@@ -1,0 +1,16 @@
+# Secrets: never commit (ADR-0009). Keys live in a gitignored .env.agents file.
+.env*
+!.env.example
+*.key
+*.pem
+
+# OS and editor files
+Thumbs.db
+desktop.ini
+.DS_Store
+~$*
+
+# Tool state
+.impeccable/
+node_modules/
+__pycache__/

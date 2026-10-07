@@ -1,0 +1,751 @@
+## LENS fidelity
+SUMMARY: I checked the protocol against the article notes and the rendered pages (p07, p10–12, p14–16, p18, p20–25, p28–31). The "Keep from the article" lines are mostly accurate, and C1's D2 critic loop reproduces T3 closely: fresh context, screenshot only, intent → top-studio bar → gaps → score/10, threshold 9 hidden from the critic, frozen prompt, probe 1–2, Fable as critic and Opus as worker. The T4 and T5 mappings also check out: the crystal clip was run by GPT-5.6 Sol on the Quartz page after the critic and image passes, and the suitcase was a standalone one-prompt demo.
+
+The fidelity problems are elsewhere:
+(1) The README promises every addition is marked ⟨A⟩. 01-blocks has no ⟨A⟩ marks at all, and C1's own wiring includes several unmarked additions.
+(2) C1's recommended `structure=conservative` for conversion pages stops C1 from reproducing the article's own landing-page case.
+(3) C1 skips the selection step the article implies: "land on a promising initial design" (p14) and "Once we've gotten to a unique, standout design" (p24). ASSET and RELAY also sit outside `each[]`, which breaks port rule 4.
+(4) On a critic stall, C1 sends the work back to D1. The article's remedy for non-convergence is to set the stopping criteria carefully.
+(5) TELLS is allowed as a CRITIC lens in some places and forbidden in others.
+(6) There are several misquotes or reinterpretations: "cards inside containers" (the article says "excessive cards and containers"), Kiln presented as "the article's lesson", "roles flip / AI executes" in D3, and a VOICE guard that the article's own Lantern rewrite would fail.
+(7) Nuances dropped: the article's direct ambitious-prompt route and examples (Questlog, Skyline, Offcut), its "each line of copy" scope, and its closing criterion, "Focus on the feeling."
+
+[fidelity-1] (high) README.md; 01-blocks.md; 03-configurations.md :: README 'Labels you'll see' (⟨A⟩ 'Always marked'); 01 all block Procedures/Knobs/Guards; 03 C1 Wiring + Blocks in Studio
+ISSUE: The README promises that every protocol addition carries an ⟨A⟩ mark so the article's own wiring stays recoverable. 01-blocks.md contains no ⟨A⟩ marks; only some additions get an ad-hoc '(added; not in the article)'. C1 also presents unmarked additions as the article's wiring. A reader can't tell which procedure steps are the article's.
+EVIDENCE: README: "⟨A⟩ Amendment: added by this protocol. Always marked, so the article-faithful wiring stays recoverable."
+
+Unmarked additions found:
+- VISION step 2: "Prime your own imagination first... Before reading any AI output". This reverses the article's system, whose step 1 is "Ask AI to list a bunch of ideas" (p11).
+- VISION step 7: uniqueness check.
+- CRITIC step 4: "3–5 prioritized gaps". The article says "outline the biggest gaps".
+- CRITIC step 8: plateau exit and best-snapshot return.
+- RELAY step 5.5: re-anchor every 3–5 segments.
+- VOICE steps 1, 6, 7: COPY-PLACEHOLDER tag, claim log, lock.
+- C1 wiring: `max=5`, `else << D1`.
+- C1 render: "1440 px and 390 px plus an above-the-fold crop". The article says "Capture a screenshot".
+- C1 GREAT refs: "4–10 professional sites". The article uses 4 references plus ours.
+- C1 SEED: "plus one structural axis".
+FIX: In 01, append ⟨A⟩ to every procedure step, knob default and guard that is not in the article. Alternatively, add an 'Additions ⟨A⟩' bullet list to each block, right after 'Keep from the article'. In C1, extend 'Amendments to the article ⟨A⟩' with: max=5 cap; best-snapshot and plateau exit; the `else << D1` stall edge; multi-viewport render; 4–10 refs; the extra structural axis; 1–3 ASSET slots. Then change the README line to say which files carry ⟨A⟩ marks.
+
+[fidelity-2] (high) 03-configurations.md :: C1 Studio → Amendments to the article ⟨A⟩, item 1 (`structure` knob)
+ISSUE: C1 is billed as 'the article's configuration', yet it recommends conservative structure (conventional information architecture) for conversion pages. Every example in the article is a productivity-app landing page, i.e. a conversion page. The article's Define stage exists precisely to move past "text on the left with a CTA button below, nav bar up top, graphic on the right" (p14), and Offcut asks to "Break all the rules" (p11). With the recommended setting, C1 does not reproduce the article's own use case.
+EVIDENCE: "Recommended: conservative for conversion pages, free for brand, portfolio and launch pages." The article's prompts are "Build me a landing page for my productivity app..." (p7, p10, p11). Its critic-loop results broke the text-left/graphic-right skeleton, e.g. Meridian's almanac masthead with sundial (p16).
+FIX: Make `structure=free` the C1 default, labelled 'article-faithful'. Re-label conservative as an opt-in ⟨A⟩: 'conservative: for pages where measured conversion outranks distinctiveness; note this undoes the article's T3 goal of escaping stale structure'. Also remove 'plus one structural axis' from the SEED row when structure=conservative, so the two settings don't contradict each other.
+
+[fidelity-3] (medium) 03-configurations.md :: C1 Studio → Wiring (D2/D3 lines) and Amendments item 2
+ISSUE: (a) The article implies selection twice: Discover should "land on a promising initial design" (p14), and Deliver begins "Once we've gotten to a unique, standout design" (p24). C1 has no pick before D3, and labels its only pick (after D1) as a protocol amendment. Running all four seeded drafts through the critic was a demonstration, not a step of the article's workflow. (b) ASSET? and RELAY? sit outside `each[...]`, so they receive an option_set. Their output then flows unpicked into D3, which violates port rule 4.
+EVIDENCE: Wiring: `D2:: each[ ( ... )*[...] ] > ASSET?[...] > RELAY?[...]` followed by `D3:: ?H[ CUT > TELLS > VOICE ]`. Amendment 2: "An optional pick(H,k) after D1 ... The article sent all four drafts through." Port rule 4 (02 §3): "Every option_set is closed by pick or carried forward by each before D3."
+FIX: Rewrite D2 as `D2:: each[ ( RENDER > @critic ... > fix )*[...] > ASSET?[...] > RELAY?[...] ] > ?H pick(H,1)`, with the note 'article: "a unique, standout design" (p24)'. Reword amendment 2: 'The article implies a human pick after Discover ("land on a promising initial design") and runs its critic demo on all four; pick(H,k) with k≥1 is article-consistent.'
+
+[fidelity-4] (medium) 03-configurations.md; 02-grammar.md :: C1 Wiring `else << D1` and Stop rules ("On a stall, go back to D1 with a new seed"); 02 §1 Backtrack
+ISSUE: C1 treats a critic loop that doesn't converge as a reason to discard the direction and re-seed. The article draws the opposite lesson: non-convergence means the stopping criteria are miscalibrated ("the critic may never consider the design good enough"), so you fix the criteria. The grammar attributes this backtrack to the article's "throw away results and try something else". That line comes from T2, about ambitious ideas that fail when built, not about critic stalls. C1 also contradicts CRITIC step 7, which says to "fix the bar, prompt, render or model".
+EVIDENCE: Article p18: "Set the stopping criteria carefully. Otherwise, the critic may never consider the design good enough... Prompt it to do one or two iterations first, and see if it's converging before adding more." C1: `*[score≥9 !hidden probe=2 max=5 else << D1]`. 02 §1: "When a D2 loop stalls ... return to D1 ... the article's 'throw away results and try something else.'"
+FIX: Change the gate to `*[score≥9 !hidden probe=2 max=5 else recalibrate(bar|prompt|render|worker) ; ?H discard → << D1 ⟨A⟩]`. In Stop rules, write: 'On a stall, first recalibrate the stopping criteria (article T3 tip); backtracking to D1 is a human decision ⟨A⟩.' In 02 §1, attribute backtrack only to a failed human checkpoint (T2), not to a critic stall.
+
+[fidelity-5] (medium) 01-blocks.md; 02-grammar.md; 03-configurations.md :: 01 TELLS → Wiring; 02 §3 Ports (`tells`) and §4 compatibility row TELLS; 03 ordering principle and C1 Amendment 6
+ISSUE: Three places allow the tell catalog to act as a lens inside CRITIC. The CRITIC's critique goes to the worker, so the catalog would reach the producer during the loop. 03's ordering principle and C1 amendment 6 forbid exactly this. Amendment 6's justification also overstates the article. The article warns against bans "from the get-go". Its own T7 method is to pull up the list while refining and prompt the AI to try alternatives, with a human comparing the results. It does not forbid catalog-informed refinement prompts.
+EVIDENCE: 01 TELLS Wiring: "Can serve as a lens inside CRITIC's 'penalize AI-looking patterns' clause". 02 port `tells`: "(also an optional CRITIC lens)". 02 §4: TELLS can be nested in "CRITIC (as a lens)". 03: "The tell catalog is never fed to the producing agent during generation or during the critic loop." Amendment 6: "...exactly what the article warns against." Article p28–29: "while refining your design, pull up this list ... Then prompt your AI to try alternatives, and see if you like the results better."
+FIX: Delete the 'CRITIC lens' allowance from 01 TELLS Wiring, the 02 `tells` port row and the 02 §4 TELLS row. Rephrase amendment 6: 'Not done: feeding catalog hits to the worker inside the automated loop, because without the article's human A/B step ("see if you like the results better") it becomes a running ban list. The article itself only warns against up-front bans.'
+
+[fidelity-6] (medium) 03-configurations.md; 01-blocks.md :: C1 → Blocks in Studio (VOICE row) and Success criteria; 01 VOICE → Knobs `surface_scope`
+ISSUE: The article says a human reads and rephrases every line of copy. C1 narrows VOICE to a list of surfaces, and its success criterion only requires the headline and CTA to be owner-written. In 01, the `surface_scope` 'minimum' contradicts the block's own `rewrite_depth` of every line.
+EVIDENCE: Article p29: "Make sure a human reads each line of copy and rephrases it in a consistent voice." C1 VOICE: "Hero headline and subhead, CTAs, benefit lines, the about/founder story, empty and error states". C1 success: "Headline and CTA written by the owner." 01: "surface_scope ... (minimum: headline, primary claim, CTA, error and apology messages)" vs "rewrite_depth every line (spot-checking is never acceptable)".
+FIX: C1 VOICE row: 'Every reader-facing string (article: "each line"); prioritize hero, CTA, value claims, error/empty states'. C1 success criterion: 'Every visible line read and rephrased by the owner; none still tagged COPY-PLACEHOLDER'. 01 knob: rename 'minimum' to 'priority order' and keep scope at all reader-facing prose.
+
+[fidelity-7] (medium) 03-configurations.md :: C1 → Wiring D1 `vision:` route and 'How the article's examples map onto this wiring'
+ISSUE: C1 models VISION only as scatter → react → sharpen → BRIEF. The article's lead T2 examples are direct ambitious prompts written from the author's own imagined inspiration: Questlog (pixel art), Skyline (isometric city) and Offcut (rule-breaking). Precision Industrial is the example of the scatter/sharpen system. The mapping section lists none of these, so half of Discover can't be traced in C1.
+EVIDENCE: C1: `vision: VISION[ scatter > ?H > (sharpen > ?H)*[H] > BRIEF ] > xk[ build:mid ]`. The mapping bullets cover only the seeded drafts, critic, ASSET, the two RELAY pages, the calorie app and Lantern. Article p10–11 shows the three direct prompts; p11–13 shows the 'system' with the Industrial Control Panel example. 01 VISION step 6 does define a 'Short form'.
+FIX: Add a route: `| vision-direct: ?H ambitious-prompt(own reference + functional anchor) > build:mid`. Add mapping bullets: 'Questlog / Skyline / Offcut = vision-direct (T2 examples a–c)'; 'Industrial Control Panel → "Precision Industrial" brief = VISION scatter/sharpen/BRIEF'; 'the plain and "random" ×4 runs = the SEED diagnostic (xN converges)'.
+
+[fidelity-8] (medium) 02-grammar.md; 01-blocks.md :: 02 §2 Operators → Lanes grounding; 01 VOICE → Wiring ('parallel lane next to visual CUT/TELLS')
+ISSUE: The article's line that copy "doesn't affect the visuals" is used to justify running VOICE in parallel with CUT and TELLS. In the article, that line makes a point about perception, not task independence. Many CUT and TELLS targets are copy: the calorie app's "extra labels" and the eyebrow-text tell. A parallel VOICE lane would have the human rewrite lines that CUT is about to delete. That breaks rule 7 and VOICE's own 'run last'.
+EVIDENCE: 02 Lanes: "Copy doesn't affect visuals, so VOICE can run beside visual CUT/TELLS". 02 rule 7: "CUT → TELLS → VOICE, so nothing gets polished that is about to be deleted". 01 VOICE step 2: "Run last, after CRITIC, CUT and TELLS." Article p29: copy "doesn't affect the visuals, but it may have the biggest impact on whether users perceive your design as tasteful or slop."
+FIX: Change the Lanes grounding to an example with genuinely independent concerns, or mark it ⟨A⟩. Restrict VOICE's lane option to 'only after CUT has removed copy-bearing elements (labels, eyebrows): `CUT > { TELLS(visual) | VOICE }`'.
+
+[fidelity-9] (medium) 01-blocks.md :: VOICE → Guards ('Mistaking tell-scrubbing for rewriting')
+ISSUE: This guard requires the human rewrite to add concrete information the AI draft lacked. The article's own Lantern rewrite would fail it. The AI draft was already full of specifics (1.4 seconds, a 4ms query firing 200,000 times a day, links to the line of code, query shapes not parameters, first fix within the hour). The human version condensed the same facts and was shorter and plainer. The article's test is "shorter, simpler, and less eyeroll-inducing". A must-add-information rule pushes VOICE toward adding, which works against CUT.
+EVIDENCE: Guard: "the after-version must contain concrete information the before-version lacked." Article p29–30: Claude's copy already contains "Most teams find their first meaningful fix within the hour" and "customers' data stays in your database". The rewrite says "Most teams find their first critical issue within an hour" and "fully private". Article: "The human version is almost always shorter, simpler, and less eyeroll-inducing."
+FIX: Replace the guard with: 'Mistaking tell-scrubbing for rewriting → the after-version must state the point more plainly and more briefly in the owner's voice (article: shorter, simpler); every concrete claim it keeps must survive the claim check ⟨A⟩.'
+
+[fidelity-10] (medium) 01-blocks.md :: TELLS → Starter catalogs, 'UI design (the article's table)' row
+ISSUE: This row is labelled as the article's table but misquotes one of its four entries. The article's tell is excessive cards and containers, meaning too many of them. The protocol says 'cards inside containers', meaning nesting. A sweep using this catalog would miss the article's canonical example: a flat row of three feature cards, replaced by a flatter layout (p28).
+EVIDENCE: Protocol: "cards inside containers → flat grid or tiles". Article p28 table: "Excessive cards and containers" → "Flatter layouts like grids or tiles".
+FIX: Change the entry to 'excessive cards and containers → flatter layouts such as grids or tiles'.
+
+[fidelity-11] (medium) README.md; 03-configurations.md :: README 'The idea in one paragraph'; C1 Success criteria; 01 CRITIC Core move
+ISSUE: The article's stated goal and final criterion is the feeling the design evokes, not distinctiveness for its own sake. Its thesis is that great design starts with feeling and aims for an emotional response. Its close says "Focus on the feeling", and "your users won't care if it was designed by Claude in a day". The protocol reframes the goal as 'distinctive' work. None of C1's success criteria, and nothing in the critic's procedure, check for the intended feeling or delight.
+EVIDENCE: Article p31: "Great design brings together elements like fonts, colors, and layouts to evoke a feeling... Focus on the feeling, and your designs will always stand out—AI-generated or not." Deliver heading: "something users will love". C1 success criteria cover different-from-each-other directions, tell hits, critic rank, element count and headline ownership, with nothing on feeling.
+FIX: Add to the README paragraph: 'The target is the feeling the work evokes; distinctiveness is the means.' Add to CRITIC step 4: 'name the intended feeling and whether the render evokes it'. Add a C1 success criterion: 'In a 5-second test, target users name the intended feeling / report delight.' In C1's CUT row, carry the article's purpose statement ('makes sense, flows well, serves a practical purpose', p24).
+
+[fidelity-12] (medium) 03-configurations.md :: C1 → Blocks in Studio (CRITIC row) vs Wiring gate
+ISSUE: C1 offers the article's GREAT mode, which ranks ours among 4 professional examples, but the loop gate is `score≥9`. A rank mode produces no score out of 10, so the gate is undefined in GREAT mode. The row also restricts references to professional sites, dropping the article's options of "designs you like, or even AI-generated concept art".
+EVIDENCE: CRITIC row: "GREAT mode = shuffled among 4–10 professional sites from the same category · threshold 9/10 hidden". Wiring: `*[score≥9 !hidden ...]`. Article p18: "Here are 5 designs: 4 professional examples and 1 screenshot of our product. Rank them by polish and taste level." Also: "You can use comparable screenshots or designs you like, or even AI-generated concept art."
+FIX: Make the gate mode-dependent: `*[ OK: score≥9 | GREAT: rank=1 of 5 !hidden ... ]`, with the GREAT gate marked ⟨A⟩. Change refs to '4 (article) comparable screenshots, designs you like, or AI-generated concept art; a moodboard, not a target'. Mark '4–10' and 'same category' as ⟨A⟩.
+
+[fidelity-13] (medium) 03-configurations.md :: C7 Lean Diff → Wiring D2 (`TELLS(deterministic DEFECT-type checks: linters + deslop rules)`)
+ISSUE: C7 runs 'deslop rules' as hard checks during production and calls them objective defects. The TELLS code catalog that those rules encode is stylistic and judgment-dependent (comments narrating code, single-use helpers, generic names). That is the up-front ban the article advises against, and port rule 7 forbids it. 05 makes the same point: hard-failing lint "drifts toward the bans the article warns against".
+EVIDENCE: C7: "allowed as hard checks: these are objective defects, not stylistic bans". 01 TELLS Code row: "Comments narrating code → comment the why only · ... single-use helpers and flags → inline · ... generic names (data, utils) → domain names". 05 §E: "Tells as linter rules ... hard-failing lint drifts toward the bans the article warns against."
+FIX: Split the C7 step: `TELLS-hard(linters, type/compile errors, leftover placeholders)` as the only hard gate; move deslop/style rules into a report-only post-loop sweep (`TELLS(audit-and-swap, ?H triage)`) after `CUT(remove review bloat)`, in line with port rule 7.
+
+[fidelity-14] (low) 01-blocks.md :: RELAY → Procedure step 5.5 vs Guards ('Seams')
+ISSUE: This is an unmarked addition that conflicts with the article's core handoff. Re-anchoring 'to the first state's reference' means a segment no longer starts from the exact final frame, which is what the article relies on so each transition "continues seamlessly". It also contradicts the block's own seam guard. The article's chain had only two transitions.
+EVIDENCE: Step 5.5: "Re-anchor to the first state's reference roughly every 3–5 segments to prevent drift." Guard: "Seams → seed from the exact final frame, never regenerate a segment's start." Article p23: "Use the final frame of that video to seed the next transition so that it continues seamlessly."
+FIX: Reword the step as: '⟨A⟩ For chains longer than ~3 segments, keep the exact final frame as the start frame and add the state-0 still as an identity/reference image (not as the start frame); or switch to first-last-frame models.'
+
+[fidelity-15] (low) 01-blocks.md; 03-configurations.md :: 01 TELLS → Procedure step 1; 03 C2 → Blocks (TELLS reduced role)
+ISSUE: The text credits the article with a lesson it didn't draw. The article uses Kiln ×4 to show that "be random" yields tokens that only sound random, so variety must come from outside the model (the T1 argument). It does not present Kiln as how you discover tells.
+EVIDENCE: 01: "The article's 'Kiln ×4' is exactly how you discover a tell." 03 C2: "It turns the article's lesson that the same idea recurring across runs is a tell (the 'Kiln' pottery metaphor four times out of four) into a check". Article p7–8: the Kiln runs illustrate that asking for randomness doesn't work.
+FIX: Reword both: '⟨A⟩ Extends the article's Kiln observation (used in T1 to show "be random" fails) into a tell-discovery method: anything that recurs across independent runs is a candidate tell.'
+
+[fidelity-16] (low) 02-grammar.md :: §1 Chassis table, D3 row ('Roles flip here: the human evaluates and the AI executes')
+ISSUE: This holds for T6 (he told Claude to dial things back) and T7 (prompt alternatives, compare). It contradicts T8, which is 'Rewrite copy by hand': the human writes and the AI only applies the text verbatim, as VOICE step 7 itself says.
+EVIDENCE: 02: "Roles flip here: the human evaluates and the AI executes." Article p29 title: "Rewrite copy by hand"; "Make sure a human reads each line of copy and rephrases it".
+FIX: Change to: 'Roles flip here: the human judges; the AI executes the human's CUT/TELLS directives, and in VOICE the human writes and the AI only inserts and flags.'
+
+[fidelity-17] (low) README.md; 01-blocks.md :: README rule 4; 01 CRITIC Core move ('The stop threshold is known only to the orchestrator')
+ISSUE: The role model differs from the article and is ambiguous. In the article the coding agent is the orchestrator: it spawns the critic, knows the 9/10 bar, and is bound by "only complete when the critic independently deems it 9/10". The point is that the agent does not decide when the work is good enough ("instead of letting the coding agent decide", p15). 'The orchestrator owns the stop' can be read as the opposite. A separate orchestrator would also conflict with CRITIC step 5, which gives T to the worker.
+EVIDENCE: README rule 4: "The orchestrator owns the decision to stop." CRITIC step 5: "Worker contract ... You're done only when it independently scores ≥ T." Article p16: "Your work is only complete when the critic independently deems it 9/10 or higher. Do not put that criterion in the critic prompt".
+FIX: Reword rule 4 and the Core move: 'The stop is set by the critic's independent score against a threshold the critic never sees. In the article the worker is also the orchestrator and knows T; a separate harness orchestrator is ⟨A⟩. Cap, plateau and best-snapshot are ⟨A⟩.'
+
+[fidelity-18] (low) 03-configurations.md :: C1 → Stop rules and budget ('The critic should be under ~10% of output tokens (the article's figure)')
+ISSUE: This turns a reported result into a budget rule. The article states the figure as an outcome showing the cost benefit. It never sets it as a target.
+EVIDENCE: Article notes (T3): "Notably Fable accounted for less than 10% of output tokens in each case; asking Fable to redesign the page directly would have cost twice as much."
+FIX: Change to: 'Expected: in the article the critic was under 10% of output tokens and about half the cost of a big-model redesign; if your critic share is much higher, check that it is receiving only renders ⟨A⟩.'
+
+[fidelity-19] (low) 02-grammar.md; 01-blocks.md :: 02 §2 Operators table (Pick and Human grounding); 01 Glue table (`?H` row)
+ISSUE: Cross-references mix the article's step numbers with the block's step numbers. 'VISION step 2' in Pick means the article's step 2 (visualize favorites), which is 01's step 4; 01's step 2 is 'Prime your own imagination'. The Human row uses 'VISION step 4' (01 numbering) and the Glue table uses 'T2 step 2' (article numbering). The Pick row also cites CRITIC's GREAT mode, but ranking ours among references doesn't reduce a candidate set.
+EVIDENCE: 02 Pick: "VISION step 2 (human picks favorites); CRITIC's GREAT mode (rank among references)". 02 Human: "VISION step 4". 01 VISION step 2: "Prime your own imagination first". 01 Glue `?H`: "T2 step 2".
+FIX: Use one scheme throughout, e.g. 'VISION step 4 (article T2 step 2: visualize favorites)'. Replace the GREAT-mode grounding for Pick with 'human selection implied by "land on a promising initial design" (p14)'.
+
+## LENS consistency
+SUMMARY: I read all six protocol files and checked them against the article notes. To test the diagrams, I parsed and rendered all 9 mermaid blocks (README map, C1–C7 and the chooser) with mermaid v11 in a browser. All 9 parse and render with no syntax errors, and the labels, subgraphs and edge text all come out correctly. The diagram problems I found are about meaning, and are listed under the issues below.
+
+The main consistency problems:
+- **TELLS feeds the critic.** 01 and 02 still let the TELLS catalog act as a CRITIC "lens". That reopens the running ban list that 03's ordering principle, C1 amendment 6 and the 04 corrections log say was removed.
+- **C7's critic breaks its own rules.** It is given acceptance criteria (the brief) and asked to judge correctness. Both are things the port rules and CRITIC's "taste only" scope forbid.
+- **C2 runs CUT and TELLS in Diverge.** 01 and 02 forbid this outright.
+- **C1's recommended GREAT mode has no stop gate.** Its score≥9 gate can't be applied to a ranking.
+- **C1 never picks a winner.** Its option set is never reduced to one candidate before D3, which violates port rule 4.
+- **C5 is out of order.** It generates voice-over from a human-written script that isn't written until D3. Its "critic loop" also has no fix step.
+- **Ordering exceptions aren't all stated.** C3, C6 and C8 also break the ordering principle silently, and the README says the ten rules hold "in every configuration" when five configurations relax them.
+- **Notation is used but never defined:** `+`, `with`, `each_scene`, `∥`, `←`, `>(type)`, `*[series]`, `portfolio-gate`, and the `:big`/`:mid` tiers.
+
+On usability, C1, C3 and C4 can't be run in Claude Code as written. There are no frozen prompt texts and no score output format. Nothing says how to render screenshots or how to keep the critic subagent away from the source code. There is no rule for keeping snapshots or for detecting a plateau. C3's different-family critic, its portfolio-gate metric and its structure/platform tell catalogs are undefined. C4 leaves the CUT taste owner unstated and contradicts 02's rule that CRITIC sits out for short documents.
+
+[consistency-1] (high) protocol/01-blocks.md; protocol/02-grammar.md (also protocol/map/off-center-map.html line 433) :: 01 TELLS › Wiring; 02 §3 Ports (`tells` row); 02 §4 compatibility (TELLS row)
+ISSUE: The TELLS catalog is still allowed as a CRITIC lens. The critic's gaps go straight to the worker inside the loop, so this feeds the catalog to the producing agent during the critic loop. 03's ordering principle, C1 amendment 6 and the 04 corrections log all say that was deliberately removed.
+EVIDENCE: 01 TELLS: "Can serve as a *lens* inside CRITIC's 'penalize AI-looking patterns' clause"; 02 ports: "catalog → TELLS sweep (also an optional CRITIC lens)"; 02 §4: "Can be nested in: CUT; CRITIC (as a lens)". vs 03: "The tell catalog is **never** fed to the producing agent during generation or during the critic loop" and C1 Amendment 6 "Deliberately not done: running a tell scan inside the critic loop and feeding its results to the worker"; 04 corrections: "A tell scan inside Studio's critic loop | Removed".
+FIX: Delete the lens sentence from 01 TELLS › Wiring. Change the 02 `tells` row to "catalog → TELLS sweep only (never to CRITIC or generation)". In 02 §4, change TELLS "Can be nested in" to "CUT" and add "the tells catalog" to CRITIC's "Must not touch" column. Keep the critic's generic article clause ("penalize patterns that feel overdone… obviously AI-generated"), but without the catalog. Fix the same text in map/off-center-map.html.
+
+[consistency-2] (high) protocol/03-configurations.md :: C7 Lean Diff › Wiring; Choosing a configuration (Q3)
+ISSUE: C7's critic sees the spec (acceptance criteria) and is told to judge correctness. That breaks port rule 1 (critics see only views), port rule 5 (briefs never go to critics) and CRITIC's 'taste only' scope. It also contradicts 02 §5, which says CRITIC sits out when correctness is the bar. The chooser makes it worse by sending 'correctness is the main bar' to C7. C7's only stated exception covers defect-type tells, not any of this.
+EVIDENCE: C7: "RENDER(diff + test/CI output + screenshots for UI changes + acceptance criteria)" … "findings limited to correctness & requirements"; 01 CRITIC guard: "CRITIC judges **taste only**"; 02 §5 CRITIC sits out when "correctness (not taste) is the real bar, which needs a verifier block"; chooser: "Is correctness the main bar (code)?" → C7.
+FIX: Take "acceptance criteria" out of the C7 RENDER. If you keep it, list it as a ⟨A⟩ exception to port rules 1 and 5 and give the reason. Rescope the reviewer's findings to "simplicity, readability, fit with this repo's conventions, scope creep; correctness is the tests' job". Label the spec-only test sub-loop as a `VERIFY?` placeholder that points to 05 shortlist #1, not as part of CRITIC. Reword chooser Q3 to "Is it an agent-written code change?" and add "(correctness via tests/CI, outside the blocks)".
+
+[consistency-3] (high) protocol/03-configurations.md :: C1 Studio › Wiring, Blocks in Studio (CRITIC row), Success criteria
+ISSUE: C1's stop gate only works in OK mode. GREAT mode, the one the article recommends, produces a rank, but the only gate C1 defines is `score≥9`. Nothing says when a GREAT-mode loop stops. The success criterion uses a third bar (rank ≥ median). C1 also widens the article's lineup from 4 references + ours to 4–10 without marking it.
+EVIDENCE: Wiring: "*[score≥9 !hidden probe=2 max=5 else << D1]"; Blocks: "GREAT mode = shuffled among 4–10 professional sites … · threshold 9/10 hidden"; Success: "ranks the page at or above the median of professional category exemplars"; article: "Here are 5 designs: 4 professional examples and 1 screenshot of our product. Rank them".
+FIX: Define the gate per bar mode in both C1 and 01 CRITIC knobs (`threshold`): OK → `*[score≥9 !hidden …]`; GREAT → `*[rank=1 of 5 !hidden …]`, or `rank ≥ median` for larger pools. Set GREAT refs to "4 (article)" and mark "up to 10" as ⟨A⟩. Make the success criterion match the gate actually used.
+
+[consistency-4] (high) protocol/03-configurations.md :: C5 Media Relay › Wiring
+ISSUE: The steps run in an impossible order. D2 renders the voice-over from a human-written script, but the human writes that script in D3 VOICE, after the relay and after the critic gate. The gate also judges the ad with placeholder taglines and captions, and nothing re-checks the ad after VOICE.
+EVIDENCE: D2: "+ voice model(VO from a HUMAN-written script)"; D3: "> ?H VOICE(tagline, headline, hook, VO script, captions) > launch".
+FIX: Move the VO script to D1: `?H VISION(creative director: brief + shot list + style frames) > ?H VOICE(VO script, locked)`. Limit D3 VOICE to tagline, headline and captions. Add `> RENDER > CRITIC?(regression check; never edits words) ⟨A⟩` after D3 VOICE, as C1 does, and update the mermaid diagram to match.
+
+[consistency-5] (high) protocol/03-configurations.md; protocol/01-blocks.md; protocol/02-grammar.md :: C2 Divergence Engine › Wiring and Blocks
+ISSUE: C2 runs CUT and TELLS inside D1 (Diverge). Three statements forbid this, and C2 states no exception. The ordering principle's exception list and 04's corrections log don't mention C2.
+EVIDENCE: C2 wiring: "D1:: xN[ SEED … ] > pool > CUT(merge near-duplicates) > TELLS(default-idea audit …)"; 01 CUT step 1: "Never in Diverge, where pruning kills breadth"; 02 §4 CUT "Must not touch: Diverge stage"; 02 §5 CUT sits out when "it's the Diverge stage".
+FIX: Write C2 with existing operators instead of the D3 blocks: `> pick(R: merge near-duplicates)` in place of `CUT(...)`, and `> pick(R: drop options also produced by x3[plain prompt])` in place of `TELLS(...)`. 02's Replicate operator already describes this diagnostic. Then set C2's CUT and TELLS cells in the coverage matrix to "— (dedupe and baseline filter are pick(R))". If you keep the block names, add an explicit C2 exception to 01 CUT step 1, 02 §4/§5 and the ordering principle.
+
+[consistency-6] (high) protocol/03-configurations.md :: C1 Studio (whole section) – executability in Claude Code
+ISSUE: A practitioner can't run C1 from these docs alone. The pieces that decide whether the loop works are missing: the prompt texts, the RENDER mechanics, critic isolation, model mapping, snapshotting, and the probe and plateau rules.
+EVIDENCE: 01 CRITIC step 4 lists what the critic prompt must ask but gives no text; no SEED, orchestrator, ASSET, RELAY, CUT-directive or TELLS-swap prompt text anywhere. C1: "render = full-page screenshots at about 1440 px and 390 px" with no capture method. A Claude Code subagent keeps Read/Grep access to the repo, so the "screenshot only" rule can't be enforced as written. `critic:big`/`fix:mid` are never mapped to models. "Return the best-scoring snapshot" has no snapshot mechanism. 01 says `max_iterations` "~5 after the probe" but C1 says `probe=2 max=5`. "Probe… check that scores rise" has no numbers. `pick(H,k)?` has no default k. Who decides "plain" before ASSET is never said.
+FIX: Add a "C1 runbook" appendix with:
+- **Prompts:** the article-shaped SEED prompt (shell RNG → direction per axis → build; never reveal the string); the orchestrator/worker prompt carrying T; the frozen critic prompt text with JSON output `{intent, gaps[3–5], score|rank}`; the ASSET and RELAY A/B prompts; and CUT, TELLS-swap and VOICE copy-deck templates.
+- **RENDER:** dev-server command, a Playwright (or Playwright MCP) script that saves 1440×900 and 390×844 full-page shots plus a fold crop to `renders/<cand>/<iter>/`, and a frame contact sheet for motion.
+- **Critic isolation:** a `.claude/agents/design-critic.md` with `model:` set to the strongest model and `tools: Read` only, told to open only the given image paths. Or `claude -p` run from an empty temp dir.
+- **Snapshots and logs:** git commit or tag `c<k>-i<n>` after each iteration; scores logged to `runs/scores.csv`.
+- **Numeric rules:** e.g. plateau = gain < 0.5 over 2 iterations; total cap of 5, including the probe.
+- **Defaults:** k=1 when the pick is made.
+- **File locations:** `runs/seeds.jsonl` and `bank/`.
+- **ASSET trigger:** a human checkpoint after D2 declares "plain".
+
+[consistency-7] (high) protocol/03-configurations.md :: C3 Voice Series – executability
+ISSUE: C3's distinctive parts aren't specified enough to run.
+- **Different-family critic:** marked ⟨A⟩, but Claude Code can't spawn one natively, and no route (CLI or API via KEYS) is given.
+- **Portfolio gate:** no metric, embedding model, baseline size or threshold is defined.
+- **Catalogs:** TELLS calls for "structure + platform" catalogs that don't exist in 01. Only a word-level Prose list and a Marketing list exist, although C3 itself says structural tells survive rewording.
+- **Undefined inputs:** the angle-card format, the reference pool size N (which sets what "top third" means), anonymizing reference bylines, and how to render a "feed card" are all undefined.
+EVIDENCE: C3 wiring: "@critic:big(view, refs = author's best N + category leaders, shuffled)"; "portfolio-gate( similarity of the last N pieces vs. the author's pre-AI baseline ) ⟨A⟩"; "TELLS(word + structure + platform catalog)"; "RENDER(feed card + expanded post / published page / email render)"; Blocks: "prefer a critic from a different model family".
+FIX: Add a C3 runbook covering:
+- **Angle card:** a template (hook, thesis claim, evidence the author holds, format).
+- **Critic route:** e.g. Codex CLI or a provider key via KEYS, with Claude as the fallback.
+- **References:** refs = author's best 6 + 3 category leaders, bylines and handles stripped, gate = top 3 of 10.
+- **Render:** an HTML feed-card mock, screenshotted.
+- **Portfolio gate:** e.g. mean pairwise cosine over the last 8 pieces vs. 8 pre-AI pieces, with a named embedding model, rotating seed axes when it exceeds baseline + δ. Alternatively, mark the gate experimental (see the portfolio-gate issue).
+- **Catalogs:** add 01 starter catalogs for prose structure (identical section skeletons, hook → list → moral arc, one-line-paragraph cascades) and for each platform (LinkedIn/newsletter).
+
+[consistency-8] (medium) protocol/03-configurations.md; protocol/04-use-case-evidence.md :: 03 'One ordering principle'; C3, C6, C8 wiring; 04 Corrections ('order of CUT and CRITIC' row)
+ISSUE: The exception list is incomplete. It names only C5 and C7, but C3, C6 and C8 also break the principle without saying so. C3 runs TELLS in D1. C6 runs CUT and TELLS as parallel D2 lanes on the same text, which 01 CUT's wiring forbids. C8 runs TELLS before CUT, and both before the critic/ranker.
+EVIDENCE: 03: "Exceptions are justified where they occur (C7: …)"; 04: "C5 and C7 exceptions are justified"; C3 D1: "> TELLS(vanilla-baseline flag)"; C6 D2: "{ CUT(…) | TELLS(…) | @critic… }"; 01 CUT wiring: "Never run it on the same region at the same time as TELLS or VOICE"; C8: "each[ TELLS(…) > CUT(default trim) ] > pick(C,1)".
+FIX: Under the ordering principle, add an exceptions table listing every deviation and its reason. C3: the vanilla-angle flag is a D1 default-idea filter (better written as pick(R) against x3[plain]). C5: per-shot audit. C6: annotation-only auditors that delete nothing, so order and concurrency don't matter. C7: defect checks. C8: see its own issue. Update 04's row to "C3, C5, C6, C7, C8 exceptions are stated in 03".
+
+[consistency-9] (medium) protocol/README.md; protocol/02-grammar.md :: README 'Ten rules that hold in every configuration'; 02 §6 'true in every configuration'
+ISSUE: The claim that the ten rules hold everywhere is false. Several configurations relax rules 3, 4, 7 and 9, so a reader who trusts the claim will misread C5–C8.
+EVIDENCE: Rule 7 "CUT → TELLS → VOICE" is broken by C5, C6, C7 and C8. Rule 3 "Judges see only views" is broken by C7's acceptance criteria. Rule 4 "Hide the threshold… cap the loop" is broken by C6 ("a threshold is optional") and C8 (pick(C,1), no cap). Rule 9 "Humans own the words" is broken by C8 ("VOICE-flag… for the user to rewrite").
+FIX: Retitle both lists "Ten default rules" and add: "A configuration may relax a rule only with a stated reason; see the exceptions table in 03." Alternatively, footnote each rule with the configurations that relax it.
+
+[consistency-10] (medium) protocol/03-configurations.md :: C1 Studio › Wiring (D2→D3) and mermaid
+ISSUE: C1 never closes its option set. `each[]` keeps k candidates, then ASSET, RELAY and D3 run outside `each` with no `pick` in between. That breaks port rule 4, and the reader can't tell which candidate is distilled. The diagram omits the pick too.
+EVIDENCE: "D2:: each[ ( … )*[…] ] > ASSET?[…] > RELAY?[…]  D3:: ?H[ CUT > TELLS > VOICE ]"; 02 port rule 4: "Every `option_set` is closed by `pick` or carried forward by `each` before D3."; `pick(H,k)?` is optional and k is unbounded.
+FIX: Rewrite as `D2:: each[ (critic loop) > ASSET? > RELAY? ] > pick(H,1)` followed by `D3:: ?H[ CUT > TELLS > VOICE ]`. If several candidates go on, wrap D3 in `each[ ]`. Add a pick node between RL and CU in the C1 mermaid.
+
+[consistency-11] (medium) protocol/README.md; protocol/03-configurations.md :: README C1 row and System map; 03 topology table (C1 row)
+ISSUE: The summaries say C1 nests the specialists inside the critic loop. C1's wiring and its mapping of the article's examples run ASSET and RELAY after the loop, as separate prompts. The README map also draws `CRITIC -.nests.-> ASSET`. Readers will build the wrong article workflow.
+EVIDENCE: README: "critic loop per candidate, with specialists nested"; 03 table: "critic loop per candidate with nested specialists"; 03 C1 mapping: "Image enrichment followed the loop as a separate prompt: `> ASSET`."
+FIX: Change both summaries to "critic loop per candidate → specialist enrichment (ASSET, optional RELAY) → human distill". In the README map, relabel the edge "then (C1) / may nest (other configs)". If you want nesting as an option, add it to C1 as a ⟨A⟩ amendment.
+
+[consistency-12] (medium) protocol/03-configurations.md; protocol/01-blocks.md :: C1 Amendment 1 (`structure` knob) vs C1 SEED row and 01 SEED procedure step 3
+ISSUE: The recommended `structure=conservative` setting says to keep the information architecture conventional. SEED requires at least one structural axis per branch, and C1 adds "plus one structural axis". The two settings fight each other. The `structure` knob also appears in no block's knob table, so no reader knows which block reads it.
+EVIDENCE: Amendment 1: "conservative (keep the information architecture conventional …) … Recommended: conservative for conversion pages"; 01 SEED step 3: "including at least one *structural* axis"; C1 SEED: "axes: palette, layout, type, imagery/metaphor, **plus one structural axis**".
+FIX: Add `structure` (free | conservative, ⟨A⟩) to the 01 SEED and VISION knob tables. Amend SEED step 3 to "≥1 structural axis unless structure=conservative, in which case use a 'signature moment' axis". Reword the C1 SEED row the same way, and drop "plus one structural axis", since layout is already structural.
+
+[consistency-13] (medium) protocol/03-configurations.md :: C5 Media Relay › Wiring (D3 critic) and Note on block placement
+ISSUE: The "pre-launch gate" is written as a loop with no producing step, so every iteration re-scores an unchanged artifact. Separately, the C5 mermaid's matte node has no input.
+EVIDENCE: "( RENDER(…) > @critic:big(view, refs = best-in-category, shuffled) )*[rank ≥ median !hidden max=2 else << D2]"; mermaid: `MT["render in scene → matte"]` has no incoming edge.
+FIX: Write it as a one-shot gate: `RENDER > @critic:big(view, refs) > gate[rank ≥ median !hidden else << D2]`. Add `gate[ ]` to the 02 operator table, or use `*[… max=1 …]`. In the mermaid, connect `AS --> MT`.
+
+[consistency-14] (medium) protocol/03-configurations.md :: C5 Media Relay › Wiring (per-shot TELLS)
+ISSUE: The per-shot audit mixes objective defects with stylistic tells and loops them into regeneration. In practice the stylistic tells go into the regeneration prompt, which port rule 7 forbids. C5's note justifies only the timing (audit after the shot), not this injection.
+EVIDENCE: "each[ shot > TELLS(visual tells: warped logos/hands, plastic sheen, frozen motion, stock motifs) > regenerate failing shots only ]"; 02 rule 7: "Stylistic `tells` are never injected into generation prompts … (Objective defects … may be hard-banned.)"
+FIX: Split the list. Objective defects (warped logos and hands, frozen motion, identity drift) can trigger hard regeneration. Stylistic tells (plastic sheen, stock motifs) go to a post-relay TELLS sweep with positive-alternative swap prompts (01 TELLS step 6), and the tell name is never pasted into the regeneration prompt.
+
+[consistency-15] (medium) protocol/01-blocks.md; protocol/02-grammar.md :: 01 CRITIC › Wiring; 02 §4 CRITIC 'Must not touch: copy'
+ISSUE: "CRITIC never rewrites copy / must not touch copy" can't hold in C3 and C4. There the artifact is prose, and the critic loop's worker (`revise:mid`) rewrites it. Readers can't tell what is allowed.
+EVIDENCE: 01: "It never rewrites copy (that belongs to VOICE)"; 02 §4: "copy (that's VOICE)"; C3: "@critic:big(…) > revise:mid )*[rank in top third …]"; C4: "> revise )*[rank ≥ median …]".
+FIX: Restate the rule in 01 and 02: "Where copy is a layer (C1, C5), critic gaps must not target copy. In prose artifacts (C3, C4) the worker may restructure and revise during the loop, but its wording stays COPY-PLACEHOLDER until VOICE." Add one line saying so to the Blocks lists in C3 and C4.
+
+[consistency-16] (medium) protocol/03-configurations.md :: C7 Lean Diff › Wiring (D2 TELLS hard checks)
+ISSUE: C7 calls "deslop rules" objective defects and runs them as hard checks before the critic. But those rules are 01's stylistic Code catalog (narrating comments, single-use helpers, generic names). 05 itself puts this approach off-path: it says hard-failing tell lint drifts toward bans, and lists ContextCov enforcement as future work.
+EVIDENCE: C7: "TELLS(deterministic DEFECT-type checks: linters + deslop rules) allowed as hard checks: these are objective defects"; 01 Code catalog: "Comments narrating code … single-use helpers … generic names"; 05 E: "hard-failing lint drifts toward the bans the article warns against"; 05 I: ContextCov "is how TELLS could be implemented in C7".
+FIX: Limit the D2 hard checks to linters, type checks, formatting and leftover placeholders or TODOs, which fall under rule 7's objective-defect carve-out. Move the 01 Code catalog to a post-loop TELLS audit after CU2, with per-hit triage. If deslop hard-checks stay, mark them ⟨A⟩ and cite 05 E and I.
+
+[consistency-17] (medium) protocol/01-blocks.md; protocol/02-grammar.md :: 01 CRITIC › Core move, step 5, Guards; 02 port rule 2 and rule 4
+ISSUE: It's unclear who holds the threshold. 01 says only the orchestrator knows T, yet the worker contract gives T to the worker. Port rule 2 says scores go only to gates. In the article, and in Claude Code, the implementing main agent is both worker and orchestrator, and it does see the score. An implementer can't tell which setup is meant.
+EVIDENCE: 01: "The stop threshold is known only to the orchestrator"; step 5: "Worker contract. '… You're done only when it independently scores ≥ T.'"; 02 rule 2: "Scores go only to gates."; article: "Your work is only complete when the critic independently deems it 9/10 or higher. Do not put that criterion in the critic prompt".
+FIX: Add to 01 CRITIC: "Article-faithful: the worker is the orchestrator. T lives in the worker or main-agent prompt and never in the critic prompt. ⟨A⟩ option: an external script or stop hook holds T and the worker sees only the critique." Reword 02 rule 2 to "Scores go to the gate holder, and T never enters a critic prompt."
+
+[consistency-18] (medium) protocol/03-configurations.md :: C4 Reader-Ready › Wiring and Blocks
+ISSUE: C4 has three gaps.
+- **No taste owner for CUT:** D3's CUT and TELLS have no ?H, though 01 makes the human the default taste owner and 02 calls D3 human-led. This silently uses CUT's "experimental" AI taste owner.
+- **Conflicts with 02 §5:** 02 says CRITIC sits out when "the artifact is short enough that a human review is cheaper", yet C4 makes a big-model critic with 3–5 references central even for emails under 100 words, and C4 is supposed to take minutes.
+- **Ambiguous gate:** "rank ≥ median" with 3–5 references is ambiguous.
+EVIDENCE: C4 D3: "CUT(length budget …) > TELLS(memo catalog) > ?H VOICE-lite"; 01 CUT knob: "`taste_owner` human (default) | fresh-context reviewer … (experimental)"; 02 §5 CRITIC sits out when "the artifact is short enough that a human review is cheaper"; C4 CUT: "<100 words for email".
+FIX: Write `?H[ CUT > TELLS ]`, or name the AI taste owner and mark it ⟨A⟩. Make the critic `CRITIC?` and trigger it only for documents over about one page (PRDs, strategy docs, RCAs); skip it for emails and updates. Write the gate as "positioned at or above the middle of the 4–6 item lineup". Add a time budget (e.g. under 10 minutes end to end).
+
+[consistency-19] (medium) protocol/03-configurations.md; protocol/05-more-to-explore.md; protocol/04-use-case-evidence.md :: C3 portfolio-gate, C8 cross-project similarity check vs 05 shortlist #7 and §I; 04 Evidence gaps
+ISSUE: Portfolio and cross-project similarity gates are wired into C3 and C8, but 05 lists diversity metrics as off-path future work, and 04 says no validated metric exists. The scope rule says off-path items must stay in More to Explore, so it's unclear whether they're in v1.
+EVIDENCE: 05 #7: "Diversity metrics for fan-outs … An evaluation tool, not a technique"; 05 I: "could become C3's portfolio gate and C8's cross-project check"; 04: "There is no validated portfolio-level diversity metric"; C3: "portfolio-gate(…) ⟨A⟩"; C8: "cross-project similarity check …".
+FIX: Pick one. (a) Keep the gates as explicitly experimental ⟨A⟩ with a named metric, and edit 05 I to say "used experimentally in C3/C8; validation pending". (b) Move them to 05 and replace C3's gate with a human portfolio review every N pieces, plus an x3[plain] replicate diagnostic of the angle cards.
+
+[consistency-20] (medium) protocol/03-configurations.md :: C8 Platform Guardrail › Wiring
+ISSUE: C8's order runs backwards. TELLS comes before CUT, both come before the ranker, and ASSET (an additive block) runs after CUT, which 01 forbids. C8 also has no D1/D2/D3 labels, no diagram (03's intro promises one for every configuration) and no stated render.
+EVIDENCE: "each[ TELLS(…) > CUT(default trim) ] > pick(C,1) … > ASSET routing (no CSS blobs) · RELAY on premium tiers only"; 01 CUT wiring: "Re-run it after any additive block (ASSET, RELAY…)"; 03 intro: "its wiring, in notation and as a diagram".
+FIX: Rewrite as `D1:: xN[ SEED(project seed+i) > generate ]`, then `D2:: each[ ASSET routing > RELAY?(premium) ] > pick(C,1 on screenshots) > similarity check (re-roll)`, then `D3:: CUT(default trim) > TELLS(detectors) > VOICE-flag`. If pre-filtering before the ranker is wanted, make it a deterministic `pick(R)` and list it as a stated exception. Add a mermaid diagram.
+
+[consistency-21] (medium) protocol/03-configurations.md; protocol/02-grammar.md :: Notation in C1, C2, C3, C5, C6, C7, C8 vs 02 §2 Operators
+ISSUE: The configurations use many symbols that 02 never defines, and misuse some that it does.
+- **Undefined:** `+`, `with`, `each_scene[ ]`, `...`, `∥`, `←`, the typed edge `>(view)`, `*[series]`, `portfolio-gate()`, `pool`, `DivergenceEngine-lite[ ]`, `VISION-lite`/`-menu`, `VOICE-flag`, and the tiers `:big`/`:mid` (TIER says 'big'/'capable').
+- **Misused:** C6 uses Lanes `{ | }` for parallel auditors of the same text, but 02 defines Lanes as splitting by independent concern and then merging. C7's isolate is malformed (`@reviewer:big, different family(view, …)`).
+- **Never used or inconsistent:** `~~A~~` is never used (sit-outs are prose, even inside C7's wiring). `>=` and `≥` are mixed. 02's Pick grounding cites "VISION step 2 (human picks favorites)", but picking is 01 VISION step 4.
+EVIDENCE: C5: "+ render-in-scene > matte", "with each[ shot > …]", "each_scene[ … ]"; C7: "∥ test sub-loop"; C1: "BANK ← every failed prompt", ">(option_set<artifact>)"; C3: ")*[series]"; C6: "{ CUT(…) | TELLS(…) | @critic… }".
+FIX: Add rows to the 02 operator table for: Parallel-audit `{{ A ‖ B }}` (same input, annotations only, no merge); typed edge `>(port)`; `gate[ ]`; and tier names (`big` = strongest/judgment, `mid` = capable/execution). In the configurations, replace `+`/`with` with `{ | }` or `>`, `each_scene` with `each`, and `←` with `> BANK`. Fix C7 to `@reviewer:big[other-family](view, refs)`. Use `~~SEED~~` for every sit-out. Standardize on `≥`. Correct the Pick grounding to "VISION step 4".
+
+[consistency-22] (low) protocol/03-configurations.md :: Block coverage at a glance vs C1, C2, C4, C5 sections; README C2 row
+ISSUE: Several matrix cells disagree with their configuration's own text. Separately, the README says C2 nests in C1, but C1's entry route offers only seed or vision.
+EVIDENCE: C1 ASSET ● vs wiring `ASSET?` ("when 'plain'"). C4 ASSET "—" vs "ASSET, except charts computed from data". C5 CUT "○" vs an unconditional "D3:: CUT(one message, fewer elements)". C2 VOICE "naming only" vs "name and one-line pitch", and neither VOICE nor ASSET appears in C2's wiring. C1 marks SEED and VISION both ●, though `route(entry)` runs only one.
+FIX: Set C1 ASSET to ○ (or ● "when plain"), C4 ASSET to ○ "charts from data only", and C5 CUT to ● (or make the wiring `CUT?`). Change C2 VOICE to "◐ name + pitch" and add `> ?H VOICE(name, pitch)` and `ASSET?(rough boards)` to C2's wiring. Annotate C1 SEED/VISION as "● (one per run)". Add `| c2: C2 >` as a third C1 entry route, or drop C1 from the README's nesting claim.
+
+[consistency-23] (low) protocol/03-configurations.md :: Stop rules across C2–C8; C3 outer loop and diagram
+ISSUE: Only C1 has a 'Stop rules' section, though recipe step 8 and the 03 intro require one for every configuration. C3's inner loop has no probe and no `else << D1`. C3's outer `*[series]` loop has no end condition, and in its diagram both gate branches go to D1, so the gate changes nothing visible.
+EVIDENCE: Recipe step 8: "Set stop rules: probe, cap, best-snapshot return, and a backtrack edge."; C3: "*[rank in top third !hidden max=3]"; mermaid: `G -- "converging: rotate seed axes" --> D1` and `G -- "ok" --> D1`.
+FIX: Add a short 'Stop rules' block to C2–C8: probe, cap, best-snapshot return and backtrack target. For C3, add `probe=1 else << D1` and define the series end (e.g. editorial calendar exhausted). In the diagram, label the 'ok' edge "next piece, same axes" and the other "next piece, rotated axes".
+
+[consistency-24] (low) protocol/01-blocks.md :: TELLS › Knobs (`enforcement: soft-steer`)
+ISSUE: The soft-steer option, "positive direction for 1–3 chronic offenders", amounts to steering generation using catalog entries. That conflicts with port rule 7 and "audit after, never ban before". It is also a non-article extension living inside a block, although 05 F already files up-front steering as off-path.
+EVIDENCE: "soft-steer (positive direction for 1–3 chronic offenders; an extension, not in the article)"; 02 rule 7: "Stylistic `tells` are never injected into generation prompts"; 05 F: "Up-front steering (contrasts with the article's 'fix after' approach)".
+FIX: Remove soft-steer from the TELLS knobs and add it to 05 F next to shortlist #6 as an A/B candidate. If you keep it, state that it applies only to swap prompts after generation, never to the first generation.
+
+[consistency-25] (low) protocol/03-configurations.md :: C1 Wiring D3 and Amendment 4 (final CRITIC regression check)
+ISSUE: The post-D3 critic has no defined outcome. Nothing says who acts on its findings, given that VOICE copy is locked and CRITIC may not veto CUT. It also sits after subtraction, so any fix it triggers breaks "subtraction runs after the last critic loop".
+EVIDENCE: "D3:: ?H[ CUT > TELLS > VOICE ] > CRITIC?(regression check; never edits words) ⟨A⟩ > ship"; 01 CUT: "don't let CRITIC veto removals"; 03 principle: "subtraction always runs *after* the last critic loop".
+FIX: Define it as a report-only, single pass. Only layout breaks (overflow, truncation, broken alignment) are actionable, and they are fixed by layout-only edits with no new elements. CUT removals and VOICE copy are immune. If a fix adds anything, CUT re-runs on that region.
+
+[consistency-26] (low) protocol/03-configurations.md; protocol/README.md :: C1 Wiring and Blocks vs README 'Amendment… Always marked, so the article-faithful wiring stays recoverable'
+ISSUE: Several C1 parameters go beyond the article but carry no ⟨A⟩ mark, so the article-faithful wiring can't be recovered as the README promises.
+EVIDENCE: "max=5" (the article gives no cap: only "do one or two iterations first and see if it's converging"); "else << D1" (the article's "throw away results" is from T2, not a T3 stall); "plus one structural axis"; "4–10 professional sites"; "1440 px and 390 px plus an above-the-fold crop" (the article: "capture a screenshot").
+FIX: Mark each with ⟨A⟩ in the C1 wiring and CRITIC row, or list them under C1's 'Amendments to the article' with the article value next to the protocol value (e.g. "cap: none in article → 5 ⟨A⟩").
+
+## LENS scope
+SUMMARY: Scope discipline breaks down mainly in the configurations, not in the blocks. 01-blocks.md mostly stays close to T1–T8. It has a few unmarked add-ons: the VOICE claim check, the SEED card deck and indexed mode, RELAY's text and data rows, and the TELLS soft-steer option. The bigger problem is in 03-configurations.md. Several configurations are built on exactly the things 05-more-to-explore.md files as off-path:
+- **C8** rests on a learned ranker, a cross-project diversity metric and best-of-N selection, and its "VISION-menu" is not VISION.
+- **C3**'s defining portfolio gate is an embedding-similarity metric that 05 lists as future work and 04 says has never been validated.
+- **C5**'s outer loop is live A/B testing (05 §C).
+- **C7** has a spec-only test sub-loop with a mutation-score bar, plus hard-fail stylistic deslop lint.
+- **C2** uses the off-path "random analog industry" card deck, removes near-duplicate ideas and calls that CUT, and uses CRITIC as a one-pass ranker.
+
+The most serious logic break is C7. Its critic is told to report "correctness & requirements" findings, and the chooser sends "correctness is the main bar" work to C7. That contradicts CRITIC's own "taste only" guard, the CRITIC sit-out rule in 02 §5, and 04's rejection of correctness-first jobs. C1, which is supposed to reproduce the article, recommends a "conservative" layout for conversion pages. Landing pages are conversion pages, and the article calls that conventional layout stale. So the recommended setting for the article's own case is the opposite of what the article does.
+
+Several cross-file contradictions undercut the claims that "everything off-path went to 05", that "amendments are always marked", and that "the ten rules hold in every configuration":
+- The tell catalog may serve as a "CRITIC lens", yet the ordering rule and C1 amendment 6 forbid feeding it into the critic loop.
+- 05 still lists as off-path items that v1 already contains: position shuffling, scroll-scrub playback, and anchor-frame chaining.
+
+Recommended approach:
+- (1) Either declare each off-block capability as an explicit external dependency, with a pointer to 05, or remove it from the wiring.
+- (2) Make the faithful-to-the-article setting the default wherever an amendment changes what a block does.
+- (3) Add ⟨A⟩ markers in 01.
+- (4) Turn the "ten rules" into defaults with declared exceptions for each configuration.
+
+[scope-1] (high) protocol/03-configurations.md :: C7 · Lean Diff (Wiring) + Choosing a configuration (chooser Q3)
+ISSUE: C7 turns CRITIC into a correctness reviewer, and the chooser sends correctness-first work to C7. Both contradict the protocol's own scope boundary. CRITIC is a taste judge on a render. Correctness is VERIFY, which 05 files as a future block. The protocol says this in three places: 01 CRITIC guards, 02 §5 sit-out rule and 04's rejected list. A reader who picks C7 because "correctness is the main bar" gets a configuration whose blocks cannot deliver that.
+EVIDENCE: C7 wiring: "fix:mid )*[bar !hidden probe=1 max=3 · findings limited to correctness & requirements]". Chooser: Q3{"Is correctness the main bar (code)?"} -- yes --> "C7 Lean Diff (+ tests)". These conflict with 01 CRITIC guard "CRITIC judges **taste only**. Correctness needs separate verification", 02 §5 "CRITIC sits out when … correctness (not taste) is the real bar, which needs a verifier block", and 04 Rejected "Correctness-first and security-first jobs … verification problems, outside the eight blocks."
+FIX: 1. Change the C7 gate to "findings limited to scope creep, unrequested changes, and fit to this repo's conventions and readability. Correctness comes only from the external test/CI result, which the reviewer may read but which is not a block."
+2. Reword chooser Q3 to "Is it an agent-written code change where diff bloat and reviewability are the pain? (Correctness: tests/CI outside the protocol, see 05 §C VERIFY.)"
+3. Add one line to C7 Thesis fit: "CRITIC here is a reviewability critic, not a correctness verifier."
+
+[scope-2] (high) protocol/03-configurations.md :: C8 · Platform Guardrail (Thesis fit, Grounding, Wiring)
+ISSUE: C8 is wired almost entirely from things 05 files as off-path:
+- a learned/calibrated ranker (05 §I "Learned critics");
+- best-of-N selection standing in for the critic loop (05 shortlist #3: "selection, not the article's refinement loop");
+- a cross-project similarity check (05 #7 and §I "could become … C8's cross-project check");
+- offline recalibration on human-preference data (05 #5 / §I).
+
+Its "VISION-menu" of preset style subfloors also turns VISION upside down. VISION's whole guard is that taste comes from the human's own words rather than a menu of options supplied by someone else. Presented as one of eight configurations wired from the blocks, C8 breaks the user's "don't veer far" requirement.
+EVIDENCE: C8 wiring: "onboarding:: VISION-menu?(contrasting style subfloors to choose from)" · "pick(C,1)   blind learned/calibrated ranker on screenshots" · "cross-project similarity check vs. recent sibling outputs" · "offline:: recalibrate the catalog and ranker on human preference data". VISION guard (01): "every sharpen round needs at least one like and one avoid in the human's own words". 05 #3: "It is selection, not the article's refinement loop".
+FIX: Option A (preferred): move C8 to 05 as "Channel candidate: Platform Guardrail", keep only a short pointer in 03, and drop it from the README's "eight configurations" (making seven).
+
+Option B: keep C8 but rewrite its block coverage row:
+- VISION: "— sits out (replaced by a non-block style-subfloor menu, see 05 §I)".
+- CRITIC: "— sits out (replaced by a non-block learned ranker, see 05 §I)".
+- Add an "External dependencies (not blocks)" list: learned ranker, cross-project similarity metric, preference-data recalibration.
+
+[scope-3] (high) protocol/03-configurations.md :: C1 · Studio → Amendments to the article ⟨A⟩, item 1 (`structure` knob)
+ISSUE: C1 is the configuration that must reproduce the article. Yet it recommends "conservative" structure for conversion pages, and the article's own case ("a landing page for my productivity app", "still functioning as a landing page") is a conversion page. So with its recommended setting, C1 departs from the article for the article's own use case. The article calls conventional structure a stale pattern to escape. The conservative setting also cancels SEED's required structural axis. The cited support (Tuch et al.) concerns first impressions, not conversion, and 04 admits there is no conversion evidence either way. This amendment is marked, but it is large enough to change what C1 is.
+EVIDENCE: C1 amendment 1: "Recommended: conservative for conversion pages, free for brand, portfolio and launch pages." Article (notes, T3): "The seed-string designs have promise but still rely on stale patterns: text on the left with a CTA button below, nav bar up top, graphic on the right." C1 SEED settings: "plus one structural axis". 01 SEED guard: "Surface-only variety (new palette, same skeleton) → include structural axes". 04 Evidence gaps: "No A/B test shows a distinctive page … beating a generic AI one on conversion."
+FIX: 1. Make `structure=free` the C1 default, labeled "article-faithful".
+2. Recast `conservative` as an opt-in ⟨A⟩ variant: "untested for conversion; first-impression evidence only. Disables SEED's structural axis in favour of one signature moment."
+3. Add the free-vs-conservative comparison as an arm of the A/B experiment in 05 §I, instead of recommending a default ahead of the evidence.
+
+[scope-4] (medium) protocol/03-configurations.md :: C3 · Voice Series (Wiring, Success criteria); README configuration table
+ISSUE: C3's defining topology, which 04 used to justify splitting C3 from C4, is a portfolio-similarity gate. That gate is an embedding-diversity metric, and 05 files it as off-path future work ("could become C3's portfolio gate"). 04 also says no such metric has been validated. So the configuration's identity rests on a capability that is outside all eight blocks and unvalidated. The ⟨A⟩ marker doesn't say that it is a non-block dependency.
+EVIDENCE: C3 wiring: "> portfolio-gate( similarity of the last N pieces vs. the author's pre-AI baseline ) ⟨A⟩"; Success: "embedding similarity between pieces is at or below the author's pre-AI baseline". 05 §I: "Diversity metrics across a portfolio of outputs … could become C3's portfolio gate"; 05 #7: "An evaluation tool, not a technique". 04 gaps: "There is no validated portfolio-level diversity metric."
+FIX: 1. Make the default gate the article-faithful one: "Each turn, the author (or a fresh-context critic) reads the last N pieces side by side and lists any recurring angle, structure or image." This is the article's Kiln ×4 observation, as in 02's `xN` diagnostic. "Recurring items become TELLS entries, and SEED axes rotate."
+2. Keep the embedding metric only as an optional, explicitly external instrument ("see 05 §I; unvalidated").
+3. Change the success criterion to match.
+
+[scope-5] (medium) protocol/03-configurations.md :: C7 · Lean Diff (Wiring: test sub-loop ⟨A⟩ and TELLS hard checks; Success criteria)
+ISSUE: Two techniques that 05 files as off-path sit inside C7's wiring and success criteria.
+
+(1) The spec-only test sub-loop with a hidden mutation-score bar is tool-grounded verification, the VERIFY candidate (05 shortlist #1, §C). It traces to none of T1–T8.
+
+(2) TELLS runs as hard-fail "linters + deslop rules" before the critic. 05 §E warns that this drifts into the bans the article rejects. 05 §I says this is how TELLS "could be" implemented, in the future tense. The claimed exception ("objective defects, not stylistic bans") does not cover deslop rules. 01's code catalog entries are stylistic: narrating comments, single-use helpers, generic names.
+EVIDENCE: C7: "∥ test sub-loop ⟨A⟩: a separate agent writes tests from the spec alone; the implementer cannot edit them; mutation score is the objective bar"; Success: "Agent-written tests clear a hidden mutation-kill bar". C7: "TELLS(deterministic DEFECT-type checks: linters + deslop rules) allowed as hard checks: these are objective defects, not stylistic bans". 01 TELLS Code row: "Comments narrating code → comment the why only · single-use helpers and flags → inline · generic names (data, utils) → domain names". 05 §E: "hard-failing lint drifts toward the bans the article warns against".
+FIX: 1. Move the test sub-loop to 05 §C under VERIFY. In C7 replace it with "External dependency: tests/CI (not a block)", and drop the mutation-kill success criterion, or label it external.
+2. Split C7's pre-critic TELLS. Keep only truly objective defects as hard checks: leftover placeholders, lint errors, dead code flagged by tooling. Move the stylistic deslop entries to the post-loop D3 sweep, run report-only with per-hit triage, as 01 TELLS prescribes.
+
+[scope-6] (medium) protocol/03-configurations.md :: C5 · Media Relay (Wiring OUTER; Risks); README configuration table
+ISSUE: C5's outer loop recalibrates the critic from live A/B results. That is real-user testing used as a gate, which 05 §C explicitly files as off-path ("the article's judges are the author and an AI critic"). It also leans on 05's learned and calibrated critic (§I / #5). The README lists "live A/B as the outer loop" as part of C5's shape, so it reads as a block-wired feature.
+EVIDENCE: C5: "OUTER:: live A/B results → recalibrate the critic's hidden threshold over time ⟨A⟩"; Risks: "recalibrate the critic against live performance". README C5 row: "live A/B as the outer loop". 05 §C: "Real-user research and small-scale testing as gates … Off-path: the article's judges are the author and an AI critic."
+FIX: 1. Relabel the OUTER line as "External dependency (not a block; see 05 §C): live A/B. Optional."
+2. Remove "live A/B as the outer loop" from the README shape column, or append "(external)".
+3. Keep C5's in-protocol stop rule as the critic's pre-launch gate against best-in-category references.
+
+[scope-7] (medium) protocol/01-blocks.md :: SEED · External Seeding (Procedure step 4, Knobs `entropy_source`/`interpretation`, Fit table); also 03 C2 Wiring
+ISSUE: SEED's "curated deck" entropy (personas, constraint cards, random analog industry) and its "indexed" mapping mode are a different mechanism from the article's string seed. A semantic card handed to the model is not an opaque string the model interprets. 05 §A files these exact techniques as off-path: random remote cross-domain mapping and provocation decks. It also notes LLMs didn't benefit on average. Yet C2 uses "string | deck: analog industry, persona, constraint card" as its default breadth engine. SEED's "strongest evidence base" (synthetic data: TinyStories, 1B Personas) is evidence for the deck/indexed variant, not for the article's string seed.
+EVIDENCE: 01 SEED step 4: "a random draw from a curated deck (word lists, personas, constraint cards)"; Fit: "Product ideation | moderate | random analog industry, persona or constraint card as a lens"; "Synthetic data … (indexed mode; strongest evidence base)". C2: "xN[ SEED(string | deck: analog industry, persona, constraint card) …]". 05 §A: "Random remote cross-domain mapping … Off-path: a SEED/VISION hybrid. On average LLMs didn't benefit; humans did." and "Oblique-Strategies-style provocation decks … Off-path".
+FIX: Pick one side and make the files agree.
+
+Recommended:
+- Keep the shell-RNG string as SEED's only article-faithful source.
+- Mark the deck and indexed modes ⟨A⟩ in 01 with the line "variant, evidence mixed for LLMs (see 05 §A)".
+- Change C2's default to "SEED(string)", with the deck as an ⟨A⟩ option.
+- In 05 §A, rewrite the two entries as "evidence on SEED's deck variant" instead of "off-path".
+- Move the "strongest evidence base" note so it attaches to the indexed variant, not to SEED as a whole.
+
+[scope-8] (medium) protocol/02-grammar.md :: §2 Operators (Pick row and the claim "Every operator below is grounded in something the article actually does"); also 03 C2 and C8
+ISSUE: `pick(C,k)` uses CRITIC as a one-pass selector over our own candidates. The article never does this. Its GREAT mode ranks our one design among four professional references to score it inside a refinement loop. 05 shortlist #3 files selection-by-ranking as off-path ("selection, not the article's refinement loop"). Yet the grammar claims the operator is grounded in the article, C2 uses CRITIC "rank-only" as a pre-filter, and C8 uses pick(C,1) as its critic. `pick(R)` (rule or metric) has no article grounding at all.
+EVIDENCE: 02: "Pick | pick(H|C|R, k) | … | VISION step 2 (human picks favorites); CRITIC's GREAT mode (rank among references)" and "Every operator below is grounded in something the article actually does." C2: "pick(C, ~10) advisory pre-filter". C8: "pick(C,1)". 05 #3: "It is selection, not the article's refinement loop".
+FIX: 1. Ground `pick` in `pick(H,k)` only, which matches the article's human selecting favorites. Mark `pick(C)` and `pick(R)` ⟨A⟩ with "selection variant, see 05 #3".
+2. In the C2/C8 block-coverage rows, label CRITIC's role as "◐ ⟨A⟩ selector (non-article use)".
+3. Soften the grammar sentence to "grounded in the article except where marked ⟨A⟩".
+
+[scope-9] (medium) protocol/03-configurations.md :: C2 · Divergence Engine (Wiring `CUT(merge near-duplicates)`; Blocks: "CUT only deduplicates")
+ISSUE: CUT is the article's subtraction pass: a taste owner removes elements inside one artifact that add nothing, using removal verbs. Merging near-duplicate ideas across a pool is post-hoc diversity filtering, which 05 §A files as off-path. Calling it CUT changes the block's identity and makes C2 look block-wired when that step is not.
+EVIDENCE: C2 wiring: "> CUT(merge near-duplicates)"; "Reduced roles: CUT only deduplicates." 05 §A: "Post-hoc diversity filtering: over-generate, then deduplicate by embedding distance. Off-path: selection after generation, not injection before it." 01 CUT Fit: "Ideation | — | **sits out**: wrong stage".
+FIX: 1. Replace `CUT(merge near-duplicates)` with a glue or non-block step, `dedupe` ("not a block; see 05 §A").
+2. Change C2's coverage cell for CUT from "◐ dedupe" to "—". This also matches 01's own CUT fit row, which says CUT sits out of ideation.
+
+[scope-10] (medium) protocol/01-blocks.md :: TELLS · Wiring ("lens inside CRITIC"); 02 §3 Ports (`tells` row) and §4 compatibility; 03 One ordering principle + C1 amendment 6
+ISSUE: The files contradict each other on whether the tell catalog may enter the critic loop. 01 and 02 allow TELLS as a "lens" inside CRITIC. The critic's gaps go to the worker every round, so the catalog reaches the producer during generation. 03 forbids exactly that and calls it a running ban list. The lens permission quietly brings in the up-front steering the article rejects.
+EVIDENCE: 01 TELLS Wiring: "Can serve as a *lens* inside CRITIC's 'penalize AI-looking patterns' clause". 02 ports: "`tells` | catalog → TELLS sweep (also an optional CRITIC lens)"; 02 §4: TELLS "Can be nested in: CUT; CRITIC (as a lens)". 03: "The tell catalog is **never** fed to the producing agent during generation or during the critic loop." C1 amendment 6: "Deliberately not done: running a tell scan inside the critic loop and feeding its results to the worker."
+FIX: 1. Delete the "CRITIC lens" permission from 01 TELLS Wiring, 02 §3 and 02 §4.
+2. State that the critic keeps only the article's generic clause ("penalize patterns that feel overdone or obviously AI-generated") and never receives catalog entries.
+3. If a domain flaw taxonomy is wanted, as in C1 Deck mode, require that it cover quality defects only and not tell entries.
+
+[scope-11] (medium) README.md :: Ten rules that hold in every configuration (mirrored in 02 §6 "true in every configuration")
+ISSUE: Several configurations break these "universal" rules, so the label hides how far they depart from the article:
+- C5 runs CUT before CRITIC (rule 7).
+- C7 runs TELLS and CUT before the critic in D2 and hard-fails style lint (rules 7 and 8).
+- C8 runs TELLS and CUT before pick, and ships AI copy unless the user rewrites it (rules 7 and 9).
+- C6 drops the hidden threshold (rule 4).
+- C2 uses CRITIC without a loop (rule 4).
+EVIDENCE: README: "Ten rules that hold in every configuration"; rule 7 "Distill only after Deepen settles, in the order CUT → TELLS → VOICE"; rule 9 "Humans own the words readers attribute to them"; rule 4 "Hide the threshold". C5: "The ordering principle is relaxed here". C8: "VOICE-flag(mark placeholder headline/CTA/about for the user to rewrite; track rewrite rate)". C6: "a threshold is optional".
+FIX: 1. Retitle the README and 02 §6 lists to "Ten default rules. A configuration that breaks one must declare it."
+2. Add a "Rule exceptions" line to each configuration: C2 (4), C5 (7), C6 (4), C7 (7, 8), C8 (7, 9), each with its one-line justification.
+
+[scope-12] (medium) protocol/01-blocks.md :: VOICE · Human Voice Pass (Counters; Procedure step 6 "Claim check"; Knobs `claim_policy`); README block table
+ISSUE: VOICE has gained a claim-verification duty ("verify or soften it", claim log, strict claim policy) that T8 doesn't contain. T8 is about one consistent human voice that is shorter and plainer. This is unmarked, and it contradicts the README's statement that facts need verification outside the blocks. Readers may assume VOICE fact-checks copy. The README table even lists "claims the model can't vouch for" as what VOICE fights.
+EVIDENCE: 01 VOICE step 6: "Claim check. Every concrete claim (numbers, guarantees, privacy, scope) is one the owner can vouch for; verify or soften it. Keep a claim log." README table: "VOICE … One shared AI voice; claims the model can't vouch for". README Limits: "Facts, citations, code correctness and security need verification outside these blocks." Article T8 (p29): "Make sure a human reads each line of copy and rephrases it in a consistent voice."
+FIX: 1. Mark step 6 ⟨A⟩ and narrow it to "Owner sign-off: the human only writes claims they personally stand behind. This is not fact verification; see VERIFY in 05."
+2. Drop "claims the model can't vouch for" from the README table, or append "(⟨A⟩ owner sign-off, not a fact check)".
+
+[scope-13] (low) protocol/01-blocks.md :: All eight blocks (no ⟨A⟩ markers anywhere in the file)
+ISSUE: The README promises that amendments are "always marked, so the article-faithful wiring stays recoverable". 01 never uses ⟨A⟩. A few additions are marked in prose (`position_shuffle`, reduced-motion fallback, soft-steer), but others that change behavior are not:
+- RELAY's re-anchoring every 3–5 segments (the article's demo had two transitions);
+- ASSET's executed charts on real data as the "specialist" (T4 is image generation for personality);
+- SEED's deck and indexed modes;
+- VOICE's `COPY-PLACEHOLDER` lock and claim log.
+EVIDENCE: README: "⟨A⟩ Amendment: added by this protocol. Always marked, so the article-faithful wiring stays recoverable." 01 RELAY step 5.5: "Re-anchor to the first state's reference roughly every 3–5 segments to prevent drift." 01 ASSET guard: "The specialist there is executed plotting code on real data."
+FIX: 1. Add ⟨A⟩ markers in 01 to each non-article procedure step, knob value and fit row.
+2. Or add a short "Amendments in this block" list just after each block's "Keep from the article" paragraph, naming these items, so the article-faithful core can be read off directly.
+
+[scope-14] (low) protocol/01-blocks.md :: RELAY · Fit by domain (rows: Long-form writing, Synthetic data / stateful journeys, Research reports)
+ISSUE: RELAY's core move is a chain of specialists, which carries the state of one generation into the next and avoids video seams. Passing a closing paragraph or end-state JSON from one LLM call to the next is ordinary prompt chaining, not a specialist relay. 05 §D already files the matching techniques as off-path (Chain of Agents, RecurrentGPT memory). These rows blur RELAY's identity, and no configuration uses them.
+EVIDENCE: 01 RELAY Fit: "Long-form writing (multi-agent) | moderate | … each section starts from the exact closing paragraph of the last (RecurrentGPT)"; "Research reports | weak | — | only 'pass exact outputs between stages'". Core move: "Pass the work through a short **chain of specialists**." 05 §D: "Chain of Agents: … Same handoff shape, different purpose"; "RecurrentGPT's human-editable memory".
+FIX: Delete the Long-form writing, Synthetic data and Research rows from RELAY's fit table, and add one line to 05 §D: "Text/data state handoff between generalist calls: same `~>` shape, not a specialist relay." Keep the Audio and 3D rows, which do use specialist models.
+
+[scope-15] (low) protocol/01-blocks.md :: RELAY · Core move / Procedure step 5 (Pattern B)
+ISSUE: Pattern B covers only last-frame seeding. The article's first and general statement of the technique is keyframe interpolation: take two product stills and generate the transition between them. In the protocol that appears only as a fallback in the guards, so a faithful form of T5 sits outside the block's procedure.
+EVIDENCE: Article p23: "many video models can interpolate between keyframe images. This lets you take two product stills and create a transition clip between them." 01 RELAY Pattern B: "Seed every stage with the **exact end state** of the stage before". Guard only: "or use first-last-frame models".
+FIX: Add a Pattern B sub-step:
+- "B0 Keyframe interpolation (article): generate both anchor stills with ASSET, then one first-last-frame clip per transition."
+- "B1 Last-frame relay (article demo): as now."
+
+Note that B0 avoids drift without re-anchoring.
+
+[scope-16] (low) protocol/01-blocks.md :: TELLS · Knobs (`enforcement` = soft-steer)
+ISSUE: Soft-steer puts tell-derived positive directions into generation for chronic offenders. That is up-front steering. 05 §F and shortlist #6 file it as off-path and as an A/B candidate, and port rule 7 forbids it ("Stylistic tells are never injected into generation prompts"). It is labeled "extension", but it sits inside the block as a normal knob value.
+EVIDENCE: 01 TELLS Knobs: "soft-steer (positive direction for 1–3 chronic offenders; an extension, not in the article)". 02 port rule 7: "Stylistic `tells` are never injected into generation prompts." 05 #6: "It directly contradicts the article's 'don't ban up front.' Worth measuring, not assuming".
+FIX: Remove soft-steer from TELLS's `enforcement` knob and add it to 05 shortlist #6 as the test arm ("positive-direction soft steer vs. audit-after").
+
+[scope-17] (low) protocol/05-more-to-explore.md :: Shortlist #4; §D "Scroll-scrub engineering"; §I "Character and scene consistency tooling for RELAY"
+ISSUE: Some 05 entries are already in v1 or are faithful parts of a block, so 05 is not a clean off-path list:
+- Position swapping is a v1 CRITIC knob (`position_shuffle` on) and C1 amendment 3.
+- Scroll-scrubbing is the article's own playback step.
+- "Anchor references, start frames and keyframe chaining" is RELAY Pattern B.
+EVIDENCE: 05 #4: "Judge hardening: position swapping … Why it's not in v1: The article uses one big critic" vs. 01 CRITIC knob "`position_shuffle` | on (rank mode)". 05 §D: "Scroll-scrub engineering … an implementation detail of RELAY's playback step." 05 §I: "Anchor references, start frames and keyframe chaining".
+FIX: 1. Remove position swapping from #4 and keep only the judge panel and length control.
+2. Move the scroll-scrub note into RELAY step 6 as an implementation tip.
+3. Reword the §I entry to "vendor and open-source tooling that implements RELAY Pattern B", or delete it.
+
+[scope-18] (low) protocol/03-configurations.md :: C2 · Divergence Engine → Architecture mode
+ISSUE: Using seeds to force at least 3 stack families goes beyond SEED's own fit, which rates software engineering weak and says never to seed correctness or single-answer work. It also contradicts C7's premise that convergence on conventions is desirable in code. It is unmarked.
+EVIDENCE: C2: "Architecture mode. Seeds vary constraints and reference systems, not fashion. Require at least 3 materially different stack families before committing." 01 SEED Fit: "Software engineering | weak | only exploratory spikes and generative content; never correctness". C7: "In routine code, convergence to the repository's conventions is desirable".
+FIX: Mark Architecture mode ⟨A⟩ and limit it to greenfield decisions where several stacks are genuinely equally valid. Otherwise move it to 05 §A, next to "Analogy-driven problem reformulation".
+
+## LENS useful
+SUMMARY: Read as a decision-maker, the protocol is carefully labeled in places. 04 has a real corrections log and evidence gaps, and the README states its limits. But several load-bearing problems would mislead an adopter or break the protocol's own logic.
+
+1. **Success metrics reward evasion.** C3, C5 and C8 define success as "not flagged as AI." That is the evasion objective the README disclaims. C8 also becomes the home of the SEO pattern that 04 rejected for evasion risk, and C5 has no consent, likeness or provenance guard for synthetic people and voices.
+2. **Loops are unbounded and there is no cost model.** Critic-loop failure handling contradicts itself across 01, 02 and 03. Backtracks have no limit. C1's only budget metric ("critic under 10% of output tokens") ignores the image-heavy input that dominates critic cost.
+3. **CRITIC's reliability caveat is buried.** The default CRITIC mode (OK, no references) is exactly the unanchored judging that the protocol's own evidence puts near chance. 05 says "whether CRITIC works at all depends on this," but the README never says so. The "rank against references" rule is labeled evidence-backed although the protocol itself cites counter-evidence (Tripathi).
+4. **C7 breaks hard invariants.** Its reviewer sees code and acceptance criteria and judges correctness. That is the VERIFY block 05 files as off-path, and the mutation-test sub-loop is beyond the article.
+5. **Several success criteria are circular.** C1, C3 and C6 judge success with the same critic the loop optimized against.
+6. **Some configurations are presented more prominently than their evidence supports.** C5 Video and Still modes were never swept on their own. C8 rests on anecdote and unverified market figures. SOURCES holds counter-evidence (Aldous, Meguellati, Purcell, Girotra) that the cards leave out.
+7. **The scoring rubric has problems.** It has no anchors, and the Evid score mixes evidence of pain with evidence that the fix works. Workslop Pull is inconsistent with C2's score for the same reason. Rejected cases were never scored, so the rubric did not actually decide which configurations exist.
+8. **Smaller logic bugs:** the C5 gate loop has no fix step; C5's per-shot TELLS works as a running ban list; the VO script is written after the audio is generated; C1 has no pick before the human-heavy D3; C2's LLM pre-filter contradicts its own risk note; C4 polishes unverified RCAs; and the C1 structure-knob recommendation would stop C1 reproducing the article's own landing pages.
+
+[useful-1] (high) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C3 Success criteria; C5 Success criteria; C8 Success criteria (vs README Limits)
+ISSUE: Three configurations define success as passing AI detection. That is the detector-evasion objective the README disclaims, and the only guard against it is how the blocks are framed.
+EVIDENCE: C3: "In blind tests, expert readers flag the piece as AI no more often than human-written controls." and "No platform 'AI slop' flags." C5: "In pre-tests, consumers flag the ad as AI no more often than human-made controls." C8: "Default tells on automated scans are near zero." README Limits: "Not for evading detection."
+FIX: Replace these with quality outcomes measured with disclosure held constant. C3: "In blind pairwise tests, with any AI-assistance disclosure shown identically on both arms, expert readers prefer the piece at least as often as the author's best pre-AI pieces." C5: "Recall, CTR and preference at or above human-made baselines, with required AI labels applied to the test arm." C8: limit the scan metric to UI/layout tell catalogs. Add port rule 8 to 02 and a README Limits line: "No gate or success metric may use an AI-detector score or a 'flagged as AI' rate. Required disclosures, platform AI labels and provenance metadata are always preserved."
+
+[useful-2] (high) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C8 Platform Guardrail (Wiring, Risks); 04 Rejected table, SEO row
+ISSUE: C8 is where the protocol parks the per-item seeding-plus-ranking pattern it rejected for SEO because of evasion risk. C8 then runs TELLS headlessly with automatic swaps and no human: in effect a platform-scale humanizer. C8 has no guardrails section, and its Risks list has no misuse item.
+EVIDENCE: 04: "SEO and programmatic content at scale | Too close to an evasion tool ... The useful pattern (per-item seeding plus ranking) lives in C8." C8 wiring: "each[ TELLS(deterministic detectors, versioned) > CUT(default trim) ]"; Risks cover only re-centering, cost and gaming.
+FIX: Add a C8 'Guardrails' block: (1) automatic TELLS swaps are limited to visual/layout and code-defect catalogs; prose tells are only flagged to the user next to VOICE-flag and never auto-rewritten; (2) C8 must not be used for bulk text-content generation (SEO or programmatic pages); (3) platform AI labels and provenance metadata are preserved. Reword the 04 SEO row: "Per-item seeding and ranking for UI output lives in C8; bulk text generation stays rejected."
+
+[useful-3] (high) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C5 Media Relay: Wiring, Modes, Risks
+ISSUE: C5 generates synthetic portraits and a synthetic voice, uses TELLS to remove the artifacts that mark them as synthetic, and mattes and composites media (which usually strips provenance metadata). Yet it has no consent, likeness or provenance guard. Disclosure is mentioned only inside Video mode, and synthetic likeness is framed purely as a backlash risk.
+EVIDENCE: "ASSET(anchor portraits · product plates · style frames)"; "+ voice model(VO from a HUMAN-written script)"; TELLS "(visual tells: warped logos/hands, plastic sheen, frozen motion, stock motifs)"; Risks: "Synthetic human likeness raises the risk of backlash." Video mode only: "Platform policies ... and disclosure rules, take precedence."
+FIX: Add a C5 'Guardrails' block covering all modes: no generated face or voice that resembles a real person without documented consent; synthetic VO only from licensed stock voices or consenting talent; apply required AI labels (platform rules, the IAB disclosure framework, applicable law); re-attach C2PA or other provenance after matting and compositing; TELLS fixes quality defects and never removes disclosure marks or watermarks. Move the Video-mode disclosure sentence into this block.
+
+[useful-4] (high) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C1 Wiring and 'Stop rules and budget'; C5 D3 loop; 01 CRITIC Guards; 02 Backtrack
+ISSUE: Failure handling for critic loops contradicts itself across files and has no bound. One file says a stuck loop hands off to a human, another says return the best snapshot at the cap, and the wiring says backtrack to D1. Nothing limits the number of backtracks, 'stall' is never quantified, and in each[] it is unclear whether a backtracked candidate is replaced. A demanding hidden 9/10 bar can therefore re-spawn whole D1→D2 runs indefinitely.
+EVIDENCE: 01: "Critic never satisfied → probe, cap, plateau detection, hand off to a human." 01 step 8: "Exit at ≥ T, at the cap, or at a plateau. Return the best-scoring snapshot". C1: "*[score≥9 !hidden probe=2 max=5 else << D1]" and "On a stall, go back to D1 with a new seed." C5: "max=2 else << D2".
+FIX: Define this once in 02 Loop-until: "stall = best score improves by <1 point over the probe → << Dk; cap reached with improvement → return best snapshot to ?H; max_backtracks=1 per candidate, after which the candidate is dropped; run-level budget (USD or turns) aborts to ?H with the best snapshots." Rewrite C1 as `*[score≥9 !hidden probe=2 max=5 stall:<< D1 cap:→?H] max_backtracks=1` and C5 as `... else << D2 (once), then ?H`.
+
+[useful-5] (high) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C1 'Stop rules and budget'; all configurations; README
+ISSUE: There is no cost or time model anywhere. C1's only budget line measures the critic's share of output tokens, but critic cost is dominated by input: every call starts in a fresh context with 3 renders plus up to 10 reference sites. The iteration cap is ambiguous (5 total, or 5 after the 2-iteration probe). Human time for VISION and for VOICE's 'every line' rule is never estimated, and 04 admits it is unmeasured. An adopter cannot budget a run.
+EVIDENCE: C1: "The critic should be under ~10% of output tokens (the article's figure)." Render: "full-page screenshots at about 1440 px and 390 px plus an above-the-fold crop"; GREAT: "4–10 professional sites". 01: "max_iterations | ~5 after the probe" vs C1 "probe 2 · max 5". VOICE: "rewrite_depth every line (spot-checking is never acceptable)". 04 gaps: "its time cost and outcome lift are unmeasured."
+FIX: Add a 'Cost & time' subsection to every configuration and a summary table in the README. Give a call formula (C1: candidates × (probe+max) critic calls × (3 renders + refs × viewports) images, the same number of worker turns, ASSET slots × ≤3 tries, RELAY segments × candidates), estimated human minutes per stage, and a 'lite' profile (C1-lite: x2 seeds, pick(H,1) before D2, OK mode, max=3, no RELAY). Replace the 10% line with: "Track total cost per candidate including image input tokens; cache the frozen critic prompt and reference images as a shared prefix." State in 02 that max counts total iterations including the probe.
+
+[useful-6] (high) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/01-blocks.md :: CRITIC Knobs (bar_mode) and Evidence; README 'Labels you'll see' and 'Limits'; 05 §I
+ISSUE: The default critic mode is the unanchored mode that the protocol's own evidence calls near-chance. 05 concedes that CRITIC's viability depends on learned critics and reference sets, but the README hides this. The README also labels "rank against references" as evidence-backed, although the CRITIC block cites counter-evidence that pairwise judging is more vulnerable to distractor features.
+EVIDENCE: 01: "bar_mode | OK"; C1: "OK mode by default". 04 #4: "Unanchored judges are near random on prose, slop, UI and creative work." 05 §I: "Whether CRITIC works at all on visuals and prose depends on this." 01 Evidence: "Tripathi et al., COLM 2025 (pairwise judgments are more vulnerable to distractor features: 35% vs. 9% flips)". README: "unanchored judges are unreliable, so rank against references" listed under Evidence-backed.
+FIX: (a) Add to README Limits: "CRITIC's reliability with current frontier models is unmeasured; evidence from older models puts unanchored judges near chance on UI and prose." (b) Add a calibration step ⟨A⟩ before the probe: show the frozen critic 2–3 known-good references and 2–3 known-generic AI outputs, and proceed only if it orders them correctly. (c) Relabel the README bullet: "Evidence-backed: unanchored judges are unreliable. Mixed: ranking against references aligns better with humans but is more distractor-sensitive." (d) Make GREAT the default whenever at least 4 references are available.
+
+[useful-7] (high) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C7 Lean Diff: Wiring and Thesis fit; ordering principle; 02 Port rules 1 and 5; README Limits
+ISSUE: C7's critic is a correctness reviewer that sees code and the spec. This silently breaks two hard invariants and the README's own scope statement, and it is the VERIFY block that 05 files as off-path. The mutation-testing sub-loop has no counterpart in the article. Under the user's requirement, substantially different material belongs in More to Explore. The only exception 03 declares for C7 is defect-type tells.
+EVIDENCE: C7: "RENDER(diff + test/CI output + screenshots for UI changes + acceptance criteria) > @reviewer:big ... findings limited to correctness & requirements"; "test sub-loop ⟨A⟩ ... mutation score is the objective bar". Port rule 1: "It never gets the code, the brief, the history". Rule 5: "Briefs go to builders, never to critics." README: "CRITIC judges taste, not truth. Facts, citations, code correctness and security need verification outside these blocks."
+FIX: Option A: limit C7's critic to taste-in-code. The render is the diff only, and findings are limited to unrequested scope, readability and fit with idioms in the repo's exemplar PRs. Correctness and requirements review, plus the mutation-test sub-loop, move to 05 §C under VERIFY. Option B: move C7 as a whole to 05 as 'first VERIFY configuration'. Either way, list C7 explicitly as an exception in 03's ordering principle and in 02's port rules.
+
+[useful-8] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C1, C3 and C6 Success criteria
+ISSUE: Success is measured by the same critic the loop optimized against, so the criterion is circular. In C3 it is literally the loop's exit gate, so every run that exits normally passes.
+EVIDENCE: C3 gate: "*[rank in top third !hidden max=3]"; C3 success: "The critic ranks the piece in the top third of the author's best work plus category leaders." C1: "The blind critic ranks the page at or above the median of professional category exemplars." C6: "The critic ranks it in the top quarter of a real pile."
+FIX: Replace each line with: "Judged by a held-out evaluator, meaning a different model family with a reference set not used in the loop, or a blind panel of at least 3 humans. The loop's own critic and references are never the success judge." Add this as a rule under 'Building a new configuration', step 9.
+
+[useful-9] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C1 Wiring; 02 Port rule 4
+ISSUE: C1 has no selection step between the parallel D2 candidates and the human-led D3, and port rule 4 explicitly allows option sets to be 'carried forward by each' into D3. The human could end up doing CUT, TELLS and the every-line VOICE rewrite on all k pages, and RELAY could run on every candidate. That contradicts rule 2, 'pick before you spend', at the most expensive stage.
+EVIDENCE: C1: "D2:: each[ ( ... )*[...] ] > ASSET?[...] > RELAY?[...]  D3:: ?H[ CUT > TELLS > VOICE ]". Port rule 4: "Every option_set is closed by pick or carried forward by each before D3." VOICE: "rewrite_depth every line".
+FIX: Rewrite as `D2:: each[ CRITIC-loop > ASSET? ] > pick(H,1) ⟨A⟩ > RELAY?` followed by D3 on the single pick (the article ran images on several drafts but video on one). Amend port rule 4: "Every option_set is closed by pick before D3 and before any RELAY stage." Add the pick node to the C1 mermaid diagram.
+
+[useful-10] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C5 Wiring, D3 gate loop
+ISSUE: The pre-launch gate loop has no fix step. Each iteration simply re-asks the critic (with re-shuffled references) about the same render, so max=2 means 'ask twice and pass if either answer clears the bar': judge-shopping, not refinement.
+EVIDENCE: "( RENDER(at served size/length, inside a feed mock) > @critic:big(view, refs = best-in-category, shuffled) )*[rank ≥ median !hidden max=2 else << D2]"
+FIX: Either add a revise step, `( RENDER > @critic:big(view, refs) > fix:mid(regenerate or re-edit only the shots named in the top gaps) )*[rank ≥ median !hidden max=2 ...]`, or make it a single-pass gate, `gate[rank ≥ median, averaged over 2 fixed shuffles] else << D2`.
+
+[useful-11] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C5 Wiring (per-shot TELLS) and 'Note on block placement'; C1 Amendment 6; 02 Port rule 7
+ISSUE: Per-shot TELLS followed by 'regenerate failing shots' turns stylistic tells into regeneration instructions. C1 Amendment 6 calls that pattern a running ban list and "exactly what the article warns against". C5 never says what the regeneration prompt contains.
+EVIDENCE: C5: "each[ shot > TELLS(visual tells: warped logos/hands, plastic sheen, frozen motion, stock motifs) > regenerate failing shots only ]". C1 Amendment 6: "running a tell scan inside the critic loop and feeding its results to the worker ... would turn the post-hoc audit into a running ban list". Port rule 7: "Stylistic tells are never injected into generation prompts."
+FIX: Add to the C5 note: "Defect tells (warped logos or hands, garbled text) may be named in the regeneration prompt as hard checks. Stylistic tells (plastic sheen, stock motifs, frozen motion) trigger only a re-roll with a new seed and the unchanged shot prompt."
+
+[useful-12] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C5 Wiring (D2 voice model vs D3 VOICE)
+ISSUE: The VO audio is generated in D2 from a 'HUMAN-written script', but the human writes the VO script in D3 VOICE, after the critic gate. Either the D2 audio is stale, or script changes ship without passing the gate.
+EVIDENCE: D2: "+ voice model(VO from a HUMAN-written script)"; D3: "?H VOICE(tagline, headline, hook, VO script, captions) > launch".
+FIX: Move VO script writing to D1 as `?H VOICE-early(VO script, spoken claims)` alongside the creative director's brief. Limit D3 VOICE to tagline, captions and on-screen text. Any D3 change to spoken lines triggers VO regeneration and one re-run of the gate.
+
+[useful-13] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C4 Reader-Ready: Serves, Wiring, Blocks
+ISSUE: C4 polishes RCAs, strategy documents and analytical memos with no verification gate, and it shrinks VOICE (which contains the claim check) to key lines. This is the very rationale 04 used to reject deep-research reports, and C4's own grounding says 66% of people don't check AI output.
+EVIDENCE: C4 serves "memos, status updates, PRDs, strategy docs, RCAs"; "?H VOICE-lite(bottom line, ask, judgment calls, sign-off)". 04 Rejected: "polishing an unverified report makes its errors more persuasive." C4 grounding: "66% rely on AI output without evaluating its accuracy".
+FIX: Add to C4 D3, whatever the VOICE scope: `?H claim-check(every number, date, name and causal claim in the body; VOICE step 6 at full scope; claim log)`. Add a sit-out note: "RCAs and analytical or strategy memos whose value is their facts: use C4 only with the full claim log signed by the sender, until VERIFY exists."
+
+[useful-14] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/README.md :: 'Ten rules that hold in every configuration' (mirrored in 02 §6)
+ISSUE: The headline claim is false. C5, C6 and C7 break rule 7 (Distill order and timing). C7 breaks rule 3, because its reviewer sees criteria and code. C8 effectively waives rule 9. A reader who adopts the rules as invariants will find the configurations contradict them.
+EVIDENCE: Rule 7: "Distill only after Deepen settles, in the order CUT → TELLS → VOICE." C5: "The ordering principle is relaxed here"; C6: CUT, TELLS and the critic run as parallel lanes inside the D2 human loop; C7: "CUT on both sides of the critic" in D2. Rule 3: "Judges see only views" vs C7's render that includes acceptance criteria.
+FIX: Rename the heading to "Ten default rules" and add: "Declared exceptions: C5 (critic after CUT; per-shot TELLS in D2), C6 (CUT and TELLS as annotation-only lanes inside the human loop), C7 (CUT and defect TELLS in D2; reviewer input, see C7), C8 (no human owns copy; placeholders are flagged only)." Mirror this in 02 §6.
+
+[useful-15] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/04-use-case-evidence.md :: Scoring rubric
+ISSUE: The rubric is said to decide which configurations exist, but it is not auditable. (1) No 1–5 anchors are defined. (2) 'Evid' mixes evidence of pain with evidence that the fix works: C2 scores Evid 5 although its core mechanism is explicitly untested. (3) Workslop scores Pull 3 although its own card says the sender's cost is invisible, the same reason C2 gets Pull 2. (4) Video mode runs 'the full relay' like Campaign but scores Blocks 4 vs 5. (5) The provisional Still and Video rows are ranked alongside swept rows. (6) Rejected use cases were never scored, so the rubric did not actually decide inclusion.
+EVIDENCE: "The scores are my judgment, applied consistently"; Option-space "Evid 5" vs C2 risks "No study tests random seed strings directly"; Workslop "Pull 3" vs card "invisible or delayed to the sender"; Brand imagery "Treat the scores as provisional"; Video "Evidence is thin."
+FIX: Add one-line anchors for 1, 3 and 5 on each criterion. Split Evid into 'Evid-pain' and 'Evid-fix'; most rows score 1–2 on Evid-fix, and C2 scores 1. Rescore workslop Pull to 2. Set Video Blocks equal to Campaign's. Mark the Still and Video rows 'provisional, excluded from ranking'. Add the rejected use cases to the table with a 'Veto' column (accuracy-dominant; evasion risk). Replace "my judgment" with who scored, noting it was a single rater.
+
+[useful-16] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/04-use-case-evidence.md :: Use-case cards for bylined writing, ad creative and internal documents; 03 C3, C4 and C5 Grounding
+ISSUE: The research collected counter-evidence in SOURCES.md that never reaches the cards or configurations, so the C3 and C5 grounding reads more one-sided than the research actually was.
+EVIDENCE: SOURCES.md (Market signals): Aldous et al.: "GPT-4 cross-platform posts were preferred over human posts by 892 participants, mainly on Facebook"; Meguellati et al.: "LLM ads ... were preferred 59.1% vs 40.9% over human ads and kept their edge despite a detection penalty"; Purcell et al.: "AI-assisted messages produced equal trust, even when disclosed"; Girotra et al. A search of 03 and 04 finds none of these.
+FIX: Add a 'Counter-evidence' bullet: in C3 and the bylined card (Aldous; the advantage faded on X and Instagram); in C5 and the ad card (Meguellati, preprint); in C4 (Purcell, which supports VOICE-lite for transactional text); in C2 (Girotra). Lower ad-creative Evid-fix accordingly, and note in C5 that human-written taglines are a hypothesis, not an evidence-backed requirement.
+
+[useful-17] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/README.md :: Configuration table (C5, C8); 03 C5 Modes, C8 Grounding, C1 Market
+ISSUE: Some configurations are presented far more prominently than their grounding supports. C5 Video and Still modes appear as full modes, yet 04 and 05 say they were never swept, and Video still needs the evasion screen that got SEO rejected. C8 is one of the eight headline configurations but is unscored, rests on anecdote plus older-model evidence, and asserts that platforms are where most people will meet these blocks without a source. C1's market figures are stated flatly but come from the 'Market signals (unverified)' section of SOURCES. The README implies broad citation checking when only about 20 of 310 sources were spot-checked and 75 are unconfirmed.
+EVIDENCE: 04 Video: "Evidence is thin. This needs its own sweep, with the same screen for evasion risk that was applied to SEO." 05 §I lists "Organic creator video" as still needing a sweep. C8: "It's included because platforms are where most people will actually meet these blocks." SOURCES: "Market signals (unverified unless noted)" holds the Lovable, Replit and v0 figures. README: "a skeptical reviewer then spot-checked its citations."
+FIX: In the README table and in 03, tag C5 Still and Video as "provisional, not yet swept". Move the Video mode wiring to 05 §I until the evasion screen is done. Tag C8 "unscored; anecdotal grounding" and delete or source the 'most people' sentence. Append "(unverified market estimates)" to C1's market bullets. Change the README line to: "a skeptical reviewer spot-checked about 20 load-bearing citations; 75 of 310 sources are unconfirmed (see SOURCES)."
+
+[useful-18] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/README.md :: 'The idea in one paragraph'; Rule 1; 04 cross-cutting #2; 01 SEED Evidence
+ISSUE: "Variety must come from outside the model" is stated as an established rule, but it is the article's claim. The one tested seed-string method (SSoT) has the model write the string itself, which the protocol relegates to a fallback, while the untested shell-RNG variant is the default. Sources the protocol cites (Verbalized Sampling at 1.6–2.1×, and Meincke et al.'s finding that chain-of-thought prompting 'substantially improves idea diversity') show diversity gains from inside the model.
+EVIDENCE: README: "What works is to: bring variety in from outside the model". 04 #2: "randomness has to come from outside the model ... though no study tests external seed strings directly". SEED: "Fallback when there are no tools: the model writes a long random string itself ... (Sakana's original SSoT)". SOURCES on Meincke: "prompt engineering substantially improves idea diversity".
+FIX: Rule 1 becomes: "Variety comes from a seed or a human, never from 'be creative' (article prescription)." 04 #2 becomes: "Sameness resists temperature and model swapping. In SSoT's tests, a model-written seed string beat asking for diversity. The external shell RNG is the article's variant and is untested." In SEED's Evidence, state which variant SSoT tested, and make the in-context string a co-default rather than a fallback.
+
+[useful-19] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C1 Amendments, item 1 ('structure' knob)
+ISSUE: The recommendation to keep conversion pages structurally conservative rests on a source SOURCES marks unconfirmed, and that source measured first-impression aesthetics, not conversion. The README admits there is no conversion evidence. Every one of the article's examples (the pixel-art Questlog, the isometric Skyline, Offcut) is a productivity-app landing page, i.e. a conversion page, so following the recommendation means C1 no longer reproduces the article.
+EVIDENCE: "Research on first impressions favors prototypical layouts (Tuch et al., via Google Research). Recommended: conservative for conversion pages, free for brand, portfolio and launch pages." SOURCES marks Tuch "·" (unconfirmed). README: "No study yet shows a distinctive AI page outperforming a generic one on conversion."
+FIX: Replace with: "Default `structure=free` (article-faithful). `conservative` is an opt-in ⟨A⟩ hypothesis: Tuch et al. measured first-impression aesthetics, not conversion. Test it with the A/B experiment in 05 before adopting it."
+
+[useful-20] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C3 Voice Series: Serves, Blocks (VOICE heavy), Risks
+ISSUE: C3 serves ghostwritten executive posts, and its VOICE pass covers anecdotes. When the human doing VOICE is the ghostwriter rather than the byline owner, the protocol's guarantee that no configuration fabricates facts about a person is never put into practice. Nothing requires the byline owner to vouch for first-person stories.
+EVIDENCE: C3: "Serves ... ghostwritten executive posts"; "VOICE, heavy: headline, hook or lede, thesis sentence, anecdotes, transitions". README: "no configuration fabricates facts about a person." VOICE step 6 makes claims ones "the owner can vouch for" but does not say who the owner is when the piece is ghostwritten.
+FIX: Add a C3 guardrail: "If the person doing VOICE is not the byline owner, every first-person anecdote, number and stated opinion goes into the claim log and must be approved by the byline owner before publishing. No invented experiences, quotes or anecdotes."
+
+[useful-21] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C3 Wiring (portfolio-gate) and Success criteria
+ISSUE: The portfolio gate is what justifies splitting C3 from C4 (per the corrections log), but it relies on a metric 04 says is not validated. It needs a pre-AI baseline that new authors lack. Full-text embedding similarity also penalizes the consistent voice that VOICE enforces, so the gate and the VOICE block push in opposite directions.
+EVIDENCE: "portfolio-gate( similarity of the last N pieces vs. the author's pre-AI baseline ) ⟨A⟩"; success: "embedding similarity between pieces is at or below the author's pre-AI baseline". 04 gaps: "There is no validated portfolio-level diversity metric." VOICE: "rephrases it in one consistent voice".
+FIX: Mark the gate 'experimental'. Measure similarity on angle cards, outlines and structure (section skeleton, hook type, thesis), not full text. If there is no pre-AI baseline, use the first 5 pieces after adoption. State explicitly that voice and style features are excluded from the gate.
+
+[useful-22] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C2 Divergence Engine: Wiring and Risks
+ISSUE: C2 calls its critic 'advisory', but pick(C,~10) by definition discards everything except the critic's top ~10 from 8–20 seeded branches before the human sees anything. That contradicts C2's own warning that an LLM judge pulls the shortlist back toward the mode, and it undercuts the configuration's purpose.
+EVIDENCE: "> pick(C, ~10)   advisory pre-filter"; 02: pick = "Reduce an option_set to k items". C2 Risks: "A single LLM judge pulls the shortlist back toward the mode, so the human must be the picker."
+FIX: Replace it with `pick(R: one representative per embedding cluster, ~10–15)`. Show the critic's rank only as an annotation on each card, and give the human the full deduplicated pool as a compact list.
+
+[useful-23] (medium) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C6 Sounding Board: Blocks and Wiring
+ISSUE: C6's central critic depends on things a typical user cannot supply. (1) The screener rule misapplies Xu et al.: self-preference concerns LLM-generated text, while C6 text is human-written, and the user cannot know which model a screener uses. (2) The 'pile of N anonymized real exemplars' has no source, and for cover letters or proposals it implies using other people's private documents.
+EVIDENCE: "The critic must be a different model from any screener the document will face, because screeners prefer their own model's text." "@critic:big(view placed in a pile of N anonymized real exemplars → rank + top 3 weaknesses)".
+FIX: Replace rule (1) with: "Use a critic from a different family than any model that touched the draft." Add a sourcing line: "Build the pile from published winning examples (funders' sample proposals, public sample-letter sets) or the user's own past successful documents. Never use others' private documents without consent. With fewer than 4 exemplars, run OK mode and treat its output as advisory only."
+
+[useful-24] (low) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/01-blocks.md :: CRITIC Economics
+ISSUE: The text calls the advisor-strategy result an independent match for the article's economics. But the advisor sees the process, it was measured on a coding-correctness benchmark against an unstated baseline, and 05 itself calls it off-path. The article's '2×' figure is the author's own estimate of a run that was never done.
+EVIDENCE: "This matches the independent 'advisor strategy' result (Claude blog, Apr 2026): Sonnet with an Opus advisor scored +2.7 pp on SWE-bench Multilingual at 11.9% lower cost." 05 §B: "the advisor sees the process ... Only the tiering economics carry over."
+FIX: Reword: "Directionally consistent with the advisor strategy (a different architecture in which the advisor sees the process, measured on coding). The article's 2× is the author's estimate. Measure cost per candidate on your own runs."
+
+[useful-25] (low) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/01-blocks.md :: CRITIC Procedure steps 4, 7 and 8
+ISSUE: Picking the best-scoring snapshot by comparing absolute scores from separate fresh-context calls tends to select noise (the article itself calls OK mode "still mushy"). Step 7 also allows changing the frozen prompt after the probe, which makes earlier scores incomparable with later ones.
+EVIDENCE: Step 4: "Write the critic prompt once and freeze it." Step 7: "fix the bar, prompt, render or model". Step 8: "Return the best-scoring snapshot".
+FIX: Step 8: "Re-rank the top 2–3 snapshots side by side in one critic call and return the winner." Step 7: "If the prompt, references or critic model change, restart the trajectory and discard earlier scores."
+
+[useful-26] (low) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C1 Amendments, item 4 (post-D3 CRITIC regression check)
+ISSUE: The regression check has no decision rule. Because of the verbosity bias the protocol itself cites, a scored critic will tend to penalize CUT's removals, which conflicts with 'don't let CRITIC veto CUT'.
+EVIDENCE: "A final CRITIC regression check after D3, to confirm the cuts and the real copy didn't break the layout. It never edits words." 01 CRITIC wiring: "Don't let it veto CUT's removals, because LLM judges have a verbosity bias".
+FIX: Make it a defect checklist with no score: overflow, truncation, clipped text, broken alignment, missing assets. A failure returns to the step that caused it (CUT or VOICE). The pre-cut and post-cut scores are never compared.
+
+[useful-27] (low) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C4 Wiring vs 02 §5 'When a block sits out'
+ISSUE: C4 runs a big-model recipient critic loop with 3–5 exemplars on emails budgeted at under 100 words. Its own sit-out rule says CRITIC sits out when a human review is cheaper, and C4 claims it must take minutes.
+EVIDENCE: C4: "CUT(length budget: 1 page / <100 words for email ...)" with CRITIC central. 02 §5: CRITIC sits out when "the artifact is short enough that a human review is cheaper".
+FIX: Add `route(length){ <300 words: CUT > TELLS > ?H VOICE-lite | else: full C4 }` and state it in C4's Blocks under 'Sit out'.
+
+[useful-28] (low) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C8 Wiring (per-project seeds)
+ISSUE: Deriving per-branch seeds as 'project seed + i' produces strings that share almost every character. That triggers the lazy-mapping failure the SEED block warns about, where only the first characters drive the direction and branches converge.
+EVIDENCE: C8: "xN[ SEED(project seed + i) > generate ]". SEED Guards: "Lazy mapping (only the first characters get used, so outputs drift back to the mode)".
+FIX: Use `SEED(hash(project_seed ‖ i))`, e.g. SHA-256 rendered as 64 characters, or indexed deck draws, so every branch's string differs throughout.
+
+[useful-29] (low) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C1 'Blocks in Studio', CRITIC row
+ISSUE: C1 departs from the article in two places without ⟨A⟩ marks, despite the README's promise that amendments are always marked. Both changes raise cost.
+EVIDENCE: "render = full-page screenshots at about 1440 px and 390 px plus an above-the-fold crop" (the article: "capture a screenshot"); "GREAT mode = shuffled among 4–10 professional sites" (the article: "4 professional examples and 1 screenshot"). README: "Always marked, so the article-faithful wiring stays recoverable."
+FIX: Mark both ⟨A⟩ and state the article-faithful settings: one screenshot, and 4 references plus ours.
+
+[useful-30] (low) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/README.md :: 'Labels you'll see' (Evidence-backed list); 03 C3 Grounding
+ISSUE: "Experienced readers detect AI text" stretches a study of 5 heavy LLM users rating non-fiction. C3's heading "Readers can tell" contradicts the protocol's own citation that lay readers use flawed heuristics. The audience penalty attaches to suspicion, not detection.
+EVIDENCE: README: "experienced readers detect AI text". C3: "Readers can tell: expert readers who use LLMs heavily ...". VOICE evidence: "Jakesch et al. ... PNAS 2023 (flawed lay heuristics)".
+FIX: README: "Heavy LLM users (n=5) reliably detect AI non-fiction; lay readers rely on flawed heuristics but still penalize suspected AI." Rename the C3 bullet to "Expert readers can tell, and suspicion alone costs trust."
+
+[useful-31] (low) C:/Users/arvik/OneDrive/Documents/ActAI/protocol/03-configurations.md :: C4 and C7 Success criteria
+ISSUE: Success targets are borrowed from other populations instead of the adopter's own baseline, so they mislead.
+EVIDENCE: C7: "The merge rate closes the gap to the human baseline (83.8% → 91%)" (Watanabe et al.'s open-source Claude Code PRs). C4: "drops below the ~15% baseline" (a national survey figure).
+FIX: Replace with: "Measure your own repo's or team's pre-adoption baseline for 4 weeks; success = a gap reduction against that baseline. External figures are context only."
+
+## CITATIONS
+[minor-inaccuracy] protocol/01-blocks.md — SEED › Counters and SEED › Evidence :: high temperature still produces repetitive output (TinyStories) ... Eldan & Li, TinyStories (random word draws beat high temperature).
+  SOURCE SAYS: The authors observe that prompting 'even if the temperature of generation is set to a high value, will still produce a very repetitive dataset', so for each story they chose 3 random words (one verb, one noun, one adjective) plus a random subset of story features. This was a dataset-design choice. The paper does not run or report a head-to-head comparison of random words against high temperature.
+  FIX: Evidence: 'Eldan & Li, TinyStories (high temperature alone still gave a very repetitive dataset; the authors injected 3 random words + random story features into each prompt to get diversity; this is a design observation, not a controlled comparison).' The Counters sentence is fine as written.
+  URL: https://arxiv.org/html/2305.07759
+
+[minor-inaccuracy] protocol/01-blocks.md — VISION › Counters :: AI-assisted ideas are individually better but collectively more alike (Doshi & Hauser 2024)
+  SOURCE SAYS: 'Access to generative AI ideas causes stories to be evaluated as more creative, better written, and more enjoyable, especially among less creative writers' and 'generative AI–enabled stories are more similar to each other than stories by humans alone.' The outcome rated was the stories, not the ideas, and most of the gain went to less creative writers.
+  FIX: 'Stories written with AI-supplied ideas were rated more creative and better written, mostly among less creative writers, but were more similar to one another (Doshi & Hauser, Science Advances 2024).' This qualifier supports VISION's claim that the human's taste is the active ingredient.
+  URL: https://pmc.ncbi.nlm.nih.gov/articles/PMC11244532/
+
+[minor-inaccuracy] protocol/01-blocks.md — VISION › Knobs (scatter_fidelity) and Evidence :: never mockups or full drafts at this stage: high-fidelity AI output causes fixation (Wadinambiarachchi et al., CHI 2024)
+  SOURCE SAYS: Between-subjects study, N=60, three conditions: no support, Google Images, Midjourney V4. Using the AI image generator 'leads to higher fixation on an initial example', with fewer, less varied and less original ideas. Fidelity was not manipulated. The low-fidelity recommendation appears only in the Discussion, as a hypothesis drawing on prior work ('users ... should consider using prompts that generate low-fidelity abstract or partial images ... might alleviate design fixation').
+  FIX: 'never mockups or full drafts at this stage: AI image-generator support increased fixation and reduced idea variety and originality (Wadinambiarachchi et al., CHI 2024); the authors attribute this partly to the images' high fidelity and recommend low-fidelity, partial stimuli.'
+  URL: https://arxiv.org/html/2403.11164v1
+
+[minor-inaccuracy] protocol/01-blocks.md — CRITIC › Economics :: This matches the independent "advisor strategy" result (Claude blog, Apr 2026): Sonnet with an Opus advisor scored +2.7 pp on SWE-bench Multilingual at 11.9% lower cost.
+  SOURCE SAYS: Published Apr 9 2026: 'Sonnet with Opus as an advisor showed a 2.7 percentage point increase on SWE-bench Multilingual over Sonnet alone, while reducing cost per agentic task by 11.9%.' Both figures are relative to Sonnet alone, and the post never compares against Opus alone. The mechanism also differs from CRITIC: the executor decides when to consult; the advisor gets 'curated context' from the executor's conversation and returns a plan, correction or stop signal. It is not blind, render-only and threshold-gated.
+  FIX: 'A related result: Anthropic's "advisor strategy" (Claude blog, Apr 2026) found Sonnet consulting an Opus advisor scored +2.7 pp on SWE-bench Multilingual over Sonnet alone at 11.9% lower cost per task than Sonnet alone. It supports the big-judges/small-executes tiering, but the advisor sees the executor's context, so it is not evidence for blind, render-only critique, and it was not compared against Opus alone.'
+  URL: https://claude.com/blog/the-advisor-strategy
+
+[minor-inaccuracy] protocol/01-blocks.md — CUT › Counters (bullet 2) :: LLMs choose additive edits 76–100% of the time on structural tasks (Santagata & De Nobili 2024).
+  SOURCE SAYS: Palindrome task: 97.85–100% additive across models. Lego-tower task: GPT-3.5 76.38%, Claude 3.5 Sonnet 100%, Mathstral 100%, but Llama 3.1 70B only 1.90% additive ('demonstrated a pronounced tendency towards subtractive choices'). On the recipe task, 'only GPT-3.5 Turbo displayed an additive bias'. When revising summaries, Claude 3.5 Sonnet and GPT-3.5 'favored a reductive strategy'; only Mistral 7B added words.
+  FIX: 'Most models tested chose additive fixes 76–100% of the time on palindrome and Lego-tower puzzles, though Llama 3.1 70B chose subtraction 98% of the time on the Lego task (Santagata & De Nobili 2024).' Don't use this paper to support CUT's prose rows: in its summary-revision task, Claude and GPT-3.5 shortened text.
+  URL: https://arxiv.org/abs/2409.02569
+
+[minor-inaccuracy] protocol/01-blocks.md — TELLS › Counters and Evidence :: some slop patterns appear more than 1,000× more often in LLM text than in human text (Paech et al., Antislop, ICLR 2026) ... instructions to avoid listed words have limited effect and can backfire; soft suppression preserves quality where hard bans collapse it.
+  SOURCE SAYS: Verified: 'some slop patterns appear over 1,000× more frequently in LLM output than human text'. ICLR 2026 poster confirmed (iclr.cc/virtual/2026/poster/10008156). 'Instructing the model to avoid a set of banned vocabulary has limited efficacy and may induce a backfire effect' (citing Castricato et al. 2024). The 'hard ban' result concerns decode-time token banning at scale, not prompt bans: 'token banning becomes unusable at just 2,000' patterns and quality falls to 28/100 at 8,000, while the backtracking sampler and FTPO keep quality.
+  FIX: '...soft, backtracking suppression keeps quality at 8,000+ banned patterns, whereas decode-time token banning becomes unusable around 2,000 patterns.' Then the TELLS knob 'hard-ban only for objective defects' won't read as contradicting the evidence: a handful of hard bans was never shown to collapse quality.
+  URL: https://arxiv.org/abs/2510.15061
+
+[minor-inaccuracy] protocol/01-blocks.md — VOICE › Evidence (also VOICE › Guards) :: Russell, Karpinska & Iyyer, ACL 2025: five frequent-LLM-user experts misclassified 1 of 300 articles, even after humanizing.
+  SOURCE SAYS: 'The majority vote among five such "expert" annotators misclassifies only 1 of 300 articles.' Individual experts ranged from about 59% to 97% accuracy. The 300 articles came from 5 experiments of 60 each, including GPT-4o with paraphrasing and o1-Pro with humanization; the majority vote was perfect on the humanized set.
+  FIX: '...the majority vote of five frequent-LLM-user annotators misclassified only 1 of 300 articles, including paraphrased and humanized ones (individual experts were less reliable).' 03-configurations.md already says 'by majority vote'. Align 01-blocks.md and 04-use-case-evidence.md §(line 54) with it.
+  URL: https://arxiv.org/html/2501.15654
+
+[minor-inaccuracy] protocol/01-blocks.md — CRITIC › Counters :: Models are worse at finding the biggest problem than at fixing one once it's pointed out (Tyen et al. 2024).
+  SOURCE SAYS: 'LLMs cannot find reasoning errors, but can correct them given the error location' (Findings of ACL 2024). It covers locating logical mistakes in chain-of-thought traces on reasoning tasks, and correction once the ground-truth mistake location is supplied. It does not cover ranking the 'biggest' quality gap in an artifact.
+  FIX: 'Models are much worse at locating a mistake than at correcting it once its location is given (Tyen et al., Findings of ACL 2024, on reasoning traces).' Present it as an analogy for taste critique, not a direct finding.
+  URL: https://arxiv.org/abs/2311.08516
+
+[minor-inaccuracy] protocol/01-blocks.md — TELLS › Evidence :: TechCrunch, Nov 2025 (users couldn't stop ChatGPT's em dashes by asking).
+  SOURCE SAYS: Headline: 'OpenAI says it's fixed ChatGPT's em dash problem.' It notes users 'were unable to get the chatbot to stop using the symbol, even when they specifically asked it not to', but the news is that 'ChatGPT will be better at not using the em dash if you instruct it not to via the custom instructions.' The doc cites only the 'before' state; the article reports that a targeted model update made a stated ban work.
+  FIX: 'TechCrunch, Nov 2025: until a targeted model update, users couldn't stop ChatGPT's em dashes by asking; OpenAI then fixed instruction-following for this one tell.' That is honest, and it still supports catalog refresh by model generation and 'version the catalog'.
+  URL: https://techcrunch.com/2025/11/14/openai-says-its-fixed-chatgpts-em-dash-problem/
+
+[minor-inaccuracy] 04-use-case-evidence.md (AI-built interfaces card, line 73); cross-cutting finding 4 (line 194) :: About 1 in 4 stated design rationales weren't actually implemented, so a critic that reads rationale gets misled. (Design Theater, 2026)
+  SOURCE SAYS: The figure holds: on average over (v2: 'roughly') 25% of user-facing design rationales are not implemented, rising to 34% for functional requirements. The tools tested were ChatGPT, Claude, Firebase Studio, v0 and Bolt, scored with partial credit (Thinking Fidelity Score). The paper does not test a critic. The 'critic gets misled' clause is the protocol's own inference.
+  FIX: 'About 1 in 4 user-facing design rationales from five generative-UI tools were not (fully) implemented, and 34% for functional requirements (Design Theater, arXiv 2607.22928, 2026). Inference: a critic that reads stated rationale instead of the render would inherit this gap.'
+  URL: https://arxiv.org/abs/2607.22928
+
+[minor-inaccuracy] 04-use-case-evidence.md (Presentation decks card, line 114); 03-configurations.md C1 Deck mode (line 137) :: All models fell short of human-designed slides; self-refinement gave small gains of 1–3 points. (AutoPresent, CVPR 2025) / with self-refinement adding only about 1–3 points
+  SOURCE SAYS: CVPR 2025 is confirmed. In the perceptual study, all three models (GPT-4o, Llama, AutoPresent) 'still have an overall performance gap compared with human-designed slides.' Table 6 gives GPT-4o's overall score (0–100) over 3 refinement rounds: 58.0→60.1 (+2.1), 56.3→59.4 (+3.1, peaking at +3.8 in round 2), and 58.5→61.4 (+2.9). The first round gave the largest gain. The paper frames this as refinement 'boosts performance in all three scenarios.'
+  FIX: 'self-refinement added roughly 2–4 points on a 100-point score over three rounds, most of it in round 1 (AutoPresent, CVPR 2025)'.
+  URL: https://arxiv.org/pdf/2501.00912
+
+[minor-inaccuracy] 03-configurations.md C2 Grounding (line 176); 04-use-case-evidence.md Option-space card (line 133) and cross-cutting finding 1 :: Consulting: 758 BCG consultants scored about 40% higher on quality with GPT-4, with 41% lower diversity.
+  SOURCE SAYS: The experiment had 758 participants, each randomly assigned to either a creative product-innovation task or a business problem-solving task. The 40% figure applies only to the creative task, where GPT-4 users 'outperformed the control group ... by 40%'. Their ideas' diversity 'was 41% lower compared with the group that did not use the technology.'
+  FIX: 'In BCG's 758-consultant experiment, consultants given GPT-4 for a creative product-innovation task scored about 40% higher than controls, while their ideas were 41% less diverse.'
+  URL: https://www.bcg.com/publications/2023/how-people-create-and-destroy-value-with-gen-ai
+
+[wrong] 03-configurations.md C2 Grounding (line 179); 04-use-case-evidence.md Option-space card (line 137) and Corrections table row (line 249) :: Stack choices: coding agents returned the same stack about 76% of the time across rephrasings (Amplifying, Feb 2026; several agents and versions). / Correction: 'That figure spans several agents and versions'
+  SOURCE SAYS: The study covers Claude Code only (CLI v2.1.39) running three models (Sonnet 4.5, Opus 4.5, Opus 4.6), with 2,430 runs. The report says it covers 'Claude Code, not Codex'. A separate Codex comparison came later (Mar 2026). The 76% is the average stability of the top tool pick within a category across 5 prompt phrasings, ranging from 100% (CI/CD, package manager) down to 50% or less (real-time). It is not 'the same stack'. The skeptic's correction row introduced the 'several agents' error.
+  FIX: 'Claude Code (three model versions) picked the same top tool per category across five rephrasings 76% of the time on average (Amplifying, Feb 2026; 2,430 runs).' Revert the Corrections row to: 'Single agent (Claude Code) across three models; 76% is per-category tool-pick stability, not whole-stack identity.'
+  URL: https://amplifying.ai/research/claude-code-picks/report
+
+[minor-inaccuracy] 03-configurations.md C3 Unit mode evidence (line 294); 04-use-case-evidence.md Teaching card (line 141) and Corrections row (line 259) :: In 310 AI lesson plans (2,230 activities), 45% of activities were remember-level and about 10% higher-order. 94% of plans lacked multicultural content, and all three chatbots used the same template (Trust & Maloy, CITE 2025).
+  SOURCE SAYS: 310 plans and 2,230 activities are confirmed. 45% (n=1,010) of activities were remember-level, and 10% (213) were higher-order. The 94% is of activities, not plans: '94% (n = 2,086) of the activities did not receive any code' on Banks' model. On structure, the paper says the plans 'tended to follow a similar format' and 'remained formulaic' (intro → activities → conclusion → assessment → extension). Authors are Trust, Maloy, Xu & Pelletier, CITE Journal 25(3).
+  FIX: '94% of activities (2,086 of 2,230) had no discernible multicultural content, and plans from all three chatbots followed the same general format.' Cite as Trust, Maloy, Xu & Pelletier, CITE Journal 2025.
+  URL: https://citejournal.org/wp-content/uploads/2025/08/v25i3Socialstudies2.pdf
+
+[minor-inaccuracy] 03-configurations.md C6 Grounding (line 447); 04-use-case-evidence.md Signal-bearing card (line 149) :: After one-click AI proposals launched, employers stopped paying a premium for customized applications. A structural model estimates the top-ability fifth of applicants were hired 19% less often (Galdin & Silbert, via Tuck).
+  SOURCE SAYS: Employers' willingness to pay for customized applications on Freelancer.com was high before LLMs but not after. The 19% comes from a counterfactual simulation: in an equilibrium where LLMs make applications useless as signals, 'workers in the top quintile ... are hired 19% less often, workers in the bottom quintile are hired 14% more often.' It is a modeled counterfactual, not an observed outcome.
+  FIX: '...A structural counterfactual in which applications no longer signal ability predicts the top-ability fifth would be hired 19% less often and the bottom fifth 14% more often (Galdin & Silbert, arXiv 2511.08785).'
+  URL: https://arxiv.org/abs/2511.08785
+
+[minor-inaccuracy] 03-configurations.md C6 Grounding (line 451); 04-use-case-evidence.md Signal-bearing card (line 153) :: LLM screeners preferred resumes they generated themselves 68–88% of the time (Xu et al., 2025).
+  SOURCE SAYS: v1 (2025) reported 'self-preference bias ranging from 68% to 88%'. The current v3 (Feb 9, 2026) revises this to '67% to 82% across major commercial and open-source models'. Same-LLM applicants were 23–60% more likely to be shortlisted. The comparison is LLM-generated resumes versus human-written ones, judged by the generating LLM.
+  FIX: 'LLM screeners preferred their own generated resumes over human-written ones 67–82% of the time (Xu, Li & Jiang, arXiv 2509.00462 v3, 2026); same-LLM applicants were 23–60% more likely to be shortlisted.'
+  URL: https://arxiv.org/abs/2509.00462
+
+[minor-inaccuracy] 03-configurations.md C5 Grounding counter-evidence (line 382); 04-use-case-evidence.md Ad creative card (line 84) :: AI marketing images beat stock photos on quality, with about 50% higher click-through (Hartmann et al., IJRM 2025). / AI images beat stock photos, with about 50% higher click-through.
+  SOURCE SAYS: Published in IJRM 42(1), 2025. AI imagery 'can surpass human-made images in quality, realism, and aesthetics'. In a field study (more than 173,000 impressions), AI-generated banners achieved 'an up to 50% higher click-through rate' than professional human-made stock photography. 50% is an upper bound, not a typical lift.
+  FIX: '...with up to 50% higher click-through than professional stock photography in a field test (Hartmann, Exner & Domdey, IJRM 2025).'
+  URL: https://ideas.repec.org/a/eee/ijrema/v42y2025i1p13-31.html
+
+[minor-inaccuracy] 03-configurations.md C8 Grounding Scale (line 563); 04-use-case-evidence.md Platform card (line 161) :: Lovable was nearing 8M users and 100k products a day in Nov 2025 (about 200k a day by Mar 2026).
+  SOURCE SAYS: Lovable's Nov 18, 2025 blog says '100,000 new projects are built on Lovable every single day'. These are projects, not shipped products. The ~200k/day figure comes from CRO Ryan Meadows in an Observer profile dated May 25, 2026, not March 2026. The nearly-8M-users figure is reported in press from CEO statements (not in the blog).
+  FIX: 'Lovable was nearing 8M users with 100k new projects a day (Nov 2025), and about 200k a day by May 2026 (Observer).'
+  URL: https://lovable.dev/blog/one-year-of-lovable
+
+## ACCURATE (short)
+- Misaki & Akiba, String Seed of Thought (Sakana AI, ICLR 2026): SSoT beat "prompted to be diverse," prompt paraphrasing a
+- LLM coin flips start with heads in more than 88% of sequences
+- more sophisticated prompting didn't reduce that homogenization (Anderson et al. 2024)
+- Tripathi et al., COLM 2025 (pairwise judgments are more vulnerable to distractor features: 35% vs. 9% flips).
+- a generator that decides when it's finished praises mediocre work (Anthropic, Harness design, 2026) ... Anthropic's harn
+- Claude-Code-assisted commits leaked secrets at 3.2% vs. a 1.5% baseline (GitGuardian 2026).
+- GPT-4 amplified the human addition bias, and added even more when told to "improve" rather than "edit" (Uhler et al.).
+- A length-only reward reproduces most RLHF gains (Singhal et al. 2024).
+- Padmakumar & He, ICLR 2024: the homogenization came from the model-contributed text.
+- Morkes & Nielsen (concise + scannable + objective copy improved usability by 124%).
+- BetterUp Labs & Stanford Social Media Lab, workslop survey: 40% of 1,004 US desk workers received it in the past month, 
+- 2025 study of LLM-generated Java: 63% more code smells than reference solutions.
+- Coherence principle: people learn more deeply when extraneous material is excluded (supported in 10 of 11 tests, median 
+- In the article the critic was under 10% of output tokens, and having the big model redesign directly would have cost abo
+- GPT-4V judged UI quality at 51.6%, close to chance, vs. 75.1% for a specialized critic. (UIClip, UIST 2024)
+- An expert flaw taxonomy improved LLM flaw detection. (SlideAudit, UIST 2025)
+- Research ideas: only about 5% of 4,000 LLM research ideas were non-duplicates (Si et al., ICLR 2025). / LLM judges agree
+- Teachers rated human-made plans higher (d=0.44; Cooper 2024).
+- An AI cover-letter tool raised callbacks, but the link between how well a letter fit the job and getting a callback fell
+- When senders had ChatGPT access, screening accuracy fell 4–9% in hiring and start-up investing (Cowgill et al., Manageme
+- Feedback from a stronger model makes self-repair work much better (Olausson et al., ICLR 2024).
+- Self-correction has a 64.5% average blind spot across 14 models (Self-Correction Bench).
+- Agent PRs were merged 83.8% of the time vs. 91.0% for human PRs (Watanabe et al.).
+- Copy/pasted lines rose from 8.3% to 12.3% while refactored (moved) lines fell from 25% to under 10% (GitClear; correlati
+- Consumers identify most AI ads and rate them more annoying, boring and confusing. Memory activation is weaker even when 
+- Iterative generate-and-describe image loops converged to about 12 motifs regardless of temperature (Hintze et al., Patte
+- On an art platform with 4M+ artworks, average visual novelty fell after text-to-image adoption while peak content novelt
+- Disclosing AI on TikTok lowers engagement by weakening the parasocial bond (Carney et al., JCR 2026).
+- Bot review can lengthen cycle time: PR closure went from 5h52m to 8h20m (Cihan et al., ICSE-SEIP 2025).
+- Gamma about $100M ARR and 70M users.
+- More than 8M advertisers had used a Meta generative-AI creative tool by Q1 2026 (company-reported).
+- AI-first ghostwriting anchored experts and lowered real ad clicks (Chen et al., Management Science 2024). / Using the LL
+- Compared with 30,000 human essays, LLM essays listed personal details formulaically even with persona prompts (Cornell, 
+- AI users were rated lazier and less competent in a preregistered study (Reif, Larrick & Soll, PNAS 2025, N=4,439).
+- LLM-generated Java had 63% more code smells than reference solutions (2025).
+- Fogg (2002) found "design look" was the most-cited credibility factor (46.1%).
+- 60% of teachers use AI. (Gallup/Walton, n=2,232)

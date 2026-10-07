@@ -1,0 +1,4 @@
+# Normalize line endings so content hashes match across machines (ADR-0057)
+* text=auto eol=lf
+*.png binary
+*.pdf binary

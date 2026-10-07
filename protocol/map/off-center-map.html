@@ -1,0 +1,826 @@
+<title>Off-Center Protocol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&family=Schibsted+Grotesk:wght@600;700;800;900&display=swap">
+<style>
+/* Layout concept: a modular patch panel. Blocks are modules with jacks; stages are panels joined by cables;
+   each configuration renders as its own wiring (nests, stacks, loops, human checkpoints, a bench for sit-outs). */
+:root{
+  --bg:#e7eaed; --surface:#f7f8f9; --surface-2:#dfe3e7; --ink:#15181c; --ink-2:#48515b; --ink-3:#6c7682;
+  --line:#c3c9d0; --line-2:#a9b1ba;
+  --d1:#2b55c9; --d2:#0d7a70; --d3:#a8670f; --human:#8a3b6f; --glue:#5d6773; --amend:#9a4a1c;
+  --ok:#2c7a3f; --warn:#a8670f; --bad:#a3352b;
+  --display:"Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --body:"Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121519; --surface:#1b1f24; --surface-2:#252a31; --ink:#e9ecef; --ink-2:#b0b8c1; --ink-3:#8a949f;
+    --line:#333a42; --line-2:#48515b;
+    --d1:#7d9cff; --d2:#3fc2b3; --d3:#e2aa52; --human:#e08bc2; --glue:#9aa5b1; --amend:#f0a070;
+    --ok:#6fcf86; --warn:#e2aa52; --bad:#f08a7e; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121519; --surface:#1b1f24; --surface-2:#252a31; --ink:#e9ecef; --ink-2:#b0b8c1; --ink-3:#8a949f;
+  --line:#333a42; --line-2:#48515b;
+  --d1:#7d9cff; --d2:#3fc2b3; --d3:#e2aa52; --human:#e08bc2; --glue:#9aa5b1; --amend:#f0a070;
+  --ok:#6fcf86; --warn:#e2aa52; --bad:#f08a7e; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto} *{transition:none!important;animation:none!important}}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.55 var(--body);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:clamp(16px,4vw,40px)}
+a{color:var(--d1)}
+h1,h2,h3,h4{font-family:var(--display);line-height:1.12;text-wrap:balance;margin:0}
+h2{font-size:clamp(1.6rem,3.2vw,2.3rem);font-weight:800;letter-spacing:-.01em}
+h3{font-size:1.18rem;font-weight:700}
+p{margin:.4em 0 .8em;max-width:68ch}
+code,.mono{font-family:var(--mono);font-size:.88em}
+.label{font:600 .72rem/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+:focus-visible{outline:2px solid var(--d1);outline-offset:2px;border-radius:3px}
+
+/* top bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.bar .wrap{display:flex;gap:12px;align-items:center;min-height:48px;overflow-x:auto;scrollbar-width:none}
+.bar .wrap::-webkit-scrollbar{display:none}
+.bar .mark{font:800 1rem var(--display);white-space:nowrap;color:var(--ink);text-decoration:none;display:flex;gap:8px;align-items:center}
+.bar nav{display:flex;gap:4px;margin-left:auto}
+.bar nav a{font:500 .85rem var(--body);color:var(--ink-2);text-decoration:none;padding:6px 10px;border-radius:999px;white-space:nowrap}
+.bar nav a:hover{background:var(--surface-2);color:var(--ink)}
+
+/* hero */
+.hero{padding-block:clamp(32px,6vw,72px) 28px}
+.hero h1{font-size:clamp(2.6rem,7vw,5rem);font-weight:900;letter-spacing:-.025em}
+.hero h1 span{color:var(--d1)}
+.hero .sub{font-size:clamp(1.05rem,1.6vw,1.25rem);color:var(--ink-2);max-width:62ch;margin-top:14px}
+.stats{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:22px}
+.stats div{font:500 .9rem var(--mono);color:var(--ink-2)}
+.stats b{font:800 1.4rem var(--display);color:var(--ink);margin-right:6px}
+
+section{padding-block:clamp(36px,6vw,64px);border-top:1px solid var(--line)}
+.sec-head{display:grid;gap:8px;margin-bottom:22px}
+.sec-head p{color:var(--ink-2);margin:0}
+
+/* why */
+.why{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:28px;align-items:center}
+@media (max-width:860px){.why{grid-template-columns:1fr}}
+.curve{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.curve svg{width:100%;height:auto;display:block}
+.forces{display:grid;gap:10px}
+.force{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.force .k{font:700 .78rem var(--mono);padding:3px 7px;border-radius:4px;color:var(--surface);white-space:nowrap}
+.force p{margin:0;font-size:.95rem}
+
+/* patch panel */
+.panel{display:grid;grid-template-columns:minmax(0,1fr) 44px minmax(0,1fr) 44px minmax(0,1fr);align-items:stretch}
+@media (max-width:980px){.panel{grid-template-columns:1fr;}}
+.stage{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;position:relative;display:flex;flex-direction:column;gap:10px}
+.stage::before,.stage::after{content:"";position:absolute;top:10px;width:7px;height:7px;border-radius:50%;background:var(--line-2)}
+.stage::before{left:10px}.stage::after{right:10px}
+.stage header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding-inline:12px}
+.stage header h3{font-size:1.25rem}
+.stage header .label{white-space:nowrap}
+.stage .mode{font-size:.88rem;color:var(--ink-2);padding-inline:12px;margin:0}
+.cable{position:relative}
+.cable::before{content:"";position:absolute;left:0;right:0;top:50%;height:6px;transform:translateY(-50%);background:linear-gradient(90deg,var(--c1),var(--c2));border-radius:3px}
+.cable::after{content:"";position:absolute;left:50%;top:50%;width:14px;height:14px;transform:translate(-50%,-50%);border-radius:50%;background:var(--surface);border:3px solid var(--c2)}
+@media (max-width:980px){.cable{height:30px}.cable::before{left:50%;right:auto;top:0;bottom:0;height:auto;width:6px;transform:translateX(-50%);background:linear-gradient(180deg,var(--c1),var(--c2))}}
+.module{display:block;text-decoration:none;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:10px 12px;transition:transform .15s, border-color .15s}
+.led{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--sc);box-shadow:0 0 0 3px color-mix(in srgb,var(--sc) 22%,transparent);margin-right:8px;vertical-align:middle;flex:none}
+.module:hover{transform:translateY(-2px);border-color:var(--sc)}
+.module .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.module .code{font:700 .95rem var(--mono);color:var(--sc);display:inline-flex;align-items:center}
+.module .from{font:500 .72rem var(--mono);color:var(--ink-3)}
+.module .nm{font:700 1rem var(--display);margin-top:2px}
+.module .ct{font-size:.86rem;color:var(--ink-2);margin:4px 0 6px;line-height:1.4}
+.jacks{display:flex;flex-wrap:wrap;gap:4px 10px}
+.jack{display:inline-flex;align-items:center;gap:5px;font:500 .68rem var(--mono);color:var(--ink-3)}
+.jack i{width:9px;height:9px;border-radius:50%;border:2px solid var(--sc);background:var(--surface);display:inline-block}
+.jack.out i{background:var(--sc)}
+.gluebar{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.gluebar .label{margin-right:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;font:600 .78rem var(--mono);padding:4px 9px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);white-space:nowrap}
+.chip.h{border-color:var(--human);color:var(--human)}
+
+/* block cards */
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:26px}
+@media (max-width:860px){.cards{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;min-width:0;scroll-margin-top:64px}
+.card h3{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.card h3 .code{font:700 .95rem var(--mono);color:var(--sc);display:inline-flex;align-items:center}
+.card .from{font:500 .75rem var(--mono);color:var(--ink-3)}
+.card dl{display:grid;grid-template-columns:7.2em minmax(0,1fr);gap:6px 12px;margin:12px 0 0;font-size:.9rem}
+.card dt{font:600 .7rem/1.6 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);padding-top:2px}
+.card dd{margin:0;color:var(--ink)}
+.card ol,.card ul{margin:0;padding-left:1.15em}
+.card li{margin:.1em 0}
+.fit{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:3px 12px}
+.fit span{display:flex;justify-content:space-between;gap:8px;font-size:.82rem}
+.dots{font:700 .8rem var(--mono);letter-spacing:1px;color:var(--sc)}
+.dots .off{color:var(--line-2)}
+.keep{font-size:.86rem;color:var(--ink-2);border-top:1px dashed var(--line);margin-top:12px;padding-top:8px}
+
+/* grammar */
+.ops{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.op{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;min-width:0}
+.op .sym{font:600 1.05rem var(--mono);color:var(--d1)}
+.op h4{font-size:1rem;margin:2px 0 4px}
+.op p{font-size:.86rem;margin:0;color:var(--ink-2)}
+.op .ex{font-size:.8rem;color:var(--ink-3);margin-top:6px}
+.cols2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:22px}
+@media (max-width:860px){.cols2{grid-template-columns:1fr}}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;min-width:0}
+.box ol{margin:8px 0 0;padding-left:1.3em}
+.box li{margin:.3em 0;font-size:.93rem}
+.ports{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+
+/* configurations */
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.tab{font:600 .88rem var(--body);background:var(--surface);color:var(--ink-2);border:1px solid var(--line);padding:8px 12px;border-radius:999px;cursor:pointer}
+.tab b{font-family:var(--mono);margin-right:6px;color:var(--ink-3)}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.tab[aria-selected="true"] b{color:var(--surface)}
+.cfg{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:clamp(16px,2.4vw,26px)}
+.cfg-top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 20px;align-items:flex-start}
+.cfg-top h3{font-size:clamp(1.5rem,3vw,2rem);font-weight:800}
+.cfg-top .tag{color:var(--ink-2);margin-top:4px;font-size:1rem}
+.badge{font:700 .72rem var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 9px;border-radius:4px;border:1px solid currentColor;white-space:nowrap}
+.badge.article{color:var(--d1)} .badge.core{color:var(--d2)} .badge.partial{color:var(--warn)} .badge.adjacent{color:var(--ink-3)} .badge.channel{color:var(--human)}
+.serves{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 4px}
+.serves span{font-size:.82rem;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--ink-2)}
+.grid-cfg{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px;margin-top:18px}
+@media (max-width:900px){.grid-cfg{grid-template-columns:1fr}}
+.grid-cfg h4{font:600 .72rem var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+.grid-cfg ul{margin:0;padding-left:1.1em;font-size:.92rem}
+.grid-cfg li{margin:.25em 0}
+
+/* wiring renderer */
+.wire-wrap{margin-top:20px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);padding:14px;overflow-x:auto}
+.outer{font:600 .78rem var(--mono);color:var(--d1);border:1px dashed var(--d1);border-radius:5px;padding:6px 10px;margin-bottom:12px;display:flex;gap:8px;align-items:center}
+.wire{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:12px;min-width:0}
+@media (max-width:900px){.wire{grid-template-columns:1fr}}
+.wst{border-radius:5px;padding:10px;border:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;gap:6px;min-width:0}
+.wst > .label{display:flex;align-items:center}
+.wst .label{color:var(--sc)}
+.wst.empty{opacity:.6}
+.arrow{align-self:center;font:700 .8rem var(--mono);color:var(--ink-3);line-height:1}
+.n-b{border:1px solid color-mix(in srgb,var(--sc) 45%,var(--line-2));border-radius:4px;padding:6px 8px;background:color-mix(in srgb,var(--sc) 7%,var(--surface));font-size:.82rem;min-width:0}
+.n-b .c{font:700 .82rem var(--mono);color:var(--sc)}
+.n-b .x{font:700 .72rem var(--mono);margin-left:6px;padding:1px 5px;border-radius:3px;background:var(--sc);color:var(--surface)}
+.n-b .note{display:block;color:var(--ink-2);margin-top:2px;line-height:1.35}
+.n-b.stack{box-shadow:4px 4px 0 -1px var(--surface),4px 4px 0 0 var(--line-2),8px 8px 0 -1px var(--surface),8px 8px 0 0 var(--line-2);margin-right:8px;margin-bottom:8px}
+.n-b.opt{border-style:dashed}
+.n-b.red{opacity:.86}
+.n-b .tagr{font:600 .64rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-left:6px}
+.n-b .tagr.am{color:var(--amend)}
+.n-g{font:600 .74rem var(--mono);color:var(--glue);border:1px dotted var(--glue);border-radius:4px;padding:4px 7px;background:transparent;align-self:flex-start;max-width:100%}
+.n-h{font:600 .76rem var(--mono);color:var(--human);border:1.5px solid var(--human);border-radius:4px;padding:4px 8px;align-self:flex-start;clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 50%,calc(100% - 8px) 100%,8px 100%,0 50%);padding-inline:14px}
+.n-op{font:600 .74rem var(--mono);color:var(--ink);background:var(--surface-2);border-radius:4px;padding:4px 8px;align-self:flex-start;max-width:100%}
+.n-op.am{color:var(--amend)}
+.ctr{border-radius:5px;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.ctr > .hd{font:600 .7rem var(--mono);text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ctr > .hd span{text-transform:none;letter-spacing:0;font-weight:500}
+.ctr.each{border:1.5px dashed var(--line-2)} .ctr.each > .hd{color:var(--ink-3)}
+.ctr.loop{border:1.5px solid var(--d2);background:color-mix(in srgb,var(--d2) 6%,transparent)} .ctr.loop > .hd{color:var(--d2)}
+.ctr.human{border:1.5px solid var(--human);background:color-mix(in srgb,var(--human) 6%,transparent)} .ctr.human > .hd{color:var(--human)}
+.ctr.nest{border:1px solid var(--line-2);background:var(--bg)} .ctr.nest > .hd{color:var(--ink-3)}
+.ctr.route,.ctr.lanes{border:1.5px solid var(--line-2)} .ctr.route > .hd,.ctr.lanes > .hd{color:var(--ink-2)}
+.branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px}
+.branch{display:flex;flex-direction:column;gap:6px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.row .sep{font:700 .78rem var(--mono);color:var(--ink-3)}
+.bench{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
+.bench .label{width:100%}
+.benched{font-size:.8rem;border:1px dashed var(--line-2);border-radius:4px;padding:5px 8px;color:var(--ink-3);max-width:340px}
+.benched b{font-family:var(--mono);text-decoration:line-through;margin-right:6px}
+.notation{margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:12px 14px;overflow-x:auto}
+.notation pre{margin:0;font:400 .8rem/1.55 var(--mono);color:var(--ink);white-space:pre}
+.roles{width:100%;border-collapse:collapse;font-size:.88rem;margin-top:6px}
+.roles th,.roles td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.roles th{font:600 .7rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)}
+.roles td:first-child{font:700 .82rem var(--mono);white-space:nowrap}
+.g{font:700 .9rem var(--mono)}
+.amends{margin-top:14px;font-size:.9rem}
+.amends li::marker{color:var(--amend)}
+
+/* matrix */
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table.mx{border-collapse:collapse;width:100%;min-width:760px;font-size:.88rem}
+.mx th,.mx td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:center}
+.mx th:first-child,.mx td:first-child{text-align:left}
+.mx thead th{font:600 .72rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);background:var(--surface-2)}
+.mx thead th.sb{color:var(--sc)}
+.mx td.cell{font:700 1rem var(--mono)}
+.mx tbody tr:hover{background:var(--bg)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:.85rem;color:var(--ink-2)}
+.legend b{font-family:var(--mono)}
+
+/* rubric */
+.rub td.tot{font:800 1rem var(--display)}
+.bar-cell{min-width:120px}
+.mini{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden}
+.mini i{display:block;height:100%;background:var(--d2)}
+.mx td.cfgc{font:600 .8rem var(--mono);color:var(--ink-2);text-align:left;white-space:nowrap}
+
+/* chooser */
+.chooser{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
+@media (max-width:860px){.chooser{grid-template-columns:1fr}}
+.qcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.qcard .q{font:700 1.3rem/1.25 var(--display);margin:8px 0 16px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{font:600 .92rem var(--body);padding:9px 16px;border-radius:999px;border:1px solid var(--ink);background:var(--ink);color:var(--surface);cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink)}
+.trail{margin-top:14px;font-size:.85rem;color:var(--ink-3)}
+.result{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.result h4{font:800 1.4rem var(--display);margin:4px 0 6px}
+
+/* explore */
+.explore{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.xc{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.xc .n{font:800 1.6rem var(--display);color:var(--line-2);float:right;line-height:1}
+.xc h4{font-size:1rem;margin-bottom:4px}
+.xc p{font-size:.86rem;color:var(--ink-2);margin:0}
+.xc .becomes{font:600 .74rem var(--mono);color:var(--d1);margin-top:8px}
+
+footer{padding-block:36px 56px;border-top:1px solid var(--line);color:var(--ink-2);font-size:.9rem}
+footer .files{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.limits{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:22px}
+.limits .box p{font-size:.9rem;margin:6px 0 0}
+.ctr.audit{border:1.5px dashed var(--human)} .ctr.audit > .hd{color:var(--human)}
+.ctr.gate{border:1.5px solid var(--d3)} .ctr.gate > .hd{color:var(--d3)}
+.exc{margin-top:16px;border:1px dashed var(--amend);border-radius:5px;padding:10px 14px;font-size:.9rem}
+.exc h4{font:600 .72rem var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--amend);margin-bottom:4px}
+.exc ul{margin:0;padding-left:1.1em}
+.costline{font-size:.9rem;margin:0}
+.counter{font-size:.9rem;margin:10px 0 0;padding:8px 12px;border-left:2px solid var(--line-2);color:var(--ink-2)}
+.anch{font-size:.82rem;color:var(--ink-2);margin:10px 0 14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px}
+.anch b{font-family:var(--mono);color:var(--ink)}
+.subhead{font:700 1rem var(--display);margin:22px 0 8px}
+.rub td.veto{text-align:left;color:var(--ink-2);font-size:.85rem}
+</style>
+
+<div class="bar"><div class="wrap">
+  <a class="mark" href="#top" aria-label="Off-Center, top of page">Off-Center</a>
+  <nav aria-label="Sections">
+    <a href="#why">Why</a><a href="#blocks">Blocks</a><a href="#grammar">Grammar</a><a href="#configs">Configurations</a><a href="#matrix">Coverage</a><a href="#evidence">Use cases</a><a href="#chooser">Chooser</a><a href="#explore">More to explore</a>
+  </nav>
+</div></div>
+
+<header class="wrap hero" id="top">
+  <div class="label">Protocol map · working name</div>
+  <h1>Off-<span>Center</span></h1>
+  <p class="sub">A protocol for distinctive AI work. It generalizes Anshu Chimala’s <em>“How to turn your AI into a world-class designer”</em> (Lenny’s Newsletter, Sep 1 2026) beyond design. The article’s eight techniques become lego blocks, a small grammar says how they connect, and seven configurations, plus a fiction variant (C6a), wire them for real use cases. C1 is the article’s own design workflow. Built from two research workflows, then checked by two review rounds.</p>
+  <div class="stats">
+    <div><b>8</b>blocks</div><div><b>17</b>operators</div><div><b>8</b>port rules</div><div><b>7+1</b>configurations</div><div><b>15</b>use cases scored</div><div><b>310</b>sources</div>
+  </div>
+</header>
+
+<section id="why"><div class="wrap">
+  <div class="sec-head"><div class="label">01 · The idea</div><h2>The default sits in the middle of the curve</h2>
+  <p>Preference-tuned models settle every open decision with the most typical, please-everyone option, and they add far more readily than they remove. The article’s target is the <b>feeling</b> the work evokes. Distinctiveness is how you get there.</p></div>
+  <div class="why">
+    <div class="curve" role="img" aria-label="Bell curve: AI defaults cluster in the center; distinctive work lives in the tails.">
+      <svg id="bell" viewBox="0 0 600 220"></svg>
+    </div>
+    <div class="forces">
+      <div class="force"><span class="k" style="background:var(--d1)">SEED · VISION</span><p><b>Bring variety from a seed or a human.</b> A random string the model has to interpret, or your own taste. Never just “be creative.”</p></div>
+      <div class="force"><span class="k" style="background:var(--d2)">CRITIC</span><p><b>Separate judgment from production.</b> A stronger critic in a fresh context sees only the rendered result, and the stop threshold never appears in its prompt.</p></div>
+      <div class="force"><span class="k" style="background:var(--d2)">ASSET · RELAY</span><p><b>Delegate to specialists.</b> Route what the generalist agent can only fake to a specialist model, then verify it in the real render.</p></div>
+      <div class="force"><span class="k" style="background:var(--d3)">CUT · TELLS · VOICE</span><p><b>Subtract, audit and re-voice after generation, never ban before it.</b> A human reads and rephrases every line.</p></div>
+    </div>
+  </div>
+</div></section>
+
+<section id="blocks"><div class="wrap">
+  <div class="sec-head"><div class="label">02 · The block library</div><h2>Eight modules on three panels</h2>
+  <p>Each block has jacks (typed ports), knobs, guards and wiring rules. Every card separates <b>Keep from the article</b> from <b>Additions ⟨A⟩</b>, so you can always recover the article-faithful version.</p></div>
+  <div class="panel" id="panel"></div>
+  <div class="gluebar"><span class="label">Glue (adapters, not techniques)</span>
+    <span class="chip">RENDER · artifact → view</span><span class="chip">BRIEF · direction → prompt</span><span class="chip">TIER · big judges, mid executes</span><span class="chip">KEYS · scoped credentials</span><span class="chip">BANK · failed-prompt archive</span><span class="chip">dedupe ⟨A⟩</span><span class="chip h">?H · human checkpoint</span>
+  </div>
+  <div class="cards" id="cards"></div>
+</div></section>
+
+<section id="grammar"><div class="wrap">
+  <div class="sec-head"><div class="label">03 · The grammar</div><h2>How the legos snap together</h2>
+  <p>Built from known agent-workflow patterns and the Double Diamond. Each operator is grounded in something the article does, except where marked ⟨A⟩. Loop failure is defined once: probe 2 iterations, cap 5 in total, stop on a plateau, return the best snapshot to a human, and backtrack only by human decision.</p></div>
+  <div class="ops" id="ops"></div>
+  <div class="cols2">
+    <div class="box"><h3>Port rules (hard invariants)</h3><ol id="portrules"></ol>
+      <div class="ports" id="ports"></div></div>
+    <div class="box"><h3>Ten default rules</h3><p style="font-size:.88rem;color:var(--ink-2);margin:4px 0 0">A configuration may relax one only by declaring an exception.</p><ol id="rules"></ol></div>
+  </div>
+</div></section>
+
+<section id="configs"><div class="wrap">
+  <div class="sec-head"><div class="label">04 · Configurations</div><h2>Seven wirings plus a fiction variant, each grounded in a real pain</h2>
+  <p>Configurations differ in <b>topology</b>, not just settings. Each one shows its wiring, the evidence behind it (counter-evidence included), the blocks that sit out, its declared exceptions, its cost with a lite profile, and success criteria judged <b>outside</b> its own loop. By default, CRITIC lives in Deepen, and CUT → TELLS → VOICE run afterward in Distill.</p></div>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div id="cfg" role="tabpanel"></div>
+</div></section>
+
+<section id="matrix"><div class="wrap">
+  <div class="sec-head"><div class="label">05 · Coverage</div><h2>Which blocks each configuration uses</h2></div>
+  <div class="tblwrap"><table class="mx" id="mx"></table></div>
+  <div class="legend"><span><b>●</b> central</span><span><b>○</b> optional</span><span><b>◐</b> reduced role</span><span><b>—</b> sits out</span></div>
+</div></section>
+
+<section id="evidence"><div class="wrap">
+  <div class="sec-head"><div class="label">06 · Use-case research</div><h2>Where the pain is, scored</h2>
+  <p>Seven research sweeps, one synthesis, and two verification rounds. Round 2 re-checked 55 claims: 37 were accurate, 17 had minor inaccuracies and 1 was wrong, and all are now corrected. Scores are one rater’s judgment against defined anchors. <b>Evid-fix</b> (evidence that the blocks’ mechanism actually helps this use case) is low almost everywhere. That is the protocol’s biggest open question.</p></div>
+  <div class="anch">
+    <span><b>Pain</b> 1 annoyance · 3 rework/trust loss · 5 large quantified cost</span>
+    <span><b>Freq</b> 1 yearly · 3 weekly · 5 daily</span>
+    <span><b>Pull</b> 1 producer doesn’t feel it · 3 felt late · 5 producer’s own audience punishes them</span>
+    <span><b>Evid-pain</b> 1 anecdote · 3 industry surveys · 5 peer-reviewed / large surveys</span>
+    <span><b>Evid-fix</b> 1 none · 3 indirect · 5 direct</span>
+    <span><b>Thesis</b> 1 unrelated · 3 partial · 5 sameness + additive habit + voice</span>
+    <span><b>Blocks</b> 1 one block · 3 about half · 5 nearly all</span>
+  </div>
+  <div class="tblwrap"><table class="mx rub" id="rub"></table></div>
+  <div class="subhead">Provisional (not separately researched) and rejected</div>
+  <div class="tblwrap"><table class="mx rub" id="rub2"></table></div>
+  <div class="cols2">
+    <div class="box"><h3>Counter-evidence the configurations account for</h3><ul id="counter" style="padding-left:1.1em;margin:8px 0 0"></ul></div>
+    <div class="box"><h3>Biggest evidence gaps</h3><ul id="gaps" style="padding-left:1.1em;margin:8px 0 0"></ul></div>
+  </div>
+</div></section>
+
+<section id="chooser"><div class="wrap">
+  <div class="sec-head"><div class="label">07 · Chooser</div><h2>Which configuration fits your work?</h2><p>Answer up to seven questions. The first “yes” decides.</p></div>
+  <div class="chooser">
+    <div class="qcard" id="qcard"></div>
+    <div class="result" id="qres" aria-live="polite"></div>
+  </div>
+</div></section>
+
+<section id="explore"><div class="wrap">
+  <div class="sec-head"><div class="label">08 · More to explore</div><h2>Off-path, but promising</h2>
+  <p>These came up in research but are substantially different from the article’s techniques, so they stay out of v1. Below is the shortlist most likely to earn a block, plus the platform channel candidate. About 70 more are catalogued in <code>05-more-to-explore.md</code>.</p></div>
+  <div class="explore" id="exl"></div>
+  <div class="limits">
+    <div class="box"><h3>No correctness guarantee</h3><p>CRITIC judges taste, not truth. Facts, citations, code correctness and security need verification outside these blocks. A <code>VERIFY</code> block is the top candidate for v2.</p></div>
+    <div class="box"><h3>Critic reliability unmeasured</h3><p>Evidence from older models puts unanchored judges near chance on UI and prose. That is why the protocol adds a calibration step and prefers ranking against references.</p></div>
+    <div class="box"><h3>Never for evasion</h3><p>No gate or success metric uses an AI-detector score. Disclosures, platform AI labels and provenance metadata are always preserved, and nothing invents facts about a person.</p></div>
+    <div class="box"><h3>Unproven end to end</h3><p>No study yet tests any configuration as a whole, or shows a distinctive AI page converting better than a generic one. <code>05-more-to-explore.md</code> proposes the experiments.</p></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <div class="label">Source files (in the ActAI/protocol folder)</div>
+  <div class="files"><span class="chip">README.md</span><span class="chip">01-blocks.md</span><span class="chip">02-grammar.md</span><span class="chip">03-configurations.md</span><span class="chip">04-use-case-evidence.md</span><span class="chip">05-more-to-explore.md</span><span class="chip">06-runbook.md</span><span class="chip">SOURCES.md</span></div>
+  <p>Source article: Anshu Chimala, “How to turn your AI into a world-class designer,” <a href="https://www.lennysnewsletter.com/p/how-to-turn-your-ai-into-a-world">Lenny’s Newsletter</a>, Sep 1 2026. Techniques are paraphrased; protocol additions are marked ⟨A⟩. Labels: <b>evidence-backed</b> · <b>mixed</b> · <b>article prescription</b> (untested elsewhere) · <b>⟨A⟩ amendment</b>.</p>
+</div></footer>
+
+<script>
+const STAGE = {D1:{n:'Diverge',a:'article: Discover',c:'var(--d1)',m:'divergent → pick'},D2:{n:'Deepen',a:'article: Define',c:'var(--d2)',m:'critic loop + specialists'},D3:{n:'Distill',a:'article: Deliver',c:'var(--d3)',m:'subtractive · human-judged'}};
+const BLOCKS = [
+ {code:'SEED',name:'External Seeding',from:'T1 · Seed strings',st:'D1',
+  ct:'Mode collapse: a model told to “be random” still returns its most typical answer.',
+  inP:['intent','seed'],outP:['option_set'],
+  move:'Give the model a random string to interpret into decisions on named axes, then have it execute that direction with judgment. The string decides what; the model’s skill decides how well.',
+  steps:['⟨A⟩ Use only on open-ended decisions','⟨A⟩ Pre-check: plain ×N runs converge (the article’s demonstration)','Name the axes (color, layout, typography…); list the fixed constraints','Fresh string per branch: shell RNG (article) or one the model writes itself (what SSoT tested)','Derive the direction from subpatterns and special numbers; build with judgment','Never show the string; hand the population to the critic loop'],
+  knobs:'branches 4 · string: shell RNG | model-written · mapping model: reasoning-capable · ⟨A⟩ structural axis, deck/indexed modes, structure knob',
+  guards:['“Be unique” is not a seed','Lazy mapping: use the whole string','Surface-only variety: send to CRITIC (⟨A⟩ structural axis)','Never seed a judge'],
+  fit:[['UI design',3],['Fiction',3],['Naming',3],['Synthetic data*',3],['Marketing',2],['Ideation',2],['Education',2],['Decks',2],['Code',1],['Research',1]],
+  wiring:'Native form is ×N in parallel; branches never see each other. Can nest in VISION’s scatter and in ASSET/RELAY art direction. *Synthetic data evidence is for the deck variant ⟨A⟩.',
+  keep:'Variety must come from outside the model · a shell-script string · direction set before building · “use your judgment” · string never revealed · seeded results still need the critic.',
+  add:'structural axis · per-axis direction log · re-roll · deck/indexed modes · structure knob',
+  ev:'SSoT (Sakana, ICLR 2026): a model-written string beat “be diverse”, paraphrasing and temperature; the external-RNG variant is untested · TinyStories (design observation) · Artificial Hivemind'},
+ {code:'VISION',name:'Taste-Steered Brief',from:'T2 · Ambitious prompts',st:'D1',
+  ct:'Unspecified decisions fall to defaults, and AI ideas pasted back homogenize everyone’s work.',
+  inP:['intent','taste','refs'],outP:['brief'],
+  move:'Replace on-the-fly decisions with a vivid, unusual vision steered by human taste. Either write the ambitious prompt yourself (direct), or have the AI scatter ideas, react to them, let it sharpen, and have it write the brief (system).',
+  steps:['Direct: describe an outside inspiration (pixel-art game, isometric city, rule-breaking layout) while keeping the page’s function','System 1: AI lists many ideas, broad not deep, low detail','System 2: visualize your favorites, react (including what to avoid); AI sharpens them “to my taste”','System 3: AI writes a concise build prompt','Build; discard freely; save failed prompts and retest on new models','⟨A⟩ optional: your own references first, a uniqueness check, a functional anchor line'],
+  knobs:'route direct | system · scatter “as many as you can” · far references · ⟨A⟩ ambition ladder, ≤200-word brief',
+  guards:['Paste-back: your own reactions every round','Fixation ⟨A⟩: low-fidelity scatter','Negatives specific to this direction, never global bans','“No way this will work” = right track'],
+  fit:[['UI design',3],['Fiction',3],['Naming',3],['Decks',3],['Strategy',2],['Education',2],['Synthetic data',2],['Research',1],['Core code',1]],
+  wiring:'Scatter and builds run in parallel; reacting is serial (one human). Can contain SEED. The brief goes to builders and is never shown to the CRITIC.',
+  keep:'Bring your own taste · Questlog, Skyline, Offcut · the three-step system → “Precision Industrial” · steering makes it yours · try terrible ideas · save failed prompts.',
+  add:'references first · uniqueness check · functional anchor · ambition ladder · numeric defaults',
+  ev:'Doshi & Hauser 2024 (stories from AI ideas: better but more similar) · Anderson et al. 2024 · Wadinambiarachchi CHI 2024 (AI images raised fixation)'},
+ {code:'CRITIC',name:'Blind Critic Loop',from:'T3 · Subagent feedback',st:'D2',
+  ct:'Self-review bias, and a generator that decides for itself when it’s done.',
+  inP:['view','refs'],outP:['critique','score'],
+  move:'The worker consults a stronger critic in a fresh context that sees only the render. The critic infers the intended aesthetic, imagines top-studio execution, lists the biggest gaps and scores it out of 10. The work is done only at the threshold, and the threshold is never in the critic’s prompt.',
+  steps:['Tiers: big critic, capable worker','Render: a screenshot (⟨A⟩ several surfaces)','Ladder: BAD → OK (imagined top studio) → GREAT (rank among 4 refs + ours)','Freeze the critic prompt; never mention the threshold','Probe 1–2 iterations; if it isn’t converging, fix the criteria','⟨A⟩ calibrate first; cap 5; re-rank the best snapshots; hand off to a human'],
+  knobs:'critic Fable 5 · worker Opus 5 (article) · 9/10 hidden · probe 1–2 · ⟨A⟩ cap 5 total, GREAT gate “ours ranked 1st”, ≤10 refs, shuffle',
+  guards:['Never satisfied: set criteria carefully (article); ⟨A⟩ cap, plateau','⟨A⟩ Homogenizing: judge each design against its own intent','⟨A⟩ Taste only: correctness lives elsewhere','⟨A⟩ The tell catalog never enters its prompt'],
+  fit:[['UI design',3],['Decks',3],['Long-form',3],['Marketing',2],['DevEx',2],['Research memos',2],['Synthetic data',2],['Education',2],['Naming',1]],
+  wiring:'A loop; each[ ] across candidates. In the article, image generation came after the loop as a separate prompt. ⟨A⟩ It may host ASSET; RELAY only after a pick. ⟨A⟩ Worker revisions to prose stay placeholder until VOICE.',
+  keep:'Ask another agent · screenshot only · intent → top studio → gaps → /10 · 9/10 kept out of its prompt · same prompt every time · bad/OK/great ladder · moodboard refs · Fable under 10% of tokens.',
+  add:'external-orchestrator option · calibration · cap · plateau/re-rank · GREAT gate · refs ≤10 · shuffle · different family for prose · feeling clause',
+  ev:'Anthropic harness (Mar 2026) · Huang; Kamoi (self-correction needs external feedback) · UIClip: GPT-4V 51.6% on UI quality · ranking more distractor-sensitive (Tripathi, COLM 2025)'},
+ {code:'ASSET',name:'Specialist Asset',from:'T4 · Image generation',st:'D2',
+  ct:'Coding agents default to gradients, shapes and patterns, and underuse the image tools they already have.',
+  inP:['artifact','brief','cred'],outP:['asset'],
+  move:'When a directed design reads as plain, add personality with image generation combined with shaders or 3D, verify frame by frame, and use scoped, capped, never-shipped keys.',
+  steps:['Trigger: “the design is pretty plain”','Route by the agent you use: built-in tool | Codex CLI on a ChatGPT plan | OpenAI/Gemini key','Separate key, tight spend limit, local only','.env.agents (gitignored) + a dev-only note in AGENTS.md','Combine with shaders/3D; integrate into the direction','Verify frame by frame in the browser'],
+  knobs:'compose with native effects · real-render verification · tight spend cap · ⟨A⟩ 1–3 slots, variants, required evidence',
+  guards:['Name the tool or it fakes it','AI-assisted commits leak keys at 3.2% vs a 1.5% baseline: fence them','Assets can become new tells ⟨A⟩','Never generated imagery as evidence ⟨A⟩'],
+  fit:[['UI design',3],['Decks',3],['Marketing creative',3],['Education',2],['Explainers ⟨A⟩',2],['Research charts ⟨A⟩',2],['Demo data ⟨A⟩',2],['Ideation',1]],
+  wiring:'Runs per candidate after the critic loop in the article (“the designs from the last step”); one integrator per artifact. Stage 1 of RELAY.',
+  keep:'Agents underuse built-in tools until told · “pretty plain, add personality” · shaders/3D · verify frame by frame · three routes · key hygiene.',
+  add:'slot and variant counts · required evidence · copy kept out of images · pruning · renderer extension (charts from real data)',
+  ev:'Anthropic docs (models favor reasoning over tool calls) · Toolformer · HuggingGPT · Graphic-Design-Bench 2026 · GitGuardian 2026'},
+ {code:'RELAY',name:'Specialist Relay',from:'T5 · Video generation',st:'D2',
+  ct:'Separate generations share no state, so outputs can’t be layered and transitions show seams.',
+  inP:['artifact','asset','cred'],outP:['asset','anchor'],
+  move:'Chain specialist models. Render-and-extract: a looping clip on a solid background (or over the page itself, for glass), then key or matte it out. Transitions: interpolate between keyframes, or seed each clip with the previous clip’s final frame.',
+  steps:['Spot the effect the agent would fake','One aggregator (fal.ai), one key; the agent picks recent models','A: render on a solid color or the destination → chroma key or matting','B0: two stills → one interpolated clip','B1: still → clip → final frame seeds the next','Play on an action or scrub on scroll; verify frame by frame'],
+  knobs:'pattern A | B0 | B1 · solid color | destination · chroma key | matting · ⟨A⟩ identity refs for long chains, manifest',
+  guards:['Seams: seed from the exact final frame','Long-chain drift ⟨A⟩: B0 or identity refs','Reads as a morph: one change per transition ⟨A⟩','Static fallback for reduced motion ⟨A⟩'],
+  fit:[['UI design',3],['Ads',3],['Explainers',3],['Audio',3],['3D/games',2],['Decks',2]],
+  wiring:'Pattern A runs in parallel; a Pattern B chain is strictly sequential. Nests ASSET. Runs on one picked design. (Text/JSON handoff between LLM calls is plain prompt chaining; see 05.)',
+  keep:'Under-imagined, not under-powered · aggregator · solid background, keyed or matted · glass over the page background · keyframe interpolation · final frame seeds the next · scroll scrub.',
+  add:'identity refs · candidates per segment · manifest · reduced-motion fallback · scrub-encoding tip',
+  ev:'Generative Inbetweening (ICLR 2025) · StreamingT2V (CVPR 2025) · Robust Video Matting; MatAnyone · Seedance 2.5 docs'},
+ {code:'CUT',name:'Subtraction Pass',from:'T6 · Cut elements',st:'D3',
+  ct:'The additive default: deleting feels risky to the model, and people overlook subtraction too.',
+  inP:['artifact','taste'],outP:['artifact'],
+  move:'You ask “what really needs to be there?” and push with a concrete removal directive: the cuts, a structural simplification and a restraint reference (e.g., “truly minimalist, Apple-native”).',
+  steps:['Only once a standout direction exists','Look at the rendered work','Itemize the cuts (glows, highlights, redundant labels, custom controls)','Simplify the structure (e.g., an image-centric grid)','Name a restraint reference','⟨A⟩ removal verbs only; no new substitutes; ≤2 rounds; tests if code was cut'],
+  knobs:'human taste owner (article) · ⟨A⟩ purpose statement, five probes, removal verbs, cap 2',
+  guards:['“Make it minimal” changes nothing: itemize','“Improve” adds ⟨A⟩','Don’t cut the identity: restraint makes it more opinionated','Don’t let an LLM critic veto cuts ⟨A⟩'],
+  fit:[['UI design',3],['Code',3],['Writing/memos',3],['Data viz',3],['Decks',3],['Education',3],['PRDs',2],['Tests',2],['Naming',1]],
+  wiring:'Runs per unit with one taste owner; re-run after additive blocks. Order: CUT → TELLS → VOICE. Never during Diverge.',
+  keep:'AI loves to add, rarely removes · overexplaining is a top tell · restraint looks premium · the calorie-app example · the model needs a push from you.',
+  add:'purpose statement · five probes · removal-verb rule · no substitutes · protected list · round cap · cut log',
+  ev:'Adams et al., Nature 2021 · Santagata & De Nobili (structural tasks; task-dependent) · Uhler (GPT-4 adds more on “improve”) · Singhal (length bias) · Mayer · Tufte'},
+ {code:'TELLS',name:'Tell Sweep & Swap',from:'T7 · Remove AI tells',st:'D3',
+  ct:'Patterns every model overuses become tells through ubiquity, and up-front bans backfire.',
+  inP:['artifact','tells'],outP:['artifact'],
+  move:'While refining, pull up a catalog of overused pattern → alternative, look for each pattern, have the AI try the alternative, and keep whichever you like better. Never ban the patterns up front.',
+  steps:['Keep a pattern → alternative catalog','Generate normally, with no bans','Look for each pattern while refining','Decide per instance: not every gradient is bad','Prompt the alternative; compare; keep the better one','⟨A⟩ one swap per prompt, one re-sweep, version the catalog by model'],
+  knobs:'audit and swap (article) · ⟨A⟩ hard bans only for objective defects (placeholders, lint errors)',
+  guards:['Up-front bans make the model overthink and produce stranger patterns','Blanket removal creates a new signature ⟨A⟩','No tells ≠ good: it’s polish, not QA','The catalog never enters generation or critic prompts'],
+  fit:[['UI design',3],['Prose',3],['Marketing',3],['Reports',3],['Decks',3],['Code (audit)',2],['Synthetic data',2],['Naming',2],['Strategy',1]],
+  wiring:'Report-only auditors may run in parallel; swaps run one at a time. Swaps call CUT (remove) or ASSET (gradient → image). Article table: eyebrow text · generic gradients · excessive cards and containers · too many fonts.',
+  keep:'Every model overuses patterns · bad through ubiquity, not on their own · the four-row design table · don’t ban from the get-go · compare alternatives while refining.',
+  add:'non-design catalogs (prose words and structure, social, newsletter, memos, slides, code, lesson plans, fiction) · recurrence-based discovery · triage · versioning',
+  ev:'Antislop (ICLR 2026): some patterns appear 1,000×+ more often in LLM text; avoid-lists can backfire · pink-elephant effect · Anthropic: Inter → Space Grotesk · Wikipedia Signs of AI writing'},
+ {code:'VOICE',name:'Human Voice Pass',from:'T8 · Rewrite copy',st:'D3',
+  ct:'One shared AI voice: clever hooks, walls of text, eyeroll.',
+  inP:['artifact','taste'],outP:['voice'],
+  move:'Treat AI copy as lorem ipsum: it shows the structure but it’s a placeholder. A human reads each line of copy and rephrases it in one consistent voice, usually shorter and plainer.',
+  steps:['Treat model copy as placeholder','Run last, after CUT and TELLS','⟨A⟩ the agent extracts a copy deck (purpose + length per line)','Set one voice','Rewrite every line by hand; keep lines that already work (the tagline survived)','⟨A⟩ owner sign-off on claims (not a fact check); apply verbatim; lock; skim test'],
+  knobs:'every reader-facing line · never spot-check · usually shorter · ⟨A⟩ AI scaffolds, applies and flags only; lock on',
+  guards:['“Make it sound human” is just another sample','The rewrite must be plainer and briefer, not just tell-scrubbed','Mixed voice lowers trust','Ghostwriting: the byline owner approves anecdotes and numbers'],
+  fit:[['UI/product copy',3],['Marketing',3],['Research claims',3],['Workplace comms',3],['Decks',3],['Code strings & PRs',2],['Education',2],['Brand story',2],['Synthetic data',1]],
+  wiring:'The last step of Distill. Never let the AI merge parallel human rewrites. ⟨A⟩ May run as a lane only after CUT has removed copy-bearing elements.',
+  keep:'Copy may decide “tasteful vs slop” · AI copy is lorem ipsum · a human reads EACH line · a consistent voice · the database-tool rewrite was shorter and plainer.',
+  add:'placeholder tag · run-last rule · copy deck · voice attributes · owner sign-off · lock · skim test · ghostwriting rule · no AI merging · lane option',
+  ev:'Russell et al., ACL 2025 (a 5-expert majority vote missed 1/300) · Padmakumar & He (homogenization came from model text) · Purcell 2025 (transactional: no penalty) · Morkes & Nielsen'}
+];
+
+const OPS = [
+ ['A > B','Sequence','A’s output feeds B, with a glue adapter if the types differ.','Discover > Define > Deliver; image gen as a follow-up prompt'],
+ ['A >(port) B','Typed edge','A sequence with the port type named.','Notation only'],
+ ['A ~> B','Relay','B starts from A’s exact end state, so there’s no seam.','Each clip’s final frame seeds the next'],
+ ['xN[ A ]','Replicate','N fresh-context copies, each with its own seed, give an option set. Also a convergence diagnostic.','Plain ×4, “random” ×4, seeded ×4'],
+ ['each[ A ]','Map','Apply A to every option with an identical prompt.','All four seeded designs got the same critic prompt'],
+ ['{ A | B }','Lanes ⟨A⟩','Split by independent concerns, run in parallel, merge. Only when the lanes don’t touch the same elements.','e.g. CUT > { TELLS(visual) | VOICE }'],
+ ['{{ A ‖ B }}','Parallel audit ⟨A⟩','Several auditors read the same input and return annotations only. Nothing is merged.','Used in C6'],
+ ['pick(H,k)','Pick','Close an option set. H = human (article); C = critic and R = rule are ⟨A⟩ variants. Pick before you spend.','“Visualize your favorites”; “land on a promising design”'],
+ ['A[ B ]','Nest','B runs inside A and returns into it.','VISION wraps scatter → brief; RELAY wraps ASSET'],
+ ['@role:tier(ports)','Isolate','A fresh-context call that sees only the listed ports, with the same prompt every time. Tiers: big judges, mid executes.','@critic:big(view): “just the screenshot”'],
+ ['( A )*[gate]','Loop-until','Repeat until the gate passes. Probe 2 · cap 5 total · plateau → best snapshot → human.','Iterate until 9/10'],
+ ['gate[ c ]','Gate ⟨A⟩','A one-shot pass/fail check with no fix step; on fail, follow the else edge.','C5 pre-launch'],
+ ['?H · ?H[ A ]','Human','A pause for human judgment, or a human-judged block.','React to favorites; CUT · TELLS · VOICE'],
+ ['route(c){a|b}','Route','Pick one branch by entry, stack, medium or length.','Seed or vision; three image routes'],
+ ['<< Dk','Backtrack','Re-enter stage k with a new seed or brief. A human decides.','“Throw away the results and try something else”'],
+ ['else ↺ Dk','Retry ⟨A⟩','An automatic, bounded re-run of stage k with the same brief (e.g. once), then a human.','C5 gate'],
+ ['A? · ~~A~~','Optional / sits out','Runs only on its trigger, or deliberately sits out with a reason.','“When the design is pretty plain”']
+];
+const PORTRULES = ['Critics see views, never process (no code, brief or history), unless an exception is declared','The threshold never enters a critic prompt; scores go only to whoever holds it','Seeds and credentials never enter the artifact','Every option set is closed by a pick before Distill and before any RELAY chain','Briefs go to builders, never to critics','Human voice is locked','The tell catalog never enters a generation, regeneration or critic prompt (objective defects may be hard checks)','⟨A⟩ No gate or metric uses an AI-detector score; disclosures and provenance are preserved'];
+const PORTS = ['intent','seed','option_set','taste','brief','artifact','view','refs','critique','score','asset','anchor','tells','voice','cred','failed'];
+const RULES = ['Variety comes from a seed or a human, never “be creative” (article prescription)','Go broad before deep; pick before you spend','Separate judgment from production: isolated judges, views only, frozen prompt','The critic’s independent score decides the stop, against a threshold it never sees','Big model for judgment, capable model for execution','Delegate to specialists; verify in the real render','Distill after Deepen settles: CUT → TELLS → VOICE','Audit after, never ban before; subtract with removal verbs','Humans own the words readers attribute to them','Bank what failed; retest it when new models ship'];
+
+const B=(b,o={})=>Object.assign({k:'b',b},o), G=l=>({k:'g',l}), H=l=>({k:'h',l}), OP=(l,am)=>({k:'op',l,am});
+const C=(k,l,items,extra={})=>Object.assign({k,l,items},extra);
+const CONFIGS = [
+ {id:'c1',code:'C1',name:'Studio',tag:'A distinctive interface, built by agents and finished by a human. The article’s own configuration.',fit:['article','Article’s own'],
+  serves:['AI-built landing pages & sites','MVP / product UI','Prototypes','Deck mode','Brand-system mode'],
+  pain:['22% of 1,590 Show HN sites showed four or more of 16 AI design patterns (Krebs, Apr 2026)','Bans shift the model to the next default; Anthropic’s skill now lists second-order defaults','52.2% of designers cite AI output quality as a blocker (UX Tools 2026)','Agents praise their own mediocre design; a separate evaluator was far more tractable (Anthropic, Mar 2026)'],
+  counter:'Counter-evidence: users prefer simple, prototypical layouts at first impression (Tuch et al.). That is why C1 offers an opt-in structure=conservative knob, untested for conversion.',
+  market:'Unverified estimates: Lovable about $400M ARR, Replit $525M, v0 4M users. Incumbents sell consistency, not distinctiveness. No conversion A/B evidence yet.',
+  outer:null,
+  stages:{D1:[C('route','entry (one per run)',null,{branches:[[B('SEED',{x:'×4',stack:1,note:'shell string → direction → build'})],[B('VISION',{note:'direct: your own ambitious prompt'})],[B('VISION',{note:'system: scatter → ?H react → sharpen → BRIEF'})]]}),OP('pick(H,k)?  “land on a promising design”')],
+          D2:[C('each','each candidate',[C('loop','score ≥ 9, or GREAT ⟨A⟩ ranked 1st (hidden) · probe 2 · cap 5 ⟨A⟩',[G('RENDER'),B('CRITIC',{note:'@critic:big sees the view only'}),G('fix:mid')]),H('?H “plain?”'),B('ASSET',{note:'image gen + shaders/3D · verify frames'})]),H('?H pick 1 · “a unique, standout design”'),B('RELAY',{opt:1,note:'graphic: over page bg → matte · transition: stills → clips → scroll'})],
+          D3:[C('human','human-judged',[{k:'row',sep:'→',items:[B('CUT'),B('TELLS'),B('VOICE',{note:'every line'})]}]),B('CRITIC',{opt:1,am:1,note:'defect checklist only · no score · failures → ?H'})]},
+  bench:[],
+  notation:`D1:: route(entry){ seed: x4[ SEED(shell string) > build:mid ]
+                | vision-direct: ?H ambitious-prompt > xk[ build ]
+                | vision-system: VISION[ scatter > ?H > sharpen > BRIEF ] > xk[ build ]
+                | engine ⟨A⟩: C2 > xk[ build ] } > pick(H,k)?
+D2:: each[ ( RENDER > @critic:big(view, refs?) > fix:mid )*[OK: score≥9 | GREAT ⟨A⟩: ranked 1st of (refs+1) · !hidden · probe=2 · max=5 ⟨A⟩]
+           > ?H "plain?" > ASSET?[ builtin | codex-cli | KEYS ] > RENDER(verify frames) ]
+     > ?H pick(H,1) > RELAY?[ route(effect){ graphic | transition-B0 | transition-B1 } ]
+D3:: ?H[ CUT > TELLS > VOICE ] > CRITIC-check? ⟨A⟩ (defects only; failures → ?H) > ship`,
+  roles:[['SEED','●','4 branches · shell string · color, layout, typography (⟨A⟩ + a structural axis while structure=free)'],['VISION','●','direct prompt or the three-step system'],['CRITIC','●','Fable 5 critic / Opus 5 worker · a screenshot (⟨A⟩ multi-view) · OK or GREAT (4 refs) · gate: OK 9/10 hidden · GREAT ⟨A⟩ ranked 1st, hidden · probe 2'],['ASSET','●','per candidate, when a human calls it “plain”'],['RELAY','○','on the picked design'],['CUT','●','restraint reference · “makes sense, flows well, serves a purpose”'],['TELLS','●','the article’s four-row table + ⟨A⟩ media scan'],['VOICE','●','every reader-facing string']],
+  exc:['Rule 2: the article-faithful default keeps all candidates through Deepen before the firm pick (the article kept 4); the lite profile picks early.','Rule 7: a score-free, defect-only CRITIC-check runs after Distill; its failures go to a human.'],
+  cost:'Article-faithful run (with the ⟨A⟩ cap of 5): about 20 critic calls (4 candidates × 5), about 20 worker turns, 4 × 1–3 image generations, 1 RELAY chain. Expected: the critic is under 10% of output tokens. <b>Lite:</b> ×2 seeds → pick 1 before Deepen → OK mode → cap 3 → no RELAY.',
+  success:['3–5 directions a blind human panel rates clearly different','A held-out evaluator ranks it ≥ the category-exemplar median (never the loop’s own critic)','In a 5-second test, users name the intended feeling','Fewer elements than the first build; real imagery','Every visible line rephrased by the owner'],
+  amend:['structure knob: free by default (article); “conservative” is an opt-in hypothesis, to be tested by A/B','C2 as an optional entry route','Multi-view render; refs up to 10, shuffled; GREAT gate “ours ranked 1st of 5”','Cap 5, plateau, best-snapshot re-rank, human-decided backtrack','Critic calibration before the probe','A final defect-only check after Distill','Not done: feeding catalog hits to the worker inside the automated loop'],
+  modes:'<b>Deck mode:</b> storyline as action titles first; slide images + a titles-only read-through; no RELAY. <b>Brand-system mode ⟨A⟩:</b> enters at Deepen; SEED sits out; the brand system replaces VISION.'},
+ {id:'c2',code:'C2',name:'Divergence Engine',tag:'Widen first, then let a human choose. It ends in a decision and can feed C1, C3 and C5.',fit:['core','Core'],
+  serves:['Strategy options','Product & campaign concepts','Naming territories','Research ideas','Greenfield architecture ⟨A⟩'],
+  pain:['AI-assisted idea sets less diverse in 37 of 45 comparisons (Nature Hum. Behav. 2025)','BCG creative task: about 40% higher quality, 41% less diverse ideas','About 5% of 4,000 LLM research ideas were non-duplicates (ICLR 2025)','Claude Code picked the same top tool per category 76% of the time across rephrasings (Amplifying)'],
+  counter:'Counter-evidence: GPT-4 ideas averaged higher purchase intent than elite students’ ideas (Girotra et al.). The pain is diversity, not quality.',
+  market:'No standalone category. The pain is invisible to individuals, so this ships nested inside other configurations or as a team practice.',
+  outer:null,
+  stages:{D1:[B('SEED',{x:'×8–20',stack:1,note:'own string → low-detail options'}),G('dedupe ⟨A⟩ · one per cluster'),C('audit','annotations only ⟨A⟩ (nothing is cut)',null,{branches:[[G('vanilla ×3 → overlap flag')],[B('CRITIC',{red:1,note:'rank vs prior art, as a note only'})]]}),C('human','the human makes the call',[B('VISION',{note:'react → sharpen 2–3 → BRIEF'}),B('VOICE',{red:1,note:'name + one-line pitch'})]),B('ASSET',{opt:1,note:'rough mood boards'}),OP('OUT → option map + 1–3 briefs → C1 · C3 · C5 · ADR')],
+          D2:[],
+          D3:[]},
+  bench:[['CUT','Wrong stage: dedupe is glue, not CUT'],['TELLS','Wrong stage: the vanilla flag is an annotation'],['RELAY','No media at ideation']],
+  notation:`D1:: xN[ SEED(string; ⟨A⟩ deck) > options:low-detail ]   N = 8–20
+     > dedupe ⟨A⟩ > {{ vanilla-overlap(x3[plain]) ‖ @critic:big(cards, refs) }} ⟨A⟩
+     > ?H VISION[ react > sharpen 2–3 > BRIEF ] > ?H VOICE(name, pitch) > ASSET?(boards)
+OUT:: option map + 1–3 briefs`,
+  roles:[['SEED','●','8–20 branches'],['VISION','●','the human sees the full deduplicated pool'],['CRITIC','◐','annotation only (LLM judges are unreliable on ideas)'],['VOICE','◐','name + pitch'],['ASSET','○','rough boards']],
+  exc:['Rule 4: CRITIC runs once, as an annotation, with no loop. The output is a decision, and the human picks.','Stage placement: VOICE and ASSET run inside Diverge, because C2 is a Diverge-only configuration.'],
+  cost:'N branch calls + 3 vanilla calls + 1 critic annotation. Human time 15–30 min. Re-roll once if fewer than about 60% of N survive dedupe. <b>Lite:</b> N=8, no critic annotation.',
+  success:['Human raters judge the option set at least as spread out as an unaided group’s (embedding score optional, experimental)','Less vanilla overlap in the final shortlist','Different team members reach different shortlists','The team owns the direction'],
+  amend:['dedupe and the vanilla-overlap flag reuse the article’s own ×N diagnostic','Architecture mode only for greenfield decisions where several stacks are equally valid'],modes:''},
+ {id:'c3',code:'C3',name:'Voice Series',tag:'Every piece one-of-a-kind, every piece in your voice, checked across the whole series.',fit:['core','Core'],
+  serves:['Thought leadership','Newsletters & blogs','LinkedIn / social','Ghostwritten exec posts','Brand copy','Unit mode: teaching'],
+  pain:['A majority vote of 5 heavy-LLM-user experts misclassified 1 of 300 articles, even after humanizing (ACL 2025)','Suspected AI content cut trust by nearly 50% (Raptive; an interested party)','87% of B2B marketers report productivity gains, 39% better performance (CMI 2026)','18% of 8,035 expert edits were pure deletions (CHI 2025)'],
+  counter:'Counter-evidence: GPT-4 cross-platform posts were preferred over human posts, mainly on Facebook (Aldous et al.). AI drafting isn’t penalized in itself; the pain is sameness and suspicion.',
+  market:'$660M enterprise marketing AI (Menlo 2025). Generic copy is commoditized. Humanizer demand is mostly evasion, which this configuration does not serve.',
+  outer:'SERIES loop · every 5 pieces, a human portfolio review reads them side by side. Any recurring angle, structure, image or phrase becomes a TELLS entry, and the seed axes rotate ⟨A⟩',
+  stages:{D1:[C('route','entry',null,{branches:[[B('SEED',{x:'×6',stack:1,note:'angle cards, never prose'})],[OP('C2 → angle cards ⟨A⟩')]]}),G('vanilla ×3 → overlap flag ⟨A⟩'),C('human','the thesis comes first',[B('VISION',{note:'from your own experience or data'})])],
+          D2:[G('draft:mid (wording stays placeholder)'),C('loop','top 3 of 10 (hidden) · probe 1 · cap 3',[G('RENDER: feed card / page'),B('CRITIC',{note:'refs = 6 of your best + 3 leaders, bylines stripped · other family ⟨A⟩'}),G('revise')]),B('ASSET',{opt:1,note:'header · chart from real data'})],
+          D3:[C('human','human-judged',[{k:'row',sep:'→',items:[B('CUT'),B('TELLS',{note:'words + structure'}),B('VOICE',{note:'every line'})]}]),OP('publish → next piece')]},
+  bench:[['RELAY','Video repurposing is C5’s job']],
+  notation:`SERIES:: (
+  D1:: route(entry){ x6[ SEED > angle card ] | C2 ⟨A⟩ } > {{ vanilla-overlap }} ⟨A⟩ > ?H VISION(thesis from your own experience)
+  D2:: draft:mid > ( RENDER > @critic:big[other family ⟨A⟩](view, refs) > revise )*[top 3 of 10 !hidden probe=1 max=3]
+       > ASSET?
+  D3:: ?H[ CUT > TELLS(words + structure + platform) > VOICE(every line) ] > publish
+  > every 5 pieces: ?H portfolio review ⟨A⟩ → TELLS entries + rotated seed axes
+)*[until the calendar ends]`,
+  roles:[['SEED','●','angles across the series'],['VISION','●','thesis before the draft'],['CRITIC','●','ranked against your corpus + leaders'],['ASSET','○','real photos often beat generated ones'],['CUT','●',''],['TELLS','●','prose words + structure + platform catalogs'],['VOICE','●','every line; the byline owner approves first-person claims']],
+  exc:[],
+  cost:'Per piece: 6 angle calls + 3 vanilla calls + ≤3 critic calls (10-item rendered lineup). Human time: about 5 min on the thesis, 20–40 min on VOICE (unmeasured). <b>Lite:</b> ×3 seeds, OK-mode critic, cap 2.',
+  success:['Disclosure held constant: blind readers prefer it at least as often as your best pre-AI pieces','The portfolio review finds no recurring angle or structure across the last 5','Shorter than the AI draft','Engagement beats your own baseline'],
+  amend:['Portfolio review across the series (an embedding check is optional, experimental, structure-only)','Different-family critic for prose','Ghostwriting guardrail'],
+  modes:'<b>Unit mode:</b> the series is a teaching unit. Seeds rotate activity formats; VISION is pedagogical; a rubric critic with expert sign-off; TELLS audits template and structure (94% of activities had no multicultural content, and plans followed one general format).'},
+ {id:'c4',code:'C4',name:'Reader-Ready',tag:'The ask in the first two lines, and nothing the reader would miss.',fit:['partial','Partial fit'],
+  serves:['Memos & updates','PRDs & strategy docs','RCAs','Exec summaries','PR descriptions','Outreach templates'],
+  pain:['40% of 1,004 desk workers received “workslop” last month; about 1h51m and $186/employee/month','About half rate senders less capable; 42% less trustworthy','66% rely on AI output without evaluating it (KPMG, n>48,000)','RLHF reward gains are driven largely by length (Singhal et al.)'],
+  counter:'Counter-evidence: in transactional trust games, AI-assisted messages earned equal trust even when disclosed (Purcell et al., iScience 2025), so a light VOICE pass is enough for transactional text.',
+  market:'Horizontal copilots: $7.2B of $8.4B in horizontal spend (Menlo 2025). Nobody sells anti-workslop. The sender’s cost is real but invisible to them, so this must take minutes.',
+  outer:null,
+  stages:{D1:[C('human','1–2 lines',[B('VISION',{red:1,note:'decision · ask · the one point'})])],
+          D2:[G('draft:mid'),C('route','length',null,{branches:[[OP('≤ ~300 words: no critic')],[C('loop','≥ lineup middle · hidden · cap 2',[G('RENDER: doc as opened + reader role'),B('CRITIC',{note:'@recipient: can I act in 2 min?'}),G('revise')])]]})],
+          D3:[C('human','human-judged',[B('CUT',{note:'length budget'}),B('TELLS',{note:'memo catalog'})]),C('human','read every line, rewrite key lines',[B('VOICE',{red:1,note:'bottom line · ask · sign-off'})]),OP('fact-heavy docs: owner signs a claim log (not a fact check)')]},
+  bench:[['SEED','Nest C2 only if the doc proposes options'],['CRITIC','Under ~300 words: a human review is cheaper'],['RELAY','No media']],
+  notation:`D1:: ?H VISION-lite(decision/ask + one point)
+D2:: draft:mid > route(length){ ≤300w: ~~CRITIC~~ | longer: ( RENDER > @recipient:big(view, refs) > revise )*[≥ middle !hidden max=2] }
+D3:: ?H[ CUT > TELLS ] > ?H VOICE-lite (+ claim log for fact-heavy docs)`,
+  roles:[['VISION','◐','one line'],['CRITIC','○','simulated recipient, long docs only'],['ASSET','○','charts computed from real data only'],['CUT','●','human-judged'],['TELLS','●','memo catalog'],['VOICE','◐','owner reads every line, rewrites key lines; everything for relational messages']],
+  exc:['Rule 9: VOICE-lite. The owner reads every line but rewrites only the key lines. Justified for transactional text (Purcell 2025) and by the minutes-long time budget.'],
+  cost:'Under 10 minutes end to end for most documents. <b>Lite:</b> no critic at all.',
+  success:['The ask appears in the first two lines','Shorter than the AI draft','Fewer follow-up questions, measured against your team’s own 4-week baseline','Fewer docs that needed rework or a follow-up before recipients could act'],
+  amend:['Length route','Owner-signed claim log for RCAs and analytical memos (VERIFY still needed)'],modes:''},
+ {id:'c5',code:'C5',name:'Media Relay',tag:'Specialist models are the production medium, and continuity comes from the handoff.',fit:['core','Core'],
+  serves:['Ad creative (static & video)','Campaign assets','Still mode (provisional)','Video mode (provisional)'],
+  pain:['Consumers spot AI ads; memory activation is weaker even at high quality (NielsenIQ, EEG)','82% of ad execs think young consumers like AI ads; 45% do (IAB 2026)','Preference for AI creator content fell from 60% to 26% (Billion Dollar Boy)','Using an LLM as a ghostwriter anchored experts (Chen et al.)'],
+  counter:'Counter-evidence: AI banners got up to 50% higher CTR than stock photography (Hartmann, IJRM 2025), and persuasion-built LLM ads were preferred 59/41 (Meguellati, preprint). The bar is best-in-category; human-written taglines are a hypothesis.',
+  market:'8M+ advertisers had used a Meta generative-AI creative tool by Q1 2026 (company-reported).',
+  outer:'EXTERNAL (not a block): live A/B results may recalibrate the gate over time',
+  stages:{D1:[OP('C2 → territories'),C('human','creative director',[B('VISION',{note:'brief + shot list + style frames'})]),OP('pick(H,1) concept'),H('?H VO script (locked)')],
+          D2:[C('nest','RELAY · the chain is the medium',[{k:'row',sep:'~>',items:[B('ASSET',{note:'anchors · plates'}),G('clip 1'),G('clip 2'),G('clip n')]},G('render in scene → matte'),G('VO from the locked script')]),G('per shot: defect → regenerate (name the defect) · otherwise re-roll the seed')],
+          D3:[C('human','human-judged',[B('CUT',{note:'one message'}),B('TELLS',{note:'stylistic sweep, A/B'})]),C('human','human',[B('VOICE',{note:'tagline · captions · on-screen text'})]),C('gate','one-shot gate (hidden) · else ↺ D2 once, then ?H',[G('RENDER: served size in a feed mock'),B('CRITIC',{note:'vs best-in-category, 2 shuffles averaged'})])]},
+  bench:[],
+  notation:`D1:: C2 > territories > ?H VISION(brief + shot list) > pick(H,1) > ?H VOICE-early(VO script, locked)
+D2:: RELAY[ ASSET(anchors, plates) > each[ scene: clip ~> clip ] > render-in-scene > matte > VO(locked script) ]
+     each[ shot: objective defect → regenerate naming it · otherwise → re-roll seed (never paste tell names) ]
+D3:: ?H[ CUT > TELLS(stylistic, A/B) ] > ?H VOICE(tagline, captions)
+     > RENDER > gate[ @critic:big(view, refs) ≥ median !hidden ] else ↺ D2 (once), then ?H > launch`,
+  roles:[['SEED','●','via C2 territories'],['VISION','●','creative director'],['ASSET','●','anchor frames, plates'],['RELAY','●','chained clips, matting'],['CUT','●','one message'],['TELLS','●','stylistic sweep after the relay'],['CRITIC','●','one-shot pre-launch gate'],['VOICE','●','VO script early; tagline and captions late']],
+  exc:['Rule 7: the VO script is written and locked in Diverge, right after the pick, because the relay generates audio from it. Distill may drop whole VO lines only with the owner’s sign-off.','Rule 7: objective defect checks run per shot in Deepen, and the critic is a one-shot gate after Distill, with one automatic retry. Iteration happens per shot inside the relay.'],
+  cost:'Per shot ≤2 regenerations · chains of 3–4 segments (scenes × segments × up to 3 clip calls, plus matting and one VO render) · the gate is 2 critic calls, then one retry, then a human · human time: brief and pick 30–60 min, plus the VO script and the review. <b>Lite:</b> static placements only, no RELAY.',
+  success:['A creative-director panel judges the concepts distinct','Recall, CTR and preference ≥ human baselines, with required AI labels on the test arm','No objective defects remain'],
+  amend:['Guardrails: consent for any face or voice; licensed or consenting voice-over; AI labels; C2PA re-attached after matting; TELLS never removes disclosure marks','Still and Video modes are provisional; Video needs an evasion screen first'],modes:''},
+ {id:'c6',code:'C6',name:'Sounding Board',tag:'You write it. The blocks only point.',fit:['core','Core (inverted)'],
+  serves:['Cover letters','Proposals & pitches','Grants & RFPs','Application essays','Relational posts'],
+  pain:['After one-click AI proposals launched, customized applications lost their premium; a counterfactual model predicts the top fifth hired 19% less (Galdin & Silbert)','Fit→callback link fell 51%; time spent editing predicted success (Cui et al.)','LLM essays were formulaic even with personas (COLM 2025)','LLM screeners prefer their own resumes 67–82% of the time (Xu et al., v3)'],
+  counter:'Counter-evidence: non-generative writing help raised hires by 8% (Wiles 2023), so clarity edits are fine. The signal is the sender’s own specifics.',
+  market:'Mostly individuals. Platforms embedded one-click proposal tools, and receivers are shifting to work samples and history. Humanizer demand here is evasion, which this configuration never serves.',
+  outer:null,
+  stages:{D1:[C('human','optional',[B('VISION',{opt:1,note:'angles from your own CV, notes, stories'})])],
+          D2:[C('loop','until you decide it’s done',[H('?H you write / revise'),C('audit','parallel audit · annotations only',null,{branches:[[B('CUT',{red:1,note:'marks only'})],[B('TELLS',{red:1,note:'flags formula'})],[B('CRITIC',{note:'rank in a pile + top 3 weaknesses'})]]})])],
+          D3:[B('VOICE',{note:'the whole document is already yours'})]},
+  bench:[['SEED','Distinctiveness comes from true facts, not randomness'],['ASSET','Portfolios go to C1'],['RELAY','Not applicable']],
+  notation:`D1:: VISION?(angles from your own material) > ?H react
+D2:: ( ?H draft/revise > {{ CUT(marks) ‖ TELLS(flags) ‖ @critic:big[family that never touched the draft](view in a pile) }} )*[H]
+D3:: VOICE = the whole document`,
+  roles:[['VISION','○','your own material only'],['CUT','◐','marks only'],['TELLS','◐','flags only'],['CRITIC','●','from a family that never touched the draft'],['VOICE','●','every sentence is yours']],
+  exc:['Rule 4: no hidden threshold; you decide when it’s done.','Rule 7: CUT, TELLS and CRITIC run in parallel as annotation-only auditors in Deepen. They delete nothing, so order doesn’t matter.'],
+  cost:'Each round is one parallel audit (3 calls). <b>Lite:</b> TELLS flags + CUT marks only, no critic. <b>Exemplars:</b> published winning examples or your own past successes, never others’ private documents. With fewer than 4, use OK mode as advisory only.',
+  success:['Verifiable, sender-specific detail','No tells left except deliberate ones','A human reader ranks it in the top quarter of a real pile','You can explain every claim'],
+  amend:['Inverted authorship','Parallel-audit operator'],modes:''},
+ {id:'c6a',code:'C6a',name:'Fiction Sounding Board',tag:'Seeded premises, your prose, critics that only point. A variant of C6 for fiction.',fit:['core','Core (variant of C6)'],
+  serves:['Short stories','Novels & novellas','Serial & flash fiction','Scripts'],
+  pain:['Stories from AI-supplied ideas were rated better but were more alike (Doshi & Hauser, Science Advances 2024)','The sameness came from model-written text, not from what people wrote (Padmakumar & He, ICLR 2024)','Expert edits of LLM prose: awkward word choice 28%, exposition 18%, clichés 17% (CHI 2025)','LLMs are near random at judging prose without references (WQ)'],
+  counter:'Counter-evidence: AI-supplied ideas did help less experienced writers (Doshi & Hauser). C6a keeps the idea step, but seeds it and lets you choose.',
+  market:'Small and hostile to AI provenance (the Authors Guild “Human Authored” certification). Added on request; not a standalone research target.',
+  outer:null,
+  stages:{D1:[C('route','entry',null,{branches:[[B('SEED',{x:'×6',stack:1,note:'premise / form cards, no prose'})],[OP('C2 → cards ⟨A⟩')]]}),G('vanilla ×3 → overlap flag ⟨A⟩'),C('human','you pick',[B('VISION',{note:'sharpen → story brief, for you'})])],
+          D2:[C('loop','until you decide it’s done',[H('?H you write / revise'),C('audit','parallel audit · annotations only',null,{branches:[[B('CUT',{red:1,note:'marks only'})],[B('TELLS',{red:1,note:'fiction flags'})],[B('CRITIC',{note:'rank vs published passages + top 3 weaknesses'})]]})])],
+          D3:[B('VOICE',{note:'the whole text is already yours'})]},
+  bench:[['ASSET','Cover art is a separate job (C5 Still)'],['RELAY','No media']],
+  notation:`D1:: route(entry){ x6[ SEED(string) > premise/form card ] | C2 } > {{ vanilla-overlap(x3[plain]) }} ⟨A⟩
+     > ?H VISION[ react > sharpen > story brief (for you) ]
+D2:: ( ?H you write > {{ CUT(marks) ‖ TELLS(fiction flags) ‖ @critic:big[untouched family](pages, refs = 4+ published passages) }} )*[H]
+D3:: VOICE = the whole text`,
+  roles:[['SEED','●','POV, setting, structure, image, temperature, one constraint'],['VISION','●','you pick and sharpen; the brief is for you'],['CRITIC','●','ranks your pages among published passages'],['CUT','◐','marks only'],['TELLS','◐','fiction catalog: clichés, explained emotion, tidy epiphanies'],['VOICE','●','every sentence is yours']],
+  exc:['The same as C6. Rule 4: no hidden threshold; you decide when it’s done. Rule 7: the auditors run in parallel in Deepen and delete nothing.'],
+  cost:'D1: 6 seed + 3 vanilla calls, then 15–30 min to pick and sharpen. D2: 3 calls per round. <b>Lite:</b> skip D1 if you already have the idea (that is plain C6), and use TELLS flags only.',
+  success:['At least 3 blind beta readers prefer the revision to your first draft','Your chosen direction doesn’t overlap the vanilla runs','Across a collection, no recurring premise, structure, image or stock name','You wrote every sentence; no detector scores'],
+  amend:['Variant of C6: SEED and VISION become central','Fiction tell catalog (from expert-edit categories)','Only published passages as references, never others’ manuscripts','No style imitation of named living authors'],modes:''},
+ {id:'c7',code:'C7',name:'Lean Diff',tag:'Smaller diffs, reviewed blind, with a human-written “why.” Correctness comes from tests outside the blocks.',fit:['adjacent','Adjacent'],
+  serves:['Agent-written code changes','PR text'],
+  pain:['“Almost right” is the top frustration (66%); 3.1% highly trust accuracy (Stack Overflow 2025)','High-adoption teams: PR size +154%, review time +91% (Faros)','64.5% average self-correction blind spot; stronger-model feedback helps (Olausson et al.)','Agent PRs merge 83.8% vs 91.0% for human PRs (Watanabe et al.)'],
+  counter:'Counter-evidence: METR’s redesigned 2026 follow-up suggests experienced developers are now likely faster with AI, unlike its 2025 result.',
+  market:'Coding is $4.0B of $7.3B in departmental AI (Menlo 2025). The blocks are already partly productized; this adds the wiring.',
+  outer:'EXTERNAL (not blocks): tests and CI for correctness · spec-only tests with a mutation bar = the VERIFY candidate',
+  stages:{D1:[B('VISION',{red:1,note:'spec interview, only if vague'}),OP('architecture → C2 (greenfield)')],
+          D2:[G('implement:mid'),G('objective-defect checks: lint · types · placeholders'),B('CUT',{note:'scope cut'}),C('loop','≥ median of 4 exemplar PRs on reviewability (hidden) · probe 1 · cap 3',[G('RENDER: diff + CI status'),B('CRITIC',{note:'reviewability: scope creep, readability, repo fit'}),G('fix')]),B('CUT',{note:'remove review bloat'})],
+          D3:[C('human','human-judged',[B('TELLS',{note:'code-style audit, triage each hit'}),B('VOICE',{red:1,note:'PR why · tradeoffs · how verified'})])]},
+  bench:[['SEED','Convergence on repo conventions is the goal'],['ASSET','No assets'],['RELAY','No media']],
+  notation:`D2:: implement:mid > objective-defect checks > CUT(scope)
+     > ( RENDER(diff + CI status) > @reviewer:big[other family](view, refs = best merged PRs) > fix )*[≥ median of 4 · !hidden · probe=1 · max=3]
+     > CUT(remove review bloat)
+D3:: ?H TELLS(code-style audit) > ?H VOICE(PR why / tradeoffs / how verified)`,
+  roles:[['VISION','◐','spec interview'],['CRITIC','●','reviewability, not correctness'],['CUT','●','both sides of the review loop'],['TELLS','●','code-style audit in Distill'],['VOICE','◐','PR “why”, user-facing strings, API names']],
+  exc:['Port rule 1: for code, the diff is what a reviewer experiences, so it is the render (no transcript, plan or acceptance criteria).','Rule 7: CUT also runs in Deepen, before and after the review loop, because reviews add material.'],
+  cost:'Review loop probe 1 / cap 3, plus 2 CUT passes. Human time about 5–10 min (TELLS audit, PR “why”). Run it selectively: bot review lengthened PR closure from 5h52m to 8h20m in one study. <b>Lite:</b> defect checks + CUT only.',
+  success:['Smaller diffs at the same CI pass rate, against your repo’s own 4-week baseline','Merge rate up','Review time down with no rise in incidents'],
+  amend:['Different-family reviewer','Stylistic code tells moved to a post-loop human audit'],modes:''}
+];
+const RUBRIC = [
+ ['Bylined & brand writing',4,5,5,5,2,5,5,'C3'],['AI-built interfaces (article)',4,5,5,3,3,5,5,'C1'],['Ad creative & campaigns',4,4,4,4,2,4,5,'C5'],['Agent code changes',4,5,4,5,3,2,3,'C7 adjacent'],['Presentation decks',3,4,3,3,3,4,5,'C1 deck'],['Signal-bearing personal docs',4,2,3,5,3,4,3,'C6'],['Option-space exploration',3,2,2,5,3,4,3,'C2'],['Internal docs (workslop)',4,5,2,5,1,2,3,'C4 partial'],['Teaching content',3,4,2,3,1,4,4,'C3 unit']
+];
+const RUBRIC2 = [
+ ['Brand imagery & illustration','23','Provisional: C5 Still mode'],['Creator & brand video','24','Provisional: C5 Video mode; needs an evasion screen'],['E-commerce listings','—','Not yet researched'],
+ ['Deep-research / analyst reports','23','Veto: the pain is accuracy (citations 40–80% accurate). Needs VERIFY'],['SEO at scale','23','Veto: evasion risk'],['Fiction (standalone)','24','Not a standalone research target; now served by the C6a variant (added on request)'],['Cold outreach (standalone)','21','Veto: the real levers sit outside the blocks'],['Platform default quality','—','A channel, not a use case: see More to explore']
+];
+const COUNTER = ['AI posts preferred over human posts on Facebook (Aldous et al.)','Persuasion-built LLM ads preferred 59% vs 41% (Meguellati, preprint)','AI-assisted transactional messages kept trust even when disclosed (Purcell, iScience 2025)','GPT-4 ideas beat students’ on purchase intent (Girotra et al.)','AI banners: up to 50% higher CTR than stock (Hartmann, IJRM 2025)','So success is measured by preference and outcomes with disclosure held constant, never by “not detected”'];
+const GAPS = ['No end-to-end test of any configuration (Evid-fix is low everywhere)','No head-to-head test of up-front bans vs post-hoc audits','External seed strings untested; SSoT tested model-written strings','No A/B test of distinctive vs generic AI pages','Hidden threshold untested; critic reliability for current models unmeasured','No validated portfolio-level diversity metric'];
+const QUESTIONS = [
+ ['Is the output a decision or option set, not an artifact?','c2'],['Is it an agent-written code change where bloat or reviewability is the pain?','c7'],['Are specialist media the production medium (ads, imagery, video)?','c5'],['Is it a rendered visual artifact (page, app, deck)?','c1'],['Is it fiction or other invented-world writing you author yourself?','c6a'],['Is it bylined, brand or teaching content produced as a series?','c3'],['Is it a signal of your own effort or fit (application, proposal, grant, personal letter)?','c6']
+];
+const EXPLORE = [
+ ['Tool-grounded verification','A VERIFY block beside CRITIC','CRITIC judges taste. Code, research and data need a correctness judge: tests, retrieval, citation checks, spec-only tests with a mutation bar.'],
+ ['Verbalized Sampling','A second Diverge diversity block','1.6–2.1× creative diversity from prompting alone, by reshaping the model’s own output distribution rather than interpreting a random string.'],
+ ['Pairwise tournament pick (PairS)','An implementation of pick(C,k)','Efficient ranking of many candidates, better aligned with humans than direct scoring.'],
+ ['Judge panels & length control','CRITIC knobs','Cross-family panels (PoLL) and length control. A panel contradicts single-big-critic tiering, so test it.'],
+ ['Scored critic calibration','A taste-profile input to CRITIC','Few-shot scored exemplars align the critic to your taste.'],
+ ['Up-front skills & soft-steer','A/B against TELLS','Cheap and widely used, but contradicts “don’t ban up front.” Measure it.'],
+ ['Diversity metrics for fan-outs','A gate on xN[SEED]','Replace eyeballing the spread with a number (NoveltyBench, Infinity-Chat).'],
+ ['Harness pruning','BANK’s other half','Re-test whether a block is still needed as models improve.'],
+ ['Platform Guardrail (channel)','A headless platform configuration','Seeds enforced across users’ projects, a learned ranker, a similarity check. The likeliest distribution channel, but built mostly from off-path parts.']
+];
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const stageOf=code=>BLOCKS.find(b=>b.code===code).st;
+const sc=code=>STAGE[stageOf(code)].c;
+
+(function(){
+  const svg=$('#bell'),base=180,amp=140,mu=300,sd=78;
+  const y=x=>base-amp*Math.exp(-0.5*((x-mu)/sd)**2);
+  const path=(a,b,close)=>{let d=`M${a} ${base}`;for(let x=a;x<=b;x+=4)d+=` L${x} ${y(x).toFixed(1)}`;return d+` L${b} ${base}`+(close?' Z':'')};
+  const t=(x,yy,txt,fill,w)=>`<text x="${x}" y="${yy}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="${w?12:11}" ${w?'font-weight="600"':''} fill="${fill}">${txt}</text>`;
+  svg.innerHTML=`<path d="${path(20,150,1)}" fill="var(--d1)" opacity=".18"/><path d="${path(450,580,1)}" fill="var(--d1)" opacity=".18"/>
+   <path d="${path(mu-70,mu+70,1)}" fill="var(--ink-3)" opacity=".22"/><path d="${path(20,580,0)}" fill="none" stroke="var(--ink)" stroke-width="2"/>
+   <line x1="20" y1="${base}" x2="580" y2="${base}" stroke="var(--line-2)"/>
+   ${t(mu,y(mu)-12,'the default (“AI slop”)','var(--ink)',1)}${t(mu,base+22,'every run · every user · every model','var(--ink-3)')}
+   ${t(70,base-44,'distinctive','var(--d1)')}${t(530,base-44,'distinctive','var(--d1)')}${t(70,base+22,'tail','var(--ink-3)')}${t(530,base+22,'tail','var(--ink-3)')}`;
+})();
+
+(function(){
+  const order=['D1','D2','D3'];let html='';
+  order.forEach((s,i)=>{
+    const st=STAGE[s];
+    html+=`<div class="stage" style="--sc:${st.c}"><header><h3>${st.n}</h3><span class="label">${s} · ${st.a}</span></header><p class="mode">${st.m}</p>`;
+    BLOCKS.filter(b=>b.st===s).forEach(b=>{
+      html+=`<a class="module" href="#b-${b.code.toLowerCase()}" style="--sc:${st.c}"><div class="row"><span class="code"><i class="led"></i>${b.code}</span><span class="from">${esc(b.from)}</span></div><div class="nm">${esc(b.name)}</div><p class="ct">${esc(b.ct)}</p><div class="jacks">${b.inP.map(p=>`<span class="jack"><i></i>${esc(p)}</span>`).join('')}${b.outP.map(p=>`<span class="jack out"><i></i>${esc(p)}</span>`).join('')}</div></a>`;
+    });
+    html+=`</div>`;
+    if(i<2)html+=`<div class="cable" aria-hidden="true" style="--c1:${st.c};--c2:${STAGE[order[i+1]].c}"></div>`;
+  });
+  $('#panel').innerHTML=html;
+  $('#cards').innerHTML=BLOCKS.map(b=>`<article class="card" id="b-${b.code.toLowerCase()}" style="--sc:${sc(b.code)}">
+    <h3><span class="code"><i class="led"></i>${b.code}</span>${esc(b.name)}<span class="from">${esc(b.from)} · ${STAGE[b.st].n}</span></h3>
+    <dl>
+      <dt>Counters</dt><dd>${esc(b.ct)}</dd>
+      <dt>Core move</dt><dd>${esc(b.move)}</dd>
+      <dt>Procedure</dt><dd><ol>${b.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol></dd>
+      <dt>Ports</dt><dd><span class="mono">in:</span> ${b.inP.map(esc).join(', ')} · <span class="mono">out:</span> ${b.outP.map(esc).join(', ')}</dd>
+      <dt>Knobs</dt><dd>${esc(b.knobs)}</dd>
+      <dt>Guards</dt><dd><ul>${b.guards.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></dd>
+      <dt>Fit</dt><dd><div class="fit">${b.fit.map(([d,v])=>`<span>${esc(d)}<span class="dots" aria-label="${['','weak','moderate','strong'][v]}">${'●'.repeat(v)}<span class="off">${'●'.repeat(3-v)}</span></span></span>`).join('')}</div></dd>
+      <dt>Wiring</dt><dd>${esc(b.wiring)}</dd>
+      <dt>Evidence</dt><dd>${esc(b.ev)}</dd>
+    </dl>
+    <div class="keep"><b>Keep from the article:</b> ${esc(b.keep)}<br><b style="color:var(--amend)">Additions ⟨A⟩:</b> ${esc(b.add)}</div>
+  </article>`).join('');
+})();
+
+$('#ops').innerHTML=OPS.map(([s,n,m,e])=>`<div class="op"><div class="sym">${esc(s)}</div><h4>${esc(n)}</h4><p>${esc(m)}</p><div class="ex">Grounding: ${esc(e)}</div></div>`).join('');
+$('#portrules').innerHTML=PORTRULES.map(r=>`<li>${esc(r)}</li>`).join('');
+$('#ports').innerHTML=PORTS.map(p=>`<span class="chip">${p}</span>`).join('');
+$('#rules').innerHTML=RULES.map(r=>`<li>${esc(r)}</li>`).join('');
+
+function node(n){
+  if(n.k==='b'){const c=sc(n.b);
+    return `<div class="n-b${n.stack?' stack':''}${n.opt?' opt':''}${n.red?' red':''}" style="--sc:${c}"><span class="c">${n.b}</span>${n.x?`<span class="x">${esc(n.x)}</span>`:''}${n.opt?'<span class="tagr">optional</span>':''}${n.red?'<span class="tagr">reduced</span>':''}${n.am?'<span class="tagr am">⟨A⟩</span>':''}${n.note?`<span class="note">${esc(n.note)}</span>`:''}</div>`;}
+  if(n.k==='g')return `<div class="n-g">${esc(n.l)}</div>`;
+  if(n.k==='h')return `<div class="n-h">${esc(n.l)}</div>`;
+  if(n.k==='op')return `<div class="n-op${n.am?' am':''}">${esc(n.l)}</div>`;
+  if(n.k==='row')return `<div class="row">${n.items.map((it,i)=>(i?`<span class="sep">${esc(n.sep)}</span>`:'')+node(it)).join('')}</div>`;
+  const icon={each:'⫶ map',loop:'↻ loop until',human:'⬡ ?H',nest:'▣',route:'◇ route',lanes:'∥ lanes',audit:'‖',gate:'◆ gate'}[n.k]||'';
+  const body = n.branches ? `<div class="branches">${n.branches.map(br=>`<div class="branch">${br.map(node).join('')}</div>`).join('')}</div>` : n.items.map(node).join('<div class="arrow" aria-hidden="true">↓</div>');
+  return `<div class="ctr ${n.k}"><div class="hd">${icon} <span>${esc(n.l||'')}</span></div>${body}</div>`;
+}
+function wiring(cfg){
+  const st=['D1','D2','D3'].map(s=>{
+    const items=cfg.stages[s]||[];
+    return `<div class="wst${items.length?'':' empty'}" style="--sc:${STAGE[s].c}"><div class="label"><i class="led"></i>${s} · ${STAGE[s].n}</div>${items.map(node).join('<div class="arrow" aria-hidden="true">↓</div>')}</div>`;
+  }).join('');
+  const bench=cfg.bench.length?`<div class="bench"><div class="label">Bench: sits out in this configuration</div>${cfg.bench.map(([b,w])=>`<div class="benched"><b>${b}</b>${esc(w)}</div>`).join('')}</div>`:`<div class="bench"><div class="label">Bench</div><div class="benched">No block sits out; optional blocks run on their trigger.</div></div>`;
+  return `<div class="wire-wrap">${cfg.outer?`<div class="outer">↻ ${esc(cfg.outer)}</div>`:''}<div class="wire">${st}</div>${bench}</div>`;
+}
+function renderCfg(id){
+  const c=CONFIGS.find(x=>x.id===id)||CONFIGS[0];
+  document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.id===c.id?'true':'false'));
+  $('#cfg').innerHTML=`<div class="cfg">
+   <div class="cfg-top"><div><div class="label">${c.code}</div><h3>${esc(c.name)}</h3><div class="tag">${esc(c.tag)}</div></div><span class="badge ${c.fit[0]}">${esc(c.fit[1])}</span></div>
+   <div class="serves">${c.serves.map(s=>`<span>${esc(s)}</span>`).join('')}</div>
+   ${wiring(c)}
+   <div class="notation"><div class="label" style="margin-bottom:6px">Notation</div><pre>${esc(c.notation)}</pre></div>
+   ${c.exc.length?`<div class="exc"><h4>Declared exceptions to the default rules</h4><ul>${c.exc.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:''}
+   <div class="grid-cfg">
+     <div><h4>Pain it addresses</h4><ul>${c.pain.map(p=>`<li>${esc(p)}</li>`).join('')}</ul>${c.counter?`<p class="counter">${esc(c.counter)}</p>`:''}<h4 style="margin-top:14px">Market reality</h4><p style="font-size:.92rem;margin:0">${esc(c.market)}</p></div>
+     <div><h4>Block roles</h4><table class="roles"><thead><tr><th>Block</th><th></th><th>Here</th></tr></thead><tbody>${c.roles.map(([b,g,t])=>`<tr><td style="color:${sc(b)}">${b}</td><td class="g">${g}</td><td>${esc(t)}</td></tr>`).join('')}</tbody></table></div>
+   </div>
+   <div class="grid-cfg">
+     <div><h4>Success, judged outside the loop</h4><ul>${c.success.map(p=>`<li>${esc(p)}</li>`).join('')}</ul><h4 style="margin-top:14px">Cost &amp; lite profile</h4><p class="costline">${c.cost}</p></div>
+     <div><h4>Amendments &amp; guardrails <span style="color:var(--amend)">⟨A⟩</span></h4><ul class="amends">${c.amend.map(p=>`<li>${esc(p)}</li>`).join('')}</ul>${c.modes?`<p style="font-size:.9rem;margin-top:10px">${c.modes}</p>`:''}</div>
+   </div></div>`;
+  try{localStorage.setItem('oc-cfg',c.id)}catch(e){}
+}
+$('#tabs').innerHTML=CONFIGS.map(c=>`<button class="tab" role="tab" id="tab-${c.id}" data-id="${c.id}" aria-controls="cfg"><b>${c.code}</b>${esc(c.name)}</button>`).join('');
+$('#tabs').addEventListener('click',e=>{const t=e.target.closest('.tab');if(t)renderCfg(t.dataset.id)});
+$('#tabs').addEventListener('keydown',e=>{if(!['ArrowRight','ArrowLeft'].includes(e.key))return;const tabs=[...document.querySelectorAll('.tab')];const i=tabs.indexOf(document.activeElement);if(i<0)return;const n=tabs[(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length];n.focus();renderCfg(n.dataset.id)});
+let start='c1';try{const h=location.hash.slice(1);if(/^c([1-7]|6a)$/.test(h))start=h;else{const s=localStorage.getItem('oc-cfg');if(s&&/^c([1-7]|6a)$/.test(s))start=s}}catch(e){}
+renderCfg(start);
+
+(function(){
+  const cols=['SEED','VISION','CRITIC','ASSET','RELAY','CUT','TELLS','VOICE'];
+  const M={c1:'●●●●○●●●',c2:'●●◐○———◐',c3:'●●●○—●●●',c4:'—◐○○—●●◐',c5:'●●●●●●●●',c6:'—○●——◐◐●',c6a:'●●●——◐◐●',c7:'—◐●——●●◐'};
+  let h=`<thead><tr><th>Configuration</th>${cols.map(c=>`<th class="sb" style="--sc:${sc(c)}">${c}</th>`).join('')}</tr></thead><tbody>`;
+  CONFIGS.forEach(c=>{h+=`<tr><td><a href="#configs" data-go="${c.id}"><b class="mono">${c.code}</b> ${esc(c.name)}</a></td>${[...M[c.id]].map((g,i)=>`<td class="cell" style="color:${g==='—'?'var(--line-2)':sc(cols[i])}">${g}</td>`).join('')}</tr>`});
+  $('#mx').innerHTML=h+'</tbody>';
+  $('#mx').addEventListener('click',e=>{const a=e.target.closest('[data-go]');if(a)renderCfg(a.dataset.go)});
+})();
+
+(function(){
+  let h=`<thead><tr><th>Use case</th><th>Pain</th><th>Freq</th><th>Pull</th><th>Evid-pain</th><th>Evid-fix</th><th>Thesis</th><th>Blocks</th><th>Total /35</th><th class="bar-cell"></th><th>Config</th></tr></thead><tbody>`;
+  RUBRIC.forEach(r=>{const v=r.slice(1,8),t=v.reduce((a,b)=>a+b,0);
+    h+=`<tr><td>${esc(r[0])}</td>${v.map((x,i)=>`<td style="${(i===4||i===5)&&x<=2?'color:var(--warn);font-weight:700':''}">${x}</td>`).join('')}<td class="tot">${t}</td><td class="bar-cell"><div class="mini"><i style="width:${(t/35*100).toFixed(0)}%"></i></div></td><td class="cfgc">${esc(r[8])}</td></tr>`});
+  $('#rub').innerHTML=h+'</tbody>';
+  $('#rub2').innerHTML=`<thead><tr><th>Use case</th><th>Total</th><th style="text-align:left">Status / veto</th></tr></thead><tbody>${RUBRIC2.map(([a,b,c])=>`<tr><td>${esc(a)}</td><td class="tot">${b}</td><td class="veto">${esc(c)}</td></tr>`).join('')}</tbody>`;
+  $('#counter').innerHTML=COUNTER.map(g=>`<li>${esc(g)}</li>`).join('');
+  $('#gaps').innerHTML=GAPS.map(g=>`<li>${esc(g)}</li>`).join('');
+})();
+
+(function(){
+  let i=0,trail=[];
+  function show(){
+    if(i>=QUESTIONS.length){result('c4','None of the above, so it’s internal or transactional writing.');return}
+    $('#qcard').innerHTML=`<div class="label">Question ${i+1} of ${QUESTIONS.length}</div><div class="q">${esc(QUESTIONS[i][0])}</div><div class="btns"><button class="btn" id="qy">Yes</button><button class="btn ghost" id="qn">No</button>${i?'<button class="btn ghost" id="qr">Start over</button>':''}</div><div class="trail">${trail.map(t=>esc(t)).join(' → ')}</div>`;
+    $('#qy').onclick=()=>result(QUESTIONS[i][1],QUESTIONS[i][0]);
+    $('#qn').onclick=()=>{trail.push('no');i++;show()};
+    if(i)$('#qr').onclick=reset;
+    $('#qres').innerHTML=`<div class="label">Result</div><h4 style="color:var(--ink-3)">Answer the questions</h4><p style="margin:0;color:var(--ink-2)">The first “yes” picks your configuration. No human per artifact (a platform default)? See the channel candidate under More to explore.</p>`;
+  }
+  function result(id,why){
+    const c=CONFIGS.find(x=>x.id===id);
+    $('#qres').innerHTML=`<div class="label">Your configuration</div><h4>${c.code} · ${esc(c.name)}</h4><p style="margin:0 0 10px">${esc(c.tag)}</p><p style="font-size:.88rem;color:var(--ink-2);margin:0 0 14px">Because: ${esc(why)}</p><div class="btns"><a class="btn" href="#configs" id="qopen" style="text-decoration:none">Open ${c.code}</a><button class="btn ghost" id="qr2">Start over</button></div>`;
+    $('#qopen').onclick=()=>renderCfg(id);
+    $('#qr2').onclick=reset;
+  }
+  function reset(){i=0;trail=[];show()}
+  show();
+})();
+
+$('#exl').innerHTML=EXPLORE.map(([t,b,d],i)=>`<div class="xc"><span class="n">${i+1}</span><h4>${esc(t)}</h4><p>${esc(d)}</p><div class="becomes">→ ${esc(b)}</div></div>`).join('');
+</script>
