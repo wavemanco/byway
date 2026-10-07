@@ -26,6 +26,7 @@ export const c1: Recipe = withHash({
   kind: 'protocol-config',
   family: 'C1',
   channel: 'protocol',
+  medium: 'web-page',
   inputs: ['intent', 'tells'],
   stages: [
     { stage: 'D1', body: replicate('seeded-x4', 4, seedBuild('seed-build', ['intent'], true)) },

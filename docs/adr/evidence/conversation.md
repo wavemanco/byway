@@ -926,3 +926,275 @@ Four decisions shape everything else:
 ---
 ## USER 2026-10-07T16:40:58.417Z
 [ANSWER] The user answered: "Study 1's honest estimate is ~$100k central (range $66–141k), not $24k. How do you want to proceed?"="Focus on code please. Design the study yes but we can price the thing after. I mean I don't understand why you are focusing on non-code hiring stuff. Just record everything and everyone who will be needed in a playbook and file the pricing bit in backlog. This is a coding session. Let's code.", "Which baselines should Study 1 include beyond the article's two (plain and 'random')?"="Focus on code please. Design the study yes but we can price the thing after. I mean I don't understand why you are focusing on non-code hiring stuff. Just record everything and everyone who will be needed in a playbook and file the pricing bit in backlog. This is a coding session. Let's code.", "Do you have, or can you recruit, an academic co-investigator (for the ethics review)?"="Focus on code please. Design the study yes but we can price the thing after. I mean I don't understand why you are focusing on non-code hiring stuff. Just record everything and everyone who will be needed in a playbook and file the pricing bit in backlog. This is a coding session. Let's code.", "There are ~15 technical design choices with clear recommendations (effect-size margin, error control, 72 briefs, expert estimates only, positive control, H1c test, Study 1b decoupled, Apache-2.0/CC-BY, etc.). How do you want to handle them?"="Accept all recommendations (Recommended)". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
+
+---
+## CLAUDE 2026-10-07T16:44:24.103Z
+Now the index update and commit:
+
+---
+## CLAUDE 2026-10-07T16:44:49.121Z
+The playbook, backlog and ADRs are recorded and pushed. Next I'm setting up the code checkout outside OneDrive.
+
+---
+## CLAUDE 2026-10-07T16:46:20.339Z
+I have what I need from the grammar and C1. One more lookup: the study-only exceptions (SM-1 to SM-6) that the validator has to know about.
+
+---
+## USER 2026-10-07T16:47:13.711Z
+[SYSTEM: skill text loaded; not a user message] Base directory for this skill: C:\Users\arvik\.claude\plugins\cache\claude-plugins-official\superpowers\6.4.1\skills\writing-plans
+
+# Writing Plans
+
+## Overview
+
+Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everythi ...[truncated]
+
+---
+## CLAUDE 2026-10-07T16:50:26.200Z
+The spec and plan are written. Now coding, starting with Task 1: the monorepo scaffold and canonical hashing, with tests written first.
+
+---
+## CLAUDE 2026-10-07T16:51:12.418Z
+The tests fail as expected because the module doesn't exist yet. Now the implementation:
+
+---
+## CLAUDE 2026-10-07T16:51:27.461Z
+The failure is in the test, not the code: re-parsing with `JSON.parse` lets JavaScript move the integer-like key `"1"` to the front. I'll check the canonical text directly instead.
+
+---
+## CLAUDE 2026-10-07T16:51:36.025Z
+Task 1: all 17 tests pass and the typecheck is clean. Committing.
+
+---
+## CLAUDE 2026-10-07T16:51:55.395Z
+Task 2: the protocol registry. Tests first:
+
+---
+## CLAUDE 2026-10-07T16:52:16.891Z
+Fails as expected. Now the registry:
+
+---
+## CLAUDE 2026-10-07T16:53:31.324Z
+Task 3: the recipe IR, hashing and tree walking. Tests first:
+
+---
+## CLAUDE 2026-10-07T16:54:37.465Z
+Zod reports the unknown operator at `…body.op`, which is more precise. I'll update the test to expect that path.
+
+---
+## CLAUDE 2026-10-07T16:55:50.441Z
+Task 4 is the validator, the core of this milestone. First, a small builder module in the recipe package so the recipes and test fixtures stay readable:
+
+---
+## CLAUDE 2026-10-07T16:56:35.773Z
+Now the validator tests. The fixture is a compact C1-style recipe that must validate cleanly; each test breaks it in exactly one way:
+
+---
+## CLAUDE 2026-10-07T16:58:03.586Z
+The test file has a stray unused import; fixing that, then writing the validator:
+
+---
+## CLAUDE 2026-10-07T17:01:54.620Z
+Now the clause scopes on each exception:
+
+---
+## CLAUDE 2026-10-07T17:02:07.222Z
+Now tag each finding with its clause:
+
+---
+## CLAUDE 2026-10-07T17:02:49.323Z
+The validator is right: with VOICE moved first, CUT, the TELLS sweep and the TELLS compare are all out of order, so there are three findings. Fixing the expectation:
+
+---
+## CLAUDE 2026-10-07T17:03:58.117Z
+84 tests pass, and the validator is committed with clause-scoped exceptions. Task 5 next: the catalog recipes, the derivation transforms and the conformance suite. First the transforms:
+
+---
+## CLAUDE 2026-10-07T17:04:18.524Z
+Now the catalog itself, starting with the shared step factories:
+
+---
+## CLAUDE 2026-10-07T17:05:36.694Z
+Every catalog recipe validates with exactly the exceptions it cites. The only failure is the drift check, because the recipe files haven't been generated yet. Generating them:
+
+---
+## CLAUDE 2026-10-07T17:05:46.629Z
+151 tests pass. I'll add unit tests for the derivation errors (nothing to remove, or a container left empty), then commit Task 5:
+
+---
+## CLAUDE 2026-10-07T17:06:04.154Z
+I committed with one test failing: my command didn't check the test exit code. Looking at the failure now, and I'll fix it in a follow-up commit.
+
+---
+## CLAUDE 2026-10-07T17:06:10.271Z
+The code is right and the test was built wrong: the extra step sat outside the `each`, so removing the loop really would empty it. Correcting the fixture:
+
+---
+## CLAUDE 2026-10-07T17:06:25.108Z
+156 tests pass. Task 6, the CLI, tests first:
+
+---
+## CLAUDE 2026-10-07T17:07:14.287Z
+Adding a short engine section to the README:
+
+---
+## CLAUDE 2026-10-07T17:08:03.506Z
+Milestone 0 of the engine, the recipe core, is built and pushed to `wavemanco/byway`. The reviewers' pass is still running.
+
+**What it does**
+- **The protocol is now code.** The 16 port types, the 8 blocks, the 29 rules and the 8 exceptions are machine-readable. Each rule is classed as a hard invariant, a hard rule that only a catalogued exception can relax, a default rule, or advisory.
+- **Every Study 1 arm is a hashed recipe file** in `recipes/`, eleven in all: C1, C1-H, the five C1-H ablations, and the four baselines B-Plain, B-Random, B-Skill and B-BoN. C1-H points back to C1's hash, and each ablation points to C1-H's, so the family tree can be checked.
+- **The validator checks recipes against the grammar's rules** and reports every breach by rule ID and location. For example, it catches a critic that can see the code (port rule 1) or an AI judge comparing the TELLS alternatives (port rule 7).
+- **The CLI:** `pnpm byway validate recipes/c1h.json` exits 0 when the recipe passes, 1 when it breaks a rule or someone has edited the file by hand, and 2 when the file is unreadable or malformed.
+
+**How it was checked**
+- 164 tests pass and the typecheck is clean.
+- Every catalog recipe validates using exactly the exceptions it cites. Removing any one of them brings back the violation it was covering.
+- A drift test fails if anyone hand-edits a recipe file.
+
+**Three things you should know**
+- **Building it exposed a real design flaw.** C1's exception to rule 7 exists only to allow the defect check after Distill, but it relaxed the whole rule, so it also hid a reordered CUT → TELLS → VOICE. Exceptions are now limited to specific parts of a rule, and the spec is updated to match.
+- **One commit went in with a failing test.** My command didn't check the test result. The next commit fixed the test, and every commit since only goes in when all tests pass.
+- **The headless arms show one expected warning:** they don't bank failed prompts (default rule 10, advisory only).
+
+`★ Insight ─────────────────────────────────────`
+- **Validated lineage is what makes a study lock credible.** An ablation's identity is its parent's hash plus the transform applied, so a reviewer can check mechanically that "−CRITIC" is C1-H with exactly the critic loop removed and nothing else changed.
+- **Exception scoping is the protocol's own declared-exceptions idea, made exact.** The protocol says configurations may relax a rule "only with a declared exception". The validator now also requires the exception to name *which part* of the rule it relaxes, which closes a loophole a composer or a hurried edit could otherwise slip through.
+`─────────────────────────────────────────────────`
+
+**Next:** fix whatever the reviewers confirm. Then Milestone 1, the model gateway: every model call goes through it, it refuses to spend without an entry in the study registry, and it logs calls in a tamper-evident chain. Its tests use mocked providers, so it needs no API keys.
+
+---
+## USER 2026-10-07T17:18:31.258Z
+[SYSTEM: background workflow finished; not a user message] <task-notification>
+<task-id>whyh2ufse</task-id>
+<tool-use-id>toolu_01Y1ddJarH6CiWM8rgJuRp67</tool-use-id>
+<output-file>C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-OneDrive-Documents-ActAI\67b5b9ac-8595-4cc6-898a-d7d911b9d422\tasks\whyh2ufse.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Adversarial review of engine Milestone 0 (recipe core): correctness, protocol fidelity, robustness; each finding verified" completed</summary>
+<result>{"confirmed":[{"title":"SEED leave-one-out keeps the seed port on the new plain build, which breaks PR3, an invariant","severity":"medium","file":"packages/recipe/src/derive.ts","line":88,"problem":"The SEED bypass turns each role:'seed' step into `{ ...s, role: 'build', prompt: PLAIN_BUILD_PROMPT }` and leaves `consumes` as it was. 02-grammar §3 wires the `seed` port to 'SEED's mapping step only', so a seed step that follows the grammar consumes `seed`. After the bypass, a build step consumes `seed`, and PR3 (only seed steps consume seed) fires. PR3 is an invariant that no exception can relax, so for these sources the derived ablation can never validate. The spec says the bypassed step becomes 'a plain build f ...[truncated]
+
+---
+## CLAUDE 2026-10-07T17:20:29.970Z
+Now the registry: tighter exception scopes and the new clauses.
+
+---
+## CLAUDE 2026-10-07T17:20:54.438Z
+Now the recipe package: forbidden prototype keys in knobs, and the three derivation fixes.
+
+---
+## CLAUDE 2026-10-07T17:21:24.626Z
+Zod drops an own `__proto__` key before the key check can see it, which is exactly the problem the reviewer described. So `parseRecipe` needs to scan the raw input itself first:
+
+---
+## CLAUDE 2026-10-07T17:22:31.087Z
+Next, one shared walker that follows control flow (forking at routes and optionals, running loop bodies twice), so the rules about what comes after what see every path:
+
+---
+## CLAUDE 2026-10-07T17:23:24.985Z
+A cleanup in DR4: walk the loop body directly instead of building a fake recipe.
+
+---
+## CLAUDE 2026-10-07T17:23:36.833Z
+Now the resolver: own-key exception lookup, duplicate citations, derivation claims checked against kind, hashing that can't throw, and stable ordering.
+
+---
+## CLAUDE 2026-10-07T17:24:03.452Z
+Many tests fail together, which points to one shared cause. Checking what the base fixture now reports:
+
+---
+## CLAUDE 2026-10-07T17:24:15.237Z
+The new rule 7.1 check is working: the fixture's own TELLS sweep wasn't isolated. Making the fixture, and the catalog's sweep factory, isolated:
+
+---
+## CLAUDE 2026-10-07T17:24:25.915Z
+All 45 existing validator tests pass. Now a regression test for each reviewer finding:
+
+---
+## CLAUDE 2026-10-07T17:25:09.262Z
+All 24 regression tests pass. Now the catalog fixes that bring the hashed Study 1 arms in line with the study protocol:
+
+---
+## CLAUDE 2026-10-07T17:25:43.118Z
+Now B-BoN as the study defines it: per slot, N plain builds and one selector call that picks one, using the A.14 prompt.
+
+---
+## CLAUDE 2026-10-07T17:25:53.870Z
+Updating the conformance tests to pin the corrected arms:
+
+---
+## CLAUDE 2026-10-07T17:26:15.340Z
+One CLI test still expects C1-H's old exception list. Fixing that, then the CLI hardening:
+
+---
+## CLAUDE 2026-10-07T17:26:29.061Z
+Simplifying the string scanner, and turning invalid UTF-8 into a clean input error:
+
+---
+## CLAUDE 2026-10-07T17:26:56.220Z
+CLI tests for each robustness finding:
+
+---
+## CLAUDE 2026-10-07T17:27:22.229Z
+198 tests pass, typecheck is clean, and the CLI validates the corrected arms. Updating the spec to match the reviewed behaviour, and logging what Study 1 protocol v1.2 must change:
+
+---
+## CLAUDE 2026-10-07T17:28:22.473Z
+All 14 confirmed findings and all 17 low-severity notes are fixed. Each has a regression test, and the fixes are pushed to `wavemanco/byway`. Milestone 0, the recipe core, is done: 198 tests pass and the typecheck is clean.
+
+**What the review caught that mattered most:** the hashed Study 1 recipes didn't match the study protocol. If those hashes had been locked, the paper would have described arms that weren't the ones pre-registered. Now:
+- **C1-H** no longer runs the final defect check. The study drops it because it needs a human to route failures, so C1-H also no longer cites C1's exception for it.
+- **The C1-H critic** sees one desktop render and runs the prompt the worker writes, as the study specifies, instead of a project template.
+- **The C1-H D3 stand-ins** (CUT, TELLS) use the study's Appendix A prompts.
+- **The TELLS sweep** runs in its own fresh context, so the tell catalog never reaches the worker.
+- **B-BoN** is now what the study defines: for each of the 4 slots, N plain builds and one selector call that picks one. N stays a placeholder until the pilot sets it.
+
+**Validator holes closed:**
+- C1's rule-7 exception now covers only a defect check that gives no score. A scoring critic after Distill is now reported.
+- Rules about what may happen on some path now check every path. A write after an optional VOICE step, or an option set left open by one route branch, is now caught.
+- The fixed copy deck no longer hides a model writing over a human VOICE step's copy.
+- A brief written by a model no longer counts as human direction.
+- Odd inputs give clean errors instead of crashes: exception IDs like `toString`, files with a byte-order mark or in UTF-16, repeated keys, very deep nesting, and launching the tool through a symlink.
+
+**One thing for the study protocol.** The study's exception table under-declares what the CRITIC-self arm relaxes: it breaks three more default rules than the table lists. The engine now declares all of them. I've logged this, plus two related clarifications, under "Study 1 protocol v1.2 edits" in the [backlog](backlog.md).
+
+`★ Insight ─────────────────────────────────────`
+- **A single walk can't check rules about what comes after something.** The validator's first scope tracked only what is guaranteed on every path. That suits "is this input available?" but not "could human copy already exist here?". The second kind of question needs a walk that follows every branch and runs loop bodies twice, so the review's fixes added that walk alongside the original one.
+- **The review earned its cost on fidelity, not on bugs.** The test suite only proved the recipes were internally consistent. Comparing them against the study protocol was a separate job, and that comparison is what makes a locked hash honest.
+`─────────────────────────────────────────────────`
+
+**Next is Milestone 1, the model gateway.** Every model call will go through it. It will refuse to spend without an entry in the study registry, cap spend per arm and per study, and log calls in a tamper-evident chain. Its tests use mocked providers, so it needs no API keys. Unless you'd rather put something else first, such as the rater app or the product track, I'll write its spec and start building it.
+
+---
+## USER 2026-10-07T17:48:15.314Z
+<!-- reply 1 -->
+> or the product track
+
+go with the product track. complete it first. use subagents with dedicated worktrees if needed.
+
+
+/goal complete the product track
+
+---
+## CLAUDE 2026-10-07T17:50:31.686Z
+Going with the product track: building it to completion, with parallel subagents in their own worktrees.
+
+**One decision first, made under the "code first" authority you gave me and recorded as a reversible ADR.** You haven't fixed the product's form yet. Product v1 will be a **local-first web app**: you describe a problem, it recommends a configuration or composes one, and you run it end to end with your checkpoints built into the flow. It runs on the shared engine. That matches your original brief ("great user interface… with proper backend… Apple-grade"). Other channels, such as a Claude Code skill, an MCP server or a hosted multi-user version, can come later on the same engine. Say so now if you'd rather start with one of those instead.
+
+Checking the toolchain the product needs before I write the contracts:
+
+---
+## CLAUDE 2026-10-07T17:55:32.874Z
+Now the recipe field, set to `web-page` on the existing C1-family and baseline recipes:
+
+---
+## CLAUDE 2026-10-07T17:55:48.820Z
+Parameter properties aren't allowed under `erasableSyntaxOnly` (so the code can run with Node's native type stripping). Rewriting `GatewayError` with explicit fields:
+
+---
+## CLAUDE 2026-10-07T17:56:29.415Z
+Next is the product spec. The parallel workers will build from it, so each work package has to be self-contained.
+
+---
+## CLAUDE 2026-10-07T17:57:32.474Z
+Recording the delegated decisions as ADRs:

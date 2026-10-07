@@ -5,6 +5,7 @@
   "kind": "protocol-config",
   "family": "C1",
   "channel": "protocol",
+  "medium": "web-page",
   "inputs": [
     "intent",
     "tells"
@@ -370,5 +371,5 @@
     "C1-DR7"
   ],
   "bank": true,
-  "hash": "sha256:87ae49e3924e7735d99bd5a27a0eda33951f22212e1c1fff6137e466078f4e6b"
+  "hash": "sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577"
 }

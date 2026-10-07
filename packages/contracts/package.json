@@ -1,0 +1,14 @@
+{
+  "name": "@byway/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared interfaces between the engine packages and the product app (contracts-first, ADR-0068)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@byway/protocol": "workspace:*",
+    "@byway/recipe": "workspace:*"
+  }
+}

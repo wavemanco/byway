@@ -18,3 +18,10 @@ __pycache__/
 # Build output
 dist/
 coverage/
+
+# Parallel work trees (product track)
+.worktrees/
+
+# Local product data and secrets
+.byway-data/
+.next/

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BLOCK_CODES, GLUE_CODES, PORT_TYPES, type BlockCode, type Channel, type GlueCode, type PortType, type RecipeKind } from '@byway/protocol';
+import { BLOCK_CODES, GLUE_CODES, MEDIA, PORT_TYPES, type BlockCode, type Channel, type GlueCode, type Medium, type PortType, type RecipeKind } from '@byway/protocol';
 
 export const RECIPE_SCHEMA_ID = 'byway.recipe/1';
 
@@ -66,6 +66,8 @@ export interface Recipe {
   /** Configuration family, e.g. "C1"; "baseline" for baselines. Exceptions can be limited to a family. */
   family: string;
   channel: Channel;
+  /** What the configuration produces (artifact format, how judges see it). */
+  medium?: Medium;
   parent?: { hash: string; derivation: Derivation };
   inputs: PortType[];
   stages: Stage[];
@@ -158,6 +160,7 @@ export const RecipeSchema: z.ZodType<Recipe> = z.strictObject({
   kind: z.enum(['protocol-config', 'variant', 'ablation', 'baseline', 'composed', 'experimental']),
   family: z.string().min(1),
   channel: z.enum(['protocol', 'research-frozen', 'product', 'workspace']),
+  medium: z.enum(MEDIA).optional(),
   parent: z
     .strictObject({
       hash: HashString,

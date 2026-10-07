@@ -5,67 +5,67 @@
       "id": "c1",
       "kind": "protocol-config",
       "channel": "protocol",
-      "hash": "sha256:87ae49e3924e7735d99bd5a27a0eda33951f22212e1c1fff6137e466078f4e6b"
+      "hash": "sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577"
     },
     {
       "id": "c1h",
       "kind": "variant",
       "channel": "research-frozen",
-      "hash": "sha256:2a40fa68ecdc82726425332d75c314435dd8112b2bdf6a9e956acee70ff2cf36"
+      "hash": "sha256:d2cf85ec155280772a12f4efa17e3db0dc3bee3835a7dd5a7840e35592b35e1a"
     },
     {
       "id": "c1h-no-seed",
       "kind": "ablation",
       "channel": "research-frozen",
-      "hash": "sha256:f9874ce424518caaac3ff1143ea8eb901968028f172e7fc1a2a1a82e4405c4a7"
+      "hash": "sha256:7f85f2140b637e28e9c457c3aac227c8be5687a7a1d67c9361ee47569c8485a6"
     },
     {
       "id": "c1h-no-critic",
       "kind": "ablation",
       "channel": "research-frozen",
-      "hash": "sha256:299421b351e9b035ee77cd19ebf5ba172eb94e0427855027c3e651ba8b51b567"
+      "hash": "sha256:bf5b4e6cdbf196c10b4a00d80a422dc04482b4fd9aa405118984ba297b09eb52"
     },
     {
       "id": "c1h-no-asset",
       "kind": "ablation",
       "channel": "research-frozen",
-      "hash": "sha256:21268a57a5a5f0f5590efd81cd7281af18aa19a531205394ef195b0e853c2f26"
+      "hash": "sha256:999023ea342f7b0cde107d4cdf39de68c2d30f55b37af45648c7fe1cd45bb69d"
     },
     {
       "id": "c1h-no-d3",
       "kind": "ablation",
       "channel": "research-frozen",
-      "hash": "sha256:25e19fd0d1cce76ea4021f5e7f22d834fbe83bbdab5da2d0728d9df35f32e00c"
+      "hash": "sha256:ca9d62d4a264f2e32cd9f1780b72006182bdd3a26bdae4cb857bafad0d8a6ea5"
     },
     {
       "id": "c1h-critic-self",
       "kind": "ablation",
       "channel": "research-frozen",
-      "hash": "sha256:54dd6b1683d81c507922e1676efd41cf23ad29a318f40e29a9a45e2adcc3aeb4"
+      "hash": "sha256:116871b9e8563e353072e2addd1b31b7fbacad09ca38549e6da1fdb8f7c84cc2"
     },
     {
       "id": "b-plain",
       "kind": "baseline",
       "channel": "research-frozen",
-      "hash": "sha256:9a92895d25a30994a6eb12ef29ddd26331d7e657834d98af3b9fb206044811c4"
+      "hash": "sha256:715cfe230315eb9255e306084d644e0edb42430151cfb7a9e9ca9c94846154ba"
     },
     {
       "id": "b-random",
       "kind": "baseline",
       "channel": "research-frozen",
-      "hash": "sha256:584aa08cca018670816a13c9f04566c268d4264437084f87c67f6f20dc6fe23b"
+      "hash": "sha256:63b413291ebf8d9168109c8043dd582086b1c958696c702ee758a165eda97306"
     },
     {
       "id": "b-skill",
       "kind": "baseline",
       "channel": "research-frozen",
-      "hash": "sha256:767d0f7179cdcdc3bfc211e19bc4140b5004934464c63d88cdcf730aa0242fb1"
+      "hash": "sha256:c2ef1ad6f413e9fe1909bd4c2ac051c64d752eb9c6b6f3c36892c38a75464b7a"
     },
     {
       "id": "b-bon",
       "kind": "baseline",
       "channel": "research-frozen",
-      "hash": "sha256:8a32cfe55bf6cfabf307fdf21684353d6abea8c67cb14ae53acc370963a2a64d"
+      "hash": "sha256:df007ffa06720c9c542e6624a99f31f4d2a9755d419a69e4b406d2138b9e1f62"
     }
   ]
 }

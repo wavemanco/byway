@@ -5,8 +5,9 @@
   "kind": "ablation",
   "family": "C1",
   "channel": "research-frozen",
+  "medium": "web-page",
   "parent": {
-    "hash": "sha256:2a40fa68ecdc82726425332d75c314435dd8112b2bdf6a9e956acee70ff2cf36",
+    "hash": "sha256:d2cf85ec155280772a12f4efa17e3db0dc3bee3835a7dd5a7840e35592b35e1a",
     "derivation": {
       "transform": "critique-self",
       "version": 1
@@ -334,5 +335,5 @@
     "SM-5"
   ],
   "bank": false,
-  "hash": "sha256:54dd6b1683d81c507922e1676efd41cf23ad29a318f40e29a9a45e2adcc3aeb4"
+  "hash": "sha256:116871b9e8563e353072e2addd1b31b7fbacad09ca38549e6da1fdb8f7c84cc2"
 }

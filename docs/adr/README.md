@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**63 records:** 56 accepted (15 of them by continuation, awaiting ratification; 1 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**68 records:** 61 accepted (15 of them by continuation, awaiting ratification; 6 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -37,6 +37,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0057](0057-tamper-evident-record-and-disclosure.md) | Charter CR14: tamper-evident record and full disclosure | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0060](0060-repository-byway-private-remote.md) | Version control: git repository named byway, private GitHub remote (wavemanco/byway) | Accepted | User | 2026-10-07 06:35 |
 | [ADR-0062](0062-code-first-work-mode.md) | Code first: people, outside actions and pricing go to a playbook and a backlog | Accepted | User | 2026-10-07 09:40 |
+| [ADR-0068](0068-contracts-first-parallel-build.md) | Build the product contracts-first, in parallel git worktrees | Accepted | Delegated | 2026-10-07 10:48 |
 
 ## Protocol
 
@@ -87,6 +88,8 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0056](0056-open-source-study-engine.md) | Charter CR13: open-source the study engine (OSI) by the end of confirmatory data collection | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0059](0059-engine-requirements-for-composition-and-credibility.md) | Engine requirements for composition and credibility, built into the spine before the pilot | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0063](0063-code-workspace-outside-onedrive.md) | The code checkout lives outside OneDrive, at C:\Users\arvik\code\byway | Accepted | Delegated | 2026-10-07 09:45 |
+| [ADR-0066](0066-product-persistence-sqlite-cas.md) | Product persistence: node:sqlite records and content-addressed artifact files outside the repo | Accepted | Delegated | 2026-10-07 10:48 |
+| [ADR-0067](0067-product-c1-direct-html-builder.md) | In the product, C1 builds single-file HTML pages by direct model generation and renders them with Playwright | Accepted | Delegated | 2026-10-07 10:48 |
 
 ## Product & program
 
@@ -98,6 +101,8 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0041](0041-shared-engine-pinned-research-versions.md) | One engine for research and product: studies pin frozen engine and recipe versions, the product evolves on newer ones, and human checkpoints bind per study | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0042](0042-product-north-star-recommend-or-compose.md) | Product north star: a user brings a problem; the product recommends a configuration or composes one | Accepted (direction) | User | 2026-10-07 00:31 |
 | [ADR-0058](0058-design-time-composition-only.md) | Design-time composition through the validator only; composed recipes labelled Composed; runtime rewiring parked | Accepted | User-approved | 2026-10-07 06:35 |
+| [ADR-0064](0064-product-v1-local-first-web-app.md) | Product v1 is a local-first web app on the shared engine | Accepted | Delegated | 2026-10-07 10:48 |
+| [ADR-0065](0065-product-v1-scope.md) | Product v1 scope: all eight configurations, recommender, composer, computed labels, demo mode | Accepted | Delegated | 2026-10-07 10:48 |
 
 ## Open decisions (not yet ADRs)
 

@@ -1,0 +1,42 @@
+/**
+ * The runner (implemented by @byway/runner): a durable Temporal interpreter that executes recipe files (ADR-0029).
+ * The product app is a Temporal client; the worker runs activities that call the gateway, render views and store artifacts.
+ */
+import type { Recipe } from '@byway/recipe';
+import type { ProblemBrief } from './advisor.ts';
+import type { CheckpointRecord, CheckpointResolution, RunEvent, RunRecord } from './store.ts';
+
+export interface StartRunInput {
+  workspaceId: string;
+  recipe: Recipe;
+  problem: ProblemBrief;
+  profileId: string;
+  /** Per-run spend cap in USD; the gateway refuses calls beyond it. */
+  budgetUsd: number;
+  /**
+   * Route choices made up front, by route node id (e.g. { entry: 'seed' }). Routes without a choice open a
+   * 'choose' checkpoint when reached.
+   */
+  routes?: Record<string, string>;
+  /** User-supplied inputs for ports the recipe declares as inputs (e.g. refs, a fixed copy deck, a draft). */
+  inputs?: { refs?: string[]; voice?: string; draft?: string; tells?: string };
+}
+
+export interface RunView {
+  run: RunRecord;
+  events: RunEvent[];
+  checkpoints: CheckpointRecord[];
+}
+
+export interface Runner {
+  start(input: StartRunInput): Promise<RunRecord>;
+  resolve(resolution: CheckpointResolution): Promise<void>;
+  cancel(runId: string): Promise<void>;
+  view(runId: string, afterSeq?: number): Promise<RunView>;
+}
+
+/** Temporal coordinates shared by the worker and clients. */
+export const TASK_QUEUE = 'byway-runs';
+export const RESOLVE_UPDATE = 'resolveCheckpoint';
+export const CANCEL_SIGNAL = 'cancelRun';
+export const DEFAULT_TEMPORAL_ADDRESS = '127.0.0.1:7233';

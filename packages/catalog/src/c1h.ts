@@ -26,6 +26,7 @@ export const c1h: Recipe = withHash({
   kind: 'variant',
   family: 'C1',
   channel: 'research-frozen',
+  medium: 'web-page',
   parent: { hash: c1.hash!, derivation: { transform: 'binding', version: 1, map: 'S1-BIND' } },
   inputs: ['intent', 'voice', 'tells'],
   stages: [

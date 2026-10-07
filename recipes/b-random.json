@@ -5,6 +5,7 @@
   "kind": "baseline",
   "family": "baseline",
   "channel": "research-frozen",
+  "medium": "web-page",
   "inputs": [
     "intent",
     "voice"
@@ -40,5 +41,5 @@
     "SM-6"
   ],
   "bank": false,
-  "hash": "sha256:584aa08cca018670816a13c9f04566c268d4264437084f87c67f6f20dc6fe23b"
+  "hash": "sha256:63b413291ebf8d9168109c8043dd582086b1c958696c702ee758a165eda97306"
 }

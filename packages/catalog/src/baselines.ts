@@ -9,6 +9,7 @@ function baseline(id: string, title: string, body: Node): Recipe {
     kind: 'baseline',
     family: 'baseline',
     channel: 'research-frozen',
+    medium: 'web-page',
     inputs: ['intent', 'voice'],
     stages: [{ stage: 'D1', body }],
     sitsOut: [],
