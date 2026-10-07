@@ -1,0 +1,14 @@
+{
+  "name": "@byway/store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Product persistence: node:sqlite records and content-addressed artifact files in the product data directory",
+  "exports": {
+    ".": "./src/index.ts",
+    "./resolution": "./src/resolution.ts"
+  },
+  "dependencies": {
+    "@byway/contracts": "workspace:*"
+  }
+}
