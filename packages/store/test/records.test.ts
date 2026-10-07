@@ -106,6 +106,14 @@ describe('runs', () => {
     await expect(store.updateRun(run.id, { costUsd: -0.01 })).rejects.toThrow(/cost/);
   });
 
+  it('refuses to change fields that are not updatable (instead of ignoring them)', async () => {
+    const store = openStore();
+    const run = await seedRun(store);
+    await expect(store.updateRun(run.id, { problem: 'rewritten' } as never)).rejects.toThrow(/may only change status, outputArtifactId, error, costUsd, title; got problem/);
+    await expect(store.updateWorkspace(run.workspaceId, { id: 'other' } as never)).rejects.toMatchObject({ code: 'invalid' });
+    expect(await store.getRun(run.id)).toEqual(run);
+  });
+
   it('lists runs of a workspace newest first, with an optional limit', async () => {
     const store = openStore({ now: steppingClock() });
     for (const id of ['r1', 'r2', 'r3']) await seedRun(store, id);
