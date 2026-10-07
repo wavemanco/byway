@@ -1,5 +1,6 @@
 import { recipeHash } from './hash.ts';
 import type { Node, Recipe, Step } from './schema.ts';
+import { children } from './walk.ts';
 
 export type LeaveOneOutTarget = 'SEED' | 'CRITIC' | 'ASSET' | 'D3';
 
@@ -35,6 +36,8 @@ function rewrite(node: Node, drop: (n: Node) => boolean, mapStep: (s: Step) => S
     case 'replicate':
     case 'each':
     case 'loop':
+    case 'gate':
+    case 'relay':
       return { ...node, body: need(rewrite(node.body, drop, mapStep, where), `${node.op} "${node.id}"`) };
     case 'optional': {
       const body = rewrite(node.body, drop, mapStep, where);
@@ -45,24 +48,23 @@ function rewrite(node: Node, drop: (n: Node) => boolean, mapStep: (s: Step) => S
         ...node,
         branches: node.branches.map((b) => ({ ...b, body: need(rewrite(b.body, drop, mapStep, where), `route branch "${b.name}"`) })),
       };
+    case 'audit': {
+      // A lens left empty is dropped, and an audit left with no lens is dropped with it.
+      const lenses = node.lenses.flatMap((l) => {
+        const body = rewrite(l.body, drop, mapStep, where);
+        return body ? [{ ...l, body }] : [];
+      });
+      return lenses.length ? { ...node, lenses } : undefined;
+    }
     case 'pick':
       return node.judge ? { ...node, judge: mapStep(node.judge) } : node;
   }
 }
 
 function containsCritic(node: Node): boolean {
-  switch (node.op) {
-    case 'step':
-      return node.role === 'critic';
-    case 'seq':
-      return node.steps.some(containsCritic);
-    case 'route':
-      return node.branches.some((b) => containsCritic(b.body));
-    case 'pick':
-      return false;
-    default:
-      return containsCritic(node.body);
-  }
+  if (node.op === 'step') return node.role === 'critic';
+  if (node.op === 'pick') return false;
+  return children(node).some(containsCritic);
 }
 
 function rewriteStages(recipe: Recipe, drop: (n: Node) => boolean, mapStep: (s: Step) => Step, where: string): Recipe['stages'] {
@@ -94,7 +96,8 @@ export function leaveOneOut(source: Recipe, target: LeaveOneOutTarget): Recipe {
       }, 'SEED bypass');
       break;
     case 'CRITIC':
-      stages = rewriteStages(recipe, (n) => n.op === 'loop' && containsCritic(n.body), same, 'CRITIC bypass');
+      // A critic loop, or a one-shot critic gate, is replaced by nothing: the artifact passes through.
+      stages = rewriteStages(recipe, (n) => (n.op === 'loop' || n.op === 'gate') && containsCritic(n.body), same, 'CRITIC bypass');
       break;
     case 'ASSET':
       stages = rewriteStages(recipe, (n) => n.op === 'step' && n.block === 'ASSET', same, 'ASSET bypass');
@@ -114,9 +117,7 @@ export function leaveOneOut(source: Recipe, target: LeaveOneOutTarget): Recipe {
     if (d3) {
       const collect = (n: Node): void => {
         if (n.op === 'step' && n.block && ['CUT', 'TELLS', 'VOICE'].includes(n.block)) removed.add(n.block);
-        if (n.op === 'seq') n.steps.forEach(collect);
-        else if (n.op === 'route') n.branches.forEach((b) => collect(b.body));
-        else if (n.op !== 'step' && n.op !== 'pick') collect(n.body);
+        if (n.op !== 'pick') children(n).forEach(collect);
       };
       collect(d3.body);
     }

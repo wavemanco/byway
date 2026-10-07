@@ -27,6 +27,28 @@ const ALL_CHANNELS: Channel[] = ['protocol', 'research-frozen', 'product', 'work
 const STUDY_KINDS: RecipeKind[] = ['variant', 'ablation', 'baseline'];
 /** Study 1 manipulations are legal only for the Study 1 arms (the C1 family and the baselines) until lock binding exists. */
 const STUDY1_FAMILIES = ['C1', 'baseline'];
+/** Kinds that may cite a protocol-declared exception: the configuration itself and what derives from or composes it. */
+const DECLARED_KINDS: RecipeKind[] = ['protocol-config', 'variant', 'ablation', 'composed'];
+
+/**
+ * A row of 03's "Ordering principle and declared exceptions" table, as a clause-scoped entry limited to its own
+ * family (the id's prefix), so it relaxes exactly what 03 says for that configuration and nothing else.
+ */
+function declared(id: string, rule: RuleId, clauses: string[], source: string): Record<string, ExceptionDef> {
+  const family = id.slice(0, id.lastIndexOf('-'));
+  return {
+    [id]: {
+      id,
+      relaxes: [rule],
+      clauses: { [rule]: clauses },
+      scope: 'protocol-declared',
+      kinds: DECLARED_KINDS,
+      channels: ALL_CHANNELS,
+      families: [family],
+      source,
+    },
+  };
+}
 
 export const EXCEPTIONS: Record<string, ExceptionDef> = {
   'C1-DR2': {
@@ -48,6 +70,21 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
     families: ['C1'],
     source: '03 ordering principle: a score-free, defect-only CRITIC-check runs after D3',
   },
+  ...declared('C2-DR4', 'DR4', ['annotation'], '03 ordering principle (C2, rule 4): the critic runs once, as an annotation; the human picks'),
+  ...declared('C2-DR7', 'DR7', ['voice-stage'], '03 ordering principle (C2, stage placement): VOICE runs inside D1; C2 is D1-only'),
+  ...declared('C4-DR9', 'DR9', ['key-lines'], '03 ordering principle (C4, rule 9): VOICE-lite, the owner reads every line and rewrites the key lines'),
+  ...declared(
+    'C5-DR7',
+    'DR7',
+    ['voice-stage', 'gate-after'],
+    '03 ordering principle (C5, rule 7): the VO script is written and locked in D1; the critic is a one-shot gate after D3',
+  ),
+  ...declared('C6-DR4', 'DR4', ['human-stop'], '03 ordering principle (C6, rule 4): no hidden threshold, the human decides when it is done'),
+  ...declared('C6-DR7', 'DR7', ['audit'], '03 ordering principle (C6, rule 7): CUT, TELLS and CRITIC run as parallel annotation-only auditors in D2'),
+  ...declared('C6a-DR4', 'DR4', ['human-stop'], '03 ordering principle (C6a, rule 4): the same as C6'),
+  ...declared('C6a-DR7', 'DR7', ['audit'], '03 ordering principle (C6a, rule 7): the same as C6, and the optional final TELLS read is flags only'),
+  ...declared('C7-PR1', 'PR1', ['code-view'], '03 ordering principle (C7, port rule 1): for code, the render is the diff'),
+  ...declared('C7-DR7', 'DR7', ['cut-stage'], '03 ordering principle (C7, rule 7): CUT also runs in D2, before and after the review loop'),
   'SM-1': {
     id: 'SM-1',
     relaxes: ['PR4'],

@@ -8,10 +8,34 @@ export type GlueCode = (typeof GLUE_CODES)[number];
 
 export type KnobDef =
   | { type: 'enum'; values: readonly string[] }
+  /** A non-empty list of distinct values from a fixed set. */
+  | { type: 'enum[]'; values: readonly string[] }
   | { type: 'int'; min: number; max: number }
   | { type: 'bool' }
   | { type: 'string' }
   | { type: 'string[]' };
+
+/**
+ * Tell catalogs by domain (01 TELLS "Starter catalogs", plus the two 03 names: C6's application formula and C5's
+ * stylistic media sweep). Several configurations share the prose medium but sweep different catalogs, so the
+ * sweep names its domains and the runner hands it those catalogs.
+ */
+export const TELLS_DOMAINS = [
+  'ui',
+  'prose-words',
+  'prose-structure',
+  'newsletter',
+  'social',
+  'marketing',
+  'memo',
+  'slides',
+  'code',
+  'lesson-plan',
+  'fiction',
+  'application',
+  'media-style',
+] as const;
+export type TellsDomain = (typeof TELLS_DOMAINS)[number];
 
 export interface BlockDef {
   code: BlockCode;
@@ -55,6 +79,10 @@ export const BLOCKS: Record<BlockCode, BlockDef> = {
       refs: { type: 'int', min: 0, max: 10 },
       shuffle: { type: 'bool' },
       calibration: { type: 'bool' },
+      /** ⟨A⟩ 'other': a model family that did not produce the work (01 CRITIC: self-preference is strongest for prose). */
+      family: { type: 'enum', values: ['same', 'other'] },
+      /** ⟨A⟩ Fixed reference orders whose ranks are averaged (03 C5 gate: "2 fixed shuffles averaged"). */
+      shuffles: { type: 'int', min: 1, max: 4 },
     },
     bypass: { transform: 'remove-critic-loop', suspends: [] },
   },
@@ -94,6 +122,8 @@ export const BLOCKS: Record<BlockCode, BlockDef> = {
     knobs: {
       catalog: { type: 'enum', values: ['article-4row', 'extended'] },
       variants: { type: 'enum', values: ['combined', 'per-row'] },
+      /** Which domain catalogs the sweep uses; absent means the article's UI table (`catalog: 'article-4row'`). */
+      domains: { type: 'enum[]', values: TELLS_DOMAINS },
     },
     bypass: { transform: 'remove-step', suspends: [] },
   },

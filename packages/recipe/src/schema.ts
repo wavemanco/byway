@@ -6,6 +6,9 @@ export const RECIPE_SCHEMA_ID = 'byway.recipe/1';
 export const ROLES = [
   'build', 'fix', 'critic', 'judge', 'seed', 'vision', 'asset', 'relay',
   'cut', 'tells-sweep', 'tells-compare', 'voice', 'check', 'render', 'select',
+  // Glue steps of 03 C2, not blocks: `dedupe` keeps one representative per cluster of near-duplicate options;
+  // `overlap` flags options that an unseeded (vanilla) run also produces, the article's own diagnostic used as a filter.
+  'dedupe', 'overlap',
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -30,6 +33,12 @@ export interface Step {
   produces: PortType[];
   /** True if the step changes the artifact. */
   writes?: boolean;
+  /**
+   * A machine write that leaves human copy verbatim. Port rule 6 forbids writing *over* voice; a configuration that
+   * locks voice early and keeps building around it (03 C5: the VO script is locked in D1, the media chain runs after)
+   * marks those writes. The runner must enforce it by comparing the human copy before and after the step.
+   */
+  keepsVoice?: boolean;
   /** Set when an AI or a policy stands in for a human step. */
   proxyFor?: 'human';
   knobs?: Record<string, Json>;
@@ -54,7 +63,38 @@ export interface Gate {
 export interface Loop { op: 'loop'; id: string; body: Node; gate: Gate }
 export interface Route { op: 'route'; id: string; on: string; branches: { name: string; body: Node }[] }
 export interface Optional { op: 'optional'; id: string; trigger: string; body: Node }
-export type Node = Step | Seq | Replicate | Each | Pick | Loop | Route | Optional;
+/**
+ * Parallel audit `{{ A ‖ B }}` (02 §2, ⟨A⟩): every lens reads the same input and returns annotations only
+ * (`critique`, `score`). Nothing a lens makes is merged or edited into the work, and no lens writes.
+ */
+export interface Audit { op: 'audit'; id: string; lenses: { name: string; body: Node }[] }
+/** The pass condition of a one-shot gate: a loop gate's condition without probe, cap or plateau. */
+export interface PassCondition {
+  /** 'critic-score' | 'critic-rank'. A string, as in Gate, so the validator can name forbidden metrics (PR8). */
+  metric: string;
+  threshold?: number;
+  hidden: boolean;
+  holder: 'worker' | 'harness' | 'human';
+}
+/**
+ * One-shot gate `gate[cond] else ↺ Dk` (02 §2, ⟨A⟩): a pass/fail check with no fix step. On a fail the run re-runs
+ * stage `retry.stage` automatically with the same brief, at most `retry.times` times, and then a human decides.
+ * A retry starts that stage again from its own entry state, so it adds no back-edge for the flow rules.
+ */
+export interface OneShotGate {
+  op: 'gate';
+  id: string;
+  body: Node;
+  pass: PassCondition;
+  retry?: { stage: Stage['stage']; times: number };
+  onFail: 'human';
+}
+/**
+ * Relay chain `A ~> B` (02 §2): each link starts from the previous link's exact end state (`anchor`). The run decides
+ * how many links there are (one per storyboard shot, say), up to `maxLinks`. Links run strictly in sequence (01 RELAY).
+ */
+export interface RelayChain { op: 'relay'; id: string; maxLinks: number; body: Node }
+export type Node = Step | Seq | Replicate | Each | Pick | Loop | Route | Optional | Audit | OneShotGate | RelayChain;
 
 export interface Stage { stage: 'D1' | 'D2' | 'D3'; body: Node }
 export interface Derivation { transform: string; version: number; target?: string; map?: string }
@@ -106,6 +146,7 @@ export const StepSchema = z.strictObject({
   consumes: z.array(Port),
   produces: z.array(Port),
   writes: z.boolean().optional(),
+  keepsVoice: z.boolean().optional(),
   proxyFor: z.literal('human').optional(),
   knobs: z.record(JsonKey, JsonSchema).optional(),
   variant: z.string().min(1).optional(),
@@ -141,6 +182,26 @@ const RouteSchema = z.strictObject({
   branches: z.array(z.strictObject({ name: z.string().min(1), body: NodeRef })).min(1),
 });
 const OptionalSchema = z.strictObject({ op: z.literal('optional'), id: Id, trigger: z.string().min(1), body: NodeRef });
+const StageName = z.enum(['D1', 'D2', 'D3']);
+const AuditSchema = z.strictObject({
+  op: z.literal('audit'),
+  id: Id,
+  lenses: z.array(z.strictObject({ name: z.string().min(1), body: NodeRef })).min(1),
+});
+const OneShotGateSchema = z.strictObject({
+  op: z.literal('gate'),
+  id: Id,
+  body: NodeRef,
+  pass: z.strictObject({
+    metric: z.string().min(1),
+    threshold: z.number().optional(),
+    hidden: z.boolean(),
+    holder: z.enum(['worker', 'harness', 'human']),
+  }),
+  retry: z.strictObject({ stage: StageName, times: z.number().int() }).optional(),
+  onFail: z.literal('human'),
+});
+const RelayChainSchema = z.strictObject({ op: z.literal('relay'), id: Id, maxLinks: z.number().int(), body: NodeRef });
 
 export const NodeSchema: z.ZodType<Node> = z.discriminatedUnion('op', [
   StepSchema,
@@ -151,6 +212,9 @@ export const NodeSchema: z.ZodType<Node> = z.discriminatedUnion('op', [
   LoopSchema,
   RouteSchema,
   OptionalSchema,
+  AuditSchema,
+  OneShotGateSchema,
+  RelayChainSchema,
 ]) as z.ZodType<Node>;
 
 export const RecipeSchema: z.ZodType<Recipe> = z.strictObject({
@@ -173,7 +237,7 @@ export const RecipeSchema: z.ZodType<Recipe> = z.strictObject({
     })
     .optional(),
   inputs: z.array(Port),
-  stages: z.array(z.strictObject({ stage: z.enum(['D1', 'D2', 'D3']), body: NodeRef })).min(1),
+  stages: z.array(z.strictObject({ stage: StageName, body: NodeRef })).min(1),
   sitsOut: z.array(z.strictObject({ block: z.enum(BLOCK_CODES), reason: z.string() })),
   exceptions: z.array(z.string()),
   bank: z.boolean(),

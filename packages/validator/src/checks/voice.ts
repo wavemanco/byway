@@ -10,13 +10,17 @@ interface VoiceState {
 }
 
 /**
- * PR6, human voice is locked: no writing step may run once human copy may exist on any path. The clause says
- * where the copy came from, so SM-6 (a fixed deck) cannot hide a model writing over a human VOICE step's copy.
+ * PR6, human voice is locked: no machine write may run once human copy may exist on any path, unless it is declared
+ * to keep that copy verbatim (`keepsVoice`, which the runner enforces by diff). The lock guards the owner's words
+ * against later automated passes (01 VOICE: "Later passes overwrite the copy. Lock it."); the owner editing their
+ * own words is not a write over them, so human writers are exempt. The clause says where the copy came from, so
+ * SM-6 (a fixed deck) cannot hide a model writing over a human VOICE step's copy.
  */
 export function checkVoiceLock(recipe: Recipe, findings: Findings): void {
   flowRecipe<VoiceState>(recipe, { fromInput: recipe.inputs.includes('voice'), fromStep: false }, {
     step(step, path, _stage, state) {
-      if (step.writes && (state.fromInput || state.fromStep)) {
+      const overwrites = step.writes && step.actor !== 'human' && !step.keepsVoice;
+      if (overwrites && (state.fromInput || state.fromStep)) {
         findings.add(
           'PR6',
           path,
