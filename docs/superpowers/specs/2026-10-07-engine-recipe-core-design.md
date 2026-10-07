@@ -66,6 +66,7 @@ interface Optional  { op: 'optional'; id: string; trigger: string; body: Node }
 interface Stage     { stage: 'D1' | 'D2' | 'D3'; body: Node }
 interface Recipe { schema: 'byway.recipe/1'; id: string; title: string;
   kind: 'protocol-config' | 'variant' | 'ablation' | 'baseline' | 'composed' | 'experimental';
+  family: string;                // 'C1', 'baseline', … (scopes protocol-declared exceptions)
   channel: 'protocol' | 'research-frozen' | 'product' | 'workspace';
   parent?: { hash: string; derivation: Derivation };
   inputs: PortType[];            // what the run starts with, e.g. ['intent'] or ['intent','voice']
@@ -119,16 +120,20 @@ Each rule has an ID and a class. **invariant**: never relaxed. **hard**: relaxed
 
 ## Exceptions
 
-| ID | Relaxes | Scope | Allowed for |
+Exceptions are **clause-scoped**: each finding names the clause of the rule it breaches, and an exception that lists clauses for a rule suppresses only those. (Added during implementation: without it, C1-DR7, which exists to allow the defect check after Distill, also hid a reordered CUT/TELLS/VOICE.)
+
+| ID | Relaxes (clauses) | Scope | Allowed for |
 |---|---|---|---|
 | C1-DR2 | DR2 | protocol-declared (03, ordering principle) | the C1 family |
-| C1-DR7 | DR7 | protocol-declared (CRITIC-check after D3) | the C1 family |
-| SM-1 | PR4 | study manipulation | channel `research-frozen` |
+| C1-DR7 | DR7 (judge-after) | protocol-declared (CRITIC-check after D3) | the C1 family |
+| SM-1 | PR4 (d3-entry, each-in-d3) | study manipulation | channel `research-frozen` |
 | SM-2 | LS1 | study manipulation | channel `research-frozen` |
 | SM-3 | CH3 | study manipulation | channel `research-frozen` |
 | SM-4 | PR7.2 | study manipulation | channel `research-frozen` |
-| SM-5 | PR1, PR2, DR3, DR5 | study manipulation | channel `research-frozen`, CRITIC-self only |
-| SM-6 | PR6, DR9 | study manipulation | channel `research-frozen` |
+| SM-5 | PR1 (not-isolated), PR2 (shared-context), DR3 (not-isolated), DR5 (judge-tier) | study manipulation | channel `research-frozen`, kind `ablation`, the `critique-self` derivation only |
+| SM-6 | PR6, DR9 (fixed-input) | study manipulation | channel `research-frozen` |
+
+Recipes carry a `family` field (for example `C1`, or `baseline`) so that protocol-declared exceptions can be limited to the configuration that declared them.
 
 ## Derivations
 
