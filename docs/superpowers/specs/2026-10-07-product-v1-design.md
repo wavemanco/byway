@@ -35,7 +35,7 @@ Dependency direction: `web → {advisor, runner, store, gateway, catalog, contra
 
 **Process model (local).** `pnpm dev` starts: a local Temporal dev server (via `@temporalio/testing` `TestWorkflowEnvironment.createLocal` with a persistent `dbFilename`, port 7233), the runner worker, and `next dev` on `127.0.0.1:3000`. `pnpm demo` does the same with the mock provider forced on.
 
-**Temporal on this machine.** SWC (Temporal's default workflow transpiler) refuses its cache folders here because their permissions include a sandbox group. Workflow code is therefore compiled to JavaScript with esbuild first (`packages/runner/scripts/build-workflows.ts`), and the worker bundles the `.js` (verified in a spike: a workflow with an activity and a human Update completed).
+**Temporal on this machine.** SWC (Temporal's default workflow transpiler) refuses its cache folders here because their permissions include a sandbox group. Workflow code is therefore compiled to JavaScript with esbuild first (`packages/runner/scripts/build-workflows.ts`), and the worker bundles the `.js` (verified in a spike: a workflow with an activity and a human Update completed). The esbuild step must bundle all workspace imports into that one file (only `@temporalio/*` stays external), because the workspace packages export TypeScript sources that Temporal's bundler would otherwise hand to SWC.
 
 **Data.** `BYWAY_DATA_DIR` (default `%LOCALAPPDATA%\byway` on Windows, `~/.byway` elsewhere; never inside OneDrive or the repo). It holds `byway.sqlite`, `artifacts/sha256/…`, `ledger.jsonl` and `temporal.sqlite`.
 
