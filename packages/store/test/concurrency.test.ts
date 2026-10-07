@@ -16,6 +16,14 @@ function runWorker(job: Job): Promise<Reply> {
   });
 }
 
+/** Waits for every worker (so none still holds the file when the temp folder is removed), then fails on the first error. */
+async function runWorkers(jobs: Job[]): Promise<Reply[]> {
+  const settled = await Promise.allSettled(jobs.map(runWorker));
+  const failed = settled.find((s) => s.status === 'rejected');
+  if (failed) throw failed.reason;
+  return settled.map((s) => (s as PromiseFulfilledResult<Reply>).value);
+}
+
 describe('concurrent store instances on one file', () => {
   it('interleaved appends from two instances in one process share one gap-free sequence', async () => {
     const dataDir = tempDir();
@@ -33,7 +41,7 @@ describe('concurrent store instances on one file', () => {
     await seedRun(store, 'run');
     const workers = 4;
     const count = 60;
-    const replies = await Promise.all(range(workers).map((worker) => runWorker({ mode: 'append', dataDir, runId: 'run', worker, count })));
+    const replies = await runWorkers(range(workers).map((worker): Job => ({ mode: 'append', dataDir, runId: 'run', worker, count })));
     for (const { seqs } of replies) expect(seqs).toEqual([...seqs].sort((x, y) => x - y));
     expect(replies.flatMap((r) => r.seqs).sort((x, y) => x - y)).toEqual(range(workers * count));
     expect((await store.events('run')).map((e) => e.seq)).toEqual(range(workers * count));
@@ -42,7 +50,7 @@ describe('concurrent store instances on one file', () => {
 
   it('threads opening a fresh data directory at once migrate it once and agree on one default workspace', async () => {
     const dataDir = tempDir();
-    const replies = await Promise.all(range(5).map(() => runWorker({ mode: 'open', dataDir })));
+    const replies = await runWorkers(range(8).map((): Job => ({ mode: 'open', dataDir })));
     expect(new Set(replies.map((r) => r.workspaceId)).size).toBe(1);
     const store = openStore({ dataDir });
     expect((await store.ensureDefaultWorkspace()).id).toBe(replies[0]?.workspaceId);

@@ -17,9 +17,8 @@ export function openDatabase(file: string, opts: OpenDatabaseOptions = {}): Data
   if (!Number.isInteger(busyTimeoutMs) || busyTimeoutMs < 0) throw new RangeError(`busyTimeoutMs must be a non-negative integer, got ${busyTimeoutMs}`);
   const db = new DatabaseSync(file, { enableForeignKeyConstraints: true, timeout: busyTimeoutMs });
   try {
-    // The timeout must be in place before journal_mode, which itself needs a lock when another connection is opening.
     db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
-    db.exec('PRAGMA journal_mode = WAL');
+    useWal(db, busyTimeoutMs);
     // NORMAL is durable across application crashes in WAL mode; only an OS crash can lose the last commits.
     db.exec('PRAGMA synchronous = NORMAL');
     db.exec('PRAGMA foreign_keys = ON');
@@ -28,6 +27,39 @@ export function openDatabase(file: string, opts: OpenDatabaseOptions = {}): Data
     db.close();
     throw e;
   }
+}
+
+/**
+ * Puts the file in WAL mode. The mode is stored in the file, so after the first switch this is a read. The switch itself
+ * needs an exclusive lock and SQLite answers SQLITE_BUSY at once, without the busy handler, when another connection is
+ * opening the same new file at that moment; so it is retried here until the busy timeout runs out.
+ */
+function useWal(db: DatabaseSync, busyTimeoutMs: number): void {
+  const mode = (): unknown => Object.values(db.prepare('PRAGMA journal_mode').get() ?? {})[0];
+  const deadline = Date.now() + busyTimeoutMs;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      if (mode() === 'wal') return;
+      db.exec('PRAGMA journal_mode = WAL');
+      if (mode() === 'wal') return;
+      throw new Error(`could not switch ${db.location() ?? 'the database'} to WAL mode`);
+    } catch (e) {
+      if (!isBusy(e) || Date.now() >= deadline) throw e;
+      sleepSync(Math.min(5 * 2 ** Math.min(attempt, 4), 50) + Math.random() * 5);
+    }
+  }
+}
+
+/** SQLITE_BUSY (5), including its extended codes. */
+export function isBusy(e: unknown): boolean {
+  const errcode = (e as { errcode?: unknown } | null)?.errcode;
+  return typeof errcode === 'number' && (errcode & 0xff) === 5;
+}
+
+const sleeper = new Int32Array(new SharedArrayBuffer(4));
+/** Opening a database is synchronous (node:sqlite is), so the retry pause is too. Only used while opening. */
+function sleepSync(ms: number): void {
+  Atomics.wait(sleeper, 0, 0, ms);
 }
 
 /**
