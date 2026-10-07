@@ -18,6 +18,27 @@ function classify(status: number | undefined): { code: GatewayErrorCode; retryab
   return { code: 'provider-error', retryable: false };
 }
 
+/**
+ * Error types in a provider's error body. A streamed response can fail after the HTTP 200 (Anthropic sends an
+ * `overloaded_error` event), so the SDK raises an error with no status; its body type still says what happened.
+ */
+const BODY_TYPES: Record<string, { code: GatewayErrorCode; retryable: boolean }> = {
+  overloaded_error: { code: 'provider-error', retryable: true },
+  api_error: { code: 'provider-error', retryable: true },
+  rate_limit_error: { code: 'rate-limited', retryable: true },
+  invalid_request_error: { code: 'invalid-request', retryable: false },
+  authentication_error: { code: 'no-credentials', retryable: false },
+  permission_error: { code: 'provider-error', retryable: false },
+  not_found_error: { code: 'invalid-request', retryable: false },
+  request_too_large: { code: 'invalid-request', retryable: false },
+};
+
+function bodyType(err: unknown): string | undefined {
+  const body = (err as { error?: { type?: unknown; error?: { type?: unknown } } }).error;
+  const t = body?.error?.type ?? body?.type;
+  return typeof t === 'string' ? t : undefined;
+}
+
 function retryAfterMs(err: unknown): number | undefined {
   const headers = (err as { headers?: unknown }).headers;
   let value: string | null | undefined;
@@ -42,7 +63,8 @@ export function toGatewayError(err: unknown, provider: ProviderId, redact: Redac
   const transient =
     status === undefined &&
     ((typeof e.name === 'string' && TRANSIENT_NAMES.has(e.name)) || (typeof e.code === 'string' && TRANSIENT_CODES.has(e.code)));
-  const { code, retryable } = transient ? { code: 'provider-error' as const, retryable: true } : classify(status);
+  const byBody = status === undefined ? BODY_TYPES[bodyType(err) ?? ''] : undefined;
+  const { code, retryable } = byBody ?? (transient ? { code: 'provider-error' as const, retryable: true } : classify(status));
   const detail = typeof e.message === 'string' && e.message ? e.message : String(err);
   const prefix = status !== undefined ? `${provider} returned ${status}` : `${provider} call failed`;
   const out: RetryHintedError = new GatewayError(code, redact(`${prefix}: ${detail}`.slice(0, 2000)), retryable);

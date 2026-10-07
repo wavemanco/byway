@@ -52,6 +52,15 @@ describe('toGatewayError', () => {
     }
   });
 
+  it('classifies errors that arrive mid-stream, without an HTTP status, by their error type', () => {
+    const overloaded = Object.assign(new Error('Overloaded'), { error: { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } } });
+    const rate = Object.assign(new Error('slow down'), { error: { type: 'error', error: { type: 'rate_limit_error' } } });
+    const invalidReq = Object.assign(new Error('bad'), { error: { type: 'error', error: { type: 'invalid_request_error' } } });
+    expect([toGatewayError(overloaded, 'anthropic', redact).code, toGatewayError(overloaded, 'anthropic', redact).retryable]).toEqual(['provider-error', true]);
+    expect([toGatewayError(rate, 'anthropic', redact).code, toGatewayError(rate, 'anthropic', redact).retryable]).toEqual(['rate-limited', true]);
+    expect([toGatewayError(invalidReq, 'anthropic', redact).code, toGatewayError(invalidReq, 'anthropic', redact).retryable]).toEqual(['invalid-request', false]);
+  });
+
   it('never carries a key in its message', () => {
     const e = toGatewayError(apiError(401, 'Incorrect API key provided: sk-live-0123456789abcdefXYZ'), 'openai', redact);
     expect(e.message).not.toContain('0123456789abcdef');

@@ -46,6 +46,19 @@ export function entryHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** On Windows a rename onto a file another process is reading fails briefly with EPERM or EBUSY; try again. */
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fs.rename(from, to);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (attempt >= 20 || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES')) throw e;
+      await sleep(10 + attempt * 5);
+    }
+  }
+}
+
 /**
  * Append-only, hash-chained JSONL ledger of every model call (spec §6, CR7-style). Each line is the canonical JSON of
  * one entry; `prevHash` links it to the line before, so an edit, a deletion or a reorder breaks the chain. The worker
@@ -94,7 +107,7 @@ export class Ledger {
     const head: Head = { seq: entry.seq, id: entry.id, hash: entry.hash };
     const tmp = `${this.headPath}.${process.pid}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(head), 'utf8');
-    await fs.rename(tmp, this.headPath);
+    await renameWithRetry(tmp, this.headPath);
     return entry;
   }
 
