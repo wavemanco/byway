@@ -88,7 +88,7 @@ describe('migrations', () => {
     }
   });
 
-  it('enforce foreign keys in the store', async () => {
+  it('refuse events for a run that does not exist', async () => {
     const store = openStore();
     await expect(store.appendEvent({ runId: 'no-such-run', type: 'run-started', data: {} })).rejects.toThrow(/no run "no-such-run"/);
   });
