@@ -44,7 +44,9 @@ describe('leaveOneOut', () => {
 
   it('records the parent hash and the transform', () => {
     const r = loopOnly();
-    r.stages[1]!.body = { op: 'seq', steps: [r.stages[1]!.body, step({ id: 'tail', role: 'render', actor: 'tool', consumes: [], produces: [] })] };
+    const d2 = r.stages[1]!.body;
+    if (d2.op !== 'each') throw new Error('fixture');
+    d2.body = { op: 'seq', steps: [d2.body, step({ id: 'tail', role: 'render', actor: 'tool', consumes: [], produces: [] })] };
     const a = leaveOneOut(r, 'CRITIC');
     expect(a.parent).toEqual({ hash: recipeHash(r), derivation: { transform: 'leave-one-out', version: 1, target: 'CRITIC' } });
     expect(a.id).toBe('minimal-no-critic');
