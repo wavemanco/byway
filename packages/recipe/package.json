@@ -1,0 +1,15 @@
+{
+  "name": "@byway/recipe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Recipe IR, hashing, walking and derivation transforms",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@byway/canonical": "workspace:*",
+    "@byway/protocol": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

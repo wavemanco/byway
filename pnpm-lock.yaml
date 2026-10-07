@@ -29,6 +29,18 @@ importers:
 
   packages/protocol: {}
 
+  packages/recipe:
+    dependencies:
+      '@byway/canonical':
+        specifier: workspace:*
+        version: link:../canonical
+      '@byway/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
 packages:
 
   '@esbuild/aix-ppc64@0.28.2':
