@@ -49,6 +49,22 @@ describe('canonicalize (RFC 8785)', () => {
     expect(() => canonicalize(a)).toThrow(CanonicalizationError);
   });
 
+  it('rejects holes in sparse arrays instead of emitting invalid JSON', () => {
+    const sparse = [1, , 3]; // deliberately sparse
+    expect(() => canonicalize(sparse)).toThrow(CanonicalizationError);
+  });
+
+  it('rejects lone surrogates (RFC 8785 §3.2.2.2)', () => {
+    expect(() => canonicalize({ s: '\ud800' })).toThrow(CanonicalizationError);
+    expect(canonicalize('😀')).toBe('"😀"');
+  });
+
+  it('rejects non-plain objects that would collide as "{}"', () => {
+    expect(() => canonicalize({ d: new Date(0) })).toThrow(CanonicalizationError);
+    expect(() => canonicalize({ m: new Map() })).toThrow(CanonicalizationError);
+    expect(canonicalize(Object.create(null))).toBe('{}');
+  });
+
   it('allows the same object to appear twice without a cycle', () => {
     const shared = { x: 1 };
     expect(canonicalize({ a: shared, b: shared })).toBe('{"a":{"x":1},"b":{"x":1}}');

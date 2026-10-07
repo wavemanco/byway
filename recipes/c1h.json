@@ -6,7 +6,7 @@
   "family": "C1",
   "channel": "research-frozen",
   "parent": {
-    "hash": "sha256:c624f454df6d501e614279758c7cab3b25ab369f2f5c68ad89ff0c4480d45593",
+    "hash": "sha256:87ae49e3924e7735d99bd5a27a0eda33951f22212e1c1fff6137e466078f4e6b",
     "derivation": {
       "transform": "binding",
       "version": 1,
@@ -84,7 +84,7 @@
                     "tier": "big",
                     "isolated": true,
                     "frozenPrompt": true,
-                    "prompt": "project.critic-ok",
+                    "prompt": "study1.A.CRIT-C",
                     "consumes": [
                       "view"
                     ],
@@ -95,10 +95,9 @@
                     "knobs": {
                       "mode": "OK",
                       "renders": [
-                        "desktop",
-                        "mobile",
-                        "fold"
-                      ]
+                        "desktop"
+                      ],
+                      "calibration": false
                     }
                   },
                   {
@@ -148,11 +147,7 @@
               "produces": [
                 "artifact"
               ],
-              "writes": true,
-              "knobs": {
-                "slots": 3,
-                "triesPerSlot": 3
-              }
+              "writes": true
             },
             {
               "op": "step",
@@ -202,7 +197,7 @@
               "isolated": true,
               "frozenPrompt": true,
               "proxyFor": "human",
-              "prompt": "project.cut-directive",
+              "prompt": "study1.A9",
               "consumes": [
                 "view"
               ],
@@ -219,7 +214,7 @@
               "role": "fix",
               "actor": "model",
               "tier": "mid",
-              "prompt": "project.apply-cut",
+              "prompt": "study1.A10",
               "consumes": [
                 "critique",
                 "artifact"
@@ -248,8 +243,10 @@
               "role": "tells-sweep",
               "block": "TELLS",
               "actor": "model",
-              "tier": "mid",
-              "prompt": "project.tells-sweep",
+              "tier": "big",
+              "isolated": true,
+              "frozenPrompt": true,
+              "prompt": "study1.A11",
               "consumes": [
                 "view",
                 "tells"
@@ -268,7 +265,7 @@
               "role": "fix",
               "actor": "model",
               "tier": "mid",
-              "prompt": "project.apply-swaps",
+              "prompt": "study1.A12",
               "consumes": [
                 "critique",
                 "artifact"
@@ -301,47 +298,13 @@
               "isolated": true,
               "frozenPrompt": true,
               "proxyFor": "human",
-              "prompt": "project.tells-keep-or-revert",
+              "prompt": "study1.A13",
               "consumes": [
                 "view"
               ],
               "produces": [
                 "taste"
               ]
-            },
-            {
-              "op": "step",
-              "id": "final-render",
-              "role": "render",
-              "glue": "RENDER",
-              "actor": "tool",
-              "consumes": [
-                "artifact"
-              ],
-              "produces": [
-                "view"
-              ]
-            },
-            {
-              "op": "step",
-              "id": "critic-check",
-              "role": "check",
-              "block": "CRITIC",
-              "variant": "CRITIC-check",
-              "actor": "model",
-              "tier": "big",
-              "isolated": true,
-              "frozenPrompt": true,
-              "prompt": "project.defect-check",
-              "consumes": [
-                "view"
-              ],
-              "produces": [
-                "critique"
-              ],
-              "knobs": {
-                "mode": "check"
-              }
             }
           ]
         }
@@ -364,7 +327,6 @@
   ],
   "exceptions": [
     "C1-DR2",
-    "C1-DR7",
     "SM-1",
     "SM-2",
     "SM-3",
@@ -372,5 +334,5 @@
     "SM-6"
   ],
   "bank": false,
-  "hash": "sha256:1fea409605c0d9a213d6408e6070a9f8ae2c6333f601c6898ac556761b466c61"
+  "hash": "sha256:2a40fa68ecdc82726425332d75c314435dd8112b2bdf6a9e956acee70ff2cf36"
 }

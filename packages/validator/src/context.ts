@@ -12,7 +12,9 @@ export interface Finding {
 /** Raw findings, before rule classes, suspensions and exceptions are applied. */
 export class Findings {
   readonly list: Finding[] = [];
+  /** Idempotent: path-sensitive checks visit loop bodies twice. */
   add(ruleId: RuleId, path: string, message: string, clause?: string): void {
+    if (this.list.some((f) => f.ruleId === ruleId && f.path === path && f.clause === clause && f.message === message)) return;
     this.list.push(clause === undefined ? { ruleId, path, message } : { ruleId, path, message, clause });
   }
 }

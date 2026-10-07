@@ -7,7 +7,6 @@ import {
   criticFix,
   criticGate,
   cutByProxy,
-  defectCheck,
   render,
   seedBuild,
   tellsCompareByProxy,
@@ -17,7 +16,8 @@ import {
 /**
  * C1-H: headless C1, the Study 1 treatment arm (protocol v1.1 §3.2). Every human checkpoint is bound
  * to a preregistered rule or a labelled AI proxy, copy comes from a fixed human deck, and every
- * candidate is evaluated (no pick).
+ * candidate is evaluated (no pick). CRITIC-check (C1 amendment 9) sits out: it needs a human to route failures
+ * (Study 1 S1-BIND).
  */
 export const c1h: Recipe = withHash({
   schema: 'byway.recipe/1',
@@ -35,7 +35,13 @@ export const c1h: Recipe = withHash({
       body: each(
         'each-candidate',
         seq(
-          loop('critic-loop', seq(render('render'), critic('critic'), criticFix('critic-fix')), criticGate('policy')),
+          loop(
+            'critic-loop',
+            // One desktop render (Study 1 §5.4, deviation 14); the worker writes the critic prompt, locked at the first call.
+            seq(render('render'), critic('critic', { renders: ['desktop'], prompt: 'study1.A.CRIT-C', calibration: false }), criticFix('critic-fix')),
+            criticGate('policy'),
+          ),
+          // The article's ASSET prompt, always on, without the protocol's slot policy (Study 1 §5.4).
           asset('asset'),
           render('asset-verify'),
         ),
@@ -48,14 +54,12 @@ export const c1h: Recipe = withHash({
         seq(
           render('cut-render'),
           cutByProxy('cut'),
-          applyDirective('apply-cut', 'project.apply-cut'),
+          applyDirective('apply-cut', 'study1.A10'),
           render('tells-render'),
-          tellsSweep('tells-sweep'),
-          applyDirective('apply-swaps', 'project.apply-swaps'),
+          tellsSweep('tells-sweep', 'study1.A11'),
+          applyDirective('apply-swaps', 'study1.A12'),
           render('compare-render'),
           tellsCompareByProxy('tells-compare'),
-          render('final-render'),
-          defectCheck('critic-check'),
         ),
       ),
     },
@@ -65,7 +69,7 @@ export const c1h: Recipe = withHash({
     { block: 'RELAY', reason: 'Raters see static renders; motion is not evaluated in Study 1' },
     { block: 'VOICE', reason: 'Copy is held constant by a fixed human copy deck in every arm (SM-6)' },
   ],
-  exceptions: ['C1-DR2', 'C1-DR7', 'SM-1', 'SM-2', 'SM-3', 'SM-4', 'SM-6'],
+  exceptions: ['C1-DR2', 'SM-1', 'SM-2', 'SM-3', 'SM-4', 'SM-6'],
   bank: false,
 });
 

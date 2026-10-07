@@ -1,6 +1,6 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { Recipe } from '@byway/recipe';
 import { CATALOG } from './index.ts';
 
@@ -33,7 +33,19 @@ export function emitCatalog(dir: string = RECIPES_DIR, recipes: readonly Recipe[
   return written;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** True when this module is the program entry, also when launched through a symlink or junction. */
+function isEntry(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    const a = realpathSync(process.argv[1]);
+    const b = realpathSync(fileURLToPath(import.meta.url));
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    return false;
+  }
+}
+
+if (isEntry()) {
   const files = emitCatalog();
   console.log(`wrote ${files.length} recipes and manifest.json to ${RECIPES_DIR}`);
 }

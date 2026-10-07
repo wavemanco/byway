@@ -25,6 +25,14 @@ All figures are estimates from the Study 1 design pass ([protocol v1.1 §13](stu
 | Quotes still needed | — | Monitor, copywriter, red team, legal, IRB, recruiting vendor, CODECHECK. |
 | **Set the Study 1 spending ceiling** | — | After the cost probe and the quotes (D13). |
 
+## Study 1 protocol v1.2 edits (found while building the engine)
+
+| Edit | Why |
+|---|---|
+| SM-5's row in §5.6 should list DR3 (isolation), DR4 (hidden threshold) and DR5 (judge tier) as well as port rules 1 and 2 | CRITIC-self necessarily breaches them; the engine's SM-5 relaxes them, clause-scoped, and the paper's exception table should match |
+| State that the C1-H critic receives one desktop render and that CRITIC-check sits out in every C1-H arm (already in S1-BIND and deviation 14) in the arm table itself | The engine recipes now encode this; a reviewer comparing hashes with §3 should find it stated where the arm is defined |
+| B-BoN's N | Stage 1 fixes N from pilot costs; the recipe carries a planning value (5) and is regenerated with the final N |
+
 ## Deferred decisions (non-code)
 
 | Decision | Default until decided | Deadline |

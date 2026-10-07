@@ -6,7 +6,7 @@
   "family": "C1",
   "channel": "research-frozen",
   "parent": {
-    "hash": "sha256:1fea409605c0d9a213d6408e6070a9f8ae2c6333f601c6898ac556761b466c61",
+    "hash": "sha256:2a40fa68ecdc82726425332d75c314435dd8112b2bdf6a9e956acee70ff2cf36",
     "derivation": {
       "transform": "leave-one-out",
       "version": 1,
@@ -84,7 +84,7 @@
                     "tier": "big",
                     "isolated": true,
                     "frozenPrompt": true,
-                    "prompt": "project.critic-ok",
+                    "prompt": "study1.A.CRIT-C",
                     "consumes": [
                       "view"
                     ],
@@ -95,10 +95,9 @@
                     "knobs": {
                       "mode": "OK",
                       "renders": [
-                        "desktop",
-                        "mobile",
-                        "fold"
-                      ]
+                        "desktop"
+                      ],
+                      "calibration": false
                     }
                   },
                   {
@@ -148,11 +147,7 @@
               "produces": [
                 "artifact"
               ],
-              "writes": true,
-              "knobs": {
-                "slots": 3,
-                "triesPerSlot": 3
-              }
+              "writes": true
             },
             {
               "op": "step",
@@ -184,6 +179,14 @@
     {
       "block": "VOICE",
       "reason": "Copy is held constant by a fixed human copy deck in every arm (SM-6)"
+    },
+    {
+      "block": "CUT",
+      "reason": "removed by the D3 leave-one-out bypass"
+    },
+    {
+      "block": "TELLS",
+      "reason": "removed by the D3 leave-one-out bypass"
     }
   ],
   "exceptions": [
@@ -192,5 +195,5 @@
     "SM-6"
   ],
   "bank": false,
-  "hash": "sha256:35c63a79404fd6bd0db89fe19dacda964303647852e5afcfb2d32dcc01b80b64"
+  "hash": "sha256:25e19fd0d1cce76ea4021f5e7f22d834fbe83bbdab5da2d0728d9df35f32e00c"
 }

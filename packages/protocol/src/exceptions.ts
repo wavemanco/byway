@@ -25,13 +25,15 @@ export interface ExceptionDef {
 
 const ALL_CHANNELS: Channel[] = ['protocol', 'research-frozen', 'product', 'workspace'];
 const STUDY_KINDS: RecipeKind[] = ['variant', 'ablation', 'baseline'];
+/** Study 1 manipulations are legal only for the Study 1 arms (the C1 family and the baselines) until lock binding exists. */
+const STUDY1_FAMILIES = ['C1', 'baseline'];
 
 export const EXCEPTIONS: Record<string, ExceptionDef> = {
   'C1-DR2': {
     id: 'C1-DR2',
     relaxes: ['DR2'],
     scope: 'protocol-declared',
-    kinds: ['protocol-config', 'variant', 'ablation'],
+    kinds: ['protocol-config', 'variant', 'ablation', 'composed'],
     channels: ALL_CHANNELS,
     families: ['C1'],
     source: '03 ordering principle: the article-faithful default keeps all k candidates through D2',
@@ -39,9 +41,9 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
   'C1-DR7': {
     id: 'C1-DR7',
     relaxes: ['DR7'],
-    clauses: { DR7: ['judge-after'] },
+    clauses: { DR7: ['check-after'] },
     scope: 'protocol-declared',
-    kinds: ['protocol-config', 'variant', 'ablation'],
+    kinds: ['protocol-config', 'variant', 'ablation', 'composed'],
     channels: ALL_CHANNELS,
     families: ['C1'],
     source: '03 ordering principle: a score-free, defect-only CRITIC-check runs after D3',
@@ -53,7 +55,7 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
     scope: 'study-manipulation',
     kinds: STUDY_KINDS,
     channels: ['research-frozen'],
-    families: [],
+    families: STUDY1_FAMILIES,
     source: 'Study 1 protocol v1.1: every candidate is evaluated, no pick before D3',
   },
   'SM-2': {
@@ -62,7 +64,7 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
     scope: 'study-manipulation',
     kinds: STUDY_KINDS,
     channels: ['research-frozen'],
-    families: [],
+    families: STUDY1_FAMILIES,
     source: 'Study 1 protocol v1.1: policies decide at non-convergence, the cap and backtracks',
   },
   'SM-3': {
@@ -71,7 +73,7 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
     scope: 'study-manipulation',
     kinds: STUDY_KINDS,
     channels: ['research-frozen'],
-    families: [],
+    families: STUDY1_FAMILIES,
     source: 'Study 1 protocol v1.1: D3-auto CUT is an AI proxy for the human taste owner',
   },
   'SM-4': {
@@ -80,28 +82,28 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
     scope: 'study-manipulation',
     kinds: STUDY_KINDS,
     channels: ['research-frozen'],
-    families: [],
+    families: STUDY1_FAMILIES,
     source: 'Study 1 protocol v1.1: a blind AI A/B call replaces the human TELLS comparison',
   },
   'SM-5': {
     id: 'SM-5',
-    relaxes: ['PR1', 'PR2', 'DR3', 'DR5'],
-    clauses: { PR1: ['not-isolated'], PR2: ['shared-context'], DR3: ['not-isolated'], DR5: ['judge-tier'] },
+    relaxes: ['PR1', 'PR2', 'DR3', 'DR4', 'DR5'],
+    clauses: { PR1: ['not-isolated'], PR2: ['shared-context'], DR3: ['not-isolated'], DR4: ['shared-context'], DR5: ['judge-tier'] },
     scope: 'study-manipulation',
     kinds: ['ablation'],
     channels: ['research-frozen'],
-    families: [],
+    families: STUDY1_FAMILIES,
     requiresDerivation: 'critique-self',
     source: 'Study 1 protocol v1.1: CRITIC-self, a non-blind same-model critic, is the manipulation itself',
   },
   'SM-6': {
     id: 'SM-6',
     relaxes: ['PR6', 'DR9'],
-    clauses: { DR9: ['fixed-input'] },
+    clauses: { PR6: ['fixed-input'], DR9: ['fixed-input'] },
     scope: 'study-manipulation',
     kinds: STUDY_KINDS,
     channels: ['research-frozen'],
-    families: [],
+    families: STUDY1_FAMILIES,
     source: 'Study 1 protocol v1.1: a fixed human copy deck in every arm holds copy constant',
   },
 };

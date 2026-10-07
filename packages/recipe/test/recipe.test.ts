@@ -47,6 +47,13 @@ describe('parseRecipe', () => {
     expect(parseError(bad).issues[0]?.code).toBe('unrecognized_keys');
   });
 
+  it('rejects reserved key names in knobs, which would escape hashing and checks', () => {
+    const text = JSON.stringify(minimalRecipe()).replace('"writes":true', '"writes":true,"knobs":{"__proto__":{"aiDetector":true}}');
+    const parsed = JSON.parse(text);
+    expect(Object.hasOwn(parsed.stages[0].body.knobs, '__proto__')).toBe(true);
+    expect(() => parseRecipe(parsed)).toThrow(ZodError);
+  });
+
   it('parses nested operators', () => {
     const r = minimalRecipe();
     r.stages[0]!.body = {

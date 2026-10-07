@@ -13,6 +13,16 @@ function containsCritic(body: Node): boolean {
   return found;
 }
 
+/** A critic loop whose critic runs in the worker's own context while the worker holds the threshold. */
+export function sharesThresholdContext(loop: Extract<Node, { op: 'loop' }>): boolean {
+  if (loop.gate.holder !== 'worker') return false;
+  let shared = false;
+  walkNode(loop.body, '', 'D2', (n) => {
+    if (n.op === 'step' && n.role === 'critic' && !n.isolated) shared = true;
+  });
+  return shared;
+}
+
 function mentionsDetector(value: Json): boolean {
   if (typeof value === 'string') return DETECTOR_PATTERN.test(value);
   if (Array.isArray(value)) return value.some(mentionsDetector);
@@ -22,7 +32,7 @@ function mentionsDetector(value: Json): boolean {
   return false;
 }
 
-/** Port rules (02 §3), the D3 human-judgment rule (CH3) and loop human handling (LS1). PR6 is checked during typing. */
+/** Port rules (02 §3) except PR6 (checks/voice.ts), the D3 human-judgment rule (CH3) and loop human handling (LS1). */
 export function checkPorts(recipe: Recipe, typing: Typing, findings: Findings): void {
   for (const { step, path } of steps(recipe)) {
     const judge = JUDGE_ROLES.has(step.role) && step.actor === 'model';
@@ -43,9 +53,12 @@ export function checkPorts(recipe: Recipe, typing: Typing, findings: Findings): 
     if (step.consumes.includes('cred') && step.actor !== 'tool') findings.add('PR3', path, `step "${step.id}" reads a credential`);
     // PR5: briefs go to builders, never to critics.
     if (JUDGE_ROLES.has(step.role) && step.consumes.includes('brief')) findings.add('PR5', path, `judge "${step.id}" reads the brief`);
-    // PR7.1: the tell catalog only enters the post-generation sweep.
-    if (step.consumes.includes('tells') && step.role !== 'tells-sweep') {
-      findings.add('PR7.1', path, `step "${step.id}" reads the tell catalog`);
+    // PR7.1: the tell catalog only enters the post-generation sweep, and that sweep never runs in a worker's context.
+    if (step.consumes.includes('tells')) {
+      if (step.role !== 'tells-sweep') findings.add('PR7.1', path, `step "${step.id}" reads the tell catalog`, 'reader');
+      else if (step.actor === 'model' && !step.isolated) {
+        findings.add('PR7.1', path, `TELLS sweep "${step.id}" is not isolated, so the catalog enters the worker's context`, 'sweep-not-isolated');
+      }
     }
     // PR7.2: a human compares the TELLS alternatives.
     if (step.role === 'tells-compare' && step.actor !== 'human') {
@@ -58,28 +71,20 @@ export function checkPorts(recipe: Recipe, typing: Typing, findings: Findings): 
       findings.add('PR8', path, `step "${step.id}" refers to an AI detector`);
     }
     // PR4 (part): RELAY only after a pick.
-    if (step.role === 'relay') {
-      const entry = typing.nodeEntry.get(step);
-      if (entry?.has(OPTION_SET)) findings.add('PR4', path, `RELAY "${step.id}" runs on an unpicked option set`, 'relay-unpicked');
+    if (step.role === 'relay' && typing.nodeEntry.get(step)?.may.has(OPTION_SET)) {
+      findings.add('PR4', path, `RELAY "${step.id}" may run on an unpicked option set`, 'relay-unpicked');
     }
   }
 
   walk(recipe, (node, path, stage) => {
     if (node.op === 'loop') {
       const g = node.gate;
-      // PR2: the threshold is hidden and held by the worker or the harness.
+      // PR2: the threshold is hidden and held by the worker or the harness, and never shares a context with the critic.
       if (!g.hidden) findings.add('PR2', path, `loop "${node.id}" does not hide its threshold`, 'not-hidden');
       if (g.holder !== 'worker' && g.holder !== 'harness') {
         findings.add('PR2', path, `loop "${node.id}" threshold is held by ${g.holder}`, 'holder');
       }
-      const selfCritic = (() => {
-        let found = false;
-        walkNode(node.body, '', stage, (n) => {
-          if (n.op === 'step' && n.role === 'critic' && !n.isolated && g.holder === 'worker') found = true;
-        });
-        return found;
-      })();
-      if (selfCritic) {
+      if (sharesThresholdContext(node)) {
         findings.add('PR2', path, `loop "${node.id}" critic shares the worker's context, which holds the threshold`, 'shared-context');
       }
       if (DETECTOR_PATTERN.test(g.metric)) findings.add('PR8', path, `loop "${node.id}" gates on an AI-detector metric`);
@@ -92,10 +97,9 @@ export function checkPorts(recipe: Recipe, typing: Typing, findings: Findings): 
     if (node.op === 'each' && stage === 'D3') findings.add('PR4', path, `each "${node.id}" carries an option set into D3`, 'each-in-d3');
   });
 
-  // PR4: every option set is closed by a pick before D3.
-  const d3 = typing.stageEntry.get('D3');
-  if (d3?.has(OPTION_SET)) {
+  // PR4: every option set is closed by a pick before D3 (on every path).
+  if (typing.stageEntry.get('D3')?.may.has(OPTION_SET)) {
     const i = recipe.stages.findIndex((s) => s.stage === 'D3');
-    findings.add('PR4', `stages[${i}]`, `an unpicked option set enters D3`, 'd3-entry');
+    findings.add('PR4', `stages[${i}]`, `an unpicked option set may enter D3`, 'd3-entry');
   }
 }

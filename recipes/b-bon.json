@@ -1,7 +1,7 @@
 {
   "schema": "byway.recipe/1",
   "id": "b-bon",
-  "title": "B-BoN (compute-matched best-of-N, same critic as selector)",
+  "title": "B-BoN (per-slot best-of-5, A.14 selector; N is a planning value until Stage 1)",
   "kind": "baseline",
   "family": "baseline",
   "channel": "research-frozen",
@@ -13,57 +13,56 @@
     {
       "stage": "D1",
       "body": {
-        "op": "seq",
-        "steps": [
-          {
-            "op": "replicate",
-            "id": "bon-pool",
-            "n": 16,
-            "body": {
-              "op": "step",
-              "id": "build",
-              "role": "build",
+        "op": "replicate",
+        "id": "x4",
+        "n": 4,
+        "body": {
+          "op": "seq",
+          "steps": [
+            {
+              "op": "replicate",
+              "id": "bon-pool",
+              "n": 5,
+              "body": {
+                "op": "step",
+                "id": "build",
+                "role": "build",
+                "actor": "model",
+                "tier": "mid",
+                "prompt": "article.B1",
+                "consumes": [
+                  "intent",
+                  "voice"
+                ],
+                "produces": [
+                  "artifact"
+                ],
+                "writes": true
+              }
+            },
+            {
+              "op": "pick",
+              "id": "bon-select",
+              "mode": "C",
+              "k": 1,
               "actor": "model",
-              "tier": "mid",
-              "prompt": "article.B1",
-              "consumes": [
-                "intent",
-                "voice"
-              ],
-              "produces": [
-                "artifact"
-              ],
-              "writes": true
-            }
-          },
-          {
-            "op": "pick",
-            "id": "bon-select",
-            "mode": "C",
-            "k": 4,
-            "actor": "model",
-            "judge": {
-              "op": "step",
-              "id": "bon-judge",
-              "role": "judge",
-              "block": "CRITIC",
-              "actor": "model",
-              "tier": "big",
-              "isolated": true,
-              "frozenPrompt": true,
-              "prompt": "project.critic-ok",
-              "consumes": [
-                "view"
-              ],
-              "produces": [
-                "score"
-              ],
-              "knobs": {
-                "mode": "OK"
+              "judge": {
+                "op": "step",
+                "id": "bon-selector",
+                "role": "judge",
+                "actor": "model",
+                "tier": "big",
+                "isolated": true,
+                "frozenPrompt": true,
+                "prompt": "study1.A14",
+                "consumes": [
+                  "view"
+                ],
+                "produces": []
               }
             }
-          }
-        ]
+          ]
+        }
       }
     }
   ],
@@ -72,5 +71,5 @@
     "SM-6"
   ],
   "bank": false,
-  "hash": "sha256:5f1b6837f82d27e84421d24e780bef76c94e168dc01f02e03198b8ef05c6c6f2"
+  "hash": "sha256:8a32cfe55bf6cfabf307fdf21684353d6abea8c67cb14ae53acc370963a2a64d"
 }

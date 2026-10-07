@@ -31,32 +31,42 @@ export const bRandom = baseline('b-random', 'B-Random (article Baseline 2)', x4(
 export const bSkill = baseline('b-skill', 'B-Skill (plain prompt + frontend-design skill)', x4('article.B1', { skill: 'anthropic/frontend-design@registered-pin' }));
 
 /**
- * Compute-matched best-of-N (Study 1 D1): plain builds, rendered and picked down to 4 by the same isolated
- * critic. N is a planning value; the pilot's cost measurement sets it before the freeze.
+ * Planning value for B-BoN's N. Study 1 sets N in Stage 1 so that the mean cost per slot equals C1-H's
+ * pilot-measured mean cost per candidate ([PILOT]); the recipe is regenerated, and its hash changes, when N is fixed.
+ * 5 ≈ C1-H's estimated cost per candidate ÷ B-Plain's (cost_model.py, unverified).
+ */
+export const BON_N_PLANNING = 5;
+
+/**
+ * Compute-matched best-of-N (Study 1 §3.1, §5.3): for each of the 4 candidate slots, N B-Plain builds are made
+ * (build 1 reuses B-Plain's own candidate at run time), then one fresh Fable selector call (A.14) sees the N views,
+ * shuffled and labelled, and returns one label.
  */
 export const bBon = baseline(
   'b-bon',
-  'B-BoN (compute-matched best-of-N, same critic as selector)',
-  seq(
-    replicate('bon-pool', 16, plainBuild('build', 'article.B1', ['intent', 'voice'])),
-    pick(
-      'bon-select',
-      'C',
-      4,
-      'model',
-      step({
-        id: 'bon-judge',
-        role: 'judge',
-        block: 'CRITIC',
-        actor: 'model',
-        tier: 'big',
-        isolated: true,
-        frozenPrompt: true,
-        prompt: 'project.critic-ok',
-        consumes: ['view'],
-        produces: ['score'],
-        knobs: { mode: 'OK' },
-      }),
+  `B-BoN (per-slot best-of-${BON_N_PLANNING}, A.14 selector; N is a planning value until Stage 1)`,
+  replicate(
+    'x4',
+    4,
+    seq(
+      replicate('bon-pool', BON_N_PLANNING, plainBuild('build', 'article.B1', ['intent', 'voice'])),
+      pick(
+        'bon-select',
+        'C',
+        1,
+        'model',
+        step({
+          id: 'bon-selector',
+          role: 'judge',
+          actor: 'model',
+          tier: 'big',
+          isolated: true,
+          frozenPrompt: true,
+          prompt: 'study1.A14',
+          consumes: ['view'],
+          produces: [],
+        }),
+      ),
     ),
   ),
 );

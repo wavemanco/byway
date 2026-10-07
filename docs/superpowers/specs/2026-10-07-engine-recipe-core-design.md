@@ -80,7 +80,9 @@ Operators the grammar defines but this milestone does not need (lanes, parallel 
 
 ## Scope typing
 
-The validator walks the tree carrying a **scope**: the set of port types available at that point. A recipe starts with `inputs`. A step requires every type in `consumes` to be in scope and adds its `produces`. `replicate` turns the body's `artifact` into `option_set<artifact>` in the outer scope. `each` requires `option_set<artifact>` in scope, runs its body with `artifact` in scope, and leaves `option_set<artifact>`. `pick(k=1)` turns `option_set<artifact>` into `artifact`. A `loop` body is typed once; the loop leaves the body's scope. Every `route` branch is typed from the same scope, and the outer scope gets the intersection of their results. `optional` adds nothing it does not guarantee: the outer scope gets the intersection of "body ran" and "body skipped".
+The validator walks the tree carrying two scopes. The **must** scope holds the ports available on every path, each with every producer (role and actor) that may have made it; it decides ST5 and provenance rules (DR1, DR6). The **may** scope holds the ports present on at least one path; it decides "may still be open" rules (PR4, DR2). A recipe starts with `inputs`. A step requires every type in `consumes` to be in the must scope and adds its `produces`. `replicate` turns the body's `artifact` into `option_set<artifact>` in the outer scope. `each` requires `option_set<artifact>`, runs its body with `artifact` in scope, and leaves `option_set<artifact>`. `pick(k=1)` turns `option_set<artifact>` into `artifact`. A `loop` body is typed once. `route` and `optional` merge their alternatives: must is the intersection (with producers unioned), may is the union.
+
+Order-sensitive rules (PR6 voice lock, DR7 Distill order) walk the control flow instead: routes and optionals fork and join, and loop bodies run twice so effects across the back-edge are seen. (Added after the Milestone 0 review, which showed that must-only typing let a write after an optional VOICE, or an option set left open by one route branch, pass.)
 
 ## Rules
 
@@ -125,13 +127,17 @@ Exceptions are **clause-scoped**: each finding names the clause of the rule it b
 | ID | Relaxes (clauses) | Scope | Allowed for |
 |---|---|---|---|
 | C1-DR2 | DR2 | protocol-declared (03, ordering principle) | the C1 family |
-| C1-DR7 | DR7 (judge-after) | protocol-declared (CRITIC-check after D3) | the C1 family |
+| C1-DR7 | DR7 (check-after: a score-free `check` step only) | protocol-declared (CRITIC-check after D3) | the C1 family |
 | SM-1 | PR4 (d3-entry, each-in-d3) | study manipulation | channel `research-frozen` |
 | SM-2 | LS1 | study manipulation | channel `research-frozen` |
 | SM-3 | CH3 | study manipulation | channel `research-frozen` |
 | SM-4 | PR7.2 | study manipulation | channel `research-frozen` |
-| SM-5 | PR1 (not-isolated), PR2 (shared-context), DR3 (not-isolated), DR5 (judge-tier) | study manipulation | channel `research-frozen`, kind `ablation`, the `critique-self` derivation only |
-| SM-6 | PR6, DR9 (fixed-input) | study manipulation | channel `research-frozen` |
+| SM-5 | PR1 (not-isolated), PR2 (shared-context), DR3 (not-isolated), DR4 (shared-context), DR5 (judge-tier) | study manipulation | channel `research-frozen`, kind `ablation`, the `critique-self` derivation only |
+| SM-6 | PR6 (fixed-input), DR9 (fixed-input) | study manipulation | channel `research-frozen` |
+
+All study manipulations are limited to the Study 1 families (`C1`, `baseline`) until lock binding exists. An exception cited twice, an unknown id (including inherited names such as `toString`) and a leave-one-out derivation claimed by anything other than an `ablation` are all ST8 violations.
+
+The Study 1 protocol's SM-5 row lists only port rules 1 and 2; the manipulation also necessarily breaches DR3, DR4 and DR5, so protocol v1.2 must list them (see the [backlog](../../backlog.md)).
 
 Recipes carry a `family` field (for example `C1`, or `baseline`) so that protocol-declared exceptions can be limited to the configuration that declared them.
 
@@ -154,7 +160,8 @@ interface Verdict { ok: boolean; recipeHash: string; violations: Violation[]; wa
 ## Recipes in this milestone
 
 - **C1** (protocol-config): seed entry route only in this milestone, `x4[SEED build] > each[critic loop > optional ASSET "plain?" > render] > pick(H,1) > D3 human CUT > TELLS sweep + human compare > VOICE > CRITIC-check`; exceptions C1-DR2, C1-DR7. VISION, the C2 entry and RELAY arrive with a later milestone.
-- **C1-H** (variant, research-frozen): parent C1; no picks; ASSET always on; D3-auto with AI CUT and AI TELLS compare; fixed copy deck as input `voice`; loop handled by policy; exceptions C1-DR2, SM-1, SM-2, SM-3, SM-4, SM-6.
+- **C1-H** (variant, research-frozen): parent C1; no picks; the critic sees one desktop render and runs the worker-written prompt (`study1.A.CRIT-C`); ASSET always on, with the article's prompt and no slot policy; D3-auto with an AI CUT reviewer (A.9), a fresh-context TELLS sweeper (A.11) and an AI keep-or-revert call (A.13); no CRITIC-check (it sits out in Study 1); fixed copy deck as input `voice`; loop handled by policy; exceptions C1-DR2, SM-1, SM-2, SM-3, SM-4, SM-6.
+- **B-BoN**: per slot, N plain builds and one A.14 selector call that picks one; N is a planning value until Stage 1 fixes it from pilot costs.
 - **Ablations of C1-H**: −SEED, −CRITIC, −ASSET, −D3 (derived), **CRITIC-self** (derived).
 - **Baselines** (research-frozen): B-Plain (`article.B1`), B-Random (`article.B2`), B-Skill (B-Plain with the frontend-design skill), B-BoN (plain builds ×N, rendered, picked to 4 by the same isolated critic). All take the fixed deck and cite SM-6.
 
@@ -167,7 +174,7 @@ interface Verdict { ok: boolean; recipeHash: string; violations: Violation[]; wa
 - Removing any cited exception from a catalog recipe produces the violation that exception relaxes.
 - Study manipulations cited on the `protocol` channel fail ST8.
 - The committed JSON in `recipes/` equals the catalog's output (no drift).
-- CLI: valid file → exit 0; violations → exit 1; unreadable or malformed file → exit 2 with a clear message.
+- CLI: valid file → exit 0; violations or a stored hash that does not match the content → exit 1; unreadable or malformed file → exit 2 with a clear message. Files are read as UTF-8 (a BOM is accepted; UTF-16 is rejected), repeated keys and nesting deeper than 64 levels are rejected, and reserved key names (`__proto__`, `constructor`, `prototype`) are rejected anywhere in a recipe.
 
 ## Out of scope (later milestones)
 

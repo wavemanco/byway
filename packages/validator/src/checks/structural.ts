@@ -19,14 +19,18 @@ export function checkStructural(recipe: Recipe, findings: Findings): void {
     // ST2: loop gates are well formed.
     if (node.op === 'loop') {
       const g = node.gate;
-      if (g.probe < 1 || g.max < g.probe) findings.add('ST2', path, `loop "${node.id}" needs 1 ≤ probe ≤ max (probe=${g.probe}, max=${g.max})`);
+      // Written as positive conditions so NaN fails them.
+      if (!(Number.isInteger(g.probe) && Number.isInteger(g.max) && g.probe >= 1 && g.max >= g.probe)) {
+        findings.add('ST2', path, `loop "${node.id}" needs integers 1 ≤ probe ≤ max (probe=${g.probe}, max=${g.max})`);
+      }
+      if (g.threshold !== undefined && !Number.isFinite(g.threshold)) findings.add('ST2', path, `loop "${node.id}" threshold is not a finite number`);
       if (!KNOWN_GATE_METRICS.has(g.metric) && !DETECTOR_PATTERN.test(g.metric)) {
         findings.add('ST2', path, `loop "${node.id}" uses an unknown gate metric "${g.metric}"`);
       }
     }
     // ST3: counts.
-    if (node.op === 'replicate' && node.n < 1) findings.add('ST3', path, `replicate "${node.id}" needs n ≥ 1`);
-    if (node.op === 'pick' && node.k < 1) findings.add('ST3', path, `pick "${node.id}" needs k ≥ 1`);
+    if (node.op === 'replicate' && !(Number.isInteger(node.n) && node.n >= 1)) findings.add('ST3', path, `replicate "${node.id}" needs an integer n ≥ 1`);
+    if (node.op === 'pick' && !(Number.isInteger(node.k) && node.k >= 1)) findings.add('ST3', path, `pick "${node.id}" needs an integer k ≥ 1`);
   });
 
   // ST4: stage order.

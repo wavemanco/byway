@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@byway/protocol": "workspace:*",
-    "@byway/recipe": "workspace:*"
+    "@byway/recipe": "workspace:*",
+    "@byway/canonical": "workspace:*"
   }
 }

@@ -85,7 +85,9 @@ export function leaveOneOut(source: Recipe, target: LeaveOneOutTarget): Recipe {
     case 'SEED':
       stages = rewriteStages(recipe, keep, (s) => {
         if (s.role !== 'seed') return s;
-        const plain: Step = { ...s, role: 'build', prompt: PLAIN_BUILD_PROMPT };
+        // A plain build from intent: it must not read the seed port (port rule 3).
+        const consumes = s.consumes.filter((p) => p !== 'seed');
+        const plain: Step = { ...s, role: 'build', prompt: PLAIN_BUILD_PROMPT, consumes: consumes.includes('intent') ? consumes : ['intent', ...consumes] };
         delete plain.block;
         delete plain.knobs;
         return plain;
@@ -104,6 +106,24 @@ export function leaveOneOut(source: Recipe, target: LeaveOneOutTarget): Recipe {
   if (JSON.stringify(stages) === JSON.stringify(recipe.stages)) {
     throw new DerivationError(`recipe "${source.id}" has nothing for the ${target} bypass to remove`);
   }
+  // The D3 bypass removes the Distill blocks; declare them as sitting out so the ablation says why they are absent.
+  const sitsOut = [...recipe.sitsOut];
+  if (target === 'D3') {
+    const d3 = recipe.stages.find((s) => s.stage === 'D3');
+    const removed = new Set<string>();
+    if (d3) {
+      const collect = (n: Node): void => {
+        if (n.op === 'step' && n.block && ['CUT', 'TELLS', 'VOICE'].includes(n.block)) removed.add(n.block);
+        if (n.op === 'seq') n.steps.forEach(collect);
+        else if (n.op === 'route') n.branches.forEach((b) => collect(b.body));
+        else if (n.op !== 'step' && n.op !== 'pick') collect(n.body);
+      };
+      collect(d3.body);
+    }
+    for (const block of ['CUT', 'TELLS', 'VOICE'] as const) {
+      if (removed.has(block) && !sitsOut.some((s) => s.block === block)) sitsOut.push({ block, reason: 'removed by the D3 leave-one-out bypass' });
+    }
+  }
   const { hash: _h, ...rest } = recipe;
   return {
     ...rest,
@@ -112,6 +132,7 @@ export function leaveOneOut(source: Recipe, target: LeaveOneOutTarget): Recipe {
     kind: 'ablation',
     parent: { hash: recipeHash(source), derivation: { transform: 'leave-one-out', version: 1, target } },
     stages,
+    sitsOut,
     exceptions: recipe.exceptions.filter((id) => !DROPPED_EXCEPTIONS[target].includes(id)),
   };
 }
@@ -137,6 +158,6 @@ export function critiqueSelf(source: Recipe): Recipe {
     kind: 'ablation',
     parent: { hash: recipeHash(source), derivation: { transform: 'critique-self', version: 1 } },
     stages,
-    exceptions: [...recipe.exceptions, 'SM-5'],
+    exceptions: recipe.exceptions.includes('SM-5') ? recipe.exceptions : [...recipe.exceptions, 'SM-5'],
   };
 }

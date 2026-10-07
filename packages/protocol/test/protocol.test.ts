@@ -87,9 +87,17 @@ describe('exceptions', () => {
       'SM-2': ['LS1'],
       'SM-3': ['CH3'],
       'SM-4': ['PR7.2'],
-      'SM-5': ['PR1', 'PR2', 'DR3', 'DR5'],
+      'SM-5': ['PR1', 'PR2', 'DR3', 'DR4', 'DR5'],
       'SM-6': ['PR6', 'DR9'],
     });
+  });
+
+  it('limits Study 1 manipulations to the Study 1 families and scopes their clauses', () => {
+    for (const [id, ex] of Object.entries(EXCEPTIONS)) {
+      if (ex.scope === 'study-manipulation') expect(ex.families, id).toEqual(['C1', 'baseline']);
+    }
+    expect(EXCEPTIONS['C1-DR7']?.clauses).toEqual({ DR7: ['check-after'] });
+    expect(EXCEPTIONS['SM-6']?.clauses).toEqual({ PR6: ['fixed-input'], DR9: ['fixed-input'] });
   });
 
   it('restricts SM-5 to the critique-self derivation', () => {

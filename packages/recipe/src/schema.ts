@@ -80,8 +80,12 @@ const Id = z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'ids are lowercase letters, 
 const Port = z.enum(PORT_TYPES);
 const HashString = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 
+/** Keys that JavaScript treats specially; content under them could escape hashing and rule checks. */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const JsonKey = z.string().refine((k) => !FORBIDDEN_KEYS.has(k), { message: 'reserved key name' });
+
 const JsonSchema: z.ZodType<Json> = z.lazy(() =>
-  z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(JsonSchema), z.record(z.string(), JsonSchema)]),
+  z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(JsonSchema), z.record(JsonKey, JsonSchema)]),
 );
 
 const NodeRef: z.ZodType<Node> = z.lazy(() => NodeSchema);
@@ -101,7 +105,7 @@ export const StepSchema = z.strictObject({
   produces: z.array(Port),
   writes: z.boolean().optional(),
   proxyFor: z.literal('human').optional(),
-  knobs: z.record(z.string(), JsonSchema).optional(),
+  knobs: z.record(JsonKey, JsonSchema).optional(),
   variant: z.string().min(1).optional(),
 });
 
@@ -173,7 +177,21 @@ export const RecipeSchema: z.ZodType<Recipe> = z.strictObject({
   hash: HashString.optional(),
 }) as z.ZodType<Recipe>;
 
+/** Paths of own properties with reserved names anywhere in raw input (zod silently drops `__proto__`). */
+function reservedKeyPaths(value: unknown, path: (string | number)[] = []): (string | number)[][] {
+  if (Array.isArray(value)) return value.flatMap((v, i) => reservedKeyPaths(v, [...path, i]));
+  if (value === null || typeof value !== 'object') return [];
+  return Object.keys(value).flatMap((k) => [
+    ...(FORBIDDEN_KEYS.has(k) ? [[...path, k]] : []),
+    ...reservedKeyPaths((value as Record<string, unknown>)[k], [...path, k]),
+  ]);
+}
+
 /** Parse untrusted input into a Recipe. Throws ZodError with paths on invalid input. */
 export function parseRecipe(input: unknown): Recipe {
+  const reserved = reservedKeyPaths(input);
+  if (reserved.length) {
+    throw new z.ZodError(reserved.map((path) => ({ code: 'custom' as const, path, message: 'reserved key name', input: undefined })));
+  }
   return RecipeSchema.parse(input);
 }

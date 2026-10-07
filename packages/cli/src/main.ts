@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { readFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { parseRecipe, recipeHash, type Recipe } from '@byway/recipe';
 import { validate } from '@byway/validator';
+import { JsonInputError, checkStructure, decode } from './json.ts';
 
 export interface Io {
   out: (line: string) => void;
@@ -18,26 +19,43 @@ const USAGE = [
 class InputError extends Error {}
 
 function load(file: string): Recipe {
-  let text: string;
+  let bytes: Uint8Array;
   try {
-    text = readFileSync(file, 'utf8');
+    bytes = readFileSync(file);
   } catch (e) {
     throw new InputError(`cannot read ${file}: ${(e as Error).message}`);
   }
-  let json: unknown;
   try {
-    json = JSON.parse(text);
-  } catch (e) {
-    throw new InputError(`${file} is not valid JSON: ${(e as Error).message}`);
-  }
-  try {
+    const text = decode(bytes, file);
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      throw new InputError(`${file} is not valid JSON: ${(e as Error).message}`);
+    }
+    checkStructure(text, file);
     return parseRecipe(json);
   } catch (e) {
+    if (e instanceof InputError) throw e;
+    if (e instanceof JsonInputError) throw new InputError(e.message);
     if (e instanceof ZodError) {
       const issues = e.issues.map((i) => `  ${i.path.join('.') || '(root)'}: ${i.message}`).join('\n');
       throw new InputError(`${file} is not a valid recipe:\n${issues}`);
     }
-    throw e;
+    // Anything else from parsing (for example a stack overflow on pathological input) is still unreadable input.
+    throw new InputError(`${file} could not be parsed: ${(e as Error).message}`);
+  }
+}
+
+/** True when this module is the program entry, also when launched through a symlink or junction. */
+export function isEntry(moduleUrl: string, argv1: string | undefined): boolean {
+  if (!argv1) return false;
+  try {
+    const a = realpathSync(argv1);
+    const b = realpathSync(fileURLToPath(moduleUrl));
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    return false;
   }
 }
 
@@ -79,7 +97,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isEntry(import.meta.url, process.argv[1])) {
   const code = await run(process.argv.slice(2), { out: (s) => console.log(s), err: (s) => console.error(s) });
   process.exit(code);
 }

@@ -16,7 +16,8 @@ import {
 
 /**
  * C1 Studio, the article's configuration (03-configurations, C1), seed entry route.
- * Not yet modelled in Milestone 0: the vision and C2 entry routes, the optional early pick and RELAY.
+ * Not yet modelled in Milestone 0: the vision and C2 entry routes, the optional early pick, RELAY, refs (GREAT mode)
+ * and the calibration step as its own node (it is recorded as the critic's `calibration` knob).
  */
 export const c1: Recipe = withHash({
   schema: 'byway.recipe/1',
@@ -34,8 +35,12 @@ export const c1: Recipe = withHash({
         each(
           'each-candidate',
           seq(
-            loop('critic-loop', seq(render('render'), critic('critic'), criticFix('critic-fix')), criticGate('human')),
-            optional('asset-if-plain', 'a human calls the design plain', seq(asset('asset'), render('asset-verify'))),
+            loop(
+              'critic-loop',
+              seq(render('render'), critic('critic', { renders: ['desktop', 'mobile', 'fold'], prompt: 'runbook.critic-ok', calibration: true }), criticFix('critic-fix')),
+              criticGate('human'),
+            ),
+            optional('asset-if-plain', 'a human calls the design plain', seq(asset('asset', { slots: 3, triesPerSlot: 3 }), render('asset-verify'))),
           ),
         ),
         pick('pick-one', 'H', 1, 'human'),
@@ -46,10 +51,10 @@ export const c1: Recipe = withHash({
       body: seq(
         render('cut-render'),
         cutByHuman('cut'),
-        applyDirective('apply-cut', 'project.apply-cut'),
+        applyDirective('apply-cut', 'runbook.cut-apply'),
         render('tells-render'),
-        tellsSweep('tells-sweep'),
-        applyDirective('apply-swaps', 'project.apply-swaps'),
+        tellsSweep('tells-sweep', 'runbook.tells-sweep'),
+        applyDirective('apply-swaps', 'runbook.tells-swap'),
         render('compare-render'),
         tellsCompareByHuman('tells-compare'),
         voiceByHuman('voice'),

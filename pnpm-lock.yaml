@@ -71,6 +71,9 @@ importers:
 
   packages/validator:
     dependencies:
+      '@byway/canonical':
+        specifier: workspace:*
+        version: link:../canonical
       '@byway/protocol':
         specifier: workspace:*
         version: link:../protocol

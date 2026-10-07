@@ -2,9 +2,14 @@ import type { PortType } from '@byway/protocol';
 import { step, type Gate, type Step } from '@byway/recipe';
 
 /**
- * Step factories shared by the C1 family and the Study 1 arms. Prompt ids name templates:
- * "article.*" are the article's prompts (to be transcribed verbatim, Study 1 D2), "project.*" are
- * project-written prompts (Study 1 protocol, Appendix A).
+ * Step factories shared by the C1 family and the Study 1 arms.
+ *
+ * Prompt ids name templates that are registered separately:
+ * - `article.*`: the article's own prompts (Study 1 Appendix A: A.B1, A.B2, A.SEED, A.CRIT-W, A.ASSET),
+ *   to be transcribed verbatim (Study 1 decision D2).
+ * - `study1.*`: Study 1 protocol Appendix A ids (A.9–A.14, A.CRIT-C). `study1.A.CRIT-C` is written by the
+ *   worker in each run and locked at the first call, as in the article; it is not a fixed project template.
+ * - `runbook.*`: 06-runbook templates used by the protocol configuration C1.
  */
 
 export const seedBuild = (id: string, consumes: PortType[], structuralAxis: boolean): Step =>
@@ -37,7 +42,16 @@ export const plainBuild = (id: string, prompt: string, consumes: PortType[], kno
 export const render = (id: string): Step =>
   step({ id, role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] });
 
-export const critic = (id: string): Step =>
+export interface CriticOptions {
+  /** Render views the critic receives. */
+  renders: string[];
+  /** Prompt id: a fixed template for C1, the worker-written locked prompt for C1-H. */
+  prompt: string;
+  /** C1 amendment 6: check the critic orders good and generic references correctly before the probe. */
+  calibration: boolean;
+}
+
+export const critic = (id: string, o: CriticOptions): Step =>
   step({
     id,
     role: 'critic',
@@ -46,10 +60,10 @@ export const critic = (id: string): Step =>
     tier: 'big',
     isolated: true,
     frozenPrompt: true,
-    prompt: 'project.critic-ok',
+    prompt: o.prompt,
     consumes: ['view'],
     produces: ['critique', 'score'],
-    knobs: { mode: 'OK', renders: ['desktop', 'mobile', 'fold'] },
+    knobs: { mode: 'OK', renders: o.renders, calibration: o.calibration },
   });
 
 /** The worker's fix turn inside the critic loop, driven by the article's critic-loop worker prompt. */
@@ -69,7 +83,8 @@ export const criticFix = (id: string): Step =>
 export const applyDirective = (id: string, prompt: string): Step =>
   step({ id, role: 'fix', actor: 'model', tier: 'mid', prompt, consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true });
 
-export const asset = (id: string): Step =>
+/** ASSET with optional slot policy knobs (C1 amendment 8). Study 1 uses the article's prompt without them. */
+export const asset = (id: string, knobs?: Step['knobs']): Step =>
   step({
     id,
     role: 'asset',
@@ -80,13 +95,13 @@ export const asset = (id: string): Step =>
     consumes: ['artifact'],
     produces: ['artifact'],
     writes: true,
-    knobs: { slots: 3, triesPerSlot: 3 },
+    ...(knobs ? { knobs } : {}),
   });
 
 export const cutByHuman = (id: string): Step =>
   step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] });
 
-/** D3-auto CUT: a fresh-context reviewer issues an itemized removal directive (Study 1 SM-3). */
+/** D3-auto CUT: a fresh-context reviewer issues an itemized removal directive (Study 1 A.9, SM-3). */
 export const cutByProxy = (id: string): Step =>
   step({
     id,
@@ -97,20 +112,23 @@ export const cutByProxy = (id: string): Step =>
     isolated: true,
     frozenPrompt: true,
     proxyFor: 'human',
-    prompt: 'project.cut-directive',
+    prompt: 'study1.A9',
     consumes: ['view'],
     produces: ['critique'],
     knobs: { rounds: 2 },
   });
 
-export const tellsSweep = (id: string): Step =>
+/** The TELLS sweep: a fresh-context, big-tier call, so the catalog never enters the worker's context (port rule 7). */
+export const tellsSweep = (id: string, prompt: string): Step =>
   step({
     id,
     role: 'tells-sweep',
     block: 'TELLS',
     actor: 'model',
-    tier: 'mid',
-    prompt: 'project.tells-sweep',
+    tier: 'big',
+    isolated: true,
+    frozenPrompt: true,
+    prompt,
     consumes: ['view', 'tells'],
     produces: ['critique'],
     knobs: { catalog: 'article-4row', variants: 'combined' },
@@ -119,7 +137,7 @@ export const tellsSweep = (id: string): Step =>
 export const tellsCompareByHuman = (id: string): Step =>
   step({ id, role: 'tells-compare', block: 'TELLS', actor: 'human', consumes: ['view'], produces: ['taste'] });
 
-/** D3-auto TELLS: a blind keep-or-revert call that never sees the catalog (Study 1 SM-4). */
+/** D3-auto TELLS: a blind keep-or-revert call that never sees the catalog (Study 1 A.13, SM-4). */
 export const tellsCompareByProxy = (id: string): Step =>
   step({
     id,
@@ -130,7 +148,7 @@ export const tellsCompareByProxy = (id: string): Step =>
     isolated: true,
     frozenPrompt: true,
     proxyFor: 'human',
-    prompt: 'project.tells-keep-or-revert',
+    prompt: 'study1.A13',
     consumes: ['view'],
     produces: ['taste'],
   });
@@ -147,7 +165,7 @@ export const voiceByHuman = (id: string): Step =>
     knobs: { scope: 'every-line' },
   });
 
-/** CRITIC-check: a score-free, defect-only check after Distill (03 C1 amendment 9). */
+/** CRITIC-check: a score-free, defect-only check after Distill (03 C1 amendment 9). Not used in Study 1. */
 export const defectCheck = (id: string): Step =>
   step({
     id,
@@ -158,7 +176,7 @@ export const defectCheck = (id: string): Step =>
     tier: 'big',
     isolated: true,
     frozenPrompt: true,
-    prompt: 'project.defect-check',
+    prompt: 'runbook.defect-check',
     consumes: ['view'],
     produces: ['critique'],
     knobs: { mode: 'check' },

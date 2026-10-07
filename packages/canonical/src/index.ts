@@ -16,7 +16,12 @@ export function canonicalize(value: unknown): string {
 }
 
 function serialize(value: unknown, ancestors: Set<object>, path: string): string {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+  if (value === null || typeof value === 'boolean') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'string') {
+    // RFC 8785 §3.2.2.2: lone surrogates are an error, not something to escape.
+    if (!value.isWellFormed()) throw new CanonicalizationError(`${path}: string contains a lone surrogate`);
     return JSON.stringify(value);
   }
   if (typeof value === 'number') {
@@ -34,7 +39,15 @@ function serialize(value: unknown, ancestors: Set<object>, path: string): string
   ancestors.add(value);
   try {
     if (Array.isArray(value)) {
-      return `[${value.map((item, i) => serialize(item, ancestors, `${path}[${i}]`)).join(',')}]`;
+      // Index loop, not map(): map() skips holes, which would turn a sparse array into invalid JSON.
+      const items: string[] = [];
+      for (let i = 0; i < value.length; i++) items.push(serialize(value[i], ancestors, `${path}[${i}]`));
+      return `[${items.join(',')}]`;
+    }
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      // Date, Map, class instances… would all serialize as "{}" and collide.
+      throw new CanonicalizationError(`${path}: only plain objects and arrays are JSON (got ${value.constructor?.name ?? 'an exotic object'})`);
     }
     const entries = Object.keys(value)
       .sort()
