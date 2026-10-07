@@ -13,5 +13,9 @@
     "@byway/contracts": "workspace:*",
     "@google/genai": "^2.27.0",
     "openai": "^7.28.0"
+  },
+  "devDependencies": {
+    "@byway/recipe": "workspace:*",
+    "@byway/validator": "workspace:*"
   }
 }

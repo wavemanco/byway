@@ -81,6 +81,13 @@ importers:
       openai:
         specifier: ^7.28.0
         version: 7.28.0(ws@8.22.0)(zod@4.6.5)
+    devDependencies:
+      '@byway/recipe':
+        specifier: workspace:*
+        version: link:../recipe
+      '@byway/validator':
+        specifier: workspace:*
+        version: link:../validator
 
   packages/protocol: {}
 
