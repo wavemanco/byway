@@ -1,0 +1,5 @@
+packages:
+  - packages/*
+allowBuilds:
+  # esbuild (used by tsx and vitest) verifies its platform binary on install.
+  esbuild: true

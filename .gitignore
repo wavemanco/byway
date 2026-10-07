@@ -14,3 +14,7 @@ desktop.ini
 .impeccable/
 node_modules/
 __pycache__/
+
+# Build output
+dist/
+coverage/

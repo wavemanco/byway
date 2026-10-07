@@ -1,0 +1,10 @@
+{
+  "name": "@byway/canonical",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RFC 8785 canonical JSON and SHA-256 content hashes",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

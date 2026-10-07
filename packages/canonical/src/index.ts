@@ -1,0 +1,59 @@
+import { createHash } from 'node:crypto';
+
+/** Thrown when a value cannot be represented as RFC 8785 canonical JSON. */
+export class CanonicalizationError extends Error {
+  override name = 'CanonicalizationError';
+}
+
+/**
+ * RFC 8785 (JSON Canonicalization Scheme). Object keys are sorted by UTF-16
+ * code units (JavaScript's default string ordering), there is no whitespace,
+ * and primitives use ECMAScript JSON.stringify serialization, which RFC 8785
+ * adopts for numbers and strings.
+ */
+export function canonicalize(value: unknown): string {
+  return serialize(value, new Set<object>(), '$');
+}
+
+function serialize(value: unknown, ancestors: Set<object>, path: string): string {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new CanonicalizationError(`${path}: ${value} is not representable in JSON`);
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value !== 'object') {
+    throw new CanonicalizationError(`${path}: values of type ${typeof value} are not JSON`);
+  }
+  if (ancestors.has(value)) {
+    throw new CanonicalizationError(`${path}: cyclic structure`);
+  }
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `[${value.map((item, i) => serialize(item, ancestors, `${path}[${i}]`)).join(',')}]`;
+    }
+    const entries = Object.keys(value)
+      .sort()
+      .map((key) => {
+        const v = (value as Record<string, unknown>)[key];
+        return `${JSON.stringify(key)}:${serialize(v, ancestors, `${path}.${key}`)}`;
+      });
+    return `{${entries.join(',')}}`;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+/** Lowercase hex SHA-256 of the UTF-8 encoding of `text`. */
+export function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/** Content address of a JSON value: `sha256:` + SHA-256 of its canonical form. */
+export function contentHash(value: unknown): string {
+  return `sha256:${sha256Hex(canonicalize(value))}`;
+}
