@@ -5,11 +5,11 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 ## How to read this log
 
 - **Status:** *Accepted* decisions are in force; *Proposed* ones are recommendations awaiting the user's decision.
-- **Decided by** says who made the call, honestly: **User** (the user directed it), **User-approved** (Claude recommended, the user explicitly chose it), **By continuation ⚑** (Claude proposed it in delivered work and the user built on it without explicit approval; these need ratification) and **Pending**.
+- **Decided by** says who made the call, honestly: **User** (the user directed it), **User-approved** (Claude recommended, the user explicitly chose it), **By continuation ⚑** (Claude proposed it in delivered work and the user built on it without explicit approval; these need ratification), **Delegated** (Claude decided under authority the user delegated, e.g. "Let's code"; reversible and flagged for review) and **Pending**.
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**60 records:** 53 accepted (15 of them by continuation, awaiting ratification) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**63 records:** 56 accepted (15 of them by continuation, awaiting ratification; 1 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -36,6 +36,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0055](0055-instrument-firewall-and-exposure.md) | Charter CR12: evaluation instruments walled off from the product; exposure tracked | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0057](0057-tamper-evident-record-and-disclosure.md) | Charter CR14: tamper-evident record and full disclosure | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0060](0060-repository-byway-private-remote.md) | Version control: git repository named byway, private GitHub remote (wavemanco/byway) | Accepted | User | 2026-10-07 06:35 |
+| [ADR-0062](0062-code-first-work-mode.md) | Code first: people, outside actions and pricing go to a playbook and a backlog | Accepted | User | 2026-10-07 09:40 |
 
 ## Protocol
 
@@ -71,6 +72,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0036](0036-study-1-outcomes-and-ai-judges.md) | Study 1 outcomes: lay pairwise judgments as primary, non-Claude AI judges as validated secondary measures | Proposed | Pending | 2026-10-06 00:17 |
 | [ADR-0037](0037-confirmatory-analysis-and-multiplicity-plan.md) | Confirmatory analysis and multiplicity plan for Study 1 | Proposed | Pending | 2026-10-06 00:17 |
 | [ADR-0038](0038-model-selection-pinning-and-routing.md) | Model selection, pinning and routing policy for the studies | Proposed | Pending | 2026-10-06 00:17 |
+| [ADR-0061](0061-study-1-technical-choices-accepted.md) | Study 1 technical design choices: all recommendations in protocol v1.1 accepted | Accepted | User-approved | 2026-10-07 09:40 |
 
 ## System
 
@@ -84,6 +86,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0039](0039-data-layer-postgres-cas-parquet.md) | Data layer: Postgres and a content-addressed artifact store on WSL ext4, with Parquet data freezes for analysis | Proposed | Pending | 2026-10-06 00:17 |
 | [ADR-0056](0056-open-source-study-engine.md) | Charter CR13: open-source the study engine (OSI) by the end of confirmatory data collection | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0059](0059-engine-requirements-for-composition-and-credibility.md) | Engine requirements for composition and credibility, built into the spine before the pilot | Accepted | User-approved | 2026-10-07 06:35 |
+| [ADR-0063](0063-code-workspace-outside-onedrive.md) | The code checkout lives outside OneDrive, at C:\Users\arvik\code\byway | Accepted | Delegated | 2026-10-07 09:45 |
 
 ## Product & program
 
@@ -98,7 +101,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 
 ## Open decisions (not yet ADRs)
 
-Choices that belong to the user and will become ADRs once decided.
+Choices that belong to the user and will become ADRs once decided. Since 2026-10-07 the non-code items are tracked in the [playbook](../playbook.md) (people and outside actions) and the [backlog](../backlog.md) (pricing and deferred decisions); this table is kept for history.
 
 | Decision | Options | Recommendation | Decide when |
 |---|---|---|---|

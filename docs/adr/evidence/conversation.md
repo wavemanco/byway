@@ -849,3 +849,80 @@ Four decisions settle this section. The rest wait for their natural point: which
 ---
 ## USER 2026-10-07T13:35:51.736Z
 [ANSWER] The user answered: "Adopt the credibility charter (CR1–CR14) as drafted?"="Adopt all 14 (Recommended)", "Who should be the Independent Integrity Monitor?"="Paid non-author methodologist (Recommended)", "When and how should the study engine be open-sourced?"="OSI licence, end of data collection (Recommended)", "May I put ActAI under git version control now?"="local git (but this won't be called ActAI.  Name it byway) + private remote repo (push to: https://github.com/wavemanco/byway)". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
+
+---
+## CLAUDE 2026-10-07T13:41:48.390Z
+The decision log and the private repository are both set up, and design section 1 is settled.
+
+**The four decisions are recorded.** You adopted all 14 charter rules, a paid Integrity Monitor who is not an author, open source by the end of data collection, and the git repository. Together with the rules and requirements they confirm, they're in the log as [ADR-0044 to ADR-0060](docs/adr/README.md). Design section 1's structure ([ADR-0041](docs/adr/0041-shared-engine-pinned-research-versions.md)) is now accepted. The index lists 60 records: 53 accepted (15 still awaiting your ratification) and 7 proposed.
+
+**The `byway` repository is pushed.** It went to the private remote `wavemanco/byway` on `main` as one commit with 93 files: the protocol, the decision log with its evidence, the research reports, and a short top-level README. I added two guard files:
+- `.gitignore` excludes `.env*` files and key files, so API keys can't be committed.
+- `.gitattributes` fixes line endings, so file fingerprints match across machines.
+
+I scanned the files before committing; nothing sensitive was staged.
+
+**Things still on your side, all listed in the index under open decisions:**
+- **The local folder is still called `ActAI`.** Renaming it to `byway` moves this session's working directory, so it's best done at the end of a working session. I'll carry the project memory across.
+- **The charter needs a public record.** CR14 calls for one, but the repository is private. Before the first registration (Stage 0), a small public mirror of the research decision records and the study registry, plus archived snapshots at each milestone, would cover it.
+- **Commit signing and branch protection** aren't set up yet; CR14 asks for both.
+- **Find the Integrity Monitor.** I can draft a search brief and an outline contract whenever you want them.
+
+**Study 1, next section.** A workflow is drafting the Study 1 protocol to journal standard. It extracts the article's exact prompts from the page images, re-runs the power analysis, reconciles the places where the research disagreed, and has three reviewers attack the draft: a Registered Report referee, a charter auditor and a feasibility auditor. When it finishes, I'll bring you the Study 1 section with the decisions only you can make: the extra baselines, model choice, journal, the smallest effect worth detecting, and budget.
+
+---
+## USER 2026-10-07T15:19:54.511Z
+[SYSTEM: background workflow finished; not a user message] <task-notification>
+<task-id>w21xexpyu</task-id>
+<tool-use-id>toolu_01DxzxdMzVxVUsH8vErDEFih</tool-use-id>
+<output-file>C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-OneDrive-Documents-ActAI\67b5b9ac-8595-4cc6-898a-d7d911b9d422\tasks\w21xexpyu.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Draft a charter-compliant, preregistration-grade Study 1 protocol and adversarially review it" completed</summary>
+<result>{"final":{"protocol_markdown":"# Study 1 Protocol v1.1: C1-H replication and leave-one-block-out ablations (landing pages)\n\n**Program:** byway · **Paper:** 1 (ADR-0024: ladder rungs 1 and 2) · **Version:** v1.1 draft, 2026-10-07 · **Status:** not registered, and not yet ready for Stage 0. Three things must happen before Stage 0 can be filed: every blocking user decision (Appendix B.1) is closed and its marker removed; the article's prompts are transcribed (D2); and a human completes the verification log (Appendix B.3). This draft is written to the standard of a Stage 0 registration (CR4) and is meant to become the core of the Stage 1 Registered Report (CR2).\n\n**Binding rules:** the credibility charter, CR1–CR14 (ADR-0044 to ADR-0057). ...[truncated]
+
+---
+## CLAUDE 2026-10-07T15:21:37.313Z
+The Study 1 design came back from its review round. Here is design section 2: what the study looks like, what it really costs, and the decisions only you can make. The full draft is in [study1/protocol-v1.1-draft.md](study1/protocol-v1.1-draft.md), committed and pushed. It's long because it's written to Registered Report standard; the summary below is what you need to decide on.
+
+## Design section 2: Study 1
+
+**The question.** Does the article's workflow, run without humans as **C1-H**, beat the article's own baselines on landing pages? And what does each block contribute?
+
+| Part | Design |
+|---|---|
+| **Arms** | **B-Plain** (the article's exact prompt) · **B-Random** (the article's "totally unique… completely at random" prompt) · **C1-H** (four seeded drafts → blind Fable 5.1 critic loop with the hidden 9/10 bar → image generation → AI stand-ins for CUT and TELLS) · **ablations:** −SEED, −CRITIC, CRITIC-self (the worker critiques itself), −ASSET, −D3 · **proposed extra baselines:** Anthropic's frontend-design skill, an invited outside competitor (the charter requires this one), and a compute-matched best-of-N arm |
+| **Materials** | 72 test briefs drawn at random from real product launches across 12 categories, fictionalized by an independent copywriter, each with a fixed copy deck so copy can't drive preferences · 12 sealed briefs for the pilot · 3–4 public briefs for all engineering dry runs |
+| **Outputs** | Each arm makes 4 pages per brief, and every page is judged (no picking) |
+| **Raters** | Lay raters on Prolific make forced choices between pairs, with one pool judging quality and another judging distinctiveness. 24 judgments per brief per comparison, paid $15/h. 20 expert designers give estimates. AI judges (GPT, Gemini, one open-weight model) are secondary, and all are reported |
+| **Headline test** | **H1a: C1-H vs B-Plain on quality** is the single gate; the other test families follow it |
+| **Analysis** | Win rate per brief, with a standard error that accounts for clustering by both brief and rater. The simulation showed that the simpler test wrongly finds an effect 7–16% of the time with a fixed 20-person expert panel; this one holds its error rate |
+| **Power** | At 72 briefs, at least 0.90 to detect a 58% win rate in every confirmatory family. Adding briefs helps far more than adding raters: about 70% of the noise sits between briefs |
+| **Safeguards** | The whole charter. The Monitor alone sees the pilot. The brief draw is committed in advance and seeded by a public random source (drand). Ratings are encrypted in the rater's browser to the Monitor. The team can tell which arm made a page, but never sees a rating |
+
+## Three findings that change the plan
+
+1. **The money.** The honest estimate is **about $100k central (range $66–141k)**, not $24k. The earlier cost model under-priced the critic and finishing steps and the growing context, and assumed rater sessions half as long as realistic. It also left out the Monitor ($10–20k), the copywriter, the red team, legal review, compute and hosting. All of these are estimates; a ~$1.4k cost probe and real quotes would replace them before you set a ceiling.
+2. **The schedule depends on one go/no-go.** Realistic dates:
+   - Stage 0 around February 2027, with the pilot the same month.
+   - Stage 1 submitted around April.
+   - In-principle acceptance around August–November.
+
+   Fable 5.1 may retire as early as September 2027, so the pages will probably have to be generated **before** acceptance, sealed with the Monitor. **The journal must agree to that in writing.** If neither PLOS ONE nor Royal Society Open Science accepts it, we stop before spending on the pilot.
+3. **The article's prompts.** I can quote only the 9-word plain prompt. Copyright limits me to describing the rest, and the PDF crops words at the page edge. **You'd need to copy them word for word from the live article**, with a second, independent person doing the same, and ask the author's permission to publish them. The review also found that the protocol's own runbook had added things to the article's prompts without marking them as additions. Those will now be logged as declared deviations. The critic's own prompt never appears in the article: the worker wrote it, so ours is project-authored and will be labelled that way.
+
+All three reviews were Claude passes, the same model family as the study's worker and critic. The Monitor must repeat the charter audit.
+
+`★ Insight ─────────────────────────────────────`
+- **More briefs beat more raters.** About 70% of the noise is in how much briefs differ from one another, so going from 24 to 32 judgments per brief adds only about 0.02–0.04 power. That's why the draft fixes 72 briefs instead of growing rater pools.
+- **The headless arm adds things the article never ran on landing pages:** AI stand-ins for CUT and TELLS. The draft therefore proposes a second, cheap test (H1c, about $1k) of the article's own demonstrated chain on its own, so the paper can say exactly what was replicated.
+`─────────────────────────────────────────────────`
+
+Four decisions shape everything else:
+
+---
+## CLAUDE-ASKS 2026-10-07T15:21:46.985Z
+[{"question": "Study 1's honest estimate is ~$100k central (range $66–141k), not $24k. How do you want to proceed?", "header": "Budget", "multiSelect": false, "options": [{"label": "Proceed; set ceiling after cost probe (Recommended)", "description": "Approve a ~$1.4k cost probe on public engineering briefs once the spend gate exists; collect quotes (Monitor, copywriter, red team, legal, IRB); then set the ceiling with real numbers. Pilot (~$5.5k) only after the Monitor is contracted."}, {"label": "Proceed, but aim for the lean design", "description": "60 briefs, no frontend-skill or best-of-N arms: saves roughly $17k (estimate), but some tests drop below 0.90 power and the 'it just spends more compute' objection stays open."}, {"label": "Too much: rethink Paper 1's scope", "description": "I come back with a smaller first study (e.g. fewer ablations), keeping the charter intact."}]}, {"question": "Which baselines should Study 1 include beyond the article's two (plain and 'random')?", "header": "Baselines", "multiSelect": false, "options": [{"label": "Skill + outside + best-of-N (Recommended)", "description": "Adds Anthropic's frontend-design skill (strong practitioner baseline), the invited outside competitor, and a compute-matched best-of-N arm (the only answer to 'C1 just spends more'). All gated behind H1a. ~+$11.6k (estimates)."}, {"label": "Skill + outside, no best-of-N", "description": "Saves ~$6k; leaves the compute objection to the CRITIC-self ablation only."}, {"label": "Article baselines only", "description": "Plain and 'random', plus the outside competitor reported as an estimate (the charter minimum). Matches what I first told you Paper 1 would test."}]}, {"question": "Do you have, or can you recruit, an academic co-investigator (for the ethics review)?", "header": "Ethics", "multiSelect": false, "options": [{"label": "Yes / can recruit one (Recommended)", "description": "Their institution's IRB reviews the rater studies (submit in November). Note: they can be deputy key-holder (as a non-author) or guarantor (as an author), not both."}, {"label": "No: use an independent IRB", "description": "A commercial/independent review board; costs a fee (quote needed) and you keep full control."}, {"label": "Not sure yet", "description": "I'll draft both routes and you decide before Stage 0."}]}, {"question": "There are ~15 technical design choices with clear recommendations (effect-size margin, error control, 72 briefs, expert estimates only, positive control, H1c test, Study 1b decoupled, Apache-2.0/CC-BY, etc.). How do you want to handle them?", "header": "Tech choices", "multiSelect": false, "options": [{"label": "Accept all recommendations (Recommended)", "description": "I record them as ADRs (marked user-approved) and fold them into protocol v1.2; you can reopen any later before Stage 0."}, {"label": "Walk me through them", "description": "I present them in a compact table, a few at a time, before recording anything."}]}]
+
+---
+## USER 2026-10-07T16:40:58.417Z
+[ANSWER] The user answered: "Study 1's honest estimate is ~$100k central (range $66–141k), not $24k. How do you want to proceed?"="Focus on code please. Design the study yes but we can price the thing after. I mean I don't understand why you are focusing on non-code hiring stuff. Just record everything and everyone who will be needed in a playbook and file the pricing bit in backlog. This is a coding session. Let's code.", "Which baselines should Study 1 include beyond the article's two (plain and 'random')?"="Focus on code please. Design the study yes but we can price the thing after. I mean I don't understand why you are focusing on non-code hiring stuff. Just record everything and everyone who will be needed in a playbook and file the pricing bit in backlog. This is a coding session. Let's code.", "Do you have, or can you recruit, an academic co-investigator (for the ethics review)?"="Focus on code please. Design the study yes but we can price the thing after. I mean I don't understand why you are focusing on non-code hiring stuff. Just record everything and everyone who will be needed in a playbook and file the pricing bit in backlog. This is a coding session. Let's code.", "There are ~15 technical design choices with clear recommendations (effect-size margin, error control, 72 briefs, expert estimates only, positive control, H1c test, Study 1b decoupled, Apache-2.0/CC-BY, etc.). How do you want to handle them?"="Accept all recommendations (Recommended)". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
