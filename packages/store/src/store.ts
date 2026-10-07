@@ -106,11 +106,12 @@ export class SqliteStore implements Store {
     try {
       migrate(this.#db, this.#now);
       this.#q = prepareQueries(this.#db);
+      this.artifacts = new FileArtifactStore(dataDir, this.#db, this.#now, () => this.#ensureOpen());
     } catch (e) {
+      // A half-built store would hold the file open (and locked, on Windows) with nobody left to close it.
       this.#db.close();
       throw e;
     }
-    this.artifacts = new FileArtifactStore(dataDir, this.#db, this.#now, () => this.#ensureOpen());
   }
 
   // Workspaces
