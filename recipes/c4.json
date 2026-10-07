@@ -1,0 +1,350 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "c4",
+  "title": "C4 Reader-Ready",
+  "kind": "protocol-config",
+  "family": "C4",
+  "channel": "protocol",
+  "medium": "prose",
+  "inputs": [
+    "intent",
+    "refs",
+    "tells"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "optional",
+            "id": "framings-if-wanted",
+            "trigger": "you want five framings to react to first",
+            "body": {
+              "op": "step",
+              "id": "framings",
+              "role": "vision",
+              "block": "VISION",
+              "actor": "model",
+              "tier": "mid",
+              "prompt": "product.c4.framings",
+              "consumes": [
+                "intent"
+              ],
+              "produces": [
+                "brief"
+              ]
+            }
+          },
+          {
+            "op": "step",
+            "id": "vision-lite",
+            "role": "vision",
+            "block": "VISION",
+            "actor": "human",
+            "consumes": [
+              "intent"
+            ],
+            "produces": [
+              "brief"
+            ],
+            "variant": "VISION-lite"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "D2",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "step",
+            "id": "draft",
+            "role": "build",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "product.c4.draft",
+            "consumes": [
+              "intent",
+              "brief"
+            ],
+            "produces": [
+              "artifact"
+            ],
+            "writes": true
+          },
+          {
+            "op": "optional",
+            "id": "recipient-critic",
+            "trigger": "the document is longer than about 300 words",
+            "body": {
+              "op": "loop",
+              "id": "critic-loop",
+              "body": {
+                "op": "seq",
+                "steps": [
+                  {
+                    "op": "step",
+                    "id": "render",
+                    "role": "render",
+                    "glue": "RENDER",
+                    "actor": "tool",
+                    "consumes": [
+                      "artifact"
+                    ],
+                    "produces": [
+                      "view"
+                    ]
+                  },
+                  {
+                    "op": "step",
+                    "id": "recipient",
+                    "role": "critic",
+                    "block": "CRITIC",
+                    "actor": "model",
+                    "tier": "big",
+                    "isolated": true,
+                    "frozenPrompt": true,
+                    "prompt": "product.c4.recipient",
+                    "consumes": [
+                      "view",
+                      "refs"
+                    ],
+                    "produces": [
+                      "critique",
+                      "score"
+                    ],
+                    "knobs": {
+                      "mode": "GREAT",
+                      "refs": 4,
+                      "shuffle": true
+                    }
+                  },
+                  {
+                    "op": "step",
+                    "id": "revise",
+                    "role": "fix",
+                    "actor": "model",
+                    "tier": "mid",
+                    "prompt": "product.c4.revise",
+                    "consumes": [
+                      "critique",
+                      "artifact"
+                    ],
+                    "produces": [
+                      "artifact"
+                    ],
+                    "writes": true
+                  }
+                ]
+              },
+              "gate": {
+                "metric": "critic-rank",
+                "threshold": 3,
+                "hidden": true,
+                "holder": "worker",
+                "probe": 1,
+                "max": 2,
+                "plateau": {
+                  "minGain": 1,
+                  "window": 2
+                },
+                "onCap": "human",
+                "onNoConverge": "recalibrate-human"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "D3",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "step",
+            "id": "cut-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "cut",
+            "role": "cut",
+            "block": "CUT",
+            "actor": "human",
+            "consumes": [
+              "view"
+            ],
+            "produces": [
+              "critique"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "apply-cut",
+            "role": "fix",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "product.c4.apply-cut",
+            "consumes": [
+              "critique",
+              "artifact"
+            ],
+            "produces": [
+              "artifact"
+            ],
+            "writes": true
+          },
+          {
+            "op": "step",
+            "id": "tells-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "tells-sweep",
+            "role": "tells-sweep",
+            "block": "TELLS",
+            "actor": "model",
+            "tier": "big",
+            "isolated": true,
+            "frozenPrompt": true,
+            "prompt": "product.c4.tells-sweep",
+            "consumes": [
+              "view",
+              "tells"
+            ],
+            "produces": [
+              "critique"
+            ],
+            "knobs": {
+              "catalog": "extended",
+              "variants": "combined",
+              "domains": [
+                "memo"
+              ]
+            }
+          },
+          {
+            "op": "step",
+            "id": "apply-swaps",
+            "role": "fix",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "product.c4.apply-swaps",
+            "consumes": [
+              "critique",
+              "artifact"
+            ],
+            "produces": [
+              "artifact"
+            ],
+            "writes": true
+          },
+          {
+            "op": "step",
+            "id": "compare-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "tells-compare",
+            "role": "tells-compare",
+            "block": "TELLS",
+            "actor": "human",
+            "consumes": [
+              "view"
+            ],
+            "produces": [
+              "taste"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "voice",
+            "role": "voice",
+            "block": "VOICE",
+            "actor": "human",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "voice",
+              "artifact"
+            ],
+            "writes": true,
+            "knobs": {
+              "scope": "key-lines"
+            },
+            "variant": "VOICE-lite"
+          },
+          {
+            "op": "optional",
+            "id": "claim-log",
+            "trigger": "the document is fact-heavy (an RCA, an analytical or a strategy memo)",
+            "body": {
+              "op": "step",
+              "id": "claim-sign-off",
+              "role": "voice",
+              "block": "VOICE",
+              "variant": "claim-log",
+              "actor": "human",
+              "consumes": [
+                "artifact"
+              ],
+              "produces": [
+                "voice"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "sitsOut": [
+    {
+      "block": "SEED",
+      "reason": "The document has one job and no open-ended divergence; nest C2 only when it proposes options (03 C4)"
+    },
+    {
+      "block": "ASSET",
+      "reason": "Pure text; the one exception, charts computed from real data, is not in the wiring (03 C4)"
+    },
+    {
+      "block": "RELAY",
+      "reason": "Nothing in an internal document has state, sequence or motion (03 C4)"
+    }
+  ],
+  "exceptions": [
+    "C4-DR9"
+  ],
+  "bank": true,
+  "hash": "sha256:393f7aa18733ae9dc325f6d5e97216fcb264e2f0c5326112cb6977b2248f04c9"
+}

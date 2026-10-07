@@ -15,11 +15,28 @@ const byId = (id: string): Recipe => {
 };
 
 describe('catalog conformance', () => {
-  it('has the Milestone 0 recipe ids', () => {
+  it('has the eight protocol configurations, then the Study 1 arms', () => {
     expect(CATALOG.map((r) => r.id)).toEqual([
-      'c1', 'c1h', 'c1h-no-seed', 'c1h-no-critic', 'c1h-no-asset', 'c1h-no-d3', 'c1h-critic-self',
+      'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c6a', 'c7',
+      'c1h', 'c1h-no-seed', 'c1h-no-critic', 'c1h-no-asset', 'c1h-no-d3', 'c1h-critic-self',
       'b-plain', 'b-random', 'b-skill', 'b-bon',
     ]);
+  });
+
+  it('keeps the Milestone 0 recipe hashes (the IR extension is backward compatible)', () => {
+    expect(Object.fromEntries(CATALOG.filter((r) => !/^c[2-7]a?$/.test(r.id)).map((r) => [r.id, r.hash]))).toEqual({
+      c1: 'sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577',
+      c1h: 'sha256:d2cf85ec155280772a12f4efa17e3db0dc3bee3835a7dd5a7840e35592b35e1a',
+      'c1h-no-seed': 'sha256:7f85f2140b637e28e9c457c3aac227c8be5687a7a1d67c9361ee47569c8485a6',
+      'c1h-no-critic': 'sha256:bf5b4e6cdbf196c10b4a00d80a422dc04482b4fd9aa405118984ba297b09eb52',
+      'c1h-no-asset': 'sha256:999023ea342f7b0cde107d4cdf39de68c2d30f55b37af45648c7fe1cd45bb69d',
+      'c1h-no-d3': 'sha256:ca9d62d4a264f2e32cd9f1780b72006182bdd3a26bdae4cb857bafad0d8a6ea5',
+      'c1h-critic-self': 'sha256:116871b9e8563e353072e2addd1b31b7fbacad09ca38549e6da1fdb8f7c84cc2',
+      'b-plain': 'sha256:715cfe230315eb9255e306084d644e0edb42430151cfb7a9e9ca9c94846154ba',
+      'b-random': 'sha256:63b413291ebf8d9168109c8043dd582086b1c958696c702ee758a165eda97306',
+      'b-skill': 'sha256:c2ef1ad6f413e9fe1909bd4c2ac051c64d752eb9c6b6f3c36892c38a75464b7a',
+      'b-bon': 'sha256:df007ffa06720c9c542e6624a99f31f4d2a9755d419a69e4b406d2138b9e1f62',
+    });
   });
 
   it.each(CATALOG.map((r) => [r.id, r] as const))('%s parses, is hashed, and validates with exactly its cited exceptions', (_id, r) => {

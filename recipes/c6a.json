@@ -1,0 +1,394 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "c6a",
+  "title": "C6a Fiction Sounding Board (seed entry)",
+  "kind": "protocol-config",
+  "family": "C6a",
+  "channel": "protocol",
+  "medium": "prose",
+  "inputs": [
+    "intent",
+    "refs",
+    "tells"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "replicate",
+            "id": "seeded-cards",
+            "n": 6,
+            "body": {
+              "op": "step",
+              "id": "seed-card",
+              "role": "seed",
+              "block": "SEED",
+              "actor": "model",
+              "tier": "mid",
+              "prompt": "product.c6a.seed-card",
+              "consumes": [
+                "intent"
+              ],
+              "produces": [
+                "artifact"
+              ],
+              "writes": true,
+              "knobs": {
+                "source": "shell-string"
+              }
+            }
+          },
+          {
+            "op": "step",
+            "id": "cards-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "option_set<artifact>"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "audit",
+            "id": "vanilla-check",
+            "lenses": [
+              {
+                "name": "vanilla-overlap",
+                "body": {
+                  "op": "seq",
+                  "steps": [
+                    {
+                      "op": "replicate",
+                      "id": "vanilla-x3",
+                      "n": 3,
+                      "body": {
+                        "op": "step",
+                        "id": "vanilla-build",
+                        "role": "build",
+                        "actor": "model",
+                        "tier": "mid",
+                        "prompt": "product.c6a.vanilla-build",
+                        "consumes": [
+                          "intent"
+                        ],
+                        "produces": [
+                          "artifact"
+                        ]
+                      }
+                    },
+                    {
+                      "op": "step",
+                      "id": "vanilla-flag",
+                      "role": "overlap",
+                      "actor": "model",
+                      "tier": "mid",
+                      "isolated": true,
+                      "frozenPrompt": true,
+                      "prompt": "product.c6a.vanilla-flag",
+                      "consumes": [
+                        "view",
+                        "option_set<artifact>"
+                      ],
+                      "produces": [
+                        "critique"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "op": "pick",
+            "id": "pick-card",
+            "mode": "H",
+            "k": 1,
+            "actor": "human"
+          },
+          {
+            "op": "loop",
+            "id": "vision",
+            "body": {
+              "op": "seq",
+              "steps": [
+                {
+                  "op": "step",
+                  "id": "react",
+                  "role": "vision",
+                  "block": "VISION",
+                  "actor": "human",
+                  "consumes": [
+                    "artifact"
+                  ],
+                  "produces": [
+                    "taste"
+                  ]
+                },
+                {
+                  "op": "step",
+                  "id": "sharpen",
+                  "role": "vision",
+                  "block": "VISION",
+                  "actor": "model",
+                  "tier": "mid",
+                  "prompt": "product.c6a.sharpen",
+                  "consumes": [
+                    "taste",
+                    "artifact"
+                  ],
+                  "produces": [
+                    "brief"
+                  ]
+                }
+              ]
+            },
+            "gate": {
+              "metric": "human",
+              "hidden": false,
+              "holder": "human",
+              "probe": 1,
+              "max": 2,
+              "onCap": "human",
+              "onNoConverge": "recalibrate-human"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "D2",
+      "body": {
+        "op": "loop",
+        "id": "author-loop",
+        "body": {
+          "op": "seq",
+          "steps": [
+            {
+              "op": "step",
+              "id": "write",
+              "role": "build",
+              "actor": "human",
+              "consumes": [
+                "intent",
+                "brief"
+              ],
+              "produces": [
+                "artifact"
+              ],
+              "writes": true
+            },
+            {
+              "op": "step",
+              "id": "render",
+              "role": "render",
+              "glue": "RENDER",
+              "actor": "tool",
+              "consumes": [
+                "artifact"
+              ],
+              "produces": [
+                "view"
+              ]
+            },
+            {
+              "op": "audit",
+              "id": "audit",
+              "lenses": [
+                {
+                  "name": "cut",
+                  "body": {
+                    "op": "step",
+                    "id": "cut-marks",
+                    "role": "cut",
+                    "block": "CUT",
+                    "actor": "model",
+                    "tier": "big",
+                    "isolated": true,
+                    "frozenPrompt": true,
+                    "prompt": "product.c6a.cut-marks",
+                    "consumes": [
+                      "view"
+                    ],
+                    "produces": [
+                      "critique"
+                    ]
+                  }
+                },
+                {
+                  "name": "tells",
+                  "body": {
+                    "op": "step",
+                    "id": "tells-flags",
+                    "role": "tells-sweep",
+                    "block": "TELLS",
+                    "actor": "model",
+                    "tier": "big",
+                    "isolated": true,
+                    "frozenPrompt": true,
+                    "prompt": "product.c6a.tells-flags",
+                    "consumes": [
+                      "view",
+                      "tells"
+                    ],
+                    "produces": [
+                      "critique"
+                    ],
+                    "knobs": {
+                      "catalog": "extended",
+                      "variants": "combined",
+                      "domains": [
+                        "fiction"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "critic",
+                  "body": {
+                    "op": "step",
+                    "id": "critic",
+                    "role": "critic",
+                    "block": "CRITIC",
+                    "actor": "model",
+                    "tier": "big",
+                    "isolated": true,
+                    "frozenPrompt": true,
+                    "prompt": "product.c6a.critic",
+                    "consumes": [
+                      "view",
+                      "refs"
+                    ],
+                    "produces": [
+                      "critique",
+                      "score"
+                    ],
+                    "knobs": {
+                      "mode": "GREAT",
+                      "refs": 4,
+                      "family": "other",
+                      "shuffle": true
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "gate": {
+          "metric": "human",
+          "hidden": false,
+          "holder": "human",
+          "probe": 1,
+          "max": 10,
+          "onCap": "human",
+          "onNoConverge": "recalibrate-human"
+        }
+      }
+    },
+    {
+      "stage": "D3",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "step",
+            "id": "voice",
+            "role": "voice",
+            "block": "VOICE",
+            "actor": "human",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "voice",
+              "artifact"
+            ],
+            "writes": true,
+            "knobs": {
+              "scope": "every-line"
+            }
+          },
+          {
+            "op": "optional",
+            "id": "final-tells-read",
+            "trigger": "you want a last read for fiction tells",
+            "body": {
+              "op": "audit",
+              "id": "final-read",
+              "lenses": [
+                {
+                  "name": "tells",
+                  "body": {
+                    "op": "seq",
+                    "steps": [
+                      {
+                        "op": "step",
+                        "id": "final-render",
+                        "role": "render",
+                        "glue": "RENDER",
+                        "actor": "tool",
+                        "consumes": [
+                          "artifact"
+                        ],
+                        "produces": [
+                          "view"
+                        ]
+                      },
+                      {
+                        "op": "step",
+                        "id": "final-tells-flags",
+                        "role": "tells-sweep",
+                        "block": "TELLS",
+                        "actor": "model",
+                        "tier": "big",
+                        "isolated": true,
+                        "frozenPrompt": true,
+                        "prompt": "product.c6a.final-tells-flags",
+                        "consumes": [
+                          "view",
+                          "tells"
+                        ],
+                        "produces": [
+                          "critique"
+                        ],
+                        "knobs": {
+                          "catalog": "extended",
+                          "variants": "combined",
+                          "domains": [
+                            "fiction"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "sitsOut": [
+    {
+      "block": "ASSET",
+      "reason": "Cover art and illustration are a separate job (C5 Still mode) (03 C6a)"
+    },
+    {
+      "block": "RELAY",
+      "reason": "No media (03 C6a)"
+    }
+  ],
+  "exceptions": [
+    "C6a-DR4",
+    "C6a-DR7"
+  ],
+  "bank": true,
+  "hash": "sha256:7ec335fcf5b83105365824ca223ea60b86b48256cd0310cc94bd059592c88645"
+}

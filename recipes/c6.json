@@ -1,0 +1,227 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "c6",
+  "title": "C6 Sounding Board",
+  "kind": "protocol-config",
+  "family": "C6",
+  "channel": "protocol",
+  "medium": "prose",
+  "inputs": [
+    "intent",
+    "refs",
+    "tells"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "optional",
+        "id": "angles-if-wanted",
+        "trigger": "you want angles mined from your own material first",
+        "body": {
+          "op": "seq",
+          "steps": [
+            {
+              "op": "step",
+              "id": "angles",
+              "role": "vision",
+              "block": "VISION",
+              "actor": "model",
+              "tier": "mid",
+              "prompt": "product.c6.angles",
+              "consumes": [
+                "intent"
+              ],
+              "produces": [
+                "brief"
+              ]
+            },
+            {
+              "op": "step",
+              "id": "react",
+              "role": "vision",
+              "block": "VISION",
+              "actor": "human",
+              "consumes": [
+                "brief"
+              ],
+              "produces": [
+                "taste"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "stage": "D2",
+      "body": {
+        "op": "loop",
+        "id": "author-loop",
+        "body": {
+          "op": "seq",
+          "steps": [
+            {
+              "op": "step",
+              "id": "write",
+              "role": "build",
+              "actor": "human",
+              "consumes": [
+                "intent"
+              ],
+              "produces": [
+                "artifact"
+              ],
+              "writes": true
+            },
+            {
+              "op": "step",
+              "id": "render",
+              "role": "render",
+              "glue": "RENDER",
+              "actor": "tool",
+              "consumes": [
+                "artifact"
+              ],
+              "produces": [
+                "view"
+              ]
+            },
+            {
+              "op": "audit",
+              "id": "audit",
+              "lenses": [
+                {
+                  "name": "cut",
+                  "body": {
+                    "op": "step",
+                    "id": "cut-marks",
+                    "role": "cut",
+                    "block": "CUT",
+                    "actor": "model",
+                    "tier": "big",
+                    "isolated": true,
+                    "frozenPrompt": true,
+                    "prompt": "product.c6.cut-marks",
+                    "consumes": [
+                      "view"
+                    ],
+                    "produces": [
+                      "critique"
+                    ]
+                  }
+                },
+                {
+                  "name": "tells",
+                  "body": {
+                    "op": "step",
+                    "id": "tells-flags",
+                    "role": "tells-sweep",
+                    "block": "TELLS",
+                    "actor": "model",
+                    "tier": "big",
+                    "isolated": true,
+                    "frozenPrompt": true,
+                    "prompt": "product.c6.tells-flags",
+                    "consumes": [
+                      "view",
+                      "tells"
+                    ],
+                    "produces": [
+                      "critique"
+                    ],
+                    "knobs": {
+                      "catalog": "extended",
+                      "variants": "combined",
+                      "domains": [
+                        "application"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "critic",
+                  "body": {
+                    "op": "step",
+                    "id": "critic",
+                    "role": "critic",
+                    "block": "CRITIC",
+                    "actor": "model",
+                    "tier": "big",
+                    "isolated": true,
+                    "frozenPrompt": true,
+                    "prompt": "product.c6.critic",
+                    "consumes": [
+                      "view",
+                      "refs"
+                    ],
+                    "produces": [
+                      "critique",
+                      "score"
+                    ],
+                    "knobs": {
+                      "mode": "GREAT",
+                      "refs": 4,
+                      "family": "other",
+                      "shuffle": true
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "gate": {
+          "metric": "human",
+          "hidden": false,
+          "holder": "human",
+          "probe": 1,
+          "max": 10,
+          "onCap": "human",
+          "onNoConverge": "recalibrate-human"
+        }
+      }
+    },
+    {
+      "stage": "D3",
+      "body": {
+        "op": "step",
+        "id": "voice",
+        "role": "voice",
+        "block": "VOICE",
+        "actor": "human",
+        "consumes": [
+          "artifact"
+        ],
+        "produces": [
+          "voice",
+          "artifact"
+        ],
+        "writes": true,
+        "knobs": {
+          "scope": "every-line"
+        }
+      }
+    }
+  ],
+  "sitsOut": [
+    {
+      "block": "SEED",
+      "reason": "Distinctiveness must come from true facts about the sender, not randomness (03 C6)"
+    },
+    {
+      "block": "ASSET",
+      "reason": "A written document has no asset slot; portfolios go to C1 (03 C6)"
+    },
+    {
+      "block": "RELAY",
+      "reason": "No media; portfolios go to C1 (03 C6)"
+    }
+  ],
+  "exceptions": [
+    "C6-DR4",
+    "C6-DR7"
+  ],
+  "bank": true,
+  "hash": "sha256:27f73bdb8efdb738a56c9b7d5772ca9fd8a0498708118e9d5ecfbecd8632222e"
+}

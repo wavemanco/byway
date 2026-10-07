@@ -1,0 +1,275 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "c2",
+  "title": "C2 Divergence Engine",
+  "kind": "protocol-config",
+  "family": "C2",
+  "channel": "protocol",
+  "medium": "options",
+  "inputs": [
+    "intent",
+    "refs"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "replicate",
+            "id": "seeded-options",
+            "n": 12,
+            "body": {
+              "op": "step",
+              "id": "seed-option",
+              "role": "seed",
+              "block": "SEED",
+              "actor": "model",
+              "tier": "mid",
+              "prompt": "product.c2.seed-option",
+              "consumes": [
+                "intent"
+              ],
+              "produces": [
+                "artifact"
+              ],
+              "writes": true,
+              "knobs": {
+                "source": "shell-string"
+              }
+            }
+          },
+          {
+            "op": "step",
+            "id": "dedupe",
+            "role": "dedupe",
+            "glue": "dedupe",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "product.c2.dedupe",
+            "consumes": [
+              "option_set<artifact>"
+            ],
+            "produces": [
+              "option_set<artifact>"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "pool-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "option_set<artifact>"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "audit",
+            "id": "annotate",
+            "lenses": [
+              {
+                "name": "vanilla-overlap",
+                "body": {
+                  "op": "seq",
+                  "steps": [
+                    {
+                      "op": "replicate",
+                      "id": "vanilla-x3",
+                      "n": 3,
+                      "body": {
+                        "op": "step",
+                        "id": "vanilla-build",
+                        "role": "build",
+                        "actor": "model",
+                        "tier": "mid",
+                        "prompt": "product.c2.vanilla-build",
+                        "consumes": [
+                          "intent"
+                        ],
+                        "produces": [
+                          "artifact"
+                        ]
+                      }
+                    },
+                    {
+                      "op": "step",
+                      "id": "vanilla-flag",
+                      "role": "overlap",
+                      "actor": "model",
+                      "tier": "mid",
+                      "isolated": true,
+                      "frozenPrompt": true,
+                      "prompt": "product.c2.vanilla-flag",
+                      "consumes": [
+                        "view",
+                        "option_set<artifact>"
+                      ],
+                      "produces": [
+                        "critique"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "critic",
+                "body": {
+                  "op": "step",
+                  "id": "critic",
+                  "role": "critic",
+                  "block": "CRITIC",
+                  "actor": "model",
+                  "tier": "big",
+                  "isolated": true,
+                  "frozenPrompt": true,
+                  "prompt": "product.c2.critic",
+                  "consumes": [
+                    "view",
+                    "refs"
+                  ],
+                  "produces": [
+                    "critique",
+                    "score"
+                  ],
+                  "knobs": {
+                    "mode": "GREAT",
+                    "shuffle": true
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "op": "loop",
+            "id": "vision",
+            "body": {
+              "op": "seq",
+              "steps": [
+                {
+                  "op": "step",
+                  "id": "react",
+                  "role": "vision",
+                  "block": "VISION",
+                  "actor": "human",
+                  "consumes": [
+                    "view",
+                    "critique"
+                  ],
+                  "produces": [
+                    "taste"
+                  ]
+                },
+                {
+                  "op": "step",
+                  "id": "sharpen",
+                  "role": "vision",
+                  "block": "VISION",
+                  "actor": "model",
+                  "tier": "mid",
+                  "prompt": "product.c2.sharpen",
+                  "consumes": [
+                    "taste",
+                    "option_set<artifact>"
+                  ],
+                  "produces": [
+                    "brief"
+                  ]
+                }
+              ]
+            },
+            "gate": {
+              "metric": "human",
+              "hidden": false,
+              "holder": "human",
+              "probe": 1,
+              "max": 3,
+              "onCap": "human",
+              "onNoConverge": "recalibrate-human"
+            }
+          },
+          {
+            "op": "step",
+            "id": "option-map",
+            "role": "build",
+            "glue": "BRIEF",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "product.c2.option-map",
+            "consumes": [
+              "option_set<artifact>",
+              "brief",
+              "critique"
+            ],
+            "produces": [
+              "artifact"
+            ],
+            "writes": true
+          },
+          {
+            "op": "step",
+            "id": "voice",
+            "role": "voice",
+            "block": "VOICE",
+            "actor": "human",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "voice",
+              "artifact"
+            ],
+            "writes": true,
+            "knobs": {
+              "scope": "every-line"
+            }
+          },
+          {
+            "op": "optional",
+            "id": "mood-boards-if-wanted",
+            "trigger": "you want rough mood boards for the chosen option",
+            "body": {
+              "op": "step",
+              "id": "mood-boards",
+              "role": "asset",
+              "block": "ASSET",
+              "actor": "model",
+              "tier": "mid",
+              "prompt": "product.c2.mood-boards",
+              "consumes": [
+                "artifact"
+              ],
+              "produces": [
+                "asset"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "sitsOut": [
+    {
+      "block": "CUT",
+      "reason": "Wrong stage: C2 ends in a decision in D1; dedupe and the vanilla-overlap flag are glue (03 C2)"
+    },
+    {
+      "block": "TELLS",
+      "reason": "Wrong stage: C2 ends in a decision in D1, before any work exists to sweep (03 C2)"
+    },
+    {
+      "block": "RELAY",
+      "reason": "No media at the ideation stage (03 C2)"
+    }
+  ],
+  "exceptions": [
+    "C2-DR4",
+    "C2-DR7"
+  ],
+  "bank": true,
+  "hash": "sha256:cb2cca9e370944192bade01c13ddb1d2afe4b529bb19ff9266d25ecf3c5aaf7a"
+}
