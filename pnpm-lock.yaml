@@ -43,6 +43,18 @@ importers:
         specifier: workspace:*
         version: link:../validator
 
+  packages/cli:
+    dependencies:
+      '@byway/recipe':
+        specifier: workspace:*
+        version: link:../recipe
+      '@byway/validator':
+        specifier: workspace:*
+        version: link:../validator
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
   packages/protocol: {}
 
   packages/recipe:

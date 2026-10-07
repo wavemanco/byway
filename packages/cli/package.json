@@ -1,0 +1,15 @@
+{
+  "name": "@byway/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "byway command line: validate and hash recipe files",
+  "exports": {
+    ".": "./src/main.ts"
+  },
+  "dependencies": {
+    "@byway/recipe": "workspace:*",
+    "@byway/validator": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}
