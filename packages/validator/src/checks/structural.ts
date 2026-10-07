@@ -1,0 +1,83 @@
+import { BLOCKS, ROLE_KNOBS, type KnobDef } from '@byway/protocol';
+import { steps, walk, type Json, type Recipe, type Step } from '@byway/recipe';
+import { DETECTOR_PATTERN, KNOWN_GATE_METRICS, type Findings } from '../context.ts';
+
+const STAGE_ORDER = { D1: 1, D2: 2, D3: 3 } as const;
+
+export function checkStructural(recipe: Recipe, findings: Findings): void {
+  // ST1: unique ids.
+  const seen = new Map<string, string>();
+  walk(recipe, (node, path) => {
+    const id = 'id' in node ? node.id : undefined;
+    if (id === undefined) return;
+    const first = seen.get(id);
+    if (first) findings.add('ST1', path, `id "${id}" is already used at ${first}`);
+    else seen.set(id, path);
+  });
+
+  walk(recipe, (node, path) => {
+    // ST2: loop gates are well formed.
+    if (node.op === 'loop') {
+      const g = node.gate;
+      if (g.probe < 1 || g.max < g.probe) findings.add('ST2', path, `loop "${node.id}" needs 1 ≤ probe ≤ max (probe=${g.probe}, max=${g.max})`);
+      if (!KNOWN_GATE_METRICS.has(g.metric) && !DETECTOR_PATTERN.test(g.metric)) {
+        findings.add('ST2', path, `loop "${node.id}" uses an unknown gate metric "${g.metric}"`);
+      }
+    }
+    // ST3: counts.
+    if (node.op === 'replicate' && node.n < 1) findings.add('ST3', path, `replicate "${node.id}" needs n ≥ 1`);
+    if (node.op === 'pick' && node.k < 1) findings.add('ST3', path, `pick "${node.id}" needs k ≥ 1`);
+  });
+
+  // ST4: stage order.
+  let last = 0;
+  recipe.stages.forEach((s, i) => {
+    const order = STAGE_ORDER[s.stage];
+    if (order <= last) findings.add('ST4', `stages[${i}]`, `stage ${s.stage} is repeated or out of order`);
+    last = Math.max(last, order);
+  });
+
+  // ST6: sit-outs.
+  const used = new Set(steps(recipe).flatMap(({ step }) => (step.block ? [step.block] : [])));
+  recipe.sitsOut.forEach((s, i) => {
+    if (s.reason.trim() === '') findings.add('ST6', `sitsOut[${i}]`, `${s.block} sits out without a reason`);
+    if (used.has(s.block)) findings.add('ST6', `sitsOut[${i}]`, `${s.block} sits out but is used`);
+  });
+
+  // ST7: knobs.
+  for (const { step, path } of steps(recipe)) checkKnobs(step, path, findings);
+}
+
+function knobDefs(step: Step): Record<string, KnobDef> {
+  if (step.block) return BLOCKS[step.block].knobs;
+  if (step.role === 'build' || step.role === 'fix' || step.role === 'select') return ROLE_KNOBS[step.role];
+  return {};
+}
+
+function checkKnobs(step: Step, path: string, findings: Findings): void {
+  if (!step.knobs) return;
+  const defs = knobDefs(step);
+  for (const [name, value] of Object.entries(step.knobs)) {
+    const def = defs[name];
+    if (!def) {
+      findings.add('ST7', `${path}.knobs.${name}`, `knob "${name}" is not registered for ${step.block ?? step.role}`);
+    } else if (!knobValueOk(def, value)) {
+      findings.add('ST7', `${path}.knobs.${name}`, `knob "${name}" has an invalid value ${JSON.stringify(value)}`);
+    }
+  }
+}
+
+function knobValueOk(def: KnobDef, value: Json): boolean {
+  switch (def.type) {
+    case 'enum':
+      return typeof value === 'string' && def.values.includes(value);
+    case 'int':
+      return typeof value === 'number' && Number.isInteger(value) && value >= def.min && value <= def.max;
+    case 'bool':
+      return typeof value === 'boolean';
+    case 'string':
+      return typeof value === 'string';
+    case 'string[]':
+      return Array.isArray(value) && value.every((v) => typeof v === 'string');
+  }
+}

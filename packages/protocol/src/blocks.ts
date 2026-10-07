@@ -115,7 +115,9 @@ export const ROLE_KNOBS: Record<'build' | 'fix' | 'select', Record<string, KnobD
     /** An up-front ban list. Registered so that default rule 8 (audit after, never ban before) can flag it. */
     avoid: { type: 'string[]' },
   },
-  fix: {},
+  fix: {
+    avoid: { type: 'string[]' },
+  },
   select: {
     n: { type: 'int', min: 1, max: 64 },
   },

@@ -6,6 +6,11 @@ export type Channel = 'protocol' | 'research-frozen' | 'product' | 'workspace';
 export interface ExceptionDef {
   id: string;
   relaxes: RuleId[];
+  /**
+   * Clause scoping. When a relaxed rule has an entry here, the exception suppresses only findings
+   * with one of these clauses, so an exception cannot hide an unrelated breach of the same rule.
+   */
+  clauses?: Partial<Record<RuleId, string[]>>;
   scope: 'protocol-declared' | 'study-manipulation';
   /** Recipe kinds that may cite it. */
   kinds: RecipeKind[];
@@ -34,6 +39,7 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
   'C1-DR7': {
     id: 'C1-DR7',
     relaxes: ['DR7'],
+    clauses: { DR7: ['judge-after'] },
     scope: 'protocol-declared',
     kinds: ['protocol-config', 'variant', 'ablation'],
     channels: ALL_CHANNELS,
@@ -43,6 +49,7 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
   'SM-1': {
     id: 'SM-1',
     relaxes: ['PR4'],
+    clauses: { PR4: ['d3-entry', 'each-in-d3'] },
     scope: 'study-manipulation',
     kinds: STUDY_KINDS,
     channels: ['research-frozen'],
@@ -79,6 +86,7 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
   'SM-5': {
     id: 'SM-5',
     relaxes: ['PR1', 'PR2', 'DR3', 'DR5'],
+    clauses: { PR1: ['not-isolated'], PR2: ['shared-context'], DR3: ['not-isolated'], DR5: ['judge-tier'] },
     scope: 'study-manipulation',
     kinds: ['ablation'],
     channels: ['research-frozen'],
@@ -89,6 +97,7 @@ export const EXCEPTIONS: Record<string, ExceptionDef> = {
   'SM-6': {
     id: 'SM-6',
     relaxes: ['PR6', 'DR9'],
+    clauses: { DR9: ['fixed-input'] },
     scope: 'study-manipulation',
     kinds: STUDY_KINDS,
     channels: ['research-frozen'],

@@ -1,0 +1,14 @@
+{
+  "name": "@byway/validator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Static validator: scope-based port typing and protocol rule checks",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@byway/protocol": "workspace:*",
+    "@byway/recipe": "workspace:*"
+  }
+}
