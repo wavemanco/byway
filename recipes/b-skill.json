@@ -1,0 +1,47 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "b-skill",
+  "title": "B-Skill (plain prompt + frontend-design skill)",
+  "kind": "baseline",
+  "family": "baseline",
+  "channel": "research-frozen",
+  "inputs": [
+    "intent",
+    "voice"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "replicate",
+        "id": "x4",
+        "n": 4,
+        "body": {
+          "op": "step",
+          "id": "build",
+          "role": "build",
+          "actor": "model",
+          "tier": "mid",
+          "prompt": "article.B1",
+          "consumes": [
+            "intent",
+            "voice"
+          ],
+          "produces": [
+            "artifact"
+          ],
+          "writes": true,
+          "knobs": {
+            "skill": "anthropic/frontend-design@registered-pin"
+          }
+        }
+      }
+    }
+  ],
+  "sitsOut": [],
+  "exceptions": [
+    "SM-6"
+  ],
+  "bank": false,
+  "hash": "sha256:767d0f7179cdcdc3bfc211e19bc4140b5004934464c63d88cdcf730aa0242fb1"
+}

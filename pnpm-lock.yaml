@@ -27,6 +27,22 @@ importers:
 
   packages/canonical: {}
 
+  packages/catalog:
+    dependencies:
+      '@byway/canonical':
+        specifier: workspace:*
+        version: link:../canonical
+      '@byway/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@byway/recipe':
+        specifier: workspace:*
+        version: link:../recipe
+    devDependencies:
+      '@byway/validator':
+        specifier: workspace:*
+        version: link:../validator
+
   packages/protocol: {}
 
   packages/recipe:

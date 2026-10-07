@@ -1,0 +1,44 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "b-plain",
+  "title": "B-Plain (article Baseline 1)",
+  "kind": "baseline",
+  "family": "baseline",
+  "channel": "research-frozen",
+  "inputs": [
+    "intent",
+    "voice"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "replicate",
+        "id": "x4",
+        "n": 4,
+        "body": {
+          "op": "step",
+          "id": "build",
+          "role": "build",
+          "actor": "model",
+          "tier": "mid",
+          "prompt": "article.B1",
+          "consumes": [
+            "intent",
+            "voice"
+          ],
+          "produces": [
+            "artifact"
+          ],
+          "writes": true
+        }
+      }
+    }
+  ],
+  "sitsOut": [],
+  "exceptions": [
+    "SM-6"
+  ],
+  "bank": false,
+  "hash": "sha256:9a92895d25a30994a6eb12ef29ddd26331d7e657834d98af3b9fb206044811c4"
+}

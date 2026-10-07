@@ -1,0 +1,44 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "b-random",
+  "title": "B-Random (article Baseline 2)",
+  "kind": "baseline",
+  "family": "baseline",
+  "channel": "research-frozen",
+  "inputs": [
+    "intent",
+    "voice"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "replicate",
+        "id": "x4",
+        "n": 4,
+        "body": {
+          "op": "step",
+          "id": "build",
+          "role": "build",
+          "actor": "model",
+          "tier": "mid",
+          "prompt": "article.B2",
+          "consumes": [
+            "intent",
+            "voice"
+          ],
+          "produces": [
+            "artifact"
+          ],
+          "writes": true
+        }
+      }
+    }
+  ],
+  "sitsOut": [],
+  "exceptions": [
+    "SM-6"
+  ],
+  "bank": false,
+  "hash": "sha256:584aa08cca018670816a13c9f04566c268d4264437084f87c67f6f20dc6fe23b"
+}

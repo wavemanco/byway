@@ -1,0 +1,371 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "c1",
+  "title": "C1 Studio (seed entry; vision routes and RELAY not yet modelled)",
+  "kind": "protocol-config",
+  "family": "C1",
+  "channel": "protocol",
+  "inputs": [
+    "intent",
+    "tells"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "replicate",
+        "id": "seeded-x4",
+        "n": 4,
+        "body": {
+          "op": "step",
+          "id": "seed-build",
+          "role": "seed",
+          "block": "SEED",
+          "actor": "model",
+          "tier": "mid",
+          "prompt": "article.SEED",
+          "consumes": [
+            "intent"
+          ],
+          "produces": [
+            "artifact"
+          ],
+          "writes": true,
+          "knobs": {
+            "source": "shell-string",
+            "structuralAxis": true
+          }
+        }
+      }
+    },
+    {
+      "stage": "D2",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "each",
+            "id": "each-candidate",
+            "body": {
+              "op": "seq",
+              "steps": [
+                {
+                  "op": "loop",
+                  "id": "critic-loop",
+                  "body": {
+                    "op": "seq",
+                    "steps": [
+                      {
+                        "op": "step",
+                        "id": "render",
+                        "role": "render",
+                        "glue": "RENDER",
+                        "actor": "tool",
+                        "consumes": [
+                          "artifact"
+                        ],
+                        "produces": [
+                          "view"
+                        ]
+                      },
+                      {
+                        "op": "step",
+                        "id": "critic",
+                        "role": "critic",
+                        "block": "CRITIC",
+                        "actor": "model",
+                        "tier": "big",
+                        "isolated": true,
+                        "frozenPrompt": true,
+                        "prompt": "project.critic-ok",
+                        "consumes": [
+                          "view"
+                        ],
+                        "produces": [
+                          "critique",
+                          "score"
+                        ],
+                        "knobs": {
+                          "mode": "OK",
+                          "renders": [
+                            "desktop",
+                            "mobile",
+                            "fold"
+                          ]
+                        }
+                      },
+                      {
+                        "op": "step",
+                        "id": "critic-fix",
+                        "role": "fix",
+                        "actor": "model",
+                        "tier": "mid",
+                        "prompt": "article.CRIT-W",
+                        "consumes": [
+                          "critique",
+                          "artifact"
+                        ],
+                        "produces": [
+                          "artifact"
+                        ],
+                        "writes": true
+                      }
+                    ]
+                  },
+                  "gate": {
+                    "metric": "critic-score",
+                    "threshold": 9,
+                    "hidden": true,
+                    "holder": "worker",
+                    "probe": 2,
+                    "max": 5,
+                    "plateau": {
+                      "minGain": 0.5,
+                      "window": 2
+                    },
+                    "onCap": "human",
+                    "onNoConverge": "recalibrate-human"
+                  }
+                },
+                {
+                  "op": "optional",
+                  "id": "asset-if-plain",
+                  "trigger": "a human calls the design plain",
+                  "body": {
+                    "op": "seq",
+                    "steps": [
+                      {
+                        "op": "step",
+                        "id": "asset",
+                        "role": "asset",
+                        "block": "ASSET",
+                        "actor": "model",
+                        "tier": "mid",
+                        "prompt": "article.ASSET",
+                        "consumes": [
+                          "artifact"
+                        ],
+                        "produces": [
+                          "artifact"
+                        ],
+                        "writes": true,
+                        "knobs": {
+                          "slots": 3,
+                          "triesPerSlot": 3
+                        }
+                      },
+                      {
+                        "op": "step",
+                        "id": "asset-verify",
+                        "role": "render",
+                        "glue": "RENDER",
+                        "actor": "tool",
+                        "consumes": [
+                          "artifact"
+                        ],
+                        "produces": [
+                          "view"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "op": "pick",
+            "id": "pick-one",
+            "mode": "H",
+            "k": 1,
+            "actor": "human"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "D3",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "step",
+            "id": "cut-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "cut",
+            "role": "cut",
+            "block": "CUT",
+            "actor": "human",
+            "consumes": [
+              "view"
+            ],
+            "produces": [
+              "critique"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "apply-cut",
+            "role": "fix",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "project.apply-cut",
+            "consumes": [
+              "critique",
+              "artifact"
+            ],
+            "produces": [
+              "artifact"
+            ],
+            "writes": true
+          },
+          {
+            "op": "step",
+            "id": "tells-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "tells-sweep",
+            "role": "tells-sweep",
+            "block": "TELLS",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "project.tells-sweep",
+            "consumes": [
+              "view",
+              "tells"
+            ],
+            "produces": [
+              "critique"
+            ],
+            "knobs": {
+              "catalog": "article-4row",
+              "variants": "combined"
+            }
+          },
+          {
+            "op": "step",
+            "id": "apply-swaps",
+            "role": "fix",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "project.apply-swaps",
+            "consumes": [
+              "critique",
+              "artifact"
+            ],
+            "produces": [
+              "artifact"
+            ],
+            "writes": true
+          },
+          {
+            "op": "step",
+            "id": "compare-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "tells-compare",
+            "role": "tells-compare",
+            "block": "TELLS",
+            "actor": "human",
+            "consumes": [
+              "view"
+            ],
+            "produces": [
+              "taste"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "voice",
+            "role": "voice",
+            "block": "VOICE",
+            "actor": "human",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "voice",
+              "artifact"
+            ],
+            "writes": true,
+            "knobs": {
+              "scope": "every-line"
+            }
+          },
+          {
+            "op": "step",
+            "id": "final-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "critic-check",
+            "role": "check",
+            "block": "CRITIC",
+            "variant": "CRITIC-check",
+            "actor": "model",
+            "tier": "big",
+            "isolated": true,
+            "frozenPrompt": true,
+            "prompt": "project.defect-check",
+            "consumes": [
+              "view"
+            ],
+            "produces": [
+              "critique"
+            ],
+            "knobs": {
+              "mode": "check"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "sitsOut": [],
+  "exceptions": [
+    "C1-DR2",
+    "C1-DR7"
+  ],
+  "bank": true,
+  "hash": "sha256:c624f454df6d501e614279758c7cab3b25ab369f2f5c68ad89ff0c4480d45593"
+}

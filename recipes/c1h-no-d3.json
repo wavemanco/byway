@@ -1,0 +1,196 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "c1h-no-d3",
+  "title": "C1-H (headless C1, Study 1 treatment arm), without D3",
+  "kind": "ablation",
+  "family": "C1",
+  "channel": "research-frozen",
+  "parent": {
+    "hash": "sha256:1fea409605c0d9a213d6408e6070a9f8ae2c6333f601c6898ac556761b466c61",
+    "derivation": {
+      "transform": "leave-one-out",
+      "version": 1,
+      "target": "D3"
+    }
+  },
+  "inputs": [
+    "intent",
+    "voice",
+    "tells"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "replicate",
+        "id": "seeded-x4",
+        "n": 4,
+        "body": {
+          "op": "step",
+          "id": "seed-build",
+          "role": "seed",
+          "block": "SEED",
+          "actor": "model",
+          "tier": "mid",
+          "prompt": "article.SEED",
+          "consumes": [
+            "intent",
+            "voice"
+          ],
+          "produces": [
+            "artifact"
+          ],
+          "writes": true,
+          "knobs": {
+            "source": "shell-string",
+            "structuralAxis": false
+          }
+        }
+      }
+    },
+    {
+      "stage": "D2",
+      "body": {
+        "op": "each",
+        "id": "each-candidate",
+        "body": {
+          "op": "seq",
+          "steps": [
+            {
+              "op": "loop",
+              "id": "critic-loop",
+              "body": {
+                "op": "seq",
+                "steps": [
+                  {
+                    "op": "step",
+                    "id": "render",
+                    "role": "render",
+                    "glue": "RENDER",
+                    "actor": "tool",
+                    "consumes": [
+                      "artifact"
+                    ],
+                    "produces": [
+                      "view"
+                    ]
+                  },
+                  {
+                    "op": "step",
+                    "id": "critic",
+                    "role": "critic",
+                    "block": "CRITIC",
+                    "actor": "model",
+                    "tier": "big",
+                    "isolated": true,
+                    "frozenPrompt": true,
+                    "prompt": "project.critic-ok",
+                    "consumes": [
+                      "view"
+                    ],
+                    "produces": [
+                      "critique",
+                      "score"
+                    ],
+                    "knobs": {
+                      "mode": "OK",
+                      "renders": [
+                        "desktop",
+                        "mobile",
+                        "fold"
+                      ]
+                    }
+                  },
+                  {
+                    "op": "step",
+                    "id": "critic-fix",
+                    "role": "fix",
+                    "actor": "model",
+                    "tier": "mid",
+                    "prompt": "article.CRIT-W",
+                    "consumes": [
+                      "critique",
+                      "artifact"
+                    ],
+                    "produces": [
+                      "artifact"
+                    ],
+                    "writes": true
+                  }
+                ]
+              },
+              "gate": {
+                "metric": "critic-score",
+                "threshold": 9,
+                "hidden": true,
+                "holder": "worker",
+                "probe": 2,
+                "max": 5,
+                "plateau": {
+                  "minGain": 0.5,
+                  "window": 2
+                },
+                "onCap": "policy-best-snapshot",
+                "onNoConverge": "continue"
+              }
+            },
+            {
+              "op": "step",
+              "id": "asset",
+              "role": "asset",
+              "block": "ASSET",
+              "actor": "model",
+              "tier": "mid",
+              "prompt": "article.ASSET",
+              "consumes": [
+                "artifact"
+              ],
+              "produces": [
+                "artifact"
+              ],
+              "writes": true,
+              "knobs": {
+                "slots": 3,
+                "triesPerSlot": 3
+              }
+            },
+            {
+              "op": "step",
+              "id": "asset-verify",
+              "role": "render",
+              "glue": "RENDER",
+              "actor": "tool",
+              "consumes": [
+                "artifact"
+              ],
+              "produces": [
+                "view"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "sitsOut": [
+    {
+      "block": "VISION",
+      "reason": "Study 1 uses the seed entry only; human taste is tested in Study 1b"
+    },
+    {
+      "block": "RELAY",
+      "reason": "Raters see static renders; motion is not evaluated in Study 1"
+    },
+    {
+      "block": "VOICE",
+      "reason": "Copy is held constant by a fixed human copy deck in every arm (SM-6)"
+    }
+  ],
+  "exceptions": [
+    "C1-DR2",
+    "SM-2",
+    "SM-6"
+  ],
+  "bank": false,
+  "hash": "sha256:35c63a79404fd6bd0db89fe19dacda964303647852e5afcfb2d32dcc01b80b64"
+}

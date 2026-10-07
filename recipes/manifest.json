@@ -1,0 +1,71 @@
+{
+  "schema": "byway.catalog/1",
+  "recipes": [
+    {
+      "id": "c1",
+      "kind": "protocol-config",
+      "channel": "protocol",
+      "hash": "sha256:c624f454df6d501e614279758c7cab3b25ab369f2f5c68ad89ff0c4480d45593"
+    },
+    {
+      "id": "c1h",
+      "kind": "variant",
+      "channel": "research-frozen",
+      "hash": "sha256:1fea409605c0d9a213d6408e6070a9f8ae2c6333f601c6898ac556761b466c61"
+    },
+    {
+      "id": "c1h-no-seed",
+      "kind": "ablation",
+      "channel": "research-frozen",
+      "hash": "sha256:f477010c2b75af995121d481bf6fc0d3a5a9f362935f21c6a7c7c71363ffb4ce"
+    },
+    {
+      "id": "c1h-no-critic",
+      "kind": "ablation",
+      "channel": "research-frozen",
+      "hash": "sha256:9fa209b89e92fa27e00386dc71882195537caf63231fa452669dfa175dba4459"
+    },
+    {
+      "id": "c1h-no-asset",
+      "kind": "ablation",
+      "channel": "research-frozen",
+      "hash": "sha256:2fa0448a93f6082568206afc2d9fdcdd7eb7ef4a64beec7e943b7fc9c62c14f2"
+    },
+    {
+      "id": "c1h-no-d3",
+      "kind": "ablation",
+      "channel": "research-frozen",
+      "hash": "sha256:35c63a79404fd6bd0db89fe19dacda964303647852e5afcfb2d32dcc01b80b64"
+    },
+    {
+      "id": "c1h-critic-self",
+      "kind": "ablation",
+      "channel": "research-frozen",
+      "hash": "sha256:da5947c10d2ff172ba9409fd85904b6edfa39d03d77771bb988d5b0ede3bcaf7"
+    },
+    {
+      "id": "b-plain",
+      "kind": "baseline",
+      "channel": "research-frozen",
+      "hash": "sha256:9a92895d25a30994a6eb12ef29ddd26331d7e657834d98af3b9fb206044811c4"
+    },
+    {
+      "id": "b-random",
+      "kind": "baseline",
+      "channel": "research-frozen",
+      "hash": "sha256:584aa08cca018670816a13c9f04566c268d4264437084f87c67f6f20dc6fe23b"
+    },
+    {
+      "id": "b-skill",
+      "kind": "baseline",
+      "channel": "research-frozen",
+      "hash": "sha256:767d0f7179cdcdc3bfc211e19bc4140b5004934464c63d88cdcf730aa0242fb1"
+    },
+    {
+      "id": "b-bon",
+      "kind": "baseline",
+      "channel": "research-frozen",
+      "hash": "sha256:5f1b6837f82d27e84421d24e780bef76c94e168dc01f02e03198b8ef05c6c6f2"
+    }
+  ]
+}
