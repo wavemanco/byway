@@ -72,7 +72,7 @@ describe('withRetries', () => {
   const opts = (sleep: (ms: number) => Promise<void>) => ({ maxAttempts: 4, baseDelayMs: 100, maxDelayMs: 1000, sleep, random: () => 0.5 });
 
   it('retries retryable errors with exponential backoff, then succeeds', async () => {
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_ms: number) => {});
     let calls = 0;
     const result = await withRetries(async () => {
       calls += 1;
@@ -86,7 +86,7 @@ describe('withRetries', () => {
   });
 
   it('does not retry non-retryable errors', async () => {
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_ms: number) => {});
     let calls = 0;
     await expect(
       withRetries(async () => {
@@ -99,7 +99,7 @@ describe('withRetries', () => {
   });
 
   it('gives up after maxAttempts and rethrows the last error', async () => {
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_ms: number) => {});
     let calls = 0;
     await expect(
       withRetries(async () => {
@@ -111,7 +111,7 @@ describe('withRetries', () => {
   });
 
   it('honours a retry-after hint, capped at maxDelayMs', async () => {
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_ms: number) => {});
     let calls = 0;
     await withRetries(async () => {
       calls += 1;
