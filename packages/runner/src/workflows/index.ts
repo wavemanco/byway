@@ -1,14 +1,5 @@
-import { proxyActivities, defineUpdate, setHandler, condition } from '@temporalio/workflow';
-import { RESOLVE_UPDATE } from '@byway/contracts';
-import { checkResolution } from '@byway/store/resolution';
-
-const acts = proxyActivities<{ hello(name: string): Promise<string> }>({ startToCloseTimeout: '10s' });
-const resolve = defineUpdate<void, [{ checkpointId: string; text?: string }]>(RESOLVE_UPDATE);
-
-export async function spike(name: string): Promise<string> {
-  let answer: string | undefined;
-  setHandler(resolve, (r) => { answer = r.text; }, { validator: (r) => { const c = checkResolution({ id: 'cp', kind: 'react' }, r); if (!c.ok) throw new Error(c.problem); } });
-  const hi = await acts.hello(name);
-  await condition(() => answer !== undefined);
-  return `${hi} ${answer} ${Math.random() < 2}`;
-}
+/**
+ * The workflow entry Temporal loads (ADR-0070: compiled to dist/workflows.js by esbuild before the worker starts).
+ * It exports workflow functions only; everything it pulls in must be deterministic and free of Node APIs.
+ */
+export { runRecipe } from '../workflow/run.ts';
