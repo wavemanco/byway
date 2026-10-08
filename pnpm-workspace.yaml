@@ -7,3 +7,5 @@ allowBuilds:
   # Not needed: @google/genai runs a no-op preinstall echo; protobufjs a postinstall we do not use.
   "@google/genai": false
   protobufjs: false
+  # Not needed: @temporalio/worker pulls in @swc/core, but workflows are compiled with esbuild instead (ADR-0070).
+  "@swc/core": false
