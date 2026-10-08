@@ -103,3 +103,26 @@ export function howItWasMade(stages: TimelineStage[]): HowItWasMade {
   }
   return { rows, skipped, byWho, totalUsd: Math.round(total * 100) / 100 };
 }
+
+export interface SideImage {
+  artifactId: string;
+  label?: string;
+  /** The shown step that made it ("Custom imagery"). */
+  step: string;
+}
+
+/**
+ * Images Custom imagery (ASSET) made in a run whose deliverable cannot hold them: Idea Generator's rough mood boards
+ * for the chosen option (UX-8). They are shown beside the options, apart from the decision, and each can be downloaded.
+ */
+export function sideImages(stages: TimelineStage[]): SideImage[] {
+  return stages.flatMap((stage) =>
+    stage.steps
+      .filter((s) => s.block === 'ASSET')
+      .flatMap((s) =>
+        s.artifacts
+          .filter((a) => outputKind(a.mediaType) === 'image')
+          .map((a) => ({ artifactId: a.artifactId, ...(a.label ? { label: a.label } : {}), step: s.label })),
+      ),
+  );
+}

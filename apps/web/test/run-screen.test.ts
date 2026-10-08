@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { focusAfterRemoval } from '../src/view/focus.ts';
 import { controlPendingLabel } from '../src/view/labels.ts';
 import type { CheckpointRecord } from '@byway/contracts';
-import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, waitingRunCount } from '../src/view/run.ts';
+import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, sideImages, waitingRunCount } from '../src/view/run.ts';
 import type { TimelineStage, TimelineStep } from '../src/view/timeline.ts';
 
 const cp = (id: string, runId: string, openedAt: string, status: CheckpointRecord['status'] = 'open'): CheckpointRecord => ({
@@ -115,5 +115,30 @@ describe('run controls (UX-10)', () => {
     expect(controlPendingLabel('pause')).toBe('Pausing…');
     expect(controlPendingLabel('resume')).toBe('Resuming…');
     expect(controlPendingLabel('cancel')).toBe('Cancelling…');
+  });
+});
+
+describe('images beside an options result (UX-8)', () => {
+  it('collects the images Custom imagery made, for a deliverable that cannot hold them', () => {
+    const stages: TimelineStage[] = [
+      {
+        stage: 'Finish',
+        steps: [
+          step({ label: 'Your words', who: 'you' }),
+          step({
+            label: 'Custom imagery',
+            who: 'ai',
+            block: 'ASSET',
+            artifacts: [
+              { artifactId: 'sha256:m1', mediaType: 'image/png', label: 'Mood board for option A' },
+              { artifactId: 'sha256:brief', mediaType: 'text/markdown', label: 'Briefs' },
+            ],
+          }),
+          step({ label: 'Option map', who: 'ai', artifacts: [{ artifactId: 'sha256:map', mediaType: 'image/png' }] }),
+        ],
+      },
+    ];
+    expect(sideImages(stages)).toEqual([{ artifactId: 'sha256:m1', label: 'Mood board for option A', step: 'Custom imagery' }]);
+    expect(sideImages([])).toEqual([]);
   });
 });

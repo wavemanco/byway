@@ -1131,3 +1131,38 @@
   display: grid;
   gap: var(--s-3);
 }
+
+/* Images beside an options result (UX-8): apart from the decision, quieter than it. */
+.side-images {
+  max-width: 860px;
+  margin-top: var(--s-7);
+}
+
+.side-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: var(--s-4);
+  list-style: none;
+  margin: var(--s-3) 0 0;
+  padding: 0;
+}
+
+.side-images-grid figure {
+  margin: 0;
+}
+
+.side-images-grid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+}
+
+.side-images-grid figcaption {
+  margin-top: var(--s-1);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
