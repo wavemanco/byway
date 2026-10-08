@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { OutputId } from '../src/index.ts';
+import { greatLineup, type OutputId } from '../src/index.ts';
 import { FILES, PROMPT_STEPS, ROLES_BY_PROMPT } from './library.ts';
 
 /**
@@ -52,6 +52,31 @@ describe('port rules and claims, checked on the template files', () => {
     'rules 1 and 5: critic %s sees only the view and the references (no brief, critique, options or round)',
     (_n, f) => {
       expect(f.template.slots.filter((s) => !['view', 'refs', 'labels', 'medium'].includes(s))).toEqual([]);
+    },
+  );
+
+  it.each(FILES.map((f) => [f.name, f] as const))('ADR-0072: %s never tells a critic which item is ours', (_n, f) => {
+    // Phrasings that would single out our item ("ours is C", "our draft is B", "labelled D is ours", "C (ours)").
+    const naming = [
+      /\bours,? is\b/i,
+      /\bis ours\b/i,
+      /\bour (?:item|piece|page|draft|document|passage|ad|change|set|design|version|label)s? (?:is|are)\b/i,
+      /\b(?:[Ll]abel(?:led)?|[Ii]tem|[Pp]iece) [A-Z]{1,2}\b[^.\n]*\bours\b/,
+      /\(ours\)/i,
+    ];
+    for (const re of naming) expect(f.raw, String(re)).not.toMatch(re);
+  });
+
+  it.each(FILES.filter((f) => outputOf(f) === 'critique').map((f) => [f.name, f] as const))(
+    'ADR-0072: critic %s mentions ours only in the lineup line, so nothing can point at one item',
+    (_n, f) => {
+      // Body only (the front matter's source notes are never sent); the one allowed mention is "1 of ours (…)".
+      const body = f.raw.slice(f.raw.indexOf('\n---', 3) + 4);
+      const rest = body.replace(/There are \{\{refs\}\} references and 1 of ours \(\{\{labels\}\}\)\./g, '');
+      expect(body).toContain('There are {{refs}} references and 1 of ours ({{labels}}).');
+      expect(rest).not.toMatch(/\bours\b|\bour\b/i);
+      // Nor does the rendered lineup: the labels slot says how many items and their labels, nothing more.
+      expect(greatLineup(4).labels).toBe('5 items, labelled A–E');
     },
   );
 

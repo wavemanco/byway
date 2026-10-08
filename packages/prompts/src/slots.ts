@@ -39,16 +39,21 @@ export function vanillaLabelled(texts: readonly string[]): string {
   return headed(texts.map((_, i) => `V${i + 1}`), texts);
 }
 
+/** ADR-0071: a critic runs in GREAT mode only with at least this many references; with fewer it runs in OK mode. */
+export const GREAT_MIN_REFERENCES = 3;
+
 /**
- * The two slots of a GREAT-mode critic (ADR-0071: at least 3 references). The template turns them into the line
- * "There are R references and 1 of ours (M items, labelled A–X; ours is Y)." The critic is told which item is ours
- * because the answer contract (spec §3.3) is our own place, "Rank: N of M"; the runner shuffles where ours sits.
+ * The two slots of a GREAT-mode critic. The templates turn them into the line "There are R references and 1 of ours
+ * (M items, labelled A–X)." and nothing says which item is ours: the critic ranks the whole lineup, every label once,
+ * and critiques every item (06-runbook: "The critic never learns which design is ours"). The runner, which shuffled
+ * the lineup, finds our place in the ranking and keeps our item's critique (ADR-0072).
  */
-export function greatLineup(referenceCount: number, oursIndex: number): { refs: string; labels: string } {
-  if (!Number.isInteger(referenceCount) || referenceCount < 1) throw new Error('A GREAT-mode lineup needs at least one reference');
+export function greatLineup(referenceCount: number): { refs: string; labels: string } {
+  if (!Number.isInteger(referenceCount) || referenceCount < GREAT_MIN_REFERENCES) {
+    throw new Error(`A GREAT-mode lineup needs at least ${GREAT_MIN_REFERENCES} references (ADR-0071); with fewer, render the OK mode (blank refs)`);
+  }
   const m = referenceCount + 1;
-  if (!Number.isInteger(oursIndex) || oursIndex < 0 || oursIndex >= m) throw new Error(`ours must be one of the ${m} positions`);
-  return { refs: String(referenceCount), labels: `${m} items, labelled A–${labelOf(m - 1)}; ours is ${labelOf(oursIndex)}` };
+  return { refs: String(referenceCount), labels: `${m} items, labelled A–${labelOf(m - 1)}` };
 }
 
 export interface GeneratedImage {

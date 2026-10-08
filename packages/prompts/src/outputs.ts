@@ -12,10 +12,11 @@ export const OUTPUT_CONTRACTS = {
   'artifact:media':
     'One fenced json block: {"storyboard":[{"shot":number,"description":string,"imagePrompt":string,"durationSec":number}],"voiceover":string}',
   'artifact:code-diff': 'One fenced diff block (unified diff), then a paragraph starting "Why:"',
-  critique: 'The critique as a bullet list, biggest gaps first, then a last line "Score: N/10" (OK mode) or "Rank: N of M" (GREAT mode)',
+  critique:
+    'The critique as a bullet list, biggest gaps first, then a last line "Score: N/10" (OK mode); or, in GREAT mode (ADR-0072), each item\'s bullets under its "### A" heading, then a last line "Ranking: C, A, E, B, D" naming every label once, best first (the critic is never told which item is ours)',
   choice: 'Optional reasoning, then a last line "Choice: <label>" (labels A, B, C…)',
   defects: 'A bullet list of defects, or the single line "No defects."',
-  cut: 'A bullet list of removals, each starting with a removal verb (Remove, Delete, Drop, Merge)',
+  cut: 'A bullet list of removals, each starting with a removal verb (Remove, Delete, Drop, Merge), or the single line "Nothing to remove."',
   'tells-hits': 'One fenced json block: {"hits":[{"pattern":string,"where":string,"alternative":string}]}',
   keep: 'Optional reasoning, then a last line "Keep: A" or "Keep: B"',
   'plain-text': 'Plain text',

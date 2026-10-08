@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { c4, CHOOSER } from '@byway/catalog';
 import { parsePurpose, respond, type MockContext } from '@byway/gateway';
-import { greatLineup, imagesSlot, labelled, problemSlot } from '../src/index.ts';
-import { FILES, library } from './library.ts';
+import type { Medium } from '@byway/protocol';
+import { greatLineup, imagesSlot, labelled, labelOf, problemSlot } from '../src/index.ts';
+import { FILES, library, mediumOf } from './library.ts';
+
+const CRITICS = FILES.filter((f) => f.template.output === 'critique');
 
 /**
  * The prompts and the gateway's demo-mode mock must agree (spec §3.3): the mock reads the problem, the current
@@ -27,15 +30,38 @@ describe('the gateway mock reads what the templates write', () => {
     expect(answer).not.toContain('Zq81xPl0aa9');
   });
 
-  it('answers a GREAT-mode critic with a rank in a lineup of references plus ours, and an OK-mode critic with a score', () => {
-    const great = ask('critic:prose', 'product.c3.critic', { view: labelled(['one', 'two', 'three', 'four', 'ours']), ...greatLineup(4, 4) });
-    expect(great).toMatch(/\nRank: \d+ of 5$/);
-    const ok = ask('critic:prose', 'product.c3.critic', { view: 'The piece.' });
-    expect(ok).toMatch(/\nScore: \d+\/10$/);
-    for (const id of ['runbook.critic-ok', 'product.c2.critic', 'product.c4.recipient', 'product.c5.gate-critic', 'product.c6.critic', 'product.c6a.critic', 'product.c7.reviewer']) {
-      const medium = id.includes('c2') ? 'options' : id.includes('c5') ? 'media' : id.includes('c7') ? 'code-diff' : id.startsWith('runbook') ? 'web-page' : 'prose';
-      expect(ask(`critic:${medium}`, id, { view: 'x' }), id).toMatch(/Score: \d+\/10$/);
-      expect(ask(`critic:${medium}`, id, { view: 'x', ...greatLineup(3, 0) }), id).toMatch(/Rank: \d+ of 4$/);
+  describe.each(CRITICS.map((f) => [f.template.id, f] as const))('critic %s, rendered in both modes', (id, f) => {
+    const medium = mediumOf(f.template) as Medium;
+    const purpose = `critic:${medium}`;
+
+    it('OK mode (no references): the mock answers bullets, then "Score: N/10"', () => {
+      const out = ask(purpose, id, { view: medium === 'web-page' ? '' : 'The work, as its audience meets it.' });
+      expect(out).toMatch(/\nScore: \d+\/10$/);
+      expect(out).not.toMatch(/Ranking:/);
+    });
+
+    it('GREAT mode: the mock reads M and the labels from the lineup line, critiques every item and ranks every label once', () => {
+      for (const refs of [3, 4, 9]) {
+        const m = refs + 1;
+        const view = medium === 'web-page' ? '' : labelled(Array.from({ length: m }, (_, i) => `Item ${i + 1}: a piece of work in this medium.`));
+        const out = ask(purpose, id, { view, ...greatLineup(refs) });
+        const labels = Array.from({ length: m }, (_, i) => labelOf(i));
+        const ranking = /\nRanking: (.+)$/.exec(out)?.[1]?.split(', ') ?? [];
+        expect([...ranking].sort(), `${id} with ${refs} references`).toEqual(labels);
+        for (const label of labels) expect(out).toMatch(new RegExp(`^### ${label}\\n- Intent: `, 'm'));
+      }
+    });
+
+    if (medium === 'prose' || medium === 'code-diff') {
+      it('GREAT mode: the mock finds the revised item in the rendered lineup and ranks it first, wherever it sits', () => {
+        const ours = medium === 'prose' ? '# Our piece\n\nThe point, made plainly.\n\n[//]: # (byway-demo-revision: 3)' : '--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-a\n+b\n\nWhy: smaller.\n<!-- byway-demo-revision: 3 -->';
+        for (const at of [0, 2, 4]) {
+          const texts = ['First reference.', 'Second reference.', 'Third reference.', 'Fourth reference.'];
+          texts.splice(at, 0, ours);
+          const out = ask(purpose, id, { view: labelled(texts), ...greatLineup(4) });
+          expect(/\nRanking: (\w+)/.exec(out)?.[1], `${id}, ours at ${labelOf(at)}`).toBe(labelOf(at));
+        }
+      });
     }
   });
 

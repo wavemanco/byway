@@ -75,12 +75,15 @@ export function lineupOf(text: string): Lineup | undefined {
   return { refs: size - 1, size, labels: Array.from({ length: size }, (_, i) => labelOf(i)) };
 }
 
+/** The tags the critic templates wrap a lineup in (<lineup>, and C6's <pile>, C6a's <passages>, C7's <diffs>). */
+const LINEUP_BLOCK = /<(lineup|pile|passages|diffs)>([\s\S]*?)<\/\1>/i;
+
 /**
- * Each label's text (under its "### X" heading, inside <lineup>…</lineup> when the prompt has that block) and the
- * images attached under its heading.
+ * Each label's text (under its "### X" heading, inside the lineup block when the prompt has one) and the images
+ * attached under its heading.
  */
 export function lineupItems(prompt: string, lineup: Lineup, attachments: readonly Attachment[]): LineupItem[] {
-  const block = /<lineup>([\s\S]*?)<\/lineup>/i.exec(prompt)?.[1] ?? prompt;
+  const block = LINEUP_BLOCK.exec(prompt)?.[2] ?? prompt;
   const heads = [...block.matchAll(/^#{1,6}[ \t]+([A-Z]{1,2})[ \t]*$/gm)].filter((m) => lineup.labels.includes(m[1] as string));
   const texts = new Map<string, string>();
   heads.forEach((m, i) => {

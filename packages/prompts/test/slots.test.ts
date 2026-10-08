@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARTIFACT_FENCE, greatLineup, imagesSlot, labelled, labelOf, problemSlot, vanillaLabelled } from '../src/slots.ts';
+import { ARTIFACT_FENCE, GREAT_MIN_REFERENCES, greatLineup, imagesSlot, labelled, labelOf, problemSlot, vanillaLabelled } from '../src/slots.ts';
 
 describe('slot helpers (spec §3.3 shared conventions)', () => {
   it('labels items A, B, C… and continues past Z', () => {
@@ -15,10 +15,14 @@ describe('slot helpers (spec §3.3 shared conventions)', () => {
     expect(vanillaLabelled(['one', 'two', 'three'])).toBe('### V1\none\n\n### V2\ntwo\n\n### V3\nthree');
   });
 
-  it('describes a GREAT-mode lineup: R references and 1 of ours, with our label', () => {
-    expect(greatLineup(4, 2)).toEqual({ refs: '4', labels: '5 items, labelled A–E; ours is C' });
-    expect(() => greatLineup(4, 5)).toThrow(/ours/);
-    expect(() => greatLineup(0, 0)).toThrow(/reference/);
+  it('describes a GREAT-mode lineup as R references and "M items, labelled A–X", never saying which is ours (ADR-0072)', () => {
+    expect(greatLineup(4)).toEqual({ refs: '4', labels: '5 items, labelled A–E' });
+    expect(greatLineup(9)).toEqual({ refs: '9', labels: '10 items, labelled A–J' });
+    for (const r of [3, 4, 12, 30]) expect(greatLineup(r).labels).not.toMatch(/\bours?\b/i);
+    // ADR-0071: GREAT mode needs at least three references; with fewer the runner uses OK mode (blank refs).
+    expect(GREAT_MIN_REFERENCES).toBe(3);
+    expect(() => greatLineup(2)).toThrow(/at least 3 references/);
+    expect(() => greatLineup(3.5)).toThrow(/at least 3 references/);
   });
 
   it('lists generated images by their artifact route: Markdown images for prose, "address | alt | slot" lines for pages', () => {
