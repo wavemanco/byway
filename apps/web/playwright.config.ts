@@ -2,7 +2,8 @@
  * End-to-end tests (spec §7 Phase 3): the whole product in demo mode, through the browser. `pnpm e2e` (scripts/e2e.ts)
  * starts `pnpm demo` on a temp data directory and free ports, waits for it, runs this suite against it
  * (BYWAY_E2E_BASE_URL) and stops it cleanly. Run directly (`playwright test`), the suite starts its own demo through
- * `webServer` on ports 3210 and 7290, so a byway you are running on 3000 and 7233 is never touched.
+ * `webServer` on ports 3210 and 7290, so a byway you are running on 3000 and 7233 is never touched; its data directory
+ * is then left in the system temp folder (`pnpm e2e` removes its own).
  */
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,8 +13,8 @@ import { E2E_KEYS } from './e2e/keys.ts';
 
 const external = process.env.BYWAY_E2E_BASE_URL;
 const port = Number(process.env.BYWAY_E2E_PORT ?? 3210);
-// Set once in the main process; Playwright's workers inherit it rather than making their own.
-process.env.BYWAY_E2E_DATA_DIR ??= mkdtempSync(path.join(tmpdir(), 'byway-e2e-'));
+// Only when the suite starts its own server; set once in the main process, and Playwright's workers inherit it.
+if (!external) process.env.BYWAY_E2E_DATA_DIR ??= mkdtempSync(path.join(tmpdir(), 'byway-e2e-'));
 
 export default defineConfig({
   testDir: './e2e',
