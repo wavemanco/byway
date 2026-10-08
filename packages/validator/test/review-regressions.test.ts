@@ -40,7 +40,8 @@ describe('C1-DR7 covers only the score-free defect check', () => {
   it('does not hide a scoring critic after VOICE', () => {
     const r = studio();
     d3(r).steps.push(renderStep('late-render'), scoringCritic('late-critic'));
-    expect(ruleClauses(r)).toEqual(['DR7:judge-after']);
+    // Since C2–C7, a critic outside any loop or gate is also reported as an annotation (DR4).
+    expect(ruleClauses(r)).toEqual(['DR4:annotation', 'DR7:judge-after']);
   });
 
   it('does not hide a critic loop after CUT', () => {

@@ -28,7 +28,23 @@ export const TASTE_JUDGE_ROLES: ReadonlySet<Role> = new Set<Role>(['critic', 'ju
 /** Execution steps: mid tier (default rule 5), no ban lists (default rule 8). */
 export const EXECUTION_ROLES: ReadonlySet<Role> = new Set<Role>(['build', 'fix']);
 
-export const KNOWN_GATE_METRICS: ReadonlySet<string> = new Set(['critic-score', 'critic-rank', 'human']);
+/**
+ * Gate metrics. `human`: a person decides (`*[H]`, no threshold). `check-clean`: stop when a defect check reports
+ * no defects (03 C5 per-shot repair; no threshold, no score).
+ */
+export const KNOWN_GATE_METRICS: ReadonlySet<string> = new Set(['critic-score', 'critic-rank', 'human', 'check-clean']);
+
+/** Metrics that compare a critic's verdict with a threshold; such a gate needs a threshold (ST2, ST10). */
+export const CRITIC_METRICS: ReadonlySet<string> = new Set(['critic-score', 'critic-rank']);
+
+/** What a parallel-audit lens may return: annotations only (02 §2). */
+export const ANNOTATION_PORTS = ['critique', 'score'] as const;
+
+/** Media whose judged view is the work itself as code: port rule 1 names code explicitly (03 C7 exception). */
+export const CODE_MEDIA: ReadonlySet<string> = new Set(['code-diff']);
+
+/** Upper bound on automatic re-runs after a failed one-shot gate (02 §2 Retry: "bounded", e.g. once). */
+export const MAX_GATE_RETRIES = 3;
 
 /** Port rule 8: anything that looks like an AI-detector score or "flagged as AI" rate. */
 export const DETECTOR_PATTERN = /(ai[-_ ]?detect|detector|gptzero|zerogpt|originality\.ai|flagged[-_ ]?as[-_ ]?ai)/i;

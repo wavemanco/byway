@@ -7,6 +7,7 @@ import {
   PORT_TYPES,
   RULES,
   ROLE_KNOBS,
+  TELLS_DOMAINS,
   type RuleId,
 } from '../src/index.ts';
 
@@ -39,12 +40,21 @@ describe('blocks and glue', () => {
     expect(BLOCKS.ASSET.knobs.slots).toEqual({ type: 'int', min: 1, max: 3 });
     expect(ROLE_KNOBS.build.avoid).toEqual({ type: 'string[]' });
   });
+
+  it('registers the knobs C2–C7 need: critic family and fixed shuffles, TELLS catalog domains', () => {
+    expect(BLOCKS.CRITIC.knobs.family).toEqual({ type: 'enum', values: ['same', 'other'] });
+    expect(BLOCKS.CRITIC.knobs.shuffles).toEqual({ type: 'int', min: 1, max: 4 });
+    const domains = BLOCKS.TELLS.knobs.domains;
+    expect(domains?.type).toBe('enum[]');
+    expect(domains && 'values' in domains ? domains.values : []).toEqual(TELLS_DOMAINS);
+    expect(TELLS_DOMAINS).toEqual(expect.arrayContaining(['ui', 'prose-words', 'prose-structure', 'memo', 'code', 'fiction', 'application', 'media-style']));
+  });
 });
 
 describe('rules', () => {
   const expected: Record<RuleId, string> = {
     ST1: 'invariant', ST2: 'invariant', ST3: 'invariant', ST4: 'invariant', ST5: 'invariant',
-    ST6: 'invariant', ST7: 'invariant', ST8: 'invariant',
+    ST6: 'invariant', ST7: 'invariant', ST8: 'invariant', ST9: 'invariant', ST10: 'invariant', ST11: 'invariant',
     PR1: 'hard', PR2: 'hard', PR3: 'invariant', PR4: 'hard', PR5: 'hard', PR6: 'hard',
     'PR7.1': 'hard', 'PR7.2': 'hard', PR8: 'invariant', CH3: 'hard', LS1: 'hard',
     DR1: 'default', DR2: 'default', DR3: 'default', DR4: 'default', DR5: 'default',
@@ -89,6 +99,39 @@ describe('exceptions', () => {
       'SM-4': ['PR7.2'],
       'SM-5': ['PR1', 'PR2', 'DR3', 'DR4', 'DR5'],
       'SM-6': ['PR6', 'DR9'],
+      'C2-DR4': ['DR4'],
+      'C2-DR7': ['DR7'],
+      'C4-DR9': ['DR9'],
+      'C5-DR7': ['DR7'],
+      'C6-DR4': ['DR4'],
+      'C6-DR7': ['DR7'],
+      'C6a-DR4': ['DR4'],
+      'C6a-DR7': ['DR7'],
+      'C7-PR1': ['PR1'],
+      'C7-DR7': ['DR7'],
+    });
+  });
+
+  it('declares the 03 ordering-principle exceptions clause-scoped and limited to their own family', () => {
+    const declared = Object.values(EXCEPTIONS).filter((ex) => ex.scope === 'protocol-declared' && ex.id !== 'C1-DR2');
+    for (const ex of declared) {
+      const family = ex.id.slice(0, ex.id.lastIndexOf('-'));
+      expect(ex.families, ex.id).toEqual([family]);
+      for (const rule of ex.relaxes) expect(ex.clauses?.[rule]?.length, `${ex.id} ${rule}`).toBeGreaterThan(0);
+      expect(ex.source, ex.id).toMatch(/^03 /);
+    }
+    expect(Object.fromEntries(declared.map((ex) => [ex.id, ex.clauses]))).toEqual({
+      'C1-DR7': { DR7: ['check-after'] },
+      'C2-DR4': { DR4: ['annotation'] },
+      'C2-DR7': { DR7: ['voice-stage'] },
+      'C4-DR9': { DR9: ['key-lines'] },
+      'C5-DR7': { DR7: ['voice-stage', 'gate-after'] },
+      'C6-DR4': { DR4: ['human-stop'] },
+      'C6-DR7': { DR7: ['audit'] },
+      'C6a-DR4': { DR4: ['human-stop'] },
+      'C6a-DR7': { DR7: ['audit'] },
+      'C7-PR1': { PR1: ['code-view'] },
+      'C7-DR7': { DR7: ['cut-stage'] },
     });
   });
 

@@ -1,7 +1,7 @@
 export type RuleClass = 'invariant' | 'hard' | 'default' | 'advisory';
 
 export const RULE_IDS = [
-  'ST1', 'ST2', 'ST3', 'ST4', 'ST5', 'ST6', 'ST7', 'ST8',
+  'ST1', 'ST2', 'ST3', 'ST4', 'ST5', 'ST6', 'ST7', 'ST8', 'ST9', 'ST10', 'ST11',
   'PR1', 'PR2', 'PR3', 'PR4', 'PR5', 'PR6', 'PR7.1', 'PR7.2', 'PR8',
   'CH3', 'LS1',
   'DR1', 'DR2', 'DR3', 'DR4', 'DR5', 'DR6', 'DR7', 'DR8', 'DR9', 'DR10',
@@ -28,6 +28,9 @@ export const RULES: Record<RuleId, RuleDef> = {
   ST6: r('ST6', 'invariant', 'Sit-outs have reasons and sat-out blocks are not used', '02 §5'),
   ST7: r('ST7', 'invariant', 'Knobs are registered and within range', '01 blocks (knobs)'),
   ST8: r('ST8', 'invariant', 'Cited exceptions and derivations exist, are allowed here, are needed and are cited once', '03 declared exceptions; ADR-0059'),
+  ST9: r('ST9', 'invariant', 'Audit lenses only annotate: no lens step writes, and every lens returns an annotation', '02 §2 parallel audit'),
+  ST10: r('ST10', 'invariant', 'One-shot gates have no fix step, and a retry is bounded and re-runs this or an earlier stage', '02 §2 gate and retry'),
+  ST11: r('ST11', 'invariant', "Each relay link starts from the previous link's exact end state (anchor) and hands one on", '02 §2 relay; 01 RELAY'),
   PR1: r('PR1', 'hard', 'Critics see views, never process', '02 §3 port rule 1'),
   PR2: r('PR2', 'hard', 'The threshold never enters a critic prompt', '02 §3 port rule 2'),
   PR3: r('PR3', 'invariant', 'Seeds and credentials never enter the artifact', '02 §3 port rule 3'),
@@ -37,7 +40,7 @@ export const RULES: Record<RuleId, RuleDef> = {
   'PR7.1': r('PR7.1', 'hard', 'The tell catalog never enters a generation or critic prompt', '02 §3 port rule 7'),
   'PR7.2': r('PR7.2', 'hard', 'A human compares the TELLS alternatives', '02 §3 port rule 7'),
   PR8: r('PR8', 'invariant', 'No gate or metric uses an AI-detector score', '02 §3 port rule 8'),
-  CH3: r('CH3', 'hard', 'Distill is human-judged: CUT is done by a human', '02 §1 chassis (D3)'),
+  CH3: r('CH3', 'hard', 'Distill is human-judged: CUT in D3 is done by a human', '02 §1 chassis (D3)'),
   LS1: r('LS1', 'hard', 'A human decides at non-convergence and at the cap', '02 §2 loop-until semantics; ADR-0012'),
   DR1: r('DR1', 'default', 'Variety comes from a seed or a human', '02 §6 rule 1'),
   DR2: r('DR2', 'default', 'Go broad before deep, and pick before you spend', '02 §6 rule 2'),

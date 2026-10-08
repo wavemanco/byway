@@ -1,6 +1,6 @@
 import { OPTION_SET, type PortType } from '@byway/protocol';
-import type { Actor, Node, Recipe, Role, Stage } from '@byway/recipe';
-import type { Findings } from './context.ts';
+import { walkNode, type Actor, type Audit, type Node, type Recipe, type RelayChain, type Role, type Stage } from '@byway/recipe';
+import { ANNOTATION_PORTS, Findings } from './context.ts';
 
 /** Who may have produced a port: a recipe input, a step (with its role and actor) or an operator. */
 export interface Producer {
@@ -134,5 +134,64 @@ function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, f
     }
     case 'route':
       return mergeAlternatives(node.branches.map((b, i) => typeNode(b.body, st, `${path}.branches[${i}].body`, typing, findings)));
+    case 'audit':
+      return typeAudit(node, st, path, typing, findings);
+    case 'gate':
+      // The check's outputs (its view, critique and score) stay in scope after it, as after any step sequence.
+      return typeNode(node.body, st, `${path}.body`, typing, findings);
+    case 'relay': {
+      // Typed once, like a loop body: the first link starts from the anchor in scope before the chain.
+      const out = typeNode(node.body, st, `${path}.body`, typing, findings);
+      checkRelayLink(node, st, path, findings);
+      return out;
+    }
   }
+}
+
+/** Ports any step inside a node produces. */
+function producedWithin(node: Node): Set<PortType> {
+  const made = new Set<PortType>();
+  walkNode(node, '', 'D1', (n) => {
+    if (n.op === 'step') for (const p of n.produces) made.add(p);
+  });
+  return made;
+}
+
+/**
+ * Every lens starts from the same input. After the audit only annotations come out: a port in ANNOTATION_PORTS that
+ * a lens makes on every one of its paths is in scope, with every lens that made it as a producer. Anything else a
+ * lens makes (its own renders, a vanilla control set) stays inside it.
+ */
+function typeAudit(node: Audit, st: MutableState, path: string, typing: Typing, findings: Findings): ScopeState {
+  const entry = clone(st);
+  const fromLenses = new Map<PortType, Producer[]>();
+  node.lenses.forEach((lens, i) => {
+    const out = typeNode(lens.body, entry, `${path}.lenses[${i}].body`, typing, findings);
+    const made = producedWithin(lens.body);
+    for (const port of ANNOTATION_PORTS) {
+      if (!made.has(port)) continue;
+      st.may.add(port);
+      const producers = out.must.get(port);
+      if (producers) fromLenses.set(port, addProducers(fromLenses.get(port) ?? [], producers));
+    }
+  });
+  for (const [port, producers] of fromLenses) st.must.set(port, producers);
+  return st;
+}
+
+/**
+ * ST11: a relay link starts from the previous link's exact end state and hands one on. It must read `anchor`, and it
+ * must make a new one on every path; the anchor it started from does not count, so the link is typed again without it.
+ */
+function checkRelayLink(node: RelayChain, st: MutableState, path: string, findings: Findings): void {
+  let reads = false;
+  walkNode(node.body, '', 'D1', (n) => {
+    if (n.op === 'step' && n.consumes.includes('anchor')) reads = true;
+  });
+  if (!reads) findings.add('ST11', path, `relay "${node.id}" link does not start from the previous link's anchor`, 'no-anchor-in');
+  const withoutAnchor = clone(st);
+  withoutAnchor.must.delete('anchor');
+  const scratch: Typing = { stageEntry: new Map(), nodeEntry: new Map() };
+  const probe = typeNode(node.body, withoutAnchor, path, scratch, new Findings());
+  if (!probe.must.has('anchor')) findings.add('ST11', path, `relay "${node.id}" link does not hand on an anchor on every path`, 'no-anchor-out');
 }

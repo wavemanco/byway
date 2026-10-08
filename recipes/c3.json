@@ -1,0 +1,442 @@
+{
+  "schema": "byway.recipe/1",
+  "id": "c3",
+  "title": "C3 Voice Series (one piece; seed entry; the series loop is not modelled)",
+  "kind": "protocol-config",
+  "family": "C3",
+  "channel": "protocol",
+  "medium": "prose",
+  "inputs": [
+    "intent",
+    "refs",
+    "tells"
+  ],
+  "stages": [
+    {
+      "stage": "D1",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "replicate",
+            "id": "seeded-angles",
+            "n": 6,
+            "body": {
+              "op": "step",
+              "id": "seed-angle",
+              "role": "seed",
+              "block": "SEED",
+              "actor": "model",
+              "tier": "mid",
+              "prompt": "product.c3.seed-angle",
+              "consumes": [
+                "intent"
+              ],
+              "produces": [
+                "artifact"
+              ],
+              "writes": true,
+              "knobs": {
+                "source": "shell-string"
+              }
+            }
+          },
+          {
+            "op": "step",
+            "id": "cards-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "option_set<artifact>"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "audit",
+            "id": "vanilla-check",
+            "lenses": [
+              {
+                "name": "vanilla-overlap",
+                "body": {
+                  "op": "seq",
+                  "steps": [
+                    {
+                      "op": "replicate",
+                      "id": "vanilla-x3",
+                      "n": 3,
+                      "body": {
+                        "op": "step",
+                        "id": "vanilla-build",
+                        "role": "build",
+                        "actor": "model",
+                        "tier": "mid",
+                        "prompt": "product.c3.vanilla-build",
+                        "consumes": [
+                          "intent"
+                        ],
+                        "produces": [
+                          "artifact"
+                        ]
+                      }
+                    },
+                    {
+                      "op": "step",
+                      "id": "vanilla-flag",
+                      "role": "overlap",
+                      "actor": "model",
+                      "tier": "mid",
+                      "isolated": true,
+                      "frozenPrompt": true,
+                      "prompt": "product.c3.vanilla-flag",
+                      "consumes": [
+                        "view",
+                        "option_set<artifact>"
+                      ],
+                      "produces": [
+                        "critique"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "op": "pick",
+            "id": "pick-angle",
+            "mode": "H",
+            "k": 1,
+            "actor": "human"
+          },
+          {
+            "op": "step",
+            "id": "thesis",
+            "role": "vision",
+            "block": "VISION",
+            "actor": "human",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "brief"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "stage": "D2",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "route",
+            "id": "draft",
+            "on": "who writes the first draft",
+            "branches": [
+              {
+                "name": "ai",
+                "body": {
+                  "op": "step",
+                  "id": "ai-draft",
+                  "role": "build",
+                  "actor": "model",
+                  "tier": "mid",
+                  "prompt": "product.c3.ai-draft",
+                  "consumes": [
+                    "intent",
+                    "brief"
+                  ],
+                  "produces": [
+                    "artifact"
+                  ],
+                  "writes": true
+                }
+              },
+              {
+                "name": "own",
+                "body": {
+                  "op": "step",
+                  "id": "own-draft",
+                  "role": "build",
+                  "actor": "human",
+                  "consumes": [
+                    "brief"
+                  ],
+                  "produces": [
+                    "artifact"
+                  ],
+                  "writes": true
+                }
+              }
+            ]
+          },
+          {
+            "op": "loop",
+            "id": "critic-loop",
+            "body": {
+              "op": "seq",
+              "steps": [
+                {
+                  "op": "step",
+                  "id": "render",
+                  "role": "render",
+                  "glue": "RENDER",
+                  "actor": "tool",
+                  "consumes": [
+                    "artifact"
+                  ],
+                  "produces": [
+                    "view"
+                  ]
+                },
+                {
+                  "op": "step",
+                  "id": "critic",
+                  "role": "critic",
+                  "block": "CRITIC",
+                  "actor": "model",
+                  "tier": "big",
+                  "isolated": true,
+                  "frozenPrompt": true,
+                  "prompt": "product.c3.critic",
+                  "consumes": [
+                    "view",
+                    "refs"
+                  ],
+                  "produces": [
+                    "critique",
+                    "score"
+                  ],
+                  "knobs": {
+                    "mode": "GREAT",
+                    "refs": 9,
+                    "family": "other",
+                    "shuffle": true
+                  }
+                },
+                {
+                  "op": "step",
+                  "id": "revise",
+                  "role": "fix",
+                  "actor": "model",
+                  "tier": "mid",
+                  "prompt": "product.c3.revise",
+                  "consumes": [
+                    "critique",
+                    "artifact"
+                  ],
+                  "produces": [
+                    "artifact"
+                  ],
+                  "writes": true
+                }
+              ]
+            },
+            "gate": {
+              "metric": "critic-rank",
+              "threshold": 3,
+              "hidden": true,
+              "holder": "worker",
+              "probe": 1,
+              "max": 3,
+              "plateau": {
+                "minGain": 1,
+                "window": 2
+              },
+              "onCap": "human",
+              "onNoConverge": "recalibrate-human"
+            }
+          },
+          {
+            "op": "optional",
+            "id": "asset-if-wanted",
+            "trigger": "you want a header image or a chart computed from real data",
+            "body": {
+              "op": "step",
+              "id": "asset",
+              "role": "asset",
+              "block": "ASSET",
+              "actor": "model",
+              "tier": "mid",
+              "prompt": "product.c3.asset",
+              "consumes": [
+                "artifact"
+              ],
+              "produces": [
+                "artifact"
+              ],
+              "writes": true,
+              "knobs": {
+                "slots": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "D3",
+      "body": {
+        "op": "seq",
+        "steps": [
+          {
+            "op": "step",
+            "id": "cut-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "cut",
+            "role": "cut",
+            "block": "CUT",
+            "actor": "human",
+            "consumes": [
+              "view"
+            ],
+            "produces": [
+              "critique"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "apply-cut",
+            "role": "fix",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "product.c3.apply-cut",
+            "consumes": [
+              "critique",
+              "artifact"
+            ],
+            "produces": [
+              "artifact"
+            ],
+            "writes": true
+          },
+          {
+            "op": "step",
+            "id": "tells-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "tells-sweep",
+            "role": "tells-sweep",
+            "block": "TELLS",
+            "actor": "model",
+            "tier": "big",
+            "isolated": true,
+            "frozenPrompt": true,
+            "prompt": "product.c3.tells-sweep",
+            "consumes": [
+              "view",
+              "tells"
+            ],
+            "produces": [
+              "critique"
+            ],
+            "knobs": {
+              "catalog": "extended",
+              "variants": "combined",
+              "domains": [
+                "prose-words",
+                "prose-structure",
+                "newsletter",
+                "social"
+              ]
+            }
+          },
+          {
+            "op": "step",
+            "id": "apply-swaps",
+            "role": "fix",
+            "actor": "model",
+            "tier": "mid",
+            "prompt": "product.c3.apply-swaps",
+            "consumes": [
+              "critique",
+              "artifact"
+            ],
+            "produces": [
+              "artifact"
+            ],
+            "writes": true
+          },
+          {
+            "op": "step",
+            "id": "compare-render",
+            "role": "render",
+            "glue": "RENDER",
+            "actor": "tool",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "view"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "tells-compare",
+            "role": "tells-compare",
+            "block": "TELLS",
+            "actor": "human",
+            "consumes": [
+              "view"
+            ],
+            "produces": [
+              "taste"
+            ]
+          },
+          {
+            "op": "step",
+            "id": "voice",
+            "role": "voice",
+            "block": "VOICE",
+            "actor": "human",
+            "consumes": [
+              "artifact"
+            ],
+            "produces": [
+              "voice",
+              "artifact"
+            ],
+            "writes": true,
+            "knobs": {
+              "scope": "every-line"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "sitsOut": [
+    {
+      "block": "RELAY",
+      "reason": "Video repurposing belongs to C5 (03 C3)"
+    }
+  ],
+  "exceptions": [],
+  "bank": true,
+  "hash": "sha256:8a9439e234063d69492608759d29d56323ed2461c34c5cd562e833180c94a997"
+}

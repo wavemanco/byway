@@ -32,6 +32,9 @@ importers:
       '@byway/canonical':
         specifier: workspace:*
         version: link:../canonical
+      '@byway/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@byway/protocol':
         specifier: workspace:*
         version: link:../protocol

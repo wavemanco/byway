@@ -8,9 +8,10 @@ export interface FlowOps<S> {
 }
 
 /**
- * Walk a recipe along its control flow, carrying a state. Routes and optionals fork and join; a loop body runs
- * twice, so effects that reach the next iteration through the back-edge are seen; per-candidate bodies (replicate,
- * each) join with the state before them. Callers record findings idempotently (the second loop pass repeats them).
+ * Walk a recipe along its control flow, carrying a state. Routes and optionals fork and join; a loop body (and a relay
+ * link) runs twice, so effects that reach the next iteration through the back-edge are seen; per-candidate bodies
+ * (replicate, each) join with the state before them; audit lenses fork from one state and join. Callers record
+ * findings idempotently (the second loop pass repeats them).
  */
 export function flowRecipe<S>(recipe: Recipe, initial: S, ops: FlowOps<S>): S {
   let state = initial;
@@ -29,11 +30,19 @@ function flowNode<S>(node: Node, state: S, path: string, stage: Stage['stage'], 
     case 'replicate':
     case 'each':
       return ops.join([state, flowNode(node.body, state, `${path}.body`, stage, ops)]);
-    case 'loop': {
+    case 'loop':
+    case 'relay': {
+      // A relay chain repeats its link like a loop body, so effects cross from one link to the next.
       const first = flowNode(node.body, state, `${path}.body`, stage, ops);
       const second = flowNode(node.body, ops.join([state, first]), `${path}.body`, stage, ops);
       return ops.join([first, second]);
     }
+    case 'audit':
+      // Lenses run side by side on the same input.
+      return ops.join(node.lenses.map((l, i) => flowNode(l.body, state, `${path}.lenses[${i}].body`, stage, ops)));
+    case 'gate':
+      // A retry re-runs its stage from that stage's own entry state, so it adds no back-edge here.
+      return flowNode(node.body, state, `${path}.body`, stage, ops);
     case 'optional':
       return ops.join([state, flowNode(node.body, state, `${path}.body`, stage, ops)]);
     case 'route':
