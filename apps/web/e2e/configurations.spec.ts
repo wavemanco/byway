@@ -3,6 +3,7 @@
  * recommended recipe, answers every "Your turn" in the app and ends on the Result screen with the deliverable. The
  * runner, prompts, store and gateway are the real ones; only the models are the gateway's mock.
  */
+import http from 'node:http';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { PRESENTATIONS } from '@byway/catalog';
 import { answerUntilDone, describeProblem, exportText, openResult, startRecommended, timelineLabels, watchForKeys } from './flow.ts';
@@ -155,4 +156,22 @@ test.fixme('C4: an optional step you decline reads Skipped, and the Result lists
   await expect(page.locator('.tl-step[data-status="stopped"]')).toHaveCount(0);
   await openResult(page);
   await expect(page.locator('.made-skipped')).toContainText('You chose not to run this step.');
+});
+
+test('the local guard refuses a foreign Host on every path, Next.js internals included (SEC-6, DNS rebinding)', async ({ baseURL }) => {
+  const { hostname, port } = new URL(baseURL ?? 'http://127.0.0.1:3210');
+  // Node's http, because a browser or Playwright's request client sets Host itself.
+  const status = (path: string, host: string) =>
+    new Promise<number>((resolve, reject) => {
+      const req = http.request({ hostname, port: Number(port), path, headers: { host }, agent: false }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  for (const path of ['/', '/settings', '/api/settings', '/__nextjs_launch-editor?file=package.json&lineNumber=1', '/__nextjs_attach-nodejs-inspector', '/_next/image?url=%2Fapi%2Fsettings&w=64&q=75']) {
+    expect(await status(path, 'rebind.evil.example'), path).toBe(403);
+  }
+  expect(await status('/settings', `${hostname}:${port}`)).toBe(200);
 });
