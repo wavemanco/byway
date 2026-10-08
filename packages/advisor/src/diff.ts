@@ -22,7 +22,8 @@ function collect(recipe: Recipe): { steps: Placed<Step>[]; loops: Placed<Loop>[]
   const visit = (n: Node, stage: Stage['stage'], always: boolean): void => {
     switch (n.op) {
       case 'step':
-        out.steps.push({ node: n, stage, always });
+        // Renders are glue: they follow from the steps that read them, so they would only add noise.
+        if (n.role !== 'render') out.steps.push({ node: n, stage, always });
         return;
       case 'seq':
         n.steps.forEach((c) => visit(c, stage, always));
