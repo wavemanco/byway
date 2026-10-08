@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { moveFocus } from '../../../view/checkpoints.ts';
 import { ArtifactPreview } from '../../ArtifactPreview.tsx';
-import { ScriptsToggle } from '../../ScriptsToggle.tsx';
+import { ScriptsToggle, usePageScripts } from '../../ScriptsToggle.tsx';
 import { outputKind } from '../../../view/run.ts';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { TurnFooter } from './TurnFooter.tsx';
@@ -25,6 +25,10 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
   const [hint, setHint] = useState<string | null>(null);
   const current = options[shown];
   const highlighted = chosen === null ? undefined : options[chosen];
+  // One switch for the pages compared here, so they are always compared the same way; it covers exactly these pages,
+  // and only while this turn shows them (SEC-4).
+  const pages = options.flatMap((o) => (o.artifactId && outputKind(artifacts[o.artifactId]?.mediaType) === 'page' ? [o.artifactId] : []));
+  const [scripts, setScripts] = usePageScripts(pages.join(' '));
 
   function show(index: number) {
     setShown(index);
@@ -67,8 +71,7 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
             Flip <kbd aria-hidden="true">Space</kbd>
           </button>
         ) : null}
-        {/* One switch for both versions, so they are always compared the same way. */}
-        {options.some((o) => o.artifactId && outputKind(artifacts[o.artifactId]?.mediaType) === 'page') ? <ScriptsToggle /> : null}
+        {pages.length > 0 ? <ScriptsToggle on={scripts} onChange={setScripts} label={pages.length > 1 ? 'Run the pages’ scripts' : undefined} /> : null}
       </div>
 
       {mode === 'side' ? (
@@ -87,7 +90,7 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
                 </button>
               </div>
               <div className="compare-view" onClick={() => show(i)}>
-                {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scriptsToggle={false} /> : <p>{o.label}</p>}
+                {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scripts={scripts} /> : <p>{o.label}</p>}
               </div>
             </li>
           ))}
@@ -103,7 +106,7 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
           {/* Both versions stay mounted so a flip is instant and lands on the same spot. */}
           {options.map((o, i) => (
             <div key={o.id} className="compare-view" hidden={i !== shown}>
-              {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scriptsToggle={false} /> : null}
+              {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scripts={scripts} /> : null}
             </div>
           ))}
         </div>

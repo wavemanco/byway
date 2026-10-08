@@ -7,8 +7,7 @@ import { DiffView } from './DiffView.tsx';
 import { Markdown } from './Markdown.tsx';
 import { OptionsList, Storyboard } from './results.tsx';
 import { ScaledPage } from './ScaledPage.tsx';
-import { ScriptsToggle } from './ScriptsToggle.tsx';
-import { PAGE_SCRIPTS, useViewerFlag } from './viewerFlags.ts';
+import { ScriptsToggle, usePageScripts } from './ScriptsToggle.tsx';
 
 interface PreviewProps {
   id: string;
@@ -19,23 +18,20 @@ interface PreviewProps {
   interactive?: boolean;
   /** Media types of artifacts a storyboard shows (frames and clips), when the caller knows them. */
   media?: Record<string, ArtifactInfo>;
-  /** A large page preview offers "Run the page's scripts", unless the caller shows one switch for several (compare). */
-  scriptsToggle?: boolean;
+  /**
+   * Set by a caller that shows one "Run the pages' scripts" switch for several large pages (compare); the preview then
+   * shows no switch of its own. Left out, a large page preview has its own switch, off until turned on.
+   */
+  scripts?: boolean;
 }
 
 /** Shows any artifact the way it is meant to be seen: a page rendered, text read, a diff as a diff. */
-export function ArtifactPreview({ id, info, title, size = 'thumb', interactive = false, media, scriptsToggle = true }: PreviewProps) {
+export function ArtifactPreview({ id, info, title, size = 'thumb', interactive = false, media, scripts }: PreviewProps) {
   const type = info?.mediaType ?? '';
-  const [scripts] = useViewerFlag(PAGE_SCRIPTS);
   if (type === 'text/html') {
-    // Thumbnails are pictures and never run scripts; a large preview runs them once you turn them on (SEC-4).
+    // Thumbnails are pictures and never run scripts; a large preview runs them only once asked, for that page (SEC-4).
     if (size === 'thumb') return <ScaledPage src={artifactUrl(id)} title={title} interactive={interactive} virtualHeight={860} />;
-    return (
-      <div className="page-preview">
-        {scriptsToggle ? <ScriptsToggle /> : null}
-        <ScaledPage src={artifactUrl(id)} title={title} interactive={interactive} virtualHeight={900} scripts={scripts} />
-      </div>
-    );
+    return <LargePage id={id} title={title} interactive={interactive} scripts={scripts} />;
   }
   if (type.startsWith('image/')) {
     return <img className="preview-image" src={artifactUrl(id)} alt={title} loading="lazy" />;
@@ -59,5 +55,17 @@ export function ArtifactPreview({ id, info, title, size = 'thumb', interactive =
     <a href={artifactUrl(id)} target="_blank" rel="noopener noreferrer">
       Open {title}
     </a>
+  );
+}
+
+/** A large page preview with its own scripts switch, scoped to this page while it is shown, unless the caller holds one. */
+function LargePage({ id, title, interactive, scripts }: { id: string; title: string; interactive: boolean; scripts: boolean | undefined }) {
+  const [own, setOwn] = usePageScripts(id);
+  const held = scripts !== undefined;
+  return (
+    <div className="page-preview">
+      {held ? null : <ScriptsToggle on={own} onChange={setOwn} />}
+      <ScaledPage src={artifactUrl(id)} title={title} interactive={interactive} virtualHeight={900} scripts={held ? scripts : own} />
+    </div>
   );
 }

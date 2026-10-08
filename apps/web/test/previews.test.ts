@@ -2,17 +2,22 @@
  * Generated content shown inside the app (SEC-4): what a preview may do before anyone clicks. Rendered to HTML with
  * react-dom/server; the browser-side behaviour (no request leaves) is the sandbox's and the CSP's.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ArtifactPreview } from '../src/components/ArtifactPreview.tsx';
 import { Markdown } from '../src/components/Markdown.tsx';
 import { ScaledPage } from '../src/components/ScaledPage.tsx';
+import { ScriptsToggle } from '../src/components/ScriptsToggle.tsx';
 import { PageResult } from '../src/components/result/PageResult.tsx';
 import { createViewerFlag, type FlagStorage } from '../src/components/viewerFlags.ts';
 import { frameSandbox, isOwnArtifactUrl } from '../src/view/pages.ts';
+import { filesUnder, REPO } from './guards/scan.ts';
 
 const ID = `sha256:${'b'.repeat(64)}`;
+const WEB = path.join(REPO, 'apps', 'web');
 const html = (el: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(el);
 
 describe('generated pages in the app', () => {
@@ -31,6 +36,34 @@ describe('generated pages in the app', () => {
     const result = html(createElement(PageResult, { src: `/artifacts/${ID}`, title: 'My page' }));
     expect(result).toContain('sandbox=""');
     expect(result).toMatch(/aria-pressed="false"[^>]*>[^<]*Run the page’s scripts/);
+    const large = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Draft A', size: 'large' }));
+    expect(large).toContain('sandbox=""');
+    expect(large).toMatch(/aria-pressed="false"[^>]*>[^<]*Run the page’s scripts/);
+  });
+});
+
+describe('running a generated page’s scripts (SEC-4)', () => {
+  const SHIPPED = /\.(ts|tsx)$/;
+  const shipped = () => [...filesUnder(path.join(WEB, 'src'), SHIPPED), ...filesUnder(path.join(WEB, 'app'), SHIPPED)];
+
+  it('is never a remembered switch: no stored flag is about scripts, and nothing writes one to browser storage', () => {
+    const files = shipped();
+    const flagKeys = files.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/createViewerFlag\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1] as string));
+    // The scan finds the switches that are remembered (single-key shortcuts), so an empty list proves nothing.
+    expect(flagKeys.length).toBeGreaterThan(0);
+    expect(flagKeys.filter((k) => /script/i.test(k))).toEqual([]);
+    for (const f of files) expect(/(?:localStorage|sessionStorage)\.setItem\([^)]*script/i.test(readFileSync(f, 'utf8')), f).toBe(false);
+  });
+
+  it('says plainly, on or off, that a page running its scripts can send what it contains to other sites', () => {
+    for (const on of [false, true]) {
+      const out = html(createElement(ScriptsToggle, { on, onChange: () => undefined }));
+      expect(out).toContain(`aria-pressed="${on}"`);
+      expect(out).toContain('A page running its scripts can send what it contains to other sites.');
+    }
+    // On, it says how long: only while this screen shows the page.
+    expect(html(createElement(ScriptsToggle, { on: true, onChange: () => undefined }))).toContain('until you leave or reload this screen');
+    expect(html(createElement(ScriptsToggle, { on: false, onChange: () => undefined, label: 'Run the pages’ scripts' }))).toContain('Run the pages’ scripts');
   });
 });
 

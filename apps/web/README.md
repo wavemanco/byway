@@ -88,8 +88,10 @@ Logic on top of the contracts sits in view code:
   persistent caches, which would snapshot the environment, are off (`next.config.ts`).
 - Generated pages are shown in sandboxed iframes (never `allow-same-origin`) and served by the artifact route with a
   CSP that sandboxes them again, blocks requests and allows only the renderer's CDNs. A CSP cannot stop a page with
-  scripts from navigating itself, so pages inside byway run their scripts only after you turn them on ("Run the
-  page's scripts", remembered in this browser); thumbnails never do. `/api/artifacts/<id>` serves media only, so a
+  scripts from navigating itself, and so sending what it contains to another site, so a page inside byway runs its
+  scripts only after you turn them on for that page ("Run the page's scripts"), and only while the screen shows it:
+  the choice is never stored, and a reload or another page starts with scripts off. Thumbnails never run scripts.
+  `/api/artifacts/<id>` serves media only, so a
   page cannot move itself to an address without its sandbox. Markdown shows images only from byway's artifact routes.
   Other media are served inert; an uploaded example image must really be PNG, JPEG or WebP.
 - Evidence labels are computed by the advisor; `test/guard-claims.test.ts` fails if any app string, recipe

@@ -26,11 +26,28 @@ const CASES: Case[] = [
     async deliverable(result, page) {
       // The page itself, in a sandboxed frame without same-origin access, its scripts off until asked for (SEC-4).
       const frame = result.locator('iframe');
+      const note = result.locator('.scripts-note');
       await expect(frame).toHaveAttribute('sandbox', '');
       await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
+      await expect(note).toContainText('A page running its scripts can send what it contains to other sites.');
       await result.getByRole('button', { name: 'Run the page’s scripts' }).click();
       await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+      await expect(note).toContainText('A page running its scripts can send what it contains to other sites.');
       await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
+
+      // SEC-4: the choice lasts only while this page is open. Nothing about it is kept in the browser, a reload starts
+      // with scripts off, and the switch an earlier byway remembered (byway.pageScripts) turns nothing on, here or on
+      // the Run screen's large preview (the re-check's proof of concept).
+      const resultUrl = page.url();
+      expect(await page.evaluate(() => Object.keys(window.localStorage).filter((k) => /script/i.test(k)))).toEqual([]);
+      await page.evaluate(() => window.localStorage.setItem('byway.pageScripts', '1'));
+      await page.reload();
+      await expect(frame).toHaveAttribute('sandbox', '');
+      await page.goto(resultUrl.replace(/\/result$/, ''));
+      await expect(page.locator('.state-preview iframe')).toHaveAttribute('sandbox', '');
+      for (const f of await page.locator('iframe').all()) await expect(f).toHaveAttribute('sandbox', '');
+      await page.goto(resultUrl);
+      await expect(frame).toHaveAttribute('sandbox', '');
 
       // SEC-1: next.config headers apply only in the running server, so the page's own address is checked here. The
       // artifact route sandboxes it; /api/artifacts never serves it, so the page cannot move there to run as byway.

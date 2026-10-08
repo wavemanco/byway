@@ -2,9 +2,11 @@
 
 /**
  * Switches that belong to this browser, not to the workspace: whether single-key shortcuts answer a Your turn (UX-1,
- * WCAG 2.1.4) and whether generated pages run their scripts inside byway (SEC-4). They live in localStorage, which
- * may be missing or refuse (private windows, blocked site data), so every read and write falls back to memory and the
- * default; the server always renders the default.
+ * WCAG 2.1.4). They live in localStorage, which may be missing or refuse (private windows, blocked site data), so every
+ * read and write falls back to memory and the default; the server always renders the default.
+ *
+ * Running a generated page's scripts is deliberately not one of these (SEC-4): a remembered switch would run every
+ * later page's scripts the moment it is shown. It is a per-page action (usePageScripts in ScriptsToggle.tsx).
  */
 import { useSyncExternalStore } from 'react';
 
@@ -64,9 +66,6 @@ export function useViewerFlag(flag: ViewerFlag): [boolean, (on: boolean) => void
   const value = useSyncExternalStore(flag.subscribe, flag.get, () => flag.fallback);
   return [value, flag.set];
 }
-
-/** Generated pages inside byway run their scripts only once the person turns this on (off by default). */
-export const PAGE_SCRIPTS = createViewerFlag('byway.pageScripts', false);
 
 /** Single-key shortcuts (Y/N, J/K, Space, Enter) on a Your turn; on by default, and can be turned off (WCAG 2.1.4). */
 export const SINGLE_KEY_SHORTCUTS = createViewerFlag('byway.singleKeyShortcuts', true);
