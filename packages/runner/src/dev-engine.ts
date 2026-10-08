@@ -17,6 +17,7 @@ import type { Client } from '@temporalio/client';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { DEFAULT_TEMPORAL_ADDRESS, type Gateway, type PromptRenderer, type Runner, type Store } from '@byway/contracts';
 import { createRunnerClient } from './client.ts';
+import { reconcileLostRuns } from './lost-runs.ts';
 import type { PageRenderer } from './pages.ts';
 import { cliFileName, devServerArgs, fileFacts, temporalExecutable, trustedBinary } from './temporal-cli.ts';
 import { createWorker, type RunnerWorker } from './worker.ts';
@@ -98,6 +99,15 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
     // The server we reached keeps its state in this data directory, so it is the one we started.
     if (!existsSync(dbFilename)) throw new Error(`The Temporal server on port ${port} is not the one byway started (it does not use ${dbFilename}). ${portInUseMessage(port)}`);
     const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, ...(opts.prompts ? { prompts: opts.prompts } : {}), ...(opts.pages ? { pages: opts.pages } : {}) });
+    try {
+      // Before the worker polls: runs another workflow bundle started cannot replay on this one (C7), and runs the
+      // store shows as going that this server does not run will never move again (OPS-1). Both end plainly.
+      await worker.retireStaleRuns(env.client);
+      await reconcileLostRuns(env.client, opts.store, [(await opts.store.ensureDefaultWorkspace()).id]);
+    } catch (e) {
+      await worker.shutdown();
+      throw e;
+    }
     const running = worker.run();
     const runner = createRunnerClient({ client: env.client, store: opts.store });
     return {

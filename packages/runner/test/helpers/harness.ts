@@ -66,6 +66,8 @@ export interface Harness {
   gateway: Gateway;
   prompts: RecordingPrompts;
   pages: FakePages;
+  worker: RunnerWorker;
+  taskQueue: string;
   /**
    * Leave demo mode for the calls that follow (a placeholder key is "configured", so profiles are taken at their
    * word: a profile with no video model has no video). Every profile these tests run is backed by the mock.
@@ -216,6 +218,8 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     gateway,
     prompts,
     pages,
+    worker,
+    taskQueue,
     useKeys(on) {
       inner = on ? keyedGateway : demoGateway;
     },

@@ -5,11 +5,13 @@
  */
 import { DEFAULT_TEMPORAL_ADDRESS, TASK_QUEUE, type Gateway, type PromptRenderer, type Store } from '@byway/contracts';
 import { createPromptRenderer } from '@byway/prompts';
+import type { Client } from '@temporalio/client';
 import { NativeConnection, Worker } from '@temporalio/worker';
 import { createActivities } from './activities/index.ts';
 import type { RunnerDeps } from './activities/deps.ts';
-import { buildWorkflows } from './build.ts';
+import { buildWorkflows, workflowBundleHash } from './build.ts';
 import { playwrightPages, type PageRenderer } from './pages.ts';
+import { retireStaleRuns } from './versioning.ts';
 
 export interface CreateWorkerOptions {
   gateway: Gateway;
@@ -31,6 +33,14 @@ export interface CreateWorkerOptions {
 
 export interface RunnerWorker {
   worker: Worker;
+  taskQueue: string;
+  /** The hash of the workflow bundle this worker runs (C7); undefined for a bundle not built by buildWorkflows. */
+  workflowHash: string | undefined;
+  /**
+   * Before `run()`: terminate and fail the open runs of this task queue that another workflow bundle started (C7).
+   * Does nothing when this worker's own hash is unknown. Returns their run ids.
+   */
+  retireStaleRuns(client: Client): Promise<string[]>;
   /** Runs until shutdown; resolves when the worker has stopped. */
   run(): Promise<void>;
   /** Stop polling, let in-flight activities finish, and close the browser. */
@@ -52,10 +62,12 @@ export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWor
     ...(opts.seed ? { seed: opts.seed } : {}),
     ...(opts.random ? { random: opts.random } : {}),
   };
+  const taskQueue = opts.taskQueue ?? TASK_QUEUE;
+  const workflowHash = workflowBundleHash(workflowsPath);
   const worker = await Worker.create({
     connection,
     namespace: opts.namespace ?? 'default',
-    taskQueue: opts.taskQueue ?? TASK_QUEUE,
+    taskQueue,
     workflowsPath,
     activities: createActivities(deps),
   });
@@ -66,6 +78,9 @@ export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWor
   };
   return {
     worker,
+    taskQueue,
+    workflowHash,
+    retireStaleRuns: async (client) => (workflowHash ? retireStaleRuns({ client, store: opts.store, taskQueue, hash: workflowHash }) : []),
     run() {
       running ??= worker.run().finally(cleanup);
       return running;

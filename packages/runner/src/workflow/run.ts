@@ -6,13 +6,14 @@
  * - CANCEL_SIGNAL: stop now, whatever the run is doing (also while paused or waiting);
  * - PAUSE_SIGNAL / RESUME_SIGNAL: stop starting steps (the running ones finish), and start again.
  */
-import { ApplicationFailure, CancellationScope, allHandlersFinished, condition, defineSignal, defineUpdate, isCancellation, setHandler } from '@temporalio/workflow';
+import { ApplicationFailure, CancellationScope, allHandlersFinished, condition, defineSignal, defineUpdate, isCancellation, setHandler, upsertMemo } from '@temporalio/workflow';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, type CheckpointResolution } from '@byway/contracts';
 import { checkResolution } from '@byway/store/resolution';
 import type { RunInput } from '../types.ts';
 import { quick } from './acts.ts';
 import { RunControl } from './control.ts';
 import { Interpreter, failureMessage } from './interpreter.ts';
+import { WORKFLOW_HASH, WORKFLOW_HASH_MEMO } from './version.ts';
 
 export const resolveUpdate = defineUpdate<void, [CheckpointResolution]>(RESOLVE_UPDATE);
 export const cancelSignal = defineSignal(CANCEL_SIGNAL);
@@ -26,6 +27,8 @@ export interface RunOutcome {
 }
 
 export async function runRecipe(input: RunInput): Promise<RunOutcome> {
+  // The bundle this run started under (C7): a worker on other code retires the run instead of failing to replay it.
+  upsertMemo({ [WORKFLOW_HASH_MEMO]: WORKFLOW_HASH });
   const control = new RunControl(input.runId);
   const interpreter = new Interpreter(input, control);
   const main = new CancellationScope();

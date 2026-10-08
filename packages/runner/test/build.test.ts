@@ -4,7 +4,7 @@
  */
 import { readFileSync, rmSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE } from '../src/build.ts';
+import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '../src/build.ts';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
@@ -20,6 +20,23 @@ describe('the workflow bundle', () => {
       expect(code).toContain('"cancelRun"');
     } finally {
       rmSync(out, { force: true });
+    }
+  }, 60_000);
+
+  it('carries the hash of its own code, the same on every build of the same code (C7)', async () => {
+    const a = await buildWorkflows({ outfile: DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `hash-a-${process.pid}.js`) });
+    const b = await buildWorkflows({ outfile: DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `hash-b-${process.pid}.js`) });
+    try {
+      const hash = workflowBundleHash(a);
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(workflowBundleHash(b)).toBe(hash);
+      const code = readFileSync(a, 'utf8');
+      // The placeholder is gone, and the source map is still inline.
+      expect(code).not.toContain(`bywaywf:${'0'.repeat(64)}`);
+      expect(code).toMatch(/\/\/# sourceMappingURL=data:application\/json;base64,/);
+    } finally {
+      rmSync(a, { force: true });
+      rmSync(b, { force: true });
     }
   }, 60_000);
 });
