@@ -9,6 +9,7 @@ export { PRICES, priceFor, tokenCost, type PriceRow } from './prices.ts';
 export { estimateInputTokens, imageTokens, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
 export { entryHash, GENESIS_HASH, Ledger, type GatewayLedgerEntry, type LedgerDraft, type LedgerOptions } from './ledger.ts';
 export { makeRedactor, type Redactor } from './redact.ts';
+export { findHeldKey, heldKeyError, isHeldKeyError, type HeldKeyError } from './held-key.ts';
 export { DEFAULT_RESPONDERS, parsePurpose, reply, respond, responderFor, type MockContext, type MockReply, type Responder } from './mock/responders.ts';
 export { composedRecipe } from './mock/compose.ts';
 /** The demo's revision markers stripped from text a person sees (UX-6); the mock keeps them in the stored text. */
