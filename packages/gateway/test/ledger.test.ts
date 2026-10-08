@@ -203,6 +203,49 @@ describe('Ledger: the lock file on Windows', () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  it('waits longer for one append when asked (a billed call must not lose its entry to a busy lock; ENG-3)', async () => {
+    let lockOpens = 0;
+    const started = Date.now();
+    const ledger = new Ledger({
+      path,
+      lockTimeoutMs: 20,
+      fs: {
+        open: (async (file: string, flags?: string) => {
+          // Held for about 150 ms, far past the ledger's ordinary 20 ms wait.
+          if (flags === 'wx' && Date.now() - started < 150) {
+            lockOpens++;
+            throw fsError('EPERM');
+          }
+          return fsp.open(file, flags);
+        }) as typeof fsp.open,
+      },
+    });
+    await expect(ledger.append(draft(1))).rejects.toThrow(/within 20 ms/);
+    const e = await ledger.append(draft(1), { lockTimeoutMs: 5_000 });
+    expect(e.seq).toBe(1);
+    expect(lockOpens).toBeGreaterThan(1);
+  });
+
+  it('keeps an appended entry when only the head record could not be rewritten (the next append catches it up)', async () => {
+    let failHead = true;
+    const ledger = new Ledger({
+      path,
+      fs: {
+        rename: (async (from: string, to: string) => {
+          if (failHead && to.endsWith('.head')) throw fsError('EIO');
+          return fsp.rename(from, to);
+        }) as typeof fsp.rename,
+      },
+    });
+    // The line is written, so the call is in the ledger: failing here would invite a retry that pays and appends again.
+    const first = await ledger.append(draft(1));
+    expect(first.seq).toBe(1);
+    expect((await ledger.entries()).map((e) => e.id)).toEqual([first.id]);
+    failHead = false;
+    await ledger.append(draft(2));
+    expect(await ledger.verify()).toBeNull();
+  });
+
   it('fails at once on an error that is not contention', async () => {
     let lockOpens = 0;
     const ledger = new Ledger({

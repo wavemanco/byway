@@ -69,6 +69,20 @@ describe('mock provider: output contracts for every purpose and medium', () => {
     });
   }
 
+  it('media: the storyboard carries its on-screen copy (headline, tagline, a caption per shot) for the late VOICE (C4)', async () => {
+    const sb = JSON.parse(lastBlock(await ask('build:media', `<problem>${PROBLEMS.media}</problem>`), 'json') as string) as {
+      storyboard: { caption?: string }[];
+      headline?: string;
+      tagline?: string;
+      voiceover: string;
+    };
+    expect(sb.headline).toMatch(/\S/);
+    expect(sb.tagline).toMatch(/\S/);
+    expect(sb.storyboard.every((s) => typeof s.caption === 'string' && s.caption.length > 0)).toBe(true);
+    // The copy is not the voice-over: the VO is locked after its own step, the copy is edited later.
+    expect([sb.headline, sb.tagline]).not.toContain(sb.voiceover);
+  });
+
   it('asset.briefs:web-page honours the slot count', async () => {
     const out = await ask('asset.briefs:web-page', '<problem>A bakery page</problem>\nPropose up to 2 images for the page.');
     expect(checkContract('asset.briefs:web-page', out, { maxBriefs: 2 })).toEqual([]);

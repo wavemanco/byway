@@ -113,8 +113,12 @@ export class Ledger {
     this.fs = { ...nodeFs, ...opts.fs };
   }
 
-  append(draft: LedgerDraft): Promise<GatewayLedgerEntry> {
-    const run = this.queue.then(() => this.withLock(() => this.appendLocked(draft)));
+  /**
+   * Appends one entry. `lockTimeoutMs` overrides the wait for the cross-process lock for this append: the gateway
+   * appends only calls a provider has already billed, and waits long for those rather than lose one (ENG-3).
+   */
+  append(draft: LedgerDraft, opts: { lockTimeoutMs?: number } = {}): Promise<GatewayLedgerEntry> {
+    const run = this.queue.then(() => this.withLock(() => this.appendLocked(draft), opts.lockTimeoutMs ?? this.lockTimeoutMs));
     this.queue = run.catch(() => undefined);
     return run;
   }
@@ -130,10 +134,17 @@ export class Ledger {
     }) as Omit<GatewayLedgerEntry, 'hash'>;
     const entry: GatewayLedgerEntry = { ...body, hash: entryHash(body) };
     await this.fs.appendFile(this.path, `${canonicalize(entry)}\n`, 'utf8');
+    // The line is the record: from here the entry is in the ledger. The head only lets verify() notice a truncated tail,
+    // and verify() accepts a head that lags the file, so a head that cannot be rewritten now is caught up by the next
+    // append. Failing here would tell the caller the entry is missing when it is not, and a retry would append it twice.
     const head: Head = { seq: entry.seq, id: entry.id, hash: entry.hash };
     const tmp = `${this.headPath}.${process.pid}.tmp`;
-    await this.fs.writeFile(tmp, JSON.stringify(head), 'utf8');
-    await retryTransient(() => this.fs.rename(tmp, this.headPath));
+    try {
+      await this.fs.writeFile(tmp, JSON.stringify(head), 'utf8');
+      await retryTransient(() => this.fs.rename(tmp, this.headPath));
+    } catch {
+      await this.fs.rm(tmp, { force: true }).catch(() => undefined);
+    }
     return entry;
   }
 
@@ -142,9 +153,9 @@ export class Ledger {
    * until `lockTimeoutMs`, then fails with an error naming the last code; any other error fails at once. Only a lock
    * that exists and is older than `staleLockMs` is broken, never one that answered with a Windows transient error.
    */
-  private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+  private async withLock<T>(fn: () => Promise<T>, lockTimeoutMs: number): Promise<T> {
     await this.fs.mkdir(dirname(this.path), { recursive: true });
-    const deadline = Date.now() + this.lockTimeoutMs;
+    const deadline = Date.now() + lockTimeoutMs;
     for (let attempt = 0; ; attempt++) {
       try {
         const handle = await this.fs.open(this.lockPath, 'wx');
@@ -162,7 +173,7 @@ export class Ledger {
         }
         if (Date.now() > deadline) {
           const why = code === 'EEXIST' ? 'it is held by another process' : `the file system kept answering ${code} (Windows does while another process deletes or reads the lock)`;
-          throw new Error(`ledger lock ${this.lockPath} could not be taken within ${this.lockTimeoutMs} ms: ${why}`, { cause: e });
+          throw new Error(`ledger lock ${this.lockPath} could not be taken within ${lockTimeoutMs} ms: ${why}`, { cause: e });
         }
         await sleep(lockBackoffMs(attempt));
       }

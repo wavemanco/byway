@@ -18,25 +18,33 @@ export function renderOptions(seed: number, subject: string, count = 6): { optio
   return { options: sample(rand, angles, Math.max(1, Math.min(count, angles.length))) };
 }
 
-/** Demo-mode storyboard (C5): shots with image prompts and a short voiceover. */
+/**
+ * Demo-mode storyboard (C5): shots with image prompts and on-screen captions, a short voice-over, and the headline and
+ * tagline (spec §3.3, contracts v5). The on-screen copy is what the late VOICE edits; the voice-over is locked after its
+ * own script step, so the two are written apart.
+ */
 export function renderStoryboard(seed: number, subject: string): {
-  storyboard: { shot: number; description: string; imagePrompt: string; durationSec: number }[];
+  storyboard: { shot: number; description: string; imagePrompt: string; durationSec: number; caption: string }[];
   voiceover: string;
+  headline: string;
+  tagline: string;
 } {
   const rand = rng(seed);
   const topic = titleFrom(subject, 'the product').toLowerCase();
   const light = pick(rand, ['early morning light', 'warm late-afternoon light', 'soft overcast light', 'neon-lit evening']);
   const beats = [
-    { description: 'Open on a small, everyday frustration.', imagePrompt: `Close-up of hands mid-task, ${light}, shallow depth of field` },
-    { description: `Introduce ${topic} in use, without explanation.`, imagePrompt: `${topic} in a real setting, ${light}, natural colour` },
-    { description: 'Show the moment it saves time.', imagePrompt: `Over-the-shoulder shot of a finished result, ${light}` },
-    { description: 'Cut to the person enjoying the time they got back.', imagePrompt: `Wide shot of a person outdoors, relaxed, ${light}` },
-    { description: 'Close on the name and one line.', imagePrompt: `Simple product shot on a plain background, ${light}, generous negative space` },
+    { description: 'Open on a small, everyday frustration.', imagePrompt: `Close-up of hands mid-task, ${light}, shallow depth of field`, caption: 'Again?' },
+    { description: `Introduce ${topic} in use, without explanation.`, imagePrompt: `${topic} in a real setting, ${light}, natural colour`, caption: 'Meet the shortcut.' },
+    { description: 'Show the moment it saves time.', imagePrompt: `Over-the-shoulder shot of a finished result, ${light}`, caption: 'Done before the kettle boils.' },
+    { description: 'Cut to the person enjoying the time they got back.', imagePrompt: `Wide shot of a person outdoors, relaxed, ${light}`, caption: 'This is the time you got back.' },
+    { description: 'Close on the name and one line.', imagePrompt: `Simple product shot on a plain background, ${light}, generous negative space`, caption: titleFrom(subject, 'The product') },
   ];
-  const storyboard = beats.map((b, i) => ({ shot: i + 1, ...b, durationSec: int(rand, 3, 6) }));
+  const storyboard = beats.map((b, i) => ({ shot: i + 1, description: b.description, imagePrompt: b.imagePrompt, durationSec: int(rand, 3, 6), caption: b.caption }));
   return {
     storyboard,
     voiceover: `Some things should take less time. With ${topic}, they do. Spend it on something better.`,
+    headline: pick(rand, ['Less waiting. More doing.', 'Time, handed back.', 'The slow part, gone.']),
+    tagline: pick(rand, ['Made for the busy part of the day.', 'Small thing, big difference.', 'Built to get out of your way.']),
   };
 }
 

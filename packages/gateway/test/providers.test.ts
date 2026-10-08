@@ -232,9 +232,12 @@ describe('openai adapter', () => {
     expect(JSON.stringify(out.responseBody)).not.toContain(PNG_B64);
   });
 
-  it('fails a response without image data as a retryable provider error', async () => {
-    const { client } = fakeOpenAI({}, { data: [] });
-    await expect(openaiAdapter({ client }).image!(imageRequest)).rejects.toMatchObject({ status: 502 });
+  it('returns a response without image data as a no-image result with its usage, not a fake 502 (ENG-5)', async () => {
+    const { client } = fakeOpenAI({}, { data: [], usage: { input_tokens: 12, output_tokens: 0 } });
+    const out = await openaiAdapter({ client }).image!(imageRequest);
+    expect(out.refusal).toMatch(/no image/);
+    expect(out.bytes.byteLength).toBe(0);
+    expect(out.usage).toEqual({ inputTokens: 12, outputTokens: 0, units: 0 });
   });
 });
 
@@ -326,6 +329,16 @@ describe('google adapter', () => {
     expect([out.truncated, out.text, out.refusal]).toEqual([true, '- Remove the', undefined]);
     expect((await googleAdapter({ client: fake(ok).client }).complete(request())).truncated).toBeFalsy();
     expect((await googleAdapter({ client: fake({ promptFeedback: { blockReason: 'SAFETY' } }).client }).complete(request())).truncated).toBeFalsy();
+  });
+
+  it('returns a text-only answer from an image model as a no-image result with its usage, not a fake 502 (ENG-5)', async () => {
+    const { client } = fake({ modelVersion: 'gemini-nano-banana-2.1', candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'A loaf, described.' }] } }], usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 40 } });
+    const out = await googleAdapter({ client }).image!(imageRequest);
+    expect(out.refusal).toBe('returned no image (finishReason STOP, text only)');
+    expect(out.usage).toEqual({ inputTokens: 9, outputTokens: 40, units: 0 });
+    // An image of a type the contract cannot carry is not an image either.
+    const odd = fake({ candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: PNG_B64, mimeType: 'image/gif' } }] } }] });
+    expect((await googleAdapter({ client: odd.client }).image!(imageRequest)).refusal).toMatch(/image\/gif/);
   });
 
   it('generates images through generateContent with an aspect ratio and the 1K size', async () => {
