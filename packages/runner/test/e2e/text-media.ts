@@ -126,6 +126,16 @@ export function textMediaScenarios(use: () => Harness): void {
         expect(ofType(view, 'step-finished', reader)).toHaveLength(2);
         expect(ofType(view, 'step-finished', reader).every((e) => (e.data.outputArtifactIds as string[]).length === 1)).toBe(true);
       }
+      // "The readers' notes are beside it": round 2's write shows your draft and the three notes of round 1, and each
+      // "Is this ready?" shows the draft with the notes it is about (ENG-8).
+      const firstNotes = ['cut-marks', 'tells-flags', 'critic'].map((r) => (ofType(view, 'step-finished', r)[0]!.data.outputArtifactIds as string[])[0]!);
+      expect(writes[1]!.artifactIds).toEqual(expect.arrayContaining(firstNotes));
+      expect(writes[1]!.artifactIds![0]).toBe((ofType(view, 'step-finished', 'write')[0]!.data.outputArtifactIds as string[])[0]);
+      const readies = view.checkpoints.filter((c) => c.prompt === READY_PROMPT && c.stepId === 'author-loop');
+      expect(readies[0]!.artifactIds).toEqual(expect.arrayContaining(firstNotes));
+      // The vision loop's question shows the sharpened brief, not only the card it started from.
+      const sharpened = (ofType(view, 'step-finished', 'sharpen')[0]!.data.outputArtifactIds as string[])[0]!;
+      expect(view.checkpoints.find((c) => c.prompt === READY_PROMPT && c.stepId !== 'author-loop')?.artifactIds).toContain(sharpened);
       const purposes = new Set(h.succeeded(run.id).filter((c) => c.stepId && ['write', 'render', 'cut-marks', 'tells-flags', 'critic', 'voice'].includes(c.stepId)).map((c) => c.purpose));
       expect([...purposes].sort()).toEqual(['critic:prose', 'cut:prose', 'tells-sweep:prose']);
       // The deliverable is your revision, exactly.

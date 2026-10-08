@@ -337,13 +337,7 @@ export class Interpreter {
     const spec = toStepSpec(s);
     const round = ctx.loop?.round;
     // What the person looks at: the candidates for a step over an option set, else the view it consumes.
-    const viewIds = (v: ViewRef | undefined) => (v ? [...(v.textArtifactId ? [v.textArtifactId] : []), ...v.imageArtifactIds] : []);
-    const shown = s.consumes.includes('option_set<artifact>')
-      ? (ports.options ?? []).flatMap((id, i) => {
-          const v = viewIds(ports.optionViews?.[i]);
-          return v.length ? v : [id];
-        })
-      : (ports.view?.items.flatMap(viewIds) ?? []);
+    const shown = s.consumes.includes('option_set<artifact>') ? optionsShown(ports) : (ports.view?.items.flatMap(viewIds) ?? []);
     let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round) };
     let initial: OpenCheckpointInput['initial'];
     if (kind === 'compare') {
@@ -360,11 +354,12 @@ export class Interpreter {
       // never from a machine's text (a seed card or a premise is not their draft).
       else if (ports.artifact && ports.artifact === ports.authored) initial = { from: 'artifact', artifactId: ports.artifact };
       else initial = { from: 'draft', ...(this.input.inputs.draft ? { draft: this.input.inputs.draft } : {}) };
-      checkpoint.artifactIds = ports.artifact ? [ports.artifact] : [];
+      // The author revises with the readers' notes beside their draft, as the question says (ENG-8); VOICE shows the work.
+      const work = ports.artifact ? [ports.artifact] : [];
+      checkpoint.artifactIds = s.role === 'voice' ? work : beside(ports, work);
     } else {
       // Beside the work: the latest notes (an audit's annotations, a model's framings or direction).
-      const work = shown.length ? shown : ports.artifact ? [ports.artifact] : [];
-      checkpoint.artifactIds = [...work, ...(ports.notes ?? []).filter((id) => !work.includes(id))];
+      checkpoint.artifactIds = beside(ports, shown.length ? shown : undefined);
     }
     const res = await this.ask(call, checkpoint, { step: spec, ...(initial ? { initial } : {}) });
     // What the checkpoint first offered: "unchanged" is measured against it, however often the person is asked again.
@@ -511,7 +506,8 @@ export class Interpreter {
         const call = this.call(l.id, ctx);
         await this.iteration(frame, call);
         if (frame.round >= frame.max) return current;
-        const res = await this.ask(call, { kind: 'confirm', prompt: READY_PROMPT, ...(current.artifact ? { artifactIds: [current.artifact] } : {}) });
+        // What "ready" is about: the work (or each option) and the round's notes, a sharpened brief among them (ENG-8).
+        const res = await this.ask(call, { kind: 'confirm', prompt: READY_PROMPT, artifactIds: beside(current) });
         if (res.approved) return current;
         continue;
       }
@@ -666,6 +662,24 @@ export class Interpreter {
 }
 
 const cand = (call: StepCall): { candidate?: number } => (call.candidate !== undefined ? { candidate: call.candidate } : {});
+
+const viewIds = (v: ViewRef | undefined): string[] => (v ? [...(v.textArtifactId ? [v.textArtifactId] : []), ...v.imageArtifactIds] : []);
+
+/** Each option by its latest view (the option itself when it has none). */
+const optionsShown = (ports: Ports): string[] =>
+  (ports.options ?? []).flatMap((id, i) => {
+    const v = viewIds(ports.optionViews?.[i]);
+    return v.length ? v : [id];
+  });
+
+/**
+ * What a question about the work shows (ENG-8): the work (given, else the artifact, else each option by its view),
+ * then the latest notes beside it (an audit's annotations, a critique, a model's direction or sharpened brief).
+ */
+function beside(ports: Ports, work?: string[]): string[] {
+  const items = work ?? (ports.artifact ? [ports.artifact] : optionsShown(ports));
+  return [...items, ...(ports.notes ?? []).filter((id) => !items.includes(id))];
+}
 
 /**
  * Ports with a new critique. `empty` marks an empty CUT directive, which the next fix passes over (spec §3.3 "Nothing to

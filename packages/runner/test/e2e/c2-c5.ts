@@ -59,6 +59,11 @@ export function c2c5Scenarios(use: () => Harness): void {
 
       // Two vision rounds: you reacted twice, and said it was ready the second time.
       expect(ofType(view, 'loop-iteration', 'vision').map((e) => e.data.iteration)).toEqual([1, 2]);
+      // "Is this ready?" shows what it asks about: the options and the briefs the AI sharpened (ENG-8).
+      const ready = view.checkpoints.find((c) => c.prompt === READY_PROMPT)!;
+      const sharpened = (ofType(view, 'step-finished', 'sharpen')[0]!.data.outputArtifactIds as string[])[0]!;
+      expect(ready.artifactIds).toContain(sharpened);
+      expect(ready.artifactIds!.length).toBeGreaterThanOrEqual(10);
       expect(view.checkpoints.filter((c) => c.stepId === 'react')).toHaveLength(2);
       const react = view.checkpoints.find((c) => c.stepId === 'react')!;
       expect(react.artifactIds?.length).toBeGreaterThanOrEqual(9);
