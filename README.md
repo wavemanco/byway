@@ -34,9 +34,7 @@ OPENROUTER_API_KEY=...
 FAL_KEY=...          # video clips for Ad Video Chain
 ```
 
-Keys are read from the process environment (a key exported in your shell wins over the file). They never enter the database, the ledger, artifacts, logs, prompts or the browser, and nothing byway writes under the repo holds them: the web build gets no keys, and Next.js's dev cache is off.
-
-If you ran `pnpm dev` or `pnpm demo` before this change, delete `apps/web/.next/dev/cache` once: Next.js's dev cache could hold a copy of the environment, keys included. Every run has a budget, and the workspace has one too; a run stops and asks before it would spend more.
+Keys are read from the process environment (a key exported in your shell wins over the file). They never enter the database, the ledger, artifacts, logs, prompts or the browser, and nothing byway writes under the repo holds them: the web build gets no keys, and Next.js's dev cache is off (byway removes one an earlier version left in `apps/web/.next/dev/cache`, which could hold a copy of the environment). Every run has a budget, and the workspace has one too; a run stops and asks before it would spend more.
 
 ## Scripts
 

@@ -26,6 +26,7 @@
  * The packages are imported by path: the repo root has no dependencies of its own, and each package resolves its own.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import net from 'node:net';
 import path from 'node:path';
@@ -128,6 +129,9 @@ async function main(): Promise<void> {
   const temporalPort = port('BYWAY_TEMPORAL_PORT', 7233);
 
   quietTemporal();
+  // Next.js's dev cache is off now (next.config.ts), but one left by an earlier byway may hold a snapshot of the
+  // environment, keys included (SEC-3); it is never needed again, so it goes.
+  rmSync(path.join(WEB, process.env.BYWAY_NEXT_DIST_DIR?.trim() || '.next', 'dev', 'cache', 'turbopack'), { recursive: true, force: true });
   const keys = loadEnvFile(path.join(ROOT, '.env.agents'));
   const dataDir = resolveDataDir();
   const store = createStore({ dataDir });
