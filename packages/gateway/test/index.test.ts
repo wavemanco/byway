@@ -44,6 +44,6 @@ describe('@byway/gateway', () => {
     expect(typeof createOpenRouterClient('test-key-not-real').chat.completions.create).toBe('function');
     expect(typeof createGoogleClient('test-key-not-real').models.generateContent).toBe('function');
     const fal = createFalClient('test-key-id:test-secret-not-real');
-    expect([typeof fal.subscribe, typeof fal.storage.upload]).toEqual(['function', 'function']);
+    expect([typeof fal.queue.submit, typeof fal.queue.subscribeToStatus, typeof fal.queue.result, typeof fal.storage.upload]).toEqual(['function', 'function', 'function', 'function']);
   });
 });

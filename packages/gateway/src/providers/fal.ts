@@ -6,8 +6,10 @@ import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type 
  * fal.ai video for C5 relay links (ADR-0069), through @fal-ai/client 1.10 (read from the package's own type
  * definitions and fal.ai's model pages, 2026-10-07):
  * - `storage.upload(blob)` puts the start frame on fal's CDN and returns its URL;
- * - `subscribe(endpointId, { input })` submits to the queue and resolves with `{ data, requestId }` when the job is done
- *   (it polls; a clip takes minutes, so `run` would hold one HTTP request open for all of it);
+ * - the queue: `queue.submit` enqueues a job and returns its `request_id`, `queue.subscribeToStatus` polls until it is
+ *   done, and `queue.result` returns `{ data, requestId }`. The client's `subscribe` is exactly these three calls; the
+ *   adapter makes them itself so that a failed poll is retried by polling again, never by submitting (and paying for)
+ *   a second clip. A clip takes minutes, so `run` (one HTTP request held open) is not used;
  * - image-to-video models answer `{ video: { url, content_type } }` (fal's `I2VOutput`);
  * - `fal-ai/ffmpeg-api/extract-frame` with `frame_type: 'last'` answers `{ images: [{ url, content_type }] }`, so
  *   fal itself provides the last frame the next link starts from, and no local video decoder is needed.
@@ -17,8 +19,15 @@ import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type 
 /** The slice of the fal client the adapter uses, so tests inject a fake. */
 export interface FalClientLike {
   storage: { upload(file: Blob): Promise<string> };
-  subscribe(endpointId: string, options: { input: Record<string, unknown>; logs?: boolean }): Promise<{ data: unknown; requestId: string }>;
+  queue: {
+    submit(endpointId: string, options: { input: Record<string, unknown> }): Promise<{ request_id: string }>;
+    subscribeToStatus(endpointId: string, options: { requestId: string; pollInterval?: number }): Promise<unknown>;
+    result(endpointId: string, options: { requestId: string }): Promise<{ data: unknown; requestId: string }>;
+  };
 }
+
+/** Clips take minutes; polling every two seconds is plenty. */
+const POLL_INTERVAL_MS = 2000;
 
 /** fal's last-frame endpoint (fal.ai/models/fal-ai/ffmpeg-api/extract-frame). */
 export const FAL_EXTRACT_FRAME = 'fal-ai/ffmpeg-api/extract-frame';
@@ -61,7 +70,11 @@ export function createFalClient(key: string): FalClientLike {
   const client = createFalSdkClient({ credentials: key, retry: { maxRetries: 0 } });
   return {
     storage: { upload: (file) => client.storage.upload(file) },
-    subscribe: (endpointId, options) => client.subscribe(endpointId, options),
+    queue: {
+      submit: (endpointId, options) => client.queue.submit(endpointId, options),
+      subscribeToStatus: (endpointId, options) => client.queue.subscribeToStatus(endpointId, options),
+      result: (endpointId, options) => client.queue.result(endpointId, options),
+    },
   };
 }
 
@@ -108,6 +121,13 @@ export interface FalAdapterOptions {
 
 export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
   const fetchImpl = opts.fetch ?? fetch;
+  const { queue } = opts.client;
+  /** One queue job: submitted once (the billable step), then polled and read, each retried on its own. */
+  const runJob = async (attempt: ProviderVideoRequest['attempt'], endpointId: string, input: Record<string, unknown>) => {
+    const { request_id: requestId } = await attempt(() => queue.submit(endpointId, { input }));
+    await attempt(() => queue.subscribeToStatus(endpointId, { requestId, pollInterval: POLL_INTERVAL_MS }));
+    return attempt(() => queue.result(endpointId, { requestId }));
+  };
   return {
     id: 'fal',
     async complete() {
@@ -121,20 +141,22 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
       const frame = req.startFrame;
       if (!frame) throw new GatewayError('invalid-request', `${req.model} makes video from a start frame, and the request has none`);
 
-      // Nothing is billed until the generation succeeds, so failures up to there are thrown (and retried per step).
+      // Failures before the generation job's result arrives are thrown, with no ledger entry: there is no clip to keep
+      // and no usage to record. (A job whose status cannot be read even after retries may still finish and be billed
+      // by fal; that spend is in fal's dashboard, not the ledger.)
       const frameUrl = await req.attempt(() => opts.client.storage.upload(new Blob([Buffer.from(frame.bytes)], { type: frame.mediaType })));
       const input = { prompt: req.prompt, [spec.imageField]: frameUrl, duration: String(req.durationSec), ...spec.extra };
-      const generated = await req.attempt(() => opts.client.subscribe(req.model, { input }));
-      const video = fileUrl(generated.data, 'video');
+      const generated = await runJob(req.attempt, req.model, input);
 
       const requestBody = { endpoint: req.model, input: { ...input, [spec.imageField]: `artifact:${frame.artifactId}` }, extract: { endpoint: FAL_EXTRACT_FRAME, frame_type: 'last' } };
       const response: Record<string, unknown> = { requestId: generated.requestId, video: plain(generated.data) };
       const out: ProviderVideo = { servedModel: req.model, usage: { inputTokens: 0, outputTokens: 0, units: req.durationSec }, requestBody, responseBody: response };
       try {
+        const video = fileUrl(generated.data, 'video');
         const clip = await req.attempt(() => download(fetchImpl, video.url, 'clip'));
         const clipType = [clip.contentType, video.contentType].find((t) => t?.startsWith('video/'))?.split(';')[0] ?? 'video/mp4';
         out.clip = { bytes: clip.bytes, mediaType: clipType };
-        const extracted = await req.attempt(() => opts.client.subscribe(FAL_EXTRACT_FRAME, { input: { video_url: video.url, frame_type: 'last' } }));
+        const extracted = await runJob(req.attempt, FAL_EXTRACT_FRAME, { video_url: video.url, frame_type: 'last' });
         response.frame = { requestId: extracted.requestId, ...(plain(extracted.data) as object) };
         const last = await req.attempt(() => download(fetchImpl, fileUrl(extracted.data, 'images').url, 'last frame'));
         const type = sniffImageType(last.bytes);

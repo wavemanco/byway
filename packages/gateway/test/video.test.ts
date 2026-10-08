@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GatewayError, type VideoRequest } from '@byway/contracts';
@@ -51,6 +51,18 @@ const req = (over: Partial<VideoRequest> = {}): VideoRequest => ({
 });
 
 const ledgerLines = () => readFileSync(join(dir, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+
+describe('gateway: fal.ai key', () => {
+  it('reads FAL_KEY from .env.agents, and reports fal and video by name only', () => {
+    const envFile = join(dir, '.env.agents');
+    writeFileSync(envFile, `FAL_KEY=${FAL_KEY}\n`);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: 'sk-ant-api03-test-not-a-real-key-000000' }, envFile });
+    expect(g.providers()).toContainEqual({ provider: 'fal', configured: true });
+    expect(g.profileStatus().find((s) => s.profile.id === 'balanced')).toMatchObject({ usable: true, video: true });
+    expect(JSON.stringify([g.providers(), g.profileStatus(), g.profiles()])).not.toContain(FAL_KEY);
+    expect(gateway({ env: {} }).profileStatus().find((s) => s.profile.id === 'balanced')?.video).toBe(false);
+  });
+});
 
 describe('gateway: video through fal.ai', () => {
   it('uploads the start frame, generates the clip, stores the clip and its last frame, and ledgers seconds', async () => {
@@ -135,6 +147,15 @@ describe('gateway: video through fal.ai', () => {
     await g.video(req());
     expect(fal.calls.filter((c) => c.endpoint === BALANCED_VIDEO)).toHaveLength(3);
     expect(ledgerLines()).toHaveLength(1);
+  });
+
+  it('retries a failed status poll by polling again, never by submitting (and paying for) a second clip', async () => {
+    const fal = fakeFal({}, { pollFailures: { [BALANCED_VIDEO]: [Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }), httpError(502)] } });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const res = await g.video(req());
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
+    expect(fal.polls).toEqual(['req-1', 'req-1', 'req-1', 'req-2']);
+    expect(res.costUsd).toBe(0.352);
   });
 
   it('maps fal errors to gateway codes, keeps the key out of them and spends nothing on a failed generation', async () => {
