@@ -41,14 +41,16 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   if (!sb.ok) throw new StepError(`The ${what} step could not read the storyboard: ${sb.problem}`);
   if (!sb.value.storyboard.some((s) => s.shot === shot)) throw new StepError(`The storyboard has no shot ${shot}.`);
 
-  const anchorIsImage = ports.anchor ? await reader.isImage(ports.anchor) : false;
+  // Inside a chain the link's start frame; outside it (render-in-scene) the chain's last frame.
+  const start = ports.linkStart ?? ports.anchor;
+  const anchorIsImage = start ? await reader.isImage(start) : false;
   const built = await buildPrompt(reader, {
     medium: run.medium,
     problem: run.problem,
     step,
     ports,
     extra: { artifact: storyboardText, brief: `Shot ${shot}` },
-    ...(anchorIsImage && ports.anchor ? { extraImages: [{ artifactIds: [ports.anchor] }] } : {}),
+    ...(anchorIsImage && start ? { extraImages: [{ artifactIds: [start] }] } : {}),
   });
   const link = await askModel(deps, reader, {
     run,
@@ -73,7 +75,7 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
       purpose: 'relay:media',
       profileId: run.profileId,
       prompt: link.value.clipPrompt,
-      ...(anchorIsImage && ports.anchor ? { startFrameArtifactId: ports.anchor } : {}),
+      ...(anchorIsImage && start ? { startFrameArtifactId: start } : {}),
       durationSec: Math.min(MAX_CLIP_SECONDS, Math.max(1, link.value.durationSec)),
     });
   } catch (e) {

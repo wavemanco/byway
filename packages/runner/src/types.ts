@@ -68,6 +68,8 @@ export interface Ports {
   asset?: string[];
   /** The storyboard shot a relay link is making (1-based shot number). */
   shot?: number;
+  /** The anchor a relay link started from; every relay step of that link (a regeneration too) starts there. */
+  linkStart?: string;
   /** The artifact the author last wrote themselves (C3, C6, C6a), which their next write revises. */
   authored?: string;
 }

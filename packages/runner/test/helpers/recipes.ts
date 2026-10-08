@@ -2,7 +2,7 @@
  * Small recipes for testing one control or operator at a time (the protocol configurations are run whole in their own
  * test files). They are workspace-channel recipes, so the catalog has no presentation for them.
  */
-import { pick, replicate, route, seq, step, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
+import { loop, pick, relay, replicate, route, seq, step, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
 import type { Medium } from '@byway/contracts';
 
 const recipe = (id: string, medium: Medium, body: Node): Recipe =>
@@ -40,5 +40,48 @@ export const judged = recipe(
     build('draft'),
     render('render'),
     step({ id: 'critic', role: 'critic', block: 'CRITIC', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'product.test.critic', consumes: ['view', 'refs'], produces: ['critique', 'score'], knobs: { mode: 'GREAT', refs: 4, shuffle: true } }),
+  ),
+);
+
+const relayStep = (id: string, consumes: Step['consumes']): Step =>
+  step({ id, role: 'relay', block: 'RELAY', actor: 'model', tier: 'mid', prompt: `product.test.${id}`, consumes, produces: ['artifact', 'anchor'], writes: true });
+
+/** A storyboard, its frames, and a two-link relay whose links are checked and regenerated until clean. */
+export const shortAd = recipe(
+  'short-ad',
+  'media',
+  seq(
+    build('board'),
+    step({ id: 'frames', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'product.test.frames', consumes: ['artifact'], produces: ['artifact', 'anchor'], writes: true }),
+    relay(
+      'links',
+      2,
+      seq(
+        relayStep('clip', ['anchor', 'artifact']),
+        loop(
+          'repair',
+          seq(render('shot-render'), step({ id: 'shot-check', role: 'check', actor: 'model', tier: 'big', prompt: 'product.test.shot-check', consumes: ['view'], produces: ['critique'] }), relayStep('regenerate', ['critique', 'artifact'])),
+          { metric: 'check-clean', hidden: false, holder: 'harness', probe: 1, max: 3, onCap: 'human', onNoConverge: 'recalibrate-human' },
+        ),
+      ),
+    ),
+  ),
+);
+
+/** A critic loop whose cap is settled by policy: the best snapshot, re-ranked in a fresh call. */
+export const policyLoop = recipe(
+  'policy-loop',
+  'prose',
+  seq(
+    build('draft'),
+    loop(
+      'polish',
+      seq(
+        render('render'),
+        step({ id: 'critic', role: 'critic', block: 'CRITIC', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'product.test.critic', consumes: ['view'], produces: ['critique', 'score'], knobs: { mode: 'OK' } }),
+        step({ id: 'revise', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.test.revise', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true }),
+      ),
+      { metric: 'critic-score', threshold: 9, hidden: true, holder: 'worker', probe: 1, max: 3, onCap: 'policy-best-snapshot', onNoConverge: 'continue' },
+    ),
   ),
 );

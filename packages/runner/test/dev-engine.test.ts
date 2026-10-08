@@ -63,6 +63,8 @@ describe('the dev engine', () => {
       if (view.run.status === 'done') break;
       await new Promise((r) => setTimeout(r, 25));
     }
+    // "done" is written just before the workflow returns; let it return before the engine stops.
+    expect(await engine.client.workflow.getHandle(workflowIdFor(run.id)).result()).toMatchObject({ status: 'done' });
     await app.close();
     await engine.stop();
 

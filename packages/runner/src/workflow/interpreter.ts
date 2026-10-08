@@ -618,8 +618,10 @@ export class Interpreter {
     const call = this.call(r.id, ctx);
     const shots = await this.act(call, () => quick.storyboardShots({ artifactId: ports.artifact! }));
     let current = ports;
-    for (const shot of shots.slice(0, Math.max(0, r.maxLinks))) current = await this.node(r.body, { ...current, shot }, ctx);
-    const { shot: _done, ...rest } = current;
+    // Every relay step of a link starts from the frame the link started from: a regeneration redoes the link, it does
+    // not continue from the defective clip's end.
+    for (const shot of shots.slice(0, Math.max(0, r.maxLinks))) current = await this.node(r.body, { ...current, shot, linkStart: current.anchor }, ctx);
+    const { shot: _done, linkStart: _start, ...rest } = current;
     return rest;
   }
 }
