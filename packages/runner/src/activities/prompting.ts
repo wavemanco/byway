@@ -7,19 +7,39 @@
  *
  * Slot layouts (the problem, "### A" options, "### V1" control answers) come from @byway/prompts, the one place the
  * templates, the gateway's mock and the runner agree on them (spec §3.3 shared conventions).
+ *
+ * A web page's screenshots are attached by surface (RENDER-1): each surface's images follow a line naming it ("Wide
+ * screen, …", "Phone, …", "First screen, …"), as the critic, defect-check and tells-sweep prompts describe them, and a
+ * step's `renders` knob picks which surfaces it is shown.
  */
 import type { ChatMessage, ContentPart, MediaType, Medium, ProblemBrief, PromptSlot } from '@byway/contracts';
 import { labelled, labelOf, problemSlot, vanillaLabelled } from '@byway/prompts/pure';
 import { textView, viewKindOf } from '../formats.ts';
-import type { Ports, StepSpec, View, ViewRef } from '../types.ts';
+import { rendersKnob, SURFACE_CAPTIONS } from '../surfaces.ts';
+import type { Ports, StepSpec, Surface, View, ViewRef } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 
 export type Slots = Partial<Record<PromptSlot, string>>;
 
-/** Images to attach, in groups; a labelled group is introduced by its "### A" heading. */
+/**
+ * Images to attach, in groups. A labelled group is introduced by its "### A" heading (once for consecutive groups with
+ * the same label); a captioned group by its caption line (a web page's surface).
+ */
 export interface ImageGroup {
   label?: string;
+  caption?: string;
   artifactIds: string[];
+}
+
+/**
+ * One view item's images as groups: one per surface, captioned, when the item is a web page rendered by surface
+ * (narrowed to `renders` when given; all of them if none is left), else one group of all its images.
+ */
+export function surfaceGroups(item: ViewRef, label?: string, renders?: readonly Surface[]): ImageGroup[] {
+  const at = label === undefined ? {} : { label };
+  if (!item.surfaces?.length) return item.imageArtifactIds.length ? [{ ...at, artifactIds: item.imageArtifactIds }] : [];
+  const picked = renders?.length ? item.surfaces.filter((s) => renders.includes(s.surface)) : [];
+  return (picked.length ? picked : item.surfaces).filter((s) => s.imageArtifactIds.length).map((s) => ({ ...at, caption: SURFACE_CAPTIONS[s.surface], artifactIds: s.imageArtifactIds }));
 }
 
 /** Roles that judge the work and so never see its source (port rule 1). */
@@ -68,18 +88,21 @@ export class ArtifactReader {
   }
 }
 
-/** A view's text for the view slot and its images, labelled A, B, C… when it is a pool. */
-export async function viewParts(reader: ArtifactReader, view: View | undefined): Promise<{ text: string; images: ImageGroup[] }> {
+/**
+ * A view's text for the view slot and its images, labelled A, B, C… when it is a pool. `renders` (a step's knob)
+ * picks a web page's surfaces.
+ */
+export async function viewParts(reader: ArtifactReader, view: View | undefined, renders?: readonly Surface[]): Promise<{ text: string; images: ImageGroup[] }> {
   if (!view || view.items.length === 0) return { text: '', images: [] };
   if (!view.pool) {
     const item = view.items[0]!;
-    return { text: await reader.viewText(item), images: item.imageArtifactIds.length ? [{ artifactIds: item.imageArtifactIds }] : [] };
+    return { text: await reader.viewText(item), images: surfaceGroups(item, undefined, renders) };
   }
   const texts = await Promise.all(view.items.map((v) => reader.viewText(v)));
   const anyText = texts.some((t) => t.trim());
   return {
     text: anyText ? labelled(texts.map((t) => t || '(see the images under this label)')) : '',
-    images: view.items.map((v, i) => ({ label: labelOf(i), artifactIds: v.imageArtifactIds })).filter((g) => g.artifactIds.length > 0),
+    images: view.items.flatMap((v, i) => surfaceGroups(v, labelOf(i), renders)),
   };
 }
 
@@ -126,7 +149,7 @@ export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Pro
         break;
       case 'view': {
         // For an overlap step this is the seeded pool, labelled A, B, C… (its options are the unseeded answers).
-        const v = await viewParts(reader, ports.view);
+        const v = await viewParts(reader, ports.view, rendersKnob(step.knobs));
         slots.view = v.text;
         images.push(...v.images);
         break;
@@ -137,7 +160,7 @@ export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Pro
         slots.options = step.role === 'overlap' ? vanillaLabelled(texts) : labelled(texts);
         if (viewKindOf(medium) === 'screenshots' && step.role !== 'overlap') {
           (ports.optionViews ?? []).forEach((v, i) => {
-            if (v?.imageArtifactIds.length) images.push({ label: labelOf(i), artifactIds: v.imageArtifactIds });
+            if (v) images.push(...surfaceGroups(v, labelOf(i), rendersKnob(step.knobs)));
           });
         }
         break;
@@ -173,9 +196,13 @@ export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Pro
   return { slots, images };
 }
 
-/** The user message: the rendered text, then each image group (its "### A" heading first, when labelled). */
+/**
+ * The user message: the rendered text, then each image group: its "### A" heading first when labelled (once for a
+ * run of groups under the same label, so a page's surfaces share their candidate's heading), then its caption line.
+ */
 export async function userMessage(reader: ArtifactReader, text: string, groups: readonly ImageGroup[]): Promise<ChatMessage> {
   const content: ContentPart[] = [{ type: 'text', text }];
+  let heading: string | undefined;
   for (const g of groups) {
     const parts: ContentPart[] = [];
     for (const id of g.artifactIds) {
@@ -183,7 +210,9 @@ export async function userMessage(reader: ArtifactReader, text: string, groups: 
       if (IMAGE_TYPES.has(mediaType)) parts.push({ type: 'image', artifactId: id, mediaType: mediaType as MediaType });
     }
     if (!parts.length) continue;
-    if (g.label) content.push({ type: 'text', text: `### ${g.label}` });
+    if (g.label && g.label !== heading) content.push({ type: 'text', text: `### ${g.label}` });
+    heading = g.label;
+    if (g.caption) content.push({ type: 'text', text: g.caption });
     content.push(...parts);
   }
   return { role: 'user', content };

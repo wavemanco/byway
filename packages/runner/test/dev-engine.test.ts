@@ -3,18 +3,19 @@
  * worker (built with esbuild, ADR-0070) in the same process, and a Runner for another process via connectRunner.
  */
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { request } from 'node:http';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DefaultLogger, Runtime } from '@temporalio/worker';
 import { createGateway } from '@byway/gateway';
-import { createStore } from '@byway/store';
 import { storeCaps } from '../src/caps.ts';
 import { connectRunner, startDevEngine, TEMPORAL_DB_FILENAME, type DevEngine } from '../src/dev-engine.ts';
 import { workflowIdFor } from '../src/types.ts';
 import { fakePages } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
+import { createTestStore } from './helpers/memo.ts';
 import { PROBLEM } from './helpers/harness.ts';
 import { tiny } from './helpers/recipes.ts';
 
@@ -35,9 +36,10 @@ const freePort = () =>
   });
 
 const dir = mkdtempSync(path.join(tmpdir(), 'byway-engine-'));
-const store = createStore({ dataDir: dir });
+const store = createTestStore({ dataDir: dir });
 const gateway = createGateway({ ledgerPath: path.join(dir, 'ledger.jsonl'), artifacts: store.artifacts, caps: storeCaps(store), demo: true, env: {} });
 let engine: DevEngine | undefined;
+let httpPort = 0;
 
 afterAll(async () => {
   await engine?.stop();
@@ -45,7 +47,33 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 }, 60_000);
 
+/** An HTTP request to the dev server's HTTP API, with the headers a hostile page or a rebinding attack would send. */
+const http = (port: number, method: 'GET' | 'POST', headers: Record<string, string>, body?: string) =>
+  new Promise<number>((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port, method, path: '/api/v1/namespaces', headers }, (res) => {
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+
 describe('the dev engine', () => {
+  it('refuses to attach to whatever already listens on its port (OPS-1)', async () => {
+    const port = await freePort();
+    const squatter = createServer();
+    await new Promise<void>((r) => squatter.listen(port, '127.0.0.1', () => r()));
+    try {
+      const err = await startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages() }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toContain(String(port));
+      expect((err as Error).message).toMatch(/already in use/);
+      expect((err as Error).message).toMatch(/BYWAY_TEMPORAL_PORT/);
+    } finally {
+      await new Promise((r) => squatter.close(r));
+    }
+  });
+
   it('runs a recipe end to end, and keeps its history in the data directory across restarts', async () => {
     const port = await freePort();
     engine = await startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages() });
@@ -73,4 +101,21 @@ describe('the dev engine', () => {
     const described = await engine.client.workflow.getHandle(workflowIdFor(run.id)).describe();
     expect(described.status.name).toBe('COMPLETED');
   }, 120_000);
+
+  it('keeps the Temporal HTTP API closed: no rebinding reads, no cross-site writes (SEC-2)', async () => {
+    expect(engine).toBeDefined();
+    const port = Number(engine!.address.split(':')[1]);
+    engine = await restartWithHttpPort(port);
+    expect(await http(httpPort, 'GET', { Host: `127.0.0.1:${httpPort}` })).toBe(403);
+    expect(await http(httpPort, 'GET', { Host: `rebind.attacker.example:${httpPort}` })).toBe(403);
+    expect(await http(httpPort, 'POST', { Host: `127.0.0.1:${httpPort}`, Origin: 'https://evil.example', 'Sec-Fetch-Site': 'cross-site', 'Content-Type': 'text/plain;charset=UTF-8' }, '{}')).toBe(403);
+  }, 60_000);
 });
+
+/** The engine again on the same port, with its HTTP API pinned to a known port so the test can find it. */
+async function restartWithHttpPort(port: number): Promise<DevEngine> {
+  await engine?.stop();
+  engine = undefined;
+  httpPort = await freePort();
+  return startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages(), httpPort });
+}

@@ -8,6 +8,7 @@ import { WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
 import { parseRecipe, recipeHash } from '@byway/recipe';
+import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
@@ -41,6 +42,8 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
   /**
    * Controls (contracts v4 Runner): an unknown run throws; cancel, pause and resume on a run that has ended do nothing.
    * The store's status settles it first, so a run that ended moments ago is not sent a signal it would only ignore.
+   * A run the store shows as going whose workflow Temporal no longer runs (OPS-1) cannot be moved on by anyone: it is
+   * closed in the store, as cancelled when the person asked to cancel it and as failed otherwise (lost-runs.ts).
    */
   const signal = async (runId: string, name: string) => {
     const run = await store.getRun(runId);
@@ -49,8 +52,8 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
     try {
       await handle(runId).signal(name);
     } catch (e) {
-      if (e instanceof WorkflowNotFoundError) return;
-      throw e;
+      if (!(e instanceof WorkflowNotFoundError)) throw e;
+      await settleLostRun(store, runId, name === CANCEL_SIGNAL ? { status: 'cancelled' } : { status: 'failed', error: LOST_RUN_MESSAGE });
     }
   };
 
@@ -107,7 +110,11 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       } catch (e) {
         // The workflow's validator (stale or mismatched answers) and handler refusals arrive as the Update's failure.
         if (e instanceof WorkflowUpdateFailedError) throw new ResolutionRejectedError((e.cause as Error | undefined)?.message ?? e.message);
-        if (e instanceof WorkflowNotFoundError) throw new ResolutionRejectedError('This run is no longer running.');
+        if (e instanceof WorkflowNotFoundError) {
+          // The store says the run is going but Temporal has no running workflow for it: nobody can answer it now.
+          await settleLostRun(store, cp.runId, { status: 'failed', error: LOST_RUN_MESSAGE });
+          throw new ResolutionRejectedError(LOST_RUN_MESSAGE);
+        }
         throw e;
       }
     },

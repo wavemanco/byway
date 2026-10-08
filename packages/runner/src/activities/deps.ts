@@ -18,4 +18,6 @@ export interface RunnerDeps {
   seed?: () => string;
   /** Uniform [0, 1) for the critic's shuffled reference positions. Defaults to crypto randomness. */
   random?: () => number;
+  /** Aborted when Temporal cancels the running activity invocation (set per invocation by createActivities). */
+  signal?: AbortSignal;
 }

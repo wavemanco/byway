@@ -11,7 +11,7 @@ import type { BudgetRaiseInput, FailRunInput, FinishRunInput, RerankInput, Reran
 import { askModel } from './call.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
-import { ArtifactReader, type ImageGroup } from './prompting.ts';
+import { ArtifactReader, surfaceGroups, type ImageGroup } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
 
 const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
@@ -62,7 +62,8 @@ export async function rerank(deps: RunnerDeps, input: RerankInput): Promise<Rera
   const images: ImageGroup[] = [];
   for (const [i, s] of input.snapshots.entries()) {
     const ids = s.view?.imageArtifactIds ?? [];
-    if (ids.length) images.push({ label: labels(input.snapshots.length)[i], artifactIds: ids });
+    // A web page's surfaces each follow a line naming them, under the snapshot's label (RENDER-1).
+    if (s.view) images.push(...surfaceGroups(s.view, labels(input.snapshots.length)[i]));
     texts.push(s.view?.textArtifactId ? await reader.text(s.view.textArtifactId) : ids.length ? '' : textView(run.medium, await reader.text(s.artifactId)));
   }
   const shown = labels(input.snapshots.length);

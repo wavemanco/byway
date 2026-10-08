@@ -1,12 +1,15 @@
 /**
- * A fake page renderer for the e2e scenarios (one real Playwright test lives in pages.test.ts): every page becomes small
+ * A fake page renderer for the e2e scenarios (the real Playwright tests live in pages.test.ts): every page becomes small
  * PNG tiles whose colour comes from the HTML, so different pages give different screenshots. A revised page is taller:
  * one more tile per revision mark (the demo's `byway-revision` meta, or a test's `<!--rev-->` comments), which lets a
- * test's critic tell rounds apart from what it sees, as a real critic would. It can be held, to test pause.
+ * test's critic tell rounds apart from what it sees, as a real critic would. Like the real renderer it makes the three
+ * surfaces (RENDER-1): the wide screen and the phone as that many tiles each (phone tiles are narrower), the first
+ * screen as one. It can be held, to test pause, cancel and shutdown; a held render stops when its step is cancelled.
  */
 import { crc32, deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import type { PageRenderer } from '../../src/pages.ts';
+import type { PageRenderer, RenderOptions, SurfaceShots } from '../../src/pages.ts';
+import type { Surface } from '../../src/types.ts';
 
 function chunk(type: string, data: Uint8Array): Buffer {
   const len = Buffer.alloc(4);
@@ -32,18 +35,50 @@ export function png(width: number, height: number, rgb: [number, number, number]
 
 export interface FakePages extends PageRenderer {
   rendered: string[];
-  /** While held, renders wait until released. */
+  /** While held, renders wait until released (or until their step is cancelled). */
   hold(): void;
   release(): void;
   /** Renders currently waiting on the hold. */
   waiting(): number;
 }
 
+/** How many wide-screen (and phone) tiles a page gets: one, plus one per revision mark. */
+export const fakeTiles = (html: string): number => 1 + Math.min((html.match(/<!--rev-->/g) ?? []).length + (/name="byway-revision"/.test(html) ? 1 : 0), 8);
+
 export function fakePages(): FakePages {
   const rendered: string[] = [];
   let gate: Promise<void> | undefined;
   let open: (() => void) | undefined;
   let waiting = 0;
+
+  const held = async (signal: AbortSignal | undefined) => {
+    if (!gate) return;
+    waiting++;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        void gate!.then(resolve);
+        if (signal?.aborted) reject(signal.reason);
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    } finally {
+      waiting--;
+    }
+  };
+
+  const shots = (html: string, surface: Surface): SurfaceShots => {
+    const h = createHash('sha256').update(html).digest();
+    const n = surface === 'fold' ? 1 : fakeTiles(html);
+    const w = surface === 'mobile' ? 4 : 8;
+    const shade = surface === 'mobile' ? 64 : surface === 'fold' ? 128 : 0;
+    return { surface, tiles: Array.from({ length: n }, (_, i) => png(w, surface === 'fold' ? 5 : 6, [h[0]!, (h[1]! + shade) % 256, (h[2]! + i) % 256])) };
+  };
+
+  const render = async (html: string, surfaces: readonly Surface[], opts: RenderOptions = {}): Promise<SurfaceShots[]> => {
+    rendered.push(html);
+    await held(opts.signal);
+    return surfaces.map((s) => shots(html, s));
+  };
+
   return {
     rendered,
     hold() {
@@ -55,17 +90,8 @@ export function fakePages(): FakePages {
       open = undefined;
     },
     waiting: () => waiting,
-    async screenshots(html) {
-      rendered.push(html);
-      if (gate) {
-        waiting++;
-        await gate;
-        waiting--;
-      }
-      const h = createHash('sha256').update(html).digest();
-      const revisions = (html.match(/<!--rev-->/g) ?? []).length + (/name="byway-revision"/.test(html) ? 1 : 0);
-      return Array.from({ length: 1 + Math.min(revisions, 8) }, (_, i) => png(8, 6, [h[0]!, h[1]!, (h[2]! + i) % 256]));
-    },
+    render: (html, _resolve, surfaces, opts) => render(html, surfaces, opts),
+    screenshots: async (html, _resolve, opts) => (await render(html, ['desktop'], opts))[0]!.tiles,
     async close() {},
   };
 }

@@ -32,10 +32,16 @@ export interface RunInput {
 
 export type StageName = 'D1' | 'D2' | 'D3';
 
+/** A way a web page is seen (RENDER-1): the whole page on a wide screen, on a phone, and the first screen. */
+export type Surface = 'desktop' | 'mobile' | 'fold';
+
 /** One view of one artifact: a text rendering, images (screenshot tiles, storyboard frames), or both (media). */
 export interface ViewRef {
   textArtifactId?: string;
+  /** Every image of the view, in order (for a web page: each surface's screenshots, surface after surface). */
   imageArtifactIds: string[];
+  /** A web page's images by surface, so prompts can attach them under their names and a step's `renders` knob can pick. */
+  surfaces?: { surface: Surface; imageArtifactIds: string[] }[];
 }
 
 /** The `view` port: one artifact's view, or a pool of candidates' views shown side by side under labels A, B, C… */

@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
 import type { CompletionRequest, CompletionResult, Gateway, ModelProfile, ProfileStatus } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
-import { createStore, type SqliteStore } from '@byway/store';
 import { askModel } from '../src/activities/call.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { cancelRun, failRun } from '../src/activities/lifecycle.ts';
@@ -20,14 +19,15 @@ import { NO_VIDEO_NOTE, relayLink } from '../src/activities/relay.ts';
 import { createActivities } from '../src/activities/index.ts';
 import type { RunRef, StepCall, StepSpec } from '../src/types.ts';
 import { fakeHash, fakePrompts } from './helpers/fake-prompts.ts';
+import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
 let dir: string;
-let store: SqliteStore;
+let store: MemoStore;
 let workspaceId: string;
 
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'byway-acts-'));
-  store = createStore({ dataDir: dir });
+  store = createTestStore({ dataDir: dir });
   workspaceId = (await store.ensureDefaultWorkspace()).id;
 });
 afterEach(() => {
@@ -37,7 +37,7 @@ afterEach(() => {
 
 const DEMO = PROFILES.find((p) => p.id === 'demo')!;
 const NO_MEDIA: ModelProfile = { id: 'no-media', label: 'Text only', tiers: DEMO.tiers };
-const status = (profile: ModelProfile, media: boolean): ProfileStatus => ({ profile, usable: true, missing: [], images: media, video: media });
+const status = (profile: ModelProfile, media: boolean): ProfileStatus => ({ profile, usable: true, missing: [], images: media, video: media, otherFamily: false });
 
 /** A gateway whose completions answer from a script and record their requests. */
 function scripted(answers: string[], opts: { demo?: boolean; statuses?: ProfileStatus[] } = {}): Gateway & { requests: CompletionRequest[] } {

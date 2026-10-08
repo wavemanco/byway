@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { c1 } from '@byway/catalog';
 import type { CompletionRequest, RunView } from '@byway/contracts';
 import { pageCopy, skeleton } from '../../src/copy.ts';
+import { SURFACE_CAPTIONS } from '../../src/surfaces.ts';
 import { BEST_SO_FAR_PROMPT } from '../../src/workflow/wording.ts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import type { Harness } from '../helpers/harness.ts';
@@ -15,9 +16,11 @@ let h: Harness;
 
 /**
  * What the critic sees: a revised page renders one tile taller (fake pages), so its answer can follow the rounds
- * from the screenshots alone. Its prompt is the same every round (01 CRITIC: frozen, no round number).
+ * from the screenshots alone. Its prompt is the same every round (01 CRITIC: frozen, no round number). C1's critic
+ * asks for the wide screen, the phone and the first screen (RENDER-1): the fake gives the phone as many tiles as the
+ * wide screen and the first screen one, so the wide screen's tiles are (images - 1) / 2.
  */
-const tiles = (images: number) => Math.max(1, images);
+const tiles = (images: number) => Math.max(1, (images - 1) / 2);
 /** A fix that marks the page once more each time, so round r shows r tiles. */
 const markingFix = (prompt: string) => {
   const page = [...prompt.matchAll(/```html\n([\s\S]*?)\n```/g)].at(-1)?.[1] ?? '';
@@ -127,11 +130,12 @@ export function c1Scenarios(use: () => Harness): void {
         const reranks = h.succeeded(run.id).filter((c) => c.purpose === 'rerank:web-page');
         expect(reranks).toHaveLength(4);
         expect(reranks.every((c) => c.stepId === 'critic-loop')).toBe(true);
-        // The re-rank sees the top three versions (rounds 5, 4 and 3: 5 + 4 + 3 tiles) under labels, with no scores or
-        // critiques attached.
+        // The re-rank sees the top three versions (rounds 5, 4 and 3: 5 + 4 + 3 wide-screen tiles, as many phone tiles,
+        // and a first screen each) under labels, each surface named, with no scores or critiques attached.
         const rr = reranks[0]!.request as CompletionRequest;
         const parts = rr.messages[0]!.content;
-        expect(parts.filter((p) => p.type === 'image')).toHaveLength(12);
+        expect(parts.filter((p) => p.type === 'image')).toHaveLength(2 * (5 + 4 + 3) + 3);
+        expect(parts.filter((p) => p.type === 'text' && p.text === SURFACE_CAPTIONS.mobile)).toHaveLength(3);
         expect(parts.flatMap((p) => (p.type === 'text' && /^### [A-Z]$/.test(p.text) ? [p.text] : []))).toEqual(['### A', '### B', '### C']);
         expect(JSON.stringify(rr.messages)).not.toMatch(/Score|spacing is uniform/);
         const caps = view.checkpoints.filter((c) => c.prompt === BEST_SO_FAR_PROMPT);

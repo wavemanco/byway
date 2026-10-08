@@ -11,6 +11,8 @@ import { createRunnerClient } from './client.ts';
 export { createRunnerClient, ResolutionRejectedError, titleOf, type RunnerClientOptions } from './client.ts';
 export { storeCaps } from './caps.ts';
 export { RUN_WORKFLOW, workflowIdFor } from './types.ts';
+export { LOST_RUN_MESSAGE } from './lost-runs.ts';
+export { OLDER_VERSION_MESSAGE } from './versioning.ts';
 
 export interface ConnectedRunner {
   runner: Runner;

@@ -1,13 +1,16 @@
 /**
  * The `renderView` activity (RENDER glue, spec §3.2 "Views by medium"): the artifact as its audience meets it.
- * - web-page: full-page screenshots at 1440 wide, tiled (Playwright);
+ * - web-page: the surfaces the prompts name (RENDER-1): the whole page on a wide screen and on a phone, tiled, and
+ *   the first screen (Playwright); each screenshot is stored and shown under its surface's name. A render step's own
+ *   `renders` knob can narrow them; otherwise all three are made, and each judging step picks by its knob;
  * - prose and code-diff: the text itself (the view is the artifact);
  * - options: a numbered plain-text list;
  * - media: the storyboard as text plus each shot's frame image when it exists.
  * A pool (an option set) gets one view per candidate, shown side by side under labels.
  */
 import { parseStoryboard, textView } from '../formats.ts';
-import type { RenderInput, RenderResult, ViewRef } from '../types.ts';
+import { rendersKnob, SURFACE_NAMES, SURFACES } from '../surfaces.ts';
+import type { RenderInput, RenderResult, Surface, ViewRef } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { stepFinished, stepStarted } from './steps.ts';
@@ -24,19 +27,25 @@ export async function renderView(deps: RunnerDeps, input: RenderInput): Promise<
     switch (run.medium) {
       case 'web-page': {
         if (!deps.pages) throw new StepError('Web pages cannot be rendered: no page renderer is configured.');
-        const tiles = await deps.pages.screenshots(text, async (id) => {
+        const wanted = rendersKnob(step.knobs) ?? [...SURFACES];
+        const shots = await deps.pages.render(text, async (id) => {
           if (!(await deps.store.artifacts.has(id))) return undefined;
           const { record, bytes } = await deps.store.artifacts.get(id);
           return { body: bytes, contentType: record.mediaType };
-        });
-        const ids: string[] = [];
-        for (const [t, png] of tiles.entries()) {
-          const record = await deps.store.artifacts.put(png, 'image/png');
-          ids.push(record.id);
-          await announce(deps, run.runId, call, record.id, 'image/png', { label: `Screenshot ${t + 1} of ${tiles.length}`, name: `view/${tag}/${t}` });
+        }, wanted.length ? wanted : [...SURFACES]);
+        const surfaces: NonNullable<ViewRef['surfaces']> = [];
+        for (const { surface, tiles } of shots) {
+          const ids: string[] = [];
+          for (const [t, png] of tiles.entries()) {
+            const record = await deps.store.artifacts.put(png, 'image/png');
+            ids.push(record.id);
+            await announce(deps, run.runId, call, record.id, 'image/png', { label: shotLabel(surface, t, tiles.length), name: `view/${tag}/${surface}/${t}` });
+          }
+          surfaces.push({ surface, imageArtifactIds: ids });
         }
+        const ids = surfaces.flatMap((s) => s.imageArtifactIds);
         outputs.push(...ids);
-        items.push({ imageArtifactIds: ids });
+        items.push({ imageArtifactIds: ids, surfaces });
         break;
       }
       case 'prose':
@@ -61,4 +70,9 @@ export async function renderView(deps: RunnerDeps, input: RenderInput): Promise<
   }
   await stepFinished(deps, run, call, { costUsd: 0, ...(outputs.length ? { outputArtifactIds: outputs } : {}) });
   return { view: { pool: input.pool, items } };
+}
+
+/** "Wide screen 1 of 3", "Phone", "First screen". */
+function shotLabel(surface: Surface, i: number, of: number): string {
+  return of > 1 ? `${SURFACE_NAMES[surface]} ${i + 1} of ${of}` : SURFACE_NAMES[surface];
 }
