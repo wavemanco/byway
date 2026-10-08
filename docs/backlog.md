@@ -46,6 +46,8 @@ All figures are estimates from the Study 1 design pass ([protocol v1.1 §13](stu
 | C2 JSON export carries the mood boards; demo option-map flags follow "Chosen / Not chosen" | The Result shows the mood boards beside the options, but the JSON export does not include them (UX-8 remainder) | apps/web, gateway mock |
 | `startDevEngine({ workflowsPath })` | A running byway and `pnpm e2e` from the same checkout both rebuild `dist/workflows.js` (same bytes) (DEV-1 remainder) | runner |
 | Gateway mock's fenced-block reader | `mock/extract.ts` still uses the lazy regex the runner replaced (ENG-1); demo only | gateway mock |
+| Temporal metrics port has no Host check | Read-only metrics; not probed for DNS-rebinding reads (Phase 4 re-check, low) | runner |
+| Reconcile lost runs while the engine runs, not only at start | A workflow terminated from outside (now only via local gRPC) stays "waiting" until the next start (Phase 4 re-check, low) | runner |
 | Advisor diff as structured data | The web strips step ids from "How it differs" lines; the advisor could return structured differences (UX-13 remainder) | advisor, apps/web |
 
 ## Deferred decisions (non-code)
