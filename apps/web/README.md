@@ -8,13 +8,15 @@ Start it from the repo root, which also starts the run engine the app needs:
 ```sh
 pnpm start       # build and serve, with real models for the keys in .env.agents at the repo root (never committed)
 pnpm demo        # the same with sample outputs: no AI calls, nothing charged
-pnpm dev         # contributor mode: next dev behind byway's guard, with hot reload
+pnpm dev         # contributor mode: next dev inside byway's guarded server, with hot reload
 pnpm e2e         # the Playwright suite against a fresh pnpm demo
 ```
 
 Inside this folder: `pnpm build` (production build; type checking is `pnpm typecheck`'s job), `pnpm typecheck`. Do not
 run `next dev` on its own: it answers its internal endpoints (opening files in your editor, attaching a debugger)
-before `proxy.ts` runs, so only `pnpm dev`, which puts a guard in front (`src/server/dev-proxy.ts`), is safe.
+before `proxy.ts` runs, so only `pnpm dev` is safe. It runs the Next app in process inside byway's own server
+(`src/server/dev-server.ts`, started by `scripts/dev-web.ts`), which guards every request and WebSocket upgrade before
+Next sees it and is the only port listening.
 
 ## Layout
 
@@ -82,14 +84,18 @@ Logic on top of the contracts sits in view code:
 ## Guardrails
 
 - The server binds 127.0.0.1; `proxy.ts` refuses other Host headers (DNS rebinding) and cross-site writes on every
-  request under `next start`. Under `next dev` (`pnpm dev`), `src/server/dev-proxy.ts` applies the same guard to every
-  request and WebSocket upgrade first, including Next.js's own dev endpoints.
+  request under `next start`. Under `next dev` (`pnpm dev`), `src/server/dev-server.ts` applies the same guard to every
+  request and WebSocket upgrade before Next sees it, including Next.js's own dev endpoints (which, and `/_next/*`, no
+  other site may call, even with a loopback Host; the path is decoded and its `..` resolved before it is matched).
+  Next runs in that server's process, so there is no other port to reach it on.
 - No provider key is written under the repo: `next build` gets none (`src/server/serving.ts`), and Turbopack's
   persistent caches, which would snapshot the environment, are off (`next.config.ts`).
 - Generated pages are shown in sandboxed iframes (never `allow-same-origin`) and served by the artifact route with a
   CSP that sandboxes them again, blocks requests and allows only the renderer's CDNs. A CSP cannot stop a page with
-  scripts from navigating itself, so pages inside byway run their scripts only after you turn them on ("Run the
-  page's scripts", remembered in this browser); thumbnails never do. `/api/artifacts/<id>` serves media only, so a
+  scripts from navigating itself, and so sending what it contains to another site, so a page inside byway runs its
+  scripts only after you turn them on for that page ("Run the page's scripts"), and only while the screen shows it:
+  the choice is never stored, and a reload or another page starts with scripts off. Thumbnails never run scripts.
+  `/api/artifacts/<id>` serves media only, so a
   page cannot move itself to an address without its sandbox. Markdown shows images only from byway's artifact routes.
   Other media are served inert; an uploaded example image must really be PNG, JPEG or WebP.
 - Evidence labels are computed by the advisor; `test/guard-claims.test.ts` fails if any app string, recipe

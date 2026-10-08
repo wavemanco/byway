@@ -5,10 +5,10 @@
  *   with `next start` on 127.0.0.1, beside the run engine.
  * - `pnpm demo` (`serve.ts start --demo`): the same with the mock provider forced on (sample outputs, nothing charged).
  * - `pnpm dev` (`serve.ts dev`): contributor mode, with hot reload. `next dev` answers its own internal endpoints
- *   (opening files in an editor, attaching a debugger) before the app's guard runs, so it listens on an internal
- *   loopback port picked at random, and a small guarding reverse proxy (apps/web/src/server/dev-proxy.ts) listens on
- *   the public port and checks every request and WebSocket upgrade first (SEC-6). The internal port itself is not
- *   guarded; it is unannounced and changes every start, and contributor mode is not the way to use byway day to day.
+ *   (opening files in an editor, attaching a debugger) before the app's guard runs, so it never runs as its own server:
+ *   scripts/dev-web.ts creates the Next app in process inside byway's guarded server on 127.0.0.1
+ *   (apps/web/src/server/dev-server.ts), which checks every request and WebSocket upgrade before Next sees it and is
+ *   the only port the web process listens on (SEC-6). Contributor mode is not the way to use byway day to day.
  *
  * This process opens the data directory, the store, the gateway (the mock forced on for `--demo`), the prompt templates
  * and the run engine: a local Temporal server persisted in `<data dir>/temporal.sqlite` plus the runner worker. The web
@@ -30,11 +30,9 @@ import { rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import net from 'node:net';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { createGuardProxy } from '../apps/web/src/server/dev-proxy.ts';
 import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engine-watch.ts';
-import { isInternalAddressLine, parseServeArgs, withoutSecrets } from '../apps/web/src/server/serving.ts';
+import { parseServeArgs, withoutSecrets } from '../apps/web/src/server/serving.ts';
 import { createGateway, KEY_VARS, loadEnvFile } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
 import { startDevEngine, storeCaps, type DevEngine } from '../packages/runner/src/index.ts';
@@ -68,6 +66,19 @@ function stopTree(child: ChildProcess | undefined): Promise<void> {
   return Promise.race([exited, timeout]);
 }
 
+/**
+ * Stops the web process. Contributor mode's has an IPC channel and is asked first, so Next closes its dev server
+ * cleanly; then, or for next start, the process tree is ended.
+ */
+async function stopWeb(child: ChildProcess): Promise<void> {
+  if (child.connected && child.exitCode === null) {
+    const exited = new Promise<true>((resolve) => child.once('exit', () => resolve(true)));
+    child.send('stop');
+    if (await Promise.race([exited, new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000).unref())])) return;
+  }
+  await stopTree(child);
+}
+
 const exitCode = (child: ChildProcess) => new Promise<number | null>((resolve) => (child.exitCode !== null ? resolve(child.exitCode) : child.once('exit', (code) => resolve(code))));
 
 /**
@@ -82,17 +93,6 @@ function quietTemporal(): void {
   };
   Runtime.install({ logger: new DefaultLogger('WARN') });
 }
-
-/** A free loopback port, chosen by the system. */
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const srv = net.createServer();
-    srv.once('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
-      const { port: p } = srv.address() as net.AddressInfo;
-      srv.close(() => resolve(p));
-    });
-  });
 
 /** Answers when something accepts a TCP connection at host:port (the Temporal server, here). */
 const reachable = (address: string) =>
@@ -170,30 +170,21 @@ async function main(): Promise<void> {
 
   const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
   let web: ChildProcess;
-  let proxy: ReturnType<typeof createGuardProxy> | undefined;
   if (mode === 'start') {
     web = spawn(process.execPath, [nextBin(), 'start', '-H', '127.0.0.1', '-p', String(webPort)], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit'], env: webEnv });
   } else {
-    const internal = await freePort();
-    web = spawn(process.execPath, [nextBin(), 'dev', '-H', '127.0.0.1', '-p', String(internal)], { cwd: WEB, stdio: ['ignore', 'pipe', 'inherit'], env: webEnv });
-    // next dev names its internal address, which a browser refuses; only the public one is shown.
-    if (web.stdout) createInterface({ input: web.stdout }).on('line', (line) => (isInternalAddressLine(line) ? undefined : console.log(line)));
-    proxy = createGuardProxy({ targetPort: internal });
-    await new Promise<void>((resolve, reject) => {
-      proxy!.once('error', reject);
-      proxy!.listen(webPort, '127.0.0.1', () => resolve());
-    });
+    // Plain Node (it strips the script's types itself), from apps/web, as next dev ran. Over the IPC channel it is
+    // asked to stop, and it stops by itself if this process goes away.
+    web = spawn(process.execPath, [path.join(ROOT, 'scripts', 'dev-web.ts')], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], env: { ...webEnv, NODE_ENV: 'development' } });
   }
-  console.log(`  web        http://127.0.0.1:${webPort}${mode === 'dev' ? ' (every request passes byway’s guard before next dev)' : ''}`);
+  console.log(`  web        http://127.0.0.1:${webPort}${mode === 'dev' ? ' (next dev inside byway’s guard: every request and WebSocket is checked first)' : ''}`);
 
   let stopping: Promise<void> | undefined;
   const stop = (code: number) =>
     (stopping ??= (async () => {
       console.log('\nStopping byway…');
       watch.stop();
-      await new Promise<void>((resolve) => (proxy ? proxy.close(() => resolve()) : resolve()));
-      proxy?.closeAllConnections();
-      await stopTree(web);
+      await stopWeb(web);
       // ENG-10: the worker gives in-flight steps a grace period and then abandons them (they are retried on the next
       // start), so the engine's stop is bounded; the deadline guards against a stop that hangs anyway.
       const stopped = await Promise.race([

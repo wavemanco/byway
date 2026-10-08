@@ -1,23 +1,52 @@
 'use client';
 
-import { useId } from 'react';
-import { PAGE_SCRIPTS, useViewerFlag } from './viewerFlags.ts';
+import { useEffect, useId, useState } from 'react';
+
+/** Where byway once remembered "Run the page's scripts" for every page; it is no longer read, and is cleared. */
+const RETIRED_KEY = 'byway.pageScripts';
 
 /**
- * Turns a generated page's scripts on or off wherever byway shows it (SEC-4). Off by default: with scripts, a page
- * could navigate itself and carry what it shows to another site. The choice is remembered in this browser and applies
- * to every large page preview; thumbnails never run scripts.
+ * Whether the generated page (or the pages compared together) named by `key` runs its scripts here (SEC-4). Off until
+ * the person turns it on, and then only for that page while this screen shows it: the choice is React state, never
+ * stored, so leaving or reloading the screen ends it, and another page shown in the same place (a new key) starts with
+ * scripts off. A page running its scripts can navigate itself to another site, carrying what it holds in the address,
+ * which no CSP can stop; so turning scripts on is a one-page, one-visit action, not a setting that runs every later
+ * page's scripts the moment it is shown.
  */
-export function ScriptsToggle() {
-  const [on, setOn] = useViewerFlag(PAGE_SCRIPTS);
+export function usePageScripts(key: string): [boolean, (on: boolean) => void] {
+  const [onFor, setOnFor] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      window.localStorage.removeItem(RETIRED_KEY);
+    } catch {
+      // Storage may be missing or refuse (private windows, blocked site data); the key is never read either way.
+    }
+  }, []);
+  return [onFor === key, (on: boolean) => setOnFor(on ? key : null)];
+}
+
+const RISK = 'A page running its scripts can send what it contains to other sites.';
+
+interface ScriptsToggleProps {
+  on: boolean;
+  onChange(on: boolean): void;
+  /** "Run the page’s scripts", or the pages’ for one switch over several (compare). */
+  label?: string;
+}
+
+/**
+ * The "Run the page's scripts" switch beside a generated page (SEC-4). Its note says, on or off, what scripts can do,
+ * and, once on, how long it lasts. Thumbnails never run scripts and have no switch.
+ */
+export function ScriptsToggle({ on, onChange, label = 'Run the page’s scripts' }: ScriptsToggleProps) {
   const note = useId();
   return (
     <span className="scripts-toggle">
-      <button type="button" className="button button-quiet" aria-pressed={on} aria-describedby={note} onClick={() => setOn(!on)}>
-        Run the page’s scripts
+      <button type="button" className="button button-quiet" aria-pressed={on} aria-describedby={note} onClick={() => onChange(!on)}>
+        {label}
       </button>
       <span id={note} className="scripts-note">
-        {on ? 'Scripts run, without access to byway.' : 'Shown without its scripts: they could send what the page shows to another site.'}
+        {on ? `Scripts are on until you leave or reload this screen. ${RISK}` : `Scripts are off. ${RISK}`}
       </span>
     </span>
   );

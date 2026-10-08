@@ -1,8 +1,9 @@
 /**
  * How generated content is let into the app's own screens (SEC-4). A generated page's CSP blocks every network write
  * except one it cannot block: a page with scripts may navigate itself to any address, carrying whatever it holds in
- * the URL. So pages shown inside byway run their scripts only after the person turns them on, and Markdown shows
- * images only from byway's own artifact routes (an image from elsewhere would be fetched the moment it is shown).
+ * the URL. So pages shown inside byway run their scripts only after the person turns them on for that page, for as
+ * long as the screen shows it (never a remembered setting), and Markdown shows images only from byway's own artifact
+ * routes (an image from elsewhere would be fetched the moment it is shown).
  */
 
 /** The iframe sandbox for a generated page: never same-origin; scripts only when asked for. */
