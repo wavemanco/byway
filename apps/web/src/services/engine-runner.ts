@@ -14,6 +14,14 @@ export class EngineUnavailableError extends Error {
   }
 }
 
+/**
+ * Recognises the error by name: the services live on globalThis and may have been created by another server bundle,
+ * whose copy of this module's class is a different object, so `instanceof` cannot be relied on.
+ */
+export function isEngineUnavailable(err: unknown): boolean {
+  return err instanceof Error && err.name === 'EngineUnavailableError';
+}
+
 export function engineRunner(store: Store, connect: () => Promise<Runner>): Runner {
   let connected: Promise<Runner> | undefined;
   const runner = (): Promise<Runner> =>

@@ -8,7 +8,7 @@ import { resolveDataDir } from '@byway/store';
 import { DEMO_PROFILE_ID, effectiveMode, findRepoRoot, flagOn, liveUsable, runProfileId, servicesConfig } from '../src/services/config.ts';
 import { loadEngine } from '../src/services/engine.ts';
 import { LEDGER_FILENAME } from '../src/services/create.ts';
-import { EngineUnavailableError, engineRunner } from '../src/services/engine-runner.ts';
+import { EngineUnavailableError, engineRunner, isEngineUnavailable } from '../src/services/engine-runner.ts';
 import { collapseDoubleFences, singleFenced } from '../src/services/prompts.ts';
 import { ENGINE, testHost, type TestHost } from './fixtures/services.ts';
 
@@ -117,8 +117,13 @@ describe('the engine Runner (the web process is only a Temporal client)', () => 
     await expect(runner.view('missing')).rejects.toThrow(/no run/);
   });
 
-  it('says plainly how to start the engine', () => {
+  it('says plainly how to start the engine, and is recognised across server bundles', () => {
     expect(new EngineUnavailableError(new Error('x')).message).toMatch(/pnpm dev/);
+    // Another bundle's copy of the class: same name, different constructor.
+    const other = Object.assign(new Error('elsewhere'), { name: 'EngineUnavailableError' });
+    expect(isEngineUnavailable(other)).toBe(true);
+    expect(isEngineUnavailable(new Error('x'))).toBe(false);
+    expect(isEngineUnavailable('EngineUnavailableError')).toBe(false);
   });
 });
 

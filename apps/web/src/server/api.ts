@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RunRecord } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
-import { EngineUnavailableError } from '../services/engine-runner.ts';
+import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
 import { budgetProblem, workspaceSpend } from '../view/history.ts';
 import { takesRefs } from '../view/refs.ts';
@@ -179,7 +179,7 @@ export async function resolveInRun(deps: Deps, runId: string, checkpointId: stri
       ...(input.approved !== undefined ? { approved: input.approved } : {}),
     });
   } catch (err) {
-    if (err instanceof EngineUnavailableError) throw err;
+    if (isEngineUnavailable(err)) throw err;
     throw new HttpError(400, err instanceof Error && err.message ? err.message : 'That answer was not accepted.');
   }
 }
