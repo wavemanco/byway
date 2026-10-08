@@ -172,6 +172,8 @@ export async function recipeForRun(deps: Deps, run: RunRecord): Promise<RunRecip
 export async function resolveInRun(deps: Deps, runId: string, checkpointId: string, input: z.infer<typeof ResolutionInput>): Promise<void> {
   const cp = await deps.services.store.getCheckpoint(checkpointId);
   if (!cp || cp.runId !== runId) throw new HttpError(404, 'That question was not found in this run.');
+  // The store's two closed states read differently: an answered question, or one taken back when its run ended.
+  if (cp.status === 'withdrawn') throw new HttpError(409, 'This question was withdrawn: its run was cancelled or failed.');
   if (cp.status !== 'open') throw new HttpError(409, 'That question has already been answered.');
   const run = await deps.services.store.getRun(runId);
   if (run && isEnded(run.status)) throw new HttpError(409, 'This run has ended, so it takes no more answers.');

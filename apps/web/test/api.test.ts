@@ -123,7 +123,20 @@ describe('route handler logic', () => {
     await resolveInRun(d, runId, cp.id, { choice: ['seed'] });
     const after = (await d.services.runner.view(runId)).checkpoints.find((c) => c.id === cp.id);
     expect(after?.status).toBe('resolved');
-    await expect(resolveInRun(d, runId, cp.id, { choice: ['seed'] })).rejects.toMatchObject({ status: 409 });
+    await expect(resolveInRun(d, runId, cp.id, { choice: ['seed'] })).rejects.toMatchObject({ status: 409, message: 'That question has already been answered.' });
+  });
+
+  it('says a question was withdrawn, not answered, when its run ended while it was open (API-1)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 5 });
+    const cp = await openQuestion(d, runId);
+    await controlRun(d, runId, 'cancel');
+    await d.services.store.withdrawCheckpoints(runId);
+    await expect(resolveInRun(d, runId, cp.id, { choice: ['seed'] })).rejects.toMatchObject({
+      status: 409,
+      message: 'This question was withdrawn: its run was cancelled or failed.',
+    });
   });
 
   it('pauses, resumes and cancels runs through the runner, and leaves ended runs alone', async () => {

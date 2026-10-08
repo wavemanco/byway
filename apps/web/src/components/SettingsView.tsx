@@ -110,7 +110,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
             <h2 id={`${ids}-demo`}>Demo mode</h2>
             <p id={`${ids}-demo-help`} className="muted">
               {demoForced
-                ? 'byway was started with pnpm demo, so every run uses sample outputs and costs nothing. Start it with pnpm dev to use real models.'
+                ? 'byway was started with pnpm demo, so every run uses sample outputs and costs nothing. Start it with pnpm start to use real models.'
                 : realConfigured
                 ? 'Use sample outputs instead of real models, at no cost.'
                 : 'No provider key is set, so every run uses sample outputs and costs nothing. Add a key to use real models.'}
