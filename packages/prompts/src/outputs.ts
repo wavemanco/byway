@@ -9,8 +9,10 @@ export const OUTPUT_CONTRACTS = {
   'artifact:web-page': 'One fenced html block holding a complete HTML document (inline CSS/JS; images by the URLs given)',
   'artifact:prose': 'The Markdown document (optionally in one fenced markdown block)',
   'artifact:options': 'One fenced json block: {"options":[{"title":string,"pitch":string,"rationale":string}]}',
+  // Spec §3.3 (contracts v5): the on-screen copy (headline, tagline, per-shot caption) is optional and is what the late
+  // VOICE edits; the voice-over is locked after the VO script step.
   'artifact:media':
-    'One fenced json block: {"storyboard":[{"shot":number,"description":string,"imagePrompt":string,"durationSec":number}],"voiceover":string}',
+    'One fenced json block: {"storyboard":[{"shot":number,"description":string,"imagePrompt":string,"durationSec":number,"caption"?:string}],"voiceover":string,"headline"?:string,"tagline"?:string}',
   'artifact:code-diff': 'One fenced diff block (unified diff), then a paragraph starting "Why:"',
   critique:
     'The critique as a bullet list, biggest gaps first, then a last line "Score: N/10" (OK mode); or, in GREAT mode (ADR-0072), each item\'s bullets under its "### A" heading, then a last line "Ranking: C, A, E, B, D" naming every label once, best first (the critic is never told which item is ours)',

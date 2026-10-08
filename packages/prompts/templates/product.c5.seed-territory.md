@@ -1,6 +1,6 @@
 ---
 id: product.c5.seed-territory
-version: 1
+version: 2
 fidelity: project
 slots: problem, seed
 output: artifact:media
@@ -32,7 +32,8 @@ The string decides the direction, never the requirements: keep what the problem 
 ## Answer format
 One fenced ```json block, shaped like this:
 
-    {"storyboard":[{"shot":1,"description":"…","imagePrompt":"…","durationSec":4}],"voiceover":"…"}
+    {"storyboard":[{"shot":1,"description":"…","imagePrompt":"…","durationSec":4,"caption":"…"}],"voiceover":"…","headline":"…","tagline":"…"}
 
 - `storyboard`: two or three shots, numbered from 1. `description` says what happens; `imagePrompt` describes the shot's first frame for an image generator, with no text in the image; `durationSec` is a whole number of seconds.
 - `voiceover`: one placeholder line in the territory's register (a person writes the real script later).
+- `headline`, `tagline` and each shot's `caption`: placeholder on-screen words in the same register, or leave them out (a person writes the real ones at the end).

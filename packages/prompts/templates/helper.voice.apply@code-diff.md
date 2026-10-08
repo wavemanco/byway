@@ -1,6 +1,6 @@
 ---
 id: helper.voice.apply
-version: 1
+version: 2
 fidelity: project
 slots: artifact, voice
 output: artifact:code-diff
@@ -30,3 +30,5 @@ How to work:
 
 ## Answer format
 One fenced ```diff block holding the complete revised change as a unified diff against the same original code. Then the developer's paragraph, starting with "Why:".
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

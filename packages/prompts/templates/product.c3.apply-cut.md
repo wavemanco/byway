@@ -1,6 +1,6 @@
 ---
 id: product.c3.apply-cut
-version: 1
+version: 2
 fidelity: project
 slots: critique, artifact
 output: artifact:prose
@@ -29,3 +29,5 @@ How to work:
 
 ## Answer format
 The complete revised draft as Markdown, in one fenced ```markdown block.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

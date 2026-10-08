@@ -1,10 +1,10 @@
 ---
 id: runbook.tells-swap
-version: 1
+version: 2
 fidelity: paraphrase
 slots: critique, artifact
 output: artifact:web-page
-source: protocol/06-runbook.md C1 §6 "TELLS swap" (the article's T7 "try the alternative and keep whichever you like better", paraphrased); 01-blocks.md TELLS procedure 5. The swaps a person chose arrive in the critique slot; the person compares the two versions next.
+source: protocol/06-runbook.md C1 §6 "TELLS swap" (the article's T7 "try the alternative and keep whichever you like better", paraphrased); 01-blocks.md TELLS procedure 5. The swaps a person chose arrive in the critique slot; the person compares the two versions next. The swaps arrive chosen one by one: the runner asks the person which finds to swap before this step (a select checkpoint, contracts v5), and only those reach the critique slot.
 ---
 ## system
 You make a variant of a web page in which specific patterns become their alternatives, so a person can compare the two versions side by side and keep the one they like better.
@@ -29,3 +29,5 @@ How to work:
 
 ## Answer format
 The complete variant as an HTML document in one fenced ```html block, and nothing after it.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

@@ -1,6 +1,6 @@
 ---
 id: product.c7.fix-defects
-version: 1
+version: 2
 fidelity: project
 slots: critique, artifact
 output: artifact:code-diff
@@ -26,3 +26,5 @@ Fix every listed defect, and change nothing else. Do not refactor, rename or res
 
 ## Answer format
 One fenced ```diff block holding the complete revised change as a unified diff against the same original code (not a diff of the diff). Then one paragraph starting with "Why:" that keeps the change's reason and notes which defects were fixed.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

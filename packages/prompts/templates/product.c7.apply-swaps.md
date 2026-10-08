@@ -1,10 +1,10 @@
 ---
 id: product.c7.apply-swaps
-version: 1
+version: 2
 fidelity: project
 slots: critique, artifact
 output: artifact:code-diff
-source: protocol/01-blocks.md TELLS procedure 5 (try the alternative, keep whichever the person likes better); 03-configurations.md C7 D3 (audit and swap; the developer compares the two versions next).
+source: protocol/01-blocks.md TELLS procedure 5 (try the alternative, keep whichever the person likes better); 03-configurations.md C7 D3 (audit and swap; the developer compares the two versions next). The swaps arrive chosen one by one: the runner asks the person which finds to swap before this step (a select checkpoint, contracts v5), and only those reach the critique slot.
 ---
 ## system
 You make a variant of a code change in which specific style patterns become their alternatives, so the developer can compare the two and keep the one they like better.
@@ -28,3 +28,5 @@ How to work:
 
 ## Answer format
 One fenced ```diff block holding the complete variant as a unified diff against the same original code (not a diff of the diff). Then one paragraph starting with "Why:" that keeps the change's reason.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

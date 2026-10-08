@@ -1,6 +1,6 @@
 ---
 id: product.c3.seed-angle
-version: 1
+version: 2
 fidelity: project
 slots: problem, seed
 output: artifact:prose
@@ -36,3 +36,5 @@ The card as Markdown, in one fenced ```markdown block, with exactly these four l
     Thesis claim: …
     Evidence it needs from you: … (the data, story or experience the author must supply)
     Format: …
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

@@ -1,6 +1,6 @@
 ---
 id: product.c5.apply-cut
-version: 1
+version: 2
 fidelity: project
 slots: critique, artifact
 output: artifact:media
@@ -26,9 +26,10 @@ How to work:
 - Carry out every cut, as itemized: remove shots, elements within shots, or motion that is only decoration.
 - Add nothing new. Where a removed shot leaves a gap, close it by joining the neighbouring shots, not by inventing a new one; renumber the shots from 1.
 - Leave `voiceover` exactly as it is, word for word. If the directive asks to change or drop voice-over lines, leave them, and say so in one line before the block: the owner drops lines in their own copy pass.
+- Keep `headline`, `tagline` and the `caption` of every shot you keep as they are; a removed shot takes its caption with it.
 - On every shot you keep unchanged, keep all its fields as they are (including `imageArtifactId` and `clipArtifactId` if present). If a cut changes what a shot shows, drop those two fields from it, because they no longer match.
 
 ## Answer format
 The complete revised storyboard in one fenced ```json block, shaped like this:
 
-    {"storyboard":[{"shot":1,"description":"…","imagePrompt":"…","durationSec":5}],"voiceover":"…"}
+    {"storyboard":[{"shot":1,"description":"…","imagePrompt":"…","durationSec":5,"caption":"…"}],"voiceover":"…","headline":"…","tagline":"…"}
