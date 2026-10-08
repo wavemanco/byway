@@ -10,7 +10,7 @@ import path from 'node:path';
 import type { Duration } from '@temporalio/common';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { DefaultLogger, Runtime } from '@temporalio/worker';
-import type { CheckpointRecord, CheckpointResolution, CompletionRequest, Gateway, ImageRequest, LedgerEntry, ModelProfile, ProblemBrief, PromptRenderer, RunRecord, RunView, StartRunInput, VideoRequest } from '@byway/contracts';
+import { GatewayError, type CheckpointRecord, type CheckpointResolution, type CompletionRequest, type Gateway, type ImageRequest, type LedgerEntry, type ModelProfile, type ProblemBrief, type PromptRenderer, type RunRecord, type RunView, type StartRunInput, type VideoRequest } from '@byway/contracts';
 import { createGateway, PRICES, PROFILES, type ModelGateway, type PriceRow, type Responder } from '@byway/gateway';
 import type { Recipe } from '@byway/recipe';
 import { buildWorkflows } from '../../src/build.ts';
@@ -87,6 +87,11 @@ export interface Harness {
   responders: Record<string, Responder>;
   /** How long every provider call takes before the mock answers (0 by default): a call "in flight". */
   setLatency(ms: number): void;
+  /**
+   * Refuse the next call that matches for budget, before it reaches the provider, as the gateway's reservation does: a
+   * budget-exceeded GatewayError with details asking for $0.50 more. Each refusal is used once.
+   */
+  refuseOnce(match: (call: GatewayCall) => boolean): void;
   calls: GatewayCall[];
   /**
    * A run's gateway calls that returned. On Windows a retried activity can repeat a call whose ledger write failed
@@ -108,6 +113,9 @@ export function defaultAnswer(cp: CheckpointRecord): CheckpointResolution {
   switch (cp.kind) {
     case 'pick':
       return { checkpointId: cp.id, choice: (cp.options ?? []).slice(0, cp.k ?? 1).map((o) => o.id) };
+    case 'select':
+      // Every TELLS hit swapped, as the sweep did before hits were chosen one by one (convention C2).
+      return { checkpointId: cp.id, choice: (cp.options ?? []).map((o) => o.id) };
     case 'choose':
       return { checkpointId: cp.id, choice: [cp.options![0]!.id] };
     case 'compare':
@@ -158,10 +166,18 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const keyedGateway = make(true);
   let inner = demoGateway;
   let latencyMs = 0;
+  const refusals: ((call: GatewayCall) => boolean)[] = [];
   const record = async <T>(kind: GatewayCall['kind'], request: GatewayCall['request'], send: () => Promise<T>): Promise<T> => {
     const call: GatewayCall = { kind, purpose: request.purpose, ...(request.runId ? { runId: request.runId } : {}), ...(request.stepId ? { stepId: request.stepId } : {}), request, at: Date.now() };
     calls.push(call);
     if (latencyMs > 0) await sleep(latencyMs);
+    const refusal = refusals.findIndex((m) => m(call));
+    if (refusal >= 0) {
+      refusals.splice(refusal, 1);
+      const err = new GatewayError('budget-exceeded', 'This call would exceed the run budget.');
+      err.budget = { scope: 'run', capUsd: 50, spentUsd: 49.9, reservedUsd: 0, estimateUsd: 0.6, shortfallUsd: 0.5 };
+      throw err;
+    }
     const r = await send();
     call.result = r;
     return r;
@@ -250,6 +266,9 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     runner,
     workspaceId: ws.id,
     responders,
+    refuseOnce(match) {
+      refusals.push(match);
+    },
     setLatency(ms) {
       latencyMs = ms;
     },

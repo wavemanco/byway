@@ -8,12 +8,13 @@
  *   the runner places them itself, which the same check then verifies.
  * - prose: the whole Markdown document; the edited text becomes the artifact.
  * - options: each option's title, pitch and rationale under its label.
- * - media: the voice-over script.
+ * - media: the voice-over script at the early VOICE (locked after it), the headline, tagline and captions at the late one.
  * - code-diff: the "Why:" paragraph.
  * Structured media map lines to fields, so they are written back exactly, with no model call.
  */
 import type { Medium } from '@byway/contracts';
-import { joinCodeDiff, parseOptions, parseStoryboard, serializeJson, splitCodeDiff, type Parsed } from './formats.ts';
+import { joinCodeDiff, parseOptions, parseStoryboard, serializeJson, splitCodeDiff, type Parsed, type Storyboard } from './formats.ts';
+import type { StepSpec } from './types.ts';
 import { labelOf } from '@byway/prompts/pure';
 
 // ---- HTML tokens -------------------------------------------------------------------------------------------------
@@ -154,8 +155,22 @@ export function pageVoiceProblems(before: string, after: string, edited: readonl
 
 const splitLines = (text: string): string[] => text.replace(/\r\n/g, '\n').split('\n');
 
-/** The copy a `write` checkpoint offers for VOICE. */
-export function extractCopy(medium: Medium, artifact: string): string {
+/**
+ * Which of a storyboard's copy a VOICE step writes (VOICE-1, convention C4): the voice-over script (C5's early VOICE,
+ * locked after it), or the on-screen copy (the late VOICE: the headline, the tagline and each shot's caption).
+ */
+export type MediaCopy = 'script' | 'on-screen';
+
+export const mediaCopyOf = (step: Pick<StepSpec, 'variant'>): MediaCopy => (step.variant === 'VOICE-early' ? 'script' : 'on-screen');
+
+/** A storyboard's on-screen copy, one labelled line per field, empty fields included so they can be written. */
+const onScreenCopy = (sb: Storyboard): string => [`Headline: ${sb.headline ?? ''}`, `Tagline: ${sb.tagline ?? ''}`, ...sb.storyboard.map((s) => `Shot ${s.shot}: ${s.caption ?? ''}`)].join('\n');
+
+/**
+ * The copy a `write` checkpoint offers for VOICE. A storyboard offers the copy its step writes (`scope`); with none,
+ * all of it (the script, then the on-screen copy), which is what a machine write is held to (keepsVoice).
+ */
+export function extractCopy(medium: Medium, artifact: string, scope?: MediaCopy): string {
   switch (medium) {
     case 'web-page':
       return pageCopy(artifact).join('\n');
@@ -168,11 +183,47 @@ export function extractCopy(medium: Medium, artifact: string): string {
     }
     case 'media': {
       const r = parseStoryboard(artifact);
-      return r.ok ? r.value.voiceover.trim() : '';
+      if (!r.ok) return '';
+      if (scope === 'script') return r.value.voiceover.trim();
+      if (scope === 'on-screen') return onScreenCopy(r.value);
+      return `${r.value.voiceover.trim()}\n${onScreenCopy(r.value)}`;
     }
     case 'code-diff':
       return splitCodeDiff(artifact).why;
   }
+}
+
+/**
+ * The late VOICE's lines back into the storyboard: "Headline:", "Tagline:" and "Shot N:" set those fields (a line left
+ * empty clears its field; a field not mentioned stays as it was). The voice-over was locked after the script step, so a
+ * line for it is refused, never applied.
+ */
+function applyOnScreen(sb: Storyboard, edited: string): Parsed<string> {
+  const shots = new Set(sb.storyboard.map((s) => s.shot));
+  const set = new Map<string, string>();
+  let field: string | undefined;
+  for (const line of splitLines(edited)) {
+    const m = /^\s*(Headline|Tagline|Shot\s+(\d+)|Voice-?over|VO)\s*:(.*)$/i.exec(line);
+    if (m) {
+      if (/^(voice-?over|vo)$/i.test(m[1]!)) return { ok: false, problem: 'The voice-over was locked after the script step, so it cannot be changed here: leave it out.' };
+      field = m[2] ? `shot:${Number(m[2])}` : m[1]!.toLowerCase();
+      if (m[2] && !shots.has(Number(m[2]))) return { ok: false, problem: `The storyboard has no shot ${m[2]}: keep one "Shot N:" line per shot (${[...shots].join(', ')}).` };
+      set.set(field, m[3]!.trim());
+    } else if (line.trim()) {
+      if (!field) return { ok: false, problem: 'Start each line with "Headline:", "Tagline:" or "Shot N:".' };
+      set.set(field, `${set.get(field)}\n${line.trim()}`.trim());
+    }
+  }
+  const value = (key: string, was: string | undefined) => (set.has(key) ? set.get(key) || undefined : was);
+  const headline = value('headline', sb.headline);
+  const tagline = value('tagline', sb.tagline);
+  const storyboard = sb.storyboard.map((s) => {
+    const { caption: was, ...rest } = s;
+    const caption = value(`shot:${s.shot}`, was);
+    return caption === undefined ? rest : { ...rest, caption };
+  });
+  const { headline: _h, tagline: _t, ...base } = sb;
+  return { ok: true, value: serializeJson({ ...base, storyboard, ...(headline !== undefined ? { headline } : {}), ...(tagline !== undefined ? { tagline } : {}) }) };
 }
 
 /** Parse "### A / Title: / Pitch: / Rationale:" blocks back into fields. */
@@ -206,7 +257,7 @@ function parseOptionCopy(text: string, count: number): Parsed<{ title: string; p
  * Write edited copy back into a structured or text artifact exactly (prose, options, media, code-diff). Web pages are
  * not handled here: they go through `helper.voice.apply` and {@link pageVoiceProblems}.
  */
-export function applyCopy(medium: Exclude<Medium, 'web-page'>, artifact: string, edited: string): Parsed<string> {
+export function applyCopy(medium: Exclude<Medium, 'web-page'>, artifact: string, edited: string, scope: MediaCopy = 'script'): Parsed<string> {
   switch (medium) {
     case 'prose':
       return edited.trim() ? { ok: true, value: `${edited.trimEnd()}\n` } : { ok: false, problem: 'The text is empty.' };
@@ -220,6 +271,7 @@ export function applyCopy(medium: Exclude<Medium, 'web-page'>, artifact: string,
     case 'media': {
       const sb = parseStoryboard(artifact);
       if (!sb.ok) return sb;
+      if (scope === 'on-screen') return applyOnScreen(sb.value, edited);
       return { ok: true, value: serializeJson({ ...sb.value, voiceover: edited.trim() }) };
     }
     case 'code-diff': {
@@ -247,14 +299,4 @@ export function lostVoiceLines(medium: Medium, artifact: string, voice: string, 
       const bare = l.replace(/^(Title|Pitch|Rationale):\s*/, '');
       return (was === undefined || was.includes(bare)) && !now.includes(bare);
     });
-}
-
-/** Sentences that carry numbers, dates or other checkable claims, for a claim-log sign-off (03 C4). */
-export function claimLines(markdown: string): string {
-  const sentences = markdown
-    .replace(/```[\s\S]*?```/g, ' ')
-    .split(/(?<=[.!?])\s+|\n+/)
-    .map(squash)
-    .filter((s) => /\d/.test(s) && !s.startsWith('#'));
-  return sentences.map((s) => `- ${s}`).join('\n');
 }

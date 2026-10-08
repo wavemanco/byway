@@ -3,16 +3,19 @@
  * with the purpose `<role>:<medium>`, and parse the answer by role (spec §3.3). Builders' artifacts are checked (PR3,
  * keepsVoice) and stored; judging answers come back as short texts, scores and labels for the workflow to act on.
  */
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { Tier } from '@byway/contracts';
 import { labelled } from '@byway/prompts/pure';
-import { parseArtifact, textView, type Parsed } from '../formats.ts';
+import { fences, parseArtifact, textView, type Parsed } from '../formats.ts';
 import { labels } from '../labels.ts';
+import { rendersKnob } from '../surfaces.ts';
 import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseTellsSweep, parseVision, type CriticAnswer } from '../parse.ts';
 import { tellsText } from '../tells.ts';
-import type { ModelStepInput, ModelStepResult } from '../types.ts';
+import type { ModelStepInput, ModelStepResult, TellsHit } from '../types.ts';
+import { otherFamilyModel, OTHER_FAMILY_FALLBACK_NOTE } from './availability.ts';
 import { askModel } from './call.ts';
-import { buildLineup, planCritic, verdictOf, type Lineup } from './critic.ts';
+import { memoized, newSalt, seededRandom } from './memo.ts';
+import { buildLineup, lineupWrittenFor, planCritic, verdictOf, type Lineup } from './critic.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
@@ -23,8 +26,8 @@ const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);
 /** Judging answers are short; builders get the gateway's larger default. */
 const JUDGE_MAX_OUTPUT = 4_000;
 
-export const defaultSeed = (): string => randomBytes(12).toString('base64url');
-export const defaultRandom = (): number => randomInt(0, 2 ** 31) / 2 ** 31;
+/** 01 SEED seed_shape ⟨A⟩: 32–64 characters; 36 random bytes are 48 base64url characters (SEED-1). */
+export const defaultSeed = (): string => randomBytes(36).toString('base64url');
 
 /** Where a judging step's text goes in the store: shown to the user with the step, never written into the work. */
 const NOTE_LABELS: Record<string, string> = {
@@ -51,12 +54,18 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   const outputs: string[] = [];
 
   if (step.role === 'critic') {
-    const random = deps.random ?? defaultRandom;
+    // The lineup's draws replay on a retry (convention C5), so a shuffle already paid for is the same request again.
+    const random = deps.random ?? seededRandom(await memoized(deps.store, run.runId, `${call.key}/random`, newSalt));
     const plan = planCritic(step, input.refs, random);
+    // A critic of another AI family (01 CRITIC knob, FID-1): the profile's other-family model when its key is set up,
+    // else a fresh session of the same family (every critic call is one), and the step says which.
+    const otherFamily = step.knobs?.family === 'other';
+    const reviewer = otherFamily ? otherFamilyModel(deps, run) : undefined;
+    const notes = [plan.note, otherFamily && !reviewer ? OTHER_FAMILY_FALLBACK_NOTE : undefined].filter(Boolean);
     const answers: { answer: CriticAnswer; lineup?: Lineup }[] = [];
     for (let i = 0; i < plan.shuffles; i++) {
       const built = await buildPrompt(reader, { medium: run.medium, problem: run.problem, step, ports: input.ports, ...(input.round !== undefined ? { round: input.round } : {}) });
-      const lineup = plan.mode === 'GREAT' ? await buildLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle) : undefined;
+      const lineup = plan.mode === 'GREAT' ? await buildLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle, rendersKnob(step.knobs)) : undefined;
       if (lineup) {
         Object.assign(built.slots, lineup.slots);
         built.images = lineup.images;
@@ -70,6 +79,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
         images: built.images,
         purpose,
         tier,
+        ...(reviewer ? { model: reviewer } : {}),
         what,
         maxOutputTokens: JUDGE_MAX_OUTPUT,
         parse: (text) => parseCritic(text, lineup?.labels),
@@ -77,13 +87,14 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       result.costUsd += answer.costUsd;
       answers.push({ answer: answer.value, ...(lineup ? { lineup } : {}) });
     }
-    const verdict = verdictOf(answers);
+    const verdict = verdictOf(answers, lineupWrittenFor(step));
     result.text = verdict.critique;
     result.score = verdict.score;
     result.criticMode = plan.mode;
-    if (plan.note) result.note = plan.note;
+    if (notes.length) result.note = notes.join(' ');
   } else {
-    const seed = step.role === 'seed' || step.consumes.includes('seed') ? (deps.seed ?? defaultSeed)() : undefined;
+    // One string per step call, kept for its retries (convention C5): the same prompt, so the answer bought is reused.
+    const seed = step.role === 'seed' || step.consumes.includes('seed') ? await memoized(deps.store, run.runId, `${call.key}/seed`, deps.seed ?? defaultSeed) : undefined;
     const ports = input.candidates ? { ...input.ports, options: input.candidates } : input.ports;
     const built = await buildPrompt(reader, {
       medium: run.medium,
@@ -121,11 +132,18 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       case 'artifact':
         result.artifactId = await storeText(deps, run, call, v.text, { label: what, name: 'work' });
         outputs.push(result.artifactId);
+        if (v.direction) {
+          // 01 SEED step 7 ⟨A⟩: seed → direction → artifact, logged outside the artifact. Never the string itself (PR3).
+          const direction = seeds.reduce((d, s) => (s ? d.split(s).join('(the random string)') : d), v.direction);
+          result.noteArtifactId = await storeText(deps, run, call, `${direction}\n`, { label: `${what}: Direction`, name: 'note', mediaType: 'text/markdown' });
+          outputs.push(result.noteArtifactId);
+        }
         break;
       case 'text':
         result.text = v.text;
         if (v.clean !== undefined) result.clean = v.clean;
         if (v.empty) result.nothingToRemove = true;
+        if (v.hits) result.hits = v.hits;
         break;
       case 'label':
         result.label = v.label;
@@ -147,6 +165,17 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   return result;
 }
 
+/**
+ * What a SEED build wrote before its block: the direction, one line per axis (the C1 SEED template asks for it). A
+ * single line ("Here is the page.") is not one, so it needs at least two lines.
+ */
+export function directionOf(answer: string): string | undefined {
+  const first = fences(answer)[0];
+  if (!first) return undefined;
+  const before = answer.slice(0, first.start).trim();
+  return before.split('\n').filter((l) => l.trim()).length >= 2 ? before : undefined;
+}
+
 /** A model keep-or-revert sees the version before the sweep (A) and after it (B). */
 async function compareSlots(reader: ArtifactReader, medium: Parameters<typeof textView>[0], ports: ModelStepInput['ports']) {
   if (!ports.previousArtifact || !ports.artifact) return {};
@@ -155,9 +184,10 @@ async function compareSlots(reader: ArtifactReader, medium: Parameters<typeof te
 }
 
 type Answer =
-  | { kind: 'artifact'; text: string }
+  /** `direction`: what a SEED build wrote before its block (SEED-1), kept as a note beside the work. */
+  | { kind: 'artifact'; text: string; direction?: string }
   /** `empty`: a CUT answered "Nothing to remove." (its text says so, for the note beside the work). */
-  | { kind: 'text'; text: string; clean?: boolean; empty?: boolean }
+  | { kind: 'text'; text: string; clean?: boolean; empty?: boolean; hits?: TellsHit[] }
   | { kind: 'label'; label: string }
   | { kind: 'keep'; keep: 'A' | 'B' }
   | { kind: 'dedupe'; keep: string[] };
@@ -171,7 +201,7 @@ function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports:
     case 'cut':
       return (t) => map(parseCut(t), (v) => (v ? { kind: 'text', text: v } : { kind: 'text', text: 'Nothing to remove.', empty: true }));
     case 'tells-sweep':
-      return (t) => map(parseTellsSweep(t), (v) => ({ kind: 'text', text: v.critique }));
+      return (t) => map(parseTellsSweep(t), (v) => ({ kind: 'text', text: v.critique, hits: v.hits }));
     case 'tells-compare':
       return (t) => map(parseKeep(t), (keep) => ({ kind: 'keep', keep }));
     case 'vision':
@@ -192,7 +222,9 @@ function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports:
         const r = parseArtifact(medium, t);
         if (!r.ok) return r;
         const problems = checks(r.value);
-        return problems.length ? { ok: false, problem: problems.join(' ') } : { ok: true, value: { kind: 'artifact', text: r.value } };
+        if (problems.length) return { ok: false, problem: problems.join(' ') };
+        const direction = role === 'seed' ? directionOf(t) : undefined;
+        return { ok: true, value: { kind: 'artifact', text: r.value, ...(direction ? { direction } : {}) } };
       };
   }
 }

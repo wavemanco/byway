@@ -3,6 +3,7 @@
  */
 import type { CheckpointKind } from '@byway/contracts';
 import type { Step } from '@byway/recipe';
+import { labelOf } from '@byway/prompts/pure';
 
 /** Human checkpoint kinds by role (spec §3.2): vision → react, cut → directive, tells-compare → compare, voice → write. */
 export function humanKind(step: Pick<Step, 'role'>): CheckpointKind {
@@ -34,7 +35,8 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
     case 'tells-compare':
       return 'Keep the version from before the cliché sweep, or the one after the swaps?';
     case 'voice':
-      if (step.variant === 'claim-log') return 'Sign off every number, date, name and causal claim below: correct any that is wrong. You own them.';
+      if (step.variant === 'claim-log')
+        return 'Sign off every number, date, name and causal claim below, one per line: correct any that is wrong, and your correction replaces it in the document. Leave just "-" on a line to take that claim out. You own them.';
       if (step.variant === 'VOICE-early') return 'Write the script yourself: change any line below. It is locked after this, and used exactly as you write it.';
       if (step.knobs?.scope === 'key-lines') return 'Rewrite the key lines yourself: the ask and the lines a reader acts on. Your lines are used exactly as you write them.';
       return 'Write the words yourself: change any line below. Your lines are used exactly as you write them.';
@@ -46,9 +48,20 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
   }
 }
 
-export const optionalPrompt = (trigger: string): string => `Run this step? It is meant for when ${trigger.replace(/[.\s]+$/, '')}.`;
+/** A recipe's trigger, said to the person it is about ("a human calls the design plain" → "you call the design plain"). */
+const toYou = (trigger: string): string => trigger.replace(/^(?:a|the) (?:human|person|user) (\w+?)s\b/i, 'you $1');
+
+/**
+ * "Run this step?" for an optional, saying what each answer does (UX-4). Inside a candidate (C1 asks once per draft)
+ * it names the draft, by the letter the pick will show it under.
+ */
+export const optionalPrompt = (trigger: string, candidate?: number): string =>
+  `Run this step${candidate !== undefined ? ` on draft ${labelOf(candidate)}` : ''}? It is meant for when ${toYou(trigger.replace(/[.\s]+$/, ''))}. Yes runs it; No skips it.`;
+/** The note of an optional the person declined (UX-1, convention C1): the step is shown as skipped, with this. */
+export const DECLINED_NOTE = 'You chose not to run this step.';
 export const routePrompt = (on: string): string => `Choose: ${on.replace(/[.\s]+$/, '')}.`;
-export const READY_PROMPT = 'Is this ready?';
+/** A person's loop gate, saying what each answer does (UX-4): No is another round, not a stop. */
+export const READY_PROMPT = 'Is this ready? Yes keeps this version and moves on; No starts another round.';
 export const BEST_SO_FAR_PROMPT = 'Use the best version so far?';
 export const NOT_CONVERGING_PROMPT = 'The outside critique is not improving the work. Keep going anyway?';
 export const GATE_FAILED_PROMPT = 'It did not pass the final check, even after another try. Use it anyway?';
@@ -57,3 +70,11 @@ export const budgetPrompt = (amountUsd: number, scope: 'run' | 'workspace'): str
   scope === 'workspace' ? `Raise the workspace budget by $${amountUsd}?` : `Raise the budget by $${amountUsd}?`;
 /** A fix after an empty CUT directive ("Nothing to remove."): it makes no change, and its step says so. */
 export const NOTHING_TO_REMOVE = 'Nothing to remove';
+/** TELLS decided hit by hit (TELLS-1, convention C2): which of the sweep's hits the swap step acts on. */
+export const SWAPS_PROMPT = 'Which of these should be swapped? Choose any, or none.';
+/** The swap step when the person chose none of the hits: it makes no change, and says so (convention C2). */
+export const NO_SWAPS_CHOSEN = 'No swaps chosen';
+/** The swap step when the sweep found nothing: no question, no change. */
+export const NOTHING_TO_SWAP = 'Nothing to swap: the sweep found no clichés';
+/** A keep-or-revert after a swap step that changed nothing: both versions are the same, so nobody is asked. */
+export const NOTHING_TO_COMPARE = 'Nothing was swapped, so there was nothing to compare';

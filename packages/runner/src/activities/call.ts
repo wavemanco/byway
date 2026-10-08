@@ -3,11 +3,11 @@
  * cut off at the output limit, stopReason 'max-tokens'), the runner asks once more with the problem appended (and,
  * for a cut-off answer, a larger output allowance). A second miss fails the step with a plain message.
  */
-import type { ChatMessage, CompletionRequest, PromptSlot, Tier } from '@byway/contracts';
+import type { ChatMessage, CompletionRequest, ModelRef, PromptSlot, Tier } from '@byway/contracts';
 import type { Parsed } from '../formats.ts';
 import type { RunRef, StepCall } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
-import { StepError } from './failures.ts';
+import { ContractMissed, StepError } from './failures.ts';
 import { ArtifactReader, userMessage, type ImageGroup } from './prompting.ts';
 
 export interface ModelCall<T> {
@@ -19,6 +19,8 @@ export interface ModelCall<T> {
   images: ImageGroup[];
   purpose: string;
   tier: Tier;
+  /** A model other than the profile's for this tier: a critic from another AI family (FID-1). */
+  model?: ModelRef;
   /** What the step is called in a failure message. */
   what: string;
   parse: (text: string) => Parsed<T> | Promise<Parsed<T>>;
@@ -52,6 +54,7 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
     // Provenance (spec §3.3): the template behind the call goes into the hash-chained ledger entry, retries included.
     prompt: { id: rendered.id, version: rendered.version, hash: rendered.hash, fidelity: rendered.fidelity },
     tier: req.tier,
+    ...(req.model ? { model: req.model } : {}),
     profileId: req.run.profileId,
     ...(rendered.system ? { system: rendered.system } : {}),
   };
@@ -78,5 +81,5 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
       { role: 'user', content: [{ type: 'text', text: `That answer could not be used: ${problem}\nAnswer again, following the answer format exactly.` }] },
     ];
   }
-  throw new StepError(`The ${req.what} step's answer could not be used after a retry: ${problem}`);
+  throw new ContractMissed(`The ${req.what} step's answer could not be used after a retry: ${problem}`, problem);
 }

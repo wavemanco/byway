@@ -10,16 +10,22 @@
  * - every event maps to a step of the recipe's presentation (presentedStepFor), as the app's timeline needs.
  * The configurations whose critics run in GREAT mode run twice: with references (GREAT, ranked blind) and without
  * (the OK fallback of ADR-0071), so both branches of their templates are rendered.
+ *
+ * Every cliché sweep that feeds a swap step asks which hits to swap (TELLS-1, convention C2): each run chooses the first
+ * hit only, and the swap step must get exactly that. The demo sweep finds text hits only in phrases it can spot, so the
+ * text configurations' reference runs bring their own tell catalog with such phrases, and their swap templates render.
+ * C4's claim log is answered with a correction, which must reach the deliverable (ENG-2).
  */
 import { rmSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { c4, PROTOCOL_CONFIGS } from '@byway/catalog';
-import type { CompletionRequest, Medium } from '@byway/contracts';
+import type { CheckpointRecord, CheckpointResolution, CompletionRequest, Medium } from '@byway/contracts';
 import { createPromptRenderer } from '@byway/prompts';
 import type { Node, Recipe } from '@byway/recipe';
 import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE } from '../src/build.ts';
 import { createRunnerClient } from '../src/client.ts';
 import { createWorker } from '../src/worker.ts';
+import { NO_SWAPS_CHOSEN, NOTHING_TO_REMOVE, NOTHING_TO_SWAP } from '../src/workflow/wording.ts';
 import { checkEvents, ofType } from './helpers/events.ts';
 import { png } from './helpers/fake-pages.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
@@ -131,18 +137,59 @@ describe('the real templates, the runner and the demo gateway agree (spec §3.3)
   }, 180_000);
 });
 
+/** A tell catalog of the run's own, with phrases the demo sweep spots in a text view (so its sweeps find hits). */
+const OWN_TELLS = '- delve\n- seamless\n- unlock\n- elevate';
+
+/** The claim C4's owner corrects (the last one offered), and what they correct it to. */
+const CORRECTION = 'The pilot runs for 3 weeks, from the 2nd.';
+
 async function agree(recipe: Recipe, withRefs: boolean): Promise<void> {
   const medium = recipe.medium!;
   const from = { calls: h.prompts.calls.length, failures: h.prompts.failures.length };
   const refs = withRefs ? await references(medium) : [];
-  const run = await h.start(recipe, { problem: { text: PROBLEMS[recipe.id]! }, ...(refs.length ? { inputs: { refs } } : {}) });
-  const view = await h.drive(run.id, undefined, 150_000);
+  const tells = withRefs && (medium === 'prose' || medium === 'code-diff') ? OWN_TELLS : undefined;
+  const run = await h.start(recipe, { problem: { text: PROBLEMS[recipe.id]! }, ...(refs.length || tells ? { inputs: { ...(refs.length ? { refs } : {}), ...(tells ? { tells } : {}) } } : {}) });
+  let corrected = '';
+  const answer = (cp: CheckpointRecord): CheckpointResolution | undefined => {
+    // Which hits to swap: the first only (TELLS-1).
+    if (cp.kind === 'select') return { checkpointId: cp.id, choice: (cp.options ?? []).slice(0, 1).map((o) => o.id) };
+    if (cp.stepId === 'claim-sign-off') {
+      const lines = cp.initialText!.split('\n');
+      corrected = lines.at(-1)!.replace(/^- /, '');
+      return { checkpointId: cp.id, text: [...lines.slice(0, -1), `- ${CORRECTION}`].join('\n') };
+    }
+    return undefined;
+  };
+  const view = await h.drive(run.id, answer, 150_000);
 
   // The run finished with something to deliver, and every event belongs to a step the app can show.
   expect(view.run.error, `${recipe.id} failed`).toBeUndefined();
   expect(view.run.status).toBe('done');
   expect(view.run.outputArtifactId).toMatch(/^sha256:[0-9a-f]{64}$/);
   checkEvents(view, recipe.id);
+
+  // The owner's claim correction replaced the claim in the deliverable (ENG-2).
+  if (recipe.id === 'c4') {
+    expect(corrected, 'C4 asked for the claim sign-off').not.toBe('');
+    const out = (await h.store.artifacts.getText(view.run.outputArtifactId!)).replace(/\s+/g, ' ');
+    expect(out).toContain(CORRECTION);
+    expect(out).not.toContain(corrected);
+  }
+
+  // Every sweep that feeds a swap step asked which hits to swap; the swap step got exactly the one chosen.
+  const swap = modelSteps(recipe).find((s) => s.id === 'apply-swaps');
+  const selects = view.checkpoints.filter((c) => c.kind === 'select');
+  for (const s of selects) {
+    expect(s.prompt).toBe('Which of these should be swapped? Choose any, or none.');
+    expect(s.options!.map((o) => o.id)).toEqual(s.options!.map((_, i) => `hit-${i + 1}`));
+    expect(s.options!.every((o) => o.label.includes(' → '))).toBe(true);
+  }
+  if (swap && (medium === 'web-page' || medium === 'media' || tells)) expect(selects.length, `${recipe.id} asked which hits to swap`).toBeGreaterThan(0);
+  if (swap && selects.length) {
+    const swaps = h.prompts.calls.slice(from.calls).filter((c) => c.id === swap.prompt);
+    expect(swaps.length).toBeGreaterThan(0);
+    expect(swaps.at(-1)!.slots.critique!.split('\n')).toHaveLength(1);
+  }
 
   // Every prompt rendered: no missing slot, no unknown template, nothing left unfilled.
   expect(h.prompts.failures.slice(from.failures)).toEqual([]);
@@ -190,11 +237,14 @@ async function agree(recipe: Recipe, withRefs: boolean): Promise<void> {
     if (e.data.rank !== undefined) expect(withRefs).toBe(true);
   }
 
-  // Every model step that ran rendered its own template (no helper stood in for it).
+  // Every model step that ran rendered its own template (no helper stood in for it). A fix with nothing to apply (an
+  // empty cut, no hit found or chosen) passes without a call, and says so.
+  const PASSED = new Set([NOTHING_TO_REMOVE, NO_SWAPS_CHOSEN, NOTHING_TO_SWAP]);
+  const passed = new Set(ofType(view, 'step-finished').flatMap((e) => (PASSED.has(e.data.note as string) ? [e.stepId] : [])));
   const ran = new Set(ofType(view, 'step-started').map((e) => e.stepId));
   const rendered = new Set(renders.map((r) => r.id));
   for (const s of modelSteps(recipe)) {
-    if (ran.has(s.id) && s.prompt && outputOf(s, medium) !== 'none') expect(rendered.has(s.prompt), `${recipe.id} step ${s.id} rendered ${s.prompt}`).toBe(true);
+    if (ran.has(s.id) && !passed.has(s.id) && s.prompt && outputOf(s, medium) !== 'none') expect(rendered.has(s.prompt), `${recipe.id} step ${s.id} rendered ${s.prompt}`).toBe(true);
   }
 }
 

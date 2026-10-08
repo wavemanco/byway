@@ -5,10 +5,11 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { VideoRequest, VideoResult } from '@byway/contracts';
-import { NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
+import { NO_SWAPS_CHOSEN, NOTHING_TO_COMPARE, NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
-import { judgedPick, policyLoop, randomPick, scripted, shortAd, tiny, trimmed, trimmedByHand } from '../helpers/recipes.ts';
+import { claimLogged, illustrated, judgedPick, policyLoop, randomPick, scripted, shortAd, swept, tiny, trimmed, trimmedByHand, twiceJudged, voicedPage } from '../helpers/recipes.ts';
+import { pageCopy } from '../../src/copy.ts';
 
 let h: Harness;
 
@@ -179,6 +180,164 @@ export function operatorScenarios(use: () => Harness): void {
       } finally {
         delete h.responders['fix:media'];
       }
+    }, 60_000);
+  });
+
+  describe('the cliché sweep is decided hit by hit (TELLS-1, convention C2)', () => {
+    const HITS = [
+      { pattern: 'delve', where: 'Opening line', alternative: 'look at' },
+      { pattern: 'seamless', where: '', alternative: 'Say what actually happens.' },
+      { pattern: '"not just X, but Y"', where: 'Second paragraph', alternative: 'Say Y directly.' },
+    ];
+    const sweepAnswer = () => '```json\n' + JSON.stringify({ hits: HITS }) + '\n```';
+
+    it('asks which hits to swap, one by one; only the chosen reach the swap step, and the A/B compare follows', async () => {
+      h.responders['tells-sweep:prose'] = sweepAnswer;
+      try {
+        const run = await h.start(swept, { problem: { text: 'A memo on the billing migration' } });
+        const view = await h.drive(run.id, (cp) => (cp.kind === 'select' ? { checkpointId: cp.id, choice: ['hit-1', 'hit-3'] } : undefined));
+        expect(view.run.status).toBe('done');
+        checkEvents(view);
+        const select = view.checkpoints.find((c) => c.kind === 'select')!;
+        expect(select.prompt).toBe('Which of these should be swapped? Choose any, or none.');
+        expect(select.options).toEqual([
+          { id: 'hit-1', label: 'delve — Opening line → look at' },
+          { id: 'hit-2', label: 'seamless → Say what actually happens.' },
+          { id: 'hit-3', label: '"not just X, but Y" — Second paragraph → Say Y directly.' },
+        ]);
+        // The question shows the work and the sweep's hits beside it.
+        expect(select.artifactIds).toContain((ofType(view, 'step-finished', 'sweep')[0]!.data.outputArtifactIds as string[])[0]);
+        const swaps = h.prompts.calls.filter((c) => c.id === 'product.test.swaps').at(-1)!;
+        expect(swaps.slots.critique).toBe('- delve (Opening line): look at\n- "not just X, but Y" (Second paragraph): Say Y directly.');
+        expect(view.checkpoints.filter((c) => c.kind === 'compare')).toHaveLength(1);
+      } finally {
+        delete h.responders['tells-sweep:prose'];
+      }
+    }, 60_000);
+
+    it('none chosen: the swap step changes nothing and says so, and there is nothing to compare', async () => {
+      h.responders['tells-sweep:prose'] = sweepAnswer;
+      try {
+        const run = await h.start(swept, { problem: { text: 'A memo on the billing migration' } });
+        const view = await h.drive(run.id, (cp) => (cp.kind === 'select' ? { checkpointId: cp.id, choice: [] } : undefined));
+        expect(view.run.status).toBe('done');
+        checkEvents(view);
+        expect(h.succeeded(run.id).some((c) => c.stepId === 'swaps')).toBe(false);
+        expect(ofType(view, 'step-finished', 'swaps').map((e) => e.data)).toEqual([{ costUsd: 0, note: NO_SWAPS_CHOSEN }]);
+        expect(NO_SWAPS_CHOSEN).toBe('No swaps chosen');
+        expect(view.checkpoints.some((c) => c.kind === 'compare')).toBe(false);
+        expect(ofType(view, 'step-finished', 'compare').map((e) => e.data.note)).toEqual([NOTHING_TO_COMPARE]);
+        expect(view.run.outputArtifactId).toBe(ofType(view, 'artifact', 'draft')[0]!.data.artifactId);
+      } finally {
+        delete h.responders['tells-sweep:prose'];
+      }
+    }, 60_000);
+  });
+
+  describe('a paid call is not bought twice (ENG-3, ENG-12, convention C5)', () => {
+    it('a step whose local write failed after its model call is retried by Temporal and reuses the answer it bought', async () => {
+      const original = h.store.artifacts.putText.bind(h.store.artifacts);
+      let runId = '';
+      let failed = false;
+      h.store.artifacts.putText = async (text, mediaType) => {
+        // The draft's own write fails once, after the model answered and the call was ledgered.
+        if (!failed && mediaType === 'text/markdown' && runId && h.succeeded(runId).some((c) => c.purpose === 'build:prose')) {
+          failed = true;
+          throw new Error('The disk is full.');
+        }
+        return original(text, mediaType);
+      };
+      try {
+        const run = await h.start(tiny);
+        runId = run.id;
+        const view = await h.drive(run.id);
+        expect(view.run.status).toBe('done');
+        expect(failed).toBe(true);
+        expect(h.succeeded(run.id).filter((c) => c.stepId === 'draft')).toHaveLength(1);
+        expect(h.ledger(run.id).filter((e) => e.stepId === 'draft')).toHaveLength(1);
+        expect(ofType(view, 'step-started', 'draft')).toHaveLength(1);
+        expect(ofType(view, 'step-failed')).toEqual([]);
+      } finally {
+        h.store.artifacts.putText = original;
+      }
+    }, 60_000);
+
+    it('a step run again after a budget raise reuses its briefs and images, and the timeline shows the images it placed', async () => {
+      h.refuseOnce((c) => c.purpose === 'asset.integrate:prose');
+      const run = await h.start(illustrated, { problem: { text: 'A status memo on the billing migration' } });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      expect(view.checkpoints.some((c) => c.kind === 'confirm' && c.stepId === 'art' && /^Raise the budget by \$1\?/.test(c.prompt))).toBe(true);
+      const paid = h.succeeded(run.id).filter((c) => c.stepId === 'art');
+      expect(paid.filter((c) => c.purpose === 'asset.briefs:prose')).toHaveLength(1);
+      const images = paid.filter((c) => c.kind === 'image');
+      expect(images.length).toBeGreaterThan(0);
+      expect(new Set(images.map((c) => JSON.stringify(c.request))).size).toBe(images.length);
+      expect(paid.filter((c) => c.purpose === 'asset.integrate:prose')).toHaveLength(1);
+      // The images the timeline shows are the ones placed in the work.
+      const shown = ofType(view, 'artifact', 'art').filter((e) => (e.data.mediaType as string).startsWith('image/')).map((e) => e.data.artifactId as string);
+      const out = await h.store.artifacts.getText(view.run.outputArtifactId!);
+      expect(shown.length).toBe(images.length);
+      for (const id of shown) expect(out).toContain(`/api/artifacts/${id}`);
+    }, 60_000);
+
+    it('a GREAT critic refused on its second shuffle reuses the first after the raise: the same lineup, not bought again', async () => {
+      let critics = 0;
+      h.refuseOnce((c) => c.purpose === 'critic:prose' && ++critics === 2);
+      const refs: string[] = [];
+      for (const t of ['# One\n\nClear ask.', '# Two\n\nOne point.', '# Three\n\nShort.']) refs.push((await h.store.artifacts.putText(t, 'text/markdown')).id);
+      const run = await h.start(twiceJudged, { problem: { text: 'A memo on the billing migration' }, inputs: { refs } });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      expect(h.succeeded(run.id).filter((c) => c.purpose === 'critic:prose')).toHaveLength(2);
+      expect(ofType(view, 'step-finished', 'critic')).toHaveLength(1);
+    }, 60_000);
+  });
+
+  describe('an answer that cannot be written back is asked for again, never a failed run (ENG-6)', () => {
+    it('your words on a page with a line added: asked again with your text and why, at no cost; the fixed answer is placed', async () => {
+      const asks: { prompt: string; initialText?: string }[] = [];
+      let offered: string[] = [];
+      const run = await h.start(voicedPage, { problem: { text: 'A landing page for a bike repair shop' } });
+      const view = await h.drive(run.id, (cp) => {
+        if (cp.kind !== 'write') return undefined;
+        asks.push({ prompt: cp.prompt, ...(cp.initialText !== undefined ? { initialText: cp.initialText } : {}) });
+        if (asks.length === 1) {
+          offered = cp.initialText!.split('\n');
+          return { checkpointId: cp.id, text: [...offered, 'A line of my own, with no block to go in.'].join('\n') };
+        }
+        return { checkpointId: cp.id, text: offered.map((l, i) => (i === 1 ? 'Fixed by Friday, or the next one is free' : l)).join('\n') };
+      });
+      expect(view.run.status).toBe('done');
+      checkEvents(view);
+      expect(asks).toHaveLength(2);
+      // The second ask says what went wrong and starts from what you wrote, not from the page's copy.
+      expect(asks[1]!.prompt).toMatch(new RegExp(`one line per block of text: ${offered.length} lines`));
+      expect(asks[1]!.initialText).toContain('A line of my own');
+      // A line count that cannot be placed is refused before any model call; the fixed answer is placed.
+      expect(h.succeeded(run.id).filter((c) => c.purpose === 'voice.apply:web-page')).toHaveLength(1);
+      expect(pageCopy(await h.store.artifacts.getText(view.run.outputArtifactId!))).toContain('Fixed by Friday, or the next one is free');
+      expect(ofType(view, 'step-failed')).toEqual([]);
+    }, 60_000);
+
+    it('a claim log answered with an extra line is asked again; the corrected claim then replaces its sentence', async () => {
+      let n = 0;
+      let offered: string[] = [];
+      const run = await h.start(claimLogged, { problem: { text: 'A status memo on the billing migration' } });
+      const view = await h.drive(run.id, (cp) => {
+        if (cp.kind !== 'write') return undefined;
+        if (++n === 1) {
+          offered = cp.initialText!.split('\n');
+          return { checkpointId: cp.id, text: `${cp.initialText}\n- And one more claim: 3 teams.` };
+        }
+        return { checkpointId: cp.id, text: [...offered.slice(0, -1), '- Decide on the 31st, once the numbers are in.'].join('\n') };
+      });
+      expect(view.run.status).toBe('done');
+      expect(n).toBe(2);
+      expect(view.checkpoints.filter((c) => c.stepId === 'claims')[1]!.prompt).toMatch(/one line per claim/);
+      const out = await h.store.artifacts.getText(view.run.outputArtifactId!);
+      expect(out).toContain('Decide on the 31st, once the numbers are in.');
+      expect(out.replace(/\s+/g, ' ')).not.toContain(offered.at(-1)!.replace(/^- /, ''));
     }, 60_000);
   });
 

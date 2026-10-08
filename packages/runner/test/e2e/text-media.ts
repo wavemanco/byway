@@ -3,10 +3,11 @@
  * point), C7 Lean Code Review (code-diff) and C3 Series Writer (the route choice, illustrated prose).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { CompletionRequest } from '@byway/contracts';
 import { c3, c4, c6a, c7 } from '@byway/catalog';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { splitCodeDiff } from '../../src/formats.ts';
-import { BEST_SO_FAR_PROMPT, READY_PROMPT } from '../../src/workflow/wording.ts';
+import { BEST_SO_FAR_PROMPT, DECLINED_NOTE, READY_PROMPT } from '../../src/workflow/wording.ts';
 import { checkEvents, notes, ofType } from '../helpers/events.ts';
 import { AUTHOR_DRAFT, type Harness } from '../helpers/harness.ts';
 
@@ -23,9 +24,17 @@ export function textMediaScenarios(use: () => Harness): void {
   describe('C4 on prose', () => {
     it('runs end to end: framings, your brief, a draft, the recipient critic in OK mode, distill, your key lines, the claim log', async () => {
       const mine = 'Decision needed by Friday: approve the second migration window.';
+      const correction = 'The pilot runs for 3 weeks, starting on the 2nd.';
+      let wrong = '';
       const run = await h.start(c4, { problem: { text: 'A status memo for leadership on the billing migration, 3 weeks in' } });
       const view = await h.drive(run.id, (cp) => {
         if (cp.stepId === 'voice') return { checkpointId: cp.id, text: `${mine}\n\n${cp.initialText}` };
+        if (cp.stepId === 'claim-sign-off') {
+          // The owner corrects the last claim (ENG-2); the others are signed off as they are.
+          const lines = cp.initialText!.split('\n');
+          wrong = lines.at(-1)!.replace(/^- /, '');
+          return { checkpointId: cp.id, text: [...lines.slice(0, -1), `- ${correction}`].join('\n') };
+        }
         return undefined;
       });
       expect(view.run.status).toBe('done');
@@ -33,7 +42,7 @@ export function textMediaScenarios(use: () => Harness): void {
       const purposes = h.succeeded(run.id).map((c) => c.purpose);
       expect(purposes).toEqual(expect.arrayContaining(['vision:prose', 'build:prose', 'critic:prose', 'fix:prose', 'tells-sweep:prose']));
       // Optionals asked with their triggers.
-      expect(view.checkpoints.find((c) => c.stepId === 'recipient-critic')?.prompt).toBe('Run this step? It is meant for when the document is longer than about 300 words.');
+      expect(view.checkpoints.find((c) => c.stepId === 'recipient-critic')?.prompt).toBe('Run this step? It is meant for when the document is longer than about 300 words. Yes runs it; No skips it.');
       // The framings are shown with your brief's checkpoint; your reaction (text) became the brief the draft used.
       const framings = ofType(view, 'step-finished', 'framings')[0]!.data.outputArtifactIds as string[];
       expect(view.checkpoints.find((c) => c.stepId === 'vision-lite')?.artifactIds).toEqual(framings);
@@ -50,9 +59,19 @@ export function textMediaScenarios(use: () => Harness): void {
       expect(tells).toContain('delve');
       expect([...tells.matchAll(/\((tells\.[a-z-]+)\)/g)].map((m) => m[1])).toEqual(['tells.memo']);
       expect(h.prompts.calls.filter((c) => c.id === 'product.c4.draft' || c.id === 'product.c4.revise').every((c) => c.slots.tells === undefined)).toBe(true);
-      // Your key lines are the deliverable, word for word; the claim log asked you to sign off.
-      expect(await text(view.run.outputArtifactId!)).toContain(mine);
-      expect(view.checkpoints.find((c) => c.stepId === 'claim-sign-off')).toMatchObject({ kind: 'write' });
+      // Your key lines are the deliverable, word for word; the claim log asked you to sign off, and your correction
+      // replaced the claim in the deliverable (ENG-2).
+      const out = await text(view.run.outputArtifactId!);
+      expect(out).toContain(mine);
+      const claims = view.checkpoints.find((c) => c.stepId === 'claim-sign-off')!;
+      expect(claims).toMatchObject({ kind: 'write' });
+      expect(out).toContain(correction);
+      expect(wrong).not.toBe('');
+      expect(out.replace(/\s+/g, ' ')).not.toContain(wrong);
+      expect(ofType(view, 'step-finished', 'claim-sign-off')[0]!.data.outputArtifactIds).toEqual([view.run.outputArtifactId]);
+      // The claims offered are sentences, once each: no doubled list markers, no demo marker (UX-5, UX-6).
+      expect(claims.initialText).not.toMatch(/^- - |byway-demo-revision/m);
+      expect(claims.initialText!.split('\n').length).toBeGreaterThan(3);
     }, 120_000);
   });
 
@@ -107,6 +126,16 @@ export function textMediaScenarios(use: () => Harness): void {
         expect(ofType(view, 'step-finished', reader)).toHaveLength(2);
         expect(ofType(view, 'step-finished', reader).every((e) => (e.data.outputArtifactIds as string[]).length === 1)).toBe(true);
       }
+      // "The readers' notes are beside it": round 2's write shows your draft and the three notes of round 1, and each
+      // "Is this ready?" shows the draft with the notes it is about (ENG-8).
+      const firstNotes = ['cut-marks', 'tells-flags', 'critic'].map((r) => (ofType(view, 'step-finished', r)[0]!.data.outputArtifactIds as string[])[0]!);
+      expect(writes[1]!.artifactIds).toEqual(expect.arrayContaining(firstNotes));
+      expect(writes[1]!.artifactIds![0]).toBe((ofType(view, 'step-finished', 'write')[0]!.data.outputArtifactIds as string[])[0]);
+      const readies = view.checkpoints.filter((c) => c.prompt === READY_PROMPT && c.stepId === 'author-loop');
+      expect(readies[0]!.artifactIds).toEqual(expect.arrayContaining(firstNotes));
+      // The vision loop's question shows the sharpened brief, not only the card it started from.
+      const sharpened = (ofType(view, 'step-finished', 'sharpen')[0]!.data.outputArtifactIds as string[])[0]!;
+      expect(view.checkpoints.find((c) => c.prompt === READY_PROMPT && c.stepId !== 'author-loop')?.artifactIds).toContain(sharpened);
       const purposes = new Set(h.succeeded(run.id).filter((c) => c.stepId && ['write', 'render', 'cut-marks', 'tells-flags', 'critic', 'voice'].includes(c.stepId)).map((c) => c.purpose));
       expect([...purposes].sort()).toEqual(['critic:prose', 'cut:prose', 'tells-sweep:prose']);
       // The deliverable is your revision, exactly.
@@ -127,9 +156,15 @@ export function textMediaScenarios(use: () => Harness): void {
       });
       expect(view.run.status).toBe('done');
       checkEvents(view, 'c7');
+      // The spec interview you declined is a step that was skipped, and says why (UX-1, convention C1).
+      expect(ofType(view, 'step-finished', 'spec-interview').map((e) => e.data)).toEqual([{ costUsd: 0, skipped: true, note: DECLINED_NOTE }]);
+      expect(DECLINED_NOTE).toBe('You chose not to run this step.');
+      expect(view.checkpoints.find((c) => c.stepId === 'spec-interview')?.prompt).toBe('Run this step? It is meant for when the requirements are vague. Yes runs it; No skips it.');
       const purposes = h.succeeded(run.id).map((c) => c.purpose);
       expect(new Set(purposes)).toEqual(new Set(['build:code-diff', 'check:code-diff', 'fix:code-diff', 'cut:code-diff', 'critic:code-diff', 'tells-sweep:code-diff', ...(purposes.includes('rerank:code-diff') ? ['rerank:code-diff'] : [])]));
       expect(view.checkpoints.find((c) => c.stepId === 'voice')?.initialText).toMatch(/^Why: /);
+      // The demo's revision marker stays in the stored work and never reaches the person (UX-6).
+      expect(view.checkpoints.find((c) => c.stepId === 'voice')?.initialText).not.toContain('byway-demo-revision');
       const out = await text(view.run.outputArtifactId!);
       const { diff, why: kept } = splitCodeDiff(out);
       expect(diff).toMatch(/^--- a\/.+\n\+\+\+ b\/.+\n@@ /);
@@ -137,6 +172,12 @@ export function textMediaScenarios(use: () => Harness): void {
       expect((await h.store.artifacts.get(view.run.outputArtifactId!)).record.mediaType).toBe('text/x-diff');
       // The reviewer judges the diff as its view: never the artifact slot (port rule 1).
       expect(h.prompts.calls.filter((c) => c.id === 'product.c7.reviewer').every((c) => c.slots.artifact === undefined && c.slots.view?.startsWith('--- a/'))).toBe(true);
+      // A reviewer from another AI family (FID-1): in demo mode the demo profile's stand-in, recorded as such.
+      const reviews = h.succeeded(run.id).filter((c) => c.stepId === 'reviewer');
+      expect(reviews.length).toBeGreaterThan(0);
+      expect(reviews.every((c) => (c.request as CompletionRequest).model?.model === 'mock-other')).toBe(true);
+      expect(h.ledger(run.id).filter((e) => e.stepId === 'reviewer').every((e) => e.requestedModel === 'mock-other')).toBe(true);
+      expect(notes(view, 'reviewer').every((n) => !n?.includes('another AI family'))).toBe(true);
     }, 120_000);
   });
 
@@ -147,7 +188,9 @@ export function textMediaScenarios(use: () => Harness): void {
       expect(view.run.status).toBe('done');
       checkEvents(view, 'c3');
       const choose = view.checkpoints.find((c) => c.kind === 'choose')!;
-      expect(choose).toMatchObject({ stepId: 'draft', prompt: 'Choose: who writes the first draft.' });
+      // The route's plain question and labels (UX-3, @byway/catalog routeChoice); the ids stay the branch names.
+      expect(choose).toMatchObject({ stepId: 'draft', prompt: 'Who writes the first draft?' });
+      expect(choose.options?.map((o) => o.label)).toEqual(['The AI drafts it: from your point, for you to revise and rewrite', 'You write it: the whole first draft, yourself']);
       expect(choose.options?.map((o) => o.id)).toEqual(['ai', 'own']);
       // The sweep's tells: every catalog its domains name, joined in order (tellsPromptIds), not just the medium's.
       const tells = h.prompts.calls.filter((c) => c.id === 'product.c3.tells-sweep').at(-1)!.slots.tells!;

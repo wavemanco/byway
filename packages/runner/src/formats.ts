@@ -1,7 +1,7 @@
 /**
  * The artifact formats of each medium (spec §3.3 output contracts) and their text views (spec §3.2 "Views by
- * medium"). Parsers follow the spec: take the last fenced block of the expected language, fall back to the whole text,
- * and fail with a plain message when the contract is not met.
+ * medium"). Parsers follow the spec: take the last fenced block of the expected language, fall back to the whole text
+ * only when the answer has no fence at all, and fail with a plain message when the contract is not met.
  */
 import { MEDIUM_FORMAT, type Medium } from '@byway/contracts';
 import { z } from 'zod';
@@ -9,16 +9,94 @@ import { z } from 'zod';
 export const mediaTypeOf = (medium: Medium): string => MEDIUM_FORMAT[medium].artifactMediaType;
 export const viewKindOf = (medium: Medium): 'screenshots' | 'text' => MEDIUM_FORMAT[medium].view;
 
-/** Contents of every fenced block whose language is one of `langs`, in order. */
-export function fencedBlocks(text: string, langs: readonly string[]): string[] {
-  const out: string[] = [];
-  for (const m of text.matchAll(/```([A-Za-z0-9_-]*)[^\n]*\n([\s\S]*?)\n?```/g)) {
-    if (langs.includes((m[1] ?? '').toLowerCase())) out.push(m[2] ?? '');
+// ---- Fences ------------------------------------------------------------------------------------------------------
+
+/** A top-level fenced block of an answer. */
+export interface Fenced {
+  /** The info string's first word, lower case ('' for a bare fence). */
+  lang: string;
+  body: string;
+  /** Offset of the opening fence line. */
+  start: number;
+  /** Offset just past the block's closing fence line (the end of the text when it was never closed). */
+  end: number;
+  closed: boolean;
+}
+
+/** A fence line: three or more backticks or tildes at the very start of a line, then an optional info string. */
+const FENCE_LINE = /^(`{3,}|~{3,})(.*)$/;
+
+/**
+ * The answer's top-level fenced blocks, read line by line (ENG-1). Documents and diffs hold fences of their own (a
+ * README's code block, a diff that adds one), so a block is not cut at the first ``` anywhere, as a lazy regex does:
+ * - a fence is a line that starts with three or more backticks (or tildes); a fence in the middle of a line, or
+ *   indented, or after a diff's "+", is content;
+ * - a block closes at the first later fence line of the same character, at least as long, with nothing after it
+ *   (CommonMark), so a longer outer fence (````markdown) holds any shorter one;
+ * - inside a block, a fence line with a language (```bash) opens a nested block that the next bare fence closes: that
+ *   is how a model writes a document with a code block inside one ```markdown fence, and the outer block must not end
+ *   at the inner one's close.
+ * A block never closed runs to the end of the text.
+ */
+export function fences(text: string): Fenced[] {
+  const out: Fenced[] = [];
+  const stack: { char: string; len: number; lang: string; start: number; bodyStart: number }[] = [];
+  let at = 0;
+  for (const raw of text.split('\n')) {
+    const lineStart = at;
+    at += raw.length + 1;
+    const m = FENCE_LINE.exec(raw.replace(/\r$/, ''));
+    if (!m) continue;
+    const run = m[1]!;
+    const info = m[2]!.trim();
+    // "```x```" on one line is inline code, not a fence (a backtick fence's info string has no backticks).
+    if (run[0] === '`' && info.includes('`')) continue;
+    const top = stack.at(-1);
+    if (!top) {
+      stack.push({ char: run[0]!, len: run.length, lang: (info.split(/\s+/)[0] ?? '').toLowerCase(), start: lineStart, bodyStart: Math.min(at, text.length) });
+      continue;
+    }
+    if (!info && run[0] === top.char && run.length >= top.len) {
+      stack.pop();
+      if (!stack.length) {
+        const body = text.slice(top.bodyStart, Math.max(top.bodyStart, lineStart - 1)).replace(/\r$/, '');
+        out.push({ lang: top.lang, body, start: top.start, end: Math.min(at, text.length), closed: true });
+      }
+    } else if (info) {
+      stack.push({ char: run[0]!, len: run.length, lang: '', start: lineStart, bodyStart: at });
+    }
   }
+  const open = stack[0];
+  if (open) out.push({ lang: open.lang, body: text.slice(open.bodyStart).replace(/\n$/, ''), start: open.start, end: text.length, closed: false });
   return out;
 }
 
-export const lastFenced = (text: string, langs: readonly string[]): string | undefined => fencedBlocks(text, langs).at(-1);
+/** Where an answer's content is: one block of the language, no fence at all (the whole text), or a problem. */
+export type Located = { kind: 'block'; block: Fenced } | { kind: 'whole' } | { kind: 'problem'; problem: string };
+
+/**
+ * The last block of the expected language. A bare block after it means a fence inside the content closed the block
+ * early (the rest of the content follows it), so the answer is refused with the fix. An answer with fences but none
+ * of the language is refused too, unless `bare` allows a bare block (formats whose content check is strict: JSON
+ * parses or does not, a diff has its headers). Only an answer with no fence at all is read whole.
+ */
+export function locate(text: string, langs: readonly string[], opts: { bare?: boolean } = {}): Located {
+  const blocks = fences(text);
+  const fence = langs[0] ?? '';
+  const i = blocks.findLastIndex((b) => langs.includes(b.lang));
+  if (i >= 0) {
+    if (blocks.slice(i + 1).some((b) => b.lang === '')) {
+      return { kind: 'problem', problem: `A fence inside the content closed the \`\`\`${fence} block early. Put the whole answer in one block with a longer fence: more backticks than any run inside it (\`\`\`\`${fence}).` };
+    }
+    return { kind: 'block', block: blocks[i]! };
+  }
+  if (opts.bare) {
+    const bare = blocks.findLast((b) => b.lang === '');
+    if (bare) return { kind: 'block', block: bare };
+  }
+  if (blocks.length) return { kind: 'problem', problem: `The answer has fenced blocks, but none marked \`\`\`${fence}: put the answer in one \`\`\`${fence} block.` };
+  return { kind: 'whole' };
+}
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; problem: string };
 const fail = (problem: string): Parsed<never> => ({ ok: false, problem });
@@ -40,17 +118,25 @@ export const ShotSchema = z.object({
   description: z.string().min(1),
   imagePrompt: z.string().min(1),
   durationSec: z.number().positive(),
+  /** On-screen copy over the shot (spec §3.3, contracts v5): the late VOICE writes it (VOICE-1). */
+  caption: z.string().optional(),
   /** Added by the runner when it stores the shot's frame. */
   imageArtifactId: z.string().optional(),
   /** Added by the runner when a relay link made the shot's clip. */
   clipArtifactId: z.string().optional(),
 });
-export const StoryboardSchema = z.object({ storyboard: z.array(ShotSchema).min(1), voiceover: z.string() });
+/**
+ * A storyboard (spec §3.3): shots, the voice-over (locked after the early VOICE), and the on-screen headline and
+ * tagline, which with the shots' captions are the late VOICE's copy (convention C4).
+ */
+export const StoryboardSchema = z.object({ storyboard: z.array(ShotSchema).min(1), voiceover: z.string(), headline: z.string().optional(), tagline: z.string().optional() });
 export type Storyboard = z.infer<typeof StoryboardSchema>;
 export type Shot = z.infer<typeof ShotSchema>;
 
 function parseJson<T>(text: string, schema: z.ZodType<T>, what: string): Parsed<T> {
-  const raw = lastFenced(text, ['json']) ?? text.trim();
+  const where = locate(text, ['json'], { bare: true });
+  if (where.kind === 'problem') return fail(where.problem);
+  const raw = where.kind === 'block' ? where.block.body : text.trim();
   let value: unknown;
   try {
     value = JSON.parse(raw);
@@ -98,14 +184,16 @@ function looksLikeDiff(diff: string): string | undefined {
 
 /** One fenced diff block (a unified diff), then a paragraph starting "Why:". */
 export function parseCodeDiff(text: string): Parsed<CodeDiff> {
-  const block = lastFenced(text, ['diff', 'patch']);
+  const where = locate(text, ['diff', 'patch'], { bare: true });
+  if (where.kind === 'problem') return fail(`The answer is not a unified diff in one fenced diff block: ${where.problem}`);
   let diff: string;
   let why = '';
-  if (block !== undefined) {
+  if (where.kind === 'block') {
     // A "Why:" paragraph that slipped inside the block belongs after it.
-    const inner = splitCodeDiff(block);
+    const inner = splitCodeDiff(where.block.body);
     diff = inner.diff;
-    const after = text.slice(text.lastIndexOf('```') + 3).trim();
+    // The text after the block the diff came from (not after the last ``` anywhere: the diff may add a fence).
+    const after = text.slice(where.block.end).trim();
     why = WHY.test(after) ? (after.slice(after.search(WHY)).split(/\n\s*\n/)[0] ?? '').trim() : inner.why;
   } else {
     const whole = splitCodeDiff(text.trim());
@@ -120,18 +208,32 @@ export function parseCodeDiff(text: string): Parsed<CodeDiff> {
 
 // ---- Documents ---------------------------------------------------------------------------------------------------
 
-/** A complete HTML document: the last fenced html block, else a bare document in the text. */
+const completePage = (html: string): boolean => /<html[\s>]/i.test(html) && /<\/html>/i.test(html);
+
+/**
+ * A complete HTML document: the last fenced html block when it is one. Otherwise the document in the text, from its
+ * doctype (or <html>) to its last </html>: a page whose own code sample (a bare ``` line in a <pre>) closed the fence
+ * early is still whole there.
+ */
 export function parseHtml(text: string): Parsed<string> {
-  const block = lastFenced(text, ['html']);
-  const candidate = block ?? /<!doctype html[\s\S]*<\/html>/i.exec(text)?.[0] ?? /<html[\s>][\s\S]*<\/html>/i.exec(text)?.[0];
-  if (!candidate) return fail('The answer has no HTML document (expected one fenced html block holding a complete page).');
-  if (!/<html[\s>]/i.test(candidate) || !/<\/html>/i.test(candidate)) return fail('The HTML is not a complete document (it needs <html> … </html>).');
+  const where = locate(text, ['html'], { bare: true });
+  const block = where.kind === 'block' ? where.block.body : undefined;
+  const bare = /<!doctype html[\s\S]*<\/html>/i.exec(text)?.[0] ?? /<html[\s>][\s\S]*<\/html>/i.exec(text)?.[0];
+  const candidate = block !== undefined && completePage(block) ? block : (bare ?? block);
+  if (!candidate) return fail(where.kind === 'problem' ? where.problem : 'The answer has no HTML document (expected one fenced html block holding a complete page).');
+  if (!completePage(candidate)) return fail('The HTML is not a complete document (it needs <html> … </html>).');
   return { ok: true, value: candidate.trim() };
 }
 
-/** The Markdown document: the last fenced markdown block, else the whole answer. */
+/**
+ * The Markdown document: the last fenced markdown block, or the whole answer when it has no fence at all. An answer
+ * with other fences only, or whose block a fence inside it closed early, is refused (and so asked again), never stored
+ * with its preamble and fence lines or cut short.
+ */
 export function parseMarkdown(text: string): Parsed<string> {
-  const doc = (lastFenced(text, ['markdown', 'md']) ?? text).trim();
+  const where = locate(text, ['markdown', 'md']);
+  if (where.kind === 'problem') return fail(where.problem);
+  const doc = (where.kind === 'block' ? where.block.body : text).trim();
   if (!doc) return fail('The answer is empty (expected the Markdown document).');
   return { ok: true, value: `${doc}\n` };
 }
@@ -165,10 +267,15 @@ export function optionsText(doc: OptionsDoc): string {
   return doc.options.map((o, i) => `${i + 1}. ${o.title}: ${o.pitch}\n   Why: ${o.rationale}`).join('\n');
 }
 
-/** A storyboard as text: each shot with its length and what it shows, then the voice-over. */
+/**
+ * A storyboard as its audience meets it: the headline and tagline, each shot with its length, what it shows and its
+ * on-screen caption, then the voice-over. Never how it was made (BLIND-1): the image prompts and whether a clip exists
+ * are process, which a critic must not read (port rule 1), and a lineup's references have none.
+ */
 export function storyboardText(sb: Storyboard): string {
-  const shots = sb.storyboard.map((s) => `Shot ${s.shot} (${s.durationSec}s): ${s.description}\n   Frame: ${s.imagePrompt}${s.clipArtifactId ? '\n   Clip: made' : ''}`);
-  return [...shots, '', `Voice-over: ${sb.voiceover}`].join('\n');
+  const head = [...(sb.headline ? [`Headline: ${sb.headline}`] : []), ...(sb.tagline ? [`Tagline: ${sb.tagline}`] : [])];
+  const shots = sb.storyboard.map((s) => `Shot ${s.shot} (${s.durationSec}s): ${s.description}${s.caption ? `\n   On screen: ${s.caption}` : ''}`);
+  return [...head, ...(head.length ? [''] : []), ...shots, '', `Voice-over: ${sb.voiceover}`].join('\n');
 }
 
 /**

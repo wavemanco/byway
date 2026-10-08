@@ -3,7 +3,9 @@
  * step appends to its one automatic retry. Builders' artifacts are parsed in formats.ts.
  */
 import { z } from 'zod';
-import { lastFenced, type Parsed } from './formats.ts';
+import { locate, type Parsed } from './formats.ts';
+import { hitsCritique } from './hits.ts';
+import type { TellsHit } from './types.ts';
 
 const fail = (problem: string): Parsed<never> => ({ ok: false, problem });
 const lastLine = (text: string): string => text.trim().split('\n').at(-1)?.trim() ?? '';
@@ -51,14 +53,17 @@ export function parseCritic(text: string, lineup?: readonly string[]): Parsed<Cr
  * One item's part of a lineup critique: the lines under its "### X" heading (any heading level, and the heading may
  * go on after the label, "### B — the bakery"), up to the next heading of that level or higher, or the closing
  * `Ranking:` line when the item is last, heading stripped. Undefined when the critique has no such section, or it is
- * empty.
+ * empty. When the label heads more than one section, the shallowest (top-level) one is ours: an item's own inner
+ * headings must not stand in for it (ENG-7).
  */
 export function sectionOf(critique: string, label: string): string | undefined {
   const lines = critique.split('\n');
   const head = new RegExp(`^(#{1,6})[ \\t]+\\**${label}\\**(?![A-Za-z0-9])`);
-  const at = lines.findIndex((l) => head.test(l.trim()));
+  const levels = lines.map((l) => head.exec(l.trim())?.[1]?.length ?? 0);
+  const top = Math.min(...levels.filter((n) => n > 0));
+  const at = levels.indexOf(top);
   if (at < 0) return undefined;
-  const level = (head.exec(lines[at]!.trim())?.[1] ?? '###').length;
+  const level = top;
   const stop = new RegExp(`^(#{1,${level}}[ \\t]|Ranking:)`, 'i');
   const end = lines.findIndex((l, i) => i > at && stop.test(plain(l)));
   const body = lines
@@ -104,10 +109,12 @@ export function parseCut(text: string): Parsed<string> {
 }
 
 const Hits = z.object({ hits: z.array(z.object({ pattern: z.string().min(1), where: z.string(), alternative: z.string() })) });
-export type TellsHit = z.infer<typeof Hits>['hits'][number];
 
 function json<T>(text: string, schema: z.ZodType<T>, what: string): Parsed<T> {
-  const raw = lastFenced(text, ['json']) ?? text.trim();
+  // A json block, else a bare one (JSON.parse is the check), else the whole answer when it has no fence (ENG-1).
+  const where = locate(text, ['json'], { bare: true });
+  if (where.kind === 'problem') return fail(where.problem);
+  const raw = where.kind === 'block' ? where.block.body : text.trim();
   try {
     const r = schema.safeParse(JSON.parse(raw));
     return r.success ? { ok: true, value: r.data } : fail(`The JSON does not match ${what}: ${r.error.issues.map((i) => `${i.path.join('.') || '(root)'} ${i.message}`).join('; ')}`);
@@ -120,8 +127,7 @@ function json<T>(text: string, schema: z.ZodType<T>, what: string): Parsed<T> {
 export function parseTellsSweep(text: string): Parsed<{ hits: TellsHit[]; critique: string }> {
   const r = json(text, Hits, '{"hits":[{"pattern","where","alternative"}]}');
   if (!r.ok) return r;
-  const critique = r.value.hits.length ? r.value.hits.map((h) => `- ${h.pattern}${h.where ? ` (${h.where})` : ''}: ${h.alternative}`).join('\n') : 'No reflexive defaults found.';
-  return { ok: true, value: { hits: r.value.hits, critique } };
+  return { ok: true, value: { hits: r.value.hits, critique: hitsCritique(r.value.hits) } };
 }
 
 /** tells-compare (model): optional reasoning, then `Keep: A` or `Keep: B`. */

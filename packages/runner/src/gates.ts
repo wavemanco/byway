@@ -8,15 +8,26 @@ import type { Score } from './types.ts';
 export const OK_BAR = 9;
 
 /**
+ * The worst rank that passes a rank gate (GATE-1, convention C6). A threshold is written for a full lineup, the critic's
+ * refs knob plus ours (C3: top 3 of 10; C4, C5 and C7: the middle of 5); a run with fewer references ranks in a
+ * smaller lineup, where the same rank is a much weaker result. So the gate keeps its share of the lineup actually
+ * used: max(1, floor(threshold × of / writtenFor)). Without a `writtenFor` the threshold applies as written.
+ */
+export function passRank(threshold: number, of: number, writtenFor: number | undefined): number {
+  if (!writtenFor || writtenFor <= 0 || of >= writtenFor) return threshold;
+  return Math.max(1, Math.floor((threshold * of) / writtenFor));
+}
+
+/**
  * Whether a critic's answer meets a gate's hidden condition.
  * - `critic-score`: the score reaches the threshold (9 when none is given).
- * - `critic-rank`: our place is at or better than the threshold (lower is better). When the critic fell back to OK
- *   mode for want of references, the score is held to the OK bar instead.
+ * - `critic-rank`: our place is at or better than the threshold (lower is better), scaled to the lineup actually used
+ *   (passRank). When the critic fell back to OK mode for want of references, the score is held to the OK bar instead.
  * A rank under a score gate passes only in first place (03 C1 GREAT: "ours ranked 1st").
  */
 export function passes(score: Score, metric: string, threshold: number | undefined): boolean {
   if (score.kind === 'rank') {
-    if (metric === 'critic-rank') return score.rank <= (threshold ?? 1);
+    if (metric === 'critic-rank') return score.rank <= passRank(threshold ?? 1, score.of, score.writtenFor);
     return score.rank === 1;
   }
   if (metric === 'critic-rank') return score.value >= OK_BAR;

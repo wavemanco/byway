@@ -16,7 +16,7 @@ export interface RunnerDeps {
   labelFor?: (recipeId: string, stepId: string) => string | undefined;
   /** The random SEED string (spec §3.3 "SEED in the product"). Defaults to crypto.randomBytes. */
   seed?: () => string;
-  /** Uniform [0, 1) for the critic's shuffled reference positions. Defaults to crypto randomness. */
+  /** Uniform [0, 1) for the critic's shuffled reference positions. Defaults to draws from a random salt memoized per step call, so a retry shuffles alike. */
   random?: () => number;
   /** Aborted when Temporal cancels the running activity invocation (set per invocation by createActivities). */
   signal?: AbortSignal;

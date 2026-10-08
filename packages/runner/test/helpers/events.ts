@@ -17,7 +17,7 @@ const PAYLOADS: Record<RunEventType, z.ZodType> = {
     .strict(),
   'step-finished': z.object({ costUsd: z.number().min(0), skipped: z.boolean().optional(), note: z.string().optional(), outputArtifactIds: z.array(id).optional() }).strict(),
   'step-failed': z.object({ error: z.string().min(1), retryable: z.boolean() }).strict(),
-  'checkpoint-opened': z.object({ checkpointId: z.string().min(1), kind: z.enum(['pick', 'react', 'confirm', 'compare', 'directive', 'write', 'choose']) }).strict(),
+  'checkpoint-opened': z.object({ checkpointId: z.string().min(1), kind: z.enum(['pick', 'select', 'react', 'confirm', 'compare', 'directive', 'write', 'choose']) }).strict(),
   'checkpoint-resolved': z.object({ checkpointId: z.string().min(1) }).strict(),
   artifact: z.object({ artifactId: id, mediaType: z.string().min(1), label: z.string().min(1), shot: z.number().int().positive().optional() }).strict(),
   // A score (OK mode) or our rank of `of` (GREAT mode; averaged over shuffles, so not always whole).

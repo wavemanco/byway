@@ -113,6 +113,52 @@ export const scripted = recipe(
   ),
 );
 
+/** A draft, a cliché sweep, the swaps a person chose, and their keep-or-revert (the TELLS of C1, C3, C4, C5, C7). */
+export const swept = recipe(
+  'swept',
+  'prose',
+  seq(
+    build('draft'),
+    render('render'),
+    step({ id: 'sweep', role: 'tells-sweep', block: 'TELLS', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'product.test.sweep', consumes: ['view', 'tells'], produces: ['critique'] }),
+    step({ id: 'swaps', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.test.swaps', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true }),
+    render('compare-render'),
+    step({ id: 'compare', role: 'tells-compare', block: 'TELLS', actor: 'human', consumes: ['view'], produces: ['taste'] }),
+  ),
+);
+
+/** A memo the AI illustrates: image briefs, two images, then the model places them. */
+export const illustrated = recipe(
+  'illustrated',
+  'prose',
+  seq(build('memo'), step({ id: 'art', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'product.test.art', consumes: ['artifact'], produces: ['artifact'], writes: true, knobs: { slots: 2 } })),
+);
+
+/** A draft ranked by a GREAT critic over two fixed shuffles, averaged (the C5 gate's form). */
+export const twiceJudged = recipe(
+  'twice-judged',
+  'prose',
+  seq(
+    build('draft'),
+    render('render'),
+    step({ id: 'critic', role: 'critic', block: 'CRITIC', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'product.test.critic', consumes: ['view', 'refs'], produces: ['critique', 'score'], knobs: { mode: 'GREAT', refs: 4, shuffle: true, shuffles: 2 } }),
+  ),
+);
+
+/** A page, then your words on it (VOICE on a web page: one line per block of copy). */
+export const voicedPage = recipe(
+  'voiced-page',
+  'web-page',
+  seq(build('page'), step({ id: 'voice', role: 'voice', block: 'VOICE', actor: 'human', consumes: ['artifact'], produces: ['voice', 'artifact'], writes: true, knobs: { scope: 'every-line' } })),
+);
+
+/** A memo, then the owner signs off its claims (the C4 claim log). */
+export const claimLogged = recipe(
+  'claim-logged',
+  'prose',
+  seq(build('memo'), step({ id: 'claims', role: 'voice', block: 'VOICE', variant: 'claim-log', actor: 'human', consumes: ['artifact'], produces: ['voice', 'artifact'], writes: true })),
+);
+
 /** Three drafts, then a judge (pick C) or chance (pick R) keeps one. */
 const judgeStep = step({ id: 'judge', role: 'judge', actor: 'model', tier: 'big', isolated: true, prompt: 'product.test.judge', consumes: ['option_set<artifact>'], produces: ['option_set<artifact>'] });
 export const judgedPick = recipe('judged-pick', 'prose', seq(replicate('drafts', 3, build('draft')), pick('choose', 'C', 1, 'model', judgeStep)));

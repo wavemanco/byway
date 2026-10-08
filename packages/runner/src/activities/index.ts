@@ -5,6 +5,9 @@
  * Each invocation runs with liveness (liveness.ts; ENG-4, ENG-10): it heartbeats while it runs, sees a gateway that
  * makes no new provider call once it is cancelled or its run has ended, renders pages that stop when it is cancelled,
  * and afterwards brings an ended run's cost up to the ledger if it spent anything for it.
+ *
+ * A step call's provider calls are memoized under its key (memo.ts; ENG-3, ENG-12, convention C5): Temporal's retry
+ * of a step whose local work failed, or the same step run again after a budget raise, reuses what it already bought.
  */
 import type { RunnerActivities } from '../types.ts';
 import { assetStep } from './asset.ts';
@@ -13,6 +16,7 @@ import { guarded } from './failures.ts';
 import { finishHumanStep, openCheckpoint, recordResolution } from './human.ts';
 import { beginRun, cancelRun, emitEvents, failRun, finishRun, passStep, raiseBudget, rerank, setRunStatus, skipStep } from './lifecycle.ts';
 import { guardGateway, guardPages, settleLateCost, startInvocation } from './liveness.ts';
+import { memoGateway, memoScopeOf } from './memo.ts';
 import { modelStep } from './model-step.ts';
 import { relayLink, storyboardShots } from './relay.ts';
 import { renderView } from './render.ts';
@@ -25,9 +29,10 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
     async (input: I): Promise<O> => {
       const invocation = startInvocation();
       const gateway = guardGateway(deps.gateway, deps.store, invocation.signal);
+      const memo = memoScopeOf(input);
       const scoped: RunnerDeps = {
         ...deps,
-        gateway,
+        gateway: memo ? memoGateway(gateway, deps.store, memo) : gateway,
         ...(deps.pages ? { pages: guardPages(deps.pages, invocation.signal) } : {}),
         ...(invocation.signal ? { signal: invocation.signal } : {}),
       };

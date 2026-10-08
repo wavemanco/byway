@@ -5,7 +5,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { c2, c5 } from '@byway/catalog';
-import type { VideoRequest, VideoResult } from '@byway/contracts';
+import type { CompletionRequest, VideoRequest, VideoResult } from '@byway/contracts';
 import { NO_AUDIO_NOTE } from '../../src/activities/asset.ts';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { NO_COMPOSITING_NOTE, NO_VIDEO_NOTE } from '../../src/activities/relay.ts';
@@ -59,6 +59,11 @@ export function c2c5Scenarios(use: () => Harness): void {
 
       // Two vision rounds: you reacted twice, and said it was ready the second time.
       expect(ofType(view, 'loop-iteration', 'vision').map((e) => e.data.iteration)).toEqual([1, 2]);
+      // "Is this ready?" shows what it asks about: the options and the briefs the AI sharpened (ENG-8).
+      const ready = view.checkpoints.find((c) => c.prompt === READY_PROMPT)!;
+      const sharpened = (ofType(view, 'step-finished', 'sharpen')[0]!.data.outputArtifactIds as string[])[0]!;
+      expect(ready.artifactIds).toContain(sharpened);
+      expect(ready.artifactIds!.length).toBeGreaterThanOrEqual(10);
       expect(view.checkpoints.filter((c) => c.stepId === 'react')).toHaveLength(2);
       const react = view.checkpoints.find((c) => c.stepId === 'react')!;
       expect(react.artifactIds?.length).toBeGreaterThanOrEqual(9);
@@ -85,10 +90,22 @@ export function c2c5Scenarios(use: () => Harness): void {
       h.responders['critic:media'] = () => '- The payoff shot is too short.\nScore: 5/10';
       const script = 'Less time on the road.\nMore time on the trail.';
       try {
+        const headline = 'Less road. More trail.';
         const run = await h.start(c5, { problem: { text: 'A 30-second video ad for trail running shoes' } });
-        const view = await h.drive(run.id, (cp) => (cp.stepId === 'vo-script' ? { checkpointId: cp.id, text: script } : undefined));
+        const view = await h.drive(run.id, (cp) => {
+          if (cp.stepId === 'vo-script') return { checkpointId: cp.id, text: script };
+          if (cp.stepId === 'voice') return { checkpointId: cp.id, text: cp.initialText!.replace(/^Headline: .*$/m, `Headline: ${headline}`) };
+          return undefined;
+        });
         expect(view.run.status).toBe('done');
         checkEvents(view, 'c5');
+        // The late VOICE offers the on-screen copy; the voice-over, locked after the script step, is not offered (VOICE-1).
+        const late = view.checkpoints.filter((c) => c.stepId === 'voice');
+        expect(late.length).toBeGreaterThan(0);
+        for (const cp of late) {
+          expect(cp.initialText).toMatch(/^Headline: .*\nTagline: .*\nShot 1: /);
+          expect(cp.initialText).not.toContain('Less time on the road');
+        }
         const purposes = h.succeeded(run.id).map((c) => c.purpose);
         expect(purposes.filter((p) => p === 'seed:media')).toHaveLength(8);
         expect(purposes).toContain('dedupe:media');
@@ -123,8 +140,9 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(ofType(view, 'step-finished', 'matte').every((e) => e.data.skipped === true)).toBe(true);
 
         // The storyboard carries each shot's frame and the clips; your script survived every machine write.
-        const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { shot: number; imageArtifactId?: string; clipArtifactId?: string }[]; voiceover: string };
+        const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { shot: number; imageArtifactId?: string; clipArtifactId?: string }[]; voiceover: string; headline?: string };
         expect(sb.voiceover).toBe(script);
+        expect(sb.headline).toBe(headline);
         expect(sb.storyboard.every((s) => s.imageArtifactId)).toBe(true);
         expect(sb.storyboard.filter((s) => s.clipArtifactId).map((s) => s.shot)).toEqual([1, 2, 3, 4, 5]);
         // Clip and frame artifacts are announced with their shot.
@@ -143,12 +161,14 @@ export function c2c5Scenarios(use: () => Harness): void {
     }, 180_000);
 
     it('with keys but no video model, every relay link finishes skipped and says so; the storyboard and anchor pass through', async () => {
-      // GREAT mode (three references). The critic is blind (ADR-0072), so this one tells our storyboard from the
-      // reference images by its text, and ranks it second: at or above the hidden rank of 3.
+      // GREAT mode (three references). The critic is blind (ADR-0072): every item is shown the same way, as images
+      // (BLIND-1), so this test's critic finds ours by its frames, which are not among the references, and ranks it
+      // second of four: at or above the gate's middle-of-five bar scaled to four (rank 2; GATE-1).
+      const refIds: string[] = [];
       h.responders['critic:media'] = (ctx) => {
         const m = Number(/\((\d+) items, labelled/.exec(ctx.prompt)?.[1] ?? 0);
         const all = Array.from({ length: m }, (_, i) => String.fromCharCode(65 + i));
-        const ours = [...ctx.prompt.matchAll(/^### ([A-Z])\n(.*)$/gm)].find((x) => !x[2]!.startsWith('(see the images'))?.[1] ?? 'A';
+        const ours = ctx.attachments?.find((a) => a.label && !refIds.includes(a.artifactId))?.label ?? 'A';
         const others = all.filter((l) => l !== ours);
         return `### ${ours}\n- Intent: one feeling, landed.\n- The payoff shot is short.\n\nRanking: ${[others[0], ours, ...others.slice(1)].join(', ')}`;
       };
@@ -156,7 +176,6 @@ export function c2c5Scenarios(use: () => Harness): void {
       h.useKeys(true);
       try {
         const refs = [png(4, 3, [10, 20, 30]), png(4, 3, [40, 50, 60]), png(4, 3, [70, 80, 90])];
-        const refIds: string[] = [];
         for (const r of refs) refIds.push((await h.store.artifacts.put(r, 'image/png')).id);
         const run = await h.start(c5, { profileId: NO_VIDEO_PROFILE.id, problem: { text: 'A 15-second ad for a reusable coffee cup' }, inputs: { refs: refIds } });
         const view = await h.drive(run.id);
@@ -175,6 +194,8 @@ export function c2c5Scenarios(use: () => Harness): void {
         // With three references the gate's critic ranks in GREAT mode: two shuffles, our place averaged (2 of 4).
         const gate = h.succeeded(run.id).filter((c) => c.stepId === 'gate-critic');
         expect(gate).toHaveLength(2);
+        // Ours is shown as the references are, by its frames: no storyboard text, image prompts or clip lines (BLIND-1).
+        for (const g of gate) expect(JSON.stringify((g.request as CompletionRequest).messages)).not.toMatch(/Frame:|Clip: made|Voice-over:|imagePrompt/);
         expect(view.checkpoints.some((c) => c.prompt === GATE_FAILED_PROMPT)).toBe(false);
         expect(notes(view, 'gate-critic')).toEqual([undefined]);
         const note = await h.store.artifacts.getText((ofType(view, 'step-finished', 'gate-critic')[0]!.data.outputArtifactIds as string[])[0]!);
