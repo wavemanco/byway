@@ -1,9 +1,11 @@
 import { c4, c6a, presentationOf } from '@byway/catalog';
 import { composedRecipe } from '@byway/gateway';
+import { problemSlot } from '@byway/prompts/pure';
 import type { Recipe } from '@byway/recipe';
 import { recipeHash, walk } from '@byway/recipe';
 import { validate } from '@byway/validator';
 import { describe, expect, it } from 'vitest';
+import { diffFromNearest } from '../src/index.ts';
 import { demoAdvisor, fencedJson, sequence, WS } from './helpers.ts';
 
 const MEMO = { text: 'A status memo to leadership about the billing migration' };
@@ -49,8 +51,10 @@ describe('compose: success in demo mode', () => {
     expect(validate(result.recipe).ok).toBe(true);
 
     const compose = prompts.renders.find((r) => r.id === 'advisor.compose')!;
-    expect(compose.slots.problem).toContain(LONG_MEMO.text);
-    expect(compose.slots.nearest).toBe(`\`\`\`json\n${JSON.stringify(c4, null, 2)}\n\`\`\``);
+    expect(compose.slots.problem).toBe(problemSlot(LONG_MEMO));
+    // The template fences the nearest recipe itself, so the slot is the bare JSON.
+    expect(compose.slots.nearest).toBe(JSON.stringify(c4, null, 2));
+    expect(compose.rendered.user).toContain(`\`\`\`json\n${compose.slots.nearest}\n\`\`\``);
     for (const code of ['SEED', 'VISION', 'CRITIC', 'ASSET', 'RELAY', 'CUT', 'TELLS', 'VOICE']) expect(compose.slots.blocks).toContain(code);
     expect(compose.slots.blocks).toContain('Inject variety from outside the model');
     expect(compose.slots.blocks).toMatch(/refs: a whole number from 0 to 10/);
@@ -91,12 +95,44 @@ describe('compose: success in demo mode', () => {
   });
 
   it('describes the differences from the nearest recipe in plain words', async () => {
+    // The demo composer answers the nearest recipe with the smallest valid change: C4's critic loop one round shorter.
     const { advisor } = demoAdvisor();
     const { diff } = await advisor.compose(LONG_MEMO, WS);
-    expect(diff.length).toBeGreaterThan(0);
+    expect(diff).toEqual(['Changed: the repeat (critic-loop): up to 1 round instead of 2']);
+  });
+
+  it('describes a composition that rewires the nearest recipe, without quoting hidden thresholds', async () => {
+    const { advisor } = demoAdvisor({ responders: { 'advisor.compose': () => fencedJson(goodRecipe()) } });
+    const { diff, ok } = await advisor.compose(LONG_MEMO, WS);
+    expect(ok).toBe(true);
     expect(diff).toEqual(expect.arrayContaining([expect.stringMatching(/^Removed: .*\(framings\)/), expect.stringMatching(/^Removed: .*\(claim-sign-off\)/)]));
     expect(diff.some((d) => /^Changed: Your words \(voice\).*every line/.test(d))).toBe(true);
     expect(diff.join('\n')).not.toMatch(/threshold|\b8\b|\b3\b(?= or better)/);
+  });
+
+  it('records which template asked on every composer call (spec §3.3 provenance)', async () => {
+    const { advisor, gateway, prompts, ledger } = demoAdvisor();
+    await advisor.compose(LONG_MEMO, WS);
+    const refs = prompts.renders.map(({ rendered: r }) => ({ id: r.id, version: r.version, hash: r.hash, fidelity: r.fidelity }));
+    expect(refs.map((r) => r.id)).toEqual(['advisor.intake', 'advisor.compose']);
+    expect(gateway.calls.map((c) => c.prompt)).toEqual(refs);
+    expect((await ledger()).map((e) => e.prompt)).toEqual(refs);
+  });
+});
+
+describe('diffFromNearest: plain words', () => {
+  const withMax = (max: number) => {
+    const r = JSON.parse(JSON.stringify(c4)) as Recipe;
+    walk(r, (n) => {
+      if (n.op === 'loop' && n.id === 'critic-loop') n.gate.max = max;
+    });
+    return r;
+  };
+
+  it('counts rounds in the singular and the plural', () => {
+    expect(diffFromNearest(withMax(1), c4, 'Memo Polish')).toEqual(['Changed: the repeat (critic-loop): up to 1 round instead of 2']);
+    expect(diffFromNearest(withMax(3), c4, 'Memo Polish')).toEqual(['Changed: the repeat (critic-loop): up to 3 rounds instead of 2']);
+    expect(diffFromNearest(c4, withMax(1), 'Memo Polish')).toEqual(['Changed: the repeat (critic-loop): up to 2 rounds instead of 1']);
   });
 });
 
@@ -110,8 +146,51 @@ describe('compose: repair and rejection', () => {
     expect(result.ok).toBe(true);
     const sent = prompts.renders.find((r) => r.id === 'advisor.compose.repair')!;
     expect(sent.slots.violations).toMatch(/COMPOSED-VOICE/);
-    // The repair turn continues the conversation: the model sees its own recipe, then the violations.
-    expect(gateway.calls[2]!.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    const compose = prompts.renders.find((r) => r.id === 'advisor.compose')!;
+    for (const slot of ['problem', 'blocks', 'nearest'] as const) expect(sent.slots[slot]).toBe(compose.slots[slot]);
+  });
+
+  it('shows the repair the recipe that failed, as the advisor read it (the artifact slot)', async () => {
+    const { advisor, prompts } = demoAdvisor({
+      responders: { 'advisor.compose': () => fencedJson({ ...withoutVoice(), hash: `sha256:${'1'.repeat(64)}`, channel: 'protocol' }), 'advisor.compose.repair': () => fencedJson(goodRecipe()) },
+      advisor: { newId: () => 'composed-fresh01' },
+    });
+    await advisor.compose(MEMO, WS);
+    const sent = prompts.renders.find((r) => r.id === 'advisor.compose.repair')!;
+    const failed = JSON.parse(sent.slots.artifact ?? 'null') as Record<string, unknown>;
+    // The forced fields as the advisor will register them, and no hash (the template says to leave it out).
+    expect(failed).toMatchObject({ id: 'composed-fresh01', kind: 'composed', channel: 'workspace', family: 'C4', stages: withoutVoice().stages });
+    expect(failed).not.toHaveProperty('hash');
+    expect(sent.rendered.user).toContain(`\`\`\`json\n${sent.slots.artifact}\n\`\`\``);
+  });
+
+  it('asks for each repair in a fresh turn of its own template, so the ledger names the prompt that was sent', async () => {
+    const { advisor, gateway, prompts } = demoAdvisor({ responders: { 'advisor.compose': () => fencedJson(withoutVoice()), 'advisor.compose.repair': () => fencedJson(withoutVoice()) } });
+    await advisor.compose(MEMO, WS);
+    const repairs = prompts.renders.filter((r) => r.id === 'advisor.compose.repair');
+    const calls = gateway.calls.filter((c) => c.purpose === 'advisor.compose.repair');
+    expect(calls).toHaveLength(2);
+    calls.forEach((call, i) => {
+      const r = repairs[i]!.rendered;
+      expect(call.prompt).toEqual({ id: r.id, version: r.version, hash: r.hash, fidelity: r.fidelity });
+      expect(call.system).toBe(r.system);
+      expect(call.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: r.user }] }]);
+    });
+  });
+
+  it('cannot let a backtick run in a model-written answer close the fence around it', async () => {
+    const title = 'Memo ```json with ```` fences';
+    // A recipe that parsed (its own fence is longer than any run inside), and an answer whose fence the title broke.
+    const parsed = `\`\`\`\`\`json\n${JSON.stringify({ ...withoutVoice(), title }, null, 2)}\n\`\`\`\`\``;
+    const broken = fencedJson({ ...withoutVoice(), title });
+    for (const answer of [parsed, broken]) {
+      const { advisor, prompts } = demoAdvisor({ responders: { 'advisor.compose': () => answer, 'advisor.compose.repair': () => fencedJson(goodRecipe()) } });
+      expect((await advisor.compose(MEMO, WS)).ok).toBe(true);
+      const sent = prompts.renders.find((r) => r.id === 'advisor.compose.repair')!;
+      expect(sent.slots.artifact).not.toContain('`');
+      const shown = JSON.parse(sent.slots.artifact ?? 'null') as { title: string } | string;
+      expect(typeof shown === 'string' ? shown : shown.title).toBe(answer === parsed ? title : answer);
+    }
   });
 
   it('repairs at most twice, then rejects with the violations and never offers the recipe', async () => {
@@ -124,10 +203,14 @@ describe('compose: repair and rejection', () => {
     expect(result.label.scope).toBe('Composed');
   });
 
-  it('treats an answer that is not JSON as a violation to repair', async () => {
-    const { advisor } = demoAdvisor({ responders: { 'advisor.compose': () => 'Here is my idea: draft, then critique.', 'advisor.compose.repair': () => fencedJson(goodRecipe()) } });
+  it('treats an answer that is not JSON as a violation to repair, showing the answer as a JSON string', async () => {
+    const idea = 'Here is my idea: draft, then critique.';
+    const { advisor, prompts } = demoAdvisor({ responders: { 'advisor.compose': () => idea, 'advisor.compose.repair': () => fencedJson(goodRecipe()) } });
     const result = await advisor.compose(MEMO, WS);
     expect(result.ok).toBe(true);
+    const sent = prompts.renders.find((r) => r.id === 'advisor.compose.repair')!;
+    expect(JSON.parse(sent.slots.artifact ?? 'null')).toBe(idea);
+    expect(sent.slots.violations).toMatch(/FORMAT/);
   });
 
   it('fails clearly when no answer was ever shaped like a recipe', async () => {

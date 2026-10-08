@@ -1,20 +1,20 @@
-import type { ProblemBrief } from '@byway/contracts';
-
 /**
- * Text helpers for prompts and answers, following the shared conventions of product spec §3.3 (the same layout the
- * prompts package and the gateway's mock use; the advisor does not depend on @byway/prompts, so the few it needs are
- * here).
+ * Text helpers for slots and answers, following the shared conventions of product spec §3.3. Slot layouts that the
+ * runner and the mock also rely on (the problem slot, labelled options) come from @byway/prompts' pure helpers, so they
+ * cannot drift; what is here is the advisor's own: JSON slots and reading answers.
  */
 
-/** A fence its content cannot close: one backtick longer than the longest run inside, and at least three. */
-export function fenceFor(text: string): string {
-  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
-  return '`'.repeat(Math.max(3, longest + 1));
-}
+/** The six characters of the JSON escape for a backtick (backslash, u, 0060), built from char codes to be unmistakable. */
+const ESCAPED_BACKTICK = String.fromCharCode(92) + 'u0060';
 
-export function fenced(lang: string, body: string): string {
-  const f = fenceFor(body);
-  return `${f}${lang}\n${body.replace(/\n+$/, '')}\n${f}`;
+/**
+ * A JSON value for a slot the template already puts inside a ```json fence (`questions`, `nearest`, `artifact`):
+ * pretty-printed, with every backtick written as the JSON escape \u0060. In JSON a backtick can only occur inside a
+ * string, where the escape stands for the same character, so the value parses the same, while no run of backticks in
+ * it (a model-written title, say) can close the template's fence early.
+ */
+export function jsonSlot(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(/`/g, ESCAPED_BACKTICK);
 }
 
 /** The last fenced block of a language (```json … ```), or undefined when there is none. */
@@ -41,22 +41,6 @@ export function answerJson(text: string): unknown {
 /** An answer that does not meet its output contract; the message goes back to the model on the retry. */
 export class ContractError extends Error {
   override name = 'ContractError';
-}
-
-/**
- * The `problem` slot: the user's words, then the brief fields they gave, then pasted material, each fenced. Templates
- * put it inside <problem>…</problem> (the shared convention), so the slot itself carries no tags.
- */
-export function problemText(p: ProblemBrief): string {
-  const parts = [p.text.trim()];
-  const fields = [
-    ...(p.deliverable ? [`Deliverable: ${p.deliverable}`] : []),
-    ...(p.audience ? [`Audience: ${p.audience}`] : []),
-    ...(p.constraints?.length ? ['Constraints:', ...p.constraints.map((c) => `- ${c}`)] : []),
-  ];
-  if (fields.length) parts.push(fields.join('\n'));
-  for (const a of p.attachments ?? []) parts.push(`Attachment: ${a.name}\n${fenced('', a.text)}`);
-  return parts.join('\n\n');
 }
 
 export function oneLine(text: string): string {

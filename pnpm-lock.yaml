@@ -79,6 +79,9 @@ importers:
       '@byway/gateway':
         specifier: workspace:*
         version: link:../gateway
+      '@byway/prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@byway/protocol':
         specifier: workspace:*
         version: link:../protocol

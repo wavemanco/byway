@@ -1,5 +1,6 @@
 import { CHOOSER, c3, presentationOf } from '@byway/catalog';
 import type { ChooserAnswer } from '@byway/contracts';
+import { problemSlot } from '@byway/prompts/pure';
 import { describe, expect, it } from 'vitest';
 import { AdvisorError } from '../src/index.ts';
 import { demoAdvisor, fencedJson, sequence, WS } from './helpers.ts';
@@ -33,21 +34,36 @@ describe('recommend: representative problems in demo mode', () => {
     expect(rec.recipeHash).toBe(advisor.recipe(expected)?.hash);
   });
 
-  it('asks the intake once, with the problem in <problem> and the questions as a fenced json array', async () => {
+  it('asks the intake once, with the problem slot laid out by @byway/prompts and the questions as JSON the template fences', async () => {
     const { advisor, gateway, prompts } = demoAdvisor();
-    await advisor.recommend({ text: 'A landing page for my bakery', audience: 'Local families', attachments: [{ name: 'notes.txt', text: 'Open 7–3.' }] }, WS);
+    const brief = { text: 'A landing page for my bakery', audience: 'Local families', attachments: [{ name: 'notes.txt', text: 'Open 7–3.' }] };
+    await advisor.recommend(brief, WS);
     expect(gateway.calls.map((c) => c.purpose)).toEqual(['advisor.intake']);
     expect(gateway.calls[0]).toMatchObject({ workspaceId: 'ws-1', profileId: 'demo' });
     expect(prompts.renders).toHaveLength(1);
-    const { id, slots } = prompts.renders[0]!;
+    const { id, slots, rendered } = prompts.renders[0]!;
     expect(id).toBe('advisor.intake');
-    expect(slots.problem).toContain('A landing page for my bakery');
-    expect(slots.problem).toContain('Audience: Local families');
-    expect(slots.problem).toContain('Attachment: notes.txt');
-    const block = /^```json\n([\s\S]*)\n```$/.exec(slots.questions ?? '');
-    expect(JSON.parse(block?.[1] ?? 'null')).toEqual(CHOOSER.map((q) => ({ id: q.id, routesTo: q.routesTo, text: q.text })));
+    expect(slots.problem).toBe(problemSlot(brief));
+    // The template puts the slot inside its own ```json fence, so the slot is the bare JSON array.
+    expect(JSON.parse(slots.questions ?? 'null')).toEqual(CHOOSER.map((q) => ({ id: q.id, routesTo: q.routesTo, text: q.text })));
+    expect(rendered.user).toContain(`\`\`\`json\n${slots.questions}\n\`\`\``);
+    expect(rendered.user).not.toContain('```json\n```');
     const sent = gateway.calls[0]!.messages[0]!.content[0];
-    expect(sent?.type === 'text' && sent.text).toContain('<problem>A landing page for my bakery');
+    expect(sent?.type === 'text' && sent.text).toBe(rendered.user);
+    expect(gateway.calls[0]!.system).toBe(rendered.system);
+    expect(rendered.user).toContain('<problem>\nA landing page for my bakery');
+  });
+
+  it('records which template asked on every intake call, retries included (spec §3.3 provenance)', async () => {
+    const intake = sequence('I think it is a landing page.', intakeAnswer({ visual: 0.9 }));
+    const { advisor, gateway, prompts, ledger } = demoAdvisor({ responders: { 'advisor.intake': intake } });
+    await advisor.recommend({ text: 'x' }, WS);
+    const { rendered } = prompts.renders[0]!;
+    const ref = { id: rendered.id, version: rendered.version, hash: rendered.hash, fidelity: rendered.fidelity };
+    expect(ref).toMatchObject({ id: 'advisor.intake', fidelity: 'project' });
+    expect(ref.hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(gateway.calls.map((c) => c.prompt)).toEqual([ref, ref]);
+    expect((await ledger()).map((e) => e.prompt)).toEqual([ref, ref]);
   });
 
   it('returns one answer per chooser question, set by the intake, with rationales', async () => {
@@ -186,5 +202,35 @@ describe('recommend: reading the intake answer', () => {
     expect(rec.routes).toEqual({ draft: 'own' });
     const { advisor: a2 } = demoAdvisor({ responders: { 'advisor.intake': () => intakeAnswer({ series: 0.9 }, { draft: 'ghostwriter' }) } });
     expect((await a2.recommend({ text: 'x' }, WS)).routes).toEqual({});
+  });
+});
+
+describe('recommend: route choices from an earlier recommendation (opts.routes)', () => {
+  /** A complete set of user answers: yes to exactly these questions. */
+  const allAnswers = (...yes: string[]) => CHOOSER.map((q) => userAnswer(q.id, yes.includes(q.id)));
+
+  it('keeps them when the answers are complete and no intake call is made', async () => {
+    const { advisor, gateway } = demoAdvisor();
+    const rec = await advisor.recommend({ text: 'x' }, { ...WS, answers: allAnswers('series'), routes: { draft: 'own' } });
+    expect(gateway.calls).toHaveLength(0);
+    expect([rec.recipeId, rec.routes]).toEqual(['c3', { draft: 'own' }]);
+  });
+
+  it("keeps only the chosen recipe's routes and branches", async () => {
+    const { advisor } = demoAdvisor();
+    const routes = { draft: 'own', entry: 'seed', other: 'x' };
+    expect((await advisor.recommend({ text: 'x' }, { ...WS, answers: allAnswers('series'), routes })).routes).toEqual({ draft: 'own' });
+    // Flipped to a recipe without that route: nothing applies.
+    expect((await advisor.recommend({ text: 'x' }, { ...WS, answers: allAnswers('fiction'), routes })).routes).toEqual({});
+    expect((await advisor.recommend({ text: 'x' }, { ...WS, answers: allAnswers('series'), routes: { draft: 'ghostwriter' } })).routes).toEqual({});
+  });
+
+  it("uses the fresh intake's route choices, not the caller's, when the intake runs", async () => {
+    const { advisor, gateway } = demoAdvisor({ responders: { 'advisor.intake': () => intakeAnswer({ series: 0.9 }, { draft: 'ai' }) } });
+    const rec = await advisor.recommend({ text: 'x' }, { ...WS, answers: [userAnswer('series', true)], routes: { draft: 'own' } });
+    expect(gateway.calls).toHaveLength(1);
+    expect(rec.routes).toEqual({ draft: 'ai' });
+    const silent = demoAdvisor({ responders: { 'advisor.intake': () => intakeAnswer({ series: 0.9 }) } });
+    expect((await silent.advisor.recommend({ text: 'x' }, { ...WS, answers: [userAnswer('series', true)], routes: { draft: 'own' } })).routes).toEqual({});
   });
 });

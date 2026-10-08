@@ -2,7 +2,7 @@ import * as catalog from '@byway/catalog';
 import type { Advisor } from '@byway/contracts';
 import { describe, expect, it } from 'vitest';
 import { createAdvisor } from '../src/index.ts';
-import { demoAdvisor, demoGateway, fakePrompts, WS } from './helpers.ts';
+import { demoAdvisor, demoGateway, recordingPrompts, WS } from './helpers.ts';
 
 describe('the Advisor contract', () => {
   const { advisor } = demoAdvisor();
@@ -30,11 +30,11 @@ describe('the Advisor contract', () => {
 
   it('accepts the catalog package itself, or a smaller catalog', async () => {
     const gateway = demoGateway();
-    const whole = createAdvisor({ gateway, prompts: fakePrompts().renderer, catalog });
+    const whole = createAdvisor({ gateway, prompts: recordingPrompts().renderer, catalog });
     expect(whole.catalog()).toHaveLength(8);
     const small = createAdvisor({
       gateway,
-      prompts: fakePrompts().renderer,
+      prompts: recordingPrompts().renderer,
       catalog: { ...catalog, CHOOSER: catalog.CHOOSER.filter((q) => q.id === 'fiction') },
     });
     expect(small.questions().map((q) => q.id)).toEqual(['fiction']);

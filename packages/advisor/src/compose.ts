@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import type { ChatMessage, Gateway, ProblemBrief, PromptRenderer } from '@byway/contracts';
+import type { Gateway, ProblemBrief, PromptRenderer } from '@byway/contracts';
+import { problemSlot } from '@byway/prompts/pure';
 import { parseRecipe, RECIPE_SCHEMA_ID, withHash, type Recipe } from '@byway/recipe';
 import { validate } from '@byway/validator';
 import { z } from 'zod';
-import { assistantText, truncation, userText } from './ask.ts';
+import { fromTemplate, truncation } from './ask.ts';
 import { blocksListing } from './blocks.ts';
 import { checkComposedProfile, COMPOSED_RULES } from './profile.ts';
-import { answerJson, ContractError, fenced, problemText } from './text.ts';
+import { answerJson, ContractError, jsonSlot } from './text.ts';
 
 /**
  * The composer (product spec §4, ADR-0058): design-time only. A model gets the block registry and the nearest
@@ -33,6 +34,11 @@ export interface Violation {
 export interface Candidate {
   /** The recipe as the advisor would register it, when the answer parsed against the schema. */
   recipe?: Recipe;
+  /**
+   * The answer's JSON object with the forced fields applied (and no hash), whether or not it met the schema: what a
+   * repair is shown as the recipe that failed. Undefined when the answer held no JSON object.
+   */
+  draft?: Record<string, unknown>;
   violations: Violation[];
 }
 
@@ -90,19 +96,21 @@ export function checkAnswer(text: string, nearest: Recipe, deps: Pick<ComposeDep
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { violations: [{ ruleId: 'FORMAT', message: 'the answer must be one JSON object holding a byway.recipe/1 recipe' }] };
 
+  const draft = forceComposed(raw as Record<string, unknown>, nearest, id);
   let recipe: Recipe;
   try {
-    recipe = withHash(parseRecipe(forceComposed(raw as Record<string, unknown>, nearest, id)));
+    recipe = withHash(parseRecipe(draft));
   } catch (e) {
     if (!(e instanceof z.ZodError)) throw e;
     return {
+      draft,
       violations: e.issues.slice(0, MAX_SCHEMA_ISSUES).map((i) => ({ ruleId: 'SCHEMA', path: i.path.map(String).join('.') || '(recipe)', message: i.message })),
     };
   }
   const verdict = validate(recipe);
   const fromValidator: Violation[] = verdict.violations.map((v) => ({ ruleId: v.ruleId, path: v.path, message: v.message }));
   const fromProfile: Violation[] = checkComposedProfile(recipe, { nearest, catalog: deps.catalog, prompts: deps.prompts });
-  return { recipe, violations: merge(fromValidator, fromProfile) };
+  return { recipe, draft, violations: merge(fromValidator, fromProfile) };
 }
 
 /** The `violations` slot: one line per violation, with its rule and place. */
@@ -118,14 +126,25 @@ export interface ComposeOutcome {
 }
 
 /**
- * Compose a recipe near `nearest`: one compose call and up to two repairs. Each repair continues the conversation, so
- * the model sees the recipe it wrote and then what is wrong with it.
+ * The repair's `artifact` slot: the recipe that failed, as the advisor read it (forced fields applied, no hash), so the
+ * model repairs what would actually be registered. An answer that held no JSON object goes in as a JSON string of its
+ * text: the template fences the slot as json, and the model still sees what it wrote.
+ */
+export function failedSlot(answer: string, candidate: Candidate): string {
+  return jsonSlot(candidate.draft ?? answer);
+}
+
+/**
+ * Compose a recipe near `nearest`: one compose call and up to two repairs. Each repair is a fresh call rendered from
+ * the repair template, which carries everything it needs (the problem, the blocks, the nearest recipe, the recipe that
+ * failed and the violations). A fresh turn rather than a continued conversation keeps the ledger's prompt ref true to
+ * what was sent, and does not pay for the blocks and the nearest recipe twice.
  */
 export async function composeRecipe(deps: ComposeDeps, problem: ProblemBrief, nearest: Recipe, opts: { workspaceId: string; profileId: string }): Promise<ComposeOutcome> {
-  const slots = { problem: problemText(problem), blocks: blocksListing(deps.catalog), nearest: fenced('json', JSON.stringify(nearest, null, 2)) };
-  const first = deps.prompts.render(COMPOSE_PROMPT, slots);
+  // The templates fence the nearest recipe as json themselves, so the slot is the bare JSON.
+  const slots = { problem: problemSlot(problem), blocks: blocksListing(deps.catalog), nearest: jsonSlot(nearest) };
   const id = (deps.newId ?? freshComposedId)();
-  let messages: ChatMessage[] = [userText(first.user)];
+  let prompt = deps.prompts.render(COMPOSE_PROMPT, slots);
   let best: Candidate | undefined;
   let last: Candidate = { violations: [] };
 
@@ -135,8 +154,7 @@ export async function composeRecipe(deps: ComposeDeps, problem: ProblemBrief, ne
       profileId: opts.profileId,
       purpose: attempt === 0 ? COMPOSE_PROMPT : REPAIR_PROMPT,
       tier: COMPOSE_TIER,
-      ...(first.system ? { system: first.system } : {}),
-      messages,
+      ...fromTemplate(prompt),
       maxOutputTokens: COMPOSE_MAX_OUTPUT_TOKENS,
     });
     const cut = truncation(result);
@@ -144,8 +162,7 @@ export async function composeRecipe(deps: ComposeDeps, problem: ProblemBrief, ne
     if (last.recipe) best = last;
     if (last.recipe && last.violations.length === 0) return { recipe: last.recipe, ok: true, violations: [] };
     if (attempt === MAX_REPAIRS) break;
-    const repair = deps.prompts.render(REPAIR_PROMPT, { ...slots, violations: violationsSlot(last.violations) });
-    messages = [...messages, assistantText(result.text.trim() ? result.text : '(empty answer)'), userText(repair.user)];
+    prompt = deps.prompts.render(REPAIR_PROMPT, { ...slots, artifact: failedSlot(result.text, last), violations: violationsSlot(last.violations) });
   }
   // Never offered: report the last recipe that parsed, with its own violations.
   return best?.recipe ? { recipe: best.recipe, ok: false, violations: best.violations } : { ok: false, violations: last.violations };
