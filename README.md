@@ -44,6 +44,7 @@ Keys are read from the process environment (a key exported in your shell wins ov
 | `pnpm demo` | The same with the mock provider forced on: sample outputs, no AI calls, nothing charged |
 | `pnpm dev` | Contributor mode, with hot reload: `next dev` runs inside byway's own server on 127.0.0.1:3000, which checks every request and WebSocket first and is the only port the web app listens on (see Architecture). `pnpm dev -- --demo` forces the mock |
 | `pnpm e2e` | The Playwright end-to-end suite: starts `pnpm demo` on a temp data directory and free ports, with the web app built into its own folder (`apps/web/.next-e2e`) so a byway you are running is not rebuilt under you; runs C1, C3, C4, C5 and C6a from a typed problem to the Result screen, then stops it and cleans up |
+| `pnpm verify` | The checks to run before a merge: the typecheck, the unit tests, then the end-to-end suite, stopping at the first failure. Nothing runs it automatically (no CI service is set up) |
 | `pnpm vitest run` (or `pnpm test`) | Unit, integration, conformance and guard tests for every package and the app |
 | `pnpm -s typecheck` | TypeScript across the packages, the scripts and the app |
 | `pnpm --filter ./apps/web run build` | Production build of the web app |
@@ -86,17 +87,55 @@ Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Win
 | File | Contents |
 |---|---|
 | `byway.sqlite` | Workspaces, intakes, runs, run events, checkpoints, preferences |
+| `byway.sqlite-wal`, `byway.sqlite-shm` | SQLite's write-ahead log and its index, present while byway runs (and after a crash). Recent commits sit in the `-wal` file until SQLite folds them into `byway.sqlite`, so together they are one database |
 | `artifacts/sha256/…` | Every artifact (pages, documents, renders, images, clips), content-addressed |
 | `ledger.jsonl` | One hash-chained entry per model, image or video call: purpose, model, usage, cost (bodies by hash) |
-| `temporal.sqlite` | The local Temporal server's state, so runs survive a restart |
+| `ledger.jsonl.head` | The ledger's last entry, so a cut-off ledger is detectable |
+| `exposure.jsonl` | The exposure register (CR12): the first time each model outside the Anthropic family judged work in a given role, per workspace |
+| `temporal.sqlite` | The local Temporal server's state, so runs survive a restart (with any `temporal.sqlite-*` files beside it) |
+| `bin/` | byway's own copy of the Temporal CLI, downloaded again when missing |
+
+## Back up and restore
+
+The backup unit is the whole data directory, copied while byway is stopped ([ADR-0094](docs/adr/0094-backup-unit-is-the-data-directory.md)). A copy of `byway.sqlite` alone is not a backup: while byway runs, recent commits sit in `byway.sqlite-wal`, and the main file can lack them entirely.
+
+**Back up**
+
+1. Stop byway (Ctrl+C) and wait until it has exited.
+2. Check that the run engine has stopped too. A Temporal server left over from a byway that did not stop cleanly can still be writing `temporal.sqlite`. Nothing may listen on the engine's port (`BYWAY_TEMPORAL_PORT`, default 7233; put yours in the commands below), and no `temporal-sdk-typescript-*` process may be running:
+   - Windows (PowerShell): `Get-NetTCPConnection -LocalPort 7233 -State Listen -ErrorAction SilentlyContinue` and `Get-Process temporal-sdk-typescript-* -ErrorAction SilentlyContinue` print nothing.
+   - macOS and Linux: `lsof -nP -iTCP:7233 -sTCP:LISTEN` and `pgrep -fl temporal-sdk-typescript` print nothing.
+3. Copy the whole data directory, every file and folder in it. `bin/` may be left out; byway downloads the Temporal CLI again when it is missing.
+
+**Restore**
+
+1. Stop byway and check that the engine has stopped, as above.
+2. Move the current data directory aside (or delete it), then copy the whole backup into its place. Do not copy a backup over a live directory or merge the two.
+3. Start byway.
+
+**Mixing files from different backups is not supported.** byway does not detect most mixes, and each one fails differently:
+
+- An older or missing `ledger.jsonl` (or `ledger.jsonl.head`): spend recorded after the backup is gone, so the run and workspace caps count from the older total, or from zero when the file is missing.
+- A `byway.sqlite` older than `temporal.sqlite`: runs the engine has and the store does not are left in the engine, and byway does not notice them.
+- A `temporal.sqlite` older than `byway.sqlite`, or missing: runs the store shows as going that the engine does not have end at the next start, with a plain message.
+- An engine ahead of the store on the same run: the run waits on a question the store does not have, and nothing reports it.
+- Missing files under `artifacts/`: a missing page, document or image is found only when something opens it.
+- An older `exposure.jsonl`: the register forgets which outside model families judged work after the backup, so the research side cannot rely on it for that period (CR12).
+
+**Spend after a restore.** byway counts spend from `ledger.jsonl`. After restoring an older backup, calls made since that backup are not counted against the run and workspace caps, so byway can spend that amount again before a cap stops it. Check your providers' own dashboards for what was actually spent. This caveat stays until the fix for review finding F03 (durable spend accounting) lands.
 
 ## Tests
 
 ```bash
-pnpm vitest run     # all packages and the app; no network, no real keys (fakes, the gateway's mock, temp folders)
+pnpm verify         # all three below, in order, stopping at the first failure
 pnpm -s typecheck
+pnpm vitest run     # all packages and the app: no model or provider calls, no real keys (fakes, the gateway's mock, temp folders)
 pnpm e2e            # Playwright, demo mode, production server, temp data directory, non-default ports
 ```
+
+The unit run is not self-contained. The renderer tests launch Playwright's Chromium, so install it once (`pnpm --filter ./apps/web exec playwright install chromium`). The engine tests start a local Temporal dev server, and the Temporal CLI is downloaded once when no cached copy exists, so the first run needs the network.
+
+No CI service runs these checks. `pnpm verify` is the gate to run before merging.
 
 The end-to-end suite sets stand-in provider keys and fails if any of them appears in a request, a response or the web build's folder.
 
@@ -107,7 +146,7 @@ The end-to-end suite sets stand-in provider keys and fails if any of them appear
 | [protocol/](protocol/README.md) | The protocol: blocks, grammar, configurations C1–C7 and C6a, use-case evidence, More to Explore, runbook, sources, and a visual map |
 | [docs/superpowers/specs/2026-10-07-product-v1-design.md](docs/superpowers/specs/2026-10-07-product-v1-design.md) | The product v1 design: architecture, how runs execute, recommending and composing, UX, credibility guardrails |
 | [docs/superpowers/specs/2026-10-07-engine-recipe-core-design.md](docs/superpowers/specs/2026-10-07-engine-recipe-core-design.md) | The engine's recipe core (Milestone 0) |
-| [docs/adr/](docs/adr/README.md) | Every architectural decision, with honest provenance (who decided, when, alternatives, evidence); the product's are ADR-0064 to ADR-0072 |
+| [docs/adr/](docs/adr/README.md) | Every architectural decision, with honest provenance (who decided, when, alternatives, evidence). The product's, from ADR-0064 on, are listed under [System](docs/adr/README.md#system) and [Product & program](docs/adr/README.md#product--program) |
 | [docs/research/](docs/research/) | Research reports behind the decisions: protocol build reviews, harness and study research, and the credibility red team |
 
 ## Two tracks, one engine
