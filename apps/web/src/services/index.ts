@@ -55,6 +55,8 @@ export interface Context {
   /** The model profile runs and estimates use: always 'demo' in demo mode, else the one chosen in Settings. */
   profileId: string;
   preferences: Preferences;
+  /** Started with `pnpm demo` (BYWAY_DEMO=1): demo mode cannot be switched off in Settings. */
+  demoForced: boolean;
 }
 
 /**
@@ -69,5 +71,5 @@ export async function getContext(): Promise<Context> {
   const preferences = await h.store.getPreferences(workspace.id);
   const services = h.services(h.demoForced || preferences.demoMode);
   const profileId = runProfileId(services.mode, preferences.profileId, services.gateway.profileStatus());
-  return { services, workspaceId: workspace.id, profileId, preferences };
+  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced };
 }

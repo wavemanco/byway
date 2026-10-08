@@ -112,6 +112,10 @@ test('Settings in demo mode: the banner, the demo profile, and providers shown w
   await expect(page.getByRole('note')).toContainText('Demo mode — sample outputs, no AI calls');
   await expect(page.getByRole('heading', { name: 'Providers' })).toBeVisible();
   await expect(page.locator('.providers')).toContainText('Anthropic');
+  // Started with pnpm demo: demo mode is on and cannot be switched off here.
+  const demo = page.getByRole('switch', { name: 'Demo mode' });
+  await expect(demo).toBeChecked();
+  await expect(demo).toBeDisabled();
   expect(keys.checked()).toBeGreaterThan(0);
   expect(keys.leaks).toEqual([]);
 });

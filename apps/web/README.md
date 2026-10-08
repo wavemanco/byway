@@ -3,26 +3,53 @@
 The byway product app (product spec §5): describe a problem, get a recipe, run it with the AI doing the AI
 steps and you doing yours, and take the deliverable away. Next.js 16 App Router, React 19, TypeScript.
 
+Start it from the repo root, which also starts the run engine the app needs:
+
 ```sh
-pnpm --filter ./apps/web dev      # http://127.0.0.1:3000 (loopback only)
-pnpm --filter ./apps/web build
-pnpm --filter ./apps/web start
-pnpm --filter ./apps/web typecheck
+pnpm demo        # sample outputs, no AI calls, nothing charged
+pnpm dev         # real models, with keys in .env.agents at the repo root (never committed)
+pnpm e2e         # the Playwright suite against a fresh pnpm demo
 ```
 
-`BYWAY_DEMO_STEP_MS` sets the length of one demo step (default 900 ms).
+Inside this folder: `pnpm build` (production build), `pnpm typecheck`. `next dev` on its own serves the screens,
+but runs cannot start or take answers without the engine (the app answers 503 and says how to start it).
 
 ## Layout
 
 | Path | What lives there |
 |---|---|
-| `app/` | Screens (Start, Recommendation, Run, Result, Library, History, Settings), route handlers under `app/api`, and the artifact route `app/artifacts/[id]` |
-| `src/services/` | **The seam.** `getServices()` returns `{ advisor, runner, store, gateway, mode }`: the four `@byway/contracts` interfaces and nothing else. Screens and route handlers reach data only through it |
-| `src/services/demo/` | In-memory fakes of the four contracts (v3): a keyword advisor over a built-in copy of the eight presentations (with `stepIds`), a timer-driven runner whose scripts open every checkpoint kind, a store with intakes and preferences, and a mock gateway whose video call returns a labelled placeholder clip |
-| `src/server/` | Route-handler logic as plain functions (`api.ts`, tested against the demo services), the loopback/CSRF guard used by `proxy.ts`, artifact headers, request schemas, storing your examples (`refs.ts`) |
+| `app/` | Screens (Start, Recommendation, Run, Result, Library, History, Settings), route handlers under `app/api`, and the artifact routes `app/artifacts/[id]` and `app/api/artifacts/[id]` |
+| `src/services/` | **The seam.** `getContext()` / `getServices()` return `{ advisor, runner, store, gateway, mode }`: the four `@byway/contracts` interfaces and nothing else. Screens and route handlers reach data only through it. Server-only |
+| `src/server/` | Route-handler logic as plain functions (`api.ts`), the loopback/CSRF guard used by `proxy.ts`, artifact headers, request schemas, storing your examples (`refs.ts`) |
 | `src/view/` | Pure view models: the step index and timeline, the cost meter, checkpoint panels, labels, formatting, the claims rule. Unit-tested in `test/` |
 | `src/components/` | Client and shared components; `run/panels/` holds one "Your turn" panel per checkpoint kind |
 | `app/styles/` | Tokens (light and dark), base, components, screens, run |
+| `test/` | Unit tests (vitest), the guard tests (`guard-claims`, `guard-boundaries`) and fixtures: the real services on a temp folder with a fake Runner |
+| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode |
+
+## How the app gets its services
+
+`src/services/index.ts` builds one set per server process (kept on `globalThis`, so hot reload does not open a second
+database handle):
+
+- **Store**: `@byway/store` in the data directory (`BYWAY_DATA_DIR`, else `%LOCALAPPDATA%\byway` or `~/.byway`).
+- **Gateway**: `@byway/gateway` with its hash-chained ledger in the data directory, the store's artifacts, the
+  workspace and run budgets from the store as spend caps, and keys from the environment (`.env.agents` at the repo
+  root fills in what the shell has not set). The mock answers every call when `BYWAY_DEMO=1` (`pnpm demo`) or when
+  demo mode is on in Settings; the app keeps one gateway per setting, so switching demo mode applies at once.
+- **Prompts and advisor**: `@byway/prompts` and `@byway/advisor` over `@byway/catalog`.
+- **Runner**: a Temporal client of the engine that `pnpm dev` / `pnpm demo` started (`BYWAY_TEMPORAL_ADDRESS`),
+  through `@byway/runner/client` only, so the worker, esbuild and Playwright never load in the web process. It
+  connects on first use; reading a run needs only the store.
+
+`mode` is `demo` when the mock is forced, when demo mode is on, or when no real profile has keys. In demo mode runs and
+estimates use the `demo` profile, so the worker answers them with the mock too.
+
+**Bundling.** The engine packages are not bundled: `src/services/engine.ts` imports them at run time with
+`turbopackIgnore`, and Node loads them (it strips their TypeScript itself; workspace packages resolve to their real
+paths outside `node_modules`). Turbopack would otherwise compile them as app source, which breaks the prompt
+templates (read from the package folder), `node:sqlite` and the Temporal client. Provider SDKs and
+`@temporalio/client` are listed in `serverExternalPackages` as a second line.
 
 ## How the app uses the contracts
 
@@ -35,24 +62,19 @@ pnpm --filter ./apps/web typecheck
 - **Examples you admire** (ADR-0071): for a recipe whose inputs include `refs`, the Recommendation screen takes
   pasted text or PNG, JPEG and WebP images (`POST /api/refs` stores each as an artifact, checking an image's bytes
   against its type) and passes their ids as `StartRunInput.inputs.refs`.
+- **Generated media**: pages and Markdown reference generated images at `/api/artifacts/<id>` (spec §3.3), which
+  serves the same bytes and headers as `/artifacts/<id>`; a generated page's CSP allows both.
 - **Video** (ADR-0069): Settings shows `ProfileStatus.video` for the chosen profile; a storyboard shows each
   shot's frame and clip, a real clip (`video/*`) in a video element and the demo's placeholder (`image/svg+xml`)
   as an image. Steps finished as skipped say "Skipped" and their note on the Run and Result screens.
 
-Logic that the demo and the real services both need sits in view code, not in a service:
+Logic on top of the contracts sits in view code:
 
 - `src/view/steps.ts` maps run events to plain labels through the presentation's `stepIds`; with the recipe, an
   operator's events (a loop's rounds, an optional's question) go to the shown step of its first step.
 - `src/view/timeline.ts` folds events into one row per shown step, with rounds when a step comes back.
 - `src/view/meter.ts` reads spend and budget from `cost` events, falling back to the run record.
-- `src/view/run.ts` treats a question as yours only while its run has not ended (the store keeps a cancelled
-  run's last question open, since it accepts only real answers).
-
-## Phase 3: swapping in the real packages
-
-Replace `createDemoServices()` in `src/services/index.ts` with `@byway/advisor`, `@byway/runner`, `@byway/store`
-and `@byway/gateway`, and set `mode` from the gateway (demo when no keys, or when demo mode is on). Nothing else
-should need to change.
+- `src/view/run.ts` treats a question as yours only while its run has not ended.
 
 ## Guardrails
 
@@ -60,5 +82,8 @@ should need to change.
 - Generated pages are shown in iframes with `sandbox="allow-scripts"` (no `allow-same-origin`) and served by
   the artifact route with a CSP that sandboxes them again, blocks all network writes and allows only the
   renderer's CDNs. Other media are served inert; an uploaded example image must really be PNG, JPEG or WebP.
-- Evidence labels are computed by the advisor; `test/claims.test.ts` fails if any app string claims efficacy.
-- Provider keys are never read, shown or sent by this app; Settings shows only whether each is configured.
+- Evidence labels are computed by the advisor; `test/guard-claims.test.ts` fails if any app string, recipe
+  presentation, prompt template or README claims efficacy.
+- Provider keys are never read into the browser, shown or sent: the services module is server-only, Settings shows
+  only whether each key is configured, and the end-to-end suite fails if a stand-in key appears in any request or
+  response.
