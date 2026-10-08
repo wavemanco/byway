@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { c1, c4, c6a, PROTOCOL_CONFIGS } from '@byway/catalog';
 import { withHash, type Recipe } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
@@ -8,7 +9,9 @@ const composed = (from: Recipe): Recipe => withHash({ ...from, id: 'composed-1',
 
 describe('evidence labels (CR11): computed from the study registry, never typed', () => {
   it('the v1 registry is empty', () => {
-    expect(STUDY_REGISTRY).toEqual([]);
+    // A tripwire: the registry machinery is not finished. Before the first entry, see docs/backlog.md ("Before the study
+    // registry's first entry"): expiry, the CR11 scope tuple, and labels keyed on the ADR-0041 snapshot.
+    expect(STUDY_REGISTRY, "see docs/backlog.md, 'Before the study registry's first entry'").toEqual([]);
   });
 
   it.each(PROTOCOL_CONFIGS.map((r) => [r.id, r]))('%s reads Untested with no scope and no studies', (_id, recipe) => {
@@ -52,6 +55,14 @@ describe('evidence labels (CR11): computed from the study registry, never typed'
     it('uses the latest report when several match, and carries its expiry', () => {
       const later = { ...entry, id: 'study-y', reported: '2027-09-01', verdict: 'Supported' as const, summary: 'Later.', expires: '2029-01-01' };
       expect(labelFor(c4, [later, entry])).toEqual({ verdict: 'Supported', scope: 'Exact', summary: 'Later.', studies: ['study-y', 'study-x'], expires: '2029-01-01' });
+    });
+
+    it('carries an expiry without acting on it, and the contract promises nothing more (RS)', () => {
+      // An entry past its date keeps its verdict: labelFor only passes the date through. Enforcing expiry, with an
+      // outcome the verdict union can represent, waits for the registry's first entry (docs/backlog.md).
+      expect(labelFor(c4, [{ ...entry, expires: '2020-01-01' }])).toMatchObject({ verdict: 'Inconclusive', expires: '2020-01-01' });
+      const contract = readFileSync(new URL('../../contracts/src/advisor.ts', import.meta.url), 'utf8');
+      expect(contract).not.toMatch(/degrades? to "Historical"/);
     });
   });
 });
