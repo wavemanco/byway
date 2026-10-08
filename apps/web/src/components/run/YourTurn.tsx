@@ -12,12 +12,14 @@ import { ComparePanel } from './panels/ComparePanel.tsx';
 import { ConfirmPanel } from './panels/ConfirmPanel.tsx';
 import { DirectivePanel } from './panels/DirectivePanel.tsx';
 import { PickPanel } from './panels/PickPanel.tsx';
+import { SelectPanel } from './panels/SelectPanel.tsx';
 import type { PanelProps } from './panels/types.ts';
 import { ReactPanel, WritePanel } from './panels/TextPanels.tsx';
 
 /** One dedicated interface per checkpoint kind, through the mapping in view/checkpoints.ts. */
 const PANELS: Record<PanelKind, ComponentType<PanelProps>> = {
   'contact-sheet': PickPanel,
+  checklist: SelectPanel,
   'side-by-side': ComparePanel,
   editor: WritePanel,
   'list-editor': DirectivePanel,

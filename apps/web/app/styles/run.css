@@ -1005,3 +1005,62 @@
     width: 100%;
   }
 }
+
+/* select: a checklist of hits, any number chosen (none included) */
+.checklist {
+  margin: var(--s-4) 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.checklist-bulk {
+  display: flex;
+  gap: var(--s-4);
+  margin-bottom: var(--s-2);
+  font-size: var(--text-sm);
+}
+
+.checklist-items {
+  display: grid;
+  gap: var(--s-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.check-item {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.check-item[data-checked] {
+  border-color: var(--you);
+  box-shadow: 0 0 0 1px var(--you);
+}
+
+.check-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  cursor: pointer;
+}
+
+.check-hit input {
+  margin-top: 4px;
+  accent-color: var(--you);
+}
+
+.check-name {
+  display: block;
+  font-weight: 600;
+}
+
+.check-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s-4);
+  color: var(--ink-2);
+}

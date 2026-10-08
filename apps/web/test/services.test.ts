@@ -34,6 +34,7 @@ const status = (id: string, usable: boolean): ProfileStatus => ({
   missing: usable ? [] : ['anthropic'],
   images: false,
   video: false,
+  otherFamily: false,
 });
 
 /** Sentinel values: tests never hold real keys, and these must never surface anywhere the browser could see. */

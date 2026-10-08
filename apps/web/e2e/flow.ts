@@ -93,6 +93,11 @@ async function answer(page: Page, turn: Locator, kind: CheckpointKind): Promise<
       await primary.click();
       return;
     }
+    case 'select':
+      // Any subset is an answer; a person who wants every swap ticks them all.
+      for (const box of await turn.locator('input[type="checkbox"]').all()) await box.check();
+      await primary.click();
+      return;
     case 'choose':
       await turn.locator('input[type="radio"]').first().check();
       await primary.click();
