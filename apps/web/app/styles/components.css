@@ -618,7 +618,23 @@ code {
   gap: var(--s-5) var(--s-4);
 }
 
+.shot-media {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.shot figure {
+  margin: 0;
+}
+
+.shot figcaption {
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
 .shot img,
+.shot video,
 .shot-empty {
   display: block;
   width: 100%;
@@ -626,6 +642,12 @@ code {
   object-fit: cover;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+}
+
+.storyboard .notice ul {
+  margin: var(--s-1) 0 0;
+  padding-left: 1.25em;
 }
 
 .shot-empty {
@@ -693,6 +715,13 @@ code {
 .run-status[data-status='failed'] {
   border-color: var(--danger);
   color: var(--danger);
+}
+
+/* Paused is a state you chose, not a problem: a dashed edge sets it apart without an alarm colour. */
+.run-status[data-status='paused'] {
+  border-style: dashed;
+  border-color: var(--field-line);
+  color: var(--ink);
 }
 
 .status-icon {

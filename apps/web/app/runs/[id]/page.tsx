@@ -19,6 +19,6 @@ export default async function RunPage({ params }: PageProps<'/runs/[id]'>) {
   const run = await deps.services.store.getRun(id);
   if (!run) notFound();
   const initial = await getRunData(deps.services, id);
-  const { presentation, label } = recipeForRun(deps, run);
-  return <RunScreen initial={initial} presentation={presentation ?? null} label={label ?? null} />;
+  const { presentation, label, steps } = await recipeForRun(deps, run);
+  return <RunScreen initial={initial} presentation={presentation ?? null} label={label ?? null} steps={steps ?? null} />;
 }

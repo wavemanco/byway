@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { artifactHeaders, isArtifactId } from '../src/server/artifacts.ts';
 import { checkRequest } from '../src/server/guard.ts';
-import { createIntakeStore } from '../src/server/intakes.ts';
-import { ProblemInput, ResolutionInput, SettingsPatch, StartInput } from '../src/server/schemas.ts';
+import { sniffImage } from '../src/server/refs.ts';
+import { ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from '../src/server/schemas.ts';
 
 const ID = `sha256:${'a'.repeat(64)}`;
 
@@ -66,16 +66,20 @@ describe('artifact route headers', () => {
   });
 });
 
-describe('intakes', () => {
-  it('keeps the problem between Start and the run, and forgets the oldest past the limit', () => {
-    const store = createIntakeStore(2);
-    const a = store.create({ problem: { text: 'one' } });
-    const b = store.create({ problem: { text: 'two' }, recipeId: 'c4' });
-    expect(store.get(a.id)?.problem.text).toBe('one');
-    expect(store.get(b.id)?.recipeId).toBe('c4');
-    store.create({ problem: { text: 'three' } });
-    expect(store.get(a.id)).toBeUndefined();
-    expect(store.get(b.id)).toBeDefined();
+describe('examples you admire', () => {
+  it('recognises PNG, JPEG and WebP by their bytes, and nothing else', () => {
+    expect(sniffImage(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]))).toBe('image/png');
+    expect(sniffImage(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    expect(sniffImage(new Uint8Array([...Buffer.from('RIFF'), 0, 0, 0, 0, ...Buffer.from('WEBP')]))).toBe('image/webp');
+    expect(sniffImage(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeUndefined();
+  });
+
+  it('accepts pasted text or an image of an allowed type, and refuses the rest', () => {
+    expect(RefInput.safeParse({ text: 'An example' }).success).toBe(true);
+    expect(RefInput.safeParse({ text: '   ' }).success).toBe(false);
+    expect(RefInput.safeParse({ image: { mediaType: 'image/png', base64: 'iVBORw0KGgo=' } }).success).toBe(true);
+    expect(RefInput.safeParse({ image: { mediaType: 'image/svg+xml', base64: 'PHN2Zz4=' } }).success).toBe(false);
+    expect(RefInput.safeParse({ image: { mediaType: 'image/png', base64: 'not base64!' } }).success).toBe(false);
   });
 });
 
@@ -89,6 +93,10 @@ describe('request schemas', () => {
   it('checks starts, answers and settings', () => {
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2 }).success).toBe(true);
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', budgetUsd: 0 }).success).toBe(false);
+    expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, refs: [ID] }).success).toBe(true);
+    expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, refs: ['../x'] }).success).toBe(false);
+    expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, refs: Array(10).fill(ID) }).success).toBe(false);
+    expect(SettingsPatch.safeParse({ showTechnicalNames: true }).success).toBe(true);
     expect(ResolutionInput.safeParse({ choice: ['a'] }).success).toBe(true);
     expect(ResolutionInput.safeParse({ approved: 'yes' }).success).toBe(false);
     expect(SettingsPatch.safeParse({ workspaceBudgetUsd: 50, demoMode: true }).success).toBe(true);

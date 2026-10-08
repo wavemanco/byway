@@ -1,12 +1,11 @@
 /**
- * What the Run screen polls: the run view, plus what the contracts leave to the app (the budget announced in
- * the run's events, whether it is paused) and the media type and a text excerpt of each artifact it shows,
- * so step rows and contact sheets can render drafts without fetching each artifact.
+ * What the Run screen polls: the runner's view of the run, plus the media type and a text excerpt of each artifact
+ * it shows, so step rows and contact sheets can render drafts without fetching each artifact. Whether the run is
+ * paused, its budget and its spend all come from the view itself (the run's status and its `cost` events).
  */
 import type { Services } from '../services/index.ts';
 import { ArtifactData, read } from '../view/events.ts';
 import type { ArtifactInfo, RunData } from '../view/rundata.ts';
-import { budgetFromEvents } from '../view/timeline.ts';
 
 export type { ArtifactInfo, RunData } from '../view/rundata.ts';
 
@@ -26,7 +25,6 @@ export async function artifactInfo(services: Services, ids: Iterable<string>): P
 
 export async function getRunData(services: Services, runId: string, afterSeq = 0): Promise<RunData> {
   const view = await services.runner.view(runId, afterSeq);
-  const fullEvents = afterSeq > 0 ? (await services.runner.view(runId)).events : view.events;
   const ids: string[] = [];
   for (const e of view.events) {
     if (e.type !== 'artifact') continue;
@@ -39,12 +37,5 @@ export async function getRunData(services: Services, runId: string, afterSeq = 0
     ids.push(...(cp.artifactIds ?? []));
   }
   if (view.run.outputArtifactId) ids.push(view.run.outputArtifactId);
-  const budgetUsd = budgetFromEvents(fullEvents);
-  return {
-    view,
-    ...(budgetUsd !== undefined ? { budgetUsd } : {}),
-    paused: services.controls?.isPaused(runId) ?? false,
-    canPause: services.controls !== null,
-    artifacts: await artifactInfo(services, ids),
-  };
+  return { view, artifacts: await artifactInfo(services, ids) };
 }

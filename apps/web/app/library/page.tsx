@@ -20,7 +20,7 @@ export default async function LibraryPage() {
   const { services, profileId } = await getContext();
   const technical = await technicalNames();
   const recipes = services.advisor.catalog().flatMap((presentation) => {
-    const recipe = services.recipes.get(presentation.recipeId);
+    const recipe = services.advisor.recipe(presentation.recipeId);
     return recipe ? [{ presentation, label: services.advisor.label(recipe), estimate: services.advisor.estimate(recipe, profileId) }] : [];
   });
 

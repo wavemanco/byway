@@ -2,7 +2,7 @@
  * The Run and Result screens' small decisions: which question is "Your turn", how often to poll, how each
  * output is previewed, and the "How this was made" account of who did what.
  */
-import type { CheckpointRecord, RunStatus } from '@byway/contracts';
+import type { CheckpointRecord, RunRecord, RunStatus } from '@byway/contracts';
 import type { TimelineStage } from './timeline.ts';
 import type { StageName, Who } from './vocabulary.ts';
 
@@ -16,9 +16,9 @@ export function isEnded(status: RunStatus): boolean {
  * Polling interval in milliseconds, or null to stop. A working run is polled briskly so steps appear as they
  * finish; a run waiting for you, or paused, changes only when you act, so it is polled lazily.
  */
-export function pollDelay(status: RunStatus, paused: boolean): number | null {
+export function pollDelay(status: RunStatus): number | null {
   if (isEnded(status)) return null;
-  if (paused || status === 'waiting') return 3000;
+  if (status === 'paused' || status === 'waiting') return 3000;
   return 1000;
 }
 
@@ -27,18 +27,28 @@ export function activeCheckpoint(checkpoints: CheckpointRecord[]): CheckpointRec
   return checkpoints.filter((c) => c.status === 'open').sort((a, b) => a.openedAt.localeCompare(b.openedAt))[0];
 }
 
-/** Runs waiting for you; one run with two open questions is still one run to visit. */
-export function waitingRunCount(openCheckpoints: CheckpointRecord[]): number {
-  return new Set(openCheckpoints.filter((c) => c.status === 'open').map((c) => c.runId)).size;
+/**
+ * Questions you can still answer. The store keeps a cancelled or failed run's last question open (it only takes
+ * real answers), so a question counts only while its run has not ended.
+ */
+export function liveQuestions(openCheckpoints: CheckpointRecord[], runs: Pick<RunRecord, 'id' | 'status'>[]): CheckpointRecord[] {
+  const live = new Set(runs.filter((r) => !isEnded(r.status)).map((r) => r.id));
+  return openCheckpoints.filter((c) => c.status === 'open' && live.has(c.runId));
 }
 
-export type OutputKind = 'page' | 'image' | 'diff' | 'data' | 'text' | 'other';
+/** Runs waiting for you; one run with two open questions is still one run to visit. */
+export function waitingRunCount(openCheckpoints: CheckpointRecord[], runs: Pick<RunRecord, 'id' | 'status'>[]): number {
+  return new Set(liveQuestions(openCheckpoints, runs).map((c) => c.runId)).size;
+}
+
+export type OutputKind = 'page' | 'image' | 'video' | 'diff' | 'data' | 'text' | 'other';
 
 /** How an output is previewed in a step row or a contact sheet. */
 export function outputKind(mediaType: string | undefined): OutputKind {
   const type = mediaType?.split(';')[0]?.trim() ?? '';
   if (type === 'text/html') return 'page';
   if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
   if (type === 'text/x-diff') return 'diff';
   if (type === 'application/json') return 'data';
   if (type === 'text/markdown' || type === 'text/plain') return 'text';
@@ -57,8 +67,8 @@ export interface MadeRow {
 
 export interface HowItWasMade {
   rows: MadeRow[];
-  /** Steps that did not run, and why. */
-  skipped: { label: string; note?: string }[];
+  /** Steps that were skipped, and why (ADR-0069: the result says what was not done). */
+  skipped: { key: string; label: string; note?: string }[];
   byWho: Record<Who, number>;
   totalUsd: number;
 }
@@ -72,7 +82,7 @@ export function howItWasMade(stages: TimelineStage[]): HowItWasMade {
   for (const stage of stages) {
     for (const s of stage.steps) {
       if (s.status === 'skipped') {
-        skipped.push({ label: s.label, ...(s.note ? { note: s.note } : {}) });
+        skipped.push({ key: s.key, label: s.label, ...(s.note ? { note: s.note } : {}) });
         continue;
       }
       if (s.status !== 'done') continue;

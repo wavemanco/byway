@@ -25,7 +25,7 @@ export function StepDetail({ step, artifacts, onClose, closeLabel }: { step: Tim
             {stepTitle(step.label, codeForLabel(step.label) ?? step.block, technical)}
           </h2>
           <p className="muted">
-            {whoLabel(step.who)}
+            {step.status === 'skipped' ? 'Skipped' : whoLabel(step.who)}
             {step.costUsd > 0 ? `, ${formatUsd(step.costUsd)}` : ''}
             {step.round > 1 ? `, round ${step.round}` : ''}
           </p>
@@ -37,7 +37,13 @@ export function StepDetail({ step, artifacts, onClose, closeLabel }: { step: Tim
       {step.error ? <p className="notice notice-danger">{step.error}</p> : null}
       {step.note ? <p className="detail-note">{step.note}</p> : null}
       {step.artifacts.length === 0 ? (
-        <p className="muted">{step.who === 'you' ? 'Your answer went into the next steps.' : 'This step made nothing to show.'}</p>
+        <p className="muted">
+          {step.status === 'skipped'
+            ? 'This step did not run, so what came before it passed through unchanged.'
+            : step.who === 'you'
+              ? 'Your answer went into the next steps.'
+              : 'This step made nothing to show.'}
+        </p>
       ) : (
         <ul className={step.artifacts.length > 1 ? 'detail-grid' : 'detail-one'}>
           {step.artifacts.map((a, i) => {

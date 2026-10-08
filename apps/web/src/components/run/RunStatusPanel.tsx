@@ -21,15 +21,15 @@ const DELIVERABLE: Record<RunRecord['medium'], string> = {
 
 interface Props {
   run: RunRecord;
-  paused: boolean;
   step: TimelineStep | undefined;
   stages: TimelineStage[];
   artifacts: Record<string, ArtifactInfo>;
 }
 
 /** The working area when nothing is asked of you: what the AI is doing, or how the run ended. */
-export function RunStatusPanel({ run, paused, step, stages, artifacts }: Props) {
+export function RunStatusPanel({ run, step, stages, artifacts }: Props) {
   const technical = useTechnicalNames();
+  const paused = run.status === 'paused';
   // What the run made most recently: every output of the last step that made something (all its drafts, not
   // just the last one, which would wrongly suggest it was chosen).
   const recent = [...stages.flatMap((s) => s.steps)].reverse().find((s) => s.artifacts.length > 0);
@@ -90,7 +90,7 @@ export function RunStatusPanel({ run, paused, step, stages, artifacts }: Props) 
       <h2 id="state-title">{paused ? 'Paused' : name ? `Working on ${name}` : 'Getting started'}</h2>
       <p className="muted">
         {paused
-          ? 'Nothing more runs until you resume. What is done so far is kept.'
+          ? 'A step already under way finishes; nothing new starts until you resume. What is done so far is kept.'
           : 'byway asks you when it is your turn. You can leave this page; the run carries on.'}
       </p>
       {!paused ? <div className="working" aria-hidden="true" /> : null}

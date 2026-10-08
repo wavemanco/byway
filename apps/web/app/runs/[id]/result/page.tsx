@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation';
 import { ResultView } from '../../../../src/components/result/ResultView.tsx';
 import { recipeForRun } from '../../../../src/server/api.ts';
 import { getDeps } from '../../../../src/server/deps.ts';
+import { artifactInfo } from '../../../../src/server/run-data.ts';
+import { parseStoryboard, storyboardArtifacts } from '../../../../src/view/result.ts';
 import { howItWasMade } from '../../../../src/view/run.ts';
 import { buildTimeline } from '../../../../src/view/timeline.ts';
 
@@ -37,11 +39,14 @@ export default async function ResultPage({ params }: PageProps<'/runs/[id]/resul
   }
 
   const view = await services.runner.view(run.id);
-  const made = howItWasMade(buildTimeline(view.events, view.checkpoints, run.status));
+  const { presentation, label, steps } = await recipeForRun(deps, run);
+  const made = howItWasMade(buildTimeline(view.events, view.checkpoints, run.status, steps));
   const { record, bytes } = await services.store.artifacts.get(run.outputArtifactId);
   const mediaType = record.mediaType.split(';')[0]?.trim() ?? 'text/plain';
   const text = mediaType === 'text/html' || mediaType.startsWith('image/') ? null : new TextDecoder().decode(bytes);
-  const { presentation, label } = recipeForRun(deps, run);
+  // A storyboard shows frames and clips; each is shown by its media type (a real clip plays, a placeholder is an image).
+  const board = run.medium === 'media' && text !== null ? parseStoryboard(text) : null;
+  const media = board ? await artifactInfo(services, storyboardArtifacts(board)) : {};
 
   return (
     <div className="page page-result">
@@ -51,6 +56,7 @@ export default async function ResultPage({ params }: PageProps<'/runs/[id]/resul
         mediaType={mediaType}
         text={text}
         made={made}
+        media={media}
         presentation={presentation ?? null}
         label={label ?? null}
       />

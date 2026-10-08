@@ -26,6 +26,9 @@ export function ArtifactPreview({ id, info, title, size = 'thumb', interactive =
   if (type.startsWith('image/')) {
     return <img className="preview-image" src={artifactUrl(id)} alt={title} loading="lazy" />;
   }
+  if (type.startsWith('video/')) {
+    return <video className="preview-image" src={artifactUrl(id)} controls preload="metadata" aria-label={title} />;
+  }
   const text = info?.text;
   if (text !== undefined) {
     if (type === 'text/x-diff') return <DiffView text={text} compact={size === 'thumb'} />;

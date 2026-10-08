@@ -15,6 +15,7 @@ const run = (costUsd: number): RunRecord => ({
   medium: 'prose',
   status: 'done',
   costUsd,
+  budgetUsd: 5,
   createdAt: NOW.toISOString(),
   updatedAt: NOW.toISOString(),
 });

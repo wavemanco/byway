@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseUnifiedDiff } from '../src/view/diff.ts';
-import { parseOptions, parseStoryboard, resultKind } from '../src/view/result.ts';
+import { clipKind, parseOptions, parseStoryboard, resultKind, storyboardArtifacts } from '../src/view/result.ts';
 import { excerpt, withoutLeadingTitle, exportFileName, slugify, titleFromProblem } from '../src/view/text.ts';
 
 const DIFF = `diff --git a/src/total.ts b/src/total.ts
@@ -82,6 +82,23 @@ describe('result parsing', () => {
       totalSec: 3,
     });
     expect(parseStoryboard('{}')).toBeNull();
+  });
+
+  it('reads each shot’s clip, lists what the storyboard shows, and shows a placeholder clip as an image', () => {
+    const json = JSON.stringify({
+      storyboard: [
+        { shot: 1, description: 'Open on hands', imagePrompt: 'hands', durationSec: 3, imageArtifactId: 'sha256:f1', clipArtifactId: 'sha256:c1' },
+        { shot: 2, description: 'The street', imagePrompt: 'street', durationSec: 4, imageArtifactId: 'sha256:f2' },
+      ],
+      voiceover: 'Made slowly.',
+    });
+    const board = parseStoryboard(json);
+    expect(board?.shots[0]?.clipArtifactId).toBe('sha256:c1');
+    expect(board?.shots[1]).not.toHaveProperty('clipArtifactId');
+    expect(board ? storyboardArtifacts(board) : []).toEqual(['sha256:f1', 'sha256:c1', 'sha256:f2']);
+    expect(clipKind('video/mp4')).toBe('video');
+    expect(clipKind('image/svg+xml')).toBe('image');
+    expect(clipKind(undefined)).toBe('link');
   });
 });
 

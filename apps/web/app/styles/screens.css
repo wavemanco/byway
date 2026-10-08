@@ -222,6 +222,100 @@
   margin-top: var(--s-3);
 }
 
+/* "Examples you admire" (ADR-0071): optional, so it reads as a quiet section, not a required form. */
+.examples {
+  margin: var(--s-6) 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.examples-title {
+  padding: 0;
+  font-weight: 600;
+  font-size: var(--text-lg);
+}
+
+.examples-note {
+  margin: var(--s-1) 0 var(--s-3);
+  max-width: 64ch;
+  color: var(--ink-2);
+}
+
+.example-list {
+  list-style: none;
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  display: grid;
+  gap: var(--s-3);
+}
+
+.example {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s-1) var(--s-3);
+}
+
+.example[data-kind='text'] .field-label {
+  grid-column: 1 / -1;
+}
+
+.example .textarea {
+  grid-column: 1;
+}
+
+.example-image {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.example-image img {
+  width: 96px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+}
+
+.example-image figcaption {
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.example-remove {
+  align-self: center;
+  min-height: 24px;
+}
+
+.example-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* The file input is visually hidden; its label is the button, and shows the focus ring for it. */
+.file-button:focus-within {
+  outline: 2px solid var(--you);
+  outline-offset: 2px;
+}
+
+.file-button[data-disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.examples-status {
+  margin-top: var(--s-2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
 .start-bar {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -524,6 +618,18 @@
   gap: 2px var(--s-4);
   font-size: var(--text-sm);
   color: var(--ink-2);
+}
+
+.profile-needs {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.profile-video {
+  margin-top: var(--s-3);
+  font-size: var(--text-sm);
 }
 
 .inline-form {

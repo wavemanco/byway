@@ -68,10 +68,11 @@ const LABEL_CODES: Record<string, string> = {
   'Your pages': 'VOICE',
   'Done?': '?H',
   'How to start': 'route',
-  'Plain?': '?H',
   Draft: 'build',
   Implement: 'build',
   Brief: 'BRIEF',
+  Composite: 'RELAY',
+  'Voice-over audio': 'ASSET',
 };
 
 /** The protocol code behind a plain step label, when there is one. */

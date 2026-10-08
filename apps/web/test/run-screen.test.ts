@@ -16,6 +16,7 @@ const cp = (id: string, runId: string, openedAt: string, status: CheckpointRecor
 const step = (over: Partial<TimelineStep> & Pick<TimelineStep, 'label' | 'who'>): TimelineStep => ({
   key: `${over.label}#1`,
   stepId: over.label,
+  stepIds: [over.label],
   round: 1,
   stage: 'Explore',
   status: 'done',
@@ -35,23 +36,25 @@ describe('the Run screen', () => {
     expect(activeCheckpoint([cp('z', 'r', '2026-10-07T10:00:00Z', 'resolved')])).toBeUndefined();
   });
 
-  it('polls quickly while the AI works, slowly while it waits for you, and not at all once the run ended', () => {
-    expect(pollDelay('running', false)).toBe(1000);
-    expect(pollDelay('queued', false)).toBe(1000);
-    expect(pollDelay('waiting', false)).toBeGreaterThan(1000);
-    expect(pollDelay('running', true)).toBeGreaterThan(1000);
+  it('polls quickly while the AI works, slowly while it waits for you or is paused, and not at all once the run ended', () => {
+    expect(pollDelay('running')).toBe(1000);
+    expect(pollDelay('queued')).toBe(1000);
+    expect(pollDelay('waiting')).toBeGreaterThan(1000);
+    expect(pollDelay('paused')).toBeGreaterThan(1000);
     for (const status of ['done', 'failed', 'cancelled'] as const) {
       expect(isEnded(status)).toBe(true);
-      expect(pollDelay(status, false)).toBeNull();
+      expect(pollDelay(status)).toBeNull();
     }
     expect(isEnded('waiting')).toBe(false);
+    expect(isEnded('paused')).toBe(false);
   });
 
-  it('shows pages as thumbnails, text as excerpts, and diffs and images as themselves', () => {
+  it('shows pages as thumbnails, text as excerpts, and diffs, images and clips as themselves', () => {
     expect(outputKind('text/html')).toBe('page');
     expect(outputKind('text/html; charset=utf-8')).toBe('page');
     expect(outputKind('image/svg+xml')).toBe('image');
     expect(outputKind('image/png')).toBe('image');
+    expect(outputKind('video/mp4')).toBe('video');
     expect(outputKind('text/x-diff')).toBe('diff');
     expect(outputKind('application/json')).toBe('data');
     expect(outputKind('text/markdown')).toBe('text');
@@ -59,9 +62,16 @@ describe('the Run screen', () => {
     expect(outputKind(undefined)).toBe('other');
   });
 
-  it('counts runs, not questions, in the "waiting for you" badge', () => {
-    expect(waitingRunCount([cp('a', 'r1', 'x'), cp('b', 'r1', 'y'), cp('c', 'r2', 'z'), cp('d', 'r3', 'w', 'resolved')])).toBe(2);
-    expect(waitingRunCount([])).toBe(0);
+  it('counts runs, not questions, in the "waiting for you" badge, and only runs that can still move', () => {
+    const runs = [
+      { id: 'r1', status: 'waiting' as const },
+      { id: 'r2', status: 'paused' as const },
+      { id: 'r3', status: 'waiting' as const },
+      { id: 'r4', status: 'cancelled' as const },
+    ];
+    const open = [cp('a', 'r1', 'x'), cp('b', 'r1', 'y'), cp('c', 'r2', 'z'), cp('d', 'r3', 'w', 'resolved'), cp('e', 'r4', 'v')];
+    expect(waitingRunCount(open, runs)).toBe(2);
+    expect(waitingRunCount([], runs)).toBe(0);
   });
 });
 
@@ -82,7 +92,7 @@ describe('"How this was made"', () => {
     const made = howItWasMade(stages);
     expect(made.totalUsd).toBeCloseTo(0.26);
     expect(made.byWho).toEqual({ you: 2, ai: 2, tool: 1 });
-    expect(made.skipped).toEqual([{ label: 'Motion', note: 'No video key.' }]);
+    expect(made.skipped).toEqual([{ key: 'Motion#1', label: 'Motion', note: 'No video key.' }]);
     expect(made.rows.map((r) => r.label)).toEqual(['Random spark', 'Your pick', 'Remove near-duplicates', 'Your words', 'Final check']);
     expect(made.rows[3]?.round).toBe(2);
   });
