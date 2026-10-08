@@ -10,7 +10,10 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json && pnpm -r --if-present run typecheck",
+    "typecheck": "tsc -p tsconfig.json && tsc -p scripts/tsconfig.json && pnpm -r --if-present run typecheck",
+    "dev": "tsx scripts/dev.ts",
+    "demo": "tsx scripts/dev.ts --demo",
+    "e2e": "tsx scripts/e2e.ts",
     "recipes:emit": "tsx packages/catalog/src/emit.ts",
     "byway": "tsx packages/cli/src/main.ts"
   },
