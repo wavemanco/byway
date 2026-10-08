@@ -52,7 +52,7 @@ export function RunStatusPanel({ run, step, stages, artifacts }: Props) {
         </div>
         {id ? (
           <div className="state-preview">
-            <ArtifactPreview id={id} info={info} title={`Result: ${run.title}`} size="large" />
+            <ArtifactPreview id={id} info={info} title={`Result: ${run.title}`} size="large" media={artifacts} />
           </div>
         ) : null}
       </section>

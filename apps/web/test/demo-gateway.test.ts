@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { GatewayError } from '@byway/contracts';
 import { createDemoGateway } from '../src/services/demo/gateway.ts';
+import { placeholderClipSvg } from '../src/services/demo/samples/clip.ts';
 import { createDemoStore } from '../src/services/demo/store.ts';
+
+describe('placeholder clip', () => {
+  const promptTexts = (svg: string) => [...svg.matchAll(/<text x="40" y="(?:188|214)"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1] ?? '');
+
+  it('fits the prompt in at most two lines, and marks a longer one as cut', () => {
+    expect(promptTexts(placeholderClipSvg('Open on hands', 3))).toEqual(['Open on hands']);
+    const long = promptTexts(placeholderClipSvg('word '.repeat(40), 3));
+    expect(long).toHaveLength(2);
+    expect(long.every((l) => l.length <= 56)).toBe(true);
+    expect(long[1]?.endsWith('…')).toBe(true);
+    expect(promptTexts(placeholderClipSvg('   ', 3))).toEqual(['A clip']);
+  });
+});
 
 async function setup() {
   const store = createDemoStore();

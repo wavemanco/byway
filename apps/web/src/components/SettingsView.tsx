@@ -155,7 +155,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
         </fieldset>
         <p id={`${ids}-video`} className="profile-video">
           {videoAvailability(chosen)}
-          {mode === 'demo' && !chosen?.video ? <span className="muted"> Demo runs show labelled placeholder clips instead.</span> : null}
+          {mode === 'demo' && !chosen?.video ? <span className="muted">. Demo runs show labelled placeholder clips instead.</span> : null}
         </p>
       </section>
 
