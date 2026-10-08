@@ -138,6 +138,33 @@ describe('VOICE copy', () => {
     expect(why.ok && splitCodeDiff(why.value).why).toBe('Why: Because the old one leaked.');
   });
 
+  it('a storyboard’s late VOICE is its on-screen copy; the locked voice-over is not offered and cannot change (VOICE-1)', () => {
+    const sb = JSON.stringify({
+      storyboard: [
+        { shot: 1, description: 'Open', imagePrompt: 'Hands', durationSec: 3, caption: 'Again?', imageArtifactId: 'sha256:a' },
+        { shot: 2, description: 'Close', imagePrompt: 'Cup', durationSec: 4 },
+      ],
+      voiceover: 'Less time on the road.',
+      headline: 'Time, handed back.',
+    });
+    // The early VOICE is the script; the late one the headline, the tagline and each shot's caption.
+    expect(extractCopy('media', sb, 'script')).toBe('Less time on the road.');
+    const copy = extractCopy('media', sb, 'on-screen');
+    expect(copy).toBe('Headline: Time, handed back.\nTagline: \nShot 1: Again?\nShot 2: ');
+    const back = applyCopy('media', sb, 'Headline: Less waiting.\nTagline: Made for mornings.\nShot 1: Again?\nShot 2: Yours, every day.', 'on-screen');
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    const out = JSON.parse(back.value);
+    expect(out).toMatchObject({ headline: 'Less waiting.', tagline: 'Made for mornings.', voiceover: 'Less time on the road.' });
+    expect(out.storyboard).toMatchObject([{ caption: 'Again?', imageArtifactId: 'sha256:a' }, { caption: 'Yours, every day.' }]);
+    // The voice-over is locked after the script step.
+    expect(applyCopy('media', sb, `${copy}\nVoice-over: Something else.`, 'on-screen')).toMatchObject({ ok: false });
+    expect(applyCopy('media', sb, 'Shot 9: Nowhere.', 'on-screen')).toMatchObject({ ok: false });
+    // A machine write after it must keep the on-screen words too (keepsVoice).
+    expect(lostVoiceLines('media', back.value, 'Headline: Less waiting.\nShot 2: Yours, every day.')).toEqual([]);
+    expect(lostVoiceLines('media', sb, 'Headline: Less waiting.')).toEqual(['Headline: Less waiting.']);
+  });
+
   it('finds the person’s lines a machine write lost', () => {
     const sb = (vo: string) => JSON.stringify({ storyboard: [{ shot: 1, description: 'd', imagePrompt: 'p', durationSec: 4 }], voiceover: vo });
     expect(lostVoiceLines('media', sb('Less time. More life.'), 'Less time. More life.')).toEqual([]);

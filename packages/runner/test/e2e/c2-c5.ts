@@ -90,10 +90,22 @@ export function c2c5Scenarios(use: () => Harness): void {
       h.responders['critic:media'] = () => '- The payoff shot is too short.\nScore: 5/10';
       const script = 'Less time on the road.\nMore time on the trail.';
       try {
+        const headline = 'Less road. More trail.';
         const run = await h.start(c5, { problem: { text: 'A 30-second video ad for trail running shoes' } });
-        const view = await h.drive(run.id, (cp) => (cp.stepId === 'vo-script' ? { checkpointId: cp.id, text: script } : undefined));
+        const view = await h.drive(run.id, (cp) => {
+          if (cp.stepId === 'vo-script') return { checkpointId: cp.id, text: script };
+          if (cp.stepId === 'voice') return { checkpointId: cp.id, text: cp.initialText!.replace(/^Headline: .*$/m, `Headline: ${headline}`) };
+          return undefined;
+        });
         expect(view.run.status).toBe('done');
         checkEvents(view, 'c5');
+        // The late VOICE offers the on-screen copy; the voice-over, locked after the script step, is not offered (VOICE-1).
+        const late = view.checkpoints.filter((c) => c.stepId === 'voice');
+        expect(late.length).toBeGreaterThan(0);
+        for (const cp of late) {
+          expect(cp.initialText).toMatch(/^Headline: .*\nTagline: .*\nShot 1: /);
+          expect(cp.initialText).not.toContain('Less time on the road');
+        }
         const purposes = h.succeeded(run.id).map((c) => c.purpose);
         expect(purposes.filter((p) => p === 'seed:media')).toHaveLength(8);
         expect(purposes).toContain('dedupe:media');
@@ -128,8 +140,9 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(ofType(view, 'step-finished', 'matte').every((e) => e.data.skipped === true)).toBe(true);
 
         // The storyboard carries each shot's frame and the clips; your script survived every machine write.
-        const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { shot: number; imageArtifactId?: string; clipArtifactId?: string }[]; voiceover: string };
+        const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { shot: number; imageArtifactId?: string; clipArtifactId?: string }[]; voiceover: string; headline?: string };
         expect(sb.voiceover).toBe(script);
+        expect(sb.headline).toBe(headline);
         expect(sb.storyboard.every((s) => s.imageArtifactId)).toBe(true);
         expect(sb.storyboard.filter((s) => s.clipArtifactId).map((s) => s.shot)).toEqual([1, 2, 3, 4, 5]);
         // Clip and frame artifacts are announced with their shot.

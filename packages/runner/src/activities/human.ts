@@ -7,8 +7,8 @@ import { routeChoice } from '@byway/catalog';
 import { withoutMarks } from '@byway/gateway';
 import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
 import { applyClaims, claimLines } from '../claims.ts';
-import { applyCopy, extractCopy, pageCopy, pageVoiceProblems, placePageCopy } from '../copy.ts';
-import { parseArtifact, parseHtml, type Parsed } from '../formats.ts';
+import { applyCopy, extractCopy, mediaCopyOf, pageCopy, pageVoiceProblems, placePageCopy } from '../copy.ts';
+import { parseArtifact, parseHtml, parseStoryboard, type Parsed } from '../formats.ts';
 import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput } from '../types.ts';
 import { askModel } from './call.ts';
 import type { RunnerDeps } from './deps.ts';
@@ -29,7 +29,7 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
     const text = input.initial.artifactId ? withoutMarks(await deps.store.artifacts.getText(input.initial.artifactId)) : '';
     switch (input.initial.from) {
       case 'copy':
-        initialText = extractCopy(run.medium, text);
+        initialText = extractCopy(run.medium, text, input.step ? mediaCopyOf(input.step) : undefined);
         break;
       case 'artifact':
         initialText = text;
@@ -128,6 +128,14 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
   return result;
 }
 
+/** The late VOICE on a storyboard leaves the voice-over as it was locked (VOICE-1): a write that changed it is refused. */
+function lockedVoiceover(medium: FinishHumanInput['run']['medium'], step: FinishHumanInput['step'], before: string, after: string): string[] {
+  if (medium !== 'media' || mediaCopyOf(step) !== 'on-screen') return [];
+  const was = parseStoryboard(before);
+  const now = parseStoryboard(after);
+  return was.ok && now.ok && was.value.voiceover !== now.value.voiceover ? ['The voice-over was locked after the script step: keep it exactly as it was.'] : [];
+}
+
 /** A write-back whose model answer missed twice becomes a question asked again (ENG-6), with the person's problem. */
 async function orAskAgain<T>(written: Promise<T>, problem: (missed: string) => string): Promise<T> {
   try {
@@ -155,7 +163,7 @@ async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: str
   const before = await reader.text(ports.artifact!);
   const store = async (text: string) => storeText(deps, run, call, text, { label: 'Your words', name: 'work' });
   if (run.medium !== 'web-page') {
-    const direct = applyCopy(run.medium, before, edited);
+    const direct = applyCopy(run.medium, before, edited, mediaCopyOf(step));
     if (direct.ok) {
       const problems = writeProblems(run, direct.value);
       if (problems.length) throw new StepError(problems.join(' '));
@@ -174,7 +182,7 @@ async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: str
       parse: (text) => {
         const r = parseArtifact(run.medium, text);
         if (!r.ok) return r;
-        const problems = writeProblems(run, r.value, edited);
+        const problems = [...writeProblems(run, r.value, edited), ...lockedVoiceover(run.medium, step, before, r.value)];
         return problems.length ? { ok: false, problem: problems.join(' ') } : r;
       },
     }), () => `${direct.problem} Your words could not be placed as they are.`);
