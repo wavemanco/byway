@@ -86,14 +86,16 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       const cp = await store.getCheckpoint(resolution.checkpointId);
       if (!cp) throw new ResolutionRejectedError(`There is no checkpoint "${resolution.checkpointId}".`);
       if (cp.status !== 'open') throw new ResolutionRejectedError(`Checkpoint "${cp.id}" was already answered.`);
+      const run = await store.getRun(cp.runId);
+      // A run that ended leaves its unanswered checkpoints open in the store; they take no answers.
+      if (!run || run.status === 'done' || run.status === 'failed' || run.status === 'cancelled') throw new ResolutionRejectedError('This run is no longer running.');
       try {
         await handle(cp.runId).executeUpdate(RESOLVE_UPDATE, { args: [resolution] });
       } catch (e) {
+        // The workflow's validator (stale or mismatched answers) and handler refusals arrive as the Update's failure.
         if (e instanceof WorkflowUpdateFailedError) throw new ResolutionRejectedError((e.cause as Error | undefined)?.message ?? e.message);
         if (e instanceof WorkflowNotFoundError) throw new ResolutionRejectedError('This run is no longer running.');
-        // A validator's rejection arrives as the Update's failure.
-        const cause = (e as { cause?: { message?: string } }).cause;
-        throw new ResolutionRejectedError(cause?.message ?? (e as Error).message);
+        throw e;
       }
     },
 
