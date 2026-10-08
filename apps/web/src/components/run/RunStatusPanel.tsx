@@ -4,11 +4,12 @@ import type { RunRecord } from '@byway/contracts';
 import Link from 'next/link';
 import { exportLabel } from '../../view/history.ts';
 import type { ArtifactInfo } from '../../view/rundata.ts';
-import { outputArtifacts, type TimelineStage, type TimelineStep } from '../../view/timeline.ts';
+import type { TimelineStage, TimelineStep } from '../../view/timeline.ts';
 import { codeForLabel, stepTitle } from '../../view/vocabulary.ts';
 import { artifactUrl } from '../api.ts';
 import { ArtifactPreview } from '../ArtifactPreview.tsx';
 import { useTechnicalNames } from '../TechNames.tsx';
+import { References } from './panels/References.tsx';
 
 const DELIVERABLE: Record<RunRecord['medium'], string> = {
   'web-page': 'Your page is ready.',
@@ -29,8 +30,9 @@ interface Props {
 /** The working area when nothing is asked of you: what the AI is doing, or how the run ended. */
 export function RunStatusPanel({ run, paused, step, stages, artifacts }: Props) {
   const technical = useTechnicalNames();
-  const outputs = outputArtifacts(stages);
-  const latest = outputs.at(-1);
+  // What the run made most recently: every output of the last step that made something (all its drafts, not
+  // just the last one, which would wrongly suggest it was chosen).
+  const recent = [...stages.flatMap((s) => s.steps)].reverse().find((s) => s.artifacts.length > 0);
 
   if (run.status === 'done') {
     const id = run.outputArtifactId;
@@ -92,10 +94,13 @@ export function RunStatusPanel({ run, paused, step, stages, artifacts }: Props) 
           : 'byway asks you when it is your turn. You can leave this page; the run carries on.'}
       </p>
       {!paused ? <div className="working" aria-hidden="true" /> : null}
-      {latest ? (
+      {recent ? (
         <div className="state-preview">
-          <p className="state-preview-label">Latest: {latest.label ?? 'output'}</p>
-          <ArtifactPreview id={latest.artifactId} info={artifacts[latest.artifactId]} title={latest.label ?? 'Latest output'} size="large" />
+          <References
+            ids={recent.artifacts.map((a) => a.artifactId)}
+            artifacts={artifacts}
+            title={`Most recent: ${stepTitle(recent.label, codeForLabel(recent.label) ?? recent.block, technical)}`}
+          />
         </div>
       ) : null}
     </section>

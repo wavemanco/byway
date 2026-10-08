@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useState } from 'react';
 import type { ComposeView } from '../server/api.ts';
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
-import { ROUTING_NOTE, answerNote, decidingQuestion, fitText } from '../view/labels.ts';
+import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { post } from './api.ts';
 import { EvidenceLabel } from './EvidenceLabel.tsx';
@@ -138,7 +138,6 @@ export function RecommendationView(props: Props) {
               <section className="aside-section" aria-labelledby="why-title">
                 <h2 id="why-title">Why this recipe</h2>
                 <p>{rec.why}</p>
-                {rec.composeSuggested ? <p className="muted">None of the recipes clearly fits. Building your own may suit this better.</p> : null}
               </section>
 
               <Chooser questions={questions} answers={rec.answers} busy={routing} onFlip={flip} />
@@ -149,9 +148,9 @@ export function RecommendationView(props: Props) {
                     {!isRecommended ? (
                       <li>
                         <button type="button" className="link-button" onClick={() => setSelection({ kind: 'recipe', recipeId: rec.recipeId })}>
-                          Back to {recipeTitle(rec.presentation, technical)}
+                          Back to the recommendation
                         </button>
-                        <span className="muted"> the recommendation</span>
+                        <span className="muted"> {recipeTitle(rec.presentation, technical)}</span>
                       </li>
                     ) : null}
                     {rec.alternatives
@@ -179,6 +178,7 @@ export function RecommendationView(props: Props) {
 
           <section className="aside-section" aria-labelledby="compose-title">
             <h2 id="compose-title">Build my own</h2>
+            {rec?.composeSuggested ? <p>None of the eight recipes clearly fits this problem, so building your own may suit it better.</p> : null}
             <p className="muted">
               byway can compose a recipe for this problem from the protocol’s blocks, starting from the closest one. A composed recipe is checked against
               the protocol’s rules, but it has not been tested.
@@ -217,14 +217,22 @@ function Chooser({ questions, answers, busy, onFlip }: { questions: ChooserQuest
                 <p id={id} className="chooser-question">
                   {q.text}
                 </p>
-                <p id={`${id}-note`} className="chooser-note">
-                  {deciding === q.id ? <strong>Decides. </strong> : null}
-                  {answerNote(answer)}
-                </p>
+                {showAnswerNote(answer) ? (
+                  <p id={`${id}-note`} className="chooser-note">
+                    {deciding === q.id ? <strong>Decides. </strong> : null}
+                    {answerNote(answer)}
+                  </p>
+                ) : null}
               </div>
               <div className="chooser-answer">
                 <span aria-hidden="true">{answer.answer ? 'Yes' : 'No'}</span>
-                <Switch checked={answer.answer} onChange={(next) => onFlip(q.id, next)} labelledBy={id} describedBy={`${id}-note`} disabled={busy} />
+                <Switch
+                  checked={answer.answer}
+                  onChange={(next) => onFlip(q.id, next)}
+                  labelledBy={id}
+                  {...(showAnswerNote(answer) ? { describedBy: `${id}-note` } : {})}
+                  disabled={busy}
+                />
               </div>
             </li>
           );

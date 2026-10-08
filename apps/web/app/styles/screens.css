@@ -412,6 +412,7 @@
 }
 
 .history-ask {
+  display: block;
   color: var(--ink);
 }
 
@@ -424,8 +425,9 @@
 
 /* --- Settings ------------------------------------------------------------------------------------------- */
 
-.page-narrow {
-  max-width: 820px;
+/* Left-aligned with the header like every screen; only the reading width is narrower. */
+.page-narrow > * {
+  max-width: 780px;
 }
 
 .settings-section {
@@ -566,6 +568,22 @@
   }
 
   .app-header-inner {
-    gap: var(--s-3);
+    gap: var(--s-2);
+  }
+
+  .nav a {
+    padding: 6px 8px;
+  }
+}
+
+/* On the narrowest phones the mark alone stands for byway, so all four destinations fit. */
+@media (max-width: 420px) {
+  .wordmark-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }

@@ -14,7 +14,8 @@ interface ScaledPageProps {
 
 /**
  * A generated page shown at desktop width, scaled to fit its box, in a sandboxed iframe: scripts may run,
- * but without the app's origin (no allow-same-origin), so the page cannot reach byway or its data.
+ * but without the app's origin (no allow-same-origin), so the page cannot reach byway or its data. A thumbnail
+ * is a picture: it takes no pointer events or focus, and shows no scrollbars.
  */
 export function ScaledPage({ src, title, virtualWidth = 1280, virtualHeight = 800, interactive = false }: ScaledPageProps) {
   const box = useRef<HTMLDivElement>(null);
@@ -39,6 +40,7 @@ export function ScaledPage({ src, title, virtualWidth = 1280, virtualHeight = 80
         referrerPolicy="no-referrer"
         loading="lazy"
         tabIndex={interactive ? 0 : -1}
+        scrolling={interactive ? undefined : 'no'}
         aria-hidden={interactive ? undefined : true}
         style={{ width: virtualWidth, height: virtualHeight, transform: `scale(${scale})` }}
       />

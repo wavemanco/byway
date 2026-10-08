@@ -9,7 +9,9 @@ import type { PanelProps } from './types.ts';
 /** Splits "Random spark: four drafts from…" into a name and its explanation, when written that way. */
 function parts(label: string): { name: string; detail?: string } {
   const at = label.indexOf(': ');
-  return at > 0 ? { name: label.slice(0, at), detail: label.slice(at + 2) } : { name: label };
+  if (at <= 0) return { name: label };
+  const detail = label.slice(at + 2);
+  return { name: label.slice(0, at), detail: detail.charAt(0).toUpperCase() + detail.slice(1) };
 }
 
 /** choose: the branches of a route as a radio list; J and K move, Enter goes the chosen way. */

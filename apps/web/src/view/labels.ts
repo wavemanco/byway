@@ -47,6 +47,14 @@ export function answerNote(answer: ChooserAnswer): string {
   return `${answer.rationale} (AI read, ${sure})`;
 }
 
+/**
+ * Seven explanations in a row are noise: a yes (it routes), and anything you set, are explained; the intake's
+ * plain noes are not, though their answer stays visible and flippable.
+ */
+export function showAnswerNote(answer: ChooserAnswer): boolean {
+  return answer.answer || answer.setBy === 'user';
+}
+
 /** The chooser's rule (spec §4): answers are in question order and the first yes decides. */
 export function decidingQuestion(answers: ChooserAnswer[]): string | undefined {
   return answers.find((a) => a.answer)?.questionId;

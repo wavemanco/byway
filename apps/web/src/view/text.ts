@@ -18,12 +18,21 @@ export function titleFromProblem(problem: string, max = 60): string {
 export function excerpt(text: string, max = 160): string {
   const plain = text
     .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+[.)])\s+/gm, '')
+    // A heading runs into the text after it, so it keeps a colon to read as a lead-in ("Brief: …").
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.*?)[ \t]*$/gm, (_, heading: string) => (/[.!?:]$/.test(heading) ? heading : `${heading}:`))
+    .replace(/^\s{0,3}(>|[-*+]|\d+[.)])\s+/gm, '')
     .replace(/[*_`]+/g, '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();
   return clip(plain, max);
+}
+
+/** A card's text without its first heading, when that heading only repeats the caption shown above the card. */
+export function withoutLeadingTitle(text: string, label: string): string {
+  const match = /^\s*#{1,6}[ \t]+(.+?)[ \t]*(?:\r?\n)+/.exec(text);
+  if (!match || match[1]?.trim() !== label.trim()) return text;
+  return text.slice(match[0].length);
 }
 
 export function slugify(title: string): string {

@@ -550,6 +550,7 @@ code {
 
 .diff-why {
   max-width: 68ch;
+  margin-top: var(--s-2);
 }
 
 .diff-why h3 {

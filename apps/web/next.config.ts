@@ -3,6 +3,9 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   transpilePackages: ['@byway/contracts', '@byway/protocol', '@byway/recipe', '@byway/canonical'],
   poweredByHeader: false,
+  // `next dev` would otherwise write AGENTS.md and CLAUDE.md into the app. Agent instructions for this repo
+  // are a decision for its maintainers, not a side effect of starting the dev server.
+  agentRules: false,
   async headers() {
     return [
       {

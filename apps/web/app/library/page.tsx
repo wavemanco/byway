@@ -10,7 +10,7 @@ import { recipeTitle } from '../../src/view/vocabulary.ts';
 export const metadata: Metadata = { title: 'Library' };
 
 function sentenceList(items: string[]): string {
-  const lower = items.map((item, i) => (i === 0 ? item : item.charAt(0).toLowerCase() + item.slice(1)));
+  const lower = items.map((item) => item.charAt(0).toLowerCase() + item.slice(1));
   if (lower.length <= 1) return lower.join('');
   return `${lower.slice(0, -1).join(', ')} and ${lower.at(-1)}`;
 }

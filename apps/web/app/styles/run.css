@@ -1,7 +1,7 @@
 /* The Run screen (timeline, "Your turn" panels, states) and the Result screen. */
 
 .run {
-  max-width: 1440px;
+  max-width: var(--content);
   margin: 0 auto;
   padding: var(--s-5) var(--gutter) var(--s-8);
 }
@@ -15,8 +15,9 @@
 }
 
 .run-title {
+  flex: 1 1 420px;
   min-width: 0;
-  max-width: 70ch;
+  max-width: 760px;
 }
 
 .run-recipe {
@@ -311,13 +312,10 @@
   line-height: 1.35;
 }
 
-.turn-head h2:focus {
-  outline: none;
-}
-
+/* The question receives focus when it opens so screen readers announce it; it is not a control, so no ring. */
+.turn-head h2:focus,
 .turn-head h2:focus-visible {
-  outline: 2px solid var(--you);
-  outline-offset: 4px;
+  outline: none;
 }
 
 .turn > .notice {
@@ -346,6 +344,11 @@
   border-top: 1px solid var(--line);
   border-radius: 0 0 var(--r-md) var(--r-md);
   background: var(--bg);
+}
+
+.turn-foot-info {
+  flex: 1 1 300px;
+  min-width: 0;
 }
 
 .turn-status {
@@ -419,8 +422,12 @@
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  padding-right: 6.5em;
   font-weight: 550;
+}
+
+/* Room for "Open full size" beside a page's caption. */
+.sheet[data-layout='pages'] .sheet-caption {
+  padding-right: 7.5em;
 }
 
 .sheet-mark {
@@ -538,6 +545,7 @@
 .react-panel,
 .directive {
   display: grid;
+  align-items: start;
   gap: var(--s-5);
   margin-top: var(--s-4);
 }
@@ -631,7 +639,7 @@
 }
 
 .refs-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 120px), 1fr));
 }
 
 .refs-item {
@@ -661,7 +669,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-3);
-  margin: var(--s-5) 0 var(--s-5);
+}
+
+.turn-foot-plain {
+  margin-top: var(--s-4);
 }
 
 .yes-no-button {
@@ -724,7 +735,8 @@
   font-size: var(--text-xl);
 }
 
-.detail-head h2:focus {
+.detail-head h2:focus,
+.detail-head h2:focus-visible {
   outline: none;
 }
 

@@ -354,6 +354,11 @@ svg {
   border-color: var(--you);
 }
 
+::placeholder {
+  color: var(--ink-3);
+  opacity: 1;
+}
+
 .textarea {
   resize: vertical;
   line-height: 1.55;

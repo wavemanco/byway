@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <style>
+    .road { stroke: #2f322a; }
+    .branch { stroke: #557a1f; }
+    @media (prefers-color-scheme: dark) {
+      .road { stroke: #ecede7; }
+      .branch { stroke: #b9d65a; }
+    }
+  </style>
+  <path class="road" d="M7 22V2" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+  <path class="branch" d="M7 15c0-5 4-6.5 7.5-6.5S20 6 20 2.5" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+</svg>

@@ -90,7 +90,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId }: Pane
                   className="input"
                   aria-label={`Item ${i + 1}`}
                   value={item.text}
-                  placeholder={i === 0 ? 'e.g. Remove the testimonials section' : undefined}
+                  placeholder={i === 0 ? 'Something to remove' : undefined}
                   onChange={(e) => {
                     const text = e.target.value;
                     setItems((list) => list.map((x) => (x.key === item.key ? { ...x, text } : x)));

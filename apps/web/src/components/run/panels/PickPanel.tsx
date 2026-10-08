@@ -1,13 +1,20 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { canSubmit, emptyDraft, moveFocus, picksNeeded, toResolution, toggleChoice } from '../../../view/checkpoints.ts';
 import { outputKind } from '../../../view/run.ts';
+import type { ArtifactInfo } from '../../../view/rundata.ts';
+import { withoutLeadingTitle } from '../../../view/text.ts';
 import { artifactUrl } from '../../api.ts';
 import { ArtifactPreview } from '../../ArtifactPreview.tsx';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { TurnFooter } from './TurnFooter.tsx';
 import type { PanelProps } from './types.ts';
+
+/** A text card shown under its caption need not repeat the caption as its own first heading. */
+function cardInfo(info: ArtifactInfo | undefined, label: string): ArtifactInfo | undefined {
+  return info?.text === undefined ? info : { ...info, text: withoutLeadingTitle(info.text, label) };
+}
 
 /**
  * pick: a contact sheet of the drafts. One pick behaves as a radio group, several as checkboxes; J and K move
@@ -17,9 +24,11 @@ export function PickPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProp
   const options = cp.options ?? [];
   const n = picksNeeded(cp);
   const [draft, setDraft] = useState(() => emptyDraft(cp));
-  const [focus, setFocus] = useState(0);
+  // -1 until you move: the first J lands on the first draft.
+  const [focus, setFocus] = useState(-1);
   const [hint, setHint] = useState<string | null>(null);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
+  const base = useId();
   const ready = canSubmit(cp, draft);
   const pages = options.some((o) => o.artifactId && outputKind(artifacts[o.artifactId]?.mediaType) === 'page');
 
@@ -79,14 +88,18 @@ export function PickPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProp
                     checked={checked}
                     onChange={() => toggle(o.id)}
                     onFocus={() => setFocus(i)}
+                    // The name is the caption alone; the whole card read out as a name would be unusable.
+                    aria-labelledby={`${base}-${i}`}
                   />
                   <span className="sheet-caption">
                     <span className="sheet-mark" aria-hidden="true" />
-                    <span className="sheet-label">{o.label}</span>
+                    <span id={`${base}-${i}`} className="sheet-label">
+                      {o.label}
+                    </span>
                   </span>
                   {o.artifactId ? (
                     <span className="sheet-preview">
-                      <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="thumb" />
+                      <ArtifactPreview id={o.artifactId} info={cardInfo(artifacts[o.artifactId], o.label)} title={o.label} size="thumb" />
                     </span>
                   ) : null}
                 </label>

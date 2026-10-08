@@ -1,7 +1,6 @@
 'use client';
 
 import type { CheckpointResolution, EvidenceLabel as Label, RecipePresentation } from '@byway/contracts';
-import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { runStatusLabel } from '../../view/labels.ts';
 import { budgetMeter } from '../../view/meter.ts';
@@ -136,13 +135,7 @@ export function RunScreen({ initial, presentation, label }: Props) {
           <span className="run-status" data-status={data.paused && !ended ? 'paused' : run.status}>
             {status}
           </span>
-          {ended ? (
-            run.status === 'done' ? (
-              <Link className="button button-primary" href={`/runs/${runId}/result`}>
-                See the result
-              </Link>
-            ) : null
-          ) : confirmCancel ? (
+          {ended ? null : confirmCancel ? (
             <div className="confirm-inline" role="group" aria-label="Cancel this run?">
               <span>Cancel this run? What it made so far is kept.</span>
               <button type="button" className="button button-danger" onClick={() => void control('cancel')}>

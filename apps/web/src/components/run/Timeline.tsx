@@ -72,10 +72,7 @@ export function Timeline({ stages, artifacts, selected, onSelect }: TimelineProp
                       </button>
                       {step.costUsd > 0 ? <span className="tl-cost">{formatUsd(step.costUsd)}</span> : null}
                     </div>
-                    <p className="tl-meta">
-                      {meta(step).join(', ')}
-                      {step.status === 'waiting' ? <span className="tl-turn"> Your turn</span> : null}
-                    </p>
+                    <p className="tl-meta">{step.status === 'waiting' ? <span className="tl-turn">Your turn</span> : meta(step).join(', ')}</p>
                     {step.error ? <p className="tl-error">{step.error}</p> : step.note ? <p className="tl-note">{step.note}</p> : null}
                     {step.artifacts.length > 0 ? <StepThumbs step={step} artifacts={artifacts} /> : null}
                   </div>

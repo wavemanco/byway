@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseUnifiedDiff } from '../src/view/diff.ts';
 import { parseOptions, parseStoryboard, resultKind } from '../src/view/result.ts';
-import { excerpt, exportFileName, slugify, titleFromProblem } from '../src/view/text.ts';
+import { excerpt, withoutLeadingTitle, exportFileName, slugify, titleFromProblem } from '../src/view/text.ts';
 
 const DIFF = `diff --git a/src/total.ts b/src/total.ts
 index 1111111..2222222 100644
@@ -97,8 +97,15 @@ describe('text helpers', () => {
   });
 
   it('excerpts text without markdown syntax', () => {
-    expect(excerpt('# Title\n\nSome **bold** text\n- item', 40)).toBe('Title Some bold text item');
+    expect(excerpt('# Title\n\nSome **bold** text\n- item', 40)).toBe('Title: Some bold text item');
+    expect(excerpt('## Done?\nYes', 40)).toBe('Done? Yes');
     expect(excerpt('one two three four five', 12)).toBe('one two…');
+  });
+
+  it('drops a card heading when the caption above the card already says the same', () => {
+    expect(withoutLeadingTitle('### Make it a ritual\n\nTurn it into a habit.', 'Make it a ritual')).toBe('Turn it into a habit.');
+    expect(withoutLeadingTitle('### Something else\n\nBody', 'Make it a ritual')).toBe('### Something else\n\nBody');
+    expect(withoutLeadingTitle('No heading here', 'No heading here')).toBe('No heading here');
   });
 
   it('names export files', () => {

@@ -3,7 +3,7 @@ import { BLOCK_CODES } from '@byway/protocol';
 import type { ChooserAnswer, EvidenceLabel, RunStatus } from '@byway/contracts';
 import { BLOCK_NAMES, RECIPE_NAMES, TERMS, codeForLabel, recipeTitle, stageFromCode, stepTitle, whoLabel } from '../src/view/vocabulary.ts';
 import { PRESENTATIONS } from '../src/services/demo/catalog.ts';
-import { answerNote, decidingQuestion, evidenceHeadline, fitText, runStatusLabel } from '../src/view/labels.ts';
+import { answerNote, decidingQuestion, evidenceHeadline, fitText, runStatusLabel, showAnswerNote } from '../src/view/labels.ts';
 
 describe('plain vocabulary (spec §5)', () => {
   it('names every block in plain words', () => {
@@ -102,6 +102,13 @@ describe('labels', () => {
     expect(answerNote(a({ confidence: 0.75 }))).toBe('You mention a landing page. (AI read, fairly sure)');
     expect(answerNote(a({ confidence: 0.5 }))).toBe('You mention a landing page. (AI read, unsure)');
     expect(answerNote(a({ setBy: 'user', confidence: 1 }))).toBe('You set this.');
+  });
+
+  it('explains yes answers and your own, and keeps plain noes from the intake quiet', () => {
+    const a = (over: Partial<ChooserAnswer>): ChooserAnswer => ({ questionId: 'q', answer: false, confidence: 0.6, rationale: 'Nothing points this way.', setBy: 'intake', ...over });
+    expect(showAnswerNote(a({}))).toBe(false);
+    expect(showAnswerNote(a({ answer: true }))).toBe(true);
+    expect(showAnswerNote(a({ setBy: 'user' }))).toBe(true);
   });
 
   it('finds the question that decides: the first yes', () => {

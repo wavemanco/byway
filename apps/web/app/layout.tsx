@@ -56,7 +56,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <div className="app-header-inner">
             <Link href="/" className="wordmark" aria-label="byway, start">
               <Mark />
-              byway
+              <span className="wordmark-text">byway</span>
             </Link>
             <Nav waiting={waiting} />
           </div>
