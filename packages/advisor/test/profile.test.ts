@@ -1,4 +1,4 @@
-import { c3, c4, c6, c6a, PROTOCOL_CONFIGS } from '@byway/catalog';
+import { c1, c3, c4, c5, c6, c6a, PROTOCOL_CONFIGS } from '@byway/catalog';
 import { steps, withHash, type Recipe } from '@byway/recipe';
 import { validate } from '@byway/validator';
 import { describe, expect, it } from 'vitest';
@@ -52,5 +52,61 @@ describe('protected checkpoints', () => {
       });
       expect(checkComposedProfile(voiceless, ctx(nearest)).map((v) => v.ruleId)).toContain('COMPOSED-VOICE');
     }
+  });
+});
+
+/**
+ * COMP-1: a composed recipe may not keep the protected checkpoints in name only. The four probes the review ran through
+ * checkAnswer were all accepted before: an AI rewrite of the author's text in C6a (inside the author's loop, and after
+ * it), and a model writer after the person's own words in C1 and C4 (declared keepsVoice, which only checks that the
+ * person's lines survive, so added AI copy passed).
+ */
+describe('protected checkpoints are kept in substance, not just in name (COMP-1)', () => {
+  const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+  const offer = (raw: unknown, nearest: Recipe) => checkAnswer(fencedJson(raw), nearest, { prompts, catalog: PROTOCOL_CONFIGS }, 'composed-probe').violations.map((v) => v.ruleId);
+  type Raw = { stages: { body: { op: string; steps: Record<string, unknown>[]; body?: { steps: Record<string, unknown>[] } } }[] };
+  const modelWriter = (id: string, prompt: string, extra: Record<string, unknown> = {}) => ({
+    op: 'step', id, role: 'fix', actor: 'model', tier: 'mid', prompt, consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true, ...extra,
+  });
+
+  it('refuses a C6a whose author loop has the AI rewrite the draft after each write', () => {
+    const r = clone(c6a) as unknown as Raw;
+    const loop = r.stages[1]!.body as unknown as { body: { steps: Record<string, unknown>[] } };
+    loop.body.steps.splice(1, 0, modelWriter('ai-rewrite', 'product.c3.revise'));
+    expect(offer(r, c6a)).toContain('COMPOSED-AUTHOR');
+  });
+
+  it('refuses a C6a that has the AI rewrite the whole text after the author loop', () => {
+    const r = clone(c6a) as unknown as Raw;
+    r.stages[1]!.body = { op: 'seq', steps: [r.stages[1]!.body as unknown as Record<string, unknown>, modelWriter('ai-polish', 'product.c3.revise')] };
+    expect(offer(r, c6a)).toContain('COMPOSED-AUTHOR');
+  });
+
+  it('refuses a C1 with a model writer after your own words, even one declared to keep them', () => {
+    const r = clone(c1) as unknown as Raw;
+    const d3 = r.stages[2]!.body.steps;
+    d3.splice(d3.findIndex((s) => s.id === 'voice') + 1, 0, modelWriter('post-voice-fix', 'article.CRIT-W', { keepsVoice: true }));
+    expect(offer(r, c1)).toContain('COMPOSED-VOICE');
+  });
+
+  it('refuses a C4 with a model revise after your own words, even one declared to keep them', () => {
+    const r = clone(c4) as unknown as Raw;
+    const d3 = r.stages[2]!.body.steps;
+    d3.splice(d3.findIndex((s) => s.id === 'voice') + 1, 0, modelWriter('post-voice-revise', 'product.c4.revise', { keepsVoice: true }));
+    expect(offer(r, c4)).toContain('COMPOSED-VOICE');
+  });
+
+  it("allows what the nearest recipe itself does after your words: C5's production keeps your locked script", () => {
+    // C5 writes media after the voice-over is locked (frames, clips, swaps that keep it verbatim); a composed C5 that
+    // does the same is not a breach, but one more model writer after your words is.
+    expect(offer(c5, c5)).toEqual([]);
+    const r = clone(c5) as unknown as Raw;
+    const d3 = r.stages[2]!.body.steps;
+    d3.splice(d3.findIndex((s) => s.id === 'voice') + 1, 0, modelWriter('post-voice-swaps', 'product.c5.apply-swaps', { keepsVoice: true }));
+    expect(offer(r, c5)).toContain('COMPOSED-VOICE');
+  });
+
+  it('still allows the author-only recipes their readers, and C3 its revise after your own draft', () => {
+    for (const nearest of [c3, c6, c6a]) expect(offer(nearest, nearest), nearest.id).toEqual([]);
   });
 });

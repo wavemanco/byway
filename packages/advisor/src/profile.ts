@@ -1,12 +1,15 @@
 import type { PromptRenderer } from '@byway/contracts';
 import { BLOCKS, EXCEPTIONS, ROLE_KNOBS, type KnobDef } from '@byway/protocol';
 import { steps, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
+import { stepsAfter } from './flow.ts';
 
 /**
  * The composed validator profile of ADR-0058, enforced in code on top of the validator: a composed recipe may use only
  * registered blocks with knobs in range, reuse only the catalog's step prompts (frozen prompts stay untouched; a step
  * cannot borrow another role's prompt), cite no study manipulation and no exception its nearest canonical recipe does
- * not declare, and must keep the protected human checkpoints (VOICE, and the author's own writing in C6/C6a).
+ * not declare, and must keep the protected human checkpoints (VOICE, and the author's own writing in C6/C6a), in
+ * substance as well as in name: no AI step may write the work after the author has in C6/C6a, and no more AI writers may
+ * follow your own words than the nearest recipe has there (COMP-1).
  */
 
 export interface ProfileViolation {
@@ -142,5 +145,46 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
   if (nearestAlways.some(isAuthorship) && !always.some(isAuthorship)) {
     add('author', 'stages', `in the nearest recipe (${ctx.nearest.id}) you write the work yourself (a human build step that writes it); keep one that always runs`);
   }
+
+  // COMP-1: the protected checkpoints must hold in substance, not only in name. A composed recipe that keeps your own
+  // writing, or your own words, but lets the AI write over the work afterwards keeps the checkpoint and undoes it.
+  if (nearestAlways.some(isAuthorship)) {
+    for (const { step, path } of modelWritersAfter(recipe, isAuthorship)) {
+      add('author', path, `step "${step.id}" lets the AI change the work after you wrote it; in ${ctx.nearest.id} every sentence is yours, so no AI step may write the work once you have`);
+    }
+  }
+  for (const { step, path } of extraWritersAfterVoice(recipe, ctx.nearest)) {
+    add('voice', path, `step "${step.id}" lets the AI write the work after your own words, which ${ctx.nearest.id} does not do there; your words stay the last word on the work`);
+  }
   return out;
+}
+
+/** A step that puts the person's own words into the work (a VOICE step), as the validator's PR6 reads it. */
+const writesVoice = (s: Step) => s.produces.includes('voice');
+
+/**
+ * Model steps that write the work and can run after a `mark` step has run on some path (flow.ts: along the control flow,
+ * loops run twice, so a writer earlier in the same loop counts for the next round). Each is reported once, at its path.
+ */
+export function modelWritersAfter(recipe: Recipe, mark: (s: Step) => boolean): { step: Step; path: string }[] {
+  return stepsAfter(recipe, mark).filter(({ step }) => step.actor === 'model' && step.writes === true);
+}
+
+/**
+ * Model writers after your own words that the nearest recipe does not have there. The validator's PR6 already refuses
+ * writers that do not declare keepsVoice; keepsVoice only checks that your lines survive, so added AI copy would pass.
+ * Some configurations do write after your words on purpose (C5 makes frames and clips, and applies the swaps you chose,
+ * after the voice-over is locked), so the bar is the nearest recipe: per role, no more model writers after your words
+ * than it has.
+ */
+function extraWritersAfterVoice(recipe: Recipe, nearest: Recipe): { step: Step; path: string }[] {
+  const allowed = new Map<string, number>();
+  for (const { step } of modelWritersAfter(nearest, writesVoice)) allowed.set(step.role, (allowed.get(step.role) ?? 0) + 1);
+  const extra: { step: Step; path: string }[] = [];
+  for (const w of modelWritersAfter(recipe, writesVoice)) {
+    const left = allowed.get(w.step.role) ?? 0;
+    if (left > 0) allowed.set(w.step.role, left - 1);
+    else extra.push(w);
+  }
+  return extra;
 }

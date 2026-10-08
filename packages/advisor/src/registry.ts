@@ -22,7 +22,13 @@ export interface StudyEntry {
 
 export const STUDY_REGISTRY: readonly StudyEntry[] = [];
 
-export const UNTESTED_SUMMARY = 'Not yet tested. Studies of this recipe are planned.';
+/**
+ * What an Untested label says: only what the registry holds, which is that no study of this exact hash has reported.
+ * It used to add "Studies of this recipe are planned.", a forward-looking claim nothing in the registry supports: no
+ * planned study names a product recipe's hash (Paper 1 studies C1-H, its own hash), and labels are computed, never typed
+ * (ADR-0054; ENG-13, LABEL-1). Should a planned study ever be registered for an exact hash, say so from that entry.
+ */
+export const UNTESTED_SUMMARY = 'Not yet tested.';
 export const COMPOSED_SUMMARY = 'Composed for you — not tested.';
 
 /** Composed recipes live on the workspace channel with kind 'composed' (ADR-0058); either marks one. */
