@@ -5,9 +5,7 @@
   "type": "module",
   "description": "The byway product app: describe a problem, get a recipe, run it with the AI and get the deliverable",
   "scripts": {
-    "dev": "next dev -H 127.0.0.1 -p 3000",
     "build": "next build",
-    "start": "next start -H 127.0.0.1 -p 3000",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

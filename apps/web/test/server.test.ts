@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import config from '../next.config.ts';
+import config, { configFor } from '../next.config.ts';
 import { artifactHeaders, isArtifactId } from '../src/server/artifacts.ts';
 import { checkRequest } from '../src/server/guard.ts';
 import { sniffImage } from '../src/server/refs.ts';
@@ -132,5 +132,18 @@ describe('app screens load images only from byway (SEC-4)', () => {
     const csp = headers.flatMap((h) => h.headers).find((x) => x.key === 'Content-Security-Policy')?.value ?? '';
     expect(csp).toContain("img-src 'self' data: blob:");
     expect(csp).toContain("media-src 'self' data: blob:");
+  });
+});
+
+describe('how the app is built and served (C8, SEC-3, DEV-1)', () => {
+  it('keeps no Turbopack cache in dev, where it would snapshot the environment and its keys under the repo', () => {
+    expect(configFor({}).experimental?.turbopackFileSystemCacheForDev).toBe(false);
+  });
+
+  it('builds into BYWAY_NEXT_DIST_DIR when set, so the e2e suite never rebuilds under a byway you are running', () => {
+    expect(configFor({})).toMatchObject({ distDir: '.next', typescript: { tsconfigPath: 'tsconfig.json' } });
+    // Its own tsconfig too: Next.js adds a build folder's type paths to the tsconfig it builds with.
+    expect(configFor({ BYWAY_NEXT_DIST_DIR: '.next-e2e' })).toMatchObject({ distDir: '.next-e2e', typescript: { tsconfigPath: 'tsconfig.e2e.json' } });
+    expect(() => configFor({ BYWAY_NEXT_DIST_DIR: '../outside' })).toThrow(/BYWAY_NEXT_DIST_DIR/);
   });
 });

@@ -25,6 +25,7 @@ coverage/
 # Local product data and secrets
 .byway-data/
 .next/
+.next-e2e/
 
 # Playwright output (pnpm e2e)
 apps/web/test-results/

@@ -20,8 +20,10 @@ Open http://127.0.0.1:3000. Ctrl+C stops everything.
 To use real models, put your provider keys in `.env.agents` at the repo root (it is gitignored; **never commit keys**), then:
 
 ```bash
-pnpm dev
+pnpm start
 ```
+
+Both build the web app first, then serve it.
 
 ```ini
 # .env.agents — any subset; Settings shows which are configured, never the keys themselves
@@ -32,22 +34,25 @@ OPENROUTER_API_KEY=...
 FAL_KEY=...          # video clips for Ad Video Chain
 ```
 
-Keys are read from the process environment (a key exported in your shell wins over the file). They never enter the database, the ledger, artifacts, logs, prompts or the browser. Every run has a budget, and the workspace has one too; a run stops and asks before it would spend more.
+Keys are read from the process environment (a key exported in your shell wins over the file). They never enter the database, the ledger, artifacts, logs, prompts or the browser, and nothing byway writes under the repo holds them: the web build gets no keys, and Next.js's dev cache is off.
+
+If you ran `pnpm dev` or `pnpm demo` before this change, delete `apps/web/.next/dev/cache` once: Next.js's dev cache could hold a copy of the environment, keys included. Every run has a budget, and the workspace has one too; a run stops and asks before it would spend more.
 
 ## Scripts
 
 | Command | What it does |
 |---|---|
-| `pnpm demo` | Starts byway with the mock provider forced on: the data directory, a local Temporal server and the runner worker in one process, then the web app on 127.0.0.1:3000 |
-| `pnpm dev` | The same, with real models for the providers that have keys (demo mode can still be switched on in Settings) |
-| `pnpm e2e` | The Playwright end-to-end suite: starts `pnpm demo` on a temp data directory and free ports, runs C1, C3, C4, C5 and C6a from a typed problem to the Result screen, then stops it and cleans up |
+| `pnpm start` | **The way to use byway.** Opens the data directory, starts a local Temporal server and the runner worker in one process, builds the web app (`next build`) and serves it (`next start`) on 127.0.0.1:3000, with real models for the providers that have keys (demo mode can still be switched on in Settings) |
+| `pnpm demo` | The same with the mock provider forced on: sample outputs, no AI calls, nothing charged |
+| `pnpm dev` | Contributor mode, with hot reload: `next dev` on an internal loopback port, behind a guard on 127.0.0.1:3000 that checks every request first (see Architecture). `pnpm dev -- --demo` forces the mock |
+| `pnpm e2e` | The Playwright end-to-end suite: starts `pnpm demo` on a temp data directory and free ports, with the web app built into its own folder (`apps/web/.next-e2e`) so a byway you are running is not rebuilt under you; runs C1, C3, C4, C5 and C6a from a typed problem to the Result screen, then stops it and cleans up |
 | `pnpm vitest run` (or `pnpm test`) | Unit, integration, conformance and guard tests for every package and the app |
 | `pnpm -s typecheck` | TypeScript across the packages, the scripts and the app |
 | `pnpm --filter ./apps/web run build` | Production build of the web app |
 | `pnpm byway validate recipes/c1h.json` | Check one recipe against the grammar (exit 0 ok, 1 violations, 2 unreadable) |
 | `pnpm recipes:emit` | Regenerate `recipes/*.json` after changing the catalog |
 
-`pnpm dev` and `pnpm demo` take `PORT` (web, default 3000), `BYWAY_TEMPORAL_PORT` (default 7233) and `BYWAY_DATA_DIR`. The first start downloads the Temporal dev server once; later starts reuse it. Web-page recipes render pages with Playwright's Chromium (`pnpm --filter ./apps/web exec playwright install chromium` if it is missing).
+`pnpm start`, `pnpm demo` and `pnpm dev` take `PORT` (web, default 3000), `BYWAY_TEMPORAL_PORT` (default 7233) and `BYWAY_DATA_DIR`. If the run engine stops while byway is running, byway says so and stops; start it again. The first start downloads the Temporal dev server once; later starts reuse it. Web-page recipes render pages with Playwright's Chromium (`pnpm --filter ./apps/web exec playwright install chromium` if it is missing).
 
 ## Architecture
 
@@ -69,10 +74,12 @@ packages/cli        `byway validate` and `byway hash` (research tooling).
 
 Dependencies point down the stack: the app uses the advisor, runner, store, gateway, prompts and catalog; the runner and the advisor use the gateway, catalog, recipe and validator (and prompts); nothing in `packages/` imports `apps/`, and product code never imports research evaluation instruments. Guard tests enforce this (`apps/web/test/guard-boundaries.test.ts`), along with the rule that no product text claims efficacy (`guard-claims.test.ts`).
 
-**Processes.** `pnpm dev` / `pnpm demo` run two Node processes:
+**Processes.** `pnpm start`, `pnpm demo` and `pnpm dev` run two Node processes:
 
-1. `scripts/dev.ts`: opens the data directory, the store, the gateway and the prompt templates, and starts the dev engine — a local Temporal server persisted in the data directory and the runner worker, which executes runs (model calls through the gateway, page renders in Playwright, human checkpoints).
-2. `next dev` on 127.0.0.1: the app. It reads and writes the same SQLite database (WAL, busy timeout) and ledger (cross-process lock), and starts and answers runs through the engine's Temporal client.
+1. `scripts/serve.ts`: opens the data directory, the store, the gateway and the prompt templates, and starts the run engine — a local Temporal server persisted in the data directory and the runner worker, which executes runs (model calls through the gateway, page renders in Playwright, human checkpoints). It watches the engine and stops byway, saying why, if the engine stops.
+2. The web app on 127.0.0.1: `next start` after a `next build` (`pnpm start`, `pnpm demo`), or `next dev` behind the guarding proxy (`pnpm dev`). It reads and writes the same SQLite database (WAL, busy timeout) and ledger (cross-process lock), and starts and answers runs through the engine's Temporal client.
+
+**The local server's guard.** byway binds 127.0.0.1, and every request passes a guard first: only loopback Host headers (no DNS rebinding) and no cross-site writes. Under `next start` the app's `proxy.ts` is that guard. `next dev` answers its own internal endpoints (open a file in your editor, attach a debugger, hot reload) before `proxy.ts` runs, so `pnpm dev` puts a small reverse proxy on the public port that applies the same guard to every request and WebSocket upgrade, and `next dev` listens on an internal port picked at random. Never run `next dev` on its own.
 
 ## Data
 
@@ -90,10 +97,10 @@ Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Win
 ```bash
 pnpm vitest run     # all packages and the app; no network, no real keys (fakes, the gateway's mock, temp folders)
 pnpm -s typecheck
-pnpm e2e            # Playwright, demo mode, temp data directory, non-default ports
+pnpm e2e            # Playwright, demo mode, production server, temp data directory, non-default ports
 ```
 
-The end-to-end suite sets stand-in provider keys and fails if any of them appears in a request or a response.
+The end-to-end suite sets stand-in provider keys and fails if any of them appears in a request, a response or the web build's folder.
 
 ## What's here
 

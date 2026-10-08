@@ -1,21 +1,48 @@
 /**
- * `pnpm e2e`: the Playwright suite (apps/web/e2e) against a real `pnpm demo`. It starts byway in demo mode on a fresh
- * temp data directory and free ports, so a byway you are running is never touched, with stand-in provider keys the
- * suite checks never leak (apps/web/e2e/keys.ts). When the suite ends it stops byway the clean way (the same path as
- * Ctrl+C) and removes the data directory. Arguments are passed to `playwright test`.
+ * `pnpm e2e`: the Playwright suite (apps/web/e2e) against a real `pnpm demo` (the production server, C8). It starts
+ * byway in demo mode on a fresh temp data directory and free ports, building the web app into its own folder
+ * (apps/web/.next-e2e), so a byway you are running from this checkout is not rebuilt under you (DEV-1). Stand-in
+ * provider keys are set, and the suite fails if any of them shows up in a request, a response or the build folder
+ * (apps/web/e2e/keys.ts; SEC-3). When the suite ends it stops byway the clean way (the same path as Ctrl+C) and removes
+ * the data directory. Arguments are passed to `playwright test`.
+ *
+ * Both byways still build the runner's workflow bundle into packages/runner/dist/workflows.js; it is the same code from
+ * the same checkout, so a second build writes the same file.
  *
  * The server's output goes to byway-e2e-server.log in the system temp folder (Playwright empties its own output folder).
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { createWriteStream, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { E2E_KEYS } from '../apps/web/e2e/keys.ts';
+import { E2E_KEYS, SENTINEL } from '../apps/web/e2e/keys.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
+/** The e2e build's own folder inside apps/web (next.config.ts). */
+const DIST_DIR = '.next-e2e';
+
+/** Files under a folder that contain a stand-in key: none may (keys are never written under the repo, SEC-3). */
+function filesWithKeys(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const found: string[] = [];
+  const values = Object.values(E2E_KEYS).map((v) => Buffer.from(v));
+  const marker = Buffer.from(SENTINEL);
+  const walk = (d: string) => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && statSync(full).size < 256 * 1024 * 1024) {
+        const bytes = readFileSync(full);
+        if (bytes.includes(marker) && values.some((v) => bytes.includes(v))) found.push(path.relative(ROOT, full));
+      }
+    }
+  };
+  walk(dir);
+  return found;
+}
 
 const freePort = () =>
   new Promise<number>((resolve, reject) => {
@@ -53,10 +80,18 @@ async function main(): Promise<number> {
   const log = createWriteStream(logFile);
 
   console.log(`e2e: starting byway in demo mode at ${baseUrl} (engine port ${temporalPort}, data ${dataDir})`);
-  const server = spawn(process.execPath, ['--import', 'tsx', path.join('scripts', 'dev.ts'), '--demo'], {
+  const server = spawn(process.execPath, ['--import', 'tsx', path.join('scripts', 'serve.ts'), 'start', '--demo'], {
     cwd: ROOT,
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-    env: { ...process.env, ...E2E_KEYS, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: '1', PORT: String(webPort), BYWAY_TEMPORAL_PORT: String(temporalPort) },
+    env: {
+      ...process.env,
+      ...E2E_KEYS,
+      BYWAY_DATA_DIR: dataDir,
+      BYWAY_DEMO: '1',
+      BYWAY_NEXT_DIST_DIR: DIST_DIR,
+      PORT: String(webPort),
+      BYWAY_TEMPORAL_PORT: String(temporalPort),
+    },
   });
   server.stdout?.pipe(log);
   server.stderr?.pipe(log);
@@ -77,7 +112,7 @@ async function main(): Promise<number> {
     console.error(`e2e: ${err instanceof Error ? err.message : String(err)}`);
     console.error(readFileSync(logFile, 'utf8').split('\n').slice(-40).join('\n'));
   } finally {
-    // The clean stop: the same path as Ctrl+C in `pnpm demo` (next dev, then the worker and Temporal, then the store).
+    // The clean stop: the same path as Ctrl+C in `pnpm demo` (the web app, then the worker and Temporal, then the store).
     if (server.exitCode === null) {
       server.send('stop');
       const stopped = await Promise.race([exited(server), new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), 60_000))]);
@@ -94,6 +129,12 @@ async function main(): Promise<number> {
     log.end();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   }
+  // The build ran with the stand-in keys in byway's environment: none may have reached the build folder.
+  const leaked = filesWithKeys(path.join(WEB, DIST_DIR));
+  if (leaked.length > 0) {
+    console.error(`e2e: a stand-in provider key was written under the repo:\n  ${leaked.join('\n  ')}`);
+    code ||= 1;
+  } else console.log(`e2e: no stand-in key under apps/web/${DIST_DIR}`);
   return code;
 }
 
