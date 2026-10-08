@@ -13,7 +13,8 @@ import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type 
  * - image-to-video models answer `{ video: { url, content_type } }` (fal's `I2VOutput`);
  * - `fal-ai/ffmpeg-api/extract-frame` with `frame_type: 'last'` answers `{ images: [{ url, content_type }] }`, so
  *   fal itself provides the last frame the next link starts from, and no local video decoder is needed.
- * Media URLs expire, so the gateway downloads and stores both at once.
+ * Media URLs expire, so the gateway downloads and stores both at once, only from fal's media host and within a byte
+ * cap (download, below; ADR-0088).
  */
 
 /** The slice of the fal client the adapter uses, so tests inject a fake. */
@@ -78,23 +79,127 @@ export function createFalClient(key: string): FalClientLike {
   };
 }
 
-/** Clips run to a few MB; anything far beyond is not a clip and is not read into memory. */
+/**
+ * Provider media trust (ADR-0088). The media URLs come from fal's answers, so they are fal's to name, but byway decides
+ * where it connects and how much it reads:
+ * - every URL fetched, the first and each redirect hop alike, must pass admitMediaUrl: https on the default port, no
+ *   userinfo, and fal's media domain (fal.media or a subdomain). With TLS to that name on every hop, a loopback or LAN
+ *   service cannot answer, so no address pinning is needed;
+ * - redirects are followed by hand, at most MAX_REDIRECTS, under one deadline for the whole download;
+ * - the bytes read are counted as they stream (decoded bytes, so a compressed body is bounded too), and reading stops
+ *   at MAX_DOWNLOAD_BYTES; a declared Content-Length over it is refused before reading;
+ * - a media host's HTTP status is a media failure ('provider-error', tried again only for 408, 429 and 5xx), never a
+ *   provider-API status: a CDN 401 is not a missing key.
+ */
 const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
+const MAX_REDIRECTS = 3;
+/** fal.media and its subdomains (v3.fal.media, v3b.fal.media). WHATWG parsing has already lowercased the host. */
+const FAL_MEDIA_HOST = /^(?:[a-z0-9-]+[.])*fal[.]media$/;
 
-const providerError = (message: string, status?: number) => Object.assign(new Error(message), status === undefined ? {} : { status });
+/** Whether a media URL may be fetched (see above). Trailing dots, IP literals and other ports all fail. */
+export function admitMediaUrl(u: URL): boolean {
+  return u.protocol === 'https:' && u.username === '' && u.password === '' && u.port === '' && FAL_MEDIA_HOST.test(u.hostname);
+}
 
-async function download(fetchImpl: typeof fetch, url: string, what: string): Promise<{ bytes: Uint8Array; contentType: string | undefined }> {
-  // Only fal's HTTPS media URLs are fetched: an answer naming another scheme is not followed.
-  if (!/^https:\/\//i.test(url)) throw new GatewayError('provider-error', `fal returned a ${what} URL that is not https`);
-  const res = await fetchImpl(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
-  if (!res.ok) throw providerError(`downloading the ${what} failed with HTTP ${res.status}`, res.status);
-  const declared = Number(res.headers.get('content-length') ?? 0);
-  if (declared > MAX_DOWNLOAD_BYTES) throw new GatewayError('provider-error', `the ${what} is ${declared} bytes, over the ${MAX_DOWNLOAD_BYTES}-byte limit`);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.byteLength > MAX_DOWNLOAD_BYTES) throw new GatewayError('provider-error', `the ${what} is over the ${MAX_DOWNLOAD_BYTES}-byte limit`);
-  if (bytes.byteLength === 0) throw new GatewayError('provider-error', `fal returned an empty ${what}`);
-  return { bytes, contentType: res.headers.get('content-type') ?? undefined };
+/** Where a URL points, for messages: scheme and host only, never userinfo or path. */
+const originOf = (u: URL) => `${u.protocol}//${u.host}`;
+
+const mediaError = (message: string, retryable = false) => new GatewayError('provider-error', message, retryable);
+
+const retryableStatus = (status: number) => status === 408 || status === 429 || status >= 500;
+
+/**
+ * The bytes a body yields, counted as they arrive: undefined (and the body cancelled) once they pass `cap`. With a
+ * declared length within the cap the buffer is allocated once; if the body turns out longer (a Content-Length counts
+ * compressed bytes, the reader yields decoded ones), the rest is gathered in chunks instead.
+ */
+export async function readCapped(body: ReadableStream<Uint8Array> | null, cap: number, declared: number | undefined): Promise<Uint8Array | undefined> {
+  if (!body) return new Uint8Array();
+  const reader = body.getReader();
+  let buffer = declared !== undefined && declared > 0 && declared <= cap ? new Uint8Array(declared) : undefined;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const at = total;
+    total += value.byteLength;
+    if (total > cap) {
+      await reader.cancel().catch(() => {});
+      return undefined;
+    }
+    if (buffer && total <= buffer.byteLength) {
+      buffer.set(value, at);
+      continue;
+    }
+    if (buffer) {
+      chunks.push(buffer.subarray(0, at));
+      buffer = undefined;
+    }
+    chunks.push(value);
+  }
+  if (buffer) return buffer.subarray(0, total);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
+}
+
+/** The clip's type from its bytes: MP4 (an ISO-BMFF `ftyp` box first) or WebM (the EBML magic); otherwise not a video. */
+export function sniffVideoType(bytes: Uint8Array): 'video/mp4' | 'video/webm' | undefined {
+  if (bytes.length >= 8 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return 'video/mp4';
+  if (bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return 'video/webm';
+  return undefined;
+}
+
+/** One media download under the rules above. `via` lists the origin of every URL fetched, for the evidence. */
+async function download(fetchImpl: typeof fetch, url: string, what: string): Promise<{ bytes: Uint8Array; via: string[] }> {
+  let current: URL;
+  try {
+    current = new URL(url);
+  } catch {
+    throw mediaError(`fal returned a ${what} URL that cannot be read`);
+  }
+  if (!admitMediaUrl(current)) throw mediaError(`fal returned a ${what} URL outside its media host (${originOf(current)})`);
+  const signal = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);
+  const via: string[] = [];
+  for (let redirects = 0; ; redirects++) {
+    via.push(originOf(current));
+    const res = await fetchImpl(current.href, { redirect: 'manual', signal });
+    if (res.status >= 300 && res.status < 400) {
+      await res.body?.cancel().catch(() => {});
+      const location = res.headers.get('location');
+      if (!location) throw mediaError(`fal's media host answered the ${what} with a redirect (HTTP ${res.status}) but no address`);
+      let next: URL;
+      try {
+        next = new URL(location, current);
+      } catch {
+        throw mediaError(`fal's media host redirected the ${what} to an address that cannot be read`);
+      }
+      if (!admitMediaUrl(next)) throw mediaError(`the ${what} download was redirected outside its media host (${originOf(next)})`);
+      if (redirects >= MAX_REDIRECTS) throw mediaError(`the ${what} download was redirected more than ${MAX_REDIRECTS} times`);
+      current = next;
+      continue;
+    }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      throw mediaError(`downloading the ${what} failed with HTTP ${res.status}`, retryableStatus(res.status));
+    }
+    const length = res.headers.get('content-length');
+    const declared = length !== null && /^\d+$/.test(length.trim()) ? Number(length) : undefined;
+    if (declared !== undefined && declared > MAX_DOWNLOAD_BYTES) {
+      await res.body?.cancel().catch(() => {});
+      throw mediaError(`the ${what} is ${declared} bytes, over the ${MAX_DOWNLOAD_BYTES}-byte limit`);
+    }
+    const bytes = await readCapped(res.body, MAX_DOWNLOAD_BYTES, declared);
+    if (!bytes) throw mediaError(`the ${what} is over the ${MAX_DOWNLOAD_BYTES}-byte limit`);
+    if (bytes.byteLength === 0) throw mediaError(`fal returned an empty ${what}`);
+    return { bytes, via };
+  }
 }
 
 /** The image type from the bytes themselves: the frame is stored under what it is, whatever a header claims. */
@@ -150,15 +255,22 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
 
       const requestBody = { endpoint: req.model, input: { ...input, [spec.imageField]: `artifact:${frame.artifactId}` }, extract: { endpoint: FAL_EXTRACT_FRAME, frame_type: 'last' } };
       const response: Record<string, unknown> = { requestId: generated.requestId, video: plain(generated.data) };
+      // The hosts each download used, in the stored evidence: a live link shows which media hosts fal really serves from.
+      const media: { clip?: string[]; frame?: string[] } = {};
+      response.media = media;
       const out: ProviderVideo = { servedModel: req.model, usage: { inputTokens: 0, outputTokens: 0, units: req.durationSec }, requestBody, responseBody: response };
       try {
         const video = fileUrl(generated.data, 'video');
         const clip = await req.attempt(() => download(fetchImpl, video.url, 'clip'));
-        const clipType = [clip.contentType, video.contentType].find((t) => t?.startsWith('video/'))?.split(';')[0] ?? 'video/mp4';
+        media.clip = clip.via;
+        // Typed from its bytes, whatever a header or fal's answer claims: anything else is not kept as a clip.
+        const clipType = sniffVideoType(clip.bytes);
+        if (!clipType) throw new GatewayError('provider-error', 'the clip fal returned is not a video (its bytes are neither MP4 nor WebM)');
         out.clip = { bytes: clip.bytes, mediaType: clipType };
         const extracted = await runJob(req.attempt, FAL_EXTRACT_FRAME, { video_url: video.url, frame_type: 'last' });
         response.frame = { requestId: extracted.requestId, ...(plain(extracted.data) as object) };
         const last = await req.attempt(() => download(fetchImpl, fileUrl(extracted.data, 'images').url, 'last frame'));
+        media.frame = last.via;
         const type = sniffImageType(last.bytes);
         if (!type) throw new GatewayError('provider-error', 'the last frame fal returned is not a PNG, JPEG or WebP image');
         out.lastFrame = { bytes: last.bytes, mediaType: type } satisfies MediaBytes;

@@ -402,7 +402,7 @@ export class ModelGateway implements Gateway {
         throw billedFailure(redact, `${ref.provider} made the clip and billed it, but its last frame could not be stored (the clip is kept as ${clip?.id ?? 'nothing'})`, keptFrame.error);
       }
       if (failure || !clip || !lastFrame) {
-        const what = !clip ? 'it could not be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
+        const what = !clip ? 'no usable clip could be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
         throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`));
       }
