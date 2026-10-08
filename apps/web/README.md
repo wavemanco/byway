@@ -84,8 +84,8 @@ Logic on top of the contracts sits in view code:
 - The server binds 127.0.0.1; `proxy.ts` refuses other Host headers (DNS rebinding) and cross-site writes on every
   request under `next start`. Under `next dev` (`pnpm dev`), `src/server/dev-proxy.ts` applies the same guard to every
   request and WebSocket upgrade first, including Next.js's own dev endpoints.
-- No provider key is written under the repo: `next build` gets none (`src/server/serving.ts`), and Turbopack's dev
-  cache, which would snapshot the environment, is off (`next.config.ts`).
+- No provider key is written under the repo: `next build` gets none (`src/server/serving.ts`), and Turbopack's
+  persistent caches, which would snapshot the environment, are off (`next.config.ts`).
 - Generated pages are shown in sandboxed iframes (never `allow-same-origin`) and served by the artifact route with a
   CSP that sandboxes them again, blocks requests and allows only the renderer's CDNs. A CSP cannot stop a page with
   scripts from navigating itself, so pages inside byway run their scripts only after you turn them on ("Run the
