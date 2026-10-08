@@ -1,0 +1,115 @@
+/*
+ * byway design tokens.
+ *
+ * One accent, and it means you: moss marks your steps, your turn and your primary actions. Everything the AI
+ * does is drawn in ink. Surfaces are true white and true near-black; neutrals lean very slightly toward the
+ * accent's hue so the palette reads as one family. Light and dark follow the system.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces and ink (light) */
+  --bg: oklch(1 0 0);
+  --bg-sunken: oklch(0.976 0.004 115);
+  --bg-hover: oklch(0.955 0.006 115);
+  --ink: oklch(0.22 0.008 115);
+  --ink-2: oklch(0.42 0.01 115);
+  --ink-3: oklch(0.5 0.01 115);
+  --line: oklch(0.905 0.006 115);
+  --line-strong: oklch(0.8 0.008 115);
+  /* Edges that identify a control (fields, switches, checkboxes): at least 3:1 against the surface (WCAG 1.4.11). */
+  --field-line: oklch(0.62 0.01 115);
+
+  /* You: the one accent */
+  --you: oklch(0.48 0.115 126);
+  --you-hover: oklch(0.42 0.11 126);
+  --you-ink: oklch(0.99 0.005 120);
+  --you-soft: oklch(0.955 0.035 122);
+  --you-line: oklch(0.78 0.08 124);
+  --you-text: oklch(0.42 0.1 126);
+
+  /* States */
+  --danger: oklch(0.5 0.17 27);
+  --danger-soft: oklch(0.965 0.022 27);
+  --caution: oklch(0.5 0.1 70);
+  --caution-soft: oklch(0.965 0.04 85);
+
+  /* Diffs (always paired with +/- signs, never colour alone) */
+  --add-bg: oklch(0.955 0.04 150);
+  --add-ink: oklch(0.36 0.09 150);
+  --del-bg: oklch(0.96 0.025 25);
+  --del-ink: oklch(0.44 0.14 25);
+
+  /* Type: the interface in the system sans; long-form reading and your own writing in a serif. */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+  --font-read: ui-serif, "Iowan Old Style", Charter, "Sitka Text", Cambria, Georgia, serif;
+  /* Code only (diffs): fixed columns are a function, not a typeface choice. */
+  --font-code: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+
+  --text-sm: 0.8125rem;   /* 13 */
+  --text-md: 0.9375rem;   /* 15 */
+  --text-lg: 1.0625rem;   /* 17 */
+  --text-xl: 1.25rem;     /* 20 */
+  --text-2xl: 1.5rem;     /* 24 */
+  --text-3xl: 2rem;       /* 32 */
+
+  /* Spacing */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+
+  --gutter: 24px;
+  --content: 1200px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur: 180ms;
+
+  --z-sticky: 10;
+  --z-banner: 20;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.17 0 0);
+    --bg-sunken: oklch(0.205 0.004 115);
+    --bg-hover: oklch(0.24 0.006 115);
+    --ink: oklch(0.945 0.006 115);
+    --ink-2: oklch(0.78 0.008 115);
+    --ink-3: oklch(0.7 0.008 115);
+    --line: oklch(0.29 0.006 115);
+    --line-strong: oklch(0.4 0.008 115);
+    --field-line: oklch(0.55 0.01 115);
+
+    --you: oklch(0.8 0.15 118);
+    --you-hover: oklch(0.86 0.14 118);
+    --you-ink: oklch(0.2 0.03 120);
+    --you-soft: oklch(0.255 0.045 122);
+    --you-line: oklch(0.52 0.1 120);
+    --you-text: oklch(0.83 0.14 118);
+
+    --danger: oklch(0.73 0.15 27);
+    --danger-soft: oklch(0.26 0.05 27);
+    --caution: oklch(0.8 0.12 80);
+    --caution-soft: oklch(0.27 0.04 80);
+
+    --add-bg: oklch(0.27 0.05 150);
+    --add-ink: oklch(0.86 0.09 150);
+    --del-bg: oklch(0.27 0.05 25);
+    --del-ink: oklch(0.84 0.09 25);
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --gutter: 16px;
+  }
+}

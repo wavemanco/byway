@@ -1,0 +1,594 @@
+/* Start, Recommendation, Library, History and Settings. */
+
+/* --- Start ---------------------------------------------------------------------------------------------- */
+
+.page-start {
+  max-width: 780px;
+  padding-top: var(--s-8);
+}
+
+.start-title {
+  font-size: var(--text-3xl);
+  letter-spacing: -0.02em;
+}
+
+.start-hint {
+  margin: var(--s-2) 0 var(--s-4);
+  color: var(--ink-2);
+}
+
+.start-field {
+  min-height: 168px;
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  font-size: var(--text-lg);
+}
+
+.examples {
+  margin-top: var(--s-4);
+}
+
+.examples-label {
+  margin-bottom: var(--s-2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.examples ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.example {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+.example:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.attachments {
+  display: grid;
+  gap: var(--s-4);
+  list-style: none;
+  margin: var(--s-5) 0 0;
+  padding: 0;
+}
+
+.attachment-head {
+  display: flex;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+
+.attachment-name {
+  max-width: 320px;
+}
+
+.attachment-text {
+  font-family: var(--font-code);
+  font-size: var(--text-sm);
+}
+
+.start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+}
+
+.start-spacer {
+  flex: 1;
+}
+
+.start-recipe {
+  color: var(--ink-2);
+}
+
+.start .error-text {
+  margin-top: var(--s-2);
+}
+
+.start-waiting {
+  margin-top: var(--s-8);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--line);
+}
+
+.start-waiting h2 {
+  margin-bottom: var(--s-3);
+}
+
+.start-waiting li a {
+  font-weight: 600;
+}
+
+.start-waiting li .muted {
+  display: block;
+  font-size: var(--text-sm);
+}
+
+/* --- Recommendation ------------------------------------------------------------------------------------- */
+
+.problem-echo {
+  max-width: 80ch;
+  margin-bottom: var(--s-6);
+}
+
+.problem-echo q {
+  font-family: var(--font-read);
+  font-size: var(--text-lg);
+}
+
+.recommend-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
+  gap: var(--s-7);
+  align-items: start;
+}
+
+.proposal-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+  color: var(--ink-2);
+  font-weight: 550;
+}
+
+.proposal h1 {
+  font-size: var(--text-3xl);
+  letter-spacing: -0.02em;
+}
+
+.proposal-promise {
+  max-width: 60ch;
+  margin-top: var(--s-2);
+  color: var(--ink-2);
+  font-size: var(--text-lg);
+}
+
+.proposal-route {
+  display: grid;
+  gap: var(--s-4);
+  margin-top: var(--s-6);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-4);
+  margin: var(--s-6) 0 0;
+  padding: var(--s-4) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.facts dt {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.facts dd {
+  margin: 2px 0 0;
+  font-weight: 550;
+}
+
+.facts-sub {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.composed {
+  margin-top: var(--s-5);
+}
+
+.composed h2 {
+  margin-bottom: var(--s-2);
+}
+
+.composed ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.composed .notice {
+  margin-top: var(--s-3);
+}
+
+.routing-note {
+  margin-top: var(--s-4);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.route-details {
+  margin-top: var(--s-3);
+}
+
+.start-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--s-2) var(--s-4);
+  margin-top: var(--s-6);
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+
+.start-bar-help {
+  align-self: center;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.start-bar-error {
+  grid-column: 1 / -1;
+}
+
+.start-bar-error:empty {
+  display: none;
+}
+
+.recommend-aside {
+  display: grid;
+  gap: var(--s-6);
+}
+
+.aside-section h2 {
+  margin-bottom: var(--s-2);
+}
+
+.aside-section > p + p,
+.aside-section > p + .button {
+  margin-top: var(--s-3);
+}
+
+.aside-section .section-note {
+  margin: 0 0 var(--s-2);
+}
+
+.chooser {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chooser-q {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-3);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line);
+}
+
+.chooser-question {
+  line-height: 1.4;
+}
+
+.chooser-q[data-deciding] .chooser-question {
+  font-weight: 600;
+}
+
+.chooser-note {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.chooser-note strong {
+  color: var(--you-text);
+}
+
+.chooser-answer {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.alternatives li {
+  line-height: 1.45;
+}
+
+.alternatives .link-button {
+  color: var(--ink);
+  font-weight: 550;
+}
+
+/* --- Library -------------------------------------------------------------------------------------------- */
+
+.library {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.recipe-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main action'
+    'route route'
+    'facts facts';
+  gap: var(--s-4) var(--s-6);
+  padding: var(--s-6) 0;
+  border-top: 1px solid var(--line);
+}
+
+.recipe-main {
+  grid-area: main;
+}
+
+.recipe-main h2 {
+  font-size: var(--text-xl);
+}
+
+.recipe-promise {
+  max-width: 70ch;
+  margin-top: var(--s-1);
+}
+
+.recipe-best {
+  margin-top: var(--s-1);
+  font-size: var(--text-sm);
+}
+
+.recipe-route {
+  grid-area: route;
+}
+
+.recipe-facts {
+  grid-area: facts;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-6);
+  margin: 0;
+}
+
+.recipe-facts div {
+  display: flex;
+  gap: var(--s-2);
+  align-items: baseline;
+}
+
+.recipe-facts dt {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.recipe-facts dd {
+  margin: 0;
+}
+
+.recipe-action {
+  grid-area: action;
+}
+
+/* --- History -------------------------------------------------------------------------------------------- */
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 72px 96px;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line);
+}
+
+.history-title {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.history-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.history-sub {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.history-ask {
+  display: block;
+  color: var(--ink);
+}
+
+.history-cost,
+.history-when {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  text-align: right;
+}
+
+/* --- Settings ------------------------------------------------------------------------------------------- */
+
+/* Left-aligned with the header like every screen; only the reading width is narrower. */
+.page-narrow > * {
+  max-width: 780px;
+}
+
+.settings-section {
+  padding: var(--s-5) 0;
+  border-top: 1px solid var(--line);
+}
+
+.settings-section > h2 {
+  margin-bottom: var(--s-2);
+}
+
+.settings-section .section-note {
+  margin: 0 0 var(--s-3);
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-5);
+}
+
+.setting-row h2 {
+  margin-bottom: var(--s-1);
+}
+
+.providers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.provider {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line);
+}
+
+.provider-name {
+  font-weight: 600;
+}
+
+.provider-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+
+.profiles {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.profile {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+
+.profile input {
+  margin-top: 4px;
+  accent-color: var(--you);
+}
+
+.profile[data-checked] {
+  border-color: var(--you);
+  box-shadow: 0 0 0 1px var(--you);
+}
+
+.profile-name {
+  display: block;
+  font-weight: 600;
+}
+
+.profile-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s-4);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.inline-form {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* --- Narrow screens ------------------------------------------------------------------------------------- */
+
+@media (max-width: 960px) {
+  .recommend-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .page-start {
+    padding-top: var(--s-6);
+  }
+
+  .start-title,
+  .proposal h1 {
+    font-size: var(--text-2xl);
+  }
+
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .start-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recipe-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'main' 'route' 'facts' 'action';
+  }
+
+  .history-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .history-cost,
+  .history-when {
+    text-align: left;
+  }
+
+  .app-header-inner {
+    gap: var(--s-2);
+  }
+
+  .nav a {
+    padding: 6px 8px;
+  }
+}
+
+/* On the narrowest phones the mark alone stands for byway, so all four destinations fit. */
+@media (max-width: 420px) {
+  .wordmark-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
