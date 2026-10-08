@@ -8,5 +8,8 @@ import { getServices } from '../../../src/services/index.ts';
  */
 export async function GET(request: NextRequest, ctx: RouteContext<'/artifacts/[id]'>) {
   const { id } = await ctx.params;
-  return artifactResponse(getServices(), id, request.nextUrl);
+  // proxy.ts has already refused any Host that is not this computer's loopback address.
+  const host = request.headers.get('host');
+  const origin = host ? `${request.nextUrl.protocol}//${host}` : request.nextUrl.origin;
+  return artifactResponse(getServices(), id, request.nextUrl, origin);
 }

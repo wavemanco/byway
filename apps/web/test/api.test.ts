@@ -142,6 +142,10 @@ describe('the artifact route', () => {
     expect(res.headers.get('content-security-policy')).toContain('sandbox allow-scripts');
     expect(await res.text()).toContain('<title>x</title>');
 
+    // The CSP names the origin the browser used, even when the request URL was normalised to localhost.
+    const viaLoopback = await artifactResponse(d.services, page.id, new URL(`http://localhost:3000/artifacts/${page.id}`), 'http://127.0.0.1:3000');
+    expect(viaLoopback.headers.get('content-security-policy')).toContain('img-src http://127.0.0.1:3000/artifacts/');
+
     const dl = await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}?download=1&name=My%20page`));
     expect(dl.headers.get('content-disposition')).toBe('attachment; filename="my-page.html"');
 

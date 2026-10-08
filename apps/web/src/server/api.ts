@@ -141,8 +141,12 @@ export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsP
   });
 }
 
-/** The artifact route: content-addressed bytes, with the sandboxing headers of src/server/artifacts.ts. */
-export async function artifactResponse(services: Services, rawId: string, url: URL): Promise<Response> {
+/**
+ * The artifact route: content-addressed bytes, with the sandboxing headers of src/server/artifacts.ts. `origin`
+ * is the one the browser used (from the Host header the guard has already checked), because the CSP must name
+ * it exactly: Next.js may report a normalised host in the request URL (localhost for 127.0.0.1).
+ */
+export async function artifactResponse(services: Services, rawId: string, url: URL, origin: string = url.origin): Promise<Response> {
   let id = rawId;
   try {
     id = decodeURIComponent(rawId);
@@ -153,5 +157,5 @@ export async function artifactResponse(services: Services, rawId: string, url: U
   if (!(await services.store.artifacts.has(id))) return new Response('Artifact not found.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   const { record, bytes } = await services.store.artifacts.get(id);
   const download = url.searchParams.get('download') === '1' ? (url.searchParams.get('name') ?? 'byway-result').slice(0, 200) : undefined;
-  return new Response(new Uint8Array(bytes), { status: 200, headers: artifactHeaders(record.mediaType, url.origin, download) });
+  return new Response(new Uint8Array(bytes), { status: 200, headers: artifactHeaders(record.mediaType, origin, download) });
 }

@@ -18,6 +18,8 @@
   --ink-3: oklch(0.5 0.01 115);
   --line: oklch(0.905 0.006 115);
   --line-strong: oklch(0.8 0.008 115);
+  /* Edges that identify a control (fields, switches, checkboxes): at least 3:1 against the surface (WCAG 1.4.11). */
+  --field-line: oklch(0.62 0.01 115);
 
   /* You: the one accent */
   --you: oklch(0.48 0.115 126);
@@ -85,6 +87,7 @@
     --ink-3: oklch(0.7 0.008 115);
     --line: oklch(0.29 0.006 115);
     --line-strong: oklch(0.4 0.008 115);
+    --field-line: oklch(0.55 0.01 115);
 
     --you: oklch(0.8 0.15 118);
     --you-hover: oklch(0.86 0.14 118);

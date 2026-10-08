@@ -436,7 +436,7 @@
   place-items: center;
   width: 18px;
   height: 18px;
-  border: 1.5px solid var(--line-strong);
+  border: 1.5px solid var(--field-line);
   border-radius: 50%;
   background: var(--bg);
 }
@@ -498,8 +498,8 @@
 }
 
 .compare-col[data-current] {
-  border-color: var(--you-line);
-  box-shadow: 0 0 0 1px var(--you-line);
+  border-color: var(--you);
+  box-shadow: 0 0 0 1px var(--you);
 }
 
 .compare-head {
@@ -561,7 +561,7 @@
   width: 100%;
   min-height: 340px;
   padding: var(--s-4) var(--s-5);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--field-line);
   border-radius: var(--r-md);
   background: var(--bg);
   font-family: var(--font-read);
