@@ -10,6 +10,7 @@ import { checkEvents, ofType } from '../helpers/events.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
 import { claimLogged, illustrated, judgedPick, policyLoop, randomPick, scripted, shortAd, swept, tiny, trimmed, trimmedByHand, twiceJudged, voicedPage } from '../helpers/recipes.ts';
 import { pageCopy } from '../../src/copy.ts';
+import { VOICEOVER_KEPT_NOTE } from '../../src/activities/writes.ts';
 
 let h: Harness;
 
@@ -160,23 +161,23 @@ export function operatorScenarios(use: () => Harness): void {
   });
 
   describe('keepsVoice (port rule 6)', () => {
-    it('refuses a machine write that changes the words you wrote, and keeps the one that does not', async () => {
+    it('writes back the voice-over a machine write changed, exactly as you wrote it, and the step says so (F07)', async () => {
       const script = 'Less time on the road.\nMore time on the trail.';
-      let n = 0;
       h.responders['fix:media'] = (ctx) => {
         const board = JSON.parse([...ctx.prompt.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)![1]!) as { voiceover: string };
-        if (++n === 1) board.voiceover = 'Run further, faster, freer.';
+        board.voiceover = 'Run further, faster, freer.';
         return '```json\n' + JSON.stringify(board) + '\n```';
       };
       try {
         const run = await h.start(scripted, { problem: { text: 'A 10-second ad for trail shoes' } });
         const view = await h.drive(run.id, (cp) => (cp.kind === 'write' ? { checkpointId: cp.id, text: script } : undefined));
         expect(view.run.status).toBe('done');
-        const fixes = h.succeeded(run.id).filter((c) => c.purpose === 'fix:media');
-        expect(fixes).toHaveLength(2);
-        expect(JSON.stringify(fixes[1]!.request)).toMatch(/own words must stay exactly as written/);
+        // One call: the locked voice-over is written back rather than sent back to the model.
+        expect(h.succeeded(run.id).filter((c) => c.purpose === 'fix:media')).toHaveLength(1);
         const out = JSON.parse(await h.store.artifacts.getText(view.run.outputArtifactId!)) as { voiceover: string };
         expect(out.voiceover).toBe(script);
+        expect(ofType(view, 'step-finished', 'polish').map((e) => e.data.note)).toEqual([VOICEOVER_KEPT_NOTE]);
+        expect(VOICEOVER_KEPT_NOTE).toMatch(/voice-over .*kept exactly as it was/);
       } finally {
         delete h.responders['fix:media'];
       }

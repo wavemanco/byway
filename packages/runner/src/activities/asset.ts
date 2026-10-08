@@ -19,7 +19,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
-import { announce, storeText, writeProblems } from './writes.ts';
+import { announce, checkedWriter, restoredNote, storeText } from './writes.ts';
 
 export const NO_IMAGES_NOTE = 'No image provider key is configured, so no images were made; the work passes through unchanged.';
 export const NO_AUDIO_NOTE = 'No voice-over audio provider is configured';
@@ -51,6 +51,9 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
 
   const reader = new ArtifactReader(deps);
   const current = await reader.text(ports.artifact);
+  // keepsVoice: locked before the paid calls, so a fault in the check never repeats them.
+  const write = checkedWriter(run, step.keepsVoice ? ports.voice : undefined, current);
+  let restored: string[] = [];
   const knobs = step.knobs ?? {};
   const slotsKnob = typeof knobs.slots === 'number' ? knobs.slots : 3;
   const tries = typeof knobs.triesPerSlot === 'number' ? Math.max(1, knobs.triesPerSlot) : 1;
@@ -119,9 +122,11 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
         const missing = made.filter((m) => !doc.value.includes(imageRoute(m.artifactId)));
         const problems = [
           ...(missing.length ? [`Place every image by its address; missing: ${missing.map((m) => imageRoute(m.artifactId)).join(', ')}.`] : []),
-          ...writeProblems(run, doc.value, step.keepsVoice ? ports.voice : undefined, current),
         ];
-        return problems.length ? { ok: false, problem: problems.join(' ') } : doc;
+        const checked = write(doc.value);
+        problems.push(...checked.problems);
+        restored = checked.restored;
+        return problems.length ? { ok: false, problem: problems.join(' ') } : { ok: true, value: checked.text };
       },
     });
     result.costUsd += integrate.costUsd;
@@ -130,10 +135,10 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     if (writes) result.artifactId = id;
     else result.asset = made.map((m) => m.artifactId);
   } else {
-    const attached = attach(medium, current, made);
-    const problems = writeProblems(run, attached, step.keepsVoice ? ports.voice : undefined, current);
-    if (problems.length) throw new StepError(`The ${what} step could not attach its images: ${problems.join(' ')}`);
-    const id = await storeText(deps, run, call, attached, { label: writes ? what : `${what} (kept beside the work)`, name: 'work' });
+    const checked = write(attach(medium, current, made));
+    if (checked.problems.length) throw new StepError(`The ${what} step could not attach its images: ${checked.problems.join(' ')}`);
+    restored = checked.restored;
+    const id = await storeText(deps, run, call, checked.text, { label: writes ? what : `${what} (kept beside the work)`, name: 'work' });
     outputs.push(id);
     if (writes) result.artifactId = id;
     else result.asset = made.map((m) => m.artifactId);
@@ -142,7 +147,8 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
       if (first) result.anchor = first.artifactId;
     }
   }
-  await stepFinished(deps, run, call, { costUsd: result.costUsd, outputArtifactIds: outputs }, true);
+  const note = restoredNote(restored);
+  await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
 

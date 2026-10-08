@@ -15,7 +15,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
-import { announce, storeText, writeProblems } from './writes.ts';
+import { announce, checkedWriter, restoredNote, storeText } from './writes.ts';
 
 export const NO_VIDEO_NOTE = 'No video provider key is configured';
 export const NO_COMPOSITING_NOTE = 'Compositing is not available in byway yet';
@@ -40,6 +40,8 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   const sb = parseStoryboard(storyboardText);
   if (!sb.ok) throw new StepError(`The ${what} step could not read the storyboard: ${sb.problem}`);
   if (!sb.value.storyboard.some((s) => s.shot === shot)) throw new StepError(`The storyboard has no shot ${shot}.`);
+  // keepsVoice: locked before the paid calls, so a fault in the check never repeats them.
+  const write = checkedWriter(run, step.keepsVoice ? ports.voice : undefined, storyboardText);
 
   // Inside a chain the link's start frame; outside it (render-in-scene) the chain's last frame.
   const start = ports.linkStart ?? ports.anchor;
@@ -89,10 +91,11 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   await announce(deps, run.runId, call, clip.lastFrameArtifactId, clip.lastFrameMediaType, { label: `Last frame of shot ${shot}`, name: 'last-frame', shot });
 
   const next = serializeJson({ ...sb.value, storyboard: sb.value.storyboard.map((s) => (s.shot === shot ? { ...s, clipArtifactId: clip.artifactId } : s)) });
-  const problems = writeProblems(run, next, step.keepsVoice ? ports.voice : undefined, storyboardText);
-  if (problems.length) throw new StepError(`The ${what} step could not update the storyboard: ${problems.join(' ')}`);
-  const artifactId = await storeText(deps, run, call, next, { label: `Storyboard with the clip for shot ${shot}`, name: 'work', shot });
-  await stepFinished(deps, run, call, { costUsd, outputArtifactIds: [clip.artifactId, clip.lastFrameArtifactId, artifactId] }, true);
+  const checked = write(next);
+  if (checked.problems.length) throw new StepError(`The ${what} step could not update the storyboard: ${checked.problems.join(' ')}`);
+  const artifactId = await storeText(deps, run, call, checked.text, { label: `Storyboard with the clip for shot ${shot}`, name: 'work', shot });
+  const note = restoredNote(checked.restored);
+  await stepFinished(deps, run, call, { costUsd, ...(note ? { note } : {}), outputArtifactIds: [clip.artifactId, clip.lastFrameArtifactId, artifactId] }, true);
   return { costUsd, artifactId, anchor: clip.lastFrameArtifactId };
 }
 
