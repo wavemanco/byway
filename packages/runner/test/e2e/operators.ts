@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { VideoRequest, VideoResult } from '@byway/contracts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import type { Harness } from '../helpers/harness.ts';
-import { policyLoop, scripted, shortAd, tiny } from '../helpers/recipes.ts';
+import { judgedPick, policyLoop, randomPick, scripted, shortAd, tiny } from '../helpers/recipes.ts';
 
 let h: Harness;
 
@@ -45,6 +45,34 @@ export function operatorScenarios(use: () => Harness): void {
       } finally {
         delete h.responders['check:media'];
       }
+    }, 60_000);
+  });
+
+  describe('picks by a judge and by chance', () => {
+    it('pick(C) asks the judge step to choose among the labelled candidates', async () => {
+      h.responders['judge:prose'] = () => 'B is clearest.\nChoice: B';
+      try {
+        const run = await h.start(judgedPick);
+        const view = await h.drive(run.id);
+        expect(view.run.status).toBe('done');
+        const drafts = ofType(view, 'artifact', 'draft').sort((a, b) => (a.candidate ?? 0) - (b.candidate ?? 0));
+        expect(drafts.map((e) => e.candidate)).toEqual([0, 1, 2]);
+        expect(view.run.outputArtifactId).toBe(drafts[1]!.data.artifactId);
+        const judge = h.prompts.calls.filter((c) => c.id === 'product.test.judge').at(-1)!;
+        expect(judge.slots.options).toMatch(/^### A\n[\s\S]*### B\n[\s\S]*### C\n/);
+        expect(view.checkpoints).toEqual([]);
+      } finally {
+        delete h.responders['judge:prose'];
+      }
+    }, 60_000);
+
+    it('pick(R) keeps one at random, deterministically on replay, and asks no one', async () => {
+      const run = await h.start(randomPick);
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      const drafts = ofType(view, 'artifact', 'draft').map((e) => e.data.artifactId);
+      expect(drafts).toContain(view.run.outputArtifactId);
+      expect(ofType(view, 'step-finished', 'choose')[0]!.data.outputArtifactIds).toEqual([view.run.outputArtifactId]);
     }, 60_000);
   });
 

@@ -96,3 +96,8 @@ export const scripted = recipe(
     step({ id: 'polish', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.test.polish', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true, keepsVoice: true }),
   ),
 );
+
+/** Three drafts, then a judge (pick C) or chance (pick R) keeps one. */
+const judgeStep = step({ id: 'judge', role: 'judge', actor: 'model', tier: 'big', isolated: true, prompt: 'product.test.judge', consumes: ['option_set<artifact>'], produces: ['option_set<artifact>'] });
+export const judgedPick = recipe('judged-pick', 'prose', seq(replicate('drafts', 3, build('draft')), pick('choose', 'C', 1, 'model', judgeStep)));
+export const randomPick = recipe('random-pick', 'prose', seq(replicate('drafts', 3, build('draft')), pick('choose', 'R', 1, 'policy')));
