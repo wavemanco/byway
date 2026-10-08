@@ -56,7 +56,9 @@ export function critique(o: CriticInput): string {
   const gaps = sample(rand, GAPS[o.medium], Math.max(1, 3 - Math.min(2, o.iteration)));
   const bullets = gaps.map((g) => `- ${g}`).join('\n');
   if (o.rankOf !== undefined) {
-    const rank = Math.max(1, o.rankOf - o.iteration);
+    // Ours starts just above the bottom and climbs a third of the lineup per round, so a demo rank loop (stop at
+    // rank 3 within 2–3 rounds, 03 C3/C4/C7) converges in a lineup of 4 to 12 the way the score loops do.
+    const rank = Math.max(1, o.rankOf - 1 - o.iteration * Math.ceil(o.rankOf / 3));
     return `${bullets}\nRank: ${rank} of ${o.rankOf}`;
   }
   const start = int(rand, 6, 7);

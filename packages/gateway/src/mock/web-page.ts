@@ -181,16 +181,27 @@ export function revisePage(html: string, iteration: number): string {
   return out;
 }
 
-/** ASSET integration in demo mode: the first image replaces the hero illustration; the rest form a gallery. */
-export function integrateImages(html: string, images: { url: string; alt: string }[]): string {
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * ASSET integration in demo mode. An image named for a slot fills the figure with that `data-slot`; without a slot,
+ * the first image replaces the hero illustration. The rest form a gallery before the end of the page.
+ */
+export function integrateImages(html: string, images: { url: string; alt: string; slot?: string }[]): string {
   if (!images.length) return html;
-  const [first, ...rest] = images;
   let out = html;
-  if (first) {
-    const img = `<img src="${escapeHtml(first.url)}" alt="${escapeHtml(first.alt)}">`;
-    out = out.replace(/(<figure class="art" data-slot="hero">)[\s\S]*?(<\/figure>)/, `$1${img}$2`);
-    if (out === html) rest.unshift(first);
-  }
+  const rest: typeof images = [];
+  const fill = (slot: string, image: (typeof images)[number]): boolean => {
+    const img = `<img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt)}">`;
+    const before = out;
+    out = out.replace(new RegExp(`(<figure[^>]*data-slot="${escapeRegExp(slot)}"[^>]*>)[\\s\\S]*?(</figure>)`), (_m, open: string, close: string) => `${open}${img}${close}`);
+    return out !== before;
+  };
+  const slotted = images.some((i) => i.slot);
+  images.forEach((image, i) => {
+    const slot = image.slot ?? (!slotted && i === 0 ? 'hero' : undefined);
+    if (!slot || !fill(slot, image)) rest.push(image);
+  });
   if (rest.length) {
     const gallery = `<section class="gallery">${rest.map((i) => `<figure><img src="${escapeHtml(i.url)}" alt="${escapeHtml(i.alt)}"></figure>`).join('')}</section>`;
     out = /<\/main>/i.test(out) ? out.replace(/<\/main>/i, `${gallery}\n</main>`) : out.replace(/<\/body>/i, `${gallery}\n</body>`);

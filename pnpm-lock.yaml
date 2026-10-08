@@ -131,6 +131,9 @@ importers:
         specifier: ^7.28.0
         version: 7.28.0(ws@8.22.0)(zod@4.6.5)
     devDependencies:
+      '@byway/catalog':
+        specifier: workspace:*
+        version: link:../catalog
       '@byway/recipe':
         specifier: workspace:*
         version: link:../recipe

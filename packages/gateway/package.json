@@ -16,6 +16,7 @@
     "openai": "^7.28.0"
   },
   "devDependencies": {
+    "@byway/catalog": "workspace:*",
     "@byway/recipe": "workspace:*",
     "@byway/validator": "workspace:*"
   }

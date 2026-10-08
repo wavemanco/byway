@@ -24,6 +24,12 @@ const Hits = z.strictObject({ hits: z.array(z.strictObject({ pattern: z.string()
 const Briefs = z.strictObject({
   images: z.array(z.strictObject({ slot: z.string().min(1), prompt: z.string().min(1), alt: z.string().min(1), size: z.enum(['1024x1024', '1536x1024', '1024x1536']) })).min(1),
 });
+const Dedupe = z.strictObject({
+  keep: z.array(z.string().min(1)),
+  merged: z.array(z.strictObject({ into: z.string().min(1), from: z.array(z.string().min(1)).min(1) })),
+});
+const Overlap = z.strictObject({ flags: z.array(z.strictObject({ label: z.string().min(1), overlapsWith: z.string().min(1), note: z.string().min(1) })) });
+const Relay = z.strictObject({ clipPrompt: z.string().min(1), durationSec: z.number().positive() });
 const Intake = z.strictObject({
   answers: z.array(z.strictObject({ questionId: z.string().min(1), answer: z.boolean(), confidence: z.number().min(0).max(1), rationale: z.string().min(1) })),
   routes: z.record(z.string(), z.string()),
@@ -77,6 +83,15 @@ export interface CheckContext {
   questionIds?: string[];
   /** Maximum briefs requested. */
   maxBriefs?: number;
+  /** asset.briefs on options and media: the exact slots expected (option labels, shot numbers). */
+  slots?: string[];
+  /** overlap: the unseeded (vanilla) labels shown, V1, V2… (`labels` holds the seeded ones). */
+  vanillaLabels?: string[];
+  /** asset.integrate: each image's src (web-page) or Markdown image line (prose) must be in the result. */
+  images?: string[];
+  /** critic: the mode the prompt asked for, and in GREAT mode the lineup size M of "Rank: N of M". */
+  mode?: 'OK' | 'GREAT';
+  lineup?: number;
 }
 
 export function checkContract(purpose: string, text: string, ctx: CheckContext = {}): string[] {
@@ -85,30 +100,46 @@ export function checkContract(purpose: string, text: string, ctx: CheckContext =
   const medium = i < 0 ? undefined : purpose.slice(i + 1);
   const builder = ['build', 'seed', 'fix', 'asset', 'asset.integrate', 'voice.apply'].includes(role);
   if (builder) {
-    switch (medium) {
-      case 'web-page': {
-        const html = lastBlock(text, 'html');
-        if (!html) return ['no ```html block'];
-        const problems: string[] = [];
-        if (!/^<!doctype html>/i.test(html.trim())) problems.push('not a complete document (no doctype)');
-        for (const tag of ['<html', '<head>', '<title>', '<body>', '</body>', '</html>']) if (!html.includes(tag)) problems.push(`missing ${tag}`);
-        if (/<script[^>]+src=|<link[^>]+href="https?:/i.test(html)) problems.push('loads external resources');
-        return problems;
+    const problems = artifactProblems(medium, text);
+    if (role === 'asset.integrate' && !problems.length) {
+      const doc = medium === 'web-page' ? (lastBlock(text, 'html') ?? '') : (lastBlock(text, 'markdown') ?? text);
+      for (const image of ctx.images ?? []) {
+        if (!(medium === 'web-page' ? doc.includes(`src="${image}"`) : doc.includes(image))) problems.push(`image ${image} is not placed`);
       }
-      case 'prose': {
-        const md = (lastBlock(text, 'markdown') ?? text).trim();
-        return md.startsWith('# ') && md.length > 120 ? [] : ['not a Markdown document with a title'];
-      }
-      case 'options':
-        return jsonBlock(text, Options).problem ? [jsonBlock(text, Options).problem as string] : [];
-      case 'media':
-        return jsonBlock(text, Storyboard).problem ? [jsonBlock(text, Storyboard).problem as string] : [];
-      case 'code-diff':
-        return checkDiff(text);
-      default:
-        return [`unknown medium ${medium}`];
     }
+    return problems;
   }
+  return judgingProblems(role, text, ctx);
+}
+
+/** A builder's answer in its medium's format (spec §3.3, first five rows). */
+function artifactProblems(medium: string | undefined, text: string): string[] {
+  switch (medium) {
+    case 'web-page': {
+      const html = lastBlock(text, 'html');
+      if (!html) return ['no ```html block'];
+      const problems: string[] = [];
+      if (!/^<!doctype html>/i.test(html.trim())) problems.push('not a complete document (no doctype)');
+      for (const tag of ['<html', '<head>', '<title>', '<body>', '</body>', '</html>']) if (!html.includes(tag)) problems.push(`missing ${tag}`);
+      if (/<script[^>]+src=|<link[^>]+href="https?:/i.test(html)) problems.push('loads external resources');
+      return problems;
+    }
+    case 'prose': {
+      const md = (lastBlock(text, 'markdown') ?? text).trim();
+      return md.startsWith('# ') && md.length > 120 ? [] : ['not a Markdown document with a title'];
+    }
+    case 'options':
+      return jsonBlock(text, Options).problem ? [jsonBlock(text, Options).problem as string] : [];
+    case 'media':
+      return jsonBlock(text, Storyboard).problem ? [jsonBlock(text, Storyboard).problem as string] : [];
+    case 'code-diff':
+      return checkDiff(text);
+    default:
+      return [`unknown medium ${medium}`];
+  }
+}
+
+function judgingProblems(role: string, text: string, ctx: CheckContext): string[] {
   switch (role) {
     case 'critic': {
       const last = lastLine(text);
@@ -118,6 +149,9 @@ export function checkContract(purpose: string, text: string, ctx: CheckContext =
       if (!score && !rank) problems.push(`last line is not a score or rank: "${last}"`);
       if (score && Number(score[1]) > 10) problems.push('score above 10');
       if (rank && Number(rank[1]) > Number(rank[2])) problems.push('rank beyond the lineup');
+      if (ctx.mode === 'OK' && !score) problems.push('OK mode answers "Score: N/10"');
+      if (ctx.mode === 'GREAT' && !rank) problems.push('GREAT mode answers "Rank: N of M"');
+      if (rank && ctx.lineup !== undefined && Number(rank[2]) !== ctx.lineup) problems.push(`ranked among ${rank[2]}, not the ${ctx.lineup} items shown`);
       if (!bodyLines(text).length || !bodyLines(text).every((l) => l.startsWith('- '))) problems.push('critique is not a bullet list');
       return problems;
     }
@@ -141,7 +175,38 @@ export function checkContract(purpose: string, text: string, ctx: CheckContext =
     case 'asset.briefs': {
       const r = jsonBlock(text, Briefs);
       if (r.problem) return [r.problem];
-      return ctx.maxBriefs && (r.value?.images.length ?? 0) > ctx.maxBriefs ? ['more briefs than slots'] : [];
+      const slots = r.value?.images.map((i) => i.slot) ?? [];
+      if (ctx.slots && slots.join() !== ctx.slots.join()) return [`briefs for slots ${slots.join()} instead of ${ctx.slots.join()}`];
+      return ctx.maxBriefs && slots.length > ctx.maxBriefs ? ['more briefs than slots'] : [];
+    }
+    case 'dedupe': {
+      const r = jsonBlock(text, Dedupe);
+      if (r.problem || !r.value) return [r.problem ?? 'no answer'];
+      const { keep, merged } = r.value;
+      const problems: string[] = [];
+      const from = merged.flatMap((m) => m.from);
+      const named = [...keep, ...from];
+      if (new Set(named).size !== named.length) problems.push('a label is both kept and merged, or listed twice');
+      for (const m of merged) if (!keep.includes(m.into)) problems.push(`merged into ${m.into}, which is not kept`);
+      if (ctx.labels) {
+        for (const l of named) if (!ctx.labels.includes(l)) problems.push(`label ${l} was not shown`);
+        for (const l of ctx.labels) if (!named.includes(l)) problems.push(`label ${l} is neither kept nor merged`);
+      }
+      return problems;
+    }
+    case 'overlap': {
+      const r = jsonBlock(text, Overlap);
+      if (r.problem || !r.value) return [r.problem ?? 'no answer'];
+      const problems: string[] = [];
+      for (const f of r.value.flags) {
+        if (ctx.labels && !ctx.labels.includes(f.label)) problems.push(`flag names ${f.label}, not a seeded option`);
+        if (ctx.vanillaLabels && !ctx.vanillaLabels.includes(f.overlapsWith)) problems.push(`flag overlaps ${f.overlapsWith}, not an unseeded answer`);
+      }
+      return problems;
+    }
+    case 'relay': {
+      const r = jsonBlock(text, Relay);
+      return r.problem ? [r.problem] : [];
     }
     case 'advisor.intake': {
       const r = jsonBlock(text, Intake);
@@ -164,6 +229,6 @@ export function checkContract(purpose: string, text: string, ctx: CheckContext =
       }
     }
     default:
-      return [`no contract for ${purpose}`];
+      return [`no contract for the role ${role}`];
   }
 }

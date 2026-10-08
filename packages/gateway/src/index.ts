@@ -9,7 +9,7 @@ export { PRICES, priceFor, tokenCost, type PriceRow } from './prices.ts';
 export { estimateInputTokens, imageTokens, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
 export { entryHash, GENESIS_HASH, Ledger, type GatewayLedgerEntry, type LedgerDraft, type LedgerOptions } from './ledger.ts';
 export { makeRedactor, type Redactor } from './redact.ts';
-export { DEFAULT_RESPONDERS, parsePurpose, reply, respond, type MockContext, type MockReply, type Responder } from './mock/responders.ts';
+export { DEFAULT_RESPONDERS, parsePurpose, reply, respond, responderFor, type MockContext, type MockReply, type Responder } from './mock/responders.ts';
 export { composedRecipe } from './mock/compose.ts';
 export { mockAdapter } from './providers/mock.ts';
 export { createFalClient, EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, FAL_VIDEO_MODELS, falAdapter, falVideoSeconds, type FalClientLike } from './providers/fal.ts';
