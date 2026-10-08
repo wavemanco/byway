@@ -159,3 +159,13 @@ export async function openResult(page: Page): Promise<Locator> {
   await expect(page.getByRole('heading', { name: 'How this was made' })).toBeVisible();
   return page.getByRole('region', { name: 'Result' });
 }
+
+/** Result: the export the Download button gives, as text. It must work away from byway (EXP-1): no byway addresses. */
+export async function exportText(page: Page): Promise<string> {
+  const href = await page.locator('.result-actions a[download]').getAttribute('href');
+  if (!href) throw new Error('no Download link');
+  const res = await page.request.get(href);
+  expect(res.ok()).toBe(true);
+  expect(res.headers()['content-disposition'] ?? '').toMatch(/^attachment/);
+  return res.text();
+}

@@ -102,7 +102,7 @@ export function ResultView({ run, artifactId, mediaType, text, made, media, pres
           <a className="button button-primary" href={artifactUrl(artifactId, run.title)} download>
             {exportLabel(mediaType)}
           </a>
-          {text !== null ? <CopyButton text={text} /> : null}
+          {text !== null ? <CopyButton text={text} {...(mediaType === 'text/markdown' ? { exportUrl: artifactUrl(artifactId, run.title) } : {})} /> : null}
           {mediaType === 'text/html' ? (
             <a className="button" href={artifactUrl(artifactId)} target="_blank" rel="noopener noreferrer">
               Open in a new tab

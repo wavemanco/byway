@@ -276,3 +276,33 @@ describe('model errors while recommending or composing (UX-2)', () => {
     expect('recommendation' in second && second.recommendation.recipeId).toBeTruthy();
   });
 });
+
+describe('exports carry their images (EXP-1)', () => {
+  it('inlines byway-served images into a downloaded page or Markdown file, so it works away from byway', async () => {
+    const d = await deps();
+    const png = await d.services.store.artifacts.put(Buffer.from(TINY_PNG_BASE64, 'base64'), 'image/png');
+    const encoded = png.id.replace(':', '%3A');
+    const md = await d.services.store.artifacts.putText(`# Cycling\n\n![A bike](/api/artifacts/${png.id})\n\n![Again](/artifacts/${encoded})\n`, 'text/markdown');
+    const res = await artifactResponse(d.services, md.id, new URL(`http://127.0.0.1:3000/artifacts/${md.id}?download=1&name=Cycling`));
+    const body = await res.text();
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="cycling.md"');
+    expect(body).not.toContain('/artifacts/');
+    expect(body).toContain(`![A bike](data:image/png;base64,${TINY_PNG_BASE64})`);
+    expect(body).toContain(`![Again](data:image/png;base64,${TINY_PNG_BASE64})`);
+
+    const page = await d.services.store.artifacts.putText(`<!doctype html><img src="/api/artifacts/${png.id}" alt="x">`, 'text/html');
+    const html = await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}?download=1`))).text();
+    expect(html).toBe(`<!doctype html><img src="data:image/png;base64,${TINY_PNG_BASE64}" alt="x">`);
+    // Viewing (not downloading) serves the stored bytes as they are.
+    expect(await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}`))).text()).toContain('/api/artifacts/');
+  });
+
+  it('leaves a reference it cannot inline as it was (missing, or not an image or clip)', async () => {
+    const d = await deps();
+    const missing = `sha256:${'1'.repeat(64)}`;
+    const note = await d.services.store.artifacts.putText('a note', 'text/markdown');
+    const md = await d.services.store.artifacts.putText(`![gone](/api/artifacts/${missing}) [note](/artifacts/${note.id})`, 'text/markdown');
+    const body = await (await artifactResponse(d.services, md.id, new URL(`http://127.0.0.1:3000/artifacts/${md.id}?download=1`))).text();
+    expect(body).toBe(`![gone](/api/artifacts/${missing}) [note](/artifacts/${note.id})`);
+  });
+});

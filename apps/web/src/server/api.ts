@@ -17,6 +17,7 @@ import { takesRefs } from '../view/refs.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
 import { artifactHeaders, isArtifactId, mediaServing } from './artifacts.ts';
+import { exportsInline, selfContained } from './export.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
 import type { ControlInput, ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
@@ -265,5 +266,10 @@ export async function artifactResponse(services: Services, rawId: string, url: U
   if (media === 'refuse') return new Response('Artifact not found.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   const requested = url.searchParams.get('download') === '1' ? (url.searchParams.get('name') ?? 'byway-result').slice(0, 200) : undefined;
   const download = requested ?? (media === 'attachment' ? 'byway-media' : undefined);
+  // A downloaded page or Markdown file carries its images inline, so it works away from byway (EXP-1).
+  if (requested !== undefined && exportsInline(record.mediaType)) {
+    const text = await selfContained(new TextDecoder().decode(bytes), services.store.artifacts);
+    return new Response(text, { status: 200, headers: artifactHeaders(record.mediaType, origin, download) });
+  }
   return new Response(new Uint8Array(bytes), { status: 200, headers: artifactHeaders(record.mediaType, origin, download) });
 }

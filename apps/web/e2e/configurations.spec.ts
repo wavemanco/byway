@@ -5,7 +5,7 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { PRESENTATIONS } from '@byway/catalog';
-import { answerUntilDone, describeProblem, openResult, startRecommended, timelineLabels, watchForKeys } from './flow.ts';
+import { answerUntilDone, describeProblem, exportText, openResult, startRecommended, timelineLabels, watchForKeys } from './flow.ts';
 
 interface Case {
   code: string;
@@ -98,6 +98,8 @@ for (const c of CASES) {
 
     const result = await openResult(page);
     await c.deliverable(result, page);
+    // The export carries its images: nothing in it points back at byway (EXP-1).
+    expect(await exportText(page)).not.toContain('/api/artifacts/');
 
     expect(keys.checked()).toBeGreaterThan(0);
     expect(keys.leaks).toEqual([]);
@@ -117,6 +119,10 @@ test('C3 from the Library: no route chosen up front, so the run asks who writes 
   await expect(page.locator('.meter-spent')).toHaveText('$0.00');
   const result = await openResult(page);
   await expect(result.locator('.prose')).toContainText(/\w+ \w+ \w+/);
+  // Custom imagery's pictures travel inside the Markdown export, not as byway addresses (EXP-1).
+  const exported = await exportText(page);
+  expect(exported).not.toContain('/api/artifacts/');
+  expect(exported).not.toMatch(/\]\(\/artifacts\//);
   expect(keys.leaks).toEqual([]);
 });
 
