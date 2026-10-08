@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import config from '../next.config.ts';
 import { artifactHeaders, isArtifactId } from '../src/server/artifacts.ts';
 import { checkRequest } from '../src/server/guard.ts';
 import { sniffImage } from '../src/server/refs.ts';
@@ -103,5 +104,24 @@ describe('request schemas', () => {
     expect(ResolutionInput.safeParse({ approved: 'yes' }).success).toBe(false);
     expect(SettingsPatch.safeParse({ workspaceBudgetUsd: 50, demoMode: true }).success).toBe(true);
     expect(SettingsPatch.safeParse({ workspaceBudgetUsd: -1 }).success).toBe(false);
+  });
+});
+
+describe('app-wide response headers (next.config.ts)', () => {
+  /** next.config `source` patterns here are plain regular expressions in one group, so they can be checked as such. */
+  async function appRule() {
+    const headers = (await config.headers?.()) ?? [];
+    const rule = headers.find((h) => h.headers.some((x) => x.key === 'Content-Security-Policy'));
+    if (!rule) throw new Error('no app CSP rule');
+    return { matches: (p: string) => new RegExp(`^${rule.source}$`).test(p), csp: rule.headers.find((x) => x.key === 'Content-Security-Policy')?.value ?? '' };
+  }
+
+  it('leaves both artifact routes to their own sandboxing headers (SEC-1)', async () => {
+    const { matches } = await appRule();
+    expect(matches('/')).toBe(true);
+    expect(matches('/api/settings')).toBe(true);
+    expect(matches('/runs/abc/result')).toBe(true);
+    expect(matches(`/artifacts/${ID}`)).toBe(false);
+    expect(matches(`/api/artifacts/${ID}`)).toBe(false);
   });
 });

@@ -16,7 +16,7 @@ import { budgetProblem, workspaceSpend } from '../view/history.ts';
 import { takesRefs } from '../view/refs.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
-import { artifactHeaders, isArtifactId } from './artifacts.ts';
+import { artifactHeaders, isArtifactId, mediaServing } from './artifacts.ts';
 import { RefError, storeRef } from './refs.ts';
 import type { ControlInput, ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
 
@@ -213,11 +213,15 @@ export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsP
 }
 
 /**
- * The artifact route: content-addressed bytes, with the sandboxing headers of src/server/artifacts.ts. `origin`
+ * The artifact routes: content-addressed bytes, with the sandboxing headers of src/server/artifacts.ts. `origin`
  * is the one the browser used (from the Host header the guard has already checked), because the CSP must name
  * it exactly: Next.js may report a normalised host in the request URL (localhost for 127.0.0.1).
+ *
+ * `route` is which address was asked for. `/artifacts/<id>` serves everything. `/api/artifacts/<id>` (`media`) is the
+ * address generated pages and documents use for generated images and clips (spec §3.3), and serves only those: a page
+ * there would be one a generated page could navigate itself to, and SVG, which can carry script, is a download there.
  */
-export async function artifactResponse(services: Services, rawId: string, url: URL, origin: string = url.origin): Promise<Response> {
+export async function artifactResponse(services: Services, rawId: string, url: URL, origin: string = url.origin, route: 'artifacts' | 'media' = 'artifacts'): Promise<Response> {
   let id = rawId;
   try {
     id = decodeURIComponent(rawId);
@@ -227,6 +231,9 @@ export async function artifactResponse(services: Services, rawId: string, url: U
   if (!isArtifactId(id)) return new Response('Not a valid artifact id.', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   if (!(await services.store.artifacts.has(id))) return new Response('Artifact not found.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   const { record, bytes } = await services.store.artifacts.get(id);
-  const download = url.searchParams.get('download') === '1' ? (url.searchParams.get('name') ?? 'byway-result').slice(0, 200) : undefined;
+  const media = route === 'media' ? mediaServing(record.mediaType) : 'inline';
+  if (media === 'refuse') return new Response('Artifact not found.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  const requested = url.searchParams.get('download') === '1' ? (url.searchParams.get('name') ?? 'byway-result').slice(0, 200) : undefined;
+  const download = requested ?? (media === 'attachment' ? 'byway-media' : undefined);
   return new Response(new Uint8Array(bytes), { status: 200, headers: artifactHeaders(record.mediaType, origin, download) });
 }

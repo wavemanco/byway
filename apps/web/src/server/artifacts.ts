@@ -40,6 +40,20 @@ function pageCsp(origin: string): string {
 /** Non-page media never run scripts; SVG keeps inline styles. */
 const INERT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'self'; sandbox";
 
+/** Raster images, video and audio: what `/api/artifacts/<id>` exists for. */
+const PLAIN_MEDIA = /^(image\/(png|jpeg|webp|gif|avif)|video\/[a-z0-9.+-]+|audio\/[a-z0-9.+-]+)$/;
+
+/**
+ * How `/api/artifacts/<id>` serves a type: media inline; SVG as a download (an <img> still shows it, but opened on its
+ * own it never runs as a document); anything else not at all. A page reachable there would be one a generated page
+ * could navigate itself to (CSP sandboxing does not follow a navigation), so pages are only ever at /artifacts.
+ */
+export function mediaServing(mediaType: string): 'inline' | 'attachment' | 'refuse' {
+  const type = mediaType.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (PLAIN_MEDIA.test(type)) return 'inline';
+  return type === 'image/svg+xml' ? 'attachment' : 'refuse';
+}
+
 export function artifactHeaders(mediaType: string, origin: string, downloadTitle?: string): Record<string, string> {
   const type = mediaType.split(';')[0]?.trim() ?? 'application/octet-stream';
   const textual = type.startsWith('text/') || type === 'application/json' || type === 'image/svg+xml';

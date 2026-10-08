@@ -197,4 +197,29 @@ describe('the artifact route', () => {
     expect((await artifactResponse(d.services, 'sha256:..%2F..%2Fsecrets', new URL('http://127.0.0.1:3000/x'))).status).toBe(400);
     expect((await artifactResponse(d.services, `sha256:${'0'.repeat(64)}`, new URL('http://127.0.0.1:3000/x'))).status).toBe(404);
   });
+
+  it('serves only media at /api/artifacts, so a generated page cannot move itself to an address without its sandbox (SEC-1)', async () => {
+    const d = await deps();
+    const media = (id: string) => artifactResponse(d.services, id, new URL(`http://127.0.0.1:3000/api/artifacts/${id}`), 'http://127.0.0.1:3000', 'media');
+    const page = await d.services.store.artifacts.putText('<!doctype html><script>location.replace("/api"+location.pathname)</script>', 'text/html');
+    const pageRes = await media(page.id);
+    expect(pageRes.status).toBe(404);
+    expect(pageRes.headers.get('content-type')).not.toContain('text/html');
+
+    // An SVG can carry script: it still loads in an <img>, but opening it downloads it instead of running it.
+    const svg = await d.services.store.artifacts.putText('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', 'image/svg+xml');
+    const svgRes = await media(svg.id);
+    expect(svgRes.status).toBe(200);
+    expect(svgRes.headers.get('content-disposition')).toMatch(/^attachment/);
+    expect(svgRes.headers.get('content-security-policy')).toMatch(/sandbox(;|$)/);
+
+    const png = await d.services.store.artifacts.put(Buffer.from(TINY_PNG_BASE64, 'base64'), 'image/png');
+    const pngRes = await media(png.id);
+    expect(pngRes.status).toBe(200);
+    expect(pngRes.headers.get('content-type')).toBe('image/png');
+    expect(pngRes.headers.get('content-disposition')).toBeNull();
+
+    const text = await d.services.store.artifacts.putText('# Notes', 'text/markdown');
+    expect((await media(text.id)).status).toBe(404);
+  });
 });

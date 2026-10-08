@@ -14,9 +14,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // The app's own screens may not be framed by anything (clickjacking). Generated pages under /artifacts
-        // set their own, stricter headers in the artifact route and may be framed by the app only.
-        source: '/((?!artifacts/).*)',
+        // The app's own screens may not be framed by anything (clickjacking). Both artifact routes, /artifacts and
+        // /api/artifacts, set their own, stricter headers (src/server/artifacts.ts). They must stay out of this rule:
+        // config headers replace a route's own, and a generated page served without its sandbox CSP runs as byway.
+        source: '/((?!artifacts/|api/artifacts/).*)',
         headers: [
           { key: 'Content-Security-Policy', value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" },
           { key: 'X-Content-Type-Options', value: 'nosniff' },

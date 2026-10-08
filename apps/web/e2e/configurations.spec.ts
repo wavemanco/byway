@@ -27,6 +27,17 @@ const CASES: Case[] = [
       const frame = result.locator('iframe');
       await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
       await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
+
+      // SEC-1: next.config headers apply only in the running server, so the page's own address is checked here. The
+      // artifact route sandboxes it; /api/artifacts never serves it, so the page cannot move there to run as byway.
+      const src = (await frame.getAttribute('src')) ?? '';
+      expect(src).toMatch(/^\/artifacts\/sha256/);
+      const own = await page.request.get(src);
+      expect(own.headers()['content-security-policy']).toMatch(/sandbox allow-scripts/);
+      const elsewhere = await page.request.get(`/api${src}`);
+      const unsandboxedPage = elsewhere.status() === 200 && (elsewhere.headers()['content-type'] ?? '').startsWith('text/html') && !/sandbox/.test(elsewhere.headers()['content-security-policy'] ?? '');
+      expect(unsandboxedPage).toBe(false);
+      expect(elsewhere.status()).toBe(404);
     },
   },
   {
