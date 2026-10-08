@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCK_CODES } from '@byway/protocol';
 import type { EvidenceLabel, RunStatus } from '@byway/contracts';
-import { BLOCK_NAMES, RECIPE_NAMES, TERMS, recipeTitle, stageFromCode, stepTitle, whoLabel } from '../src/view/vocabulary.ts';
+import { BLOCK_NAMES, RECIPE_NAMES, TERMS, codeForLabel, recipeTitle, stageFromCode, stepTitle, whoLabel } from '../src/view/vocabulary.ts';
+import { PRESENTATIONS } from '../src/services/demo/catalog.ts';
 import { evidenceHeadline, fitText, runStatusLabel } from '../src/view/labels.ts';
 
 describe('plain vocabulary (spec §5)', () => {
@@ -15,6 +16,19 @@ describe('plain vocabulary (spec §5)', () => {
     expect(BLOCK_NAMES.CUT).toBe('Trim');
     expect(BLOCK_NAMES.TELLS).toBe('Cliché sweep');
     expect(BLOCK_NAMES.VOICE).toBe('Your words');
+  });
+
+  it('finds the protocol code behind a plain step label', () => {
+    expect(codeForLabel('Random spark')).toBe('SEED');
+    expect(codeForLabel('Your words')).toBe('VOICE');
+    expect(codeForLabel('Your pick')).toBe('pick(H)');
+    expect(codeForLabel('Keep or revert')).toBe('TELLS');
+    expect(codeForLabel('Something new')).toBeUndefined();
+  });
+
+  it('has a protocol code for every step label the recipe presentations use', () => {
+    const labels = PRESENTATIONS.flatMap((p) => p.stages.flatMap((s) => s.steps.map((step) => step.label)));
+    expect(labels.filter((label) => codeForLabel(label) === undefined)).toEqual([]);
   });
 
   it('maps chassis stages to Explore, Refine and Finish', () => {

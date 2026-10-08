@@ -51,6 +51,35 @@ export const TERMS = {
   threshold: { plain: 'Quality bar', code: 'hidden threshold' },
 } as const;
 
+/** Protocol codes for step labels that are not plain block names. */
+const LABEL_CODES: Record<string, string> = {
+  'Your pick': 'pick(H)',
+  'Keep or revert': 'TELLS',
+  'Trim marks': 'CUT',
+  'Cliché flags': 'TELLS',
+  'Apply trim': 'CUT',
+  'Set your words': 'VOICE',
+  'Obvious-idea check': 'vanilla-overlap',
+  'Remove near-duplicates': 'dedupe',
+  'Final check': 'CRITIC-check',
+  'Defect check': 'check',
+  'Objective checks': 'check',
+  'Your draft': 'VOICE',
+  'Your pages': 'VOICE',
+  'Done?': '?H',
+  'How to start': 'route',
+  'Plain?': '?H',
+  Draft: 'build',
+  Implement: 'build',
+  Brief: 'BRIEF',
+};
+
+/** The protocol code behind a plain step label, when there is one. */
+export function codeForLabel(label: string): string | undefined {
+  const block = (Object.keys(BLOCK_NAMES) as BlockCode[]).find((code) => BLOCK_NAMES[code] === label);
+  return block ?? LABEL_CODES[label];
+}
+
 /** A step name, with its protocol code in parentheses when technical names are on. */
 export function stepTitle(label: string, code: string | undefined, technical: boolean): string {
   return technical && code ? `${label} (${code})` : label;
