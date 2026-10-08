@@ -3,6 +3,7 @@
  * (the RESOLVE_UPDATE Update), and then the answer becomes the step's ports. Writing steps write here: the author's
  * draft becomes the artifact, and VOICE writes the person's copy back (see copy.ts for how, per medium).
  */
+import { routeChoice } from '@byway/catalog';
 import { withoutMarks } from '@byway/gateway';
 import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
 import { applyClaims, claimLines } from '../claims.ts';
@@ -41,20 +42,32 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
         break;
     }
   }
+  const { prompt, options } = plainChoice(run.recipeId, call.stepId, checkpoint);
   const stored = await deps.store.openCheckpoint({
     id: checkpoint.id,
     runId: run.runId,
     stepId: call.stepId,
     ...(call.candidate !== undefined ? { candidate: call.candidate } : {}),
     kind: checkpoint.kind,
-    prompt: checkpoint.prompt,
-    ...(checkpoint.options ? { options: checkpoint.options } : {}),
+    prompt,
+    ...(options ? { options } : {}),
     ...(checkpoint.k !== undefined ? { k: checkpoint.k } : {}),
     ...(initialText !== undefined ? { initialText } : {}),
     ...(checkpoint.artifactIds?.length ? { artifactIds: checkpoint.artifactIds } : {}),
   });
   await emit(deps.store, run.runId, 'checkpoint-opened', { checkpointId: stored.id, kind: stored.kind }, at(call, `checkpoint/${stored.id}/opened`));
   return { checkpointId: stored.id, ...(stored.initialText !== undefined ? { initialText: stored.initialText } : {}) };
+}
+
+/**
+ * A route asked at run time in plain words (UX-3): the catalog's question for it and a "Name: detail" label per branch,
+ * when it has them (protocol recipes). The option ids stay the branch names the workflow checks the answer against.
+ */
+function plainChoice(recipeId: string, routeId: string, cp: OpenCheckpointInput['checkpoint']): Pick<OpenCheckpointInput['checkpoint'], 'prompt' | 'options'> {
+  const plain = cp.kind === 'choose' ? routeChoice(recipeId, routeId) : undefined;
+  const options = cp.options;
+  if (!plain || !options || !options.every((o) => plain.options.some((p) => p.id === o.id))) return { prompt: cp.prompt, ...(options ? { options } : {}) };
+  return { prompt: plain.question, options: options.map((o) => ({ ...o, label: plain.options.find((p) => p.id === o.id)!.label })) };
 }
 
 /** Write the person's answer to the store (the workflow already validated it) and announce it. */

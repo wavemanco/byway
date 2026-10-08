@@ -8,7 +8,7 @@ import { c1 } from '@byway/catalog';
 import type { CompletionRequest, RunView } from '@byway/contracts';
 import { pageCopy, skeleton } from '../../src/copy.ts';
 import { SURFACE_CAPTIONS } from '../../src/surfaces.ts';
-import { BEST_SO_FAR_PROMPT } from '../../src/workflow/wording.ts';
+import { BEST_SO_FAR_PROMPT, DECLINED_NOTE } from '../../src/workflow/wording.ts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import type { Harness } from '../helpers/harness.ts';
 
@@ -92,6 +92,12 @@ export function c1Scenarios(use: () => Harness): void {
         expect(withImages).toMatch(/src="\/api\/artifacts\/sha256:[0-9a-f]{64}"/);
         expect(byCandidate(view, 'step-started', 'asset').get(0)).toBe(1);
         expect(byCandidate(view, 'step-started', 'asset').get(1)).toBeUndefined();
+        // The question names its draft and says what each answer does (UX-4); a declined one is skipped (UX-1, C1).
+        const plain = view.checkpoints.filter((c) => c.stepId === 'asset-if-plain').sort((a, b) => (a.candidate ?? 0) - (b.candidate ?? 0));
+        expect(plain.map((c) => c.prompt)).toEqual(['A', 'B', 'C', 'D'].map((d) => `Run this step on draft ${d}? It is meant for when you call the design plain. Yes runs it; No skips it.`));
+        const declined = ofType(view, 'step-finished', 'asset-if-plain');
+        expect(declined.map((e) => e.candidate).sort()).toEqual([1, 2, 3]);
+        expect(declined.every((e) => e.data.skipped === true && e.data.note === DECLINED_NOTE)).toBe(true);
 
         // The pick shows the four candidates; D3 works on the one picked (A, the one with images).
         expect(pickOptions).toHaveLength(4);

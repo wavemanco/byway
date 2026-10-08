@@ -23,6 +23,7 @@ import type { PendingCheckpoint, RunControl } from './control.ts';
 import {
   BEST_SO_FAR_PROMPT,
   budgetPrompt,
+  DECLINED_NOTE,
   GATE_FAILED_PROMPT,
   GATE_RETRY_NOTE,
   humanKind,
@@ -607,8 +608,16 @@ export class Interpreter {
   }
 
   private async optional(o: Optional, ports: Ports, ctx: Ctx): Promise<Ports> {
-    const res = await this.ask(this.call(o.id, ctx), { kind: 'confirm', prompt: optionalPrompt(o.trigger), ...(ports.artifact ? { artifactIds: [ports.artifact] } : {}) });
-    return res.approved ? this.node(o.body, ports, ctx) : ports;
+    const call = this.call(o.id, ctx);
+    const res = await this.ask(call, { kind: 'confirm', prompt: optionalPrompt(o.trigger, call.candidate), ...(ports.artifact ? { artifactIds: [ports.artifact] } : {}) });
+    if (res.approved) return this.node(o.body, ports, ctx);
+    // Declined (UX-1, convention C1): the step it asked about finished as skipped, and says why, so the run's timeline
+    // and its result list it as not done instead of leaving it in progress.
+    await this.emit([
+      { type: 'step-started', stepId: o.id, ...cand(call), data: { label: 'Optional step', stage: ctx.stage, role: 'optional', actor: 'human' }, dedupeKey: `${call.key}/step-started` },
+      { type: 'step-finished', stepId: o.id, ...cand(call), data: { costUsd: 0, skipped: true, note: DECLINED_NOTE }, dedupeKey: `${call.key}/step-finished` },
+    ]);
+    return ports;
   }
 
   // ---- Annotations, gates, relays --------------------------------------------------------------------------------

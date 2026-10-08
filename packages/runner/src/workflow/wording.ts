@@ -3,6 +3,7 @@
  */
 import type { CheckpointKind } from '@byway/contracts';
 import type { Step } from '@byway/recipe';
+import { labelOf } from '@byway/prompts/pure';
 
 /** Human checkpoint kinds by role (spec §3.2): vision → react, cut → directive, tells-compare → compare, voice → write. */
 export function humanKind(step: Pick<Step, 'role'>): CheckpointKind {
@@ -47,9 +48,20 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
   }
 }
 
-export const optionalPrompt = (trigger: string): string => `Run this step? It is meant for when ${trigger.replace(/[.\s]+$/, '')}.`;
+/** A recipe's trigger, said to the person it is about ("a human calls the design plain" → "you call the design plain"). */
+const toYou = (trigger: string): string => trigger.replace(/^(?:a|the) (?:human|person|user) (\w+?)s\b/i, 'you $1');
+
+/**
+ * "Run this step?" for an optional, saying what each answer does (UX-4). Inside a candidate (C1 asks once per draft)
+ * it names the draft, by the letter the pick will show it under.
+ */
+export const optionalPrompt = (trigger: string, candidate?: number): string =>
+  `Run this step${candidate !== undefined ? ` on draft ${labelOf(candidate)}` : ''}? It is meant for when ${toYou(trigger.replace(/[.\s]+$/, ''))}. Yes runs it; No skips it.`;
+/** The note of an optional the person declined (UX-1, convention C1): the step is shown as skipped, with this. */
+export const DECLINED_NOTE = 'You chose not to run this step.';
 export const routePrompt = (on: string): string => `Choose: ${on.replace(/[.\s]+$/, '')}.`;
-export const READY_PROMPT = 'Is this ready?';
+/** A person's loop gate, saying what each answer does (UX-4): No is another round, not a stop. */
+export const READY_PROMPT = 'Is this ready? Yes keeps this version and moves on; No starts another round.';
 export const BEST_SO_FAR_PROMPT = 'Use the best version so far?';
 export const NOT_CONVERGING_PROMPT = 'The outside critique is not improving the work. Keep going anyway?';
 export const GATE_FAILED_PROMPT = 'It did not pass the final check, even after another try. Use it anyway?';

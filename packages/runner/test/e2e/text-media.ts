@@ -7,7 +7,7 @@ import type { CompletionRequest } from '@byway/contracts';
 import { c3, c4, c6a, c7 } from '@byway/catalog';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { splitCodeDiff } from '../../src/formats.ts';
-import { BEST_SO_FAR_PROMPT, READY_PROMPT } from '../../src/workflow/wording.ts';
+import { BEST_SO_FAR_PROMPT, DECLINED_NOTE, READY_PROMPT } from '../../src/workflow/wording.ts';
 import { checkEvents, notes, ofType } from '../helpers/events.ts';
 import { AUTHOR_DRAFT, type Harness } from '../helpers/harness.ts';
 
@@ -42,7 +42,7 @@ export function textMediaScenarios(use: () => Harness): void {
       const purposes = h.succeeded(run.id).map((c) => c.purpose);
       expect(purposes).toEqual(expect.arrayContaining(['vision:prose', 'build:prose', 'critic:prose', 'fix:prose', 'tells-sweep:prose']));
       // Optionals asked with their triggers.
-      expect(view.checkpoints.find((c) => c.stepId === 'recipient-critic')?.prompt).toBe('Run this step? It is meant for when the document is longer than about 300 words.');
+      expect(view.checkpoints.find((c) => c.stepId === 'recipient-critic')?.prompt).toBe('Run this step? It is meant for when the document is longer than about 300 words. Yes runs it; No skips it.');
       // The framings are shown with your brief's checkpoint; your reaction (text) became the brief the draft used.
       const framings = ofType(view, 'step-finished', 'framings')[0]!.data.outputArtifactIds as string[];
       expect(view.checkpoints.find((c) => c.stepId === 'vision-lite')?.artifactIds).toEqual(framings);
@@ -146,6 +146,10 @@ export function textMediaScenarios(use: () => Harness): void {
       });
       expect(view.run.status).toBe('done');
       checkEvents(view, 'c7');
+      // The spec interview you declined is a step that was skipped, and says why (UX-1, convention C1).
+      expect(ofType(view, 'step-finished', 'spec-interview').map((e) => e.data)).toEqual([{ costUsd: 0, skipped: true, note: DECLINED_NOTE }]);
+      expect(DECLINED_NOTE).toBe('You chose not to run this step.');
+      expect(view.checkpoints.find((c) => c.stepId === 'spec-interview')?.prompt).toBe('Run this step? It is meant for when the requirements are vague. Yes runs it; No skips it.');
       const purposes = h.succeeded(run.id).map((c) => c.purpose);
       expect(new Set(purposes)).toEqual(new Set(['build:code-diff', 'check:code-diff', 'fix:code-diff', 'cut:code-diff', 'critic:code-diff', 'tells-sweep:code-diff', ...(purposes.includes('rerank:code-diff') ? ['rerank:code-diff'] : [])]));
       expect(view.checkpoints.find((c) => c.stepId === 'voice')?.initialText).toMatch(/^Why: /);
@@ -174,7 +178,9 @@ export function textMediaScenarios(use: () => Harness): void {
       expect(view.run.status).toBe('done');
       checkEvents(view, 'c3');
       const choose = view.checkpoints.find((c) => c.kind === 'choose')!;
-      expect(choose).toMatchObject({ stepId: 'draft', prompt: 'Choose: who writes the first draft.' });
+      // The route's plain question and labels (UX-3, @byway/catalog routeChoice); the ids stay the branch names.
+      expect(choose).toMatchObject({ stepId: 'draft', prompt: 'Who writes the first draft?' });
+      expect(choose.options?.map((o) => o.label)).toEqual(['The AI drafts it: from your point, for you to revise and rewrite', 'You write it: the whole first draft, yourself']);
       expect(choose.options?.map((o) => o.id)).toEqual(['ai', 'own']);
       // The sweep's tells: every catalog its domains name, joined in order (tellsPromptIds), not just the medium's.
       const tells = h.prompts.calls.filter((c) => c.id === 'product.c3.tells-sweep').at(-1)!.slots.tells!;
