@@ -28,6 +28,7 @@ export function prepareQueries(db: DatabaseSync) {
     insertCheckpoint: p(`INSERT INTO checkpoints (id, run_id, step_id, candidate, kind, prompt, options, k, initial_text,
       artifact_ids, status, opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`),
     resolveCheckpoint: p(`UPDATE checkpoints SET status = 'resolved', resolved_at = ?, resolution = ? WHERE id = ? AND status = 'open'`),
+    withdrawCheckpoints: p(`UPDATE checkpoints SET status = 'withdrawn', withdrawn_at = ? WHERE run_id = ? AND status = 'open'`),
     openCheckpoints: p(`SELECT c.* FROM checkpoints c JOIN runs r ON r.id = c.run_id
       WHERE r.workspace_id = ? AND c.status = 'open' ORDER BY c.opened_at, c.rowid`),
     runCheckpoints: p('SELECT * FROM checkpoints WHERE run_id = ? ORDER BY opened_at, rowid'),

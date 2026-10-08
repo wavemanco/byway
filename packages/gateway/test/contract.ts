@@ -89,7 +89,7 @@ export interface CheckContext {
   vanillaLabels?: string[];
   /** asset.integrate: each image's src (web-page) or Markdown image line (prose) must be in the result. */
   images?: string[];
-  /** critic: the mode the prompt asked for, and in GREAT mode the lineup size M of "Rank: N of M". */
+  /** critic: the mode the prompt asked for, and in GREAT mode the lineup size M ("Ranking:" names labels A… once each). */
   mode?: 'OK' | 'GREAT';
   lineup?: number;
 }
@@ -144,15 +144,24 @@ function judgingProblems(role: string, text: string, ctx: CheckContext): string[
     case 'critic': {
       const last = lastLine(text);
       const score = /^Score: (\d+(?:\.\d+)?)\/10$/.exec(last);
-      const rank = /^Rank: (\d+) of (\d+)$/.exec(last);
+      // GREAT mode (ADR-0072): every label of the lineup once, best first; the critic is never told which is ours.
+      const ranking = /^Ranking: ([A-Z]{1,2}(?:, [A-Z]{1,2})*)$/.exec(last)?.[1]?.split(', ');
       const problems: string[] = [];
-      if (!score && !rank) problems.push(`last line is not a score or rank: "${last}"`);
+      if (!score && !ranking) problems.push(`last line is not a score or a ranking: "${last}"`);
       if (score && Number(score[1]) > 10) problems.push('score above 10');
-      if (rank && Number(rank[1]) > Number(rank[2])) problems.push('rank beyond the lineup');
       if (ctx.mode === 'OK' && !score) problems.push('OK mode answers "Score: N/10"');
-      if (ctx.mode === 'GREAT' && !rank) problems.push('GREAT mode answers "Rank: N of M"');
-      if (rank && ctx.lineup !== undefined && Number(rank[2]) !== ctx.lineup) problems.push(`ranked among ${rank[2]}, not the ${ctx.lineup} items shown`);
-      if (!bodyLines(text).length || !bodyLines(text).every((l) => l.startsWith('- '))) problems.push('critique is not a bullet list');
+      if (ctx.mode === 'GREAT' && !ranking) problems.push('GREAT mode answers "Ranking: A, B, …"');
+      if (ranking) {
+        if (new Set(ranking).size !== ranking.length) problems.push('the ranking names a label twice');
+        if (ctx.lineup !== undefined) {
+          const labels = Array.from({ length: ctx.lineup }, (_, i) => String.fromCharCode(65 + i));
+          if ([...ranking].sort().join() !== labels.join()) problems.push(`ranked ${ranking.join(', ')}, not every label of the ${ctx.lineup} items shown once`);
+        }
+      }
+      // OK mode: one bullet list. GREAT mode: each item's bullets under its "### X" heading.
+      const body = bodyLines(text);
+      const allowed = (l: string) => l.startsWith('- ') || (ranking !== undefined && /^### [A-Z]{1,2}$/.test(l));
+      if (!body.some((l) => l.startsWith('- ')) || !body.every(allowed)) problems.push('critique is not a bullet list');
       return problems;
     }
     case 'judge':

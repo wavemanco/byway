@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { promises as nodeFs } from 'node:fs';
 import { dirname } from 'node:path';
 import { canonicalize, contentHash } from '@byway/canonical';
 import type { LedgerEntry } from '@byway/contracts';
@@ -22,6 +22,9 @@ interface Head {
   hash: string;
 }
 
+/** The file operations the ledger uses: node's promise API by default; tests replace single calls to inject failures. */
+export type LedgerFs = Pick<typeof nodeFs, 'open' | 'stat' | 'rm' | 'mkdir' | 'appendFile' | 'writeFile' | 'rename' | 'readFile'>;
+
 export interface LedgerOptions {
   /** The JSONL file. A sibling `<path>.head` records the last entry so a truncated tail is detectable. */
   path: string;
@@ -30,7 +33,20 @@ export interface LedgerOptions {
   lockTimeoutMs?: number;
   /** A lock older than this is presumed left by a crashed process and broken. */
   staleLockMs?: number;
+  /** Replaces some of node's file operations (tests inject Windows' transient errors). */
+  fs?: Partial<LedgerFs>;
 }
+
+/**
+ * Errors that mean "someone else is using the lock file right now", so the right move is to wait and try again:
+ * EEXIST (it is held) and, on Windows, EPERM, EBUSY and EACCES, which `open(…, 'wx')` returns while another process is
+ * still deleting the lock file (the name stays taken until its last handle closes) or briefly holds it open to stat it.
+ */
+const LOCK_CONTENTION = new Set(['EEXIST', 'EPERM', 'EBUSY', 'EACCES']);
+/** The transient subset of {@link LOCK_CONTENTION} that is not "held": the lock may not be judged stale from these. */
+const WINDOWS_TRANSIENT = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+const errCode = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | null)?.code;
 
 /** Drop undefined-valued keys: canonical JSON has no undefined, and absent must hash the same as omitted. */
 function defined<T extends object>(value: T): T {
@@ -44,18 +60,23 @@ export function entryHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** On Windows a rename onto a file another process is reading fails briefly with EPERM or EBUSY; try again. */
-async function renameWithRetry(from: string, to: string): Promise<void> {
+/**
+ * On Windows a rename onto, or a delete of, a file another process has open fails briefly with EPERM, EBUSY or
+ * EACCES; try again a bounded number of times.
+ */
+async function retryTransient(op: () => Promise<void>): Promise<void> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await fs.rename(from, to);
+      return await op();
     } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (attempt >= 20 || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES')) throw e;
+      if (attempt >= 20 || !WINDOWS_TRANSIENT.has(errCode(e) ?? '')) throw e;
       await sleep(10 + attempt * 5);
     }
   }
 }
+
+/** Backoff between lock attempts: 5, 10, 20, 40, then 80 ms, each with up to 20 ms of jitter so waiters spread out. */
+const lockBackoffMs = (attempt: number) => 5 * 2 ** Math.min(attempt, 4) + Math.floor(Math.random() * 20);
 
 /**
  * Append-only, hash-chained JSONL ledger of every model call (spec §6, CR7-style). Each line is the canonical JSON of
@@ -71,6 +92,7 @@ export class Ledger {
   private readonly now: () => Date;
   private readonly lockTimeoutMs: number;
   private readonly staleLockMs: number;
+  private readonly fs: LedgerFs;
   /** Serializes this instance's appends so they do not contend for the file lock among themselves. */
   private queue: Promise<unknown> = Promise.resolve();
   /** Incremental read cache for entries(). */
@@ -83,6 +105,7 @@ export class Ledger {
     this.now = opts.now ?? (() => new Date());
     this.lockTimeoutMs = opts.lockTimeoutMs ?? 10_000;
     this.staleLockMs = opts.staleLockMs ?? 30_000;
+    this.fs = { ...nodeFs, ...opts.fs };
   }
 
   append(draft: LedgerDraft): Promise<GatewayLedgerEntry> {
@@ -101,45 +124,56 @@ export class Ledger {
       prevHash: last?.hash ?? GENESIS_HASH,
     }) as Omit<GatewayLedgerEntry, 'hash'>;
     const entry: GatewayLedgerEntry = { ...body, hash: entryHash(body) };
-    await fs.appendFile(this.path, `${canonicalize(entry)}\n`, 'utf8');
+    await this.fs.appendFile(this.path, `${canonicalize(entry)}\n`, 'utf8');
     const head: Head = { seq: entry.seq, id: entry.id, hash: entry.hash };
     const tmp = `${this.headPath}.${process.pid}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(head), 'utf8');
-    await renameWithRetry(tmp, this.headPath);
+    await this.fs.writeFile(tmp, JSON.stringify(head), 'utf8');
+    await retryTransient(() => this.fs.rename(tmp, this.headPath));
     return entry;
   }
 
+  /**
+   * Runs `fn` holding the cross-process lock file. Contention (see {@link LOCK_CONTENTION}) is retried with backoff
+   * until `lockTimeoutMs`, then fails with an error naming the last code; any other error fails at once. Only a lock
+   * that exists and is older than `staleLockMs` is broken, never one that answered with a Windows transient error.
+   */
   private async withLock<T>(fn: () => Promise<T>): Promise<T> {
-    await fs.mkdir(dirname(this.path), { recursive: true });
+    await this.fs.mkdir(dirname(this.path), { recursive: true });
     const deadline = Date.now() + this.lockTimeoutMs;
-    for (;;) {
+    for (let attempt = 0; ; attempt++) {
       try {
-        const handle = await fs.open(this.lockPath, 'wx');
+        const handle = await this.fs.open(this.lockPath, 'wx');
         await handle.close();
         break;
       } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-        const stat = await fs.stat(this.lockPath).catch(() => undefined);
-        if (stat && Date.now() - stat.mtimeMs > this.staleLockMs) {
-          await fs.rm(this.lockPath, { force: true });
-          continue;
+        const code = errCode(e) ?? '';
+        if (!LOCK_CONTENTION.has(code)) throw e;
+        if (code === 'EEXIST') {
+          const stat = await this.fs.stat(this.lockPath).catch(() => undefined);
+          if (stat && Date.now() - stat.mtimeMs > this.staleLockMs) {
+            await retryTransient(() => this.fs.rm(this.lockPath, { force: true }));
+            continue;
+          }
         }
-        if (Date.now() > deadline) throw new Error(`ledger lock ${this.lockPath} is held by another process`);
-        await sleep(5 + Math.floor(Math.random() * 20));
+        if (Date.now() > deadline) {
+          const why = code === 'EEXIST' ? 'it is held by another process' : `the file system kept answering ${code} (Windows does while another process deletes or reads the lock)`;
+          throw new Error(`ledger lock ${this.lockPath} could not be taken within ${this.lockTimeoutMs} ms: ${why}`, { cause: e });
+        }
+        await sleep(lockBackoffMs(attempt));
       }
     }
     try {
       return await fn();
     } finally {
-      await fs.rm(this.lockPath, { force: true });
+      await retryTransient(() => this.fs.rm(this.lockPath, { force: true }));
     }
   }
 
   /** The last complete line, read from the end of the file so appends stay cheap as the ledger grows. */
   private async lastEntry(): Promise<GatewayLedgerEntry | undefined> {
-    let handle: fs.FileHandle;
+    let handle: Awaited<ReturnType<LedgerFs['open']>>;
     try {
-      handle = await fs.open(this.path, 'r');
+      handle = await this.fs.open(this.path, 'r');
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
       throw e;
@@ -166,7 +200,7 @@ export class Ledger {
   async entries(): Promise<GatewayLedgerEntry[]> {
     let size: number;
     try {
-      size = (await fs.stat(this.path)).size;
+      size = (await this.fs.stat(this.path)).size;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw e;
@@ -174,7 +208,7 @@ export class Ledger {
     // The file shrank (rewritten, or tampered with): start over.
     if (size < this.cache.offset) this.cache = { offset: 0, entries: [] };
     if (size > this.cache.offset) {
-      const handle = await fs.open(this.path, 'r');
+      const handle = await this.fs.open(this.path, 'r');
       try {
         const buf = Buffer.alloc(size - this.cache.offset);
         await handle.read(buf, 0, buf.length, this.cache.offset);
@@ -205,7 +239,7 @@ export class Ledger {
   async verify(): Promise<string | null> {
     let text = '';
     try {
-      text = await fs.readFile(this.path, 'utf8');
+      text = await this.fs.readFile(this.path, 'utf8');
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     }
@@ -236,7 +270,7 @@ export class Ledger {
 
   private async readHead(): Promise<Head | undefined> {
     try {
-      return JSON.parse(await fs.readFile(this.headPath, 'utf8')) as Head;
+      return JSON.parse(await this.fs.readFile(this.headPath, 'utf8')) as Head;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
       throw e;

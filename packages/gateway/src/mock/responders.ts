@@ -3,9 +3,11 @@ import { compose, intake } from './advisor.ts';
 import { briefsFor, documentIn, integrateProse } from './assets.ts';
 import { htmlDocument, imageLines, imageRefs, lastFenced, subjectOf } from './extract.ts';
 import { dedupe, overlap } from './glue.ts';
-import { choose, critique, cutDirective, defects, keep, tellsSweep, vision } from './judging.ts';
+import { choose, critique, cutDirective, defects, greatCritique, keep, tellsSweep, vision } from './judging.ts';
+import { blindRanking, lineupItems, lineupOf, lookOf, type Attachment, type LineupMemory } from './lineup.ts';
 import { relayLink } from './media.ts';
 import { renderProse, reviseProse } from './prose.ts';
+import { markDiffAnswer, markProse, nextRevision } from './revision.ts';
 import { renderDiff, renderOptions, renderStoryboard } from './structured.ts';
 import { integrateImages, renderPage, revisePage } from './web-page.ts';
 
@@ -31,6 +33,10 @@ export interface MockContext {
   seed: number;
   /** Prior calls with the same run, step and purpose (critic loops, fix turns). */
   iteration: number;
+  /** Attached images in message order, each with the "### X" label it was attached under (GREAT lineups of screenshots). */
+  attachments?: readonly Attachment[];
+  /** What a GREAT critic saw in earlier calls of this loop (the same run, step and purpose); see lineup.ts. */
+  lineupMemory?: LineupMemory;
 }
 
 /**
@@ -92,7 +98,9 @@ const artifact: Responder = (ctx) => {
       let doc = existing ?? renderProse(ctx.seed, subject);
       if (existing !== undefined && ctx.role === 'fix') doc = reviseProse(existing);
       if (existing !== undefined && ctx.role === 'asset.integrate') doc = integrateProse(existing, ctx.prompt);
-      return fence('markdown', doc.trimEnd());
+      // The demo revision marker (revision.ts): new work is 1, a fix adds one, other turns keep what they were given.
+      const revision = nextRevision(existing === undefined && ctx.role !== 'fix' ? 'build' : ctx.role, existing);
+      return fence('markdown', (revision === undefined ? doc : markProse(doc, revision)).trimEnd());
     }
     // Structured artifacts come back as given on revising turns: the demo cannot apply edits to them faithfully.
     case 'options':
@@ -100,27 +108,28 @@ const artifact: Responder = (ctx) => {
     case 'media':
       return json((revising && existingJson(ctx.prompt, 'storyboard')) || renderStoryboard(ctx.seed, subject));
     case 'code-diff': {
-      if (ctx.role !== 'fix') {
-        const given = revising ? existingDiff(ctx.prompt) : undefined;
-        if (given) return given;
-      }
-      return renderDiff(ctx.seed, ctx.role === 'fix' ? ctx.iteration + 1 : 0);
+      const given = revising ? existingDiff(ctx.prompt) : undefined;
+      if (ctx.role !== 'fix' && given) return given;
+      // The demo revision marker (revision.ts) in the Why paragraph: new work is 1, a fix adds one to what it was given.
+      return markDiffAnswer(renderDiff(ctx.seed, ctx.role === 'fix' ? ctx.iteration + 1 : 0), nextRevision(ctx.role === 'fix' ? 'fix' : 'build', given) ?? 1);
     }
   }
 };
 
 /**
- * The lineup a GREAT-mode critic ranks within (ADR-0071): read from the prompt's line "There are R references and 1 of
- * ours (M items, …)". Older phrasings ("N references", "Rank: N of M") still work. Undefined in OK mode.
+ * critic: OK mode answers `Score: N/10` (unchanged). GREAT mode (ADR-0071, ADR-0072) reads the lineup from "There are R
+ * references and 1 of ours (M items, labelled A–X).", critiques every item and ranks them all blind: by the demo
+ * revision markers and, failing those, by what is new since the loop's first call (lineup.ts). Demo mode only.
  */
-function rankLineup(ctx: MockContext): number | undefined {
-  const text = `${ctx.system}\n${ctx.prompt}`;
-  const line = /There (?:are|is) (\d+) references? and 1 of ours \((\d+) items/i.exec(text);
-  if (line) return Math.max(2, Number(line[2]));
-  if (!/Rank:\s*N\s+of\s+M|\bGREAT\b/.test(text)) return undefined;
-  const refs = /\b(\d+)\s+(?:references|reference pages|exemplars|published (?:pieces|passages))\b/i.exec(text);
-  return Math.max(2, Math.min(12, Number(refs?.[1] ?? 5) + 1));
-}
+const critic: Responder = (ctx) => {
+  const medium = ctx.medium ?? 'prose';
+  const lineup = lineupOf(`${ctx.system}\n${ctx.prompt}`);
+  if (!lineup) return critique({ seed: ctx.seed, medium, iteration: ctx.iteration });
+  const items = lineupItems(ctx.prompt, lineup, ctx.attachments ?? []);
+  const looks = items.map(lookOf);
+  const novelty = ctx.lineupMemory?.revise(looks) ?? [];
+  return greatCritique({ medium, items: items.map((item, i) => ({ label: item.label, look: looks[i] ?? '' })), ranking: blindRanking(items, novelty) });
+};
 
 export const DEFAULT_RESPONDERS: Readonly<Record<string, Responder>> = {
   build: artifact,
@@ -129,10 +138,7 @@ export const DEFAULT_RESPONDERS: Readonly<Record<string, Responder>> = {
   asset: artifact,
   'asset.integrate': artifact,
   'voice.apply': artifact,
-  critic: (ctx) => {
-    const rankOf = rankLineup(ctx);
-    return critique({ seed: ctx.seed, medium: ctx.medium ?? 'prose', iteration: ctx.iteration, ...(rankOf !== undefined ? { rankOf } : {}) });
-  },
+  critic,
   judge: (ctx) => choose(ctx.seed, ctx.prompt, ctx.images),
   select: (ctx) => choose(ctx.seed, ctx.prompt, ctx.images),
   rerank: (ctx) => choose(ctx.seed, ctx.prompt, ctx.images),

@@ -12,13 +12,14 @@ import {
   type ModelProfile,
   type ModelRef,
   type ProfileStatus,
+  type PromptRef,
   type ProviderId,
   type ProviderStatus,
   type SpendSummary,
   type VideoRequest,
   type VideoResult,
 } from '@byway/contracts';
-import { configuredProviders, isConfigured, keyFor, loadEnvFile, type Env } from './env.ts';
+import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
 import { toGatewayError } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
 import { Ledger, type LedgerDraft } from './ledger.ts';
@@ -86,6 +87,10 @@ const IMAGE_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536']);
 const MOCK_MODELS = { big: 'mock-big', mid: 'mock-mid', image: 'mock-image', video: 'mock-video' } as const;
 /** Relay links are a few seconds each (03 C5); a request far beyond that is a mistake, not a clip. */
 const MAX_VIDEO_SECONDS = 60;
+/** The clip types VideoResult.mediaType can name: real providers' MP4, and the demo mock's labelled SVG placeholder. */
+const CLIP_TYPES = new Set<VideoResult['mediaType']>(['video/mp4', 'image/svg+xml']);
+const FIDELITIES = new Set<PromptRef['fidelity']>(['verbatim', 'paraphrase', 'project']);
+const SHA256_ID = /^sha256:[0-9a-f]{64}$/;
 
 interface Reservation {
   workspaceId: string;
@@ -102,7 +107,7 @@ const invalid = (message: string) => new GatewayError('invalid-request', message
  * appends every call to the hash-chained ledger.
  */
 export class ModelGateway implements Gateway {
-  readonly demo: boolean;
+  private readonly forcedDemo: boolean;
   private readonly env: Env;
   private readonly ledger: Ledger;
   private readonly artifacts: ArtifactStore;
@@ -120,7 +125,7 @@ export class ModelGateway implements Gateway {
     this.opts = opts;
     this.env = opts.env ?? process.env;
     if (opts.envFile) loadEnvFile(opts.envFile, this.env);
-    this.demo = opts.demo ?? false;
+    this.forcedDemo = opts.demo ?? false;
     this.ledger = new Ledger({ path: opts.ledgerPath, ...(opts.now ? { now: opts.now } : {}) });
     this.artifacts = opts.artifacts;
     this.caps = opts.caps;
@@ -130,6 +135,17 @@ export class ModelGateway implements Gateway {
     this.now = opts.now ?? (() => new Date());
     this.defaultMaxOutput = opts.defaultMaxOutputTokens ?? DEFAULT_MAX_OUTPUT;
     for (const [id, adapter] of Object.entries(opts.adapters ?? {})) this.adapters.set(id as ProviderId, adapter);
+  }
+
+  /**
+   * True when every call goes to the mock (contracts v4): demo mode forced (`pnpm demo`, the Settings switch), or no
+   * provider key in the environment. Read from the environment each time, like the keys themselves, so a key added
+   * later ends demo mode without a restart. With some keys but not a profile's, calls are not mocked: they fail with
+   * 'no-credentials', which Settings explains.
+   */
+  get demo(): boolean {
+    if (this.forcedDemo) return true;
+    return (Object.keys(KEY_VARS) as (keyof typeof KEY_VARS)[]).every((provider) => !isConfigured(this.env, provider));
   }
 
   providers(): ProviderStatus[] {
@@ -157,6 +173,7 @@ export class ModelGateway implements Gateway {
     if (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > MAX_OUTPUT_LIMIT) {
       throw invalid(`maxOutputTokens must be an integer from 1 to ${MAX_OUTPUT_LIMIT}`);
     }
+    const prompt = req.prompt === undefined ? undefined : promptRef(req.prompt);
     const profile = this.profile(req.profileId);
     const ref: ModelRef = this.demo ? { provider: 'mock', model: MOCK_MODELS[req.tier] } : (req.model ?? profile.tiers[req.tier]);
     this.requireKey(ref.provider);
@@ -196,6 +213,8 @@ export class ModelGateway implements Gateway {
           costUsd,
           latencyMs: Date.now() - started,
           ...(out.upstreamProvider ? { upstreamProvider: out.upstreamProvider } : {}),
+          // Provenance (spec §3.3): the template behind the call, inside the hash chain like every other field.
+          ...(prompt ? { prompt } : {}),
         },
         { profileId: req.profileId, tier: req.tier, provider: ref.provider, model: ref.model, wire: out.requestBody },
         { servedModel: out.servedModel, usage: out.usage, ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
@@ -278,6 +297,7 @@ export class ModelGateway implements Gateway {
     if (typeof req.durationSec !== 'number' || !Number.isFinite(req.durationSec) || req.durationSec <= 0 || req.durationSec > MAX_VIDEO_SECONDS) {
       throw invalid(`durationSec must be a number of seconds above 0 and at most ${MAX_VIDEO_SECONDS}`);
     }
+    if (req.shot !== undefined && (!Number.isSafeInteger(req.shot) || req.shot < 1)) throw invalid(`shot must be a storyboard shot number from 1, got ${String(req.shot)}`);
     const profile = this.profile(req.profileId);
     const ref: ModelRef | undefined = this.demo ? { provider: 'mock', model: MOCK_MODELS.video } : profile.video;
     if (!ref) throw new GatewayError('no-credentials', `profile "${profile.id}" has no video model`);
@@ -302,6 +322,7 @@ export class ModelGateway implements Gateway {
         model: ref.model,
         prompt: req.prompt,
         durationSec: seconds,
+        ...(req.shot !== undefined ? { shot: req.shot } : {}),
         ...(startFrame ? { startFrame } : {}),
         context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
         attempt: (fn) =>
@@ -331,7 +352,7 @@ export class ModelGateway implements Gateway {
           costUsd,
           latencyMs: Date.now() - started,
         },
-        { profileId: req.profileId, provider: ref.provider, model: ref.model, durationSec: req.durationSec, seconds, wire: out.requestBody },
+        { profileId: req.profileId, provider: ref.provider, model: ref.model, durationSec: req.durationSec, seconds, ...(req.shot !== undefined ? { shot: req.shot } : {}), wire: out.requestBody },
         {
           servedModel: out.servedModel,
           usage: { units },
@@ -347,7 +368,17 @@ export class ModelGateway implements Gateway {
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
         throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`));
       }
-      return { artifactId: clip.id, lastFrameArtifactId: lastFrame.id, servedModel: out.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
+      // The contract names two clip types (MP4, and the demo's SVG placeholder) and three frame types. Anything else is
+      // kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
+      const mediaType = clip.mediaType as VideoResult['mediaType'];
+      if (!CLIP_TYPES.has(mediaType)) {
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`);
+      }
+      const lastFrameMediaType = lastFrame.mediaType as MediaType;
+      if (!MEDIA_TYPES.has(lastFrameMediaType)) {
+        throw new GatewayError('provider-error', `${ref.provider} returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`);
+      }
+      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: out.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
     } finally {
       this.reservations.delete(reservation);
     }
@@ -507,6 +538,20 @@ function validateSpend(req: { workspaceId?: unknown; purpose?: unknown; profileI
   if (typeof req.workspaceId !== 'string' || !req.workspaceId) throw invalid('workspaceId is required');
   if (typeof req.purpose !== 'string' || !req.purpose) throw invalid('purpose is required (spec §3.3)');
   if (typeof req.profileId !== 'string' || !req.profileId) throw invalid('profileId is required');
+}
+
+/**
+ * The prompt ref as the ledger records it (contracts v4 PromptRef, from RenderedPrompt): only its four fields, checked,
+ * so a malformed ref fails the call before anything is spent instead of writing provenance nobody can check.
+ */
+function promptRef(value: unknown): PromptRef {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw invalid('prompt must be a prompt ref { id, version, hash, fidelity }');
+  const p = value as Record<string, unknown>;
+  if (typeof p.id !== 'string' || !p.id.trim()) throw invalid('prompt.id must be a template id');
+  if (!Number.isSafeInteger(p.version) || (p.version as number) < 1) throw invalid('prompt.version must be a positive integer');
+  if (typeof p.hash !== 'string' || !SHA256_ID.test(p.hash)) throw invalid('prompt.hash must be "sha256:<64 hex>"');
+  if (!FIDELITIES.has(p.fidelity as PromptRef['fidelity'])) throw invalid('prompt.fidelity must be verbatim, paraphrase or project');
+  return { id: p.id, version: p.version as number, hash: p.hash, fidelity: p.fidelity as PromptRef['fidelity'] };
 }
 
 function ctxIds(req: { runId?: string; stepId?: string }): { runId?: string; stepId?: string } {

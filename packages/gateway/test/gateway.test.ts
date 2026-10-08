@@ -145,9 +145,9 @@ describe('gateway: complete', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('refuses a provider without a key', async () => {
+  it("refuses a provider without a key when other keys exist (with no keys at all, it is demo mode)", async () => {
     const { client, calls } = fakeAnthropic();
-    const g = gateway({ clients: { anthropic: client } });
+    const g = gateway({ env: { OPENAI_API_KEY: OPENAI_KEY }, clients: { anthropic: client } });
     await expect(g.complete(req())).rejects.toMatchObject({ code: 'no-credentials' });
     expect(calls).toHaveLength(0);
   });
@@ -354,6 +354,73 @@ describe('gateway: images', () => {
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, OPENAI_API_KEY: OPENAI_KEY }, clients: { openai: client } });
     await expect(g.image({ workspaceId: 'ws-1', purpose: 'asset:web-page', profileId: 'best', prompt: 'x', size: '1024x1024' })).rejects.toMatchObject({ code: 'budget-exceeded' });
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('gateway: demo (contracts v4, Gateway.demo)', () => {
+  it('is true when demo mode is forced or no key is configured, false otherwise', () => {
+    expect(gateway().demo).toBe(true);
+    expect(gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY } }).demo).toBe(false);
+    expect(gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, demo: true }).demo).toBe(true);
+    // Blank values are not keys.
+    expect(gateway({ env: { ANTHROPIC_API_KEY: '  ', OPENAI_API_KEY: '' } }).demo).toBe(true);
+  });
+
+  it('routes every call to the mock when there are no keys, whatever profile is named', async () => {
+    const { client, calls } = fakeAnthropic();
+    const g = gateway({ clients: { anthropic: client } });
+    expect(await g.complete(req({ profileId: 'best', tier: 'mid', purpose: 'build:prose' }))).toMatchObject({ provider: 'mock', servedModel: 'mock-mid', costUsd: 0 });
+    expect(await g.image({ workspaceId: 'ws-1', purpose: 'asset.briefs:prose', profileId: 'balanced', prompt: 'A loaf', size: '1024x1024' })).toMatchObject({ provider: 'mock' });
+    expect(calls).toHaveLength(0);
+    expect(g.profiles().map((p) => p.id)).toEqual(['demo']);
+  });
+
+  it('follows the environment: keys read at call time end demo mode', () => {
+    const env: Record<string, string | undefined> = {};
+    const g = gateway({ env });
+    expect(g.demo).toBe(true);
+    env.ANTHROPIC_API_KEY = ANTHROPIC_KEY;
+    expect(g.demo).toBe(false);
+  });
+});
+
+describe('gateway: prompt provenance (contracts v4, spec §3.3 "Provenance")', () => {
+  const prompt = { id: 'product.c1.critic', version: 2, hash: `sha256:${'c'.repeat(64)}`, fidelity: 'paraphrase' as const };
+
+  it('writes the prompt ref into the ledger entry, inside the hash chain', async () => {
+    const g = gateway();
+    const res = await g.complete(req({ profileId: 'demo', prompt }));
+    const [entry] = ledgerLines();
+    expect(entry).toMatchObject({ id: res.ledgerEntryId, prompt });
+    expect(await g.verifyLedger()).toBeNull();
+    // A call without a template leaves the field out entirely.
+    await g.complete(req({ profileId: 'demo' }));
+    expect(ledgerLines()[1]).not.toHaveProperty('prompt');
+    expect(await g.verifyLedger()).toBeNull();
+    // The provenance is covered: changing it breaks the chain at that entry.
+    const path = join(dir, 'ledger.jsonl');
+    const lines = readFileSync(path, 'utf8').trim().split('\n');
+    lines[0] = (lines[0] as string).replace('"version":2', '"version":1');
+    writeFileSync(path, `${lines.join('\n')}\n`);
+    expect(await g.verifyLedger()).toBe(res.ledgerEntryId);
+  });
+
+  it('keeps only the ref fields, and refuses a malformed ref before any call', async () => {
+    const g = gateway();
+    await g.complete(req({ profileId: 'demo', prompt: { ...prompt, extra: 'dropped' } as typeof prompt }));
+    expect(ledgerLines()[0].prompt).toEqual(prompt);
+    const bad: unknown[] = [
+      { ...prompt, id: '' },
+      { ...prompt, version: 0 },
+      { ...prompt, version: 1.5 },
+      { ...prompt, hash: 'abc' },
+      { ...prompt, fidelity: 'loose' },
+      'product.c1.critic',
+    ];
+    for (const p of bad) {
+      await expect(g.complete(req({ profileId: 'demo', prompt: p as typeof prompt }))).rejects.toMatchObject({ code: 'invalid-request', message: expect.stringMatching(/prompt/) });
+    }
+    expect(ledgerLines()).toHaveLength(1);
   });
 });
 

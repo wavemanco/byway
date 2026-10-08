@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Store } from '@byway/contracts';
-import { CheckpointResolvedError, StoreError } from '../src/index.ts';
+import { CheckpointResolvedError, CheckpointWithdrawnError, StoreError } from '../src/index.ts';
 import { openStore, seedRun, steppingClock } from './helpers.ts';
 
 type OpenInput = Parameters<Store['openCheckpoint']>[0];
@@ -148,5 +148,86 @@ describe('resolution validation', () => {
     await expect(store.resolveCheckpoint({ checkpointId: 'dir', approved: true })).rejects.toThrow(/text/);
     expect((await store.resolveCheckpoint({ checkpointId: 'ok', approved: false, text: 'ignored' })).resolution).toEqual({ checkpointId: 'ok', approved: false });
     expect((await store.resolveCheckpoint({ checkpointId: 'dir', text: '- Remove the testimonials' })).resolution).toEqual({ checkpointId: 'dir', text: '- Remove the testimonials' });
+  });
+});
+
+describe('withdrawn checkpoints (a cancelled or failed run)', () => {
+  async function twoRuns() {
+    const store = openStore({ now: steppingClock() });
+    await seedRun(store, 'run-1');
+    await seedRun(store, 'run-2');
+    await store.openCheckpoint(pick('p1', 'run-1'));
+    await store.openCheckpoint({ id: 'r1', runId: 'run-1', stepId: 'vision', kind: 'react', prompt: 'What do you see?' });
+    await store.openCheckpoint({ id: 'done', runId: 'run-1', stepId: 'gate', kind: 'confirm', prompt: 'Ship it?' });
+    await store.resolveCheckpoint({ checkpointId: 'done', approved: true });
+    await store.openCheckpoint({ id: 'c2', runId: 'run-2', stepId: 'gate', kind: 'confirm', prompt: 'Use the best version so far?' });
+    return store;
+  }
+
+  it("withdraws only the run's open checkpoints and returns how many", async () => {
+    const store = await twoRuns();
+    const resolved = await store.getCheckpoint('done');
+    expect(await store.withdrawCheckpoints('run-1')).toBe(2);
+    expect((await store.checkpointsForRun('run-1')).map((c) => [c.id, c.status])).toEqual([
+      ['p1', 'withdrawn'],
+      ['r1', 'withdrawn'],
+      ['done', 'resolved'],
+    ]);
+    // A withdrawn question was never answered: it has no resolution or resolvedAt; the resolved one is untouched.
+    const withdrawn = await store.getCheckpoint('p1');
+    expect(withdrawn).not.toHaveProperty('resolution');
+    expect(withdrawn).not.toHaveProperty('resolvedAt');
+    expect(await store.getCheckpoint('done')).toEqual(resolved);
+    // Another run's checkpoint stays open.
+    expect((await store.getCheckpoint('c2'))?.status).toBe('open');
+  });
+
+  it('is idempotent: a second withdrawal finds nothing open', async () => {
+    const store = await twoRuns();
+    expect(await store.withdrawCheckpoints('run-1')).toBe(2);
+    expect(await store.withdrawCheckpoints('run-1')).toBe(0);
+    expect((await store.checkpointsForRun('run-1')).map((c) => c.status)).toEqual(['withdrawn', 'withdrawn', 'resolved']);
+  });
+
+  it('returns 0 for a run with no checkpoints and fails with not-found for an unknown run', async () => {
+    const store = openStore();
+    await seedRun(store);
+    expect(await store.withdrawCheckpoints('run-1')).toBe(0);
+    await expect(store.withdrawCheckpoints('no-such-run')).rejects.toMatchObject({ code: 'not-found' });
+  });
+
+  it('openCheckpoints lists only open ones', async () => {
+    const store = await twoRuns();
+    const ws = await store.ensureDefaultWorkspace();
+    expect((await store.openCheckpoints(ws.id)).map((c) => c.id)).toEqual(['p1', 'r1', 'c2']);
+    await store.withdrawCheckpoints('run-1');
+    expect((await store.openCheckpoints(ws.id)).map((c) => c.id)).toEqual(['c2']);
+  });
+
+  it('resolveCheckpoint refuses a withdrawn checkpoint with its own error, distinct from already-resolved', async () => {
+    const store = await twoRuns();
+    await store.withdrawCheckpoints('run-1');
+    const withdrawn = await store.getCheckpoint('r1');
+    const attempt = store.resolveCheckpoint({ checkpointId: 'r1', text: 'Warmer' });
+    await expect(attempt).rejects.toThrow(CheckpointWithdrawnError);
+    await expect(store.resolveCheckpoint({ checkpointId: 'r1', text: 'Warmer' })).rejects.toMatchObject({ code: 'withdrawn', checkpoint: withdrawn });
+    await expect(store.resolveCheckpoint({ checkpointId: 'r1', text: 'Warmer' })).rejects.toThrow(/withdrawn/);
+    // A retried runner activity treats CheckpointResolvedError as its own earlier success: a withdrawn one must not look like that.
+    await expect(store.resolveCheckpoint({ checkpointId: 'r1', text: 'Warmer' })).rejects.not.toBeInstanceOf(CheckpointResolvedError);
+    expect(await store.getCheckpoint('r1')).toEqual(withdrawn);
+    // A resolved one still answers with already-resolved.
+    await expect(store.resolveCheckpoint({ checkpointId: 'done', approved: false })).rejects.toMatchObject({ code: 'already-resolved' });
+  });
+
+  it('re-opening a withdrawn checkpoint with the same content (an activity retry) hands back the stored record', async () => {
+    const store = await twoRuns();
+    await store.withdrawCheckpoints('run-1');
+    expect(await store.openCheckpoint(pick('p1', 'run-1'))).toMatchObject({ id: 'p1', status: 'withdrawn' });
+  });
+
+  it('refuses withdrawal input that is not a run id', async () => {
+    const store = openStore();
+    await expect(store.withdrawCheckpoints('' as string)).rejects.toMatchObject({ code: 'invalid' });
+    await expect(store.withdrawCheckpoints(42 as unknown as string)).rejects.toMatchObject({ code: 'invalid' });
   });
 });

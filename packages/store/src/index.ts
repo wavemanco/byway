@@ -6,7 +6,7 @@ export { createStore, SqliteStore, DB_FILENAME, DEFAULT_WORKSPACE_BUDGET_USD, DE
 export { FileArtifactStore, artifactPath } from './artifacts.ts';
 export { assertSafeDataDir, defaultDataDir, resolveDataDir, unsafeLocationReason, type DataDirOptions, type Env, type UnsafeLocation } from './datadir.ts';
 export { DEFAULT_BUSY_TIMEOUT_MS, openDatabase, writeTransaction, type OpenDatabaseOptions } from './db.ts';
-export { ArtifactCorruptError, CheckpointResolvedError, StoreError, UnsafeDataDirError, type StoreErrorCode } from './errors.ts';
+export { ArtifactCorruptError, CheckpointResolvedError, CheckpointWithdrawnError, StoreError, UnsafeDataDirError, type StoreErrorCode } from './errors.ts';
 export { MIGRATIONS, SCHEMA_VERSION, migrate, type Migration } from './migrations.ts';
 export { checkResolution, type ResolutionCheck } from './resolution.ts';
 export { DEFAULT_PREFERENCES } from './preferences.ts';

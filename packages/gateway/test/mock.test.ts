@@ -75,10 +75,13 @@ describe('mock provider: output contracts for every purpose and medium', () => {
     expect(JSON.parse(lastBlock(out, 'json') as string).images).toHaveLength(2);
   });
 
-  it('critic answers with a rank in GREAT mode', async () => {
-    const out = await ask('critic:prose', 'Compare the draft with the 4 references. End with "Rank: N of M".');
-    expect(out.trim().split('\n').at(-1)).toMatch(/^Rank: \d+ of 5$/);
-    expect(checkContract('critic:prose', out)).toEqual([]);
+  it('critic answers with a ranking of every label in GREAT mode', async () => {
+    const out = await ask('critic:prose', 'GREAT mode. There are 4 references and 1 of ours (5 items, labelled A–E).');
+    expect(out.trim().split('\n').at(-1)).toMatch(/^Ranking: [A-E](, [A-E]){4}$/);
+    expect(checkContract('critic:prose', out, { mode: 'GREAT', lineup: 5 })).toEqual([]);
+    // A hand-written GREAT prompt with only a reference count still gets a full ranking.
+    const loose = await ask('critic:prose', 'GREAT mode: compare the draft with the 4 references.');
+    expect(checkContract('critic:prose', loose, { mode: 'GREAT', lineup: 5 })).toEqual([]);
   });
 
   it('check reports placeholders as defects', async () => {
@@ -244,15 +247,5 @@ describe('mock provider: advisor', () => {
     expect(JSON.stringify(short)).not.toContain('recipient-loop');
     expect(JSON.stringify(long)).toContain('recipient-loop');
   });
-
-  it("reuses the nearest recipe's prompt ids", async () => {
-    const nearest = {
-      schema: 'byway.recipe/1',
-      id: 'c4',
-      stages: [{ stage: 'D2', body: { op: 'step', id: 'draft', role: 'build', actor: 'model', prompt: 'runbook.c4.draft-v2', consumes: [], produces: [] } }],
-    };
-    const out = await ask('advisor.compose', `Nearest recipe:\n\`\`\`json\n${JSON.stringify(nearest)}\n\`\`\`\n<problem>A memo</problem>`);
-    expect(lastBlock(out, 'json')).toContain('runbook.c4.draft-v2');
-    expect(checkContract('advisor.compose', out)).toEqual([]);
-  });
+  // Composing from the nearest recipe (prompt ids, exceptions, checkpoints kept) is covered in compose.test.ts.
 });

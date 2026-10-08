@@ -27,7 +27,7 @@ import type {
 import { FileArtifactStore } from './artifacts.ts';
 import { assertSafeDataDir, resolveDataDir } from './datadir.ts';
 import { openDatabase, writeTransaction } from './db.ts';
-import { CheckpointResolvedError, StoreError } from './errors.ts';
+import { CheckpointResolvedError, CheckpointWithdrawnError, StoreError } from './errors.ts';
 import { INTAKE_PATCH_KEYS, intakeFieldJson, toIntake, type IntakeField } from './intakes.ts';
 import { migrate } from './migrations.ts';
 import { PREFERENCE_KEYS, mergePreferences, toPreferences } from './preferences.ts';
@@ -304,6 +304,7 @@ export class SqliteStore implements Store {
       const row = q.checkpoint.get(id);
       if (!row) throw new StoreError('not-found', `no checkpoint ${JSON.stringify(id)}`);
       const cp = toCheckpoint(row);
+      if (cp.status === 'withdrawn') throw new CheckpointWithdrawnError(cp);
       if (cp.status !== 'open') throw new CheckpointResolvedError(cp);
       const check = checkResolution(cp, res);
       if (!check.ok) throw invalid(check.problem);
@@ -312,11 +313,26 @@ export class SqliteStore implements Store {
     });
   }
 
+  /**
+   * Withdraws the run's open checkpoints (the run was cancelled or failed, so nobody will act on an answer) and returns
+   * how many. Resolved ones keep their answer. Idempotent: a second call finds nothing open and returns 0, which is what
+   * a retried cancel or fail path needs.
+   */
+  async withdrawCheckpoints(runId: string): Promise<number> {
+    const q = this.#queries();
+    const id = nonEmpty('runId', runId);
+    return writeTransaction(this.#db, () => {
+      if (!q.run.get(id)) throw new StoreError('not-found', `no run ${JSON.stringify(id)}`);
+      return Number(q.withdrawCheckpoints.run(this.#stamp(), id).changes);
+    });
+  }
+
   async getCheckpoint(id: string): Promise<CheckpointRecord | undefined> {
     const row = this.#queries().checkpoint.get(id);
     return row ? toCheckpoint(row) : undefined;
   }
 
+  /** Only checkpoints still waiting for an answer: resolved and withdrawn ones are left out. */
   async openCheckpoints(workspaceId: string): Promise<CheckpointRecord[]> {
     return this.#queries().openCheckpoints.all(workspaceId).map(toCheckpoint);
   }

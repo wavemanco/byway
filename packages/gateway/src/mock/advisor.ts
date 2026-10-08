@@ -1,4 +1,4 @@
-import { composedRecipe, type RecipeJson } from './compose.ts';
+import { composedRecipe, composeFromNearest, nearestRecipeIn, type RecipeJson } from './compose.ts';
 import { fencedBlocks, oneLine, subjectOf, tagged, titleFrom } from './extract.ts';
 import { seedOf } from './seed.ts';
 
@@ -104,37 +104,16 @@ export function intake(prompt: string): { answers: IntakeAnswer[]; routes: Recor
   return { answers, routes };
 }
 
-/** Prompt ids by role from the nearest canonical recipe, when the composer prompt includes it as JSON. */
-function promptsFromNearest(prompt: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const block of fencedBlocks(prompt, ['json', ''])) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(block);
-    } catch {
-      continue;
-    }
-    if (!parsed || typeof parsed !== 'object' || (parsed as { schema?: unknown }).schema !== 'byway.recipe/1') continue;
-    const visit = (node: unknown) => {
-      if (Array.isArray(node)) return node.forEach(visit);
-      if (!node || typeof node !== 'object') return;
-      const n = node as Record<string, unknown>;
-      if (n.op === 'step' && typeof n.role === 'string' && typeof n.prompt === 'string') {
-        const key = n.role === 'fix' ? (/cut/.test(String(n.id)) ? 'cut-apply' : /swap|tells/.test(String(n.id)) ? 'tells-swap' : 'fix') : n.role;
-        out[key] ??= n.prompt;
-      }
-      Object.values(n).forEach(visit);
-    };
-    visit(parsed);
-    return out;
-  }
-  return out;
-}
-
-/** advisor.compose and advisor.compose.repair: a recipe built after C4, varied by the problem. */
+/**
+ * advisor.compose and advisor.compose.repair: the nearest recipe in the prompt with the smallest valid change
+ * (compose.ts), or, when the prompt carries none, a C4-shaped recipe varied by the problem's length.
+ */
 export function compose(prompt: string): RecipeJson {
   const problem = oneLine(tagged(prompt, ['problem']) ?? subjectOf(prompt));
-  const long = /\b(long|detailed|strategy|prd|rca|root cause|report|analysis|proposal|plan)\b/i.test(problem);
   const id = `composed-${seedOf(problem).toString(16).padStart(8, '0').slice(0, 8)}`;
-  return composedRecipe({ id, title: `Composed: ${titleFrom(problem, 'a reader-ready document')}`, long, prompts: promptsFromNearest(prompt) });
+  const title = `Composed: ${titleFrom(problem, 'a reader-ready document')}`;
+  const nearest = nearestRecipeIn(fencedBlocks(prompt, ['json', '']));
+  if (nearest) return composeFromNearest(nearest, { id, title });
+  const long = /\b(long|detailed|strategy|prd|rca|root cause|report|analysis|proposal|plan)\b/i.test(problem);
+  return composedRecipe({ id, title, long });
 }

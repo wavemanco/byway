@@ -71,7 +71,7 @@ The runner and the advisor fill slots from ports (spec §3.2 "Prompt slots by po
 | `artifact` | The artifact's raw text. Templates fence it in the medium's language (`ARTIFACT_FENCE`): html, markdown, json, diff | |
 | `view` | A text view (prose, options, media storyboards, diffs). Screenshot views are attached images and leave the slot empty | |
 | `options` | Candidates under `### A`, `### B`… headings; in overlap steps the unseeded runs under `### V1`–`### V3` (the seeded options are then in `view`); on an ASSET step on options, the option labels | `labelled(texts)`, `vanillaLabelled(texts)` |
-| `refs`, `labels` | GREAT-mode critics: `refs` is the number of references, `labels` describes the lineup and names ours ("5 items, labelled A–E; ours is C"). Leave `refs` empty for OK mode | `greatLineup(referenceCount, oursIndex)` |
+| `refs`, `labels` | GREAT-mode critics (at least 3 references, ADR-0071): `refs` is the number of references, `labels` describes the lineup ("5 items, labelled A–E") and never says which item is ours (ADR-0072). Leave `refs` empty for OK mode | `greatLineup(referenceCount)` |
 | `seed` | The runner's random string, for SEED steps only | |
 | `tells` | The rendered tell catalogs | `tellsPromptIds(medium, domains)` |
 | `images` | Generated images by artifact route: `![alt](/api/artifacts/<id>)` lines (prose) or `/api/artifacts/<id> \| alt \| slot` lines (web-page) | `imagesSlot(medium, images)` |
@@ -88,7 +88,7 @@ The tests in `test/` enforce these on every file:
 - **Port rule 3:** only SEED templates take `seed`, once, with an instruction never to reveal it.
 - **Port rule 7:** only TELLS sweep templates take `tells`, and no other template contains catalog text.
 - **Port rule 8 and claims:** no mention of AI detectors or evasion, and no efficacy claims ("research-backed", "proven", "studies show", "outperforms").
-- **Critic modes** (ADR-0071): every critic branches on `refs`. GREAT mode contains the word GREAT, the line "There are R references and 1 of ours (…)", ranks by polish and taste and answers `Rank: N of M`; OK mode is the article's critic and answers `Score: N/10`.
+- **Critic modes** (ADR-0071, ADR-0072): every critic branches on `refs`. GREAT mode contains the word GREAT and the line "There are R references and 1 of ours (…)", says the critic is not told which item that is, ranks every item by polish and taste, critiques each one under its `### A` heading and answers a last line `Ranking: C, A, E, B, D` (every label once, best first); the runner finds our place and keeps our item's critique. "Ours" appears nowhere else in a critic template, and no template names our item. OK mode is the article's critic and answers `Score: N/10`.
 - **Answer format last:** every template that expects an answer ends with a `## Answer format` section that states its spec §3.3 contract; every slot comes before it, and it mentions a code fence at most once, so it never opens a block a parser could take for the work.
 - Every recipe step's template answers its step's role in the recipe's medium (`outputForStep`), and uses only slots its ports fill.
 

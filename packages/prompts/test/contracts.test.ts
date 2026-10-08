@@ -17,7 +17,7 @@ const MARKERS: Record<OutputId, string[]> = {
   critique: ['Score: N/10'],
   choice: ['Choice:'],
   defects: ['No defects.'],
-  cut: ['Remove', 'Delete', 'Drop', 'Merge'],
+  cut: ['Remove', 'Delete', 'Drop', 'Merge', 'Nothing to remove.'],
   'tells-hits': ['```json', '"hits"', '"pattern"', '"where"', '"alternative"'],
   keep: ['Keep: A', 'Keep: B'],
   'plain-text': ['plain text'],
@@ -30,6 +30,12 @@ const MARKERS: Record<OutputId, string[]> = {
   catalog: [],
   none: [],
 };
+
+/**
+ * A GREAT-mode critic's answer format (ADR-0072): every item's critique under its "### X" heading, then a last line
+ * ranking every label once, best first.
+ */
+const GREAT_MARKERS = ['### A', 'Intent:', 'Ranking:', 'every label', 'once', 'best first', 'Ranking: C, A, E, B, D'];
 
 const answering = FILES.filter((f) => !['catalog', 'none'].includes(f.template.output));
 const critics = FILES.filter((f) => f.template.output === 'critique');
@@ -50,7 +56,7 @@ describe('output contracts in the templates', () => {
       const at = user.lastIndexOf('## Answer format');
       expect(at, `${mode}: no "## Answer format" section`).toBeGreaterThan(0);
       const tail = user.slice(at);
-      const markers = f.template.output === 'critique' && mode === 'GREAT' ? ['Rank: N of M'] : MARKERS[f.template.output];
+      const markers = f.template.output === 'critique' && mode === 'GREAT' ? GREAT_MARKERS : MARKERS[f.template.output];
       for (const marker of markers) expect(tail.toLowerCase(), `${mode}: missing ${marker}`).toContain(marker.toLowerCase());
       // Slot values come before the answer format, so nothing the user pasted can follow the instructions…
       for (const m of user.matchAll(/SLOT_[A-Z]+/g)) expect(m.index, `${mode}: ${m[0]} after the answer format`).toBeLessThan(at);
@@ -59,18 +65,22 @@ describe('output contracts in the templates', () => {
     }
   });
 
-  it.each(critics.map((f) => [f.name, f] as const))('critic %s branches on refs: GREAT mode ranks, OK mode scores', (_n, f) => {
+  it.each(critics.map((f) => [f.name, f] as const))('critic %s branches on refs: GREAT mode ranks the whole lineup, OK mode scores', (_n, f) => {
     expect(f.template.slots).toContain('refs');
+    expect(f.template.version, 'the GREAT branch changed with ADR-0072').toBeGreaterThanOrEqual(2);
     const [great, ok] = renders(f);
     const g = `${great?.system}\n${great?.user}`;
     const o = `${ok?.system}\n${ok?.user}`;
     expect(g).toMatch(/\bGREAT\b/);
     expect(g).toContain('There are 4 references and 1 of ours (SLOT_LABELS).');
-    expect(g).toContain('Rank: N of M');
-    expect(g).toMatch(/polish and taste/);
-    expect(g).not.toContain('Score: N/10');
+    // It ranks every item and critiques every item, because it is not told which one is ours (ADR-0072).
+    expect(g).toMatch(/Rank every \w+ by polish and taste/);
+    expect(g).toMatch(/For each \w+:/);
+    expect(g).toMatch(/not told which \w+ that is/);
+    expect(g).toContain('Ranking:');
+    expect(g).not.toMatch(/Rank: N of M|Score: N\/10/);
     expect(o).not.toMatch(/\bGREAT\b/);
-    expect(o).not.toMatch(/Rank: N of M|references and 1 of ours/);
+    expect(o).not.toMatch(/Rank: N of M|Ranking:|references and 1 of ours/);
     expect(o).toContain('Score: N/10');
     // The article's critic: infer the intended aesthetic, picture a top studio's execution, name the biggest gaps.
     for (const text of [g, o]) {
