@@ -6,7 +6,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { c1 } from '@byway/catalog';
 import type { CompletionRequest, RunView } from '@byway/contracts';
-import { pageCopy, skeleton } from '../../src/copy.ts';
+import { pageCopy } from '../../src/copy.ts';
+import { tokenize } from '../../src/html-tokens.ts';
 import { SURFACE_CAPTIONS } from '../../src/surfaces.ts';
 import { BEST_SO_FAR_PROMPT, DECLINED_NOTE } from '../../src/workflow/wording.ts';
 import { checkEvents, ofType } from '../helpers/events.ts';
@@ -104,12 +105,15 @@ export function c1Scenarios(use: () => Harness): void {
         const pick = view.checkpoints.find((c) => c.kind === 'pick')!;
         expect(pick).toMatchObject({ stepId: 'pick-one', k: 1 });
 
-        // Your words: placed verbatim, nothing but text changed (voice.apply, held to the diff check).
-        expect(h.succeeded(run.id).some((c) => c.purpose === 'voice.apply:web-page')).toBe(true);
+        // Your words: written back exactly, line for line, by the runner with no model call (F07, ADR-0081); nothing but
+        // text changed, and no link or button was left empty.
+        expect(h.succeeded(run.id).filter((c) => c.purpose.startsWith('voice.apply'))).toEqual([]);
         const out = await h.store.artifacts.getText(view.run.outputArtifactId!);
-        expect(pageCopy(out)).toContain('Sourdough at your door by six');
-        expect(skeleton(out)).toBe(skeleton(await h.store.artifacts.getText(beforeVoice)));
-        expect(pageCopy(out)).toEqual(editedCopy.map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean));
+        expect(pageCopy(out)).toEqual(editedCopy);
+        expect(pageCopy(out)[1]).toBe('Sourdough at your door by six');
+        const markup = (html: string) => tokenize(html).filter((t) => t.kind !== 'text').map((t) => t.raw);
+        expect(markup(out)).toEqual(markup(await h.store.artifacts.getText(beforeVoice)));
+        expect(out.match(/<(a|button)\b[^>]*>\s*<\/\1>/g)).toBeNull();
 
         // The final defect check found nothing.
         const check = ofType(view, 'step-finished', 'critic-check')[0]!;

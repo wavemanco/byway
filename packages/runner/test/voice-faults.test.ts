@@ -25,6 +25,8 @@ vi.mock('../src/copy.ts', async (importOriginal) => {
     ...real,
     applyCopy: (...a: Parameters<typeof real.applyCopy>) => (boom('applyCopy'), real.applyCopy(...a)),
     extractCopy: (...a: Parameters<typeof real.extractCopy>) => (boom('extractCopy'), real.extractCopy(...a)),
+    readPageEdit: (...a: Parameters<typeof real.readPageEdit>) => (boom('readPageEdit'), real.readPageEdit(...a)),
+    pageVoiceSuffix: (...a: Parameters<typeof real.pageVoiceSuffix>) => (boom('pageVoiceSuffix'), real.pageVoiceSuffix(...a)),
     roundTripProblem: (...a: Parameters<typeof real.roundTripProblem>) => fault.problem ?? real.roundTripProblem(...a),
     lockCopy: (...a: Parameters<typeof real.lockCopy>) => {
       boom('lockCopy');
@@ -113,5 +115,27 @@ describe('keepsVoice: a fault in the check never repeats a paid call', () => {
     fault.in = 'lockCopy';
     expect(await fix()).toBeInstanceOf(StepError);
     expect(b.gateway.requests).toHaveLength(0);
+  });
+});
+
+describe('VOICE on a page: the same boundaries', () => {
+  const PAGE = '<!doctype html><html><head><title>T</title></head><body><h1>Head</h1><p>Sub</p></body></html>\n';
+
+  it('a fault in the pure page code is asked again, quoting the offered lines that changed', async () => {
+    const q = await VoiceQuestion.open(b, await benchRun(b, 'web-page'), await putWork(b, 'web-page', PAGE));
+    fault.in = 'readPageEdit';
+    const err = await q.answer('T\nNew head\nSub').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AnswerRejected);
+    expect((err as Error).message).toBe('byway could not place this edit (forced fault in readPageEdit). Change those lines again, or leave them as they were offered. As first offered, line 2 read "Head".');
+    expect(b.gateway.requests).toEqual([]);
+    // The offered copy sent back still succeeds.
+    expect((await q.answer(q.offered!)).artifactId).toBeUndefined();
+  });
+
+  it('a fault reading the page to ask about it is a plain, final step failure', async () => {
+    fault.in = 'pageVoiceSuffix';
+    const err = await VoiceQuestion.open(b, await benchRun(b, 'web-page'), await putWork(b, 'web-page', PAGE)).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe('byway could not read the copy of this work (forced fault in pageVoiceSuffix).');
   });
 });

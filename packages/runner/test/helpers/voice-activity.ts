@@ -114,6 +114,14 @@ export class VoiceQuestion {
     return q;
   }
 
+  /** A question opened by an older engine: its first offer is `offered` as that engine read the work. */
+  static async openInFlight(b: VoiceBench, run: RunRef, artifactId: string, offered: string, step: StepSpec = voiceStep()): Promise<VoiceQuestion> {
+    const q = new VoiceQuestion(b, run, step, artifactId);
+    const opened = await q.ask({ prompt: 'Write the words yourself: change any line below.', initialText: offered });
+    q.offered = opened.initialText;
+    return q;
+  }
+
   /** Open a checkpoint for this step (the first offer, or a re-ask starting from the person's previous answer). */
   async ask(spec: { prompt: string; initialText?: string; initial?: { from: 'copy' | 'claims'; artifactId: string } }): Promise<{ checkpointId: string; initialText?: string; prompt: string }> {
     const id = `${this.run.runId}/cp${++this.n}-${this.step.id}`;

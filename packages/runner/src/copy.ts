@@ -5,7 +5,8 @@
  * checks the written artifact against what the person wrote. Later machine writes are held to the same deck
  * (keepsVoice, port rule 6): the deck locked at VOICE must be unchanged.
  *
- * - web-page: one line per block of visible text, in reading order.
+ * - web-page: one line per block of visible text, in reading order, link words in [brackets] (page-copy.ts reads,
+ *   places and verifies it).
  * - prose: the whole Markdown document; the edited text becomes the artifact.
  * - options: each option's title, pitch and rationale under its "### A" label.
  * - media: the voice-over script at the early VOICE (locked after it), the headline, tagline and captions at the late one.
@@ -18,143 +19,32 @@
  * This module must stay activity-side: never bundle it for a browser or the workflow sandbox.
  */
 import type { Medium } from '@byway/contracts';
-import { joinCodeDiff, parseOptions, parseStoryboard, serializeJson, splitCodeDiff, type Parsed, type Storyboard } from './formats.ts';
+import { joinCodeDiff, parseOptions, parseStoryboard, serializeJson, splitCodeDiff, type Storyboard } from './formats.ts';
+import { squashHtml } from './html-tokens.ts';
+import { deckLines, pageLockView, readPageCopy } from './page-copy.ts';
 import type { StepSpec } from './types.ts';
 import { labelOf } from '@byway/prompts/pure';
 
-// ---- HTML tokens -------------------------------------------------------------------------------------------------
+// ---- Pages (page-copy.ts) ------------------------------------------------------------------------------------------
 
-type Token = { kind: 'tag'; raw: string; name: string; closing: boolean } | { kind: 'text'; raw: string } | { kind: 'other'; raw: string };
+export {
+  deckLines,
+  pageEditProblems,
+  pageLockView,
+  pageVoiceSuffix,
+  placePageEdit,
+  readPageCopy,
+  readPageEdit,
+  samePageCopy,
+  type PageDeck,
+  type PageEdit,
+  type PageRefusal,
+  type Placed,
+  type Witness,
+} from './page-copy.ts';
 
-const RAW_TEXT = new Set(['script', 'style', 'noscript', 'template', 'textarea']);
-/** Formatting that sits inside a line of text; any other tag ends the line. */
-const INLINE = new Set(['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'data', 'dfn', 'em', 'i', 'kbd', 'mark', 'q', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var', 'wbr']);
-
-export function tokenize(html: string): Token[] {
-  const out: Token[] = [];
-  const re = /<!--[\s\S]*?-->|<![^>]*>|<\/?([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*>|[^<]+|</g;
-  let rawUntil: string | undefined;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html))) {
-    const raw = m[0];
-    if (rawUntil) {
-      // Inside <script>, <style>…: everything up to the matching close tag is opaque.
-      const close = html.toLowerCase().indexOf(`</${rawUntil}`, m.index);
-      const end = close < 0 ? html.length : close;
-      if (end > m.index) out.push({ kind: 'other', raw: html.slice(m.index, end) });
-      re.lastIndex = end;
-      rawUntil = undefined;
-      continue;
-    }
-    if (m[1]) {
-      const name = m[1].toLowerCase();
-      const closing = raw.startsWith('</');
-      out.push({ kind: 'tag', raw, name, closing });
-      if (!closing && RAW_TEXT.has(name) && !raw.endsWith('/>')) rawUntil = name;
-    } else if (raw.startsWith('<!') || raw === '<') {
-      out.push(raw === '<' ? { kind: 'text', raw } : { kind: 'other', raw });
-    } else {
-      out.push({ kind: 'text', raw });
-    }
-  }
-  return out;
-}
-
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'", mdash: '—', ndash: '–', hellip: '…', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', copy: '©', middot: '·' };
-
-export function decodeEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+\d*);/gi, (all, e: string) => {
-    if (e[0] === '#') {
-      const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : all;
-    }
-    return ENTITIES[e.toLowerCase()] ?? all;
-  });
-}
-
-const escapeText = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const squash = (text: string): string => text.replace(/\s+/g, ' ').trim();
-
-interface CopyLine {
-  text: string;
-  /** Indices of the text tokens that make up the line. */
-  tokens: number[];
-}
-
-/** Lines of visible copy: text runs split at every non-inline tag, outside <head> except the <title>. */
-function copyLines(tokens: Token[]): CopyLine[] {
-  const lines: CopyLine[] = [];
-  let current: CopyLine = { text: '', tokens: [] };
-  let inHead = false;
-  let inTitle = false;
-  const flush = () => {
-    const text = squash(current.text);
-    if (text) lines.push({ text, tokens: current.tokens });
-    current = { text: '', tokens: [] };
-  };
-  tokens.forEach((t, i) => {
-    if (t.kind === 'tag') {
-      if (t.name === 'head') inHead = !t.closing;
-      if (t.name === 'title') inTitle = !t.closing;
-      if (!INLINE.has(t.name)) flush();
-      return;
-    }
-    if (t.kind !== 'text' || (inHead && !inTitle)) return;
-    current.text += decodeEntities(t.raw);
-    current.tokens.push(i);
-  });
-  flush();
-  return lines;
-}
-
-/** The page's visible copy, one line per block, in reading order. */
-export const pageCopy = (html: string): string[] => copyLines(tokenize(html)).map((l) => l.text);
-
-/** The page with its text removed: tags and everything opaque, in order. Two pages with equal skeletons differ only in text. */
-export function skeleton(html: string): string {
-  return tokenize(html)
-    .filter((t) => t.kind !== 'text')
-    .map((t) => (t.kind === 'tag' ? t.raw.replace(/\s+/g, ' ') : t.raw.trim()))
-    .join('\n');
-}
-
-/**
- * Place edited copy into the page line by line: each changed line's text goes into its first text token and the
- * line's other text tokens are emptied, so every tag stays where it was. Needs the same number of lines.
- */
-export function placePageCopy(html: string, edited: readonly string[]): Parsed<string> {
-  const tokens = tokenize(html);
-  const lines = copyLines(tokens);
-  if (edited.length !== lines.length) {
-    return { ok: false, problem: `The page has ${lines.length} lines of copy and the edit has ${edited.length}, so they cannot be placed line by line.` };
-  }
-  const raws = tokens.map((t) => t.raw);
-  lines.forEach((line, i) => {
-    const next = squash(edited[i] ?? '');
-    if (next === line.text) return;
-    line.tokens.forEach((ti, k) => {
-      const raw = raws[ti] ?? '';
-      if (k === 0) {
-        const lead = /^\s*/.exec(raw)?.[0] ?? '';
-        const trail = /\s*$/.exec(raw)?.[0] ?? '';
-        raws[ti] = `${lead}${escapeText(next)}${trail}`;
-      } else {
-        raws[ti] = '';
-      }
-    });
-  });
-  return { ok: true, value: raws.join('') };
-}
-
-/** Problems with a VOICE write-back on a page: anything but text changed, or a line of the person's is missing. */
-export function pageVoiceProblems(before: string, after: string, edited: readonly string[]): string[] {
-  const problems: string[] = [];
-  if (skeleton(before) !== skeleton(after)) problems.push('The page changed beyond its text: keep every tag and attribute exactly as it was.');
-  const have = new Set(pageCopy(after));
-  const missing = edited.map(squash).filter((l) => l && !have.has(l));
-  if (missing.length) problems.push(`These lines must appear exactly as written: ${missing.map((l) => `"${l.slice(0, 80)}"`).join('; ')}.`);
-  return problems;
-}
+/** The page's visible copy, one line per block, in reading order, as the person is shown it (link words in brackets). */
+export const pageCopy = (html: string): string[] => deckLines(readPageCopy(html));
 
 // ---- Per medium ---------------------------------------------------------------------------------------------------
 
@@ -459,18 +349,22 @@ export function lockCopy(medium: Medium, voice: string | undefined, before: stri
 }
 
 const LOCKED: Record<Exclude<Medium, 'media'>, string> = {
-  'web-page': "The person's own words must stay exactly as written: keep every line of the page's text exactly as it is, in the same order.",
+  'web-page': "The person's own words must stay exactly as written: keep every line of the page's text, and every link's words and address, exactly as they are, in the same order.",
   prose: "The person's own words must stay exactly as written: keep the text exactly as it is.",
   options: "The person's own words must stay exactly as written: keep every option's title, pitch and rationale exactly as they are.",
   'code-diff': "The person's own words must stay exactly as written: keep the \"Why:\" paragraph exactly as it is.",
 };
 
 /** The deck a write is held to, in a form compared exactly. */
-const lockedDeck = (medium: Exclude<Medium, 'media'>, text: string): string => (medium === 'web-page' ? JSON.stringify(pageCopy(text)) : extractCopy(medium, text));
+const lockedDeck = (medium: Exclude<Medium, 'media'>, text: string): string => (medium === 'web-page' ? pageLockView(text) : extractCopy(medium, text));
 
 /** With no work before the write: the written artifact's deck is the voice, as the VOICE round trip reads it. */
 function holdsVoice(medium: Medium, voice: string, after: string): boolean {
-  if (medium === 'web-page') return JSON.stringify(pageCopy(after)) === JSON.stringify(lf(voice).split('\n').map(squash).filter(Boolean));
+  if (medium === 'web-page') {
+    const lines = lf(voice).split('\n').map(squashHtml);
+    while (lines.length && !lines.at(-1)) lines.pop();
+    return JSON.stringify(pageCopy(after)) === JSON.stringify(lines);
+  }
   if (medium === 'media') return (['script', 'on-screen'] as const).some((scope) => roundTripProblem(medium, scope, after, voice) === undefined);
   return roundTripProblem(medium, 'script', after, voice) === undefined;
 }

@@ -357,8 +357,8 @@ export function operatorScenarios(use: () => Harness): void {
       // The second ask says what went wrong and starts from what you wrote, not from the page's copy.
       expect(asks[1]!.prompt).toMatch(new RegExp(`one line per block of text: ${offered.length} lines`));
       expect(asks[1]!.initialText).toContain('A line of my own');
-      // A line count that cannot be placed is refused before any model call; the fixed answer is placed.
-      expect(h.succeeded(run.id).filter((c) => c.purpose === 'voice.apply:web-page')).toHaveLength(1);
+      // A line count that cannot be placed is refused; the fixed answer is placed by the runner, with no model call (F07).
+      expect(h.succeeded(run.id).filter((c) => c.purpose.startsWith('voice.apply'))).toEqual([]);
       expect(pageCopy(await h.store.artifacts.getText(view.run.outputArtifactId!))).toContain('Fixed by Friday, or the next one is free');
       expect(ofType(view, 'step-failed')).toEqual([]);
     }, 60_000);

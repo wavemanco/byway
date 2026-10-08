@@ -259,3 +259,90 @@ describe('keepsVoice holds the person’s words exactly (F07)', () => {
     expect(notes).toEqual([undefined]);
   });
 });
+
+describe('VOICE on a web page: deterministic, no model (F07)', () => {
+  const page = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>\n`;
+  const open = async (html: string) => VoiceQuestion.open(b, await benchRun(b, 'web-page'), await putWork(b, 'web-page', html));
+  const stored = async (id: string) => (await b.store.artifacts.getText(id)).replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, '');
+
+  it('writes deletions, order and link words exactly, with no model call, at no cost', async () => {
+    const q = await open(page('<h1>Head</h1><p>Old middle</p><p>Please <a href="/terms">read terms</a> today.</p>'));
+    expect(q.offered).toBe('T\nHead\nOld middle\nPlease [read terms] today.');
+    const out = await q.answer('T\nNew head\n\nPlease [read the terms] today.');
+    expect(await stored(out.artifactId!)).toBe('<h1>New head</h1><p>Please <a href="/terms">read the terms</a> today.</p>');
+    expect(out.costUsd).toBe(0);
+    expect(b.gateway.requests).toEqual([]);
+  });
+
+  it('a page with an out-of-range character reference opens and finishes', async () => {
+    const q = await open(page('<p>A &#99999999; B</p><p>Two</p>'));
+    expect(q.offered).toBe('T\nA \uFFFD B\nTwo');
+    const out = await q.answer('T\nA \uFFFD B\nTwo!');
+    expect(await stored(out.artifactId!)).toBe('<p>A &#99999999; B</p><p>Two!</p>');
+  });
+
+  it('refusals name the line and quote how it was first offered', async () => {
+    const q = await open(page('<p>Please <a href="/terms">read terms</a> today.</p>'));
+    const msg = await rejected(q.answer('T\nPlease read the terms today.'));
+    expect(msg).toBe('Line 2 has 1 link in [brackets] and your line has 0: keep one pair per link, in order; leave a pair empty, [], to remove its link. As first offered, line 2 read "Please [read terms] today.".');
+    expect(b.gateway.requests).toEqual([]);
+  });
+
+  it('the prompt says how a page is written and where each link goes, once, on the first offer and on a re-ask', async () => {
+    const q = await open(page('<footer><p><a href="/terms">Terms of service</a> · <a href="/privacy">Privacy policy</a></p></footer>'));
+    const legend = 'Where each one goes: line 2 "Terms of service" goes to /terms; line 2 "Privacy policy" goes to /privacy.';
+    expect(q.prompt).toMatch(/^Write the words yourself: change any line below\. One line per block of text; leave a line empty to remove its text\. Words in \[brackets\] are a link's words/);
+    expect(q.prompt!.split(legend)).toHaveLength(2);
+    const problem = await rejected(q.answer('T\nTerms · Privacy'));
+    const again = await q.ask({ prompt: `${problem} Write the words yourself: change any line below.`, initialText: 'T\nTerms · Privacy' });
+    expect(again.prompt.split(legend)).toHaveLength(2);
+    expect(again.prompt.split('One line per block of text')).toHaveLength(2);
+    const out = await q.answer('T\n[Privacy] · [Terms]', again.checkpointId);
+    expect(await stored(out.artifactId!)).toBe('<footer><p><a href="/terms">Privacy</a> · <a href="/privacy">Terms</a></p></footer>');
+  });
+
+  it('an in-flight question read differently since it opened: a moved line is refused on the first offer and applied on the re-ask', async () => {
+    const html = page('<p>A</p><nav><a href="#1">One</a><a href="#2">Two</a></nav><pre>code</pre>');
+    const old = 'T\nA\nOneTwo\ncode';
+    const q = await VoiceQuestion.openInFlight(b, await benchRun(b, 'web-page'), await putWork(b, 'web-page', html), old);
+    const answer = 'T\nA\nOne and Two\nTwo';
+    const problem = await rejected(q.answer(answer));
+    expect(problem).toMatch(/^Line 3 was read again since this question opened; it now reads "One": write your change to that line\. As first offered, line 3 read "OneTwo"\./);
+    const out = await q.reask(answer, problem, answer);
+    expect(await stored(out.artifactId!)).toBe('<p>A</p><nav><a href="#1">One and Two</a><a href="#2">Two</a></nav><pre>code</pre>');
+  });
+
+  it('an answer equal to the offer writes nothing, whatever its whitespace', async () => {
+    const q = await open(page('<h1>Head</h1><p>Sub</p>'));
+    expect((await q.answer('T\n  Head \nSub\n\n')).artifactId).toBeUndefined();
+  });
+
+  it('a claim-log VOICE on a web-page run offers the page deck', async () => {
+    const run = await benchRun(b, 'web-page');
+    const q = await VoiceQuestion.open(b, run, await putWork(b, 'web-page', page('<h1>We launched on 3 May.</h1>')), voiceStep({ variant: 'claim-log' }), 'claims');
+    expect(q.offered).toBe('T\nWe launched on 3 May.');
+    const out = await q.answer('T\nWe launched on 4 May.');
+    expect(await stored(out.artifactId!)).toBe('<h1>We launched on 4 May.</h1>');
+  });
+});
+
+describe('keepsVoice on a web page (F07)', () => {
+  const fixSpec: StepSpec = { id: 'polish', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.test.polish', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true, keepsVoice: true };
+  const voiced = '<!doctype html><html><head><title>T</title></head><body><h1>New head</h1><p>Please <a href="/t">read the terms</a> today.</p></body></html>';
+  const fix = async (after: string) => {
+    const run = await benchRun(b, 'web-page');
+    const artifact = await putWork(b, 'web-page', voiced);
+    b.gateway.complete = async (req) => {
+      b.gateway.requests.push(req);
+      return { text: '```html\n' + after + '\n```', stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, ledgerEntryId: 'l1' };
+    };
+    return modelStep(b.deps, { run, call: { key: `${run.runId}/polish/-/1`, stepId: 'polish', stage: 'D3' }, step: fixSpec, ports: { artifact, voice: 'T\nNew head\nPlease [read the terms] today.' }, refs: [] });
+  };
+
+  it('refuses a write that adds a claim or retargets a link; a class change passes', async () => {
+    await expect(fix(voiced.replace('today.', 'today. Now 50% off!'))).rejects.toThrow(/every line of the page's text/);
+    await expect(fix(voiced.replace('href="/t"', 'href="/elsewhere"'))).rejects.toThrow(/every link's words and address/);
+    const out = await fix(voiced.replace('<h1>', '<h1 class="big">'));
+    expect(await b.store.artifacts.getText(out.artifactId!)).toContain('<h1 class="big">New head</h1>');
+  });
+});

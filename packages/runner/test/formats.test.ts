@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OUTPUT_CONTRACTS } from '@byway/prompts/pure';
-import { applyCopy, extractCopy, layoutOf, lockCopy, pageCopy, pageVoiceProblems, placePageCopy, roundTripProblem, sameCopy, skeleton } from '../src/copy.ts';
+import { applyCopy, extractCopy, layoutOf, lockCopy, pageCopy, pageEditProblems, placePageEdit, readPageCopy, readPageEdit, roundTripProblem, sameCopy } from '../src/copy.ts';
 import { joinCodeDiff, parseArtifact, parseCodeDiff, serializeJson, splitCodeDiff, textView } from '../src/formats.ts';
 import { parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep, sectionOf } from '../src/parse.ts';
 
@@ -105,22 +105,25 @@ describe('VOICE copy', () => {
     expect(pageCopy(PAGE)).toEqual(['Northloaf', 'Bread before seven', "Order by 9pm & it's at your door.", 'Get started']);
   });
 
-  it('places edited lines without touching a tag, and the diff check accepts it', () => {
+  it('places edited lines without touching a tag, and the verifier accepts it', () => {
     const edited = ['Northloaf', 'Warm bread by six', 'Order tonight & wake up to it.', 'Order now'];
-    const placed = placePageCopy(PAGE, edited);
-    expect(placed.ok).toBe(true);
-    if (!placed.ok) return;
-    expect(pageCopy(placed.value)).toEqual(edited);
-    expect(skeleton(placed.value)).toBe(skeleton(PAGE));
-    expect(pageVoiceProblems(PAGE, placed.value, edited)).toEqual([]);
-    expect(placed.value).toContain('Order tonight &amp; wake up to it.');
+    const edit = readPageEdit(readPageCopy(PAGE), edited.join('\n'));
+    if (!edit.ok) throw new Error(edit.problem);
+    const placed = placePageEdit(PAGE, edit);
+    expect(placed.problems).toEqual([]);
+    expect(pageCopy(placed.page)).toEqual(edited);
+    expect(pageEditProblems(PAGE, placed.page, edit, placed)).toEqual([]);
+    expect(placed.page).toContain('Order tonight &amp; wake up to it.');
+    // Formatting follows the words it held: a line rewritten with none of its old words keeps none of its emphasis.
+    expect(placed.page).toContain('<h1>Warm bread by six</h1>');
   });
 
-  it('refuses a write-back that changed markup or lost a line', () => {
-    const changed = PAGE.replace('class="cta"', 'class="cta big"');
-    expect(pageVoiceProblems(PAGE, changed, pageCopy(PAGE))[0]).toMatch(/beyond its text/);
-    expect(pageVoiceProblems(PAGE, PAGE, ['A line nobody placed'])[0]).toMatch(/exactly as written/);
-    expect(placePageCopy(PAGE, ['too few'])).toMatchObject({ ok: false });
+  it('refuses a write-back that changed markup or left out a line, and an answer with a line too few', () => {
+    const edit = readPageEdit(readPageCopy(PAGE), pageCopy(PAGE).join('\n'));
+    if (!edit.ok) throw new Error(edit.problem);
+    const placed = placePageEdit(PAGE, edit);
+    expect(pageEditProblems(PAGE, PAGE.replace('class="cta"', 'class="cta big"'), edit, placed)[0]).toMatch(/beyond its text/);
+    expect(readPageEdit(readPageCopy(PAGE), 'too few')).toMatchObject({ ok: false });
   });
 
   it('writes structured copy back field by field', () => {
