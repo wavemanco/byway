@@ -14,6 +14,7 @@ export { launchChromium, playwrightPages, RENDER_ALLOWLIST, type ArtifactResolve
 export { isSurface, rendersKnob, SURFACE_CAPTIONS, SURFACE_NAMES, SURFACES } from './surfaces.ts';
 export { storeCaps } from './caps.ts';
 export { NO_AUDIO_NOTE, NO_IMAGES_NOTE } from './activities/asset.ts';
+export { OTHER_FAMILY_FALLBACK_NOTE } from './activities/availability.ts';
 export { NO_COMPOSITING_NOTE, NO_VIDEO_NOTE } from './activities/relay.ts';
 export { FEW_REFS_NOTE, OK_FALLBACK_NOTE } from './activities/critic.ts';
 export { NOTHING_TO_REMOVE } from './workflow/wording.ts';

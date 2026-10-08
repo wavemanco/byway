@@ -18,6 +18,7 @@ import { ArtifactReader } from '../src/activities/prompting.ts';
 import { NO_VIDEO_NOTE, relayLink } from '../src/activities/relay.ts';
 import { createActivities } from '../src/activities/index.ts';
 import { modelStep } from '../src/activities/model-step.ts';
+import { OTHER_FAMILY_FALLBACK_NOTE } from '../src/activities/availability.ts';
 import type { RunRef, StepCall, StepSpec } from '../src/types.ts';
 import { fakeHash, fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -93,6 +94,43 @@ describe('askModel', () => {
     expect(out.value).toContain('The ask.');
     expect(gateway.requests).toHaveLength(2);
     for (const r of gateway.requests) expect(r.prompt).toEqual({ id: 'product.test.draft', version: 1, hash: fakeHash('product.test.draft'), fidelity: 'project' });
+  });
+});
+
+describe('a reviewer from another AI family (FID-1, convention C3)', () => {
+  const criticSpec: StepSpec = { id: 'critic', role: 'critic', block: 'CRITIC', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'product.test.critic', consumes: ['view'], produces: ['critique', 'score'], knobs: { mode: 'OK', family: 'other' } };
+  const BALANCED = PROFILES.find((p) => p.id === 'balanced')!;
+  const critique = '- The ask is buried.\nScore: 7/10';
+
+  it('a critic whose family knob is other runs on the profile’s other-family model when its key is set up', async () => {
+    const run = await newRun('balanced');
+    const gateway = scripted([critique], { statuses: [{ ...status(BALANCED, false), otherFamily: true }] });
+    const out = await modelStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'critic'), step: criticSpec, ports: {}, refs: [] });
+    expect(gateway.requests[0]!.model).toEqual(BALANCED.otherFamily);
+    expect(out.note).toBeUndefined();
+  });
+
+  it('without that key: a fresh session of the same family, and the step says so', async () => {
+    const run = await newRun('balanced');
+    const gateway = scripted([critique], { statuses: [status(BALANCED, false)] });
+    const out = await modelStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'critic'), step: criticSpec, ports: {}, refs: [] });
+    expect(gateway.requests[0]!.model).toBeUndefined();
+    expect(out.note).toBe(OTHER_FAMILY_FALLBACK_NOTE);
+    expect(OTHER_FAMILY_FALLBACK_NOTE).toBe('No reviewer from another AI family is configured, so a fresh session of the same family reviewed this.');
+  });
+
+  it('in demo mode, the demo profile’s stand-in for another family, whatever profile the run names', async () => {
+    const run = await newRun('balanced');
+    const gateway = scripted([critique], { demo: true, statuses: [{ ...status(DEMO, true), otherFamily: true }, status(BALANCED, false)] });
+    await modelStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'critic'), step: criticSpec, ports: {}, refs: [] });
+    expect(gateway.requests[0]!.model).toEqual({ provider: 'mock', model: 'mock-other' });
+  });
+
+  it('a critic of the same family (no knob) names no model', async () => {
+    const run = await newRun('balanced');
+    const gateway = scripted([critique], { statuses: [{ ...status(BALANCED, false), otherFamily: true }] });
+    await modelStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'critic'), step: { ...criticSpec, knobs: { mode: 'OK' } }, ports: {}, refs: [] });
+    expect(gateway.requests[0]!.model).toBeUndefined();
   });
 });
 

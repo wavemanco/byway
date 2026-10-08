@@ -12,6 +12,7 @@ import { rendersKnob } from '../surfaces.ts';
 import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseTellsSweep, parseVision, type CriticAnswer } from '../parse.ts';
 import { tellsText } from '../tells.ts';
 import type { ModelStepInput, ModelStepResult } from '../types.ts';
+import { otherFamilyModel, OTHER_FAMILY_FALLBACK_NOTE } from './availability.ts';
 import { askModel } from './call.ts';
 import { buildLineup, lineupWrittenFor, planCritic, verdictOf, type Lineup } from './critic.ts';
 import type { RunnerDeps } from './deps.ts';
@@ -55,6 +56,11 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   if (step.role === 'critic') {
     const random = deps.random ?? defaultRandom;
     const plan = planCritic(step, input.refs, random);
+    // A critic of another AI family (01 CRITIC knob, FID-1): the profile's other-family model when its key is set up,
+    // else a fresh session of the same family (every critic call is one), and the step says which.
+    const otherFamily = step.knobs?.family === 'other';
+    const reviewer = otherFamily ? otherFamilyModel(deps, run) : undefined;
+    const notes = [plan.note, otherFamily && !reviewer ? OTHER_FAMILY_FALLBACK_NOTE : undefined].filter(Boolean);
     const answers: { answer: CriticAnswer; lineup?: Lineup }[] = [];
     for (let i = 0; i < plan.shuffles; i++) {
       const built = await buildPrompt(reader, { medium: run.medium, problem: run.problem, step, ports: input.ports, ...(input.round !== undefined ? { round: input.round } : {}) });
@@ -72,6 +78,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
         images: built.images,
         purpose,
         tier,
+        ...(reviewer ? { model: reviewer } : {}),
         what,
         maxOutputTokens: JUDGE_MAX_OUTPUT,
         parse: (text) => parseCritic(text, lineup?.labels),
@@ -83,7 +90,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     result.text = verdict.critique;
     result.score = verdict.score;
     result.criticMode = plan.mode;
-    if (plan.note) result.note = plan.note;
+    if (notes.length) result.note = notes.join(' ');
   } else {
     const seed = step.role === 'seed' || step.consumes.includes('seed') ? (deps.seed ?? defaultSeed)() : undefined;
     const ports = input.candidates ? { ...input.ports, options: input.candidates } : input.ports;

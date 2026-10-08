@@ -3,6 +3,7 @@
  * point), C7 Lean Code Review (code-diff) and C3 Series Writer (the route choice, illustrated prose).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { CompletionRequest } from '@byway/contracts';
 import { c3, c4, c6a, c7 } from '@byway/catalog';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { splitCodeDiff } from '../../src/formats.ts';
@@ -157,6 +158,12 @@ export function textMediaScenarios(use: () => Harness): void {
       expect((await h.store.artifacts.get(view.run.outputArtifactId!)).record.mediaType).toBe('text/x-diff');
       // The reviewer judges the diff as its view: never the artifact slot (port rule 1).
       expect(h.prompts.calls.filter((c) => c.id === 'product.c7.reviewer').every((c) => c.slots.artifact === undefined && c.slots.view?.startsWith('--- a/'))).toBe(true);
+      // A reviewer from another AI family (FID-1): in demo mode the demo profile's stand-in, recorded as such.
+      const reviews = h.succeeded(run.id).filter((c) => c.stepId === 'reviewer');
+      expect(reviews.length).toBeGreaterThan(0);
+      expect(reviews.every((c) => (c.request as CompletionRequest).model?.model === 'mock-other')).toBe(true);
+      expect(h.ledger(run.id).filter((e) => e.stepId === 'reviewer').every((e) => e.requestedModel === 'mock-other')).toBe(true);
+      expect(notes(view, 'reviewer').every((n) => !n?.includes('another AI family'))).toBe(true);
     }, 120_000);
   });
 
