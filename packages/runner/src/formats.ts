@@ -16,6 +16,8 @@ export interface Fenced {
   /** The info string's first word, lower case ('' for a bare fence). */
   lang: string;
   body: string;
+  /** Offset of the opening fence line. */
+  start: number;
   /** Offset just past the block's closing fence line (the end of the text when it was never closed). */
   end: number;
   closed: boolean;
@@ -38,7 +40,7 @@ const FENCE_LINE = /^(`{3,}|~{3,})(.*)$/;
  */
 export function fences(text: string): Fenced[] {
   const out: Fenced[] = [];
-  const stack: { char: string; len: number; lang: string; bodyStart: number }[] = [];
+  const stack: { char: string; len: number; lang: string; start: number; bodyStart: number }[] = [];
   let at = 0;
   for (const raw of text.split('\n')) {
     const lineStart = at;
@@ -51,18 +53,21 @@ export function fences(text: string): Fenced[] {
     if (run[0] === '`' && info.includes('`')) continue;
     const top = stack.at(-1);
     if (!top) {
-      stack.push({ char: run[0]!, len: run.length, lang: (info.split(/\s+/)[0] ?? '').toLowerCase(), bodyStart: Math.min(at, text.length) });
+      stack.push({ char: run[0]!, len: run.length, lang: (info.split(/\s+/)[0] ?? '').toLowerCase(), start: lineStart, bodyStart: Math.min(at, text.length) });
       continue;
     }
     if (!info && run[0] === top.char && run.length >= top.len) {
       stack.pop();
-      if (!stack.length) out.push({ lang: top.lang, body: text.slice(top.bodyStart, Math.max(top.bodyStart, lineStart - 1)).replace(/\r$/, ''), end: Math.min(at, text.length), closed: true });
+      if (!stack.length) {
+        const body = text.slice(top.bodyStart, Math.max(top.bodyStart, lineStart - 1)).replace(/\r$/, '');
+        out.push({ lang: top.lang, body, start: top.start, end: Math.min(at, text.length), closed: true });
+      }
     } else if (info) {
-      stack.push({ char: run[0]!, len: run.length, lang: '', bodyStart: at });
+      stack.push({ char: run[0]!, len: run.length, lang: '', start: lineStart, bodyStart: at });
     }
   }
   const open = stack[0];
-  if (open) out.push({ lang: open.lang, body: text.slice(open.bodyStart).replace(/\n$/, ''), end: text.length, closed: false });
+  if (open) out.push({ lang: open.lang, body: text.slice(open.bodyStart).replace(/\n$/, ''), start: open.start, end: text.length, closed: false });
   return out;
 }
 

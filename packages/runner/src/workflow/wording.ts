@@ -34,7 +34,8 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
     case 'tells-compare':
       return 'Keep the version from before the cliché sweep, or the one after the swaps?';
     case 'voice':
-      if (step.variant === 'claim-log') return 'Sign off every number, date, name and causal claim below: correct any that is wrong. You own them.';
+      if (step.variant === 'claim-log')
+        return 'Sign off every number, date, name and causal claim below, one per line: correct any that is wrong, and your correction replaces it in the document. Leave just "-" on a line to take that claim out. You own them.';
       if (step.variant === 'VOICE-early') return 'Write the script yourself: change any line below. It is locked after this, and used exactly as you write it.';
       if (step.knobs?.scope === 'key-lines') return 'Rewrite the key lines yourself: the ask and the lines a reader acts on. Your lines are used exactly as you write them.';
       return 'Write the words yourself: change any line below. Your lines are used exactly as you write them.';

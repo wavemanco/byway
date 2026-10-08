@@ -23,9 +23,17 @@ export function textMediaScenarios(use: () => Harness): void {
   describe('C4 on prose', () => {
     it('runs end to end: framings, your brief, a draft, the recipient critic in OK mode, distill, your key lines, the claim log', async () => {
       const mine = 'Decision needed by Friday: approve the second migration window.';
+      const correction = 'The pilot runs for 3 weeks, starting on the 2nd.';
+      let wrong = '';
       const run = await h.start(c4, { problem: { text: 'A status memo for leadership on the billing migration, 3 weeks in' } });
       const view = await h.drive(run.id, (cp) => {
         if (cp.stepId === 'voice') return { checkpointId: cp.id, text: `${mine}\n\n${cp.initialText}` };
+        if (cp.stepId === 'claim-sign-off') {
+          // The owner corrects the last claim (ENG-2); the others are signed off as they are.
+          const lines = cp.initialText!.split('\n');
+          wrong = lines.at(-1)!.replace(/^- /, '');
+          return { checkpointId: cp.id, text: [...lines.slice(0, -1), `- ${correction}`].join('\n') };
+        }
         return undefined;
       });
       expect(view.run.status).toBe('done');
@@ -50,9 +58,19 @@ export function textMediaScenarios(use: () => Harness): void {
       expect(tells).toContain('delve');
       expect([...tells.matchAll(/\((tells\.[a-z-]+)\)/g)].map((m) => m[1])).toEqual(['tells.memo']);
       expect(h.prompts.calls.filter((c) => c.id === 'product.c4.draft' || c.id === 'product.c4.revise').every((c) => c.slots.tells === undefined)).toBe(true);
-      // Your key lines are the deliverable, word for word; the claim log asked you to sign off.
-      expect(await text(view.run.outputArtifactId!)).toContain(mine);
-      expect(view.checkpoints.find((c) => c.stepId === 'claim-sign-off')).toMatchObject({ kind: 'write' });
+      // Your key lines are the deliverable, word for word; the claim log asked you to sign off, and your correction
+      // replaced the claim in the deliverable (ENG-2).
+      const out = await text(view.run.outputArtifactId!);
+      expect(out).toContain(mine);
+      const claims = view.checkpoints.find((c) => c.stepId === 'claim-sign-off')!;
+      expect(claims).toMatchObject({ kind: 'write' });
+      expect(out).toContain(correction);
+      expect(wrong).not.toBe('');
+      expect(out.replace(/\s+/g, ' ')).not.toContain(wrong);
+      expect(ofType(view, 'step-finished', 'claim-sign-off')[0]!.data.outputArtifactIds).toEqual([view.run.outputArtifactId]);
+      // The claims offered are sentences, once each: no doubled list markers, no demo marker (UX-5, UX-6).
+      expect(claims.initialText).not.toMatch(/^- - |byway-demo-revision/m);
+      expect(claims.initialText!.split('\n').length).toBeGreaterThan(3);
     }, 120_000);
   });
 
@@ -130,6 +148,8 @@ export function textMediaScenarios(use: () => Harness): void {
       const purposes = h.succeeded(run.id).map((c) => c.purpose);
       expect(new Set(purposes)).toEqual(new Set(['build:code-diff', 'check:code-diff', 'fix:code-diff', 'cut:code-diff', 'critic:code-diff', 'tells-sweep:code-diff', ...(purposes.includes('rerank:code-diff') ? ['rerank:code-diff'] : [])]));
       expect(view.checkpoints.find((c) => c.stepId === 'voice')?.initialText).toMatch(/^Why: /);
+      // The demo's revision marker stays in the stored work and never reaches the person (UX-6).
+      expect(view.checkpoints.find((c) => c.stepId === 'voice')?.initialText).not.toContain('byway-demo-revision');
       const out = await text(view.run.outputArtifactId!);
       const { diff, why: kept } = splitCodeDiff(out);
       expect(diff).toMatch(/^--- a\/.+\n\+\+\+ b\/.+\n@@ /);

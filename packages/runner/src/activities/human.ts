@@ -3,8 +3,10 @@
  * (the RESOLVE_UPDATE Update), and then the answer becomes the step's ports. Writing steps write here: the author's
  * draft becomes the artifact, and VOICE writes the person's copy back (see copy.ts for how, per medium).
  */
+import { withoutMarks } from '@byway/gateway';
 import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
-import { applyCopy, claimLines, extractCopy, pageVoiceProblems, placePageCopy } from '../copy.ts';
+import { applyClaims, claimLines } from '../claims.ts';
+import { applyCopy, extractCopy, pageVoiceProblems, placePageCopy } from '../copy.ts';
 import { parseArtifact, parseHtml, type Parsed } from '../formats.ts';
 import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput } from '../types.ts';
 import { askModel } from './call.ts';
@@ -22,7 +24,8 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
   if (input.step) await stepStarted(deps, run, call, input.step, input.meta);
   let initialText = checkpoint.initialText;
   if (input.initial) {
-    const text = input.initial.artifactId ? await deps.store.artifacts.getText(input.initial.artifactId) : '';
+    // The demo's revision markers never reach a person (UX-6); the stored work keeps them for the demo's critic.
+    const text = input.initial.artifactId ? withoutMarks(await deps.store.artifacts.getText(input.initial.artifactId)) : '';
     switch (input.initial.from) {
       case 'copy':
         initialText = extractCopy(run.medium, text);
@@ -74,7 +77,19 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
   const result: FinishHumanResult = { costUsd: 0 };
   const outputs: string[] = [];
   const text = resolution.text ?? '';
-  if (input.kind === 'write' && step.role === 'voice' && step.produces.includes('artifact') && ports.artifact) {
+  if (input.kind === 'write' && step.role === 'voice' && step.variant === 'claim-log' && step.produces.includes('artifact') && ports.artifact) {
+    // The claim log (ENG-2): the owner's corrections replace the claims where they stood; nothing else changes.
+    const before = await deps.store.artifacts.getText(ports.artifact);
+    const applied = applyClaims(before, text);
+    if (!applied.ok) throw new StepError(applied.problem);
+    result.text = text;
+    if (applied.value.changed.length) {
+      const problems = writeProblems(run, applied.value.text);
+      if (problems.length) throw new StepError(problems.join(' '));
+      result.artifactId = await storeText(deps, run, call, applied.value.text, { label: 'With your corrections', name: 'work' });
+      outputs.push(result.artifactId);
+    }
+  } else if (input.kind === 'write' && step.role === 'voice' && step.produces.includes('artifact') && ports.artifact) {
     const written = await writeVoice(deps, input, text);
     result.costUsd = written.costUsd;
     result.text = text;

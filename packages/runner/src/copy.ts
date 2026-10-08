@@ -248,13 +248,3 @@ export function lostVoiceLines(medium: Medium, artifact: string, voice: string, 
       return (was === undefined || was.includes(bare)) && !now.includes(bare);
     });
 }
-
-/** Sentences that carry numbers, dates or other checkable claims, for a claim-log sign-off (03 C4). */
-export function claimLines(markdown: string): string {
-  const sentences = markdown
-    .replace(/```[\s\S]*?```/g, ' ')
-    .split(/(?<=[.!?])\s+|\n+/)
-    .map(squash)
-    .filter((s) => /\d/.test(s) && !s.startsWith('#'));
-  return sentences.map((s) => `- ${s}`).join('\n');
-}
