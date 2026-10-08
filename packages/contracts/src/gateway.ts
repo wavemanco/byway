@@ -95,6 +95,25 @@ export interface ImageResult {
   ledgerEntryId: string;
 }
 
+export interface VideoRequest extends SpendContext {
+  profileId: string;
+  prompt: string;
+  /** The relay anchor: the clip starts from this exact frame (C5 relay links, 01 RELAY). */
+  startFrameArtifactId?: string;
+  durationSec: number;
+}
+
+export interface VideoResult {
+  /** The clip (video/mp4), stored in the artifact store immediately (provider URLs expire). */
+  artifactId: string;
+  /** The clip's last frame (PNG), the anchor the next relay link starts from. */
+  lastFrameArtifactId: string;
+  servedModel: string;
+  provider: ProviderId;
+  costUsd: number;
+  ledgerEntryId: string;
+}
+
 export interface SpendSummary {
   workspaceId: string;
   spentUsd: number;
@@ -180,6 +199,8 @@ export interface ProfileStatus {
 export interface Gateway {
   complete(req: CompletionRequest): Promise<CompletionResult>;
   image(req: ImageRequest): Promise<ImageResult>;
+  /** Fails with 'no-credentials' when the profile has no video model or its provider has no key. */
+  video(req: VideoRequest): Promise<VideoResult>;
   spend(workspaceId: string): Promise<SpendSummary>;
   providers(): ProviderStatus[];
   /** Profiles usable now (only 'demo' in demo mode or with no keys). */
