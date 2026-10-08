@@ -134,6 +134,8 @@ export interface ComposeOptions {
   title: string;
   /** Add the recipient-critic loop (C4 runs it only for documents over about 300 words). */
   long: boolean;
+  /** Prompt ids by role in place of C4's own (DEFAULT_PROMPTS), for callers that build test recipes. */
+  prompts?: Partial<Record<string, string>>;
 }
 
 const step = (s: RecipeJson): RecipeJson => ({ op: 'step', ...s });
@@ -145,7 +147,7 @@ const render = (id: string) => step({ id, role: 'render', glue: 'RENDER', actor:
  * that it validates with no exceptions: VOICE covers every line, not only the key lines (C4 cites C4-DR9 for that).
  */
 export function composedRecipe(o: ComposeOptions): RecipeJson {
-  const p = (role: string) => DEFAULT_PROMPTS[role] as string;
+  const p = (role: string) => (o.prompts?.[role] ?? DEFAULT_PROMPTS[role]) as string;
   const applyDirective = (id: string, prompt: string) =>
     step({ id, role: 'fix', actor: 'model', tier: 'mid', prompt, consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true });
 
