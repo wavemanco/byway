@@ -13,8 +13,8 @@ import { E2E_KEYS } from './e2e/keys.ts';
 
 const external = process.env.BYWAY_E2E_BASE_URL;
 const port = Number(process.env.BYWAY_E2E_PORT ?? 3210);
-// Only when the suite starts its own server; set once in the main process, and Playwright's workers inherit it.
-if (!external) process.env.BYWAY_E2E_DATA_DIR ??= mkdtempSync(path.join(tmpdir(), 'byway-e2e-'));
+/** The data directory of the suite's own server: made once in the main process, and Playwright's workers inherit it. */
+const ownDataDir = (): string => (process.env.BYWAY_E2E_DATA_DIR ??= mkdtempSync(path.join(tmpdir(), 'byway-e2e-')));
 
 export default defineConfig({
   testDir: './e2e',
@@ -47,7 +47,7 @@ export default defineConfig({
           stdout: 'pipe',
           env: {
             ...E2E_KEYS,
-            BYWAY_DATA_DIR: process.env.BYWAY_E2E_DATA_DIR,
+            BYWAY_DATA_DIR: ownDataDir(),
             PORT: String(port),
             BYWAY_TEMPORAL_PORT: process.env.BYWAY_E2E_TEMPORAL_PORT ?? '7290',
           },
