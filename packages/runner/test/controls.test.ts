@@ -223,7 +223,7 @@ describe('SEED (PR3)', () => {
       expect(calls).toBe(2);
       const seed = h.prompts.calls.filter((c) => c.id === 'product.test.spark').at(-1)!.slots.seed!;
       expect(seed).toMatch(/^sd\d+x/);
-      const retry = h.calls.filter((c) => c.runId === run.id && c.purpose === 'seed:prose').at(-1)!.request as { messages: { content: { type: string; text?: string }[] }[] };
+      const retry = h.succeeded(run.id).filter((c) => c.purpose === 'seed:prose').at(-1)!.request as { messages: { content: { type: string; text?: string }[] }[] };
       expect(retry.messages.at(-1)?.content[0]?.text).toMatch(/never write it into the work/);
       for (const e of view.events.filter((x) => x.type === 'artifact')) {
         expect(await h.store.artifacts.getText(e.data.artifactId as string)).not.toContain(seed);
@@ -261,8 +261,69 @@ describe('CRITIC modes (ADR-0071)', () => {
     expect(call.slots.view).toContain('Exemplar one');
     expect(call.slots.artifact).toBeUndefined();
     expect(call.user).not.toMatch(/\b9\/10\b|threshold/i);
-    const gw = h.calls.filter((c) => c.runId === run.id && c.purpose === 'critic:prose');
+    const gw = h.succeeded(run.id).filter((c) => c.purpose === 'critic:prose');
     expect(gw).toHaveLength(1);
     expect(gw[0]!.request).toMatchObject({ tier: 'big' });
   }, 60_000);
+});
+
+describe('answers that miss their contract', () => {
+  it('asks again with a larger output allowance when an answer was cut off', async () => {
+    let n = 0;
+    h.responders['build:prose'] = () => (++n === 1 ? { text: '```markdown\n# Half a memo\n\nThe migration is', truncated: true } : '```markdown\n# A whole memo\n\nThe migration is on track.\n```');
+    try {
+      const run = await h.start(tiny);
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      const builds = h.succeeded(run.id).filter((c) => c.purpose === 'build:prose').map((c) => (c.request as { maxOutputTokens?: number }).maxOutputTokens);
+      expect(builds).toEqual([16_000, 32_000]);
+      const draft = view.events.find((e) => e.type === 'artifact' && e.stepId === 'draft')!;
+      expect(await h.store.artifacts.getText(draft.data.artifactId as string)).toContain('A whole memo');
+    } finally {
+      delete h.responders['build:prose'];
+    }
+  }, 60_000);
+
+  it('retries once with the problem appended, then fails the step and the run in plain words', async () => {
+    h.responders['build:prose'] = () => '';
+    try {
+      const run = await h.start(tiny);
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('failed');
+      expect(view.run.error).toMatch(/^The Draft step's answer could not be used after a retry: The answer is empty/);
+      expect(view.events.find((e) => e.type === 'step-failed')).toMatchObject({ stepId: 'draft', data: { retryable: false } });
+      expect(h.succeeded(run.id).filter((c) => c.purpose === 'build:prose')).toHaveLength(2);
+    } finally {
+      delete h.responders['build:prose'];
+    }
+  }, 60_000);
+
+  it('fails the run plainly when a step names a prompt that does not exist', async () => {
+    h.prompts.missing.add('product.test.draft');
+    try {
+      const run = await h.start(tiny);
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('failed');
+      expect(view.run.error).toBe('The Draft step has no prompt template "product.test.draft".');
+    } finally {
+      h.prompts.missing.clear();
+    }
+  }, 60_000);
+});
+
+describe('determinism', () => {
+  it('replays recorded histories of concurrent and interactive runs without a mismatch', async () => {
+    const { Worker } = await import('@temporalio/worker');
+    const { buildWorkflows } = await import('../src/build.ts');
+    const runs = [await h.start(threePages), await h.start(tiny)];
+    for (const run of runs) await h.drive(run.id);
+    const { DEFAULT_WORKFLOWS_BUNDLE } = await import('../src/build.ts');
+    const workflowsPath = await buildWorkflows({ outfile: DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows.js$/, `replay-${process.pid}.js`) });
+    for (const run of runs) {
+      const history = await h.env.client.workflow.getHandle(workflowIdFor(run.id)).fetchHistory();
+      await Worker.runReplayHistory({ workflowsPath }, history, workflowIdFor(run.id));
+    }
+    const { rmSync } = await import('node:fs');
+    rmSync(workflowsPath, { force: true });
+  }, 120_000);
 });

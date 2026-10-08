@@ -68,6 +68,8 @@ export interface Ports {
   asset?: string[];
   /** The storyboard shot a relay link is making (1-based shot number). */
   shot?: number;
+  /** The artifact the author last wrote themselves (C3, C6, C6a), which their next write revises. */
+  authored?: string;
 }
 
 /** One execution of one step (or operator) at one place in the run: the base of every dedupe key it uses. */

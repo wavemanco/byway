@@ -59,6 +59,11 @@ export interface Harness {
   /** Mock answers by purpose or role; mutable per test. */
   responders: Record<string, Responder>;
   calls: GatewayCall[];
+  /**
+   * A run's gateway calls that returned. On Windows a retried activity can repeat a call whose ledger write failed
+   * (the gateway's lock file); counting the calls that returned keeps assertions about the run, not the platform.
+   */
+  succeeded(runId: string): GatewayCall[];
   start(recipe: Recipe, opts?: Partial<Omit<StartRunInput, 'recipe' | 'workspaceId'>>): Promise<RunRecord>;
   /** Answer checkpoints as they open (default answers unless `answer` says otherwise) until the run ends. */
   drive(runId: string, answer?: Answer, timeoutMs?: number): Promise<RunView>;
@@ -94,7 +99,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Quiet the SDK: errors only (refused budgets and failed steps are expected here). Installed once per test process, before any worker or server. */
 function quietRuntime(): void {
   try {
-    Runtime.install({ logger: new DefaultLogger('ERROR') });
+    Runtime.install({ logger: new DefaultLogger(process.env.BYWAY_TEST_LOG === 'WARN' ? 'WARN' : 'ERROR') });
   } catch {
     // Already installed in this process.
   }
@@ -171,6 +176,7 @@ export async function createHarness(): Promise<Harness> {
     workspaceId: ws.id,
     responders,
     calls,
+    succeeded: (runId) => calls.filter((c) => c.runId === runId && c.result !== undefined),
     waitFor,
     start: (recipe, opts = {}) => runner.start({ workspaceId: ws.id, recipe, problem: PROBLEM, profileId: 'demo', budgetUsd: 50, ...opts }),
     async drive(runId, answer = () => undefined, timeoutMs = 120_000) {

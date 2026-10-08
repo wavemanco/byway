@@ -35,7 +35,7 @@ describe('C2 on options', () => {
     });
     expect(view.run.status).toBe('done');
     checkEvents(view, 'c2');
-    const purposes = h.calls.filter((c) => c.runId === run.id).map((c) => c.purpose);
+    const purposes = h.succeeded(run.id).map((c) => c.purpose);
     expect(purposes.filter((p) => p === 'seed:options')).toHaveLength(12);
     expect(purposes.filter((p) => p === 'dedupe:options')).toHaveLength(1);
 
@@ -67,7 +67,7 @@ describe('C2 on options', () => {
     const out = (await json(view.run.outputArtifactId!)) as { options: { title: string; imageArtifactId?: string }[] };
     expect(out.options[0]!.title).toBe('Fix-it Fridays');
     expect(out.options.every((o) => o.imageArtifactId === undefined)).toBe(true);
-    const moods = h.calls.filter((c) => c.runId === run.id && c.purpose === 'asset:options');
+    const moods = h.succeeded(run.id).filter((c) => c.purpose === 'asset:options');
     expect(moods).toHaveLength(out.options.length);
     const beside = ofType(view, 'step-finished', 'mood-boards')[0]!.data.outputArtifactIds as string[];
     const annotated = (await json(beside.at(-1)!)) as { options: { imageArtifactId?: string }[] };
@@ -86,7 +86,7 @@ describe('C5 on media', () => {
       const view = await h.drive(run.id, (cp) => (cp.stepId === 'vo-script' ? { checkpointId: cp.id, text: script } : undefined));
       expect(view.run.status).toBe('done');
       checkEvents(view, 'c5');
-      const purposes = h.calls.filter((c) => c.runId === run.id).map((c) => c.purpose);
+      const purposes = h.succeeded(run.id).map((c) => c.purpose);
       expect(purposes.filter((p) => p === 'seed:media')).toHaveLength(8);
       expect(purposes).toContain('dedupe:media');
       expect(purposes).toContain('overlap:media');
@@ -98,7 +98,7 @@ describe('C5 on media', () => {
       expect(view.checkpoints.filter((c) => c.prompt === GATE_FAILED_PROMPT)).toHaveLength(1);
 
       // Each D2 pass: four relay links (maxLinks) from five shots, then the render-in-scene link, all on one chain.
-      const videos = h.calls.filter((c) => c.runId === run.id && c.kind === 'video');
+      const videos = h.succeeded(run.id).filter((c) => c.kind === 'video');
       expect(videos).toHaveLength(2 * 5);
       for (const pass of [videos.slice(0, 5), videos.slice(5)]) {
         const reqs = pass.map((v) => v.request as VideoRequest);
@@ -145,7 +145,7 @@ describe('C5 on media', () => {
       expect(view.run.error).toBeUndefined();
       expect(view.run.status).toBe('done');
       checkEvents(view, 'c5');
-      expect(h.calls.filter((c) => c.runId === run.id && c.kind === 'video')).toEqual([]);
+      expect(h.succeeded(run.id).filter((c) => c.kind === 'video')).toEqual([]);
       for (const stepId of ['clip', 'render-in-scene']) {
         const fin = ofType(view, 'step-finished', stepId);
         expect(fin.length).toBeGreaterThan(0);
@@ -155,7 +155,7 @@ describe('C5 on media', () => {
       const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { imageArtifactId?: string; clipArtifactId?: string }[] };
       expect(sb.storyboard.every((s) => s.imageArtifactId && !s.clipArtifactId)).toBe(true);
       // With three references the gate's critic ranks in GREAT mode: two fixed shuffles, averaged.
-      const gate = h.calls.filter((c) => c.runId === run.id && c.stepId === 'gate-critic');
+      const gate = h.succeeded(run.id).filter((c) => c.stepId === 'gate-critic');
       expect(gate).toHaveLength(2);
       expect(view.checkpoints.some((c) => c.prompt === GATE_FAILED_PROMPT)).toBe(false);
       expect(notes(view, 'gate-critic')).toEqual([undefined]);

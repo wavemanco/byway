@@ -54,7 +54,7 @@ describe('C1 on web-page', () => {
       checkEvents(view, 'c1');
 
       // D1: four seeded builds, each with its own random string.
-      const seeds = h.calls.filter((c) => c.runId === run.id && c.purpose === 'seed:web-page');
+      const seeds = h.succeeded(run.id).filter((c) => c.purpose === 'seed:web-page');
       expect(seeds).toHaveLength(4);
       const seedSlots = h.prompts.calls.filter((c) => c.id === 'article.SEED').slice(-4).map((c) => c.slots.seed);
       expect(new Set(seedSlots).size).toBe(4);
@@ -68,12 +68,12 @@ describe('C1 on web-page', () => {
         expect(c.slots.artifact).toBeUndefined();
         expect(c.user).not.toMatch(/9\/10|threshold/);
       }
-      const criticCall = h.calls.find((c) => c.runId === run.id && c.purpose === 'critic:web-page')!.request as CompletionRequest;
+      const criticCall = h.succeeded(run.id).find((c) => c.purpose === 'critic:web-page')!.request as CompletionRequest;
       expect(criticCall.tier).toBe('big');
       expect(criticCall.messages[0]!.content.some((p) => p.type === 'image')).toBe(true);
 
       // ASSET only where a person said the design was plain: briefs, images, then the model places them.
-      const assetCalls = h.calls.filter((c) => c.runId === run.id && c.purpose.startsWith('asset'));
+      const assetCalls = h.succeeded(run.id).filter((c) => c.purpose.startsWith('asset'));
       expect(assetCalls.map((c) => c.purpose).filter((p, i, a) => a.indexOf(p) === i)).toEqual(['asset.briefs:web-page', 'asset:web-page', 'asset.integrate:web-page']);
       expect(assetCalls.every((c) => c.stepId === 'asset')).toBe(true);
       const withImages = await h.store.artifacts.getText(pickOptions[0]!);
@@ -87,7 +87,7 @@ describe('C1 on web-page', () => {
       expect(pick).toMatchObject({ stepId: 'pick-one', k: 1 });
 
       // Your words: placed verbatim, nothing but text changed (voice.apply, held to the diff check).
-      expect(h.calls.some((c) => c.runId === run.id && c.purpose === 'voice.apply:web-page')).toBe(true);
+      expect(h.succeeded(run.id).some((c) => c.purpose === 'voice.apply:web-page')).toBe(true);
       const out = await h.store.artifacts.getText(view.run.outputArtifactId!);
       expect(pageCopy(out)).toContain('Sourdough at your door by six');
       expect(skeleton(out)).toBe(skeleton(await h.store.artifacts.getText(beforeVoice)));
@@ -114,7 +114,7 @@ describe('C1 on web-page', () => {
       expect([...byCandidate(view, 'loop-iteration', 'critic-loop').values()]).toEqual([5, 5, 5, 5]);
       // Four fixes per candidate: none after the fifth critique.
       expect([...byCandidate(view, 'step-started', 'critic-fix').values()]).toEqual([4, 4, 4, 4]);
-      const reranks = h.calls.filter((c) => c.runId === run.id && c.purpose === 'rerank:web-page');
+      const reranks = h.succeeded(run.id).filter((c) => c.purpose === 'rerank:web-page');
       expect(reranks).toHaveLength(4);
       expect(reranks.every((c) => c.stepId === 'critic-loop')).toBe(true);
       // The re-rank sees the top three versions as labelled screenshots, with no scores or critiques.

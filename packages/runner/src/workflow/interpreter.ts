@@ -344,7 +344,10 @@ export class Interpreter {
       };
     } else if (kind === 'write') {
       if (s.role === 'voice') initial = { from: s.variant === 'claim-log' ? 'claims' : 'copy', ...(ports.artifact ? { artifactId: ports.artifact } : {}) };
-      else initial = ports.artifact ? { from: 'artifact', artifactId: ports.artifact } : { from: 'draft', ...(this.input.inputs.draft ? { draft: this.input.inputs.draft } : {}) };
+      // The author revises their own last draft; the first time, they start from the draft they brought (or nothing),
+      // never from a machine's text (a seed card or a premise is not their draft).
+      else if (ports.artifact && ports.artifact === ports.authored) initial = { from: 'artifact', artifactId: ports.artifact };
+      else initial = { from: 'draft', ...(this.input.inputs.draft ? { draft: this.input.inputs.draft } : {}) };
       checkpoint.artifactIds = ports.artifact ? [ports.artifact] : [];
     } else {
       checkpoint.artifactIds = shown.length ? shown : ports.artifact ? [ports.artifact] : [];
@@ -362,7 +365,7 @@ export class Interpreter {
         out.taste = fin.keep === 'A' ? 'Kept the version from before the cliché sweep.' : 'Kept the swaps.';
         break;
       case 'write':
-        if (fin.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: fin.artifactId });
+        if (fin.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: fin.artifactId, ...(s.role !== 'voice' ? { authored: fin.artifactId } : {}) });
         if (s.produces.includes('voice')) out.voice = text;
         break;
       case 'directive':
