@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
@@ -8,6 +9,36 @@ function versions(dbPath: string): number[] {
   const db = new DatabaseSync(dbPath);
   try {
     return db.prepare('SELECT version FROM schema_version ORDER BY version').all().map((r) => Number(r.version));
+  } finally {
+    db.close();
+  }
+}
+
+const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
+
+/**
+ * Writes a data directory exactly as a build that knew only migration 1 left it: the v1 schema, its schema_version row,
+ * a default workspace (budget $30), a second workspace (budget $7.50), a run in each, events and an open checkpoint.
+ */
+function writeVersion1Database(dataDir: string): void {
+  const db = openDatabase(join(dataDir, 'byway.sqlite'));
+  try {
+    const v1 = MIGRATIONS[0]!;
+    db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+    db.exec(v1.sql);
+    db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(1, v1.name, checksumOf(v1.sql), '2026-10-01T00:00:00.000Z');
+    const at = '2026-10-01T09:00:00.000Z';
+    db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws-default', 'My workspace', 30, 1, at);
+    db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws-other', 'Side project', 7.5, 0, at);
+    const run = db.prepare(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, title, problem, medium, status,
+      output_artifact_id, error, cost_usd, created_at, updated_at) VALUES (?, ?, 'c1', ?, 'demo', ?, ?, 'prose', ?, NULL, ?, ?, ?, ?)`);
+    run.run('old-run', 'ws-default', `sha256:${'a'.repeat(64)}`, 'Memo', 'Write a memo', 'waiting', null, 1.25, at, at);
+    run.run('other-run', 'ws-other', `sha256:${'a'.repeat(64)}`, 'Page', 'Make a page', 'failed', 'budget-exceeded', 0, at, at);
+    const event = db.prepare('INSERT INTO events (run_id, seq, at, type, step_id, candidate, data) VALUES (?, ?, ?, ?, NULL, NULL, ?)');
+    event.run('old-run', 1, at, 'run-started', '{"recipe":"c1"}');
+    event.run('old-run', 2, at, 'checkpoint-opened', '{"checkpointId":"cp-old"}');
+    db.prepare(`INSERT INTO checkpoints (id, run_id, step_id, kind, prompt, options, k, status, opened_at)
+      VALUES ('cp-old', 'old-run', 'pick', 'pick', 'Which?', '[{"id":"A","label":"A"},{"id":"B","label":"B"}]', 1, 'open', ?)`).run(at);
   } finally {
     db.close();
   }
@@ -83,6 +114,61 @@ describe('migrations', () => {
       expect(pragma('journal_mode')).toBe('wal');
       expect(pragma('foreign_keys')).toBe(1);
       expect(pragma('busy_timeout')).toBe(1234);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('pin the checksum of every migration: an applied migration is never edited, only followed by a new one', () => {
+    expect(MIGRATIONS.map((m) => [m.version, m.name, checksumOf(m.sql)])).toEqual([
+      [1, 'initial', 'sha256:bc605de33d2e74a5c2e2c7a66665f9dbc57f81348749ff5e7e5ca1ceda1345f6'],
+      [2, 'run-budget-and-event-dedupe', 'sha256:ca45698760fd568f816708307e9d1861550b0fb8ddbac710768c565913c126ec'],
+    ]);
+  });
+
+  it('upgrade an existing version-1 database file in place, keeping every row', async () => {
+    const dataDir = tempDir();
+    writeVersion1Database(dataDir);
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    // Existing runs take their workspace's budget: before this migration that was the only cap they ran under.
+    expect(await store.getRun('old-run')).toEqual({
+      id: 'old-run',
+      workspaceId: 'ws-default',
+      recipeId: 'c1',
+      recipeHash: `sha256:${'a'.repeat(64)}`,
+      profileId: 'demo',
+      title: 'Memo',
+      problem: 'Write a memo',
+      medium: 'prose',
+      status: 'waiting',
+      budgetUsd: 30,
+      costUsd: 1.25,
+      createdAt: '2026-10-01T09:00:00.000Z',
+      updatedAt: '2026-10-01T09:00:00.000Z',
+    });
+    expect(await store.getRun('other-run')).toMatchObject({ budgetUsd: 7.5, status: 'failed', error: 'budget-exceeded' });
+    expect((await store.events('old-run')).map((e) => [e.seq, e.type])).toEqual([[1, 'run-started'], [2, 'checkpoint-opened']]);
+    expect(await store.getCheckpoint('cp-old')).toMatchObject({ status: 'open', k: 1 });
+    // The upgraded file takes the new columns: a budget change, keyed appends and the old rows' seq continue.
+    expect((await store.updateRun('old-run', { budgetUsd: 40, error: null })).budgetUsd).toBe(40);
+    const keyed = await store.appendEvent({ runId: 'old-run', type: 'checkpoint-resolved', data: {} }, { dedupeKey: 'cp-old:resolved' });
+    expect(keyed.seq).toBe(3);
+    expect(await store.appendEvent({ runId: 'old-run', type: 'checkpoint-resolved', data: { again: true } }, { dedupeKey: 'cp-old:resolved' })).toEqual(keyed);
+    expect((await store.resolveCheckpoint({ checkpointId: 'cp-old', choice: ['B'] })).status).toBe('resolved');
+    expect(await store.listRuns('ws-default')).toHaveLength(1);
+  });
+
+  it('refuse a negative run budget at the schema level too', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      db.prepare("INSERT INTO workspaces (id, name, budget_usd, created_at) VALUES ('w', 'W', 1, 'now')").run();
+      const insert = db.prepare(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, title, problem, medium, status,
+        budget_usd, created_at, updated_at) VALUES (?, 'w', 'c1', 'h', 'demo', 't', 'p', 'prose', 'queued', ?, 'now', 'now')`);
+      insert.run('ok', 0);
+      expect(() => insert.run('bad', -1)).toThrow(/CHECK/);
     } finally {
       db.close();
     }

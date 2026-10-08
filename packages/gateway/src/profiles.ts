@@ -1,5 +1,8 @@
-import type { ModelProfile, ModelRef, ProviderId } from '@byway/contracts';
+import type { ModelProfile, ModelRef, ProfileStatus, ProviderId } from '@byway/contracts';
 import { isConfigured, type Env } from './env.ts';
+
+/** The contract's profile status, re-exported where this package has always exported it. */
+export type { ProfileStatus };
 
 const ref = (provider: ProviderId, model: string): ModelRef => ({ provider, model });
 
@@ -67,16 +70,6 @@ export const OPENROUTER_PINS: Readonly<Record<string, string>> = {
 /** Providers a profile's text tiers need. */
 export function tierProviders(profile: ModelProfile): ProviderId[] {
   return [...new Set([profile.tiers.big.provider, profile.tiers.mid.provider])];
-}
-
-export interface ProfileStatus {
-  profile: ModelProfile;
-  /** True when every text tier's provider has a key. */
-  usable: boolean;
-  /** Providers whose keys are missing for the text tiers. */
-  missing: ProviderId[];
-  /** True when the profile has an image model and its provider has a key. */
-  images: boolean;
 }
 
 /** Whether each profile can run with the keys in the environment. Reports provider names only, never keys. */

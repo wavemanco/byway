@@ -13,14 +13,15 @@ export function prepareQueries(db: DatabaseSync) {
 
     run: p('SELECT * FROM runs WHERE id = ?'),
     insertRun: p(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, title, problem, medium, status,
-      output_artifact_id, error, cost_usd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
-    updateRun: p('UPDATE runs SET status = ?, output_artifact_id = ?, error = ?, cost_usd = ?, title = ?, updated_at = ? WHERE id = ?'),
+      output_artifact_id, error, budget_usd, cost_usd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
+    updateRun: p('UPDATE runs SET status = ?, output_artifact_id = ?, error = ?, cost_usd = ?, title = ?, budget_usd = ?, updated_at = ? WHERE id = ?'),
     // rowid breaks ties between runs created in the same millisecond, in creation order. A negative LIMIT is no limit.
     listRuns: p('SELECT * FROM runs WHERE workspace_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?'),
     artifactExists: p('SELECT 1 FROM artifacts WHERE id = ?'),
 
     nextSeq: p('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM events WHERE run_id = ?'),
-    insertEvent: p('INSERT INTO events (run_id, seq, at, type, step_id, candidate, data) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    insertEvent: p('INSERT INTO events (run_id, seq, at, type, step_id, candidate, data, dedupe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    eventByDedupeKey: p('SELECT * FROM events WHERE run_id = ? AND dedupe_key = ?'),
     events: p('SELECT * FROM events WHERE run_id = ? AND seq > ? ORDER BY seq'),
 
     checkpoint: p('SELECT * FROM checkpoints WHERE id = ?'),

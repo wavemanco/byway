@@ -40,6 +40,8 @@ export interface ProviderCompletion {
   upstreamProvider?: string;
   /** Set when the provider declined: the call is still ledgered (it may be billed) before the gateway raises 'refused'. */
   refusal?: string;
+  /** True when the answer was cut off at the output limit; the gateway reports it as stopReason 'max-tokens'. */
+  truncated?: boolean;
   /** The request as sent, with image bytes replaced by artifact references. Stored by hash, never inline. */
   requestBody: unknown;
   /** The provider's response as plain JSON. */

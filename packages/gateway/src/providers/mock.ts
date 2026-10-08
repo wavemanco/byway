@@ -1,5 +1,5 @@
 import { mockImage } from '../mock/png.ts';
-import { parsePurpose, respond, type Responder } from '../mock/responders.ts';
+import { parsePurpose, reply, type Responder } from '../mock/responders.ts';
 import { seedOf } from '../mock/seed.ts';
 import { plain, textOf, type ProviderAdapter } from './types.ts';
 
@@ -31,7 +31,7 @@ export function mockAdapter(opts: MockAdapterOptions = {}): ProviderAdapter {
       const key = `${req.context.runId ?? req.context.workspaceId}|${req.context.stepId ?? ''}|${req.context.purpose}`;
       const iteration = counts.get(key) ?? 0;
       counts.set(key, iteration + 1);
-      const text = respond(
+      const { text, truncated } = reply(
         { purpose: req.context.purpose, role, medium, system: req.system ?? '', prompt, images, seed: seedOf(`${req.system ?? ''}\n${prompt}`), iteration },
         opts.responders,
       );
@@ -40,8 +40,10 @@ export function mockAdapter(opts: MockAdapterOptions = {}): ProviderAdapter {
         text,
         servedModel: req.model,
         usage: { inputTokens: tokens(`${req.system ?? ''}${prompt}`) + images * 1000, outputTokens: tokens(text) },
+        // Only a test responder truncates; the demo's own answers are always whole, whatever maxOutputTokens says.
+        ...(truncated ? { truncated: true } : {}),
         requestBody,
-        responseBody: { model: req.model, text },
+        responseBody: { model: req.model, text, ...(truncated ? { truncated: true } : {}) },
       };
     },
     async image(req) {

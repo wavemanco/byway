@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { CheckpointRecord } from '@byway/contracts';
+import type { Store } from '@byway/contracts';
 import { CheckpointResolvedError, StoreError } from '../src/index.ts';
 import { openStore, seedRun, steppingClock } from './helpers.ts';
 
-type OpenInput = Omit<CheckpointRecord, 'status' | 'openedAt'>;
+type OpenInput = Parameters<Store['openCheckpoint']>[0];
 
 const pick = (id = 'cp-pick', runId = 'run-1'): OpenInput => ({
   id,
@@ -54,10 +54,10 @@ describe('checkpoint lifecycle', () => {
     const store = openStore();
     await seedRun(store);
     await store.openCheckpoint(pick());
-    const resolved = await store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['B'] });
-    const again = store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['A'] });
+    const resolved = await store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['B', 'C'] });
+    const again = store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['A', 'B'] });
     await expect(again).rejects.toThrow(CheckpointResolvedError);
-    await expect(store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['B'] })).rejects.toMatchObject({ code: 'already-resolved', checkpoint: resolved });
+    await expect(store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['B', 'C'] })).rejects.toMatchObject({ code: 'already-resolved', checkpoint: resolved });
     expect(await store.getCheckpoint('cp-pick')).toEqual(resolved);
   });
 
@@ -78,8 +78,22 @@ describe('checkpoint lifecycle', () => {
     const store = openStore();
     await expect(store.openCheckpoint(pick('x', 'no-run'))).rejects.toThrow(/no run "no-run"/);
     await seedRun(store);
-    await expect(store.openCheckpoint({ ...pick(), resolution: { checkpointId: 'cp-pick', choice: ['A'] } })).rejects.toThrow(StoreError);
+    // The contract's input type has no resolution or resolvedAt; data that crossed JSON may still carry them.
+    const resolution = { checkpointId: 'cp-pick', choice: ['A', 'B'] };
+    await expect(store.openCheckpoint({ ...pick(), resolution } as unknown as OpenInput)).rejects.toThrow(StoreError);
+    await expect(store.openCheckpoint({ ...pick(), resolvedAt: '2026-10-07T12:00:00.000Z' } as unknown as OpenInput)).rejects.toThrow(/resolveCheckpoint/);
     await expect(store.openCheckpoint({ ...pick(), kind: 'vote' as never })).rejects.toThrow(/kind/);
+    expect(await store.getCheckpoint('cp-pick')).toBeUndefined();
+  });
+
+  it('refuses a pick that could never be answered: k larger than its option list', async () => {
+    const store = openStore();
+    await seedRun(store);
+    await expect(store.openCheckpoint({ ...pick(), k: 4 })).rejects.toThrow(/k is 4 but only 3 options/);
+    // Exactly as many as listed is fine, and so is a pick whose options come later (none listed).
+    await expect(store.openCheckpoint({ ...pick('all'), k: 3 })).resolves.toMatchObject({ k: 3 });
+    const { options: _none, ...unlisted } = pick('unlisted');
+    await expect(store.openCheckpoint({ ...unlisted, k: 5 })).resolves.toMatchObject({ k: 5 });
   });
 
   it('lists open checkpoints per workspace (oldest first) and all checkpoints per run', async () => {
@@ -89,7 +103,7 @@ describe('checkpoint lifecycle', () => {
     await store.openCheckpoint(pick('p1', 'run-1'));
     await store.openCheckpoint({ id: 'c2', runId: 'run-2', stepId: 'gate', kind: 'confirm', prompt: 'Use the best version so far?' });
     await store.openCheckpoint({ id: 'r1', runId: 'run-1', stepId: 'vision', kind: 'react', prompt: 'What do you see?' });
-    await store.resolveCheckpoint({ checkpointId: 'p1', choice: ['A'] });
+    await store.resolveCheckpoint({ checkpointId: 'p1', choice: ['A', 'B'] });
     const ws = await store.ensureDefaultWorkspace();
     expect((await store.openCheckpoints(ws.id)).map((c) => c.id)).toEqual(['c2', 'r1']);
     expect(await store.openCheckpoints('other-workspace')).toEqual([]);
@@ -106,13 +120,16 @@ describe('resolution validation', () => {
     return store;
   }
 
-  it('pick: 1..k known, distinct option ids', async () => {
+  it('pick: exactly k known, distinct option ids', async () => {
     const store = await opened(pick());
-    for (const choice of [[], ['A', 'B', 'C'], ['A', 'A'], ['Z']]) {
+    // k is 2: too few, too many, a repeat that only looks like two, and an unknown id are all refused.
+    for (const choice of [[], ['C'], ['A', 'B', 'C'], ['A', 'A'], ['A', 'Z'], ['Z']]) {
       await expect(store.resolveCheckpoint({ checkpointId: 'cp-pick', choice })).rejects.toMatchObject({ code: 'invalid' });
     }
+    await expect(store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['C'] })).rejects.toThrow(/exactly 2/);
     await expect(store.resolveCheckpoint({ checkpointId: 'cp-pick', text: 'A' })).rejects.toThrow(/choice/);
-    expect((await store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['C'] })).status).toBe('resolved');
+    expect((await store.getCheckpoint('cp-pick'))?.status).toBe('open');
+    expect((await store.resolveCheckpoint({ checkpointId: 'cp-pick', choice: ['C', 'A'] })).resolution).toEqual({ checkpointId: 'cp-pick', choice: ['C', 'A'] });
   });
 
   it('choose and compare: exactly one known option', async () => {

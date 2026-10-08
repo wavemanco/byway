@@ -78,7 +78,7 @@ type RunPatch = Parameters<Store['updateRun']>[1];
 type WorkspacePatch = Parameters<Store['updateWorkspace']>[1];
 type CheckpointInput = Parameters<Store['openCheckpoint']>[0];
 
-const RUN_PATCH_KEYS = ['status', 'outputArtifactId', 'error', 'costUsd', 'title'] as const satisfies readonly (keyof RunPatch)[];
+const RUN_PATCH_KEYS = ['status', 'outputArtifactId', 'error', 'costUsd', 'title', 'budgetUsd'] as const satisfies readonly (keyof RunPatch)[];
 const WORKSPACE_PATCH_KEYS = ['name', 'budgetUsd'] as const satisfies readonly (keyof WorkspacePatch)[];
 
 function onlyKeys(what: string, patch: unknown, allowed: readonly string[]): Record<string, unknown> {
@@ -86,6 +86,12 @@ function onlyKeys(what: string, patch: unknown, allowed: readonly string[]): Rec
   const extra = Object.keys(patch).filter((k) => !allowed.includes(k));
   if (extra.length > 0) throw invalid(`${what} may only change ${allowed.join(', ')}; got ${extra.join(', ')}`);
   return patch;
+}
+
+/** The column value for a patch field that `null` clears: undefined keeps `current`, null clears, anything else is checked. */
+function clearable(value: unknown, current: string | undefined, check: (v: unknown) => string): string | null {
+  if (value === undefined) return current ?? null;
+  return value === null ? null : check(value);
 }
 
 export class SqliteStore implements Store {
@@ -164,6 +170,7 @@ export class SqliteStore implements Store {
       problem: text('problem', run.problem),
       medium: medium(run.medium),
       status: run.status === undefined ? 'queued' : oneOf<RunStatus>('run status', run.status, RUN_STATUSES),
+      budgetUsd: usd('run budget', run.budgetUsd),
       outputArtifactId: run.outputArtifactId === undefined ? null : nonEmpty('outputArtifactId', run.outputArtifactId),
       error: run.error === undefined ? null : text('error', run.error),
     };
@@ -173,11 +180,12 @@ export class SqliteStore implements Store {
       this.#requireArtifact(values.outputArtifactId);
       const at = this.#stamp();
       const v = values;
-      q.insertRun.run(id, v.workspaceId, v.recipeId, v.recipeHash, v.profileId, v.title, v.problem, v.medium, v.status, v.outputArtifactId, v.error, at, at);
+      q.insertRun.run(id, v.workspaceId, v.recipeId, v.recipeHash, v.profileId, v.title, v.problem, v.medium, v.status, v.outputArtifactId, v.error, v.budgetUsd, at, at);
       return toRun(q.run.get(id)!);
     });
   }
 
+  /** Fields left undefined keep their value; `null` clears `error` or `outputArtifactId` (and only those). */
   async updateRun(id: string, patch: RunPatch): Promise<RunRecord> {
     const q = this.#queries();
     const p = onlyKeys('a run update', patch, RUN_PATCH_KEYS);
@@ -186,12 +194,13 @@ export class SqliteStore implements Store {
       if (!row) throw new StoreError('not-found', `no run ${JSON.stringify(id)}`);
       const run = toRun(row);
       const status = p.status === undefined ? run.status : oneOf<RunStatus>('run status', p.status, RUN_STATUSES);
-      const outputArtifactId = p.outputArtifactId === undefined ? (run.outputArtifactId ?? null) : nonEmpty('outputArtifactId', p.outputArtifactId);
-      const error = p.error === undefined ? (run.error ?? null) : text('error', p.error);
+      const outputArtifactId = clearable(p.outputArtifactId, run.outputArtifactId, (v) => nonEmpty('outputArtifactId', v));
+      const error = clearable(p.error, run.error, (v) => text('error', v));
       const costUsd = p.costUsd === undefined ? run.costUsd : usd('run cost', p.costUsd);
       const title = p.title === undefined ? run.title : text('title', p.title);
-      if (outputArtifactId !== run.outputArtifactId) this.#requireArtifact(outputArtifactId);
-      q.updateRun.run(status, outputArtifactId, error, costUsd, title, this.#stamp(), id);
+      const budgetUsd = p.budgetUsd === undefined ? run.budgetUsd : usd('run budget', p.budgetUsd);
+      if (outputArtifactId !== (run.outputArtifactId ?? null)) this.#requireArtifact(outputArtifactId);
+      q.updateRun.run(status, outputArtifactId, error, costUsd, title, budgetUsd, this.#stamp(), id);
       return toRun(q.run.get(id)!);
     });
   }
@@ -211,20 +220,32 @@ export class SqliteStore implements Store {
 
   // Events
 
-  async appendEvent(event: Omit<RunEvent, 'seq' | 'at'>): Promise<RunEvent> {
+  /**
+   * Appends with the run's next seq. With `dedupeKey`, an append whose key the run already used returns that first event
+   * as stored (its seq, time and data) and writes nothing: a retried activity appends its event once. The new event is
+   * still validated first, so a malformed retry fails the same way the first attempt would have.
+   */
+  async appendEvent(event: Omit<RunEvent, 'seq' | 'at'>, opts: { dedupeKey?: string } = {}): Promise<RunEvent> {
     const q = this.#queries();
     if (!isPlainObject(event)) throw invalid('an event must be a plain object');
+    if (!isPlainObject(opts)) throw invalid('appendEvent options must be a plain object');
     const runId = nonEmpty('runId', event.runId);
     const type = oneOf('event type', event.type, RUN_EVENT_TYPES);
     const stepId = event.stepId === undefined ? null : nonEmpty('stepId', event.stepId);
     const candidate = optionalIndex('candidate', event.candidate);
     const data = eventData(event.data);
+    const dedupeKey = opts.dedupeKey === undefined ? null : nonEmpty('dedupeKey', opts.dedupeKey);
     return writeTransaction(this.#db, () => {
       if (!q.run.get(runId)) throw new StoreError('not-found', `no run ${JSON.stringify(runId)}`);
-      // The write lock is already held, so no other connection can take the same seq between this read and the insert.
+      // The write lock is already held, so no other connection can append the same key, or take the same seq, between
+      // these reads and the insert.
+      if (dedupeKey !== null) {
+        const first = q.eventByDedupeKey.get(runId, dedupeKey);
+        if (first) return toEvent(first);
+      }
       const seq = Number(q.nextSeq.get(runId)!.next);
       const at = this.#stamp();
-      q.insertEvent.run(runId, seq, at, type, stepId, candidate, data);
+      q.insertEvent.run(runId, seq, at, type, stepId, candidate, data, dedupeKey);
       return toEvent({ run_id: runId, seq, at, type, step_id: stepId, candidate, data });
     });
   }
@@ -239,7 +260,9 @@ export class SqliteStore implements Store {
 
   async openCheckpoint(cp: CheckpointInput): Promise<CheckpointRecord> {
     const q = this.#queries();
-    if (isPlainObject(cp) && (cp.resolution !== undefined || cp.resolvedAt !== undefined)) {
+    // The input type has no resolution, but input that crossed JSON can still carry one: refuse it rather than drop it.
+    const raw: unknown = cp;
+    if (isPlainObject(raw) && (raw.resolution !== undefined || raw.resolvedAt !== undefined)) {
       throw invalid('a checkpoint is opened without a resolution; answer it with resolveCheckpoint');
     }
     const fields = checkpointFields(cp);
@@ -323,6 +346,10 @@ function checkpointFields(cp: CheckpointInput | CheckpointRecord): Omit<Checkpoi
   const options = cp.options === undefined ? undefined : checkpointOptions(cp.options);
   const k = optionalIndex('k', cp.k);
   if (k === 0) throw invalid('k must be at least 1');
+  // A pick is answered with exactly k distinct options (checkResolution), so k beyond the list could never be answered.
+  if (cp.kind === 'pick' && k !== null && options !== undefined && k > options.length) {
+    throw invalid(`pick checkpoint ${JSON.stringify(id)}: k is ${k} but only ${options.length} options are listed`);
+  }
   const artifactIds = cp.artifactIds;
   if (artifactIds !== undefined && (!Array.isArray(artifactIds) || !artifactIds.every((a) => typeof a === 'string' && a !== ''))) {
     throw invalid('artifactIds must be a list of artifact ids');

@@ -76,6 +76,12 @@ export function anthropicParams(req: ProviderCompletionRequest, inline: boolean,
 
 type IterationUsage = NonNullable<AnthropicMessageLike['usage']['iterations']>[number];
 
+/**
+ * Stop reasons that mean the answer was cut off: `max_tokens` (it reached max_tokens) and
+ * `model_context_window_exceeded` (it filled the model's context window first). Either way the text is incomplete.
+ */
+const TRUNCATED = new Set(['max_tokens', 'model_context_window_exceeded']);
+
 function breakdown(u: AnthropicMessageLike['usage'] | IterationUsage): TokenBreakdown {
   const cacheWrite = u.cache_creation_input_tokens ?? 0;
   const cacheRead = u.cache_read_input_tokens ?? 0;
@@ -108,6 +114,7 @@ export function parseAnthropicMessage(msg: AnthropicMessageLike, requestedModel:
     usage,
     ...(usageByModel ? { usageByModel } : {}),
     ...(msg.stop_reason === 'refusal' ? { refusal: `declined (${msg.stop_details?.category ?? 'policy'})` } : {}),
+    ...(msg.stop_reason !== null && TRUNCATED.has(msg.stop_reason) ? { truncated: true } : {}),
     responseBody: plain(msg),
   };
 }

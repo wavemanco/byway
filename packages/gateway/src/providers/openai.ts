@@ -102,6 +102,8 @@ export function parseChatCompletion(res: ChatCompletionLike): Omit<ProviderCompl
     ...(typeof res.usage?.cost === 'number' ? { reportedCostUsd: res.usage.cost } : {}),
     ...(typeof res.provider === 'string' ? { upstreamProvider: res.provider } : {}),
     ...(refusal ? { refusal } : {}),
+    // 'length': the answer hit max_completion_tokens (OpenRouter normalizes every upstream's limit stop to it too).
+    ...(choice?.finish_reason === 'length' ? { truncated: true } : {}),
     responseBody: plain(res),
   };
 }

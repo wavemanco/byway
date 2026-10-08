@@ -5,12 +5,10 @@ import { canonicalize, contentHash } from '@byway/canonical';
 import type { LedgerEntry } from '@byway/contracts';
 
 /**
- * The gateway's entry: the contract's LedgerEntry plus the upstream host for routers (OpenRouter), which the contract
- * has no field for. Extra fields are covered by the hash like every other field.
+ * The gateway's entry is the contract's LedgerEntry, upstream host (OpenRouter) included; the name is kept for existing
+ * imports. Every field, upstreamProvider too, is covered by the hash.
  */
-export interface GatewayLedgerEntry extends LedgerEntry {
-  upstreamProvider?: string;
-}
+export type GatewayLedgerEntry = LedgerEntry;
 
 /** What the gateway supplies; the ledger assigns id, seq, time and the chain links. */
 export type LedgerDraft = Omit<GatewayLedgerEntry, 'id' | 'seq' | 'at' | 'prevHash' | 'hash'>;

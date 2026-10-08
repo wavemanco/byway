@@ -2,6 +2,7 @@ import { canonicalize, sha256Hex } from '@byway/canonical';
 import {
   GatewayError,
   type ArtifactStore,
+  type BudgetDetails,
   type CompletionRequest,
   type CompletionResult,
   type Gateway,
@@ -10,6 +11,7 @@ import {
   type MediaType,
   type ModelProfile,
   type ModelRef,
+  type ProfileStatus,
   type ProviderId,
   type ProviderStatus,
   type SpendSummary,
@@ -19,7 +21,7 @@ import { toGatewayError } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost } from './estimate.ts';
 import { Ledger, type LedgerDraft } from './ledger.ts';
 import { PRICES, priceFor, roundUsd, tokenCost, type PriceRow, type TokenBreakdown } from './prices.ts';
-import { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus, type ProfileStatus } from './profiles.ts';
+import { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus } from './profiles.ts';
 import { anthropicAdapter, createAnthropicClient, type AnthropicClientLike } from './providers/anthropic.ts';
 import { createGoogleClient, googleAdapter, type GoogleClientLike } from './providers/google.ts';
 import { mockAdapter } from './providers/mock.ts';
@@ -65,18 +67,10 @@ export interface GatewayOptions {
   anthropicRefusalFallback?: boolean;
 }
 
-/** Details a budget refusal carries, so the runner can offer "Raise the budget by $X?" (spec §3.4). */
-export interface BudgetDetails {
-  scope: 'workspace' | 'run';
-  capUsd: number;
-  spentUsd: number;
-  /** In-flight calls' estimates, already counted against the cap. */
-  reservedUsd: number;
-  estimateUsd: number;
-  /** How much the cap would need to rise for this call to proceed. */
-  shortfallUsd: number;
-}
+/** The contract's budget details, re-exported under the name this package has always used. */
+export type { BudgetDetails };
 
+/** A 'budget-exceeded' GatewayError, whose `budget` (optional on GatewayError) is always set. */
 export type BudgetError = GatewayError & { budget: BudgetDetails };
 
 const DEFAULT_MAX_OUTPUT = 16_000;
@@ -203,6 +197,8 @@ export class ModelGateway implements Gateway {
       if (out.refusal) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal}`));
       return {
         text: out.text,
+        // A cut-off answer is still returned (and was billed); callers decide whether a partial parse is usable.
+        stopReason: out.truncated ? 'max-tokens' : 'end',
         servedModel: out.servedModel,
         provider: ref.provider,
         usage: { inputTokens: out.usage.inputTokens, outputTokens: out.usage.outputTokens },
@@ -375,7 +371,7 @@ export class ModelGateway implements Gateway {
         const err = new GatewayError(
           'budget-exceeded',
           `the ${scope} budget of $${capUsd.toFixed(2)} would be exceeded: $${spent.toFixed(4)} spent, $${reserved.toFixed(4)} in flight, and this call may cost up to $${budget.estimateUsd.toFixed(4)}`,
-        ) as BudgetError;
+        );
         err.budget = budget;
         throw err;
       }

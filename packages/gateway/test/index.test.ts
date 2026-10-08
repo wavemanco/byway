@@ -1,9 +1,10 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type * as contracts from '@byway/contracts';
 import type { Gateway } from '@byway/contracts';
-import { describe, expect, it } from 'vitest';
-import { createGateway, PROFILES } from '../src/index.ts';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { createGateway, PROFILES, type BudgetDetails, type BudgetError, type GatewayLedgerEntry, type ProfileStatus } from '../src/index.ts';
 import { createAnthropicClient } from '../src/providers/anthropic.ts';
 import { createGoogleClient } from '../src/providers/google.ts';
 import { createOpenAIClient } from '../src/providers/openai.ts';
@@ -19,9 +20,21 @@ describe('@byway/gateway', () => {
       env: {},
     });
     expect(g.profiles().map((p) => p.id)).toEqual(['demo']);
+    const status = g.profileStatus();
+    expect(status.map((s) => s.profile.id)).toEqual(PROFILES.map((p) => p.id));
+    expect(status.find((s) => s.profile.id === 'demo')).toMatchObject({ usable: true, missing: [], images: true });
+    expect(status.find((s) => s.profile.id === 'balanced')).toMatchObject({ usable: false, missing: ['anthropic'], images: false });
     expect(await g.spend('ws')).toEqual({ workspaceId: 'ws', spentUsd: 0, capUsd: 5, byRun: {} });
     expect(await g.verifyLedger()).toBeNull();
     expect(PROFILES.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('re-exports the contract types under their old names instead of keeping local copies', () => {
+    expectTypeOf<BudgetDetails>().toEqualTypeOf<contracts.BudgetDetails>();
+    expectTypeOf<ProfileStatus>().toEqualTypeOf<contracts.ProfileStatus>();
+    expectTypeOf<GatewayLedgerEntry>().toEqualTypeOf<contracts.LedgerEntry>();
+    expectTypeOf<BudgetError['budget']>().toEqualTypeOf<contracts.BudgetDetails>();
+    expectTypeOf<contracts.CompletionResult['stopReason']>().toEqualTypeOf<'end' | 'max-tokens' | undefined>();
   });
 
   it('builds the real SDK clients offline (construction makes no request)', () => {

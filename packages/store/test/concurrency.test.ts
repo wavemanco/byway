@@ -48,6 +48,19 @@ describe('concurrent store instances on one file', () => {
     expect(new Set(replies.map((r) => r.workspaceId)).size).toBe(1);
   }, 60_000);
 
+  it('parallel writers on separate threads retrying the same keyed appends insert each key once', async () => {
+    const dataDir = tempDir();
+    const store = openStore({ dataDir });
+    await seedRun(store, 'run');
+    const count = 40;
+    const replies = await runWorkers(range(4).map((worker): Job => ({ mode: 'append', dataDir, runId: 'run', worker, count, dedupe: true })));
+    // Every worker reaches key k<i> only after k<i-1> exists, so k<i> is always seq i+1, whoever inserted it.
+    for (const { seqs } of replies) expect(seqs).toEqual(range(count));
+    const events = await store.events('run');
+    expect(events.map((e) => e.seq)).toEqual(range(count));
+    expect(events.map((e) => e.data.i)).toEqual(range(count).map((n) => n - 1));
+  }, 60_000);
+
   it('threads opening a fresh data directory at once migrate it once and agree on one default workspace', async () => {
     const dataDir = tempDir();
     const replies = await runWorkers(range(8).map((): Job => ({ mode: 'open', dataDir })));

@@ -57,6 +57,8 @@ export function parseGoogleResponse(res: GoogleResponseLike, requestedModel: str
     // Gemini bills thinking tokens as output ("output price including thinking tokens").
     usage: { inputTokens: u.promptTokenCount ?? 0, outputTokens: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cacheReadTokens: u.cachedContentTokenCount ?? 0 },
     ...(refusal ? { refusal } : {}),
+    // MAX_TOKENS: the answer hit maxOutputTokens (thinking tokens count toward it).
+    ...(res.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? { truncated: true } : {}),
     responseBody: plain(res),
   };
 }

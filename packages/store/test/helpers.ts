@@ -32,6 +32,9 @@ export function steppingClock(start = '2026-10-07T12:00:00.000Z'): () => Date {
   return () => new Date((t += 1000) - 1000);
 }
 
+/** The spend cap {@link seedRun} gives a run unless told otherwise. */
+export const SEED_RUN_BUDGET_USD = 5;
+
 /** A minimal run in the store's default workspace. */
 export async function seedRun(store: SqliteStore, id = 'run-1', extra: Partial<RunRecord> = {}): Promise<RunRecord> {
   const ws = await store.ensureDefaultWorkspace();
@@ -44,6 +47,7 @@ export async function seedRun(store: SqliteStore, id = 'run-1', extra: Partial<R
     title: 'A landing page',
     problem: 'I need a landing page for a bakery',
     medium: 'web-page',
+    budgetUsd: SEED_RUN_BUDGET_USD,
     ...extra,
   });
 }

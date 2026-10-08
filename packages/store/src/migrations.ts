@@ -90,6 +90,21 @@ CREATE INDEX checkpoints_by_run ON checkpoints (run_id, opened_at);
 CREATE INDEX checkpoints_open ON checkpoints (run_id) WHERE status = 'open';
 `,
   },
+  {
+    version: 2,
+    name: 'run-budget-and-event-dedupe',
+    sql: `
+-- Each run's spend cap (RunRecord.budgetUsd), raised when the user accepts a "Raise the budget" checkpoint. ADD COLUMN
+-- needs a default for NOT NULL; every insert names the column, so the 0 only exists for the instant before the backfill.
+ALTER TABLE runs ADD COLUMN budget_usd REAL NOT NULL DEFAULT 0 CHECK (budget_usd >= 0);
+-- Runs from before this migration had no cap of their own, only their workspace's; they keep running under that.
+UPDATE runs SET budget_usd = COALESCE((SELECT w.budget_usd FROM workspaces w WHERE w.id = runs.workspace_id), 0);
+
+-- appendEvent's optional dedupe key: an activity that runs twice appends its event once (Temporal is at-least-once).
+ALTER TABLE events ADD COLUMN dedupe_key TEXT CHECK (dedupe_key IS NULL OR dedupe_key <> '');
+CREATE UNIQUE INDEX events_dedupe ON events (run_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+`,
+  },
 ];
 
 /** The schema version this build writes. */

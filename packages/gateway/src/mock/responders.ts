@@ -28,7 +28,13 @@ export interface MockContext {
   iteration: number;
 }
 
-export type Responder = (ctx: MockContext) => string;
+/**
+ * A mock answer: its text, or the text with `truncated: true` to stand in for an answer cut off at the output cap. The
+ * mock never truncates on its own; only a test's responder asks for it.
+ */
+export type MockReply = string | { text: string; truncated?: boolean };
+
+export type Responder = (ctx: MockContext) => MockReply;
 
 export function parsePurpose(purpose: string): { role: string; medium: Medium | undefined } {
   const i = purpose.lastIndexOf(':');
@@ -103,8 +109,14 @@ export const DEFAULT_RESPONDERS: Readonly<Record<string, Responder>> = {
 /** Roles with no output contract of their own (relay, for instance) get a short plain-text acknowledgement. */
 const fallback: Responder = (ctx) => `Done: ${ctx.role} step completed in demo mode.`;
 
-/** Find the responder: an override for the exact purpose, then for the role, then the defaults. */
-export function respond(ctx: MockContext, overrides: Readonly<Record<string, Responder>> = {}): string {
+/** Find the responder (an override for the exact purpose, then for the role, then the defaults) and normalize its reply. */
+export function reply(ctx: MockContext, overrides: Readonly<Record<string, Responder>> = {}): { text: string; truncated: boolean } {
   const r = overrides[ctx.purpose] ?? overrides[ctx.role] ?? DEFAULT_RESPONDERS[ctx.role] ?? fallback;
-  return r(ctx);
+  const out = r(ctx);
+  return typeof out === 'string' ? { text: out, truncated: false } : { text: out.text, truncated: out.truncated === true };
+}
+
+/** The answer text for `ctx`, as {@link reply} finds it. */
+export function respond(ctx: MockContext, overrides: Readonly<Record<string, Responder>> = {}): string {
+  return reply(ctx, overrides).text;
 }

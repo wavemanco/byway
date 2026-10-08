@@ -16,6 +16,9 @@ const TEXT_KINDS: readonly CheckpointKind[] = ['react', 'write', 'directive'];
  * Checks `res` against the checkpoint it answers and returns it normalized to the one field its kind uses (pick, choose
  * and compare: `choice`; confirm: `approved`; react, write and directive: `text`). Fields that belong to other kinds are
  * dropped rather than refused, so a generic form that sends every field still works.
+ *
+ * A choice names distinct options, all of them listed when the checkpoint lists options. A pick chooses exactly `k`
+ * (any non-empty number when it has no `k`); choose and compare choose exactly one.
  */
 export function checkResolution(cp: Target, res: CheckpointResolution): ResolutionCheck {
   const fail = (problem: string): ResolutionCheck => ({ ok: false, problem: `checkpoint "${cp.id}" (${cp.kind}): ${problem}` });
@@ -34,8 +37,9 @@ export function checkResolution(cp: Target, res: CheckpointResolution): Resoluti
       if (unknown.length > 0) return fail(`\`choice\` names unknown options ${unknown.map((c) => JSON.stringify(c)).join(', ')}`);
     }
     if (cp.kind === 'pick') {
-      const max = cp.k ?? choice.length;
-      if (choice.length > max) return fail(`\`choice\` picks ${choice.length} options; at most ${max} may be picked`);
+      if (cp.k !== undefined && choice.length !== cp.k) {
+        return fail(`\`choice\` picks ${choice.length} option${choice.length === 1 ? '' : 's'}; exactly ${cp.k} must be picked`);
+      }
     } else if (choice.length !== 1) {
       return fail(`\`choice\` must name exactly one option, not ${choice.length}`);
     }

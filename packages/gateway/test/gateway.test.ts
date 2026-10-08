@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sha256Hex } from '@byway/canonical';
-import { GatewayError, type CompletionRequest } from '@byway/contracts';
+import { GatewayError, type BudgetDetails, type CompletionRequest } from '@byway/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
@@ -214,6 +214,32 @@ describe('gateway: complete', () => {
     expect(ledgerLines()[0]).toMatchObject({ provider: 'openrouter', upstreamProvider: 'Anthropic' });
   });
 
+  it("reports stopReason 'end' for a whole answer and 'max-tokens' for one cut off at the output cap", async () => {
+    const { client } = fakeAnthropic([anthropicMessage(), anthropicMessage({ stop_reason: 'max_tokens', content: [{ type: 'text', text: '- Tighten the' }] })]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    expect(await g.complete(req())).toMatchObject({ stopReason: 'end' });
+    const cut = await g.complete(req());
+    expect(cut).toMatchObject({ stopReason: 'max-tokens', text: '- Tighten the', provider: 'anthropic' });
+    // A truncated answer is still a billed call: priced and ledgered like any other.
+    expect(cut.costUsd).toBeCloseTo(0.014, 9);
+    expect(ledgerLines().map((e) => e.id)).toEqual([expect.any(String), cut.ledgerEntryId]);
+  });
+
+  it("maps every adapter's truncation to stopReason 'max-tokens'", async () => {
+    const openai = fakeOpenAI([{ model: 'gpt-6-astra', choices: [{ finish_reason: 'length', message: { content: '{"a":' } }], usage: { prompt_tokens: 10, completion_tokens: 1000 } }]);
+    const google = fakeGoogle([{ modelVersion: 'gemini-3.1-pro-preview', candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '- Drop' }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 1000 } }]);
+    const g = gateway({ env: { OPENAI_API_KEY: OPENAI_KEY, GEMINI_API_KEY: 'AIza-test-not-real-0000000000000' }, clients: { openai: openai.client, google: google.client } });
+    expect(await g.complete(req({ profileId: 'openai' }))).toMatchObject({ provider: 'openai', stopReason: 'max-tokens' });
+    expect(await g.complete(req({ profileId: 'google' }))).toMatchObject({ provider: 'google', stopReason: 'max-tokens' });
+    expect(await g.complete(req({ profileId: 'openai' }))).toMatchObject({ provider: 'openai', stopReason: 'end' });
+  });
+
+  it("answers demo calls with stopReason 'end' unless a test responder truncates", async () => {
+    expect(await gateway().complete(req({ profileId: 'demo', purpose: 'build:prose' }))).toMatchObject({ provider: 'mock', stopReason: 'end' });
+    const g = gateway({ mockResponders: { 'build:prose': () => ({ text: '# Half a memo', truncated: true }) } });
+    expect(await g.complete(req({ profileId: 'demo', purpose: 'build:prose' }))).toMatchObject({ text: '# Half a memo', stopReason: 'max-tokens' });
+  });
+
   it('never writes a key to the ledger or the stored bodies, even when a prompt contains one', async () => {
     const { client } = fakeAnthropic();
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
@@ -231,8 +257,13 @@ describe('gateway: budgets', () => {
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
     // 1000 output tokens at $20/M alone is $0.02.
     const err = await g.complete(req()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GatewayError);
     expect(err).toMatchObject({ code: 'budget-exceeded', retryable: false });
-    expect((err as { budget?: unknown }).budget).toMatchObject({ scope: 'workspace', capUsd: 0.01, spentUsd: 0 });
+    // The contract's GatewayError carries the details: no cast to a gateway-local type needed.
+    const budget: BudgetDetails | undefined = (err as GatewayError).budget;
+    expect(budget).toMatchObject({ scope: 'workspace', capUsd: 0.01, spentUsd: 0, reservedUsd: 0 });
+    // Both are rounded to the micro-dollar separately.
+    expect(budget?.shortfallUsd).toBeCloseTo(budget!.estimateUsd - 0.01, 5);
     expect(calls).toHaveLength(0);
   });
 

@@ -52,6 +52,7 @@ export function toRun(r: Row): RunRecord {
     problem: str(r.problem),
     medium: str(r.medium) as Medium,
     status: str(r.status) as RunStatus,
+    budgetUsd: num(r.budget_usd),
     ...opt('outputArtifactId', r.output_artifact_id, str),
     ...opt('error', r.error, str),
     costUsd: num(r.cost_usd),

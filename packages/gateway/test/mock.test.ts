@@ -153,6 +153,21 @@ describe('mock provider: behaviour', () => {
     expect((await adapter.complete(req('judge:options', 'x'))).text).toBe('Choice: B');
   });
 
+  it('never reports truncation on its own, even when the answer is longer than the output cap', async () => {
+    const out = await mockAdapter().complete(req('build:web-page', PROBLEMS['web-page'], { maxOutputTokens: 1 }));
+    expect(out.usage.outputTokens).toBeGreaterThan(1);
+    expect(out.truncated).toBeUndefined();
+  });
+
+  it('reports truncation when a test responder asks for it', async () => {
+    const adapter = mockAdapter({ responders: { 'advisor.compose': () => ({ text: '{"kind": "composed", "steps": [', truncated: true }), critic: () => ({ text: '- whole\nScore: 8/10' }) } });
+    const cut = await adapter.complete(req('advisor.compose', 'x'));
+    expect([cut.text, cut.truncated]).toEqual(['{"kind": "composed", "steps": [', true]);
+    expect(cut.responseBody).toMatchObject({ text: cut.text, truncated: true });
+    const whole = await adapter.complete(req('critic:prose', 'x'));
+    expect([whole.text, whole.truncated]).toEqual(['- whole\nScore: 8/10', undefined]);
+  });
+
   it('generates small deterministic PNGs at the requested aspect ratio', async () => {
     const adapter = mockAdapter();
     const ctx = { workspaceId: 'ws', purpose: 'asset:web-page', profileId: 'demo' };

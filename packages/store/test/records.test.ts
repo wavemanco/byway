@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_WORKSPACE_BUDGET_USD, DEFAULT_WORKSPACE_NAME, StoreError, createStore } from '../src/index.ts';
-import { openStore, seedRun, steppingClock, tempDir } from './helpers.ts';
+import { SEED_RUN_BUDGET_USD, openStore, seedRun, steppingClock, tempDir } from './helpers.ts';
 
 describe('workspaces', () => {
   it('ensureDefaultWorkspace creates "My workspace" with the default budget once', async () => {
@@ -55,6 +55,7 @@ describe('runs', () => {
       problem: 'I need a landing page for a bakery',
       medium: 'web-page',
       status: 'queued',
+      budgetUsd: SEED_RUN_BUDGET_USD,
       costUsd: 0,
       createdAt: '2026-10-07T12:00:00.000Z',
       updatedAt: '2026-10-07T12:00:00.000Z',
@@ -66,6 +67,22 @@ describe('runs', () => {
   it('honours an initial status', async () => {
     const store = openStore();
     expect((await seedRun(store, 'r', { status: 'running' })).status).toBe('running');
+  });
+
+  it('stores the run budget, including a zero or fractional one', async () => {
+    const store = openStore();
+    expect((await seedRun(store, 'zero', { budgetUsd: 0 })).budgetUsd).toBe(0);
+    expect((await seedRun(store, 'cents', { budgetUsd: 2.75 })).budgetUsd).toBe(2.75);
+    expect((await store.getRun('cents'))?.budgetUsd).toBe(2.75);
+  });
+
+  it('requires a finite, non-negative run budget', async () => {
+    const store = openStore();
+    await expect(seedRun(store, 'none', { budgetUsd: undefined })).rejects.toThrow(/run budget/);
+    await expect(seedRun(store, 'neg', { budgetUsd: -1 })).rejects.toThrow(/run budget/);
+    await expect(seedRun(store, 'nan', { budgetUsd: Number.NaN })).rejects.toThrow(/run budget/);
+    await expect(seedRun(store, 'str', { budgetUsd: '5' as never })).rejects.toMatchObject({ code: 'invalid' });
+    expect(await store.getRun('none')).toBeUndefined();
   });
 
   it('rejects a duplicate id, an unknown workspace, an unknown medium and an unknown status', async () => {
@@ -97,6 +114,46 @@ describe('runs', () => {
     expect(same.status).toBe('running');
   });
 
+  it('raises (or lowers) the run budget', async () => {
+    const store = openStore({ now: steppingClock() });
+    const run = await seedRun(store);
+    const raised = await store.updateRun(run.id, { budgetUsd: 12.5 });
+    expect(raised).toEqual({ ...run, budgetUsd: 12.5, updatedAt: raised.updatedAt });
+    expect((await store.updateRun(run.id, { budgetUsd: 0 })).budgetUsd).toBe(0);
+    await expect(store.updateRun(run.id, { budgetUsd: -0.5 })).rejects.toThrow(/run budget/);
+    await expect(store.updateRun(run.id, { budgetUsd: Number.POSITIVE_INFINITY })).rejects.toThrow(/run budget/);
+    await expect(store.updateRun(run.id, { budgetUsd: null as never })).rejects.toThrow(/run budget/);
+    expect((await store.getRun(run.id))?.budgetUsd).toBe(0);
+  });
+
+  it('clears error and output with null, and leaves them unchanged when undefined', async () => {
+    const store = openStore();
+    const run = await seedRun(store);
+    const art = await store.artifacts.putText('# Memo', 'text/markdown');
+    const failed = await store.updateRun(run.id, { status: 'failed', error: 'provider-error', outputArtifactId: art.id });
+    expect([failed.error, failed.outputArtifactId]).toEqual(['provider-error', art.id]);
+    // undefined: unchanged.
+    const kept = await store.updateRun(run.id, { status: 'running', error: undefined, outputArtifactId: undefined });
+    expect([kept.error, kept.outputArtifactId]).toEqual(['provider-error', art.id]);
+    // null: cleared, and absent from the record (not set to undefined or null).
+    const cleared = await store.updateRun(run.id, { error: null, outputArtifactId: null });
+    expect('error' in cleared).toBe(false);
+    expect('outputArtifactId' in cleared).toBe(false);
+    expect(await store.getRun(run.id)).toEqual(cleared);
+    // Clearing what is already clear is harmless.
+    expect(await store.updateRun(run.id, { error: null })).toMatchObject({ status: 'running' });
+  });
+
+  it('accepts null only where the contract allows it', async () => {
+    const store = openStore();
+    const run = await seedRun(store);
+    await expect(store.updateRun(run.id, { title: null as never })).rejects.toThrow(/title/);
+    await expect(store.updateRun(run.id, { status: null as never })).rejects.toThrow(/status/);
+    await expect(store.updateRun(run.id, { costUsd: null as never })).rejects.toThrow(/cost/);
+    await expect(store.updateRun(run.id, { outputArtifactId: '' })).rejects.toThrow(/outputArtifactId/);
+    expect(await store.getRun(run.id)).toEqual(run);
+  });
+
   it('rejects updates to an unknown run, an unknown output artifact, a bad status and a negative cost', async () => {
     const store = openStore();
     const run = await seedRun(store);
@@ -109,7 +166,7 @@ describe('runs', () => {
   it('refuses to change fields that are not updatable (instead of ignoring them)', async () => {
     const store = openStore();
     const run = await seedRun(store);
-    await expect(store.updateRun(run.id, { problem: 'rewritten' } as never)).rejects.toThrow(/may only change status, outputArtifactId, error, costUsd, title; got problem/);
+    await expect(store.updateRun(run.id, { problem: 'rewritten' } as never)).rejects.toThrow(/may only change status, outputArtifactId, error, costUsd, title, budgetUsd; got problem/);
     await expect(store.updateWorkspace(run.workspaceId, { id: 'other' } as never)).rejects.toMatchObject({ code: 'invalid' });
     expect(await store.getRun(run.id)).toEqual(run);
   });

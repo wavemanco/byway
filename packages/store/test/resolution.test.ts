@@ -33,9 +33,26 @@ describe('checkResolution', () => {
     }
   });
 
-  it('accepts any choice when the checkpoint lists no options, and up to the whole list when pick has no k', () => {
+  it('accepts any choice when the checkpoint lists no options, and any number of options when pick has no k', () => {
     expect(checkResolution({ id: 'c', kind: 'choose' }, { checkpointId: 'c', choice: ['explore'] }).ok).toBe(true);
     expect(checkResolution({ id: 'p', kind: 'pick', options }, { checkpointId: 'p', choice: ['A', 'B', 'C'] }).ok).toBe(true);
+    expect(checkResolution({ id: 'p', kind: 'pick', options }, { checkpointId: 'p', choice: ['B'] }).ok).toBe(true);
+  });
+
+  it('pick: exactly k distinct, known options (the contract), no fewer and no more', () => {
+    const pick = (k: number, choice: string[], opts: Target['options'] | null = options) => checkResolution({ id: 'p', kind: 'pick', ...(opts ? { options: opts } : {}), k }, { checkpointId: 'p', choice });
+    expect(pick(1, ['B'])).toEqual({ ok: true, resolution: { checkpointId: 'p', choice: ['B'] } });
+    expect(pick(2, ['C', 'A']).ok).toBe(true);
+    expect(pick(3, ['A', 'B', 'C']).ok).toBe(true);
+    for (const [k, choice] of [[2, ['A']], [2, ['A', 'B', 'C']], [3, ['A', 'B']], [1, ['A', 'B']]] as const) {
+      expect(pick(k, [...choice]).ok, `k=${k} ${choice.join()}`).toBe(false);
+    }
+    // Two entries that name one option are one option, not two.
+    expect(pick(2, ['A', 'A']).ok).toBe(false);
+    expect(pick(2, ['A', 'Q']).ok).toBe(false);
+    // Without listed options the ids cannot be checked, but the count still can.
+    expect(pick(2, ['x', 'y'], null).ok).toBe(true);
+    expect(pick(2, ['x'], null).ok).toBe(false);
   });
 
   it('explains what is wrong', () => {
@@ -43,7 +60,8 @@ describe('checkResolution', () => {
       const r = checkResolution(cp, { checkpointId: cp.id, ...res });
       return r.ok ? '' : r.problem;
     };
-    expect(problem({ id: 'p', kind: 'pick', options, k: 1 }, { choice: ['A', 'B'] })).toBe('checkpoint "p" (pick): `choice` picks 2 options; at most 1 may be picked');
+    expect(problem({ id: 'p', kind: 'pick', options, k: 1 }, { choice: ['A', 'B'] })).toBe('checkpoint "p" (pick): `choice` picks 2 options; exactly 1 must be picked');
+    expect(problem({ id: 'p', kind: 'pick', options, k: 2 }, { choice: ['A'] })).toBe('checkpoint "p" (pick): `choice` picks 1 option; exactly 2 must be picked');
     expect(problem({ id: 'p', kind: 'pick', options }, { choice: ['Q'] })).toContain('unknown options "Q"');
     expect(problem({ id: 'p', kind: 'pick', options }, { choice: ['A', 'A'] })).toContain('twice');
     expect(problem({ id: 'p', kind: 'pick', options }, { choice: [1] })).toContain('non-empty list');

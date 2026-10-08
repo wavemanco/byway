@@ -129,6 +129,18 @@ describe('anthropic adapter', () => {
     expect(out.usage).toMatchObject({ inputTokens: 100, outputTokens: 23 });
   });
 
+  it('reports truncation when the answer stopped at max_tokens (or ran out of context window)', async () => {
+    expect((await anthropicAdapter({ client: fake().client }).complete(request())).truncated).toBeFalsy();
+    for (const stop_reason of ['max_tokens', 'model_context_window_exceeded']) {
+      const out = await anthropicAdapter({ client: fake({ stop_reason }).client }).complete(request());
+      expect(out.truncated, stop_reason).toBe(true);
+      expect(out.text).toBe('Score: 7/10');
+    }
+    for (const stop_reason of ['end_turn', 'stop_sequence', 'refusal', null]) {
+      expect((await anthropicAdapter({ client: fake({ stop_reason }).client }).complete(request())).truncated, String(stop_reason)).toBeFalsy();
+    }
+  });
+
   it('can turn the refusal fallback off', async () => {
     const { client, calls } = fake();
     await anthropicAdapter({ client, refusalFallback: false }).complete(request());
@@ -200,6 +212,15 @@ describe('openai adapter', () => {
     expect((await openaiAdapter({ client: b.client }).complete(request())).refusal).toContain('content filter');
   });
 
+  it("reports truncation when finish_reason is 'length'", async () => {
+    const cut = fakeOpenAI({ choices: [{ finish_reason: 'length', message: { content: '{"options": [' } }] });
+    const out = await openaiAdapter({ client: cut.client }).complete(request());
+    expect([out.truncated, out.text]).toEqual([true, '{"options": [']);
+    expect((await openaiAdapter({ client: fakeOpenAI().client }).complete(request())).truncated).toBeFalsy();
+    const filtered = fakeOpenAI({ choices: [{ finish_reason: 'content_filter', message: { content: '' } }] });
+    expect((await openaiAdapter({ client: filtered.client }).complete(request())).truncated).toBeFalsy();
+  });
+
   it('generates a PNG and keeps base64 out of the logged response', async () => {
     const { client, imgs } = fakeOpenAI();
     const adapter = openaiAdapter({ client });
@@ -228,6 +249,13 @@ describe('openrouter adapter', () => {
     expect((body.messages as { role: string }[])[0]?.role).toBe('system');
     expect(out.upstreamProvider).toBe('Anthropic');
     expect(out.reportedCostUsd).toBe(0.00014);
+  });
+
+  it("reports truncation when finish_reason is 'length'", async () => {
+    const { client } = fakeOpenAI({ choices: [{ finish_reason: 'length', message: { content: '- Tighten' } }] });
+    expect((await openrouterAdapter({ client, pins }).complete(request({ model: 'anthropic/claude-opus-5.5' }))).truncated).toBe(true);
+    const whole = fakeOpenAI();
+    expect((await openrouterAdapter({ client: whole.client, pins }).complete(request({ model: 'anthropic/claude-opus-5.5' }))).truncated).toBeFalsy();
   });
 
   it('records the pin as the upstream when the response does not name one', async () => {
@@ -290,6 +318,14 @@ describe('google adapter', () => {
     expect((await googleAdapter({ client: a.client }).complete(request())).refusal).toContain('SAFETY');
     const b = fake({ promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } });
     expect((await googleAdapter({ client: b.client }).complete(request())).refusal).toContain('PROHIBITED_CONTENT');
+  });
+
+  it("reports truncation when finishReason is 'MAX_TOKENS'", async () => {
+    const cut = fake({ ...ok, candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '- Remove the' }] } }] });
+    const out = await googleAdapter({ client: cut.client }).complete(request());
+    expect([out.truncated, out.text, out.refusal]).toEqual([true, '- Remove the', undefined]);
+    expect((await googleAdapter({ client: fake(ok).client }).complete(request())).truncated).toBeFalsy();
+    expect((await googleAdapter({ client: fake({ promptFeedback: { blockReason: 'SAFETY' } }).client }).complete(request())).truncated).toBeFalsy();
   });
 
   it('generates images through generateContent with an aspect ratio and the 1K size', async () => {
