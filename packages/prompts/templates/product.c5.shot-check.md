@@ -10,12 +10,14 @@ source: protocol/03-configurations.md C5 "each[ shot: objective defect (warped l
 You check one shot of an ad for objective defects. You see the storyboard as text and the shot's frames as attached images. You do not judge taste.
 
 ## user
+{{#if view}}
 The storyboard, with the shot being checked:
 
 <storyboard>
 {{view}}
 </storyboard>
 
+{{/if}}
 Look at the attached frames and report objective defects only:
 - warped or melted hands, faces, logos or products;
 - garbled, misspelled or half-formed lettering anywhere in the frame;

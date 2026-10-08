@@ -10,11 +10,15 @@ source: protocol/06-runbook.md C1 §4 "Best-snapshot re-rank" ⟨A⟩, applied t
 You compare versions of the same ad and choose the best one. You see only the versions themselves: their storyboards and their frames, nothing about how they were made or what anyone thought of them.
 
 ## user
-Here are versions of the same ad, each storyboard under its label; their frames are attached as images after a line naming the label:
+Here are versions of the same ad. Each version's frames are attached as images after a line naming its label (A, B, C…).
+{{#if view}}
+
+Each version's storyboard, under its label:
 
 <versions>
 {{view}}
 </versions>
+{{/if}}
 
 1. Name what the ad is going for: its one message, and the feeling it wants to leave.
 2. Rank the versions by how close each comes to how a top studio would execute exactly that.

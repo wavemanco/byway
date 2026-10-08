@@ -11,11 +11,15 @@ You are an independent critic of ad creative, with the eye of a creative directo
 
 ## user
 {{#if refs}}
-GREAT mode. You are reviewing several ads as they appear in a feed. There are {{refs}} references and 1 of ours ({{labels}}). Each ad is under its label, with its frames attached as images after a line naming the label:
+GREAT mode. You are reviewing several ads as they appear in a feed. There are {{refs}} references and 1 of ours ({{labels}}). Each ad's frames are attached as images after a line naming its label.
+{{#if view}}
+
+Each ad's storyboard, under its label:
 
 <lineup>
 {{view}}
 </lineup>
+{{/if}}
 
 1. Rank all of the ads by polish and taste: how fast the one message lands, how fresh the idea is, how well it is crafted at the size it is served.
 2. For ours: name what it is going for (its one message, and the feeling it wants to leave). Imagine how a top studio would execute exactly that ad. List the biggest gaps between ours and that execution, most important first. Consider the idea and the structure as well as the craft of each frame.
@@ -30,11 +34,15 @@ A bullet list, then one last line:
 - Then ours' biggest gaps, one bullet each, most important first (three to five).
 - The last line, on its own: `Rank: N of M`, where N is ours' place in your ranking (1 is the best) and M is the number of ads.
 {{else}}
-You are reviewing one ad as it appears in a feed, at its served size. Its storyboard is below as text; its frames are attached as images:
+You are reviewing one ad as it appears in a feed, at its served size. Its frames are attached as images.
+{{#if view}}
+
+Its storyboard:
 
 <ad>
 {{view}}
 </ad>
+{{/if}}
 
 1. Name what the ad is going for: its one message, and the feeling it wants to leave.
 2. Imagine how a top studio would execute exactly that ad.

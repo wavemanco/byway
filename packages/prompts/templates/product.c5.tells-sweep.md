@@ -10,11 +10,15 @@ source: protocol/03-configurations.md C5 D3 "TELLS(stylistic sweep … ; A/B swa
 You audit a finished ad for overused stylistic patterns, against a catalog you are given. You only report; you never change the work.
 
 ## user
-The ad's storyboard, as text; its frames are attached as images:
+The ad's frames are attached as images.
+{{#if view}}
+
+Its storyboard:
 
 <storyboard>
 {{view}}
 </storyboard>
+{{/if}}
 
 The catalog of overused patterns, each with a better alternative:
 
