@@ -27,16 +27,20 @@ export interface CriticPlan {
   refs: string[];
   /** How many fixed lineup orders to average (the C5 gate's "2 fixed shuffles averaged"). */
   shuffles: number;
+  /** Shuffle positions (the `shuffle` knob; on unless a recipe turns it off, when ours goes last). */
+  shuffle: boolean;
 }
 
 export function planCritic(step: Pick<StepSpec, 'knobs'>, refs: readonly string[], random: () => number): CriticPlan {
   const knobs = step.knobs ?? {};
   const shuffles = typeof knobs.shuffles === 'number' && knobs.shuffles > 1 ? Math.min(4, Math.floor(knobs.shuffles)) : 1;
-  if (knobs.mode !== 'GREAT') return { mode: 'OK', refs: [], shuffles: 1 };
-  if (refs.length < GREAT_MIN_REFS) return { mode: 'OK', note: OK_FALLBACK_NOTE, refs: [], shuffles: 1 };
+  const shuffled = knobs.shuffle !== false;
+  if (knobs.mode !== 'GREAT') return { mode: 'OK', refs: [], shuffles: 1, shuffle: shuffled };
+  if (refs.length < GREAT_MIN_REFS) return { mode: 'OK', note: OK_FALLBACK_NOTE, refs: [], shuffles: 1, shuffle: shuffled };
   const want = typeof knobs.refs === 'number' && knobs.refs > 0 ? knobs.refs : MAX_REFS;
   const take = Math.min(refs.length, want, MAX_REFS);
-  return { mode: 'GREAT', refs: shuffle([...refs], random).slice(0, Math.max(GREAT_MIN_REFS, take)), shuffles };
+  const chosen = (shuffled ? shuffle([...refs], random) : [...refs]).slice(0, Math.max(GREAT_MIN_REFS, take));
+  return { mode: 'GREAT', refs: chosen, shuffles, shuffle: shuffled };
 }
 
 export function shuffle<T>(items: T[], random: () => number): T[] {
@@ -59,9 +63,10 @@ export interface Lineup {
  * text in the view slot; screenshot media attach every item's images under its label (a reference page given as HTML
  * is screenshotted the way ours was).
  */
-export async function greatLineup(deps: RunnerDeps, reader: ArtifactReader, medium: Medium, ports: Ports, refs: readonly string[], random: () => number): Promise<Lineup> {
+export async function greatLineup(deps: RunnerDeps, reader: ArtifactReader, medium: Medium, ports: Ports, refs: readonly string[], random: () => number, shuffled = true): Promise<Lineup> {
   const size = refs.length + 1;
-  const ours = Math.floor(random() * size);
+  const order = shuffled ? shuffle([...refs], random) : [...refs];
+  const ours = shuffled ? Math.floor(random() * size) : size - 1;
   const oursView = await viewParts(reader, ports.view);
   const texts: string[] = [];
   const images: ImageGroup[] = [];
@@ -73,7 +78,7 @@ export async function greatLineup(deps: RunnerDeps, reader: ArtifactReader, medi
       images.push(...oursView.images.map((g) => ({ label, artifactIds: g.artifactIds })));
       continue;
     }
-    const ref = refs[r++] as string;
+    const ref = order[r++] as string;
     if (await reader.isImage(ref)) {
       texts.push('');
       images.push({ label, artifactIds: [ref] });

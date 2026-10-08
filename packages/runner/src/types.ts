@@ -66,6 +66,8 @@ export interface Ports {
   optionViews?: (ViewRef | undefined)[];
   anchor?: string;
   asset?: string[];
+  /** Notes shown beside the work (critiques, flags, a model's direction): artifact ids of the latest ones. */
+  notes?: string[];
   /** The storyboard shot a relay link is making (1-based shot number). */
   shot?: number;
   /** The anchor a relay link started from; every relay step of that link (a regeneration too) starts there. */
@@ -162,6 +164,8 @@ export interface ModelStepResult {
   seed?: string;
   /** Set when the step ran differently from the recipe as written (ADR-0071 critic fallback). */
   note?: string;
+  /** The note this step stored (its critique, flags or direction as text), shown to the person beside the work. */
+  noteArtifactId?: string;
   /** The critic's mode as it actually ran. */
   criticMode?: 'OK' | 'GREAT';
 }

@@ -312,6 +312,7 @@ export class Interpreter {
       }
     }
     if (res.score) out.score = res.score;
+    if (res.noteArtifactId) out.notes = [res.noteArtifactId];
     if (res.keep === 'A' && ports.previousArtifact) Object.assign(out, { artifact: ports.previousArtifact, previousArtifact: ports.artifact });
     if (res.keep) out.taste = res.keep === 'A' ? 'Kept the version from before the cliché sweep.' : 'Kept the swaps.';
     if (res.keepLabels) {
@@ -352,7 +353,9 @@ export class Interpreter {
       else initial = { from: 'draft', ...(this.input.inputs.draft ? { draft: this.input.inputs.draft } : {}) };
       checkpoint.artifactIds = ports.artifact ? [ports.artifact] : [];
     } else {
-      checkpoint.artifactIds = shown.length ? shown : ports.artifact ? [ports.artifact] : [];
+      // Beside the work: the latest notes (an audit's annotations, a model's framings or direction).
+      const work = shown.length ? shown : ports.artifact ? [ports.artifact] : [];
+      checkpoint.artifactIds = [...work, ...(ports.notes ?? []).filter((id) => !work.includes(id))];
     }
     const res = await this.ask(call, checkpoint, { step: spec, ...(initial ? { initial } : {}) });
     const { initialText, ...resolution } = res;
@@ -590,8 +593,9 @@ export class Interpreter {
   /** Lenses read the same input concurrently; their critiques are joined under their names and nothing else changes. */
   private async audit(a: Audit, ports: Ports, ctx: Ctx): Promise<Ports> {
     const outs = await Promise.all(a.lenses.map((lens) => this.node(lens.body, ports, { stage: ctx.stage, path: ctx.path })));
-    const notes = outs.flatMap((o, i) => (o.critique && o.critique !== ports.critique ? [`## ${a.lenses[i]!.name}\n${o.critique.trim()}`] : []));
-    return { ...ports, ...(notes.length ? { critique: notes.join('\n\n') } : {}) };
+    const joined = outs.flatMap((o, i) => (o.critique && o.critique !== ports.critique ? [`## ${a.lenses[i]!.name}\n${o.critique.trim()}`] : []));
+    const notes = outs.flatMap((o) => (o.notes && o.notes !== ports.notes ? o.notes : []));
+    return { ...ports, ...(joined.length ? { critique: joined.join('\n\n') } : {}), ...(notes.length ? { notes } : {}) };
   }
 
   private async gate(g: OneShotGate, ports: Ports, ctx: Ctx): Promise<Ports> {

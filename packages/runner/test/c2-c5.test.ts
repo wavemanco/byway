@@ -62,6 +62,9 @@ describe('C2 on options', () => {
     expect(view.checkpoints.filter((c) => c.stepId === 'react')).toHaveLength(2);
     const react = view.checkpoints.find((c) => c.stepId === 'react')!;
     expect(react.artifactIds?.length).toBeGreaterThanOrEqual(9);
+    // Beside the pool, the audit's notes: the overlap flags and the critique.
+    const types = await Promise.all(react.artifactIds!.map(async (id) => (await h.store.artifacts.get(id)).record.mediaType));
+    expect(types.filter((t) => t === 'text/markdown')).toHaveLength(2);
 
     // Your words land in the option map; the mood boards are kept beside it.
     const out = (await json(view.run.outputArtifactId!)) as { options: { title: string; imageArtifactId?: string }[] };

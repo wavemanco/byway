@@ -34,7 +34,9 @@ describe('C4 on prose', () => {
     expect(purposes).toEqual(expect.arrayContaining(['vision:prose', 'build:prose', 'critic:prose', 'fix:prose', 'tells-sweep:prose']));
     // Optionals asked with their triggers.
     expect(view.checkpoints.find((c) => c.stepId === 'recipient-critic')?.prompt).toBe('Run this step? It is meant for when the document is longer than about 300 words.');
-    // The framings became the brief offered to you; your reaction (text) became the brief the draft used.
+    // The framings are shown with your brief's checkpoint; your reaction (text) became the brief the draft used.
+    const framings = ofType(view, 'step-finished', 'framings')[0]!.data.outputArtifactIds as string[];
+    expect(view.checkpoints.find((c) => c.stepId === 'vision-lite')?.artifactIds).toEqual(framings);
     expect(h.prompts.calls.filter((c) => c.id === 'product.c4.draft').at(-1)!.slots.brief).toBe('Warmer and plainer, please; avoid jargon.');
     // A GREAT critic with no references scored instead, said so, and the loop held it to the hidden 9/10.
     expect(notes(view, 'recipient').every((n) => n === OK_FALLBACK_NOTE)).toBe(true);

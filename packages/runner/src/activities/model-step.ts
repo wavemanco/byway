@@ -56,7 +56,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       const built = await buildPrompt(reader, { medium: run.medium, problem: run.problem, step, ports: input.ports, ...(input.round !== undefined ? { round: input.round } : {}) });
       let lineup: number | undefined;
       if (plan.mode === 'GREAT') {
-        const l = await greatLineup(deps, reader, run.medium, input.ports, plan.refs, random);
+        const l = await greatLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle);
         lineup = l.size;
         Object.assign(built.slots, l.slots);
         built.images = l.images;
@@ -136,7 +136,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   }
 
   if (result.text !== undefined && NOTE_LABELS[step.role]) {
-    outputs.push(await storeText(deps, run, call, `${result.text}\n`, { label: `${what}: ${NOTE_LABELS[step.role]}`, name: 'note', mediaType: 'text/markdown' }));
+    result.noteArtifactId = await storeText(deps, run, call, `${result.text}\n`, { label: `${what}: ${NOTE_LABELS[step.role]}`, name: 'note', mediaType: 'text/markdown' });
+    outputs.push(result.noteArtifactId);
   }
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(result.note ? { note: result.note } : {}), ...(outputs.length ? { outputArtifactIds: outputs } : {}) }, true);
   return result;
