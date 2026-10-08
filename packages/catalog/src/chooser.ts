@@ -6,7 +6,8 @@ import type { ChooserQuestion } from '@byway/contracts';
  * The questions are asked in 03's order and the first "yes" decides, so order is meaning: a page of options is an
  * option set (C2) before it is a visual artifact (C1), and fiction you write yourself (C6a) is settled before series
  * writing (C3). The wording is plain (spec §5); the routing is 03's exactly, and a test reads it back from the
- * flowchart. Help text says what a "yes" looks like and, where it matters, what the recipe does not do.
+ * flowchart. Help text says what a "yes" looks like and, where it matters, what the recipe does not do. It says what the
+ * recipe does, never what it achieves (CR11): every recipe is untested.
  */
 export const CHOOSER: readonly ChooserQuestion[] = [
   {
@@ -18,7 +19,7 @@ export const CHOOSER: readonly ChooserQuestion[] = [
   {
     id: 'code-change',
     text: 'Is it a code change written by an AI agent, where size or ease of review is the problem?',
-    help: 'Say yes when agent-written changes come out bloated or hard to review. This makes the change smaller and easier to read; whether the code is correct stays with your own tests and CI.',
+    help: 'Say yes when agent-written changes come out bloated or hard to review. The recipe checks the change for defects, cuts what the task did not ask for and has it reviewed; whether the code is correct stays with your own tests and CI.',
     routesTo: 'c7',
   },
   {
@@ -30,7 +31,7 @@ export const CHOOSER: readonly ChooserQuestion[] = [
   {
     id: 'visual',
     text: 'Is it something people look at on screen, such as a web page, an app screen or a deck?',
-    help: 'Say yes when how it looks is most of the job. In this version the recipe builds web pages, such as landing and product pages.',
+    help: 'Say yes when how it looks is most of the job. In this version the recipe builds web pages, such as landing and product pages, and every draft starts from a random spark: you cannot give your own visual direction or a reference up front.',
     routesTo: 'c1',
   },
   {

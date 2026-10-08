@@ -12,6 +12,11 @@ import { build, critic, distill, fix, humanVision, modelVision, rankGate, render
  * Modelling notes: the length route is an optional whose trigger is "longer than about 300 words" (the short branch
  * is empty: CRITIC sits out there). The lineup is 4 references plus ours, so "the middle" is rank 3. The claim log
  * is the owner's sign-off on every number, date, name and causal claim (ownership, not a fact check; 01 VOICE step 6).
+ *
+ * Hash change (2026-10-07, ENG-2): the claim-log sign-off now produces the artifact as well as the owner's voice, and
+ * writes it. The owner is asked to correct any claim that is wrong, and 01 VOICE step 6 has the owner's claims be the ones
+ * that ship; when the step produced only `voice`, every correction was dropped and the memo kept the wrong numbers. This
+ * changes C4's recipe hash, which no study has run (the registry is empty), so no evidence label moves.
  */
 export const c4: Recipe = withHash({
   schema: 'byway.recipe/1',
@@ -54,7 +59,7 @@ export const c4: Recipe = withHash({
         optional(
           'claim-log',
           'the document is fact-heavy (an RCA, an analytical or a strategy memo)',
-          step({ id: 'claim-sign-off', role: 'voice', block: 'VOICE', variant: 'claim-log', actor: 'human', consumes: ['artifact'], produces: ['voice'] }),
+          step({ id: 'claim-sign-off', role: 'voice', block: 'VOICE', variant: 'claim-log', actor: 'human', consumes: ['artifact'], produces: ['voice', 'artifact'], writes: true }),
         ),
       ),
     },

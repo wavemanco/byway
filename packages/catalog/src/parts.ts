@@ -32,6 +32,11 @@ export const humanGate = (max: number): Gate => ({
 /**
  * A rank gate (02 §2): ours must place at `threshold` or better in a lineup of the references plus ours (refs + 1),
  * hidden from the critic. Plateau for rank gates: the same rank for 2 iterations.
+ *
+ * The threshold is written for the full lineup, the critic step's `refs` knob plus ours (C3: top 3 of 10; C4, C5 and
+ * C7: the middle of 5). A run with fewer references has a smaller lineup, and the runner keeps the bar's share of it:
+ * ours passes at rank <= max(1, floor(threshold × lineup / (refs + 1))) (GATE-1, convention C6). So every critic under
+ * a rank gate names its `refs` (tested).
  */
 export const rankGate = (threshold: number, max: number, probe = 1): Gate => ({
   metric: 'critic-rank',
