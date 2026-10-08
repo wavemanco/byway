@@ -9,6 +9,7 @@
     "./resolution": "./src/resolution.ts"
   },
   "dependencies": {
-    "@byway/contracts": "workspace:*"
+    "@byway/contracts": "workspace:*",
+    "zod": "^4.6.5"
   }
 }

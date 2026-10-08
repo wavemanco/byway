@@ -24,6 +24,8 @@ export interface PriceRow {
    * budget estimate. The actual cost comes from the usage the provider reports.
    */
   estimatedOutputTokensPerImage?: number;
+  /** Video models and helper endpoints priced by time: USD per second of video made (or of compute, for helpers). */
+  perSecondUsd?: number;
   /** Where the number was read, and when. */
   source: string;
 }
@@ -77,10 +79,36 @@ export const PRICES: readonly PriceRow[] = [
   // anthropic/claude-sonnet-5.5: $2 / $10. Source: OPENROUTER, 2026-10-07.
   { provider: 'openrouter', model: 'anthropic/claude-sonnet-5.5', inputPerMTok: 2, outputPerMTok: 10, source: OPENROUTER },
 
+  // fal.ai video for C5 relay links (ADR-0069), priced per second of video; no token charges.
+  // kling-video/v2.5-turbo/pro/image-to-video: "For 5s video your request will cost $0.35. For every additional second
+  // you will be charged $0.07." The model makes 5 s or 10 s clips, so this is $0.07 per second either way.
+  {
+    provider: 'fal',
+    model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+    inputPerMTok: 0,
+    outputPerMTok: 0,
+    perSecondUsd: 0.07,
+    source: 'fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video, read 2026-10-07',
+  },
+  // kling-video/v3/pro/image-to-video: "$0.112 (audio off)" per second of video ($0.168 with audio, $0.196 with voice
+  // control). The gateway always sends generate_audio: false.
+  {
+    provider: 'fal',
+    model: 'fal-ai/kling-video/v3/pro/image-to-video',
+    inputPerMTok: 0,
+    outputPerMTok: 0,
+    perSecondUsd: 0.112,
+    source: 'fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video, read 2026-10-07',
+  },
+  // ffmpeg-api/extract-frame (the relay anchor: a clip's last frame): "Your request will cost $0.0002 per second" of
+  // compute. fal does not report the seconds to the client; the gateway charges a fixed upper bound (providers/fal.ts).
+  { provider: 'fal', model: 'fal-ai/ffmpeg-api/extract-frame', inputPerMTok: 0, outputPerMTok: 0, perSecondUsd: 0.0002, source: 'fal.ai/models/fal-ai/ffmpeg-api/extract-frame, read 2026-10-07' },
+
   // The demo-mode mock costs nothing.
   { provider: 'mock', model: 'mock-big', inputPerMTok: 0, outputPerMTok: 0, source: 'byway mock provider, 2026-10-07' },
   { provider: 'mock', model: 'mock-mid', inputPerMTok: 0, outputPerMTok: 0, source: 'byway mock provider, 2026-10-07' },
   { provider: 'mock', model: 'mock-image', inputPerMTok: 0, outputPerMTok: 0, perImageUsd: 0, source: 'byway mock provider, 2026-10-07' },
+  { provider: 'mock', model: 'mock-video', inputPerMTok: 0, outputPerMTok: 0, perSecondUsd: 0, source: 'byway mock provider, 2026-10-07' },
 ];
 
 /** The row in force for a model on a date, or undefined when the model has no price. */

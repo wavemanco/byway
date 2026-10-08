@@ -12,8 +12,8 @@ export function prepareQueries(db: DatabaseSync) {
     updateWorkspace: p('UPDATE workspaces SET name = ?, budget_usd = ? WHERE id = ?'),
 
     run: p('SELECT * FROM runs WHERE id = ?'),
-    insertRun: p(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, title, problem, medium, status,
-      output_artifact_id, error, budget_usd, cost_usd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
+    insertRun: p(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, intake_id, title, problem, medium, status,
+      output_artifact_id, error, budget_usd, cost_usd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
     updateRun: p('UPDATE runs SET status = ?, output_artifact_id = ?, error = ?, cost_usd = ?, title = ?, budget_usd = ?, updated_at = ? WHERE id = ?'),
     // rowid breaks ties between runs created in the same millisecond, in creation order. A negative LIMIT is no limit.
     listRuns: p('SELECT * FROM runs WHERE workspace_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?'),
@@ -31,5 +31,15 @@ export function prepareQueries(db: DatabaseSync) {
     openCheckpoints: p(`SELECT c.* FROM checkpoints c JOIN runs r ON r.id = c.run_id
       WHERE r.workspace_id = ? AND c.status = 'open' ORDER BY c.opened_at, c.rowid`),
     runCheckpoints: p('SELECT * FROM checkpoints WHERE run_id = ? ORDER BY opened_at, rowid'),
+
+    intake: p('SELECT * FROM intakes WHERE id = ?'),
+    insertIntake: p(`INSERT INTO intakes (id, workspace_id, problem, answers, recommendation, composed, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+    updateIntake: p('UPDATE intakes SET problem = ?, answers = ?, recommendation = ?, composed = ?, updated_at = ? WHERE id = ?'),
+
+    preferences: p('SELECT * FROM preferences WHERE workspace_id = ?'),
+    upsertPreferences: p(`INSERT INTO preferences (workspace_id, profile_id, demo_mode, show_technical_names, updated_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (workspace_id) DO UPDATE SET profile_id = excluded.profile_id, demo_mode = excluded.demo_mode,
+      show_technical_names = excluded.show_technical_names, updated_at = excluded.updated_at`),
   };
 }

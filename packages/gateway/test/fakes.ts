@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { ArtifactRecord, ArtifactStore } from '@byway/contracts';
+import { encodePng } from '../src/mock/png.ts';
 import type { AnthropicClientLike, AnthropicMessageLike } from '../src/providers/anthropic.ts';
+import type { FalClientLike } from '../src/providers/fal.ts';
 import type { GoogleClientLike, GoogleResponseLike } from '../src/providers/google.ts';
 import type { ChatCompletionLike, ImagesResponseLike, OpenAIClientLike } from '../src/providers/openai.ts';
 
@@ -106,6 +108,70 @@ export function fakeGoogle(queue: Step<GoogleResponseLike>[] = []) {
     },
   };
   return { client, calls };
+}
+
+const FAL_MEDIA = 'https://v3.fal.media/files';
+
+/**
+ * A fake fal.ai client: storage uploads return a URL per upload; queue jobs answer by endpoint (a video for an
+ * image-to-video model, an image list for frame extraction). `failures` are thrown by submits to that endpoint, and
+ * `pollFailures` by its status polls, in order. `calls` lists the submitted jobs (the billable step).
+ */
+export function fakeFal(failures: Record<string, Error[]> = {}, opts: { clipUrl?: string; frameUrl?: string; pollFailures?: Record<string, Error[]> } = {}) {
+  const clipUrl = opts.clipUrl ?? `${FAL_MEDIA}/clip.mp4`;
+  const frameUrl = opts.frameUrl ?? `${FAL_MEDIA}/last.png`;
+  const calls: { endpoint: string; input: Record<string, unknown> }[] = [];
+  const polls: string[] = [];
+  const uploads: { type: string; bytes: number }[] = [];
+  const uploadedUrl = (i: number) => `${FAL_MEDIA}/upload-${i}.png`;
+  const jobs = new Map<string, string>();
+  const client: FalClientLike = {
+    storage: {
+      async upload(file) {
+        uploads.push({ type: file.type, bytes: file.size });
+        return uploadedUrl(uploads.length - 1);
+      },
+    },
+    queue: {
+      async submit(endpoint, options) {
+        calls.push({ endpoint, input: options.input });
+        const error = failures[endpoint]?.shift();
+        if (error) throw error;
+        const id = `req-${jobs.size + 1}`;
+        jobs.set(id, endpoint);
+        return { request_id: id };
+      },
+      async subscribeToStatus(endpoint, options) {
+        polls.push(options.requestId);
+        if (jobs.get(options.requestId) !== endpoint) throw new Error(`no job ${options.requestId} on ${endpoint}`);
+        const error = opts.pollFailures?.[endpoint]?.shift();
+        if (error) throw error;
+        return { status: 'COMPLETED', request_id: options.requestId };
+      },
+      async result(endpoint, options) {
+        const data = endpoint.includes('extract-frame')
+          ? { images: [{ url: frameUrl, content_type: 'image/png', width: 1280, height: 720 }] }
+          : { video: { url: clipUrl, content_type: 'video/mp4', file_size: 9 } };
+        return { data, requestId: options.requestId };
+      },
+    },
+  };
+  return { client, calls, polls, uploads, uploadedUrl, clipUrl, frameUrl };
+}
+
+/** A fake fetch for provider media downloads: .mp4 URLs serve clip bytes, .png URLs a PNG; `statuses` overrides. */
+export function fakeFetch(statuses: Record<string, number> = {}) {
+  const requested: string[] = [];
+  const fetch = async (input: string | URL | Request): Promise<Response> => {
+    const url = String(input instanceof Request ? input.url : input);
+    requested.push(url);
+    const status = statuses[url];
+    if (status !== undefined) return new Response('nope', { status });
+    if (url.endsWith('.mp4')) return new Response(new TextEncoder().encode('mp4-bytes'), { headers: { 'content-type': 'video/mp4' } });
+    if (url.endsWith('.png')) return new Response(encodePng(4, 2, new Uint8Array(24).fill(90)), { headers: { 'content-type': 'image/png' } });
+    return new Response('not found', { status: 404 });
+  };
+  return { fetch: fetch as typeof globalThis.fetch, requested };
 }
 
 /** An error shaped like the SDKs' API errors. */

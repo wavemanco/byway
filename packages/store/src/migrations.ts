@@ -105,6 +105,42 @@ ALTER TABLE events ADD COLUMN dedupe_key TEXT CHECK (dedupe_key IS NULL OR dedup
 CREATE UNIQUE INDEX events_dedupe ON events (run_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
 `,
   },
+  {
+    version: 3,
+    name: 'intakes-preferences-run-intake',
+    sql: `
+-- What the user brought before a run (IntakeRecord): the problem, the chooser answers, the advisor's recommendation and
+-- a composed recipe. They are the advisor's structures, stored whole as JSON and checked by the store on write and read.
+CREATE TABLE intakes (
+  id              TEXT PRIMARY KEY CHECK (id <> ''),
+  workspace_id    TEXT NOT NULL REFERENCES workspaces (id),
+  problem         TEXT NOT NULL CHECK (json_valid(problem)),
+  answers         TEXT CHECK (answers IS NULL OR json_valid(answers)),
+  recommendation  TEXT CHECK (recommendation IS NULL OR json_valid(recommendation)),
+  composed        TEXT CHECK (composed IS NULL OR json_valid(composed)),
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+) STRICT;
+CREATE INDEX intakes_by_workspace ON intakes (workspace_id, created_at);
+
+-- Settings per workspace (Preferences). No row means "never set", and the store answers with the defaults, so a new
+-- default can ship without rewriting rows.
+CREATE TABLE preferences (
+  workspace_id          TEXT PRIMARY KEY REFERENCES workspaces (id),
+  profile_id            TEXT NOT NULL CHECK (profile_id <> ''),
+  demo_mode             INTEGER NOT NULL CHECK (demo_mode IN (0, 1)),
+  show_technical_names  INTEGER NOT NULL CHECK (show_technical_names IN (0, 1)),
+  updated_at            TEXT NOT NULL
+) STRICT;
+
+-- The intake a run started from (RunRecord.intakeId), for labels and presentation after a restart. SQLite allows a
+-- REFERENCES clause on an added column only with a NULL default, which is what runs from before this migration have.
+ALTER TABLE runs ADD COLUMN intake_id TEXT REFERENCES intakes (id);
+
+-- The 'paused' run status and the run-paused/run-resumed events need no schema change: statuses and event types are
+-- checked in TypeScript (see the header of migrations.ts), never by a CHECK, so no table is rebuilt.
+`,
+  },
 ];
 
 /** The schema version this build writes. */

@@ -20,7 +20,7 @@ export { c6a } from './c6a.ts';
 export { c7 } from './c7.ts';
 export { c1h, c1hAblations } from './c1h.ts';
 export { bBon, bPlain, bRandom, bSkill, baselines } from './baselines.ts';
-export { BLOCK_NAMES, PRESENTATIONS, STAGE_NAMES, presentationOf, stepPresentation, type PresentedStep } from './presentation.ts';
+export { BLOCK_NAMES, PRESENTATIONS, STAGE_NAMES, presentationOf, presentedStepFor, stepPresentation, type PresentedStep } from './presentation.ts';
 export { CHOOSER, CHOOSER_FALLBACK } from './chooser.ts';
 
 /** The eight protocol configurations of 03 (C1–C7 and C6a), in 03's order, on the protocol channel. */

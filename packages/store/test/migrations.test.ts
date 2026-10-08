@@ -14,6 +14,9 @@ function versions(dbPath: string): number[] {
   }
 }
 
+/** Pinned when migration 3 was written; it must never change. */
+const MIGRATION_3_CHECKSUM = 'sha256:ca2c930d144a72d26638620f9b9aa2e98acc2088e97facd4c9f1d79883d3a4b2';
+
 const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
 
 /**
@@ -39,6 +42,34 @@ function writeVersion1Database(dataDir: string): void {
     event.run('old-run', 2, at, 'checkpoint-opened', '{"checkpointId":"cp-old"}');
     db.prepare(`INSERT INTO checkpoints (id, run_id, step_id, kind, prompt, options, k, status, opened_at)
       VALUES ('cp-old', 'old-run', 'pick', 'pick', 'Which?', '[{"id":"A","label":"A"},{"id":"B","label":"B"}]', 1, 'open', ?)`).run(at);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Writes a data directory exactly as a build that knew migrations 1 and 2 left it: both schemas and their
+ * schema_version rows, a default workspace, a run with a budget, keyed events, a resolved checkpoint and an artifact.
+ */
+function writeVersion2Database(dataDir: string): void {
+  const db = openDatabase(join(dataDir, 'byway.sqlite'));
+  try {
+    db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+    for (const m of MIGRATIONS.slice(0, 2)) {
+      db.exec(m.sql);
+      db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-05T00:00:00.000Z');
+    }
+    const at = '2026-10-05T09:00:00.000Z';
+    db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, at);
+    db.prepare('INSERT INTO artifacts (id, media_type, bytes, created_at) VALUES (?, ?, ?, ?)').run(`sha256:${'c'.repeat(64)}`, 'text/markdown', 10, at);
+    db.prepare(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, title, problem, medium, status,
+      output_artifact_id, error, cost_usd, budget_usd, created_at, updated_at) VALUES (?, 'ws', 'c4', ?, 'balanced', 'Memo', 'Write a memo', 'prose', 'done', ?, NULL, 0.5, 8, ?, ?)`)
+      .run('v2-run', `sha256:${'a'.repeat(64)}`, `sha256:${'c'.repeat(64)}`, at, at);
+    const event = db.prepare('INSERT INTO events (run_id, seq, at, type, step_id, candidate, data, dedupe_key) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)');
+    event.run('v2-run', 1, at, 'run-started', null, '{"recipeId":"c4","profileId":"balanced","budgetUsd":8}', 'start');
+    event.run('v2-run', 2, at, 'run-finished', null, '{"outputArtifactId":"x","costUsd":0.5}', null);
+    db.prepare(`INSERT INTO checkpoints (id, run_id, step_id, kind, prompt, status, opened_at, resolved_at, resolution)
+      VALUES ('cp', 'v2-run', 'voice', 'write', 'Your words', 'resolved', ?, ?, '{"checkpointId":"cp","text":"Mine."}')`).run(at, at);
   } finally {
     db.close();
   }
@@ -123,6 +154,7 @@ describe('migrations', () => {
     expect(MIGRATIONS.map((m) => [m.version, m.name, checksumOf(m.sql)])).toEqual([
       [1, 'initial', 'sha256:bc605de33d2e74a5c2e2c7a66665f9dbc57f81348749ff5e7e5ca1ceda1345f6'],
       [2, 'run-budget-and-event-dedupe', 'sha256:ca45698760fd568f816708307e9d1861550b0fb8ddbac710768c565913c126ec'],
+      [3, 'intakes-preferences-run-intake', MIGRATION_3_CHECKSUM],
     ]);
   });
 
@@ -158,6 +190,41 @@ describe('migrations', () => {
     expect(await store.appendEvent({ runId: 'old-run', type: 'checkpoint-resolved', data: { again: true } }, { dedupeKey: 'cp-old:resolved' })).toEqual(keyed);
     expect((await store.resolveCheckpoint({ checkpointId: 'cp-old', choice: ['B'] })).status).toBe('resolved');
     expect(await store.listRuns('ws-default')).toHaveLength(1);
+  });
+
+  it('upgrade an existing version-2 database file in place, keeping every row and adding intakes and preferences', async () => {
+    const dataDir = tempDir();
+    writeVersion2Database(dataDir);
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    expect(await store.getRun('v2-run')).toEqual({
+      id: 'v2-run',
+      workspaceId: 'ws',
+      recipeId: 'c4',
+      recipeHash: `sha256:${'a'.repeat(64)}`,
+      profileId: 'balanced',
+      title: 'Memo',
+      problem: 'Write a memo',
+      medium: 'prose',
+      status: 'done',
+      budgetUsd: 8,
+      outputArtifactId: `sha256:${'c'.repeat(64)}`,
+      costUsd: 0.5,
+      createdAt: '2026-10-05T09:00:00.000Z',
+      updatedAt: '2026-10-05T09:00:00.000Z',
+    });
+    expect((await store.events('v2-run')).map((e) => [e.seq, e.type])).toEqual([[1, 'run-started'], [2, 'run-finished']]);
+    // The old dedupe keys still hold.
+    expect((await store.appendEvent({ runId: 'v2-run', type: 'run-started', data: {} }, { dedupeKey: 'start' })).seq).toBe(1);
+    expect(await store.getCheckpoint('cp')).toMatchObject({ status: 'resolved', resolution: { checkpointId: 'cp', text: 'Mine.' } });
+    expect(await store.getWorkspace('ws')).toMatchObject({ name: 'Studio', budgetUsd: 25 });
+    // The new tables and column work on the upgraded file.
+    expect(await store.getPreferences('ws')).toEqual({ profileId: 'balanced', demoMode: false, showTechnicalNames: false });
+    await store.createIntake({ id: 'in', workspaceId: 'ws', problem: { text: 'Another memo' } });
+    const run = await store.createRun({ id: 'v3-run', workspaceId: 'ws', recipeId: 'c4', recipeHash: `sha256:${'a'.repeat(64)}`, profileId: 'balanced', intakeId: 'in', title: 't', problem: 'p', medium: 'prose', budgetUsd: 3, status: 'paused' });
+    expect(run).toMatchObject({ intakeId: 'in', status: 'paused' });
+    expect((await store.appendEvent({ runId: 'v3-run', type: 'run-paused', data: {} })).seq).toBe(1);
   });
 
   it('refuse a negative run budget at the schema level too', () => {

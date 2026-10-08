@@ -15,19 +15,22 @@ import {
   type ProviderId,
   type ProviderStatus,
   type SpendSummary,
+  type VideoRequest,
+  type VideoResult,
 } from '@byway/contracts';
 import { configuredProviders, isConfigured, keyFor, loadEnvFile, type Env } from './env.ts';
 import { toGatewayError } from './errors.ts';
-import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost } from './estimate.ts';
+import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
 import { Ledger, type LedgerDraft } from './ledger.ts';
 import { PRICES, priceFor, roundUsd, tokenCost, type PriceRow, type TokenBreakdown } from './prices.ts';
 import { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus } from './profiles.ts';
 import { anthropicAdapter, createAnthropicClient, type AnthropicClientLike } from './providers/anthropic.ts';
+import { createFalClient, falAdapter, type FalClientLike } from './providers/fal.ts';
 import { createGoogleClient, googleAdapter, type GoogleClientLike } from './providers/google.ts';
 import { mockAdapter } from './providers/mock.ts';
 import { createOpenAIClient, openaiAdapter, type OpenAIClientLike } from './providers/openai.ts';
 import { createOpenRouterClient, openrouterAdapter } from './providers/openrouter.ts';
-import type { ProviderAdapter, ProviderCompletion, ResolvedImage, ResolvedMessage } from './providers/types.ts';
+import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, ResolvedImage, ResolvedMessage } from './providers/types.ts';
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
 import { DEFAULT_RETRY, withRetries, type RetryOptions } from './retry.ts';
@@ -52,7 +55,9 @@ export interface GatewayOptions {
   /** Route every call to the mock provider (`pnpm demo`; spec §5 "Demo mode"). */
   demo?: boolean;
   /** Injected SDK clients (tests pass fakes). Missing ones are built from the environment's keys on first use. */
-  clients?: { anthropic?: AnthropicClientLike; openai?: OpenAIClientLike; google?: GoogleClientLike; openrouter?: OpenAIClientLike };
+  clients?: { anthropic?: AnthropicClientLike; openai?: OpenAIClientLike; google?: GoogleClientLike; openrouter?: OpenAIClientLike; fal?: FalClientLike };
+  /** Downloads generated media from provider URLs (fal.ai clips and frames). Defaults to the global fetch. */
+  fetch?: typeof fetch;
   /** Replace whole adapters (tests). */
   adapters?: Partial<Record<ProviderId, ProviderAdapter>>;
   /** Override mock answers by purpose or role. */
@@ -78,7 +83,9 @@ const MAX_OUTPUT_LIMIT = 128_000;
 const TIERS = new Set(['big', 'mid']);
 const MEDIA_TYPES = new Set<MediaType>(['image/png', 'image/jpeg', 'image/webp']);
 const IMAGE_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536']);
-const MOCK_MODELS = { big: 'mock-big', mid: 'mock-mid', image: 'mock-image' } as const;
+const MOCK_MODELS = { big: 'mock-big', mid: 'mock-mid', image: 'mock-image', video: 'mock-video' } as const;
+/** Relay links are a few seconds each (03 C5); a request far beyond that is a mistake, not a clip. */
+const MAX_VIDEO_SECONDS = 60;
 
 interface Reservation {
   workspaceId: string;
@@ -89,7 +96,7 @@ interface Reservation {
 const invalid = (message: string) => new GatewayError('invalid-request', message);
 
 /**
- * The model gateway (ADR-0030): the only path out for model and image calls. It resolves the profile's model for the
+ * The model gateway (ADR-0030): the only path out for model, image and video calls. It resolves the profile's model for the
  * tier, checks the key exists (never exposing it), loads images from the artifact store, refuses calls whose
  * worst case would break a spend cap, retries transient failures, stores request and response bodies by hash, and
  * appends every call to the hash-chained ledger.
@@ -259,6 +266,93 @@ export class ModelGateway implements Gateway {
     }
   }
 
+  /**
+   * One relay link (ADR-0069): a clip from the start frame, stored at once with its last frame (the next link's
+   * anchor). It fails with 'no-credentials' when the profile has no video model or its provider has no key. The
+   * budget check uses the clip's seconds at the model's price plus the provider's helper calls at their bound. A clip
+   * that was generated is ledgered even when keeping it or its last frame then fails: it was billed.
+   */
+  async video(req: VideoRequest): Promise<VideoResult> {
+    validateSpend(req);
+    if (typeof req.prompt !== 'string' || !req.prompt.trim()) throw invalid('a video needs a prompt');
+    if (typeof req.durationSec !== 'number' || !Number.isFinite(req.durationSec) || req.durationSec <= 0 || req.durationSec > MAX_VIDEO_SECONDS) {
+      throw invalid(`durationSec must be a number of seconds above 0 and at most ${MAX_VIDEO_SECONDS}`);
+    }
+    const profile = this.profile(req.profileId);
+    const ref: ModelRef | undefined = this.demo ? { provider: 'mock', model: MOCK_MODELS.video } : profile.video;
+    if (!ref) throw new GatewayError('no-credentials', `profile "${profile.id}" has no video model`);
+    this.requireKey(ref.provider);
+    const price = this.price(ref);
+    const adapter = this.adapter(ref.provider);
+    const generate = adapter.video?.bind(adapter);
+    if (!generate) throw invalid(`${ref.provider} does not generate video`);
+    const extras = (adapter.videoExtras ?? []).map((x) => ({ ...x, price: this.price({ provider: ref.provider, model: x.model }) }));
+    let startFrame: ProviderVideoRequest['startFrame'];
+    if (req.startFrameArtifactId !== undefined) {
+      if (!(await this.artifacts.has(req.startFrameArtifactId))) throw invalid(`start frame artifact ${req.startFrameArtifactId} is not in the store`);
+      const { record, bytes } = await this.artifacts.get(req.startFrameArtifactId);
+      startFrame = { artifactId: record.id, bytes, mediaType: record.mediaType };
+    }
+    const seconds = adapter.videoSeconds?.(ref.model, req.durationSec) ?? Math.ceil(req.durationSec);
+    const reservation = await this.reserve(req, maxVideoCost(price, seconds, extras));
+    const redact = makeRedactor(this.env);
+    const started = Date.now();
+    try {
+      const out = await generate({
+        model: ref.model,
+        prompt: req.prompt,
+        durationSec: seconds,
+        ...(startFrame ? { startFrame } : {}),
+        context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
+        attempt: (fn) =>
+          withRetries(async () => {
+            try {
+              return await fn();
+            } catch (e) {
+              throw toGatewayError(e, ref.provider, redact);
+            }
+          }, this.retry),
+      });
+      const units = out.usage.units ?? seconds;
+      const costUsd = roundUsd(maxVideoCost(price, units, extras));
+      const clip = out.clip ? await this.artifacts.put(out.clip.bytes, out.clip.mediaType) : undefined;
+      const lastFrame = out.lastFrame ? await this.artifacts.put(out.lastFrame.bytes, out.lastFrame.mediaType) : undefined;
+      const failure = out.failure !== undefined ? toGatewayError(out.failure, ref.provider, redact) : undefined;
+      const entry = await this.record(
+        {
+          workspaceId: req.workspaceId,
+          ...ctxIds(req),
+          purpose: req.purpose,
+          kind: 'video',
+          provider: ref.provider,
+          requestedModel: ref.model,
+          servedModel: out.servedModel,
+          usage: { inputTokens: 0, outputTokens: 0, units },
+          costUsd,
+          latencyMs: Date.now() - started,
+        },
+        { profileId: req.profileId, provider: ref.provider, model: ref.model, durationSec: req.durationSec, seconds, wire: out.requestBody },
+        {
+          servedModel: out.servedModel,
+          usage: { units },
+          ...(clip ? { artifactId: clip.id } : {}),
+          ...(lastFrame ? { lastFrameArtifactId: lastFrame.id } : {}),
+          ...(failure ? { failure: failure.message } : {}),
+          wire: out.responseBody,
+        },
+        redact,
+      );
+      if (failure || !clip || !lastFrame) {
+        const what = !clip ? 'it could not be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
+        // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
+        throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`));
+      }
+      return { artifactId: clip.id, lastFrameArtifactId: lastFrame.id, servedModel: out.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
+    } finally {
+      this.reservations.delete(reservation);
+    }
+  }
+
   async spend(workspaceId: string): Promise<SpendSummary> {
     const byRun: Record<string, number> = {};
     let spent = 0;
@@ -309,6 +403,9 @@ export class ModelGateway implements Gateway {
         break;
       case 'openrouter':
         adapter = openrouterAdapter({ client: c.openrouter ?? createOpenRouterClient(key), pins: OPENROUTER_PINS });
+        break;
+      case 'fal':
+        adapter = falAdapter({ client: c.fal ?? createFalClient(key), ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}) });
         break;
       case 'mock':
         adapter = mockAdapter(this.opts.mockResponders ? { responders: this.opts.mockResponders } : {});

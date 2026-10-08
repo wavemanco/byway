@@ -6,6 +6,7 @@ import type { ResolvedMessage } from './providers/types.ts';
  * Pre-call cost estimates (spec §3.4): the gateway refuses a call whose worst case would break a cap, so estimates err
  * high. Text: one token per three characters (current tokenizers run about 30% above the old four-characters rule).
  * Images: width × height / 750 (Anthropic's vision formula, close for the others), capped, or a high default.
+ * Video: the clip's seconds at the per-second price, plus helper endpoints at their upper bound.
  */
 const CHARS_PER_TOKEN = 3;
 const PER_MESSAGE_OVERHEAD = 8;
@@ -47,6 +48,14 @@ export function maxImageCost(price: PriceRow, req: Pick<ImageRequest, 'prompt'>)
   const promptTokens = Math.ceil(req.prompt.length / CHARS_PER_TOKEN) + PER_MESSAGE_OVERHEAD;
   const outputTokens = price.estimatedOutputTokensPerImage ?? 0;
   return tokenCost(price, { inputTokens: promptTokens, outputTokens }) + (price.perImageUsd ?? 0);
+}
+
+/**
+ * Worst-case USD for one clip: its seconds at the model's per-second price, plus the helper endpoints the call also
+ * uses (each priced per second, at its bound on seconds).
+ */
+export function maxVideoCost(price: PriceRow, seconds: number, extras: readonly { price: PriceRow; seconds: number }[] = []): number {
+  return (price.perSecondUsd ?? 0) * seconds + extras.reduce((usd, x) => usd + (x.price.perSecondUsd ?? 0) * x.seconds, 0);
 }
 
 /** Width and height from PNG or JPEG bytes; undefined for other formats. */

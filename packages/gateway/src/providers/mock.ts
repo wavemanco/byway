@@ -1,6 +1,7 @@
 import { mockImage } from '../mock/png.ts';
 import { parsePurpose, reply, type Responder } from '../mock/responders.ts';
 import { seedOf } from '../mock/seed.ts';
+import { placeholderClip, placeholderFrame, shotNumber } from '../mock/video.ts';
 import { plain, textOf, type ProviderAdapter } from './types.ts';
 
 export interface MockAdapterOptions {
@@ -44,6 +45,24 @@ export function mockAdapter(opts: MockAdapterOptions = {}): ProviderAdapter {
         ...(truncated ? { truncated: true } : {}),
         requestBody,
         responseBody: { model: req.model, text, ...(truncated ? { truncated: true } : {}) },
+      };
+    },
+    videoSeconds: (_model, requestedSec) => Math.max(1, Math.round(requestedSec)),
+    async video(req) {
+      // Shots are numbered by the prompt ("Shot 2: …") or, failing that, in call order within the run.
+      const key = `video|${req.context.runId ?? req.context.workspaceId}`;
+      const n = (counts.get(key) ?? 0) + 1;
+      counts.set(key, n);
+      const shot = shotNumber(req.prompt) ?? n;
+      const seed = seedOf(`${shot}\n${req.prompt}`);
+      const svg = placeholderClip({ seed, shot, durationSec: req.durationSec, prompt: req.prompt });
+      return {
+        clip: { bytes: new TextEncoder().encode(svg), mediaType: 'image/svg+xml' },
+        lastFrame: { bytes: placeholderFrame(seed), mediaType: 'image/png' },
+        servedModel: req.model,
+        usage: { inputTokens: 0, outputTokens: 0, units: req.durationSec },
+        requestBody: { model: req.model, prompt: req.prompt, durationSec: req.durationSec, ...(req.startFrame ? { startFrame: `artifact:${req.startFrame.artifactId}` } : {}) },
+        responseBody: { model: req.model, placeholder: true, shot },
       };
     },
     async image(req) {

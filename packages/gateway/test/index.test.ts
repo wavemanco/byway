@@ -6,6 +6,7 @@ import type { Gateway } from '@byway/contracts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { createGateway, PROFILES, type BudgetDetails, type BudgetError, type GatewayLedgerEntry, type ProfileStatus } from '../src/index.ts';
 import { createAnthropicClient } from '../src/providers/anthropic.ts';
+import { createFalClient } from '../src/providers/fal.ts';
 import { createGoogleClient } from '../src/providers/google.ts';
 import { createOpenAIClient } from '../src/providers/openai.ts';
 import { createOpenRouterClient } from '../src/providers/openrouter.ts';
@@ -22,8 +23,8 @@ describe('@byway/gateway', () => {
     expect(g.profiles().map((p) => p.id)).toEqual(['demo']);
     const status = g.profileStatus();
     expect(status.map((s) => s.profile.id)).toEqual(PROFILES.map((p) => p.id));
-    expect(status.find((s) => s.profile.id === 'demo')).toMatchObject({ usable: true, missing: [], images: true });
-    expect(status.find((s) => s.profile.id === 'balanced')).toMatchObject({ usable: false, missing: ['anthropic'], images: false });
+    expect(status.find((s) => s.profile.id === 'demo')).toMatchObject({ usable: true, missing: [], images: true, video: true });
+    expect(status.find((s) => s.profile.id === 'balanced')).toMatchObject({ usable: false, missing: ['anthropic'], images: false, video: false });
     expect(await g.spend('ws')).toEqual({ workspaceId: 'ws', spentUsd: 0, capUsd: 5, byRun: {} });
     expect(await g.verifyLedger()).toBeNull();
     expect(PROFILES.length).toBeGreaterThanOrEqual(3);
@@ -42,5 +43,7 @@ describe('@byway/gateway', () => {
     expect(typeof createOpenAIClient('test-key-not-real').chat.completions.create).toBe('function');
     expect(typeof createOpenRouterClient('test-key-not-real').chat.completions.create).toBe('function');
     expect(typeof createGoogleClient('test-key-not-real').models.generateContent).toBe('function');
+    const fal = createFalClient('test-key-id:test-secret-not-real');
+    expect([typeof fal.queue.submit, typeof fal.queue.subscribeToStatus, typeof fal.queue.result, typeof fal.storage.upload]).toEqual(['function', 'function', 'function', 'function']);
   });
 });

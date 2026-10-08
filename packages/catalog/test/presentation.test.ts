@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { BLOCK_CODES } from '@byway/protocol';
-import { walk, type Recipe } from '@byway/recipe';
-import { BLOCK_NAMES, PRESENTATIONS, PROTOCOL_CONFIGS, STAGE_NAMES, presentationOf, stepPresentation } from '../src/index.ts';
+import { walk, walkNode, type Recipe } from '@byway/recipe';
+import { BLOCK_NAMES, PRESENTATIONS, PROTOCOL_CONFIGS, STAGE_NAMES, presentationOf, presentedStepFor, stepPresentation } from '../src/index.ts';
 
 /** Step and pick ids of a recipe in walk order, with their stage and whether a human does them. */
 function nodesOf(r: Recipe): { id: string; stage: 'D1' | 'D2' | 'D3'; human: boolean; model: boolean }[] {
@@ -126,6 +126,71 @@ describe('recipe presentations', () => {
       expect(text, id).not.toMatch(/\b(SEED|VISION|CRITIC|ASSET|RELAY|CUT|TELLS|VOICE|RENDER|BRIEF|D[123]|C[1-7]a?)\b/);
       expect(text, id).not.toMatch(/\b(threshold|port|rule|exception|block|operator|chassis|Diverge|Deepen|Distill|tells?)\b/i);
     }
+  });
+
+  it.each(all)('%s maps every step and every pick, optional, route, loop, gate and relay id to exactly one shown step', (id, p) => {
+    const r = recipeOf(id);
+    const shown = p.stages.flatMap((s) => s.steps);
+    const owners = (nodeId: string) => shown.filter((st) => st.stepIds.includes(nodeId));
+    const ids = new Set<string>();
+    walk(r, (n) => {
+      if ('id' in n && n.id) ids.add(n.id);
+      // Run events carry the step's id, or the operator's id for operator checkpoints and loop iterations.
+      if (n.op === 'step' || ['pick', 'optional', 'route', 'loop', 'gate', 'relay'].includes(n.op)) {
+        expect(owners(n.id as string).map((st) => st.label), `${id} ${n.op} ${n.id}`).toHaveLength(1);
+      }
+      // Replicate, each and audit map where one shown step covers their whole body, and never twice.
+      if (['replicate', 'each', 'audit'].includes(n.op)) expect(owners(n.id as string).length, `${id} ${n.op} ${n.id}`).toBeLessThanOrEqual(1);
+    });
+    for (const st of shown) {
+      expect(st.stepIds.length, `${id} ${st.label}`).toBeGreaterThan(0);
+      for (const stepId of st.stepIds) expect(ids.has(stepId), `${id} ${st.label}: ${stepId}`).toBe(true);
+      expect(new Set(st.stepIds).size, `${id} ${st.label} lists an id twice`).toBe(st.stepIds.length);
+    }
+  });
+
+  it.each(all)('%s labels an operator with the shown step that covers its body, so a loop or optional reads as its step', (id, p) => {
+    const r = recipeOf(id);
+    walk(r, (n) => {
+      if (n.op === 'step' || n.op === 'pick' || n.op === 'seq') return;
+      const shown = presentedStepFor(p, n.id);
+      if (!shown) return;
+      // The operator's shown step covers at least one step or pick inside it.
+      const inside: string[] = [];
+      walkNode(n, '', 'D1', (c) => {
+        if (c.op === 'step' || c.op === 'pick') inside.push(c.id);
+      });
+      expect(inside.some((x) => shown.stepIds.includes(x)), `${id} ${n.id} → ${shown.label}`).toBe(true);
+      expect(stepPresentation(id, n.id)).toEqual(shown);
+    });
+  });
+
+  it('labels the operator events a run emits in plain words', () => {
+    const label = (recipeId: string, nodeId: string) => presentedStepFor(presentationOf(recipeId)!, nodeId)?.label;
+    expect(label('c1', 'critic-loop')).toBe('Outside critique');
+    expect(label('c1', 'asset-if-plain')).toBe('Custom imagery');
+    expect(label('c1', 'seeded-x4')).toBe('Random spark');
+    expect(label('c3', 'draft')).toBe('First draft');
+    expect(label('c4', 'recipient-critic')).toBe('Outside critique');
+    expect(label('c5', 'shot-chain')).toBe('Motion');
+    expect(label('c5', 'shot-repair')).toBe('Motion');
+    expect(label('c5', 'launch-gate')).toBe('Outside critique: launch check');
+    expect(label('c6', 'author-loop')).toBe('Your draft');
+    expect(label('c6', 'angles-if-wanted')).toBe('Angles from your material');
+    expect(label('c6a', 'final-tells-read')).toBe('Last cliché read');
+    expect(label('c7', 'spec-interview')).toBe('Spec interview');
+    // A body that spans several shown steps has no single label.
+    expect(label('c1', 'each-candidate')).toBeUndefined();
+    expect(label('c2', 'annotate')).toBeUndefined();
+  });
+
+  it('finds the shown step for a step id in any presentation, with its stage', () => {
+    const p = presentationOf('c1')!;
+    expect(presentedStepFor(p, 'pick-one')).toMatchObject({ label: 'Pick one', who: 'you', stage: 'Refine' });
+    expect(presentedStepFor(p, 'seed-build')?.stage).toBe('Explore');
+    expect(presentedStepFor(p, 'no-such-step')).toBeUndefined();
+    const composed: typeof p = { ...p, recipeId: 'composed-x', stages: [{ stage: 'Finish', steps: [{ label: 'Mine', explainer: 'E.', who: 'you', stepIds: ['a', 'b'] }] }] };
+    expect(presentedStepFor(composed, 'b')).toEqual({ label: 'Mine', explainer: 'E.', who: 'you', stepIds: ['a', 'b'], stage: 'Finish' });
   });
 
   it.each(all)('%s makes no efficacy claim (every recipe is untested, CR11)', (id, p) => {

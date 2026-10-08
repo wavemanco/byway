@@ -8,7 +8,7 @@ import { StoreError } from './errors.ts';
 /** True when the list `L` names every member of the union `T`. */
 type Covers<T, L extends readonly T[]> = [Exclude<T, L[number]>] extends [never] ? true : false;
 
-export const RUN_STATUSES = ['queued', 'running', 'waiting', 'done', 'failed', 'cancelled'] as const satisfies readonly RunStatus[];
+export const RUN_STATUSES = ['queued', 'running', 'waiting', 'paused', 'done', 'failed', 'cancelled'] as const satisfies readonly RunStatus[];
 
 export const RUN_EVENT_TYPES = [
   'run-started',
@@ -23,6 +23,8 @@ export const RUN_EVENT_TYPES = [
   'run-finished',
   'run-failed',
   'run-cancelled',
+  'run-paused',
+  'run-resumed',
 ] as const satisfies readonly RunEventType[];
 
 export const CHECKPOINT_KINDS = ['pick', 'react', 'confirm', 'compare', 'directive', 'write', 'choose'] as const satisfies readonly CheckpointKind[];

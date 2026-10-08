@@ -74,16 +74,60 @@ export function imageRefs(text: string): string[] {
   return [...refs];
 }
 
+/**
+ * The images slot for a web page (spec §3.3 conventions): one `<id> | alt | slot` line per image. The id becomes its
+ * artifact route, `/api/artifacts/<id>`; a line that already gives a route or an https URL keeps it.
+ */
+export function imageLines(text: string): { url: string; alt: string; slot: string }[] {
+  const out: { url: string; alt: string; slot: string }[] = [];
+  for (const m of text.matchAll(/^[ \t]*(?:[-*][ \t]+)?(\S+)[ \t]*\|[ \t]*([^|\n]*?)[ \t]*\|[ \t]*([^|\n]*?)[ \t]*$/gm)) {
+    const ref = m[1] as string;
+    const url = /^sha256:[0-9a-f]{64}$/i.test(ref) ? `/api/artifacts/${ref}` : /^(?:\/api\/artifacts\/|https:\/\/)\S+$/.test(ref) ? ref : undefined;
+    if (url) out.push({ url, alt: (m[2] as string) || 'Image', slot: m[3] as string });
+  }
+  return out;
+}
+
 /** Candidate labels (A, B, C…) the prompt presents, in order of first appearance. */
 export function labelsIn(text: string): string[] {
   const found = new Set<string>();
   const patterns = [
+    // The shared convention (spec §3.3): each candidate under a "### A" heading in the options or view slot.
+    /^#{1,6}[ \t]+([A-Z])[ \t]*$/gm,
     /\b(?:Candidate|Option|Draft|Version|Variant|Label|Page|Render)\s+([A-Z])\b/g,
     /^\s*(?:\*\*)?\[?([A-Z])(?:\]|\)|:|\.)(?:\*\*)?\s/gm,
     /<candidate[^>]*label="([A-Z])"/gi,
   ];
   for (const re of patterns) for (const m of text.matchAll(re)) if (m[1]) found.add(m[1].toUpperCase());
   return [...found].sort();
+}
+
+export interface LabelledItem {
+  label: string;
+  /** The text under the heading, up to the next heading. */
+  text: string;
+}
+
+/**
+ * Items under "### <label>" headings, in order: single letters (A, B, C…, the options shown) or, with `vanilla`, the
+ * unseeded answers of an overlap step (V1, V2, V3…).
+ */
+export function labelledItems(text: string, vanilla = false): LabelledItem[] {
+  const label = vanilla ? 'V\\d{1,2}' : '[A-Z]';
+  const re = new RegExp(`^#{1,6}[ \\t]+(${label})[ \\t]*$`, 'gm');
+  const heads = [...text.matchAll(re)];
+  return heads.map((m, i) => {
+    const start = (m.index ?? 0) + m[0].length;
+    const next = heads[i + 1]?.index ?? text.length;
+    // The text runs to the next heading of any kind (a slot title, another list).
+    const body = text.slice(start, next).split(/^#{1,6}[ \t]/m)[0] ?? '';
+    return { label: m[1] as string, text: body.trim() };
+  });
+}
+
+/** The text with every fenced block removed, so a slot's plain words are read apart from the artifact. */
+export function outsideFences(text: string): string {
+  return text.replace(/```[^\n]*\n[\s\S]*?```/g, '');
 }
 
 export function escapeHtml(text: string): string {

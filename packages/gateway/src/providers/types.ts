@@ -66,6 +66,44 @@ export interface ProviderImage {
   responseBody: unknown;
 }
 
+/** Bytes with their media type, as a provider returned them or as the gateway loaded them from the artifact store. */
+export interface MediaBytes {
+  bytes: Uint8Array;
+  mediaType: string;
+}
+
+export interface ProviderVideoRequest {
+  model: string;
+  prompt: string;
+  /** Already snapped to a length the model makes (`videoSeconds`), so the estimate and the bill agree. */
+  durationSec: number;
+  /** The relay anchor the clip starts from, loaded from the artifact store. */
+  startFrame?: MediaBytes & { artifactId: string };
+  context: CallContext;
+  /**
+   * Runs one provider round trip under the gateway's retry policy and error mapping. A video call makes several
+   * (upload, generate, download, extract), and only the failed one should be repeated, never a paid generation.
+   */
+  attempt<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+export interface ProviderVideo {
+  /** The clip; absent only when `failure` is set. */
+  clip?: MediaBytes;
+  /** Its last frame, the next relay link's anchor; absent only when `failure` is set. */
+  lastFrame?: MediaBytes;
+  /**
+   * Set when the clip was generated (and billed) but a later round trip failed. The gateway keeps what arrived,
+   * ledgers the spend and then raises this error. Failures before anything is billed are thrown instead.
+   */
+  failure?: unknown;
+  servedModel: string;
+  /** units = seconds of video billed. */
+  usage: Usage;
+  requestBody: unknown;
+  responseBody: unknown;
+}
+
 /**
  * The one small interface every provider adapter implements. Adapters translate requests and parse responses; the
  * gateway owns credentials, budgets, retries, the ledger and storage. SDK clients are injected, so tests use fakes.
@@ -74,6 +112,14 @@ export interface ProviderAdapter {
   readonly id: ProviderId;
   complete(req: ProviderCompletionRequest): Promise<ProviderCompletion>;
   image?(req: ProviderImageRequest): Promise<ProviderImage>;
+  video?(req: ProviderVideoRequest): Promise<ProviderVideo>;
+  /** The seconds a video model makes (and bills) for a requested length; models offer only some lengths. */
+  videoSeconds?(model: string, requestedSec: number): number;
+  /**
+   * Helper endpoints billed per second that every video call also uses (fal.ai's last-frame extraction), with an upper
+   * bound on their seconds. The gateway prices them from the price table, in the estimate and in the ledger.
+   */
+  readonly videoExtras?: readonly { model: string; seconds: number }[];
 }
 
 /** Concatenated text of a message's text parts. */

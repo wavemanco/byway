@@ -69,6 +69,15 @@ describe('runs', () => {
     expect((await seedRun(store, 'r', { status: 'running' })).status).toBe('running');
   });
 
+  it('pauses and resumes a run (Runner.pause: the status becomes paused)', async () => {
+    const store = openStore();
+    const run = await seedRun(store, 'r', { status: 'running' });
+    expect((await store.updateRun(run.id, { status: 'paused' })).status).toBe('paused');
+    expect((await store.getRun(run.id))?.status).toBe('paused');
+    expect((await store.updateRun(run.id, { status: 'running' })).status).toBe('running');
+    expect((await seedRun(store, 'born-paused', { status: 'paused' })).status).toBe('paused');
+  });
+
   it('stores the run budget, including a zero or fractional one', async () => {
     const store = openStore();
     expect((await seedRun(store, 'zero', { budgetUsd: 0 })).budgetUsd).toBe(0);
@@ -91,7 +100,7 @@ describe('runs', () => {
     await expect(seedRun(store, 'dup')).rejects.toThrow(/run "dup" already exists/);
     await expect(seedRun(store, 'r2', { workspaceId: 'nope' })).rejects.toThrow(/no workspace "nope"/);
     await expect(seedRun(store, 'r3', { medium: 'hologram' as never })).rejects.toThrow(/medium/);
-    await expect(seedRun(store, 'r4', { status: 'paused' as never })).rejects.toThrow(/status/);
+    await expect(seedRun(store, 'r4', { status: 'exploded' as never })).rejects.toThrow(/status/);
   });
 
   it('updates status, cost, title, error and output, and bumps updatedAt', async () => {
@@ -159,7 +168,7 @@ describe('runs', () => {
     const run = await seedRun(store);
     await expect(store.updateRun('missing', { status: 'done' })).rejects.toThrow(/no run "missing"/);
     await expect(store.updateRun(run.id, { outputArtifactId: `sha256:${'0'.repeat(64)}` })).rejects.toThrow(/no artifact/);
-    await expect(store.updateRun(run.id, { status: 'paused' as never })).rejects.toThrow(/status/);
+    await expect(store.updateRun(run.id, { status: 'exploded' as never })).rejects.toThrow(/status/);
     await expect(store.updateRun(run.id, { costUsd: -0.01 })).rejects.toThrow(/cost/);
   });
 
