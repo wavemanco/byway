@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**73 records:** 66 accepted (15 of them by continuation, awaiting ratification; 11 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**78 records:** 71 accepted (15 of them by continuation, awaiting ratification; 16 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -91,6 +91,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0066](0066-product-persistence-sqlite-cas.md) | Product persistence: node:sqlite records and content-addressed artifact files outside the repo | Accepted | Delegated | 2026-10-07 10:48 |
 | [ADR-0067](0067-product-c1-direct-html-builder.md) | In the product, C1 builds single-file HTML pages by direct model generation and renders them with Playwright | Accepted | Delegated | 2026-10-07 10:48 |
 | [ADR-0070](0070-runner-workflows-precompiled-with-esbuild.md) | Precompile the runner's Temporal workflows with esbuild | Accepted | Delegated | 2026-10-07 10:52 |
+| [ADR-0078](0078-runs-from-older-engine-versions-end-plainly.md) | Runs started by an older engine version end plainly when the engine changes | Accepted | Delegated | 2026-10-07 23:00 |
 
 ## Product & program
 
@@ -108,6 +109,10 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0071](0071-great-critic-falls-back-to-ok-without-references.md) | In the product, a GREAT-mode critic needs at least three references, and falls back to OK mode without them | Accepted | Delegated | 2026-10-07 18:40 |
 | [ADR-0072](0072-great-critic-ranks-blind.md) | A GREAT-mode critic ranks the whole lineup without knowing which item is ours; the runner finds our rank | Accepted | Delegated | 2026-10-07 21:05 |
 | [ADR-0073](0073-runner-semantics-where-the-spec-was-open.md) | Runner semantics chosen where the product spec was open | Accepted | Delegated | 2026-10-07 21:40 |
+| [ADR-0074](0074-local-app-security-model.md) | Local app security model: a production server for use, a guarded dev server, and no unguarded local control planes | Accepted | Delegated | 2026-10-07 23:00 |
+| [ADR-0075](0075-tells-swaps-chosen-per-instance.md) | The person chooses which cliché-sweep hits to swap, one by one | Accepted | Delegated | 2026-10-07 23:00 |
+| [ADR-0076](0076-other-family-critic-and-exposure-register.md) | A different-family critic where a recipe asks for one, recorded in an exposure register | Accepted | Delegated | 2026-10-07 23:00 |
+| [ADR-0077](0077-rank-gates-scale-with-the-lineup.md) | Hidden rank thresholds scale with the lineup actually used | Accepted | Delegated | 2026-10-07 23:00 |
 
 ## Open decisions (not yet ADRs)
 
