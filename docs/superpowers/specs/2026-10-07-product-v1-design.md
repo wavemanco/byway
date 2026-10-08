@@ -77,6 +77,13 @@ The runner interprets the recipe tree (`byway.recipe/1`) as a Temporal workflow.
 | `route` | The choice in `StartRunInput.routes`, else checkpoint `choose` |
 | `loop` | Run the body; after each iteration compare the critic's score with the hidden threshold (never put in any critic prompt); stop at the threshold, at the plateau rule or at `max`; at the cap with `onCap: human`, checkpoint `confirm` ("Use the best version so far?"); best-snapshot re-rank as a fresh judge call |
 | `replicate n` / `each` | Run candidates concurrently inside the workflow; candidate index recorded on events and checkpoints |
+| `audit` | Run the lenses concurrently on the same input; their critiques and scores are annotations shown to the user and never written into the work |
+| `gate` (one-shot) | Run the body once and compare with the hidden pass condition; on a fail re-run `retry.stage` up to `retry.times`, then checkpoint `confirm` |
+| `relay` | One link per storyboard shot (up to `maxLinks`), strictly in sequence; the first link starts from shot 1's frame (the anchor-frames ASSET step), each next one from the previous clip's last frame. Relay model steps answer `relay:media`; the runner then calls `gateway.video` ([ADR-0069](../../adr/0069-product-c5-relay-and-honest-skips.md)) |
+| ASSET on `options`, `media`, `prose` | `asset.briefs:<medium>` → `gateway.image` per brief; on `prose` then `asset.integrate:prose`; on `options`/`media` the runner attaches `imageArtifactId` to each option or shot (no integrate call) |
+| Steps with no v1 executor (C5 `matte`, `vo-audio`), and relay links without a usable video model | Finish as skipped with a plain note ("Compositing is not available in byway yet", "No voice-over audio provider is configured", "No video provider key is configured"); the artifact and anchor pass through unchanged (ADR-0069) |
+
+**Views by medium.** `web-page`: Playwright screenshots. `prose`: the clean Markdown text. `options`: the options as a numbered plain-text list (labels A, B, C… when several sets are compared). `media`: the storyboard as text plus each shot's frame image when it exists. `code-diff`: the diff text.
 
 **Human checkpoint kinds by role:** `vision` → `react`; `cut` → `directive`; `tells-compare` → `compare`; `voice` → `write` (initial text = the copy extracted from the artifact; the edited copy is written back by a model step that changes only text and is checked by a diff); the author's draft in C6/C6a → `write`.
 

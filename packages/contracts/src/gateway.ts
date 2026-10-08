@@ -194,6 +194,8 @@ export interface ProfileStatus {
   missing: ProviderId[];
   /** True when the profile has an image model and its provider has a key. */
   images: boolean;
+  /** True when the profile has a video model and its provider has a key (C5 relay links; ADR-0069). */
+  video: boolean;
 }
 
 export interface Gateway {
