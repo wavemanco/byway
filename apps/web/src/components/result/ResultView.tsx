@@ -6,6 +6,7 @@ import { formatUsd } from '../../view/format.ts';
 import { exportLabel, formatWhen } from '../../view/history.ts';
 import { parseOptions, parseStoryboard, resultKind } from '../../view/result.ts';
 import type { HowItWasMade } from '../../view/run.ts';
+import type { ArtifactInfo } from '../../view/rundata.ts';
 import { codeForLabel, recipeTitle, stepTitle, whoLabel } from '../../view/vocabulary.ts';
 import { artifactUrl } from '../api.ts';
 import { DiffView } from '../DiffView.tsx';
@@ -23,11 +24,13 @@ interface Props {
   /** The deliverable's text, for every medium except pages. */
   text: string | null;
   made: HowItWasMade;
+  /** Media types of what the deliverable shows besides itself (a storyboard's frames and clips). */
+  media: Record<string, ArtifactInfo>;
   presentation: RecipePresentation | null;
   label: Label | null;
 }
 
-function Deliverable({ run, artifactId, text, made }: Pick<Props, 'run' | 'artifactId' | 'text' | 'made'>) {
+function Deliverable({ run, artifactId, text, made, media }: Pick<Props, 'run' | 'artifactId' | 'text' | 'made' | 'media'>) {
   const kind = resultKind(run.medium);
   if (kind === 'page') return <PageResult src={artifactUrl(artifactId)} title={run.title} />;
   if (text === null) return null;
@@ -38,8 +41,7 @@ function Deliverable({ run, artifactId, text, made }: Pick<Props, 'run' | 'artif
     return options ? <OptionsList options={options} /> : <pre className="preview-raw">{text}</pre>;
   }
   const board = parseStoryboard(text);
-  const motion = made.skipped.find((s) => s.label === 'Motion');
-  return board ? <Storyboard board={board} {...(motion?.note ? { note: motion.note } : {})} /> : <pre className="preview-raw">{text}</pre>;
+  return board ? <Storyboard board={board} media={media} skipped={made.skipped} /> : <pre className="preview-raw">{text}</pre>;
 }
 
 /** "just now", "5 min ago", "yesterday", "on Oct 1": formatWhen's words, fitted into a sentence. */
@@ -49,7 +51,7 @@ function finishedPhrase(when: string): string {
 }
 
 /** The deliverable, its export, and "How this was made": the steps, who did each, and the cost. */
-export function ResultView({ run, artifactId, mediaType, text, made, presentation, label }: Props) {
+export function ResultView({ run, artifactId, mediaType, text, made, media, presentation, label }: Props) {
   const technical = useTechnicalNames();
   const aiSteps = made.byWho.ai;
   return (
@@ -79,7 +81,7 @@ export function ResultView({ run, artifactId, mediaType, text, made, presentatio
       </header>
 
       <section className="result-body" aria-label="Result">
-        <Deliverable run={run} artifactId={artifactId} text={text} made={made} />
+        <Deliverable run={run} artifactId={artifactId} text={text} made={made} media={media} />
       </section>
 
       <section className="made" aria-labelledby="made-title">
@@ -120,10 +122,10 @@ export function ResultView({ run, artifactId, mediaType, text, made, presentatio
         </table>
         {made.skipped.length > 0 ? (
           <div className="made-skipped">
-            <h3>Not run</h3>
+            <h3>Skipped</h3>
             <ul>
               {made.skipped.map((s) => (
-                <li key={s.label}>
+                <li key={s.key}>
                   {s.label}
                   {s.note ? <span className="muted">: {s.note}</span> : null}
                 </li>

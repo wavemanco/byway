@@ -25,7 +25,7 @@ function textOf(a: TimelineArtifact, artifacts: Record<string, ArtifactInfo>): s
 export function StepThumbs({ step, artifacts }: { step: TimelineStep; artifacts: Record<string, ArtifactInfo> }) {
   const items = step.artifacts;
   const kindOf = (a: TimelineArtifact) => outputKind(artifacts[a.artifactId]?.mediaType ?? a.mediaType);
-  const visual = items.filter((a) => kindOf(a) === 'page' || kindOf(a) === 'image');
+  const visual = items.filter((a) => kindOf(a) === 'page' || kindOf(a) === 'image' || kindOf(a) === 'video');
   const textual = items.filter((a) => kindOf(a) === 'text' || kindOf(a) === 'data');
   const diffs = items.filter((a) => kindOf(a) === 'diff');
 
@@ -37,6 +37,8 @@ export function StepThumbs({ step, artifacts }: { step: TimelineStep; artifacts:
             <li key={`${a.artifactId}-${i}`} className="thumb">
               {kindOf(a) === 'page' ? (
                 <ScaledPage src={artifactUrl(a.artifactId)} title={a.label ?? `Page ${i + 1}`} virtualHeight={900} />
+              ) : kindOf(a) === 'video' ? (
+                <video src={artifactUrl(a.artifactId)} preload="metadata" muted aria-label={a.label ?? `Clip ${i + 1}`} />
               ) : (
                 <img src={artifactUrl(a.artifactId)} alt={a.label ?? `Image ${i + 1}`} loading="lazy" />
               )}

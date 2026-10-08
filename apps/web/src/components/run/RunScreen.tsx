@@ -3,9 +3,10 @@
 import type { CheckpointResolution, EvidenceLabel as Label, RecipePresentation } from '@byway/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { runStatusLabel } from '../../view/labels.ts';
-import { budgetMeter } from '../../view/meter.ts';
+import { runMeter } from '../../view/meter.ts';
 import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
+import type { StepIndex } from '../../view/steps.ts';
 import { buildTimeline, currentStep } from '../../view/timeline.ts';
 import { recipeTitle } from '../../view/vocabulary.ts';
 import { get, post } from '../api.ts';
@@ -21,9 +22,11 @@ interface Props {
   initial: RunData;
   presentation: RecipePresentation | null;
   label: Label | null;
+  /** Run events → plain step labels, from the presentation's stepIds (null when the recipe is unknown). */
+  steps: StepIndex | null;
 }
 
-export function RunScreen({ initial, presentation, label }: Props) {
+export function RunScreen({ initial, presentation, label, steps }: Props) {
   const technical = useTechnicalNames();
   const [data, setData] = useState(initial);
   const [selected, setSelected] = useState<string | null>(null);
@@ -36,11 +39,12 @@ export function RunScreen({ initial, presentation, label }: Props) {
 
   const { run, events, checkpoints } = data.view;
   const runId = run.id;
-  const stages = useMemo(() => buildTimeline(events, checkpoints, run.status), [events, checkpoints, run.status]);
+  const stages = useMemo(() => buildTimeline(events, checkpoints, run.status, steps), [events, checkpoints, run.status, steps]);
   const active = activeCheckpoint(checkpoints);
   const step = currentStep(stages);
   const ended = isEnded(run.status);
-  const meter = budgetMeter(run.costUsd, data.budgetUsd);
+  const paused = run.status === 'paused';
+  const meter = runMeter(run, events);
   const selectedStep = selected ? stages.flatMap((s) => s.steps).find((s) => s.key === selected) : undefined;
 
   const refresh = useCallback(async () => {
@@ -54,7 +58,7 @@ export function RunScreen({ initial, presentation, label }: Props) {
   }, [runId]);
 
   // Poll while the run can still change: briskly while the AI works, lazily while it waits for you.
-  const delay = pollDelay(run.status, data.paused);
+  const delay = pollDelay(run.status);
   useEffect(() => {
     if (delay === null) return;
     let timer = 0;
@@ -99,8 +103,8 @@ export function RunScreen({ initial, presentation, label }: Props) {
     }
   }
 
-  const status = data.paused && !ended ? 'Paused' : runStatusLabel(run.status);
-  const announcement = active && !data.paused ? `Your turn: ${active.prompt}` : ended ? `Run ${status.toLowerCase()}.` : '';
+  const status = runStatusLabel(run.status);
+  const announcement = paused ? 'Run paused.' : active && !ended ? `Your turn: ${active.prompt}` : ended ? `Run ${status.toLowerCase()}.` : '';
 
   return (
     <div className="run">
@@ -132,7 +136,7 @@ export function RunScreen({ initial, presentation, label }: Props) {
               </div>
             ) : null}
           </div>
-          <span className="run-status" data-status={data.paused && !ended ? 'paused' : run.status}>
+          <span className="run-status" data-status={run.status}>
             {status}
           </span>
           {ended ? null : confirmCancel ? (
@@ -147,17 +151,15 @@ export function RunScreen({ initial, presentation, label }: Props) {
             </div>
           ) : (
             <div className="run-controls">
-              {data.canPause ? (
-                data.paused ? (
-                  <button type="button" className="button" onClick={() => void control('resume')}>
-                    Resume
-                  </button>
-                ) : (
-                  <button type="button" className="button" onClick={() => void control('pause')}>
-                    Pause
-                  </button>
-                )
-              ) : null}
+              {paused ? (
+                <button type="button" className="button" onClick={() => void control('resume')}>
+                  Resume
+                </button>
+              ) : (
+                <button type="button" className="button" onClick={() => void control('pause')}>
+                  Pause
+                </button>
+              )}
               <button type="button" className="button" onClick={() => setConfirmCancel(true)}>
                 Cancel
               </button>
@@ -194,9 +196,9 @@ export function RunScreen({ initial, presentation, label }: Props) {
           {selectedStep ? (
             <StepDetail step={selectedStep} artifacts={data.artifacts} onClose={() => setSelected(null)} closeLabel={active ? 'Back to your turn' : 'Back'} />
           ) : active && !ended ? (
-            <YourTurn key={active.id} cp={active} step={stages.flatMap((s) => s.steps).find((s) => s.checkpointIds.includes(active.id))} artifacts={data.artifacts} busy={busy} paused={data.paused} onSubmit={resolve} />
+            <YourTurn key={active.id} cp={active} step={stages.flatMap((s) => s.steps).find((s) => s.checkpointIds.includes(active.id))} artifacts={data.artifacts} busy={busy} paused={paused} onSubmit={resolve} />
           ) : (
-            <RunStatusPanel run={run} paused={data.paused} step={step} stages={stages} artifacts={data.artifacts} />
+            <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} />
           )}
         </div>
       </div>

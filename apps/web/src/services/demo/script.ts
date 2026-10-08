@@ -3,7 +3,7 @@
  * AI and tool steps produce sample artifacts and sample costs; "you" steps open a checkpoint and apply the
  * answer, so what you write ends up in the deliverable.
  */
-import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, ProblemBrief, RunRecord } from '@byway/contracts';
+import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, ProblemBrief, RunRecord, VideoResult } from '@byway/contracts';
 import type { BlockCode, GlueCode } from '@byway/protocol';
 import type { Role } from '@byway/recipe';
 import type { Who } from '../../view/vocabulary.ts';
@@ -28,6 +28,14 @@ export interface Ask {
   k?: number;
   initialText?: string;
   artifactIds?: string[];
+}
+
+/**
+ * Thrown by a step's work when it cannot run here (ADR-0069): the step finishes as skipped with this plain note,
+ * and whatever it would have changed passes through unchanged.
+ */
+export class SkipStep extends Error {
+  override name = 'SkipStep';
 }
 
 /** Everything a script remembers between steps. */
@@ -59,10 +67,19 @@ export interface DemoState {
   // Ad Video Chain
   voiceover?: string;
   frames?: string[];
+  /** Clip artifact ids by shot index, when a relay link made one. */
+  clips?: string[];
   onScreen?: string;
   // Lean Code Review
   diff?: string;
   why?: string;
+}
+
+/** A relay link's request, as a script makes it; the runner adds who is spending (spec §3.2 relay). */
+export interface ClipRequest {
+  prompt: string;
+  durationSec: number;
+  startFrameArtifactId?: string;
 }
 
 export interface DemoContext {
@@ -71,10 +88,29 @@ export interface DemoContext {
   /** A short phrase naming what the run is about, for sample copy. */
   readonly subject: string;
   readonly routes: Record<string, string>;
+  /** Artifact ids of the examples you supplied (StartRunInput.inputs.refs). */
+  readonly refs: readonly string[];
   state: DemoState;
   /** Stores text as an artifact and returns its id. */
   put(text: string, mediaType: string): Promise<string>;
   getText(artifactId: string): Promise<string>;
+  mediaTypeOf(artifactId: string): Promise<string>;
+  /** Makes one relay clip through the gateway; undefined when the runner has no gateway. */
+  readonly video?: (req: ClipRequest) => Promise<VideoResult>;
+}
+
+/**
+ * A confirm question asked before a step, which runs the step only on a yes (the recipe's `optional` operator).
+ * Its checkpoint events carry the operator's id, as the real runner's do.
+ */
+export interface OptionalGate {
+  id: string;
+  /** The recipe's trigger, in the protocol's words. */
+  trigger: string;
+  ask: (ctx: DemoContext) => Promise<Ask>;
+  apply?: (ctx: DemoContext, res: CheckpointResolution) => void;
+  /** The skipped step's note on a no. */
+  declined: string;
 }
 
 export interface ScriptStep {
@@ -86,12 +122,19 @@ export interface ScriptStep {
   who: Who;
   block?: BlockCode;
   glue?: GlueCode;
+  /**
+   * The critic's bar mode (01 CRITIC). A GREAT critic needs at least three of your examples; with fewer it scores
+   * against the quality bar instead, and says so (ADR-0071).
+   */
+  critic?: 'OK' | 'GREAT' | 'check';
   /** Sample cost of the whole step in USD (AI steps). */
   costUsd?: number;
   /** Duration in step units. */
   units?: number;
-  /** Loop rounds to report as loop-iteration events. */
+  /** Loop rounds to report as loop-iteration events, out of `loopMax` (default 5). */
   iterations?: number;
+  loopMax?: number;
+  optional?: OptionalGate;
   /** Runs the step when true; a string skips it and shows the reason; false leaves it out of the timeline. */
   when?: (ctx: DemoContext) => boolean | string;
   work?: (ctx: DemoContext) => Promise<Produced[]>;
@@ -107,6 +150,8 @@ export interface Script {
   family: string;
   title: string;
   medium: Medium;
+  /** Ports the canonical recipe takes from you, mirrored so "Examples you admire" appears where it would. */
+  inputs: ('refs' | 'tells' | 'voice')[];
   steps: ScriptStep[];
   /** Stores the deliverable and returns its artifact id. */
   finish: (ctx: DemoContext) => Promise<string>;

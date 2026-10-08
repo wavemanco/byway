@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCK_CODES } from '@byway/protocol';
-import type { ChooserAnswer, EvidenceLabel, RunStatus } from '@byway/contracts';
+import type { ChooserAnswer, EvidenceLabel, ModelProfile, RunStatus } from '@byway/contracts';
 import { BLOCK_NAMES, RECIPE_NAMES, TERMS, codeForLabel, recipeTitle, stageFromCode, stepTitle, whoLabel } from '../src/view/vocabulary.ts';
 import { PRESENTATIONS } from '../src/services/demo/catalog.ts';
-import { answerNote, decidingQuestion, evidenceHeadline, fitText, runStatusLabel, showAnswerNote } from '../src/view/labels.ts';
+import {
+  answerNote,
+  decidingQuestion,
+  evidenceHeadline,
+  fitText,
+  profileNeeds,
+  runStatusLabel,
+  showAnswerNote,
+  videoAvailability,
+} from '../src/view/labels.ts';
 
 describe('plain vocabulary (spec §5)', () => {
   it('names every block in plain words', () => {
@@ -88,8 +97,24 @@ describe('labels', () => {
   });
 
   it('names every run status in plain words', () => {
-    const statuses: RunStatus[] = ['queued', 'running', 'waiting', 'done', 'failed', 'cancelled'];
-    expect(statuses.map(runStatusLabel)).toEqual(['Queued', 'Working', 'Your turn', 'Done', 'Failed', 'Cancelled']);
+    const statuses: RunStatus[] = ['queued', 'running', 'waiting', 'paused', 'done', 'failed', 'cancelled'];
+    expect(statuses.map(runStatusLabel)).toEqual(['Queued', 'Working', 'Your turn', 'Paused', 'Done', 'Failed', 'Cancelled']);
+  });
+
+  it('says whether a profile can make video clips, and what it still needs', () => {
+    const profile = (video?: ModelProfile['video']): ModelProfile => ({
+      id: 'p',
+      label: 'P',
+      tiers: { big: { provider: 'anthropic', model: 'a' }, mid: { provider: 'anthropic', model: 'b' } },
+      ...(video ? { video } : {}),
+    });
+    expect(videoAvailability({ video: true, profile: profile({ provider: 'fal', model: 'v' }) })).toBe('Video clips: available');
+    expect(videoAvailability({ video: false, profile: profile({ provider: 'fal', model: 'v' }) })).toBe('Video clips need a fal.ai key');
+    expect(videoAvailability({ video: false, profile: profile() })).toBe('Video clips need a fal.ai key');
+    expect(videoAvailability(undefined)).toBe('Video clips need a fal.ai key');
+    expect(profileNeeds({ usable: true, missing: [] })).toBeNull();
+    expect(profileNeeds({ usable: false, missing: ['anthropic'] })).toBe('Needs a key for Anthropic');
+    expect(profileNeeds({ usable: false, missing: ['anthropic', 'google', 'openai'] })).toBe('Needs a key for Anthropic, Google and OpenAI');
   });
 
   it('describes recommendation fit', () => {

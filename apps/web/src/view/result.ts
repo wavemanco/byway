@@ -42,8 +42,10 @@ const Shot = z.object({
   description: z.string(),
   imagePrompt: z.string(),
   durationSec: z.number(),
-  /** Not in the model's output contract: the runner adds the generated frame's artifact id. */
+  /** Not in the model's output contract: the runner adds the generated frame's artifact id (spec §3.2 Storyboards). */
   imageArtifactId: z.string().optional(),
+  /** Added by the runner when a relay link made this shot's clip (ADR-0069). */
+  clipArtifactId: z.string().optional(),
 });
 const Storyboard = z.object({ storyboard: z.array(Shot).min(1), voiceover: z.string() });
 
@@ -64,6 +66,23 @@ export function parseStoryboard(text: string): StoryboardModel | null {
     imagePrompt: s.imagePrompt,
     durationSec: s.durationSec,
     ...(s.imageArtifactId ? { imageArtifactId: s.imageArtifactId } : {}),
+    ...(s.clipArtifactId ? { clipArtifactId: s.clipArtifactId } : {}),
   }));
   return { shots, voiceover: parsed.data.voiceover, totalSec: shots.reduce((t, s) => t + s.durationSec, 0) };
+}
+
+/** Every artifact a storyboard shows (frames and clips), so the server can say what media type each one is. */
+export function storyboardArtifacts(board: StoryboardModel): string[] {
+  return board.shots.flatMap((s) => [s.imageArtifactId, s.clipArtifactId].filter((id): id is string => id !== undefined));
+}
+
+/**
+ * How a clip is shown: a real clip (video/*) plays in a video element; the demo's labelled placeholder
+ * (image/svg+xml, contracts VideoResult) is an image, so it is shown as one.
+ */
+export function clipKind(mediaType: string | undefined): 'video' | 'image' | 'link' {
+  const type = mediaType?.split(';')[0]?.trim() ?? '';
+  if (type.startsWith('video/')) return 'video';
+  if (type.startsWith('image/')) return 'image';
+  return 'link';
 }

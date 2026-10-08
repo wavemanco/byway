@@ -1,23 +1,30 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { RecommendationView, type RecipeOption } from '../../../src/components/RecommendationView.tsx';
-import { recommendIntake } from '../../../src/server/api.ts';
+import { composeView, currentRecommendation } from '../../../src/server/api.ts';
 import { getDeps } from '../../../src/server/deps.ts';
 import { workspaceSpend } from '../../../src/view/history.ts';
+import { takesRefs } from '../../../src/view/refs.ts';
 
 export const metadata: Metadata = { title: 'Recommendation' };
 
-/** Recommendation (spec §5, screen 2): the recommended recipe, the chooser answers, alternatives, Build my own. */
-export default async function RecommendPage({ params }: PageProps<'/recommend/[intakeId]'>) {
+/**
+ * Recommendation (spec §5, screen 2): the recommended recipe, the chooser answers, alternatives, Build my own.
+ * `?recipe=` is a recipe chosen from the Library, shown instead of running the chooser.
+ */
+export default async function RecommendPage({ params, searchParams }: PageProps<'/recommend/[intakeId]'>) {
   const { intakeId } = await params;
+  const chosen = (await searchParams).recipe;
   const deps = await getDeps();
-  const intake = deps.intakes.get(intakeId);
-  if (!intake) {
+  const { services, profileId } = deps;
+  const intake = await services.store.getIntake(intakeId);
+  const chosenRecipeId = typeof chosen === 'string' && services.advisor.recipe(chosen) ? chosen : null;
+  if (!intake || intake.workspaceId !== deps.workspaceId) {
     return (
       <div className="page">
         <div className="empty">
-          <h1>This problem is no longer here</h1>
-          <p>byway keeps a problem in memory until you start a run, and it may have restarted since. Describe it again to get a recommendation.</p>
+          <h1>This problem is not here</h1>
+          <p>byway could not find it. Describe it again to get a recommendation.</p>
           <Link className="button button-primary" href="/">
             Go to Start
           </Link>
@@ -26,16 +33,20 @@ export default async function RecommendPage({ params }: PageProps<'/recommend/[i
     );
   }
 
-  const { services, profileId } = deps;
   const options: Record<string, RecipeOption> = {};
   for (const presentation of services.advisor.catalog()) {
-    const recipe = services.recipes.get(presentation.recipeId);
+    const recipe = services.advisor.recipe(presentation.recipeId);
     if (!recipe) continue;
-    options[presentation.recipeId] = { presentation, label: services.advisor.label(recipe), estimate: services.advisor.estimate(recipe, profileId) };
+    options[presentation.recipeId] = {
+      presentation,
+      label: services.advisor.label(recipe),
+      estimate: services.advisor.estimate(recipe, profileId),
+      takesRefs: takesRefs(recipe),
+    };
   }
-  const recommendation = intake.recipeId ? null : await recommendIntake(deps, intakeId);
+  const recommendation = chosenRecipeId ? null : await currentRecommendation(deps, intakeId);
   // The composed recipe stays on the server; the page gets what it shows.
-  const composed = intake.composed ? (({ recipe: _recipe, ...view }) => view)(intake.composed) : null;
+  const composed = intake.composed ? composeView(intake.composed) : null;
   const workspace = await services.store.ensureDefaultWorkspace();
   const spend = workspaceSpend(workspace.budgetUsd, await services.store.listRuns(workspace.id));
 
@@ -46,7 +57,7 @@ export default async function RecommendPage({ params }: PageProps<'/recommend/[i
         problem={intake.problem.text}
         attachments={intake.problem.attachments?.map((a) => a.name) ?? []}
         recommendation={recommendation}
-        chosenRecipeId={intake.recipeId ?? null}
+        chosenRecipeId={chosenRecipeId}
         questions={services.advisor.questions()}
         options={options}
         composed={composed}

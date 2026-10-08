@@ -5,10 +5,12 @@ import type { DemoRunner } from '../src/services/demo/runner.ts';
 import type { Services } from '../src/services/index.ts';
 import {
   HttpError,
+  addRef,
   artifactResponse,
   composeIntake,
   controlRun,
   createIntake,
+  currentRecommendation,
   recipeForRun,
   recommendIntake,
   resolveInRun,
@@ -16,8 +18,8 @@ import {
   updateSettings,
   type Deps,
 } from '../src/server/api.ts';
-import { createIntakeStore } from '../src/server/intakes.ts';
 import { getRunData } from '../src/server/run-data.ts';
+import { encodePng } from '../src/services/demo/png.ts';
 
 const instant = () => Promise.resolve();
 let services: Services | undefined;
@@ -27,7 +29,7 @@ afterEach(() => (services?.runner as DemoRunner | undefined)?.dispose());
 async function deps(): Promise<Deps> {
   services = createDemoServices({ sleep: instant, stepMs: 0 });
   const ws = await services.store.ensureDefaultWorkspace();
-  return { services, intakes: createIntakeStore(), workspaceId: ws.id, profileId: 'balanced' };
+  return { services, workspaceId: ws.id, profileId: (await services.store.getPreferences(ws.id)).profileId };
 }
 
 async function openQuestion(d: Deps, runId: string): Promise<CheckpointRecord> {
@@ -40,54 +42,66 @@ async function openQuestion(d: Deps, runId: string): Promise<CheckpointRecord> {
   return open;
 }
 
+const png = () => Buffer.from(encodePng(2, 2, () => [10, 20, 30])).toString('base64');
+
 describe('route handler logic', () => {
-  it('takes a problem from Start to a recommendation, re-routes on a flipped answer, and starts the run', async () => {
+  it('takes a problem from Start to a recommendation, re-routes on a flipped answer, keeps it, and starts the run', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
-    const rec = await recommendIntake(d, intakeId);
+    expect(await d.services.store.getIntake(intakeId)).toMatchObject({ workspaceId: d.workspaceId, problem: { text: 'A landing page for my pottery studio' } });
+    const rec = await currentRecommendation(d, intakeId);
     expect(rec.recipeId).toBe('c1');
 
     const flipped = rec.answers.map((a) => (a.questionId === 'visual' ? { ...a, answer: false, setBy: 'user' as const } : a));
-    expect((await recommendIntake(d, intakeId, flipped)).recipeId).not.toBe('c1');
+    const again = await recommendIntake(d, intakeId, flipped);
+    expect(again.recipeId).not.toBe('c1');
+    // Coming back to the screen shows the answers as you left them.
+    expect((await currentRecommendation(d, intakeId)).recipeId).toBe(again.recipeId);
+    expect((await d.services.store.getIntake(intakeId))?.answers?.find((a) => a.questionId === 'visual')).toMatchObject({ answer: false, setBy: 'user' });
 
     const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 3 });
     const data = await getRunData(d.services, runId);
-    expect(data.view.run.recipeId).toBe('c1');
-    expect(data.budgetUsd).toBe(3);
+    expect(data.view.run).toMatchObject({ recipeId: 'c1', budgetUsd: 3, intakeId });
   });
 
-  it('starts a library recipe directly', async () => {
+  it('checks a library recipe through the advisor', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo', recipeId: 'c4' });
-    expect(d.intakes.get(intakeId)?.recipeId).toBe('c4');
+    expect(await d.services.store.getIntake(intakeId)).toBeDefined();
     await expect(createIntake(d, { text: 'x', recipeId: 'c99' })).rejects.toMatchObject({ status: 404 });
   });
 
-  it('composes a recipe, keeps it with the intake and starts it as composed', async () => {
+  it('composes a recipe, keeps it on the intake and starts it as composed, presentable even after a restart', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo' });
     const composed = await composeIntake(d, intakeId);
     expect(composed.label.scope).toBe('Composed');
+    expect(composed.takesRefs).toBe(true);
     expect(composed).not.toHaveProperty('recipe');
+    expect((await d.services.store.getIntake(intakeId))?.composed?.recipe.kind).toBe('composed');
     const { runId } = await startRun(d, { intakeId, budgetUsd: 2 });
-    expect(d.intakes.runRecipe(runId)?.presentation.name).toMatch(/^Your recipe/);
-    expect(d.intakes.runRecipe(runId)?.label.scope).toBe('Composed');
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
-    expect(recipeForRun(d, run).label?.scope).toBe('Composed');
-    // After a restart the composed recipe is unknown: no label is better than a made-up one.
-    expect(recipeForRun({ ...d, intakes: createIntakeStore() }, run)).toEqual({});
+    expect(run.intakeId).toBe(intakeId);
+    // The run finds its composed recipe through its intake, which the store keeps.
+    const shown = await recipeForRun(d, run);
+    expect(shown.presentation?.name).toMatch(/^Your recipe/);
+    expect(shown.label?.scope).toBe('Composed');
+    expect(shown.steps?.vision?.label).toBe('Your direction');
+    // Without its intake, no label is better than a made-up one.
+    expect(await recipeForRun(d, { ...run, intakeId: 'gone' })).toEqual({});
   });
 
-  it('presents library runs from the catalog with a computed label', async () => {
+  it('presents library runs from the catalog with a computed label and a step index', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
     const run = await d.services.store.getRun(runId);
     if (!run) throw new Error('run missing');
-    const shown = recipeForRun(d, run);
+    const shown = await recipeForRun(d, run);
     expect(shown.presentation?.name).toBe('Memo Polish');
     expect(shown.label?.verdict).toBe('Untested');
+    expect(shown.steps?.['apply-cut']).toMatchObject({ label: 'Trim', who: 'you', stage: 'Finish' });
   });
 
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {
@@ -111,25 +125,55 @@ describe('route handler logic', () => {
     expect(after?.status).toBe('resolved');
   });
 
-  it('pauses, resumes and cancels runs', async () => {
+  it('pauses, resumes and cancels runs through the runner, and leaves ended runs alone', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
     await controlRun(d, runId, 'pause');
-    expect(d.services.controls?.isPaused(runId)).toBe(true);
+    expect((await d.services.store.getRun(runId))?.status).toBe('paused');
     await controlRun(d, runId, 'resume');
-    expect(d.services.controls?.isPaused(runId)).toBe(false);
+    expect((await d.services.store.getRun(runId))?.status).not.toBe('paused');
     await controlRun(d, runId, 'cancel');
     await vi.waitFor(async () => expect((await d.services.runner.view(runId)).run.status).toBe('cancelled'));
+    await expect(controlRun(d, runId, 'resume')).rejects.toMatchObject({ status: 409 });
     await expect(controlRun(d, 'run-missing', 'cancel')).rejects.toMatchObject({ status: 404 });
   });
 
-  it('updates the profile, demo mode and workspace budget, and refuses unknown profiles', async () => {
+  it('saves the profile, demo mode and technical names as Store preferences, and refuses unknown profiles', async () => {
     const d = await deps();
-    const next = await updateSettings(d, { profileId: 'best', workspaceBudgetUsd: 50 });
-    expect(next.profileId).toBe('best');
+    const next = await updateSettings(d, { profileId: 'best', workspaceBudgetUsd: 50, showTechnicalNames: true });
+    expect(next).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true });
+    expect(await d.services.store.getPreferences(d.workspaceId)).toEqual(next);
     expect((await d.services.store.getWorkspace(d.workspaceId))?.budgetUsd).toBe(50);
     await expect(updateSettings(d, { profileId: 'nope' })).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe('examples you admire (ADR-0071)', () => {
+  it('stores pasted text and images, and passes them to the run as inputs.refs', async () => {
+    const d = await deps();
+    const text = await addRef(d, { text: '  A memo I admire.  ' });
+    expect(text.mediaType).toBe('text/markdown');
+    expect(await d.services.store.artifacts.getText(text.artifactId)).toBe('A memo I admire.');
+    const image = await addRef(d, { image: { mediaType: 'image/png', base64: png() } });
+    expect(image.mediaType).toBe('image/png');
+
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const start = vi.spyOn(d.services.runner, 'start');
+    await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, refs: [text.artifactId, image.artifactId, text.artifactId] });
+    expect(start.mock.calls[0]?.[0]).toMatchObject({ intakeId, inputs: { refs: [text.artifactId, image.artifactId] } });
+  });
+
+  it('refuses images that are not what they claim, examples that were never stored, and examples for a recipe without them', async () => {
+    const d = await deps();
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64');
+    await expect(addRef(d, { image: { mediaType: 'image/png', base64: svg } })).rejects.toMatchObject({ status: 400 });
+    await expect(addRef(d, { image: { mediaType: 'image/jpeg', base64: png() } })).rejects.toMatchObject({ status: 400 });
+
+    const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
+    const ref = await addRef(d, { text: 'A page I admire.' });
+    await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, refs: [ref.artifactId] })).rejects.toThrow(/does not use examples/);
+    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, refs: [`sha256:${'0'.repeat(64)}`] })).rejects.toThrow(/not found/);
   });
 });
 

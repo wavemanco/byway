@@ -249,7 +249,8 @@
   width: 64px;
 }
 
-.thumb img {
+.thumb img,
+.thumb video {
   display: block;
   width: 64px;
   aspect-ratio: 16 / 9;

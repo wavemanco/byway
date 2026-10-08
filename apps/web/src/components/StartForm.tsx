@@ -67,7 +67,8 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
         attachments: attachments.filter((a) => a.text.trim()).map(({ name, text: body }) => ({ name: name.trim() || 'Attachment', text: body })),
         ...(recipe ? { recipeId: recipe.recipeId } : {}),
       });
-      router.push(`/recommend/${intakeId}`);
+      // A library choice travels in the address, so the Recommendation screen shows that recipe instead of choosing.
+      router.push(recipe ? `/recommend/${intakeId}?recipe=${encodeURIComponent(recipe.recipeId)}` : `/recommend/${intakeId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
       setBusy(false);

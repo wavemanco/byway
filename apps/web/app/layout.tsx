@@ -1,11 +1,9 @@
 import type { Metadata, Viewport } from 'next';
-import { cookies } from 'next/headers';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Nav } from '../src/components/Nav.tsx';
 import { TechNamesProvider } from '../src/components/TechNames.tsx';
 import { getContext } from '../src/services/index.ts';
-import { TECHNICAL_COOKIE } from '../src/view/prefs.ts';
 import { waitingRunCount } from '../src/view/run.ts';
 import './styles/tokens.css';
 import './styles/base.css';
@@ -36,9 +34,10 @@ function Mark() {
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const technical = (await cookies()).get(TECHNICAL_COOKIE)?.value === '1';
-  const { services, workspaceId } = await getContext();
-  const waiting = waitingRunCount(await services.store.openCheckpoints(workspaceId));
+  const { services, workspaceId, preferences } = await getContext();
+  const technical = preferences.showTechnicalNames;
+  const [open, runs] = await Promise.all([services.store.openCheckpoints(workspaceId), services.store.listRuns(workspaceId)]);
+  const waiting = waitingRunCount(open, runs);
   return (
     <html lang="en">
       <body>

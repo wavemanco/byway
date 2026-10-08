@@ -1,4 +1,10 @@
-/** The live cost meter against the run's budget (spec §5, Run screen; §3.4 spend). */
+/**
+ * The live cost meter against the run's budget (spec §5, Run screen; §3.4 spend). The runner announces spend in
+ * `cost` events ({ totalUsd, budgetUsd }), including each budget raise; the run record is the fallback before the
+ * first one arrives. Both the demo and the real runner emit these, so the meter lives here, not in a service.
+ */
+import type { RunEvent, RunRecord } from '@byway/contracts';
+import { CostData, read } from './events.ts';
 import { formatUsd } from './format.ts';
 
 export interface BudgetMeter {
@@ -20,4 +26,22 @@ export function budgetMeter(costUsd: number, budgetUsd: number | undefined): Bud
     spent,
     budget: formatUsd(budgetUsd),
   };
+}
+
+/**
+ * Spend and budget from the latest `cost` event. Spend only grows and a budget only rises, so the larger of the
+ * event and the run record wins: whichever of the two a poll caught first, the meter never steps backwards.
+ */
+export function runSpend(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[]): { costUsd: number; budgetUsd: number } {
+  const latest = events.filter((e) => e.type === 'cost').reduce<RunEvent | undefined>((a, e) => (!a || e.seq > a.seq ? e : a), undefined);
+  const d = latest ? read(CostData, latest.data) : {};
+  return {
+    costUsd: Math.max(run.costUsd, d.totalUsd ?? 0),
+    budgetUsd: Math.max(run.budgetUsd, d.budgetUsd ?? 0),
+  };
+}
+
+export function runMeter(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[]): BudgetMeter {
+  const { costUsd, budgetUsd } = runSpend(run, events);
+  return budgetMeter(costUsd, budgetUsd);
 }

@@ -45,7 +45,7 @@ export default async function HistoryPage() {
   const runs = await services.store.listRuns(workspaceId);
   const names = new Map<string, string>();
   for (const run of runs) {
-    const { presentation } = recipeForRun(deps, run);
+    const { presentation } = await recipeForRun(deps, run);
     if (presentation) names.set(run.id, recipeTitle(presentation, technical));
   }
   const groups = groupRuns(runs, await services.store.openCheckpoints(workspaceId));

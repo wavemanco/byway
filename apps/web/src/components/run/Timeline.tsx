@@ -16,8 +16,11 @@ const STATUS_WORDS: Record<StepStatus, string> = {
   stopped: 'Stopped',
 };
 
-/** A small status glyph; its meaning is also given in words for screen readers. */
-export function StatusIcon({ status }: { status: StepStatus }) {
+/**
+ * A small status glyph; its meaning is also given in words for screen readers, unless the row already says it in
+ * visible words (a skipped step's "Skipped").
+ */
+export function StatusIcon({ status, announce = true }: { status: StepStatus; announce?: boolean }) {
   return (
     <span className="status-icon" data-status={status}>
       <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
@@ -28,12 +31,14 @@ export function StatusIcon({ status }: { status: StepStatus }) {
         {status === 'skipped' ? <path d="M4.5 8h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /> : null}
         {status === 'stopped' ? <circle cx="8" cy="8" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" /> : null}
       </svg>
-      <span className="sr-only">{STATUS_WORDS[status]}: </span>
+      {announce ? <span className="sr-only">{STATUS_WORDS[status]}: </span> : null}
     </span>
   );
 }
 
 function meta(step: TimelineStep): string[] {
+  // ADR-0069: a step that could not run says so in words, with its note below.
+  if (step.status === 'skipped') return [STATUS_WORDS.skipped];
   const parts = [whoLabel(step.who)];
   if (step.round > 1) parts.push(`round ${step.round}`);
   if (step.iterations > 1) parts.push(`${step.iterations} passes`);
@@ -64,7 +69,7 @@ export function Timeline({ stages, artifacts, selected, onSelect }: TimelineProp
               const title = stepTitle(step.label, codeForLabel(step.label) ?? step.block, technical);
               return (
                 <li key={step.key} className="tl-step" data-status={step.status} data-who={step.who} data-selected={selected === step.key ? 'true' : undefined}>
-                  <StatusIcon status={step.status} />
+                  <StatusIcon status={step.status} announce={step.status !== 'skipped'} />
                   <div className="tl-main">
                     <div className="tl-line">
                       <button type="button" className="tl-title" aria-pressed={selected === step.key} onClick={() => onSelect(step.key)}>

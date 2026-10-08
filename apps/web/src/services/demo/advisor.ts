@@ -10,6 +10,8 @@ import { demoRecipes } from './recipes.ts';
 import { hashOf } from './samples/text.ts';
 
 const STRONG = 0.7;
+/** 03's fallback when no chooser question is answered yes: C4, as a partial fit (spec §4, CHOOSER_FALLBACK). */
+const FALLBACK = 'c4';
 
 const WHY: Record<string, string> = {
   c1: 'It is something people look at on a screen, so it is drafted four different ways and finished by you.',
@@ -88,9 +90,13 @@ function capCritique(node: Node): Node {
     case 'each':
     case 'loop':
     case 'optional':
+    case 'gate':
+    case 'relay':
       return { ...node, body: capCritique(node.body) };
     case 'route':
       return { ...node, branches: node.branches.map((b) => ({ ...b, body: capCritique(b.body) })) };
+    case 'audit':
+      return { ...node, lenses: node.lenses.map((l) => ({ ...l, body: capCritique(l.body) })) };
     case 'pick':
       return node;
   }
@@ -109,9 +115,10 @@ export function createDemoAdvisor(): Advisor {
       });
       const yes = QUESTIONS.filter((q, i) => answers[i]?.answer);
       const deciding = yes[0];
-      const recipeId = deciding?.routesTo ?? 'c4';
+      const recipeId = deciding?.routesTo ?? FALLBACK;
       const decidingAnswer = answers.find((a) => a.questionId === deciding?.id);
-      const fit: Recommendation['fit'] = !deciding ? 'none' : (decidingAnswer?.confidence ?? 0) >= STRONG ? 'strong' : 'partial';
+      // With no yes, 03's fallback is a partial fit by definition (spec §4), whatever the intake's confidence.
+      const fit: Recommendation['fit'] = deciding && (decidingAnswer?.confidence ?? 0) >= STRONG ? 'strong' : 'partial';
       const presentation = requirePresentation(recipeId);
       const recipe = requireRecipe(recipeId);
       return {
@@ -131,7 +138,7 @@ export function createDemoAdvisor(): Advisor {
           why: `You also answered yes to “${q.text}”`,
         })),
         estimate: advisor.estimate(recipe, opts.profileId),
-        composeSuggested: fit === 'none',
+        composeSuggested: !deciding,
         routes: {},
       };
     },
@@ -172,6 +179,9 @@ export function createDemoAdvisor(): Advisor {
     },
 
     catalog: () => PRESENTATIONS.map((p) => structuredClone(p)),
+
+    // Only catalog recipes: a composed recipe lives with its intake (Store intakes), not here.
+    recipe: (recipeId) => demoRecipes.get(recipeId),
 
     label: (recipe) => (recipe.kind === 'composed' ? { ...COMPOSED } : { ...UNTESTED }),
 

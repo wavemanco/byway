@@ -1,14 +1,13 @@
 'use client';
 
-import type { ModelProfile, ProviderId, ProviderStatus } from '@byway/contracts';
+import type { Preferences, ProfileStatus, ProviderId, ProviderStatus } from '@byway/contracts';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
-import type { Preferences } from '../services/index.ts';
 import { formatUsd, parseBudgetInput } from '../view/format.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
+import { profileNeeds, videoAvailability } from '../view/labels.ts';
 import { patch } from './api.ts';
 import { Switch } from './Switch.tsx';
-import { setTechnicalNamesCookie } from './TechNames.tsx';
 
 const PROVIDERS: Record<ProviderId, { name: string; does: string; env?: string }> = {
   anthropic: { name: 'Anthropic', does: 'Claude models for drafting and judgment', env: 'ANTHROPIC_API_KEY' },
@@ -23,18 +22,20 @@ const TIER_WORDS = { big: 'Judgment', mid: 'Drafting' } as const;
 
 interface Props {
   providers: ProviderStatus[];
-  profiles: ModelProfile[];
+  /** Every profile with what it is missing (Gateway.profileStatus), so you can see what a key would unlock. */
+  profiles: ProfileStatus[];
+  /** Store preferences: the profile, demo mode and technical names. */
   preferences: Preferences;
   spend: WorkspaceSpend;
   mode: 'demo' | 'live';
-  technical: boolean;
 }
 
-export function SettingsView({ providers, profiles, preferences: initial, spend, mode, technical: initialTechnical }: Props) {
+export function SettingsView({ providers, profiles, preferences: initial, spend, mode }: Props) {
   const router = useRouter();
   const ids = useId();
   const [prefs, setPrefs] = useState(initial);
-  const [technical, setTechnical] = useState(initialTechnical);
+  const technical = prefs.showTechnicalNames;
+  const chosen = profiles.find((s) => s.profile.id === prefs.profileId);
   const [budgetText, setBudgetText] = useState(spend.capUsd.toFixed(2));
   const [cap, setCap] = useState(spend.capUsd);
   const [saved, setSaved] = useState<string | null>(null);
@@ -124,30 +125,38 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
       <section className="settings-section" aria-labelledby={`${ids}-profile`}>
         <h2 id={`${ids}-profile`}>Model profile</h2>
         <p className="section-note">Which models do the AI steps. Judgment (critique, picking, checks) uses the larger model; drafting uses the other.</p>
-        <fieldset className="profiles">
+        <fieldset className="profiles" aria-describedby={`${ids}-video`}>
           <legend className="sr-only">Model profile</legend>
-          {profiles.map((profile) => (
-            <label key={profile.id} className="profile" data-checked={prefs.profileId === profile.id ? 'true' : undefined}>
-              <input
-                type="radio"
-                name="profile"
-                value={profile.id}
-                checked={prefs.profileId === profile.id}
-                onChange={() => void save({ profileId: profile.id }, `Model profile set to ${profile.label}.`)}
-              />
-              <span>
-                <span className="profile-name">{profile.label}</span>
-                <span className="profile-models">
-                  {(Object.keys(TIER_WORDS) as (keyof typeof TIER_WORDS)[]).map((tier) => (
-                    <span key={tier}>
-                      {technical ? `${TIER_WORDS[tier]} (${tier})` : TIER_WORDS[tier]}: {profile.tiers[tier].model}
-                    </span>
-                  ))}
+          {profiles.map(({ profile, ...status }) => {
+            const needs = profileNeeds(status);
+            return (
+              <label key={profile.id} className="profile" data-checked={prefs.profileId === profile.id ? 'true' : undefined}>
+                <input
+                  type="radio"
+                  name="profile"
+                  value={profile.id}
+                  checked={prefs.profileId === profile.id}
+                  onChange={() => void save({ profileId: profile.id }, `Model profile set to ${profile.label}.`)}
+                />
+                <span>
+                  <span className="profile-name">{profile.label}</span>
+                  <span className="profile-models">
+                    {(Object.keys(TIER_WORDS) as (keyof typeof TIER_WORDS)[]).map((tier) => (
+                      <span key={tier}>
+                        {technical ? `${TIER_WORDS[tier]} (${tier})` : TIER_WORDS[tier]}: {profile.tiers[tier].model}
+                      </span>
+                    ))}
+                  </span>
+                  {needs ? <span className="profile-needs">{mode === 'demo' ? `${needs}. Demo runs use sample outputs meanwhile.` : needs}</span> : null}
                 </span>
-              </span>
-            </label>
-          ))}
+              </label>
+            );
+          })}
         </fieldset>
+        <p id={`${ids}-video`} className="profile-video">
+          {videoAvailability(chosen)}
+          {mode === 'demo' && !chosen?.video ? <span className="muted">. Demo runs show labelled placeholder clips instead.</span> : null}
+        </p>
       </section>
 
       <section className="settings-section" aria-labelledby={`${ids}-budget`}>
@@ -186,12 +195,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
           </div>
           <Switch
             checked={technical}
-            onChange={(on) => {
-              setTechnical(on);
-              setTechnicalNamesCookie(on);
-              setSaved(on ? 'Technical names shown.' : 'Technical names hidden.');
-              router.refresh();
-            }}
+            onChange={(on) => void save({ showTechnicalNames: on }, on ? 'Technical names shown.' : 'Technical names hidden.')}
             labelledBy={`${ids}-names`}
             describedBy={`${ids}-names-help`}
           />

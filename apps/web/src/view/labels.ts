@@ -2,7 +2,33 @@
  * Label text. Evidence labels are computed by the advisor from the study registry (CR11); the UI only words
  * them, and never more strongly than the verdict allows.
  */
-import type { ChooserAnswer, EvidenceLabel, Recommendation, RunStatus } from '@byway/contracts';
+import type { ChooserAnswer, EvidenceLabel, ProfileStatus, ProviderId, Recommendation, RunStatus } from '@byway/contracts';
+
+/** Provider names as people know them. */
+export const PROVIDER_NAMES: Record<ProviderId, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  google: 'Google',
+  openrouter: 'OpenRouter',
+  fal: 'fal.ai',
+  mock: 'Sample outputs',
+};
+
+/** Settings: whether the profile can make C5's video clips (ProfileStatus.video, ADR-0069). */
+export function videoAvailability(status: Pick<ProfileStatus, 'video' | 'profile'> | undefined): string {
+  if (status?.video) return 'Video clips: available';
+  const provider = status?.profile.video?.provider;
+  const name = provider && provider !== 'mock' ? PROVIDER_NAMES[provider] : PROVIDER_NAMES.fal;
+  return `Video clips need a ${name} key`;
+}
+
+/** Settings: what a profile still needs before it can run, or null when it can. */
+export function profileNeeds(status: Pick<ProfileStatus, 'usable' | 'missing'>): string | null {
+  if (status.usable || status.missing.length === 0) return null;
+  const names = status.missing.map((p) => PROVIDER_NAMES[p]);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return `Needs a key for ${list}`;
+}
 
 const SCOPE_TEXT: Record<EvidenceLabel['scope'], string> = {
   Exact: 'this exact recipe',
@@ -24,6 +50,7 @@ const STATUS_TEXT: Record<RunStatus, string> = {
   queued: 'Queued',
   running: 'Working',
   waiting: 'Your turn',
+  paused: 'Paused',
   done: 'Done',
   failed: 'Failed',
   cancelled: 'Cancelled',

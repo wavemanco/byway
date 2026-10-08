@@ -11,6 +11,7 @@ import { recipeTitle } from '../view/vocabulary.ts';
 import { post } from './api.ts';
 import { EvidenceLabel } from './EvidenceLabel.tsx';
 import { Route, RouteDetails, RouteLegend } from './Route.tsx';
+import { Examples, exampleCount, storeExamples, type ExampleEntry } from './Examples.tsx';
 import { clearStartDraft } from './startDraft.ts';
 import { Switch } from './Switch.tsx';
 import { useTechnicalNames } from './TechNames.tsx';
@@ -19,6 +20,8 @@ export interface RecipeOption {
   presentation: RecipePresentation;
   label: Label;
   estimate: CostEstimate;
+  /** The recipe takes your examples (its `refs` input), so the "Examples you admire" field is offered. */
+  takesRefs: boolean;
 }
 
 type Selection = { kind: 'recipe'; recipeId: string } | { kind: 'composed' };
@@ -48,9 +51,15 @@ export function RecommendationView(props: Props) {
   const [composing, setComposing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Kept here, not in the proposal, so your examples survive switching to another recipe that takes them.
+  const [examples, setExamples] = useState<ExampleEntry[]>([]);
 
   const current: RecipeOption | null =
-    selection.kind === 'composed' ? (composed ? { presentation: composed.presentation, label: composed.label, estimate: composed.estimate } : null) : (options[selection.recipeId] ?? null);
+    selection.kind === 'composed'
+      ? composed
+        ? { presentation: composed.presentation, label: composed.label, estimate: composed.estimate, takesRefs: composed.takesRefs }
+        : null
+      : (options[selection.recipeId] ?? null);
   const isRecommended = rec !== null && selection.kind === 'recipe' && selection.recipeId === rec.recipeId;
 
   async function flip(questionId: string, answer: boolean) {
@@ -112,6 +121,8 @@ export function RecommendationView(props: Props) {
             composed={selection.kind === 'composed' ? composed : null}
             remainingUsd={props.remainingUsd}
             demo={demo}
+            examples={examples}
+            onExamples={setExamples}
             onStarted={(runId) => {
               clearStartDraft();
               router.push(`/runs/${runId}`);
@@ -252,10 +263,12 @@ interface ProposalProps {
   composed: ComposeView | null;
   remainingUsd: number;
   demo: boolean;
+  examples: ExampleEntry[];
+  onExamples: (update: (entries: ExampleEntry[]) => ExampleEntry[]) => void;
   onStarted: (runId: string) => void;
 }
 
-function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, remainingUsd, demo, onStarted }: ProposalProps) {
+function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, remainingUsd, demo, examples, onExamples, onStarted }: ProposalProps) {
   const technical = useTechnicalNames();
   const budgetId = useId();
   const { presentation, label, estimate } = option;
@@ -275,11 +288,14 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
     setBusy(true);
     setError(null);
     try {
+      // Examples go only to a recipe that takes them; they stay on this screen if you switch to one that does not.
+      const refs = option.takesRefs && exampleCount(examples) > 0 ? await storeExamples(examples) : [];
       const { runId } = await post<{ runId: string }>('/api/runs', {
         intakeId,
         budgetUsd: budget,
         ...(recipeId ? { recipeId } : {}),
         ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),
+        ...(refs.length > 0 ? { refs } : {}),
       });
       onStarted(runId);
     } catch (err) {
@@ -348,6 +364,8 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
 
       <p className="routing-note">{ROUTING_NOTE}</p>
       <RouteDetails stages={presentation.stages} technical={technical} />
+
+      {option.takesRefs ? <Examples entries={examples} onChange={onExamples} disabled={busy} /> : null}
 
       <form
         className="start-bar"

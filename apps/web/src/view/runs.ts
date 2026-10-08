@@ -1,8 +1,9 @@
 /**
  * Ordering runs for History and the header badge: runs waiting for you come first (spec §5, History), because
- * a run cannot move until you take your turn.
+ * a run cannot move until you take your turn. A paused run is still in progress; it sits with the working ones.
  */
 import type { CheckpointRecord, RunRecord } from '@byway/contracts';
+import { isEnded, liveQuestions } from './run.ts';
 
 export interface RunListItem {
   run: RunRecord;
@@ -14,16 +15,15 @@ type Group = 'yourTurn' | 'working' | 'finished';
 
 function groupOf(item: RunListItem): Group {
   if (item.openCheckpoint || item.run.status === 'waiting') return 'yourTurn';
-  if (item.run.status === 'running' || item.run.status === 'queued') return 'working';
-  return 'finished';
+  return isEnded(item.run.status) ? 'finished' : 'working';
 }
 
 const RANK: Record<Group, number> = { yourTurn: 0, working: 1, finished: 2 };
 
 export function orderRuns(runs: RunRecord[], openCheckpoints: CheckpointRecord[]): RunListItem[] {
   const firstOpen = new Map<string, CheckpointRecord>();
-  for (const cp of [...openCheckpoints].sort((a, b) => a.openedAt.localeCompare(b.openedAt))) {
-    if (cp.status === 'open' && !firstOpen.has(cp.runId)) firstOpen.set(cp.runId, cp);
+  for (const cp of [...liveQuestions(openCheckpoints, runs)].sort((a, b) => a.openedAt.localeCompare(b.openedAt))) {
+    if (!firstOpen.has(cp.runId)) firstOpen.set(cp.runId, cp);
   }
   return runs
     .map((run): RunListItem => {

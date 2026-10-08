@@ -1,7 +1,8 @@
 /**
- * The demo gateway: every call is answered by a mock that follows the output contracts of spec §3.3, at no
- * cost, with a hash-chained ledger like the real one (CR7). It has no provider keys, so only the mock is
- * configured; the real gateway (WP-C) reports key presence from the environment, never the keys.
+ * The demo gateway: like @byway/gateway in demo mode, every call is answered by a mock that follows the output
+ * contracts of spec §3.3, at no cost, with a hash-chained ledger (CR7). It has no provider keys, so only the mock
+ * is configured: `profiles()` offers the demo profile alone and `profileStatus()` says what each other profile
+ * would need. Video calls return a labelled placeholder clip (contracts VideoResult; ADR-0069).
  */
 import { createHash, randomUUID } from 'node:crypto';
 import {
@@ -11,30 +12,48 @@ import {
   type ImageResult,
   type LedgerEntry,
   type ModelProfile,
+  type ProfileStatus,
+  type ProviderId,
   type ProviderStatus,
   type Store,
+  type VideoResult,
 } from '@byway/contracts';
 import { encodePng } from './png.ts';
+import { placeholderClipSvg } from './samples/clip.ts';
 import { hashOf } from './samples/text.ts';
 
-/** Display data for demo mode; the verified model table comes from @byway/gateway. */
+/**
+ * Display data for demo mode; the verified model table comes from @byway/gateway. Image and video entries say
+ * which provider each profile needs; their model ids are never shown.
+ */
 const PROFILES: ModelProfile[] = [
   {
     id: 'balanced',
     label: 'Balanced',
     tiers: { big: { provider: 'anthropic', model: 'claude-opus-5-5' }, mid: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
+    image: { provider: 'google', model: 'image' },
+    video: { provider: 'fal', model: 'video' },
   },
   {
     id: 'best',
     label: 'Best quality',
     tiers: { big: { provider: 'anthropic', model: 'claude-opus-5-5' }, mid: { provider: 'anthropic', model: 'claude-opus-5-5' } },
+    image: { provider: 'openai', model: 'image' },
+    video: { provider: 'fal', model: 'video' },
   },
   {
     id: 'demo',
     label: 'Demo',
     tiers: { big: { provider: 'mock', model: 'mock-judge' }, mid: { provider: 'mock', model: 'mock-worker' } },
+    image: { provider: 'mock', model: 'mock-image' },
+    video: { provider: 'mock', model: 'mock-video' },
   },
 ];
+
+/** The demo has no keys: only the built-in mock answers. */
+const CONFIGURED: ReadonlySet<ProviderId> = new Set(['mock']);
+const REAL_PROVIDERS = ['anthropic', 'openai', 'google', 'openrouter', 'fal'] as const;
+const MAX_CLIP_SEC = 60;
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -59,6 +78,12 @@ function answer(purpose: string): string {
       return 'B reads more plainly.\nKeep: B';
     case 'vision':
       return 'A calm, specific direction with one memorable detail.';
+    case 'dedupe':
+      return fenced('json', JSON.stringify({ keep: ['A', 'B'], merged: [{ into: 'A', from: ['C'] }] }));
+    case 'overlap':
+      return fenced('json', JSON.stringify({ flags: [{ label: 'A', overlapsWith: 'a plain answer', note: 'Common first idea.' }] }));
+    case 'relay':
+      return fenced('json', JSON.stringify({ clipPrompt: 'Slow push-in on the opening frame', durationSec: 3 }));
     case 'asset.briefs':
       return fenced('json', JSON.stringify({ images: [{ slot: 'hero', prompt: 'quiet workshop, morning light', alt: 'A workshop in morning light', size: '1536x1024' }] }));
     case 'advisor.intake':
@@ -78,6 +103,24 @@ function answer(purpose: string): string {
     default:
       return '# Draft\n\nA short sample paragraph.';
   }
+}
+
+function status(profile: ModelProfile): ProfileStatus {
+  const missing = [...new Set([profile.tiers.big.provider, profile.tiers.mid.provider])].filter((p) => !CONFIGURED.has(p));
+  return {
+    profile: structuredClone(profile),
+    usable: missing.length === 0,
+    missing,
+    images: profile.image !== undefined && CONFIGURED.has(profile.image.provider),
+    video: profile.video !== undefined && CONFIGURED.has(profile.video.provider),
+  };
+}
+
+/** A small solid PNG standing in for a frame, coloured by the text it stands for. */
+function swatch(text: string, width: number, height: number): Uint8Array {
+  const h = hashOf(text);
+  const [r, g, b] = [h & 0xff, (h >> 8) & 0xff, (h >> 16) & 0xff];
+  return encodePng(width, height, (x, y) => [(r + x * 2) & 0xff, (g + y * 3) & 0xff, b]);
 }
 
 export function createDemoGateway(opts: { store: Store }): Gateway {
@@ -117,18 +160,16 @@ export function createDemoGateway(opts: { store: Store }): Gateway {
         costUsd: 0,
         latencyMs: 0,
       });
-      return { text, servedModel: entry.servedModel, provider: 'mock', usage, costUsd: 0, ledgerEntryId: entry.id };
+      return { text, stopReason: 'end', servedModel: entry.servedModel, provider: 'mock', usage, costUsd: 0, ledgerEntryId: entry.id };
     },
 
     async image(req): Promise<ImageResult> {
       profile(req.profileId);
-      const h = hashOf(req.prompt);
-      const [r, g, b] = [h & 0xff, (h >> 8) & 0xff, (h >> 16) & 0xff];
-      const bytes = encodePng(64, 40, (x, y) => [(r + x * 2) & 0xff, (g + y * 3) & 0xff, b]);
-      const art = await opts.store.artifacts.put(bytes, 'image/png');
+      const art = await opts.store.artifacts.put(swatch(req.prompt, 64, 40), 'image/png');
       const entry = record({
         workspaceId: req.workspaceId,
         ...(req.runId ? { runId: req.runId } : {}),
+        ...(req.stepId ? { stepId: req.stepId } : {}),
         purpose: req.purpose,
         kind: 'image',
         provider: 'mock',
@@ -143,6 +184,31 @@ export function createDemoGateway(opts: { store: Store }): Gateway {
       return { artifactId: art.id, mediaType: 'image/png', servedModel: 'mock-image', provider: 'mock', costUsd: 0, ledgerEntryId: entry.id };
     },
 
+    async video(req): Promise<VideoResult> {
+      profile(req.profileId);
+      if (!(req.durationSec > 0) || req.durationSec > MAX_CLIP_SEC) {
+        throw new GatewayError('invalid-request', `A clip lasts more than 0 and at most ${MAX_CLIP_SEC} seconds.`);
+      }
+      const clip = await opts.store.artifacts.putText(placeholderClipSvg(req.prompt, req.durationSec), 'image/svg+xml');
+      const lastFrame = await opts.store.artifacts.put(swatch(`${req.startFrameArtifactId ?? ''}|${req.prompt}`, 64, 36), 'image/png');
+      const entry = record({
+        workspaceId: req.workspaceId,
+        ...(req.runId ? { runId: req.runId } : {}),
+        ...(req.stepId ? { stepId: req.stepId } : {}),
+        purpose: req.purpose,
+        kind: 'video',
+        provider: 'mock',
+        requestedModel: 'mock-video',
+        servedModel: 'mock-video',
+        requestSha256: sha(JSON.stringify({ prompt: req.prompt, start: req.startFrameArtifactId ?? null, durationSec: req.durationSec })),
+        responseSha256: clip.id.replace('sha256:', ''),
+        usage: { inputTokens: 0, outputTokens: 0, units: 1 },
+        costUsd: 0,
+        latencyMs: 0,
+      });
+      return { artifactId: clip.id, lastFrameArtifactId: lastFrame.id, servedModel: 'mock-video', provider: 'mock', costUsd: 0, ledgerEntryId: entry.id };
+    },
+
     async spend(workspaceId) {
       const ws = await opts.store.getWorkspace(workspaceId);
       const byRun: Record<string, number> = {};
@@ -155,11 +221,12 @@ export function createDemoGateway(opts: { store: Store }): Gateway {
     },
 
     providers(): ProviderStatus[] {
-      const real = ['anthropic', 'openai', 'google', 'openrouter', 'fal'] as const;
-      return [...real.map((provider) => ({ provider, configured: false })), { provider: 'mock', configured: true }];
+      return [...REAL_PROVIDERS.map((provider) => ({ provider, configured: CONFIGURED.has(provider) })), { provider: 'mock', configured: true }];
     },
 
-    profiles: () => PROFILES.map((p) => structuredClone(p)),
+    profiles: () => PROFILES.map(status).filter((s) => s.usable).map((s) => s.profile),
+
+    profileStatus: () => PROFILES.map(status),
 
     async verifyLedger() {
       let prev = 'genesis';

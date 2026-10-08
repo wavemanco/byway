@@ -3,7 +3,8 @@
  * compare, directive, write, choose) so every "Your turn" panel can be exercised without keys. Costs are
  * sample figures in the range of each recipe's estimate.
  */
-import type { CheckpointResolution } from '@byway/contracts';
+import { GatewayError, type CheckpointResolution } from '@byway/contracts';
+import { NO_COMPOSITING, NO_VIDEO, NO_VO_AUDIO } from './notes.ts';
 import { DIFF_IMPLEMENT, DIFF_REVIEWED, DIFF_SCOPED, DIFF_SWEPT, WHY_DRAFT } from './samples/code.ts';
 import { frameSvg, shotsFor, voiceoverDraft } from './samples/media.ts';
 import { BRANDS, PAGE_STYLES, STYLE_NAMES, aiCopy, copyToText, renderPage, sweptCopy, textToCopy, type PageCopy } from './samples/pages.ts';
@@ -24,7 +25,7 @@ import {
   trimMemo,
   trimSeries,
 } from './samples/text.ts';
-import type { DemoContext, Produced, Script, ScriptStep } from './script.ts';
+import { SkipStep, type DemoContext, type Produced, type Script, type ScriptStep } from './script.ts';
 
 const HTML = 'text/html';
 const MD = 'text/markdown';
@@ -134,6 +135,7 @@ const c1: Script = {
   family: 'C1',
   title: 'Landing Page Studio',
   medium: 'web-page',
+  inputs: ['tells'],
   steps: [
     you({
       id: 'entry',
@@ -187,31 +189,17 @@ const c1: Script = {
       label: 'Outside critique',
       role: 'critic',
       block: 'CRITIC',
+      critic: 'OK',
       costUsd: 0.42,
       units: 3,
       iterations: 3,
-      note: () => 'Each draft went through 3 rounds of notes and fixes.',
+      note: () => 'Each draft went through 3 rounds of notes and fixes, scored against the quality bar.',
       work: async (ctx) => {
         ctx.state.copies = need(ctx.state.copies, 'copies').map((c) => ({
           ...c,
           points: [c.points[0] ?? ['', ''], c.points[1] ?? ['', ''], ['Close by', 'Made, answered and fixed by people a short walk from you.']],
         }));
         return draftSet(ctx, false);
-      },
-    }),
-    you({
-      id: 'plain',
-      stage: 'D2',
-      label: 'Plain?',
-      role: 'vision',
-      block: 'ASSET',
-      ask: async (ctx) => ({
-        kind: 'confirm',
-        prompt: 'Do any of these drafts look plain? Say yes and AI makes custom imagery for them.',
-        artifactIds: need(ctx.state.drafts, 'drafts'),
-      }),
-      apply: (ctx, res) => {
-        ctx.state.imagery = res.approved === true;
       },
     }),
     ai({
@@ -222,7 +210,19 @@ const c1: Script = {
       block: 'ASSET',
       costUsd: 0.16,
       units: 2,
-      when: (ctx) => (ctx.state.imagery ? true : 'You did not find the drafts plain.'),
+      optional: {
+        id: 'asset-if-plain',
+        trigger: 'a human calls the design plain',
+        ask: async (ctx) => ({
+          kind: 'confirm',
+          prompt: 'Do any of these drafts look plain? Say yes and AI makes custom imagery for them.',
+          artifactIds: need(ctx.state.drafts, 'drafts'),
+        }),
+        apply: (ctx, res) => {
+          ctx.state.imagery = res.approved === true;
+        },
+        declined: 'You did not find the drafts plain.',
+      },
       work: (ctx) => draftSet(ctx, true),
     }),
     you({
@@ -323,6 +323,7 @@ const c1: Script = {
       label: 'Final check',
       role: 'check',
       block: 'CRITIC',
+      critic: 'check',
       costUsd: 0.02,
       note: () => 'No defects found.',
     }),
@@ -337,6 +338,7 @@ const c2: Script = {
   family: 'C2',
   title: 'Idea Generator',
   medium: 'options',
+  inputs: ['refs'],
   steps: [
     ai({
       id: 'seed-options',
@@ -383,7 +385,9 @@ const c2: Script = {
       label: 'Outside critique',
       role: 'critic',
       block: 'CRITIC',
+      critic: 'GREAT',
       costUsd: 0.04,
+      note: (ctx) => `Ranked against your ${ctx.refs.length} examples. The notes are advisory.`,
       work: async (ctx) => [
         await produce(
           ctx,
@@ -521,6 +525,7 @@ const c3: Script = {
   family: 'C3',
   title: 'Series Writer',
   medium: 'prose',
+  inputs: ['refs', 'tells'],
   steps: [
     ai({ id: 'seed-angles', stage: 'D1', label: 'Random spark', role: 'seed', block: 'SEED', costUsd: 0.06, units: 3, work: (ctx) => putCards(ctx, angleCards(ctx.subject)) }),
     ai({
@@ -568,9 +573,11 @@ const c3: Script = {
     ai({
       id: 'critic-loop',
       stage: 'D2',
+      critic: 'GREAT',
       iterations: 2,
+      loopMax: 3,
       units: 2,
-      note: () => 'In the top 3 of 10 after 2 rounds.',
+      note: (ctx) => `Ranked in the top 3 against your ${ctx.refs.length} examples after 2 rounds.`,
       ...textVersion('Outside critique', (t) => t.replace('[Your example here: a specific moment from your own work.]', '[Your example here: the moment you noticed this in your own work.]'), 0.12, 'critic', 'CRITIC'),
     }),
     you({ id: 'cut', stage: 'D3', label: 'Trim', role: 'cut', block: 'CUT', ask: trimAsk('List what to cut, one item per line. AI cuts exactly that.') }),
@@ -587,6 +594,7 @@ const c4: Script = {
   family: 'C4',
   title: 'Memo Polish',
   medium: 'prose',
+  inputs: ['refs', 'tells'],
   steps: [
     you({
       id: 'vision',
@@ -615,6 +623,8 @@ const c4: Script = {
     ai({
       id: 'critic',
       stage: 'D2',
+      critic: 'GREAT',
+      loopMax: 2,
       when: (ctx) => ((ctx.state.text ?? '').split(/\s+/).length > 300 ? true : 'Under 300 words, so your own read is enough.'),
       ...textVersion('Outside critique', (t) => t, 0.04, 'critic', 'CRITIC'),
     }),
@@ -629,11 +639,40 @@ const c4: Script = {
 
 // --- C5 Ad Video Chain -------------------------------------------------------------------------------------------
 
+/**
+ * Motion (01 RELAY): one clip per storyboard shot, strictly in sequence, each starting from the previous clip's
+ * last frame (the first from shot 1's frame). The gateway makes the clips; without a usable video model the step
+ * is skipped and the frames pass through unchanged (ADR-0069).
+ */
+async function relayChain(ctx: DemoContext): Promise<Produced[]> {
+  const video = ctx.video;
+  if (!video) throw new SkipStep(NO_VIDEO);
+  const frames = need(ctx.state.frames, 'frames');
+  const produced: Produced[] = [];
+  const clips: string[] = [];
+  let anchor = frames[0];
+  for (const [i, shot] of shotsFor(ctx.subject).entries()) {
+    let clip;
+    try {
+      clip = await video({ prompt: shot.description, durationSec: shot.durationSec, ...(anchor ? { startFrameArtifactId: anchor } : {}) });
+    } catch (err) {
+      if (err instanceof GatewayError && err.code === 'no-credentials') throw new SkipStep(NO_VIDEO);
+      throw err;
+    }
+    clips[i] = clip.artifactId;
+    anchor = clip.lastFrameArtifactId;
+    produced.push({ artifactId: clip.artifactId, mediaType: await ctx.mediaTypeOf(clip.artifactId), label: `Shot ${shot.shot} clip`, shot: shot.shot });
+  }
+  ctx.state.clips = clips;
+  return produced;
+}
+
 const c5: Script = {
   recipeId: 'c5',
   family: 'C5',
   title: 'Ad Video Chain',
   medium: 'media',
+  inputs: ['refs', 'tells'],
   steps: [
     ai({ id: 'territories', stage: 'D1', label: 'Random spark', role: 'seed', block: 'SEED', costUsd: 0.06, units: 2, work: (ctx) => putCards(ctx, territoryCards(ctx.subject)) }),
     you({
@@ -674,18 +713,11 @@ const c5: Script = {
       },
     }),
     ai({
-      id: 'relay',
-      stage: 'D2',
-      label: 'Motion',
-      role: 'relay',
-      block: 'RELAY',
-      when: () => 'No video provider key is configured, so this run stops at the storyboard and frames.',
-    }),
-    ai({
       id: 'defect-check',
       stage: 'D2',
       label: 'Defect check',
       role: 'check',
+      critic: 'check',
       costUsd: 0.1,
       note: () => '1 frame regenerated: garbled text on a sign in shot 3.',
       work: async (ctx) => {
@@ -696,6 +728,9 @@ const c5: Script = {
         return [p];
       },
     }),
+    ai({ id: 'relay', stage: 'D2', label: 'Motion', role: 'relay', block: 'RELAY', costUsd: 0.6, units: 3, work: relayChain }),
+    tool({ id: 'matte', stage: 'D2', label: 'Composite', role: 'relay', block: 'RELAY', when: () => NO_COMPOSITING }),
+    ai({ id: 'vo-audio', stage: 'D2', label: 'Voice-over audio', role: 'asset', block: 'ASSET', when: () => NO_VO_AUDIO }),
     you({
       id: 'cut',
       stage: 'D3',
@@ -720,15 +755,27 @@ const c5: Script = {
         ctx.state.onScreen = res.text;
       },
     }),
-    ai({ id: 'gate', stage: 'D3', label: 'Outside critique', role: 'critic', block: 'CRITIC', costUsd: 0.12, note: () => 'At or above the middle of the category lineup on the first try.' }),
+    ai({
+      id: 'gate',
+      stage: 'D3',
+      label: 'Outside critique',
+      role: 'critic',
+      block: 'CRITIC',
+      critic: 'GREAT',
+      costUsd: 0.12,
+      note: (ctx) => `At or above the middle of your ${ctx.refs.length} examples on the first try.`,
+    }),
   ],
   finish: async (ctx) => {
     const frames = ctx.state.frames ?? [];
+    const clips = ctx.state.clips ?? [];
     const tagline = /^Tagline:\s*(.+)$/im.exec(ctx.state.onScreen ?? '')?.[1];
+    // Spec §3.2 "Storyboards": the runner adds each shot's frame, and its clip when a relay link made one.
     const storyboard = shotsFor(ctx.subject).map((s, i) => ({
       ...s,
       ...(i === 4 && tagline ? { description: `End card: ${tagline}` } : {}),
       ...(frames[i] ? { imageArtifactId: frames[i] } : {}),
+      ...(clips[i] ? { clipArtifactId: clips[i] } : {}),
     }));
     return ctx.put(JSON.stringify({ storyboard, voiceover: ctx.state.voiceover ?? '' }, null, 2), JSON_TYPE);
   },
@@ -737,16 +784,17 @@ const c5: Script = {
 // --- C6 Second Reader and C6a Fiction Second Reader ----------------------------------------------------------------
 
 function auditSteps(fiction: boolean, writeId: string): ScriptStep[] {
-  const annotate = (id: string, label: string, block: ScriptStep['block'], make: (text: string) => string, costUsd: number): ScriptStep =>
+  const annotate = (id: string, label: string, block: ScriptStep['block'], make: (text: string, ctx: DemoContext) => string, costUsd: number): ScriptStep =>
     ai({
       id,
       stage: 'D2',
       label,
       role: block === 'CRITIC' ? 'critic' : block === 'CUT' ? 'cut' : 'tells-sweep',
       ...(block ? { block } : {}),
+      ...(block === 'CRITIC' ? { critic: 'GREAT' as const } : {}),
       costUsd,
       work: async (ctx) => {
-        const p = await produce(ctx, make(ctx.state.text ?? ''), MD, { label });
+        const p = await produce(ctx, make(ctx.state.text ?? '', ctx), MD, { label });
         ctx.state.notes = [...(ctx.state.notes ?? []), p.artifactId];
         return [p];
       },
@@ -754,7 +802,7 @@ function auditSteps(fiction: boolean, writeId: string): ScriptStep[] {
   return [
     annotate('cut-marks', 'Trim marks', 'CUT', trimMarks, 0.01),
     annotate('tells-flags', 'Cliché flags', 'TELLS', (t) => clicheFlags(t, fiction), 0.01),
-    annotate('critic-rank', 'Outside critique', 'CRITIC', (t) => critiqueRank(t, fiction), 0.03),
+    annotate('critic-rank', 'Outside critique', 'CRITIC', (t, ctx) => critiqueRank(t, fiction, ctx.refs.length), 0.03),
     you({
       id: 'done',
       stage: 'D2',
@@ -794,11 +842,26 @@ function writeStep(id: string, label: string, firstPrompt: string): ScriptStep {
   });
 }
 
+/** The last read in C6 and C6a: the text is already yours, so this only gives you the final word on it. */
+const finalRead = (prompt: string): ScriptStep =>
+  you({
+    id: 'voice',
+    stage: 'D3',
+    label: 'Your words',
+    role: 'voice',
+    block: 'VOICE',
+    ask: async (ctx) => ({ kind: 'write', prompt, initialText: ctx.state.text ?? '' }),
+    apply: (ctx, res) => {
+      ctx.state.text = res.text ?? ctx.state.text;
+    },
+  });
+
 const c6: Script = {
   recipeId: 'c6',
   family: 'C6',
   title: 'Second Reader',
   medium: 'prose',
+  inputs: ['refs', 'tells'],
   steps: [
     ai({
       id: 'angles',
@@ -819,6 +882,7 @@ const c6: Script = {
     }),
     writeStep('draft', 'Your draft', 'Write your draft. Every sentence is yours; byway only points.'),
     ...auditSteps(false, 'draft'),
+    finalRead('Read it once more as your reader will, and change any line you like. This is the final text.'),
   ],
   finish: finishText,
 };
@@ -828,6 +892,7 @@ const c6a: Script = {
   family: 'C6a',
   title: 'Fiction Second Reader',
   medium: 'prose',
+  inputs: ['refs', 'tells'],
   steps: [
     ai({ id: 'premise-cards', stage: 'D1', label: 'Random spark', role: 'seed', block: 'SEED', costUsd: 0.05, units: 3, work: (ctx) => putCards(ctx, premiseCards()) }),
     ai({
@@ -862,6 +927,7 @@ const c6a: Script = {
     }),
     writeStep('pages', 'Your pages', 'Write your pages. Every sentence is yours; the notes only point.'),
     ...auditSteps(true, 'pages'),
+    finalRead('Read your pages once more as a reader will, and change any line you like. This is the final text.'),
   ],
   finish: finishText,
 };
@@ -890,6 +956,7 @@ const c7: Script = {
   family: 'C7',
   title: 'Lean Code Review',
   medium: 'code-diff',
+  inputs: ['refs', 'tells'],
   steps: [
     diffVersion('implement', 'Implement', DIFF_IMPLEMENT, 0.08, { role: 'build', units: 2 }),
     tool({ id: 'objective-checks', stage: 'D2', label: 'Objective checks', role: 'check', note: () => 'Lint and types pass. Found 1 leftover TODO and an unused debug flag.' }),
@@ -897,9 +964,11 @@ const c7: Script = {
     diffVersion('review-loop', 'Outside critique', DIFF_SCOPED, 0.12, {
       role: 'critic',
       block: 'CRITIC',
+      critic: 'GREAT',
       iterations: 2,
+      loopMax: 3,
       units: 2,
-      note: () => 'Reviewability at the middle of 4 merged pull requests after 2 rounds.',
+      note: (ctx) => `Reviewability ranked at the middle of your ${ctx.refs.length} examples after 2 rounds.`,
     }),
     diffVersion('cut-review', 'Trim', DIFF_REVIEWED, 0.02, { role: 'cut', block: 'CUT', note: () => 'Removed comments that narrate the code.' }),
     ai({

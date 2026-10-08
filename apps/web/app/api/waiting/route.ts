@@ -6,6 +6,7 @@ import { waitingRunCount } from '../../../src/view/run.ts';
 export async function GET() {
   return handle(async () => {
     const { services, workspaceId } = await getDeps();
-    return json({ count: waitingRunCount(await services.store.openCheckpoints(workspaceId)) });
+    const [open, runs] = await Promise.all([services.store.openCheckpoints(workspaceId), services.store.listRuns(workspaceId)]);
+    return json({ count: waitingRunCount(open, runs) });
   });
 }
