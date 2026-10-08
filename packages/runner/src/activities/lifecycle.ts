@@ -16,8 +16,15 @@ import { stepFinished, stepStarted } from './steps.ts';
 
 const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
 
+/**
+ * The run begins. A web page is first rendered after its build (and seed) steps are paid for, so a web-page run whose
+ * page renderer cannot start is refused here, before any step, with the renderer's plain message (F18; ADR-0084). The
+ * browser this starts is the one the run's renders share. Runs of other media need the renderer only when a GREAT
+ * lineup forms cards, which depends on their references; they are not asked here (the start-up line warns instead).
+ */
 export async function beginRun(deps: RunnerDeps, input: { runId: string; recipeId: string; profileId: string; budgetUsd: number }): Promise<void> {
   const run = await deps.store.getRun(input.runId);
+  if (run?.medium === 'web-page' && deps.pages) await deps.pages.ready();
   if (run && run.status === 'queued') await deps.store.updateRun(input.runId, { status: 'running' });
   await emit(deps.store, input.runId, 'run-started', { recipeId: input.recipeId, profileId: input.profileId, budgetUsd: input.budgetUsd }, { dedupeKey: `${input.runId}/run-started` });
 }

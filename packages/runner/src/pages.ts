@@ -15,8 +15,19 @@
  * the page opens (alert, confirm, prompt, even in a loop) are dismissed by byway, and a dismissal that fails because the
  * page was closed is swallowed, so such a page cannot end the engine's process. A browser that crashed, disconnected or
  * failed to launch is launched again on the next render (ENG-14).
+ *
+ * The renderer is shared by every medium, not only web pages: it draws C1 views of model-written HTML and JavaScript,
+ * web-page references given as HTML, and the cards a GREAT critic sees whenever a lineup mixes forms (BLIND-1), which
+ * decode reference images people upload and images providers return. All of that is untrusted, so its Chromium is
+ * started in one place with one stated policy (F18; ADR-0084): chromiumLaunchOptions() says how; launchChromium() is the
+ * only production launch and takes no parameter, so no caller can add a flag; Chromium's environment holds no provider
+ * key, nothing secret-looking and nothing from the secrets file; and a Chromium that cannot start fails every use with
+ * one plain message that is not retried. Whether Chromium's OS sandbox is on (RENDERER_OS_SANDBOX) is kept as it always
+ * was until the owner decides. ready() and checkRenderer() say whether the renderer can start before a run that needs
+ * it spends anything.
  */
-import type { Browser, BrowserContext, Page, Route } from 'playwright';
+import type { Browser, BrowserContext, LaunchOptions, Page, Route } from 'playwright';
+import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
 import type { Surface } from './types.ts';
 
@@ -42,6 +53,11 @@ export interface PageRenderer {
   screenshots(html: string, resolve: ArtifactResolver, opts?: RenderOptions): Promise<Uint8Array[]>;
   /** The page as each surface shows it, in the order asked. */
   render(html: string, resolve: ArtifactResolver, surfaces: readonly Surface[], opts?: RenderOptions): Promise<SurfaceShots[]>;
+  /**
+   * Starts the shared browser, or finds it running, so a run that will need it can be refused before anything is
+   * spent; rejects as a render would when it cannot start. The browser it starts is the one later renders reuse.
+   */
+  ready(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -49,7 +65,44 @@ export interface PageRenderer {
 export const RENDER_ALLOWLIST: readonly string[] = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com'];
 
 /** Chromium flags: WebRTC may not open UDP paths around the request filter. */
-const LAUNCH_ARGS = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
+const LAUNCH_ARGS: readonly string[] = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
+
+/**
+ * Whether the renderer's Chromium runs inside its OS sandbox: the one place byway states it. It is off, as it always
+ * has been (Playwright's default, which adds --no-sandbox to every Chromium process), and stays off until the owner
+ * decides (docs/reviews/2026-10-08-external-review-verification.md §4 item 2; ADR-0084). Switching it on was verified
+ * on Windows 11 (the renderer drops to Untrusted integrity, tiles are pixel-identical, a launch takes about 100 ms), but
+ * a host that cannot start the sandbox (Linux with unprivileged user namespaces restricted, running as root or in a
+ * container) would then stop rendering, and whether an owner opt-out should exist belongs to the same decision.
+ */
+export const RENDERER_OS_SANDBOX: boolean = false;
+
+/**
+ * How the renderer's Chromium is launched, for every use of it. `env` exists so tests can pass a fixture; it can only
+ * take variables away. Playwright would otherwise hand Chromium the engine's whole environment, provider keys included;
+ * it gets none of them, nothing secret-looking and no name the secrets file listed (withoutSecrets, the rule `next build`
+ * also follows: ADR-0030's "keys never enter a sandbox", applied to the renderer).
+ */
+export function chromiumLaunchOptions(env: Env = process.env): LaunchOptions {
+  return { headless: true, chromiumSandbox: RENDERER_OS_SANDBOX, args: [...LAUNCH_ARGS], env: withoutSecrets(env, namesFromEnvFile(env)) };
+}
+
+/** What to run when Playwright's Chromium was never downloaded (it is a separate download from the package). */
+const INSTALL_CHROMIUM = 'pnpm --filter ./apps/web exec playwright install chromium';
+
+/**
+ * A Chromium that could not start, as one plain step failure for every use of the renderer (a web page's view, an HTML
+ * reference, a lineup card, the readiness check). Not retried: a missing or broken Chromium does not start on a second
+ * try, and a retry would only repeat the wait. Playwright's first line says what went wrong; its box of advice and its
+ * call log stay on the cause.
+ */
+export function launchFailure(err: unknown): StepError {
+  const first = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
+  const said = first.replace(/^browserType\.launch:\s*/, '').trim().replace(/\.$/, '');
+  return new StepError(`The page renderer could not start (${said}), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: ${INSTALL_CHROMIUM}`, {
+    cause: err,
+  });
+}
 
 export interface PlaywrightPagesOptions {
   /** Wide-screen width (and the first screen's). */
@@ -67,7 +120,7 @@ export interface PlaywrightPagesOptions {
   timeoutMs?: number;
   /** How long closing a stuck page may take before the whole browser is closed and relaunched. */
   closeTimeoutMs?: number;
-  /** Launches the browser; defaults to headless Playwright Chromium with LAUNCH_ARGS. Tests inject their own. */
+  /** For tests only: how to launch the browser. Production passes none, so it is always launchChromium(). */
   launch?: () => Promise<Browser>;
 }
 
@@ -225,6 +278,9 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
 
   return {
     render,
+    async ready() {
+      await getBrowser();
+    },
     async screenshots(html, resolve, renderOpts) {
       return (await render(html, resolve, ['desktop'], renderOpts))[0]!.tiles;
     },
@@ -237,10 +293,37 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   };
 }
 
-/** Headless Chromium with the flags above. */
-export async function launchChromium(extraArgs: readonly string[] = []): Promise<Browser> {
-  const { chromium } = await import('playwright');
-  return chromium.launch({ headless: true, args: [...LAUNCH_ARGS, ...extraArgs] });
+/**
+ * The renderer's Chromium, launched once per call as chromiumLaunchOptions() says. It takes no parameter, so nothing
+ * can add a flag to the production launch; a test that needs one composes it from chromiumLaunchOptions() in test code.
+ * A failure to start is launchFailure's plain message.
+ */
+export async function launchChromium(): Promise<Browser> {
+  try {
+    const { chromium } = await import('playwright');
+    return await chromium.launch(chromiumLaunchOptions());
+  } catch (e) {
+    throw launchFailure(e);
+  }
+}
+
+export type RendererCheck = { ready: true } | { ready: false; message: string };
+
+/**
+ * Whether the renderer can start on this computer, for the "renderer" line byway prints at start-up. It makes the
+ * stated launch once and closes it again, and never throws: byway keeps running either way, since prose, options and
+ * code-diff runs need no renderer unless a lineup forms cards.
+ */
+export async function checkRenderer(): Promise<RendererCheck> {
+  const pages = playwrightPages();
+  try {
+    await pages.ready();
+    return { ready: true };
+  } catch (e) {
+    return { ready: false, message: (e instanceof StepError ? e : launchFailure(e)).message };
+  } finally {
+    await pages.close().catch(() => undefined);
+  }
 }
 
 /** The error a cancelled render ends with: the signal's own reason (Temporal's CancelledFailure) when it has one. */

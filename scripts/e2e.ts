@@ -10,6 +10,7 @@
  * the same checkout, so a second build writes the same file.
  *
  * The server's output goes to byway-e2e-server.log in the system temp folder (Playwright empties its own output folder).
+ * Its start-up lines must say the page renderer is ready (F18): the suite renders pages, so here it has to start.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
@@ -95,6 +96,13 @@ async function main(): Promise<number> {
   });
   server.stdout?.pipe(log);
   server.stderr?.pipe(log);
+  // The start-up lines, kept until the "renderer" line has been printed.
+  let startup = '';
+  const keep = (d: Buffer) => {
+    startup += d.toString();
+    if (/^ {2}renderer {3}.*\n/m.test(startup)) server.stdout?.off('data', keep);
+  };
+  server.stdout?.on('data', keep);
 
   let code = 1;
   try {
@@ -128,6 +136,13 @@ async function main(): Promise<number> {
     }
     log.end();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  }
+  // The start-up "renderer" line (serve.ts) says whether the page renderer's Chromium can start.
+  const renderer = /^ {2}renderer {3}(.*)$/m.exec(startup)?.[1]?.trim();
+  if (renderer?.startsWith("Playwright's Chromium, ready")) console.log(`e2e: renderer ${renderer}`);
+  else {
+    console.error(`e2e: byway did not say at start-up that its page renderer is ready (${renderer ?? 'no "renderer" line'}).`);
+    code ||= 1;
   }
   // The build ran with the stand-in keys in byway's environment: none may have reached the build folder.
   const leaked = filesWithKeys(path.join(WEB, DIST_DIR));

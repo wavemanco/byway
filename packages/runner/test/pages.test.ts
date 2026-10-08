@@ -3,16 +3,18 @@
  * surfaces (RENDER-1), images from the artifact route, other hosts and WebSockets blocked (ENG-14), a bounded render
  * for a page that never settles, a page that opens dialogs in a loop (in its own process, which must survive) and a
  * failing artifact route (SEC-5), a cancelled render, and a browser that comes back
- * after a crash or a failed launch (ENG-14).
+ * after a crash or a failed launch (ENG-14). And the launch itself (F18; ADR-0084): the effective command line of a
+ * Chromium started from the one stated launch, read back through CDP, with a control that shows the check can tell
+ * the two sandbox settings apart; and a readiness check that starts the browser the renders then share.
  */
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { Browser } from 'playwright';
+import type { Browser, LaunchOptions } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { launchChromium, playwrightPages } from '../src/pages.ts';
+import { chromiumLaunchOptions, launchChromium, playwrightPages, RENDERER_OS_SANDBOX } from '../src/pages.ts';
 
 const pages = playwrightPages({ maxTileHeight: 1200 });
 const opened: { close(): Promise<void> }[] = [pages];
@@ -45,6 +47,26 @@ const runNode = (file: string, args: string[]) =>
 const PIXEL =Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
 const SIMPLE = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0"><div style="height:500px;background:#345">Hi</div></body></html>';
 const none = async () => undefined;
+
+/**
+ * Test-only: the stated launch with flags added in test code. Production cannot add any (launchChromium takes no
+ * parameter); a test that needs a flag composes it here, from the same options.
+ */
+async function launchWith(extra: readonly string[], change: Partial<LaunchOptions> = {}): Promise<Browser> {
+  const { chromium } = await import('playwright');
+  const opts = chromiumLaunchOptions();
+  return chromium.launch({ ...opts, ...change, args: [...(opts.args ?? []), ...extra] });
+}
+
+/** The browser's own command line, read through CDP (it answers only when --enable-automation is set). */
+async function commandLine(browser: Browser): Promise<string[]> {
+  const session = await browser.newBrowserCDPSession();
+  try {
+    return (await session.send('Browser.getBrowserCommandLine')).arguments;
+  } finally {
+    await session.detach();
+  }
+}
 
 describe('web-page RENDER with Playwright Chromium', () => {
   it('screenshots the full page at 1440 wide in tiles, serving artifacts and blocking other hosts', async () => {
@@ -145,7 +167,7 @@ describe('web-page RENDER with Playwright Chromium', () => {
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
     const port = (server.address() as AddressInfo).port;
     // Chromium's own local-network checks would also stop a socket to 127.0.0.1; turn them off so only byway's block is tested.
-    const open = playwrightPages({ launch: () => launchChromium(['--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests']) });
+    const open = playwrightPages({ launch: () => launchWith(['--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests']) });
     opened.push(open);
     try {
       const html = `<!doctype html><html><body><script>try { new WebSocket('ws://127.0.0.1:${port}/exfil'); } catch (e) {}</script><div style="height:50px">x</div></body></html>`;
@@ -178,5 +200,37 @@ describe('web-page RENDER with Playwright Chromium', () => {
     await launched[0]!.close();
     expect((await flaky.screenshots(SIMPLE, none)).length).toBe(1);
     expect(launched.length).toBe(2);
+  }, 60_000);
+
+  it('starts Chromium from the one stated launch: its sandbox policy and WebRTC flags are what the command line shows (F18)', async () => {
+    const stated = await launchWith(['--enable-automation']);
+    // Control: the other sandbox setting, so the check is seen to tell the two apart on this computer.
+    const other = await launchWith(['--enable-automation'], { chromiumSandbox: !RENDERER_OS_SANDBOX });
+    try {
+      const args = await commandLine(stated);
+      expect(args.includes('--no-sandbox')).toBe(!RENDERER_OS_SANDBOX);
+      for (const flag of chromiumLaunchOptions().args ?? []) expect(args).toContain(flag);
+      expect((await commandLine(other)).includes('--no-sandbox')).toBe(RENDERER_OS_SANDBOX);
+    } finally {
+      await stated.close();
+      await other.close();
+    }
+  }, 60_000);
+
+  it('starts the browser when asked whether it is ready, and the renders that follow share it (F18)', async () => {
+    let launches = 0;
+    const counted = playwrightPages({
+      launch: async () => {
+        launches++;
+        return launchChromium();
+      },
+    });
+    opened.push(counted);
+    await counted.ready();
+    expect(launches).toBe(1);
+    expect((await counted.screenshots(SIMPLE, none)).length).toBe(1);
+    expect((await counted.render(SIMPLE, none, ['fold'])).length).toBe(1);
+    await counted.ready();
+    expect(launches).toBe(1);
   }, 60_000);
 });
