@@ -1,12 +1,13 @@
 /**
  * Operators on small recipes: a relay link checked and regenerated until clean (each regeneration starts from the
- * link's own start frame), a loop whose cap is settled by policy (a fresh re-rank), and the run's intake on its record.
+ * link's own start frame), demo-mode media, an empty CUT directive, picks by a judge and by chance, a loop whose cap
+ * is settled by policy (a fresh re-rank), keepsVoice, and the run's intake on its record.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { VideoRequest, VideoResult } from '@byway/contracts';
+import { NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
-import { NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
 import { judgedPick, policyLoop, randomPick, scripted, shortAd, tiny, trimmed, trimmedByHand } from '../helpers/recipes.ts';
 
 let h: Harness;

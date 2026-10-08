@@ -5,10 +5,11 @@
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import type { Tier } from '@byway/contracts';
-import { parseArtifact, textView, type Parsed } from '../formats.ts';
 import { labelled } from '@byway/prompts/pure';
+import { parseArtifact, textView, type Parsed } from '../formats.ts';
 import { labels } from '../labels.ts';
 import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseTellsSweep, parseVision, type CriticAnswer } from '../parse.ts';
+import { tellsText } from '../tells.ts';
 import type { ModelStepInput, ModelStepResult } from '../types.ts';
 import { askModel } from './call.ts';
 import { buildLineup, planCritic, verdictOf, type Lineup } from './critic.ts';
@@ -16,7 +17,6 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
-import { tellsText } from '../tells.ts';
 import { storeText, writeProblems } from './writes.ts';
 
 const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);

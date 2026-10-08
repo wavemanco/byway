@@ -13,9 +13,9 @@
  */
 import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '@temporalio/workflow';
 import type { CheckpointResolution } from '@byway/contracts';
+import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
-import { labelOf } from '@byway/prompts/pure';
 import { indexOfLabel } from '../labels.ts';
 import { FAILURE, toStepSpec, type BudgetFailureDetails, type CheckpointSpec, type ModelStepResult, type OpenCheckpointInput, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
 import { media, model, quick } from './acts.ts';

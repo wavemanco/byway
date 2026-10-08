@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { OUTPUT_CONTRACTS } from '@byway/prompts/pure';
 import { applyCopy, extractCopy, lostVoiceLines, pageCopy, pageVoiceProblems, placePageCopy, skeleton } from '../src/copy.ts';
 import { joinCodeDiff, parseArtifact, parseCodeDiff, splitCodeDiff, textView } from '../src/formats.ts';
-import { OUTPUT_CONTRACTS } from '@byway/prompts/pure';
 import { parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep, sectionOf } from '../src/parse.ts';
 
 const PAGE = `<!doctype html>

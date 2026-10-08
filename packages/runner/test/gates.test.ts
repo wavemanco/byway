@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { bestSnapshots, converging, OK_BAR, passes, plateaued, raiseAmount } from '../src/gates.ts';
 import { labelOf } from '@byway/prompts/pure';
+import { bestSnapshots, converging, OK_BAR, passes, plateaued, raiseAmount } from '../src/gates.ts';
 import { indexOfLabel, labels } from '../src/labels.ts';
 import type { Score } from '../src/types.ts';
 
