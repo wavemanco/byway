@@ -1,6 +1,6 @@
 ---
 id: product.c5.concept
-version: 1
+version: 2
 fidelity: project
 slots: artifact, taste
 output: artifact:media
@@ -34,7 +34,8 @@ Develop the concept.
 ## Answer format
 One fenced ```json block, shaped like this:
 
-    {"storyboard":[{"shot":1,"description":"…","imagePrompt":"…","durationSec":6}],"voiceover":"…"}
+    {"storyboard":[{"shot":1,"description":"…","imagePrompt":"…","durationSec":6,"caption":"…"}],"voiceover":"…","headline":"…","tagline":"…"}
 
 - `description`: what happens in the shot, and how its last moment hands over to the next shot.
 - `durationSec`: a whole number of seconds.
+- `caption`: the words shown on screen during the shot, if any. `headline` and `tagline`: the ad's on-screen headline and closing line. All three are placeholders the person rewrites at the end; leave out any the concept does not need.

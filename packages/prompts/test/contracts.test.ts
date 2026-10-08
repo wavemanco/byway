@@ -12,7 +12,7 @@ const MARKERS: Record<OutputId, string[]> = {
   'artifact:web-page': ['```html', 'HTML document'],
   'artifact:prose': ['```markdown'],
   'artifact:options': ['```json', '"options"', '"title"', '"pitch"', '"rationale"'],
-  'artifact:media': ['```json', '"storyboard"', '"shot"', '"description"', '"imagePrompt"', '"durationSec"', '"voiceover"'],
+  'artifact:media': ['```json', '"storyboard"', '"shot"', '"description"', '"imagePrompt"', '"durationSec"', '"caption"', '"voiceover"', '"headline"', '"tagline"'],
   'artifact:code-diff': ['```diff', 'Why:'],
   critique: ['Score: N/10'],
   choice: ['Choice:'],

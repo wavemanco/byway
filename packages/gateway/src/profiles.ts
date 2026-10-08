@@ -15,6 +15,15 @@ const ref = (provider: ProviderId, model: string): ModelRef => ({ provider, mode
  * - OpenRouter: openrouter.ai/api/v1/models (anthropic/claude-opus-5.5, anthropic/claude-sonnet-5.5).
  * - fal.ai: fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video and fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video
  *   (also listed in @fal-ai/client 1.10.1's endpoint types).
+ *
+ * `otherFamily` (contracts v5, FID-1): the reviewer for critics whose family knob is 'other' (01 CRITIC: a critic of
+ * another family than the one that wrote the work, so it does not prefer its own family's writing). The runner uses it
+ * when ProfileStatus.otherFamily says its key is present, and otherwise runs the same family in a fresh session and
+ * says so. Every non-Anthropic judging call is recorded in the exposure register (exposure.ts, CR12), so the choice
+ * matters for the studies: the Claude profiles use GPT-6 Astra, not the GPT Sol line or Gemini 3.1 Pro, which Study 1
+ * plans as held-out judges (ADR-0036; exposure is counted by model line and role, ADR-0061 D22). The OpenAI and Google
+ * profiles use Claude Opus 5.5. The OpenRouter profile has none: it exists for people with only an OpenRouter key, and
+ * its pins allow Anthropic upstreams only.
  */
 export const PROFILES: readonly ModelProfile[] = [
   {
@@ -25,6 +34,8 @@ export const PROFILES: readonly ModelProfile[] = [
     image: ref('google', 'gemini-nano-banana-2.1'),
     // C5 relay links: Kling 2.5 Turbo Pro image-to-video at $0.07 per second; needs a fal.ai key.
     video: ref('fal', 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video'),
+    // Needs an OpenAI key.
+    otherFamily: ref('openai', 'gpt-6-astra'),
   },
   {
     id: 'best',
@@ -34,18 +45,24 @@ export const PROFILES: readonly ModelProfile[] = [
     image: ref('openai', 'gpt-image-2.5-sunburst'),
     // C5 relay links: Kling 3 Pro image-to-video (3–15 s clips, audio off) at $0.112 per second; needs a fal.ai key.
     video: ref('fal', 'fal-ai/kling-video/v3/pro/image-to-video'),
+    // Needs an OpenAI key.
+    otherFamily: ref('openai', 'gpt-6-astra'),
   },
   {
     id: 'openai',
     label: 'OpenAI: GPT-6 Astra judges, GPT-6.1 Sol builds',
     tiers: { big: ref('openai', 'gpt-6-astra'), mid: ref('openai', 'gpt-6.1-sol') },
     image: ref('openai', 'gpt-image-2.5-flare'),
+    // Needs an Anthropic key.
+    otherFamily: ref('anthropic', 'claude-opus-5-5'),
   },
   {
     id: 'google',
     label: 'Google: Gemini 3.1 Pro judges, Gemini 3.8 Flash builds',
     tiers: { big: ref('google', 'gemini-3.1-pro-preview'), mid: ref('google', 'gemini-3.8-flash') },
     image: ref('google', 'gemini-nano-banana-2.1'),
+    // Needs an Anthropic key.
+    otherFamily: ref('anthropic', 'claude-opus-5-5'),
   },
   {
     id: 'openrouter',
@@ -58,6 +75,8 @@ export const PROFILES: readonly ModelProfile[] = [
     tiers: { big: ref('mock', 'mock-big'), mid: ref('mock', 'mock-mid') },
     image: ref('mock', 'mock-image'),
     video: ref('mock', 'mock-video'),
+    // Stands in for another family, so a demo run takes the same path a configured one does.
+    otherFamily: ref('mock', 'mock-other'),
   },
 ];
 
@@ -89,6 +108,7 @@ export function profileStatus(profiles: readonly ModelProfile[], env: Env): Prof
       missing,
       images: profile.image !== undefined && isConfigured(env, profile.image.provider),
       video: profile.video !== undefined && isConfigured(env, profile.video.provider),
+      otherFamily: profile.otherFamily !== undefined && isConfigured(env, profile.otherFamily.provider),
     };
   });
 }

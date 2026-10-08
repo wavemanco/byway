@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { BLOCK_CODES, EXCEPTIONS, OPTION_SET } from '@byway/protocol';
-import { steps, walk, type Node, type Recipe, type Step } from '@byway/recipe';
+import { steps, walk, walkNode, type Node, type Recipe, type Step } from '@byway/recipe';
 import { validate } from '@byway/validator';
 import { CATALOG, PROTOCOL_CONFIGS, c2, c3, c4, c5, c6, c6a, c7 } from '../src/index.ts';
 
@@ -105,6 +105,30 @@ describe('the eight protocol configurations', () => {
     }
   });
 
+  it('give every rank gate a critic that names its reference count, so the runner can scale the bar to the lineup (GATE-1, C6)', () => {
+    // A rank threshold is written for a lineup of refs + 1. A run with fewer references gets a smaller lineup, and the
+    // runner passes rank <= max(1, floor(threshold × lineup / (refs + 1))): the bar keeps its share of the lineup.
+    const critics = (n: Node): Step[] => {
+      const out: Step[] = [];
+      walkNode(n, '', 'D1', (x) => {
+        if (x.op === 'step' && x.role === 'critic') out.push(x);
+      });
+      return out;
+    };
+    let gates = 0;
+    for (const r of PROTOCOL_CONFIGS) {
+      walk(r, (n) => {
+        const ranked = (n.op === 'loop' && n.gate.metric === 'critic-rank') || (n.op === 'gate' && n.pass.metric === 'critic-rank');
+        if (!ranked) return;
+        gates++;
+        const [critic, ...more] = critics(n.body);
+        expect(more, `${r.id} ${n.id}`).toEqual([]);
+        expect(critic?.knobs?.refs, `${r.id} ${n.id}: the critic's refs knob`).toEqual(expect.any(Number));
+      });
+    }
+    expect(gates).toBe(4);
+  });
+
   it('validate on their own with no warnings', () => {
     for (const r of NEW) expect(validate(r).warnings, r.id).toEqual([]);
   });
@@ -163,7 +187,14 @@ describe('C4 Reader-Ready', () => {
     const claims = nodes(c4, 'optional').find((o) => o.id === 'claim-log');
     expect(claims?.trigger).toMatch(/fact-heavy/);
     expect(stepById(c4, 'claim-sign-off')).toMatchObject({ actor: 'human', block: 'VOICE', variant: 'claim-log' });
-    expect(stepById(c4, 'claim-sign-off').writes).toBeUndefined();
+  });
+
+  it("writes the owner's claim corrections back into the memo: the sign-off produces the artifact (ENG-2)", () => {
+    // The owner is asked to correct any claim that is wrong; a sign-off that produced only `voice` dropped every
+    // correction, and the memo shipped with the numbers the owner had fixed.
+    const signOff = stepById(c4, 'claim-sign-off');
+    expect(signOff).toMatchObject({ consumes: ['artifact'], produces: ['voice', 'artifact'], writes: true });
+    expect(validate(c4).ok).toBe(true);
   });
 });
 

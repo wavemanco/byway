@@ -1,6 +1,7 @@
 import { canonicalize, sha256Hex } from '@byway/canonical';
 import {
   GatewayError,
+  type ArtifactRecord,
   type ArtifactStore,
   type BudgetDetails,
   type CompletionRequest,
@@ -22,6 +23,7 @@ import {
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
 import { toGatewayError } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
+import { ExposureRegister, exposurePath } from './exposure.ts';
 import { Ledger, type LedgerDraft } from './ledger.ts';
 import { PRICES, priceFor, roundUsd, tokenCost, type PriceRow, type TokenBreakdown } from './prices.ts';
 import { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus } from './profiles.ts';
@@ -71,6 +73,12 @@ export interface GatewayOptions {
   defaultMaxOutputTokens?: number;
   /** Anthropic server-side refusal fallback (default on). */
   anthropicRefusalFallback?: boolean;
+  /**
+   * How long a call the provider has already answered (and billed) waits for the ledger's cross-process lock before the
+   * gateway gives up on ledgering it. Default two minutes: losing a billed entry under-counts spend, and failing the
+   * call would make the runner retry it and pay again (ENG-3).
+   */
+  billedLedgerWaitMs?: number;
 }
 
 /** The contract's budget details, re-exported under the name this package has always used. */
@@ -80,6 +88,7 @@ export type { BudgetDetails };
 export type BudgetError = GatewayError & { budget: BudgetDetails };
 
 const DEFAULT_MAX_OUTPUT = 16_000;
+const DEFAULT_BILLED_LEDGER_WAIT_MS = 120_000;
 const MAX_OUTPUT_LIMIT = 128_000;
 const TIERS = new Set(['big', 'mid']);
 const MEDIA_TYPES = new Set<MediaType>(['image/png', 'image/jpeg', 'image/webp']);
@@ -120,6 +129,9 @@ export class ModelGateway implements Gateway {
   private readonly adapters = new Map<ProviderId, ProviderAdapter>();
   private readonly reservations = new Set<Reservation>();
   private readonly opts: GatewayOptions;
+  private readonly exposure: ExposureRegister;
+  /** See {@link GatewayOptions.billedLedgerWaitMs}. */
+  readonly billedLedgerWaitMs: number;
 
   constructor(opts: GatewayOptions) {
     this.opts = opts;
@@ -134,6 +146,8 @@ export class ModelGateway implements Gateway {
     this.retry = { ...DEFAULT_RETRY, ...opts.retry };
     this.now = opts.now ?? (() => new Date());
     this.defaultMaxOutput = opts.defaultMaxOutputTokens ?? DEFAULT_MAX_OUTPUT;
+    this.billedLedgerWaitMs = opts.billedLedgerWaitMs ?? DEFAULT_BILLED_LEDGER_WAIT_MS;
+    this.exposure = new ExposureRegister(exposurePath(opts.ledgerPath));
     for (const [id, adapter] of Object.entries(opts.adapters ?? {})) this.adapters.set(id as ProviderId, adapter);
   }
 
@@ -175,7 +189,7 @@ export class ModelGateway implements Gateway {
     }
     const prompt = req.prompt === undefined ? undefined : promptRef(req.prompt);
     const profile = this.profile(req.profileId);
-    const ref: ModelRef = this.demo ? { provider: 'mock', model: MOCK_MODELS[req.tier] } : (req.model ?? profile.tiers[req.tier]);
+    const ref = this.completionModel(req, profile);
     this.requireKey(ref.provider);
     const price = this.price(ref);
     const { messages, sizes } = await this.resolveMessages(req.messages);
@@ -184,6 +198,8 @@ export class ModelGateway implements Gateway {
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
+      // Before the call: a family is exposed by being used as a gate, whether or not the call then succeeds (CR12).
+      await this.exposure.record(ref, req.purpose, req.workspaceId, this.now());
       const adapter = this.adapter(ref.provider);
       const out = await withRetries(async () => {
         try {
@@ -260,7 +276,9 @@ export class ModelGateway implements Gateway {
         }
       }, this.retry);
       const costUsd = roundUsd(tokenCost(price, out.usage) + (price.perImageUsd ?? 0) * (out.usage.units ?? 1));
-      const stored = out.refusal ? undefined : await this.artifacts.put(out.bytes, out.mediaType);
+      // Billed from here: keeping the image may fail, but the call is ledgered first either way (ENG-3).
+      const kept = out.refusal ? undefined : await keep(() => this.artifacts.put(out.bytes, out.mediaType));
+      const stored = kept?.record;
       const entry = await this.record(
         {
           workspaceId: req.workspaceId,
@@ -278,6 +296,7 @@ export class ModelGateway implements Gateway {
         { servedModel: out.servedModel, usage: out.usage, ...(stored ? { artifactId: stored.id } : {}), ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
         redact,
       );
+      if (kept?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the image and billed it, but it could not be stored`, kept.error);
       if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`));
       return { artifactId: stored.id, mediaType: out.mediaType, servedModel: out.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
     } finally {
@@ -336,8 +355,13 @@ export class ModelGateway implements Gateway {
       });
       const units = out.usage.units ?? seconds;
       const costUsd = roundUsd(maxVideoCost(price, units, extras));
-      const clip = out.clip ? await this.artifacts.put(out.clip.bytes, out.clip.mediaType) : undefined;
-      const lastFrame = out.lastFrame ? await this.artifacts.put(out.lastFrame.bytes, out.lastFrame.mediaType) : undefined;
+      // Billed from here: keeping the clip or its frame may fail, but the clip is ledgered first either way (ENG-3).
+      const madeClip = out.clip;
+      const madeFrame = out.lastFrame;
+      const keptClip = madeClip ? await keep(() => this.artifacts.put(madeClip.bytes, madeClip.mediaType)) : undefined;
+      const keptFrame = madeFrame ? await keep(() => this.artifacts.put(madeFrame.bytes, madeFrame.mediaType)) : undefined;
+      const clip = keptClip?.record;
+      const lastFrame = keptFrame?.record;
       const failure = out.failure !== undefined ? toGatewayError(out.failure, ref.provider, redact) : undefined;
       const entry = await this.record(
         {
@@ -363,6 +387,10 @@ export class ModelGateway implements Gateway {
         },
         redact,
       );
+      if (keptClip?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the clip and billed it, but it could not be stored`, keptClip.error);
+      if (keptFrame?.error !== undefined) {
+        throw billedFailure(redact, `${ref.provider} made the clip and billed it, but its last frame could not be stored (the clip is kept as ${clip?.id ?? 'nothing'})`, keptFrame.error);
+      }
       if (failure || !clip || !lastFrame) {
         const what = !clip ? 'it could not be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
@@ -521,17 +549,62 @@ export class ModelGateway implements Gateway {
     return tokenCost(priceOf(out.servedModel), out.usage);
   }
 
-  /** Store the bodies (redacted, canonical JSON) and append the ledger entry that names them by hash. */
-  private async record(draft: Omit<LedgerDraft, 'requestSha256' | 'responseSha256'>, request: unknown, response: unknown, redact: Redactor) {
-    const store = async (body: unknown) => {
-      const text = redact(canonicalOrJson(body));
-      await this.artifacts.putText(text, 'application/json');
-      return `sha256:${sha256Hex(text)}`;
-    };
-    const requestSha256 = await store({ purpose: draft.purpose, ...(request as object) });
-    const responseSha256 = await store(response);
-    return this.ledger.append({ ...draft, requestSha256, responseSha256 });
+  /**
+   * The model for a completion: the request's override (an other-family critic, contracts v5) or the profile's tier
+   * model. In demo mode every call goes to the mock: a mock override (the demo profile's other-family stand-in) is
+   * served as asked, so a demo run takes the same path a configured one does; anything else gets the mock tier model.
+   */
+  private completionModel(req: CompletionRequest, profile: ModelProfile): ModelRef {
+    if (this.demo) return req.model?.provider === 'mock' ? req.model : { provider: 'mock', model: MOCK_MODELS[req.tier] };
+    return req.model ?? profile.tiers[req.tier];
   }
+
+  /**
+   * Ledgers a call the provider has answered, and so billed, then stores its request and response bodies (redacted,
+   * canonical JSON) under the hashes the entry names. The entry goes first (ENG-3): a local failure after a provider
+   * answered must not lose the spend, and a plain error would make Temporal retry the activity and pay a second time.
+   * So the ledger is given a long wait for its lock, and any failure from here on is a GatewayError that is not
+   * retryable and says the call was billed.
+   */
+  private async record(draft: Omit<LedgerDraft, 'requestSha256' | 'responseSha256'>, request: unknown, response: unknown, redact: Redactor) {
+    const requestText = redact(canonicalOrJson({ purpose: draft.purpose, ...(request as object) }));
+    const responseText = redact(canonicalOrJson(response));
+    const billed = `${draft.provider} answered and billed this call (${draft.purpose})`;
+    let entry;
+    try {
+      entry = await this.ledger.append(
+        { ...draft, requestSha256: `sha256:${sha256Hex(requestText)}`, responseSha256: `sha256:${sha256Hex(responseText)}` },
+        { lockTimeoutMs: this.billedLedgerWaitMs },
+      );
+    } catch (e) {
+      throw billedFailure(redact, `${billed}, but it could not be written to the ledger, so the spend caps do not count it`, e);
+    }
+    try {
+      await this.artifacts.putText(requestText, 'application/json');
+      await this.artifacts.putText(responseText, 'application/json');
+    } catch (e) {
+      throw billedFailure(redact, `${billed} and it is in the ledger (entry ${entry.id}), but its request and response could not be stored`, e);
+    }
+    return entry;
+  }
+}
+
+/** The outcome of keeping media a provider made: its record, or the error (kept for after the call is ledgered). */
+async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: ArtifactRecord; error?: unknown }> {
+  try {
+    return { record: await put() };
+  } catch (error) {
+    return { error: error ?? new Error('unknown error') };
+  }
+}
+
+/**
+ * A failure after a provider was paid: never retryable, because retrying the call (here, or by Temporal re-running the
+ * activity) would pay again for what was already bought.
+ */
+function billedFailure(redact: Redactor, what: string, cause: unknown): GatewayError {
+  const reason = cause instanceof Error ? cause.message : String(cause);
+  return new GatewayError('provider-error', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false);
 }
 
 function validateSpend(req: { workspaceId?: unknown; purpose?: unknown; profileId?: unknown }): void {

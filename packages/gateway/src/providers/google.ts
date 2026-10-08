@@ -70,10 +70,18 @@ export function googleImageParams(req: ProviderImageRequest): GenerateContentPar
 
 const MEDIA_TYPES = new Set<MediaType>(['image/png', 'image/jpeg', 'image/webp']);
 
+/**
+ * An image answer. Image models sometimes answer an image request with text only (finishReason STOP): that answer was
+ * billed for its tokens, so it comes back as a no-image result with its usage and a refusal-like reason, which the
+ * gateway ledgers and then refuses (not retryable). It used to be thrown as a synthetic 502, which the gateway retried
+ * up to four times, paying each time and ledgering none (ENG-5). Whether to try the slot again is the asset step's
+ * decision (its triesPerSlot), not a transport retry's.
+ */
 export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string): Omit<ProviderImage, 'requestBody'> {
   const refusal = refusalOf(res);
   const body = plain(res) as GoogleResponseLike;
-  const inline = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
+  const parts = res.candidates?.[0]?.content?.parts ?? [];
+  const inline = parts.find((p) => p.inlineData?.data)?.inlineData;
   for (const c of body.candidates ?? []) {
     for (const p of c.content?.parts ?? []) {
       if (p.inlineData?.data) (p.inlineData as { data: string }).data = `[${p.inlineData.data.length} base64 chars, stored as an artifact]`;
@@ -81,13 +89,17 @@ export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string
   }
   const u = res.usageMetadata ?? {};
   const usage = { inputTokens: u.promptTokenCount ?? 0, outputTokens: u.candidatesTokenCount ?? 0, units: inline?.data ? 1 : 0 };
+  const servedModel = res.modelVersion ?? requestedModel;
+  const noImage = (reason: string) => ({ bytes: new Uint8Array(), mediaType: 'image/png' as const, servedModel, usage, refusal: reason, responseBody: body });
   if (!inline?.data) {
-    if (refusal) return { bytes: new Uint8Array(), mediaType: 'image/png', servedModel: res.modelVersion ?? requestedModel, usage, refusal, responseBody: body };
-    throw Object.assign(new Error('the image response carried no image data'), { status: 502 });
+    if (refusal) return noImage(refusal);
+    const finish = res.candidates?.[0]?.finishReason ?? 'none';
+    const content = parts.some((p) => typeof p.text === 'string' && p.text.trim() && !p.thought) ? 'text only' : 'no content';
+    return noImage(`returned no image (finishReason ${finish}, ${content})`);
   }
   const mediaType = (inline.mimeType ?? 'image/png') as MediaType;
-  if (!MEDIA_TYPES.has(mediaType)) throw Object.assign(new Error(`unsupported image type ${inline.mimeType}`), { status: 502 });
-  return { bytes: Buffer.from(inline.data, 'base64'), mediaType, servedModel: res.modelVersion ?? requestedModel, usage, responseBody: body };
+  if (!MEDIA_TYPES.has(mediaType)) return noImage(`returned an image of type ${inline.mimeType}, which byway cannot use (PNG, JPEG or WebP only)`);
+  return { bytes: Buffer.from(inline.data, 'base64'), mediaType, servedModel, usage, responseBody: body };
 }
 
 export function googleAdapter(opts: { client: GoogleClientLike }): ProviderAdapter {

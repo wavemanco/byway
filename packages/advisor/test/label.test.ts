@@ -12,7 +12,12 @@ describe('evidence labels (CR11): computed from the study registry, never typed'
   });
 
   it.each(PROTOCOL_CONFIGS.map((r) => [r.id, r]))('%s reads Untested with no scope and no studies', (_id, recipe) => {
-    expect(labelFor(recipe)).toEqual({ verdict: 'Untested', scope: 'None', summary: 'Not yet tested. Studies of this recipe are planned.', studies: [] });
+    expect(labelFor(recipe)).toEqual({ verdict: 'Untested', scope: 'None', summary: 'Not yet tested.', studies: [] });
+  });
+
+  it('the Untested summary asserts nothing the registry does not hold: no planned studies (ENG-13, LABEL-1)', () => {
+    // No registry entry names a planned study of any product recipe's hash, so the label may not say one is planned.
+    for (const recipe of PROTOCOL_CONFIGS) expect(labelFor(recipe).summary).not.toMatch(/plan|study|studies|will be/i);
   });
 
   it('a composed recipe reads "Composed for you — not tested."', () => {

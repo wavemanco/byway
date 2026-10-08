@@ -20,6 +20,12 @@ export interface PricingContext {
   images: boolean;
   /** True when the profile's video model is usable; otherwise relay links finish skipped (ADR-0069) and cost nothing. */
   video: boolean;
+  /**
+   * True when the profile's other-family critic is usable (ProfileStatus.otherFamily, contracts v5): critics whose family
+   * knob is 'other' then run on it and are priced at its model; otherwise a fresh session of the profile's own big tier
+   * reviews (convention C3) and they are priced at that.
+   */
+  otherFamily?: boolean;
   prices?: readonly PriceRow[];
   /** The date whose prices apply. */
   at: Date;
@@ -103,6 +109,8 @@ export const HUMAN_MINUTES = {
   author: [15, 60],
   confirm: [0.5, 1],
   choose: [0.5, 1],
+  /** Which cliché-sweep finds to swap, decided one by one before the swap step (convention C2). */
+  select: [1, 3],
 } as const satisfies Record<string, readonly [number, number]>;
 
 /** Roles that judge rather than make: big tier unless the step says otherwise (default rule 5). */
@@ -155,6 +163,8 @@ const minutes = (kind: keyof typeof HUMAN_MINUTES): Span => {
 interface Priced {
   medium: Medium;
   tier(t: Tier): PriceRow;
+  /** The other-family critic's price, when it is usable (C3). */
+  otherFamily?: PriceRow;
   image?: PriceRow;
   video?: { row: PriceRow; model: string; extraUsd: number };
 }
@@ -167,9 +177,9 @@ interface Walk {
 
 const count = (low: number, high: number): Count => ({ low: Math.max(0, low), high: Math.max(0, high) });
 
-function completion(w: Walk, role: string, tier: Tier, readers: Count): Span {
+function completion(w: Walk, role: string, tier: Tier, readers: Count, model?: PriceRow): Span {
   const rule = TOKEN_ASSUMPTIONS[role] ?? TOKEN_ASSUMPTIONS.build!;
-  const price = w.priced.tier(tier);
+  const price = model ?? w.priced.tier(tier);
   const usd = (readersN: number, band: number) => {
     const t = rule(w.priced.medium, Math.max(1, readersN));
     return tokenCost(price, { inputTokens: Math.ceil(t.input * band), outputTokens: Math.ceil(t.output * band) });
@@ -212,7 +222,7 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
   if (s.actor === 'model') {
     switch (s.role) {
       case 'critic':
-        return completion(w, 'critic', tierOf(s), criticReaders(s));
+        return completion(w, 'critic', tierOf(s), criticReaders(s), s.knobs?.family === 'other' ? w.priced.otherFamily : undefined);
       case 'judge':
       case 'select':
       case 'dedupe':
@@ -277,11 +287,13 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
     case 'seq': {
       let cur = set;
       const spans: Span[] = [];
-      for (const c of n.steps) {
+      n.steps.forEach((c, i) => {
         const r = walkNode(w, c, cur);
         spans.push(r.span);
         cur = r.set;
-      }
+        // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2).
+        if (feedsSwaps(c, n.steps[i + 1])) spans.push(minutes('select'));
+      });
       return { span: add(...spans), set: cur };
     }
     case 'replicate': {
@@ -334,6 +346,11 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
   }
 }
 
+/** A model TELLS sweep immediately followed by the model step that applies its finds. */
+function feedsSwaps(n: Node, next: Node | undefined): boolean {
+  return n.op === 'step' && n.role === 'tells-sweep' && n.actor === 'model' && next?.op === 'step' && next.actor === 'model' && next.writes === true && next.consumes.includes('critique');
+}
+
 function walkStages(w: Walk, recipe: Recipe): { total: Span; byStage: Map<Stage['stage'], Span> } {
   const byStage = new Map<Stage['stage'], Span>();
   let set = count(1, 1);
@@ -357,6 +374,8 @@ function resolvePrices(recipe: Recipe, ctx: PricingContext): Priced {
   const rows = ctx.prices ?? PRICES;
   const tiers = { big: price(rows, ctx.profile.tiers.big.provider, ctx.profile.tiers.big.model, ctx.at), mid: price(rows, ctx.profile.tiers.mid.provider, ctx.profile.tiers.mid.model, ctx.at) };
   const priced: Priced = { medium: recipe.medium ?? 'prose', tier: (t) => tiers[t] };
+  const other = ctx.profile.otherFamily;
+  if (ctx.otherFamily && other) priced.otherFamily = price(rows, other.provider, other.model, ctx.at);
   if (ctx.images && ctx.profile.image) priced.image = price(rows, ctx.profile.image.provider, ctx.profile.image.model, ctx.at);
   const video = ctx.profile.video;
   if (ctx.video && video) {

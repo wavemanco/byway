@@ -9,16 +9,17 @@ export type ResolutionCheck = { ok: true; resolution: CheckpointResolution } | {
 
 type Target = Pick<CheckpointRecord, 'id' | 'kind' | 'options' | 'k'>;
 
-const CHOICE_KINDS: readonly CheckpointKind[] = ['pick', 'choose', 'compare'];
+const CHOICE_KINDS: readonly CheckpointKind[] = ['pick', 'select', 'choose', 'compare'];
 const TEXT_KINDS: readonly CheckpointKind[] = ['react', 'write', 'directive'];
 
 /**
- * Checks `res` against the checkpoint it answers and returns it normalized to the one field its kind uses (pick, choose
- * and compare: `choice`; confirm: `approved`; react, write and directive: `text`). Fields that belong to other kinds are
- * dropped rather than refused, so a generic form that sends every field still works.
+ * Checks `res` against the checkpoint it answers and returns it normalized to the one field its kind uses (pick, select,
+ * choose and compare: `choice`; confirm: `approved`; react, write and directive: `text`). Fields that belong to other
+ * kinds are dropped rather than refused, so a generic form that sends every field still works.
  *
  * A choice names distinct options, all of them listed when the checkpoint lists options. A pick chooses exactly `k`
- * (any non-empty number when it has no `k`); choose and compare choose exactly one.
+ * (any non-empty number when it has no `k`); choose and compare choose exactly one. A select chooses any number, none
+ * included: "swap none of these" is a real answer when the person decides TELLS hits one by one (contracts v5).
  */
 export function checkResolution(cp: Target, res: CheckpointResolution): ResolutionCheck {
   const fail = (problem: string): ResolutionCheck => ({ ok: false, problem: `checkpoint "${cp.id}" (${cp.kind}): ${problem}` });
@@ -27,8 +28,9 @@ export function checkResolution(cp: Target, res: CheckpointResolution): Resoluti
 
   if (CHOICE_KINDS.includes(cp.kind)) {
     const choice: unknown = res.choice;
-    if (!Array.isArray(choice) || choice.length === 0 || !choice.every((c) => typeof c === 'string')) {
-      return fail('needs `choice`: a non-empty list of option ids');
+    const mayBeEmpty = cp.kind === 'select';
+    if (!Array.isArray(choice) || !choice.every((c) => typeof c === 'string') || (choice.length === 0 && !mayBeEmpty)) {
+      return fail(mayBeEmpty ? 'needs `choice`: a list of option ids (it may be empty)' : 'needs `choice`: a non-empty list of option ids');
     }
     if (new Set(choice).size !== choice.length) return fail('`choice` lists an option twice');
     if (cp.options) {
@@ -40,7 +42,7 @@ export function checkResolution(cp: Target, res: CheckpointResolution): Resoluti
       if (cp.k !== undefined && choice.length !== cp.k) {
         return fail(`\`choice\` picks ${choice.length} option${choice.length === 1 ? '' : 's'}; exactly ${cp.k} must be picked`);
       }
-    } else if (choice.length !== 1) {
+    } else if (cp.kind !== 'select' && choice.length !== 1) {
       return fail(`\`choice\` must name exactly one option, not ${choice.length}`);
     }
     return { ok: true, resolution: { checkpointId: cp.id, choice: [...choice] } };

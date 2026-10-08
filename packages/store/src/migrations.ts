@@ -180,6 +180,26 @@ CREATE INDEX checkpoints_by_run ON checkpoints (run_id, opened_at);
 CREATE INDEX checkpoints_open ON checkpoints (run_id) WHERE status = 'open';
 `,
   },
+  {
+    version: 5,
+    name: 'memos',
+    sql: `
+-- Store.getMemo/setMemo (contracts v5): an idempotency memo for at-least-once activities. Temporal may run an activity
+-- again after it bought a model, image or video call; the runner records each call's result here by a stable key, and
+-- the retry reuses it instead of paying twice. The primary key makes the first write win: a later insert of the same
+-- key does nothing. Memos belong to their run and go with it.
+CREATE TABLE memos (
+  run_id      TEXT NOT NULL REFERENCES runs (id) ON DELETE CASCADE,
+  key         TEXT NOT NULL CHECK (key <> ''),
+  value       TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  PRIMARY KEY (run_id, key)
+) STRICT, WITHOUT ROWID;
+
+-- The 'select' checkpoint kind (choose any number of options, none included) needs no schema change: kinds are checked
+-- in TypeScript, never by a CHECK (see the header of migrations.ts).
+`,
+  },
 ];
 
 /** The schema version this build writes. */

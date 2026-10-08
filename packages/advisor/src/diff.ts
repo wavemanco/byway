@@ -1,6 +1,7 @@
-import { BLOCK_NAMES, STAGE_NAMES } from '@byway/catalog';
+import { BLOCK_NAMES, presentedStepFor, STAGE_NAMES } from '@byway/catalog';
+import type { Medium, RecipePresentation } from '@byway/contracts';
 import type { BlockCode } from '@byway/protocol';
-import type { Json, Loop, Node, Recipe, RelayChain, Replicate, Stage, Step } from '@byway/recipe';
+import { walkNode, type Json, type Loop, type Node, type Pick, type Recipe, type RelayChain, type Replicate, type Stage, type Step } from '@byway/recipe';
 import { stepLabel } from './present.ts';
 
 /**
@@ -8,6 +9,11 @@ import { stepLabel } from './present.ts';
  * from the nearest canonical one"). Steps are matched by id, then by what they are (role, block and who does them) in
  * order, so a renamed step reads as the same step. Hidden thresholds are never shown: a changed quality bar is
  * described, not quoted (the bar stays hidden from everyone who could game it).
+ *
+ * Plain words by default (spec §5, UX-13): steps, repeats and parallel drafts are named by the labels the person saw
+ * (the nearest recipe's presentation where it has the step, else the block or role name), with the stage they run in;
+ * node ids and medium codes are never shown. ComposeResult.diff is a list of strings, so ids have nowhere to go that
+ * only "Show technical names" would reveal; they stay in the recipe itself.
  */
 
 interface Placed<T> {
@@ -114,8 +120,31 @@ function stepChanges(a: Placed<Step>, b: Placed<Step>): string[] {
   return out;
 }
 
-const named = (s: Step) => `${stepLabel(s)} (${s.id})`;
-const renamed = (a: Step, b: Step) => `${stepLabel(b)} (${a.id === b.id ? b.id : `${a.id} → ${b.id}`})`;
+/** Media in plain words, for "Makes … instead of …". */
+const MEDIUM_WORDS: Readonly<Record<Medium, string>> = {
+  'web-page': 'a web page',
+  prose: 'a written document',
+  options: 'a set of options',
+  media: 'a storyboard and video',
+  'code-diff': 'a code change',
+};
+const mediumWords = (m: Medium | undefined) => (m ? MEDIUM_WORDS[m] : 'an unspecified kind of work');
+
+/** Labels by node id, from the nearest recipe's presentation (what the person saw in the Library). */
+type Labels = (id: string) => string | undefined;
+
+/** A step as the person knows it: its shown label, and the stage it runs in. */
+const named = (p: Placed<Step>, labels: Labels) => `${labels(p.node.id) ?? stepLabel(p.node)} (${STAGE_NAMES[p.stage]})`;
+
+/** What a loop or a replicate repeats: the first step in its body that is not a render, as the person knows it. */
+function bodyLabel(n: Node, labels: Labels): string {
+  let lead: Step | Pick | undefined;
+  walkNode(n, '', 'D1', (c) => {
+    if (!lead && (c.op === 'pick' || (c.op === 'step' && c.role !== 'render'))) lead = c;
+  });
+  if (!lead) return 'the work';
+  return labels(n.op === 'loop' || n.op === 'replicate' ? n.id : lead.id) ?? labels(lead.id) ?? stepLabel(lead);
+}
 
 function loopWords(l: Loop): string {
   switch (l.gate.metric) {
@@ -130,41 +159,48 @@ function loopWords(l: Loop): string {
   }
 }
 
-export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: string): string[] {
+/**
+ * The composed recipe's differences from its nearest canonical one, one plain line each. `nearestPresentation` names
+ * the nearest recipe's steps as the person saw them; without it, steps are named from their block or role.
+ */
+export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: string, nearestPresentation?: RecipePresentation): string[] {
   const a = collect(nearest);
   const b = collect(composed);
   const lines: string[] = [];
+  const shown: Labels = (id) => (nearestPresentation ? presentedStepFor(nearestPresentation, id)?.label : undefined);
+  // The composed recipe's own steps are named from its blocks and roles: a nearest label could name something else there.
+  const own: Labels = () => undefined;
 
-  if (composed.medium !== nearest.medium) lines.push(`Makes ${composed.medium ?? 'an unspecified medium'} instead of ${nearest.medium ?? 'an unspecified medium'}.`);
+  if (composed.medium !== nearest.medium) lines.push(`Makes ${mediumWords(composed.medium)} instead of ${mediumWords(nearest.medium)}.`);
 
   const steps = pair(a.steps, b.steps, ({ node: s }) => `${s.role}|${s.block ?? ''}|${s.actor}`);
-  for (const r of steps.removed) lines.push(`Removed: ${named(r.node)}`);
-  for (const x of steps.added) lines.push(`Added: ${named(x.node)}${x.always ? '' : ', when it applies'}`);
+  for (const r of steps.removed) lines.push(`Removed: ${named(r, shown)}`);
+  for (const x of steps.added) lines.push(`Added: ${named(x, own)}${x.always ? '' : ', when it applies'}`);
   for (const [x, y] of steps.pairs) {
     const changes = stepChanges(x, y);
-    if (changes.length) lines.push(`Changed: ${renamed(x.node, y.node)}: ${changes.join('; ')}`);
+    if (changes.length) lines.push(`Changed: ${named({ ...y, node: x.node }, shown)}: ${changes.join('; ')}`);
   }
 
   // Loops pair by id, then by what ends them, then by stage (a loop that changed how it ends is still that loop).
   const loops = pair(a.loops, b.loops, ({ node: l }) => l.gate.metric, (l) => l.stage);
-  for (const r of loops.removed) lines.push(`Removed: the repeat ${loopWords(r.node)} (${r.node.id})`);
-  for (const x of loops.added) lines.push(`Added: a repeat of up to ${counted(x.node.gate.max, 'round')}, ${loopWords(x.node)} (${x.node.id})`);
+  for (const r of loops.removed) lines.push(`Removed: repeating ${bodyLabel(r.node, shown)} ${loopWords(r.node)}`);
+  for (const x of loops.added) lines.push(`Added: ${bodyLabel(x.node, own)} repeated up to ${counted(x.node.gate.max, 'round')}, ${loopWords(x.node)}`);
   for (const [x, y] of loops.pairs) {
     const changes: string[] = [];
     if (x.node.gate.metric !== y.node.gate.metric) changes.push(`${loopWords(y.node)} instead of ${loopWords(x.node)}`);
     if (x.node.gate.max !== y.node.gate.max) changes.push(`up to ${counted(y.node.gate.max, 'round')} instead of ${x.node.gate.max}`);
-    if (changes.length) lines.push(`Changed: the repeat (${x.node.id === y.node.id ? y.node.id : `${x.node.id} → ${y.node.id}`}): ${changes.join('; ')}`);
+    if (changes.length) lines.push(`Changed: ${bodyLabel(x.node, shown)} repeats ${changes.join('; ')}`);
   }
 
   const reps = pair(a.replicates, b.replicates, () => 'replicate');
-  for (const r of reps.removed) lines.push(`Removed: ${counted(r.node.n, 'separate draft')} (${r.node.id})`);
-  for (const x of reps.added) lines.push(`Added: ${counted(x.node.n, 'separate draft')} (${x.node.id})`);
-  for (const [x, y] of reps.pairs) if (x.node.n !== y.node.n) lines.push(`Changed: ${counted(y.node.n, 'separate draft')} instead of ${x.node.n} (${y.node.id})`);
+  for (const r of reps.removed) lines.push(`Removed: ${bodyLabel(r.node, shown)}: ${counted(r.node.n, 'separate draft')}`);
+  for (const x of reps.added) lines.push(`Added: ${bodyLabel(x.node, own)}: ${counted(x.node.n, 'separate draft')}`);
+  for (const [x, y] of reps.pairs) if (x.node.n !== y.node.n) lines.push(`Changed: ${bodyLabel(x.node, shown)}: ${counted(y.node.n, 'separate draft')} instead of ${x.node.n}`);
 
   const relays = pair(a.relays, b.relays, () => 'relay');
-  for (const r of relays.removed) lines.push(`Removed: the shot-by-shot motion chain (${r.node.id})`);
-  for (const x of relays.added) lines.push(`Added: a shot-by-shot motion chain of up to ${counted(x.node.maxLinks, 'shot')} (${x.node.id})`);
-  for (const [x, y] of relays.pairs) if (x.node.maxLinks !== y.node.maxLinks) lines.push(`Changed: up to ${counted(y.node.maxLinks, 'shot')} instead of ${x.node.maxLinks} (${y.node.id})`);
+  for (const _r of relays.removed) lines.push('Removed: the shot-by-shot motion chain');
+  for (const x of relays.added) lines.push(`Added: a shot-by-shot motion chain of up to ${counted(x.node.maxLinks, 'shot')}`);
+  for (const [x, y] of relays.pairs) if (x.node.maxLinks !== y.node.maxLinks) lines.push(`Changed: the motion chain makes up to ${counted(y.node.maxLinks, 'shot')} instead of ${x.node.maxLinks}`);
 
   const sitting = (r: Recipe) => new Map(r.sitsOut.map((s) => [s.block, s.reason]));
   const outA = sitting(nearest);

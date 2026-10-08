@@ -1,6 +1,6 @@
 ---
 id: runbook.cut-apply
-version: 1
+version: 2
 fidelity: paraphrase
 slots: critique, artifact
 output: artifact:web-page
@@ -31,3 +31,5 @@ How to work:
 
 ## Answer format
 The complete revised HTML document in one fenced ```html block, and nothing after it.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

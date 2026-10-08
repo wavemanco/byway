@@ -115,16 +115,22 @@ export function openaiImageParams(req: ProviderImageRequest): ImageParams {
 
 const FORMAT_TYPES: Record<string, MediaType> = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
 
+/**
+ * An images answer. One that carries no image is returned as a no-image result with its usage and a refusal-like reason
+ * (the gateway ledgers it, then refuses, not retryable), never as a synthetic 502 that would be retried and paid for again
+ * with nothing ledgered (ENG-5).
+ */
 export function parseImagesResponse(res: ImagesResponseLike, model: string): Omit<ProviderImage, 'requestBody'> {
   const b64 = res.data?.[0]?.b64_json;
-  if (!b64) throw Object.assign(new Error('the image response carried no image data'), { status: 502 });
   const body = plain(res) as { data?: { b64_json?: string }[] };
   for (const d of body.data ?? []) if (d.b64_json) d.b64_json = `[${d.b64_json.length} base64 chars, stored as an artifact]`;
+  const usage = { inputTokens: res.usage?.input_tokens ?? 0, outputTokens: res.usage?.output_tokens ?? 0, units: b64 ? 1 : 0 };
+  if (!b64) return { bytes: new Uint8Array(), mediaType: 'image/png', servedModel: model, usage, refusal: 'returned no image', responseBody: body };
   return {
     bytes: Buffer.from(b64, 'base64'),
     mediaType: FORMAT_TYPES[res.output_format ?? 'png'] ?? 'image/png',
     servedModel: model,
-    usage: { inputTokens: res.usage?.input_tokens ?? 0, outputTokens: res.usage?.output_tokens ?? 0, units: 1 },
+    usage,
     responseBody: body,
   };
 }

@@ -1,6 +1,6 @@
 ---
 id: helper.asset.integrate
-version: 1
+version: 2
 fidelity: project
 slots: artifact, images
 output: artifact:prose
@@ -29,3 +29,5 @@ How to work:
 
 ## Answer format
 The complete piece as Markdown, with the images in place, in one fenced ```markdown block.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

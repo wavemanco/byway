@@ -23,8 +23,8 @@ describe('@byway/gateway', () => {
     expect(g.profiles().map((p) => p.id)).toEqual(['demo']);
     const status = g.profileStatus();
     expect(status.map((s) => s.profile.id)).toEqual(PROFILES.map((p) => p.id));
-    expect(status.find((s) => s.profile.id === 'demo')).toMatchObject({ usable: true, missing: [], images: true, video: true });
-    expect(status.find((s) => s.profile.id === 'balanced')).toMatchObject({ usable: false, missing: ['anthropic'], images: false, video: false });
+    expect(status.find((s) => s.profile.id === 'demo')).toMatchObject({ usable: true, missing: [], images: true, video: true, otherFamily: true });
+    expect(status.find((s) => s.profile.id === 'balanced')).toMatchObject({ usable: false, missing: ['anthropic'], images: false, video: false, otherFamily: false });
     expect(await g.spend('ws')).toEqual({ workspaceId: 'ws', spentUsd: 0, capUsd: 5, byRun: {} });
     expect(await g.verifyLedger()).toBeNull();
     expect(PROFILES.length).toBeGreaterThanOrEqual(3);
@@ -36,6 +36,15 @@ describe('@byway/gateway', () => {
     expectTypeOf<GatewayLedgerEntry>().toEqualTypeOf<contracts.LedgerEntry>();
     expectTypeOf<BudgetError['budget']>().toEqualTypeOf<contracts.BudgetDetails>();
     expectTypeOf<contracts.CompletionResult['stopReason']>().toEqualTypeOf<'end' | 'max-tokens' | undefined>();
+  });
+
+  it('exports what the runner, the web app and the evaluation side read: the exposure register and the demo-mark stripper', async () => {
+    const gw = await import('../src/index.ts');
+    expect(typeof gw.readExposure).toBe('function');
+    expect(gw.EXPOSURE_FILENAME).toBe('exposure.jsonl');
+    // UX-6: the demo's revision markers never reach a person; the runner and the web strip them where text is shown.
+    expect(gw.withoutMarks('Why: smaller.\n<!-- byway-demo-revision: 4 -->')).toBe('Why: smaller.\n');
+    expect(gw.withoutMarks('# Memo\n\nText.\n\n[//]: # (byway-demo-revision: 2)')).toBe('# Memo\n\nText.\n\n');
   });
 
   it('builds the real SDK clients offline (construction makes no request)', () => {

@@ -14,6 +14,11 @@ import { c7 } from './c7.ts';
  * The plain-language face of the eight protocol configurations (product spec §5): no protocol jargon by default;
  * "Show technical names" reveals the codes.
  *
+ * The copy says what each step does, never what it achieves (CR11, ADR-0054): every recipe is untested, and the
+ * protocol's success criteria ("clearly different drafts", "the ask in the first two lines", "a smaller diff") are what
+ * the studies test, so stating them as results would be an efficacy claim. A step this version does not perform is
+ * described as not performed (ADR-0069's honest skips), not as if it ran.
+ *
  * The copy is written by hand, but it cannot drift from the recipes: each shown step lists the recipe nodes it
  * covers, and its stage and "who does it" are computed from those nodes. Any human part makes a step your turn,
  * since that is where the run waits for you. Every step and pick of a recipe is covered exactly once, and so is every
@@ -71,21 +76,37 @@ const yourDraft = (covers: string[] = ['write', 'render']): StepCopy => ({
 const trimByYou = (explainer: string): StepCopy => ({ label: 'Trim', explainer, covers: ['cut-render', 'cut', 'apply-cut'] });
 const keepOrRevert: StepCopy = {
   label: 'Keep or revert',
-  explainer: 'Your turn: compare the versions before and after the sweep, and keep the better one.',
+  explainer: 'Your turn: compare the version before the swaps with the one after, and keep whichever you prefer.',
   covers: ['compare-render', 'tells-compare'],
 };
+/**
+ * The swapping cliché sweep (C1, C3, C4, C5, C7). The person decides each find on its own (01 TELLS step 4, "decide
+ * per instance"): the runner asks which finds to swap before the swap step runs (convention C2), and only those are
+ * swapped.
+ */
+const clicheSweep = (finds: string): StepCopy => ({
+  label: 'Cliché sweep',
+  explainer: `A fresh reviewer lists the ${finds} it finds, each with an alternative; you choose which ones, if any, the AI swaps.`,
+  covers: ['tells-render', 'tells-sweep', 'apply-swaps'],
+});
+/**
+ * A critic whose family knob is 'other' (convention C3): the profile's reviewer from another provider family when its
+ * key is set up, otherwise a fresh session of the same family, and the run says which.
+ */
+const OTHER_FAMILY = 'A reviewer from another AI family (or, when none is set up, a fresh session of the same AI)';
 const obviousCheck = (explainer: string): StepCopy => ({ label: 'Obvious-answer check', explainer, covers: ['vanilla-build', 'vanilla-flag'] });
 
 const COPY: readonly Copy[] = [
   {
     recipe: c1,
     name: 'Landing Page Studio',
-    promise: 'Four distinct page designs, each pushed by an outside critique; you pick one and make every word yours.',
-    bestFor: ['Landing pages', 'Product and marketing pages', 'Brand pages that should not look like every other page'],
+    promise: 'Four page drafts, each started from its own random spark and revised against an outside critique; you pick one and rewrite its words yourself.',
+    bestFor: ['Landing pages', 'Product and marketing pages', 'Brand and campaign pages'],
     steps: [
       {
         label: 'Random spark',
-        explainer: 'Four drafts start in separate sessions, each from its own random spark, so they do not settle on the same safe design.',
+        explainer:
+          'Four drafts start in separate sessions, each told to take its creative direction from its own random string. In this version every draft starts this way: you cannot give your own visual direction or a reference up front.',
         covers: ['seed-build'],
       },
       {
@@ -96,21 +117,17 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Custom imagery',
-        explainer: 'If you call a design plain, the AI makes images for it and checks that they fit the page.',
+        explainer: 'If you call a design plain, the AI makes images for it and puts them in the page. Nothing checks the fit for you: you see the page with its images when you pick.',
         covers: ['asset', 'asset-verify'],
       },
       { label: 'Pick one', explainer: 'Your turn: choose the draft to finish.', covers: ['pick-one'] },
       trimByYou('Your turn: list what the page could lose, and the AI removes it.'),
-      {
-        label: 'Cliché sweep',
-        explainer: 'A fresh reviewer looks for stock design patterns, and the AI swaps them for something specific to you.',
-        covers: ['tells-render', 'tells-sweep', 'apply-swaps'],
-      },
+      clicheSweep('stock design patterns'),
       keepOrRevert,
       { label: 'Your words', explainer: 'Your turn: rewrite every line of copy in your own voice.', covers: ['voice'] },
       {
         label: 'Outside critique: defect check',
-        explainer: 'A last look for broken layout and leftovers. It lists defects only, makes no taste calls, and you decide what to fix.',
+        explainer: 'A last look for broken layout and leftovers. It lists defects only, makes no taste calls and changes nothing: you see the list with the result.',
         covers: ['final-render', 'critic-check'],
       },
     ],
@@ -118,7 +135,7 @@ const COPY: readonly Copy[] = [
   {
     recipe: c2,
     name: 'Idea Generator',
-    promise: 'A wide field of genuinely different options, with the obvious ones flagged, so you choose with everything in view.',
+    promise: 'Options sketched in separate sessions from random sparks, near-duplicates merged and the obvious ones flagged, laid out side by side for you to choose from.',
     bestFor: ['Strategy options', 'Concepts and campaign ideas', 'Naming', 'Research ideas'],
     steps: [
       {
@@ -128,7 +145,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Merge near-duplicates',
-        explainer: 'Options that say the same thing are merged, so the field stays wide.',
+        explainer: 'The AI merges options that say the same thing into one.',
         covers: ['dedupe', 'pool-render'],
       },
       obviousCheck('Three plain sessions with no spark show what anyone would get; options that match them are flagged.'),
@@ -147,7 +164,7 @@ const COPY: readonly Copy[] = [
         explainer: 'The AI lays out every option with its notes, and your chosen briefs.',
         covers: ['option-map'],
       },
-      { label: 'Your words', explainer: "Your turn: write the chosen option's name and one-line pitch.", covers: ['voice'] },
+      { label: 'Your words', explainer: "Your turn: put the option map's names and pitches in your own words, starting with the option you chose.", covers: ['voice'] },
       {
         label: 'Custom imagery',
         explainer: 'If you want them, rough mood boards for the chosen option. They stay rough and stay out of the decision.',
@@ -158,7 +175,7 @@ const COPY: readonly Copy[] = [
   {
     recipe: c3,
     name: 'Series Writer',
-    promise: 'One piece of your series per run: a fresh angle, an outside critique, and your own words on every line.',
+    promise: 'One piece of your series per run: angles from random sparks, your own point, a draft revised against an outside critique, and every line rewritten by you.',
     bestFor: ['Newsletters and bylined posts', 'Brand articles published regularly', 'Teaching units'],
     steps: [
       {
@@ -180,21 +197,16 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Outside critique',
-        explainer:
-          "A reviewer from a different AI family ranks the draft, unsigned, among your series' best pieces and leading writers in your field, and names the gaps; the AI revises until it ranks in the top three or three rounds pass.",
+        explainer: `${OTHER_FAMILY} ranks the draft, unsigned, among your series' best pieces and leading writers in your field, and names the gaps; the AI revises until the draft reaches a rank the reviewer never sees, scaled to how many examples you gave, or three rounds pass.`,
         covers: ['render', 'critic', 'revise'],
       },
       {
         label: 'Custom imagery',
-        explainer: 'If you want one, a header image or a chart computed from real data.',
+        explainer: 'If you want one, the AI makes a header image for the piece. Charts computed from your data are not made in this version.',
         covers: ['asset'],
       },
       trimByYou('Your turn: list what the piece could lose, and the AI removes it.'),
-      {
-        label: 'Cliché sweep',
-        explainer: 'A fresh reviewer flags stock phrasing, structure and platform habits, and the AI swaps them out.',
-        covers: ['tells-render', 'tells-sweep', 'apply-swaps'],
-      },
+      clicheSweep('stock phrasing, structure and platform habits'),
       keepOrRevert,
       { label: 'Your words', explainer: 'Your turn: rewrite every line in your own voice.', covers: ['voice'] },
     ],
@@ -202,7 +214,7 @@ const COPY: readonly Copy[] = [
   {
     recipe: c4,
     name: 'Memo Polish',
-    promise: 'A memo with the ask in the first two lines and nothing the reader would miss, in minutes.',
+    promise: 'A memo drafted from your one-line ask, read as its recipient would read it, trimmed by you and finished in your own words.',
     bestFor: ['Internal memos and updates', 'Product requirement documents', 'Incident write-ups'],
     steps: [
       {
@@ -223,11 +235,7 @@ const COPY: readonly Copy[] = [
         covers: ['render', 'recipient', 'revise'],
       },
       trimByYou('Your turn: cut to the length the reader will give it; the AI removes what you list.'),
-      {
-        label: 'Cliché sweep',
-        explainer: 'A fresh reviewer flags memo clichés, and the AI swaps them out.',
-        covers: ['tells-render', 'tells-sweep', 'apply-swaps'],
-      },
+      clicheSweep('memo clichés'),
       keepOrRevert,
       {
         label: 'Your words',
@@ -236,7 +244,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Sign off the facts',
-        explainer: 'For fact-heavy documents, you confirm every number, date, name and causal claim as yours.',
+        explainer: 'For fact-heavy documents, you go through every number, date, name and causal claim and correct any that is wrong; your corrections replace them in the memo.',
         covers: ['claim-sign-off'],
       },
     ],
@@ -254,7 +262,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Merge near-duplicates',
-        explainer: 'Territories that say the same thing are merged, so the field stays wide.',
+        explainer: 'The AI merges territories that say the same thing into one.',
         covers: ['dedupe', 'territories-render'],
       },
       obviousCheck('Territories that plain sessions with no spark also come up with are flagged.'),
@@ -288,24 +296,21 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Composite',
-        explainer: 'The product is placed into each scene and cut out cleanly.',
+        explainer:
+          'The AI makes one more clip of the last shot, starting where the chain ended. Placing the product into each scene and cutting it out is not available in this version, so that part is skipped.',
         covers: ['render-in-scene', 'matte'],
       },
       {
         label: 'Voice-over audio',
-        explainer: 'Audio is made from your locked script, word for word.',
+        explainer: 'Not available in this version: no voice-over audio is made, and your locked script stays with the storyboard.',
         covers: ['vo-audio'],
       },
-      trimByYou('Your turn: cut the ad down to one message. Whole voice-over lines go only with your sign-off.'),
-      {
-        label: 'Cliché sweep',
-        explainer: 'A fresh reviewer flags stock visual habits, and the AI tries swaps for you to judge.',
-        covers: ['tells-render', 'tells-sweep', 'apply-swaps'],
-      },
+      trimByYou('Your turn: cut the ad down to one message; the AI removes what you list from the shots. The voice-over stays as you locked it.'),
+      clicheSweep('stock visual habits'),
       keepOrRevert,
       {
         label: 'Your words',
-        explainer: 'Your turn: write the tagline, the headline, the captions and any on-screen text.',
+        explainer: "Your turn: write the headline, the tagline and each shot's caption. The voice-over stays as you locked it.",
         covers: ['voice'],
       },
       {
@@ -347,8 +352,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Outside critique',
-        explainer:
-          'One reader, from an AI family that never touched your draft, ranks it among published winning examples or your own past documents and names its top three weaknesses.',
+        explainer: `${OTHER_FAMILY} ranks your draft among published winning examples or your own past documents and names its top three weaknesses.`,
         covers: ['critic'],
       },
       {
@@ -361,7 +365,7 @@ const COPY: readonly Copy[] = [
   {
     recipe: c6a,
     name: 'Fiction Second Reader',
-    promise: 'Unexpected premises to start from; then you write every sentence while AI readers only point.',
+    promise: 'Premises from random sparks to start from; then you write every sentence while AI readers only point.',
     bestFor: ['Short stories', 'Novels and serials', 'Scripts'],
     steps: [
       {
@@ -389,8 +393,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Outside critique',
-        explainer:
-          'One reader, from an AI family that never touched your text, ranks your pages among published passages and names their top three weaknesses.',
+        explainer: `${OTHER_FAMILY} ranks your pages among published passages and names their top three weaknesses.`,
         covers: ['critic'],
       },
       {
@@ -408,7 +411,7 @@ const COPY: readonly Copy[] = [
   {
     recipe: c7,
     name: 'Lean Code Review',
-    promise: 'A smaller code change that is easier to review, with the "why" written by you. Correctness stays with your tests and CI.',
+    promise: 'An AI-written code change checked for defects, cut back to what the task asked for and reviewed among strong merged pull requests, with the "why" written by you. Correctness stays with your tests and CI.',
     bestFor: ['Pull requests written by AI agents', 'Changes that grew too big', 'Changes headed for human review'],
     steps: [
       {
@@ -426,38 +429,29 @@ const COPY: readonly Copy[] = [
       { label: 'Implement', explainer: 'The AI writes the change.', covers: ['implement'] },
       {
         label: 'Defect check',
-        explainer: 'Lint-style problems, placeholders and leftover to-dos are found and fixed. It looks for defects only, not style.',
+        explainer: 'A reviewer lists lint-style problems, placeholders and leftover to-dos, and the AI fixes what it lists. It looks for defects only, not style.',
         covers: ['defect-render', 'defect-check', 'fix-defects'],
       },
       {
         label: 'Trim the scope',
-        explainer: 'A fresh reviewer removes anything the task did not ask for.',
+        explainer: 'A fresh reviewer lists what the task did not ask for, and the AI removes what it lists.',
         covers: ['scope-render', 'scope-cut', 'apply-scope-cut'],
       },
       {
         label: 'Outside critique',
-        explainer:
-          'A reviewer from a different AI family ranks the change for ease of review next to strong merged pull requests, and the AI fixes what it finds, up to three rounds.',
+        explainer: `${OTHER_FAMILY} ranks the change for ease of review among strong merged pull requests and names what to fix; the AI fixes it, up to three rounds.`,
         covers: ['review-render', 'reviewer', 'review-fix'],
       },
       {
         label: 'Trim what review added',
-        explainer: 'A fresh reviewer removes anything the review rounds added that the change does not need.',
+        explainer: 'A fresh reviewer lists what the review rounds added that the change does not need, and the AI removes what it lists.',
         covers: ['bloat-render', 'bloat-cut', 'apply-bloat-cut'],
       },
-      {
-        label: 'Cliché sweep',
-        explainer: 'A fresh reviewer flags stock code patterns, and the AI proposes swaps.',
-        covers: ['tells-render', 'tells-sweep', 'apply-swaps'],
-      },
-      {
-        label: 'Keep or revert',
-        explainer: 'Your turn: go through the swaps and keep the ones that read better.',
-        covers: ['compare-render', 'tells-compare'],
-      },
+      clicheSweep('stock code patterns'),
+      keepOrRevert,
       {
         label: 'Your words',
-        explainer: 'Your turn: write why the change exists, its tradeoffs, how you checked it, user-facing strings and public names.',
+        explainer: 'Your turn: write the "why" of the change yourself: why it exists, its tradeoffs and how you checked it.',
         covers: ['voice'],
       },
     ],
@@ -587,6 +581,34 @@ export function presentationOf(recipeId: string): RecipePresentation | undefined
 export function stepPresentation(recipeId: string, nodeId: string): PresentedStep | undefined {
   const i = PRESENTATIONS.findIndex((p) => p.recipeId === recipeId);
   return i < 0 ? undefined : PRESENTED[i]!.byNode.get(nodeId);
+}
+
+/** A route's choice in plain words: the question, and one "Name: detail" label per branch, in branch order (UX-3). */
+export interface RouteChoice {
+  question: string;
+  options: { id: string; label: string }[];
+}
+
+/**
+ * Plain wording for the protocol recipes' routes, by recipe id and route id. A route the run was not told in advance
+ * becomes a choose checkpoint; branch names ('ai', 'own') mean nothing to a person, and choosing 'own' means writing the
+ * whole first draft, so each option says who does what. Tested to cover every route, branch for branch.
+ */
+const ROUTE_CHOICES: Readonly<Record<string, Readonly<Record<string, RouteChoice>>>> = {
+  c3: {
+    draft: {
+      question: 'Who writes the first draft?',
+      options: [
+        { id: 'ai', label: 'The AI drafts it: from your point, for you to revise and rewrite' },
+        { id: 'own', label: 'You write it: the whole first draft, yourself' },
+      ],
+    },
+  },
+};
+
+/** The plain choice for a route of a protocol recipe, or undefined for an unknown recipe or route. */
+export function routeChoice(recipeId: string, routeId: string): RouteChoice | undefined {
+  return Object.hasOwn(ROUTE_CHOICES, recipeId) && Object.hasOwn(ROUTE_CHOICES[recipeId]!, routeId) ? ROUTE_CHOICES[recipeId]![routeId] : undefined;
 }
 
 /**

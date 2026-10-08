@@ -16,9 +16,14 @@ const lastLine = (text: string) => text.trim().split('\n').at(-1)?.trim() ?? '';
 const bodyLines = (text: string) => text.trim().split('\n').slice(0, -1).filter((l) => l.trim());
 
 const Options = z.strictObject({ options: z.array(z.strictObject({ title: z.string().min(1), pitch: z.string().min(1), rationale: z.string().min(1) })).min(1) });
+/** Spec §3.3 (contracts v5): the on-screen copy (headline, tagline, per-shot caption) is optional and is what the late VOICE edits. */
 const Storyboard = z.strictObject({
-  storyboard: z.array(z.strictObject({ shot: z.number().int().positive(), description: z.string().min(1), imagePrompt: z.string().min(1), durationSec: z.number().positive() })).min(1),
+  storyboard: z
+    .array(z.strictObject({ shot: z.number().int().positive(), description: z.string().min(1), imagePrompt: z.string().min(1), durationSec: z.number().positive(), caption: z.string().min(1).optional() }))
+    .min(1),
   voiceover: z.string().min(1),
+  headline: z.string().min(1).optional(),
+  tagline: z.string().min(1).optional(),
 });
 const Hits = z.strictObject({ hits: z.array(z.strictObject({ pattern: z.string().min(1), where: z.string().min(1), alternative: z.string().min(1) })) });
 const Briefs = z.strictObject({

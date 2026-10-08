@@ -139,6 +139,38 @@ describe('resolution validation', () => {
     expect((await store.resolveCheckpoint({ checkpointId: 'cmp', choice: ['B'] })).resolution).toEqual({ checkpointId: 'cmp', choice: ['B'] });
   });
 
+  it('select: any distinct subset of the listed options, possibly empty, stored as given', async () => {
+    const hits: OpenInput = {
+      id: 'sel',
+      runId: 'run-1',
+      stepId: 'apply-swaps',
+      kind: 'select',
+      prompt: 'Which of these should be swapped? Choose any, or none.',
+      options: [
+        { id: 'hit-1', label: 'Gradient hero — header → a flat brand colour' },
+        { id: 'hit-2', label: 'Three feature cards — middle section → one short list' },
+      ],
+    };
+    const store = await opened(hits);
+    for (const choice of [['hit-1', 'hit-1'], ['hit-3'], ['hit-1', 'nope']]) {
+      await expect(store.resolveCheckpoint({ checkpointId: 'sel', choice })).rejects.toMatchObject({ code: 'invalid' });
+    }
+    await expect(store.resolveCheckpoint({ checkpointId: 'sel', approved: false })).rejects.toThrow(/choice/);
+    expect((await store.getCheckpoint('sel'))?.status).toBe('open');
+    expect((await store.resolveCheckpoint({ checkpointId: 'sel', choice: [] })).resolution).toEqual({ checkpointId: 'sel', choice: [] });
+    // Another select can choose several.
+    await store.openCheckpoint({ ...hits, id: 'sel-2' });
+    expect((await store.resolveCheckpoint({ checkpointId: 'sel-2', choice: ['hit-2', 'hit-1'] })).resolution).toEqual({ checkpointId: 'sel-2', choice: ['hit-2', 'hit-1'] });
+  });
+
+  it('select ignores k (it is a pick field): the record keeps no k', async () => {
+    const store = openStore();
+    await seedRun(store);
+    const cp = await store.openCheckpoint({ id: 'sel', runId: 'run-1', stepId: 's', kind: 'select', prompt: 'Which?', options: [{ id: 'hit-1', label: 'x' }], k: 1 });
+    expect(cp).not.toHaveProperty('k');
+    expect((await store.resolveCheckpoint({ checkpointId: 'sel', choice: [] })).status).toBe('resolved');
+  });
+
   it('confirm needs approved; text kinds need text; only the field for the kind is stored', async () => {
     const store = openStore();
     await seedRun(store);

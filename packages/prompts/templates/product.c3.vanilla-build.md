@@ -1,6 +1,6 @@
 ---
 id: product.c3.vanilla-build
-version: 1
+version: 2
 fidelity: project
 slots: problem
 output: artifact:prose
@@ -15,3 +15,5 @@ Write a post about this:
 
 ## Answer format
 The post as Markdown, in one fenced ```markdown block.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

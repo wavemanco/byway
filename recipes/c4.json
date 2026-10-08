@@ -320,8 +320,10 @@
                 "artifact"
               ],
               "produces": [
-                "voice"
-              ]
+                "voice",
+                "artifact"
+              ],
+              "writes": true
             }
           }
         ]
@@ -346,5 +348,5 @@
     "C4-DR9"
   ],
   "bank": true,
-  "hash": "sha256:393f7aa18733ae9dc325f6d5e97216fcb264e2f0c5326112cb6977b2248f04c9"
+  "hash": "sha256:12a129edb4a51039f1b8972d2b58593423dec55c205a54ef4be0aca1e60c7e9e"
 }

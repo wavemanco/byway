@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCK_CODES } from '@byway/protocol';
 import { walk, walkNode, type Recipe } from '@byway/recipe';
-import { BLOCK_NAMES, PRESENTATIONS, PROTOCOL_CONFIGS, STAGE_NAMES, presentationOf, presentedStepFor, stepPresentation } from '../src/index.ts';
+import { BLOCK_NAMES, CHOOSER, PRESENTATIONS, PROTOCOL_CONFIGS, STAGE_NAMES, presentationOf, presentedStepFor, routeChoice, stepPresentation } from '../src/index.ts';
 
 /** Step and pick ids of a recipe in walk order, with their stage and whether a human does them. */
 function nodesOf(r: Recipe): { id: string; stage: 'D1' | 'D2' | 'D3'; human: boolean; model: boolean }[] {
@@ -197,5 +197,114 @@ describe('recipe presentations', () => {
     for (const text of copyOf(p)) {
       expect(text, id).not.toMatch(/research[- ]backed|proven|studies show|outperform|scientifically|guarantee|best[- ]in[- ]class/i);
     }
+  });
+});
+
+/**
+ * Honest copy (CR11, convention C9): product text describes what the steps do, never what they achieve, and never
+ * describes a step this version does not perform. The outcome shapes below are the ones the review found: the
+ * protocol's own untested success criteria stated as fact.
+ */
+const OUTCOME_SHAPES: readonly RegExp[] = [
+  /\bso(?: that)? (?:they|it|the|you|your)\b/i,
+  /\bgenuinely\b/i,
+  /\bdistinct\b/i,
+  /\bmakes? (?:\w+ ){0,4}(?:smaller|easier|better|clearer|stronger|shorter|sharper)\b/i,
+  /\b(?:smaller|easier|clearer|better)\b[^.]*\bto (?:review|read|act on)\b/i,
+  /\bnothing the reader would miss\b/i,
+  /\bin minutes\b/i,
+  /\bstays? wide\b/i,
+  /\bdo(?:es)? not settle\b/i,
+  /\bcleanly\b/i,
+  /\bunexpected\b/i,
+];
+const outcomes = (text: string) => OUTCOME_SHAPES.filter((re) => re.test(text)).map(String);
+const explainerOf = (id: string, label: string) => presentationOf(id)!.stages.flatMap((s) => s.steps).find((s) => s.label === label)?.explainer ?? '';
+
+describe('honest copy (CRED-1, PRES-1, FID-1, FID-2, TELLS-1, VOICE-1)', () => {
+  it.each(all)('%s states no outcome as fact', (id, p) => {
+    for (const text of copyOf(p)) expect(outcomes(text), `${id}: ${text}`).toEqual([]);
+  });
+
+  it('the chooser help states no outcome as fact', () => {
+    for (const q of CHOOSER) expect(outcomes(`${q.text} ${q.help}`), q.id).toEqual([]);
+  });
+
+  it('says C1 starts every draft from a random spark, with no direction or reference of your own up front (FID-2)', () => {
+    expect(explainerOf('c1', 'Random spark')).toMatch(/cannot give your own (visual )?direction/);
+    expect(CHOOSER.find((q) => q.routesTo === 'c1')?.help).toMatch(/random spark/);
+  });
+
+  it('describes C1 imagery and its last check as what they do: nothing checks the images for you, and the check changes nothing (PRES-1)', () => {
+    const imagery = explainerOf('c1', 'Custom imagery');
+    expect(imagery).not.toMatch(/checks that they fit/);
+    expect(imagery).toMatch(/you see/);
+    const check = explainerOf('c1', 'Outside critique: defect check');
+    expect(check).not.toMatch(/you decide what to fix/);
+    expect(check).toMatch(/changes nothing/);
+  });
+
+  it('says C5 compositing and voice-over audio are not available in this version (PRES-1)', () => {
+    expect(explainerOf('c5', 'Composite')).toMatch(/not available in this version/i);
+    expect(explainerOf('c5', 'Voice-over audio')).toMatch(/not available in this version/i);
+    expect(explainerOf('c5', 'Voice-over audio')).not.toMatch(/word for word/);
+  });
+
+  it('says C3 makes no charts from data in this version (C9)', () => {
+    expect(explainerOf('c3', 'Custom imagery')).toMatch(/not made in this version/);
+  });
+
+  it('every explainer that names a reviewer from another AI family says what happens when none is set up (FID-1, C3)', () => {
+    let named = 0;
+    for (const p of PRESENTATIONS) {
+      for (const s of p.stages.flatMap((x) => x.steps)) {
+        if (!/AI family/.test(s.explainer)) continue;
+        named++;
+        expect(s.explainer, `${p.recipeId} ${s.label}`).toMatch(/fresh session of the same/);
+      }
+    }
+    // C3, C6, C6a and C7 have a different-family reviewer.
+    expect(named).toBe(4);
+  });
+
+  it('every cliché sweep that swaps says you choose which of its finds are swapped, and the swap step never claims more (TELLS-1, C2)', () => {
+    for (const id of ['c1', 'c3', 'c4', 'c5', 'c7']) {
+      expect(explainerOf(id, 'Cliché sweep'), id).toMatch(/you choose which/);
+      expect(explainerOf(id, 'Keep or revert'), id).not.toMatch(/go through the swaps/);
+    }
+  });
+
+  it("C5's late Your words is the on-screen copy: headline, tagline and captions, with the voice-over left as locked (VOICE-1, C4)", () => {
+    const words = explainerOf('c5', 'Your words');
+    expect(words).toMatch(/headline/);
+    expect(words).toMatch(/tagline/);
+    expect(words).toMatch(/caption/);
+    expect(words).not.toMatch(/any on-screen text/);
+    expect(words).toMatch(/voice-over/);
+  });
+
+  it("C7's Your words offers the change's why, not strings or names it does not offer (VOICE-1, C9)", () => {
+    const words = explainerOf('c7', 'Your words');
+    expect(words).toMatch(/why/);
+    expect(words).not.toMatch(/user-facing strings|public names/);
+  });
+
+  it('every route has a plain question and a plain "Name: detail" label for each branch, in branch order (UX-3)', () => {
+    let routes = 0;
+    for (const r of PROTOCOL_CONFIGS) {
+      walk(r, (n) => {
+        if (n.op !== 'route') return;
+        routes++;
+        const choice = routeChoice(r.id, n.id);
+        expect(choice, `${r.id} ${n.id}`).toBeDefined();
+        expect(choice!.question).toMatch(/^[A-Z].*\?$/);
+        expect(choice!.options.map((o) => o.id)).toEqual(n.branches.map((b) => b.name));
+        for (const o of choice!.options) expect(o.label, `${r.id} ${n.id} ${o.id}`).toMatch(/^[A-Z][^:]+: \S.*[^.]$/);
+      });
+    }
+    expect(routes).toBe(1);
+    expect(routeChoice('c3', 'draft')?.options.find((o) => o.id === 'own')?.label).toMatch(/whole first draft/);
+    expect(routeChoice('c3', 'nope')).toBeUndefined();
+    expect(routeChoice('nope', 'draft')).toBeUndefined();
   });
 });

@@ -11,6 +11,9 @@ export { entryHash, GENESIS_HASH, Ledger, type GatewayLedgerEntry, type LedgerDr
 export { makeRedactor, type Redactor } from './redact.ts';
 export { DEFAULT_RESPONDERS, parsePurpose, reply, respond, responderFor, type MockContext, type MockReply, type Responder } from './mock/responders.ts';
 export { composedRecipe } from './mock/compose.ts';
+/** The demo's revision markers stripped from text a person sees (UX-6); the mock keeps them in the stored text. */
+export { withoutMarks } from './mock/revision.ts';
+export { EXPOSURE_FILENAME, ExposureRegister, exposurePath, familyOf, isJudgingPurpose, readExposure, type ExposureEntry } from './exposure.ts';
 export { mockAdapter } from './providers/mock.ts';
 export { createFalClient, EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, FAL_VIDEO_MODELS, falAdapter, falVideoSeconds, type FalClientLike } from './providers/fal.ts';
 export type { ProviderAdapter } from './providers/types.ts';

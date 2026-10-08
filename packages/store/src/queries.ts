@@ -33,6 +33,10 @@ export function prepareQueries(db: DatabaseSync) {
       WHERE r.workspace_id = ? AND c.status = 'open' ORDER BY c.opened_at, c.rowid`),
     runCheckpoints: p('SELECT * FROM checkpoints WHERE run_id = ? ORDER BY opened_at, rowid'),
 
+    memo: p('SELECT value FROM memos WHERE run_id = ? AND key = ?'),
+    // First write wins: a key that is already set keeps its value (the caller reads it back in the same transaction).
+    insertMemo: p('INSERT INTO memos (run_id, key, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (run_id, key) DO NOTHING'),
+
     intake: p('SELECT * FROM intakes WHERE id = ?'),
     insertIntake: p(`INSERT INTO intakes (id, workspace_id, problem, answers, recommendation, composed, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),

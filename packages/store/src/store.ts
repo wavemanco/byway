@@ -42,6 +42,7 @@ import {
   invalid,
   isPlainObject,
   medium,
+  memoValue,
   nonEmpty,
   oneOf,
   optionalIndex,
@@ -381,6 +382,32 @@ export class SqliteStore implements Store {
     return row ? toIntake(row) : undefined;
   }
 
+  // Memo
+
+  /** The value memoized under `key` for the run, or undefined (also for a run that does not exist). */
+  async getMemo(runId: string, key: string): Promise<string | undefined> {
+    const q = this.#queries();
+    const row = q.memo.get(nonEmpty('runId', runId), nonEmpty('memo key', key));
+    return row ? String(row.value) : undefined;
+  }
+
+  /**
+   * Memoizes `value` under `key` for the run and returns the value now stored. First write wins: when the key is already
+   * set (an earlier attempt of the same activity, or a racing one in another process), it keeps that value and returns
+   * it, so every caller goes on with the one result that was paid for.
+   */
+  async setMemo(runId: string, key: string, value: string): Promise<string> {
+    const q = this.#queries();
+    const id = nonEmpty('runId', runId);
+    const k = nonEmpty('memo key', key);
+    const v = memoValue(value);
+    return writeTransaction(this.#db, () => {
+      if (!q.run.get(id)) throw new StoreError('not-found', `no run ${JSON.stringify(id)}`);
+      q.insertMemo.run(id, k, v, this.#stamp());
+      return String(q.memo.get(id, k)!.value);
+    });
+  }
+
   // Preferences
 
   async getPreferences(workspaceId: string): Promise<Preferences> {
@@ -433,7 +460,9 @@ function checkpointFields(cp: CheckpointInput | CheckpointRecord): Omit<Checkpoi
   if (!isPlainObject(cp)) throw invalid('a checkpoint must be a plain object');
   const id = nonEmpty('checkpoint id', cp.id);
   const options = cp.options === undefined ? undefined : checkpointOptions(cp.options);
-  const k = optionalIndex('k', cp.k);
+  // A select answers with any number of options (none included), so a k would mean nothing there; it is dropped rather
+  // than refused, so a caller that sends one by habit does not fail a run over a field nobody reads.
+  const k = cp.kind === 'select' ? null : optionalIndex('k', cp.k);
   if (k === 0) throw invalid('k must be at least 1');
   // A pick is answered with exactly k distinct options (checkResolution), so k beyond the list could never be answered.
   if (cp.kind === 'pick' && k !== null && options !== undefined && k > options.length) {

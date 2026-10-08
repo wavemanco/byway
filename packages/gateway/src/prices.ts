@@ -107,6 +107,7 @@ export const PRICES: readonly PriceRow[] = [
   // The demo-mode mock costs nothing.
   { provider: 'mock', model: 'mock-big', inputPerMTok: 0, outputPerMTok: 0, source: 'byway mock provider, 2026-10-07' },
   { provider: 'mock', model: 'mock-mid', inputPerMTok: 0, outputPerMTok: 0, source: 'byway mock provider, 2026-10-07' },
+  { provider: 'mock', model: 'mock-other', inputPerMTok: 0, outputPerMTok: 0, source: 'byway mock provider, 2026-10-07' },
   { provider: 'mock', model: 'mock-image', inputPerMTok: 0, outputPerMTok: 0, perImageUsd: 0, source: 'byway mock provider, 2026-10-07' },
   { provider: 'mock', model: 'mock-video', inputPerMTok: 0, outputPerMTok: 0, perSecondUsd: 0, source: 'byway mock provider, 2026-10-07' },
 ];

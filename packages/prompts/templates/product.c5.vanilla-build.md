@@ -1,6 +1,6 @@
 ---
 id: product.c5.vanilla-build
-version: 1
+version: 2
 fidelity: project
 slots: problem
 output: artifact:media
@@ -16,4 +16,4 @@ Come up with an ad for this:
 ## Answer format
 One fenced ```json block, shaped like this:
 
-    {"storyboard":[{"shot":1,"description":"…","imagePrompt":"…","durationSec":4}],"voiceover":"…"}
+    {"storyboard":[{"shot":1,"description":"…","imagePrompt":"…","durationSec":4,"caption":"…"}],"voiceover":"…","headline":"…","tagline":"…"}

@@ -3,7 +3,7 @@ import type { CostEstimate } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
 import { withHash, type Node, type Recipe } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
-import { createAdvisor, estimateRecipe, TOKEN_ASSUMPTIONS } from '../src/index.ts';
+import { createAdvisor, estimateRecipe, HUMAN_MINUTES, TOKEN_ASSUMPTIONS } from '../src/index.ts';
 import { demoAdvisor, demoGateway, recordingPrompts } from './helpers.ts';
 
 /** A copy of the recipe with the node of this id changed. */
@@ -119,6 +119,25 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     // The openai profile has no video model at all.
     const openai = keyed({ OPENAI_API_KEY: 'sk-test-not-a-real-key-000000000' }).estimate(c5, 'openai');
     expect(openai.highUsd).toBeGreaterThan(0);
+  });
+
+  it("prices a different-family critic at the other family's model when its key is set up (C3), else at the profile's own", () => {
+    // C3's critic has family 'other': with an OpenAI key, balanced runs it on GPT-6 Astra ($10/$50 per MTok), dearer
+    // than Claude Opus 5.5 ($4/$20); without one, a fresh session of the same family reviews, at Opus prices.
+    const OPENAI = { OPENAI_API_KEY: 'sk-test-not-a-real-key-000000000' };
+    const same = keyed({ ...ANTHROPIC }).estimate(c3, 'balanced');
+    const other = keyed({ ...ANTHROPIC, ...OPENAI }).estimate(c3, 'balanced');
+    expect(other.highUsd).toBeGreaterThan(same.highUsd);
+    expect(other.modelCalls).toEqual(same.modelCalls);
+    // A recipe with no different-family critic costs the same either way.
+    expect(keyed({ ...ANTHROPIC, ...OPENAI }).estimate(c4, 'balanced')).toEqual(keyed({ ...ANTHROPIC }).estimate(c4, 'balanced'));
+  });
+
+  it('counts your time choosing which cliché-sweep finds to swap (C2)', () => {
+    const withChoice = advisor.estimate(c4, 'balanced').humanMinutes;
+    const asRender: Node = { op: 'step', id: 'apply-swaps', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] };
+    const noSwaps = advisor.estimate(edit(c4, 'apply-swaps', () => asRender), 'balanced').humanMinutes;
+    expect(withChoice.low - noSwaps.low).toBeGreaterThanOrEqual(HUMAN_MINUTES.select[0]);
   });
 
   it('counts your time by checkpoint: authorship takes longer than polishing a memo', () => {

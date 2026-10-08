@@ -44,48 +44,82 @@ export function stepLabel(n: Unit): string {
   }
 }
 
+/**
+ * Every sentence a composed step can be explained with, in one place: product copy like the catalog's, so it says what
+ * a step does, never what it achieves (CR11, CRED-1), and the web app's claims guard scans this list. The swapping
+ * cliché sweep says the person chooses which finds are swapped (convention C2).
+ */
+export const COMPOSED_EXPLAINERS = {
+  pickYours: 'Your turn: choose what to keep.',
+  pickAi: 'The AI chooses what to keep.',
+  seed: 'Separate sessions, each told to take its direction from its own random string.',
+  visionYours: 'Your turn: say what you want, what pulls you and what to avoid.',
+  visionAi: 'The AI offers directions for you to react to.',
+  criticCheck: 'A look for defects only. It makes no taste calls.',
+  criticApplies: 'A separate reviewer looks at the work as it will be shown and names the biggest gaps; the AI fixes them.',
+  critic: 'A separate reviewer looks at the work as it will be shown and names the biggest gaps.',
+  asset: 'The AI makes images for the work.',
+  relay: 'Specialist models make the motion, each part starting where the last one ended.',
+  cutYoursApplies: 'Your turn: list what the work could lose, and the AI removes it.',
+  cutYours: 'Your turn: mark what the work could lose.',
+  cutApplies: 'A fresh reviewer lists what the work could lose, and the AI removes it.',
+  cut: 'A fresh reviewer marks what could go. Nothing is deleted for you.',
+  tellsCompare: 'Your turn: compare the version before the swaps with the one after, and keep whichever you prefer.',
+  tellsApplies: 'A fresh reviewer lists the stock patterns it finds, each with an alternative; you choose which ones, if any, the AI swaps.',
+  tells: 'A fresh reviewer flags stock patterns. It flags only.',
+  voice: 'Your turn: write the words readers will take as yours.',
+  buildYours: 'Your turn: write or revise the work yourself.',
+  build: 'The AI drafts the work.',
+  checkApplies: 'A look for defects only, which the AI then fixes.',
+  dedupe: 'The AI merges options that say the same thing into one.',
+  overlap: 'Plain sessions with no spark show what anyone would get; options that match them are flagged.',
+  fix: 'The AI revises the work.',
+  render: 'The work is rendered as it will be shown.',
+  otherYours: 'Your turn.',
+  other: 'The AI does this step.',
+} as const;
+
 /** One plain sentence on what a shown step does, from its lead node; `applies` when it also applies its own findings. */
 function explainer(n: Unit, applies: boolean): string {
-  if (n.op === 'pick') return n.mode === 'H' ? 'Your turn: choose what to keep.' : 'The AI chooses what to keep.';
+  const E = COMPOSED_EXPLAINERS;
+  if (n.op === 'pick') return n.mode === 'H' ? E.pickYours : E.pickAi;
   const yours = n.actor === 'human';
   switch (n.block) {
     case 'SEED':
-      return 'Separate sessions, each from its own random spark, so the drafts do not settle on the same safe answer.';
+      return E.seed;
     case 'VISION':
-      return yours ? 'Your turn: say what you want, what pulls you and what to avoid.' : 'The AI offers directions for you to react to.';
+      return yours ? E.visionYours : E.visionAi;
     case 'CRITIC':
-      if (n.role === 'check') return 'A look for defects only. It makes no taste calls.';
-      return applies
-        ? 'A separate reviewer looks at the work as its audience will and names the biggest gaps; the AI fixes them.'
-        : 'A separate reviewer looks at the work as its audience will and names the biggest gaps.';
+      if (n.role === 'check') return E.criticCheck;
+      return applies ? E.criticApplies : E.critic;
     case 'ASSET':
-      return 'The AI makes the images the work needs.';
+      return E.asset;
     case 'RELAY':
-      return 'Specialist models make the motion, each part starting where the last one ended.';
+      return E.relay;
     case 'CUT':
-      if (yours) return applies ? 'Your turn: list what the work could lose, and the AI removes it.' : 'Your turn: mark what the work could lose.';
-      return applies ? 'A fresh reviewer lists what the work could lose, and the AI removes it.' : 'A fresh reviewer marks what could go. Nothing is deleted for you.';
+      if (yours) return applies ? E.cutYoursApplies : E.cutYours;
+      return applies ? E.cutApplies : E.cut;
     case 'TELLS':
-      if (n.role === 'tells-compare') return 'Your turn: compare the versions before and after the sweep, and keep the better one.';
-      return applies ? 'A fresh reviewer flags stock patterns, and the AI swaps them for something specific.' : 'A fresh reviewer flags stock patterns. It flags only.';
+      if (n.role === 'tells-compare') return E.tellsCompare;
+      return applies ? E.tellsApplies : E.tells;
     case 'VOICE':
-      return 'Your turn: write the words readers will take as yours.';
+      return E.voice;
   }
   switch (n.role) {
     case 'build':
-      return yours ? 'Your turn: write or revise the work yourself.' : 'The AI drafts the work.';
+      return yours ? E.buildYours : E.build;
     case 'check':
-      return applies ? 'A look for defects only, which the AI then fixes.' : 'A look for defects only. It makes no taste calls.';
+      return applies ? E.checkApplies : E.criticCheck;
     case 'dedupe':
-      return 'Options that say the same thing are merged, so the field stays wide.';
+      return E.dedupe;
     case 'overlap':
-      return 'Plain sessions with no spark show what anyone would get; options that match them are flagged.';
+      return E.overlap;
     case 'fix':
-      return 'The AI revises the work.';
+      return E.fix;
     case 'render':
-      return 'The work is rendered as its audience will see it.';
+      return E.render;
     default:
-      return yours ? 'Your turn.' : 'The AI does this step.';
+      return yours ? E.otherYours : E.other;
   }
 }
 

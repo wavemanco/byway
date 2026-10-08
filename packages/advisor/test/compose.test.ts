@@ -98,15 +98,17 @@ describe('compose: success in demo mode', () => {
     // The demo composer answers the nearest recipe with the smallest valid change: C4's critic loop one round shorter.
     const { advisor } = demoAdvisor();
     const { diff } = await advisor.compose(LONG_MEMO, WS);
-    expect(diff).toEqual(['Changed: the repeat (critic-loop): up to 1 round instead of 2']);
+    expect(diff).toEqual(['Changed: Outside critique repeats up to 1 round instead of 2']);
   });
 
   it('describes a composition that rewires the nearest recipe, without quoting hidden thresholds', async () => {
     const { advisor } = demoAdvisor({ responders: { 'advisor.compose': () => fencedJson(goodRecipe()) } });
     const { diff, ok } = await advisor.compose(LONG_MEMO, WS);
     expect(ok).toBe(true);
-    expect(diff).toEqual(expect.arrayContaining([expect.stringMatching(/^Removed: .*\(framings\)/), expect.stringMatching(/^Removed: .*\(claim-sign-off\)/)]));
-    expect(diff.some((d) => /^Changed: Your words \(voice\).*every line/.test(d))).toBe(true);
+    expect(diff).toEqual(expect.arrayContaining(['Removed: Framings to react to (Explore)', 'Removed: Sign off the facts (Finish)']));
+    expect(diff.some((d) => /^Changed: Your words \(Finish\): .*every line/.test(d))).toBe(true);
+    // Plain words by default (spec §5, UX-13): no step ids, which belong behind "Show technical names".
+    expect(diff.join('\n')).not.toMatch(/\((?:framings|claim-sign-off|voice|critic-loop)\)/);
     expect(diff.join('\n')).not.toMatch(/threshold|\b8\b|\b3\b(?= or better)/);
   });
 
@@ -130,9 +132,9 @@ describe('diffFromNearest: plain words', () => {
   };
 
   it('counts rounds in the singular and the plural', () => {
-    expect(diffFromNearest(withMax(1), c4, 'Memo Polish')).toEqual(['Changed: the repeat (critic-loop): up to 1 round instead of 2']);
-    expect(diffFromNearest(withMax(3), c4, 'Memo Polish')).toEqual(['Changed: the repeat (critic-loop): up to 3 rounds instead of 2']);
-    expect(diffFromNearest(c4, withMax(1), 'Memo Polish')).toEqual(['Changed: the repeat (critic-loop): up to 2 rounds instead of 1']);
+    expect(diffFromNearest(withMax(1), c4, 'Memo Polish')).toEqual(['Changed: Outside critique repeats up to 1 round instead of 2']);
+    expect(diffFromNearest(withMax(3), c4, 'Memo Polish')).toEqual(['Changed: Outside critique repeats up to 3 rounds instead of 2']);
+    expect(diffFromNearest(c4, withMax(1), 'Memo Polish')).toEqual(['Changed: Outside critique repeats up to 2 rounds instead of 1']);
   });
 });
 
@@ -315,5 +317,21 @@ describe('the nearest recipe and its presentation', () => {
     const result = await advisor.compose({ text: 'A landing page for my neighborhood bakery' }, WS);
     expect(result.nearestRecipeId).toBe('c1');
     expect(result.presentation.name).toContain(presentationOf('c1')!.name);
+  });
+});
+
+describe('compose: trying again (UX-3)', () => {
+  it('composes again for the same problem after a recipe that failed the checks, with a fresh recipe each time', async () => {
+    // The web app's "Try building again" calls compose for the same intake; the advisor keeps no state between calls,
+    // so a second attempt asks the composer afresh and can pass where the first did not.
+    let answers = 0;
+    const { advisor } = demoAdvisor({
+      responders: { 'advisor.compose': () => fencedJson(++answers === 1 ? withoutVoice() : goodRecipe()), 'advisor.compose.repair': () => fencedJson(withoutVoice()) },
+    });
+    const first = await advisor.compose(LONG_MEMO, WS);
+    expect(first.ok).toBe(false);
+    const second = await advisor.compose(LONG_MEMO, WS);
+    expect(second.ok).toBe(true);
+    expect(second.recipe.id).not.toBe(first.recipe.id);
   });
 });

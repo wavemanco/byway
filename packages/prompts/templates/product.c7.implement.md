@@ -1,6 +1,6 @@
 ---
 id: product.c7.implement
-version: 1
+version: 2
 fidelity: project
 slots: problem, brief
 output: artifact:code-diff
@@ -33,3 +33,5 @@ How to work:
 
 ## Answer format
 One fenced ```diff block holding a unified diff with file headers and hunks against the code as given. Then one paragraph starting with "Why:" that says why the change is shaped this way, in two or three sentences.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

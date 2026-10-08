@@ -1,6 +1,6 @@
 ---
 id: product.c3.ai-draft
-version: 1
+version: 2
 fidelity: project
 slots: problem, brief
 output: artifact:prose
@@ -30,3 +30,5 @@ How to work:
 
 ## Answer format
 The draft as Markdown, in one fenced ```markdown block, with a title line at the top.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

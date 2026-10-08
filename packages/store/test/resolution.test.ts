@@ -55,6 +55,23 @@ describe('checkResolution', () => {
     expect(pick(2, ['x'], null).ok).toBe(false);
   });
 
+  it('select: any distinct subset of the listed options, including none (TELLS hits decided per instance)', () => {
+    const select = (choice: unknown[], opts: Target['options'] | null = options) =>
+      checkResolution({ id: 's', kind: 'select', ...(opts ? { options: opts } : {}) }, { checkpointId: 's', choice: choice as string[] });
+    expect(select([])).toEqual({ ok: true, resolution: { checkpointId: 's', choice: [] } });
+    expect(select(['B'])).toEqual({ ok: true, resolution: { checkpointId: 's', choice: ['B'] } });
+    expect(select(['C', 'A'])).toEqual({ ok: true, resolution: { checkpointId: 's', choice: ['C', 'A'] } });
+    expect(select(['A', 'B', 'C']).ok).toBe(true);
+    // Choosing none is an answer; sending no choice at all is not.
+    expect(checkResolution({ id: 's', kind: 'select', options }, { checkpointId: 's' }).ok).toBe(false);
+    expect(checkResolution({ id: 's', kind: 'select', options }, { checkpointId: 's', text: 'none' }).ok).toBe(false);
+    expect(select(['A', 'A']).ok).toBe(false);
+    expect(select(['Q']).ok).toBe(false);
+    expect(select([1]).ok).toBe(false);
+    // Other fields are dropped, as for every kind.
+    expect(checkResolution({ id: 's', kind: 'select', options }, { checkpointId: 's', choice: [], approved: true })).toEqual({ ok: true, resolution: { checkpointId: 's', choice: [] } });
+  });
+
   it('explains what is wrong', () => {
     const problem = (cp: Target, res: object): string => {
       const r = checkResolution(cp, { checkpointId: cp.id, ...res });
@@ -66,6 +83,8 @@ describe('checkResolution', () => {
     expect(problem({ id: 'p', kind: 'pick', options }, { choice: ['A', 'A'] })).toContain('twice');
     expect(problem({ id: 'p', kind: 'pick', options }, { choice: [1] })).toContain('non-empty list');
     expect(problem({ id: 'c', kind: 'choose', options }, { choice: ['A', 'B'] })).toContain('exactly one');
+    expect(problem({ id: 's', kind: 'select', options }, {})).toBe('checkpoint "s" (select): needs `choice`: a list of option ids (it may be empty)');
+    expect(problem({ id: 's', kind: 'select', options }, { choice: ['A', 'A'] })).toContain('twice');
     expect(problem({ id: 'y', kind: 'confirm' }, { approved: 'yes' })).toContain('`approved`');
     expect(problem({ id: 'w', kind: 'write' }, {})).toContain('`text`');
   });

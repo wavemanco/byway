@@ -1,6 +1,6 @@
 ---
 id: helper.voice.apply
-version: 1
+version: 2
 fidelity: project
 slots: artifact, voice
 output: artifact:web-page
@@ -30,3 +30,5 @@ How to work:
 
 ## Answer format
 The complete HTML document with the person's copy in place, in one fenced ```html block, and nothing after it.
+
+If the content itself holds a run of three or more backticks (a code block, say), open and close your block with more backticks than the longest run inside it.

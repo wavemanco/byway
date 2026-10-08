@@ -27,7 +27,7 @@ export const RUN_EVENT_TYPES = [
   'run-resumed',
 ] as const satisfies readonly RunEventType[];
 
-export const CHECKPOINT_KINDS = ['pick', 'react', 'confirm', 'compare', 'directive', 'write', 'choose'] as const satisfies readonly CheckpointKind[];
+export const CHECKPOINT_KINDS = ['pick', 'select', 'react', 'confirm', 'compare', 'directive', 'write', 'choose'] as const satisfies readonly CheckpointKind[];
 
 // A member added to a contract union but not listed above fails the typecheck here instead of being refused at runtime.
 true satisfies Covers<RunStatus, typeof RUN_STATUSES>;
@@ -36,6 +36,19 @@ true satisfies Covers<CheckpointKind, typeof CHECKPOINT_KINDS>;
 
 /** "Small JSON payload; large content goes to artifacts" (RunEvent.data): the store enforces the "small". */
 export const MAX_EVENT_DATA_BYTES = 64 * 1024;
+
+/** A memo value is a reference (an artifact id, a small JSON summary), never the content it refers to. */
+export const MAX_MEMO_VALUE_BYTES = 64 * 1024;
+
+/** A memo value: a string, small enough that it is plainly a reference and not content (Store.setMemo). */
+export function memoValue(value: unknown): string {
+  const v = text('memo value', value);
+  const size = Buffer.byteLength(v, 'utf8');
+  if (size > MAX_MEMO_VALUE_BYTES) {
+    throw invalid(`a memo value is ${size} bytes, over the ${MAX_MEMO_VALUE_BYTES}-byte limit; store the content as an artifact and memo its id`);
+  }
+  return v;
+}
 
 export function invalid(message: string): StoreError {
   return new StoreError('invalid', message);
