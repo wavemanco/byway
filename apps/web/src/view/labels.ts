@@ -2,7 +2,7 @@
  * Label text. Evidence labels are computed by the advisor from the study registry (CR11); the UI only words
  * them, and never more strongly than the verdict allows.
  */
-import type { EvidenceLabel, Recommendation, RunStatus } from '@byway/contracts';
+import type { ChooserAnswer, EvidenceLabel, Recommendation, RunStatus } from '@byway/contracts';
 
 const SCOPE_TEXT: Record<EvidenceLabel['scope'], string> = {
   Exact: 'this exact recipe',
@@ -39,3 +39,15 @@ export function fitText(fit: Recommendation['fit']): string {
 
 /** The recommender itself is unstudied (CR11); every recommendation says so. */
 export const ROUTING_NOTE = 'How byway picks a recipe has not been tested yet. Treat it as a starting point.';
+
+/** Under each chooser question: why it is answered as it is, and whether a person or the intake model said so. */
+export function answerNote(answer: ChooserAnswer): string {
+  if (answer.setBy === 'user') return 'You set this.';
+  const sure = answer.confidence >= 0.85 ? 'sure' : answer.confidence >= 0.7 ? 'fairly sure' : 'unsure';
+  return `${answer.rationale} (AI read, ${sure})`;
+}
+
+/** The chooser's rule (spec §4): answers are in question order and the first yes decides. */
+export function decidingQuestion(answers: ChooserAnswer[]): string | undefined {
+  return answers.find((a) => a.answer)?.questionId;
+}

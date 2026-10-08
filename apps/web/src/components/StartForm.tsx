@@ -1,0 +1,193 @@
+'use client';
+
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { recipeTitle } from '../view/vocabulary.ts';
+import { post } from './api.ts';
+import { loadStartDraft, saveStartDraft } from './startDraft.ts';
+import { useTechnicalNames } from './TechNames.tsx';
+import { useShortcuts } from './useShortcuts.ts';
+
+/** Examples that span the eight recipes, so the first visit shows what byway is for. */
+const EXAMPLES = [
+  'A landing page for the spring classes at my pottery studio',
+  'Names for a budgeting app for teenagers',
+  'A weekly newsletter about cycling in the city',
+  'A 30-second ad for a neighbourhood bakery',
+  'A cover letter for a museum education job',
+  'A short story I am writing about a lighthouse keeper',
+] as const;
+
+interface Attachment {
+  key: number;
+  name: string;
+  text: string;
+}
+
+const MAX_ATTACHMENTS = 5;
+
+export function StartForm({ recipe }: { recipe?: { recipeId: string; name: string; code: string } }) {
+  const router = useRouter();
+  const technical = useTechnicalNames();
+  const fieldId = useId();
+  const hintId = useId();
+  const field = useRef<HTMLTextAreaElement>(null);
+  const [text, setText] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [nextKey, setNextKey] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ready = text.trim().length > 0 && !busy;
+
+  // Restore what you wrote before following "Change" back from the Recommendation screen (after hydration).
+  useEffect(() => {
+    const draft = loadStartDraft();
+    if (draft) setText((current) => current || draft);
+  }, []);
+
+  function edit(next: string) {
+    setText(next);
+    saveStartDraft(next);
+  }
+
+  async function submit(event?: FormEvent) {
+    event?.preventDefault();
+    if (!text.trim()) {
+      setError('Describe what you are working on first.');
+      field.current?.focus();
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const { intakeId } = await post<{ intakeId: string }>('/api/intakes', {
+        text,
+        attachments: attachments.filter((a) => a.text.trim()).map(({ name, text: body }) => ({ name: name.trim() || 'Attachment', text: body })),
+        ...(recipe ? { recipeId: recipe.recipeId } : {}),
+      });
+      router.push(`/recommend/${intakeId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That did not work. Try again.');
+      setBusy(false);
+    }
+  }
+
+  useShortcuts({ 'Mod+Enter': () => void submit() });
+
+  function addAttachment() {
+    setAttachments((list) => [...list, { key: nextKey, name: '', text: '' }]);
+    setNextKey((k) => k + 1);
+  }
+
+  function updateAttachment(key: number, patch: Partial<Attachment>) {
+    setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
+  }
+
+  return (
+    <form className="start" onSubmit={submit} noValidate>
+      <h1 className="start-title">
+        <label htmlFor={fieldId}>What are you working on?</label>
+      </h1>
+      <p id={hintId} className="start-hint">
+        Say it in your own words: what it is, who it is for, and what you want to end up with.
+      </p>
+      <textarea
+        ref={field}
+        id={fieldId}
+        className="textarea start-field"
+        rows={5}
+        value={text}
+        onChange={(e) => edit(e.target.value)}
+        aria-describedby={hintId}
+        aria-invalid={error !== null && !text.trim() ? true : undefined}
+        maxLength={20_000}
+        autoFocus
+      />
+
+      {text.trim() === '' ? (
+        <div className="examples">
+          <p className="examples-label">Or try one of these</p>
+          <ul>
+            {EXAMPLES.map((example) => (
+              <li key={example}>
+                <button
+                  type="button"
+                  className="example"
+                  onClick={() => {
+                    edit(example);
+                    field.current?.focus();
+                  }}
+                >
+                  {example}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {attachments.length > 0 ? (
+        <ul className="attachments">
+          {attachments.map((a, i) => (
+            <li key={a.key} className="attachment">
+              <div className="attachment-head">
+                <label className="sr-only" htmlFor={`${fieldId}-name-${a.key}`}>
+                  Name of attachment {i + 1}
+                </label>
+                <input
+                  id={`${fieldId}-name-${a.key}`}
+                  className="input attachment-name"
+                  value={a.name}
+                  placeholder="Name, e.g. Current draft"
+                  maxLength={200}
+                  onChange={(e) => updateAttachment(a.key, { name: e.target.value })}
+                />
+                <button type="button" className="button button-quiet" onClick={() => setAttachments((list) => list.filter((x) => x.key !== a.key))}>
+                  Remove
+                </button>
+              </div>
+              <label className="sr-only" htmlFor={`${fieldId}-text-${a.key}`}>
+                Text of attachment {i + 1}
+              </label>
+              <textarea
+                id={`${fieldId}-text-${a.key}`}
+                className="textarea attachment-text"
+                rows={8}
+                value={a.text}
+                placeholder="Paste a draft, notes or a diff"
+                maxLength={200_000}
+                onChange={(e) => updateAttachment(a.key, { text: e.target.value })}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="start-actions">
+        {attachments.length < MAX_ATTACHMENTS ? (
+          <button type="button" className="button" onClick={addAttachment}>
+            {attachments.length === 0 ? 'Attach a draft or diff' : 'Attach another'}
+          </button>
+        ) : null}
+        <span className="start-spacer" />
+        {recipe ? (
+          <span className="start-recipe">
+            Using {recipeTitle(recipe, technical)}.{' '}
+            <Link href="/" replace>
+              Let byway choose instead
+            </Link>
+          </span>
+        ) : null}
+        <button type="submit" className="button button-primary button-large" disabled={busy} aria-disabled={!ready}>
+          {busy ? 'Working…' : recipe ? 'Continue' : 'Get a recommendation'}
+          <kbd aria-hidden="true">Ctrl ↵</kbd>
+        </button>
+      </div>
+      <p className="error-text" role="alert">
+        {error}
+      </p>
+    </form>
+  );
+}

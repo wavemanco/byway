@@ -9,6 +9,7 @@ import {
   composeIntake,
   controlRun,
   createIntake,
+  recipeForRun,
   recommendIntake,
   resolveInRun,
   startRun,
@@ -69,7 +70,24 @@ describe('route handler logic', () => {
     expect(composed.label.scope).toBe('Composed');
     expect(composed).not.toHaveProperty('recipe');
     const { runId } = await startRun(d, { intakeId, budgetUsd: 2 });
-    expect(d.intakes.runPresentation(runId)?.name).toMatch(/^Your recipe/);
+    expect(d.intakes.runRecipe(runId)?.presentation.name).toMatch(/^Your recipe/);
+    expect(d.intakes.runRecipe(runId)?.label.scope).toBe('Composed');
+    const run = await d.services.store.getRun(runId);
+    if (!run) throw new Error('run missing');
+    expect(recipeForRun(d, run).label?.scope).toBe('Composed');
+    // After a restart the composed recipe is unknown: no label is better than a made-up one.
+    expect(recipeForRun({ ...d, intakes: createIntakeStore() }, run)).toEqual({});
+  });
+
+  it('presents library runs from the catalog with a computed label', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const run = await d.services.store.getRun(runId);
+    if (!run) throw new Error('run missing');
+    const shown = recipeForRun(d, run);
+    expect(shown.presentation?.name).toBe('Memo Polish');
+    expect(shown.label?.verdict).toBe('Untested');
   });
 
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {

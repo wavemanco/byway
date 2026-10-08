@@ -3,7 +3,7 @@
  * turn results into responses, so this logic is tested directly against the demo services (no server, no
  * network). Errors meant for people are HttpErrors with a status and a plain-language message.
  */
-import type { ChooserAnswer, ComposeResult, Recommendation } from '@byway/contracts';
+import type { ChooserAnswer, ComposeResult, EvidenceLabel, Recommendation, RecipePresentation, RunRecord } from '@byway/contracts';
 import type { z } from 'zod';
 import type { Preferences, Services } from '../services/index.ts';
 import { budgetProblem, workspaceSpend } from '../view/history.ts';
@@ -89,8 +89,20 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     budgetUsd: input.budgetUsd,
     ...(input.routes ? { routes: input.routes } : {}),
   });
-  if (!input.recipeId && intake.composed) deps.intakes.rememberRun(run.id, intake.composed.presentation);
+  if (!input.recipeId && intake.composed) deps.intakes.rememberRun(run.id, { presentation: intake.composed.presentation, label: intake.composed.label });
   return { runId: run.id };
+}
+
+/**
+ * How a run's recipe is presented: library recipes from the catalog with a computed label; composed ones as
+ * remembered when they started. Unknown (a composed run after a restart) gives neither, rather than a guess.
+ */
+export function recipeForRun(deps: Deps, run: RunRecord): { presentation?: RecipePresentation; label?: EvidenceLabel } {
+  const { services } = deps;
+  const presentation = services.advisor.catalog().find((p) => p.recipeId === run.recipeId);
+  const recipe = services.recipes.get(run.recipeId);
+  if (presentation && recipe) return { presentation, label: services.advisor.label(recipe) };
+  return deps.intakes.runRecipe(run.id) ?? {};
 }
 
 export async function resolveInRun(deps: Deps, runId: string, checkpointId: string, input: z.infer<typeof ResolutionInput>): Promise<void> {

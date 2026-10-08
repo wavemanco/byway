@@ -5,8 +5,7 @@
  * screens and client components agree on first paint.
  */
 import { createContext, useContext, type ReactNode } from 'react';
-
-export const TECHNICAL_COOKIE = 'byway-technical';
+import { TECHNICAL_COOKIE } from '../view/prefs.ts';
 
 const TechnicalNames = createContext(false);
 

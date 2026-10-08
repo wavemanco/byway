@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCK_CODES } from '@byway/protocol';
-import type { EvidenceLabel, RunStatus } from '@byway/contracts';
+import type { ChooserAnswer, EvidenceLabel, RunStatus } from '@byway/contracts';
 import { BLOCK_NAMES, RECIPE_NAMES, TERMS, codeForLabel, recipeTitle, stageFromCode, stepTitle, whoLabel } from '../src/view/vocabulary.ts';
 import { PRESENTATIONS } from '../src/services/demo/catalog.ts';
-import { evidenceHeadline, fitText, runStatusLabel } from '../src/view/labels.ts';
+import { answerNote, decidingQuestion, evidenceHeadline, fitText, runStatusLabel } from '../src/view/labels.ts';
 
 describe('plain vocabulary (spec §5)', () => {
   it('names every block in plain words', () => {
@@ -94,5 +94,19 @@ describe('labels', () => {
 
   it('describes recommendation fit', () => {
     expect([fitText('strong'), fitText('partial'), fitText('none')]).toEqual(['Strong fit', 'Partial fit', 'No clear fit']);
+  });
+
+  it('explains each chooser answer: who set it, and how sure the intake was', () => {
+    const a = (over: Partial<ChooserAnswer>): ChooserAnswer => ({ questionId: 'q', answer: true, confidence: 0.9, rationale: 'You mention a landing page.', setBy: 'intake', ...over });
+    expect(answerNote(a({}))).toBe('You mention a landing page. (AI read, sure)');
+    expect(answerNote(a({ confidence: 0.75 }))).toBe('You mention a landing page. (AI read, fairly sure)');
+    expect(answerNote(a({ confidence: 0.5 }))).toBe('You mention a landing page. (AI read, unsure)');
+    expect(answerNote(a({ setBy: 'user', confidence: 1 }))).toBe('You set this.');
+  });
+
+  it('finds the question that decides: the first yes', () => {
+    const answers: ChooserAnswer[] = ['a', 'b', 'c'].map((id, i) => ({ questionId: id, answer: i > 0, confidence: 1, rationale: '', setBy: 'user' }));
+    expect(decidingQuestion(answers)).toBe('b');
+    expect(decidingQuestion(answers.map((x) => ({ ...x, answer: false })))).toBeUndefined();
   });
 });

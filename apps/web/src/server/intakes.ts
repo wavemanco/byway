@@ -5,7 +5,14 @@
  * here too, because the catalog does not know composed recipes.
  */
 import { randomUUID } from 'node:crypto';
-import type { ComposeResult, ProblemBrief, RecipePresentation } from '@byway/contracts';
+import type { ComposeResult, EvidenceLabel, ProblemBrief, RecipePresentation } from '@byway/contracts';
+
+/** How a run's recipe is shown when the catalog does not know it (a composed recipe). */
+export interface RunRecipe {
+  presentation: RecipePresentation;
+  /** The label the advisor computed when it composed the recipe (CR11: never typed). */
+  label: EvidenceLabel;
+}
 
 export interface Intake {
   id: string;
@@ -20,13 +27,13 @@ export interface IntakeStore {
   create(input: { problem: ProblemBrief; recipeId?: string }): Intake;
   get(id: string): Intake | undefined;
   setComposed(id: string, result: ComposeResult): void;
-  rememberRun(runId: string, presentation: RecipePresentation): void;
-  runPresentation(runId: string): RecipePresentation | undefined;
+  rememberRun(runId: string, recipe: RunRecipe): void;
+  runRecipe(runId: string): RunRecipe | undefined;
 }
 
 export function createIntakeStore(limit = 100): IntakeStore {
   const intakes = new Map<string, Intake>();
-  const runs = new Map<string, RecipePresentation>();
+  const runs = new Map<string, RunRecipe>();
   const trim = <K, V>(map: Map<K, V>) => {
     while (map.size > limit) {
       const oldest = map.keys().next().value as K;
@@ -45,11 +52,11 @@ export function createIntakeStore(limit = 100): IntakeStore {
       const intake = intakes.get(id);
       if (intake) intakes.set(id, { ...intake, composed: result });
     },
-    rememberRun(runId, presentation) {
-      runs.set(runId, presentation);
+    rememberRun(runId, recipe) {
+      runs.set(runId, recipe);
       trim(runs);
     },
-    runPresentation: (runId) => runs.get(runId),
+    runRecipe: (runId) => runs.get(runId),
   };
 }
 
