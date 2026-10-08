@@ -6,7 +6,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { VideoRequest, VideoResult } from '@byway/contracts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
-import { judgedPick, policyLoop, randomPick, scripted, shortAd, tiny } from '../helpers/recipes.ts';
+import { NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
+import { judgedPick, policyLoop, randomPick, scripted, shortAd, tiny, trimmed, trimmedByHand } from '../helpers/recipes.ts';
 
 let h: Harness;
 
@@ -56,6 +57,45 @@ export function operatorScenarios(use: () => Harness): void {
       const videos = h.succeeded(run.id).filter((c) => c.kind === 'video');
       expect(videos.map((v) => (v.request as VideoRequest).shot)).toEqual([1, 2]);
       expect(ofType(view, 'step-finished', 'clip').every((e) => e.data.skipped === undefined)).toBe(true);
+    }, 60_000);
+  });
+
+  describe('an empty CUT directive (spec §3.3 "Nothing to remove.")', () => {
+    it('a model that finds nothing to remove ends the trim there: the fix makes no change and says so', async () => {
+      h.responders['cut:prose'] = () => 'Nothing to remove.';
+      try {
+        const run = await h.start(trimmed, { problem: { text: 'A memo on the billing migration' } });
+        const view = await h.drive(run.id);
+        expect(view.run.status).toBe('done');
+        checkEvents(view);
+        const draft = ofType(view, 'artifact', 'draft')[0]!.data.artifactId;
+        expect(view.run.outputArtifactId).toBe(draft);
+        expect(h.succeeded(run.id).map((c) => c.purpose)).toEqual(['build:prose', 'cut:prose']);
+        const trim = ofType(view, 'step-finished', 'trim')[0]!;
+        expect(await h.store.artifacts.getText((trim.data.outputArtifactIds as string[])[0]!)).toBe('Nothing to remove.\n');
+        expect(ofType(view, 'step-started', 'apply-cut')).toHaveLength(1);
+        expect(ofType(view, 'step-finished', 'apply-cut').map((e) => e.data)).toEqual([{ costUsd: 0, note: NOTHING_TO_REMOVE }]);
+      } finally {
+        delete h.responders['cut:prose'];
+      }
+    }, 60_000);
+
+    it('a model’s removals are applied as usual', async () => {
+      const run = await h.start(trimmed, { problem: { text: 'A memo on the billing migration' } });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      expect(h.succeeded(run.id).map((c) => c.purpose)).toEqual(['build:prose', 'cut:prose', 'fix:prose']);
+      expect(h.prompts.calls.filter((c) => c.id === 'product.test.apply-cut').at(-1)!.slots.critique).toMatch(/^- (Remove|Delete|Drop|Merge) /);
+      expect(ofType(view, 'step-finished', 'apply-cut')[0]!.data.note).toBeUndefined();
+    }, 60_000);
+
+    it('a person who lists nothing to remove gets the same: no change, and a note', async () => {
+      const run = await h.start(trimmedByHand, { problem: { text: 'A memo on the billing migration' } });
+      const view = await h.drive(run.id, (cp) => (cp.kind === 'directive' ? { checkpointId: cp.id, text: '  \n' } : undefined));
+      expect(view.run.status).toBe('done');
+      expect(h.succeeded(run.id).map((c) => c.purpose)).toEqual(['build:prose']);
+      expect(ofType(view, 'step-finished', 'apply-cut')[0]!.data.note).toBe(NOTHING_TO_REMOVE);
+      expect(view.run.outputArtifactId).toBe(ofType(view, 'artifact', 'draft')[0]!.data.artifactId);
     }, 60_000);
   });
 

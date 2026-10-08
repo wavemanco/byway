@@ -7,7 +7,7 @@ import { assetStep } from './asset.ts';
 import type { RunnerDeps } from './deps.ts';
 import { guarded } from './failures.ts';
 import { finishHumanStep, openCheckpoint, recordResolution } from './human.ts';
-import { beginRun, cancelRun, emitEvents, failRun, finishRun, raiseBudget, rerank, setRunStatus, skipStep } from './lifecycle.ts';
+import { beginRun, cancelRun, emitEvents, failRun, finishRun, passStep, raiseBudget, rerank, setRunStatus, skipStep } from './lifecycle.ts';
 import { modelStep } from './model-step.ts';
 import { relayLink, storyboardShots } from './relay.ts';
 import { renderView } from './render.ts';
@@ -29,6 +29,7 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
     relayLink: wrap(relayLink),
     storyboardShots: wrap(storyboardShots),
     skipStep: wrap(skipStep),
+    passStep: wrap(passStep),
     openCheckpoint: wrap(openCheckpoint),
     recordResolution: wrap(recordResolution),
     finishHumanStep: wrap(finishHumanStep),

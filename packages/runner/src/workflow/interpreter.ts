@@ -28,6 +28,7 @@ import {
   humanKind,
   humanPrompt,
   NOT_CONVERGING_PROMPT,
+  NOTHING_TO_REMOVE,
   optionalPrompt,
   READY_PROMPT,
   routePrompt,
@@ -288,6 +289,11 @@ export class Interpreter {
         if (res.anchor) out.anchor = res.anchor;
         return out;
       }
+      if (s.role === 'fix' && s.consumes.includes('critique') && ports.nothingToRemove) {
+        // An empty CUT directive: there is nothing to apply, so no model is asked and the work stays as it is.
+        await this.act(call, () => quick.passStep({ run: this.run, call, step: spec, note: NOTHING_TO_REMOVE }));
+        return withCritique(ports, ports.critique);
+      }
       const res = await this.act(call, () =>
         model.modelStep({ run: this.run, call, step: spec, ports, refs: this.input.inputs.refs ?? [], ...(this.input.inputs.tells ? { tells: this.input.inputs.tells } : {}), ...(ctx.loop ? { round: ctx.loop.round } : {}) }),
       );
@@ -301,15 +307,15 @@ export class Interpreter {
 
   /** A model step's outputs, mapped onto the ports it produces. */
   private applyModel(s: Step, ports: Ports, res: ModelStepResult): Ports {
-    const out: Ports = { ...ports };
+    let out: Ports = { ...ports };
     if (res.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: res.artifactId });
     if (res.text !== undefined) {
       if (s.role === 'vision') {
         if (s.produces.includes('brief')) out.brief = res.text;
         if (s.produces.includes('taste')) out.taste = res.text;
-        if (s.produces.includes('critique')) out.critique = res.text;
+        if (s.produces.includes('critique')) out = withCritique(out, res.text);
       } else {
-        out.critique = res.text;
+        out = withCritique(out, res.text, res.nothingToRemove === true);
       }
     }
     if (res.score) out.score = res.score;
@@ -363,7 +369,7 @@ export class Interpreter {
     // Writing the answer back (VOICE may call the model) is the rest of this step: a pause waits for it.
     const finish = { run: this.run, call, step: spec, kind, resolution, ports, ...(initialText !== undefined ? { initialText } : {}) };
     const fin = await this.control.track(() => this.act(call, () => model.finishHumanStep(finish)));
-    const out: Ports = { ...ports };
+    let out: Ports = { ...ports };
     const text = fin.text ?? '';
     switch (kind) {
       case 'compare':
@@ -375,12 +381,13 @@ export class Interpreter {
         if (s.produces.includes('voice')) out.voice = text;
         break;
       case 'directive':
-        out.critique = text;
+        // A person who lists nothing to remove gives an empty directive, as a model's "Nothing to remove." does.
+        out = withCritique(out, text, !text.trim());
         break;
       default:
         if (s.produces.includes('brief')) out.brief = text;
         if (s.produces.includes('taste')) out.taste = text;
-        if (s.produces.includes('critique')) out.critique = text;
+        if (s.produces.includes('critique')) out = withCritique(out, text);
     }
     return out;
   }
@@ -596,7 +603,8 @@ export class Interpreter {
     const outs = await Promise.all(a.lenses.map((lens) => this.node(lens.body, ports, { stage: ctx.stage, path: ctx.path })));
     const joined = outs.flatMap((o, i) => (o.critique && o.critique !== ports.critique ? [`## ${a.lenses[i]!.name}\n${o.critique.trim()}`] : []));
     const notes = outs.flatMap((o) => (o.notes && o.notes !== ports.notes ? o.notes : []));
-    return { ...ports, ...(joined.length ? { critique: joined.join('\n\n') } : {}), ...(notes.length ? { notes } : {}) };
+    const annotated = joined.length ? withCritique(ports, joined.join('\n\n')) : ports;
+    return { ...annotated, ...(notes.length ? { notes } : {}) };
   }
 
   private async gate(g: OneShotGate, ports: Ports, ctx: Ctx): Promise<Ports> {
@@ -634,6 +642,15 @@ export class Interpreter {
 }
 
 const cand = (call: StepCall): { candidate?: number } => (call.candidate !== undefined ? { candidate: call.candidate } : {});
+
+/**
+ * Ports with a new critique. `empty` marks an empty CUT directive, which the next fix passes over (spec §3.3 "Nothing to
+ * remove."); any other critique, or no critique at all, clears that mark.
+ */
+function withCritique(ports: Ports, critique: string | undefined, empty = false): Ports {
+  const { nothingToRemove: _was, critique: _old, ...rest } = ports;
+  return { ...rest, ...(critique !== undefined ? { critique } : {}), ...(empty ? { nothingToRemove: true } : {}) };
+}
 
 function budgetDetails(e: unknown): BudgetFailureDetails | undefined {
   const cause = e instanceof ActivityFailure ? e.cause : e;

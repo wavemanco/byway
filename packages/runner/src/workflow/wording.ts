@@ -55,3 +55,5 @@ export const GATE_FAILED_PROMPT = 'It did not pass the final check, even after a
 export const GATE_RETRY_NOTE = 'It did not pass the final check, so the earlier stage runs again with the same brief.';
 export const budgetPrompt = (amountUsd: number, scope: 'run' | 'workspace'): string =>
   scope === 'workspace' ? `Raise the workspace budget by $${amountUsd}?` : `Raise the budget by $${amountUsd}?`;
+/** A fix after an empty CUT directive ("Nothing to remove."): it makes no change, and its step says so. */
+export const NOTHING_TO_REMOVE = 'Nothing to remove';

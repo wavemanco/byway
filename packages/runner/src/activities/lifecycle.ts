@@ -42,6 +42,15 @@ export async function skipStep(deps: RunnerDeps, input: SkipInput): Promise<void
 }
 
 /**
+ * A step that has nothing to do (the fix after "Nothing to remove."): it finishes at once with the work unchanged and
+ * says why. Not "skipped", which means the product could not run it.
+ */
+export async function passStep(deps: RunnerDeps, input: SkipInput): Promise<void> {
+  await stepStarted(deps, input.run, input.call, input.step, input.meta);
+  await stepFinished(deps, input.run, input.call, { costUsd: 0, note: input.note });
+}
+
+/**
  * Best-snapshot selection (02 §2): the top snapshots side by side in a separate, fresh judge call, with no scores or
  * critiques attached (the one default exception to port rule 1). Purpose `rerank:<medium>`.
  */

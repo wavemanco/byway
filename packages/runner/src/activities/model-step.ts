@@ -125,6 +125,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       case 'text':
         result.text = v.text;
         if (v.clean !== undefined) result.clean = v.clean;
+        if (v.empty) result.nothingToRemove = true;
         break;
       case 'label':
         result.label = v.label;
@@ -155,7 +156,8 @@ async function compareSlots(reader: ArtifactReader, medium: Parameters<typeof te
 
 type Answer =
   | { kind: 'artifact'; text: string }
-  | { kind: 'text'; text: string; clean?: boolean }
+  /** `empty`: a CUT answered "Nothing to remove." (its text says so, for the note beside the work). */
+  | { kind: 'text'; text: string; clean?: boolean; empty?: boolean }
   | { kind: 'label'; label: string }
   | { kind: 'keep'; keep: 'A' | 'B' }
   | { kind: 'dedupe'; keep: string[] };
@@ -167,7 +169,7 @@ function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports:
     case 'check':
       return (t) => map(parseCheck(t), (v) => ({ kind: 'text', text: v.defects, clean: v.clean }));
     case 'cut':
-      return (t) => map(parseCut(t), (v) => ({ kind: 'text', text: v }));
+      return (t) => map(parseCut(t), (v) => (v ? { kind: 'text', text: v } : { kind: 'text', text: 'Nothing to remove.', empty: true }));
     case 'tells-sweep':
       return (t) => map(parseTellsSweep(t), (v) => ({ kind: 'text', text: v.critique }));
     case 'tells-compare':

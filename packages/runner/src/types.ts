@@ -74,6 +74,11 @@ export interface Ports {
   linkStart?: string;
   /** The artifact the author last wrote themselves (C3, C6, C6a), which their next write revises. */
   authored?: string;
+  /**
+   * The critique is an empty CUT directive ("Nothing to remove.", or a person who listed nothing): the fix that
+   * consumes it makes no change. Cleared by the next critique and by that fix.
+   */
+  nothingToRemove?: boolean;
 }
 
 /** One execution of one step (or operator) at one place in the run: the base of every dedupe key it uses. */
@@ -170,6 +175,8 @@ export interface ModelStepResult {
   noteArtifactId?: string;
   /** The critic's mode as it actually ran. */
   criticMode?: 'OK' | 'GREAT';
+  /** cut: the answer was "Nothing to remove." (an empty directive). */
+  nothingToRemove?: boolean;
 }
 
 export interface RenderInput {
@@ -327,6 +334,8 @@ export interface RunnerActivities {
   relayLink(input: RelayInput): Promise<RelayResult>;
   storyboardShots(input: { artifactId: string }): Promise<number[]>;
   skipStep(input: SkipInput): Promise<void>;
+  /** A step with nothing to do: it finishes at once, the work unchanged, with a note (not skipped: it had no work). */
+  passStep(input: SkipInput): Promise<void>;
   openCheckpoint(input: OpenCheckpointInput): Promise<OpenCheckpointResult>;
   recordResolution(input: RecordResolutionInput): Promise<void>;
   finishHumanStep(input: FinishHumanInput): Promise<FinishHumanResult>;
