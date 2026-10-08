@@ -42,6 +42,8 @@ export interface GatewayCall {
   runId?: string;
   stepId?: string;
   request: CompletionRequest | ImageRequest | VideoRequest;
+  /** What the gateway returned, once it has. */
+  result?: unknown;
 }
 
 export type Answer = (cp: CheckpointRecord) => CheckpointResolution | 'wait' | undefined;
@@ -116,12 +118,15 @@ export async function createHarness(): Promise<Harness> {
     prices: PRICED,
     retry: { maxAttempts: 1 },
   });
-  const record = (kind: GatewayCall['kind'], request: GatewayCall['request']) =>
-    calls.push({ kind, purpose: request.purpose, ...(request.runId ? { runId: request.runId } : {}), ...(request.stepId ? { stepId: request.stepId } : {}), request });
+  const record = <T>(kind: GatewayCall['kind'], request: GatewayCall['request'], result: Promise<T>): Promise<T> => {
+    const call: GatewayCall = { kind, purpose: request.purpose, ...(request.runId ? { runId: request.runId } : {}), ...(request.stepId ? { stepId: request.stepId } : {}), request };
+    calls.push(call);
+    return result.then((r) => ((call.result = r), r));
+  };
   const gateway: Gateway = {
-    complete: (req) => (record('complete', req), inner.complete(req)),
-    image: (req) => (record('image', req), inner.image(req)),
-    video: (req) => (record('video', req), inner.video(req)),
+    complete: (req) => record('complete', req, inner.complete(req)),
+    image: (req) => record('image', req, inner.image(req)),
+    video: (req) => record('video', req, inner.video(req)),
     spend: (id) => inner.spend(id),
     providers: () => inner.providers(),
     profiles: () => inner.profiles(),
