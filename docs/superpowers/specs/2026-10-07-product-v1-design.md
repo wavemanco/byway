@@ -39,7 +39,7 @@ Dependency direction: `web → {advisor, runner (its `./client` entry only), sto
 
 **Data.** `BYWAY_DATA_DIR` (default `%LOCALAPPDATA%\byway` on Windows, `~/.byway` elsewhere; never inside OneDrive or the repo). It holds `byway.sqlite`, `artifacts/sha256/…`, `ledger.jsonl` and `temporal.sqlite`.
 
-**Keys.** Read from the process environment, loaded at startup from `.env.agents` at the repo root if present (gitignored, ADR-0009). Variables: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `FAL_KEY`. Keys never enter the database, the ledger, artifacts, logs, prompts or the browser.
+**Keys.** Read from the process environment, loaded at startup from `.env.agents` at the repo root if present (gitignored, ADR-0009). Variables: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `FAL_KEY`. Keys never enter the database, the ledger, artifacts, logs, prompts or the browser. This is enforced where text crosses a boundary ([ADR-0088](../../adr/0088-provider-boundary-held-keys-and-media-admission.md)). A request body holding a configured key (its exact value, or a `:`-part of 16+ characters) is refused before it is stored. The gateway refuses any model, image or video request whose text holds one, and never hands on an answer that holds one (the paid call is still ledgered). Its diagnostic copies are redacted: stored request and response bodies, the served model and upstream host, and error messages. Data stored before that change is not scanned, and images are sent unchecked.
 
 ## 3. Runs: how a recipe executes
 
