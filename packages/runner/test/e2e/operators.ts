@@ -8,7 +8,7 @@ import type { VideoRequest, VideoResult } from '@byway/contracts';
 import { NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
-import { claimLogged, judgedPick, policyLoop, randomPick, scripted, shortAd, tiny, trimmed, trimmedByHand, voicedPage } from '../helpers/recipes.ts';
+import { claimLogged, illustrated, judgedPick, policyLoop, randomPick, scripted, shortAd, tiny, trimmed, trimmedByHand, twiceJudged, voicedPage } from '../helpers/recipes.ts';
 import { pageCopy } from '../../src/copy.ts';
 
 let h: Harness;
@@ -180,6 +180,66 @@ export function operatorScenarios(use: () => Harness): void {
       } finally {
         delete h.responders['fix:media'];
       }
+    }, 60_000);
+  });
+
+  describe('a paid call is not bought twice (ENG-3, ENG-12, convention C5)', () => {
+    it('a step whose local write failed after its model call is retried by Temporal and reuses the answer it bought', async () => {
+      const original = h.store.artifacts.putText.bind(h.store.artifacts);
+      let runId = '';
+      let failed = false;
+      h.store.artifacts.putText = async (text, mediaType) => {
+        // The draft's own write fails once, after the model answered and the call was ledgered.
+        if (!failed && mediaType === 'text/markdown' && runId && h.succeeded(runId).some((c) => c.purpose === 'build:prose')) {
+          failed = true;
+          throw new Error('The disk is full.');
+        }
+        return original(text, mediaType);
+      };
+      try {
+        const run = await h.start(tiny);
+        runId = run.id;
+        const view = await h.drive(run.id);
+        expect(view.run.status).toBe('done');
+        expect(failed).toBe(true);
+        expect(h.succeeded(run.id).filter((c) => c.stepId === 'draft')).toHaveLength(1);
+        expect(h.ledger(run.id).filter((e) => e.stepId === 'draft')).toHaveLength(1);
+        expect(ofType(view, 'step-started', 'draft')).toHaveLength(1);
+        expect(ofType(view, 'step-failed')).toEqual([]);
+      } finally {
+        h.store.artifacts.putText = original;
+      }
+    }, 60_000);
+
+    it('a step run again after a budget raise reuses its briefs and images, and the timeline shows the images it placed', async () => {
+      h.refuseOnce((c) => c.purpose === 'asset.integrate:prose');
+      const run = await h.start(illustrated, { problem: { text: 'A status memo on the billing migration' } });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      expect(view.checkpoints.some((c) => c.kind === 'confirm' && c.stepId === 'art' && /^Raise the budget by \$1\?/.test(c.prompt))).toBe(true);
+      const paid = h.succeeded(run.id).filter((c) => c.stepId === 'art');
+      expect(paid.filter((c) => c.purpose === 'asset.briefs:prose')).toHaveLength(1);
+      const images = paid.filter((c) => c.kind === 'image');
+      expect(images.length).toBeGreaterThan(0);
+      expect(new Set(images.map((c) => JSON.stringify(c.request))).size).toBe(images.length);
+      expect(paid.filter((c) => c.purpose === 'asset.integrate:prose')).toHaveLength(1);
+      // The images the timeline shows are the ones placed in the work.
+      const shown = ofType(view, 'artifact', 'art').filter((e) => (e.data.mediaType as string).startsWith('image/')).map((e) => e.data.artifactId as string);
+      const out = await h.store.artifacts.getText(view.run.outputArtifactId!);
+      expect(shown.length).toBe(images.length);
+      for (const id of shown) expect(out).toContain(`/api/artifacts/${id}`);
+    }, 60_000);
+
+    it('a GREAT critic refused on its second shuffle reuses the first after the raise: the same lineup, not bought again', async () => {
+      let critics = 0;
+      h.refuseOnce((c) => c.purpose === 'critic:prose' && ++critics === 2);
+      const refs: string[] = [];
+      for (const t of ['# One\n\nClear ask.', '# Two\n\nOne point.', '# Three\n\nShort.']) refs.push((await h.store.artifacts.putText(t, 'text/markdown')).id);
+      const run = await h.start(twiceJudged, { problem: { text: 'A memo on the billing migration' }, inputs: { refs } });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      expect(h.succeeded(run.id).filter((c) => c.purpose === 'critic:prose')).toHaveLength(2);
+      expect(ofType(view, 'step-finished', 'critic')).toHaveLength(1);
     }, 60_000);
   });
 

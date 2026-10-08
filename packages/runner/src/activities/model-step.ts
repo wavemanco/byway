@@ -3,7 +3,7 @@
  * with the purpose `<role>:<medium>`, and parse the answer by role (spec §3.3). Builders' artifacts are checked (PR3,
  * keepsVoice) and stored; judging answers come back as short texts, scores and labels for the workflow to act on.
  */
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { Tier } from '@byway/contracts';
 import { labelled } from '@byway/prompts/pure';
 import { fences, parseArtifact, textView, type Parsed } from '../formats.ts';
@@ -14,6 +14,7 @@ import { tellsText } from '../tells.ts';
 import type { ModelStepInput, ModelStepResult } from '../types.ts';
 import { otherFamilyModel, OTHER_FAMILY_FALLBACK_NOTE } from './availability.ts';
 import { askModel } from './call.ts';
+import { memoized, newSalt, seededRandom } from './memo.ts';
 import { buildLineup, lineupWrittenFor, planCritic, verdictOf, type Lineup } from './critic.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
@@ -27,7 +28,6 @@ const JUDGE_MAX_OUTPUT = 4_000;
 
 /** 01 SEED seed_shape ⟨A⟩: 32–64 characters; 36 random bytes are 48 base64url characters (SEED-1). */
 export const defaultSeed = (): string => randomBytes(36).toString('base64url');
-export const defaultRandom = (): number => randomInt(0, 2 ** 31) / 2 ** 31;
 
 /** Where a judging step's text goes in the store: shown to the user with the step, never written into the work. */
 const NOTE_LABELS: Record<string, string> = {
@@ -54,7 +54,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   const outputs: string[] = [];
 
   if (step.role === 'critic') {
-    const random = deps.random ?? defaultRandom;
+    // The lineup's draws replay on a retry (convention C5), so a shuffle already paid for is the same request again.
+    const random = deps.random ?? seededRandom(await memoized(deps.store, run.runId, `${call.key}/random`, newSalt));
     const plan = planCritic(step, input.refs, random);
     // A critic of another AI family (01 CRITIC knob, FID-1): the profile's other-family model when its key is set up,
     // else a fresh session of the same family (every critic call is one), and the step says which.
@@ -92,7 +93,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     result.criticMode = plan.mode;
     if (notes.length) result.note = notes.join(' ');
   } else {
-    const seed = step.role === 'seed' || step.consumes.includes('seed') ? (deps.seed ?? defaultSeed)() : undefined;
+    // One string per step call, kept for its retries (convention C5): the same prompt, so the answer bought is reused.
+    const seed = step.role === 'seed' || step.consumes.includes('seed') ? await memoized(deps.store, run.runId, `${call.key}/seed`, deps.seed ?? defaultSeed) : undefined;
     const ports = input.candidates ? { ...input.ports, options: input.candidates } : input.ports;
     const built = await buildPrompt(reader, {
       medium: run.medium,
