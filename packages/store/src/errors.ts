@@ -7,6 +7,8 @@ export type StoreErrorCode =
   | 'already-exists'
   /** The checkpoint was resolved before; see {@link CheckpointResolvedError}. */
   | 'already-resolved'
+  /** The checkpoint was withdrawn (its run was cancelled or failed); see {@link CheckpointWithdrawnError}. */
+  | 'withdrawn'
   /** The input breaks the contract (bad enum value, malformed id, wrong resolution shape…). */
   | 'invalid'
   /** An artifact's bytes no longer match their content address, the file is gone, or a stored record no longer parses. */
@@ -53,6 +55,21 @@ export class CheckpointResolvedError extends StoreError {
 
   constructor(checkpoint: CheckpointRecord) {
     super('already-resolved', `checkpoint "${checkpoint.id}" was already resolved at ${checkpoint.resolvedAt ?? 'an unknown time'}`);
+    this.checkpoint = checkpoint;
+  }
+}
+
+/**
+ * Raised when answering a checkpoint that was withdrawn because its run was cancelled or failed. Deliberately not a
+ * {@link CheckpointResolvedError}: a retried runner activity treats that one as its own earlier success, and an answer
+ * to a withdrawn question is never a success (nobody will act on it). The UI shows "This question was withdrawn".
+ */
+export class CheckpointWithdrawnError extends StoreError {
+  override name = 'CheckpointWithdrawnError';
+  readonly checkpoint: CheckpointRecord;
+
+  constructor(checkpoint: CheckpointRecord) {
+    super('withdrawn', `checkpoint "${checkpoint.id}" was withdrawn because its run was cancelled or failed; it can no longer be answered`);
     this.checkpoint = checkpoint;
   }
 }

@@ -16,6 +16,8 @@ function versions(dbPath: string): number[] {
 
 /** Pinned when migration 3 was written; it must never change. */
 const MIGRATION_3_CHECKSUM = 'sha256:ca2c930d144a72d26638620f9b9aa2e98acc2088e97facd4c9f1d79883d3a4b2';
+/** Pinned when migration 4 was written; it must never change. */
+const MIGRATION_4_CHECKSUM = 'sha256:f1f0c656cb2df7b091d1c67e0a4a71114206771feeb788b5f387cb625865b125';
 
 const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
 
@@ -70,6 +72,34 @@ function writeVersion2Database(dataDir: string): void {
     event.run('v2-run', 2, at, 'run-finished', null, '{"outputArtifactId":"x","costUsd":0.5}', null);
     db.prepare(`INSERT INTO checkpoints (id, run_id, step_id, kind, prompt, status, opened_at, resolved_at, resolution)
       VALUES ('cp', 'v2-run', 'voice', 'write', 'Your words', 'resolved', ?, ?, '{"checkpointId":"cp","text":"Mine."}')`).run(at, at);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Writes a data directory exactly as a build that knew migrations 1 to 3 left it: a default workspace, a run with an
+ * intake, and three checkpoints (two open, one resolved), so the checkpoints table rebuild of migration 4 has rows to keep.
+ */
+function writeVersion3Database(dataDir: string): void {
+  const db = openDatabase(join(dataDir, 'byway.sqlite'));
+  try {
+    db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+    for (const m of MIGRATIONS.slice(0, 3)) {
+      db.exec(m.sql);
+      db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-06T00:00:00.000Z');
+    }
+    const at = '2026-10-06T09:00:00.000Z';
+    db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, at);
+    db.prepare(`INSERT INTO intakes (id, workspace_id, problem, created_at, updated_at) VALUES ('in', 'ws', '{"text":"A page"}', ?, ?)`).run(at, at);
+    db.prepare(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, intake_id, title, problem, medium, status,
+      output_artifact_id, error, cost_usd, budget_usd, created_at, updated_at) VALUES ('v3-run', 'ws', 'c1', ?, 'demo', 'in', 'Page', 'A page', 'web-page', 'waiting', NULL, NULL, 0, 5, ?, ?)`)
+      .run(`sha256:${'a'.repeat(64)}`, at, at);
+    const cp = db.prepare(`INSERT INTO checkpoints (id, run_id, step_id, candidate, kind, prompt, options, k, initial_text, artifact_ids, status, opened_at, resolved_at, resolution)
+      VALUES (?, 'v3-run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    cp.run('cp-pick', 'pick', 0, 'pick', 'Which?', '[{"id":"A","label":"A"},{"id":"B","label":"B"}]', 1, null, `["sha256:${'b'.repeat(64)}"]`, 'open', '2026-10-06T09:00:01.000Z', null, null);
+    cp.run('cp-voice', 'voice', null, 'write', 'Your words', null, null, 'Fresh bread', null, 'open', '2026-10-06T09:00:02.000Z', null, null);
+    cp.run('cp-done', 'gate', null, 'confirm', 'Ship it?', null, null, null, null, 'resolved', '2026-10-06T09:00:00.500Z', '2026-10-06T09:00:03.000Z', '{"checkpointId":"cp-done","approved":true}');
   } finally {
     db.close();
   }
@@ -155,6 +185,7 @@ describe('migrations', () => {
       [1, 'initial', 'sha256:bc605de33d2e74a5c2e2c7a66665f9dbc57f81348749ff5e7e5ca1ceda1345f6'],
       [2, 'run-budget-and-event-dedupe', 'sha256:ca45698760fd568f816708307e9d1861550b0fb8ddbac710768c565913c126ec'],
       [3, 'intakes-preferences-run-intake', MIGRATION_3_CHECKSUM],
+      [4, 'checkpoint-withdrawn', MIGRATION_4_CHECKSUM],
     ]);
   });
 
@@ -225,6 +256,50 @@ describe('migrations', () => {
     const run = await store.createRun({ id: 'v3-run', workspaceId: 'ws', recipeId: 'c4', recipeHash: `sha256:${'a'.repeat(64)}`, profileId: 'balanced', intakeId: 'in', title: 't', problem: 'p', medium: 'prose', budgetUsd: 3, status: 'paused' });
     expect(run).toMatchObject({ intakeId: 'in', status: 'paused' });
     expect((await store.appendEvent({ runId: 'v3-run', type: 'run-paused', data: {} })).seq).toBe(1);
+  });
+
+  it('upgrade an existing version-3 database file in place, keeping every checkpoint and allowing withdrawal', async () => {
+    const dataDir = tempDir();
+    writeVersion3Database(dataDir);
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3]);
+    const store = openStore({ dataDir, now: () => new Date('2026-10-07T10:00:00.000Z') });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    expect(await store.checkpointsForRun('v3-run')).toEqual([
+      { id: 'cp-done', runId: 'v3-run', stepId: 'gate', kind: 'confirm', prompt: 'Ship it?', status: 'resolved', openedAt: '2026-10-06T09:00:00.500Z', resolvedAt: '2026-10-06T09:00:03.000Z', resolution: { checkpointId: 'cp-done', approved: true } },
+      { id: 'cp-pick', runId: 'v3-run', stepId: 'pick', candidate: 0, kind: 'pick', prompt: 'Which?', options: [{ id: 'A', label: 'A' }, { id: 'B', label: 'B' }], k: 1, artifactIds: [`sha256:${'b'.repeat(64)}`], status: 'open', openedAt: '2026-10-06T09:00:01.000Z' },
+      { id: 'cp-voice', runId: 'v3-run', stepId: 'voice', kind: 'write', prompt: 'Your words', initialText: 'Fresh bread', status: 'open', openedAt: '2026-10-06T09:00:02.000Z' },
+    ]);
+    expect((await store.openCheckpoints('ws')).map((c) => c.id)).toEqual(['cp-pick', 'cp-voice']);
+    expect(await store.withdrawCheckpoints('v3-run')).toBe(2);
+    expect((await store.checkpointsForRun('v3-run')).map((c) => [c.id, c.status])).toEqual([['cp-done', 'resolved'], ['cp-pick', 'withdrawn'], ['cp-voice', 'withdrawn']]);
+    expect(await store.openCheckpoints('ws')).toEqual([]);
+    // The indexes survive the rebuild.
+    const db = new DatabaseSync(store.dbPath);
+    try {
+      const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'checkpoints' ORDER BY name").all().map((r) => r.name);
+      expect(indexes).toEqual(expect.arrayContaining(['checkpoints_by_run', 'checkpoints_open']));
+    } finally {
+      db.close();
+    }
+  });
+
+  it('allow a withdrawn checkpoint at the schema level only with a withdrawal time and without a resolution', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      db.prepare("INSERT INTO workspaces (id, name, budget_usd, created_at) VALUES ('w', 'W', 1, 'now')").run();
+      db.prepare(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, title, problem, medium, status,
+        budget_usd, created_at, updated_at) VALUES ('r', 'w', 'c1', 'h', 'demo', 't', 'p', 'prose', 'queued', 1, 'now', 'now')`).run();
+      const insert = db.prepare(`INSERT INTO checkpoints (id, run_id, step_id, kind, prompt, status, opened_at, resolved_at, resolution, withdrawn_at)
+        VALUES (?, 'r', 's', 'confirm', 'q', ?, 'now', ?, ?, ?)`);
+      insert.run('ok', 'withdrawn', null, null, 'later');
+      expect(() => insert.run('answered', 'withdrawn', 'later', '{"checkpointId":"answered","approved":true}', 'later')).toThrow(/CHECK/);
+      expect(() => insert.run('no-time', 'withdrawn', null, null, null)).toThrow(/CHECK/);
+      expect(() => insert.run('odd', 'open', null, null, 'later')).toThrow(/CHECK/);
+      expect(() => insert.run('bad', 'cancelled', null, null, null)).toThrow(/CHECK/);
+    } finally {
+      db.close();
+    }
   });
 
   it('refuse a negative run budget at the schema level too', () => {

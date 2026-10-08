@@ -141,6 +141,45 @@ ALTER TABLE runs ADD COLUMN intake_id TEXT REFERENCES intakes (id);
 -- checked in TypeScript (see the header of migrations.ts), never by a CHECK, so no table is rebuilt.
 `,
   },
+  {
+    version: 4,
+    name: 'checkpoint-withdrawn',
+    sql: `
+-- A checkpoint becomes 'withdrawn' when its run is cancelled or fails while the question is open (contracts v4,
+-- Store.withdrawCheckpoints). Migration 1 pinned the status to ('open', 'resolved') with a CHECK, and SQLite cannot alter
+-- a CHECK, so the table is rebuilt (SQLite's documented create-copy-drop-rename procedure). Nothing references
+-- checkpoints, so dropping the old table cascades nowhere; rowids are copied so ties in opened_at keep their order.
+-- withdrawn_at records when the question was withdrawn; the record does not expose it (the contract has no field for
+-- it), but it keeps the row honest about when it stopped being answerable.
+CREATE TABLE checkpoints_v4 (
+  id            TEXT PRIMARY KEY,
+  run_id        TEXT NOT NULL REFERENCES runs (id) ON DELETE CASCADE,
+  step_id       TEXT NOT NULL,
+  candidate     INTEGER CHECK (candidate >= 0),
+  kind          TEXT NOT NULL,
+  prompt        TEXT NOT NULL,
+  options       TEXT CHECK (options IS NULL OR json_valid(options)),
+  k             INTEGER CHECK (k >= 1),
+  initial_text  TEXT,
+  artifact_ids  TEXT CHECK (artifact_ids IS NULL OR json_valid(artifact_ids)),
+  status        TEXT NOT NULL CHECK (status IN ('open', 'resolved', 'withdrawn')),
+  opened_at     TEXT NOT NULL,
+  resolved_at   TEXT,
+  resolution    TEXT CHECK (resolution IS NULL OR json_valid(resolution)),
+  withdrawn_at  TEXT,
+  CHECK ((status = 'resolved') = (resolution IS NOT NULL AND resolved_at IS NOT NULL)),
+  CHECK ((status = 'withdrawn') = (withdrawn_at IS NOT NULL))
+) STRICT;
+INSERT INTO checkpoints_v4 (rowid, id, run_id, step_id, candidate, kind, prompt, options, k, initial_text, artifact_ids, status,
+  opened_at, resolved_at, resolution, withdrawn_at)
+  SELECT rowid, id, run_id, step_id, candidate, kind, prompt, options, k, initial_text, artifact_ids, status,
+  opened_at, resolved_at, resolution, NULL FROM checkpoints;
+DROP TABLE checkpoints;
+ALTER TABLE checkpoints_v4 RENAME TO checkpoints;
+CREATE INDEX checkpoints_by_run ON checkpoints (run_id, opened_at);
+CREATE INDEX checkpoints_open ON checkpoints (run_id) WHERE status = 'open';
+`,
+  },
 ];
 
 /** The schema version this build writes. */
