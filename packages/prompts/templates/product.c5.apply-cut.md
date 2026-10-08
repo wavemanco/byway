@@ -25,7 +25,7 @@ The current storyboard:
 How to work:
 - Carry out every cut, as itemized: remove shots, elements within shots, or motion that is only decoration.
 - Add nothing new. Where a removed shot leaves a gap, close it by joining the neighbouring shots, not by inventing a new one; renumber the shots from 1.
-- Leave `voiceover` exactly as it is, word for word. If the directive asks to change or drop voice-over lines, leave them, and say so in one line before the block: the owner drops lines in their own copy pass.
+- Leave `voiceover` exactly as it is, word for word. If the directive asks to change or drop voice-over lines, leave them, and say so in one line before the block: the voice-over is locked.
 - Keep `headline`, `tagline` and the `caption` of every shot you keep as they are; a removed shot takes its caption with it.
 - On every shot you keep unchanged, keep all its fields as they are (including `imageArtifactId` and `clipArtifactId` if present). If a cut changes what a shot shows, drop those two fields from it, because they no longer match.
 

@@ -39,7 +39,8 @@ const KEEP = { keepsVoice: true } as const;
  * - The scenes become one relay chain over the storyboard's shots (up to 4 links, 03: chains of 3–4 segments); each
  *   link is checked for objective defects and regenerated at most twice. Re-rolls never paste tell names.
  * - D3 CUT may drop whole VO lines only with the owner's sign-off: the apply step keeps human copy verbatim, and the
- *   owner drops lines in the late VOICE step.
+ *   owner drops lines in the late VOICE step. In v1 the late VOICE edits only the on-screen copy (headline, tagline and
+ *   captions; spec §3.3), so the voice-over stays as locked and dropping its lines is not offered.
  * - The gate's lineup is 4 best-in-category references plus ours, so "at or above the median" is rank 3.
  * - Without a video provider the runner stops after the storyboard and images and says so (product spec §1).
  * - EXTERNAL, not modelled: live A/B results recalibrating the gate.

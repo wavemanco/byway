@@ -305,7 +305,7 @@ const COPY: readonly Copy[] = [
         explainer: 'Not available in this version: no voice-over audio is made, and your locked script stays with the storyboard.',
         covers: ['vo-audio'],
       },
-      trimByYou('Your turn: cut the ad down to one message. Whole voice-over lines go only with your sign-off.'),
+      trimByYou('Your turn: cut the ad down to one message; the AI removes what you list from the shots. The voice-over stays as you locked it.'),
       clicheSweep('stock visual habits'),
       keepOrRevert,
       {
