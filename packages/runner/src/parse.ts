@@ -3,7 +3,7 @@
  * step appends to its one automatic retry. Builders' artifacts are parsed in formats.ts.
  */
 import { z } from 'zod';
-import { lastFenced, type Parsed } from './formats.ts';
+import { locate, type Parsed } from './formats.ts';
 
 const fail = (problem: string): Parsed<never> => ({ ok: false, problem });
 const lastLine = (text: string): string => text.trim().split('\n').at(-1)?.trim() ?? '';
@@ -107,7 +107,10 @@ const Hits = z.object({ hits: z.array(z.object({ pattern: z.string().min(1), whe
 export type TellsHit = z.infer<typeof Hits>['hits'][number];
 
 function json<T>(text: string, schema: z.ZodType<T>, what: string): Parsed<T> {
-  const raw = lastFenced(text, ['json']) ?? text.trim();
+  // A json block, else a bare one (JSON.parse is the check), else the whole answer when it has no fence (ENG-1).
+  const where = locate(text, ['json'], { bare: true });
+  if (where.kind === 'problem') return fail(where.problem);
+  const raw = where.kind === 'block' ? where.block.body : text.trim();
   try {
     const r = schema.safeParse(JSON.parse(raw));
     return r.success ? { ok: true, value: r.data } : fail(`The JSON does not match ${what}: ${r.error.issues.map((i) => `${i.path.join('.') || '(root)'} ${i.message}`).join('; ')}`);
