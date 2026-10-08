@@ -25,7 +25,7 @@ Use this procedure.
 2. Let the string decide the direction of one option. Make one explicit decision on each axis: the bet the option makes (what it assumes will work), its form (what kind of thing it is), and the far-off domain it borrows from (another industry, a craft, a game, a place). For names, decide the metaphor domain, the sound and the root language instead. Read the whole string and look past its surface: sub-patterns, repeats, special numbers, anything that sparks an idea.
 3. Turn that direction into one option a thoughtful person could choose. Make it specific and committed, not safe.
 
-The string is only for inspiration. Never quote or show it, or anything derived literally from it.
+The string is only for inspiration. Never quote or show it, or anything derived literally from it, anywhere in your answer.
 
 The string decides the direction, never the requirements. Keep every fixed constraint the problem states (budget, audience, deadline, what it must achieve).
 

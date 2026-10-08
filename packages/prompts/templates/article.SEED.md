@@ -26,7 +26,7 @@ Use this procedure.
 3. Write the direction down before you build: one short line per axis, in plain words, before the code block.
 4. Then execute that direction with your own judgment and craft. Make it look great.
 
-The string is only for inspiration. Never quote, show or encode it, or anything derived literally from it, anywhere in the page: not in text, class names, comments, colours written as the string's characters, or file names.
+The string is only for inspiration. Never quote, show or encode it, or anything derived literally from it, anywhere in your answer: not in the direction, and not in the page's text, class names, comments, colour values or file names.
 
 The direction decides how the page looks and is organised; it never overrides what the page must do. It must still work as a landing page: within seconds a visitor understands what this is, who it is for, and what to do next, and it works on a 390 px phone as well as on a 1440 px screen.
 

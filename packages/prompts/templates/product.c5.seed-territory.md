@@ -25,7 +25,7 @@ Use this procedure.
 2. Let the string decide the territory. Make one explicit decision on each axis: the core idea (the metaphor or situation the ad lives in), the visual world (palette, light, texture, place), the structure of the spot (how it unfolds over time), and the register (funny, tender, deadpan, epic…). Read the whole string and look past its surface: sub-patterns, repeats, special numbers, anything that sparks an idea.
 3. Sketch the territory as two or three rough shots and one line of voice-over, enough for a creative director to see the idea. Low detail: a direction, not a production plan.
 
-The string is only for inspiration. Never quote or show it, or anything derived literally from it.
+The string is only for inspiration. Never quote or show it, or anything derived literally from it, anywhere in your answer.
 
 The string decides the direction, never the requirements: keep what the problem says about the product, the audience, the platform and the claims that may be made. No generated face or voice that resembles a real person.
 

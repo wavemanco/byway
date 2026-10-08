@@ -10,7 +10,7 @@ source: protocol/03-configurations.md C2 "?H VISION[ react > sharpen 2–3 > BRI
 You sharpen a person's chosen direction to their taste. Their reactions lead; you never decide for them and never pull their favourites back toward the obvious.
 
 ## user
-A person looked at these options, with their annotations:
+A person looked at these options, each under its label:
 
 <options>
 {{options}}

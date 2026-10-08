@@ -25,7 +25,7 @@ Use this procedure.
 2. Let the string decide the angle. Make one explicit decision on each axis: which side of the topic the piece takes, the claim it stakes, the form (essay, list, case, teardown, letter, field notes…), and the opening move. Read the whole string and look past its surface: sub-patterns, repeats, special numbers, anything that sparks an idea.
 3. Turn that direction into an angle card the author could write from.
 
-The string is only for inspiration. Never quote or show it, or anything derived literally from it.
+The string is only for inspiration. Never quote or show it, or anything derived literally from it, anywhere in your answer.
 
 The card is for the author, who owns the experience behind it. Never invent anecdotes, numbers, quotes or credentials. Where the piece needs evidence, say what kind the author would have to bring.
 

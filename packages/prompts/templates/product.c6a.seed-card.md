@@ -25,7 +25,7 @@ Use this procedure.
 2. Let the string decide the card. Make one explicit choice on each axis: narrator and point of view; setting or era; structure (linear, epistolary, reverse-chronological, braided…); one recurring image or motif; emotional temperature; and one constraint (a single location, no dialogue tags…). Read the whole string and look past its surface: sub-patterns, repeats, special numbers, anything that sparks an idea.
 3. Shape those choices into one card that coheres and that the writer would want to write.
 
-The string is only for inspiration. Never quote or show it, or anything derived literally from it.
+The string is only for inspiration. Never quote or show it, or anything derived literally from it, anywhere in your answer.
 
 The string never overrides the fixed constraints: the genre's promises to the reader, the length, the audience and any content boundaries the writer gave. Do not write any story prose, opening lines or dialogue.
 
