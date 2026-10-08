@@ -19,7 +19,7 @@ Two review rounds followed:
 - A skeptic spot-checked the use-case research.
 - A six-agent adversarial review checked the protocol. It covered article fidelity, internal consistency, scope discipline and practitioner usefulness, and re-checked 55 citations.
 
-Everything both rounds found has been fixed, and every change is logged in [04 · Corrections](04-use-case-evidence.md#corrections). Anything substantially different from the article went to [More to Explore](05-more-to-explore.md).
+Everything both rounds found has been fixed, and every change is logged in [04 · Corrections](04-use-case-evidence.md#corrections). A later external review of byway (2026-10-08) found the summaries' seed-string wording broader than its source; the narrowed wording is logged there as Round 3. Anything substantially different from the article went to [More to Explore](05-more-to-explore.md).
 
 ---
 
@@ -127,7 +127,7 @@ A configuration may relax one only with a **declared exception** ([03](03-config
   - Heavy LLM users detect AI non-fiction by majority vote. Lay readers use flawed cues, yet still penalize suspected AI.
 - **Mixed:** ranking against references aligns better with humans, but it is more sensitive to distractors.
 - **Article prescription** (untested elsewhere):
-  - The external shell-RNG seed. SSoT tested a seed string the model writes itself.
+  - A shell-generated seed string driving a design workflow. SSoT's main tests used a string the model writes itself; its comparisons with external randomness used other tasks, where model-written strings generally did better ([01 · SEED](01-blocks.md#seed--external-seeding)).
   - Hiding the critic's threshold.
   - Auditing tells after generation instead of banning them.
 - **⟨A⟩ Amendment:** added by this protocol. Marked in 01 ("Additions ⟨A⟩" lists and inline marks), in 02, in C1's amendments table, and inline in the other configurations, so the article-faithful wiring stays recoverable.

@@ -94,7 +94,11 @@ Two forces run through all eight.
 **Wiring.** Native form is parallel: `x4[ SEED > build ]`. Branches never see each other. It loops only as an outer re-roll. It can nest inside VISION's scatter step and inside ASSET/RELAY art direction. It never goes inside a judge (CRITIC) or a Distill block.
 
 **Evidence.**
-- Misaki & Akiba, *String Seed of Thought* (Sakana AI, ICLR 2026). The model writes a random string and manipulates it. This beat "prompted to be diverse," prompt paraphrasing and higher temperatures on NoveltyBench. In a biased probabilistic-instruction test, model-written strings beat externally randomized ones. *The article's shell-RNG variant has not been tested directly.*
+- Misaki & Akiba, *String Seed of Thought* (Sakana AI, ICLR 2026). The model writes a random string and manipulates it. This beat "prompted to be diverse," prompt paraphrasing and higher temperatures on NoveltyBench. The paper also compares external randomness with model-written strings, on two tasks that are not design work:
+  - §5.1.2, a biased probabilistic-instruction test (DeepSeek-R1): model-written strings beat a fixed and an externally randomized string, though the randomized string also helped.
+  - App. D.6, open-ended generation (DeepSeek-R1-0528 on NoveltyBench Curated): model-written strings beat a pseudo-random string injected into the prompt ("Seed Injection") and a random-string tool the model calls ("Tool Call", the closest analogue to the article's shell script) on distinctness and utility in every category except product recommendations. Both external forms still scored above no seed on overall utility.
+
+  *The article's setup, a shell-generated string driving named design axes, has not been tested directly.* The comparisons above used one model family and no design task.
 - Zhang et al., *Verbalized Sampling* (typicality bias).
 - Jiang et al., *Artificial Hivemind* (NeurIPS 2025).
 - "How Random is Random?" (arXiv 2406.00092).
