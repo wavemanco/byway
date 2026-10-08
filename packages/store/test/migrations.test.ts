@@ -18,6 +18,8 @@ function versions(dbPath: string): number[] {
 const MIGRATION_3_CHECKSUM = 'sha256:ca2c930d144a72d26638620f9b9aa2e98acc2088e97facd4c9f1d79883d3a4b2';
 /** Pinned when migration 4 was written; it must never change. */
 const MIGRATION_4_CHECKSUM = 'sha256:f1f0c656cb2df7b091d1c67e0a4a71114206771feeb788b5f387cb625865b125';
+/** Pinned when migration 5 was written; it must never change. */
+const MIGRATION_5_CHECKSUM = 'sha256:9a63b55748772581a7a23f8f9eef1ef9c85100cffc88ee7a5412c0685c140729';
 
 const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
 
@@ -186,6 +188,7 @@ describe('migrations', () => {
       [2, 'run-budget-and-event-dedupe', 'sha256:ca45698760fd568f816708307e9d1861550b0fb8ddbac710768c565913c126ec'],
       [3, 'intakes-preferences-run-intake', MIGRATION_3_CHECKSUM],
       [4, 'checkpoint-withdrawn', MIGRATION_4_CHECKSUM],
+      [5, 'memos', MIGRATION_5_CHECKSUM],
     ]);
   });
 
@@ -280,6 +283,39 @@ describe('migrations', () => {
       expect(indexes).toEqual(expect.arrayContaining(['checkpoints_by_run', 'checkpoints_open']));
     } finally {
       db.close();
+    }
+  });
+
+  it('upgrade an existing version-4 database file in place, adding memos that go with their run', async () => {
+    const dataDir = tempDir();
+    const db = openDatabase(join(dataDir, 'byway.sqlite'));
+    try {
+      db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+      for (const m of MIGRATIONS.slice(0, 4)) {
+        db.exec(m.sql);
+        db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-07T00:00:00.000Z');
+      }
+      const at = '2026-10-07T09:00:00.000Z';
+      db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, at);
+      db.prepare(`INSERT INTO runs (id, workspace_id, recipe_id, recipe_hash, profile_id, title, problem, medium, status, cost_usd, budget_usd, created_at, updated_at)
+        VALUES ('v4-run', 'ws', 'c4', ?, 'demo', 'Memo', 'A memo', 'prose', 'running', 0, 5, ?, ?)`).run(`sha256:${'a'.repeat(64)}`, at, at);
+    } finally {
+      db.close();
+    }
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3, 4]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    expect(await store.getMemo('v4-run', 'k')).toBeUndefined();
+    expect(await store.setMemo('v4-run', 'k', 'sha256:x')).toBe('sha256:x');
+    // A memo belongs to its run: deleting the run (only ever done by hand) takes its memos with it.
+    const raw = new DatabaseSync(store.dbPath);
+    try {
+      raw.exec('PRAGMA foreign_keys = ON');
+      raw.prepare('DELETE FROM runs WHERE id = ?').run('v4-run');
+      expect(raw.prepare('SELECT COUNT(*) AS n FROM memos').get()?.n).toBe(0);
+      expect(() => raw.prepare("INSERT INTO memos (run_id, key, value, created_at) VALUES ('ghost', 'k', 'v', 'now')").run()).toThrow(/FOREIGN KEY/);
+    } finally {
+      raw.close();
     }
   });
 
