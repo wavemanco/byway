@@ -9,4 +9,5 @@ export { DEFAULT_BUSY_TIMEOUT_MS, openDatabase, writeTransaction, type OpenDatab
 export { ArtifactCorruptError, CheckpointResolvedError, StoreError, UnsafeDataDirError, type StoreErrorCode } from './errors.ts';
 export { MIGRATIONS, SCHEMA_VERSION, migrate, type Migration } from './migrations.ts';
 export { checkResolution, type ResolutionCheck } from './resolution.ts';
+export { DEFAULT_PREFERENCES } from './preferences.ts';
 export { CHECKPOINT_KINDS, MAX_EVENT_DATA_BYTES, RUN_EVENT_TYPES, RUN_STATUSES } from './validate.ts';

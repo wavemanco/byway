@@ -1,7 +1,7 @@
 import type { CheckpointRecord } from '@byway/contracts';
 
 export type StoreErrorCode =
-  /** The id names nothing (run, workspace, checkpoint, artifact). */
+  /** The id names nothing (run, workspace, checkpoint, artifact, intake). */
   | 'not-found'
   /** A record with this id exists and differs from the one being created. */
   | 'already-exists'
@@ -9,7 +9,7 @@ export type StoreErrorCode =
   | 'already-resolved'
   /** The input breaks the contract (bad enum value, malformed id, wrong resolution shape…). */
   | 'invalid'
-  /** An artifact's bytes no longer match their content address, or the file is gone. */
+  /** An artifact's bytes no longer match their content address, the file is gone, or a stored record no longer parses. */
   | 'corrupt'
   /** The data directory is inside OneDrive or a git working tree. */
   | 'unsafe-location'

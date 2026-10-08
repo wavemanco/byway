@@ -48,6 +48,7 @@ export function toRun(r: Row): RunRecord {
     recipeId: str(r.recipe_id),
     recipeHash: str(r.recipe_hash),
     profileId: str(r.profile_id),
+    ...opt('intakeId', r.intake_id, str),
     title: str(r.title),
     problem: str(r.problem),
     medium: str(r.medium) as Medium,

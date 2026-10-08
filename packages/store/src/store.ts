@@ -1,7 +1,8 @@
 /**
- * The product store (spec §2 "Data", ADR-0066): workspaces, runs, run events and checkpoints in one SQLite file,
- * `byway.sqlite`, plus the content-addressed artifact files beside it. The web app and the runner worker each open
- * their own instance on the same data directory; every read-then-write runs in an IMMEDIATE transaction so they agree.
+ * The product store (spec §2 "Data", ADR-0066): workspaces, runs, run events, checkpoints, intakes and preferences in
+ * one SQLite file, `byway.sqlite`, plus the content-addressed artifact files beside it. The web app and the runner
+ * worker each open their own instance on the same data directory; every read-then-write runs in an IMMEDIATE
+ * transaction so they agree.
  *
  * node:sqlite is synchronous. The contract is asynchronous so that a remote store could stand in later; here the
  * promises simply settle with the synchronous result (or reject with its error).
@@ -15,6 +16,8 @@ import type {
   CheckpointOption,
   CheckpointRecord,
   CheckpointResolution,
+  IntakeRecord,
+  Preferences,
   RunEvent,
   RunRecord,
   RunStatus,
@@ -25,7 +28,9 @@ import { FileArtifactStore } from './artifacts.ts';
 import { assertSafeDataDir, resolveDataDir } from './datadir.ts';
 import { openDatabase, writeTransaction } from './db.ts';
 import { CheckpointResolvedError, StoreError } from './errors.ts';
+import { INTAKE_PATCH_KEYS, intakeFieldJson, toIntake, type IntakeField } from './intakes.ts';
 import { migrate } from './migrations.ts';
+import { PREFERENCE_KEYS, mergePreferences, toPreferences } from './preferences.ts';
 import { prepareQueries, type Queries } from './queries.ts';
 import { checkResolution } from './resolution.ts';
 import { toCheckpoint, toEvent, toRun, toWorkspace } from './rows.ts';
@@ -77,6 +82,8 @@ type RunInput = Parameters<Store['createRun']>[0];
 type RunPatch = Parameters<Store['updateRun']>[1];
 type WorkspacePatch = Parameters<Store['updateWorkspace']>[1];
 type CheckpointInput = Parameters<Store['openCheckpoint']>[0];
+type IntakeInput = Parameters<Store['createIntake']>[0];
+type IntakePatch = Parameters<Store['updateIntake']>[1];
 
 const RUN_PATCH_KEYS = ['status', 'outputArtifactId', 'error', 'costUsd', 'title', 'budgetUsd'] as const satisfies readonly (keyof RunPatch)[];
 const WORKSPACE_PATCH_KEYS = ['name', 'budgetUsd'] as const satisfies readonly (keyof WorkspacePatch)[];
@@ -171,16 +178,23 @@ export class SqliteStore implements Store {
       medium: medium(run.medium),
       status: run.status === undefined ? 'queued' : oneOf<RunStatus>('run status', run.status, RUN_STATUSES),
       budgetUsd: usd('run budget', run.budgetUsd),
+      intakeId: run.intakeId === undefined ? null : nonEmpty('intakeId', run.intakeId),
       outputArtifactId: run.outputArtifactId === undefined ? null : nonEmpty('outputArtifactId', run.outputArtifactId),
       error: run.error === undefined ? null : text('error', run.error),
     };
     return writeTransaction(this.#db, () => {
       if (q.run.get(id)) throw new StoreError('already-exists', `run ${JSON.stringify(id)} already exists`);
       if (!q.workspace.get(values.workspaceId)) throw new StoreError('not-found', `no workspace ${JSON.stringify(values.workspaceId)}`);
+      if (values.intakeId !== null) {
+        const intake = q.intake.get(values.intakeId);
+        if (!intake) throw new StoreError('not-found', `no intake ${JSON.stringify(values.intakeId)}`);
+        // A run labelled from another workspace's intake would show that workspace's problem.
+        if (intake.workspace_id !== values.workspaceId) throw invalid(`intake ${JSON.stringify(values.intakeId)} belongs to another workspace`);
+      }
       this.#requireArtifact(values.outputArtifactId);
       const at = this.#stamp();
       const v = values;
-      q.insertRun.run(id, v.workspaceId, v.recipeId, v.recipeHash, v.profileId, v.title, v.problem, v.medium, v.status, v.outputArtifactId, v.error, v.budgetUsd, at, at);
+      q.insertRun.run(id, v.workspaceId, v.recipeId, v.recipeHash, v.profileId, v.intakeId, v.title, v.problem, v.medium, v.status, v.outputArtifactId, v.error, v.budgetUsd, at, at);
       return toRun(q.run.get(id)!);
     });
   }
@@ -309,6 +323,65 @@ export class SqliteStore implements Store {
 
   async checkpointsForRun(runId: string): Promise<CheckpointRecord[]> {
     return this.#queries().runCheckpoints.all(runId).map(toCheckpoint);
+  }
+
+  // Intakes
+
+  async createIntake(intake: IntakeInput): Promise<IntakeRecord> {
+    const q = this.#queries();
+    if (!isPlainObject(intake)) throw invalid('an intake must be a plain object');
+    const id = nonEmpty('intake id', intake.id);
+    const workspaceId = nonEmpty('workspaceId', intake.workspaceId);
+    const problem = intakeFieldJson('problem', intake.problem);
+    const optional = (field: Exclude<IntakeField, 'problem'>) => (intake[field] === undefined ? null : intakeFieldJson(field, intake[field]));
+    const answers = optional('answers');
+    const recommendation = optional('recommendation');
+    const composed = optional('composed');
+    return writeTransaction(this.#db, () => {
+      if (q.intake.get(id)) throw new StoreError('already-exists', `intake ${JSON.stringify(id)} already exists`);
+      if (!q.workspace.get(workspaceId)) throw new StoreError('not-found', `no workspace ${JSON.stringify(workspaceId)}`);
+      const at = this.#stamp();
+      q.insertIntake.run(id, workspaceId, problem, answers, recommendation, composed, at, at);
+      return toIntake(q.intake.get(id)!);
+    });
+  }
+
+  /** Fields left undefined keep their value; the intake's id and workspace never change. */
+  async updateIntake(id: string, patch: IntakePatch): Promise<IntakeRecord> {
+    const q = this.#queries();
+    const p = onlyKeys('an intake update', patch, INTAKE_PATCH_KEYS);
+    const json = Object.fromEntries(INTAKE_PATCH_KEYS.map((field) => [field, p[field] === undefined ? undefined : intakeFieldJson(field, p[field])]));
+    return writeTransaction(this.#db, () => {
+      const row = q.intake.get(id);
+      if (!row) throw new StoreError('not-found', `no intake ${JSON.stringify(id)}`);
+      const keep = (field: IntakeField) => json[field] ?? (row[field] as string | null);
+      q.updateIntake.run(keep('problem'), keep('answers'), keep('recommendation'), keep('composed'), this.#stamp(), id);
+      return toIntake(q.intake.get(id)!);
+    });
+  }
+
+  async getIntake(id: string): Promise<IntakeRecord | undefined> {
+    const row = this.#queries().intake.get(id);
+    return row ? toIntake(row) : undefined;
+  }
+
+  // Preferences
+
+  async getPreferences(workspaceId: string): Promise<Preferences> {
+    const q = this.#queries();
+    if (!q.workspace.get(workspaceId)) throw new StoreError('not-found', `no workspace ${JSON.stringify(workspaceId)}`);
+    return toPreferences(q.preferences.get(workspaceId));
+  }
+
+  async setPreferences(workspaceId: string, patch: Partial<Preferences>): Promise<Preferences> {
+    const q = this.#queries();
+    const p = onlyKeys('a preferences update', patch, PREFERENCE_KEYS);
+    return writeTransaction(this.#db, () => {
+      if (!q.workspace.get(workspaceId)) throw new StoreError('not-found', `no workspace ${JSON.stringify(workspaceId)}`);
+      const next = mergePreferences(toPreferences(q.preferences.get(workspaceId)), p);
+      q.upsertPreferences.run(workspaceId, next.profileId, next.demoMode ? 1 : 0, next.showTechnicalNames ? 1 : 0, this.#stamp());
+      return next;
+    });
   }
 
   /** Closes the database. Safe to call twice; every later call on the store fails with code 'closed'. */

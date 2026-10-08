@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_EVENT_DATA_BYTES } from '../src/index.ts';
+import { MAX_EVENT_DATA_BYTES, RUN_EVENT_TYPES } from '../src/index.ts';
 import { openStore, seedRun, steppingClock } from './helpers.ts';
 
 describe('events', () => {
@@ -23,6 +23,16 @@ describe('events', () => {
     expect((await store.events('a', 3)).map((e) => e.data.i)).toEqual([3, 4]);
     expect(await store.events('a', 5)).toEqual([]);
     expect(await store.events('unknown')).toEqual([]);
+  });
+
+  it('accepts every event type of the contract, run-paused and run-resumed included', async () => {
+    const store = openStore();
+    await seedRun(store, 'a');
+    const paused = await store.appendEvent({ runId: 'a', type: 'run-paused', data: {} }, { dedupeKey: 'pause:1' });
+    const resumed = await store.appendEvent({ runId: 'a', type: 'run-resumed', data: {} }, { dedupeKey: 'resume:1' });
+    expect([paused.type, paused.seq, resumed.type, resumed.seq]).toEqual(['run-paused', 1, 'run-resumed', 2]);
+    expect((await store.events('a')).map((e) => e.type)).toEqual(['run-paused', 'run-resumed']);
+    expect(RUN_EVENT_TYPES).toEqual(expect.arrayContaining(['run-paused', 'run-resumed']));
   });
 
   it('round-trips nested JSON data', async () => {
