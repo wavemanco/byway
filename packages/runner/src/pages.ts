@@ -11,8 +11,10 @@
  *
  * A render is bounded (SEC-5): everything from loading the page to the last screenshot runs under one deadline. A
  * page that never settles (a script that loops after load) has its context closed, which stops its renderer, and the
- * render fails with a plain message that is not retried. A render whose step is cancelled stops the same way. A browser
- * that crashed, disconnected or failed to launch is launched again on the next render (ENG-14).
+ * render fails with a plain message that is not retried. A render whose step is cancelled stops the same way. Dialogs
+ * the page opens (alert, confirm, prompt, even in a loop) are dismissed by byway, and a dismissal that fails because the
+ * page was closed is swallowed, so such a page cannot end the engine's process. A browser that crashed, disconnected or
+ * failed to launch is launched again on the next render (ENG-14).
  */
 import type { Browser, BrowserContext, Page, Route } from 'playwright';
 import { StepError } from './activities/failures.ts';
@@ -164,6 +166,13 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       reducedMotion: 'reduce',
       serviceWorkers: 'block',
       ...(phone ? { isMobile: true, hasTouch: true } : {}),
+    });
+    // Every dialog any page of this context opens (alert, confirm, prompt, also from a popup) is answered here, and a
+    // failed answer is swallowed. Without a listener Playwright answers them itself, and when the deadline closes the
+    // context while a page opens dialogs in a loop, its own answer rejects unhandled ("session closed") and ends the
+    // process the renderer runs in, which is the engine (SEC-5).
+    context.on('dialog', (dialog) => {
+      (dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss()).catch(() => undefined);
     });
     let timer: NodeJS.Timeout | undefined;
     let onAbort: (() => void) | undefined;

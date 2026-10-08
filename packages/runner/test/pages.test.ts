@@ -1,11 +1,14 @@
 /**
  * The real Playwright tests (the e2e scenarios fake the renderer): tiles at 1440 wide, the phone and first-screen
  * surfaces (RENDER-1), images from the artifact route, other hosts and WebSockets blocked (ENG-14), a bounded render
- * for a page that never settles and a failing artifact route (SEC-5), a cancelled render, and a browser that comes back
+ * for a page that never settles, a page that opens dialogs in a loop (in its own process, which must survive) and a
+ * failing artifact route (SEC-5), a cancelled render, and a browser that comes back
  * after a crash or a failed launch (ENG-14).
  */
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
@@ -23,7 +26,23 @@ const size = (png: Uint8Array) => {
   return { width: v.getUint32(16), height: v.getUint32(20) };
 };
 
-const PIXEL = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
+/** Runs a TypeScript file in a fresh Node process (Node strips the types) and collects what it printed. */
+const runNode = (file: string, args: string[]) =>
+  new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, [file, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
+    child.stderr.on('data', (d: Buffer) => (stderr += d.toString()));
+    const killer = setTimeout(() => child.kill(), 50_000);
+    child.on('error', reject);
+    child.on('close', (code) => {
+      clearTimeout(killer);
+      resolve({ code, stdout, stderr });
+    });
+  });
+
+const PIXEL =Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
 const SIMPLE = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0"><div style="height:500px;background:#345">Hi</div></body></html>';
 const none = async () => undefined;
 
@@ -84,6 +103,19 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect((err as Error).message).toMatch(/did not finish rendering within 2 s/);
     expect((await quick.screenshots(SIMPLE, none)).length).toBe(1);
   }, 60_000);
+
+  it.each(['interval', 'alertloop', 'confirmloop', 'promptloop', 'once'])(
+    'a page that opens dialogs (%s) does not crash the process that renders it (SEC-5)',
+    async (variant) => {
+      // Its own process: inside vitest an unhandled rejection is caught by the runner and would not end the process.
+      const { code, stdout, stderr } = await runNode(fileURLToPath(new URL('./helpers/dialog-page.ts', import.meta.url)), [variant, '3000']);
+      expect(stderr).not.toMatch(/ProtocolError|unhandled|Unhandled/);
+      expect(code).toBe(0);
+      expect(stdout).toMatch(/^(rendered|rejected: The page did not finish rendering within 3 s)/m);
+      expect(stdout).toMatch(/^survived$/m);
+    },
+    60_000,
+  );
 
   it('answers 404 when the artifact route fails, instead of an unhandled rejection (SEC-5)', async () => {
     const html = '<!doctype html><html><body style="margin:0"><img src="/api/artifacts/sha256:broken" width="10" height="10"><div style="height:100px">x</div></body></html>';
