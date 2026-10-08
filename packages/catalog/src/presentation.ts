@@ -1,6 +1,6 @@
 import type { RecipePresentation } from '@byway/contracts';
 import type { BlockCode } from '@byway/protocol';
-import { walk, type Recipe, type Stage } from '@byway/recipe';
+import { walk, walkNode, type Recipe, type Stage } from '@byway/recipe';
 import { c1 } from './c1.ts';
 import { c2 } from './c2.ts';
 import { c3 } from './c3.ts';
@@ -16,8 +16,9 @@ import { c7 } from './c7.ts';
  *
  * The copy is written by hand, but it cannot drift from the recipes: each shown step lists the recipe nodes it
  * covers, and its stage and "who does it" are computed from those nodes. Any human part makes a step your turn,
- * since that is where the run waits for you. Every step and pick of a recipe is covered exactly once (tested), so
- * a run event for any node can be labelled with `stepPresentation`.
+ * since that is where the run waits for you. Every step and pick of a recipe is covered exactly once, and so is every
+ * operator that emits events of its own (tested); each shown step lists those ids as `stepIds`, so a run event for
+ * any node can be labelled with `presentedStepFor` (or `stepPresentation` by recipe id).
  */
 
 type PlainStage = RecipePresentation['stages'][number]['stage'];
@@ -44,6 +45,12 @@ interface StepCopy {
   explainer: string;
   /** Ids of the recipe steps and picks this shown step stands for. */
   covers: string[];
+  /**
+   * Operators (loops, optionals…) whose body spans several shown steps but whose checkpoint and iterations belong to
+   * this one: the author's loop is "Your draft" (you decide when it is done), an optional is the step it asks about.
+   * Operators whose body lies inside one shown step map to it without being listed.
+   */
+  operators?: string[];
 }
 
 interface Copy {
@@ -59,6 +66,7 @@ const yourDraft = (covers: string[] = ['write', 'render']): StepCopy => ({
   label: 'Your draft',
   explainer: 'Your turn: write or revise the whole draft yourself. Each round, three AI readers go over it, and you decide when it is done.',
   covers,
+  operators: ['author-loop'],
 });
 const trimByYou = (explainer: string): StepCopy => ({ label: 'Trim', explainer, covers: ['cut-render', 'cut', 'apply-cut'] });
 const keepOrRevert: StepCopy = {
@@ -318,6 +326,8 @@ const COPY: readonly Copy[] = [
         label: 'Angles from your material',
         explainer: 'If you want them, the AI mines your CV, notes and stories for angles: broad, not deep.',
         covers: ['angles'],
+        // "Do you want angles first?" is asked about this step; your reaction only follows when the answer is yes.
+        operators: ['angles-if-wanted'],
       },
       {
         label: 'Your direction',
@@ -405,6 +415,8 @@ const COPY: readonly Copy[] = [
         label: 'Spec interview',
         explainer: 'If the requirements are vague, the AI asks a few questions first.',
         covers: ['interview'],
+        // "Are the requirements vague?" is asked about the interview; your spec only follows when the answer is yes.
+        operators: ['spec-interview'],
       },
       {
         label: 'Your direction',
@@ -473,13 +485,49 @@ function whoDoes(actors: NodeFacts['actor'][]): Who {
   return 'tool';
 }
 
+/**
+ * Every named operator (loops, optionals, routes, picks' parents… everything with an id but steps and picks) with the
+ * step and pick ids inside it, and the walk position of every id, so stepIds read in recipe order.
+ */
+function operatorsOf(recipe: Recipe): { operators: Map<string, string[]>; order: Map<string, number> } {
+  const operators = new Map<string, string[]>();
+  const order = new Map<string, number>();
+  walk(recipe, (n, path, stage) => {
+    const id = 'id' in n ? n.id : undefined;
+    if (id === undefined) return;
+    order.set(id, order.size);
+    if (n.op === 'step' || n.op === 'pick') return;
+    const inside: string[] = [];
+    walkNode(n, path, stage, (c) => {
+      if (c.op === 'step' || c.op === 'pick') inside.push(c.id);
+    });
+    operators.set(id, inside);
+  });
+  return { operators, order };
+}
+
+/**
+ * The shown steps of a recipe, each with the ids it stands for (`stepIds`): its steps and picks, and the operators
+ * whose events it explains. A run event carries a step's id, or an operator's id for an operator's own checkpoint
+ * (pick, optional, route, a loop's cap or its "Is this ready?", a gate's fail) and for loop iterations, so the
+ * timeline can label every event in plain words. An operator belongs to the one shown step that covers its whole body;
+ * when its body spans several shown steps, the copy names its step (`operators`), or it has none (an audit of three
+ * readers, the C1 per-candidate wrapper): those emit no events of their own.
+ */
 function present(copy: Copy): { presentation: RecipePresentation; byNode: Map<string, PresentedStep> } {
   const { recipe } = copy;
   if (!recipe.medium) throw new Error(`${recipe.id} has no medium`);
   const facts = nodeFacts(recipe);
-  const byNode = new Map<string, PresentedStep>();
+  const { operators, order } = operatorsOf(recipe);
   const stages: RecipePresentation['stages'] = [];
-  for (const s of copy.steps) {
+  const shownSteps: PresentedStep[] = [];
+  /** Index into shownSteps of the shown step each id belongs to. */
+  const owner = new Map<string, number>();
+  const assign = (id: string, i: number, what: string) => {
+    if (owner.has(id)) throw new Error(`${recipe.id}: ${what} "${id}" is shown twice`);
+    owner.set(id, i);
+  };
+  copy.steps.forEach((s, i) => {
     const covered = s.covers.map((id) => {
       const f = facts.get(id);
       if (!f) throw new Error(`${recipe.id}: "${s.label}" covers unknown node "${id}"`);
@@ -488,14 +536,32 @@ function present(copy: Copy): { presentation: RecipePresentation; byNode: Map<st
     const stageSet = new Set(covered.map((f) => f.stage));
     const [only] = stageSet;
     if (stageSet.size !== 1 || !only) throw new Error(`${recipe.id}: "${s.label}" must cover nodes of one stage`);
-    const stage = STAGE_NAMES[only];
-    const shown = { label: s.label, explainer: s.explainer, who: whoDoes(covered.map((f) => f.actor)) };
+    shownSteps.push({ label: s.label, explainer: s.explainer, who: whoDoes(covered.map((f) => f.actor)), stepIds: [], stage: STAGE_NAMES[only] });
+    for (const id of s.covers) assign(id, i, 'node');
+  });
+  // Operators the copy places explicitly; each must contain a node of the step it is placed on.
+  copy.steps.forEach((s, i) => {
+    for (const id of s.operators ?? []) {
+      const inside = operators.get(id);
+      if (!inside) throw new Error(`${recipe.id}: "${s.label}" names unknown operator "${id}"`);
+      if (!inside.some((x) => s.covers.includes(x))) throw new Error(`${recipe.id}: operator "${id}" contains nothing "${s.label}" covers`);
+      assign(id, i, 'operator');
+    }
+  });
+  // The rest belong to the shown step that covers everything inside them, if there is exactly one.
+  for (const [id, inside] of operators) {
+    if (owner.has(id)) continue;
+    const owners = new Set(inside.map((x) => owner.get(x)));
+    const [single] = owners;
+    if (owners.size === 1 && single !== undefined) owner.set(id, single);
+  }
+  for (const [id, i] of [...owner].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0))) shownSteps[i]!.stepIds.push(id);
+
+  const byNode = new Map<string, PresentedStep>();
+  for (const [id, i] of owner) byNode.set(id, shownSteps[i]!);
+  for (const { stage, ...shown } of shownSteps) {
     if (stages.at(-1)?.stage !== stage) stages.push({ stage, steps: [] });
     stages.at(-1)!.steps.push(shown);
-    for (const id of s.covers) {
-      if (byNode.has(id)) throw new Error(`${recipe.id}: node "${id}" is shown twice`);
-      byNode.set(id, { ...shown, stage });
-    }
   }
   return {
     presentation: { recipeId: recipe.id, code: recipe.family, name: copy.name, promise: copy.promise, medium: recipe.medium, bestFor: copy.bestFor, stages },
@@ -514,10 +580,23 @@ export function presentationOf(recipeId: string): RecipePresentation | undefined
 }
 
 /**
- * The shown step a recipe node belongs to, by recipe id and step or pick id: what a run timeline labels a step event
- * with. Undefined for unknown ids and for structural nodes (loops, routes, optionals), which are not steps.
+ * The shown step a recipe node belongs to, by recipe id and node id (a step, a pick, or an operator such as a loop or
+ * an optional): what a run timeline labels an event with. Undefined for unknown ids and for operators whose body spans
+ * several shown steps.
  */
 export function stepPresentation(recipeId: string, nodeId: string): PresentedStep | undefined {
   const i = PRESENTATIONS.findIndex((p) => p.recipeId === recipeId);
   return i < 0 ? undefined : PRESENTED[i]!.byNode.get(nodeId);
+}
+
+/**
+ * The shown step whose `stepIds` include `stepId`, with its stage, in any presentation (a protocol recipe's or a
+ * composed one's): how the app labels a run event, which carries a step's or an operator's id.
+ */
+export function presentedStepFor(presentation: RecipePresentation, stepId: string): PresentedStep | undefined {
+  for (const { stage, steps } of presentation.stages) {
+    const step = steps.find((s) => s.stepIds.includes(stepId));
+    if (step) return { ...step, stage };
+  }
+  return undefined;
 }
