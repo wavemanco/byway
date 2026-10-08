@@ -5,9 +5,11 @@
  *
  * What counts as a claim (UX-5): a sentence with a digit, a number word, a weekday or month, a relative date, a
  * capitalised name after its first word, or a causal word. The list over-includes on purpose: missing a claim is the
- * failure that matters, since the prompt says "every". Headings, code, link definitions, comments (the demo's revision
- * marker among them, UX-6) and rules are not claims. Each claim is offered once, as "- " and the sentence, without the
- * list or quote marker it had in the document.
+ * failure that matters, since the prompt says "every". Sentences are read per paragraph, so one wrapped across lines
+ * is one claim. Headings are claims too when they carry a fact (ENG-2): a corrected number must not survive in the
+ * title or a section heading; a heading that is only a label ("Root cause", "Next Steps") is not offered. Code, link
+ * definitions, comments (the demo's revision marker among them, UX-6) and rules are not claims. Each claim is offered
+ * once, as "- " and the sentence, without the list, quote or heading marker it had in the document.
  */
 import { fences, type Parsed } from './formats.ts';
 
@@ -21,15 +23,25 @@ export interface Claim {
 
 const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
-const HEADING = /^\s{0,3}#{1,6}(?:\s|$)/;
+/** An ATX heading's opening #s and the space after them: what a heading claim is offered without. */
+const HEADING = /^\s{0,3}#{1,6}(?=\s|$)[ \t]*/;
 /** Markdown comments ("[//]: # (…)", the demo's marker among them), link definitions, one-line HTML comments. */
 const NOT_PROSE = /^\s*(?:\[[^\]]*\]:\s*\S|<!--.*-->\s*$)/;
 const RULE = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+/** A setext heading's underline: it ends the paragraph above it and is not prose. */
+const SETEXT = /^\s{0,3}(?:=+|-+)\s*$/;
+const TABLE_ROW = /^\s*(?:>\s?)*\|/;
+/** A line that starts a list item: a new paragraph, not the continuation of the one above. */
+const LIST_ITEM = /^\s*(?:>\s?)*(?:[-*+]|\d+[.)])\s+/;
+/** A line ending in a Markdown hard break (two spaces or a backslash). */
+const HARD_BREAK = /(?: {2,}|\\)$/;
 /** A line's list, task or quote marker: what the claim is offered without. */
 const MARKER = /^\s*(?:>\s?)*(?:(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)?/;
-/** A line left with nothing but its marker. */
-const MARKER_ONLY = /^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s*(?:\[[ xX]\]\s*)?)?$/;
+/** A continuation line's quote markers and indent. */
+const CONTINUATION = /^\s*(?:>\s?)*\s*/;
+/** A line left with nothing but its marker (a list or quote marker, or a heading's #s). */
+const MARKER_ONLY = /^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s*(?:\[[ xX]\]\s*)?|#{1,6}(?:\s+#*)?\s*)?$/;
 
 const NUMBER_WORD =
   /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|dozen|half|twice|double|triple|quarter|percent)\b/i;
@@ -53,49 +65,107 @@ function namesSomething(sentence: string): boolean {
 export const isClaim = (sentence: string): boolean =>
   /\d/.test(sentence) || NUMBER_WORD.test(sentence) || CALENDAR.test(sentence) || RELATIVE.test(sentence) || CAUSAL.test(sentence) || namesSomething(sentence);
 
-/** The sentences of one line from `from` on, with their offsets in the line. */
-function sentences(line: string, from: number): { text: string; start: number; end: number }[] {
+/** The sentences of a text, with their offsets in it. */
+function sentences(text: string): { text: string; start: number; end: number }[] {
   const out: { text: string; start: number; end: number }[] = [];
   const push = (s: number, e: number) => {
-    const raw = line.slice(s, e);
+    const raw = text.slice(s, e);
     const lead = raw.length - raw.trimStart().length;
-    const text = raw.trim();
-    if (text) out.push({ text, start: s + lead, end: s + lead + text.length });
+    const trimmed = raw.trim();
+    if (trimmed) out.push({ text: trimmed, start: s + lead, end: s + lead + trimmed.length });
   };
   const sep = /(?<=[.!?][)"'”’*_\]]*)\s+/g;
-  sep.lastIndex = from;
-  let start = from;
-  for (let m = sep.exec(line); m; m = sep.exec(line)) {
+  let start = 0;
+  for (let m = sep.exec(text); m; m = sep.exec(text)) {
     push(start, m.index);
     start = m.index + m[0].length;
   }
-  push(start, line.length);
+  push(start, text.length);
   return out;
+}
+
+/** One line's prose inside a paragraph: its text and where that text starts in the document. */
+interface Piece {
+  at: number;
+  text: string;
+}
+
+/**
+ * A heading is a claim when it carries a fact: a number or a date always; a name or a cause once it says more than a
+ * label of one or two words ("Root cause" and "Next Steps" are labels, "Outage at Acme" is a claim).
+ */
+function isHeadingClaim(text: string): boolean {
+  if (/\d/.test(text) || NUMBER_WORD.test(text) || CALENDAR.test(text) || RELATIVE.test(text)) return true;
+  return text.split(/\s+/).length > 2 && isClaim(text);
 }
 
 /** The document's claims, in order, each with where it stands. */
 export function claimsOf(markdown: string): Claim[] {
   const code = fences(markdown).map((b) => [b.start, b.end] as const);
   const out: Claim[] = [];
+  // The paragraph being read: a sentence wrapped across its lines is one claim (ENG-2).
+  let para: Piece[] = [];
+  let paraQuote = 0;
+  const flush = () => {
+    if (!para.length) return;
+    // The lines' prose joined by one space, and where each character of it stands in the document.
+    let joined = '';
+    const pos: number[] = [];
+    for (const [i, p] of para.entries()) {
+      if (i) {
+        joined += ' ';
+        pos.push(para[i - 1]!.at + para[i - 1]!.text.length);
+      }
+      joined += p.text;
+      for (let k = 0; k < p.text.length; k++) pos.push(p.at + k);
+    }
+    for (const s of sentences(joined)) if (isClaim(s.text)) out.push({ text: squash(s.text), start: pos[s.start]!, end: pos[s.end - 1]! + 1 });
+    para = [];
+  };
   let at = 0;
   let inComment = false;
   for (const raw of markdown.split('\n')) {
     const lineStart = at;
     at += raw.length + 1;
     const line = raw.replace(/\r$/, '');
-    if (code.some(([s, e]) => lineStart >= s && lineStart < e)) continue;
+    if (code.some(([s, e]) => lineStart >= s && lineStart < e)) {
+      flush();
+      continue;
+    }
     if (inComment) {
       inComment = !line.includes('-->');
       continue;
     }
     if (/^\s*<!--/.test(line) && !line.includes('-->')) {
+      flush();
       inComment = true;
       continue;
     }
-    if (!line.trim() || HEADING.test(line) || NOT_PROSE.test(line) || RULE.test(line) || TABLE_RULE.test(line)) continue;
-    const lead = MARKER.exec(line)?.[0].length ?? 0;
-    for (const s of sentences(line, lead)) if (isClaim(s.text)) out.push({ text: squash(s.text), start: lineStart + s.start, end: lineStart + s.end });
+    if (!line.trim() || NOT_PROSE.test(line) || RULE.test(line) || TABLE_RULE.test(line) || SETEXT.test(line)) {
+      flush();
+      continue;
+    }
+    const heading = HEADING.exec(line);
+    if (heading) {
+      flush();
+      // The heading's words, without its opening #s or a closing run of #s.
+      const start = heading[0].length;
+      const end = line.replace(/(?:[ \t]+#+)?[ \t]*$/, '').length;
+      const text = start < end ? line.slice(start, end) : '';
+      if (text && isHeadingClaim(text)) out.push({ text: squash(text), start: lineStart + start, end: lineStart + end });
+      continue;
+    }
+    const quote = (/^\s*((?:>\s?)*)/.exec(line)?.[1] ?? '').split('>').length - 1;
+    // A list item, a table row, or a change of quote starts a new paragraph; any other line continues the one before.
+    const row = TABLE_ROW.test(line);
+    if (para.length && (row || LIST_ITEM.test(line) || quote !== paraQuote)) flush();
+    const lead = para.length ? (CONTINUATION.exec(line)?.[0].length ?? 0) : (MARKER.exec(line)?.[0].length ?? 0);
+    if (!para.length) paraQuote = quote;
+    para.push({ at: lineStart + lead, text: line.slice(lead) });
+    // A table row stands alone, and so does a line ending in a hard break: the line break is kept, so is the claim.
+    if (row || HARD_BREAK.test(line)) flush();
   }
+  flush();
   return out;
 }
 
