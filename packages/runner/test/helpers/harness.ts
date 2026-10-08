@@ -14,7 +14,7 @@ import type { Recipe } from '@byway/recipe';
 import { createStore, type SqliteStore } from '@byway/store';
 import { buildWorkflows } from '../../src/build.ts';
 import { cachedTemporalExecutable } from '../../src/dev-engine.ts';
-import { createRunnerClient } from '../../src/client.ts';
+import { createRunnerClient, ResolutionRejectedError } from '../../src/client.ts';
 import { storeCaps } from '../../src/caps.ts';
 import { createWorker, type RunnerWorker } from '../../src/worker.ts';
 import { workflowIdFor } from '../../src/types.ts';
@@ -89,10 +89,10 @@ export function defaultAnswer(cp: CheckpointRecord): CheckpointResolution {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Quiet the SDK: warnings and errors only. Installed once per test process, before any worker or server. */
+/** Quiet the SDK: errors only (refused budgets and failed steps are expected here). Installed once per test process, before any worker or server. */
 function quietRuntime(): void {
   try {
-    Runtime.install({ logger: new DefaultLogger('WARN') });
+    Runtime.install({ logger: new DefaultLogger('ERROR') });
   } catch {
     // Already installed in this process.
   }
@@ -182,7 +182,12 @@ export async function createHarness(): Promise<Harness> {
           const res = answer(cp) ?? defaultAnswer(cp);
           if (res === 'wait') continue;
           answered.add(cp.id);
-          await runner.resolve(res);
+          try {
+            await runner.resolve(res);
+          } catch (e) {
+            // A run that ended meanwhile (cancelled, failed) refuses answers; the loop sees it end next.
+            if (!(e instanceof ResolutionRejectedError)) throw e;
+          }
         }
         if (Date.now() > deadline) {
           const open = (await store.checkpointsForRun(runId)).filter((c) => c.status === 'open').map((c) => `${c.kind} ${c.stepId}`);
