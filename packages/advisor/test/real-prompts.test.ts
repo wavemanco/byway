@@ -68,7 +68,9 @@ describe('real templates, real demo gateway: compose', () => {
     expect(gateway.calls.map((c) => c.purpose)).toEqual(['advisor.intake', 'advisor.compose']);
     // The smallest valid change, so the composition is never the nearest recipe unchanged.
     expect(result.diff).toHaveLength(1);
-    expect(result.diff[0]).toMatch(/^Changed: the repeat|^Removed: /);
+    expect(result.diff[0]).toMatch(/^Changed: .+ repeats up to |^Removed: /);
+    // Plain words (UX-13): no node id in parentheses.
+    expect(result.diff[0]).not.toMatch(/\([a-z0-9-]+\)$/);
     expectProvenance(await ledger());
   });
 

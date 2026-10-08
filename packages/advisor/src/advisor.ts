@@ -165,7 +165,7 @@ export function createAdvisor(opts: AdvisorOptions): Advisor {
         ok: outcome.ok,
         violations: outcome.violations.map((v) => ({ ruleId: v.ruleId, message: v.path ? `${v.path}: ${v.message}` : v.message })),
         nearestRecipeId: nearest.recipe.id,
-        diff: diffFromNearest(composed, nearest.recipe, nearest.presentation.name),
+        diff: diffFromNearest(composed, nearest.recipe, nearest.presentation.name, nearest.presentation),
         label: label(composed),
         presentation,
         estimate: estimate(composed, o.profileId),
