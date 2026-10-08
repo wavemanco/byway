@@ -1,8 +1,11 @@
 /**
- * Response headers for the artifact route. Generated pages are untrusted content: they are served with a
- * CSP whose `sandbox allow-scripts` gives them an opaque origin even when opened directly, the iframe that
- * shows them repeats the sandbox, and nothing may send data anywhere (no connect, no forms). Only the CDNs the
- * renderer allows (spec §3.2) may supply fonts, styles and scripts, so a page looks as it did to the critic.
+ * Response headers for the artifact routes. Generated pages are untrusted content: they are served with a CSP whose
+ * `sandbox allow-scripts` gives them an opaque origin even when opened directly, and the iframe that shows them
+ * repeats the sandbox (without scripts until the person turns them on). The CSP blocks requests (no connect, no
+ * forms, images only from byway), but no CSP can stop a page with scripts from navigating itself, so a page could
+ * still carry what it holds to another address that way: that is why the app runs a page's scripts only on request
+ * (SEC-4). Only the CDNs the renderer allows (spec §3.2) may supply fonts, styles and scripts, so a page looks as it
+ * did to the critic.
  */
 import { exportFileName } from '../view/text.ts';
 

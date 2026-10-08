@@ -23,8 +23,11 @@ const CASES: Case[] = [
     name: 'Landing Page Studio',
     problem: 'A landing page for the spring classes at my pottery studio',
     async deliverable(result, page) {
-      // The page itself, in a sandboxed frame without same-origin access.
+      // The page itself, in a sandboxed frame without same-origin access, its scripts off until asked for (SEC-4).
       const frame = result.locator('iframe');
+      await expect(frame).toHaveAttribute('sandbox', '');
+      await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
+      await result.getByRole('button', { name: 'Run the page’s scripts' }).click();
       await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
       await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
 

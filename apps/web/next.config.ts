@@ -19,7 +19,12 @@ const nextConfig: NextConfig = {
         // config headers replace a route's own, and a generated page served without its sandbox CSP runs as byway.
         source: '/((?!artifacts/|api/artifacts/).*)',
         headers: [
-          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" },
+          // Images and media only from byway itself (SEC-4): an image from elsewhere in generated text would be
+          // fetched as soon as it is shown, with whatever a model put in its address.
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:",
+          },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'same-origin' },
         ],

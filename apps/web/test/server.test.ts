@@ -125,3 +125,12 @@ describe('app-wide response headers (next.config.ts)', () => {
     expect(matches(`/api/artifacts/${ID}`)).toBe(false);
   });
 });
+
+describe('app screens load images only from byway (SEC-4)', () => {
+  it('limits images and media on the app’s own pages to its origin, data: and blob:', async () => {
+    const headers = (await config.headers?.()) ?? [];
+    const csp = headers.flatMap((h) => h.headers).find((x) => x.key === 'Content-Security-Policy')?.value ?? '';
+    expect(csp).toContain("img-src 'self' data: blob:");
+    expect(csp).toContain("media-src 'self' data: blob:");
+  });
+});

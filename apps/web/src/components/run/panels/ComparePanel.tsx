@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { moveFocus } from '../../../view/checkpoints.ts';
 import { ArtifactPreview } from '../../ArtifactPreview.tsx';
+import { ScriptsToggle } from '../../ScriptsToggle.tsx';
+import { outputKind } from '../../../view/run.ts';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { TurnFooter } from './TurnFooter.tsx';
 import type { PanelProps } from './types.ts';
@@ -50,6 +52,8 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
             Flip <kbd aria-hidden="true">Space</kbd>
           </button>
         ) : null}
+        {/* One switch for both versions, so they are always compared the same way. */}
+        {options.some((o) => o.artifactId && outputKind(artifacts[o.artifactId]?.mediaType) === 'page') ? <ScriptsToggle /> : null}
       </div>
 
       {mode === 'side' ? (
@@ -68,7 +72,7 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
                 </button>
               </div>
               <div className="compare-view" onClick={() => setShown(i)}>
-                {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" /> : <p>{o.label}</p>}
+                {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scriptsToggle={false} /> : <p>{o.label}</p>}
               </div>
             </li>
           ))}
@@ -84,7 +88,7 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
           {/* Both versions stay mounted so a flip is instant and lands on the same spot. */}
           {options.map((o, i) => (
             <div key={o.id} className="compare-view" hidden={i !== shown}>
-              {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" /> : null}
+              {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scriptsToggle={false} /> : null}
             </div>
           ))}
         </div>

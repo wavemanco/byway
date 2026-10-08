@@ -331,6 +331,39 @@ code {
   pointer-events: none;
 }
 
+/* "Run the page's scripts" (SEC-4): pages inside byway are shown without their scripts until turned on. */
+.page-preview {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.scripts-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--s-3);
+}
+
+.scripts-toggle .button[aria-pressed='true'] {
+  border-color: var(--you);
+  color: var(--ink);
+}
+
+.scripts-note {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+/* An image in generated text that points outside byway is named, not loaded (SEC-4). */
+.md-image-blocked {
+  display: inline-block;
+  padding: 2px var(--s-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-sm);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
 .preview-image {
   display: block;
   width: 100%;

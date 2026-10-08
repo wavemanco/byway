@@ -854,7 +854,11 @@
   gap: var(--s-2);
 }
 
-.page-result .segmented {
+.page-result-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
   margin-bottom: var(--s-3);
 }
 
