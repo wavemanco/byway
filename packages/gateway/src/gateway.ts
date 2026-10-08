@@ -570,10 +570,14 @@ export class ModelGateway implements Gateway {
     const requestText = redact(canonicalOrJson({ purpose: draft.purpose, ...(request as object) }));
     const responseText = redact(canonicalOrJson(response));
     const billed = `${draft.provider} answered and billed this call (${draft.purpose})`;
+    const labels = {
+      servedModel: providerLabel(draft.servedModel),
+      ...(draft.upstreamProvider !== undefined ? { upstreamProvider: providerLabel(draft.upstreamProvider) } : {}),
+    };
     let entry;
     try {
       entry = await this.ledger.append(
-        { ...draft, requestSha256: `sha256:${sha256Hex(requestText)}`, responseSha256: `sha256:${sha256Hex(responseText)}` },
+        { ...draft, ...labels, requestSha256: `sha256:${sha256Hex(requestText)}`, responseSha256: `sha256:${sha256Hex(responseText)}` },
         { lockTimeoutMs: this.billedLedgerWaitMs },
       );
     } catch (e) {
@@ -587,6 +591,20 @@ export class ModelGateway implements Gateway {
     }
     return entry;
   }
+}
+
+/**
+ * A provider-reported label (the served model, the upstream host) as the hash-chained ledger records it. Provider JSON
+ * can carry a lone surrogate through a \u escape, which has no canonical form, yet a call the provider answered was
+ * billed and must be ledgered (ENG-3, F19). So a lone surrogate is written as U+FFFD; the exact reply stays in the
+ * stored response under responseSha256. A label that is not a string at all (adapters copy it unchecked) is written as
+ * its JSON text, which escapes lone surrogates, for the same reason; an absent one stays absent, as before. Results
+ * returned to callers keep the label as reported: nothing hashes them.
+ */
+function providerLabel(label: string): string {
+  const value: unknown = label;
+  if (typeof value === 'string') return value.toWellFormed();
+  return value === undefined ? label : (JSON.stringify(value) ?? typeof value);
 }
 
 /** The outcome of keeping media a provider made: its record, or the error (kept for after the call is ledgered). */
