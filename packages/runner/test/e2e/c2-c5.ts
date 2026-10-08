@@ -3,6 +3,7 @@
  * lens, a person's vision loop and mood boards; then storyboards, anchor frames, the relay chain on the demo video
  * model (and with no video model: honest skips), the launch gate's retry and the person's call.
  */
+import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { c2, c5 } from '@byway/catalog';
 import type { CompletionRequest, VideoRequest, VideoResult } from '@byway/contracts';
@@ -11,7 +12,7 @@ import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { NO_COMPOSITING_NOTE, NO_VIDEO_NOTE } from '../../src/activities/relay.ts';
 import { GATE_FAILED_PROMPT, GATE_RETRY_NOTE, READY_PROMPT } from '../../src/workflow/wording.ts';
 import { checkEvents, notes, ofType } from '../helpers/events.ts';
-import { png } from '../helpers/fake-pages.ts';
+import { fakeShots, png } from '../helpers/fake-pages.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
 
 let h: Harness;
@@ -161,14 +162,16 @@ export function c2c5Scenarios(use: () => Harness): void {
     }, 180_000);
 
     it('with keys but no video model, every relay link finishes skipped and says so; the storyboard and anchor pass through', async () => {
-      // GREAT mode (three references). The critic is blind (ADR-0072): every item is shown the same way, as images
-      // (BLIND-1), so this test's critic finds ours by its frames, which are not among the references, and ranks it
-      // second of four: at or above the gate's middle-of-five bar scaled to four (rank 2; GATE-1).
+      // GREAT mode (three references). The critic is blind (ADR-0072): every item is shown the same way, as one card
+      // image (BLIND-1). This test's critic finds ours as only a test can, by the card drawn from none of the
+      // references, and ranks it second of four: at or above the gate's middle-of-five bar scaled to four (rank 2; GATE-1).
       const refIds: string[] = [];
+      const cardId = (html: string) => `sha256:${createHash('sha256').update(fakeShots(html, 'desktop').tiles[0]!).digest('hex')}`;
       h.responders['critic:media'] = (ctx) => {
         const m = Number(/\((\d+) items, labelled/.exec(ctx.prompt)?.[1] ?? 0);
         const all = Array.from({ length: m }, (_, i) => String.fromCharCode(65 + i));
-        const ours = ctx.attachments?.find((a) => a.label && !refIds.includes(a.artifactId))?.label ?? 'A';
+        const ourCards = new Set(h.pages.rendered.filter((html) => html.includes('class="card"') && !refIds.some((r) => html.includes(encodeURIComponent(r)))).map(cardId));
+        const ours = ctx.attachments?.find((a) => a.label && ourCards.has(a.artifactId))?.label ?? 'A';
         const others = all.filter((l) => l !== ours);
         return `### ${ours}\n- Intent: one feeling, landed.\n- The payoff shot is short.\n\nRanking: ${[others[0], ours, ...others.slice(1)].join(', ')}`;
       };
@@ -196,6 +199,16 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(gate).toHaveLength(2);
         // Ours is shown as the references are, by its frames: no storyboard text, image prompts or clip lines (BLIND-1).
         for (const g of gate) expect(JSON.stringify((g.request as CompletionRequest).messages)).not.toMatch(/Frame:|Clip: made|Voice-over:|imagePrompt/);
+        // Every ad is one image under its label, ours as much as each reference (BLIND-1, the re-check).
+        for (const g of gate) {
+          const perLabel = new Map<string, number>();
+          let label = '';
+          for (const p of (g.request as CompletionRequest).messages.flatMap((msg) => msg.content)) {
+            if (p.type === 'text') label = /^### ([A-Z])$/.exec(p.text)?.[1] ?? label;
+            else perLabel.set(label, (perLabel.get(label) ?? 0) + 1);
+          }
+          expect([...perLabel.entries()]).toEqual([['A', 1], ['B', 1], ['C', 1], ['D', 1]]);
+        }
         expect(view.checkpoints.some((c) => c.prompt === GATE_FAILED_PROMPT)).toBe(false);
         expect(notes(view, 'gate-critic')).toEqual([undefined]);
         const note = await h.store.artifacts.getText((ofType(view, 'step-finished', 'gate-critic')[0]!.data.outputArtifactIds as string[])[0]!);

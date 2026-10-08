@@ -5,17 +5,24 @@
  *
  * The critic never learns which item is ours (06-runbook): its slots are `greatLineup(R)` from @byway/prompts ("M items,
  * labelled A–X"), it ranks every label, and the runner finds our place in that ranking. It never sees a threshold.
- * Every item takes the same form (BLIND-1): one block under one label, shown as the references are shown, and never
- * with process the references lack (a storyboard's image prompts).
+ * Every item takes the same form (BLIND-1): the same number and kind of parts under its label, shown as the references
+ * are shown, and never with process the references lack (a storyboard's image prompts). When the references and ours
+ * differ in form (images against text, one image against several frames), every item is drawn on one card by one
+ * template and reaches the critic as one image (cards.ts).
  */
+import { createHash } from 'node:crypto';
 import type { Medium } from '@byway/contracts';
 import { GREAT_MIN_REFERENCES, greatLineup, labelled, labelOf } from '@byway/prompts/pure';
+import { cardHtml, imageSize, type CardContent, type CardImage } from '../cards.ts';
 import { textView, viewKindOf } from '../formats.ts';
 import { labels } from '../labels.ts';
+import type { ArtifactResolver } from '../pages.ts';
 import { sectionOf, type CriticAnswer } from '../parse.ts';
 import { SURFACE_CAPTIONS, SURFACES } from '../surfaces.ts';
 import type { Ports, Score, StepSpec, Surface, View } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
+import { StepError } from './failures.ts';
+import { memoized } from './memo.ts';
 import { ArtifactReader, surfaceGroups, type ImageGroup, type Slots } from './prompting.ts';
 
 /** 01 CRITIC: up to 10 references. */
@@ -66,13 +73,26 @@ export interface Lineup {
   labels: string[];
   /** Our item's label: known to the runner, never to the critic. */
   ours: string;
+  /** How every item was shown (formOf). */
+  form: LineupForm;
 }
 
-/** One item of a lineup before it gets its label: its text for the view slot and its images. */
+/**
+ * One item of a lineup before it gets its label: its text, its images as groups (a page's surfaces under their
+ * captions), and the images a card draws it with.
+ */
 interface Item {
+  /** Ours, or a reference given as an image, as a page (HTML, rendered as ours was) or as text. */
+  kind: 'ours' | 'image' | 'page' | 'text';
   text: string;
-  images: ImageGroup[];
+  groups: ImageGroup[];
+  /** What a card draws: a storyboard's frames, a page's screenshots of one surface, the image itself. */
+  frames: string[];
+  layout: CardContent['layout'];
 }
+
+/** What a text critic reads under every label of a lineup shown as cards: the same words for every item. */
+export const CARD_NOTE = '(shown in the image under this label)';
 
 /**
  * A pool's members as one lineup item (ENG-7): C2's option set is ranked whole against prior art, so its members go
@@ -88,43 +108,108 @@ export function poolText(medium: Medium, texts: readonly string[]): string {
   return parts.map((t, i) => `#### Option ${i + 1}\n${t}`).join('\n\n');
 }
 
+/** The surface a web page is drawn with on a card: the wide screen, unless the step's renders knob leaves it out. */
+const cardSurface = (renders: readonly Surface[] | undefined): Surface => (renders?.length ? (SURFACES.find((s) => renders.includes(s)) ?? 'desktop') : 'desktop');
+
 /** Our item: the view the critic consumes, a pool as one block; a web page by the surfaces its knob picks. */
 async function oursItem(reader: ArtifactReader, medium: Medium, view: View | undefined, renders: readonly Surface[] | undefined): Promise<Item> {
-  if (!view?.items.length) return { text: '', images: [] };
+  if (!view?.items.length) return { kind: 'ours', text: '', groups: [], frames: [], layout: 'grid' };
   const texts = await Promise.all(view.items.map((v) => reader.viewText(v)));
-  return { text: view.pool ? poolText(medium, texts) : (texts[0] ?? ''), images: view.items.flatMap((v) => surfaceGroups(v, undefined, renders)) };
+  const surface = cardSurface(renders);
+  return {
+    kind: 'ours',
+    text: view.pool ? poolText(medium, texts) : (texts[0] ?? ''),
+    groups: view.items.flatMap((v) => surfaceGroups(v, undefined, renders)),
+    frames: view.items.flatMap((v) => (v.surfaces?.length ? (v.surfaces.find((s) => s.surface === surface) ?? v.surfaces[0]!).imageArtifactIds : v.imageArtifactIds)),
+    layout: medium === 'web-page' ? 'stack' : 'grid',
+  };
 }
 
+/** The renderer's artifact route, served from the store (a missing artifact is a 404). */
+const artifactRoute =
+  (deps: RunnerDeps): ArtifactResolver =>
+  async (id) => {
+    if (!(await deps.store.artifacts.has(id))) return undefined;
+    const { record, bytes } = await deps.store.artifacts.get(id);
+    return { body: bytes, contentType: record.mediaType };
+  };
+
+/**
+ * A reference's screenshots or a card, made once in a run and kept (convention C5): a retried step shows the critic the
+ * same images, so its request is the same and the answer already paid for is reused; and a reference looks the same
+ * to every critic call of the run. The key names everything the images are made from (a reference's id and surfaces,
+ * a card's HTML). Made fresh outside a run (unit tests).
+ */
+const kept = (deps: RunnerDeps, runId: string | undefined, key: string, make: () => Promise<string>): Promise<string> =>
+  runId ? memoized(deps.store, runId, `lineup/${key}`, make) : make();
+
+const hashOf = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 32);
+
 /** A reference as the critic sees it: an image as itself, a page given as HTML rendered as ours was, text as its view. */
-async function referenceItem(deps: RunnerDeps, reader: ArtifactReader, medium: Medium, ref: string, renders: readonly Surface[] | undefined): Promise<Item> {
-  if (await reader.isImage(ref)) return { text: '', images: [{ artifactIds: [ref] }] };
-  if (medium === 'web-page' && (await reader.mediaType(ref)).startsWith('text/html') && deps.pages) {
+async function referenceItem(deps: RunnerDeps, reader: ArtifactReader, medium: Medium, ref: string, renders: readonly Surface[] | undefined, runId: string | undefined): Promise<Item> {
+  if (await reader.isImage(ref)) return { kind: 'image', text: '', groups: [{ artifactIds: [ref] }], frames: [ref], layout: 'grid' };
+  const pages = deps.pages;
+  if (medium === 'web-page' && (await reader.mediaType(ref)).startsWith('text/html') && pages) {
     // The same named surfaces as ours (RENDER-1), so no item stands out by how it is shown.
-    const shots = await deps.pages.render(
-      await reader.text(ref),
-      async (id) => {
-        if (!(await deps.store.artifacts.has(id))) return undefined;
-        const { record, bytes } = await deps.store.artifacts.get(id);
-        return { body: bytes, contentType: record.mediaType };
-      },
-      renders?.length ? renders : SURFACES,
-    );
-    const images: ImageGroup[] = [];
-    for (const { surface, tiles } of shots) {
-      const ids: string[] = [];
-      for (const t of tiles) ids.push((await deps.store.artifacts.put(t, 'image/png')).id);
-      images.push({ caption: SURFACE_CAPTIONS[surface], artifactIds: ids });
-    }
-    return { text: '', images };
+    const surfaces = renders?.length ? renders : SURFACES;
+    const shots = JSON.parse(
+      await kept(deps, runId, `reference/${ref}/${surfaces.join(',')}`, async () => {
+        const out: { surface: Surface; ids: string[] }[] = [];
+        for (const { surface, tiles } of await pages.render(await reader.text(ref), artifactRoute(deps), surfaces)) {
+          const ids: string[] = [];
+          for (const t of tiles) ids.push((await deps.store.artifacts.put(t, 'image/png')).id);
+          out.push({ surface, ids });
+        }
+        return JSON.stringify(out);
+      }),
+    ) as { surface: Surface; ids: string[] }[];
+    const surface = cardSurface(renders);
+    return {
+      kind: 'page',
+      text: '',
+      groups: shots.map((s) => ({ caption: SURFACE_CAPTIONS[s.surface], artifactIds: s.ids })),
+      frames: (shots.find((s) => s.surface === surface) ?? shots[0])?.ids ?? [],
+      layout: 'stack',
+    };
   }
-  return { text: textView(medium, await reader.text(ref)), images: [] };
+  return { kind: 'text', text: textView(medium, await reader.text(ref)), groups: [], frames: [], layout: 'grid' };
+}
+
+/** One item drawn on a card (cards.ts) and rendered to one PNG; its artifact id. */
+async function cardOf(deps: RunnerDeps, item: Item, text: string, runId: string | undefined): Promise<string> {
+  const images: CardImage[] = [];
+  for (const id of item.frames) images.push({ artifactId: id, ...(imageSize((await deps.store.artifacts.get(id)).bytes) ?? {}) });
+  const html = cardHtml({ images, layout: item.layout, text });
+  return kept(deps, runId, `card/${hashOf(html)}`, async () => {
+    if (!deps.pages) throw new StepError('The examples could not be shown to the critic alongside the work: no page renderer is configured.');
+    const [shot] = await deps.pages.render(html, artifactRoute(deps), ['desktop']);
+    const png = shot?.tiles[0];
+    if (!png) throw new StepError('The examples could not be shown to the critic alongside the work: a card came out empty.');
+    return (await deps.store.artifacts.put(png, 'image/png')).id;
+  });
 }
 
 /**
- * One GREAT lineup: the references and ours in shuffled positions, each under its label. Text media put every item's
- * text in the view slot; screenshot media attach every item's images under its label, each surface under its caption.
- * When every reference is images only, ours is shown by its images only too (BLIND-1): a storyboard's text would be the
- * one item that reads differently, and so the one the critic could pick out as ours.
+ * How every item of a lineup reaches the critic (BLIND-1). The references decide, and ours takes their form:
+ * - `surfaces`: a web page against pages given as HTML: every item by the same named surfaces, each under its caption;
+ * - `text`: no item has images, or every reference is text and ours has text too: every item as text only (our
+ *   frames are left out: they would be the only images);
+ * - `cards`: anything else (images against text, several frames against single images, a page against images): every
+ *   item as one card image, drawn by one template and rendered by one renderer.
+ */
+export type LineupForm = 'surfaces' | 'text' | 'cards';
+
+function formOf(medium: Medium, mine: Item, others: readonly Item[]): LineupForm {
+  if (medium === 'web-page' && mine.groups.length && others.every((o) => o.kind === 'page')) return 'surfaces';
+  if (![mine, ...others].some((i) => i.frames.length)) return 'text';
+  if (others.every((o) => o.kind === 'text') && mine.text.trim()) return 'text';
+  return 'cards';
+}
+
+/**
+ * One GREAT lineup: the references and ours in shuffled positions, each under its label, every item in the same form
+ * (formOf). On cards, when no reference has text, ours is drawn by its frames only: a storyboard's words would make it
+ * the one card that reads differently. `runId` keeps the screenshots and cards for the run (and so for retries).
  */
 export async function buildLineup(
   deps: RunnerDeps,
@@ -135,26 +220,33 @@ export async function buildLineup(
   random: () => number,
   shuffled = true,
   renders?: readonly Surface[],
+  runId?: string,
 ): Promise<Lineup> {
   const size = refs.length + 1;
   const order = shuffled ? shuffle([...refs], random) : [...refs];
   const ours = shuffled ? Math.floor(random() * size) : size - 1;
   const others: Item[] = [];
-  for (const ref of order) others.push(await referenceItem(deps, reader, medium, ref, renders));
+  for (const ref of order) others.push(await referenceItem(deps, reader, medium, ref, renders, runId));
   const mine = await oursItem(reader, medium, ports.view, renders);
-  if (others.every((o) => !o.text.trim()) && mine.images.length) mine.text = '';
-  const texts: string[] = [];
+  const items: Item[] = [];
+  for (let i = 0, r = 0; i < size; i++) items.push(i === ours ? mine : others[r++]!);
+  const form = formOf(medium, mine, others);
+  let view: string;
   const images: ImageGroup[] = [];
-  let r = 0;
-  for (let i = 0; i < size; i++) {
-    const label = labelOf(i);
-    const item = i === ours ? mine : others[r++]!;
-    texts.push(item.text);
-    images.push(...item.images.map((g) => ({ ...g, label })));
+  if (form === 'surfaces') {
+    view = '';
+    items.forEach((item, i) => images.push(...item.groups.map((g) => ({ ...g, label: labelOf(i) }))));
+  } else if (form === 'text') {
+    view = labelled(items.map((item) => (item.text.trim() ? item.text : '(empty)')));
+  } else {
+    const framesOnly = others.every((o) => !o.text.trim());
+    for (const [i, item] of items.entries()) {
+      const text = item.kind === 'ours' && framesOnly && item.frames.length ? '' : item.text;
+      images.push({ label: labelOf(i), artifactIds: [await cardOf(deps, item, text, runId)] });
+    }
+    view = viewKindOf(medium) === 'screenshots' ? '' : labelled(items.map(() => CARD_NOTE));
   }
-  const anyText = texts.some((t) => t.trim());
-  const view = anyText ? labelled(texts.map((t) => t || '(see the images under this label)')) : viewKindOf(medium) === 'screenshots' ? '' : labelled(texts.map(() => '(see the images under this label)'));
-  return { slots: { ...greatLineup(refs.length), view }, images, labels: labels(size), ours: labelOf(ours) };
+  return { slots: { ...greatLineup(refs.length), view }, images, labels: labels(size), ours: labelOf(ours), form };
 }
 
 /** What a critic step hands on: its critique (ours only, in GREAT mode) and its score or our averaged rank. */
