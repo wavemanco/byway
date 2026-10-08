@@ -14,6 +14,7 @@ import { labelled, labelOf } from '../labels.ts';
 import { parseBriefs, type ImageBrief } from '../parse.ts';
 import type { AssetInput, AssetResult } from '../types.ts';
 import { askModel } from './call.ts';
+import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
@@ -45,8 +46,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     return { costUsd: 0, skipped: true };
   };
   if (isAudioAsset(step)) return skip(NO_AUDIO_NOTE);
-  const status = deps.gateway.profileStatus().find((s) => s.profile.id === run.profileId);
-  if (!status?.images) return skip(NO_IMAGES_NOTE);
+  if (!mediaStatus(deps, run).images) return skip(NO_IMAGES_NOTE);
   if (!ports.artifact) throw new StepError(`The ${what} step has no work to make images for.`);
 
   const reader = new ArtifactReader(deps);

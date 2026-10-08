@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
-import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
+import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
 import { parseRecipe, recipeHash } from '@byway/recipe';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
@@ -23,6 +23,11 @@ export function titleOf(text: string): string {
   return `${line.slice(0, 72).replace(/\s+\S*$/, '')}…`;
 }
 
+const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
+
+/** What the app shows for an answer to a question its run withdrew (contracts v4 CheckpointRecord.status). */
+const WITHDRAWN = 'This question was withdrawn: its run was cancelled or failed.';
+
 /** A refused answer or a stale checkpoint, in the workflow's own words. */
 export class ResolutionRejectedError extends Error {
   override name = 'ResolutionRejectedError';
@@ -33,9 +38,14 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
   const taskQueue = opts.taskQueue ?? TASK_QUEUE;
   const handle = (runId: string) => client.workflow.getHandle(workflowIdFor(runId));
 
-  /** Signals to a run that has already ended are no-ops; to a run that never existed, an error. */
+  /**
+   * Controls (contracts v4 Runner): an unknown run throws; cancel, pause and resume on a run that has ended do nothing.
+   * The store's status settles it first, so a run that ended moments ago is not sent a signal it would only ignore.
+   */
   const signal = async (runId: string, name: string) => {
-    if (!(await store.getRun(runId))) throw new Error(`There is no run "${runId}".`);
+    const run = await store.getRun(runId);
+    if (!run) throw new Error(`There is no run "${runId}".`);
+    if (ENDED.has(run.status)) return;
     try {
       await handle(runId).signal(name);
     } catch (e) {
@@ -87,10 +97,11 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
     async resolve(resolution: CheckpointResolution): Promise<void> {
       const cp = await store.getCheckpoint(resolution.checkpointId);
       if (!cp) throw new ResolutionRejectedError(`There is no checkpoint "${resolution.checkpointId}".`);
+      if (cp.status === 'withdrawn') throw new ResolutionRejectedError(WITHDRAWN);
       if (cp.status !== 'open') throw new ResolutionRejectedError(`Checkpoint "${cp.id}" was already answered.`);
+      // Answers are accepted while the run is paused (it carries on when resumed), never once it has ended.
       const run = await store.getRun(cp.runId);
-      // A run that ended leaves its unanswered checkpoints open in the store; they take no answers.
-      if (!run || run.status === 'done' || run.status === 'failed' || run.status === 'cancelled') throw new ResolutionRejectedError('This run is no longer running.');
+      if (!run || ENDED.has(run.status)) throw new ResolutionRejectedError('This run is no longer running.');
       try {
         await handle(cp.runId).executeUpdate(RESOLVE_UPDATE, { args: [resolution] });
       } catch (e) {

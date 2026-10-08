@@ -29,6 +29,13 @@ export const routed = recipe(
   ]),
 );
 
+/** Two people's own diffs, written side by side: one bad draft fails the run while the other is still open. */
+export const twoAuthors = recipe(
+  'two-authors',
+  'code-diff',
+  replicate('both', 2, step({ id: 'own-diff', role: 'build', actor: 'human', consumes: ['intent'], produces: ['artifact'], writes: true })),
+);
+
 /** A seeded draft (SEED: the runner's random string, never written into the work). */
 export const seeded = recipe('seeded', 'prose', step({ id: 'spark', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'product.test.spark', consumes: ['intent'], produces: ['artifact'], writes: true, knobs: { source: 'shell-string' } }));
 

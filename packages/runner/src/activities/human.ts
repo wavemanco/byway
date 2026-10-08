@@ -3,7 +3,7 @@
  * (the RESOLVE_UPDATE Update), and then the answer becomes the step's ports. Writing steps write here: the author's
  * draft becomes the artifact, and VOICE writes the person's copy back (see copy.ts for how, per medium).
  */
-import { CheckpointResolvedError } from '@byway/store';
+import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
 import { applyCopy, claimLines, extractCopy, pageVoiceProblems, placePageCopy } from '../copy.ts';
 import { parseArtifact, parseHtml, type Parsed } from '../formats.ts';
 import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput } from '../types.ts';
@@ -59,6 +59,9 @@ export async function recordResolution(deps: RunnerDeps, input: RecordResolution
   try {
     await deps.store.resolveCheckpoint(input.resolution);
   } catch (e) {
+    // A withdrawn question (its run was cancelled or failed) takes no answer, and retrying will not change that. It is
+    // deliberately not a CheckpointResolvedError, so it never passes for an earlier attempt's success.
+    if (e instanceof CheckpointWithdrawnError) throw new StepError('This question was withdrawn: its run was cancelled or failed.');
     // A retried activity whose first attempt committed finds the checkpoint already answered: that is success.
     if (!(e instanceof CheckpointResolvedError)) throw e;
   }

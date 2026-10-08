@@ -10,6 +10,7 @@ import { parseStoryboard, serializeJson } from '../formats.ts';
 import { parseRelay } from '../parse.ts';
 import type { RelayInput, RelayResult } from '../types.ts';
 import { askModel } from './call.ts';
+import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
@@ -29,8 +30,7 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
     await stepFinished(deps, run, call, { costUsd, skipped: true, note }, costUsd > 0);
     return { costUsd, skipped: true };
   };
-  const status = deps.gateway.profileStatus().find((s) => s.profile.id === run.profileId);
-  if (!status?.video) return skip(NO_VIDEO_NOTE);
+  if (!mediaStatus(deps, run).video) return skip(NO_VIDEO_NOTE);
   if (!ports.artifact) throw new StepError(`The ${what} step has no storyboard to work from.`);
   if (!step.prompt) throw new StepError(`The ${what} step names no prompt.`);
   const promptId = step.prompt;
@@ -77,15 +77,16 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
       prompt: link.value.clipPrompt,
       ...(anchorIsImage && start ? { startFrameArtifactId: start } : {}),
       durationSec: Math.min(MAX_CLIP_SECONDS, Math.max(1, link.value.durationSec)),
+      shot,
     });
   } catch (e) {
     if (e instanceof GatewayError && e.code === 'no-credentials') return skip(NO_VIDEO_NOTE, costUsd);
     throw e;
   }
   costUsd += clip.costUsd;
-  const { record: clipRecord } = await deps.store.artifacts.get(clip.artifactId);
-  await announce(deps, run.runId, call, clip.artifactId, clipRecord.mediaType, { label: `Clip for shot ${shot}`, name: 'clip', shot });
-  await announce(deps, run.runId, call, clip.lastFrameArtifactId, 'image/png', { label: `Last frame of shot ${shot}`, name: 'last-frame', shot });
+  // The gateway says what it stored: MP4 or the demo's SVG placeholder, and a frame that is not always PNG.
+  await announce(deps, run.runId, call, clip.artifactId, clip.mediaType, { label: `Clip for shot ${shot}`, name: 'clip', shot });
+  await announce(deps, run.runId, call, clip.lastFrameArtifactId, clip.lastFrameMediaType, { label: `Last frame of shot ${shot}`, name: 'last-frame', shot });
 
   const next = serializeJson({ ...sb.value, storyboard: sb.value.storyboard.map((s) => (s.shot === shot ? { ...s, clipArtifactId: clip.artifactId } : s)) });
   const problems = writeProblems(run, next, step.keepsVoice ? ports.voice : undefined, storyboardText);

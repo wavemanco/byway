@@ -8,8 +8,9 @@ import { RESOLVE_UPDATE } from '@byway/contracts';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { ResolutionRejectedError } from '../../src/client.ts';
 import { workflowIdFor } from '../../src/types.ts';
+import { fakeHash } from '../helpers/fake-prompts.ts';
 import type { Harness } from '../helpers/harness.ts';
-import { judged, routed, seeded, threePages, tiny } from '../helpers/recipes.ts';
+import { judged, routed, seeded, threePages, tiny, twoAuthors } from '../helpers/recipes.ts';
 
 let h: Harness;
 
@@ -142,7 +143,7 @@ export function controlScenarios(use: () => Harness): void {
   });
 
   describe('cancel', () => {
-    it('cancels a paused run, which then takes no answers', async () => {
+    it('cancels a paused run, which withdraws its open question; it then takes no answers', async () => {
       const run = await h.start(tiny);
       const cp = await openCheckpoint(run.id);
       await h.runner.pause(run.id);
@@ -152,7 +153,11 @@ export function controlScenarios(use: () => Harness): void {
       expect(view.run.status).toBe('cancelled');
       expect(view.events.at(-1)?.type).toBe('run-cancelled');
       expect(await h.env.client.workflow.getHandle(workflowIdFor(run.id)).result()).toEqual({ status: 'cancelled' });
-      await expect(h.runner.resolve({ checkpointId: cp.id, text: 'Late.' })).rejects.toBeInstanceOf(ResolutionRejectedError);
+      expect(view.checkpoints.find((c) => c.id === cp.id)?.status).toBe('withdrawn');
+      expect((await h.store.openCheckpoints(h.workspaceId)).some((c) => c.runId === run.id)).toBe(false);
+      const late = await h.runner.resolve({ checkpointId: cp.id, text: 'Late.' }).catch((e: unknown) => e);
+      expect(late).toBeInstanceOf(ResolutionRejectedError);
+      expect((late as Error).message).toMatch(/withdrawn/);
     }, 60_000);
 
     it('cancels while steps are running, and nothing is logged after "cancelled"', async () => {
@@ -167,6 +172,51 @@ export function controlScenarios(use: () => Harness): void {
       expect(events.at(-1)?.type).toBe('run-cancelled');
       // Signals to an ended run are harmless.
       await h.runner.pause(run.id);
+    }, 60_000);
+  });
+
+  describe('failure', () => {
+    it('a run that fails withdraws the questions it left open', async () => {
+      const run = await h.start(twoAuthors, { problem: { text: 'Fix the rounding bug in the invoice total' } });
+      const open = await h.waitFor('both drafts asked for', async () => {
+        const cps = (await h.store.checkpointsForRun(run.id)).filter((c) => c.status === 'open');
+        return cps.length === 2 && cps;
+      });
+      await h.runner.resolve({ checkpointId: open[0]!.id, text: 'not a diff at all' });
+      const view = await h.drive(run.id, () => 'wait');
+      expect(view.run.status).toBe('failed');
+      expect(view.run.error).toMatch(/^Your draft could not be used as the code-diff/);
+      expect(view.checkpoints.find((c) => c.id === open[0]!.id)?.status).toBe('resolved');
+      expect(view.checkpoints.find((c) => c.id === open[1]!.id)?.status).toBe('withdrawn');
+      await expect(h.runner.resolve({ checkpointId: open[1]!.id, text: 'Late.' })).rejects.toThrow(/withdrawn/);
+    }, 60_000);
+  });
+
+  describe('controls on runs that are not running', () => {
+    it('cancel, pause and resume on a run that has ended do nothing; an unknown run throws', async () => {
+      const run = await h.start(tiny);
+      const done = await h.drive(run.id);
+      expect(done.run.status).toBe('done');
+      await h.runner.cancel(run.id);
+      await h.runner.pause(run.id);
+      await h.runner.resume(run.id);
+      const after = await h.runner.view(run.id);
+      expect(after.run.status).toBe('done');
+      expect(after.events).toEqual(done.events);
+      await expect(h.runner.cancel('no-such-run')).rejects.toThrow(/no run/);
+      await expect(h.runner.pause('no-such-run')).rejects.toThrow(/no run/);
+      await expect(h.runner.view('no-such-run')).rejects.toThrow(/no run/);
+    }, 60_000);
+  });
+
+  describe('provenance', () => {
+    it('names the template behind every completion in the hash-chained ledger', async () => {
+      const run = await h.start(tiny);
+      await h.drive(run.id);
+      const completions = h.ledger(run.id).filter((e) => e.kind === 'completion');
+      expect(completions.map((e) => e.prompt?.id)).toEqual(['product.test.draft', 'product.test.revise']);
+      for (const e of completions) expect(e.prompt).toEqual({ id: e.prompt!.id, version: 1, hash: fakeHash(e.prompt!.id), fidelity: 'project' });
+      expect(await h.gateway.verifyLedger()).toBeNull();
     }, 60_000);
   });
 
