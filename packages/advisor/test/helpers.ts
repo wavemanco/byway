@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ArtifactRecord, ArtifactStore, CompletionRequest, Gateway, PromptRenderer, PromptSlot, RenderedPrompt } from '@byway/contracts';
-import { createGateway, type GatewayOptions, type Responder } from '@byway/gateway';
+import type { ArtifactRecord, ArtifactStore, CompletionRequest, Gateway, LedgerEntry, PromptRenderer, PromptSlot, RenderedPrompt } from '@byway/contracts';
+import { createGateway, Ledger, type GatewayOptions, type Responder } from '@byway/gateway';
+import { createPromptRenderer } from '@byway/prompts';
 import { createAdvisor, type AdvisorOptions } from '../src/index.ts';
 
 /** A content-addressed artifact store in memory (ids are sha256 of the bytes), as the contract describes. */
@@ -31,10 +32,16 @@ export class MemoryArtifacts implements ArtifactStore {
   }
 }
 
+/** A fresh ledger path in a temp directory, and a reader for what the gateway wrote there. */
+export function tempLedger() {
+  const ledgerPath = join(mkdtempSync(join(tmpdir(), 'byway-advisor-')), 'ledger.jsonl');
+  return { ledgerPath, entries: (): Promise<LedgerEntry[]> => new Ledger({ path: ledgerPath }).entries() };
+}
+
 /** The gateway in demo mode: the deterministic mock provider, a ledger in a fresh temp directory, no keys, no network. */
 export function demoGateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
-    ledgerPath: join(mkdtempSync(join(tmpdir(), 'byway-advisor-')), 'ledger.jsonl'),
+    ledgerPath: tempLedger().ledgerPath,
     artifacts: new MemoryArtifacts(),
     caps: { workspaceCapUsd: () => 100 },
     env: {},
@@ -44,11 +51,15 @@ export function demoGateway(over: Partial<GatewayOptions> = {}) {
   });
 }
 
-/** Wraps a gateway and records every completion request (purposes, messages) the advisor sends. */
+/** Wraps a gateway and records every completion request (purposes, messages, prompt refs) the advisor sends. */
 export function recording(inner: Gateway): Gateway & { calls: CompletionRequest[] } {
   const calls: CompletionRequest[] = [];
   return {
     calls,
+    // A getter, not a copy: the inner gateway reads demo mode from its environment on every call.
+    get demo() {
+      return inner.demo;
+    },
     complete: (req) => {
       calls.push(req);
       return inner.complete(req);
@@ -63,33 +74,23 @@ export function recording(inner: Gateway): Gateway & { calls: CompletionRequest[
   };
 }
 
-/** Slots each advisor template uses, as the real templates will declare them (WP-P); rendering without one throws. */
-const REQUIRED: Record<string, PromptSlot[]> = {
-  'advisor.intake': ['problem', 'questions'],
-  'advisor.compose': ['problem', 'blocks', 'nearest'],
-  'advisor.compose.repair': ['violations'],
-};
+/** The real templates (@byway/prompts), loaded once: rendering is pure, so tests can share one library. */
+export const PROMPTS = createPromptRenderer();
 
 /**
- * A stand-in for @byway/prompts: renders the problem inside <problem>…</problem> (the shared convention) and every
- * other slot under its own heading, verbatim, and records each render. Strict like the real renderer: unknown ids and
- * missing slots throw.
+ * The real prompt renderer, recording each render (id, slots, result) so tests can look at what the advisor filled in.
+ * `has` can be narrowed to pretend a template is missing (the composed profile checks that step prompts exist). Using
+ * the real templates here, rather than a stand-in, means no advisor test can pass with a slot layout the real
+ * templates would refuse or render differently.
  */
-export function fakePrompts(opts: { has?: (id: string) => boolean } = {}) {
-  const renders: { id: string; slots: Partial<Record<PromptSlot, string>> }[] = [];
-  const has = opts.has ?? (() => true);
+export function recordingPrompts(opts: { has?: (id: string) => boolean } = {}) {
+  const renders: { id: string; slots: Partial<Record<PromptSlot, string>>; rendered: RenderedPrompt }[] = [];
   const renderer: PromptRenderer = {
-    has,
+    has: opts.has ?? ((id) => PROMPTS.has(id)),
     render(id, slots): RenderedPrompt {
-      if (!has(id) && !(id in REQUIRED)) throw new Error(`Unknown prompt template "${id}"`);
-      for (const s of REQUIRED[id] ?? []) if (slots[s] === undefined) throw new Error(`Prompt "${id}" needs slot "${s}"`);
-      renders.push({ id, slots });
-      const rest = Object.entries(slots)
-        .filter(([k]) => k !== 'problem')
-        .map(([k, v]) => `## ${k}\n${v}`)
-        .join('\n\n');
-      const user = [slots.problem !== undefined ? `<problem>${slots.problem}</problem>` : '', rest].filter(Boolean).join('\n\n');
-      return { id, version: 1, hash: `sha256:${'0'.repeat(64)}`, fidelity: 'project', system: `Template ${id}.`, user };
+      const rendered = PROMPTS.render(id, slots);
+      renders.push({ id, slots, rendered });
+      return rendered;
     },
   };
   return { renderer, renders };
@@ -106,10 +107,14 @@ export function sequence(...answers: string[]): Responder & { count: () => numbe
 
 export const WS = { workspaceId: 'ws-1', profileId: 'demo' };
 
-/** An advisor over a demo gateway (optionally with mock answers replaced) and the fake prompts, with handles to both. */
-export function demoAdvisor(o: { responders?: Record<string, Responder>; has?: (id: string) => boolean; advisor?: Partial<AdvisorOptions> } = {}) {
-  const gateway = recording(demoGateway(o.responders ? { mockResponders: o.responders } : {}));
-  const prompts = fakePrompts(o.has ? { has: o.has } : {});
+/**
+ * An advisor over a demo gateway (optionally with mock answers replaced) and the real templates, with handles to the
+ * recorded calls, the recorded renders and the gateway's ledger.
+ */
+export function demoAdvisor(o: { responders?: Record<string, Responder>; has?: (id: string) => boolean; advisor?: Partial<AdvisorOptions>; gateway?: Partial<GatewayOptions> } = {}) {
+  const ledger = tempLedger();
+  const gateway = recording(demoGateway({ ledgerPath: ledger.ledgerPath, ...(o.responders ? { mockResponders: o.responders } : {}), ...o.gateway }));
+  const prompts = recordingPrompts(o.has ? { has: o.has } : {});
   const advisor = createAdvisor({ gateway, prompts: prompts.renderer, ...o.advisor });
-  return { advisor, gateway, prompts };
+  return { advisor, gateway, prompts, ledger: ledger.entries };
 }

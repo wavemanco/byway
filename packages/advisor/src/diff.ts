@@ -82,13 +82,16 @@ function pair<T extends { id: string }>(
 
 const show = (v: Json | undefined): string => (Array.isArray(v) ? v.join(', ') : String(v));
 
+/** "1 round", "2 rounds": counts read as plain English. */
+const counted = (n: Json | undefined, noun: string): string => `${show(n)} ${noun}${n === 1 ? '' : 's'}`;
+
 /** One knob change in plain words; the VOICE scope and the critic's mode get their own phrasing. */
 function knobChange(name: string, before: Json | undefined, after: Json | undefined): string {
   if (name === 'scope' && after === 'every-line') return 'you write every line instead of the key lines';
   if (name === 'scope' && after === 'key-lines') return 'you write the key lines instead of every line';
   if (name === 'mode' && after === 'OK') return 'scores the work against a quality bar instead of ranking it among examples';
   if (name === 'mode' && after === 'GREAT') return 'ranks the work among examples instead of scoring it against a quality bar';
-  if (name === 'refs') return after === undefined ? `no examples to compare with (was ${show(before)})` : `${show(after)} examples to compare with${before === undefined ? '' : ` instead of ${show(before)}`}`;
+  if (name === 'refs') return after === undefined ? `no examples to compare with (was ${show(before)})` : `${counted(after, 'example')} to compare with${before === undefined ? '' : ` instead of ${show(before)}`}`;
   if (after === undefined) return `${name} no longer set (was ${show(before)})`;
   if (before === undefined) return `${name} set to ${show(after)}`;
   return `${name} ${show(after)} instead of ${show(before)}`;
@@ -145,23 +148,23 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
   // Loops pair by id, then by what ends them, then by stage (a loop that changed how it ends is still that loop).
   const loops = pair(a.loops, b.loops, ({ node: l }) => l.gate.metric, (l) => l.stage);
   for (const r of loops.removed) lines.push(`Removed: the repeat ${loopWords(r.node)} (${r.node.id})`);
-  for (const x of loops.added) lines.push(`Added: a repeat of up to ${x.node.gate.max} rounds, ${loopWords(x.node)} (${x.node.id})`);
+  for (const x of loops.added) lines.push(`Added: a repeat of up to ${counted(x.node.gate.max, 'round')}, ${loopWords(x.node)} (${x.node.id})`);
   for (const [x, y] of loops.pairs) {
     const changes: string[] = [];
     if (x.node.gate.metric !== y.node.gate.metric) changes.push(`${loopWords(y.node)} instead of ${loopWords(x.node)}`);
-    if (x.node.gate.max !== y.node.gate.max) changes.push(`up to ${y.node.gate.max} rounds instead of ${x.node.gate.max}`);
+    if (x.node.gate.max !== y.node.gate.max) changes.push(`up to ${counted(y.node.gate.max, 'round')} instead of ${x.node.gate.max}`);
     if (changes.length) lines.push(`Changed: the repeat (${x.node.id === y.node.id ? y.node.id : `${x.node.id} → ${y.node.id}`}): ${changes.join('; ')}`);
   }
 
   const reps = pair(a.replicates, b.replicates, () => 'replicate');
-  for (const r of reps.removed) lines.push(`Removed: ${r.node.n} separate drafts (${r.node.id})`);
-  for (const x of reps.added) lines.push(`Added: ${x.node.n} separate drafts (${x.node.id})`);
-  for (const [x, y] of reps.pairs) if (x.node.n !== y.node.n) lines.push(`Changed: ${y.node.n} separate drafts instead of ${x.node.n} (${y.node.id})`);
+  for (const r of reps.removed) lines.push(`Removed: ${counted(r.node.n, 'separate draft')} (${r.node.id})`);
+  for (const x of reps.added) lines.push(`Added: ${counted(x.node.n, 'separate draft')} (${x.node.id})`);
+  for (const [x, y] of reps.pairs) if (x.node.n !== y.node.n) lines.push(`Changed: ${counted(y.node.n, 'separate draft')} instead of ${x.node.n} (${y.node.id})`);
 
   const relays = pair(a.relays, b.relays, () => 'relay');
   for (const r of relays.removed) lines.push(`Removed: the shot-by-shot motion chain (${r.node.id})`);
-  for (const x of relays.added) lines.push(`Added: a shot-by-shot motion chain of up to ${x.node.maxLinks} shots (${x.node.id})`);
-  for (const [x, y] of relays.pairs) if (x.node.maxLinks !== y.node.maxLinks) lines.push(`Changed: up to ${y.node.maxLinks} shots instead of ${x.node.maxLinks} (${y.node.id})`);
+  for (const x of relays.added) lines.push(`Added: a shot-by-shot motion chain of up to ${counted(x.node.maxLinks, 'shot')} (${x.node.id})`);
+  for (const [x, y] of relays.pairs) if (x.node.maxLinks !== y.node.maxLinks) lines.push(`Changed: up to ${counted(y.node.maxLinks, 'shot')} instead of ${x.node.maxLinks} (${y.node.id})`);
 
   const sitting = (r: Recipe) => new Map(r.sitsOut.map((s) => [s.block, s.reason]));
   const outA = sitting(nearest);

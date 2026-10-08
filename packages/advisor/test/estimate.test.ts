@@ -4,7 +4,7 @@ import { PROFILES } from '@byway/gateway';
 import { withHash, type Node, type Recipe } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
 import { createAdvisor, estimateRecipe, TOKEN_ASSUMPTIONS } from '../src/index.ts';
-import { demoAdvisor, demoGateway, fakePrompts } from './helpers.ts';
+import { demoAdvisor, demoGateway, recordingPrompts } from './helpers.ts';
 
 /** A copy of the recipe with the node of this id changed. */
 function edit(recipe: Recipe, id: string, change: (n: Node) => Node): Recipe {
@@ -31,7 +31,7 @@ const withReplicas = (r: Recipe, id: string, n: number) => edit(r, id, (x) => (x
 
 /** An advisor whose gateway sees these (fake, never used) keys, so profiles' image and video models count as usable. */
 function keyed(env: Record<string, string>) {
-  return createAdvisor({ gateway: demoGateway({ demo: false, env }), prompts: fakePrompts().renderer });
+  return createAdvisor({ gateway: demoGateway({ demo: false, env }), prompts: recordingPrompts().renderer });
 }
 const ANTHROPIC = { ANTHROPIC_API_KEY: 'sk-ant-test-not-a-real-key-0000' };
 const GEMINI = { GEMINI_API_KEY: 'AIza-test-not-a-real-key-000000000' };
@@ -163,5 +163,49 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     const { advisor: demo } = demoAdvisor();
     const rec = await demo.recommend({ text: 'A memo about the offsite' }, { workspaceId: 'ws', profileId: 'demo' });
     expect(rec.estimate).toEqual(demo.estimate(c4, 'demo'));
+  });
+});
+
+describe('estimate in demo mode (Gateway.demo: every call goes to the mock)', () => {
+  const demoPriced = keyed({ ...ANTHROPIC, ...GEMINI, ...FAL });
+
+  it('prices with the demo profile whatever profile is asked, so a demo estimate reads $0', () => {
+    const { advisor } = demoAdvisor();
+    for (const recipe of [c1, c4, c5]) {
+      for (const profile of ['balanced', 'best', 'demo']) {
+        const e = advisor.estimate(recipe, profile);
+        expect(e).toEqual(demoPriced.estimate(recipe, 'demo'));
+        expect([e.lowUsd, e.highUsd]).toEqual([0, 0]);
+      }
+    }
+  });
+
+  it("takes image and video availability from the demo profile too (the mock makes both)", () => {
+    const { advisor } = demoAdvisor();
+    expect(advisor.estimate(c1, 'balanced').images).toEqual({ low: 0, high: 12 });
+    expect(advisor.estimate(c1, 'balanced').modelCalls).toEqual(demoPriced.estimate(c1, 'balanced').modelCalls);
+  });
+
+  it('is demo mode when forced even with keys, and when there are no keys at all', () => {
+    const forced = createAdvisor({ gateway: demoGateway({ demo: true, env: { ...ANTHROPIC } }), prompts: recordingPrompts().renderer });
+    expect(forced.estimate(c4, 'balanced').highUsd).toBe(0);
+    const keyless = createAdvisor({ gateway: demoGateway({ demo: false, env: {} }), prompts: recordingPrompts().renderer });
+    expect(keyless.estimate(c4, 'balanced').highUsd).toBe(0);
+    // With a key and demo mode off, the same estimate is priced.
+    expect(keyed(ANTHROPIC).estimate(c4, 'balanced').highUsd).toBeGreaterThan(0);
+  });
+
+  it('still rejects a profile the gateway does not know (the gateway refuses it in demo mode too)', () => {
+    const { advisor } = demoAdvisor();
+    expect(() => advisor.estimate(c4, 'nope')).toThrow(expect.objectContaining({ name: 'AdvisorError', code: 'unknown-profile' }));
+  });
+
+  it('reads $0 on recommendations and compositions made with a priced profile in demo mode', async () => {
+    const { advisor } = demoAdvisor();
+    const ws = { workspaceId: 'ws', profileId: 'best' };
+    const rec = await advisor.recommend({ text: 'A landing page for my neighborhood bakery' }, ws);
+    expect([rec.estimate.lowUsd, rec.estimate.highUsd]).toEqual([0, 0]);
+    const composed = await advisor.compose({ text: 'A detailed strategy memo on the billing migration' }, ws);
+    expect([composed.estimate.lowUsd, composed.estimate.highUsd]).toEqual([0, 0]);
   });
 });

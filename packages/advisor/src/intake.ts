@@ -1,10 +1,11 @@
 import type { ChooserAnswer, ChooserQuestion, Gateway, ProblemBrief, PromptRenderer } from '@byway/contracts';
+import { problemSlot } from '@byway/prompts/pure';
 import type { Recipe } from '@byway/recipe';
 import { walk } from '@byway/recipe';
 import { z } from 'zod';
-import { askParsed, userText } from './ask.ts';
+import { askParsed, fromTemplate } from './ask.ts';
 import { AdvisorError } from './errors.ts';
-import { answerJson, ContractError, fenced, oneLine, problemText } from './text.ts';
+import { answerJson, ContractError, jsonSlot, oneLine } from './text.ts';
 
 /**
  * The intake (product spec §4): a model reads the problem and proposes an answer, a confidence and a one-line rationale
@@ -16,9 +17,12 @@ export const INTAKE_PROMPT = 'advisor.intake';
 export const INTAKE_TIER = 'mid' as const;
 export const INTAKE_MAX_OUTPUT_TOKENS = 4000;
 
-/** The `questions` slot: the chooser as one fenced json array of {id, routesTo, text} (the shared convention). */
+/**
+ * The `questions` slot: the chooser as a JSON array of {id, routesTo, text} (the shared convention). The template
+ * puts it inside its own ```json fence, so the slot is the bare JSON; a pre-fenced value would nest two fences.
+ */
 export function questionsSlot(questions: readonly ChooserQuestion[]): string {
-  return fenced('json', JSON.stringify(questions.map((q) => ({ id: q.id, routesTo: q.routesTo, text: q.text })), null, 2));
+  return jsonSlot(questions.map((q) => ({ id: q.id, routesTo: q.routesTo, text: q.text })));
 }
 
 const IntakeAnswerSchema = z.object({
@@ -71,7 +75,7 @@ export interface IntakeDeps {
 
 /** Ask the intake model once (and once more with the parse error); an unreadable answer is an AdvisorError. */
 export async function runIntake(deps: IntakeDeps, problem: ProblemBrief, opts: { workspaceId: string; profileId: string }): Promise<IntakeResult> {
-  const prompt = deps.prompts.render(INTAKE_PROMPT, { problem: problemText(problem), questions: questionsSlot(deps.questions) });
+  const prompt = deps.prompts.render(INTAKE_PROMPT, { problem: problemSlot(problem), questions: questionsSlot(deps.questions) });
   const asked = await askParsed(
     deps.gateway,
     {
@@ -79,8 +83,7 @@ export async function runIntake(deps: IntakeDeps, problem: ProblemBrief, opts: {
       profileId: opts.profileId,
       purpose: INTAKE_PROMPT,
       tier: INTAKE_TIER,
-      ...(prompt.system ? { system: prompt.system } : {}),
-      messages: [userText(prompt.user)],
+      ...fromTemplate(prompt),
       maxOutputTokens: INTAKE_MAX_OUTPUT_TOKENS,
     },
     (text) => parseIntake(text, deps.questions),

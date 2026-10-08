@@ -12,7 +12,7 @@ import type {
   Recommendation,
   RecipePresentation,
 } from '@byway/contracts';
-import type { PriceRow } from '@byway/gateway';
+import { DEMO_PROFILE_ID, type PriceRow } from '@byway/gateway';
 import { recipeHash, type Recipe } from '@byway/recipe';
 import { mergeAnswers, needsIntake } from './answers.ts';
 import { composeRecipe } from './compose.ts';
@@ -57,8 +57,15 @@ export interface AdvisorOptions {
 interface Decided {
   routed: Routed;
   answers: ChooserAnswer[];
-  /** Route choices the intake proposed (not yet narrowed to a recipe). */
+  /** Route choices from the intake, or kept from the caller when no intake ran (not yet narrowed to a recipe). */
   routes: Record<string, string>;
+}
+
+interface DecideOptions {
+  workspaceId: string;
+  profileId: string;
+  answers?: ChooserAnswer[];
+  routes?: Record<string, string>;
 }
 
 export function createAdvisor(opts: AdvisorOptions): Advisor {
@@ -78,17 +85,29 @@ export function createAdvisor(opts: AdvisorOptions): Advisor {
 
   const label = (r: Recipe): EvidenceLabel => labelFor(r, registry);
 
+  /**
+   * Estimates price the profile the run will actually use. In demo mode (Gateway.demo) every call goes to the mock,
+   * so that is the demo profile, whatever profile is asked for: a demo estimate reads $0, and its images and clips are
+   * the mock's. A profile the gateway does not know is still refused, as the gateway refuses it in demo mode too.
+   */
   const estimate = (r: Recipe, profileId: string): CostEstimate => {
-    const status = opts.gateway.profileStatus().find((s) => s.profile.id === profileId);
-    if (!status) throw new AdvisorError('unknown-profile', `There is no model profile "${profileId}".`);
+    const statuses = opts.gateway.profileStatus();
+    if (!statuses.some((s) => s.profile.id === profileId)) throw new AdvisorError('unknown-profile', `There is no model profile "${profileId}".`);
+    const priced = opts.gateway.demo ? DEMO_PROFILE_ID : profileId;
+    const status = statuses.find((s) => s.profile.id === priced);
+    if (!status) throw new AdvisorError('unknown-profile', `Demo mode is on, but the gateway has no "${priced}" profile to estimate with.`);
     return estimateRecipe(r, { profile: status.profile, images: status.images, video: status.video, at: now(), ...(opts.prices ? { prices: opts.prices } : {}) });
   };
 
-  /** Intake (only when some question has no answer yet), merge, then deterministic routing. */
-  async function decide(problem: ProblemBrief, o: { workspaceId: string; profileId: string; answers?: ChooserAnswer[] }): Promise<Decided> {
+  /**
+   * Intake (only when some question has no answer yet), merge, then deterministic routing. Route choices are the fresh
+   * intake's when it ran; otherwise the caller's from an earlier recommendation are kept (contract: re-routing after
+   * the user flips an answer makes no model call and keeps what was chosen).
+   */
+  async function decide(problem: ProblemBrief, o: DecideOptions): Promise<Decided> {
     const intake = needsIntake(questions, o.answers) ? await runIntake({ gateway: opts.gateway, prompts: opts.prompts, questions }, problem, o) : undefined;
     const answers = mergeAnswers(questions, intake?.answers, o.answers);
-    return { routed: route(questions, answers, catalog.CHOOSER_FALLBACK), answers, routes: intake?.routes ?? {} };
+    return { routed: route(questions, answers, catalog.CHOOSER_FALLBACK), answers, routes: intake ? intake.routes : (o.routes ?? {}) };
   }
 
   return {

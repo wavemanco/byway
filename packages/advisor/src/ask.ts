@@ -1,8 +1,22 @@
-import type { ChatMessage, CompletionRequest, CompletionResult, Gateway } from '@byway/contracts';
+import type { ChatMessage, CompletionRequest, CompletionResult, Gateway, PromptRef, RenderedPrompt } from '@byway/contracts';
 import { ContractError } from './text.ts';
 
 export const userText = (text: string): ChatMessage => ({ role: 'user', content: [{ type: 'text', text }] });
 export const assistantText = (text: string): ChatMessage => ({ role: 'assistant', content: [{ type: 'text', text }] });
+
+/** The template behind a call, as the ledger records it (spec §3.3 provenance): only the four PromptRef fields. */
+export function promptRef(rendered: RenderedPrompt): PromptRef {
+  return { id: rendered.id, version: rendered.version, hash: rendered.hash, fidelity: rendered.fidelity };
+}
+
+/**
+ * The parts of a completion request that come from one rendered template: its provenance, its system prompt and its
+ * user turn. Every advisor call is built from this, so none can reach the gateway without naming its template, and the
+ * name always matches the text sent (a call never mixes two templates under one ref).
+ */
+export function fromTemplate(rendered: RenderedPrompt): Pick<CompletionRequest, 'prompt' | 'system' | 'messages'> {
+  return { prompt: promptRef(rendered), ...(rendered.system ? { system: rendered.system } : {}), messages: [userText(rendered.user)] };
+}
 
 /** The follow-up turn that hands a model its own parse error (spec §3.3: one automatic retry, the error appended). */
 export function retryNote(problem: string): string {

@@ -3,9 +3,9 @@ import { steps, withHash, type Recipe } from '@byway/recipe';
 import { validate } from '@byway/validator';
 import { describe, expect, it } from 'vitest';
 import { alwaysRunSteps, catalogPrompts, checkAnswer, checkComposedProfile } from '../src/index.ts';
-import { fakePrompts, fencedJson } from './helpers.ts';
+import { fencedJson, recordingPrompts } from './helpers.ts';
 
-const prompts = fakePrompts().renderer;
+const prompts = recordingPrompts().renderer;
 const ctx = (nearest: Recipe) => ({ nearest, catalog: PROTOCOL_CONFIGS, prompts });
 
 describe('the composed profile on the canonical recipes themselves', () => {
