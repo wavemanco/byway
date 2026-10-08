@@ -1,7 +1,7 @@
 /**
  * What the route handlers do, as plain functions over the services. The route files only parse requests and
- * turn results into responses, so this logic is tested directly against the demo services (no server, no
- * network). Errors meant for people are HttpErrors with a status and a plain-language message.
+ * turn results into responses, so this logic is tested directly against the real services on a temp folder, with a
+ * fake Runner (no server, no network). Errors meant for people are HttpErrors with a status and a plain-language message.
  *
  * Everything here goes through the four contracts: intakes and preferences live in the Store, recipes come from
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
