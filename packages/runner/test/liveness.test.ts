@@ -130,6 +130,20 @@ describe('cancel and stop through the real workflow', () => {
     }
   }, 60_000);
 
+  it('Cancel reaches steps that are running: held renders stop without being released (ENG-4)', async () => {
+    h.pages.hold();
+    try {
+      const run = await h.start(threePages);
+      await h.waitFor('renders in flight', async () => h.pages.waiting() === 3);
+      await h.runner.cancel(run.id);
+      await statusIs(run.id, 'cancelled');
+      // The cancel travels to each running step in a heartbeat's reply; the step then closes its page.
+      await h.waitFor('the renders to stop', async () => h.pages.waiting() === 0, 15_000);
+    } finally {
+      h.pages.release();
+    }
+  }, 60_000);
+
   it('stopping the worker does not wait for steps in flight: renders stop, a slow call is abandoned (ENG-10)', async () => {
     h.pages.hold();
     const pagesRun = await h.start(threePages);
