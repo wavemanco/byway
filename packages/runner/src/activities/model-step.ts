@@ -8,6 +8,7 @@ import type { Tier } from '@byway/contracts';
 import { labelled } from '@byway/prompts/pure';
 import { fences, parseArtifact, textView, type Parsed } from '../formats.ts';
 import { labels } from '../labels.ts';
+import { rendersKnob } from '../surfaces.ts';
 import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseTellsSweep, parseVision, type CriticAnswer } from '../parse.ts';
 import { tellsText } from '../tells.ts';
 import type { ModelStepInput, ModelStepResult } from '../types.ts';
@@ -57,7 +58,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     const answers: { answer: CriticAnswer; lineup?: Lineup }[] = [];
     for (let i = 0; i < plan.shuffles; i++) {
       const built = await buildPrompt(reader, { medium: run.medium, problem: run.problem, step, ports: input.ports, ...(input.round !== undefined ? { round: input.round } : {}) });
-      const lineup = plan.mode === 'GREAT' ? await buildLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle) : undefined;
+      const lineup = plan.mode === 'GREAT' ? await buildLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle, rendersKnob(step.knobs)) : undefined;
       if (lineup) {
         Object.assign(built.slots, lineup.slots);
         built.images = lineup.images;

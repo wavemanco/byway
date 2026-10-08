@@ -118,12 +118,18 @@ export const ShotSchema = z.object({
   description: z.string().min(1),
   imagePrompt: z.string().min(1),
   durationSec: z.number().positive(),
+  /** On-screen copy over the shot (spec §3.3, contracts v5): the late VOICE writes it (VOICE-1). */
+  caption: z.string().optional(),
   /** Added by the runner when it stores the shot's frame. */
   imageArtifactId: z.string().optional(),
   /** Added by the runner when a relay link made the shot's clip. */
   clipArtifactId: z.string().optional(),
 });
-export const StoryboardSchema = z.object({ storyboard: z.array(ShotSchema).min(1), voiceover: z.string() });
+/**
+ * A storyboard (spec §3.3): shots, the voice-over (locked after the early VOICE), and the on-screen headline and
+ * tagline, which with the shots' captions are the late VOICE's copy (convention C4).
+ */
+export const StoryboardSchema = z.object({ storyboard: z.array(ShotSchema).min(1), voiceover: z.string(), headline: z.string().optional(), tagline: z.string().optional() });
 export type Storyboard = z.infer<typeof StoryboardSchema>;
 export type Shot = z.infer<typeof ShotSchema>;
 
@@ -261,10 +267,15 @@ export function optionsText(doc: OptionsDoc): string {
   return doc.options.map((o, i) => `${i + 1}. ${o.title}: ${o.pitch}\n   Why: ${o.rationale}`).join('\n');
 }
 
-/** A storyboard as text: each shot with its length and what it shows, then the voice-over. */
+/**
+ * A storyboard as its audience meets it: the headline and tagline, each shot with its length, what it shows and its
+ * on-screen caption, then the voice-over. Never how it was made (BLIND-1): the image prompts and whether a clip exists
+ * are process, which a critic must not read (port rule 1), and a lineup's references have none.
+ */
 export function storyboardText(sb: Storyboard): string {
-  const shots = sb.storyboard.map((s) => `Shot ${s.shot} (${s.durationSec}s): ${s.description}\n   Frame: ${s.imagePrompt}${s.clipArtifactId ? '\n   Clip: made' : ''}`);
-  return [...shots, '', `Voice-over: ${sb.voiceover}`].join('\n');
+  const head = [...(sb.headline ? [`Headline: ${sb.headline}`] : []), ...(sb.tagline ? [`Tagline: ${sb.tagline}`] : [])];
+  const shots = sb.storyboard.map((s) => `Shot ${s.shot} (${s.durationSec}s): ${s.description}${s.caption ? `\n   On screen: ${s.caption}` : ''}`);
+  return [...head, ...(head.length ? [''] : []), ...shots, '', `Voice-over: ${sb.voiceover}`].join('\n');
 }
 
 /**

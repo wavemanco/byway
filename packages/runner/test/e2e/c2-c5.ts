@@ -5,7 +5,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { c2, c5 } from '@byway/catalog';
-import type { VideoRequest, VideoResult } from '@byway/contracts';
+import type { CompletionRequest, VideoRequest, VideoResult } from '@byway/contracts';
 import { NO_AUDIO_NOTE } from '../../src/activities/asset.ts';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { NO_COMPOSITING_NOTE, NO_VIDEO_NOTE } from '../../src/activities/relay.ts';
@@ -143,12 +143,14 @@ export function c2c5Scenarios(use: () => Harness): void {
     }, 180_000);
 
     it('with keys but no video model, every relay link finishes skipped and says so; the storyboard and anchor pass through', async () => {
-      // GREAT mode (three references). The critic is blind (ADR-0072), so this one tells our storyboard from the
-      // reference images by its text, and ranks it second: at or above the hidden rank of 3.
+      // GREAT mode (three references). The critic is blind (ADR-0072): every item is shown the same way, as images
+      // (BLIND-1), so this test's critic finds ours by its frames, which are not among the references, and ranks it
+      // second of four: at or above the gate's middle-of-five bar scaled to four (rank 2; GATE-1).
+      const refIds: string[] = [];
       h.responders['critic:media'] = (ctx) => {
         const m = Number(/\((\d+) items, labelled/.exec(ctx.prompt)?.[1] ?? 0);
         const all = Array.from({ length: m }, (_, i) => String.fromCharCode(65 + i));
-        const ours = [...ctx.prompt.matchAll(/^### ([A-Z])\n(.*)$/gm)].find((x) => !x[2]!.startsWith('(see the images'))?.[1] ?? 'A';
+        const ours = ctx.attachments?.find((a) => a.label && !refIds.includes(a.artifactId))?.label ?? 'A';
         const others = all.filter((l) => l !== ours);
         return `### ${ours}\n- Intent: one feeling, landed.\n- The payoff shot is short.\n\nRanking: ${[others[0], ours, ...others.slice(1)].join(', ')}`;
       };
@@ -156,7 +158,6 @@ export function c2c5Scenarios(use: () => Harness): void {
       h.useKeys(true);
       try {
         const refs = [png(4, 3, [10, 20, 30]), png(4, 3, [40, 50, 60]), png(4, 3, [70, 80, 90])];
-        const refIds: string[] = [];
         for (const r of refs) refIds.push((await h.store.artifacts.put(r, 'image/png')).id);
         const run = await h.start(c5, { profileId: NO_VIDEO_PROFILE.id, problem: { text: 'A 15-second ad for a reusable coffee cup' }, inputs: { refs: refIds } });
         const view = await h.drive(run.id);
@@ -175,6 +176,8 @@ export function c2c5Scenarios(use: () => Harness): void {
         // With three references the gate's critic ranks in GREAT mode: two shuffles, our place averaged (2 of 4).
         const gate = h.succeeded(run.id).filter((c) => c.stepId === 'gate-critic');
         expect(gate).toHaveLength(2);
+        // Ours is shown as the references are, by its frames: no storyboard text, image prompts or clip lines (BLIND-1).
+        for (const g of gate) expect(JSON.stringify((g.request as CompletionRequest).messages)).not.toMatch(/Frame:|Clip: made|Voice-over:|imagePrompt/);
         expect(view.checkpoints.some((c) => c.prompt === GATE_FAILED_PROMPT)).toBe(false);
         expect(notes(view, 'gate-critic')).toEqual([undefined]);
         const note = await h.store.artifacts.getText((ofType(view, 'step-finished', 'gate-critic')[0]!.data.outputArtifactIds as string[])[0]!);
