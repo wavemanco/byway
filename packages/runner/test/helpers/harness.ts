@@ -1,15 +1,16 @@
 /**
  * The e2e harness: a local Temporal dev server (the cached CLI, no download), the real gateway in demo mode (the mock
- * provider, no keys, no network), a temp store, the fake prompt renderer and fake pages, and the real worker and
- * Runner client. One per test file; tests within a file run one after another.
+ * provider, no keys, no network), a temp store, a recorded prompt renderer (the fake by default, the real templates on
+ * request) and fake pages, and the real worker and Runner client. One per test file; tests within a file run one after
+ * another.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { DefaultLogger, Runtime } from '@temporalio/worker';
-import type { CheckpointRecord, CheckpointResolution, CompletionRequest, Gateway, ImageRequest, ModelProfile, ProblemBrief, RunRecord, RunView, StartRunInput, VideoRequest } from '@byway/contracts';
-import { createGateway, PRICES, PROFILES, type PriceRow, type Responder } from '@byway/gateway';
+import type { CheckpointRecord, CheckpointResolution, CompletionRequest, Gateway, ImageRequest, LedgerEntry, ModelProfile, ProblemBrief, PromptRenderer, RunRecord, RunView, StartRunInput, VideoRequest } from '@byway/contracts';
+import { createGateway, PRICES, PROFILES, type ModelGateway, type PriceRow, type Responder } from '@byway/gateway';
 import type { Recipe } from '@byway/recipe';
 import { createStore, type SqliteStore } from '@byway/store';
 import { buildWorkflows } from '../../src/build.ts';
@@ -19,9 +20,15 @@ import { storeCaps } from '../../src/caps.ts';
 import { createWorker, type RunnerWorker } from '../../src/worker.ts';
 import { workflowIdFor } from '../../src/types.ts';
 import { fakePages, type FakePages } from './fake-pages.ts';
-import { fakePrompts, type FakePrompts } from './fake-prompts.ts';
+import { fakePrompts, recordPrompts, type RecordingPrompts } from './fake-prompts.ts';
 
-/** A demo profile with no video model: C5 relay links finish as skipped (ADR-0069). */
+/**
+ * A stand-in for "a provider key is configured", so the gateway leaves demo mode (contracts v4: demo means forced or no
+ * key at all). Not a key: only mock-backed profiles run in these tests, so it is never sent anywhere.
+ */
+const PLACEHOLDER_KEY_ENV = { ANTHROPIC_API_KEY: 'placeholder-not-a-key' };
+
+/** A demo profile with no video model: with keys present, C5 relay links finish as skipped (ADR-0069). */
 export const NO_VIDEO_PROFILE: ModelProfile = {
   id: 'demo-novideo',
   label: 'Demo without video',
@@ -48,12 +55,24 @@ export interface GatewayCall {
 
 export type Answer = (cp: CheckpointRecord) => CheckpointResolution | 'wait' | undefined;
 
+export interface HarnessOptions {
+  /** The templates to render; defaults to the fake renderer. The agreement test passes @byway/prompts' renderer. */
+  prompts?: PromptRenderer;
+}
+
 export interface Harness {
   env: TestWorkflowEnvironment;
   store: SqliteStore;
   gateway: Gateway;
-  prompts: FakePrompts;
+  prompts: RecordingPrompts;
   pages: FakePages;
+  /**
+   * Leave demo mode for the calls that follow (a placeholder key is "configured", so profiles are taken at their
+   * word: a profile with no video model has no video). Every profile these tests run is backed by the mock.
+   */
+  useKeys(on: boolean): void;
+  /** The ledger entries of a run (both the demo and the keyed gateway's ledgers). */
+  ledger(runId: string): LedgerEntry[];
   runner: ReturnType<typeof createRunnerClient>;
   workspaceId: string;
   /** Mock answers by purpose or role; mutable per test. */
@@ -105,30 +124,38 @@ function quietRuntime(): void {
   }
 }
 
-export async function createHarness(): Promise<Harness> {
+export async function createHarness(opts: HarnessOptions = {}): Promise<Harness> {
   quietRuntime();
   const dir = mkdtempSync(path.join(tmpdir(), 'byway-runner-'));
   const store = createStore({ dataDir: dir });
   const ws = await store.ensureDefaultWorkspace();
   const responders: Record<string, Responder> = {};
   const calls: GatewayCall[] = [];
-  const inner = createGateway({
-    ledgerPath: path.join(dir, 'ledger.jsonl'),
-    artifacts: store.artifacts,
-    caps: storeCaps(store),
-    demo: true,
-    env: {},
-    mockResponders: responders,
-    profiles: [...PROFILES, NO_VIDEO_PROFILE],
-    prices: PRICED,
-    retry: { maxAttempts: 1 },
-  });
+  const ledgers = { demo: path.join(dir, 'ledger.jsonl'), keyed: path.join(dir, 'ledger-keyed.jsonl') };
+  const make = (keyed: boolean): ModelGateway =>
+    createGateway({
+      ledgerPath: keyed ? ledgers.keyed : ledgers.demo,
+      artifacts: store.artifacts,
+      caps: storeCaps(store),
+      demo: !keyed,
+      env: keyed ? { ...PLACEHOLDER_KEY_ENV } : {},
+      mockResponders: responders,
+      profiles: [...PROFILES, NO_VIDEO_PROFILE],
+      prices: PRICED,
+      retry: { maxAttempts: 1 },
+    });
+  const demoGateway = make(false);
+  const keyedGateway = make(true);
+  let inner = demoGateway;
   const record = <T>(kind: GatewayCall['kind'], request: GatewayCall['request'], result: Promise<T>): Promise<T> => {
     const call: GatewayCall = { kind, purpose: request.purpose, ...(request.runId ? { runId: request.runId } : {}), ...(request.stepId ? { stepId: request.stepId } : {}), request };
     calls.push(call);
     return result.then((r) => ((call.result = r), r));
   };
   const gateway: Gateway = {
+    get demo() {
+      return inner.demo;
+    },
     complete: (req) => record('complete', req, inner.complete(req)),
     image: (req) => record('image', req, inner.image(req)),
     video: (req) => record('video', req, inner.video(req)),
@@ -138,7 +165,24 @@ export async function createHarness(): Promise<Harness> {
     profileStatus: () => inner.profileStatus(),
     verifyLedger: () => inner.verifyLedger(),
   };
-  const prompts = fakePrompts();
+  const readLedger = (file: string): LedgerEntry[] => {
+    try {
+      // A line still being appended does not parse yet; it is skipped, as the gateway's own reader does.
+      return readFileSync(file, 'utf8')
+        .split('\n')
+        .flatMap((l) => {
+          try {
+            return l.trim() ? [JSON.parse(l) as LedgerEntry] : [];
+          } catch {
+            return [];
+          }
+        });
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw e;
+    }
+  };
+  const prompts = opts.prompts ? recordPrompts(opts.prompts) : fakePrompts();
   const pages = fakePages();
   const executable = cachedTemporalExecutable();
   const env = await TestWorkflowEnvironment.createLocal(executable ? { server: { executable } } : {});
@@ -172,6 +216,10 @@ export async function createHarness(): Promise<Harness> {
     gateway,
     prompts,
     pages,
+    useKeys(on) {
+      inner = on ? keyedGateway : demoGateway;
+    },
+    ledger: (runId) => [...readLedger(ledgers.demo), ...readLedger(ledgers.keyed)].filter((e) => e.runId === runId),
     runner,
     workspaceId: ws.id,
     responders,
