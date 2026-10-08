@@ -58,7 +58,7 @@ The runner interprets the recipe tree (`byway.recipe/1`) as a Temporal workflow.
 | `taste`, `voice` | Human text |
 | `tells` | The tell catalog text for the medium (from `@byway/prompts`) |
 | `refs` | Artifact ids supplied by the user |
-| `seed` | Generated in an activity with `crypto.randomBytes`; passed to SEED steps only; the runner checks it never appears in an artifact (PR3) |
+| `seed` | Generated in an activity with `crypto.randomBytes`; passed to SEED steps only; the runner checks it never appears in the work: artifacts, views and notes of the run (PR3; the gateway's stored request bodies necessarily contain it) |
 | `option_set<artifact>` | An ordered list of artifact ids (candidates) |
 | `anchor` | The artifact id of a relay link's exact end state (C5: the last frame of a clip), which the next link starts from |
 | `asset` | Artifact ids of generated media kept beside the work (C2: rough mood images that never become the deliverable) |
@@ -106,10 +106,10 @@ Prompts (WP-P), the runner's parsers (WP-D) and the mock provider (WP-C) must ag
 | same, on `options` | One fenced `json` block: `{"options":[{"title":string,"pitch":string,"rationale":string}]}` |
 | same, on `media` | One fenced `json` block: `{"storyboard":[{"shot":number,"description":string,"imagePrompt":string,"durationSec":number}],"voiceover":string}` |
 | same, on `code-diff` | One fenced `diff` block (unified diff), then a paragraph starting `Why:` |
-| `critic` | The critique as a bullet list, biggest gaps first, then a last line `Score: N/10` (OK mode) or `Rank: N of M` (GREAT mode) |
+| `critic` | The critique as a bullet list, biggest gaps first, then a last line `Score: N/10` (OK mode) or `Ranking: C, A, E, B, D` (GREAT mode: every label of the lineup, best first; the critic is never told which item is ours and the runner finds our rank, [ADR-0072](../../adr/0072-great-critic-ranks-blind.md)) |
 | `judge`, `select`, `rerank` | Optional reasoning, then a last line `Choice: <label>` (labels A, B, C…) |
 | `check` | A bullet list of defects, or the single line `No defects.` |
-| `cut` (model) | A bullet list of removals, each starting with a removal verb (Remove, Delete, Drop, Merge) |
+| `cut` (model) | A bullet list of removals, each starting with a removal verb (Remove, Delete, Drop, Merge), or the single line `Nothing to remove.` |
 | `tells-sweep` | One fenced `json` block: `{"hits":[{"pattern":string,"where":string,"alternative":string}]}` |
 | `tells-compare` (model) | Optional reasoning, then a last line `Keep: A` or `Keep: B` |
 | `vision` (model) | Plain text |
@@ -124,9 +124,11 @@ Prompts (WP-P), the runner's parsers (WP-D) and the mock provider (WP-C) must ag
 
 Parsers take the last fenced block of the expected language, fall back to the whole text, and fail the step with a clear message when the contract is not met (one automatic retry with the parse error appended).
 
-**SEED in the product.** The article has the model generate its random string with a shell command; the product has no shell, so the runner generates the string (`crypto.randomBytes`) and the SEED prompt hands it over with the article's instructions (interpret it for direction, never reveal it). This is a declared product deviation; the PR3 check verifies the string never appears in an artifact.
+**SEED in the product.** The article has the model generate its random string with a shell command; the product has no shell, so the runner generates the string (`crypto.randomBytes`) and the SEED prompt hands it over with the article's instructions (interpret it for direction, never reveal it). This is a declared product deviation; the PR3 check verifies the string never appears in the work.
 
 **Storyboards.** The runner adds `imageArtifactId` to each storyboard shot when it stores the shot's frame, and `clipArtifactId` when a relay link produced a clip.
+
+**Provenance.** Every completion carries its template's id, version, hash and fidelity (`CompletionRequest.prompt`), and the gateway writes them into the hash-chained ledger entry.
 
 **Spend authority.** The gateway's ledger is the source of truth for spend, in demo mode too (the mock records $0 entries).
 

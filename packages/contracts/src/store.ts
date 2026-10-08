@@ -74,8 +74,10 @@ export interface RunEventPayloads {
   'checkpoint-opened': { checkpointId: string; kind: CheckpointKind };
   'checkpoint-resolved': { checkpointId: string };
   artifact: { artifactId: string; mediaType: string; label: string; shot?: number };
-  /** The score is shown to the user; it never reaches a critic (port rule 2). */
-  'loop-iteration': { iteration: number; max: number; score?: number };
+  /**
+   * The score (OK mode) or our rank of `of` (GREAT mode) is shown to the user; it never reaches a critic (port rule 2).
+   */
+  'loop-iteration': { iteration: number; max: number; score?: number; rank?: number; of?: number };
   cost: { totalUsd: number; budgetUsd: number };
   'run-finished': { outputArtifactId: string; costUsd: number };
   'run-failed': { error: string };
@@ -136,7 +138,8 @@ export interface CheckpointRecord {
   initialText?: string;
   /** Artifacts to show alongside (renders, drafts). */
   artifactIds?: string[];
-  status: 'open' | 'resolved';
+  /** 'withdrawn': the run was cancelled or failed while the question was open; it can no longer be answered. */
+  status: 'open' | 'resolved' | 'withdrawn';
   openedAt: string;
   resolvedAt?: string;
   resolution?: CheckpointResolution;
@@ -181,6 +184,10 @@ export interface ArtifactStore {
   has(id: string): Promise<boolean>;
 }
 
+/**
+ * Methods that take a workspace, run, checkpoint or intake id fail with a not-found error when it is unknown, and with
+ * an invalid error when an intake belongs to another workspace.
+ */
 export interface Store {
   readonly artifacts: ArtifactStore;
   ensureDefaultWorkspace(): Promise<Workspace>;
@@ -204,8 +211,12 @@ export interface Store {
   events(runId: string, afterSeq?: number): Promise<RunEvent[]>;
 
   openCheckpoint(cp: Omit<CheckpointRecord, 'status' | 'openedAt' | 'resolvedAt' | 'resolution'>): Promise<CheckpointRecord>;
+  /** Refuses a checkpoint that is not open (resolved or withdrawn). */
   resolveCheckpoint(res: CheckpointResolution): Promise<CheckpointRecord>;
+  /** Marks a run's open checkpoints 'withdrawn' (the run was cancelled or failed); returns how many. Idempotent. */
+  withdrawCheckpoints(runId: string): Promise<number>;
   getCheckpoint(id: string): Promise<CheckpointRecord | undefined>;
+  /** Only checkpoints with status 'open'. */
   openCheckpoints(workspaceId: string): Promise<CheckpointRecord[]>;
   checkpointsForRun(runId: string): Promise<CheckpointRecord[]>;
 

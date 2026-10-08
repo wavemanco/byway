@@ -72,7 +72,11 @@ export interface RecipePresentation {
   bestFor: string[];
   stages: {
     stage: 'Explore' | 'Refine' | 'Finish';
-    /** stepIds: the recipe step and pick ids this displayed step covers, so run events map to plain labels. */
+    /**
+     * stepIds: the recipe step ids and operator ids (pick, optional, route, loop, gate, relay; replicate, each and
+     * audit where one displayed step covers the whole body) this displayed step covers, so every run event maps to a
+     * plain label. Each id appears in exactly one displayed step.
+     */
     steps: { label: string; explainer: string; who: 'you' | 'ai' | 'tool'; stepIds: string[] }[];
   }[];
 }
@@ -115,7 +119,14 @@ export interface ComposeResult {
 export interface Advisor {
   questions(): ChooserQuestion[];
   /** Map the problem to chooser answers (intake model), then route deterministically. */
-  recommend(problem: ProblemBrief, opts: { workspaceId: string; profileId: string; answers?: ChooserAnswer[] }): Promise<Recommendation>;
+  /**
+   * `routes`: route choices from an earlier recommendation, kept when the answers are complete and no intake call is
+   * made (re-routing after the user flips an answer).
+   */
+  recommend(
+    problem: ProblemBrief,
+    opts: { workspaceId: string; profileId: string; answers?: ChooserAnswer[]; routes?: Record<string, string> },
+  ): Promise<Recommendation>;
   compose(problem: ProblemBrief, opts: { workspaceId: string; profileId: string }): Promise<ComposeResult>;
   catalog(): RecipePresentation[];
   /** The canonical recipe for an id (protocol channel), for starting a run. */

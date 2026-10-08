@@ -48,7 +48,18 @@ export interface SpendContext {
   purpose: string;
 }
 
+/** Which prompt template produced a call (from RenderedPrompt), recorded in the ledger for provenance (CR14). */
+export interface PromptRef {
+  id: string;
+  version: number;
+  /** "sha256:<hex>" of the template file. */
+  hash: string;
+  fidelity: 'verbatim' | 'paraphrase' | 'project';
+}
+
 export interface CompletionRequest extends SpendContext {
+  /** The template behind this call; the gateway writes it into the ledger entry. Omitted only for template-free calls. */
+  prompt?: PromptRef;
   tier: Tier;
   /** Overrides the profile's model for this tier (rare; e.g. a different family for a held-out judge). */
   model?: ModelRef;
@@ -98,9 +109,14 @@ export interface ImageResult {
 export interface VideoRequest extends SpendContext {
   profileId: string;
   prompt: string;
-  /** The relay anchor: the clip starts from this exact frame (C5 relay links, 01 RELAY). */
+  /**
+   * The relay anchor: the clip starts from this exact frame (C5 relay links, 01 RELAY). Required by image-to-video
+   * models (every v1 profile's video model); the mock does not need it.
+   */
   startFrameArtifactId?: string;
   durationSec: number;
+  /** The storyboard shot this clip is for (1-based), for labels and the ledger. */
+  shot?: number;
 }
 
 export interface VideoResult {
@@ -109,8 +125,12 @@ export interface VideoResult {
    * demo-mode mock stores a labelled placeholder (an animated SVG) instead.
    */
   artifactId: string;
-  /** The clip's last frame (PNG), the anchor the next relay link starts from. */
+  /** The clip's media type: 'video/mp4', or 'image/svg+xml' for the demo placeholder. */
+  mediaType: 'video/mp4' | 'image/svg+xml';
+  /** The clip's last frame, the anchor the next relay link starts from. */
   lastFrameArtifactId: string;
+  /** Stored under its real type (the provider's frame extractor does not promise PNG). */
+  lastFrameMediaType: MediaType;
   servedModel: string;
   provider: ProviderId;
   costUsd: number;
@@ -146,6 +166,8 @@ export interface LedgerEntry {
   latencyMs: number;
   /** The host that actually served a routed call (OpenRouter's pinned upstream). Covered by the hash chain. */
   upstreamProvider?: string;
+  /** The prompt template behind a completion (CompletionRequest.prompt). Covered by the hash chain. */
+  prompt?: PromptRef;
 }
 
 export type GatewayErrorCode =
@@ -202,6 +224,11 @@ export interface ProfileStatus {
 }
 
 export interface Gateway {
+  /**
+   * True when every call goes to the mock provider (demo mode forced, or no keys). Callers then use the 'demo'
+   * profile for estimates and for image/video availability, whatever profile the preferences name.
+   */
+  readonly demo: boolean;
   complete(req: CompletionRequest): Promise<CompletionResult>;
   image(req: ImageRequest): Promise<ImageResult>;
   /** Fails with 'no-credentials' when the profile has no video model or its provider has no key. */

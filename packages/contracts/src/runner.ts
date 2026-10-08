@@ -30,6 +30,11 @@ export interface RunView {
   checkpoints: CheckpointRecord[];
 }
 
+/**
+ * Control semantics: an unknown run id throws; cancel, pause and resume on a run that has ended do nothing; an answer
+ * (resolve) is accepted while the run is paused and the run carries on when resumed. Cancelling or failing a run
+ * withdraws its open checkpoints (Store.withdrawCheckpoints).
+ */
 export interface Runner {
   start(input: StartRunInput): Promise<RunRecord>;
   resolve(resolution: CheckpointResolution): Promise<void>;

@@ -30,9 +30,17 @@ export const PROMPT_SLOTS = [
   'round',
   /** A rendered list of options or candidates with labels. */
   'options',
+  /**
+   * References. For a GREAT-mode critic: the number of references R as digits (non-blank selects GREAT mode; blank
+   * means OK mode, ADR-0071); reference texts or images travel in the lineup.
+   */
   'refs',
   /** Image URLs and alt texts for ASSET integration. */
   'images',
+  /**
+   * For a GREAT-mode critic: "M items, labelled A–X". The critic is never told which item is ours (06-runbook);
+   * it ranks the whole lineup and the runner finds our rank (ADR-0072).
+   */
   'labels',
   /** Advisor: the chooser questions, the block registry, the nearest recipe, validator violations. */
   'questions',
