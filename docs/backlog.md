@@ -33,6 +33,16 @@ All figures are estimates from the Study 1 design pass ([protocol v1.1 §13](stu
 | State that the C1-H critic receives one desktop render and that CRITIC-check sits out in every C1-H arm (already in S1-BIND and deviation 14) in the arm table itself | The engine recipes now encode this; a reviewer comparing hashes with §3 should find it stated where the arm is defined |
 | B-BoN's N | Stage 1 fixes N from pilot costs; the recipe carries a planning value (5) and is regenerated with the final N |
 
+## Product follow-ups (found while building v1)
+
+| Item | Why | Where |
+|---|---|---|
+| C7's spec interview: let `implement` read the interview's brief | The validator's must/may typing rejects consuming a port only an optional produces (ST5), so the brief is written and never used. Proposal: an optional-read field on steps (`reads`, checked against `may`, still under port rules 1 and 5), the runner filling the slot only when the port has a value; c7's hash changes. Needs an IR ADR. | recipe, validator, runner, catalog |
+| Widen `VideoResult.mediaType` beyond `video/mp4` | A provider returning another container (e.g. webm) is billed, stored and then refused | contracts, gateway |
+| Expose `withdrawnAt` on `CheckpointRecord` | The store records it; the app cannot show when a question was withdrawn | contracts, store |
+| Templates for the Study 1 research arms' prompt ids (`article.B1`, `study1.*`) | Research recipes are not in the product library; a product run of one would fail with unknown-template | prompts (research track) |
+| Demo revision markers show in the diff viewer | The mock's code-diff answers carry an HTML comment line in the Why paragraph (demo only) | gateway mock |
+
 ## Deferred decisions (non-code)
 
 | Decision | Default until decided | Deadline |
