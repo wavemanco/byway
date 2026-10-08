@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@byway/canonical": "workspace:*",
+    "@byway/contracts": "workspace:*",
     "@byway/protocol": "workspace:*",
     "@byway/recipe": "workspace:*"
   },
