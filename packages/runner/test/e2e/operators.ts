@@ -262,6 +262,48 @@ export function operatorScenarios(use: () => Harness): void {
       }
     }, 60_000);
 
+    it('a memo write that fails once after the model answered is retried in place: the call is bought once (the re-check)', async () => {
+      const original = h.store.setMemo.bind(h.store);
+      let failed = false;
+      h.store.setMemo = async (runId, key, value) => {
+        // The answer was paid for and ledgered; then keeping it fails once (SQLite busy past its timeout).
+        if (!failed && key.includes('/complete/')) {
+          failed = true;
+          throw new Error('SQLITE_BUSY: database is locked');
+        }
+        return original(runId, key, value);
+      };
+      try {
+        const run = await h.start(tiny);
+        const view = await h.drive(run.id);
+        expect(view.run.status).toBe('done');
+        expect(failed).toBe(true);
+        expect(h.succeeded(run.id).filter((c) => c.stepId === 'draft')).toHaveLength(1);
+        expect(h.ledger(run.id).filter((e) => e.stepId === 'draft')).toHaveLength(1);
+        expect(ofType(view, 'step-started', 'draft')).toHaveLength(1);
+      } finally {
+        h.store.setMemo = original;
+      }
+    }, 60_000);
+
+    it('a memo write that keeps failing fails the step for good, saying the call was paid and is in the ledger', async () => {
+      const original = h.store.setMemo.bind(h.store);
+      h.store.setMemo = async (runId, key, value) => {
+        if (key.includes('/complete/')) throw new Error('SQLITE_BUSY: database is locked');
+        return original(runId, key, value);
+      };
+      try {
+        const run = await h.start(tiny);
+        const view = await h.drive(run.id);
+        expect(view.run.status).toBe('failed');
+        expect(view.run.error).toMatch(/paid for.*spending ledger/s);
+        expect(h.succeeded(run.id).filter((c) => c.stepId === 'draft')).toHaveLength(1);
+        expect(h.ledger(run.id).filter((e) => e.stepId === 'draft')).toHaveLength(1);
+      } finally {
+        h.store.setMemo = original;
+      }
+    }, 120_000);
+
     it('a step run again after a budget raise reuses its briefs and images, and the timeline shows the images it placed', async () => {
       h.refuseOnce((c) => c.purpose === 'asset.integrate:prose');
       const run = await h.start(illustrated, { problem: { text: 'A status memo on the billing migration' } });

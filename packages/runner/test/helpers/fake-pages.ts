@@ -45,6 +45,15 @@ export interface FakePages extends PageRenderer {
 /** How many wide-screen (and phone) tiles a page gets: one, plus one per revision mark. */
 export const fakeTiles = (html: string): number => 1 + Math.min((html.match(/<!--rev-->/g) ?? []).length + (/name="byway-revision"/.test(html) ? 1 : 0), 8);
 
+/** The screenshots the fake renderer makes of a page for one surface (deterministic: a test can tell which page an image is). */
+export const fakeShots = (html: string, surface: Surface): SurfaceShots => {
+  const h = createHash('sha256').update(html).digest();
+  const n = surface === 'fold' ? 1 : fakeTiles(html);
+  const w = surface === 'mobile' ? 4 : 8;
+  const shade = surface === 'mobile' ? 64 : surface === 'fold' ? 128 : 0;
+  return { surface, tiles: Array.from({ length: n }, (_, i) => png(w, surface === 'fold' ? 5 : 6, [h[0]!, (h[1]! + shade) % 256, (h[2]! + i) % 256])) };
+};
+
 export function fakePages(): FakePages {
   const rendered: string[] = [];
   let gate: Promise<void> | undefined;
@@ -65,18 +74,10 @@ export function fakePages(): FakePages {
     }
   };
 
-  const shots = (html: string, surface: Surface): SurfaceShots => {
-    const h = createHash('sha256').update(html).digest();
-    const n = surface === 'fold' ? 1 : fakeTiles(html);
-    const w = surface === 'mobile' ? 4 : 8;
-    const shade = surface === 'mobile' ? 64 : surface === 'fold' ? 128 : 0;
-    return { surface, tiles: Array.from({ length: n }, (_, i) => png(w, surface === 'fold' ? 5 : 6, [h[0]!, (h[1]! + shade) % 256, (h[2]! + i) % 256])) };
-  };
-
   const render = async (html: string, surfaces: readonly Surface[], opts: RenderOptions = {}): Promise<SurfaceShots[]> => {
     rendered.push(html);
     await held(opts.signal);
-    return surfaces.map((s) => shots(html, s));
+    return surfaces.map((s) => fakeShots(html, s));
   };
 
   return {

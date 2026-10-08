@@ -63,3 +63,25 @@ describe('storyboard on-screen copy (VOICE-1, C4)', () => {
     expect(user).not.toMatch(/On-screen: "/);
   });
 });
+
+describe('the C5 launch check says what its critic is shown (RENDER-1, BLIND-1)', () => {
+  const id = 'product.c5.gate-critic';
+  const render = (slots: Record<string, string>) => {
+    const r = library.render(id, sampleSlots('media', slots));
+    return `${r.system ?? ''}\n${r.user}`;
+  };
+
+  it('claims no feed mock and no served size, which v1 never renders, in either mode', () => {
+    for (const text of [render({ refs: '4', view: '### A\nShot 1' }), render({ refs: '4', view: '' }), render({ refs: '', view: 'Shot 1' })]) {
+      expect(text).not.toMatch(/as they appear in a feed|in a feed\.|at its served size|as its audience meets it/);
+      expect(text).toMatch(/as they were generated/);
+    }
+  });
+
+  it('names the form the lineup takes: every ad as one sheet, or every storyboard written out', () => {
+    expect(render({ refs: '4', view: '' })).toMatch(/Each ad is attached as one image after a line naming its label/);
+    const written = render({ refs: '4', view: '### A\nShot 1' });
+    expect(written).toMatch(/Each ad's storyboard is written out under its label/);
+    expect(written).not.toMatch(/attached as one image/);
+  });
+});
