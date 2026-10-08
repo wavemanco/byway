@@ -1,9 +1,10 @@
 'use client';
 
 import type { CheckpointResolution, EvidenceLabel as Label, RecipePresentation } from '@byway/contracts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { controlPendingLabel, runStatusLabel, type ControlAction } from '../../view/labels.ts';
 import { runMeter } from '../../view/meter.ts';
+import type { Connection } from '../../view/refresh.ts';
 import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
 import type { StepIndex } from '../../view/steps.ts';
@@ -13,10 +14,14 @@ import { get, post } from '../api.ts';
 import { EvidenceLabel } from '../EvidenceLabel.tsx';
 import { Route } from '../Route.tsx';
 import { useTechnicalNames } from '../TechNames.tsx';
+import { usePolling, useRefresher } from '../useRefresher.ts';
 import { RunStatusPanel } from './RunStatusPanel.tsx';
 import { StepDetail } from './StepDetail.tsx';
 import { Timeline } from './Timeline.tsx';
 import { YourTurn } from './YourTurn.tsx';
+
+/** How long to wait before retrying while byway is not answering, whatever the run's status. */
+const LOST_RETRY_MS = 3000;
 
 interface Props {
   initial: RunData;
@@ -26,11 +31,16 @@ interface Props {
   steps: StepIndex | null;
 }
 
+/**
+ * Run (spec §5, screen 3). This component owns the screen's state (ADR-0082): the latest applied server snapshot, which
+ * only the latest-issued request may replace (useRefresher, F15). It is mounted once per run (the page keys it by the
+ * run's id).
+ */
 export function RunScreen({ initial, presentation, label, steps }: Props) {
   const technical = useTechnicalNames();
   const [data, setData] = useState(initial);
   const [selected, setSelected] = useState<string | null>(null);
-  const [connection, setConnection] = useState<'ok' | 'lost'>('ok');
+  const [connection, setConnection] = useState<Connection>('ok');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -64,36 +74,16 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   const meter = runMeter(run, events);
   const selectedStep = selected ? stages.flatMap((s) => s.steps).find((s) => s.key === selected) : undefined;
 
-  const refresh = useCallback(async () => {
-    try {
-      const next = await get<RunData>(`/api/runs/${encodeURIComponent(runId)}?after=${lastSeq(latest.current)}`);
-      setData((prev) => mergeRunData(prev, next));
-      setConnection('ok');
-    } catch {
-      setConnection('lost');
-    }
-  }, [runId]);
-
-  // Poll while the run can still change: briskly while the AI works, lazily while it waits for you.
-  const delay = pollDelay(run.status);
-  useEffect(() => {
-    if (delay === null) return;
-    let timer = 0;
-    const tick = () => {
-      // A hidden tab skips its polls; the run carries on and the screen catches up when you come back.
-      if (document.visibilityState === 'visible') void refresh();
-      timer = window.setTimeout(tick, delay);
-    };
-    timer = window.setTimeout(tick, delay);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void refresh();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [delay, refresh]);
+  // F15: one owner of the request sequence. Only the latest-issued request applies a snapshot or sets the connection.
+  const refresher = useRefresher(
+    runId,
+    (signal) => get<RunData>(`/api/runs/${encodeURIComponent(runId)}?after=${lastSeq(latest.current)}`, signal),
+    (next) => setData((prev) => mergeRunData(prev, next)),
+    setConnection,
+  );
+  // Poll while the run can still change: briskly while the AI works, lazily while it waits for you. While byway is not
+  // answering, keep retrying whatever the last status said, so the banner clears on an ended run too.
+  usePolling(refresher, connection === 'lost' ? LOST_RETRY_MS : pollDelay(run.status));
 
   async function resolve(resolution: CheckpointResolution) {
     setBusy(true);
@@ -101,7 +91,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
     try {
       const { checkpointId, ...answer } = resolution;
       await post(`/api/runs/${encodeURIComponent(runId)}/checkpoints/${encodeURIComponent(checkpointId)}`, answer);
-      await refresh();
+      await refresher.now();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That answer was not sent. Try again.');
     } finally {
@@ -118,7 +108,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
       setConfirmCancel(false);
       // The Cancel dialog that had focus is gone: focus goes to the run's status, which now says what happened (UX-2).
       if (action === 'cancel') statusRef.current?.focus();
-      await refresh();
+      await refresher.now();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
     } finally {
