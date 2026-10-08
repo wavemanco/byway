@@ -316,7 +316,7 @@ const COPY: readonly Copy[] = [
       {
         label: 'Outside critique: launch check',
         explainer:
-          'Shown at real size in a mock feed, the ad is ranked against strong ads in its category. If it lands below the middle, production runs once more on its own; then you decide.',
+          'The ad is judged from its storyboard (its frames as they were generated, or its shots written out) and ranked against strong ads in its category. If it lands below the middle, production runs once more on its own; then you decide.',
         covers: ['feed-render', 'gate-critic'],
       },
     ],

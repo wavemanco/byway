@@ -250,6 +250,14 @@ describe('honest copy (CRED-1, PRES-1, FID-1, FID-2, TELLS-1, VOICE-1)', () => {
     expect(explainerOf('c5', 'Voice-over audio')).not.toMatch(/word for word/);
   });
 
+  it('says what the C5 launch check is shown: the storyboard frames as generated, not a feed or a real-size view, which are never made (RENDER-1)', () => {
+    const gate = explainerOf('c5', 'Outside critique: launch check');
+    expect(gate).not.toMatch(/feed|real size|served/i);
+    expect(gate).toMatch(/frames/);
+    expect(gate).toMatch(/as they were generated/);
+    for (const p of PRESENTATIONS) for (const text of copyOf(p)) expect(text, p.recipeId).not.toMatch(/mock feed|real size|served size/i);
+  });
+
   it('says C3 makes no charts from data in this version (C9)', () => {
     expect(explainerOf('c3', 'Custom imagery')).toMatch(/not made in this version/);
   });
