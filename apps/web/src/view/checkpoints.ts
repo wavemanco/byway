@@ -85,6 +85,12 @@ export function panelFor(kind: CheckpointKind): PanelSpec {
   return CHECKPOINT_PANELS[kind];
 }
 
+/** The shortcuts a panel lists: all of them, or only the Ctrl ones when single-key shortcuts are off in Settings. */
+export function listedShortcuts(kind: CheckpointKind, singleKeys: boolean): Shortcut[] {
+  const all = CHECKPOINT_PANELS[kind].shortcuts;
+  return singleKeys ? all : all.filter((s) => s.keys.startsWith('Ctrl+'));
+}
+
 /** What the person has entered so far, for any kind of panel. */
 export interface CheckpointDraft {
   choice: string[];

@@ -8,6 +8,7 @@ import type { WorkspaceSpend } from '../view/history.ts';
 import { profileNeeds, videoAvailability } from '../view/labels.ts';
 import { patch } from './api.ts';
 import { Switch } from './Switch.tsx';
+import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
 
 const PROVIDERS: Record<ProviderId, { name: string; does: string; env?: string }> = {
   anthropic: { name: 'Anthropic', does: 'Claude models for drafting and judgment', env: 'ANTHROPIC_API_KEY' },
@@ -43,6 +44,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const realConfigured = providers.some((p) => p.provider !== 'mock' && p.configured);
+  const [singleKeys, setSingleKeys] = useViewerFlag(SINGLE_KEY_SHORTCUTS);
 
   async function save(body: Record<string, unknown>, done: string) {
     setError(null);
@@ -202,6 +204,27 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
             onChange={(on) => void save({ showTechnicalNames: on }, on ? 'Technical names shown.' : 'Technical names hidden.')}
             labelledBy={`${ids}-names`}
             describedBy={`${ids}-names-help`}
+          />
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby={`${ids}-keys`}>
+        <div className="setting-row">
+          <div>
+            <h2 id={`${ids}-keys`}>Single-key shortcuts</h2>
+            <p id={`${ids}-keys-help`} className="muted">
+              On a Your turn, keys such as Y and N, J and K, Space and Enter answer or move while the question has focus. Turn them off if you use speech
+              input or type into the page by accident. Ctrl+Enter still sends what you wrote. Saved in this browser only.
+            </p>
+          </div>
+          <Switch
+            checked={singleKeys}
+            onChange={(on) => {
+              setSingleKeys(on);
+              setSaved(on ? 'Single-key shortcuts on.' : 'Single-key shortcuts off.');
+            }}
+            labelledBy={`${ids}-keys`}
+            describedBy={`${ids}-keys-help`}
           />
         </div>
       </section>

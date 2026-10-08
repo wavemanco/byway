@@ -66,10 +66,18 @@ export interface MadeRow {
   note?: string;
 }
 
+export interface SkippedStep {
+  key: string;
+  label: string;
+  note?: string;
+  /** Only part of this step was skipped; the rest ran (UX-7). */
+  part?: boolean;
+}
+
 export interface HowItWasMade {
   rows: MadeRow[];
-  /** Steps that were skipped, and why (ADR-0069: the result says what was not done). */
-  skipped: { key: string; label: string; note?: string }[];
+  /** Steps that were skipped, wholly or in part, and why (ADR-0069: the result says what was not done). */
+  skipped: SkippedStep[];
   byWho: Record<Who, number>;
   totalUsd: number;
 }
@@ -87,6 +95,7 @@ export function howItWasMade(stages: TimelineStage[]): HowItWasMade {
         continue;
       }
       if (s.status !== 'done') continue;
+      for (const [i, p] of s.skippedParts.entries()) skipped.push({ key: `${s.key}:part:${i}`, label: s.label, part: true, ...(p.note ? { note: p.note } : {}) });
       rows.push({ key: s.key, label: s.label, stage: s.stage, who: s.who, costUsd: s.costUsd, round: s.round, ...(s.note ? { note: s.note } : {}) });
       byWho[s.who]++;
       total += s.costUsd;

@@ -1068,3 +1068,8 @@
   gap: 2px var(--s-4);
   color: var(--ink-2);
 }
+
+/* A done step some of whose parts were skipped (UX-7): not the plain check of a fully done one. */
+.status-icon[data-status][data-partial] {
+  color: var(--caution);
+}

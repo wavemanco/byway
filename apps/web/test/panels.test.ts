@@ -7,6 +7,8 @@ import { createElement, type ComponentType } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { CheckpointKind, CheckpointRecord } from '@byway/contracts';
+import { ChoosePanel } from '../src/components/run/panels/ChoosePanel.tsx';
+import { ComparePanel } from '../src/components/run/panels/ComparePanel.tsx';
 import { SelectPanel } from '../src/components/run/panels/SelectPanel.tsx';
 import type { PanelProps } from '../src/components/run/panels/types.ts';
 
@@ -46,5 +48,20 @@ describe('select panel (TELLS hits, C2)', () => {
     expect(html).toContain('Em dash pivot');
     expect(html).toContain('In hero heading');
     expect(html).toContain('Swap for a full stop');
+  });
+});
+
+describe('panels that commit with Enter start with nothing chosen (UX-1)', () => {
+  it('choose: no branch is preselected, so Enter alone goes nowhere', () => {
+    const html = render(ChoosePanel, cp('choose', { options: [{ id: 'ai', label: 'ai' }, { id: 'own', label: 'own' }] }));
+    expect(html.match(/type="radio"/g)).toHaveLength(2);
+    expect(html).not.toMatch(/checked=""/);
+    expect(html).toMatch(/aria-disabled="true"[^>]*>Go this way/);
+  });
+
+  it('compare: no version is kept until one is chosen', () => {
+    const html = render(ComparePanel, cp('compare', { options: [{ id: 'A', label: 'Before the sweep' }, { id: 'B', label: 'After the swaps' }] }));
+    expect(html).not.toContain('data-current');
+    expect(html).toMatch(/aria-disabled="true"[^>]*>Keep this version/);
   });
 });

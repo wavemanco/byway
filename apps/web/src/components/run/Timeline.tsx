@@ -18,13 +18,15 @@ const STATUS_WORDS: Record<StepStatus, string> = {
 
 /**
  * A small status glyph; its meaning is also given in words for screen readers, unless the row already says it in
- * visible words (a skipped step's "Skipped").
+ * visible words (a skipped step's "Skipped", a partly skipped one's "Part skipped").
  */
-export function StatusIcon({ status, announce = true }: { status: StepStatus; announce?: boolean }) {
+export function StatusIcon({ status, announce = true, partial = false }: { status: StepStatus; announce?: boolean; partial?: boolean }) {
+  const done = status === 'done' && !partial;
   return (
-    <span className="status-icon" data-status={status}>
+    <span className="status-icon" data-status={status} data-partial={partial ? 'true' : undefined}>
       <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-        {status === 'done' ? <path d="M4 8.5l2.5 2.5L12 5.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /> : null}
+        {done ? <path d="M4 8.5l2.5 2.5L12 5.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /> : null}
+        {status === 'done' && partial ? <path d="M3.5 8.5l2 2L9 7M10 8h3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /> : null}
         {status === 'running' ? <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeDasharray="20 12" /> : null}
         {status === 'waiting' ? <circle cx="8" cy="8" r="4.5" fill="currentColor" /> : null}
         {status === 'failed' ? <path d="M5 5l6 6M11 5l-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /> : null}
@@ -36,10 +38,14 @@ export function StatusIcon({ status, announce = true }: { status: StepStatus; an
   );
 }
 
+/** A done row some of whose steps were skipped (UX-7): not a plain check, and it says so. */
+export const partlySkipped = (step: TimelineStep): boolean => step.status === 'done' && step.skippedParts.length > 0;
+
 function meta(step: TimelineStep): string[] {
   // ADR-0069: a step that could not run says so in words, with its note below.
   if (step.status === 'skipped') return [STATUS_WORDS.skipped];
   const parts = [whoLabel(step.who)];
+  if (partlySkipped(step)) parts.push('Part skipped');
   if (step.round > 1) parts.push(`round ${step.round}`);
   if (step.iterations > 1) parts.push(`${step.iterations} passes`);
   if (step.judged) parts.push(step.judged);
@@ -70,7 +76,7 @@ export function Timeline({ stages, artifacts, selected, onSelect }: TimelineProp
               const title = stepTitle(step.label, codeForLabel(step.label) ?? step.block, technical);
               return (
                 <li key={step.key} className="tl-step" data-status={step.status} data-who={step.who} data-selected={selected === step.key ? 'true' : undefined}>
-                  <StatusIcon status={step.status} announce={step.status !== 'skipped'} />
+                  <StatusIcon status={step.status} announce={step.status !== 'skipped' && !partlySkipped(step)} partial={partlySkipped(step)} />
                   <div className="tl-main">
                     <div className="tl-line">
                       <button type="button" className="tl-title" aria-pressed={selected === step.key} onClick={() => onSelect(step.key)}>

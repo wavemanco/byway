@@ -34,8 +34,8 @@ interface StoryboardProps {
   board: StoryboardModel;
   /** Media types of the frames and clips, so each is shown the way it can be. */
   media?: Record<string, ArtifactInfo>;
-  /** Steps that did not run and why (ADR-0069: the result says what was not made). */
-  skipped?: { key: string; label: string; note?: string }[];
+  /** Steps that did not run, wholly or in part, and why (ADR-0069: the result says what was not made). */
+  skipped?: { key: string; label: string; note?: string; part?: boolean }[];
 }
 
 export function Storyboard({ board, media = {}, skipped = [] }: StoryboardProps) {
@@ -48,6 +48,7 @@ export function Storyboard({ board, media = {}, skipped = [] }: StoryboardProps)
             {skipped.map((s) => (
               <li key={s.key}>
                 {s.label}
+                {s.part ? ' (in part)' : ''}
                 {s.note ? `: ${s.note}` : ''}
               </li>
             ))}

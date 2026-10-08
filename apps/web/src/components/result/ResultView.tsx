@@ -127,6 +127,7 @@ export function ResultView({ run, artifactId, mediaType, text, made, media, pres
               {made.skipped.map((s) => (
                 <li key={s.key}>
                   {s.label}
+                  {s.part ? ' (in part)' : ''}
                   {s.note ? <span className="muted">: {s.note}</span> : null}
                 </li>
               ))}

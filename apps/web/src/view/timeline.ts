@@ -50,6 +50,11 @@ export interface TimelineStep {
   error?: string;
   /** What the steps said when they finished (why one was skipped, how the critique judged). */
   note?: string;
+  /**
+   * Recipe steps in this row that finished skipped. A done row with some is only partly done (UX-7: C5's Composite
+   * places the product in each scene, but the clean cut-out has no executor), and the Result says what was not done.
+   */
+  skippedParts: { stepId: string; note?: string }[];
   startedAt: string;
   finishedAt?: string;
 }
@@ -135,6 +140,7 @@ export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[
         iterations: 0,
         candidates: 0,
         checkpointIds: [],
+        skippedParts: [],
         startedAt: at,
       },
     };
@@ -204,7 +210,11 @@ export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[
         row.open.delete(`${e.stepId}#${e.candidate ?? ''}`);
         row.step.costUsd = micro(row.step.costUsd + (d.costUsd ?? 0));
         row.finished++;
-        if (d.skipped) row.skipped++;
+        if (d.skipped) {
+          row.skipped++;
+          const stepId = e.stepId ?? row.step.stepId;
+          if (!row.step.skippedParts.some((p) => p.stepId === stepId && p.note === d.note)) row.step.skippedParts.push({ stepId, ...(d.note ? { note: d.note } : {}) });
+        }
         if (d.note && !row.notes.includes(d.note)) row.notes.push(d.note);
         row.step.finishedAt = e.at;
         break;

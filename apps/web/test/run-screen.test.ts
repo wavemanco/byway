@@ -25,6 +25,7 @@ const step = (over: Partial<TimelineStep> & Pick<TimelineStep, 'label' | 'who'>)
   iterations: 0,
   candidates: 0,
   checkpointIds: [],
+  skippedParts: [],
   startedAt: '2026-10-07T10:00:00.000Z',
   ...over,
 });
