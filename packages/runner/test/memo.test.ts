@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CompletionRequest, CompletionResult, Gateway, ImageRequest, ImageResult, VideoRequest, VideoResult } from '@byway/contracts';
+import type { ApplicationFailure } from '@temporalio/common';
+import { StepError, toFailure } from '../src/activities/failures.ts';
 import { memoGateway, memoized, seededRandom } from '../src/activities/memo.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -103,6 +105,79 @@ describe('memoGateway (convention C5)', () => {
     expect(made.complete).toBe(1);
     // The work stored later under its own media type keeps that type.
     expect((await store.artifacts.putText(long, 'text/markdown')).mediaType).toBe('text/markdown');
+  });
+});
+
+describe('saving what a paid call returned (ENG-3)', () => {
+  /** The store with its memo write (or its artifact write) failing the first `times` times. */
+  function failing(what: 'setMemo' | 'putText', times: number) {
+    let failures = 0;
+    const failNow = (message: string) => {
+      if (failures >= times) return;
+      failures++;
+      throw new Error(message);
+    };
+    const artifacts = new Proxy(store.artifacts, {
+      get(target, prop) {
+        if (prop === 'putText' && what === 'putText')
+          return async (text: string, mediaType: string) => {
+            failNow('EPERM: operation not permitted');
+            return target.putText(text, mediaType);
+          };
+        const value: unknown = Reflect.get(target, prop, target);
+        return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+    const flaky: Parameters<typeof memoGateway>[1] = {
+      getMemo: (runId, key) => store.getMemo(runId, key),
+      setMemo: async (runId, key, value) => {
+        if (what === 'setMemo') failNow('SQLITE_BUSY: database is locked');
+        return store.setMemo(runId, key, value);
+      },
+      artifacts,
+    };
+    return { flaky, failures: () => failures };
+  }
+  const quick = { saveAttempts: 4, saveDelayMs: 5 };
+
+  it('a memo write that fails for a while is retried here, so the step goes on and a later retry pays nothing', async () => {
+    const { gateway, made } = counting();
+    const { flaky, failures } = failing('setMemo', 2);
+    const first = await memoGateway(gateway, flaky, scope, quick).complete(ask('Write it.'));
+    expect(failures()).toBe(2);
+    expect(await memoGateway(gateway, store, scope).complete(ask('Write it.'))).toEqual(first);
+    expect(made.complete).toBe(1);
+  });
+
+  it('the artifact write of a long answer is retried here too', async () => {
+    const { gateway, made } = counting(() => `# Page\n\n${'x'.repeat(70_000)}\n`);
+    const { flaky, failures } = failing('putText', 1);
+    const first = await memoGateway(gateway, flaky, scope, quick).complete(ask('Long.'));
+    expect(failures()).toBe(1);
+    expect(await memoGateway(gateway, store, scope).complete(ask('Long.'))).toEqual(first);
+    expect(made.complete).toBe(1);
+  });
+
+  it('when the save still fails, the step fails for good, saying the call was paid and is in the ledger: Temporal must not buy it again', async () => {
+    for (const [what, call] of [
+      ['setMemo', (g: Gateway) => g.complete(ask('Write it.'))],
+      ['setMemo', (g: Gateway) => g.image({ workspaceId: 'w', runId: 'run-memo', stepId: 'art', purpose: 'asset:prose', profileId: 'demo', prompt: 'A loaf', size: '1024x1024' })],
+      ['putText', (g: Gateway) => g.complete(ask(`Long ${'y'.repeat(10)}`))],
+    ] as const) {
+      const { gateway, made } = counting(() => `# Page\n\n${'x'.repeat(70_000)}\n`);
+      const { flaky, failures } = failing(what, Infinity);
+      const started = Date.now();
+      const err = await call(memoGateway(gateway, flaky, { ...scope, key: `${scope.key}/${what}` }, quick)).catch((e: unknown) => e);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(failures()).toBe(4);
+      expect(made.complete + made.image).toBe(1);
+      expect(err).toBeInstanceOf(StepError);
+      expect((err as Error).message).toMatch(/paid for/);
+      expect((err as Error).message).toMatch(/spending ledger/);
+      expect((err as Error).message).toMatch(/(SQLITE_BUSY|EPERM)/);
+      // Not retried by Temporal: a step failure is non-retryable.
+      expect((toFailure(err) as ApplicationFailure).nonRetryable).toBe(true);
+    }
   });
 });
 
