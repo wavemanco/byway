@@ -3,11 +3,14 @@
  * brief, `artifact` → artifact (never for judging steps: port rule 1), a text `view` → view and a screenshot view →
  * attached images, `option_set` → options (labelled A, B, C…), `critique` → critique, `taste`/`voice`/`tells`/`seed`/
  * `refs` → slots of the same name; `score` never reaches a prompt (port rule 2). The artifact slot holds the artifact's
- * raw text: templates put it in its medium's fence (ARTIFACT_FENCE).
+ * raw text: templates put it in its medium's fence (@byway/prompts' ARTIFACT_FENCE).
+ *
+ * Slot layouts (the problem, "### A" options, "### V1" control answers) come from @byway/prompts, the one place the
+ * templates, the gateway's mock and the runner agree on them (spec §3.3 shared conventions).
  */
 import type { ChatMessage, ContentPart, MediaType, Medium, ProblemBrief, PromptSlot } from '@byway/contracts';
+import { labelled, labelOf, problemSlot, vanillaLabelled } from '@byway/prompts/pure';
 import { textView, viewKindOf } from '../formats.ts';
-import { labelled, labelOf, vanillaLabelled } from '../labels.ts';
 import type { Ports, StepSpec, View, ViewRef } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 
@@ -23,23 +26,6 @@ export interface ImageGroup {
 export const JUDGING_ROLES: ReadonlySet<string> = new Set(['critic', 'judge', 'check', 'tells-sweep', 'tells-compare', 'rerank']);
 
 const IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/webp']);
-
-/** The `problem` slot: the user's words, the brief fields they gave, then pasted material, each fenced. */
-export function problemSlot(p: ProblemBrief): string {
-  const fence = (text: string) => '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map((m) => m[0].length + 1)));
-  const parts = [p.text.trim()];
-  const fields = [
-    ...(p.deliverable ? [`Deliverable: ${p.deliverable}`] : []),
-    ...(p.audience ? [`Audience: ${p.audience}`] : []),
-    ...(p.constraints?.length ? ['Constraints:', ...p.constraints.map((c) => `- ${c}`)] : []),
-  ];
-  if (fields.length) parts.push(fields.join('\n'));
-  for (const a of p.attachments ?? []) {
-    const f = fence(a.text);
-    parts.push(`Attachment: ${a.name}\n${f}\n${a.text.replace(/\n+$/, '')}\n${f}`);
-  }
-  return parts.join('\n\n');
-}
 
 /** Reads artifacts for prompts, caching within one activity. */
 export class ArtifactReader {

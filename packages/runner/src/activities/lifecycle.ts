@@ -4,7 +4,8 @@
  */
 import type { RunStatus } from '@byway/contracts';
 import { textView } from '../formats.ts';
-import { labelled, labels } from '../labels.ts';
+import { labelled } from '@byway/prompts/pure';
+import { labels } from '../labels.ts';
 import { parseChoice } from '../parse.ts';
 import type { BudgetRaiseInput, FailRunInput, FinishRunInput, RerankInput, RerankResult, SkipInput, WorkflowEvent } from '../types.ts';
 import { askModel } from './call.ts';

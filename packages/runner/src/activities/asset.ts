@@ -10,7 +10,7 @@
  */
 import { GatewayError, type Medium } from '@byway/contracts';
 import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson, textView, type Parsed } from '../formats.ts';
-import { labelled, labelOf } from '../labels.ts';
+import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
 import { parseBriefs, type ImageBrief } from '../parse.ts';
 import type { AssetInput, AssetResult } from '../types.ts';
 import { askModel } from './call.ts';
@@ -103,12 +103,12 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const result: AssetResult = { costUsd };
   const writes = step.produces.includes('artifact');
   if (medium === 'web-page' || medium === 'prose') {
-    const lines = medium === 'web-page' ? made.map((m) => `${imageRoute(m.artifactId)} | ${oneLine(m.alt).replace(/\|/g, '/')} | ${oneLine(m.slot)}`) : made.map((m) => `![${oneLine(m.alt).replace(/[[\]]/g, '')}](${imageRoute(m.artifactId)})`);
     const integrate = await askModel(deps, reader, {
       run,
       call,
       promptId: 'helper.asset.integrate',
-      slots: { medium, artifact: current, images: lines.join('\n') },
+      // Pages get "address | alt | slot" lines, prose Markdown image lines (@byway/prompts' layout, which the mock reads).
+      slots: { medium, artifact: current, images: imagesSlot(medium, made) },
       images: [],
       purpose: `asset.integrate:${medium}`,
       tier: step.tier ?? 'mid',

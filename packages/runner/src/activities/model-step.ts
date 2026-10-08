@@ -6,7 +6,8 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import type { Tier } from '@byway/contracts';
 import { parseArtifact, textView, type Parsed } from '../formats.ts';
-import { labelled, labels } from '../labels.ts';
+import { labelled } from '@byway/prompts/pure';
+import { labels } from '../labels.ts';
 import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseTellsSweep, parseVision, type CriticAnswer } from '../parse.ts';
 import type { ModelStepInput, ModelStepResult } from '../types.ts';
 import { askModel } from './call.ts';
@@ -15,6 +16,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
+import { tellsText } from '../tells.ts';
 import { storeText, writeProblems } from './writes.ts';
 
 const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);
@@ -43,7 +45,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   const purpose = `${step.role}:${run.medium}`;
   if (!step.prompt) throw new StepError(`The ${what} step names no prompt.`);
   const promptId = step.prompt;
-  const tells = step.consumes.includes('tells') ? tellsText(deps, run.medium, input.tells) : undefined;
+  const tells = step.consumes.includes('tells') ? tellsText(deps.prompts, run.medium, step, input.tells) : undefined;
 
   const result: ModelStepResult = { costUsd: 0 };
   const outputs: string[] = [];
@@ -142,13 +144,6 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   }
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(result.note ? { note: result.note } : {}), ...(outputs.length ? { outputArtifactIds: outputs } : {}) }, true);
   return result;
-}
-
-/** The tell catalog for the medium (spec §3.1 `tells`), unless the run brought its own. */
-function tellsText(deps: RunnerDeps, medium: string, own: string | undefined): string {
-  if (own?.trim()) return own;
-  const id = `tells.${medium}`;
-  return deps.prompts.has(id) ? deps.prompts.render(id, { medium: medium as never }).user : '';
 }
 
 /** A model keep-or-revert sees the version before the sweep (A) and after it (B). */

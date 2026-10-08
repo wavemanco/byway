@@ -9,15 +9,6 @@ import { z } from 'zod';
 export const mediaTypeOf = (medium: Medium): string => MEDIUM_FORMAT[medium].artifactMediaType;
 export const viewKindOf = (medium: Medium): 'screenshots' | 'text' => MEDIUM_FORMAT[medium].view;
 
-/** The fence language a medium's artifact travels in (fix, voice.apply and asset.integrate turns). */
-export const ARTIFACT_FENCE: Readonly<Record<Medium, string>> = {
-  'web-page': 'html',
-  prose: 'markdown',
-  options: 'json',
-  media: 'json',
-  'code-diff': 'diff',
-};
-
 /** Contents of every fenced block whose language is one of `langs`, in order. */
 export function fencedBlocks(text: string, langs: readonly string[]): string[] {
   const out: string[] = [];

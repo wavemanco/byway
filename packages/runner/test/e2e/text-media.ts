@@ -45,8 +45,10 @@ export function textMediaScenarios(use: () => Harness): void {
       expect(iterations.every((e) => typeof e.data.score === 'number' && e.data.max === 2)).toBe(true);
       const lastScore = iterations.at(-1)!.data.score as number;
       if (lastScore < 9) expect(view.checkpoints.some((c) => c.prompt === BEST_SO_FAR_PROMPT)).toBe(true);
-      // The tells sweep got the catalog for prose; the worker turns never did (port rule 7).
-      expect(h.prompts.calls.filter((c) => c.id === 'product.c4.tells-sweep').at(-1)!.slots.tells).toContain('delve');
+      // The tells sweep got the step's own catalog (its domain: memo); the worker turns never did (port rule 7).
+      const tells = h.prompts.calls.filter((c) => c.id === 'product.c4.tells-sweep').at(-1)!.slots.tells!;
+      expect(tells).toContain('delve');
+      expect([...tells.matchAll(/\((tells\.[a-z-]+)\)/g)].map((m) => m[1])).toEqual(['tells.memo']);
       expect(h.prompts.calls.filter((c) => c.id === 'product.c4.draft' || c.id === 'product.c4.revise').every((c) => c.slots.tells === undefined)).toBe(true);
       // Your key lines are the deliverable, word for word; the claim log asked you to sign off.
       expect(await text(view.run.outputArtifactId!)).toContain(mine);
@@ -59,7 +61,8 @@ export function textMediaScenarios(use: () => Harness): void {
       const refs: string[] = [];
       for (const n of ['one', 'two', 'three', 'four']) refs.push((await h.store.artifacts.putText(`# Exemplar ${n}\n\nDecision needed: ${n}.\n`, 'text/markdown')).id);
       const from = h.prompts.calls.length;
-      const run = await h.start(c4, { problem: { text: 'A status memo for leadership on the billing migration, 3 weeks in' }, inputs: { refs } });
+      const own = '- "synergy" → say what the teams do together';
+      const run = await h.start(c4, { problem: { text: 'A status memo for leadership on the billing migration, 3 weeks in' }, inputs: { refs, tells: own } });
       const view = await h.drive(run.id);
       expect(view.run.status).toBe('done');
       checkEvents(view, 'c4');
@@ -78,6 +81,8 @@ export function textMediaScenarios(use: () => Harness): void {
       expect(revise).toHaveLength(1);
       expect(revise[0]!.slots.critique).toMatch(/^- Intent: /);
       expect(revise[0]!.slots.critique).not.toMatch(/^###/m);
+      // The run brought its own tell catalog (StartRunInput.inputs.tells): the sweep used it instead of the memo one.
+      expect(rendered.filter((c) => c.id === 'product.c4.tells-sweep').map((c) => c.slots.tells)).toEqual([own]);
     }, 120_000);
   });
 
@@ -144,6 +149,9 @@ export function textMediaScenarios(use: () => Harness): void {
       const choose = view.checkpoints.find((c) => c.kind === 'choose')!;
       expect(choose).toMatchObject({ stepId: 'draft', prompt: 'Choose: who writes the first draft.' });
       expect(choose.options?.map((o) => o.id)).toEqual(['ai', 'own']);
+      // The sweep's tells: every catalog its domains name, joined in order (tellsPromptIds), not just the medium's.
+      const tells = h.prompts.calls.filter((c) => c.id === 'product.c3.tells-sweep').at(-1)!.slots.tells!;
+      expect([...tells.matchAll(/\((tells\.[a-z-]+)\)/g)].map((m) => m[1])).toEqual(['tells.prose-words', 'tells.prose-structure', 'tells.newsletter', 'tells.social']);
       expect(view.checkpoints.find((c) => c.stepId === 'own-draft')).toMatchObject({ kind: 'write', initialText: AUTHOR_DRAFT });
       expect(h.succeeded(run.id).some((c) => c.stepId === 'ai-draft')).toBe(false);
       // ASSET on prose: briefs, one image (slots: 1), then the model places it as a Markdown image line.

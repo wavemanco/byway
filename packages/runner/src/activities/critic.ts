@@ -7,7 +7,7 @@
  * labelled A–X"), it ranks every label, and the runner finds our place in that ranking. It never sees a threshold.
  */
 import type { Medium } from '@byway/contracts';
-import { GREAT_MIN_REFERENCES, greatLineup, labelled, labelOf } from '@byway/prompts';
+import { GREAT_MIN_REFERENCES, greatLineup, labelled, labelOf } from '@byway/prompts/pure';
 import { textView, viewKindOf } from '../formats.ts';
 import { labels } from '../labels.ts';
 import { sectionOf, type CriticAnswer } from '../parse.ts';
