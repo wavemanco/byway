@@ -152,6 +152,9 @@ describe('cancel and stop through the real workflow', () => {
     const slow = await h.start(tiny);
     await h.waitFor('a slow call in flight', async () => h.calls.some((c) => c.runId === slow.id && c.result === undefined));
     const started = Date.now();
+    // Expected output: the SDK logs "[ERROR] Worker failed" with GracefulShutdownPeriodExpiredError here. That is this
+    // test's intended outcome (worker.ts `abandoned`), not a failure. The suite's log is left unfiltered, so a real
+    // error of that kind elsewhere stays visible.
     const stopped = await Promise.race([h.worker.shutdown().then(() => 'stopped'), sleep(20_000).then(() => 'still stopping')]);
     expect(stopped).toBe('stopped');
     expect(Date.now() - started).toBeLessThan(10_000);
