@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**79 records:** 72 accepted (15 of them by continuation, awaiting ratification; 17 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**80 records:** 73 accepted (15 of them by continuation, awaiting ratification; 18 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -114,6 +114,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0076](0076-other-family-critic-and-exposure-register.md) | A different-family critic where a recipe asks for one, recorded in an exposure register | Accepted | Delegated | 2026-10-07 23:00 |
 | [ADR-0077](0077-rank-gates-scale-with-the-lineup.md) | Hidden rank thresholds scale with the lineup actually used | Accepted | Delegated | 2026-10-07 23:00 |
 | [ADR-0079](0079-phase-4-runner-records.md) | Runner decisions made while fixing the Phase 4 review | Accepted | Delegated | 2026-10-08 00:30 |
+| [ADR-0080](0080-phase-4-recheck-corrections.md) | Corrections after the independent re-check of the Phase 4 fixes | Accepted | Delegated | 2026-10-08 02:00 |
 
 ## Open decisions (not yet ADRs)
 
