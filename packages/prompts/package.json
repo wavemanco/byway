@@ -1,0 +1,21 @@
+{
+  "name": "@byway/prompts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Versioned prompt templates for every prompt id, and a strict renderer (product spec §3.3, WP-P)",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pure": "./src/pure.ts"
+  },
+  "dependencies": {
+    "@byway/contracts": "workspace:*",
+    "@byway/protocol": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@byway/catalog": "workspace:*",
+    "@byway/gateway": "workspace:*",
+    "@byway/recipe": "workspace:*"
+  }
+}
