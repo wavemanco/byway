@@ -1,0 +1,19 @@
+{
+  "name": "@byway/advisor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Recommender (chooser + intake), composer, evidence labels and cost estimates for the product (spec §4)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@byway/catalog": "workspace:*",
+    "@byway/contracts": "workspace:*",
+    "@byway/gateway": "workspace:*",
+    "@byway/protocol": "workspace:*",
+    "@byway/recipe": "workspace:*",
+    "@byway/validator": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

@@ -68,6 +68,30 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/advisor:
+    dependencies:
+      '@byway/catalog':
+        specifier: workspace:*
+        version: link:../catalog
+      '@byway/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@byway/gateway':
+        specifier: workspace:*
+        version: link:../gateway
+      '@byway/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@byway/recipe':
+        specifier: workspace:*
+        version: link:../recipe
+      '@byway/validator':
+        specifier: workspace:*
+        version: link:../validator
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
   packages/canonical: {}
 
   packages/catalog:

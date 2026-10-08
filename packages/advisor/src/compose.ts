@@ -1,0 +1,152 @@
+import { randomBytes } from 'node:crypto';
+import type { ChatMessage, Gateway, ProblemBrief, PromptRenderer } from '@byway/contracts';
+import { parseRecipe, RECIPE_SCHEMA_ID, withHash, type Recipe } from '@byway/recipe';
+import { validate } from '@byway/validator';
+import { z } from 'zod';
+import { assistantText, truncation, userText } from './ask.ts';
+import { blocksListing } from './blocks.ts';
+import { checkComposedProfile, COMPOSED_RULES } from './profile.ts';
+import { answerJson, ContractError, fenced, problemText } from './text.ts';
+
+/**
+ * The composer (product spec §4, ADR-0058): design-time only. A model gets the block registry and the nearest
+ * canonical recipe and answers with a `byway.recipe/1` object; the advisor forces what is not the model's to decide
+ * (channel, kind, family, id), validates it with @byway/validator and the composed profile, sends violations back for
+ * at most two repairs, and offers the recipe only when it validates.
+ */
+
+export const COMPOSE_PROMPT = 'advisor.compose';
+export const REPAIR_PROMPT = 'advisor.compose.repair';
+export const MAX_REPAIRS = 2;
+/** Designing a recipe is judgment, so it runs at the big tier (default rule 5). */
+export const COMPOSE_TIER = 'big' as const;
+/** A recipe as JSON runs to a few thousand tokens (C5's is the longest); the allowance leaves room for reasoning. */
+export const COMPOSE_MAX_OUTPUT_TOKENS = 16000;
+
+export interface Violation {
+  ruleId: string;
+  /** Where in the recipe, when known. */
+  path?: string;
+  message: string;
+}
+
+export interface Candidate {
+  /** The recipe as the advisor would register it, when the answer parsed against the schema. */
+  recipe?: Recipe;
+  violations: Violation[];
+}
+
+export interface ComposeDeps {
+  gateway: Gateway;
+  prompts: PromptRenderer;
+  /** The canonical recipes: their blocks' wiring goes into the prompt, and their step prompts may be reused. */
+  catalog: readonly Recipe[];
+  newId?: () => string;
+}
+
+export const freshComposedId = (): string => `composed-${randomBytes(6).toString('hex')}`;
+
+/**
+ * Fields forced on whatever the model returned: a composed recipe lives on the workspace channel as kind 'composed'
+ * in its nearest recipe's family (so only that family's declared exceptions can apply), under a fresh id. A `hash` or
+ * `parent` the model wrote is dropped: the advisor hashes the result itself, and a composed recipe is not a registered
+ * derivation of anything (claiming one could suspend rules). Missing housekeeping fields default from the nearest
+ * recipe, so a model that leaves out `inputs` or `bank` does not spend a repair on it.
+ */
+export function forceComposed(raw: Record<string, unknown>, nearest: Recipe, id: string): Record<string, unknown> {
+  const { hash: _hash, parent: _parent, ...rest } = raw;
+  return {
+    ...rest,
+    schema: RECIPE_SCHEMA_ID,
+    id,
+    kind: 'composed',
+    channel: 'workspace',
+    family: nearest.family,
+    title: typeof rest.title === 'string' && rest.title.trim() ? rest.title : `Composed from ${nearest.title}`,
+    ...(rest.medium === undefined && nearest.medium ? { medium: nearest.medium } : {}),
+    inputs: rest.inputs ?? nearest.inputs,
+    sitsOut: rest.sitsOut ?? [],
+    exceptions: rest.exceptions ?? [],
+    bank: rest.bank ?? true,
+  };
+}
+
+const MAX_SCHEMA_ISSUES = 12;
+
+/** Validator violations at a knob path that the composed profile also reports there are dropped (same finding, once). */
+function merge(validator: Violation[], profile: Violation[]): Violation[] {
+  const knobPaths = new Set(profile.filter((v) => v.ruleId === COMPOSED_RULES.knob).map((v) => v.path));
+  return [...validator.filter((v) => !(v.ruleId === 'ST7' && v.path !== undefined && knobPaths.has(v.path))), ...profile];
+}
+
+/** Parse, force, schema-check, validate and profile-check one composer answer. */
+export function checkAnswer(text: string, nearest: Recipe, deps: Pick<ComposeDeps, 'prompts' | 'catalog'>, id: string): Candidate {
+  let raw: unknown;
+  try {
+    raw = answerJson(text);
+  } catch (e) {
+    if (!(e instanceof ContractError)) throw e;
+    return { violations: [{ ruleId: 'FORMAT', message: e.message }] };
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { violations: [{ ruleId: 'FORMAT', message: 'the answer must be one JSON object holding a byway.recipe/1 recipe' }] };
+
+  let recipe: Recipe;
+  try {
+    recipe = withHash(parseRecipe(forceComposed(raw as Record<string, unknown>, nearest, id)));
+  } catch (e) {
+    if (!(e instanceof z.ZodError)) throw e;
+    return {
+      violations: e.issues.slice(0, MAX_SCHEMA_ISSUES).map((i) => ({ ruleId: 'SCHEMA', path: i.path.map(String).join('.') || '(recipe)', message: i.message })),
+    };
+  }
+  const verdict = validate(recipe);
+  const fromValidator: Violation[] = verdict.violations.map((v) => ({ ruleId: v.ruleId, path: v.path, message: v.message }));
+  const fromProfile: Violation[] = checkComposedProfile(recipe, { nearest, catalog: deps.catalog, prompts: deps.prompts });
+  return { recipe, violations: merge(fromValidator, fromProfile) };
+}
+
+/** The `violations` slot: one line per violation, with its rule and place. */
+export function violationsSlot(violations: readonly Violation[]): string {
+  return violations.map((v) => `- ${v.ruleId}${v.path ? ` at ${v.path}` : ''}: ${v.message}`).join('\n');
+}
+
+export interface ComposeOutcome {
+  /** The last answer that parsed as a recipe (the offered one when ok). */
+  recipe?: Recipe;
+  ok: boolean;
+  violations: Violation[];
+}
+
+/**
+ * Compose a recipe near `nearest`: one compose call and up to two repairs. Each repair continues the conversation, so
+ * the model sees the recipe it wrote and then what is wrong with it.
+ */
+export async function composeRecipe(deps: ComposeDeps, problem: ProblemBrief, nearest: Recipe, opts: { workspaceId: string; profileId: string }): Promise<ComposeOutcome> {
+  const slots = { problem: problemText(problem), blocks: blocksListing(deps.catalog), nearest: fenced('json', JSON.stringify(nearest, null, 2)) };
+  const first = deps.prompts.render(COMPOSE_PROMPT, slots);
+  const id = (deps.newId ?? freshComposedId)();
+  let messages: ChatMessage[] = [userText(first.user)];
+  let best: Candidate | undefined;
+  let last: Candidate = { violations: [] };
+
+  for (let attempt = 0; attempt <= MAX_REPAIRS; attempt++) {
+    const result = await deps.gateway.complete({
+      workspaceId: opts.workspaceId,
+      profileId: opts.profileId,
+      purpose: attempt === 0 ? COMPOSE_PROMPT : REPAIR_PROMPT,
+      tier: COMPOSE_TIER,
+      ...(first.system ? { system: first.system } : {}),
+      messages,
+      maxOutputTokens: COMPOSE_MAX_OUTPUT_TOKENS,
+    });
+    const cut = truncation(result);
+    last = cut ? { violations: [{ ruleId: 'FORMAT', message: cut }] } : checkAnswer(result.text, nearest, deps, id);
+    if (last.recipe) best = last;
+    if (last.recipe && last.violations.length === 0) return { recipe: last.recipe, ok: true, violations: [] };
+    if (attempt === MAX_REPAIRS) break;
+    const repair = deps.prompts.render(REPAIR_PROMPT, { ...slots, violations: violationsSlot(last.violations) });
+    messages = [...messages, assistantText(result.text.trim() ? result.text : '(empty answer)'), userText(repair.user)];
+  }
+  // Never offered: report the last recipe that parsed, with its own violations.
+  return best?.recipe ? { recipe: best.recipe, ok: false, violations: best.violations } : { ok: false, violations: last.violations };
+}
