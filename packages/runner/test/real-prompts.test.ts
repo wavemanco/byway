@@ -11,11 +11,15 @@
  * The configurations whose critics run in GREAT mode run twice: with references (GREAT, ranked blind) and without
  * (the OK fallback of ADR-0071), so both branches of their templates are rendered.
  */
+import { rmSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PROTOCOL_CONFIGS } from '@byway/catalog';
+import { c4, PROTOCOL_CONFIGS } from '@byway/catalog';
 import type { CompletionRequest, Medium } from '@byway/contracts';
 import { createPromptRenderer } from '@byway/prompts';
 import type { Node, Recipe } from '@byway/recipe';
+import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE } from '../src/build.ts';
+import { createRunnerClient } from '../src/client.ts';
+import { createWorker } from '../src/worker.ts';
 import { checkEvents, ofType } from './helpers/events.ts';
 import { png } from './helpers/fake-pages.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
@@ -104,6 +108,27 @@ describe('the real templates, the runner and the demo gateway agree (spec §3.3)
       await agree(recipe, refs);
     }, 180_000);
   }
+
+  it('a worker given no renderer renders these same templates (the product wiring)', async () => {
+    const taskQueue = 'runner-default-prompts';
+    // Next to the default bundle, where Temporal's bundler resolves @temporalio/* from the runner's node_modules.
+    const outfile = DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `default-prompts-${process.pid}.js`);
+    const worker = await createWorker({ connection: h.env.nativeConnection, taskQueue, gateway: h.gateway, store: h.store, pages: h.pages, workflowsPath: await buildWorkflows({ outfile }) });
+    const running = worker.run();
+    try {
+      const runner = createRunnerClient({ client: h.env.client, store: h.store, taskQueue });
+      const run = await runner.start({ workspaceId: h.workspaceId, recipe: c4, problem: { text: PROBLEMS.c4! }, profileId: 'demo', budgetUsd: 50 });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      const prompts = h.ledger(run.id).flatMap((e) => (e.prompt ? [e.prompt] : []));
+      expect(prompts.length).toBeGreaterThan(0);
+      for (const p of prompts) expect(p.hash).toBe(library.info(p.id, 'prose').hash);
+    } finally {
+      await worker.shutdown();
+      await running.catch(() => undefined);
+      rmSync(outfile, { force: true });
+    }
+  }, 180_000);
 });
 
 async function agree(recipe: Recipe, withRefs: boolean): Promise<void> {

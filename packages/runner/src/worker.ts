@@ -1,8 +1,10 @@
 /**
  * The runner worker: it builds the workflow bundle with esbuild (ADR-0070), points Temporal's `workflowsPath` at it,
- * and serves the activities built from the injected gateway, store and prompts.
+ * and serves the activities built from the injected gateway and store, and the prompt templates (@byway/prompts unless a
+ * test injects its own).
  */
 import { DEFAULT_TEMPORAL_ADDRESS, TASK_QUEUE, type Gateway, type PromptRenderer, type Store } from '@byway/contracts';
+import { createPromptRenderer } from '@byway/prompts';
 import { NativeConnection, Worker } from '@temporalio/worker';
 import { createActivities } from './activities/index.ts';
 import type { RunnerDeps } from './activities/deps.ts';
@@ -12,8 +14,8 @@ import { playwrightPages, type PageRenderer } from './pages.ts';
 export interface CreateWorkerOptions {
   gateway: Gateway;
   store: Store;
-  /** The prompt templates; @byway/prompts in the product (wired in Phase 3), a fake in tests. */
-  prompts: PromptRenderer;
+  /** The prompt templates. Defaults to @byway/prompts (checked when it loads); tests may inject a fake. */
+  prompts?: PromptRenderer;
   /** A connection to Temporal; defaults to one to DEFAULT_TEMPORAL_ADDRESS. */
   connection?: NativeConnection;
   namespace?: string;
@@ -44,7 +46,7 @@ export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWor
   const deps: RunnerDeps = {
     gateway: opts.gateway,
     store: opts.store,
-    prompts: opts.prompts,
+    prompts: opts.prompts ?? createPromptRenderer(),
     pages,
     ...(opts.labelFor ? { labelFor: opts.labelFor } : {}),
     ...(opts.seed ? { seed: opts.seed } : {}),

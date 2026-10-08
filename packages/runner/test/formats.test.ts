@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyCopy, extractCopy, lostVoiceLines, pageCopy, pageVoiceProblems, placePageCopy, skeleton } from '../src/copy.ts';
 import { joinCodeDiff, parseArtifact, parseCodeDiff, splitCodeDiff, textView } from '../src/formats.ts';
+import { OUTPUT_CONTRACTS } from '@byway/prompts/pure';
 import { parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep, sectionOf } from '../src/parse.ts';
 
 const PAGE = `<!doctype html>
@@ -138,5 +139,23 @@ describe('VOICE copy', () => {
     // Measured against where the write started: words that were never placed are not required.
     expect(lostVoiceLines('media', sb('Something else.'), 'Less time. More life.', sb('Earlier draft.'))).toEqual([]);
     expect(lostVoiceLines('media', sb('Something else.'), 'Less time. More life.', sb('Less time. More life.'))).toEqual(['Less time. More life.']);
+  });
+});
+
+describe('the output contracts as @byway/prompts states them (spec §3.3)', () => {
+  /** The quoted final lines of a contract, e.g. "Score: N/10" and "Ranking: C, A, E, B, D". */
+  const quoted = (id: keyof typeof OUTPUT_CONTRACTS): string[] => [...OUTPUT_CONTRACTS[id].matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
+
+  it('the runner reads the very lines the contracts quote, so a template and its parser cannot drift apart', () => {
+    const critique = quoted('critique');
+    const score = critique.find((q) => q.startsWith('Score:'))!.replace('N', '7');
+    expect(parseCritic(`- gap\n${score}`)).toMatchObject({ ok: true, value: { mode: 'OK', score: 7 } });
+    const ranking = critique.find((q) => q.startsWith('Ranking:'))!;
+    const lineup = [...ranking.matchAll(/[A-Z](?=,|$)/g)].map((m) => m[0]).sort();
+    expect(parseCritic(`### A\n- gap\n\n${ranking}`, lineup)).toMatchObject({ ok: true, value: { mode: 'GREAT' } });
+    expect(parseCut(quoted('cut').find((q) => q.startsWith('Nothing'))!)).toEqual({ ok: true, value: '' });
+    expect(parseCheck(quoted('defects').find((q) => q.startsWith('No defects'))!)).toMatchObject({ ok: true, value: { clean: true } });
+    for (const keep of quoted('keep')) expect(parseKeep(`Reasons.\n${keep}`)).toMatchObject({ ok: true });
+    expect(parseChoice(`Reasons.\n${quoted('choice')[0]!.replace('<label>', 'B')}`, ['A', 'B'])).toEqual({ ok: true, value: 'B' });
   });
 });
