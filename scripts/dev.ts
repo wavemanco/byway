@@ -49,11 +49,25 @@ function stopTree(child: ChildProcess): Promise<void> {
   return Promise.race([exited, timeout]);
 }
 
+/**
+ * Temporal's worker logs every bundle build and state change at INFO; keep warnings and errors only. The SDK is the
+ * runner's own dependency, resolved from its package, so this is the instance the dev engine uses.
+ */
+function quietTemporal(): void {
+  const requireFromRunner = createRequire(path.join(ROOT, 'packages', 'runner', 'package.json'));
+  const { DefaultLogger, Runtime } = requireFromRunner('@temporalio/worker') as {
+    DefaultLogger: new (level: 'WARN') => unknown;
+    Runtime: { install(options: { logger: unknown }): unknown };
+  };
+  Runtime.install({ logger: new DefaultLogger('WARN') });
+}
+
 async function main(): Promise<void> {
   const demo = process.argv.includes('--demo') || flagOn(process.env.BYWAY_DEMO);
   const webPort = port('PORT', 3000);
   const temporalPort = port('BYWAY_TEMPORAL_PORT', 7233);
 
+  quietTemporal();
   const keys = loadEnvFile(path.join(ROOT, '.env.agents'));
   const dataDir = resolveDataDir();
   const store = createStore({ dataDir });

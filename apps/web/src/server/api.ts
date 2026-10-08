@@ -56,6 +56,9 @@ export async function createIntake(deps: Deps, input: z.infer<typeof ProblemInpu
 /**
  * Recommends for the intake's problem. Answers you flipped are passed in and routing re-runs; the answers and the
  * recommendation are kept on the intake, so coming back to the screen shows them as you left them.
+ *
+ * TODO(v4): Advisor.recommend takes opts.routes; pass route choices the person made on the Recommendation screen so a
+ * re-route keeps them.
  */
 export async function recommendIntake(deps: Deps, intakeId: string, answers?: ChooserAnswer[]): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
