@@ -14,8 +14,10 @@ export const PROMPT_SLOTS = [
   /** The user's problem (the `intent` port), with brief fields. */
   'problem',
   'brief',
-  /** The current artifact's text (HTML, Markdown, JSON, diff). */
+  /** The current artifact's text (HTML, Markdown, JSON, diff). Never given to judging steps (port rule 1). */
   'artifact',
+  /** A text view of the artifact as its audience meets it (text media); screenshot views are attached images instead. */
+  'view',
   'critique',
   'taste',
   'voice',

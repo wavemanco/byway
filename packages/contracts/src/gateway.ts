@@ -104,7 +104,10 @@ export interface VideoRequest extends SpendContext {
 }
 
 export interface VideoResult {
-  /** The clip (video/mp4), stored in the artifact store immediately (provider URLs expire). */
+  /**
+   * The clip, stored in the artifact store immediately (provider URLs expire): video/mp4 from real providers; the
+   * demo-mode mock stores a labelled placeholder (an animated SVG) instead.
+   */
   artifactId: string;
   /** The clip's last frame (PNG), the anchor the next relay link starts from. */
   lastFrameArtifactId: string;

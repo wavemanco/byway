@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**70 records:** 63 accepted (15 of them by continuation, awaiting ratification; 8 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**71 records:** 64 accepted (15 of them by continuation, awaiting ratification; 9 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -105,6 +105,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0064](0064-product-v1-local-first-web-app.md) | Product v1 is a local-first web app on the shared engine | Accepted | Delegated | 2026-10-07 10:48 |
 | [ADR-0065](0065-product-v1-scope.md) | Product v1 scope: all eight configurations, recommender, composer, computed labels, demo mode | Accepted | Delegated | 2026-10-07 10:48 |
 | [ADR-0069](0069-product-c5-relay-and-honest-skips.md) | In the product, C5 relay links run on fal.ai video, one link per shot, and steps with no v1 executor finish as skipped | Accepted | Delegated | 2026-10-07 18:25 |
+| [ADR-0071](0071-great-critic-falls-back-to-ok-without-references.md) | In the product, a GREAT-mode critic needs at least three references, and falls back to OK mode without them | Accepted | Delegated | 2026-10-07 18:40 |
 
 ## Open decisions (not yet ADRs)
 
