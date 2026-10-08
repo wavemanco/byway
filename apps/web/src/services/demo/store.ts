@@ -1,22 +1,27 @@
 /**
- * An in-memory Store for demo mode. It mirrors what @byway/store will do on SQLite (content-addressed
- * artifacts, per-run event sequence numbers, checkpoints resolved exactly once) so the UI can be built and
- * tested against the same behaviour before the real store is wired in.
+ * An in-memory Store for demo mode. It mirrors what @byway/store does on SQLite (content-addressed artifacts,
+ * per-run event sequence numbers with dedupe keys, checkpoints resolved exactly once with a checked answer,
+ * intakes and per-workspace preferences) so the UI is built and tested against the same behaviour the real store
+ * has. Nothing survives a restart, which is the one thing demo mode is allowed to differ on.
  */
 import { createHash } from 'node:crypto';
 import type {
   ArtifactRecord,
   ArtifactStore,
   CheckpointRecord,
-  CheckpointResolution,
+  IntakeRecord,
+  Preferences,
   RunEvent,
   RunRecord,
   Store,
   Workspace,
 } from '@byway/contracts';
+import { checkResolution } from './resolution.ts';
 
 const DEFAULT_WORKSPACE_ID = 'default';
 const DEFAULT_BUDGET_USD = 20;
+/** The contract's defaults for a workspace that never saved preferences. */
+const DEFAULT_PREFERENCES: Preferences = { profileId: 'balanced', demoMode: false, showTechnicalNames: false };
 
 /** Strictly increasing ISO timestamps, so ordering by time is stable even within one millisecond. */
 function clock(): () => string {
@@ -30,6 +35,11 @@ function clock(): () => string {
 
 function notFound(what: string, id: string): Error {
   return new Error(`${what} ${id} not found`);
+}
+
+/** Copies only the fields a patch sets: undefined keeps the current value, as the contract says. */
+function defined<T extends object>(patch: T): Partial<T> {
+  return Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Partial<T>;
 }
 
 function createArtifactStore(now: () => string): ArtifactStore {
@@ -65,7 +75,11 @@ export function createDemoStore(): Store {
   const workspaces = new Map<string, Workspace>();
   const runs = new Map<string, RunRecord>();
   const events = new Map<string, RunEvent[]>();
+  /** Per run: dedupe key → the event first appended with it. */
+  const dedupe = new Map<string, Map<string, RunEvent>>();
   const checkpoints = new Map<string, CheckpointRecord>();
+  const intakes = new Map<string, IntakeRecord>();
+  const preferences = new Map<string, Preferences>();
 
   const requireRun = (id: string): RunRecord => {
     const run = runs.get(id);
@@ -91,7 +105,7 @@ export function createDemoStore(): Store {
     async updateWorkspace(id, patch) {
       const ws = workspaces.get(id);
       if (!ws) throw notFound('workspace', id);
-      const next = { ...ws, ...patch };
+      const next = { ...ws, ...defined(patch) };
       workspaces.set(id, next);
       return next;
     },
@@ -104,9 +118,15 @@ export function createDemoStore(): Store {
     },
 
     async updateRun(id, patch) {
-      const run = { ...requireRun(id), ...patch, updatedAt: now() };
-      runs.set(id, run);
-      return run;
+      const { error, outputArtifactId, ...rest } = patch;
+      const next: RunRecord = { ...requireRun(id), ...defined(rest), updatedAt: now() };
+      // null clears; a string sets; undefined leaves the field as it was.
+      if (error === null) delete next.error;
+      else if (error !== undefined) next.error = error;
+      if (outputArtifactId === null) delete next.outputArtifactId;
+      else if (outputArtifactId !== undefined) next.outputArtifactId = outputArtifactId;
+      runs.set(id, next);
+      return next;
     },
 
     async getRun(id) {
@@ -120,11 +140,18 @@ export function createDemoStore(): Store {
       return opts?.limit ? list.slice(0, opts.limit) : list;
     },
 
-    async appendEvent(input) {
+    async appendEvent(input, opts) {
+      const keyed = dedupe.get(input.runId) ?? new Map<string, RunEvent>();
+      const first = opts?.dedupeKey !== undefined ? keyed.get(opts.dedupeKey) : undefined;
+      if (first) return first;
       const list = events.get(input.runId) ?? [];
       const event: RunEvent = { ...input, seq: list.length + 1, at: now() };
       list.push(event);
       events.set(input.runId, list);
+      if (opts?.dedupeKey !== undefined) {
+        keyed.set(opts.dedupeKey, event);
+        dedupe.set(input.runId, keyed);
+      }
       return event;
     },
 
@@ -138,11 +165,11 @@ export function createDemoStore(): Store {
       return cp;
     },
 
-    async resolveCheckpoint(res: CheckpointResolution) {
+    async resolveCheckpoint(res) {
       const cp = checkpoints.get(res.checkpointId);
       if (!cp) throw notFound('checkpoint', res.checkpointId);
       if (cp.status === 'resolved') throw new Error(`checkpoint ${cp.id} is already resolved`);
-      const done: CheckpointRecord = { ...cp, status: 'resolved', resolvedAt: now(), resolution: res };
+      const done: CheckpointRecord = { ...cp, status: 'resolved', resolvedAt: now(), resolution: checkResolution(cp, res) };
       checkpoints.set(cp.id, done);
       return done;
     },
@@ -159,10 +186,43 @@ export function createDemoStore(): Store {
       return [...checkpoints.values()].filter((c) => c.runId === runId);
     },
 
+    async createIntake(input) {
+      if (intakes.has(input.id)) throw new Error(`intake ${input.id} already exists`);
+      const at = now();
+      const intake: IntakeRecord = { ...input, createdAt: at, updatedAt: at };
+      intakes.set(intake.id, intake);
+      return intake;
+    },
+
+    async updateIntake(id, patch) {
+      const intake = intakes.get(id);
+      if (!intake) throw notFound('intake', id);
+      const next: IntakeRecord = { ...intake, ...defined(patch), updatedAt: now() };
+      intakes.set(id, next);
+      return next;
+    },
+
+    async getIntake(id) {
+      return intakes.get(id);
+    },
+
+    async getPreferences(workspaceId) {
+      return { ...(preferences.get(workspaceId) ?? DEFAULT_PREFERENCES) };
+    },
+
+    async setPreferences(workspaceId, patch) {
+      const next: Preferences = { ...(preferences.get(workspaceId) ?? DEFAULT_PREFERENCES), ...defined(patch) };
+      preferences.set(workspaceId, next);
+      return { ...next };
+    },
+
     close() {
       runs.clear();
       events.clear();
+      dedupe.clear();
       checkpoints.clear();
+      intakes.clear();
+      preferences.clear();
     },
   };
 }
