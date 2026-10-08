@@ -42,12 +42,20 @@ const Shot = z.object({
   description: z.string(),
   imagePrompt: z.string(),
   durationSec: z.number(),
+  /** On-screen text over this shot (spec §3.3; C4: the late Your words step edits it, with the headline and tagline). */
+  caption: z.string().optional(),
   /** Not in the model's output contract: the runner adds the generated frame's artifact id (spec §3.2 Storyboards). */
   imageArtifactId: z.string().optional(),
   /** Added by the runner when a relay link made this shot's clip (ADR-0069). */
   clipArtifactId: z.string().optional(),
 });
-const Storyboard = z.object({ storyboard: z.array(Shot).min(1), voiceover: z.string() });
+const Storyboard = z.object({
+  storyboard: z.array(Shot).min(1),
+  voiceover: z.string(),
+  /** The ad's on-screen headline and tagline (spec §3.3), when the storyboard has them. */
+  headline: z.string().optional(),
+  tagline: z.string().optional(),
+});
 
 export type StoryboardShot = z.infer<typeof Shot>;
 
@@ -55,6 +63,8 @@ export interface StoryboardModel {
   shots: StoryboardShot[];
   voiceover: string;
   totalSec: number;
+  headline?: string;
+  tagline?: string;
 }
 
 export function parseStoryboard(text: string): StoryboardModel | null {
@@ -65,10 +75,18 @@ export function parseStoryboard(text: string): StoryboardModel | null {
     description: s.description,
     imagePrompt: s.imagePrompt,
     durationSec: s.durationSec,
+    ...(s.caption?.trim() ? { caption: s.caption } : {}),
     ...(s.imageArtifactId ? { imageArtifactId: s.imageArtifactId } : {}),
     ...(s.clipArtifactId ? { clipArtifactId: s.clipArtifactId } : {}),
   }));
-  return { shots, voiceover: parsed.data.voiceover, totalSec: shots.reduce((t, s) => t + s.durationSec, 0) };
+  const { headline, tagline } = parsed.data;
+  return {
+    shots,
+    voiceover: parsed.data.voiceover,
+    totalSec: shots.reduce((t, s) => t + s.durationSec, 0),
+    ...(headline?.trim() ? { headline } : {}),
+    ...(tagline?.trim() ? { tagline } : {}),
+  };
 }
 
 /** Every artifact a storyboard shows (frames and clips), so the server can say what media type each one is. */

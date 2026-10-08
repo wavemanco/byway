@@ -7,10 +7,13 @@ import { createElement, type ComponentType } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { CheckpointKind, CheckpointRecord } from '@byway/contracts';
+import { Examples } from '../src/components/Examples.tsx';
 import { ChoosePanel } from '../src/components/run/panels/ChoosePanel.tsx';
 import { ComparePanel } from '../src/components/run/panels/ComparePanel.tsx';
 import { SelectPanel } from '../src/components/run/panels/SelectPanel.tsx';
+import { WritePanel } from '../src/components/run/panels/TextPanels.tsx';
 import type { PanelProps } from '../src/components/run/panels/types.ts';
+import { fieldName, parseOnScreenCopy, serializeOnScreenCopy } from '../src/view/onscreen.ts';
 
 const cp = (kind: CheckpointKind, extra: Partial<CheckpointRecord> = {}): CheckpointRecord => ({
   id: 'cp1',
@@ -63,5 +66,45 @@ describe('panels that commit with Enter start with nothing chosen (UX-1)', () =>
     const html = render(ComparePanel, cp('compare', { options: [{ id: 'A', label: 'Before the sweep' }, { id: 'B', label: 'After the swaps' }] }));
     expect(html).not.toContain('data-current');
     expect(html).toMatch(/aria-disabled="true"[^>]*>Keep this version/);
+  });
+});
+
+describe('Examples you admire (UX-12)', () => {
+  it('uses its own class names, not the Start page chips’ (.example, .examples)', () => {
+    const html = renderToStaticMarkup(createElement(Examples, { entries: [{ key: 1, kind: 'text', text: 'A memo I admire' }], onChange: () => undefined }));
+    const classes = [...html.matchAll(/class="([^"]*)"/g)].flatMap((m) => (m[1] ?? '').split(/\s+/));
+    expect(classes).not.toContain('example');
+    expect(classes).not.toContain('examples');
+    expect(classes).toContain('ref-example');
+  });
+});
+
+describe('on-screen copy in a Your words turn (C4)', () => {
+  const copy = 'Headline: Bread, the slow way\nTagline:Open at seven\nShot 1: Made by hand';
+
+  it('reads Headline, Tagline and Shot lines as fields, and sends unchanged copy back exactly', () => {
+    const fields = parseOnScreenCopy(copy);
+    expect(fields?.map((f) => [f.label, f.value])).toEqual([
+      ['Headline', 'Bread, the slow way'],
+      ['Tagline', 'Open at seven'],
+      ['Shot 1', 'Made by hand'],
+    ]);
+    expect(serializeOnScreenCopy(fields ?? [])).toBe(copy);
+    const edited = (fields ?? []).map((f) => (f.label === 'Tagline' ? { ...f, value: 'Open from seven,\nevery day' } : f));
+    expect(serializeOnScreenCopy(edited)).toBe('Headline: Bread, the slow way\nTagline:Open from seven, every day\nShot 1: Made by hand');
+    expect(fieldName('Shot 1')).toBe('Shot 1 caption');
+  });
+
+  it('leaves any other text to the plain editor', () => {
+    expect(parseOnScreenCopy('A whole page of copy\nHeadline: but not only')).toBeNull();
+    expect(parseOnScreenCopy('')).toBeNull();
+    expect(parseOnScreenCopy(undefined)).toBeNull();
+  });
+
+  it('shows a labelled field for each line', () => {
+    const html = render(WritePanel, cp('write', { prompt: 'Write the words shown on screen.', initialText: copy }));
+    expect(html).toContain('Shot 1 caption');
+    expect(html).toContain('value="Bread, the slow way"');
+    expect(html).not.toContain('<textarea');
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { diffLine } from '../src/view/composed.ts';
 import { BLOCK_CODES } from '@byway/protocol';
 import type { ChooserAnswer, EvidenceLabel, ModelProfile, RunStatus } from '@byway/contracts';
 import { BLOCK_NAMES, RECIPE_NAMES, TERMS, codeForLabel, recipeTitle, stageFromCode, stepTitle, whoLabel } from '../src/view/vocabulary.ts';
@@ -140,5 +141,19 @@ describe('labels', () => {
     const answers: ChooserAnswer[] = ['a', 'b', 'c'].map((id, i) => ({ questionId: id, answer: i > 0, confidence: 1, rationale: '', setBy: 'user' }));
     expect(decidingQuestion(answers)).toBe('b');
     expect(decidingQuestion(answers.map((x) => ({ ...x, answer: false })))).toBeUndefined();
+  });
+});
+
+describe('a composed recipe’s differences in plain words (UX-13)', () => {
+  it('drops node ids and names media in words unless technical names are on', () => {
+    expect(diffLine('Changed: the repeat (critic-loop): up to 4 rounds instead of 5', false)).toBe('Changed: the repeat: up to 4 rounds instead of 5');
+    expect(diffLine('Added: 3 separate drafts (seed-rep)', false)).toBe('Added: 3 separate drafts');
+    expect(diffLine('Changed: the repeat (a-loop → b-loop): until you say it is ready instead of until it clears a quality bar', false)).toBe(
+      'Changed: the repeat: until you say it is ready instead of until it clears a quality bar',
+    );
+    expect(diffLine('Makes web-page instead of prose.', false)).toBe('Makes a web page instead of text.');
+    // Words in parentheses that are not ids stay.
+    expect(diffLine('Added: a check (only when it applies) before the end', false)).toBe('Added: a check (only when it applies) before the end');
+    expect(diffLine('Changed: the repeat (critic-loop): up to 4 rounds instead of 5', true)).toBe('Changed: the repeat (critic-loop): up to 4 rounds instead of 5');
   });
 });

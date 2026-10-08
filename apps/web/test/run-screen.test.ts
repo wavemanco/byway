@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { focusAfterRemoval } from '../src/view/focus.ts';
+import { controlPendingLabel } from '../src/view/labels.ts';
 import type { CheckpointRecord } from '@byway/contracts';
 import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, waitingRunCount } from '../src/view/run.ts';
 import type { TimelineStage, TimelineStep } from '../src/view/timeline.ts';
@@ -96,5 +98,22 @@ describe('"How this was made"', () => {
     expect(made.skipped).toEqual([{ key: 'Motion#1', label: 'Motion', note: 'No video key.' }]);
     expect(made.rows.map((r) => r.label)).toEqual(['Random spark', 'Your pick', 'Remove near-duplicates', 'Your words', 'Final check']);
     expect(made.rows[3]?.round).toBe(2);
+  });
+});
+
+describe('focus after removing an item (UX-2)', () => {
+  it('goes to the item that took its place, else the one before, else the Add button', () => {
+    expect(focusAfterRemoval([1, 2, 3], 2)).toBe(3);
+    expect(focusAfterRemoval([1, 2, 3], 3)).toBe(2);
+    expect(focusAfterRemoval([1], 1)).toBeNull();
+    expect(focusAfterRemoval([1, 2], 9)).toBeNull();
+  });
+});
+
+describe('run controls (UX-10)', () => {
+  it('say at once what is happening while the request is on its way', () => {
+    expect(controlPendingLabel('pause')).toBe('Pausing…');
+    expect(controlPendingLabel('resume')).toBe('Resuming…');
+    expect(controlPendingLabel('cancel')).toBe('Cancelling…');
   });
 });

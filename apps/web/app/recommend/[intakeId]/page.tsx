@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { RecommendationView, type RecipeOption } from '../../../src/components/RecommendationView.tsx';
-import { composeView, currentRecommendation } from '../../../src/server/api.ts';
+import { composeView, recommendationOrProblem } from '../../../src/server/api.ts';
 import { getDeps } from '../../../src/server/deps.ts';
 import { workspaceSpend } from '../../../src/view/history.ts';
 import { takesRefs } from '../../../src/view/refs.ts';
@@ -44,7 +44,10 @@ export default async function RecommendPage({ params, searchParams }: PageProps<
       takesRefs: takesRefs(recipe),
     };
   }
-  const recommendation = chosenRecipeId ? null : await currentRecommendation(deps, intakeId);
+  // A model error (a wrong key, a spent budget, a busy provider) is shown here with a way forward (UX-2).
+  const outcome = chosenRecipeId ? null : await recommendationOrProblem(deps, intakeId);
+  const recommendation = outcome && 'recommendation' in outcome ? outcome.recommendation : null;
+  const recommendProblem = outcome && 'problem' in outcome ? outcome.problem : null;
   // The composed recipe stays on the server; the page gets what it shows.
   const composed = intake.composed ? composeView(intake.composed) : null;
   const workspace = await services.store.ensureDefaultWorkspace();
@@ -57,6 +60,7 @@ export default async function RecommendPage({ params, searchParams }: PageProps<
         problem={intake.problem.text}
         attachments={intake.problem.attachments?.map((a) => a.name) ?? []}
         recommendation={recommendation}
+        recommendProblem={recommendProblem}
         chosenRecipeId={chosenRecipeId}
         questions={services.advisor.questions()}
         options={options}

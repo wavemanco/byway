@@ -1,4 +1,5 @@
 /** Viewers for JSON deliverables: an options list (Idea Generator) and a storyboard (Ad Video Chain). */
+import { useId } from 'react';
 import type { ArtifactInfo } from '../view/rundata.ts';
 import { clipKind, type OptionItem, type StoryboardModel, type StoryboardShot } from '../view/result.ts';
 import { artifactUrl } from './api.ts';
@@ -39,8 +40,17 @@ interface StoryboardProps {
 }
 
 export function Storyboard({ board, media = {}, skipped = [] }: StoryboardProps) {
+  // Two storyboards can be on screen at once (Compare): each names its own voice-over section (UX-14).
+  const voId = useId();
   return (
     <div className="storyboard">
+      {board.headline || board.tagline ? (
+        <div className="storyboard-copy">
+          <p className="storyboard-copy-label">On screen</p>
+          {board.headline ? <p className="storyboard-headline">{board.headline}</p> : null}
+          {board.tagline ? <p className="storyboard-tagline">{board.tagline}</p> : null}
+        </div>
+      ) : null}
       {skipped.length > 0 ? (
         <div className="notice small">
           <p>Not made in this run:</p>
@@ -79,12 +89,18 @@ export function Storyboard({ board, media = {}, skipped = [] }: StoryboardProps)
                 Shot {shot.shot} <span className="muted">{shot.durationSec}s</span>
               </p>
               <p>{shot.description}</p>
+              {shot.caption ? (
+                <p className="shot-caption">
+                  <span className="muted">On screen: </span>
+                  {shot.caption}
+                </p>
+              ) : null}
             </div>
           </li>
         ))}
       </ol>
-      <section className="voiceover" aria-labelledby="vo-title">
-        <h3 id="vo-title">
+      <section className="voiceover" aria-labelledby={voId}>
+        <h3 id={voId}>
           Voice-over <span className="muted">{board.totalSec}s in total</span>
         </h3>
         <p>{board.voiceover}</p>

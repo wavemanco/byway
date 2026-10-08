@@ -17,6 +17,7 @@ import { takesRefs } from '../view/refs.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
 import { artifactHeaders, isArtifactId, mediaServing } from './artifacts.ts';
+import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
 import type { ControlInput, ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
 
@@ -34,6 +35,17 @@ export interface Deps {
   workspaceId: string;
   /** The model profile runs use (Store preferences). */
   profileId: string;
+}
+
+/** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */
+async function asking<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (err) {
+    const problem = modelProblem(err);
+    if (problem) throw new HttpError(problem.status, problem.message);
+    throw err;
+  }
 }
 
 async function requireIntake(deps: Deps, intakeId: string): Promise<IntakeRecord> {
@@ -63,12 +75,14 @@ export async function recommendIntake(deps: Deps, intakeId: string, answers?: Ch
   const intake = await requireIntake(deps, intakeId);
   const given = answers ?? intake.answers;
   const routes = intake.recommendation?.routes;
-  const rec = await deps.services.advisor.recommend(intake.problem, {
-    workspaceId: deps.workspaceId,
-    profileId: deps.profileId,
-    ...(given ? { answers: given } : {}),
-    ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),
-  });
+  const rec = await asking(() =>
+    deps.services.advisor.recommend(intake.problem, {
+      workspaceId: deps.workspaceId,
+      profileId: deps.profileId,
+      ...(given ? { answers: given } : {}),
+      ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),
+    }),
+  );
   await deps.services.store.updateIntake(intakeId, { answers: rec.answers, recommendation: rec });
   return rec;
 }
@@ -77,6 +91,20 @@ export async function recommendIntake(deps: Deps, intakeId: string, answers?: Ch
 export async function currentRecommendation(deps: Deps, intakeId: string): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
   return intake.recommendation ?? recommendIntake(deps, intakeId);
+}
+
+/**
+ * For the Recommendation screen: the recommendation, or what stopped it in words, so a model error is shown on the
+ * screen with a way forward instead of failing the whole screen. Nothing is stored on failure, so trying again asks
+ * again.
+ */
+export async function recommendationOrProblem(deps: Deps, intakeId: string): Promise<{ recommendation: Recommendation } | { problem: string }> {
+  try {
+    return { recommendation: await currentRecommendation(deps, intakeId) };
+  } catch (err) {
+    if (err instanceof HttpError && err.status !== 404) return { problem: err.message };
+    throw err;
+  }
 }
 
 /** What the browser sees of a composed recipe; the recipe itself stays on the server with the intake. */
@@ -92,7 +120,7 @@ export function composeView(result: ComposeResult): ComposeView {
 
 export async function composeIntake(deps: Deps, intakeId: string): Promise<ComposeView> {
   const intake = await requireIntake(deps, intakeId);
-  const result = await deps.services.advisor.compose(intake.problem, { workspaceId: deps.workspaceId, profileId: deps.profileId });
+  const result = await asking(() => deps.services.advisor.compose(intake.problem, { workspaceId: deps.workspaceId, profileId: deps.profileId }));
   await deps.services.store.updateIntake(intakeId, { composed: result });
   return composeView(result);
 }

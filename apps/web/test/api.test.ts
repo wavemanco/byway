@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CheckpointRecord } from '@byway/contracts';
+import { GatewayError, type CheckpointRecord, type GatewayErrorCode } from '@byway/contracts';
+import { AdvisorError } from '@byway/advisor';
 import type { Services } from '../src/services/index.ts';
 import {
   HttpError,
@@ -11,6 +12,7 @@ import {
   currentRecommendation,
   recipeForRun,
   recommendIntake,
+  recommendationOrProblem,
   resolveInRun,
   startRun,
   updateSettings,
@@ -234,5 +236,43 @@ describe('the artifact route', () => {
 
     const text = await d.services.store.artifacts.putText('# Notes', 'text/markdown');
     expect((await media(text.id)).status).toBe(404);
+  });
+});
+
+describe('model errors while recommending or composing (UX-2)', () => {
+  const gatewayError = (code: GatewayErrorCode, scope?: 'workspace' | 'run') =>
+    Object.assign(new GatewayError(code, `${code} from the provider`), scope ? { budget: { scope, capUsd: 5, spentUsd: 5, reservedUsd: 0, estimateUsd: 0.1, shortfallUsd: 0.1 } } : {});
+
+  it('says what went wrong and what to do, with a status that matches', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const cases: [Error, number, RegExp][] = [
+      [gatewayError('no-credentials'), 400, /key/],
+      [gatewayError('budget-exceeded', 'workspace'), 400, /workspace budget.*Settings/],
+      [gatewayError('rate-limited'), 503, /busy/],
+      [gatewayError('provider-error'), 503, /did not answer/],
+      [new AdvisorError('intake-unreadable', 'unreadable'), 502, /could not read/],
+    ];
+    for (const [err, status, message] of cases) {
+      recommend.mockRejectedValueOnce(err);
+      await expect(recommendIntake(d, intakeId)).rejects.toMatchObject({ status, message: expect.stringMatching(message) });
+    }
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    compose.mockRejectedValueOnce(new AdvisorError('compose-unreadable', 'unreadable'));
+    await expect(composeIntake(d, intakeId)).rejects.toMatchObject({ status: 502, message: expect.stringMatching(/build a recipe/) });
+    // Anything else is not dressed up as a model problem.
+    recommend.mockRejectedValueOnce(new TypeError('a bug'));
+    await expect(recommendIntake(d, intakeId)).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('gives the Recommendation screen a problem to show instead of failing to load', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    vi.spyOn(d.services.advisor, 'recommend').mockRejectedValueOnce(gatewayError('rate-limited'));
+    const first = await recommendationOrProblem(d, intakeId);
+    expect(first).toEqual({ problem: expect.stringMatching(/busy/) });
+    const second = await recommendationOrProblem(d, intakeId);
+    expect('recommendation' in second && second.recommendation.recipeId).toBeTruthy();
   });
 });

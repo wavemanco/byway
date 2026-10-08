@@ -464,6 +464,12 @@ kbd {
   opacity: 0.55;
 }
 
+/* Busy for a moment (the chooser re-routing): it keeps focus, so it only looks paused. */
+.switch[aria-disabled='true'] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
 /* Evidence label: honest, quiet, never celebratory. */
 .evidence {
   display: inline-flex;

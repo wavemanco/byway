@@ -114,7 +114,8 @@ async function answer(page: Page, turn: Locator, kind: CheckpointKind): Promise<
       return;
     case 'write': {
       const field = turn.locator('textarea');
-      if (!(await field.inputValue()).trim()) await field.fill(WORDS.write);
+      // On-screen copy (C4) comes as labelled fields, already filled; anything else is one text field.
+      if ((await field.count()) > 0 && !(await field.inputValue()).trim()) await field.fill(WORDS.write);
       await primary.click();
       return;
     }
