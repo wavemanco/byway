@@ -168,7 +168,10 @@ export function fakeFetch(statuses: Record<string, number> = {}) {
     const status = statuses[url];
     if (status !== undefined) return new Response('nope', { status });
     if (url.endsWith('.mp4')) return new Response(new TextEncoder().encode('mp4-bytes'), { headers: { 'content-type': 'video/mp4' } });
+    if (url.endsWith('.webm')) return new Response(new TextEncoder().encode('webm-bytes'), { headers: { 'content-type': 'video/webm' } });
     if (url.endsWith('.png')) return new Response(encodePng(4, 2, new Uint8Array(24).fill(90)), { headers: { 'content-type': 'image/png' } });
+    // A JPEG served with a PNG header: the frame must be stored under what its bytes are.
+    if (url.endsWith('.jpg')) return new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0]), { headers: { 'content-type': 'image/png' } });
     return new Response('not found', { status: 404 });
   };
   return { fetch: fetch as typeof globalThis.fetch, requested };

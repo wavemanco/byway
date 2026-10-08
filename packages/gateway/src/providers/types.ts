@@ -77,6 +77,8 @@ export interface ProviderVideoRequest {
   prompt: string;
   /** Already snapped to a length the model makes (`videoSeconds`), so the estimate and the bill agree. */
   durationSec: number;
+  /** The storyboard shot (VideoRequest.shot, 1-based), when the caller named it: the mock labels its placeholder with it. */
+  shot?: number;
   /** The relay anchor the clip starts from, loaded from the artifact store. */
   startFrame?: MediaBytes & { artifactId: string };
   context: CallContext;

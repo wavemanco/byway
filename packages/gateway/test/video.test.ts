@@ -88,7 +88,7 @@ describe('gateway: video through fal.ai', () => {
     expect(Buffer.from(frame.bytes.subarray(0, 4)).toString('hex')).toBe('89504e47');
 
     // 5 s at $0.07, plus fal's frame extraction bounded at 10 compute seconds at $0.0002.
-    expect(res).toMatchObject({ provider: 'fal', servedModel: BALANCED_VIDEO, costUsd: 0.352 });
+    expect(res).toMatchObject({ provider: 'fal', servedModel: BALANCED_VIDEO, costUsd: 0.352, mediaType: 'video/mp4', lastFrameMediaType: 'image/png' });
     const [entry] = ledgerLines();
     expect(entry).toMatchObject({ id: res.ledgerEntryId, kind: 'video', provider: 'fal', purpose: 'relay:media', requestedModel: BALANCED_VIDEO, usage: { inputTokens: 0, outputTokens: 0, units: 5 }, costUsd: 0.352, runId: 'run-1', stepId: 'clip' });
     expect(await g.verifyLedger()).toBeNull();
@@ -118,7 +118,8 @@ describe('gateway: video through fal.ai', () => {
     const fal = fakeFal();
     const fetch = fakeFetch();
     const opts = { clients: { fal: fal.client }, fetch: fetch.fetch };
-    await expect(gateway({ ...opts, env: {} }).video(req())).rejects.toMatchObject({ code: 'no-credentials', message: expect.stringMatching(/fal/) });
+    // Keys exist (so this is not demo mode), but not fal's.
+    await expect(gateway({ ...opts, env: { ANTHROPIC_API_KEY: 'sk-ant-api03-test-not-a-real-key-000000' } }).video(req())).rejects.toMatchObject({ code: 'no-credentials', message: expect.stringMatching(/fal/) });
     await expect(gateway(opts).video(req({ profileId: 'openai' }))).rejects.toMatchObject({ code: 'no-credentials', message: expect.stringMatching(/no video model/) });
     await expect(gateway(opts).video(req({ profileId: 'nope' }))).rejects.toMatchObject({ code: 'unknown-profile' });
     const { startFrameArtifactId: _, ...noFrame } = req();
@@ -187,6 +188,33 @@ describe('gateway: video through fal.ai', () => {
     expect(stored).toHaveLength(1);
   });
 
+  it('reports the last frame under the type its bytes have, whatever fal claims (contracts v4 lastFrameMediaType)', async () => {
+    const fal = fakeFal({}, { frameUrl: 'https://v3.fal.media/files/last.jpg' });
+    const res = await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(req());
+    expect(res).toMatchObject({ mediaType: 'video/mp4', lastFrameMediaType: 'image/jpeg' });
+    expect((await artifacts.get(res.lastFrameArtifactId)).record.mediaType).toBe('image/jpeg');
+  });
+
+  it('keeps and ledgers a paid clip that is not MP4, then fails clearly (the contract knows MP4 clips only)', async () => {
+    const fal = fakeFal({}, { clipUrl: 'https://v3.fal.media/files/clip.webm' });
+    const err = (await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err.code).toBe('provider-error');
+    expect(err.message).toMatch(/video\/webm/);
+    expect(ledgerLines()).toHaveLength(1);
+    expect([...artifacts.items.values()].filter((i) => i.record.mediaType === 'video/webm')).toHaveLength(1);
+  });
+
+  it('records the storyboard shot in the stored request, and refuses a shot that is not a positive integer', async () => {
+    const fal = fakeFal();
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    await g.video(req({ shot: 3 }));
+    const request = JSON.parse(await artifacts.getText(ledgerLines()[0].requestSha256));
+    expect(request).toMatchObject({ shot: 3, purpose: 'relay:media' });
+    for (const shot of [0, -1, 1.5, Number.NaN]) await expect(g.video(req({ shot }))).rejects.toMatchObject({ code: 'invalid-request', message: expect.stringMatching(/shot/) });
+    expect(fal.calls.filter((c) => c.endpoint === BALANCED_VIDEO)).toHaveLength(1);
+  });
+
   it('refuses a download that is not https, or that the provider fails to serve', async () => {
     const plain = fakeFal({}, { clipUrl: 'http://v3.fal.media/files/clip.mp4' });
     await expect(gateway({ clients: { fal: plain.client }, fetch: fakeFetch().fetch }).video(req())).rejects.toMatchObject({ code: 'provider-error', message: expect.stringMatching(/https/) });
@@ -212,8 +240,17 @@ describe('gateway: video in demo mode', () => {
     expect(svg).not.toMatch(/<script|href=|\son[a-z]+=/i);
     const frame = await artifacts.get(res.lastFrameArtifactId);
     expect(frame.record.mediaType).toBe('image/png');
-    expect(res).toMatchObject({ provider: 'mock', servedModel: 'mock-video', costUsd: 0 });
+    expect(res).toMatchObject({ provider: 'mock', servedModel: 'mock-video', costUsd: 0, mediaType: 'image/svg+xml', lastFrameMediaType: 'image/png' });
     expect(ledgerLines()[0]).toMatchObject({ kind: 'video', provider: 'mock', costUsd: 0, usage: { units: 5 } });
+  });
+
+  it('labels the placeholder with the request shot first, then the prompt, then call order', async () => {
+    const g = gateway({ env: {} });
+    const text = async (id: string) => Buffer.from((await artifacts.get(id)).bytes).toString('utf8');
+    // The prompt says shot 2, the request says 4: the request wins.
+    expect(await text((await g.video(req({ shot: 4 }))).artifactId)).toContain('Sample clip — shot 4');
+    expect(await text((await g.video(req())).artifactId)).toContain('Sample clip — shot 2');
+    expect(await text((await g.video(req({ prompt: 'The runner laces up' }))).artifactId)).toContain('Sample clip — shot 3');
   });
 
   it('works in the demo profile without demo mode, numbers shots from the prompt or in call order, and is deterministic', async () => {

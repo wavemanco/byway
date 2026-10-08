@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, promises as fsp, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { contentHash } from '@byway/canonical';
+import { canonicalize, contentHash } from '@byway/canonical';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { GENESIS_HASH, Ledger, type LedgerDraft } from '../src/ledger.ts';
+import { entryHash, GENESIS_HASH, Ledger, type LedgerDraft } from '../src/ledger.ts';
 
 const draft = (n: number, over: Partial<LedgerDraft> = {}): LedgerDraft => ({
   workspaceId: 'ws-1',
@@ -128,6 +128,117 @@ describe('Ledger', () => {
   it('starts empty and verifies an empty ledger', async () => {
     const ledger = new Ledger({ path });
     expect(await ledger.entries()).toEqual([]);
+    expect(await ledger.verify()).toBeNull();
+  });
+});
+
+describe('Ledger: prompt provenance (contracts v4, CR14)', () => {
+  const prompt = { id: 'product.c3.critic', version: 4, hash: `sha256:${'c'.repeat(64)}`, fidelity: 'paraphrase' as const };
+
+  it('records the prompt ref inside the hash chain', async () => {
+    const ledger = new Ledger({ path });
+    const e = await ledger.append(draft(1, { prompt }));
+    expect(e.prompt).toEqual(prompt);
+    const { hash, ...rest } = e;
+    expect(hash).toBe(contentHash(rest));
+    expect(JSON.parse(lines()[0] as string).prompt).toEqual(prompt);
+    expect(await ledger.verify()).toBeNull();
+    // Editing the provenance breaks the chain like any other field.
+    rewrite([(lines()[0] as string).replace('"version":4', '"version":3')]);
+    expect(await ledger.verify()).toBe(e.id);
+  });
+
+  it('still verifies older entries written before the prompt field existed, followed by newer ones', async () => {
+    // An entry exactly as the pre-v4 gateway wrote it: no prompt key at all, hashed without it.
+    const body = { ...draft(1), id: 'old-entry', seq: 1, at: '2026-10-06T12:00:00.000Z', prevHash: GENESIS_HASH };
+    const old = { ...body, hash: entryHash(body) };
+    writeFileSync(path, `${canonicalize(old)}\n`);
+    writeFileSync(`${path}.head`, JSON.stringify({ seq: 1, id: old.id, hash: old.hash }));
+    const ledger = new Ledger({ path });
+    const next = await ledger.append(draft(2, { prompt }));
+    expect(next).toMatchObject({ seq: 2, prevHash: old.hash, prompt });
+    expect(await ledger.verify()).toBeNull();
+  });
+});
+
+/** An fs error as Node raises it. */
+const fsError = (code: string) => Object.assign(new Error(`${code}: operation failed`), { code });
+
+describe('Ledger: the lock file on Windows', () => {
+  it('retries EPERM, EBUSY and EACCES from opening the lock like EEXIST (a lock being deleted), then appends', async () => {
+    const failures = ['EPERM', 'EPERM', 'EBUSY', 'EACCES', 'EPERM'];
+    let lockOpens = 0;
+    const ledger = new Ledger({
+      path,
+      fs: {
+        open: (async (file: string, flags?: string) => {
+          if (flags === 'wx') {
+            lockOpens++;
+            const code = failures.shift();
+            if (code) throw fsError(code);
+          }
+          return fsp.open(file, flags);
+        }) as typeof fsp.open,
+      },
+    });
+    const e = await ledger.append(draft(1));
+    expect(e.seq).toBe(1);
+    expect(lockOpens).toBe(6);
+    expect(existsSync(`${path}.lock`)).toBe(false);
+    expect(await ledger.verify()).toBeNull();
+  });
+
+  it('gives up with a clear error naming the code when the lock keeps failing past the bound', async () => {
+    const ledger = new Ledger({
+      path,
+      lockTimeoutMs: 60,
+      fs: {
+        open: (async (file: string, flags?: string) => {
+          if (flags === 'wx') throw fsError('EPERM');
+          return fsp.open(file, flags);
+        }) as typeof fsp.open,
+      },
+    });
+    await expect(ledger.append(draft(1))).rejects.toThrow(/ledger lock .*EPERM/);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('fails at once on an error that is not contention', async () => {
+    let lockOpens = 0;
+    const ledger = new Ledger({
+      path,
+      fs: {
+        open: (async (file: string, flags?: string) => {
+          if (flags === 'wx') {
+            lockOpens++;
+            throw fsError('EROFS');
+          }
+          return fsp.open(file, flags);
+        }) as typeof fsp.open,
+      },
+    });
+    await expect(ledger.append(draft(1))).rejects.toMatchObject({ code: 'EROFS' });
+    expect(lockOpens).toBe(1);
+  });
+
+  it('retries releasing the lock when Windows briefly refuses the delete', async () => {
+    const failures = ['EPERM', 'EBUSY'];
+    const ledger = new Ledger({
+      path,
+      fs: {
+        rm: (async (file: string, opts?: Parameters<typeof fsp.rm>[1]) => {
+          if (file.endsWith('.lock')) {
+            const code = failures.shift();
+            if (code) throw fsError(code);
+          }
+          return fsp.rm(file, opts);
+        }) as typeof fsp.rm,
+      },
+    });
+    await ledger.append(draft(1));
+    expect(failures).toEqual([]);
+    expect(existsSync(`${path}.lock`)).toBe(false);
+    await ledger.append(draft(2));
     expect(await ledger.verify()).toBeNull();
   });
 });
