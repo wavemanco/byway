@@ -9,12 +9,12 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DefaultLogger, Runtime } from '@temporalio/worker';
 import { createGateway } from '@byway/gateway';
-import { createStore } from '@byway/store';
 import { storeCaps } from '../src/caps.ts';
 import { connectRunner, startDevEngine, TEMPORAL_DB_FILENAME, type DevEngine } from '../src/dev-engine.ts';
 import { workflowIdFor } from '../src/types.ts';
 import { fakePages } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
+import { createTestStore } from './helpers/memo.ts';
 import { PROBLEM } from './helpers/harness.ts';
 import { tiny } from './helpers/recipes.ts';
 
@@ -35,7 +35,7 @@ const freePort = () =>
   });
 
 const dir = mkdtempSync(path.join(tmpdir(), 'byway-engine-'));
-const store = createStore({ dataDir: dir });
+const store = createTestStore({ dataDir: dir });
 const gateway = createGateway({ ledgerPath: path.join(dir, 'ledger.jsonl'), artifacts: store.artifacts, caps: storeCaps(store), demo: true, env: {} });
 let engine: DevEngine | undefined;
 

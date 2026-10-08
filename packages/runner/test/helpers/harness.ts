@@ -12,7 +12,6 @@ import { DefaultLogger, Runtime } from '@temporalio/worker';
 import type { CheckpointRecord, CheckpointResolution, CompletionRequest, Gateway, ImageRequest, LedgerEntry, ModelProfile, ProblemBrief, PromptRenderer, RunRecord, RunView, StartRunInput, VideoRequest } from '@byway/contracts';
 import { createGateway, PRICES, PROFILES, type ModelGateway, type PriceRow, type Responder } from '@byway/gateway';
 import type { Recipe } from '@byway/recipe';
-import { createStore, type SqliteStore } from '@byway/store';
 import { buildWorkflows } from '../../src/build.ts';
 import { cachedTemporalExecutable } from '../../src/dev-engine.ts';
 import { createRunnerClient, ResolutionRejectedError } from '../../src/client.ts';
@@ -21,6 +20,7 @@ import { createWorker, type RunnerWorker } from '../../src/worker.ts';
 import { workflowIdFor } from '../../src/types.ts';
 import { fakePages, type FakePages } from './fake-pages.ts';
 import { fakePrompts, recordPrompts, type RecordingPrompts } from './fake-prompts.ts';
+import { createTestStore, type MemoStore } from './memo.ts';
 
 /**
  * A stand-in for "a provider key is configured", so the gateway leaves demo mode (contracts v4: demo means forced or no
@@ -62,7 +62,7 @@ export interface HarnessOptions {
 
 export interface Harness {
   env: TestWorkflowEnvironment;
-  store: SqliteStore;
+  store: MemoStore;
   gateway: Gateway;
   prompts: RecordingPrompts;
   pages: FakePages;
@@ -127,7 +127,7 @@ function quietRuntime(): void {
 export async function createHarness(opts: HarnessOptions = {}): Promise<Harness> {
   quietRuntime();
   const dir = mkdtempSync(path.join(tmpdir(), 'byway-runner-'));
-  const store = createStore({ dataDir: dir });
+  const store = createTestStore({ dataDir: dir });
   const ws = await store.ensureDefaultWorkspace();
   const responders: Record<string, Responder> = {};
   const calls: GatewayCall[] = [];
