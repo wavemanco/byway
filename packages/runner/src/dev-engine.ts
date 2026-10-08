@@ -116,9 +116,14 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
       client: env.client,
       worker,
       async stop() {
-        await worker.shutdown();
-        await running.catch(() => undefined);
-        await env.teardown();
+        // The Temporal server is stopped even if the worker did not stop cleanly: a server left running would hold the
+        // port and this data directory's database (OPS-1).
+        try {
+          await worker.shutdown();
+          await running.catch(() => undefined);
+        } finally {
+          await env.teardown();
+        }
       },
     };
   } catch (e) {

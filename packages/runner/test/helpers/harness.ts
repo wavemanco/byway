@@ -286,12 +286,16 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
       }
     },
     async close() {
-      await worker.shutdown();
-      await running.catch(() => undefined);
-      await env.teardown();
-      store.close();
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(bundle, { force: true });
+      // The Temporal server is always stopped, even when the worker did not stop cleanly: it is a child process.
+      try {
+        await worker.shutdown();
+        await running.catch(() => undefined);
+      } finally {
+        await env.teardown();
+        store.close();
+        rmSync(dir, { recursive: true, force: true });
+        rmSync(bundle, { force: true });
+      }
     },
   };
 }
