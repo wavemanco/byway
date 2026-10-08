@@ -135,6 +135,28 @@ importers:
         specifier: workspace:*
         version: link:../validator
 
+  packages/prompts:
+    dependencies:
+      '@byway/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@byway/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@byway/catalog':
+        specifier: workspace:*
+        version: link:../catalog
+      '@byway/gateway':
+        specifier: workspace:*
+        version: link:../gateway
+      '@byway/recipe':
+        specifier: workspace:*
+        version: link:../recipe
+
   packages/protocol: {}
 
   packages/recipe:
