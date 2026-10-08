@@ -1,24 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { RunRecord } from '@byway/contracts';
 import { budgetProblem, exportLabel, formatWhen, workspaceSpend } from '../src/view/history.ts';
 
 const NOW = new Date('2026-10-07T15:00:00.000Z');
-
-const run = (costUsd: number): RunRecord => ({
-  id: `r${costUsd}`,
-  workspaceId: 'w',
-  recipeId: 'c4',
-  recipeHash: 'h',
-  profileId: 'balanced',
-  title: 'Memo',
-  problem: 'A memo',
-  medium: 'prose',
-  status: 'done',
-  costUsd,
-  budgetUsd: 5,
-  createdAt: NOW.toISOString(),
-  updatedAt: NOW.toISOString(),
-});
 
 describe('History', () => {
   it('says when a run last changed, in words for recent times and as a date after that', () => {
@@ -42,9 +25,10 @@ describe('History', () => {
 });
 
 describe('workspace spend', () => {
-  it('adds up what runs have spent and what is left of the workspace budget', () => {
-    expect(workspaceSpend(20, [run(1.25), run(0.5)])).toEqual({ spentUsd: 1.75, remainingUsd: 18.25, capUsd: 20 });
-    expect(workspaceSpend(1, [run(3)]).remainingUsd).toBe(0);
+  it('takes what the ledger says was spent and what is left of the workspace budget', () => {
+    expect(workspaceSpend(20, 1.75)).toEqual({ spentUsd: 1.75, remainingUsd: 18.25, capUsd: 20 });
+    expect(workspaceSpend(1, 3).remainingUsd).toBe(0);
+    expect(workspaceSpend(5, 0.123456).spentUsd).toBe(0.12);
   });
 
   it('refuses a run budget larger than what is left, with a way out', () => {

@@ -157,7 +157,7 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     }
   }
   const workspace = await services.store.ensureDefaultWorkspace();
-  const spend = workspaceSpend(workspace.budgetUsd, await services.store.listRuns(workspace.id));
+  const spend = workspaceSpend(workspace.budgetUsd, (await services.gateway.spend(workspace.id)).spentUsd);
   const problem = budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
   const run = await services.runner.start({

@@ -130,9 +130,12 @@ async function answer(page: Page, turn: Locator, kind: CheckpointKind): Promise<
  * Run: answer every "Your turn" as it comes until the run is done. Fails with the run's own message if it stops with a
  * problem. Returns what was asked, in order.
  */
-export async function answerUntilDone(page: Page, opts: { stepTimeoutMs?: number; maxTurns?: number } = {}): Promise<Answered[]> {
+export async function answerUntilDone(
+  page: Page,
+  opts: { stepTimeoutMs?: number; maxTurns?: number; /** A checkpoint the test answered itself, so its fading panel is not answered again. */ after?: string } = {},
+): Promise<Answered[]> {
   const answered: Answered[] = [];
-  let last: string | undefined;
+  let last: string | undefined = opts.after;
   for (let i = 0; i < (opts.maxTurns ?? 60); i++) {
     const outcome = await next(page, last, opts.stepTimeoutMs ?? 120_000);
     if ('done' in outcome) return answered;

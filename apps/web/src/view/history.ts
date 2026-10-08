@@ -1,5 +1,4 @@
 /** History and Settings helpers: when a run changed, what an export is called, and what is left to spend. */
-import type { RunRecord } from '@byway/contracts';
 import { formatUsd } from './format.ts';
 
 const MINUTE = 60_000;
@@ -45,8 +44,13 @@ export interface WorkspaceSpend {
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 
-export function workspaceSpend(capUsd: number, runs: Pick<RunRecord, 'costUsd'>[]): WorkspaceSpend {
-  const spentUsd = cents(runs.reduce((sum, r) => sum + r.costUsd, 0));
+/**
+ * What is left of the workspace budget. `ledgerSpentUsd` comes from the gateway's ledger (Gateway.spend), the spend
+ * authority (spec §3.3): it includes recommending and composing, which belong to no run, and spend that landed after a
+ * run ended (ENG-4), which summing the runs' costs would miss.
+ */
+export function workspaceSpend(capUsd: number, ledgerSpentUsd: number): WorkspaceSpend {
+  const spentUsd = cents(ledgerSpentUsd);
   return { spentUsd, remainingUsd: cents(Math.max(0, capUsd - spentUsd)), capUsd };
 }
 

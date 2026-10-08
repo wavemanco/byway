@@ -141,16 +141,16 @@ test('Settings in demo mode: the banner, the demo profile, and providers shown w
   expect(keys.leaks).toEqual([]);
 });
 
-// C1 (UX-1): a declined optional reads Skipped, with its note, on the Run screen and in the Result's Skipped list. It
-// needs the runner to emit step-finished { skipped: true } for the declined optional (the packages side of UX-1);
-// until that lands this stays fixme, so the suite does not test behaviour the engine does not have yet.
-test.fixme('C4: an optional step you decline reads Skipped, and the Result lists it as not done', async ({ page }) => {
+// C1 (UX-1): a declined optional reads Skipped, with its note, on the Run screen and in the Result's Skipped list (the
+// runner emits step-finished { skipped: true } on the optional's id).
+test('C4: an optional step you decline reads Skipped, and the Result lists it as not done', async ({ page }) => {
   await describeProblem(page, 'Tighten my quarterly status memo for the leadership team before Friday');
   await startRecommended(page, 'Memo Polish');
   const turn = page.locator('section.turn[data-kind="confirm"]');
   await expect(turn).toBeVisible({ timeout: 120_000 });
+  const declined = (await turn.getAttribute('data-checkpoint')) ?? undefined;
   await turn.getByRole('button', { name: 'No', exact: true }).click();
-  await answerUntilDone(page);
+  await answerUntilDone(page, declined ? { after: declined } : {});
   const skipped = page.locator('.tl-step[data-status="skipped"]');
   await expect(skipped.first()).toContainText('You chose not to run this step.');
   await expect(page.locator('.tl-step[data-status="stopped"]')).toHaveCount(0);

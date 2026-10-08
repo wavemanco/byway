@@ -42,6 +42,8 @@ import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
+/** Longer than the worker's forced shutdown (30 s), so a normal stop always finishes first. */
+const ENGINE_STOP_DEADLINE_MS = 40_000;
 
 function port(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
@@ -192,7 +194,16 @@ async function main(): Promise<void> {
       await new Promise<void>((resolve) => (proxy ? proxy.close(() => resolve()) : resolve()));
       proxy?.closeAllConnections();
       await stopTree(web);
-      await engine.stop().catch((err: unknown) => console.error('The engine did not stop cleanly:', err));
+      // ENG-10: the worker gives in-flight steps a grace period and then abandons them (they are retried on the next
+      // start), so the engine's stop is bounded; the deadline guards against a stop that hangs anyway.
+      const stopped = await Promise.race([
+        engine.stop().then(
+          () => true,
+          (err: unknown) => (console.error('The engine did not stop cleanly:', err), true),
+        ),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), ENGINE_STOP_DEADLINE_MS).unref()),
+      ]);
+      if (!stopped) console.error(`The engine did not stop within ${ENGINE_STOP_DEADLINE_MS / 1000} s; exiting anyway. Steps that were in flight will be retried when byway starts again.`);
       store.close();
       console.log('Stopped.');
       process.exit(code);
@@ -221,7 +232,14 @@ async function main(): Promise<void> {
     },
   );
 
-  process.on('SIGINT', () => void stop(0));
+  process.on('SIGINT', () => {
+    // A second Ctrl+C while stopping exits at once; the engine retries abandoned steps on the next start.
+    if (stopping) {
+      console.error('\nStopping now. Steps that were in flight will be retried when byway starts again.');
+      process.exit(130);
+    }
+    void stop(0);
+  });
   process.on('SIGTERM', () => void stop(0));
   // The e2e runner asks for a clean stop over IPC (a signal cannot be sent gracefully to a child on Windows).
   process.on('message', (message) => {

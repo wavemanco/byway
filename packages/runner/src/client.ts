@@ -9,6 +9,7 @@ import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
 import { parseRecipe, recipeHash } from '@byway/recipe';
 import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
+import { startFailureMessage } from './start-failure.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
@@ -91,7 +92,7 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       try {
         await client.workflow.start(RUN_WORKFLOW, { taskQueue, workflowId: workflowIdFor(id), args: [args] });
       } catch (e) {
-        await store.updateRun(id, { status: 'failed', error: `The run could not be started: ${(e as Error).message}` });
+        await store.updateRun(id, { status: 'failed', error: startFailureMessage(e) });
         throw e;
       }
       return record;

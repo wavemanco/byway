@@ -52,7 +52,7 @@ The runner interprets the recipe tree (`byway.recipe/1`) as a Temporal workflow.
 | `intent` | The problem text plus brief fields |
 | `brief` | Text |
 | `artifact` | An artifact id; its format comes from the recipe's `medium` (`MEDIUM_FORMAT`) |
-| `view` | For `screenshots` media: artifact ids of PNG renders (full page at 1440 wide, tiled to ≤ 2576 px tall per tile). For `text` media: the artifact's clean text |
+| `view` | For `web-page`: labelled PNG renders of three surfaces — wide screen (full page at 1440, tiled to ≤ 2576 px per tile), phone (390 wide, tiled) and first screen (1440×900) — narrowed by a render step's `renders` knob ([ADR-0079](../../adr/0079-phase-4-runner-records.md)). For `media`: the storyboard text and each shot's frame. For `text` media: the artifact's clean text |
 | `critique` | Text |
 | `score` | Number parsed from the critic's "Score: N/10" line (or rank) |
 | `taste`, `voice` | Human text |
@@ -87,7 +87,7 @@ The runner interprets the recipe tree (`byway.recipe/1`) as a Temporal workflow.
 
 **Prompt slots by port.** The runner fills: `intent` → `problem`; `brief` → `brief`; `artifact` → `artifact` (never for critic, judge, check, tells-sweep or tells-compare steps: port rule 1); a text `view` → `view`, a screenshot `view` → attached images; `option_set` → `options` (labelled A, B, C…); `critique` → `critique` (audit lenses joined under their names); `taste`, `voice`, `tells`, `seed`, `refs` → slots of the same name (reference images are attached); `score` never reaches a prompt (port rule 2).
 
-**Views by medium.** `web-page`: Playwright screenshots. `prose`: the clean Markdown text. `options`: the options as a numbered plain-text list (labels A, B, C… when several sets are compared). `media`: the storyboard as text plus each shot's frame image when it exists. `code-diff`: the diff text.
+**Views by medium.** `web-page`: Playwright screenshots of the wide screen, the phone and the first screen, each captioned. `prose`: the clean Markdown text. `options`: the options as a numbered plain-text list (labels A, B, C… when several sets are compared). `media`: the storyboard as text plus each shot's frame image when it exists. `code-diff`: the diff text.
 
 **Human checkpoint kinds by role:** `vision` → `react`; `cut` → `directive`; `tells-compare` → `compare`; `voice` → `write` (initial text = the copy extracted from the artifact; the edited copy is written back by a model step that changes only text and is checked by a diff); the author's draft in C6/C6a → `write`.
 

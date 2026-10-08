@@ -7,6 +7,10 @@ import { asset, authorWrites, build, critic, distill, fix, humanVision, rankGate
  *   D1:: x6[ SEED > angle card ] > {{ vanilla-overlap(x3[plain]) }} > ?H VISION(thesis from your own experience)
  *   D2:: draft:mid or your own draft > ( RENDER > @critic:big[other family](view, refs = 6 best + 3 leaders) > revise:mid )
  *        *[ours in top 3 of 10 · !hidden · probe=1 · max=3] > ASSET?(header image · chart from real data)
+ *
+ * The product's ASSET trigger names only the header image: v1 cannot compute charts from data, and the trigger is
+ * quoted to the person when the run asks whether to run the step (Phase 4 review, C9 honest copy). This changed c3's
+ * hash on 2026-10-08.
  *   D3:: ?H[ CUT > TELLS(prose words + structure + platform) > VOICE(every line) ]
  *
  * Not yet expressible in the IR, so not modelled: the outer series loop `( … )*[until the calendar ends]`, the
@@ -47,7 +51,7 @@ export const c3: Recipe = withHash({
           seq(render('render'), critic('c3', 'critic', { mode: 'GREAT', refs: 9, family: 'other', shuffle: true }), fix('c3', 'revise')),
           rankGate(3, 3),
         ),
-        optional('asset-if-wanted', 'you want a header image or a chart computed from real data', asset('c3', 'asset', ['artifact'], ['artifact'], { writes: true, knobs: { slots: 1 } })),
+        optional('asset-if-wanted', 'you want a header image (charts computed from real data are not made in this version)', asset('c3', 'asset', ['artifact'], ['artifact'], { writes: true, knobs: { slots: 1 } })),
       ),
     },
     { stage: 'D3', body: seq(...distill('c3', ['prose-words', 'prose-structure', 'newsletter', 'social']), voice('voice')) },

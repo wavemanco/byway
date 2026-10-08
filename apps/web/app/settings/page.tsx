@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Settings' };
 export default async function SettingsPage() {
   const { services, workspaceId, preferences, demoForced } = await getContext();
   const workspace = (await services.store.getWorkspace(workspaceId)) ?? (await services.store.ensureDefaultWorkspace());
-  const spend = workspaceSpend(workspace.budgetUsd, await services.store.listRuns(workspaceId));
+  const spend = workspaceSpend(workspace.budgetUsd, (await services.gateway.spend(workspace.id)).spentUsd);
   return (
     <div className="page page-narrow">
       <div className="page-head">

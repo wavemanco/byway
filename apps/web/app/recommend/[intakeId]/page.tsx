@@ -51,7 +51,7 @@ export default async function RecommendPage({ params, searchParams }: PageProps<
   // The composed recipe stays on the server; the page gets what it shows.
   const composed = intake.composed ? composeView(intake.composed) : null;
   const workspace = await services.store.ensureDefaultWorkspace();
-  const spend = workspaceSpend(workspace.budgetUsd, await services.store.listRuns(workspace.id));
+  const spend = workspaceSpend(workspace.budgetUsd, (await services.gateway.spend(workspace.id)).spentUsd);
 
   return (
     <div className="page">

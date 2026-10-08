@@ -41,7 +41,12 @@ All figures are estimates from the Study 1 design pass ([protocol v1.1 §13](stu
 | Widen `VideoResult.mediaType` beyond `video/mp4` | A provider returning another container (e.g. webm) is billed, stored and then refused | contracts, gateway |
 | Expose `withdrawnAt` on `CheckpointRecord` | The store records it; the app cannot show when a question was withdrawn | contracts, store |
 | Templates for the Study 1 research arms' prompt ids (`article.B1`, `study1.*`) | Research recipes are not in the product library; a product run of one would fail with unknown-template | prompts (research track) |
-| Demo revision markers show in the diff viewer | The mock's code-diff answers carry an HTML comment line in the Why paragraph (demo only) | gateway mock |
+| Cancel stops calls already in flight | Cancel refuses new provider calls, but one in flight runs to completion and is billed; needs an optional `signal` on gateway requests honoured by the SDK clients (ENG-4 remainder) | contracts, gateway, runner |
+| Cost in "Run this step?" and "Is this ready?" questions | The runner has no per-step estimate; the advisor's estimator would have to move or be shared (UX-4 remainder) | runner, advisor |
+| C2 JSON export carries the mood boards; demo option-map flags follow "Chosen / Not chosen" | The Result shows the mood boards beside the options, but the JSON export does not include them (UX-8 remainder) | apps/web, gateway mock |
+| `startDevEngine({ workflowsPath })` | A running byway and `pnpm e2e` from the same checkout both rebuild `dist/workflows.js` (same bytes) (DEV-1 remainder) | runner |
+| Gateway mock's fenced-block reader | `mock/extract.ts` still uses the lazy regex the runner replaced (ENG-1); demo only | gateway mock |
+| Advisor diff as structured data | The web strips step ids from "How it differs" lines; the advisor could return structured differences (UX-13 remainder) | advisor, apps/web |
 
 ## Deferred decisions (non-code)
 
