@@ -6,8 +6,9 @@ import { SettingsPatch } from '../../../src/server/schemas.ts';
 /** Model profile, demo mode and the workspace budget. Keys are never read or written here. */
 export async function PATCH(request: Request) {
   return handle(async () => {
-    const body = await parseBody(request, SettingsPatch);
+    const deps = await getDeps();
+    const body = await parseBody(request, SettingsPatch, deps.heldKeyIn);
     if (!body.ok) return body.response;
-    return json(await updateSettings(await getDeps(), body.data));
+    return json(await updateSettings(deps, body.data));
   });
 }

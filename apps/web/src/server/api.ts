@@ -18,6 +18,7 @@ import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
 import { artifactHeaders, isArtifactId, mediaServing } from './artifacts.ts';
 import { exportsInline, selfContained } from './export.ts';
+import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
 import type { ControlInput, ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
@@ -36,6 +37,8 @@ export interface Deps {
   workspaceId: string;
   /** The model profile runs use (Store preferences). */
   profileId: string;
+  /** Names a provider key byway holds found in a request body (ADR-0088); routes hand it to parseBody. */
+  heldKeyIn: HeldKeyIn;
 }
 
 /** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */

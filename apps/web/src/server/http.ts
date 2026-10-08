@@ -11,8 +11,16 @@ export function fail(status: number, message: string): Response {
 
 type Parsed<T> = { ok: true; data: T } | { ok: false; response: Response };
 
-/** Reads a JSON body against a schema; only application/json is accepted (a CSRF form post cannot send it). */
-export async function parseBody<T extends z.ZodType>(request: Request, schema: T): Promise<Parsed<z.infer<T>>> {
+/** Names a provider key byway holds that appears in a parsed body, or undefined (ServiceHost.heldKeyIn). */
+export type HeldKeyIn = (value: unknown) => string | undefined;
+
+/**
+ * Reads a JSON body against a schema; only application/json is accepted (a CSRF form post cannot send it). A body
+ * holding one of byway's provider keys is refused before anything is stored or sent (ADR-0088). `heldKeyIn` is
+ * required, so a route that skips the check does not compile. It runs on what the schema keeps: fields the schema
+ * strips are never stored.
+ */
+export async function parseBody<T extends z.ZodType>(request: Request, schema: T, heldKeyIn: HeldKeyIn): Promise<Parsed<z.infer<T>>> {
   if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) {
     return { ok: false, response: fail(415, 'Send the request as JSON.') };
   }
@@ -27,6 +35,8 @@ export async function parseBody<T extends z.ZodType>(request: Request, schema: T
     const message = parsed.error.issues[0]?.message ?? 'The request is not valid.';
     return { ok: false, response: fail(400, message) };
   }
+  const held = heldKeyIn(parsed.data);
+  if (held) return { ok: false, response: fail(400, `This text contains your ${held}. Remove it and try again — byway never stores or sends its keys.`) };
   return { ok: true, data: parsed.data };
 }
 

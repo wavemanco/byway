@@ -9,18 +9,28 @@ import { E2E_KEYS, SENTINEL } from './keys.ts';
 
 const TEXTUAL = /^(text\/|application\/(json|javascript|x-component)|image\/svg\+xml)/;
 
+export interface KeyWatchOptions {
+  /**
+   * The path of the one POST whose body is the person pasting a stand-in key on purpose (the refusal test, ADR-0088).
+   * Only that first request's body is exempt; its URL and headers, every response and every other request are checked.
+   */
+  pastedTo?: string;
+}
+
 /** Records every place a stand-in key appeared: request URLs, headers and bodies; response headers and bodies. */
-export function watchForKeys(page: Page): { leaks: string[]; checked(): number } {
+export function watchForKeys(page: Page, opts: KeyWatchOptions = {}): { leaks: string[]; checked(): number; pastes(): number } {
   const leaks: string[] = [];
   let responses = 0;
+  let pastes = 0;
   const scan = (where: string, text: string | null | undefined) => {
     if (!text || !text.includes(SENTINEL)) return;
     for (const [name, value] of Object.entries(E2E_KEYS)) if (text.includes(value)) leaks.push(`${name} in ${where}`);
   };
+  const pasted = (url: string, method: string) => opts.pastedTo !== undefined && method === 'POST' && new URL(url).pathname === opts.pastedTo && pastes++ === 0;
   page.on('request', (req) => {
     scan(`request URL ${req.url()}`, req.url());
     scan(`request headers ${req.url()}`, JSON.stringify(req.headers()));
-    scan(`request body ${req.url()}`, req.postData());
+    if (!pasted(req.url(), req.method())) scan(`request body ${req.url()}`, req.postData());
   });
   page.on('response', async (res) => {
     scan(`response headers ${res.url()}`, JSON.stringify(res.headers()));
@@ -33,7 +43,7 @@ export function watchForKeys(page: Page): { leaks: string[]; checked(): number }
       // Redirects and aborted navigations have no body.
     }
   });
-  return { leaks, checked: () => responses };
+  return { leaks, checked: () => responses, pastes: () => pastes };
 }
 
 /** Start: type the problem and ask for a recommendation. */

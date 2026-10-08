@@ -7,8 +7,9 @@ import { AnswersInput } from '../../../../../src/server/schemas.ts';
 export async function POST(request: Request, ctx: RouteContext<'/api/intakes/[id]/recommend'>) {
   return handle(async () => {
     const { id } = await ctx.params;
-    const body = await parseBody(request, AnswersInput);
+    const deps = await getDeps();
+    const body = await parseBody(request, AnswersInput, deps.heldKeyIn);
     if (!body.ok) return body.response;
-    return json(await recommendIntake(await getDeps(), id, body.data.answers));
+    return json(await recommendIntake(deps, id, body.data.answers));
   });
 }

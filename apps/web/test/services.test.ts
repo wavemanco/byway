@@ -244,4 +244,14 @@ describe('the service host', () => {
       await host.close();
     }
   });
+
+  it('finds a held provider key anywhere in a request body, a FAL_KEY by its secret half alone, naming only the variable (ADR-0088)', async () => {
+    const anthropic = 'sk-ant-test-0000-never-real-0000';
+    const falSecret = '0011223344556677never-real-secret';
+    current = testHost({ env: { ANTHROPIC_API_KEY: anthropic, FAL_KEY: `fal-test-key-id-never-real:${falSecret}` } });
+    expect(current.host.heldKeyIn({ text: `my key is ${anthropic}` })).toBe('ANTHROPIC_API_KEY');
+    expect(current.host.heldKeyIn({ routes: { [falSecret]: 'yes' } })).toBe('FAL_KEY');
+    expect(current.host.heldKeyIn({ attachments: [{ name: 'a', text: `x ${falSecret} y` }] })).toBe('FAL_KEY');
+    expect(current.host.heldKeyIn({ text: 'A landing page', budgetUsd: 2 })).toBeUndefined();
+  });
 });
