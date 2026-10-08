@@ -2,13 +2,17 @@
  * A small built-in copy of the eight recipe presentations, the chooser questions and per-recipe cost data,
  * for demo mode only. The real data comes from @byway/catalog (WP-A) through @byway/advisor (WP-E); this copy
  * follows 03-configurations in plain words (spec §5 vocabulary) and makes no efficacy claims (CR11).
+ *
+ * Each shown step lists the demo recipe's step ids it stands for (`stepIds`), exactly as the real catalog lists the
+ * canonical recipe's, so a run event's step id finds its plain label. A test checks that every demo step is covered
+ * exactly once, from the right stage, by the right "who".
  */
 import type { ChooserQuestion, CostEstimate, RecipePresentation } from '@byway/contracts';
 
 type Step = RecipePresentation['stages'][number]['steps'][number];
-const you = (label: string, explainer: string): Step => ({ label, explainer, who: 'you' });
-const ai = (label: string, explainer: string): Step => ({ label, explainer, who: 'ai' });
-const tool = (label: string, explainer: string): Step => ({ label, explainer, who: 'tool' });
+const you = (label: string, explainer: string, stepIds: string[]): Step => ({ label, explainer, who: 'you', stepIds });
+const ai = (label: string, explainer: string, stepIds: string[]): Step => ({ label, explainer, who: 'ai', stepIds });
+const tool = (label: string, explainer: string, stepIds: string[]): Step => ({ label, explainer, who: 'tool', stepIds });
 
 export const PRESENTATIONS: RecipePresentation[] = [
   {
@@ -19,23 +23,29 @@ export const PRESENTATIONS: RecipePresentation[] = [
     medium: 'web-page',
     bestFor: ['Landing pages', 'Marketing sites', 'Product and app screens', 'Decks'],
     stages: [
-      { stage: 'Explore', steps: [ai('Random spark', 'AI drafts four pages, each steered by a different random starting point.')] },
+      {
+        stage: 'Explore',
+        steps: [
+          you('Your direction', 'Optional: describe the look you want before the drafts are made.', ['entry', 'vision']),
+          ai('Random spark', 'AI drafts four pages, each steered by a different random starting point.', ['seed-build']),
+        ],
+      },
       {
         stage: 'Refine',
         steps: [
-          ai('Outside critique', 'A separate model looks at screenshots of each draft and sends notes until it clears the quality bar.'),
-          ai('Custom imagery', 'If you find a draft plain, AI makes images for it.'),
-          you('Your pick', 'You choose the draft to finish.'),
+          ai('Outside critique', 'A separate model looks at screenshots of each draft and sends notes until it clears the quality bar.', ['critic-loop']),
+          ai('Custom imagery', 'If you find a draft plain, AI makes images for it.', ['asset']),
+          you('Your pick', 'You choose the draft to finish.', ['pick-one']),
         ],
       },
       {
         stage: 'Finish',
         steps: [
-          you('Trim', 'You list what to remove; AI removes exactly that.'),
-          ai('Cliché sweep', 'AI flags stock patterns and proposes swaps.'),
-          you('Keep or revert', 'You compare the page before and after the swaps.'),
-          you('Your words', 'You rewrite every line of copy in your own voice.'),
-          ai('Final check', 'A last look for broken layout, clipped text or missing images. No scoring.'),
+          you('Trim', 'You list what to remove; AI removes exactly that.', ['cut', 'apply-cut']),
+          ai('Cliché sweep', 'AI flags stock patterns and proposes swaps.', ['tells-sweep']),
+          you('Keep or revert', 'You compare the page before and after the swaps.', ['tells-compare']),
+          you('Your words', 'You rewrite every line of copy in your own voice.', ['voice', 'voice-apply']),
+          ai('Final check', 'A last look for broken layout, clipped text or missing images. No scoring.', ['critic-check']),
         ],
       },
     ],
@@ -51,13 +61,13 @@ export const PRESENTATIONS: RecipePresentation[] = [
       {
         stage: 'Explore',
         steps: [
-          ai('Random spark', 'AI writes eight short options, each from a different random starting point.'),
-          tool('Remove near-duplicates', 'Keeps one option from each cluster of look-alikes.'),
-          ai('Obvious-idea check', 'Flags options that a plain prompt also comes up with.'),
-          ai('Outside critique', 'Adds an advisory note to each option. Nothing is removed on its say-so.'),
-          you('Your pick', 'You choose the options worth keeping.'),
-          you('Your direction', 'You react and sharpen them into a brief.'),
-          you('Your words', 'You name the direction and write its one-line pitch.'),
+          ai('Random spark', 'AI writes eight short options, each from a different random starting point.', ['seed-options']),
+          tool('Remove near-duplicates', 'Keeps one option from each cluster of look-alikes.', ['dedupe']),
+          ai('Obvious-idea check', 'Flags options that a plain prompt also comes up with.', ['vanilla-overlap']),
+          ai('Outside critique', 'Adds an advisory note to each option. Nothing is removed on its say-so.', ['annotate']),
+          you('Your pick', 'You choose the options worth keeping.', ['pick-options']),
+          you('Your direction', 'You react and sharpen them into a brief.', ['sharpen', 'brief']),
+          you('Your words', 'You name the direction and write its one-line pitch.', ['voice']),
         ],
       },
     ],
@@ -73,26 +83,26 @@ export const PRESENTATIONS: RecipePresentation[] = [
       {
         stage: 'Explore',
         steps: [
-          ai('Random spark', 'Six angle cards, each from a different random starting point.'),
-          ai('Obvious-idea check', 'Flags angles that a plain prompt also produces.'),
-          you('Your pick', 'You choose the angle.'),
-          you('Your direction', 'You state the thesis from your own experience or data.'),
+          ai('Random spark', 'Six angle cards, each from a different random starting point.', ['seed-angles']),
+          ai('Obvious-idea check', 'Flags angles that a plain prompt also produces.', ['vanilla-overlap']),
+          you('Your pick', 'You choose the angle.', ['pick-angle']),
+          you('Your direction', 'You state the thesis from your own experience or data.', ['thesis']),
         ],
       },
       {
         stage: 'Refine',
         steps: [
-          ai('Draft', 'AI drafts the piece. Its wording is a placeholder until you write yours.'),
-          ai('Outside critique', 'A model from another family ranks the draft against strong pieces until it makes the top three.'),
+          ai('Draft', 'AI drafts the piece. Its wording is a placeholder until you write yours.', ['draft']),
+          ai('Outside critique', 'A model from another family ranks the draft against strong pieces until it makes the top three.', ['critic-loop']),
         ],
       },
       {
         stage: 'Finish',
         steps: [
-          you('Trim', 'You list what to cut.'),
-          ai('Cliché sweep', 'AI flags stock phrases, structures and platform habits.'),
-          you('Keep or revert', 'You compare before and after the swaps.'),
-          you('Your words', 'You rewrite every line.'),
+          you('Trim', 'You list what to cut.', ['cut', 'apply-cut']),
+          ai('Cliché sweep', 'AI flags stock phrases, structures and platform habits.', ['tells-sweep']),
+          you('Keep or revert', 'You compare before and after the swaps.', ['tells-compare']),
+          you('Your words', 'You rewrite every line.', ['voice']),
         ],
       },
     ],
@@ -105,21 +115,21 @@ export const PRESENTATIONS: RecipePresentation[] = [
     medium: 'prose',
     bestFor: ['Memos', 'Status updates', 'Product specs', 'Incident reviews'],
     stages: [
-      { stage: 'Explore', steps: [you('Your direction', 'In a line or two: the decision or ask, and the one point.')] },
+      { stage: 'Explore', steps: [you('Your direction', 'In a line or two: the decision or ask, and the one point.', ['vision'])] },
       {
         stage: 'Refine',
         steps: [
-          ai('Draft', 'AI drafts the document around your ask.'),
-          ai('Outside critique', 'Only for long documents: a simulated reader checks they could act on it in two minutes.'),
+          ai('Draft', 'AI drafts the document around your ask.', ['draft']),
+          ai('Outside critique', 'Only for long documents: a simulated reader checks they could act on it in two minutes.', ['critic']),
         ],
       },
       {
         stage: 'Finish',
         steps: [
-          you('Trim', 'You cut to a length budget: what would the reader not miss?'),
-          ai('Cliché sweep', 'AI flags memo filler and proposes plainer lines.'),
-          you('Keep or revert', 'You compare before and after the swaps.'),
-          you('Your words', 'You read every line and rewrite the key ones: the bottom line, the ask, judgment calls, the sign-off.'),
+          you('Trim', 'You cut to a length budget: what would the reader not miss?', ['cut', 'apply-cut']),
+          ai('Cliché sweep', 'AI flags memo filler and proposes plainer lines.', ['tells-sweep']),
+          you('Keep or revert', 'You compare before and after the swaps.', ['tells-compare']),
+          you('Your words', 'You read every line and rewrite the key ones: the bottom line, the ask, judgment calls, the sign-off.', ['voice']),
         ],
       },
     ],
@@ -135,26 +145,28 @@ export const PRESENTATIONS: RecipePresentation[] = [
       {
         stage: 'Explore',
         steps: [
-          ai('Random spark', 'AI sketches four creative territories.'),
-          you('Your pick', 'You choose the concept.'),
-          you('Your words', 'You write the voice-over script, which is then locked.'),
+          ai('Random spark', 'AI sketches four creative territories.', ['territories']),
+          you('Your pick', 'You choose the concept.', ['concept']),
+          you('Your words', 'You write the voice-over script, which is then locked.', ['vo-script']),
         ],
       },
       {
         stage: 'Refine',
         steps: [
-          ai('Custom imagery', 'AI makes the anchor frames for each shot.'),
-          ai('Motion', 'Clips chained shot to shot. Needs a video provider key.'),
-          ai('Defect check', 'Each shot is checked for warped logos, hands or garbled text.'),
+          ai('Custom imagery', 'AI makes the anchor frames for each shot.', ['frames']),
+          ai('Defect check', 'Each frame is checked for warped logos, hands or garbled text.', ['defect-check']),
+          ai('Motion', 'One clip per shot, each starting from the last frame of the one before. Needs a video provider key.', ['relay']),
+          tool('Composite', 'Places the product into each scene. byway cannot do this yet, so the step is skipped and says so.', ['matte']),
+          ai('Voice-over audio', 'Turns your script into audio. It needs a voice-over audio provider, which byway does not have yet.', ['vo-audio']),
         ],
       },
       {
         stage: 'Finish',
         steps: [
-          you('Trim', 'One message, fewer elements: you say what goes.'),
-          ai('Cliché sweep', 'AI flags stock motifs, plastic sheen and frozen motion.'),
-          you('Your words', 'You write the tagline, headline and captions.'),
-          ai('Outside critique', 'A one-time check against strong ads in the category, with one automatic retry.'),
+          you('Trim', 'One message, fewer elements: you say what goes.', ['cut']),
+          ai('Cliché sweep', 'AI flags stock motifs, plastic sheen and frozen motion.', ['tells-sweep']),
+          you('Your words', 'You write the tagline, headline and captions.', ['on-screen']),
+          ai('Outside critique', 'A one-time check against strong ads in the category, with one automatic retry.', ['gate']),
         ],
       },
     ],
@@ -167,18 +179,18 @@ export const PRESENTATIONS: RecipePresentation[] = [
     medium: 'prose',
     bestFor: ['Cover letters', 'Proposals', 'Grant applications', 'Personal essays'],
     stages: [
-      { stage: 'Explore', steps: [ai('Your direction', 'Optional: angles drawn from your own notes and CV.')] },
+      { stage: 'Explore', steps: [ai('Your direction', 'Optional: angles drawn from your own notes and CV.', ['angles'])] },
       {
         stage: 'Refine',
         steps: [
-          you('Your draft', 'You write or revise. Every sentence is yours.'),
-          ai('Trim marks', 'Marks cut candidates. Deletes nothing.'),
-          ai('Cliché flags', 'Flags formula: listed credentials, echoed keywords, self-announcing structure.'),
-          ai('Outside critique', 'Ranks your draft in a pile of strong examples and names the top three weaknesses.'),
-          you('Done?', 'You decide when it is finished.'),
+          you('Your draft', 'You write or revise. Every sentence is yours.', ['draft']),
+          ai('Trim marks', 'Marks cut candidates. Deletes nothing.', ['cut-marks']),
+          ai('Cliché flags', 'Flags formula: listed credentials, echoed keywords, self-announcing structure.', ['tells-flags']),
+          ai('Outside critique', 'Ranks your draft in a pile of strong examples and names the top three weaknesses.', ['critic-rank']),
+          you('Done?', 'You decide when it is finished.', ['done']),
         ],
       },
-      { stage: 'Finish', steps: [you('Your words', 'The whole document is already yours.')] },
+      { stage: 'Finish', steps: [you('Your words', 'The whole document is already yours; you read it once more and have the final word.', ['voice'])] },
     ],
   },
   {
@@ -192,23 +204,23 @@ export const PRESENTATIONS: RecipePresentation[] = [
       {
         stage: 'Explore',
         steps: [
-          ai('Random spark', 'Six premise and form cards, each from a different random starting point.'),
-          ai('Obvious-idea check', 'Flags premises that a plain prompt also produces.'),
-          you('Your pick', 'You choose a premise.'),
-          you('Your direction', 'You sharpen it into a story brief, written for you.'),
+          ai('Random spark', 'Six premise and form cards, each from a different random starting point.', ['premise-cards']),
+          ai('Obvious-idea check', 'Flags premises that a plain prompt also produces.', ['vanilla-overlap']),
+          you('Your pick', 'You choose a premise.', ['premise']),
+          you('Your direction', 'You sharpen it into a story brief, written for you.', ['story-brief']),
         ],
       },
       {
         stage: 'Refine',
         steps: [
-          you('Your pages', 'You write. Every sentence is yours.'),
-          ai('Trim marks', 'Marks cut candidates. Deletes nothing.'),
-          ai('Cliché flags', 'Flags fiction tells: stock names, explained feelings, tidy endings.'),
-          ai('Outside critique', 'Ranks your pages against published passages in your genre.'),
-          you('Done?', 'You decide when it is finished.'),
+          you('Your pages', 'You write. Every sentence is yours.', ['pages']),
+          ai('Trim marks', 'Marks cut candidates. Deletes nothing.', ['cut-marks']),
+          ai('Cliché flags', 'Flags fiction tells: stock names, explained feelings, tidy endings.', ['tells-flags']),
+          ai('Outside critique', 'Ranks your pages against published passages in your genre.', ['critic-rank']),
+          you('Done?', 'You decide when it is finished.', ['done']),
         ],
       },
-      { stage: 'Finish', steps: [you('Your words', 'The whole text is already yours.')] },
+      { stage: 'Finish', steps: [you('Your words', 'The whole text is already yours; you read it once more and have the final word.', ['voice'])] },
     ],
   },
   {
@@ -222,19 +234,19 @@ export const PRESENTATIONS: RecipePresentation[] = [
       {
         stage: 'Refine',
         steps: [
-          ai('Implement', 'AI writes the change.'),
-          tool('Objective checks', 'Lint, types, formatting and leftover TODOs.'),
-          ai('Trim', 'Removes unrequested files, helpers, flags and comments.'),
-          ai('Outside critique', 'A reviewer model judges reviewability. It does not check correctness; your tests do.'),
-          ai('Trim', 'Removes anything the review added.'),
+          ai('Implement', 'AI writes the change.', ['implement']),
+          tool('Objective checks', 'Lint, types, formatting and leftover TODOs.', ['objective-checks']),
+          ai('Trim', 'Removes unrequested files, helpers, flags and comments.', ['cut-scope']),
+          ai('Outside critique', 'A reviewer model judges reviewability. It does not check correctness; your tests do.', ['review-loop']),
+          ai('Trim', 'Removes anything the review added.', ['cut-review']),
         ],
       },
       {
         stage: 'Finish',
         steps: [
-          ai('Cliché sweep', 'AI flags code-style habits and proposes swaps.'),
-          you('Keep or revert', 'You compare before and after the swaps.'),
-          you('Your words', "You write the pull request's why, its tradeoffs and how you verified it."),
+          ai('Cliché sweep', 'AI flags code-style habits and proposes swaps.', ['tells-sweep']),
+          you('Keep or revert', 'You compare before and after the swaps.', ['tells-compare']),
+          you('Your words', "You write the pull request's why, its tradeoffs and how you verified it.", ['voice']),
         ],
       },
     ],

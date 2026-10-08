@@ -195,9 +195,14 @@ export function clicheFlags(text: string, fiction: boolean): string {
   return `## Cliché flags\n\nFlags only; you decide what stays.\n\n${[...hits, generic].join('\n')}\n`;
 }
 
-export function critiqueRank(text: string, fiction: boolean): string {
+/**
+ * The outside critique's notes on your text. With at least three examples it ranks against them (GREAT mode);
+ * with fewer it scores against the quality bar instead (OK mode, ADR-0071), and says which it did.
+ */
+export function critiqueRank(text: string, fiction: boolean, refs: number): string {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
   const rank = words > 250 ? 2 : words > 80 ? 3 : 4;
-  const pile = fiction ? 'published passages in your genre' : 'strong examples of the same kind';
-  return `## Outside critique\n\nRanked **${rank} of 5** against ${pile}.\n\nTop three weaknesses:\n\n1. The opening takes too long to reach the specific detail that makes it yours.\n2. One paragraph restates the one before it.\n3. The ending summarises instead of landing on an image or an ask.\n`;
+  const kind = fiction ? 'passages you admire' : 'examples you admire';
+  const verdict = refs >= 3 ? `Ranked **${Math.min(rank, refs + 1)} of ${refs + 1}** against the ${refs} ${kind}.` : `Scored **${9 - rank}/10** against the quality bar.`;
+  return `## Outside critique\n\n${verdict}\n\nTop three weaknesses:\n\n1. The opening takes too long to reach the specific detail that makes it yours.\n2. One paragraph restates the one before it.\n3. The ending summarises instead of landing on an image or an ask.\n`;
 }

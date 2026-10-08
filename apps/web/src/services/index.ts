@@ -3,10 +3,11 @@
  * a demo fake; Phase 3 swaps in @byway/advisor, @byway/runner, @byway/store and @byway/gateway here, behind
  * the same `Services` shape, and nothing else in the app changes.
  */
+import type { Preferences } from '@byway/contracts';
 import { createDemoServices } from './demo/index.ts';
 import type { Services } from './types.ts';
 
-export type { PreferenceStore, Preferences, RecipeSource, RunControls, Services } from './types.ts';
+export type { Services } from './types.ts';
 
 const KEY = Symbol.for('byway.services');
 
@@ -22,9 +23,18 @@ export function getServices(): Services {
   return holder[KEY];
 }
 
-/** The default workspace and the chosen model profile, which most requests need. */
-export async function getContext(): Promise<{ services: Services; workspaceId: string; profileId: string }> {
+export interface Context {
+  services: Services;
+  workspaceId: string;
+  /** The model profile runs use, from Settings. */
+  profileId: string;
+  preferences: Preferences;
+}
+
+/** The default workspace and its preferences (Store.getPreferences), which most requests need. */
+export async function getContext(): Promise<Context> {
   const services = getServices();
   const workspace = await services.store.ensureDefaultWorkspace();
-  return { services, workspaceId: workspace.id, profileId: services.preferences.get().profileId };
+  const preferences = await services.store.getPreferences(workspace.id);
+  return { services, workspaceId: workspace.id, profileId: preferences.profileId, preferences };
 }
