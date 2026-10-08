@@ -96,7 +96,7 @@ export function createAdvisor(opts: AdvisorOptions): Advisor {
     const priced = opts.gateway.demo ? DEMO_PROFILE_ID : profileId;
     const status = statuses.find((s) => s.profile.id === priced);
     if (!status) throw new AdvisorError('unknown-profile', `Demo mode is on, but the gateway has no "${priced}" profile to estimate with.`);
-    return estimateRecipe(r, { profile: status.profile, images: status.images, video: status.video, at: now(), ...(opts.prices ? { prices: opts.prices } : {}) });
+    return estimateRecipe(r, { profile: status.profile, images: status.images, video: status.video, otherFamily: status.otherFamily, at: now(), ...(opts.prices ? { prices: opts.prices } : {}) });
   };
 
   /**
