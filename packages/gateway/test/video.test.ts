@@ -131,6 +131,17 @@ describe('gateway: video through fal.ai', () => {
     expect([fal.calls, fal.uploads, fetch.requested]).toEqual([[], [], []]);
   });
 
+  it("refuses a clip prompt holding the FAL_KEY's secret half on its own, before any upload, job or reservation (ADR-0088)", async () => {
+    const fal = fakeFal();
+    const fetch = fakeFetch();
+    const secret = FAL_KEY.split(':')[1] as string;
+    const err = await gateway({ clients: { fal: fal.client }, fetch: fetch.fetch }).video(req({ prompt: `Shot 2, overlay the text ${secret}` })).catch((e: unknown) => e);
+    expect(err).toMatchObject({ name: 'GatewayError', code: 'invalid-request', heldKey: 'FAL_KEY' });
+    expect((err as Error).message).not.toContain(secret);
+    expect([fal.calls, fal.uploads, fetch.requested]).toEqual([[], [], []]);
+    expect(() => ledgerLines()).toThrow();
+  });
+
   it('refuses a clip the run budget cannot cover, with the shortfall, before calling fal', async () => {
     const fal = fakeFal();
     caps.runs['run-1'] = 0.3;

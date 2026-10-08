@@ -24,6 +24,7 @@ import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type 
 import { toGatewayError } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
 import { ExposureRegister, exposurePath } from './exposure.ts';
+import { findHeldKey, heldKeyError } from './held-key.ts';
 import { Ledger, type LedgerDraft } from './ledger.ts';
 import { PRICES, priceFor, roundUsd, tokenCost, type PriceRow, type TokenBreakdown } from './prices.ts';
 import { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus } from './profiles.ts';
@@ -188,6 +189,7 @@ export class ModelGateway implements Gateway {
       throw invalid(`maxOutputTokens must be an integer from 1 to ${MAX_OUTPUT_LIMIT}`);
     }
     const prompt = req.prompt === undefined ? undefined : promptRef(req.prompt);
+    this.refuseHeldKeys(requestTexts(req));
     const profile = this.profile(req.profileId);
     const ref = this.completionModel(req, profile);
     this.requireKey(ref.provider);
@@ -237,11 +239,17 @@ export class ModelGateway implements Gateway {
         redact,
       );
       if (out.refusal) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal}`));
+      // The answer crosses into byway here: one holding a key is never handed on (ADR-0088). The call is already
+      // ledgered with its evidence redacted, and it is not retried, because a retry would pay again.
+      const echoed = findHeldKey(this.env, [out.text]);
+      if (echoed) {
+        throw heldKeyError('provider-error', redact(`${ref.provider} answered and billed this call (${req.purpose}), but its answer contained your ${echoed}, so byway did not use it. It is not retried, because a retry would pay again.`), echoed);
+      }
       return {
         text: out.text,
         // A cut-off answer is still returned (and was billed); callers decide whether a partial parse is usable.
         stopReason: out.truncated ? 'max-tokens' : 'end',
-        servedModel: out.servedModel,
+        servedModel: entry.servedModel,
         provider: ref.provider,
         usage: { inputTokens: out.usage.inputTokens, outputTokens: out.usage.outputTokens },
         costUsd,
@@ -256,6 +264,7 @@ export class ModelGateway implements Gateway {
     validateSpend(req);
     if (typeof req.prompt !== 'string' || !req.prompt.trim()) throw invalid('an image needs a prompt');
     if (!IMAGE_SIZES.has(req.size)) throw invalid(`unsupported image size "${String(req.size)}"`);
+    this.refuseHeldKeys([req.prompt]);
     const profile = this.profile(req.profileId);
     const ref: ModelRef | undefined = this.demo ? { provider: 'mock', model: MOCK_MODELS.image } : profile.image;
     if (!ref) throw invalid(`profile "${profile.id}" has no image model`);
@@ -298,7 +307,7 @@ export class ModelGateway implements Gateway {
       );
       if (kept?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the image and billed it, but it could not be stored`, kept.error);
       if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`));
-      return { artifactId: stored.id, mediaType: out.mediaType, servedModel: out.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
+      return { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
     } finally {
       this.reservations.delete(reservation);
     }
@@ -317,6 +326,7 @@ export class ModelGateway implements Gateway {
       throw invalid(`durationSec must be a number of seconds above 0 and at most ${MAX_VIDEO_SECONDS}`);
     }
     if (req.shot !== undefined && (!Number.isSafeInteger(req.shot) || req.shot < 1)) throw invalid(`shot must be a storyboard shot number from 1, got ${String(req.shot)}`);
+    this.refuseHeldKeys([req.prompt]);
     const profile = this.profile(req.profileId);
     const ref: ModelRef | undefined = this.demo ? { provider: 'mock', model: MOCK_MODELS.video } : profile.video;
     if (!ref) throw new GatewayError('no-credentials', `profile "${profile.id}" has no video model`);
@@ -406,7 +416,7 @@ export class ModelGateway implements Gateway {
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {
         throw new GatewayError('provider-error', `${ref.provider} returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`);
       }
-      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: out.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
+      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
     } finally {
       this.reservations.delete(reservation);
     }
@@ -431,6 +441,16 @@ export class ModelGateway implements Gateway {
     const profile = this.allProfiles.find((p) => p.id === id);
     if (!profile) throw new GatewayError('unknown-profile', `no model profile "${id}"`);
     return profile;
+  }
+
+  /**
+   * Refuses a request whose text holds a provider key byway has, before anything is reserved, recorded or sent
+   * (ADR-0088). Every caller goes through here, so a key pasted into someone's material never reaches a provider.
+   * The request is refused, not rewritten: the person's text is never silently changed.
+   */
+  private refuseHeldKeys(texts: Iterable<string | undefined>): void {
+    const name = findHeldKey(this.env, texts);
+    if (name) throw heldKeyError('invalid-request', `This request contains your ${name}. byway never sends a key to a model; remove it from the material and try again.`, name);
   }
 
   private requireKey(provider: ProviderId): void {
@@ -567,6 +587,7 @@ export class ModelGateway implements Gateway {
    * retryable and says the call was billed.
    */
   private async record(draft: Omit<LedgerDraft, 'requestSha256' | 'responseSha256'>, request: unknown, response: unknown, redact: Redactor) {
+    draft = scrubLabels(draft, redact);
     const requestText = redact(canonicalOrJson({ purpose: draft.purpose, ...(request as object) }));
     const responseText = redact(canonicalOrJson(response));
     const billed = `${draft.provider} answered and billed this call (${draft.purpose})`;
@@ -605,6 +626,22 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
 function billedFailure(redact: Redactor, what: string, cause: unknown): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);
   return new GatewayError('provider-error', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false);
+}
+
+/**
+ * Provider metadata is a label, not content: a key in the served model or the upstream host is scrubbed for the ledger
+ * (and the result, which returns what the ledger recorded), never a reason to refuse a call that was paid for (ADR-0088).
+ */
+function scrubLabels<T extends { servedModel: string; upstreamProvider?: string }>(draft: T, redact: Redactor): T {
+  return { ...draft, servedModel: redact(draft.servedModel), ...(draft.upstreamProvider !== undefined ? { upstreamProvider: redact(draft.upstreamProvider) } : {}) };
+}
+
+/** The text a completion request sends: its system text and every text part (malformed parts are refused later). */
+function* requestTexts(req: CompletionRequest): Generator<string> {
+  if (typeof req.system === 'string') yield req.system;
+  for (const m of req.messages) {
+    for (const part of Array.isArray(m?.content) ? m.content : []) if (part?.type === 'text' && typeof part.text === 'string') yield part.text;
+  }
 }
 
 function validateSpend(req: { workspaceId?: unknown; purpose?: unknown; profileId?: unknown }): void {

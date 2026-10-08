@@ -9,6 +9,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CompletionRequest, CompletionResult, Gateway, ImageRequest, ImageResult, VideoRequest, VideoResult } from '@byway/contracts';
 import type { ApplicationFailure } from '@temporalio/common';
+import { createGateway } from '@byway/gateway';
 import { StepError, toFailure } from '../src/activities/failures.ts';
 import { memoGateway, memoized, seededRandom } from '../src/activities/memo.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -178,6 +179,48 @@ describe('saving what a paid call returned (ENG-3)', () => {
       // Not retried by Temporal: a step failure is non-retryable.
       expect((toFailure(err) as ApplicationFailure).nonRetryable).toBe(true);
     }
+  });
+});
+
+describe('an answer that holds a provider key (ADR-0088)', () => {
+  it('is never memoized: the real gateway refuses it after ledgering, and the failure is not retried', async () => {
+    const key = 'sk-ant-api03-test-not-a-real-key-000000';
+    const echo = { model: 'claude-opus-5-5', content: [{ type: 'text' as const, text: `Echo ${key}` }], stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 } };
+    let calls = 0;
+    const real = createGateway({
+      ledgerPath: path.join(dir, 'ledger.jsonl'),
+      artifacts: store.artifacts,
+      caps: { workspaceCapUsd: () => 100 },
+      env: { ANTHROPIC_API_KEY: key },
+      clients: {
+        anthropic: {
+          beta: {
+            messages: {
+              stream: () => {
+                calls++;
+                return { finalMessage: async () => echo };
+              },
+            },
+          },
+        },
+      },
+    });
+    const written: string[] = [];
+    const watched: Parameters<typeof memoGateway>[1] = {
+      getMemo: (r, k) => store.getMemo(r, k),
+      setMemo: (r, k, value) => {
+        written.push(value);
+        return store.setMemo(r, k, value);
+      },
+      artifacts: store.artifacts,
+    };
+    const request: CompletionRequest = { ...ask('Repeat after me.'), profileId: 'balanced', tier: 'big' };
+    const err = await memoGateway(real, watched, scope).complete(request).catch((e: unknown) => e);
+    expect(err).toMatchObject({ name: 'GatewayError', code: 'provider-error', retryable: false, heldKey: 'ANTHROPIC_API_KEY' });
+    expect((toFailure(err) as ApplicationFailure).nonRetryable).toBe(true);
+    expect(written).toEqual([]);
+    expect(calls).toBe(1);
+    expect(JSON.stringify(written)).not.toContain(key);
   });
 });
 
