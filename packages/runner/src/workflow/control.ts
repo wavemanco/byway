@@ -42,6 +42,16 @@ export class RunControl {
     if (this.pauseRequested) await condition(() => !this.pauseRequested);
   }
 
+  /** Count work as in flight (a pause waits for it) without waiting at the boundary: the rest of a step under way. */
+  async track<T>(fn: () => Promise<T>): Promise<T> {
+    this.activeSteps++;
+    try {
+      return await fn();
+    } finally {
+      this.activeSteps--;
+    }
+  }
+
   /** Run one machine step: past the pause boundary, counted as in flight until it finishes. */
   async machine<T>(fn: () => Promise<T>): Promise<T> {
     await this.boundary();

@@ -188,7 +188,9 @@ export class Interpreter {
         const budget = budgetDetails(e);
         if (budget) {
           if (await this.askBudget(call, budget)) continue;
-          throw new RunFailure(`The run stopped at its ${budget.scope === 'workspace' ? 'workspace ' : ''}budget of $${budget.capUsd.toFixed(2)}, and the budget was not raised.`);
+          const message = `The run stopped at its ${budget.scope === 'workspace' ? 'workspace ' : ''}budget of $${budget.capUsd.toFixed(2)}, and the budget was not raised.`;
+          await this.emit([{ type: 'step-failed', stepId: call.stepId, ...cand(call), data: { error: message, retryable: false }, dedupeKey: `${call.key}/step-failed` }]);
+          throw new RunFailure(message);
         }
         const message = failureMessage(e);
         const retryable = e instanceof ActivityFailure && e.cause instanceof ApplicationFailure ? !e.cause.nonRetryable : false;
@@ -354,9 +356,9 @@ export class Interpreter {
     }
     const res = await this.ask(call, checkpoint, { step: spec, ...(initial ? { initial } : {}) });
     const { initialText, ...resolution } = res;
-    const fin = await this.act(call, () =>
-      model.finishHumanStep({ run: this.run, call, step: spec, kind, resolution, ports, ...(initialText !== undefined ? { initialText } : {}) }),
-    );
+    // Writing the answer back (VOICE may call the model) is the rest of this step: a pause waits for it.
+    const finish = { run: this.run, call, step: spec, kind, resolution, ports, ...(initialText !== undefined ? { initialText } : {}) };
+    const fin = await this.control.track(() => this.act(call, () => model.finishHumanStep(finish)));
     const out: Ports = { ...ports };
     const text = fin.text ?? '';
     switch (kind) {
