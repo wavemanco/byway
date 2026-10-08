@@ -104,7 +104,7 @@ Prompts (WP-P), the runner's parsers (WP-D) and the mock provider (WP-C) must ag
 | `build`, `seed`, `fix`, `asset.integrate`, `voice.apply` on `web-page` | One fenced `html` block holding a complete HTML document (inline CSS/JS; images by the URLs given) |
 | same, on `prose` | The Markdown document (optionally in one fenced `markdown` block) |
 | same, on `options` | One fenced `json` block: `{"options":[{"title":string,"pitch":string,"rationale":string}]}` |
-| same, on `media` | One fenced `json` block: `{"storyboard":[{"shot":number,"description":string,"imagePrompt":string,"durationSec":number}],"voiceover":string}` |
+| same, on `media` | One fenced `json` block: `{"storyboard":[{"shot":number,"description":string,"imagePrompt":string,"durationSec":number,"caption"?:string}],"voiceover":string,"headline"?:string,"tagline"?:string}` (the on-screen copy — headline, tagline, captions — is what the late VOICE edits; the voice-over is locked after the VO script step) |
 | same, on `code-diff` | One fenced `diff` block (unified diff), then a paragraph starting `Why:` |
 | `critic` | OK mode: the critique as a bullet list, biggest gaps first, then a last line `Score: N/10`. GREAT mode: one `### X` section per item of the lineup, then a last line `Ranking: C, A, E, B, D` (every label once, best first). The critic is never told which item is ours; the runner finds our rank and hands only our item's section to the fix step ([ADR-0072](../../adr/0072-great-critic-ranks-blind.md)) |
 | `judge`, `select`, `rerank` | Optional reasoning, then a last line `Choice: <label>` (labels A, B, C…) |

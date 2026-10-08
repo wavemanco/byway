@@ -104,6 +104,8 @@ export interface RunEvent {
 export type CheckpointKind =
   /** Choose k options from a set (pick(H,k)). */
   | 'pick'
+  /** Choose any number of options, including none (which TELLS hits to swap, decided per instance). */
+  | 'select'
   /** Free-text reaction or direction (VISION react/sharpen, taste). */
   | 'react'
   /** Yes/no decision (e.g. "Is the design plain?", ship best-so-far at the cap). */
@@ -132,7 +134,7 @@ export interface CheckpointRecord {
   /** Plain-language question shown to the user. */
   prompt: string;
   options?: CheckpointOption[];
-  /** For pick: how many to choose. A resolution must choose exactly k distinct options. */
+  /** For pick: how many to choose. A resolution must choose exactly k distinct options. Unused for select. */
   k?: number;
   /** For write/directive: starting text (e.g. the copy extracted from the page). */
   initialText?: string;
@@ -147,7 +149,7 @@ export interface CheckpointRecord {
 
 export interface CheckpointResolution {
   checkpointId: string;
-  /** pick/choose/compare: chosen option ids. */
+  /** pick/select/choose/compare: chosen option ids (select: any distinct subset, possibly empty). */
   choice?: string[];
   /** react/write/directive: the text. */
   text?: string;
@@ -223,6 +225,13 @@ export interface Store {
   createIntake(intake: Omit<IntakeRecord, 'createdAt' | 'updatedAt'>): Promise<IntakeRecord>;
   updateIntake(id: string, patch: Partial<Pick<IntakeRecord, 'problem' | 'answers' | 'recommendation' | 'composed'>>): Promise<IntakeRecord>;
   getIntake(id: string): Promise<IntakeRecord | undefined>;
+
+  /**
+   * An idempotency memo for at-least-once activities: a value (e.g. the artifact id of a model call's answer) by key
+   * within a run, so a retried activity reuses what was already bought instead of paying again. Set is first-write-wins.
+   */
+  getMemo(runId: string, key: string): Promise<string | undefined>;
+  setMemo(runId: string, key: string, value: string): Promise<string>;
 
   /** Defaults when never set: profileId 'balanced', demoMode false, showTechnicalNames false. */
   getPreferences(workspaceId: string): Promise<Preferences>;

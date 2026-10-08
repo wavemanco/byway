@@ -21,6 +21,11 @@ export interface ModelProfile {
   tiers: Record<Tier, ModelRef>;
   image?: ModelRef;
   video?: ModelRef;
+  /**
+   * A big-tier model from a different provider family than `tiers.big`, for critics whose `family` knob is 'other'
+   * (01 CRITIC: a different-family critic for prose). Its use is recorded in the gateway's exposure register (CR12).
+   */
+  otherFamily?: ModelRef;
 }
 
 export type MediaType = 'image/png' | 'image/jpeg' | 'image/webp';
@@ -221,6 +226,8 @@ export interface ProfileStatus {
   images: boolean;
   /** True when the profile has a video model and its provider has a key (C5 relay links; ADR-0069). */
   video: boolean;
+  /** True when the profile has an other-family critic model and its provider has a key. */
+  otherFamily: boolean;
 }
 
 export interface Gateway {
