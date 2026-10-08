@@ -1,7 +1,11 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import { parseRecipe, recipeHash, walk, withHash, type Recipe } from '../src/index.ts';
 import { minimalRecipe } from './fixtures.ts';
+
+const RECIPES = join(import.meta.dirname, '../../../recipes');
 
 function parseError(input: unknown): ZodError {
   try {
@@ -63,6 +67,71 @@ describe('parseRecipe', () => {
       body: { op: 'seq', steps: [r.stages[0]!.body] },
     };
     expect(parseRecipe(r).stages[0]?.body.op).toBe('replicate');
+  });
+});
+
+/**
+ * The minimal recipe read back from JSON text, with `edit` applied to that text first. A lone surrogate reaches a
+ * recipe only this way: as a JSON \u escape written by a model or into a file.
+ */
+const fromText = (edit: (text: string) => string): unknown => JSON.parse(edit(JSON.stringify(minimalRecipe())));
+const withKnobs = (knobsJson: string) => fromText((t) => t.replace('"writes":true', `"writes":true,"knobs":${knobsJson}`));
+
+describe('parseRecipe: every recipe it returns can be hashed (F19)', () => {
+  it.each([
+    ['a knob name', withKnobs('{"\\ud800":"x"}'), '$.stages[0].body.knobs: property name "\\ud800"'],
+    ['a knob value', withKnobs('{"k":"v\\ud800"}'), '$.stages[0].body.knobs.k: string'],
+    ['the title', fromText((t) => t.replace('"title":"Minimal"', '"title":"x\\ud800"')), '$.title: string'],
+    ['a knob name under a bad knob name', withKnobs('{"\\ud800":{"x\\udc00":"y"}}'), '$.stages[0].body.knobs: property name "\\ud800"'],
+  ])('refuses a lone surrogate in %s with one well-formed issue naming where it is', (_label, input, where) => {
+    let error: unknown;
+    try {
+      parseRecipe(input);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(ZodError);
+    const issues = (error as ZodError).issues;
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ code: 'custom', path: [], message: `the recipe cannot be hashed: ${where} contains a lone surrogate` });
+    expect(issues[0]!.message.isWellFormed()).toBe(true);
+  });
+
+  it('either refuses an adversarial input with a ZodError or returns a recipe that hashes', () => {
+    const inputs: Record<string, unknown> = {
+      'well-formed': minimalRecipe(),
+      'astral knob name and value': withKnobs('{"\\ud83d\\ude00":"\\ud83d\\ude00"}'),
+      'lone surrogate in the title': fromText((t) => t.replace('"title":"Minimal"', '"title":"\\udc00"')),
+      'lone surrogate in a knob name': withKnobs('{"a\\udbff":1}'),
+      'lone surrogate in a nested knob name': withKnobs('{"k":{"ok":[{"\\ud800":1}]}}'),
+      'lone surrogate in a knob value': withKnobs('{"k":["\\udfff"]}'),
+      'lone surrogate in a sits-out reason': fromText((t) => t.replace('"sitsOut":[]', '"sitsOut":[{"block":"SEED","reason":"r\\ud800"}]')),
+      'lone surrogate in an exception': fromText((t) => t.replace('"exceptions":[]', '"exceptions":["e\\ud800"]')),
+      'a number too large for JSON': withKnobs('{"k":1e400}'),
+      'a reserved key': withKnobs('{"__proto__":{"a":1}}'),
+    };
+    const returned: string[] = [];
+    for (const [label, input] of Object.entries(inputs)) {
+      let recipe: Recipe;
+      try {
+        recipe = parseRecipe(input);
+      } catch (e) {
+        expect(e, label).toBeInstanceOf(ZodError);
+        continue;
+      }
+      expect(() => recipeHash(recipe), label).not.toThrow();
+      returned.push(label);
+    }
+    expect(returned).toEqual(['well-formed', 'astral knob name and value']);
+  });
+
+  it('hashes every stored catalog recipe exactly as before once read back through parseRecipe', () => {
+    const files = readdirSync(RECIPES).filter((f) => f.endsWith('.json') && f !== 'manifest.json');
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const stored = JSON.parse(readFileSync(join(RECIPES, file), 'utf8')) as Recipe;
+      expect(recipeHash(parseRecipe(stored)), file).toBe(stored.hash);
+    }
   });
 });
 
