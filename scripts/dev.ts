@@ -102,6 +102,8 @@ async function main(): Promise<void> {
   process.on('message', (message) => {
     if (message === 'stop') void stop(0);
   });
+  // Started by a runner that has gone away: nobody can stop us any more, so stop now.
+  process.on('disconnect', () => void stop(0));
   web.on('exit', (code) => {
     if (!stopping) {
       console.error(`next dev exited${code === null ? '' : ` with code ${code}`}.`);

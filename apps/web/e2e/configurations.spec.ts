@@ -1,0 +1,117 @@
+/**
+ * The configurations end to end in demo mode (spec §7 Phase 3): each starts from a problem typed on Start, takes the
+ * recommended recipe, answers every "Your turn" in the app and ends on the Result screen with the deliverable. The
+ * runner, prompts, store and gateway are the real ones; only the models are the gateway's mock.
+ */
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import { PRESENTATIONS } from '@byway/catalog';
+import { answerUntilDone, describeProblem, openResult, startRecommended, timelineLabels, watchForKeys } from './flow.ts';
+
+interface Case {
+  code: string;
+  recipeId: string;
+  name: string;
+  problem: string;
+  /** What the deliverable must look like on the Result screen. */
+  deliverable(result: Locator, page: Page): Promise<void>;
+}
+
+const CASES: Case[] = [
+  {
+    code: 'C1',
+    recipeId: 'c1',
+    name: 'Landing Page Studio',
+    problem: 'A landing page for the spring classes at my pottery studio',
+    async deliverable(result, page) {
+      // The page itself, in a sandboxed frame without same-origin access.
+      const frame = result.locator('iframe');
+      await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+      await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
+    },
+  },
+  {
+    code: 'C4',
+    recipeId: 'c4',
+    name: 'Memo Polish',
+    problem: 'Tighten my quarterly status memo for the leadership team before Friday',
+    async deliverable(result) {
+      await expect(result.locator('.prose')).toContainText(/\w+ \w+ \w+/);
+    },
+  },
+  {
+    code: 'C6a',
+    recipeId: 'c6a',
+    name: 'Fiction Second Reader',
+    problem: 'A short story I am writing about a lighthouse keeper who stops lighting the lamp',
+    async deliverable(result) {
+      await expect(result.locator('.prose')).toContainText(/\w+ \w+ \w+/);
+    },
+  },
+  {
+    code: 'C5',
+    recipeId: 'c5',
+    name: 'Ad Video Chain',
+    problem: 'A 30-second video ad for a neighbourhood bakery',
+    async deliverable(result) {
+      // The storyboard, each shot with its frame; demo clips are labelled placeholders (ADR-0069).
+      const shots = result.locator('.shot');
+      await expect(shots.first()).toBeVisible();
+      expect(await shots.count()).toBeGreaterThan(1);
+      await expect(result.locator('.shot img').first()).toBeVisible();
+      await expect(result.locator('.shot figcaption', { hasText: 'Clip' }).first()).toBeVisible();
+    },
+  },
+];
+
+for (const c of CASES) {
+  test(`${c.code} ${c.name}: problem to deliverable, every turn answered in the app`, async ({ page }) => {
+    const keys = watchForKeys(page);
+    await describeProblem(page, c.problem);
+    await startRecommended(page, c.name);
+    const answered = await answerUntilDone(page);
+    test.info().annotations.push({ type: 'turns', description: answered.map((a) => a.kind).join(', ') });
+    expect(answered.length).toBeGreaterThan(0);
+
+    // The timeline names steps as the recipe's presentation does, never by protocol codes or step ids.
+    const presentation = PRESENTATIONS.find((p) => p.recipeId === c.recipeId);
+    const presented = new Set(presentation?.stages.flatMap((s) => s.steps.map((step) => step.label)));
+    const labels = await timelineLabels(page);
+    expect(labels.length).toBeGreaterThan(1);
+    expect(labels.filter((l) => !presented.has(l))).toEqual([]);
+
+    // Demo mode spends nothing: the meter reads the gateway's $0 ledger entries through the run's cost events.
+    await expect(page.locator('.meter-spent')).toHaveText('$0.00');
+
+    const result = await openResult(page);
+    await c.deliverable(result, page);
+
+    expect(keys.checked()).toBeGreaterThan(0);
+    expect(keys.leaks).toEqual([]);
+  });
+}
+
+test('C3 from the Library: no route chosen up front, so the run asks who writes the first draft (choose)', async ({ page }) => {
+  const keys = watchForKeys(page);
+  await page.goto('/library');
+  await page.getByRole('link', { name: /Use this recipe\s*: Series Writer/ }).click();
+  await page.getByLabel('What are you working on?').fill('A weekly newsletter about cycling in the city, for people who commute by bike');
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await expect(page).toHaveURL(/\/recommend\/.+\?recipe=c3/);
+  await startRecommended(page, 'Series Writer');
+  const answered = await answerUntilDone(page);
+  expect(answered.map((a) => a.kind)).toContain('choose');
+  await expect(page.locator('.meter-spent')).toHaveText('$0.00');
+  const result = await openResult(page);
+  await expect(result.locator('.prose')).toContainText(/\w+ \w+ \w+/);
+  expect(keys.leaks).toEqual([]);
+});
+
+test('Settings in demo mode: the banner, the demo profile, and providers shown without their keys', async ({ page }) => {
+  const keys = watchForKeys(page);
+  await page.goto('/settings');
+  await expect(page.getByRole('note')).toContainText('Demo mode — sample outputs, no AI calls');
+  await expect(page.getByRole('heading', { name: 'Providers' })).toBeVisible();
+  await expect(page.locator('.providers')).toContainText('Anthropic');
+  expect(keys.checked()).toBeGreaterThan(0);
+  expect(keys.leaks).toEqual([]);
+});
