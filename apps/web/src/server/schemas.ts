@@ -27,6 +27,13 @@ export const AnswersInput = z.object({
     .max(20),
 });
 
+/**
+ * POST /api/intakes/:id/recommend takes one of two commands (F14, ADR-0082): `{ answers }` re-routes with the chooser
+ * answers as the person left them; `{ ensure: true }` is "Try again", which returns the intake's stored recommendation,
+ * or makes and stores one when there is none. Anything else, an empty body included, is refused.
+ */
+export const RecommendInput = z.union([z.strictObject({ ensure: z.literal(true) }), AnswersInput]);
+
 export const StartInput = z.object({
   intakeId: z.string().uuid(),
   /** A canonical recipe id; omitted to start the intake's composed recipe. */

@@ -351,3 +351,44 @@ test.describe('your unsent answer belongs to its question (F06), continued', () 
     await expect.poll(() => draftKeys(page)).not.toContain(`byway.draft.${t.id}`);
   });
 });
+
+test('examples you admire and Start attachments survive a detour, and are cleared once the run starts', async ({ page }) => {
+  const example = 'An example memo I admire: two lines, the ask first.';
+  await page.goto('/');
+  await page.getByLabel('What are you working on?').fill(MEMO);
+  await page.getByRole('button', { name: 'Attach a draft or diff' }).click();
+  await page.getByLabel('Name of attachment 1').fill('Current draft');
+  await page.getByLabel('Text of attachment 1').fill('Q3 status: shipped two of three milestones.');
+  await page.getByRole('button', { name: /Get a recommendation/ }).click();
+  await expect(page).toHaveURL(/\/recommend\//, { timeout: 60_000 });
+  await expect(page.locator('#proposal-title')).toHaveText('Memo Polish', { timeout: 60_000 });
+
+  // Start attachments come back with "Change".
+  await page.getByRole('link', { name: 'Change' }).click();
+  await expect(page.getByLabel('What are you working on?')).toHaveValue(MEMO);
+  await expect(page.getByLabel('Text of attachment 1')).toHaveValue('Q3 status: shipped two of three milestones.');
+  await expect(page.getByLabel('Name of attachment 1')).toHaveValue('Current draft');
+  await page.goBack();
+  await expect(page.locator('#proposal-title')).toHaveText('Memo Polish', { timeout: 60_000 });
+
+  // An example survives a trip to Settings and back.
+  await page.getByRole('button', { name: 'Paste an example' }).click();
+  await page.getByLabel('Example 1').fill(example);
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings' }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await page.goBack();
+  await expect(page.locator('#proposal-title')).toHaveText('Memo Polish', { timeout: 60_000 });
+  await expect(page.getByLabel('Example 1')).toHaveValue(example);
+  await page.getByRole('button', { name: 'Paste an example' }).click();
+  await page.getByLabel('Example 2').fill('A second one.');
+  await expect(page.getByLabel('Example 1')).toHaveValue(example);
+
+  // Starting the run uses them and clears what was kept.
+  await page.getByRole('button', { name: /^Start/ }).click();
+  await expect(page).toHaveURL(/\/runs\/[0-9a-f-]+$/, { timeout: 60_000 });
+  const kept = await page.evaluate(() => Object.keys(window.sessionStorage).filter((k) => /^byway\.(examples|start-)/.test(k)));
+  expect(kept).toEqual([]);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel run' }).click();
+  await expect(page.locator('.run-status')).toHaveText('Cancelled');
+});

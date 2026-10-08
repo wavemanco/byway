@@ -17,7 +17,11 @@ import {
   startRun,
   updateSettings,
   type Deps,
+  composeCommand,
+  recommendCommand,
+  workspaceRemaining,
 } from '../src/server/api.ts';
+import { RecommendInput } from '../src/server/schemas.ts';
 import { getRunData } from '../src/server/run-data.ts';
 import { FIRST_QUESTION } from './fixtures/runner.ts';
 import { TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
@@ -274,6 +278,69 @@ describe('model errors while recommending or composing (UX-2)', () => {
     expect(first).toEqual({ problem: expect.stringMatching(/busy/) });
     const second = await recommendationOrProblem(d, intakeId);
     expect('recommendation' in second && second.recommendation.recipeId).toBeTruthy();
+  });
+});
+
+describe('Recommendation screen commands return everything they change (F14, ADR-0082)', () => {
+  const rateLimited = () => new GatewayError('rate-limited', 'rate-limited from the provider');
+
+  it('Try again ({ ensure: true }) makes and stores the recommendation once, and says what is left in the workspace', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    recommend.mockRejectedValueOnce(rateLimited());
+    expect(await recommendationOrProblem(d, intakeId)).toEqual({ problem: expect.stringMatching(/busy/) });
+    expect(recommend).toHaveBeenCalledTimes(1);
+
+    const first = await recommendCommand(d, intakeId, { ensure: true });
+    expect(first.recommendation.recipeId).toBe('c1');
+    expect((await d.services.store.getIntake(intakeId))?.recommendation?.recipeId).toBe('c1');
+    expect(first.remainingUsd).toBe((await workspaceRemaining(d)).remainingUsd);
+    // Asking again returns the stored one: no second model call.
+    const second = await recommendCommand(d, intakeId, { ensure: true });
+    expect(second.recommendation).toEqual(first.recommendation);
+    expect(recommend).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-routing with flipped answers still works through the same command', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const { recommendation } = await recommendCommand(d, intakeId, { ensure: true });
+    const answers = recommendation.answers.map((a) => (a.questionId === 'visual' ? { ...a, answer: false, setBy: 'user' as const } : a));
+    const next = await recommendCommand(d, intakeId, { answers });
+    expect(next.recommendation.recipeId).not.toBe('c1');
+    expect(typeof next.remainingUsd).toBe('number');
+  });
+
+  it('Build my own during a failure asks the model for no recommendation, stores none, and says what is left', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    recommend.mockRejectedValueOnce(rateLimited());
+    await recommendationOrProblem(d, intakeId);
+    const calls = recommend.mock.calls.length;
+    const result = await composeCommand(d, intakeId);
+    expect(result.composed.ok).toBe(true);
+    expect(result.remainingUsd).toBe((await workspaceRemaining(d)).remainingUsd);
+    expect(recommend.mock.calls.length).toBe(calls);
+    expect((await d.services.store.getIntake(intakeId))?.recommendation).toBeUndefined();
+  });
+
+  it('reports the remaining amount as it is now, a raised cap included', async () => {
+    const d = await deps();
+    const before = await workspaceRemaining(d);
+    await updateSettings(d, { workspaceBudgetUsd: before.capUsd + 30 });
+    const after = await workspaceRemaining(d);
+    expect(after.remainingUsd).toBeCloseTo(before.remainingUsd + 30, 2);
+    expect(after.workspaceId).toBe(d.workspaceId);
+  });
+
+  it('accepts exactly two request bodies: { ensure: true } or { answers }; an empty body is still refused', () => {
+    expect(RecommendInput.safeParse({ ensure: true }).success).toBe(true);
+    expect(RecommendInput.safeParse({ answers: [] }).success).toBe(true);
+    expect(RecommendInput.safeParse({}).success).toBe(false);
+    expect(RecommendInput.safeParse({ ensure: false }).success).toBe(false);
+    expect(RecommendInput.safeParse({ ensure: 'yes' }).success).toBe(false);
   });
 });
 

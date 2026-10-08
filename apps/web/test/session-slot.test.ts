@@ -4,7 +4,9 @@
  * break a screen or restore something malformed.
  */
 import { describe, expect, it } from 'vitest';
+import { decodeExamples, examplesSlot } from '../src/components/examplesDraft.ts';
 import { keysWithPrefix, sessionSlot } from '../src/components/sessionSlot.ts';
+import { decodeAttachments } from '../src/components/startDraft.ts';
 
 class MapStorage {
   readonly map = new Map<string, string>();
@@ -79,3 +81,30 @@ describe('sessionSlot', () => {
   });
 });
 
+describe('what Recommendation examples and Start attachments keep', () => {
+  it('keeps pasted text and stored images, never anything else', () => {
+    const good = [
+      { kind: 'text', text: 'A memo I admire' },
+      { kind: 'image', name: 'poster.png', artifactId: `sha256:${'a'.repeat(64)}` },
+    ];
+    expect(decodeExamples(good)).toEqual(good);
+    expect(decodeExamples([{ kind: 'image', name: 'x', artifactId: 'http://elsewhere/x.png' }])).toBeNull();
+    expect(decodeExamples([{ kind: 'video', text: 'x' }])).toBeNull();
+    expect(decodeExamples('nope')).toBeNull();
+    expect(decodeExamples(Array.from({ length: 10 }, () => ({ kind: 'text', text: 'x' })))).toBeNull();
+  });
+
+  it('keeps examples per problem', () => {
+    const storage = new MapStorage();
+    examplesSlot('intake-1', () => storage as unknown as Storage).save([{ kind: 'text', text: 'one' }]);
+    expect(examplesSlot('intake-2', () => storage as unknown as Storage).load()).toBeNull();
+    expect(examplesSlot('intake-1', () => storage as unknown as Storage).load()).toEqual([{ kind: 'text', text: 'one' }]);
+  });
+
+  it('keeps attachments within the limits Start sends', () => {
+    expect(decodeAttachments([{ name: 'Draft', text: 'body' }])).toEqual([{ name: 'Draft', text: 'body' }]);
+    expect(decodeAttachments([{ name: 'Draft' }])).toBeNull();
+    expect(decodeAttachments(Array.from({ length: 6 }, () => ({ name: 'a', text: 'b' })))).toBeNull();
+    expect(decodeAttachments([{ name: 'x'.repeat(201), text: 'b' }])).toBeNull();
+  });
+});

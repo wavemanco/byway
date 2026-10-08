@@ -1,9 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { RecommendationView, type RecipeOption } from '../../../src/components/RecommendationView.tsx';
-import { composeView, recommendationOrProblem } from '../../../src/server/api.ts';
+import { composeView, recommendationOrProblem, workspaceRemaining } from '../../../src/server/api.ts';
 import { getDeps } from '../../../src/server/deps.ts';
-import { workspaceSpend } from '../../../src/view/history.ts';
 import { takesRefs } from '../../../src/view/refs.ts';
 
 export const metadata: Metadata = { title: 'Recommendation' };
@@ -50,12 +49,13 @@ export default async function RecommendPage({ params, searchParams }: PageProps<
   const recommendProblem = outcome && 'problem' in outcome ? outcome.problem : null;
   // The composed recipe stays on the server; the page gets what it shows.
   const composed = intake.composed ? composeView(intake.composed) : null;
-  const workspace = await services.store.ensureDefaultWorkspace();
-  const spend = workspaceSpend(workspace.budgetUsd, (await services.gateway.spend(workspace.id)).spentUsd);
+  const spend = await workspaceRemaining(deps);
 
   return (
     <div className="page">
+      {/* Keyed by what its state belongs to (ADR-0082): constant while the screen is shown, so it is never re-seeded. */}
       <RecommendationView
+        key={`${intakeId}:${chosenRecipeId ?? ''}`}
         intakeId={intakeId}
         problem={intake.problem.text}
         attachments={intake.problem.attachments?.map((a) => a.name) ?? []}
