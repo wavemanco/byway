@@ -130,7 +130,7 @@ Parsers take the last fenced block of the expected language, fall back to the wh
 
 **Provenance.** Every completion carries its template's id, version, hash and fidelity (`CompletionRequest.prompt`), and the gateway writes them into the hash-chained ledger entry.
 
-**Spend authority.** The gateway's ledger is the source of truth for spend, in demo mode too (the mock records $0 entries).
+**Spend authority.** The gateway's ledger is the source of truth for spend, in demo mode too (the mock records $0 entries). A call a provider answered is ledgered even when a label the provider reported (the served model, the upstream host) has no canonical form: the ledger records it with U+FFFD in place of a lone surrogate, or as its JSON text when it is not a string, and the exact reply stays stored under the entry's `responseSha256` ([ADR-0083](../../adr/0083-hashed-text-is-well-formed-unicode.md)). Verifying the ledger reports a stored line that is not an entry, or has no canonical form, as broken; it does not fail on it.
 
 ### 3.4 Spend
 
