@@ -2,14 +2,16 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_TEMPORAL_ADDRESS, type ModelProfile, type ProfileStatus, type PromptRenderer, type Runner } from '@byway/contracts';
+import { DEFAULT_TEMPORAL_ADDRESS, type ModelProfile, type ProfileStatus, type Runner } from '@byway/contracts';
+import { questionsSlot } from '@byway/advisor';
+import { CHOOSER } from '@byway/catalog';
+import { createPromptRenderer } from '@byway/prompts';
 import { DEMO_PROFILE_ID as GATEWAY_DEMO_PROFILE_ID } from '@byway/gateway';
 import { resolveDataDir } from '@byway/store';
 import { DEMO_PROFILE_ID, effectiveMode, findRepoRoot, flagOn, liveUsable, runProfileId, servicesConfig } from '../src/services/config.ts';
 import { loadEngine } from '../src/services/engine.ts';
 import { LEDGER_FILENAME } from '../src/services/create.ts';
 import { EngineUnavailableError, engineRunner, isEngineUnavailable } from '../src/services/engine-runner.ts';
-import { collapseDoubleFences, singleFenced } from '../src/services/prompts.ts';
 import { ENGINE, testHost, type TestHost } from './fixtures/services.ts';
 
 const temp: string[] = [];
@@ -128,21 +130,10 @@ describe('the engine Runner (the web process is only a Temporal client)', () => 
 });
 
 describe('prompts for the advisor', () => {
-  it('collapses a fence inside a fence of the same language into one', () => {
-    const doubled = 'Questions:\n\n```json\n```json\n[{"id":"visual"}]\n```\n```\n\nAnswer.';
-    expect(collapseDoubleFences(doubled)).toBe('Questions:\n\n```json\n[{"id":"visual"}]\n```\n\nAnswer.');
-    // An inner fence made longer for its body is the one kept.
-    expect(collapseDoubleFences('```json\n````json\na ``` b\n````\n```')).toBe('````json\na ``` b\n````');
-    const single = 'x\n```json\n{"a":1}\n```\ny\n```json\n{"b":2}\n```';
-    expect(collapseDoubleFences(single)).toBe(single);
-  });
-
-  it('keeps the template id, version, hash and fidelity of what it renders', () => {
-    const inner: PromptRenderer = {
-      has: () => true,
-      render: (id) => ({ id, version: 3, hash: 'sha256:x', fidelity: 'project', system: 'S', user: '```json\n```json\n[]\n```\n```' }),
-    };
-    expect(singleFenced(inner).render('advisor.intake', {})).toEqual({ id: 'advisor.intake', version: 3, hash: 'sha256:x', fidelity: 'project', system: 'S', user: '```json\n[]\n```' });
+  it('fence the chooser questions once: the advisor passes bare JSON and the template fences it', () => {
+    const out = createPromptRenderer().render('advisor.intake', { problem: 'A memo for my team.', questions: questionsSlot(CHOOSER) });
+    expect(out.user).not.toMatch(/```json\s*\n```/);
+    expect(out.user).toContain(CHOOSER[0]!.id);
   });
 });
 

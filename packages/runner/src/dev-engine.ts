@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { Client, Connection } from '@temporalio/client';
+import type { Client } from '@temporalio/client';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { DEFAULT_TEMPORAL_ADDRESS, type Gateway, type PromptRenderer, type Runner, type Store } from '@byway/contracts';
 import { createRunnerClient } from './client.ts';
@@ -81,9 +81,5 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
   }
 }
 
-/** A Runner for another process (the web app) talking to a running engine. */
-export async function connectRunner(opts: { store: Store; address?: string; namespace?: string }): Promise<{ runner: Runner; close(): Promise<void> }> {
-  const connection = await Connection.connect({ address: opts.address ?? DEFAULT_TEMPORAL_ADDRESS });
-  const client = new Client({ connection, namespace: opts.namespace ?? 'default' });
-  return { runner: createRunnerClient({ client, store: opts.store }), close: () => connection.close() };
-}
+/** A Runner for another process (the web app) talking to a running engine; defined in the client entry. */
+export { connectRunner, type ConnectedRunner } from './client-entry.ts';

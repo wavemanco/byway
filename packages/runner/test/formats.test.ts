@@ -70,6 +70,12 @@ describe('judging parsers (spec §3.3)', () => {
     expect(sectionOf('### B\n', 'B')).toBeUndefined();
   });
 
+  it('stops the last item’s section at the closing ranking line', () => {
+    const answer = '### A\n- Intent: calm.\n\n### B\n- Intent: warm.\n- The ask is buried.\n\nRanking: A, B';
+    expect(sectionOf(answer, 'B')).toBe('- Intent: warm.\n- The ask is buried.');
+    expect(sectionOf('### B\n- Intent: warm.\n**Ranking: B, A**', 'B')).toBe('- Intent: warm.');
+  });
+
   it('reads choices, checks, cuts, keeps', () => {
     expect(parseChoice('B is best.\nChoice: B', ['A', 'B'])).toEqual({ ok: true, value: 'B' });
     expect(parseChoice('Choice: C', ['A', 'B'])).toMatchObject({ ok: false });

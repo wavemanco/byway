@@ -42,6 +42,8 @@ export interface TimelineStep {
   artifacts: TimelineArtifact[];
   /** Loop rounds (e.g. critique passes). */
   iterations: number;
+  /** The latest round's judgement in words ("scored 8/10", "ranked 2 of 5"); never shown to a critic. */
+  judged?: string;
   /** Parallel candidates seen (replicate / each). */
   candidates: number;
   checkpointIds: string[];
@@ -73,6 +75,14 @@ interface Row {
 
 function isBlock(value: string | undefined): value is BlockCode {
   return value !== undefined && (BLOCK_CODES as readonly string[]).includes(value);
+}
+
+/** A loop round's judgement in words: a score out of 10 (OK mode), or our place in the lineup (GREAT mode). */
+export function judgement(d: { score?: number | undefined; rank?: number | undefined; of?: number | undefined }): string | undefined {
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  if (d.rank !== undefined && d.of !== undefined) return `ranked ${fmt(d.rank)} of ${d.of}`;
+  if (d.score !== undefined) return `scored ${fmt(d.score)}/10`;
+  return undefined;
 }
 
 function whoFrom(actor: string | undefined): Who {
@@ -177,6 +187,8 @@ export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[
         if (!row) break;
         const d = read(LoopIterationData, e.data);
         row.step.iterations = Math.max(row.step.iterations + (d.iteration === undefined ? 1 : 0), d.iteration ?? 0);
+        const judged = judgement(d);
+        if (judged) row.step.judged = judged;
         break;
       }
       case 'checkpoint-opened': {

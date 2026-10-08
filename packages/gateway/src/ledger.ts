@@ -97,6 +97,11 @@ export class Ledger {
   private queue: Promise<unknown> = Promise.resolve();
   /** Incremental read cache for entries(). */
   private cache: { offset: number; entries: GatewayLedgerEntry[] } = { offset: 0, entries: [] };
+  /**
+   * Serializes this instance's reads: two overlapping entries() calls would otherwise both read from the same cache
+   * offset, and the slower one (sized before the faster one advanced it) would ask for a negative number of bytes.
+   */
+  private reads: Promise<unknown> = Promise.resolve();
 
   constructor(opts: LedgerOptions) {
     this.path = opts.path;
@@ -197,7 +202,13 @@ export class Ledger {
   }
 
   /** All entries, read incrementally: only bytes appended since the last call are parsed. Unparseable lines are skipped. */
-  async entries(): Promise<GatewayLedgerEntry[]> {
+  entries(): Promise<GatewayLedgerEntry[]> {
+    const run = this.reads.then(() => this.readNew());
+    this.reads = run.catch(() => undefined);
+    return run;
+  }
+
+  private async readNew(): Promise<GatewayLedgerEntry[]> {
     let size: number;
     try {
       size = (await this.fs.stat(this.path)).size;

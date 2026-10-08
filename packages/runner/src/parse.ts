@@ -49,8 +49,9 @@ export function parseCritic(text: string, lineup?: readonly string[]): Parsed<Cr
 
 /**
  * One item's part of a lineup critique: the lines under its "### X" heading (any heading level, and the heading may
- * go on after the label, "### B — the bakery"), up to the next heading of that level or higher, heading stripped.
- * Undefined when the critique has no such section, or it is empty.
+ * go on after the label, "### B — the bakery"), up to the next heading of that level or higher, or the closing
+ * `Ranking:` line when the item is last, heading stripped. Undefined when the critique has no such section, or it is
+ * empty.
  */
 export function sectionOf(critique: string, label: string): string | undefined {
   const lines = critique.split('\n');
@@ -58,7 +59,8 @@ export function sectionOf(critique: string, label: string): string | undefined {
   const at = lines.findIndex((l) => head.test(l.trim()));
   if (at < 0) return undefined;
   const level = (head.exec(lines[at]!.trim())?.[1] ?? '###').length;
-  const end = lines.findIndex((l, i) => i > at && new RegExp(`^#{1,${level}}[ \\t]`).test(l.trim()));
+  const stop = new RegExp(`^(#{1,${level}}[ \\t]|Ranking:)`, 'i');
+  const end = lines.findIndex((l, i) => i > at && stop.test(plain(l)));
   const body = lines
     .slice(at + 1, end < 0 ? undefined : end)
     .join('\n')

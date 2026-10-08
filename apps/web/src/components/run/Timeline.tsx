@@ -42,6 +42,7 @@ function meta(step: TimelineStep): string[] {
   const parts = [whoLabel(step.who)];
   if (step.round > 1) parts.push(`round ${step.round}`);
   if (step.iterations > 1) parts.push(`${step.iterations} passes`);
+  if (step.judged) parts.push(step.judged);
   if (step.candidates > 1) parts.push(`${step.candidates} drafts`);
   return parts;
 }

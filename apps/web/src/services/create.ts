@@ -14,7 +14,6 @@ import type { Env as GatewayEnv } from '@byway/gateway';
 import { effectiveMode } from './config.ts';
 import type { EngineModules } from './engine.ts';
 import { engineRunner } from './engine-runner.ts';
-import { singleFenced } from './prompts.ts';
 import type { Services } from './types.ts';
 
 /** The ledger of every model call, beside the database (spec §2 "Data"). */
@@ -61,7 +60,7 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
         env: opts.env,
         demo,
       });
-      found = { gateway, advisor: engine.advisor.createAdvisor({ gateway, prompts: singleFenced(prompts), catalog: engine.catalog }) };
+      found = { gateway, advisor: engine.advisor.createAdvisor({ gateway, prompts, catalog: engine.catalog }) };
       pairs.set(demo, found);
     }
     return found;
@@ -74,8 +73,9 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
     services(demo: boolean): Services {
       const forced = opts.demo || demo;
       const { gateway, advisor } = pair(forced);
-      // TODO(v4): read `gateway.demo` (Gateway.demo in contracts v4) instead of carrying the flag beside it.
-      const mode = effectiveMode({ forced, preference: false, statuses: gateway.profileStatus() });
+      // Gateway.demo covers a forced mock and an environment with no keys at all; effectiveMode adds the case of keys
+      // that make no live profile usable.
+      const mode = effectiveMode({ forced: forced || gateway.demo, preference: false, statuses: gateway.profileStatus() });
       return { advisor, runner, store, gateway, mode };
     },
     async close() {

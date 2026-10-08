@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CheckpointRecord, RecipePresentation, RunEvent } from '@byway/contracts';
 import { loop, optional, seq, step, type Recipe } from '@byway/recipe';
 import { shownStep, stepIndex } from '../src/view/steps.ts';
-import { buildTimeline, currentStep, outputArtifacts } from '../src/view/timeline.ts';
+import { buildTimeline, currentStep, judgement, outputArtifacts } from '../src/view/timeline.ts';
 
 let seq_ = 0;
 const ev = (type: RunEvent['type'], stepId: string | undefined, data: Record<string, unknown> = {}, candidate?: number): RunEvent => ({
@@ -148,6 +148,8 @@ describe('run timeline, labelled by the presentation', () => {
     expect(explore?.steps[0]?.artifacts.map((a) => a.artifactId)).toEqual(['sha256:a', 'sha256:b']);
     expect(refine?.steps.map((st) => st.label)).toEqual(['Outside critique', 'Custom imagery', 'Pick one']);
     expect(refine?.steps[0]).toMatchObject({ status: 'done', iterations: 2, costUsd: 0.15, stepIds: ['render', 'critic', 'critic-loop', 'critic-fix'] });
+    // The latest round's judgement is shown to you (never to a critic, port rule 2).
+    expect(refine?.steps[0]?.judged).toBe('scored 9/10');
     expect(refine?.steps[1]).toMatchObject({ status: 'skipped', note: 'You did not find the drafts plain.', checkpointIds: ['cp-plain'] });
     expect(refine?.steps[2]).toMatchObject({ who: 'you', status: 'waiting', checkpointIds: ['cp-pick'] });
   });
@@ -239,5 +241,14 @@ describe('run timeline without a presentation', () => {
     const [stage] = buildTimeline(list, [], 'running');
     expect(stage?.stage).toBe('Refine');
     expect(stage?.steps[0]).toMatchObject({ label: 'x', who: 'ai', artifacts: [] });
+  });
+});
+
+describe('loop judgements', () => {
+  it('reads a score in OK mode and our place in the blind lineup in GREAT mode (ADR-0072)', () => {
+    expect(judgement({ score: 8 })).toBe('scored 8/10');
+    expect(judgement({ rank: 2, of: 5 })).toBe('ranked 2 of 5');
+    expect(judgement({ rank: 1.5, of: 10, score: 3 })).toBe('ranked 1.5 of 10');
+    expect(judgement({})).toBeUndefined();
   });
 });

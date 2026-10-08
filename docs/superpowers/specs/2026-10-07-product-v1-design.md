@@ -31,7 +31,7 @@ packages/runner     Temporal workflow interpreter, activities, worker, dev engin
 packages/advisor    Recommender (chooser + intake), composer, labels, estimates.          [WP-E]
 ```
 
-Dependency direction: `web → {advisor, runner, store, gateway, catalog, contracts}`; `runner → {gateway, store, prompts, catalog, recipe, validator, contracts}`; `advisor → {gateway, catalog, recipe, validator, contracts}`; nothing in `packages/` imports `apps/`. The research evaluation side (future `py/eval`, judge instruments) is never imported by product code (CR12).
+Dependency direction: `web → {advisor, runner (its `./client` entry only), store, gateway, prompts, catalog, contracts}`; `runner → {gateway, store, prompts, catalog, recipe, validator, contracts}`; `advisor → {gateway, prompts, catalog, recipe, validator, contracts}`; nothing in `packages/` imports `apps/`. A guard test (`apps/web/test/guard-boundaries.test.ts`) enforces these sets. The research evaluation side (future `py/eval`, judge instruments) is never imported by product code (CR12).
 
 **Process model (local).** `pnpm dev` starts: a local Temporal dev server (via `@temporalio/testing` `TestWorkflowEnvironment.createLocal` with a persistent `dbFilename`, port 7233), the runner worker, and `next dev` on `127.0.0.1:3000`. `pnpm demo` does the same with the mock provider forced on.
 
@@ -106,7 +106,7 @@ Prompts (WP-P), the runner's parsers (WP-D) and the mock provider (WP-C) must ag
 | same, on `options` | One fenced `json` block: `{"options":[{"title":string,"pitch":string,"rationale":string}]}` |
 | same, on `media` | One fenced `json` block: `{"storyboard":[{"shot":number,"description":string,"imagePrompt":string,"durationSec":number}],"voiceover":string}` |
 | same, on `code-diff` | One fenced `diff` block (unified diff), then a paragraph starting `Why:` |
-| `critic` | The critique as a bullet list, biggest gaps first, then a last line `Score: N/10` (OK mode) or `Ranking: C, A, E, B, D` (GREAT mode: every label of the lineup, best first; the critic is never told which item is ours and the runner finds our rank, [ADR-0072](../../adr/0072-great-critic-ranks-blind.md)) |
+| `critic` | OK mode: the critique as a bullet list, biggest gaps first, then a last line `Score: N/10`. GREAT mode: one `### X` section per item of the lineup, then a last line `Ranking: C, A, E, B, D` (every label once, best first). The critic is never told which item is ours; the runner finds our rank and hands only our item's section to the fix step ([ADR-0072](../../adr/0072-great-critic-ranks-blind.md)) |
 | `judge`, `select`, `rerank` | Optional reasoning, then a last line `Choice: <label>` (labels A, B, C…) |
 | `check` | A bullet list of defects, or the single line `No defects.` |
 | `cut` (model) | A bullet list of removals, each starting with a removal verb (Remove, Delete, Drop, Merge), or the single line `Nothing to remove.` |

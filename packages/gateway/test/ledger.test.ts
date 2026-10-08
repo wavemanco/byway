@@ -242,3 +242,32 @@ describe('Ledger: the lock file on Windows', () => {
     expect(await ledger.verify()).toBeNull();
   });
 });
+
+describe('Ledger: concurrent reads in one process', () => {
+  it('serializes entries() so a slower read cannot rewind the cache past a faster one (negative read size)', async () => {
+    const writer = await seed(2);
+    // The first read stops at open() until a second read, started after more appends, has finished.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let readOpens = 0;
+    const ledger = new Ledger({
+      path,
+      fs: {
+        open: (async (file: string, flags?: string) => {
+          if (file === path && flags === 'r' && ++readOpens === 1) await held;
+          return fsp.open(file, flags);
+        }) as typeof fsp.open,
+      },
+    });
+    const slow = ledger.entries();
+    await new Promise((r) => setTimeout(r, 10));
+    await writer.append(draft(3));
+    await writer.append(draft(4));
+    const fast = ledger.entries();
+    setTimeout(release, 10);
+    const [a, b] = await Promise.all([slow, fast]);
+    expect(a.map((e) => e.seq)).toEqual([1, 2]);
+    expect(b.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+    expect((await ledger.entries()).map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+  });
+});

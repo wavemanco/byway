@@ -38,11 +38,11 @@ export const ArtifactData = z.object({
 });
 
 /**
- * 'loop-iteration': iteration, max, score? (the score is shown to you, never to a critic).
- * TODO(v4): RunEventPayloads['loop-iteration'] gains rank?/of? (a GREAT critic's place for our version in the blind
- * lineup, ADR-0072); read them here and show "Ranked N of M" beside the round.
+ * 'loop-iteration': iteration, max, and the round's judgement — score (OK mode) or rank of `of` (GREAT mode: our
+ * version's place in the blind lineup, ADR-0072; averaged across shuffles, so it can be fractional). Shown to you,
+ * never to a critic (port rule 2).
  */
-export const LoopIterationData = z.object({ iteration: num, max: num, score: num });
+export const LoopIterationData = z.object({ iteration: num, max: num, score: num, rank: num, of: num });
 
 /** 'checkpoint-opened' and 'checkpoint-resolved'. */
 export const CheckpointEventData = z.object({ checkpointId: str, kind: str });
