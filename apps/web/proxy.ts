@@ -7,8 +7,8 @@ import { checkRequest } from './src/server/guard.ts';
  *
  * Under `next start` (`pnpm start`, `pnpm demo`) this is the whole guard. Under `next dev` it is not: next dev answers
  * its own internal endpoints (`/__nextjs_*`, the HMR WebSocket) before this runs, so contributor mode (`pnpm dev`)
- * puts a reverse proxy in front that applies the same guard to everything first (src/server/dev-proxy.ts). Never
- * run `next dev` on its own.
+ * runs the Next app inside a server of byway's own that applies the same guard to everything first, and is the only
+ * thing listening (src/server/dev-server.ts). Never run `next dev` on its own.
  */
 export function proxy(request: NextRequest) {
   const result = checkRequest({

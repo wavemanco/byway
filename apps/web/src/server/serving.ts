@@ -20,14 +20,6 @@ export function withoutSecrets(env: Readonly<Record<string, string | undefined>>
   return out;
 }
 
-/**
- * `next dev` announces the address it listens on, which in contributor mode is the internal one behind the guard;
- * those lines are dropped so the only address shown is the public one.
- */
-export function isInternalAddressLine(line: string): boolean {
-  return /^\s*-\s*(Local|Network):\s/.test(line);
-}
-
 export type ServeMode = 'start' | 'dev';
 
 export interface ServeArgs {
