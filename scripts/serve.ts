@@ -129,9 +129,10 @@ async function main(): Promise<void> {
   const temporalPort = port('BYWAY_TEMPORAL_PORT', 7233);
 
   quietTemporal();
-  // Next.js's dev cache is off now (next.config.ts), but one left by an earlier byway may hold a snapshot of the
-  // environment, keys included (SEC-3); it is never needed again, so it goes.
-  rmSync(path.join(WEB, process.env.BYWAY_NEXT_DIST_DIR?.trim() || '.next', 'dev', 'cache', 'turbopack'), { recursive: true, force: true });
+  // Turbopack's caches are off now (next.config.ts), but ones left by an earlier byway may hold a snapshot of the
+  // environment, keys included (SEC-3); they are never needed again, so they go.
+  const dist = path.join(WEB, process.env.BYWAY_NEXT_DIST_DIR?.trim() || '.next');
+  for (const cache of [path.join(dist, 'dev', 'cache', 'turbopack'), path.join(dist, 'cache', 'turbopack')]) rmSync(cache, { recursive: true, force: true });
   const keys = loadEnvFile(path.join(ROOT, '.env.agents'));
   const dataDir = resolveDataDir();
   const store = createStore({ dataDir });

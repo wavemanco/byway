@@ -35,9 +35,12 @@ export function configFor(env: Env): NextConfig {
     // byway not to start.
     typescript: { ignoreBuildErrors: true, tsconfigPath },
     experimental: {
-      // Turbopack's dev cache persists a snapshot of the process environment, provider keys included, under
-      // apps/web/.next (SEC-3). `next dev` needs the keys (it recommends and composes), so the cache is off instead.
+      // Turbopack's persistent cache keeps a snapshot of the process environment, provider keys included, under
+      // apps/web/.next (SEC-3). `next dev` needs the keys (it recommends and composes), so its cache is off.
+      // scripts/serve.ts gives `next build` no keys, but a build run by hand has whatever the shell has, so that
+      // cache is off too (the build takes seconds without it).
       turbopackFileSystemCacheForDev: false,
+      turbopackFileSystemCacheForBuild: false,
     },
     async headers() {
       return [

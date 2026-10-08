@@ -136,8 +136,9 @@ describe('app screens load images only from byway (SEC-4)', () => {
 });
 
 describe('how the app is built and served (C8, SEC-3, DEV-1)', () => {
-  it('keeps no Turbopack cache in dev, where it would snapshot the environment and its keys under the repo', () => {
+  it('keeps no Turbopack cache, which would snapshot the environment and its keys under the repo', () => {
     expect(configFor({}).experimental?.turbopackFileSystemCacheForDev).toBe(false);
+    expect(configFor({}).experimental?.turbopackFileSystemCacheForBuild).toBe(false);
   });
 
   it('builds into BYWAY_NEXT_DIST_DIR when set, so the e2e suite never rebuilds under a byway you are running', () => {
