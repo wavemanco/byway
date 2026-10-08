@@ -88,8 +88,8 @@ Logic on top of the contracts sits in view code:
   request and WebSocket upgrade before Next sees it, including Next.js's own dev endpoints (which, and `/_next/*`, no
   other site may call, even with a loopback Host; the path is decoded and its `..` resolved before it is matched).
   Next runs in that server's process, so there is no other port to reach it on.
-- No provider key is written under the repo: `next build` gets none (`src/server/serving.ts`), and Turbopack's
-  persistent caches, which would snapshot the environment, are off (`next.config.ts`).
+- No provider key is written under the repo: `next build` gets none (`withoutSecrets` in `@byway/gateway`), and
+  Turbopack's persistent caches, which would snapshot the environment, are off (`next.config.ts`).
 - Generated pages are shown in sandboxed iframes (never `allow-same-origin`) and served by the artifact route with a
   CSP that sandboxes them again, blocks requests and allows only the renderer's CDNs. A CSP cannot stop a page with
   scripts from navigating itself, and so sending what it contains to another site, so a page inside byway runs its

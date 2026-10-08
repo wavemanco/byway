@@ -32,8 +32,8 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engine-watch.ts';
-import { parseServeArgs, withoutSecrets } from '../apps/web/src/server/serving.ts';
-import { createGateway, KEY_VARS, loadEnvFile } from '../packages/gateway/src/index.ts';
+import { parseServeArgs } from '../apps/web/src/server/serving.ts';
+import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
 import { startDevEngine, storeCaps, type DevEngine } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
@@ -115,7 +115,7 @@ function nextBin(): string {
 /** Runs `next build` without any secret in its environment, so none can reach the build's caches (SEC-3). */
 async function build(env: Record<string, string>): Promise<void> {
   console.log('  web        building the app (next build)…');
-  const child = spawn(process.execPath, [nextBin(), 'build'], { cwd: WEB, stdio: ['ignore', 'pipe', 'pipe'], env: withoutSecrets(env, Object.values(KEY_VARS)) });
+  const child = spawn(process.execPath, [nextBin(), 'build'], { cwd: WEB, stdio: ['ignore', 'pipe', 'pipe'], env: withoutSecrets(env) });
   const output: string[] = [];
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', (chunk: Buffer) => output.push(chunk.toString()));
   const code = await exitCode(child);

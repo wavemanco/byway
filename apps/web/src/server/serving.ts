@@ -1,24 +1,8 @@
 /**
  * Rules for how scripts/serve.ts runs the web app (C8: `pnpm start`, `pnpm demo`, `pnpm dev`), as plain functions so
- * they are tested without starting anything. Node-only and never imported by the app.
+ * they are tested without starting anything. Node-only and never imported by the app. Which environment `next build`
+ * gets (no key, SEC-3) is the gateway's one rule for every child that must hold none: withoutSecrets in @byway/gateway.
  */
-
-/**
- * Environment variables that hold secrets. `next build` is given none of them (SEC-3): the build needs no key, and
- * Turbopack's persistent cache would otherwise keep a snapshot of the environment under the repo. Provider keys are
- * named exactly; anything else secret-looking is dropped too, as a second line.
- */
-const SECRET_NAME = /(?:API_KEY|_KEY|_TOKEN|_SECRET|PASSWORD)$/i;
-
-export function withoutSecrets(env: Readonly<Record<string, string | undefined>>, keyVars: readonly string[]): Record<string, string> {
-  const named = new Set(keyVars.map((k) => k.toUpperCase()));
-  const out: Record<string, string> = {};
-  for (const [name, value] of Object.entries(env)) {
-    if (value === undefined || named.has(name.toUpperCase()) || SECRET_NAME.test(name)) continue;
-    out[name] = value;
-  }
-  return out;
-}
 
 export type ServeMode = 'start' | 'dev';
 
