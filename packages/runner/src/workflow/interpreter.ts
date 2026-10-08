@@ -17,7 +17,7 @@ import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { indexOfLabel } from '../labels.ts';
-import { FAILURE, toStepSpec, type BudgetFailureDetails, type CheckpointSpec, type ModelStepResult, type OpenCheckpointInput, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
+import { FAILURE, toStepSpec, type BudgetFailureDetails, type RejectedAnswerDetails, type CheckpointSpec, type ModelStepResult, type OpenCheckpointInput, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
 import { media, model, quick } from './acts.ts';
 import type { PendingCheckpoint, RunControl } from './control.ts';
 import {
@@ -186,7 +186,8 @@ export class Interpreter {
       try {
         return await fn();
       } catch (e) {
-        if (isCancellation(e)) throw e;
+        // A person's answer that cannot be used as it is goes back to the step that asked (ENG-6): not a failure.
+        if (isCancellation(e) || rejectedAnswer(e) !== undefined) throw e;
         const budget = budgetDetails(e);
         if (budget) {
           if (await this.askBudget(call, budget)) continue;
@@ -365,10 +366,24 @@ export class Interpreter {
       checkpoint.artifactIds = [...work, ...(ports.notes ?? []).filter((id) => !work.includes(id))];
     }
     const res = await this.ask(call, checkpoint, { step: spec, ...(initial ? { initial } : {}) });
-    const { initialText, ...resolution } = res;
-    // Writing the answer back (VOICE may call the model) is the rest of this step: a pause waits for it.
-    const finish = { run: this.run, call, step: spec, kind, resolution, ports, ...(initialText !== undefined ? { initialText } : {}) };
-    const fin = await this.control.track(() => this.act(call, () => model.finishHumanStep(finish)));
+    // What the checkpoint first offered: "unchanged" is measured against it, however often the person is asked again.
+    const { initialText: offered, ...first } = res;
+    let resolution: CheckpointResolution = first;
+    let fin;
+    for (;;) {
+      // Writing the answer back (VOICE may call the model) is the rest of this step: a pause waits for it.
+      const finish = { run: this.run, call, step: spec, kind, resolution, ports, ...(offered !== undefined ? { initialText: offered } : {}) };
+      try {
+        fin = await this.control.track(() => this.act(call, () => model.finishHumanStep(finish)));
+        break;
+      } catch (e) {
+        const problem = rejectedAnswer(e);
+        if (problem === undefined) throw e;
+        // Asked again, starting from what they wrote, with why it could not be used (ENG-6).
+        const { initialText: _again, ...next } = await this.ask(call, { ...checkpoint, prompt: `${problem} ${checkpoint.prompt}`, initialText: resolution.text ?? '' }, { step: spec });
+        resolution = next;
+      }
+    }
     let out: Ports = { ...ports };
     const text = fin.text ?? '';
     switch (kind) {
@@ -650,6 +665,14 @@ const cand = (call: StepCall): { candidate?: number } => (call.candidate !== und
 function withCritique(ports: Ports, critique: string | undefined, empty = false): Ports {
   const { nothingToRemove: _was, critique: _old, ...rest } = ports;
   return { ...rest, ...(critique !== undefined ? { critique } : {}), ...(empty ? { nothingToRemove: true } : {}) };
+}
+
+/** The problem with a person's answer that an activity could not use as it is (ENG-6), or undefined. */
+function rejectedAnswer(e: unknown): string | undefined {
+  const cause = e instanceof ActivityFailure ? e.cause : e;
+  if (!(cause instanceof ApplicationFailure) || cause.type !== FAILURE.rejected) return undefined;
+  const d = cause.details?.[0] as RejectedAnswerDetails | undefined;
+  return typeof d?.problem === 'string' ? d.problem : cause.message;
 }
 
 function budgetDetails(e: unknown): BudgetFailureDetails | undefined {

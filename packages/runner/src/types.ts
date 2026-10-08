@@ -359,7 +359,14 @@ export interface RunnerActivities {
 export const FAILURE = {
   budget: 'BudgetExceeded',
   step: 'StepFailed',
+  /** A person's answer that cannot be written back as it is (ENG-6): the workflow asks them again, with why. */
+  rejected: 'AnswerRejected',
 } as const;
+
+/** The details an activity attaches to an AnswerRejected failure: what to tell the person. */
+export interface RejectedAnswerDetails {
+  problem: string;
+}
 
 /** The details an activity attaches to a BudgetExceeded failure. */
 export interface BudgetFailureDetails {

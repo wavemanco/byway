@@ -6,13 +6,13 @@
 import { withoutMarks } from '@byway/gateway';
 import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
 import { applyClaims, claimLines } from '../claims.ts';
-import { applyCopy, extractCopy, pageVoiceProblems, placePageCopy } from '../copy.ts';
+import { applyCopy, extractCopy, pageCopy, pageVoiceProblems, placePageCopy } from '../copy.ts';
 import { parseArtifact, parseHtml, type Parsed } from '../formats.ts';
 import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput } from '../types.ts';
 import { askModel } from './call.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
-import { StepError } from './failures.ts';
+import { AnswerRejected, ContractMissed, StepError } from './failures.ts';
 import { ArtifactReader } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
 import { storeText, writeProblems } from './writes.ts';
@@ -81,7 +81,7 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
     // The claim log (ENG-2): the owner's corrections replace the claims where they stood; nothing else changes.
     const before = await deps.store.artifacts.getText(ports.artifact);
     const applied = applyClaims(before, text);
-    if (!applied.ok) throw new StepError(applied.problem);
+    if (!applied.ok) throw new AnswerRejected(applied.problem);
     result.text = text;
     if (applied.value.changed.length) {
       const problems = writeProblems(run, applied.value.text);
@@ -115,11 +115,25 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
   return result;
 }
 
+/** A write-back whose model answer missed twice becomes a question asked again (ENG-6), with the person's problem. */
+async function orAskAgain<T>(written: Promise<T>, problem: (missed: string) => string): Promise<T> {
+  try {
+    return await written;
+  } catch (e) {
+    if (e instanceof ContractMissed) throw new AnswerRejected(problem(e.problem));
+    throw e;
+  }
+}
+
 /**
  * VOICE write-back. Unchanged copy writes nothing. Prose: the edited text is the artifact. Options, media and diffs map
  * the copy back field by field. Pages: `helper.voice.apply`, held to a diff check (only text changed, every line of
  * the person's verbatim); when the model's page fails the check but the lines map one to one onto the page's lines,
  * the runner places them itself and the same check verifies it.
+ *
+ * Copy that cannot be written back is never a failed run (ENG-6): the person is asked again, with their own text and
+ * why. A page's copy is one line per block of text, so an answer with another number of lines cannot be placed (a new
+ * line needs a new element, which the diff check refuses): that is asked again before any model call.
  */
 async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: string): Promise<{ costUsd: number; artifactId?: string }> {
   const { run, call, step, ports } = input;
@@ -135,7 +149,7 @@ async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: str
       return { costUsd: 0, artifactId: await store(direct.value) };
     }
     // The copy no longer maps onto the fields: let the model write it in, then hold it to the person's lines.
-    const applied = await askModel(deps, reader, {
+    const applied = await orAskAgain(askModel(deps, reader, {
       run,
       call,
       promptId: 'helper.voice.apply',
@@ -150,15 +164,21 @@ async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: str
         const problems = writeProblems(run, r.value, edited);
         return problems.length ? { ok: false, problem: problems.join(' ') } : r;
       },
-    });
+    }), () => `${direct.problem} Your words could not be placed as they are.`);
     return { costUsd: applied.costUsd, artifactId: await store(applied.value) };
   }
   const lines = edited.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n');
+  const blocks = pageCopy(before).length;
+  if (lines.length !== blocks) {
+    throw new AnswerRejected(
+      `This page has one line per block of text: ${blocks} lines, and your text has ${lines.length}. Keep one line per block: merge a line you added into the line next to it, or put back a line you removed (an empty line empties its block).`,
+    );
+  }
   const check = (page: string): Parsed<string> => {
     const problems = [...pageVoiceProblems(before, page, lines), ...writeProblems(run, page)];
     return problems.length ? { ok: false, problem: problems.join(' ') } : { ok: true, value: page };
   };
-  const applied = await askModel(deps, reader, {
+  const applied = await orAskAgain(askModel(deps, reader, {
     run,
     call,
     promptId: 'helper.voice.apply',
@@ -175,6 +195,6 @@ async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: str
       const fallback = placed.ok ? check(placed.value) : placed;
       return fallback.ok ? fallback : checked;
     },
-  });
+  }), (missed) => `Your words could not be placed on the page as they are: ${missed}`);
   return { costUsd: applied.costUsd, artifactId: await store(`${applied.value}\n`) };
 }

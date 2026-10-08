@@ -113,6 +113,20 @@ export const scripted = recipe(
   ),
 );
 
+/** A page, then your words on it (VOICE on a web page: one line per block of copy). */
+export const voicedPage = recipe(
+  'voiced-page',
+  'web-page',
+  seq(build('page'), step({ id: 'voice', role: 'voice', block: 'VOICE', actor: 'human', consumes: ['artifact'], produces: ['voice', 'artifact'], writes: true, knobs: { scope: 'every-line' } })),
+);
+
+/** A memo, then the owner signs off its claims (the C4 claim log). */
+export const claimLogged = recipe(
+  'claim-logged',
+  'prose',
+  seq(build('memo'), step({ id: 'claims', role: 'voice', block: 'VOICE', variant: 'claim-log', actor: 'human', consumes: ['artifact'], produces: ['voice', 'artifact'], writes: true })),
+);
+
 /** Three drafts, then a judge (pick C) or chance (pick R) keeps one. */
 const judgeStep = step({ id: 'judge', role: 'judge', actor: 'model', tier: 'big', isolated: true, prompt: 'product.test.judge', consumes: ['option_set<artifact>'], produces: ['option_set<artifact>'] });
 export const judgedPick = recipe('judged-pick', 'prose', seq(replicate('drafts', 3, build('draft')), pick('choose', 'C', 1, 'model', judgeStep)));

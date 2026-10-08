@@ -8,7 +8,8 @@ import type { VideoRequest, VideoResult } from '@byway/contracts';
 import { NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
-import { judgedPick, policyLoop, randomPick, scripted, shortAd, tiny, trimmed, trimmedByHand } from '../helpers/recipes.ts';
+import { claimLogged, judgedPick, policyLoop, randomPick, scripted, shortAd, tiny, trimmed, trimmedByHand, voicedPage } from '../helpers/recipes.ts';
+import { pageCopy } from '../../src/copy.ts';
 
 let h: Harness;
 
@@ -179,6 +180,53 @@ export function operatorScenarios(use: () => Harness): void {
       } finally {
         delete h.responders['fix:media'];
       }
+    }, 60_000);
+  });
+
+  describe('an answer that cannot be written back is asked for again, never a failed run (ENG-6)', () => {
+    it('your words on a page with a line added: asked again with your text and why, at no cost; the fixed answer is placed', async () => {
+      const asks: { prompt: string; initialText?: string }[] = [];
+      let offered: string[] = [];
+      const run = await h.start(voicedPage, { problem: { text: 'A landing page for a bike repair shop' } });
+      const view = await h.drive(run.id, (cp) => {
+        if (cp.kind !== 'write') return undefined;
+        asks.push({ prompt: cp.prompt, ...(cp.initialText !== undefined ? { initialText: cp.initialText } : {}) });
+        if (asks.length === 1) {
+          offered = cp.initialText!.split('\n');
+          return { checkpointId: cp.id, text: [...offered, 'A line of my own, with no block to go in.'].join('\n') };
+        }
+        return { checkpointId: cp.id, text: offered.map((l, i) => (i === 1 ? 'Fixed by Friday, or the next one is free' : l)).join('\n') };
+      });
+      expect(view.run.status).toBe('done');
+      checkEvents(view);
+      expect(asks).toHaveLength(2);
+      // The second ask says what went wrong and starts from what you wrote, not from the page's copy.
+      expect(asks[1]!.prompt).toMatch(new RegExp(`one line per block of text: ${offered.length} lines`));
+      expect(asks[1]!.initialText).toContain('A line of my own');
+      // A line count that cannot be placed is refused before any model call; the fixed answer is placed.
+      expect(h.succeeded(run.id).filter((c) => c.purpose === 'voice.apply:web-page')).toHaveLength(1);
+      expect(pageCopy(await h.store.artifacts.getText(view.run.outputArtifactId!))).toContain('Fixed by Friday, or the next one is free');
+      expect(ofType(view, 'step-failed')).toEqual([]);
+    }, 60_000);
+
+    it('a claim log answered with an extra line is asked again; the corrected claim then replaces its sentence', async () => {
+      let n = 0;
+      let offered: string[] = [];
+      const run = await h.start(claimLogged, { problem: { text: 'A status memo on the billing migration' } });
+      const view = await h.drive(run.id, (cp) => {
+        if (cp.kind !== 'write') return undefined;
+        if (++n === 1) {
+          offered = cp.initialText!.split('\n');
+          return { checkpointId: cp.id, text: `${cp.initialText}\n- And one more claim: 3 teams.` };
+        }
+        return { checkpointId: cp.id, text: [...offered.slice(0, -1), '- Decide on the 31st, once the numbers are in.'].join('\n') };
+      });
+      expect(view.run.status).toBe('done');
+      expect(n).toBe(2);
+      expect(view.checkpoints.filter((c) => c.stepId === 'claims')[1]!.prompt).toMatch(/one line per claim/);
+      const out = await h.store.artifacts.getText(view.run.outputArtifactId!);
+      expect(out).toContain('Decide on the 31st, once the numbers are in.');
+      expect(out.replace(/\s+/g, ' ')).not.toContain(offered.at(-1)!.replace(/^- /, ''));
     }, 60_000);
   });
 

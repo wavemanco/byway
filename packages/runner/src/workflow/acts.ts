@@ -9,7 +9,7 @@
 import { proxyActivities, type ActivityOptions } from '@temporalio/workflow';
 import { FAILURE, type RunnerActivities } from '../types.ts';
 
-const retry: ActivityOptions['retry'] = { initialInterval: '1 second', backoffCoefficient: 2, maximumInterval: '30 seconds', maximumAttempts: 3, nonRetryableErrorTypes: [FAILURE.budget, FAILURE.step] };
+const retry: ActivityOptions['retry'] = { initialInterval: '1 second', backoffCoefficient: 2, maximumInterval: '30 seconds', maximumAttempts: 3, nonRetryableErrorTypes: [FAILURE.budget, FAILURE.step, FAILURE.rejected] };
 
 /** Store reads and writes. */
 export const quick = proxyActivities<RunnerActivities>({ startToCloseTimeout: '1 minute', retry: { ...retry, maximumAttempts: 5 } });

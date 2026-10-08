@@ -7,7 +7,7 @@ import type { ChatMessage, CompletionRequest, PromptSlot, Tier } from '@byway/co
 import type { Parsed } from '../formats.ts';
 import type { RunRef, StepCall } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
-import { StepError } from './failures.ts';
+import { ContractMissed, StepError } from './failures.ts';
 import { ArtifactReader, userMessage, type ImageGroup } from './prompting.ts';
 
 export interface ModelCall<T> {
@@ -78,5 +78,5 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
       { role: 'user', content: [{ type: 'text', text: `That answer could not be used: ${problem}\nAnswer again, following the answer format exactly.` }] },
     ];
   }
-  throw new StepError(`The ${req.what} step's answer could not be used after a retry: ${problem}`);
+  throw new ContractMissed(`The ${req.what} step's answer could not be used after a retry: ${problem}`, problem);
 }
