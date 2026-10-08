@@ -1,7 +1,7 @@
 'use client';
 
-import { panelFor } from '../../../view/checkpoints.ts';
-import { useShortcuts } from '../../useShortcuts.ts';
+import { listedShortcuts } from '../../../view/checkpoints.ts';
+import { useShortcuts, useSingleKeyShortcuts } from '../../useShortcuts.ts';
 import { References } from './References.tsx';
 import type { PanelProps } from './types.ts';
 
@@ -16,6 +16,7 @@ export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
   };
   useShortcuts({ Y: () => answer(true), N: () => answer(false) });
   const refs = cp.artifactIds ?? [];
+  const shortcuts = listedShortcuts(cp.kind, useSingleKeyShortcuts());
 
   return (
     <>
@@ -23,7 +24,7 @@ export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
       <div className={refs.length > 0 ? 'turn-foot' : 'turn-foot turn-foot-plain'}>
         <div className="turn-foot-info">
           <ul className="shortcuts" aria-label="Keyboard shortcuts">
-            {panelFor(cp.kind).shortcuts.map((s) => (
+            {shortcuts.map((s) => (
               <li key={s.keys}>
                 <kbd>{s.keys}</kbd> {s.does}
               </li>

@@ -5,8 +5,10 @@ import {
   canSubmit,
   directiveItems,
   emptyDraft,
+  hitParts,
   moveFocus,
   panelFor,
+  selectAction,
   toResolution,
   toggleChoice,
 } from '../src/view/checkpoints.ts';
@@ -24,9 +26,9 @@ const cp = (kind: CheckpointKind, extra: Partial<CheckpointRecord> = {}): Checkp
 
 describe('checkpoint panels', () => {
   it('has a dedicated panel for every checkpoint kind', () => {
-    expect(CHECKPOINT_KINDS).toEqual(['pick', 'react', 'confirm', 'compare', 'directive', 'write', 'choose']);
+    expect(CHECKPOINT_KINDS).toEqual(['pick', 'select', 'react', 'confirm', 'compare', 'directive', 'write', 'choose']);
     const panels = CHECKPOINT_KINDS.map((k) => panelFor(k).panel);
-    expect(panels).toEqual(['contact-sheet', 'reaction', 'yes-no', 'side-by-side', 'list-editor', 'editor', 'branches']);
+    expect(panels).toEqual(['contact-sheet', 'checklist', 'reaction', 'yes-no', 'side-by-side', 'list-editor', 'editor', 'branches']);
     expect(new Set(panels).size).toBe(CHECKPOINT_KINDS.length);
   });
 
@@ -85,6 +87,37 @@ describe('drafts and resolutions', () => {
     expect(emptyDraft(compare).choice).toEqual([]);
     expect(canSubmit(compare, { ...emptyDraft(compare), choice: ['B'] })).toBe(true);
     expect(toResolution(compare, { ...emptyDraft(compare), choice: ['B'] })).toEqual({ checkpointId: 'cp1', choice: ['B'] });
+  });
+
+  it('takes any subset for select, none included, in the order the options are listed (TELLS hits, C2)', () => {
+    const hits = [
+      { id: 'hit-1', label: 'Em dash pivot — hero heading → a full stop' },
+      { id: 'hit-2', label: 'Triplet — features list → two items' },
+      { id: 'hit-3', label: 'Seamless — footer → plain verb' },
+    ];
+    const select = cp('select', { options: hits });
+    expect(emptyDraft(select).choice).toEqual([]);
+    // Choosing none is an answer: the fix step then changes nothing.
+    expect(canSubmit(select, emptyDraft(select))).toBe(true);
+    expect(toResolution(select, emptyDraft(select))).toEqual({ checkpointId: 'cp1', choice: [] });
+    // Ticked in any order, sent once each and in the listed order; unknown ids never reach the run.
+    expect(toResolution(select, { ...emptyDraft(select), choice: ['hit-3', 'hit-1', 'hit-3', 'hit-9'] })).toEqual({ checkpointId: 'cp1', choice: ['hit-1', 'hit-3'] });
+    // There is no upper limit.
+    expect(toggleChoice(['hit-1', 'hit-2'], 'hit-3', Number.POSITIVE_INFINITY)).toEqual(['hit-1', 'hit-2', 'hit-3']);
+  });
+
+  it('names what sending a select does: the chosen hits are swapped, or none are', () => {
+    expect(selectAction(0)).toBe('Swap none');
+    expect(selectAction(1)).toBe('Swap the chosen one');
+    expect(selectAction(3)).toBe('Swap the chosen ones');
+    // Sending is never a single key: it changes the work.
+    expect(panelFor('select').shortcuts.map((s) => s.keys)).toEqual(['J', 'K', 'Space', 'Ctrl+Enter']);
+  });
+
+  it('reads a TELLS hit label as its pattern, where it is and the alternative', () => {
+    expect(hitParts('Em dash pivot — hero heading → a full stop')).toEqual({ pattern: 'Em dash pivot', where: 'hero heading', alternative: 'a full stop' });
+    expect(hitParts('Seamless → plain verb')).toEqual({ pattern: 'Seamless', alternative: 'plain verb' });
+    expect(hitParts('Just a label')).toEqual({ pattern: 'Just a label' });
   });
 
   it('moves focus between drafts without wrapping', () => {

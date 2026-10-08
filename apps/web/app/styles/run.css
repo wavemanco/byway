@@ -6,12 +6,29 @@
   padding: var(--s-5) var(--gutter) var(--s-8);
 }
 
+/* Meter, status, Pause and Cancel always in view (spec §5; UX-10): the header sticks while the page scrolls. */
 .run-head {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--s-4) var(--s-6);
+  margin-top: calc(-1 * var(--s-3));
+  padding: var(--s-3) 0;
+  background: var(--bg);
+  border-bottom: 1px solid transparent;
+}
+
+.run-status:focus {
+  outline: none;
+}
+
+.run-status:focus-visible {
+  outline: 2px solid var(--you);
+  outline-offset: 2px;
 }
 
 .run-title {
@@ -97,18 +114,25 @@
   margin-top: var(--s-4);
 }
 
+/* The working area is first in the DOM (UX-11); on wide screens the timeline is placed to its left. */
 .run-body {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-areas: 'timeline work';
   gap: var(--s-6);
   align-items: start;
   margin-top: var(--s-6);
 }
 
+.run-work {
+  grid-area: work;
+}
+
 .run-timeline {
+  grid-area: timeline;
   position: sticky;
-  top: var(--s-4);
-  max-height: calc(100vh - var(--s-6));
+  top: calc(var(--run-head-h, 0px) + var(--s-4));
+  max-height: calc(100vh - var(--run-head-h, 0px) - var(--s-6));
   overflow: auto;
   padding-right: var(--s-2);
   overscroll-behavior: contain;
@@ -854,7 +878,11 @@
   gap: var(--s-2);
 }
 
-.page-result .segmented {
+.page-result-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
   margin-bottom: var(--s-3);
 }
 
@@ -973,10 +1001,7 @@
 @media (max-width: 960px) {
   .run-body {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .run-work {
-    order: -1;
+    grid-template-areas: 'work' 'timeline';
   }
 
   .run-timeline {
@@ -1004,4 +1029,148 @@
   .run-side {
     width: 100%;
   }
+
+  /*
+   * On a phone only the strip with the meter, status, Pause and Cancel stays in view (UX-10): the title scrolls away,
+   * so the strip is short. The header lets its children take part in the page flow, and the strip sticks.
+   */
+  .run-head {
+    display: contents;
+  }
+
+  .run-side {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    padding: var(--s-2) 0;
+    background: var(--bg);
+  }
+}
+
+/* select: a checklist of hits, any number chosen (none included) */
+.checklist {
+  margin: var(--s-4) 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.checklist-bulk {
+  display: flex;
+  gap: var(--s-4);
+  margin-bottom: var(--s-2);
+  font-size: var(--text-sm);
+}
+
+.checklist-items {
+  display: grid;
+  gap: var(--s-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.check-item {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.check-item[data-checked] {
+  border-color: var(--you);
+  box-shadow: 0 0 0 1px var(--you);
+}
+
+.check-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  cursor: pointer;
+}
+
+.check-hit input {
+  margin-top: 4px;
+  accent-color: var(--you);
+}
+
+.check-name {
+  display: block;
+  font-weight: 600;
+}
+
+.check-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s-4);
+  color: var(--ink-2);
+}
+
+/* A done step some of whose parts were skipped (UX-7): not the plain check of a fully done one. */
+.status-icon[data-status][data-partial] {
+  color: var(--caution);
+}
+
+/* A storyboard's on-screen copy (C4): the headline and tagline over the whole ad, and each shot's caption. */
+.storyboard-copy {
+  margin-bottom: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+}
+
+.storyboard-copy-label {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.storyboard-headline {
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+
+.shot-caption {
+  margin-top: var(--s-1);
+  font-weight: 550;
+}
+
+/* Your words for an ad's on-screen copy (C4): one field per line. */
+.onscreen-copy {
+  display: grid;
+  gap: var(--s-3);
+}
+
+/* Images beside an options result (UX-8): apart from the decision, quieter than it. */
+.side-images {
+  max-width: 860px;
+  margin-top: var(--s-7);
+}
+
+.side-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: var(--s-4);
+  list-style: none;
+  margin: var(--s-3) 0 0;
+  padding: 0;
+}
+
+.side-images-grid figure {
+  margin: 0;
+}
+
+.side-images-grid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+}
+
+.side-images-grid figcaption {
+  margin-top: var(--s-1);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
 }

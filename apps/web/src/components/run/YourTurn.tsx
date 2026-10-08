@@ -7,17 +7,20 @@ import type { ArtifactInfo } from '../../view/rundata.ts';
 import type { TimelineStep } from '../../view/timeline.ts';
 import { TERMS, codeForLabel, stepTitle } from '../../view/vocabulary.ts';
 import { useTechnicalNames } from '../TechNames.tsx';
+import { ShortcutScope } from '../useShortcuts.ts';
 import { ChoosePanel } from './panels/ChoosePanel.tsx';
 import { ComparePanel } from './panels/ComparePanel.tsx';
 import { ConfirmPanel } from './panels/ConfirmPanel.tsx';
 import { DirectivePanel } from './panels/DirectivePanel.tsx';
 import { PickPanel } from './panels/PickPanel.tsx';
+import { SelectPanel } from './panels/SelectPanel.tsx';
 import type { PanelProps } from './panels/types.ts';
 import { ReactPanel, WritePanel } from './panels/TextPanels.tsx';
 
 /** One dedicated interface per checkpoint kind, through the mapping in view/checkpoints.ts. */
 const PANELS: Record<PanelKind, ComponentType<PanelProps>> = {
   'contact-sheet': PickPanel,
+  checklist: SelectPanel,
   'side-by-side': ComparePanel,
   editor: WritePanel,
   'list-editor': DirectivePanel,
@@ -43,6 +46,8 @@ export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit }: Props)
   const technical = useTechnicalNames();
   const promptId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
+  // Single-key shortcuts answer only while focus is in this section (or nowhere): see useShortcuts.
+  const section = useRef<HTMLElement>(null);
   const spec = panelFor(cp.kind);
   const Panel = PANELS[spec.panel];
 
@@ -54,19 +59,21 @@ export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit }: Props)
   }, [spec.panel]);
 
   return (
-    <section className="turn" data-kind={cp.kind} data-checkpoint={cp.id} aria-labelledby={promptId}>
-      <header className="turn-head">
-        <p className="turn-kicker">
-          <span className="tag tag-you">{technical ? `${TERMS.checkpoint.plain} (${TERMS.checkpoint.code})` : TERMS.checkpoint.plain}</span>
-          {step ? <span className="muted">{stepTitle(step.label, codeForLabel(step.label) ?? step.block, technical)}</span> : null}
-          {technical ? <span className="muted">{cp.kind}</span> : null}
-        </p>
-        <h2 id={promptId} ref={heading} tabIndex={-1}>
-          {cp.prompt}
-        </h2>
-      </header>
-      {paused ? <p className="notice small">The run is paused. You can answer now; it carries on when you resume.</p> : null}
-      <Panel cp={cp} artifacts={artifacts} busy={busy} onSubmit={onSubmit} promptId={promptId} />
-    </section>
+    <ShortcutScope value={section}>
+      <section ref={section} className="turn" data-kind={cp.kind} data-checkpoint={cp.id} aria-labelledby={promptId}>
+        <header className="turn-head">
+          <p className="turn-kicker">
+            <span className="tag tag-you">{technical ? `${TERMS.checkpoint.plain} (${TERMS.checkpoint.code})` : TERMS.checkpoint.plain}</span>
+            {step ? <span className="muted">{stepTitle(step.label, codeForLabel(step.label) ?? step.block, technical)}</span> : null}
+            {technical ? <span className="muted">{cp.kind}</span> : null}
+          </p>
+          <h2 id={promptId} ref={heading} tabIndex={-1}>
+            {cp.prompt}
+          </h2>
+        </header>
+        {paused ? <p className="notice small">The run is paused. You can answer now; it carries on when you resume.</p> : null}
+        <Panel cp={cp} artifacts={artifacts} busy={busy} onSubmit={onSubmit} promptId={promptId} />
+      </section>
+    </ShortcutScope>
   );
 }

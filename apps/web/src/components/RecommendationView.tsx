@@ -3,9 +3,10 @@
 import type { ChooserAnswer, ChooserQuestion, CostEstimate, EvidenceLabel as Label, Recommendation, RecipePresentation } from '@byway/contracts';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ComposeView } from '../server/api.ts';
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
+import { diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { post } from './api.ts';
@@ -30,8 +31,10 @@ interface Props {
   intakeId: string;
   problem: string;
   attachments: string[];
-  /** Null when the person picked a recipe from the library. */
+  /** Null when the person picked a recipe from the library, or when recommending failed (recommendProblem). */
   recommendation: Recommendation | null;
+  /** Why no recommendation could be made (a model error, in words), when that is what happened. */
+  recommendProblem?: string | null;
   chosenRecipeId: string | null;
   questions: ChooserQuestion[];
   options: Record<string, RecipeOption>;
@@ -53,6 +56,16 @@ export function RecommendationView(props: Props) {
   const [error, setError] = useState<string | null>(null);
   // Kept here, not in the proposal, so your examples survive switching to another recipe that takes them.
   const [examples, setExamples] = useState<ExampleEntry[]>([]);
+  // UX-2: an action that replaces what has focus (Build my own, switching recipe) moves focus to the new proposal's
+  // title, so keyboard and screen-reader users land on what changed instead of the top of the page.
+  const [focusProposal, setFocusProposal] = useState(0);
+  useEffect(() => {
+    if (focusProposal > 0) document.getElementById('proposal-title')?.focus();
+  }, [focusProposal]);
+  const select = (next: Selection) => {
+    setSelection(next);
+    setFocusProposal((n) => n + 1);
+  };
 
   const current: RecipeOption | null =
     selection.kind === 'composed'
@@ -83,13 +96,14 @@ export function RecommendationView(props: Props) {
   }
 
   async function compose() {
+    if (composing) return;
     setComposing(true);
     setError(null);
     try {
       const result = await post<ComposeView>(`/api/intakes/${intakeId}/compose`, {});
       setComposed(result);
-      setSelection({ kind: 'composed' });
-      setNotice('Your recipe is ready. It is shown above.');
+      select({ kind: 'composed' });
+      setNotice(result.ok ? 'Your recipe is ready. It is shown above.' : 'byway built a recipe, but it did not pass the protocol checks. It is shown above.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Composing failed. Try again.');
     } finally {
@@ -109,7 +123,20 @@ export function RecommendationView(props: Props) {
       </p>
 
       <div className="recommend-grid">
-        {current ? (
+        {props.recommendProblem && !rec && !chosenRecipeId ? (
+          <div className="empty" role="alert">
+            <h1>byway could not recommend a recipe</h1>
+            <p>{props.recommendProblem}</p>
+            <div className="empty-actions">
+              <button type="button" className="button button-primary" onClick={() => router.refresh()}>
+                Try again
+              </button>
+              <Link className="button" href="/library">
+                Choose from the Library
+              </Link>
+            </div>
+          </div>
+        ) : current ? (
           <Proposal
             key={selection.kind === 'composed' ? 'composed' : selection.recipeId}
             intakeId={intakeId}
@@ -158,7 +185,7 @@ export function RecommendationView(props: Props) {
                   <ul className="plain-list alternatives">
                     {!isRecommended ? (
                       <li>
-                        <button type="button" className="link-button" onClick={() => setSelection({ kind: 'recipe', recipeId: rec.recipeId })}>
+                        <button type="button" className="link-button" onClick={() => select({ kind: 'recipe', recipeId: rec.recipeId })}>
                           Back to the recommendation
                         </button>
                         <span className="muted"> {recipeTitle(rec.presentation, technical)}</span>
@@ -168,7 +195,7 @@ export function RecommendationView(props: Props) {
                       .filter((alt) => !(selection.kind === 'recipe' && selection.recipeId === alt.recipeId))
                       .map((alt) => (
                         <li key={alt.recipeId}>
-                          <button type="button" className="link-button" onClick={() => setSelection({ kind: 'recipe', recipeId: alt.recipeId })}>
+                          <button type="button" className="link-button" onClick={() => select({ kind: 'recipe', recipeId: alt.recipeId })}>
                             Use {options[alt.recipeId] ? recipeTitle(options[alt.recipeId]!.presentation, technical) : alt.name}
                           </button>
                           <span className="muted"> {alt.why}</span>
@@ -180,12 +207,12 @@ export function RecommendationView(props: Props) {
                   </p>
                 </section>
             </>
-          ) : (
+          ) : chosenRecipeId ? (
             <section className="aside-section">
               <h2>You chose this recipe</h2>
               <p className="muted">byway did not run its chooser. Go back to Start without a recipe to get a recommendation.</p>
             </section>
-          )}
+          ) : null}
 
           <section className="aside-section" aria-labelledby="compose-title">
             <h2 id="compose-title">Build my own</h2>
@@ -194,15 +221,19 @@ export function RecommendationView(props: Props) {
               byway can compose a recipe for this problem from the protocol’s blocks, starting from the closest one. A composed recipe is checked against
               the protocol’s rules, but it has not been tested.
             </p>
-            {selection.kind === 'composed' ? null : composed ? (
-              <button type="button" className="button" onClick={() => setSelection({ kind: 'composed' })}>
-                Show your recipe
-              </button>
-            ) : (
-              <button type="button" className="button" onClick={compose} disabled={composing}>
-                {composing ? 'Composing…' : 'Build my own'}
-              </button>
-            )}
+            <div className="compose-actions">
+              {composed && selection.kind !== 'composed' ? (
+                <button type="button" className="button" onClick={() => select({ kind: 'composed' })}>
+                  Show your recipe
+                </button>
+              ) : null}
+              {/* UX-3: composing is not deterministic, so a recipe that failed the checks can be built again. */}
+              {!composed || !composed.ok ? (
+                <button type="button" className="button" onClick={compose} aria-disabled={composing} aria-busy={composing}>
+                  {composing ? 'Composing…' : composed ? 'Try building again' : 'Build my own'}
+                </button>
+              ) : null}
+            </div>
           </section>
         </div>
       </div>
@@ -242,7 +273,7 @@ function Chooser({ questions, answers, busy, onFlip }: { questions: ChooserQuest
                   onChange={(next) => onFlip(q.id, next)}
                   labelledBy={id}
                   {...(showAnswerNote(answer) ? { describedBy: `${id}-note` } : {})}
-                  disabled={busy}
+                  busy={busy}
                 />
               </div>
             </li>
@@ -310,7 +341,9 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
         {heading}
         {tag ? <span className="tag">{tag}</span> : null}
       </p>
-      <h1 id="proposal-title">{recipeTitle(presentation, technical)}</h1>
+      <h1 id="proposal-title" tabIndex={-1}>
+        {recipeTitle(presentation, technical)}
+      </h1>
       <p className="proposal-promise">{presentation.promise}</p>
 
       <div className="proposal-route">
@@ -343,7 +376,7 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
           <h2>How it differs</h2>
           <ul>
             {composed.diff.map((line) => (
-              <li key={line}>{line}</li>
+              <li key={line}>{diffLine(line, technical)}</li>
             ))}
           </ul>
           {composed.violations.length > 0 ? (

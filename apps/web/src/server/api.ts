@@ -16,7 +16,9 @@ import { budgetProblem, workspaceSpend } from '../view/history.ts';
 import { takesRefs } from '../view/refs.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
-import { artifactHeaders, isArtifactId } from './artifacts.ts';
+import { artifactHeaders, isArtifactId, mediaServing } from './artifacts.ts';
+import { exportsInline, selfContained } from './export.ts';
+import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
 import type { ControlInput, ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
 
@@ -34,6 +36,17 @@ export interface Deps {
   workspaceId: string;
   /** The model profile runs use (Store preferences). */
   profileId: string;
+}
+
+/** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */
+async function asking<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (err) {
+    const problem = modelProblem(err);
+    if (problem) throw new HttpError(problem.status, problem.message);
+    throw err;
+  }
 }
 
 async function requireIntake(deps: Deps, intakeId: string): Promise<IntakeRecord> {
@@ -63,12 +76,14 @@ export async function recommendIntake(deps: Deps, intakeId: string, answers?: Ch
   const intake = await requireIntake(deps, intakeId);
   const given = answers ?? intake.answers;
   const routes = intake.recommendation?.routes;
-  const rec = await deps.services.advisor.recommend(intake.problem, {
-    workspaceId: deps.workspaceId,
-    profileId: deps.profileId,
-    ...(given ? { answers: given } : {}),
-    ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),
-  });
+  const rec = await asking(() =>
+    deps.services.advisor.recommend(intake.problem, {
+      workspaceId: deps.workspaceId,
+      profileId: deps.profileId,
+      ...(given ? { answers: given } : {}),
+      ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),
+    }),
+  );
   await deps.services.store.updateIntake(intakeId, { answers: rec.answers, recommendation: rec });
   return rec;
 }
@@ -77,6 +92,20 @@ export async function recommendIntake(deps: Deps, intakeId: string, answers?: Ch
 export async function currentRecommendation(deps: Deps, intakeId: string): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
   return intake.recommendation ?? recommendIntake(deps, intakeId);
+}
+
+/**
+ * For the Recommendation screen: the recommendation, or what stopped it in words, so a model error is shown on the
+ * screen with a way forward instead of failing the whole screen. Nothing is stored on failure, so trying again asks
+ * again.
+ */
+export async function recommendationOrProblem(deps: Deps, intakeId: string): Promise<{ recommendation: Recommendation } | { problem: string }> {
+  try {
+    return { recommendation: await currentRecommendation(deps, intakeId) };
+  } catch (err) {
+    if (err instanceof HttpError && err.status !== 404) return { problem: err.message };
+    throw err;
+  }
 }
 
 /** What the browser sees of a composed recipe; the recipe itself stays on the server with the intake. */
@@ -92,7 +121,7 @@ export function composeView(result: ComposeResult): ComposeView {
 
 export async function composeIntake(deps: Deps, intakeId: string): Promise<ComposeView> {
   const intake = await requireIntake(deps, intakeId);
-  const result = await deps.services.advisor.compose(intake.problem, { workspaceId: deps.workspaceId, profileId: deps.profileId });
+  const result = await asking(() => deps.services.advisor.compose(intake.problem, { workspaceId: deps.workspaceId, profileId: deps.profileId }));
   await deps.services.store.updateIntake(intakeId, { composed: result });
   return composeView(result);
 }
@@ -172,6 +201,8 @@ export async function recipeForRun(deps: Deps, run: RunRecord): Promise<RunRecip
 export async function resolveInRun(deps: Deps, runId: string, checkpointId: string, input: z.infer<typeof ResolutionInput>): Promise<void> {
   const cp = await deps.services.store.getCheckpoint(checkpointId);
   if (!cp || cp.runId !== runId) throw new HttpError(404, 'That question was not found in this run.');
+  // The store's two closed states read differently: an answered question, or one taken back when its run ended.
+  if (cp.status === 'withdrawn') throw new HttpError(409, 'This question was withdrawn: its run was cancelled or failed.');
   if (cp.status !== 'open') throw new HttpError(409, 'That question has already been answered.');
   const run = await deps.services.store.getRun(runId);
   if (run && isEnded(run.status)) throw new HttpError(409, 'This run has ended, so it takes no more answers.');
@@ -213,11 +244,15 @@ export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsP
 }
 
 /**
- * The artifact route: content-addressed bytes, with the sandboxing headers of src/server/artifacts.ts. `origin`
+ * The artifact routes: content-addressed bytes, with the sandboxing headers of src/server/artifacts.ts. `origin`
  * is the one the browser used (from the Host header the guard has already checked), because the CSP must name
  * it exactly: Next.js may report a normalised host in the request URL (localhost for 127.0.0.1).
+ *
+ * `route` is which address was asked for. `/artifacts/<id>` serves everything. `/api/artifacts/<id>` (`media`) is the
+ * address generated pages and documents use for generated images and clips (spec §3.3), and serves only those: a page
+ * there would be one a generated page could navigate itself to, and SVG, which can carry script, is a download there.
  */
-export async function artifactResponse(services: Services, rawId: string, url: URL, origin: string = url.origin): Promise<Response> {
+export async function artifactResponse(services: Services, rawId: string, url: URL, origin: string = url.origin, route: 'artifacts' | 'media' = 'artifacts'): Promise<Response> {
   let id = rawId;
   try {
     id = decodeURIComponent(rawId);
@@ -227,6 +262,14 @@ export async function artifactResponse(services: Services, rawId: string, url: U
   if (!isArtifactId(id)) return new Response('Not a valid artifact id.', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   if (!(await services.store.artifacts.has(id))) return new Response('Artifact not found.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   const { record, bytes } = await services.store.artifacts.get(id);
-  const download = url.searchParams.get('download') === '1' ? (url.searchParams.get('name') ?? 'byway-result').slice(0, 200) : undefined;
+  const media = route === 'media' ? mediaServing(record.mediaType) : 'inline';
+  if (media === 'refuse') return new Response('Artifact not found.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  const requested = url.searchParams.get('download') === '1' ? (url.searchParams.get('name') ?? 'byway-result').slice(0, 200) : undefined;
+  const download = requested ?? (media === 'attachment' ? 'byway-media' : undefined);
+  // A downloaded page or Markdown file carries its images inline, so it works away from byway (EXP-1).
+  if (requested !== undefined && exportsInline(record.mediaType)) {
+    const text = await selfContained(new TextDecoder().decode(bytes), services.store.artifacts);
+    return new Response(text, { status: 200, headers: artifactHeaders(record.mediaType, origin, download) });
+  }
   return new Response(new Uint8Array(bytes), { status: 200, headers: artifactHeaders(record.mediaType, origin, download) });
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CheckpointRecord, RecipePresentation, RunEvent } from '@byway/contracts';
 import { loop, optional, seq, step, type Recipe } from '@byway/recipe';
 import { shownStep, stepIndex } from '../src/view/steps.ts';
+import { howItWasMade } from '../src/view/run.ts';
 import { buildTimeline, currentStep, judgement, outputArtifacts } from '../src/view/timeline.ts';
 
 let seq_ = 0;
@@ -188,6 +189,48 @@ describe('run timeline, labelled by the presentation', () => {
       'Cliché sweep:1:done',
       'Your draft:2:running',
     ]);
+  });
+
+  it('shows an optional step you declined as Skipped with its note, from the events the runner emits (C1)', () => {
+    seq_ = 0;
+    // A declined optional: its question, your answer, then step-finished on the optional's own id. No step-started.
+    const list = [
+      started('critic', 'Critic', 'D2', 'model', { block: 'CRITIC' }),
+      done('critic', 0.1),
+      ev('checkpoint-opened', 'asset-if-plain', { checkpointId: 'cp-plain', kind: 'confirm' }),
+      ev('checkpoint-resolved', 'asset-if-plain', { checkpointId: 'cp-plain' }),
+      ev('step-finished', 'asset-if-plain', { costUsd: 0, skipped: true, note: 'You chose not to run this step.' }),
+      ev('checkpoint-opened', 'pick-one', { checkpointId: 'cp-pick', kind: 'pick' }),
+    ];
+    const cps = [{ ...checkpoint('cp-plain', 'asset-if-plain', 'resolved'), kind: 'confirm' as const }, checkpoint('cp-pick', 'pick-one', 'open')];
+    const running = buildTimeline(list, cps, 'waiting', stepIndex(PRESENTATION, RECIPE));
+    const imagery = running.flatMap((st) => st.steps).find((st) => st.label === 'Custom imagery');
+    expect(imagery).toMatchObject({ status: 'skipped', note: 'You chose not to run this step.', checkpointIds: ['cp-plain'] });
+    // Once the run is done it is still Skipped (not Stopped), and the Result lists it under Skipped.
+    const ended = buildTimeline([...list, ev('run-finished', undefined, { outputArtifactId: 'sha256:a', costUsd: 0.1 })], cps, 'done', stepIndex(PRESENTATION, RECIPE));
+    expect(ended.flatMap((st) => st.steps).find((st) => st.label === 'Custom imagery')?.status).toBe('skipped');
+    expect(howItWasMade(ended).skipped).toEqual([expect.objectContaining({ label: 'Custom imagery', note: 'You chose not to run this step.' })]);
+  });
+
+  it('marks a row part skipped when some of its steps were skipped, and the Result names what was not done (UX-7)', () => {
+    seq_ = 0;
+    // C5's Composite: the product is placed in each scene (runs), the clean cut-out (matte) has no executor.
+    const presentation: RecipePresentation = {
+      ...PRESENTATION,
+      stages: [{ stage: 'Refine', steps: [{ label: 'Composite', explainer: '', who: 'ai', stepIds: ['render-in-scene', 'matte'] }] }],
+    };
+    const list = [
+      started('render-in-scene', 'Render in scene', 'D2'),
+      done('render-in-scene', 0.2),
+      started('matte', 'Matte', 'D2', 'tool'),
+      done('matte', 0, { skipped: true, note: 'Compositing is not available in byway yet.' }),
+    ];
+    const timeline = buildTimeline(list, [], 'done', stepIndex(presentation));
+    const row = timeline[0]?.steps[0];
+    expect(row).toMatchObject({ label: 'Composite', status: 'done', skippedParts: [{ stepId: 'matte', note: 'Compositing is not available in byway yet.' }] });
+    const made = howItWasMade(timeline);
+    expect(made.rows.map((r) => r.label)).toEqual(['Composite']);
+    expect(made.skipped).toEqual([expect.objectContaining({ label: 'Composite', part: true, note: 'Compositing is not available in byway yet.' })]);
   });
 
   it('reads a step skipped for want of an executor as skipped, with its note', () => {

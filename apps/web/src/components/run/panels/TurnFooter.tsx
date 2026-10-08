@@ -2,7 +2,8 @@
 
 import type { CheckpointKind } from '@byway/contracts';
 import type { ReactNode } from 'react';
-import { panelFor } from '../../../view/checkpoints.ts';
+import { listedShortcuts, panelFor } from '../../../view/checkpoints.ts';
+import { useSingleKeyShortcuts } from '../../useShortcuts.ts';
 
 interface Props {
   kind: CheckpointKind;
@@ -18,12 +19,13 @@ interface Props {
 /** The panel's footer: what you have done so far, the shortcuts, and the one primary action. */
 export function TurnFooter({ kind, ready, busy, onSubmit, action, status }: Props) {
   const spec = panelFor(kind);
+  const shortcuts = listedShortcuts(kind, useSingleKeyShortcuts());
   return (
     <div className="turn-foot">
       <div className="turn-foot-info">
         {status ? <p className="turn-status">{status}</p> : null}
         <ul className="shortcuts" aria-label="Keyboard shortcuts">
-          {spec.shortcuts.map((s) => (
+          {shortcuts.map((s) => (
             <li key={s.keys}>
               <kbd>{s.keys}</kbd> {s.does}
             </li>

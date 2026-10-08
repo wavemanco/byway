@@ -3,9 +3,10 @@
  * recommended recipe, answers every "Your turn" in the app and ends on the Result screen with the deliverable. The
  * runner, prompts, store and gateway are the real ones; only the models are the gateway's mock.
  */
+import http from 'node:http';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { PRESENTATIONS } from '@byway/catalog';
-import { answerUntilDone, describeProblem, openResult, startRecommended, timelineLabels, watchForKeys } from './flow.ts';
+import { answerUntilDone, describeProblem, exportText, openResult, startRecommended, timelineLabels, watchForKeys } from './flow.ts';
 
 interface Case {
   code: string;
@@ -23,10 +24,24 @@ const CASES: Case[] = [
     name: 'Landing Page Studio',
     problem: 'A landing page for the spring classes at my pottery studio',
     async deliverable(result, page) {
-      // The page itself, in a sandboxed frame without same-origin access.
+      // The page itself, in a sandboxed frame without same-origin access, its scripts off until asked for (SEC-4).
       const frame = result.locator('iframe');
+      await expect(frame).toHaveAttribute('sandbox', '');
+      await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
+      await result.getByRole('button', { name: 'Run the page’s scripts' }).click();
       await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
       await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
+
+      // SEC-1: next.config headers apply only in the running server, so the page's own address is checked here. The
+      // artifact route sandboxes it; /api/artifacts never serves it, so the page cannot move there to run as byway.
+      const src = (await frame.getAttribute('src')) ?? '';
+      expect(src).toMatch(/^\/artifacts\/sha256/);
+      const own = await page.request.get(src);
+      expect(own.headers()['content-security-policy']).toMatch(/sandbox allow-scripts/);
+      const elsewhere = await page.request.get(`/api${src}`);
+      const unsandboxedPage = elsewhere.status() === 200 && (elsewhere.headers()['content-type'] ?? '').startsWith('text/html') && !/sandbox/.test(elsewhere.headers()['content-security-policy'] ?? '');
+      expect(unsandboxedPage).toBe(false);
+      expect(elsewhere.status()).toBe(404);
     },
   },
   {
@@ -84,6 +99,8 @@ for (const c of CASES) {
 
     const result = await openResult(page);
     await c.deliverable(result, page);
+    // The export carries its images: nothing in it points back at byway (EXP-1).
+    expect(await exportText(page)).not.toContain('/api/artifacts/');
 
     expect(keys.checked()).toBeGreaterThan(0);
     expect(keys.leaks).toEqual([]);
@@ -103,6 +120,10 @@ test('C3 from the Library: no route chosen up front, so the run asks who writes 
   await expect(page.locator('.meter-spent')).toHaveText('$0.00');
   const result = await openResult(page);
   await expect(result.locator('.prose')).toContainText(/\w+ \w+ \w+/);
+  // Custom imagery's pictures travel inside the Markdown export, not as byway addresses (EXP-1).
+  const exported = await exportText(page);
+  expect(exported).not.toContain('/api/artifacts/');
+  expect(exported).not.toMatch(/\]\(\/artifacts\//);
   expect(keys.leaks).toEqual([]);
 });
 
@@ -118,4 +139,39 @@ test('Settings in demo mode: the banner, the demo profile, and providers shown w
   await expect(demo).toBeDisabled();
   expect(keys.checked()).toBeGreaterThan(0);
   expect(keys.leaks).toEqual([]);
+});
+
+// C1 (UX-1): a declined optional reads Skipped, with its note, on the Run screen and in the Result's Skipped list. It
+// needs the runner to emit step-finished { skipped: true } for the declined optional (the packages side of UX-1);
+// until that lands this stays fixme, so the suite does not test behaviour the engine does not have yet.
+test.fixme('C4: an optional step you decline reads Skipped, and the Result lists it as not done', async ({ page }) => {
+  await describeProblem(page, 'Tighten my quarterly status memo for the leadership team before Friday');
+  await startRecommended(page, 'Memo Polish');
+  const turn = page.locator('section.turn[data-kind="confirm"]');
+  await expect(turn).toBeVisible({ timeout: 120_000 });
+  await turn.getByRole('button', { name: 'No', exact: true }).click();
+  await answerUntilDone(page);
+  const skipped = page.locator('.tl-step[data-status="skipped"]');
+  await expect(skipped.first()).toContainText('You chose not to run this step.');
+  await expect(page.locator('.tl-step[data-status="stopped"]')).toHaveCount(0);
+  await openResult(page);
+  await expect(page.locator('.made-skipped')).toContainText('You chose not to run this step.');
+});
+
+test('the local guard refuses a foreign Host on every path, Next.js internals included (SEC-6, DNS rebinding)', async ({ baseURL }) => {
+  const { hostname, port } = new URL(baseURL ?? 'http://127.0.0.1:3210');
+  // Node's http, because a browser or Playwright's request client sets Host itself.
+  const status = (path: string, host: string) =>
+    new Promise<number>((resolve, reject) => {
+      const req = http.request({ hostname, port: Number(port), path, headers: { host }, agent: false }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  for (const path of ['/', '/settings', '/api/settings', '/__nextjs_launch-editor?file=package.json&lineNumber=1', '/__nextjs_attach-nodejs-inspector', '/_next/image?url=%2Fapi%2Fsettings&w=64&q=75']) {
+    expect(await status(path, 'rebind.evil.example'), path).toBe(403);
+  }
+  expect(await status('/settings', `${hostname}:${port}`)).toBe(200);
 });

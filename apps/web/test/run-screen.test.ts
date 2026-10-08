@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { focusAfterRemoval } from '../src/view/focus.ts';
+import { controlPendingLabel } from '../src/view/labels.ts';
 import type { CheckpointRecord } from '@byway/contracts';
-import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, waitingRunCount } from '../src/view/run.ts';
+import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, sideImages, waitingRunCount } from '../src/view/run.ts';
 import type { TimelineStage, TimelineStep } from '../src/view/timeline.ts';
 
 const cp = (id: string, runId: string, openedAt: string, status: CheckpointRecord['status'] = 'open'): CheckpointRecord => ({
@@ -25,6 +27,7 @@ const step = (over: Partial<TimelineStep> & Pick<TimelineStep, 'label' | 'who'>)
   iterations: 0,
   candidates: 0,
   checkpointIds: [],
+  skippedParts: [],
   startedAt: '2026-10-07T10:00:00.000Z',
   ...over,
 });
@@ -95,5 +98,47 @@ describe('"How this was made"', () => {
     expect(made.skipped).toEqual([{ key: 'Motion#1', label: 'Motion', note: 'No video key.' }]);
     expect(made.rows.map((r) => r.label)).toEqual(['Random spark', 'Your pick', 'Remove near-duplicates', 'Your words', 'Final check']);
     expect(made.rows[3]?.round).toBe(2);
+  });
+});
+
+describe('focus after removing an item (UX-2)', () => {
+  it('goes to the item that took its place, else the one before, else the Add button', () => {
+    expect(focusAfterRemoval([1, 2, 3], 2)).toBe(3);
+    expect(focusAfterRemoval([1, 2, 3], 3)).toBe(2);
+    expect(focusAfterRemoval([1], 1)).toBeNull();
+    expect(focusAfterRemoval([1, 2], 9)).toBeNull();
+  });
+});
+
+describe('run controls (UX-10)', () => {
+  it('say at once what is happening while the request is on its way', () => {
+    expect(controlPendingLabel('pause')).toBe('Pausing…');
+    expect(controlPendingLabel('resume')).toBe('Resuming…');
+    expect(controlPendingLabel('cancel')).toBe('Cancelling…');
+  });
+});
+
+describe('images beside an options result (UX-8)', () => {
+  it('collects the images Custom imagery made, for a deliverable that cannot hold them', () => {
+    const stages: TimelineStage[] = [
+      {
+        stage: 'Finish',
+        steps: [
+          step({ label: 'Your words', who: 'you' }),
+          step({
+            label: 'Custom imagery',
+            who: 'ai',
+            block: 'ASSET',
+            artifacts: [
+              { artifactId: 'sha256:m1', mediaType: 'image/png', label: 'Mood board for option A' },
+              { artifactId: 'sha256:brief', mediaType: 'text/markdown', label: 'Briefs' },
+            ],
+          }),
+          step({ label: 'Option map', who: 'ai', artifacts: [{ artifactId: 'sha256:map', mediaType: 'image/png' }] }),
+        ],
+      },
+    ];
+    expect(sideImages(stages)).toEqual([{ artifactId: 'sha256:m1', label: 'Mood board for option A', step: 'Custom imagery' }]);
+    expect(sideImages([])).toEqual([]);
   });
 });

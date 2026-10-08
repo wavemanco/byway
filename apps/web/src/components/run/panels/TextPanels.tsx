@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { canSubmit, emptyDraft, toResolution } from '../../../view/checkpoints.ts';
+import { fieldName, parseOnScreenCopy, serializeOnScreenCopy, type CopyField } from '../../../view/onscreen.ts';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { References } from './References.tsx';
 import { TurnFooter } from './TurnFooter.tsx';
@@ -36,8 +37,70 @@ function useTextDraft(props: PanelProps) {
   return { draft, setDraft, hint, setHint, field, ready, submit };
 }
 
+/**
+ * The words shown on screen in an ad (C4): one labelled field per line of copy, sent back in the lines they came in.
+ * The voice-over was settled earlier, so it is not here.
+ */
+function OnScreenCopyPanel(props: PanelProps & { initial: CopyField[] }) {
+  const { cp, artifacts, busy, onSubmit, promptId, initial } = props;
+  const [fields, setFields] = useState(initial);
+  const first = useRef<HTMLInputElement>(null);
+  const id = useId();
+  const refs = cp.artifactIds ?? [];
+  const text = serializeOnScreenCopy(fields);
+  const changed = text !== serializeOnScreenCopy(initial);
+
+  useEffect(() => first.current?.focus(), []);
+
+  function submit() {
+    if (!busy) onSubmit(toResolution(cp, { ...emptyDraft(cp), text }));
+  }
+
+  useShortcuts({ 'Mod+Enter': submit });
+
+  return (
+    <>
+      <div className={refs.length > 0 ? 'write write-with-refs' : 'write'}>
+        <div className="write-main onscreen-copy" aria-describedby={promptId}>
+          <p className="muted small">The words shown on screen. Edit any of them; the voice-over is already set.</p>
+          {fields.map((f, i) => (
+            <div key={`${f.label}-${i}`} className="field">
+              <label htmlFor={`${id}-${i}`}>{fieldName(f.label)}</label>
+              <input
+                ref={i === 0 ? first : undefined}
+                id={`${id}-${i}`}
+                className="input"
+                value={f.value}
+                spellCheck
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setFields((list) => list.map((x, j) => (j === i ? { ...x, value } : x)));
+                }}
+              />
+            </div>
+          ))}
+          {changed ? (
+            <p className="write-meta">
+              <button type="button" className="link-button" onClick={() => setFields(initial)}>
+                Go back to the starting text
+              </button>
+            </p>
+          ) : null}
+        </div>
+        <References ids={refs} artifacts={artifacts} />
+      </div>
+      <TurnFooter kind={cp.kind} ready busy={busy} onSubmit={submit} />
+    </>
+  );
+}
+
 /** write: a focused editor for your own words (VOICE; the author's draft in Second Reader). */
 export function WritePanel(props: PanelProps) {
+  const copy = parseOnScreenCopy(props.cp.initialText);
+  return copy ? <OnScreenCopyPanel {...props} initial={copy} /> : <TextWritePanel {...props} />;
+}
+
+function TextWritePanel(props: PanelProps) {
   const { cp, artifacts, busy, promptId } = props;
   const { draft, setDraft, hint, setHint, field, ready, submit } = useTextDraft(props);
   const id = useId();

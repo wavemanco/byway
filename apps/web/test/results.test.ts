@@ -1,4 +1,7 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { Storyboard } from '../src/components/results.tsx';
 import { parseUnifiedDiff } from '../src/view/diff.ts';
 import { clipKind, parseOptions, parseStoryboard, resultKind, storyboardArtifacts } from '../src/view/result.ts';
 import { excerpt, withoutLeadingTitle, exportFileName, slugify, titleFromProblem } from '../src/view/text.ts';
@@ -82,6 +85,39 @@ describe('result parsing', () => {
       totalSec: 3,
     });
     expect(parseStoryboard('{}')).toBeNull();
+  });
+
+  it('reads the on-screen copy a storyboard may carry: a headline, a tagline and each shot’s caption (C4)', () => {
+    const json = JSON.stringify({
+      storyboard: [
+        { shot: 1, description: 'Open on hands', imagePrompt: 'hands', durationSec: 3, caption: 'Made by hand' },
+        { shot: 2, description: 'The street', imagePrompt: 'street', durationSec: 4 },
+      ],
+      voiceover: 'Made slowly.',
+      headline: 'Bread, the slow way',
+      tagline: 'Open at seven',
+    });
+    const board = parseStoryboard(json);
+    expect(board).toMatchObject({ headline: 'Bread, the slow way', tagline: 'Open at seven' });
+    expect(board?.shots[0]?.caption).toBe('Made by hand');
+    expect(board?.shots[1]).not.toHaveProperty('caption');
+    // Without them it is the storyboard it always was.
+    expect(parseStoryboard(JSON.stringify({ storyboard: [{ shot: 1, description: 'd', imagePrompt: 'i', durationSec: 2 }], voiceover: 'v' }))).not.toHaveProperty('headline');
+  });
+
+  it('shows the on-screen copy, and two storyboards side by side keep their own voice-over headings (C4, UX-14)', () => {
+    const board = parseStoryboard(
+      JSON.stringify({ storyboard: [{ shot: 1, description: 'Open on hands', imagePrompt: 'hands', durationSec: 3, caption: 'Made by hand' }], voiceover: 'Made slowly.', headline: 'Bread, the slow way', tagline: 'Open at seven' }),
+    );
+    if (!board) throw new Error('no board');
+    const html = renderToStaticMarkup(createElement('div', null, createElement(Storyboard, { board }), createElement(Storyboard, { board })));
+    expect(html).toContain('Bread, the slow way');
+    expect(html).toContain('Open at seven');
+    expect(html).toContain('Made by hand');
+    const labelled = [...html.matchAll(/aria-labelledby="([^"]+)"/g)].map((m) => m[1]);
+    expect(labelled).toHaveLength(2);
+    expect(new Set(labelled).size).toBe(2);
+    for (const id of labelled) expect(html).toContain(`id="${id}"`);
   });
 
   it('reads each shot’s clip, lists what the storyboard shows, and shows a placeholder clip as an image', () => {

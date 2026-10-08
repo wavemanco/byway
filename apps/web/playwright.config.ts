@@ -2,8 +2,9 @@
  * End-to-end tests (spec §7 Phase 3): the whole product in demo mode, through the browser. `pnpm e2e` (scripts/e2e.ts)
  * starts `pnpm demo` on a temp data directory and free ports, waits for it, runs this suite against it
  * (BYWAY_E2E_BASE_URL) and stops it cleanly. Run directly (`playwright test`), the suite starts its own demo through
- * `webServer` on ports 3210 and 7290, so a byway you are running on 3000 and 7233 is never touched; its data directory
- * is then left in the system temp folder (`pnpm e2e` removes its own).
+ * `webServer` on ports 3210 and 7290. Either way the web app is built into apps/web/.next-e2e, so a byway you are
+ * running from this checkout on 3000 and 7233 is not rebuilt under you; the data directory of a direct run is left in
+ * the system temp folder (`pnpm e2e` removes its own).
  */
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -39,7 +40,7 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: 'node --import tsx scripts/dev.ts --demo',
+          command: 'node --import tsx scripts/serve.ts start --demo',
           cwd: path.resolve(import.meta.dirname, '..', '..'),
           url: `http://127.0.0.1:${port}/`,
           timeout: 240_000,
@@ -48,6 +49,7 @@ export default defineConfig({
           env: {
             ...E2E_KEYS,
             BYWAY_DATA_DIR: ownDataDir(),
+            BYWAY_NEXT_DIST_DIR: '.next-e2e',
             PORT: String(port),
             BYWAY_TEMPORAL_PORT: process.env.BYWAY_E2E_TEMPORAL_PORT ?? '7290',
           },

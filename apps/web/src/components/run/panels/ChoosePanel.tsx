@@ -14,21 +14,35 @@ function parts(label: string): { name: string; detail?: string } {
   return { name: label.slice(0, at), detail: detail.charAt(0).toUpperCase() + detail.slice(1) };
 }
 
-/** choose: the branches of a route as a radio list; J and K move, Enter goes the chosen way. */
+/**
+ * choose: the branches of a route as a radio list; J and K move, Enter goes the chosen way. Nothing is chosen at
+ * first, so a stray Enter cannot send the run down the first branch (UX-1).
+ */
 export function ChoosePanel({ cp, busy, onSubmit, promptId }: PanelProps) {
   const options = cp.options ?? [];
-  const [chosen, setChosen] = useState(0);
+  const [chosen, setChosen] = useState<number | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
 
+  function choose(index: number) {
+    setChosen(index);
+    setHint(null);
+  }
+
   function move(delta: number) {
-    const next = moveFocus(chosen, delta, options.length);
-    setChosen(next);
+    const next = moveFocus(chosen ?? -1, delta, options.length);
+    choose(next);
     inputs.current[next]?.focus();
   }
 
   function submit() {
-    const option = options[chosen];
-    if (option && !busy) onSubmit({ checkpointId: cp.id, choice: [option.id] });
+    if (busy) return;
+    const option = chosen === null ? undefined : options[chosen];
+    if (!option) {
+      setHint('Choose a way first.');
+      return;
+    }
+    onSubmit({ checkpointId: cp.id, choice: [option.id] });
   }
 
   useShortcuts({ J: () => move(1), K: () => move(-1), Enter: submit });
@@ -49,7 +63,7 @@ export function ChoosePanel({ cp, busy, onSubmit, promptId }: PanelProps) {
                 name={cp.id}
                 value={o.id}
                 checked={chosen === i}
-                onChange={() => setChosen(i)}
+                onChange={() => choose(i)}
               />
               <span className="branch-text">
                 <span className="branch-name">{name}</span>
@@ -59,7 +73,10 @@ export function ChoosePanel({ cp, busy, onSubmit, promptId }: PanelProps) {
           );
         })}
       </fieldset>
-      <TurnFooter kind={cp.kind} ready={options.length > 0} busy={busy} onSubmit={submit} />
+      <p className="turn-hint" role="status">
+        {hint}
+      </p>
+      <TurnFooter kind={cp.kind} ready={chosen !== null} busy={busy} onSubmit={submit} />
     </>
   );
 }

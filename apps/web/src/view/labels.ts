@@ -86,3 +86,10 @@ export function showAnswerNote(answer: ChooserAnswer): boolean {
 export function decidingQuestion(answers: ChooserAnswer[]): string | undefined {
   return answers.find((a) => a.answer)?.questionId;
 }
+
+export type ControlAction = 'pause' | 'resume' | 'cancel';
+
+/** What a run control's button says while its request is on its way (UX-10: feedback at once, not after a second). */
+export function controlPendingLabel(action: ControlAction): string {
+  return { pause: 'Pausing…', resume: 'Resuming…', cancel: 'Cancelling…' }[action];
+}

@@ -6,13 +6,15 @@ steps and you doing yours, and take the deliverable away. Next.js 16 App Router,
 Start it from the repo root, which also starts the run engine the app needs:
 
 ```sh
-pnpm demo        # sample outputs, no AI calls, nothing charged
-pnpm dev         # real models, with keys in .env.agents at the repo root (never committed)
+pnpm start       # build and serve, with real models for the keys in .env.agents at the repo root (never committed)
+pnpm demo        # the same with sample outputs: no AI calls, nothing charged
+pnpm dev         # contributor mode: next dev behind byway's guard, with hot reload
 pnpm e2e         # the Playwright suite against a fresh pnpm demo
 ```
 
-Inside this folder: `pnpm build` (production build), `pnpm typecheck`. `next dev` on its own serves the screens,
-but runs cannot start or take answers without the engine (the app answers 503 and says how to start it).
+Inside this folder: `pnpm build` (production build; type checking is `pnpm typecheck`'s job), `pnpm typecheck`. Do not
+run `next dev` on its own: it answers its internal endpoints (opening files in your editor, attaching a debugger)
+before `proxy.ts` runs, so only `pnpm dev`, which puts a guard in front (`src/server/dev-proxy.ts`), is safe.
 
 ## Layout
 
@@ -63,7 +65,8 @@ templates (read from the package folder), `node:sqlite` and the Temporal client.
   pasted text or PNG, JPEG and WebP images (`POST /api/refs` stores each as an artifact, checking an image's bytes
   against its type) and passes their ids as `StartRunInput.inputs.refs`.
 - **Generated media**: pages and Markdown reference generated images at `/api/artifacts/<id>` (spec §3.3), which
-  serves the same bytes and headers as `/artifacts/<id>`; a generated page's CSP allows both.
+  serves images, clips and audio only (SVG as a download), with the same headers as `/artifacts/<id>`; a generated
+  page's CSP allows both.
 - **Video** (ADR-0069): Settings shows `ProfileStatus.video` for the chosen profile; a storyboard shows each
   shot's frame and clip, a real clip (`video/*`) in a video element and the demo's placeholder (`image/svg+xml`)
   as an image. Steps finished as skipped say "Skipped" and their note on the Run and Result screens.
@@ -78,10 +81,17 @@ Logic on top of the contracts sits in view code:
 
 ## Guardrails
 
-- The server binds 127.0.0.1; `proxy.ts` refuses other Host headers (DNS rebinding) and cross-site writes.
-- Generated pages are shown in iframes with `sandbox="allow-scripts"` (no `allow-same-origin`) and served by
-  the artifact route with a CSP that sandboxes them again, blocks all network writes and allows only the
-  renderer's CDNs. Other media are served inert; an uploaded example image must really be PNG, JPEG or WebP.
+- The server binds 127.0.0.1; `proxy.ts` refuses other Host headers (DNS rebinding) and cross-site writes on every
+  request under `next start`. Under `next dev` (`pnpm dev`), `src/server/dev-proxy.ts` applies the same guard to every
+  request and WebSocket upgrade first, including Next.js's own dev endpoints.
+- No provider key is written under the repo: `next build` gets none (`src/server/serving.ts`), and Turbopack's
+  persistent caches, which would snapshot the environment, are off (`next.config.ts`).
+- Generated pages are shown in sandboxed iframes (never `allow-same-origin`) and served by the artifact route with a
+  CSP that sandboxes them again, blocks requests and allows only the renderer's CDNs. A CSP cannot stop a page with
+  scripts from navigating itself, so pages inside byway run their scripts only after you turn them on ("Run the
+  page's scripts", remembered in this browser); thumbnails never do. `/api/artifacts/<id>` serves media only, so a
+  page cannot move itself to an address without its sandbox. Markdown shows images only from byway's artifact routes.
+  Other media are served inert; an uploaded example image must really be PNG, JPEG or WebP.
 - Evidence labels are computed by the advisor; `test/guard-claims.test.ts` fails if any app string, recipe
   presentation, prompt template or README claims efficacy.
 - Provider keys are never read into the browser, shown or sent: the services module is server-only, Settings shows

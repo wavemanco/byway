@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { moveFocus } from '../../../view/checkpoints.ts';
 import { ArtifactPreview } from '../../ArtifactPreview.tsx';
+import { ScriptsToggle } from '../../ScriptsToggle.tsx';
+import { outputKind } from '../../../view/run.ts';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { TurnFooter } from './TurnFooter.tsx';
 import type { PanelProps } from './types.ts';
@@ -10,28 +12,43 @@ import type { PanelProps } from './types.ts';
 type Mode = 'side' | 'flip';
 
 /**
- * compare: two versions, side by side or flipped in place (flipping is how a small change becomes visible).
- * The highlighted version is the one Enter keeps; Space flips, J and K move between versions.
+ * compare: two versions, side by side or flipped in place (flipping is how a small change becomes visible). Space
+ * flips, J and K move between versions, and Enter keeps the highlighted one. Nothing is highlighted until you move,
+ * flip or click a version, so a stray Enter as the panel opens keeps nothing (UX-1); "Keep this" keeps that version.
  */
 export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
   const options = cp.options ?? [];
   const [mode, setMode] = useState<Mode>('side');
+  // The version shown in Flip mode, and the one highlighted once you have chosen (null until then).
   const [shown, setShown] = useState(0);
+  const [chosen, setChosen] = useState<number | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const current = options[shown];
+  const highlighted = chosen === null ? undefined : options[chosen];
 
-  function keep(index: number) {
-    const option = options[index];
-    if (!option || busy) return;
+  function show(index: number) {
+    setShown(index);
+    setChosen(index);
+    setHint(null);
+  }
+
+  function keep(index: number | null) {
+    const option = index === null ? undefined : options[index];
+    if (busy) return;
+    if (!option) {
+      setHint('Choose a version first: J and K move between them, or use Keep this.');
+      return;
+    }
     onSubmit({ checkpointId: cp.id, choice: [option.id] });
   }
 
-  const flip = () => setShown((i) => (options.length > 0 ? (i + 1) % options.length : 0));
+  const flip = () => show(options.length > 0 ? (shown + 1) % options.length : 0);
 
   useShortcuts({
     Space: flip,
-    J: () => setShown((i) => moveFocus(i, 1, options.length)),
-    K: () => setShown((i) => moveFocus(i, -1, options.length)),
-    Enter: () => keep(shown),
+    J: () => show(moveFocus(chosen ?? -1, 1, options.length)),
+    K: () => show(moveFocus(chosen ?? options.length, -1, options.length)),
+    Enter: () => keep(chosen),
   });
 
   return (
@@ -50,12 +67,14 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
             Flip <kbd aria-hidden="true">Space</kbd>
           </button>
         ) : null}
+        {/* One switch for both versions, so they are always compared the same way. */}
+        {options.some((o) => o.artifactId && outputKind(artifacts[o.artifactId]?.mediaType) === 'page') ? <ScriptsToggle /> : null}
       </div>
 
       {mode === 'side' ? (
         <ul className="compare" aria-describedby={promptId}>
           {options.map((o, i) => (
-            <li key={o.id} className="compare-col" data-current={shown === i ? 'true' : undefined}>
+            <li key={o.id} className="compare-col" data-current={chosen === i ? 'true' : undefined}>
               <div className="compare-head">
                 <h3>
                   <span className="compare-letter" aria-hidden="true">
@@ -67,8 +86,8 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
                   Keep this<span className="sr-only">: {o.label}</span>
                 </button>
               </div>
-              <div className="compare-view" onClick={() => setShown(i)}>
-                {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" /> : <p>{o.label}</p>}
+              <div className="compare-view" onClick={() => show(i)}>
+                {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scriptsToggle={false} /> : <p>{o.label}</p>}
               </div>
             </li>
           ))}
@@ -84,19 +103,22 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
           {/* Both versions stay mounted so a flip is instant and lands on the same spot. */}
           {options.map((o, i) => (
             <div key={o.id} className="compare-view" hidden={i !== shown}>
-              {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" /> : null}
+              {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scriptsToggle={false} /> : null}
             </div>
           ))}
         </div>
       ) : null}
 
+      <p className="turn-hint" role="status">
+        {hint}
+      </p>
       <TurnFooter
         kind={cp.kind}
-        ready={current !== undefined}
+        ready={highlighted !== undefined}
         busy={busy}
-        onSubmit={() => keep(shown)}
-        action={current ? `Keep “${current.label}”` : undefined}
-        status={mode === 'side' && current ? `Highlighted: ${current.id}` : undefined}
+        onSubmit={() => keep(chosen)}
+        action={highlighted ? `Keep “${highlighted.label}”` : undefined}
+        status={mode === 'side' ? (highlighted ? `Highlighted: ${highlighted.id}` : 'Nothing highlighted yet.') : undefined}
       />
     </>
   );

@@ -1,4 +1,5 @@
 /** Viewers for JSON deliverables: an options list (Idea Generator) and a storyboard (Ad Video Chain). */
+import { useId } from 'react';
 import type { ArtifactInfo } from '../view/rundata.ts';
 import { clipKind, type OptionItem, type StoryboardModel, type StoryboardShot } from '../view/result.ts';
 import { artifactUrl } from './api.ts';
@@ -34,13 +35,22 @@ interface StoryboardProps {
   board: StoryboardModel;
   /** Media types of the frames and clips, so each is shown the way it can be. */
   media?: Record<string, ArtifactInfo>;
-  /** Steps that did not run and why (ADR-0069: the result says what was not made). */
-  skipped?: { key: string; label: string; note?: string }[];
+  /** Steps that did not run, wholly or in part, and why (ADR-0069: the result says what was not made). */
+  skipped?: { key: string; label: string; note?: string; part?: boolean }[];
 }
 
 export function Storyboard({ board, media = {}, skipped = [] }: StoryboardProps) {
+  // Two storyboards can be on screen at once (Compare): each names its own voice-over section (UX-14).
+  const voId = useId();
   return (
     <div className="storyboard">
+      {board.headline || board.tagline ? (
+        <div className="storyboard-copy">
+          <p className="storyboard-copy-label">On screen</p>
+          {board.headline ? <p className="storyboard-headline">{board.headline}</p> : null}
+          {board.tagline ? <p className="storyboard-tagline">{board.tagline}</p> : null}
+        </div>
+      ) : null}
       {skipped.length > 0 ? (
         <div className="notice small">
           <p>Not made in this run:</p>
@@ -48,6 +58,7 @@ export function Storyboard({ board, media = {}, skipped = [] }: StoryboardProps)
             {skipped.map((s) => (
               <li key={s.key}>
                 {s.label}
+                {s.part ? ' (in part)' : ''}
                 {s.note ? `: ${s.note}` : ''}
               </li>
             ))}
@@ -78,12 +89,18 @@ export function Storyboard({ board, media = {}, skipped = [] }: StoryboardProps)
                 Shot {shot.shot} <span className="muted">{shot.durationSec}s</span>
               </p>
               <p>{shot.description}</p>
+              {shot.caption ? (
+                <p className="shot-caption">
+                  <span className="muted">On screen: </span>
+                  {shot.caption}
+                </p>
+              ) : null}
             </div>
           </li>
         ))}
       </ol>
-      <section className="voiceover" aria-labelledby="vo-title">
-        <h3 id="vo-title">
+      <section className="voiceover" aria-labelledby={voId}>
+        <h3 id={voId}>
           Voice-over <span className="muted">{board.totalSec}s in total</span>
         </h3>
         <p>{board.voiceover}</p>

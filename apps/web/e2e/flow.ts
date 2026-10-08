@@ -93,6 +93,11 @@ async function answer(page: Page, turn: Locator, kind: CheckpointKind): Promise<
       await primary.click();
       return;
     }
+    case 'select':
+      // Any subset is an answer; a person who wants every swap ticks them all.
+      for (const box of await turn.locator('input[type="checkbox"]').all()) await box.check();
+      await primary.click();
+      return;
     case 'choose':
       await turn.locator('input[type="radio"]').first().check();
       await primary.click();
@@ -109,7 +114,8 @@ async function answer(page: Page, turn: Locator, kind: CheckpointKind): Promise<
       return;
     case 'write': {
       const field = turn.locator('textarea');
-      if (!(await field.inputValue()).trim()) await field.fill(WORDS.write);
+      // On-screen copy (C4) comes as labelled fields, already filled; anything else is one text field.
+      if ((await field.count()) > 0 && !(await field.inputValue()).trim()) await field.fill(WORDS.write);
       await primary.click();
       return;
     }
@@ -152,4 +158,14 @@ export async function openResult(page: Page): Promise<Locator> {
   await expect(page).toHaveURL(/\/runs\/[0-9a-f-]+\/result$/);
   await expect(page.getByRole('heading', { name: 'How this was made' })).toBeVisible();
   return page.getByRole('region', { name: 'Result' });
+}
+
+/** Result: the export the Download button gives, as text. It must work away from byway (EXP-1): no byway addresses. */
+export async function exportText(page: Page): Promise<string> {
+  const href = await page.locator('.result-actions a[download]').getAttribute('href');
+  if (!href) throw new Error('no Download link');
+  const res = await page.request.get(href);
+  expect(res.ok()).toBe(true);
+  expect(res.headers()['content-disposition'] ?? '').toMatch(/^attachment/);
+  return res.text();
 }

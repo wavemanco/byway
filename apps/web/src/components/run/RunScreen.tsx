@@ -2,7 +2,7 @@
 
 import type { CheckpointResolution, EvidenceLabel as Label, RecipePresentation } from '@byway/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { runStatusLabel } from '../../view/labels.ts';
+import { controlPendingLabel, runStatusLabel, type ControlAction } from '../../view/labels.ts';
 import { runMeter } from '../../view/meter.ts';
 import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
@@ -34,8 +34,25 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  // UX-10: Pause, Resume and Cancel take a moment to reach the engine; the button says so at once.
+  const [pending, setPending] = useState<ControlAction | null>(null);
+  const statusRef = useRef<HTMLSpanElement>(null);
+  const headRef = useRef<HTMLElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const latest = useRef(data);
   latest.current = data;
+
+  // The header (meter, status, Pause, Cancel) stays in view while the page scrolls; the timeline sits below it.
+  useEffect(() => {
+    const head = headRef.current;
+    const root = rootRef.current;
+    if (!head || !root) return;
+    const update = () => root.style.setProperty('--run-head-h', `${head.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(head);
+    return () => observer.disconnect();
+  }, []);
 
   const { run, events, checkpoints } = data.view;
   const runId = run.id;
@@ -92,14 +109,20 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
     }
   }
 
-  async function control(action: 'pause' | 'resume' | 'cancel') {
+  async function control(action: ControlAction) {
+    if (pending) return;
+    setPending(action);
     setError(null);
     try {
       await post(`/api/runs/${encodeURIComponent(runId)}/control`, { action });
       setConfirmCancel(false);
+      // The Cancel dialog that had focus is gone: focus goes to the run's status, which now says what happened (UX-2).
+      if (action === 'cancel') statusRef.current?.focus();
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
+    } finally {
+      setPending(null);
     }
   }
 
@@ -107,8 +130,8 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   const announcement = paused ? 'Run paused.' : active && !ended ? `Your turn: ${active.prompt}` : ended ? `Run ${status.toLowerCase()}.` : '';
 
   return (
-    <div className="run">
-      <header className="run-head">
+    <div className="run" ref={rootRef}>
+      <header className="run-head" ref={headRef}>
         <div className="run-title">
           <p className="run-recipe">
             {presentation ? recipeTitle(presentation, technical) : 'Recipe'}
@@ -136,14 +159,14 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
               </div>
             ) : null}
           </div>
-          <span className="run-status" data-status={run.status}>
+          <span className="run-status" data-status={run.status} ref={statusRef} tabIndex={-1}>
             {status}
           </span>
           {ended ? null : confirmCancel ? (
             <div className="confirm-inline" role="group" aria-label="Cancel this run?">
               <span>Cancel this run? What it made so far is kept.</span>
-              <button type="button" className="button button-danger" onClick={() => void control('cancel')}>
-                Cancel run
+              <button type="button" className="button button-danger" onClick={() => void control('cancel')} aria-disabled={pending !== null} aria-busy={pending === 'cancel'}>
+                {pending === 'cancel' ? controlPendingLabel('cancel') : 'Cancel run'}
               </button>
               <button type="button" className="button button-quiet" onClick={() => setConfirmCancel(false)} autoFocus>
                 Keep going
@@ -152,15 +175,15 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
           ) : (
             <div className="run-controls">
               {paused ? (
-                <button type="button" className="button" onClick={() => void control('resume')}>
-                  Resume
+                <button type="button" className="button" onClick={() => void control('resume')} aria-disabled={pending !== null} aria-busy={pending === 'resume'}>
+                  {pending === 'resume' ? controlPendingLabel('resume') : 'Resume'}
                 </button>
               ) : (
-                <button type="button" className="button" onClick={() => void control('pause')}>
-                  Pause
+                <button type="button" className="button" onClick={() => void control('pause')} aria-disabled={pending !== null} aria-busy={pending === 'pause'}>
+                  {pending === 'pause' ? controlPendingLabel('pause') : 'Pause'}
                 </button>
               )}
-              <button type="button" className="button" onClick={() => setConfirmCancel(true)}>
+              <button type="button" className="button" onClick={() => setConfirmCancel(true)} aria-disabled={pending !== null}>
                 Cancel
               </button>
             </div>
@@ -189,9 +212,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
       </p>
 
       <div className="run-body">
-        <aside className="run-timeline" aria-label="Steps">
-          <Timeline stages={stages} artifacts={data.artifacts} selected={selected} onSelect={(key) => setSelected((cur) => (cur === key ? null : key))} />
-        </aside>
+        {/* The working area comes first in reading and Tab order; wide screens place the timeline to its left (UX-11). */}
         <div className="run-work">
           {selectedStep ? (
             <StepDetail step={selectedStep} artifacts={data.artifacts} onClose={() => setSelected(null)} closeLabel={active ? 'Back to your turn' : 'Back'} />
@@ -201,6 +222,9 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
             <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} />
           )}
         </div>
+        <aside className="run-timeline" aria-label="Steps">
+          <Timeline stages={stages} artifacts={data.artifacts} selected={selected} onSelect={(key) => setSelected((cur) => (cur === key ? null : key))} />
+        </aside>
       </div>
     </div>
   );

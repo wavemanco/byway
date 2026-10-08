@@ -8,6 +8,7 @@ import { post } from './api.ts';
 import { loadStartDraft, saveStartDraft } from './startDraft.ts';
 import { useTechnicalNames } from './TechNames.tsx';
 import { useShortcuts } from './useShortcuts.ts';
+import { focusAfterRemoval } from '../view/focus.ts';
 
 /** Examples that span the eight recipes, so the first visit shows what byway is for. */
 const EXAMPLES = [
@@ -35,6 +36,20 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
   const field = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const removeButtons = useRef(new Map<number, HTMLButtonElement>());
+  const attachButton = useRef<HTMLButtonElement>(null);
+  // After a removal, focus goes to the Remove button that takes its place, or the Attach button (UX-2).
+  const [refocus, setRefocus] = useState<{ key: number | null } | undefined>(undefined);
+  useEffect(() => {
+    if (!refocus) return;
+    (refocus.key === null ? attachButton.current : removeButtons.current.get(refocus.key))?.focus();
+    setRefocus(undefined);
+  }, [refocus]);
+
+  function removeAttachment(key: number) {
+    setRefocus({ key: focusAfterRemoval(attachments.map((a) => a.key), key) });
+    setAttachments((list) => list.filter((x) => x.key !== key));
+  }
   const [nextKey, setNextKey] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,8 +160,16 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
                   maxLength={200}
                   onChange={(e) => updateAttachment(a.key, { name: e.target.value })}
                 />
-                <button type="button" className="button button-quiet" onClick={() => setAttachments((list) => list.filter((x) => x.key !== a.key))}>
-                  Remove
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  ref={(el) => {
+                    if (el) removeButtons.current.set(a.key, el);
+                    else removeButtons.current.delete(a.key);
+                  }}
+                  onClick={() => removeAttachment(a.key)}
+                >
+                  Remove<span className="sr-only"> attachment {i + 1}</span>
                 </button>
               </div>
               <label className="sr-only" htmlFor={`${fieldId}-text-${a.key}`}>
@@ -168,7 +191,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
 
       <div className="start-actions">
         {attachments.length < MAX_ATTACHMENTS ? (
-          <button type="button" className="button" onClick={addAttachment}>
+          <button type="button" className="button" onClick={addAttachment} ref={attachButton}>
             {attachments.length === 0 ? 'Attach a draft or diff' : 'Attach another'}
           </button>
         ) : null}

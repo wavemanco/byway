@@ -7,6 +7,8 @@ import { DiffView } from './DiffView.tsx';
 import { Markdown } from './Markdown.tsx';
 import { OptionsList, Storyboard } from './results.tsx';
 import { ScaledPage } from './ScaledPage.tsx';
+import { ScriptsToggle } from './ScriptsToggle.tsx';
+import { PAGE_SCRIPTS, useViewerFlag } from './viewerFlags.ts';
 
 interface PreviewProps {
   id: string;
@@ -17,13 +19,23 @@ interface PreviewProps {
   interactive?: boolean;
   /** Media types of artifacts a storyboard shows (frames and clips), when the caller knows them. */
   media?: Record<string, ArtifactInfo>;
+  /** A large page preview offers "Run the page's scripts", unless the caller shows one switch for several (compare). */
+  scriptsToggle?: boolean;
 }
 
 /** Shows any artifact the way it is meant to be seen: a page rendered, text read, a diff as a diff. */
-export function ArtifactPreview({ id, info, title, size = 'thumb', interactive = false, media }: PreviewProps) {
+export function ArtifactPreview({ id, info, title, size = 'thumb', interactive = false, media, scriptsToggle = true }: PreviewProps) {
   const type = info?.mediaType ?? '';
+  const [scripts] = useViewerFlag(PAGE_SCRIPTS);
   if (type === 'text/html') {
-    return <ScaledPage src={artifactUrl(id)} title={title} interactive={interactive} virtualHeight={size === 'thumb' ? 860 : 900} />;
+    // Thumbnails are pictures and never run scripts; a large preview runs them once you turn them on (SEC-4).
+    if (size === 'thumb') return <ScaledPage src={artifactUrl(id)} title={title} interactive={interactive} virtualHeight={860} />;
+    return (
+      <div className="page-preview">
+        {scriptsToggle ? <ScriptsToggle /> : null}
+        <ScaledPage src={artifactUrl(id)} title={title} interactive={interactive} virtualHeight={900} scripts={scripts} />
+      </div>
+    );
   }
   if (type.startsWith('image/')) {
     return <img className="preview-image" src={artifactUrl(id)} alt={title} loading="lazy" />;

@@ -43,7 +43,7 @@ function host(): Promise<ServiceHost> {
   return holder[KEY];
 }
 
-/** The services as `pnpm dev` / `pnpm demo` set them up, for requests that need no workspace preferences. */
+/** The services as `pnpm start` / `pnpm demo` set them up, for requests that need no workspace preferences. */
 export async function getServices(): Promise<Services> {
   const h = await host();
   return h.services(h.demoForced);

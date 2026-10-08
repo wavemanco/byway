@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CheckpointRecord } from '@byway/contracts';
+import { GatewayError, type CheckpointRecord, type GatewayErrorCode } from '@byway/contracts';
+import { AdvisorError } from '@byway/advisor';
 import type { Services } from '../src/services/index.ts';
 import {
   HttpError,
@@ -11,6 +12,7 @@ import {
   currentRecommendation,
   recipeForRun,
   recommendIntake,
+  recommendationOrProblem,
   resolveInRun,
   startRun,
   updateSettings,
@@ -123,7 +125,20 @@ describe('route handler logic', () => {
     await resolveInRun(d, runId, cp.id, { choice: ['seed'] });
     const after = (await d.services.runner.view(runId)).checkpoints.find((c) => c.id === cp.id);
     expect(after?.status).toBe('resolved');
-    await expect(resolveInRun(d, runId, cp.id, { choice: ['seed'] })).rejects.toMatchObject({ status: 409 });
+    await expect(resolveInRun(d, runId, cp.id, { choice: ['seed'] })).rejects.toMatchObject({ status: 409, message: 'That question has already been answered.' });
+  });
+
+  it('says a question was withdrawn, not answered, when its run ended while it was open (API-1)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 5 });
+    const cp = await openQuestion(d, runId);
+    await controlRun(d, runId, 'cancel');
+    await d.services.store.withdrawCheckpoints(runId);
+    await expect(resolveInRun(d, runId, cp.id, { choice: ['seed'] })).rejects.toMatchObject({
+      status: 409,
+      message: 'This question was withdrawn: its run was cancelled or failed.',
+    });
   });
 
   it('pauses, resumes and cancels runs through the runner, and leaves ended runs alone', async () => {
@@ -196,5 +211,98 @@ describe('the artifact route', () => {
 
     expect((await artifactResponse(d.services, 'sha256:..%2F..%2Fsecrets', new URL('http://127.0.0.1:3000/x'))).status).toBe(400);
     expect((await artifactResponse(d.services, `sha256:${'0'.repeat(64)}`, new URL('http://127.0.0.1:3000/x'))).status).toBe(404);
+  });
+
+  it('serves only media at /api/artifacts, so a generated page cannot move itself to an address without its sandbox (SEC-1)', async () => {
+    const d = await deps();
+    const media = (id: string) => artifactResponse(d.services, id, new URL(`http://127.0.0.1:3000/api/artifacts/${id}`), 'http://127.0.0.1:3000', 'media');
+    const page = await d.services.store.artifacts.putText('<!doctype html><script>location.replace("/api"+location.pathname)</script>', 'text/html');
+    const pageRes = await media(page.id);
+    expect(pageRes.status).toBe(404);
+    expect(pageRes.headers.get('content-type')).not.toContain('text/html');
+
+    // An SVG can carry script: it still loads in an <img>, but opening it downloads it instead of running it.
+    const svg = await d.services.store.artifacts.putText('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', 'image/svg+xml');
+    const svgRes = await media(svg.id);
+    expect(svgRes.status).toBe(200);
+    expect(svgRes.headers.get('content-disposition')).toMatch(/^attachment/);
+    expect(svgRes.headers.get('content-security-policy')).toMatch(/sandbox(;|$)/);
+
+    const png = await d.services.store.artifacts.put(Buffer.from(TINY_PNG_BASE64, 'base64'), 'image/png');
+    const pngRes = await media(png.id);
+    expect(pngRes.status).toBe(200);
+    expect(pngRes.headers.get('content-type')).toBe('image/png');
+    expect(pngRes.headers.get('content-disposition')).toBeNull();
+
+    const text = await d.services.store.artifacts.putText('# Notes', 'text/markdown');
+    expect((await media(text.id)).status).toBe(404);
+  });
+});
+
+describe('model errors while recommending or composing (UX-2)', () => {
+  const gatewayError = (code: GatewayErrorCode, scope?: 'workspace' | 'run') =>
+    Object.assign(new GatewayError(code, `${code} from the provider`), scope ? { budget: { scope, capUsd: 5, spentUsd: 5, reservedUsd: 0, estimateUsd: 0.1, shortfallUsd: 0.1 } } : {});
+
+  it('says what went wrong and what to do, with a status that matches', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const cases: [Error, number, RegExp][] = [
+      [gatewayError('no-credentials'), 400, /key/],
+      [gatewayError('budget-exceeded', 'workspace'), 400, /workspace budget.*Settings/],
+      [gatewayError('rate-limited'), 503, /busy/],
+      [gatewayError('provider-error'), 503, /did not answer/],
+      [new AdvisorError('intake-unreadable', 'unreadable'), 502, /could not read/],
+    ];
+    for (const [err, status, message] of cases) {
+      recommend.mockRejectedValueOnce(err);
+      await expect(recommendIntake(d, intakeId)).rejects.toMatchObject({ status, message: expect.stringMatching(message) });
+    }
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    compose.mockRejectedValueOnce(new AdvisorError('compose-unreadable', 'unreadable'));
+    await expect(composeIntake(d, intakeId)).rejects.toMatchObject({ status: 502, message: expect.stringMatching(/build a recipe/) });
+    // Anything else is not dressed up as a model problem.
+    recommend.mockRejectedValueOnce(new TypeError('a bug'));
+    await expect(recommendIntake(d, intakeId)).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('gives the Recommendation screen a problem to show instead of failing to load', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    vi.spyOn(d.services.advisor, 'recommend').mockRejectedValueOnce(gatewayError('rate-limited'));
+    const first = await recommendationOrProblem(d, intakeId);
+    expect(first).toEqual({ problem: expect.stringMatching(/busy/) });
+    const second = await recommendationOrProblem(d, intakeId);
+    expect('recommendation' in second && second.recommendation.recipeId).toBeTruthy();
+  });
+});
+
+describe('exports carry their images (EXP-1)', () => {
+  it('inlines byway-served images into a downloaded page or Markdown file, so it works away from byway', async () => {
+    const d = await deps();
+    const png = await d.services.store.artifacts.put(Buffer.from(TINY_PNG_BASE64, 'base64'), 'image/png');
+    const encoded = png.id.replace(':', '%3A');
+    const md = await d.services.store.artifacts.putText(`# Cycling\n\n![A bike](/api/artifacts/${png.id})\n\n![Again](/artifacts/${encoded})\n`, 'text/markdown');
+    const res = await artifactResponse(d.services, md.id, new URL(`http://127.0.0.1:3000/artifacts/${md.id}?download=1&name=Cycling`));
+    const body = await res.text();
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="cycling.md"');
+    expect(body).not.toContain('/artifacts/');
+    expect(body).toContain(`![A bike](data:image/png;base64,${TINY_PNG_BASE64})`);
+    expect(body).toContain(`![Again](data:image/png;base64,${TINY_PNG_BASE64})`);
+
+    const page = await d.services.store.artifacts.putText(`<!doctype html><img src="/api/artifacts/${png.id}" alt="x">`, 'text/html');
+    const html = await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}?download=1`))).text();
+    expect(html).toBe(`<!doctype html><img src="data:image/png;base64,${TINY_PNG_BASE64}" alt="x">`);
+    // Viewing (not downloading) serves the stored bytes as they are.
+    expect(await (await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}`))).text()).toContain('/api/artifacts/');
+  });
+
+  it('leaves a reference it cannot inline as it was (missing, or not an image or clip)', async () => {
+    const d = await deps();
+    const missing = `sha256:${'1'.repeat(64)}`;
+    const note = await d.services.store.artifacts.putText('a note', 'text/markdown');
+    const md = await d.services.store.artifacts.putText(`![gone](/api/artifacts/${missing}) [note](/artifacts/${note.id})`, 'text/markdown');
+    const body = await (await artifactResponse(d.services, md.id, new URL(`http://127.0.0.1:3000/artifacts/${md.id}?download=1`))).text();
+    expect(body).toBe(`![gone](/api/artifacts/${missing}) [note](/artifacts/${note.id})`);
   });
 });

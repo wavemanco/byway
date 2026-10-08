@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import config, { configFor } from '../next.config.ts';
 import { artifactHeaders, isArtifactId } from '../src/server/artifacts.ts';
 import { checkRequest } from '../src/server/guard.ts';
 import { sniffImage } from '../src/server/refs.ts';
@@ -103,5 +104,47 @@ describe('request schemas', () => {
     expect(ResolutionInput.safeParse({ approved: 'yes' }).success).toBe(false);
     expect(SettingsPatch.safeParse({ workspaceBudgetUsd: 50, demoMode: true }).success).toBe(true);
     expect(SettingsPatch.safeParse({ workspaceBudgetUsd: -1 }).success).toBe(false);
+  });
+});
+
+describe('app-wide response headers (next.config.ts)', () => {
+  /** next.config `source` patterns here are plain regular expressions in one group, so they can be checked as such. */
+  async function appRule() {
+    const headers = (await config.headers?.()) ?? [];
+    const rule = headers.find((h) => h.headers.some((x) => x.key === 'Content-Security-Policy'));
+    if (!rule) throw new Error('no app CSP rule');
+    return { matches: (p: string) => new RegExp(`^${rule.source}$`).test(p), csp: rule.headers.find((x) => x.key === 'Content-Security-Policy')?.value ?? '' };
+  }
+
+  it('leaves both artifact routes to their own sandboxing headers (SEC-1)', async () => {
+    const { matches } = await appRule();
+    expect(matches('/')).toBe(true);
+    expect(matches('/api/settings')).toBe(true);
+    expect(matches('/runs/abc/result')).toBe(true);
+    expect(matches(`/artifacts/${ID}`)).toBe(false);
+    expect(matches(`/api/artifacts/${ID}`)).toBe(false);
+  });
+});
+
+describe('app screens load images only from byway (SEC-4)', () => {
+  it('limits images and media on the app’s own pages to its origin, data: and blob:', async () => {
+    const headers = (await config.headers?.()) ?? [];
+    const csp = headers.flatMap((h) => h.headers).find((x) => x.key === 'Content-Security-Policy')?.value ?? '';
+    expect(csp).toContain("img-src 'self' data: blob:");
+    expect(csp).toContain("media-src 'self' data: blob:");
+  });
+});
+
+describe('how the app is built and served (C8, SEC-3, DEV-1)', () => {
+  it('keeps no Turbopack cache, which would snapshot the environment and its keys under the repo', () => {
+    expect(configFor({}).experimental?.turbopackFileSystemCacheForDev).toBe(false);
+    expect(configFor({}).experimental?.turbopackFileSystemCacheForBuild).toBe(false);
+  });
+
+  it('builds into BYWAY_NEXT_DIST_DIR when set, so the e2e suite never rebuilds under a byway you are running', () => {
+    expect(configFor({})).toMatchObject({ distDir: '.next', typescript: { tsconfigPath: 'tsconfig.json' } });
+    // Its own tsconfig too: Next.js adds a build folder's type paths to the tsconfig it builds with.
+    expect(configFor({ BYWAY_NEXT_DIST_DIR: '.next-e2e' })).toMatchObject({ distDir: '.next-e2e', typescript: { tsconfigPath: 'tsconfig.e2e.json' } });
+    expect(() => configFor({ BYWAY_NEXT_DIST_DIR: '../outside' })).toThrow(/BYWAY_NEXT_DIST_DIR/);
   });
 });

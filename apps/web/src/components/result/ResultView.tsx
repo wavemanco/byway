@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { formatUsd } from '../../view/format.ts';
 import { exportLabel, formatWhen } from '../../view/history.ts';
 import { parseOptions, parseStoryboard, resultKind } from '../../view/result.ts';
-import type { HowItWasMade } from '../../view/run.ts';
+import type { HowItWasMade, SideImage } from '../../view/run.ts';
 import type { ArtifactInfo } from '../../view/rundata.ts';
 import { codeForLabel, recipeTitle, stepTitle, whoLabel } from '../../view/vocabulary.ts';
 import { artifactUrl } from '../api.ts';
@@ -28,6 +28,37 @@ interface Props {
   media: Record<string, ArtifactInfo>;
   presentation: RecipePresentation | null;
   label: Label | null;
+  /** Images made beside a deliverable that cannot hold them (an options list's mood boards). */
+  images?: SideImage[];
+}
+
+/** Rough images beside the options (UX-8): shown apart from the decision, each with its own download. */
+function SideImages({ images }: { images: SideImage[] }) {
+  const step = images[0]?.step ?? 'Custom imagery';
+  return (
+    <section className="side-images" aria-labelledby="side-images-title">
+      <h2 id="side-images-title">{step}</h2>
+      <p className="muted">Rough images made in this run. They are not part of the options above.</p>
+      <ul className="side-images-grid">
+        {images.map((img, i) => {
+          const name = img.label ?? `Image ${i + 1}`;
+          return (
+            <li key={`${img.artifactId}-${i}`}>
+              <figure>
+                <img src={artifactUrl(img.artifactId)} alt={name} loading="lazy" />
+                <figcaption>
+                  {name}{' '}
+                  <a href={artifactUrl(img.artifactId, name)} download>
+                    Download<span className="sr-only"> {name}</span>
+                  </a>
+                </figcaption>
+              </figure>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }
 
 function Deliverable({ run, artifactId, text, made, media }: Pick<Props, 'run' | 'artifactId' | 'text' | 'made' | 'media'>) {
@@ -51,7 +82,7 @@ function finishedPhrase(when: string): string {
 }
 
 /** The deliverable, its export, and "How this was made": the steps, who did each, and the cost. */
-export function ResultView({ run, artifactId, mediaType, text, made, media, presentation, label }: Props) {
+export function ResultView({ run, artifactId, mediaType, text, made, media, presentation, label, images = [] }: Props) {
   const technical = useTechnicalNames();
   const aiSteps = made.byWho.ai;
   return (
@@ -71,7 +102,7 @@ export function ResultView({ run, artifactId, mediaType, text, made, media, pres
           <a className="button button-primary" href={artifactUrl(artifactId, run.title)} download>
             {exportLabel(mediaType)}
           </a>
-          {text !== null ? <CopyButton text={text} /> : null}
+          {text !== null ? <CopyButton text={text} {...(mediaType === 'text/markdown' ? { exportUrl: artifactUrl(artifactId, run.title) } : {})} /> : null}
           {mediaType === 'text/html' ? (
             <a className="button" href={artifactUrl(artifactId)} target="_blank" rel="noopener noreferrer">
               Open in a new tab
@@ -83,6 +114,8 @@ export function ResultView({ run, artifactId, mediaType, text, made, media, pres
       <section className="result-body" aria-label="Result">
         <Deliverable run={run} artifactId={artifactId} text={text} made={made} media={media} />
       </section>
+
+      {images.length > 0 ? <SideImages images={images} /> : null}
 
       <section className="made" aria-labelledby="made-title">
         <h2 id="made-title">How this was made</h2>
@@ -127,6 +160,7 @@ export function ResultView({ run, artifactId, mediaType, text, made, media, pres
               {made.skipped.map((s) => (
                 <li key={s.key}>
                   {s.label}
+                  {s.part ? ' (in part)' : ''}
                   {s.note ? <span className="muted">: {s.note}</span> : null}
                 </li>
               ))}

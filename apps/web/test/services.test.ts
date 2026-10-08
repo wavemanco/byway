@@ -11,7 +11,7 @@ import { resolveDataDir } from '@byway/store';
 import { DEMO_PROFILE_ID, effectiveMode, findRepoRoot, flagOn, liveUsable, runProfileId, servicesConfig } from '../src/services/config.ts';
 import { loadEngine } from '../src/services/engine.ts';
 import { LEDGER_FILENAME } from '../src/services/create.ts';
-import { EngineUnavailableError, engineRunner, isEngineUnavailable } from '../src/services/engine-runner.ts';
+import { EngineUnavailableError, engineRunner, isEngineUnavailable, isTransportFailure } from '../src/services/engine-runner.ts';
 import { ENGINE, testHost, type TestHost } from './fixtures/services.ts';
 
 const temp: string[] = [];
@@ -34,6 +34,7 @@ const status = (id: string, usable: boolean): ProfileStatus => ({
   missing: usable ? [] : ['anthropic'],
   images: false,
   video: false,
+  otherFamily: false,
 });
 
 /** Sentinel values: tests never hold real keys, and these must never surface anywhere the browser could see. */
@@ -119,8 +120,52 @@ describe('the engine Runner (the web process is only a Temporal client)', () => 
     await expect(runner.view('missing')).rejects.toThrow(/no run/);
   });
 
-  it('says plainly how to start the engine, and is recognised across server bundles', () => {
-    expect(new EngineUnavailableError(new Error('x')).message).toMatch(/pnpm dev/);
+  it('turns an engine that stopped after connecting into the same plain 503, and reconnects next time (OPS-2)', async () => {
+    current = testHost();
+    const { store } = current.host;
+    let connects = 0;
+    let down = true;
+    // What the Temporal client throws when its server has gone: a gRPC ServiceError with code 14 (UNAVAILABLE).
+    const unavailable = Object.assign(new Error('Failed to start Workflow'), {
+      name: 'ServiceError',
+      cause: Object.assign(new Error('14 UNAVAILABLE: No connection established. Last error: connect ECONNREFUSED 127.0.0.1:7405'), { code: 14 }),
+    });
+    const real = {
+      start: async () => {
+        if (down) throw unavailable;
+        return { id: 'r' };
+      },
+      resolve: async () => {
+        throw Object.assign(new Error('Workflow Update failed'), { name: 'WorkflowUpdateFailedError', cause: Object.assign(new Error('deadline'), { code: 4 }) });
+      },
+      pause: async () => {
+        throw new Error('This run has already ended.');
+      },
+    } as unknown as Runner;
+    const runner = engineRunner(store, async () => {
+      connects++;
+      return real;
+    });
+    await expect(runner.start({} as never)).rejects.toBeInstanceOf(EngineUnavailableError);
+    await expect(runner.resolve({ checkpointId: 'c' })).rejects.toBeInstanceOf(EngineUnavailableError);
+    // An error that is not about the connection stays what it was.
+    await expect(runner.pause('x')).rejects.toThrow('This run has already ended.');
+    // Each transport failure dropped the cached connection, so the next call connects again.
+    expect(connects).toBe(3);
+    down = false;
+    await expect(runner.start({} as never)).resolves.toEqual({ id: 'r' });
+  });
+
+  it('recognises transport failures anywhere in the cause chain, and nothing else', () => {
+    expect(isTransportFailure(Object.assign(new Error('x'), { code: 14 }))).toBe(true);
+    expect(isTransportFailure(new Error('outer', { cause: new Error('connect ECONNREFUSED 127.0.0.1:7233') }))).toBe(true);
+    expect(isTransportFailure(Object.assign(new Error('x'), { code: 4 }))).toBe(true);
+    expect(isTransportFailure(Object.assign(new Error('That answer was not accepted.'), { code: 3 }))).toBe(false);
+    expect(isTransportFailure('ECONNREFUSED')).toBe(false);
+  });
+
+  it('says plainly that the engine stopped and how to bring it back, and is recognised across server bundles', () => {
+    expect(new EngineUnavailableError(new Error('x')).message).toBe('byway’s run engine is not running. Restart byway (pnpm start), then try again.');
     // Another bundle's copy of the class: same name, different constructor.
     const other = Object.assign(new Error('elsewhere'), { name: 'EngineUnavailableError' });
     expect(isEngineUnavailable(other)).toBe(true);

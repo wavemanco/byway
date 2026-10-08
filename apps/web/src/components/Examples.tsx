@@ -6,6 +6,7 @@
  * still here. Each becomes an artifact, passed to the run as StartRunInput.inputs.refs.
  */
 import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
+import { focusAfterRemoval } from '../view/focus.ts';
 import { MAX_REF_IMAGE_BYTES, MAX_REF_TEXT, MAX_REFS, REF_IMAGE_TYPES, REFS_NOTE, refsStatus, type RefImageType } from '../view/refs.ts';
 import { artifactUrl, post } from './api.ts';
 
@@ -48,7 +49,22 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [focusKey, setFocusKey] = useState<number | null>(null);
   const fields = useRef(new Map<number, HTMLTextAreaElement>());
+  const removeButtons = useRef(new Map<number, HTMLButtonElement>());
+  const addButton = useRef<HTMLButtonElement>(null);
+  // After a removal: the Remove button of the item that takes its place, or the Add button (UX-2). Undefined: none.
+  const [refocus, setRefocus] = useState<{ key: number | null } | undefined>(undefined);
   const full = entries.length >= MAX_REFS;
+
+  useEffect(() => {
+    if (!refocus) return;
+    (refocus.key === null ? addButton.current : removeButtons.current.get(refocus.key))?.focus();
+    setRefocus(undefined);
+  }, [refocus]);
+
+  function remove(key: number) {
+    setRefocus({ key: focusAfterRemoval(entries.map((x) => x.key), key) });
+    onChange((list) => list.filter((x) => x.key !== key));
+  }
 
   // A newly added text example gets the focus, so you can paste straight away.
   useEffect(() => {
@@ -94,15 +110,15 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
   }
 
   return (
-    <fieldset className="examples" aria-describedby={`${id}-note`} disabled={disabled}>
-      <legend className="examples-title">Examples you admire</legend>
-      <p id={`${id}-note`} className="examples-note">
+    <fieldset className="ref-examples" aria-describedby={`${id}-note`} disabled={disabled}>
+      <legend className="ref-examples-title">Examples you admire</legend>
+      <p id={`${id}-note`} className="ref-examples-note">
         {REFS_NOTE}
       </p>
       {entries.length > 0 ? (
-        <ol className="example-list">
+        <ol className="ref-example-list">
           {entries.map((e, i) => (
-            <li key={e.key} className="example" data-kind={e.kind}>
+            <li key={e.key} className="ref-example" data-kind={e.kind}>
               {e.kind === 'text' ? (
                 <>
                   <label htmlFor={`${id}-${e.key}`} className="field-label">
@@ -126,20 +142,28 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
                   />
                 </>
               ) : (
-                <figure className="example-image">
+                <figure className="ref-example-image">
                   <img src={artifactUrl(e.artifactId)} alt={`Example ${i + 1}: ${e.name}`} />
                   <figcaption>{e.name}</figcaption>
                 </figure>
               )}
-              <button type="button" className="link-button example-remove" onClick={() => onChange((list) => list.filter((x) => x.key !== e.key))}>
+              <button
+                type="button"
+                className="link-button ref-example-remove"
+                ref={(el) => {
+                  if (el) removeButtons.current.set(e.key, el);
+                  else removeButtons.current.delete(e.key);
+                }}
+                onClick={() => remove(e.key)}
+              >
                 Remove<span className="sr-only"> example {i + 1}</span>
               </button>
             </li>
           ))}
         </ol>
       ) : null}
-      <div className="example-actions">
-        <button type="button" className="button" onClick={addText} disabled={full}>
+      <div className="ref-example-actions">
+        <button type="button" className="button" onClick={addText} disabled={full} ref={addButton}>
           Paste an example
         </button>
         <label className="button file-button" data-disabled={full || adding ? 'true' : undefined}>
@@ -147,7 +171,7 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
           <input type="file" className="sr-only" accept={REF_IMAGE_TYPES.join(',')} multiple disabled={full || adding} onChange={(ev) => void addImages(ev)} />
         </label>
       </div>
-      <p className="examples-status" role="status">
+      <p className="ref-examples-status" role="status">
         {refsStatus(exampleCount(entries))}
       </p>
       {error ? (
