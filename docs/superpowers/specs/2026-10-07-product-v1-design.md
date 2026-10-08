@@ -89,7 +89,7 @@ The runner interprets the recipe tree (`byway.recipe/1`) as a Temporal workflow.
 
 **Views by medium.** `web-page`: Playwright screenshots of the wide screen, the phone and the first screen, each captioned. `prose`: the clean Markdown text. `options`: the options as a numbered plain-text list (labels A, B, C… when several sets are compared). `media`: the storyboard as text plus each shot's frame image when it exists. `code-diff`: the diff text.
 
-**Human checkpoint kinds by role:** `vision` → `react`; `cut` → `directive`; `tells-compare` → `compare`; `voice` → `write` (initial text = the copy extracted from the artifact; the edited copy is written back by a model step that changes only text and is checked by a diff); the author's draft in C6/C6a → `write`.
+**Human checkpoint kinds by role:** `vision` → `react`; `cut` → `directive`; `tells-compare` → `compare`; `voice` → `write` (initial text = the copy deck extracted from the artifact; the edited copy is read by the medium's total reader, written back by the runner with no model, and checked exactly against what the person wrote, [ADR-0081](../../adr/0081-voice-writes-the-persons-copy-exactly.md); later `keepsVoice` writes are held to the deck locked at VOICE); the author's draft in C6/C6a → `write`.
 
 Every step emits `step-started`/`step-finished` events with cost; every artifact emits `artifact`; the run ends with `run-finished` and the output artifact id.
 
@@ -97,7 +97,7 @@ Every step emits `step-started`/`step-finished` events with cost; every artifact
 
 Prompts (WP-P), the runner's parsers (WP-D) and the mock provider (WP-C) must agree exactly. Every gateway call carries a `purpose`:
 - recipe steps: `<role>:<medium>`, e.g. `build:web-page`, `critic:prose`, `cut:web-page`, `tells-sweep:prose`;
-- helpers: `asset.briefs:web-page`, `asset.integrate:web-page`, `voice.apply:<medium>`, `rerank:<medium>`, `advisor.intake`, `advisor.compose`, `advisor.compose.repair`.
+- helpers: `asset.briefs:web-page`, `asset.integrate:web-page`, `voice.apply:<medium>` (no longer called: VOICE writes back without a model, ADR-0081), `rerank:<medium>`, `advisor.intake`, `advisor.compose`, `advisor.compose.repair`.
 
 | Purpose (role) | The model must answer with |
 |---|---|
