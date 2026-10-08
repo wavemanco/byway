@@ -16,6 +16,7 @@ import type { CheckpointResolution } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
+import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
 import { FAILURE, toStepSpec, type BudgetFailureDetails, type RejectedAnswerDetails, type CheckpointSpec, type ModelStepResult, type OpenCheckpointInput, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
 import { media, model, quick } from './acts.ts';
@@ -29,10 +30,14 @@ import {
   humanKind,
   humanPrompt,
   NOT_CONVERGING_PROMPT,
+  NO_SWAPS_CHOSEN,
+  NOTHING_TO_COMPARE,
   NOTHING_TO_REMOVE,
+  NOTHING_TO_SWAP,
   optionalPrompt,
   READY_PROMPT,
   routePrompt,
+  SWAPS_PROMPT,
 } from './wording.ts';
 
 /** A plain failure that ends the run with this message. */
@@ -152,7 +157,11 @@ export class Interpreter {
         return this.step(n, ports, ctx);
       case 'seq': {
         let p = ports;
-        for (const child of n.steps) p = await this.node(child, p, ctx);
+        for (const [i, child] of n.steps.entries()) {
+          p = await this.node(child, p, ctx);
+          // A sweep whose hits a swap step will act on: the person decides each hit first (TELLS-1, convention C2).
+          if (child.op === 'step' && child.actor === 'model' && child.role === 'tells-sweep' && swapsFollow(n.steps.slice(i + 1))) p = await this.chooseSwaps(child, p, ctx);
+        }
         return p;
       }
       case 'replicate':
@@ -291,10 +300,12 @@ export class Interpreter {
         if (res.anchor) out.anchor = res.anchor;
         return out;
       }
-      if (s.role === 'fix' && s.consumes.includes('critique') && ports.nothingToRemove) {
-        // An empty CUT directive: there is nothing to apply, so no model is asked and the work stays as it is.
-        await this.act(call, () => quick.passStep({ run: this.run, call, step: spec, note: NOTHING_TO_REMOVE }));
-        return withCritique(ports, ports.critique);
+      if (s.role === 'fix' && s.consumes.includes('critique') && ports.emptyCritique) {
+        // An empty CUT directive, or TELLS hits of which none were chosen: there is nothing to apply, so no model is
+        // asked and the work stays as it is. Nothing changed, so a keep-or-revert after it has nothing to compare.
+        const note = ports.emptyCritique;
+        await this.act(call, () => quick.passStep({ run: this.run, call, step: spec, note }));
+        return { ...withCritique(ports, ports.critique), ...(ports.artifact ? { previousArtifact: ports.artifact } : {}) };
       }
       const res = await this.act(call, () =>
         model.modelStep({ run: this.run, call, step: spec, ports, refs: this.input.inputs.refs ?? [], ...(this.input.inputs.tells ? { tells: this.input.inputs.tells } : {}), ...(ctx.loop ? { round: ctx.loop.round } : {}) }),
@@ -317,9 +328,10 @@ export class Interpreter {
         if (s.produces.includes('taste')) out.taste = res.text;
         if (s.produces.includes('critique')) out = withCritique(out, res.text);
       } else {
-        out = withCritique(out, res.text, res.nothingToRemove === true);
+        out = withCritique(out, res.text, res.nothingToRemove === true ? NOTHING_TO_REMOVE : undefined);
       }
     }
+    if (res.hits) out.hits = res.hits;
     if (res.score) out.score = res.score;
     if (res.noteArtifactId) out.notes = [res.noteArtifactId];
     if (res.keep === 'A' && ports.previousArtifact) Object.assign(out, { artifact: ports.previousArtifact, previousArtifact: ports.artifact });
@@ -336,6 +348,11 @@ export class Interpreter {
     const kind = humanKind(s);
     const spec = toStepSpec(s);
     const round = ctx.loop?.round;
+    if (kind === 'compare' && ports.artifact && (!ports.previousArtifact || ports.previousArtifact === ports.artifact)) {
+      // No swap was made (none chosen, or none found): both versions are the same, so there is nothing to ask.
+      await this.control.machine(() => this.act(call, () => quick.passStep({ run: this.run, call, step: spec, note: NOTHING_TO_COMPARE })));
+      return ports;
+    }
     // What the person looks at: the candidates for a step over an option set, else the view it consumes.
     const shown = s.consumes.includes('option_set<artifact>') ? optionsShown(ports) : (ports.view?.items.flatMap(viewIds) ?? []);
     let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round) };
@@ -393,7 +410,7 @@ export class Interpreter {
         break;
       case 'directive':
         // A person who lists nothing to remove gives an empty directive, as a model's "Nothing to remove." does.
-        out = withCritique(out, text, !text.trim());
+        out = withCritique(out, text, text.trim() ? undefined : NOTHING_TO_REMOVE);
         break;
       default:
         if (s.produces.includes('brief')) out.brief = text;
@@ -616,6 +633,25 @@ export class Interpreter {
     return ports;
   }
 
+  /**
+   * TELLS decided per instance (01 TELLS step 4, "Not every gradient, card or label is bad"; TELLS-1, convention C2):
+   * the person chooses which of the sweep's hits are swapped, any or none, and only those reach the swap step. None
+   * chosen, or none found, and the swap step makes no change and says so. The keep-or-revert afterwards stays.
+   */
+  private async chooseSwaps(sweep: Step, ports: Ports, ctx: Ctx): Promise<Ports> {
+    const hits = ports.hits ?? [];
+    if (!hits.length) return withCritique(ports, ports.critique, NOTHING_TO_SWAP);
+    const res = await this.ask(this.call(sweep.id, ctx), {
+      kind: 'select',
+      prompt: SWAPS_PROMPT,
+      options: hits.map((h, i) => ({ id: `hit-${i + 1}`, label: hitLabel(h) })),
+      artifactIds: beside(ports),
+    });
+    const chosen = hits.filter((_, i) => (res.choice ?? []).includes(`hit-${i + 1}`));
+    if (!chosen.length) return withCritique(ports, 'No swaps chosen.', NO_SWAPS_CHOSEN);
+    return withCritique(ports, hitsCritique(chosen));
+  }
+
   // ---- Annotations, gates, relays --------------------------------------------------------------------------------
 
   /** Lenses read the same input concurrently; their critiques are joined under their names and nothing else changes. */
@@ -682,12 +718,24 @@ function beside(ports: Ports, work?: string[]): string[] {
 }
 
 /**
- * Ports with a new critique. `empty` marks an empty CUT directive, which the next fix passes over (spec §3.3 "Nothing to
- * remove."); any other critique, or no critique at all, clears that mark.
+ * Ports with a new critique. `empty` is the note of a critique that asks for nothing (an empty CUT directive, spec §3.3
+ * "Nothing to remove."; no TELLS hit chosen), which the next fix passes over; any other critique, or no critique at all,
+ * clears that mark, and the hits of an earlier sweep with it.
  */
-function withCritique(ports: Ports, critique: string | undefined, empty = false): Ports {
-  const { nothingToRemove: _was, critique: _old, ...rest } = ports;
-  return { ...rest, ...(critique !== undefined ? { critique } : {}), ...(empty ? { nothingToRemove: true } : {}) };
+function withCritique(ports: Ports, critique: string | undefined, empty?: string): Ports {
+  const { emptyCritique: _was, critique: _old, hits: _hits, ...rest } = ports;
+  return { ...rest, ...(critique !== undefined ? { critique } : {}), ...(empty ? { emptyCritique: empty } : {}) };
+}
+
+/**
+ * Whether a TELLS sweep's hits feed a swap step a person stands behind: the next step that reads a critique is a model
+ * fix, and the keep-or-revert after it is a person's. A headless arm (C1-H, its keep-or-revert by a proxy) and a sweep
+ * that only flags (C6, C6a) are left as they are.
+ */
+function swapsFollow(rest: readonly Node[]): boolean {
+  const steps = rest.filter((n): n is Step => n.op === 'step');
+  const fix = steps.find((s) => s.consumes.includes('critique'));
+  return fix?.role === 'fix' && fix.actor === 'model' && !steps.some((s) => s.role === 'tells-compare' && s.actor !== 'human');
 }
 
 /** The problem with a person's answer that an activity could not use as it is (ENG-6), or undefined. */

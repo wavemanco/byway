@@ -5,10 +5,10 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { VideoRequest, VideoResult } from '@byway/contracts';
-import { NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
+import { NO_SWAPS_CHOSEN, NOTHING_TO_COMPARE, NOTHING_TO_REMOVE } from '../../src/workflow/wording.ts';
 import { checkEvents, ofType } from '../helpers/events.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
-import { claimLogged, illustrated, judgedPick, policyLoop, randomPick, scripted, shortAd, tiny, trimmed, trimmedByHand, twiceJudged, voicedPage } from '../helpers/recipes.ts';
+import { claimLogged, illustrated, judgedPick, policyLoop, randomPick, scripted, shortAd, swept, tiny, trimmed, trimmedByHand, twiceJudged, voicedPage } from '../helpers/recipes.ts';
 import { pageCopy } from '../../src/copy.ts';
 
 let h: Harness;
@@ -179,6 +179,57 @@ export function operatorScenarios(use: () => Harness): void {
         expect(out.voiceover).toBe(script);
       } finally {
         delete h.responders['fix:media'];
+      }
+    }, 60_000);
+  });
+
+  describe('the cliché sweep is decided hit by hit (TELLS-1, convention C2)', () => {
+    const HITS = [
+      { pattern: 'delve', where: 'Opening line', alternative: 'look at' },
+      { pattern: 'seamless', where: '', alternative: 'Say what actually happens.' },
+      { pattern: '"not just X, but Y"', where: 'Second paragraph', alternative: 'Say Y directly.' },
+    ];
+    const sweepAnswer = () => '```json\n' + JSON.stringify({ hits: HITS }) + '\n```';
+
+    it('asks which hits to swap, one by one; only the chosen reach the swap step, and the A/B compare follows', async () => {
+      h.responders['tells-sweep:prose'] = sweepAnswer;
+      try {
+        const run = await h.start(swept, { problem: { text: 'A memo on the billing migration' } });
+        const view = await h.drive(run.id, (cp) => (cp.kind === 'select' ? { checkpointId: cp.id, choice: ['hit-1', 'hit-3'] } : undefined));
+        expect(view.run.status).toBe('done');
+        checkEvents(view);
+        const select = view.checkpoints.find((c) => c.kind === 'select')!;
+        expect(select.prompt).toBe('Which of these should be swapped? Choose any, or none.');
+        expect(select.options).toEqual([
+          { id: 'hit-1', label: 'delve — Opening line → look at' },
+          { id: 'hit-2', label: 'seamless → Say what actually happens.' },
+          { id: 'hit-3', label: '"not just X, but Y" — Second paragraph → Say Y directly.' },
+        ]);
+        // The question shows the work and the sweep's hits beside it.
+        expect(select.artifactIds).toContain((ofType(view, 'step-finished', 'sweep')[0]!.data.outputArtifactIds as string[])[0]);
+        const swaps = h.prompts.calls.filter((c) => c.id === 'product.test.swaps').at(-1)!;
+        expect(swaps.slots.critique).toBe('- delve (Opening line): look at\n- "not just X, but Y" (Second paragraph): Say Y directly.');
+        expect(view.checkpoints.filter((c) => c.kind === 'compare')).toHaveLength(1);
+      } finally {
+        delete h.responders['tells-sweep:prose'];
+      }
+    }, 60_000);
+
+    it('none chosen: the swap step changes nothing and says so, and there is nothing to compare', async () => {
+      h.responders['tells-sweep:prose'] = sweepAnswer;
+      try {
+        const run = await h.start(swept, { problem: { text: 'A memo on the billing migration' } });
+        const view = await h.drive(run.id, (cp) => (cp.kind === 'select' ? { checkpointId: cp.id, choice: [] } : undefined));
+        expect(view.run.status).toBe('done');
+        checkEvents(view);
+        expect(h.succeeded(run.id).some((c) => c.stepId === 'swaps')).toBe(false);
+        expect(ofType(view, 'step-finished', 'swaps').map((e) => e.data)).toEqual([{ costUsd: 0, note: NO_SWAPS_CHOSEN }]);
+        expect(NO_SWAPS_CHOSEN).toBe('No swaps chosen');
+        expect(view.checkpoints.some((c) => c.kind === 'compare')).toBe(false);
+        expect(ofType(view, 'step-finished', 'compare').map((e) => e.data.note)).toEqual([NOTHING_TO_COMPARE]);
+        expect(view.run.outputArtifactId).toBe(ofType(view, 'artifact', 'draft')[0]!.data.artifactId);
+      } finally {
+        delete h.responders['tells-sweep:prose'];
       }
     }, 60_000);
   });

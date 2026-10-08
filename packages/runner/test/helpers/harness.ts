@@ -113,6 +113,9 @@ export function defaultAnswer(cp: CheckpointRecord): CheckpointResolution {
   switch (cp.kind) {
     case 'pick':
       return { checkpointId: cp.id, choice: (cp.options ?? []).slice(0, cp.k ?? 1).map((o) => o.id) };
+    case 'select':
+      // Every TELLS hit swapped, as the sweep did before hits were chosen one by one (convention C2).
+      return { checkpointId: cp.id, choice: (cp.options ?? []).map((o) => o.id) };
     case 'choose':
       return { checkpointId: cp.id, choice: [cp.options![0]!.id] };
     case 'compare':

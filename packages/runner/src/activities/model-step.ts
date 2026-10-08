@@ -11,7 +11,7 @@ import { labels } from '../labels.ts';
 import { rendersKnob } from '../surfaces.ts';
 import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseTellsSweep, parseVision, type CriticAnswer } from '../parse.ts';
 import { tellsText } from '../tells.ts';
-import type { ModelStepInput, ModelStepResult } from '../types.ts';
+import type { ModelStepInput, ModelStepResult, TellsHit } from '../types.ts';
 import { otherFamilyModel, OTHER_FAMILY_FALLBACK_NOTE } from './availability.ts';
 import { askModel } from './call.ts';
 import { memoized, newSalt, seededRandom } from './memo.ts';
@@ -143,6 +143,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
         result.text = v.text;
         if (v.clean !== undefined) result.clean = v.clean;
         if (v.empty) result.nothingToRemove = true;
+        if (v.hits) result.hits = v.hits;
         break;
       case 'label':
         result.label = v.label;
@@ -186,7 +187,7 @@ type Answer =
   /** `direction`: what a SEED build wrote before its block (SEED-1), kept as a note beside the work. */
   | { kind: 'artifact'; text: string; direction?: string }
   /** `empty`: a CUT answered "Nothing to remove." (its text says so, for the note beside the work). */
-  | { kind: 'text'; text: string; clean?: boolean; empty?: boolean }
+  | { kind: 'text'; text: string; clean?: boolean; empty?: boolean; hits?: TellsHit[] }
   | { kind: 'label'; label: string }
   | { kind: 'keep'; keep: 'A' | 'B' }
   | { kind: 'dedupe'; keep: string[] };
@@ -200,7 +201,7 @@ function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports:
     case 'cut':
       return (t) => map(parseCut(t), (v) => (v ? { kind: 'text', text: v } : { kind: 'text', text: 'Nothing to remove.', empty: true }));
     case 'tells-sweep':
-      return (t) => map(parseTellsSweep(t), (v) => ({ kind: 'text', text: v.critique }));
+      return (t) => map(parseTellsSweep(t), (v) => ({ kind: 'text', text: v.critique, hits: v.hits }));
     case 'tells-compare':
       return (t) => map(parseKeep(t), (keep) => ({ kind: 'keep', keep }));
     case 'vision':

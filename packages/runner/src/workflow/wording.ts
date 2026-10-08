@@ -70,3 +70,11 @@ export const budgetPrompt = (amountUsd: number, scope: 'run' | 'workspace'): str
   scope === 'workspace' ? `Raise the workspace budget by $${amountUsd}?` : `Raise the budget by $${amountUsd}?`;
 /** A fix after an empty CUT directive ("Nothing to remove."): it makes no change, and its step says so. */
 export const NOTHING_TO_REMOVE = 'Nothing to remove';
+/** TELLS decided hit by hit (TELLS-1, convention C2): which of the sweep's hits the swap step acts on. */
+export const SWAPS_PROMPT = 'Which of these should be swapped? Choose any, or none.';
+/** The swap step when the person chose none of the hits: it makes no change, and says so (convention C2). */
+export const NO_SWAPS_CHOSEN = 'No swaps chosen';
+/** The swap step when the sweep found nothing: no question, no change. */
+export const NOTHING_TO_SWAP = 'Nothing to swap: the sweep found no clichés';
+/** A keep-or-revert after a swap step that changed nothing: both versions are the same, so nobody is asked. */
+export const NOTHING_TO_COMPARE = 'Nothing was swapped, so there was nothing to compare';

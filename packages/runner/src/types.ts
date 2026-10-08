@@ -85,10 +85,20 @@ export interface Ports {
   /** The artifact the author last wrote themselves (C3, C6, C6a), which their next write revises. */
   authored?: string;
   /**
-   * The critique is an empty CUT directive ("Nothing to remove.", or a person who listed nothing): the fix that
-   * consumes it makes no change. Cleared by the next critique and by that fix.
+   * The critique asks for nothing: an empty CUT directive ("Nothing to remove.", or a person who listed nothing), or
+   * TELLS hits of which the person chose none. The fix that consumes it makes no change and finishes with this note.
+   * Cleared by the next critique and by that fix.
    */
-  nothingToRemove?: boolean;
+  emptyCritique?: string;
+  /** The latest TELLS sweep's hits, for the person to choose which are swapped (TELLS-1). Cleared by the next critique. */
+  hits?: TellsHit[];
+}
+
+/** One TELLS sweep hit (spec §3.3 tells-sweep contract). */
+export interface TellsHit {
+  pattern: string;
+  where: string;
+  alternative: string;
 }
 
 /** One execution of one step (or operator) at one place in the run: the base of every dedupe key it uses. */
@@ -187,6 +197,8 @@ export interface ModelStepResult {
   criticMode?: 'OK' | 'GREAT';
   /** cut: the answer was "Nothing to remove." (an empty directive). */
   nothingToRemove?: boolean;
+  /** tells-sweep: the hits, for the person to choose from (TELLS-1). */
+  hits?: TellsHit[];
 }
 
 export interface RenderInput {

@@ -113,6 +113,20 @@ export const scripted = recipe(
   ),
 );
 
+/** A draft, a cliché sweep, the swaps a person chose, and their keep-or-revert (the TELLS of C1, C3, C4, C5, C7). */
+export const swept = recipe(
+  'swept',
+  'prose',
+  seq(
+    build('draft'),
+    render('render'),
+    step({ id: 'sweep', role: 'tells-sweep', block: 'TELLS', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'product.test.sweep', consumes: ['view', 'tells'], produces: ['critique'] }),
+    step({ id: 'swaps', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.test.swaps', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true }),
+    render('compare-render'),
+    step({ id: 'compare', role: 'tells-compare', block: 'TELLS', actor: 'human', consumes: ['view'], produces: ['taste'] }),
+  ),
+);
+
 /** A memo the AI illustrates: image briefs, two images, then the model places them. */
 export const illustrated = recipe(
   'illustrated',

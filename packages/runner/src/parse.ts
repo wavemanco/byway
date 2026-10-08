@@ -4,6 +4,8 @@
  */
 import { z } from 'zod';
 import { locate, type Parsed } from './formats.ts';
+import { hitsCritique } from './hits.ts';
+import type { TellsHit } from './types.ts';
 
 const fail = (problem: string): Parsed<never> => ({ ok: false, problem });
 const lastLine = (text: string): string => text.trim().split('\n').at(-1)?.trim() ?? '';
@@ -107,7 +109,6 @@ export function parseCut(text: string): Parsed<string> {
 }
 
 const Hits = z.object({ hits: z.array(z.object({ pattern: z.string().min(1), where: z.string(), alternative: z.string() })) });
-export type TellsHit = z.infer<typeof Hits>['hits'][number];
 
 function json<T>(text: string, schema: z.ZodType<T>, what: string): Parsed<T> {
   // A json block, else a bare one (JSON.parse is the check), else the whole answer when it has no fence (ENG-1).
@@ -126,8 +127,7 @@ function json<T>(text: string, schema: z.ZodType<T>, what: string): Parsed<T> {
 export function parseTellsSweep(text: string): Parsed<{ hits: TellsHit[]; critique: string }> {
   const r = json(text, Hits, '{"hits":[{"pattern","where","alternative"}]}');
   if (!r.ok) return r;
-  const critique = r.value.hits.length ? r.value.hits.map((h) => `- ${h.pattern}${h.where ? ` (${h.where})` : ''}: ${h.alternative}`).join('\n') : 'No reflexive defaults found.';
-  return { ok: true, value: { hits: r.value.hits, critique } };
+  return { ok: true, value: { hits: r.value.hits, critique: hitsCritique(r.value.hits) } };
 }
 
 /** tells-compare (model): optional reasoning, then `Keep: A` or `Keep: B`. */
