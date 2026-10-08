@@ -98,13 +98,39 @@ function whoDoes(units: Unit[]): Who {
 
 /** Roles whose output is a critique a following writer applies. */
 const FINDS = new Set(['critic', 'check', 'cut', 'tells-sweep']);
-const appliesFindings = (s: Unit) => s.op === 'step' && s.writes === true && s.consumes.includes('critique');
+const appliesFindings = (u: Unit) => u.op === 'step' && u.writes === true && u.consumes.includes('critique');
+const isRender = (u: Unit) => u.op === 'step' && u.role === 'render';
+/** The node a group is named after: the first that is not a render. */
+const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group[0]!;
 
-interface Group {
-  stage: Stage['stage'];
-  units: Unit[];
-  /** The node that names the group (the first that is not a render). */
-  lead?: Unit;
+/**
+ * The shown steps of one stage, from its steps and picks in order: renders wait for the next node (the one that reads
+ * them), and a writer that applies a critique joins the group that made it, once.
+ */
+function groupStage(units: Unit[]): Unit[][] {
+  const groups: Unit[][] = [];
+  let renders: Unit[] = [];
+  for (const u of units) {
+    if (isRender(u)) {
+      renders.push(u);
+      continue;
+    }
+    const last = groups.at(-1);
+    const lead = last && leadOf(last);
+    if (!renders.length && last && lead?.op === 'step' && FINDS.has(lead.role) && appliesFindings(u) && !last.some(appliesFindings)) {
+      last.push(u);
+      continue;
+    }
+    groups.push([...renders, u]);
+    renders = [];
+  }
+  // Renders at the end of a stage belong to the step before them (or stand alone).
+  if (renders.length) {
+    const last = groups.at(-1);
+    if (last) last.push(...renders);
+    else groups.push(renders);
+  }
+  return groups;
 }
 
 export interface ComposedCopy {
@@ -116,57 +142,33 @@ export interface ComposedCopy {
 }
 
 export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePresentation {
-  // Units in walk order; a pick's judge belongs to its pick.
-  const units: { unit: Unit; stage: Stage['stage'] }[] = [];
   const order = new Map<string, number>();
-  const judges = new Set<Step>();
-  walk(recipe, (n, _path, stage) => {
+  walk(recipe, (n) => {
     if ('id' in n && n.id !== undefined && !order.has(n.id)) order.set(n.id, order.size);
-    if (n.op === 'pick' && n.judge) judges.add(n.judge);
-    if ((n.op === 'step' && !judges.has(n)) || n.op === 'pick') units.push({ unit: n, stage });
   });
 
-  const groups: Group[] = [];
+  // Steps and picks per stage, in walk order; a pick's judge is shown with its pick, not on its own.
+  const groups: { stage: Stage['stage']; units: Unit[] }[] = [];
+  for (const s of recipe.stages) {
+    const units: Unit[] = [];
+    const judges = new Set<Step>();
+    walkNode(s.body, '', s.stage, (n) => {
+      if (n.op === 'pick') {
+        units.push(n);
+        if (n.judge) judges.add(n.judge);
+      } else if (n.op === 'step' && !judges.has(n)) units.push(n);
+    });
+    for (const g of groupStage(units)) groups.push({ stage: s.stage, units: g });
+  }
+
+  /** Index of the shown step each id belongs to. */
   const owner = new Map<string, number>();
-  let pending: Unit[] = [];
-  let pendingStage: Stage['stage'] | undefined;
-  const flushInto = (g: Group) => {
-    g.units.unshift(...pending);
-    pending = [];
-  };
-  for (const { unit, stage } of units) {
-    if (pending.length && pendingStage !== stage) {
-      const last = groups.at(-1);
-      if (last && last.stage === pendingStage) last.units.push(...pending);
-      else groups.push({ stage: pendingStage!, units: pending });
-      pending = [];
-    }
-    if (unit.op === 'step' && unit.role === 'render') {
-      pending.push(unit);
-      pendingStage = stage;
-      continue;
-    }
-    const last = groups.at(-1);
-    const joins = last && last.stage === stage && pending.length === 0 && last.lead?.op === 'step' && FINDS.has(last.lead.role) && appliesFindings(unit) && !last.units.some(appliesFindings);
-    if (joins) {
-      last.units.push(unit);
-      continue;
-    }
-    const g: Group = { stage, units: [unit], lead: unit };
-    flushInto(g);
-    groups.push(g);
-  }
-  if (pending.length) {
-    const last = groups.at(-1);
-    if (last && last.stage === pendingStage) last.units.push(...pending);
-    else groups.push({ stage: pendingStage!, units: pending, lead: pending[0] });
-  }
   groups.forEach((g, i) => {
-    g.lead ??= g.units[0];
-    for (const u of g.units) owner.set(u.id, i);
-    if (g.units.some((u) => u.op === 'pick' && u.judge)) for (const u of g.units) if (u.op === 'pick' && u.judge) owner.set(u.judge.id, i);
+    for (const u of g.units) {
+      owner.set(u.id, i);
+      if (u.op === 'pick' && u.judge) owner.set(u.judge.id, i);
+    }
   });
-
   // Operators go with the shown step that holds their first node: a loop's checkpoints and rounds, an optional's
   // question and a route's choice then read as the step they are about.
   walk(recipe, (n, path, stage) => {
@@ -178,9 +180,10 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
     if (first !== undefined) owner.set(n.id, first);
   });
 
-  const shown = groups.map((g) => {
-    const lead = g.lead ?? g.units[0]!;
-    return { stage: STAGE_NAMES[g.stage], label: stepLabel(lead), explainer: explainer(lead, g.units.some((u) => u !== lead && appliesFindings(u))), who: whoDoes(g.units), stepIds: [] as string[] };
+  const shown = groups.map(({ stage, units }) => {
+    const lead = leadOf(units);
+    const applies = units.some((u) => u !== lead && appliesFindings(u));
+    return { stage: STAGE_NAMES[stage], label: stepLabel(lead), explainer: explainer(lead, applies), who: whoDoes(units), stepIds: [] as string[] };
   });
   for (const [id, i] of [...owner].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0))) shown[i]!.stepIds.push(id);
 
