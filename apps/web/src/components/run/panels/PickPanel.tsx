@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useRef, useState } from 'react';
-import { canSubmit, emptyDraft, moveFocus, picksNeeded, toResolution, toggleChoice } from '../../../view/checkpoints.ts';
+import { canSubmit, moveFocus, picksNeeded, toResolution, toggleChoice, type CheckpointDraft } from '../../../view/checkpoints.ts';
 import { outputKind } from '../../../view/run.ts';
 import type { ArtifactInfo } from '../../../view/rundata.ts';
 import { withoutLeadingTitle } from '../../../view/text.ts';
@@ -18,12 +18,17 @@ function cardInfo(info: ArtifactInfo | undefined, label: string): ArtifactInfo |
 
 /**
  * pick: a contact sheet of the drafts. One pick behaves as a radio group, several as checkboxes; J and K move
- * between drafts, Space selects the one in focus, Enter keeps the selection once it is complete.
+ * between drafts, Space selects the one in focus, Enter keeps the selection once it is complete. The selection starts as
+ * the Run screen kept it for this question and every change is written through (ADR-0082).
  */
-export function PickPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
+export function PickPanel({ cp, artifacts, busy, onSubmit, promptId, draft: seed, onDraft, sent }: PanelProps) {
   const options = cp.options ?? [];
   const n = picksNeeded(cp);
-  const [draft, setDraft] = useState(() => emptyDraft(cp));
+  const [draft, setDraftState] = useState(seed);
+  const setDraft = (next: CheckpointDraft) => {
+    setDraftState(next);
+    onDraft(next);
+  };
   // -1 until you move: the first J lands on the first draft.
   const [focus, setFocus] = useState(-1);
   const [hint, setHint] = useState<string | null>(null);
@@ -116,7 +121,7 @@ export function PickPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProp
       <p className="turn-hint" role="status">
         {hint}
       </p>
-      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} status={status} />
+      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} status={status} sent={sent} />
     </>
   );
 }

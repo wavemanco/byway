@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { canSubmit, directiveItems, toResolution } from '../../../view/checkpoints.ts';
+import { canSubmit, toResolution } from '../../../view/checkpoints.ts';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { References } from './References.tsx';
 import { TurnFooter } from './TurnFooter.tsx';
@@ -14,11 +14,16 @@ interface Item {
 
 /**
  * directive: a list editor for what to remove (CUT). Enter adds an item below, Backspace in an empty item
- * removes it, and Ctrl+Enter sends the list.
+ * removes it, and Ctrl+Enter sends the list. The list starts as the Run screen kept it for this question (the starting
+ * list until the person edits it), its row keys made once from that, and every change is written through (ADR-0082).
  */
-export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
-  const [items, setItems] = useState<Item[]>(() => directiveItems(cp.initialText).map((text, key) => ({ key, text })));
+export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId, draft: seed, onDraft, sent }: PanelProps) {
+  const [items, setItemsState] = useState<Item[]>(() => (seed.items.length > 0 ? seed.items : ['']).map((text, key) => ({ key, text })));
   const [nextKey, setNextKey] = useState(items.length);
+  const setItems = (next: Item[]) => {
+    setItemsState(next);
+    onDraft({ ...seed, items: next.map((i) => i.text) });
+  };
   // A new object per request, so asking to focus the same item again still moves focus there.
   const [focusRequest, setFocusRequest] = useState<{ key: number } | null>(items[0] ? { key: items[0].key } : null);
   const [hint, setHint] = useState<string | null>(null);
@@ -34,7 +39,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId }: Pane
   function insertAfter(index: number) {
     const item = { key: nextKey, text: '' };
     setNextKey((k) => k + 1);
-    setItems((list) => [...list.slice(0, index + 1), item, ...list.slice(index + 1)]);
+    setItems([...items.slice(0, index + 1), item, ...items.slice(index + 1)]);
     setFocusRequest({ key: item.key });
   }
 
@@ -93,7 +98,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId }: Pane
                   placeholder={i === 0 ? 'Something to remove' : undefined}
                   onChange={(e) => {
                     const text = e.target.value;
-                    setItems((list) => list.map((x) => (x.key === item.key ? { ...x, text } : x)));
+                    setItems(items.map((x) => (x.key === item.key ? { ...x, text } : x)));
                     setHint(null);
                   }}
                   onKeyDown={(e) => onKeyDown(e, i)}
@@ -116,7 +121,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId }: Pane
       <p className="turn-hint" role="status">
         {hint}
       </p>
-      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} status={`${draft.items.filter((t) => t.trim()).length} to remove`} />
+      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} sent={sent} status={`${draft.items.filter((t) => t.trim()).length} to remove`} />
     </>
   );
 }

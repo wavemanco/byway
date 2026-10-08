@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { canSubmit, emptyDraft, toResolution } from '../../../view/checkpoints.ts';
+import { canSubmit, toResolution, type CheckpointDraft } from '../../../view/checkpoints.ts';
 import { fieldName, parseOnScreenCopy, serializeOnScreenCopy, type CopyField } from '../../../view/onscreen.ts';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { References } from './References.tsx';
@@ -13,15 +13,24 @@ function wordCount(text: string): number {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-/** Shared by write and react: one text field, sent with the primary button or Ctrl+Enter. */
+/**
+ * Shared by write and react: one text field, sent with the primary button or Ctrl+Enter. It starts from the draft the
+ * Run screen kept for this question (the model's starting text only when the person has not typed), and every change
+ * is written through to it (F06, ADR-0082).
+ */
 function useTextDraft(props: PanelProps) {
-  const { cp, busy, onSubmit } = props;
-  const [draft, setDraft] = useState(() => emptyDraft(cp));
+  const { cp, busy, onSubmit, onDraft } = props;
+  const [draft, setDraftState] = useState(props.draft);
   const [hint, setHint] = useState<string | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const ready = canSubmit(cp, draft);
 
   useEffect(() => field.current?.focus(), []);
+
+  function setDraft(next: CheckpointDraft) {
+    setDraftState(next);
+    onDraft(next);
+  }
 
   function submit() {
     if (busy) return;
@@ -37,13 +46,18 @@ function useTextDraft(props: PanelProps) {
   return { draft, setDraft, hint, setHint, field, ready, submit };
 }
 
+/** The fields as the person left them: labels and separators from the starting text, values from the kept draft. */
+function seedFields(initial: CopyField[], kept: string[]): CopyField[] {
+  return kept.length === initial.length ? initial.map((f, i) => ({ ...f, value: kept[i] ?? f.value })) : initial;
+}
+
 /**
  * The words shown on screen in an ad (C4): one labelled field per line of copy, sent back in the lines they came in.
  * The voice-over was settled earlier, so it is not here.
  */
 function OnScreenCopyPanel(props: PanelProps & { initial: CopyField[] }) {
-  const { cp, artifacts, busy, onSubmit, promptId, initial } = props;
-  const [fields, setFields] = useState(initial);
+  const { cp, artifacts, busy, onSubmit, onDraft, promptId, initial, sent } = props;
+  const [fields, setFieldsState] = useState(() => seedFields(initial, props.draft.items));
   const first = useRef<HTMLInputElement>(null);
   const id = useId();
   const refs = cp.artifactIds ?? [];
@@ -52,8 +66,13 @@ function OnScreenCopyPanel(props: PanelProps & { initial: CopyField[] }) {
 
   useEffect(() => first.current?.focus(), []);
 
+  function setFields(next: CopyField[]) {
+    setFieldsState(next);
+    onDraft({ ...props.draft, items: next.map((f) => f.value), text: serializeOnScreenCopy(next) });
+  }
+
   function submit() {
-    if (!busy) onSubmit(toResolution(cp, { ...emptyDraft(cp), text }));
+    if (!busy) onSubmit(toResolution(cp, { ...props.draft, text }));
   }
 
   useShortcuts({ 'Mod+Enter': submit });
@@ -74,7 +93,7 @@ function OnScreenCopyPanel(props: PanelProps & { initial: CopyField[] }) {
                 spellCheck
                 onChange={(e) => {
                   const value = e.target.value;
-                  setFields((list) => list.map((x, j) => (j === i ? { ...x, value } : x)));
+                  setFields(fields.map((x, j) => (j === i ? { ...x, value } : x)));
                 }}
               />
             </div>
@@ -89,7 +108,7 @@ function OnScreenCopyPanel(props: PanelProps & { initial: CopyField[] }) {
         </div>
         <References ids={refs} artifacts={artifacts} />
       </div>
-      <TurnFooter kind={cp.kind} ready busy={busy} onSubmit={submit} />
+      <TurnFooter kind={cp.kind} ready busy={busy} onSubmit={submit} sent={sent} />
     </>
   );
 }
@@ -101,7 +120,7 @@ export function WritePanel(props: PanelProps) {
 }
 
 function TextWritePanel(props: PanelProps) {
-  const { cp, artifacts, busy, promptId } = props;
+  const { cp, artifacts, busy, promptId, sent } = props;
   const { draft, setDraft, hint, setHint, field, ready, submit } = useTextDraft(props);
   const id = useId();
   const refs = cp.artifactIds ?? [];
@@ -141,14 +160,14 @@ function TextWritePanel(props: PanelProps) {
       <p className="turn-hint" role="status">
         {hint}
       </p>
-      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} />
+      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} sent={sent} />
     </>
   );
 }
 
 /** react: a short free-text reaction or direction (VISION), next to what it reacts to. */
 export function ReactPanel(props: PanelProps) {
-  const { cp, artifacts, busy, promptId } = props;
+  const { cp, artifacts, busy, promptId, sent } = props;
   const { draft, setDraft, hint, setHint, field, ready, submit } = useTextDraft(props);
   const id = useId();
   const refs = cp.artifactIds ?? [];
@@ -178,7 +197,7 @@ export function ReactPanel(props: PanelProps) {
       <p className="turn-hint" role="status">
         {hint}
       </p>
-      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} />
+      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} sent={sent} />
     </>
   );
 }

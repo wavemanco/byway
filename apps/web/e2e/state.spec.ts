@@ -170,3 +170,184 @@ test.describe('the Run screen applies only the newest snapshot (F15)', () => {
     await expect(page.locator('.run-status')).toHaveText('Done');
   });
 });
+
+test.describe('your unsent answer belongs to its question, not to the panel showing it (F06)', () => {
+  test('what you type survives looking at earlier steps, Esc, the current row, a reload and Back, and is exactly what is sent', async ({ page }) => {
+    await startMemo(page);
+    const words = 'F06 sentinel: my own words, typed here and nowhere else.';
+    const t = await untilTurn(page, ['write']);
+    const editor = () => field(t);
+    await editor().fill(words);
+
+    await inspectEarlierStep(page);
+    await expect(editor()).toHaveValue(words);
+    await inspectAndEscape(page);
+    await expect(editor()).toHaveValue(words);
+    await currentRowTwice(page);
+    await expect(editor()).toHaveValue(words);
+    await page.reload();
+    await expect(editor()).toHaveValue(words);
+    await historyAndBack(page);
+    await expect(editor()).toHaveValue(words);
+
+    const posted = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes(`/checkpoints/`));
+    await t.turn.locator('.turn-foot button.button-primary').click();
+    expect((await posted).postDataJSON()).toMatchObject({ text: words });
+    await expect(t.turn).toHaveCount(0, { timeout: 30_000 });
+    await expect.poll(() => draftKeys(page)).not.toContain(`byway.draft.${t.id}`);
+  });
+
+  test('lists, ticks and highlights survive inspection; lists and ticks survive a reload, a compare highlight does not (UX-1)', async ({ page }) => {
+    // Memo Polish asks for a list of cuts; in the demo its sweep finds no clichés, so Landing Page Studio supplies the
+    // contact sheet (pick), the cliché checklist (select) and the before/after (compare).
+    await startMemo(page);
+    const checked = await roundTripEachKind(page);
+    await describeProblem(page, 'A landing page for the spring classes at my pottery studio');
+    await startRecommended(page, 'Landing Page Studio');
+    for (const kind of await roundTripEachKind(page)) checked.add(kind);
+    expect([...checked]).toEqual(expect.arrayContaining(['directive', 'pick', 'select', 'compare']));
+  });
+});
+
+/**
+ * Answers a run to the end. The first question of each kind below is first given an answer, then looked away from
+ * (an earlier step, Back to your turn) and reloaded, and what the person chose must still be there (or, for a compare
+ * highlight, must not survive the reload). Returns the kinds checked.
+ */
+async function roundTripEachKind(page: Page): Promise<Set<CheckpointKind>> {
+  const checked = new Set<CheckpointKind>();
+  let after: string | undefined;
+  for (let i = 0; i < 60; i++) {
+    const outcome = await nextTurn(page, after, 120_000);
+    if ('done' in outcome) return checked;
+    if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
+    const id = (await outcome.turn.getAttribute('data-checkpoint')) ?? '';
+    const kind = (await outcome.turn.getAttribute('data-kind')) as CheckpointKind;
+    const t: Turn = { turn: page.locator(`section.turn[data-checkpoint="${id}"]`), id, kind };
+    after = id;
+    if (checked.has(kind)) {
+      await answerTurn(page, t.turn, kind);
+      continue;
+    }
+    if (kind === 'directive') {
+      checked.add(kind);
+      const first = t.turn.getByRole('textbox', { name: 'Item 1', exact: true });
+      await first.fill('Remove the opening pleasantries.');
+      await first.press('Enter');
+      await t.turn.getByRole('textbox', { name: 'Item 2', exact: true }).fill('Remove the second chart.');
+      await inspectEarlierStep(page);
+      await expect(t.turn.getByRole('textbox', { name: 'Item 2', exact: true })).toHaveValue('Remove the second chart.');
+      await page.reload();
+      await expect(t.turn.getByRole('textbox', { name: 'Item 1', exact: true })).toHaveValue('Remove the opening pleasantries.');
+      await expect(t.turn.getByRole('textbox', { name: 'Item 2', exact: true })).toHaveValue('Remove the second chart.');
+      const posted = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes('/checkpoints/'));
+      await t.turn.locator('.turn-foot button.button-primary').click();
+      expect((await posted).postDataJSON()).toMatchObject({ text: 'Remove the opening pleasantries.\nRemove the second chart.' });
+    } else if (kind === 'select' || kind === 'pick') {
+      checked.add(kind);
+      const boxes = t.turn.locator(kind === 'pick' ? 'input.sheet-input' : 'input[type="checkbox"]');
+      const target = boxes.last();
+      const value = (await target.getAttribute('value')) ?? '';
+      await target.check();
+      await inspectEarlierStep(page);
+      await expect(t.turn.locator(`input[value="${value}"]`)).toBeChecked();
+      await page.reload();
+      await expect(t.turn.locator(`input[value="${value}"]`)).toBeChecked();
+      if (kind === 'select') {
+        const posted = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes('/checkpoints/'));
+        await t.turn.locator('.turn-foot button.button-primary').click();
+        expect((await posted).postDataJSON()).toMatchObject({ choice: [value] });
+      } else {
+        await answerTurn(page, t.turn, kind);
+      }
+    } else if (kind === 'compare') {
+      checked.add(kind);
+      // J highlights a version (the versions are framed pages, so a click inside one would not reach this page).
+      await t.turn.locator('h2').first().focus();
+      await page.keyboard.press('j');
+      await expect(t.turn.locator('.compare-col[data-current="true"]')).toHaveCount(1);
+      await inspectEarlierStep(page);
+      await expect(t.turn.locator('.compare-col[data-current="true"]')).toHaveCount(1);
+      await page.reload();
+      await expect(t.turn).toBeVisible();
+      await expect(t.turn.locator('.compare-col[data-current="true"]')).toHaveCount(0);
+      await answerTurn(page, t.turn, kind);
+    } else {
+      await answerTurn(page, t.turn, kind);
+    }
+  }
+  throw new Error('The run asked more than 60 questions.');
+}
+
+test.describe('your unsent answer belongs to its question (F06), continued', () => {
+  test('a refused answer keeps your words; a sent one stays locked as Sent, never the starting text, until byway confirms it', async ({ page }) => {
+    const runId = await startMemo(page);
+    const words = 'F06 sentinel: warmer, plainer, and about the reader first.';
+    const t = await untilTurn(page, ['react', 'write', 'directive']);
+    await field(t).fill(words);
+    // Polling while you type changes nothing (a regression check: this already held).
+    await page.waitForTimeout(4000);
+    await expect(field(t)).toHaveValue(words);
+
+    // The first send is refused: the words stay, with the reason.
+    let refuse = true;
+    let failRefreshes = false;
+    await page.route(`**/api/runs/${runId}/checkpoints/**`, async (route) => {
+      if (refuse) {
+        refuse = false;
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'e2e: the answer was refused once' }) });
+        return;
+      }
+      const response = await route.fetch();
+      failRefreshes = true;
+      await route.fulfill({ response });
+    });
+    await page.route(
+      (url) => url.pathname === `/api/runs/${runId}` && url.searchParams.has('after'),
+      async (route) => {
+        if (failRefreshes) await route.abort();
+        else await route.continue();
+      },
+    );
+    await t.turn.locator('.turn-foot button.button-primary').click();
+    await expect(page.getByRole('alert').filter({ hasText: 'e2e: the answer was refused once' })).toBeVisible();
+    await expect(field(t)).toHaveValue(words);
+
+    // The second send is accepted but byway cannot be reached afterwards: the turn shows your words, locked as Sent.
+    await t.turn.locator('.turn-foot button.button-primary').click();
+    await expect(page.getByText(NOT_ANSWERING)).toBeVisible();
+    await expect(t.turn.locator('.turn-foot button.button-primary')).toHaveText('Sent');
+    await expect(t.turn.locator('.turn-foot button.button-primary')).toBeDisabled();
+    await expect(field(t)).toHaveValue(words);
+
+    // Once byway answers again, the question settles and its draft is gone.
+    failRefreshes = false;
+    await expect(t.turn).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByText(NOT_ANSWERING)).toHaveCount(0);
+    await expect.poll(() => draftKeys(page)).not.toContain(`byway.draft.${t.id}`);
+  });
+
+  test('words typed for a question that closes unsent are shown read-only, with Copy and Discard, and cannot be sent', async ({ page }) => {
+    await startMemo(page);
+    const words = 'F06 sentinel: the words I had not sent when the run was cancelled.';
+    const t = await untilTurn(page, ['react', 'write', 'directive']);
+    await field(t).fill(words);
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('button', { name: 'Cancel run' }).click();
+    await expect(page.locator('.run-status')).toHaveText('Cancelled');
+
+    const unsent = page.getByRole('region', { name: 'Your unsent words' });
+    await expect(unsent).toContainText(words);
+    await expect(unsent.getByRole('button', { name: 'Copy' })).toBeVisible();
+    await expect(unsent.getByRole('button', { name: /^Discard/ })).toBeVisible();
+    await expect(unsent.locator('textarea')).toHaveAttribute('readonly', '');
+    await expect(page.locator('section.turn')).toHaveCount(0);
+    await expect(unsent.getByRole('button', { name: /Send|Use my words/ })).toHaveCount(0);
+
+    await page.reload();
+    await expect(unsent).toContainText(words);
+    await unsent.getByRole('button', { name: /^Discard/ }).click();
+    await expect(unsent).toHaveCount(0);
+    await expect.poll(() => draftKeys(page)).not.toContain(`byway.draft.${t.id}`);
+  });
+});
