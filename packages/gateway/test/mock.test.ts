@@ -247,15 +247,5 @@ describe('mock provider: advisor', () => {
     expect(JSON.stringify(short)).not.toContain('recipient-loop');
     expect(JSON.stringify(long)).toContain('recipient-loop');
   });
-
-  it("reuses the nearest recipe's prompt ids", async () => {
-    const nearest = {
-      schema: 'byway.recipe/1',
-      id: 'c4',
-      stages: [{ stage: 'D2', body: { op: 'step', id: 'draft', role: 'build', actor: 'model', prompt: 'runbook.c4.draft-v2', consumes: [], produces: [] } }],
-    };
-    const out = await ask('advisor.compose', `Nearest recipe:\n\`\`\`json\n${JSON.stringify(nearest)}\n\`\`\`\n<problem>A memo</problem>`);
-    expect(lastBlock(out, 'json')).toContain('runbook.c4.draft-v2');
-    expect(checkContract('advisor.compose', out)).toEqual([]);
-  });
+  // Composing from the nearest recipe (prompt ids, exceptions, checkpoints kept) is covered in compose.test.ts.
 });
