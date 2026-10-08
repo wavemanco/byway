@@ -6,7 +6,8 @@
 import { DEFAULT_TEMPORAL_ADDRESS, TASK_QUEUE, type Gateway, type PromptRenderer, type Store } from '@byway/contracts';
 import { createPromptRenderer } from '@byway/prompts';
 import type { Client } from '@temporalio/client';
-import { NativeConnection, Worker } from '@temporalio/worker';
+import type { Duration } from '@temporalio/common';
+import { GracefulShutdownPeriodExpiredError, NativeConnection, Worker } from '@temporalio/worker';
 import { createActivities } from './activities/index.ts';
 import type { RunnerDeps } from './activities/deps.ts';
 import { buildWorkflows, workflowBundleHash } from './build.ts';
@@ -29,6 +30,10 @@ export interface CreateWorkerOptions {
   labelFor?: RunnerDeps['labelFor'];
   seed?: RunnerDeps['seed'];
   random?: RunnerDeps['random'];
+  /** How long a stopping worker lets steps in flight finish before cancelling them (default 10 s; ENG-10). */
+  shutdownGraceTime?: Duration;
+  /** When a stopping worker gives up on steps that ignore the cancel (a provider call in flight; default 30 s). */
+  shutdownForceTime?: Duration;
 }
 
 export interface RunnerWorker {
@@ -43,7 +48,11 @@ export interface RunnerWorker {
   retireStaleRuns(client: Client): Promise<string[]>;
   /** Runs until shutdown; resolves when the worker has stopped. */
   run(): Promise<void>;
-  /** Stop polling, let in-flight activities finish, and close the browser. */
+  /**
+   * Stop polling, give in-flight activities the grace time, then cancel them (they stop their renders and make no new
+   * provider call), and close the browser. Bounded by the force time: an activity still running then is abandoned,
+   * and Temporal retries it on the next start once its heartbeat times out.
+   */
   shutdown(): Promise<void>;
 }
 
@@ -70,6 +79,11 @@ export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWor
     taskQueue,
     workflowsPath,
     activities: createActivities(deps),
+    shutdownGraceTime: opts.shutdownGraceTime ?? '10 seconds',
+    shutdownForceTime: opts.shutdownForceTime ?? '30 seconds',
+    // Heartbeats reach the server at least every 2 s, so a cancel reaches a running step within about that.
+    maxHeartbeatThrottleInterval: '2 seconds',
+    defaultHeartbeatThrottleInterval: '2 seconds',
   });
   let running: Promise<void> | undefined;
   const cleanup = async () => {
@@ -87,8 +101,20 @@ export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWor
     },
     async shutdown() {
       if (worker.getState() === 'RUNNING') worker.shutdown();
-      if (running) await running;
-      else await cleanup();
+      if (!running) return cleanup();
+      try {
+        await running;
+      } catch (e) {
+        // The force time passed with a step still running: it is abandoned (and retried later), as intended. The SDK
+        // then also fails to release the worker the abandoned step still holds; the process is about to stop anyway.
+        if (!abandoned(e)) throw e;
+      }
     },
   };
+}
+
+/** The errors a forced shutdown ends with (shutdownForceTime passed with an activity still running). */
+function abandoned(e: unknown): boolean {
+  if (e instanceof GracefulShutdownPeriodExpiredError) return true;
+  return e instanceof Error && e.name === 'IllegalStateError' && /still in use/i.test(e.message);
 }

@@ -7,6 +7,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type { Duration } from '@temporalio/common';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { DefaultLogger, Runtime } from '@temporalio/worker';
 import type { CheckpointRecord, CheckpointResolution, CompletionRequest, Gateway, ImageRequest, LedgerEntry, ModelProfile, ProblemBrief, PromptRenderer, RunRecord, RunView, StartRunInput, VideoRequest } from '@byway/contracts';
@@ -49,6 +50,8 @@ export interface GatewayCall {
   runId?: string;
   stepId?: string;
   request: CompletionRequest | ImageRequest | VideoRequest;
+  /** When the call was made (Date.now()). */
+  at: number;
   /** What the gateway returned, once it has. */
   result?: unknown;
 }
@@ -58,6 +61,9 @@ export type Answer = (cp: CheckpointRecord) => CheckpointResolution | 'wait' | u
 export interface HarnessOptions {
   /** The templates to render; defaults to the fake renderer. The agreement test passes @byway/prompts' renderer. */
   prompts?: PromptRenderer;
+  /** Worker shutdown timing, for the shutdown tests. */
+  shutdownGraceTime?: Duration;
+  shutdownForceTime?: Duration;
 }
 
 export interface Harness {
@@ -79,6 +85,8 @@ export interface Harness {
   workspaceId: string;
   /** Mock answers by purpose or role; mutable per test. */
   responders: Record<string, Responder>;
+  /** How long every provider call takes before the mock answers (0 by default): a call "in flight". */
+  setLatency(ms: number): void;
   calls: GatewayCall[];
   /**
    * A run's gateway calls that returned. On Windows a retried activity can repeat a call whose ledger write failed
@@ -149,18 +157,22 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const demoGateway = make(false);
   const keyedGateway = make(true);
   let inner = demoGateway;
-  const record = <T>(kind: GatewayCall['kind'], request: GatewayCall['request'], result: Promise<T>): Promise<T> => {
-    const call: GatewayCall = { kind, purpose: request.purpose, ...(request.runId ? { runId: request.runId } : {}), ...(request.stepId ? { stepId: request.stepId } : {}), request };
+  let latencyMs = 0;
+  const record = async <T>(kind: GatewayCall['kind'], request: GatewayCall['request'], send: () => Promise<T>): Promise<T> => {
+    const call: GatewayCall = { kind, purpose: request.purpose, ...(request.runId ? { runId: request.runId } : {}), ...(request.stepId ? { stepId: request.stepId } : {}), request, at: Date.now() };
     calls.push(call);
-    return result.then((r) => ((call.result = r), r));
+    if (latencyMs > 0) await sleep(latencyMs);
+    const r = await send();
+    call.result = r;
+    return r;
   };
   const gateway: Gateway = {
     get demo() {
       return inner.demo;
     },
-    complete: (req) => record('complete', req, inner.complete(req)),
-    image: (req) => record('image', req, inner.image(req)),
-    video: (req) => record('video', req, inner.video(req)),
+    complete: (req) => record('complete', req, () => inner.complete(req)),
+    image: (req) => record('image', req, () => inner.image(req)),
+    video: (req) => record('video', req, () => inner.video(req)),
     spend: (id) => inner.spend(id),
     providers: () => inner.providers(),
     profiles: () => inner.profiles(),
@@ -194,7 +206,18 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   let seeds = 0;
   let worker: RunnerWorker;
   try {
-    worker = await createWorker({ connection: env.nativeConnection, taskQueue, gateway, store, prompts, pages, workflowsPath, seed: () => `sd${++seeds}x${path.basename(dir).slice(-6)}` });
+    worker = await createWorker({
+      connection: env.nativeConnection,
+      taskQueue,
+      gateway,
+      store,
+      prompts,
+      pages,
+      workflowsPath,
+      seed: () => `sd${++seeds}x${path.basename(dir).slice(-6)}`,
+      ...(opts.shutdownGraceTime ? { shutdownGraceTime: opts.shutdownGraceTime } : {}),
+      ...(opts.shutdownForceTime ? { shutdownForceTime: opts.shutdownForceTime } : {}),
+    });
   } catch (e) {
     await env.teardown();
     throw e;
@@ -227,6 +250,9 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     runner,
     workspaceId: ws.id,
     responders,
+    setLatency(ms) {
+      latencyMs = ms;
+    },
     calls,
     succeeded: (runId) => calls.filter((c) => c.runId === runId && c.result !== undefined),
     waitFor,

@@ -1,6 +1,10 @@
 /**
  * The runner's activities: every bit of I/O a run does (spec §3: "activities do all I/O"), built from injected
  * dependencies. Errors are translated for the workflow (failures.ts).
+ *
+ * Each invocation runs with liveness (liveness.ts; ENG-4, ENG-10): it heartbeats while it runs, sees a gateway that
+ * makes no new provider call once it is cancelled or its run has ended, renders pages that stop when it is cancelled,
+ * and afterwards brings an ended run's cost up to the ledger if it spent anything for it.
  */
 import type { RunnerActivities } from '../types.ts';
 import { assetStep } from './asset.ts';
@@ -8,6 +12,7 @@ import type { RunnerDeps } from './deps.ts';
 import { guarded } from './failures.ts';
 import { finishHumanStep, openCheckpoint, recordResolution } from './human.ts';
 import { beginRun, cancelRun, emitEvents, failRun, finishRun, passStep, raiseBudget, rerank, setRunStatus, skipStep } from './lifecycle.ts';
+import { guardGateway, guardPages, settleLateCost, startInvocation } from './liveness.ts';
 import { modelStep } from './model-step.ts';
 import { relayLink, storyboardShots } from './relay.ts';
 import { renderView } from './render.ts';
@@ -17,8 +22,23 @@ export type { RunnerDeps } from './deps.ts';
 export function createActivities(deps: RunnerDeps): RunnerActivities {
   const wrap =
     <I, O>(fn: (deps: RunnerDeps, input: I) => Promise<O>) =>
-    (input: I): Promise<O> =>
-      guarded(() => fn(deps, input));
+    async (input: I): Promise<O> => {
+      const invocation = startInvocation();
+      const gateway = guardGateway(deps.gateway, deps.store, invocation.signal);
+      const scoped: RunnerDeps = {
+        ...deps,
+        gateway,
+        ...(deps.pages ? { pages: guardPages(deps.pages, invocation.signal) } : {}),
+        ...(invocation.signal ? { signal: invocation.signal } : {}),
+      };
+      try {
+        return await guarded(() => fn(scoped, input));
+      } finally {
+        invocation.stop();
+        // Best effort: the step's own outcome stands whether or not the cost could be brought up to date here.
+        await settleLateCost(deps.gateway, deps.store, gateway.calledFor).catch(() => undefined);
+      }
+    };
   return {
     beginRun: wrap(beginRun),
     setRunStatus: wrap(setRunStatus),
