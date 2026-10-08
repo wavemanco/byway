@@ -99,7 +99,7 @@ export interface RunRef {
 }
 
 /** The parts of a recipe step the activities read. */
-export type StepSpec = Pick<Step, 'id' | 'role' | 'block' | 'glue' | 'actor' | 'tier' | 'prompt' | 'consumes' | 'produces' | 'writes' | 'keepsVoice' | 'knobs' | 'variant'>;
+export type StepSpec = Pick<Step, 'id' | 'role' | 'block' | 'glue' | 'actor' | 'tier' | 'isolated' | 'frozenPrompt' | 'prompt' | 'consumes' | 'produces' | 'writes' | 'keepsVoice' | 'knobs' | 'variant'>;
 
 export const toStepSpec = (s: Step): StepSpec => ({
   id: s.id,
@@ -108,6 +108,8 @@ export const toStepSpec = (s: Step): StepSpec => ({
   ...(s.glue ? { glue: s.glue } : {}),
   actor: s.actor,
   ...(s.tier ? { tier: s.tier } : {}),
+  ...(s.isolated !== undefined ? { isolated: s.isolated } : {}),
+  ...(s.frozenPrompt !== undefined ? { frozenPrompt: s.frozenPrompt } : {}),
   ...(s.prompt ? { prompt: s.prompt } : {}),
   consumes: s.consumes,
   produces: s.produces,

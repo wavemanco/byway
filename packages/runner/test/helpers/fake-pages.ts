@@ -1,7 +1,8 @@
 /**
- * A fake page renderer for the e2e scenarios (one real Playwright test lives in pages.test.ts): every page becomes one
- * small PNG whose colour comes from the HTML, so different pages give different screenshots. It can be held, to test
- * what pause does while renders are in flight.
+ * A fake page renderer for the e2e scenarios (one real Playwright test lives in pages.test.ts): every page becomes small
+ * PNG tiles whose colour comes from the HTML, so different pages give different screenshots. A revised page is taller:
+ * one more tile per revision mark (the demo's `byway-revision` meta, or a test's `<!--rev-->` comments), which lets a
+ * test's critic tell rounds apart from what it sees, as a real critic would. It can be held, to test pause.
  */
 import { crc32, deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
@@ -62,7 +63,8 @@ export function fakePages(): FakePages {
         waiting--;
       }
       const h = createHash('sha256').update(html).digest();
-      return [png(8, 6, [h[0]!, h[1]!, h[2]!])];
+      const revisions = (html.match(/<!--rev-->/g) ?? []).length + (/name="byway-revision"/.test(html) ? 1 : 0);
+      return Array.from({ length: 1 + Math.min(revisions, 8) }, (_, i) => png(8, 6, [h[0]!, h[1]!, (h[2]! + i) % 256]));
     },
     async close() {},
   };

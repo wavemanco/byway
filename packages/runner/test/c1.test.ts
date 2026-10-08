@@ -19,7 +19,16 @@ afterAll(async () => {
   await h?.close();
 }, 60_000);
 
-const round = (prompt: string) => Number(/Round: (\d+)/.exec(prompt)?.[1] ?? 1);
+/**
+ * What the critic sees: a revised page renders one tile taller (fake pages), so its answer can follow the rounds
+ * from the screenshots alone. Its prompt is the same every round (01 CRITIC: frozen, no round number).
+ */
+const tiles = (images: number) => Math.max(1, images);
+/** A fix that marks the page once more each time, so round r shows r tiles. */
+const markingFix = (prompt: string) => {
+  const page = [...prompt.matchAll(/```html\n([\s\S]*?)\n```/g)].at(-1)?.[1] ?? '';
+  return '```html\n' + page.replace('</body>', '<!--rev--></body>') + '\n```';
+};
 const byCandidate = (view: RunView, type: Parameters<typeof ofType>[1], stepId: string) => {
   const out = new Map<number, number>();
   for (const e of ofType(view, type, stepId)) out.set(e.candidate ?? -1, (out.get(e.candidate ?? -1) ?? 0) + 1);
@@ -28,8 +37,8 @@ const byCandidate = (view: RunView, type: Parameters<typeof ofType>[1], stepId: 
 
 describe('C1 on web-page', () => {
   it('runs end to end: loops stop at the hidden threshold, ASSET on request, your pick, your words', async () => {
-    // The critic's score rises with the round it is shown (the round is in its prompt, never the bar): 6, then 9.
-    h.responders['critic:web-page'] = (ctx) => `- The headline is generic.\n- The action competes with the menu.\nScore: ${round(ctx.prompt) >= 2 ? 9 : 6}/10`;
+    // The first version scores 6; the revised one (the demo fix marks it, one tile taller) scores 9.
+    h.responders['critic:web-page'] = (ctx) => `- The headline is generic.\n- The action competes with the menu.\nScore: ${tiles(ctx.images) >= 2 ? 9 : 6}/10`;
     let pickOptions: string[] = [];
     let beforeVoice = '';
     let editedCopy: string[] = [];
@@ -105,7 +114,8 @@ describe('C1 on web-page', () => {
 
   it('at the cap, re-ranks the best versions in a fresh call and asks whether to use the best so far', async () => {
     // Rising slowly but steadily: converging, no plateau, never at the bar.
-    h.responders['critic:web-page'] = (ctx) => `- The spacing is uniform.\nScore: ${(5 + 0.6 * round(ctx.prompt)).toFixed(1)}/10`;
+    h.responders['critic:web-page'] = (ctx) => `- The spacing is uniform.\nScore: ${(5 + 0.6 * tiles(ctx.images)).toFixed(1)}/10`;
+    h.responders['fix:web-page'] = (ctx) => markingFix(ctx.prompt);
     try {
       const run = await h.start(c1);
       const view = await h.drive(run.id, (cp) => (cp.stepId === 'asset-if-plain' ? { checkpointId: cp.id, approved: false } : undefined));
@@ -117,15 +127,21 @@ describe('C1 on web-page', () => {
       const reranks = h.succeeded(run.id).filter((c) => c.purpose === 'rerank:web-page');
       expect(reranks).toHaveLength(4);
       expect(reranks.every((c) => c.stepId === 'critic-loop')).toBe(true);
-      // The re-rank sees the top three versions as labelled screenshots, with no scores or critiques.
+      // The re-rank sees the top three versions (rounds 5, 4 and 3: 5 + 4 + 3 tiles) under labels, with no scores or
+      // critiques attached.
       const rr = reranks[0]!.request as CompletionRequest;
-      expect(rr.messages[0]!.content.filter((p) => p.type === 'image')).toHaveLength(3);
+      const parts = rr.messages[0]!.content;
+      expect(parts.filter((p) => p.type === 'image')).toHaveLength(12);
+      expect(parts.flatMap((p) => (p.type === 'text' && /^### [A-Z]$/.test(p.text) ? [p.text] : []))).toEqual(['### A', '### B', '### C']);
       expect(JSON.stringify(rr.messages)).not.toMatch(/Score|spacing is uniform/);
       const caps = view.checkpoints.filter((c) => c.prompt === BEST_SO_FAR_PROMPT);
       expect(caps).toHaveLength(4);
       expect(caps.every((c) => c.stepId === 'critic-loop' && c.kind === 'confirm' && c.artifactIds?.length === 1)).toBe(true);
+      // The critic's prompt never changed between rounds.
+      expect(new Set(h.prompts.calls.filter((c) => c.id === 'runbook.critic-ok').map((c) => c.user)).size).toBe(1);
     } finally {
       delete h.responders['critic:web-page'];
+      delete h.responders['fix:web-page'];
     }
   }, 120_000);
 });

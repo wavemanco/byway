@@ -68,7 +68,9 @@ export async function runRecipe(input: RunInput): Promise<RunOutcome> {
     control.pauseRequested = false;
   });
 
-  const loops = control.startLoops();
+  // Status and pause bookkeeping is best effort: if its writes ever fail for good, the run still ends with the status
+  // its last activity writes, and an unhandled rejection must not wedge the workflow task.
+  const loops = control.startLoops().catch(() => undefined);
   const end = async (finish: () => Promise<void>) => {
     control.finished = true;
     await loops;

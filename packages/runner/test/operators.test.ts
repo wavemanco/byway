@@ -51,7 +51,8 @@ describe('relay with a check-clean repair loop', () => {
 describe('a loop capped by policy', () => {
   it('takes the best snapshot by a fresh re-rank, asking no one', async () => {
     const scores = [7, 8, 7.5];
-    h.responders['critic:prose'] = (ctx) => `- The ask is buried.\nScore: ${scores[Number(/Round: (\d+)/.exec(ctx.prompt)?.[1] ?? 1) - 1]}/10`;
+    // One candidate, so the demo's count of this step's critic calls is the round (the prompt never says).
+    h.responders['critic:prose'] = (ctx) => `- The ask is buried.\nScore: ${scores[ctx.iteration]}/10`;
     h.responders['rerank:prose'] = () => 'A holds together best.\nChoice: A';
     // Distinct revisions each round, so the three snapshots are three versions.
     h.responders['fix:prose'] = (ctx) => `\`\`\`markdown\n# Billing migration\n\nRevision ${/Round: (\d+)/.exec(ctx.prompt)?.[1]}: the ask comes first.\n\`\`\``;

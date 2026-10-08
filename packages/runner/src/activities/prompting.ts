@@ -124,8 +124,9 @@ export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Pro
   const { step, ports, medium } = ctx;
   const slots: Slots = { medium };
   const images: ImageGroup[] = [];
-  if (ctx.round !== undefined) slots.round = String(ctx.round);
   const judging = JUDGING_ROLES.has(step.role);
+  // A judge's prompt is the same every time (01 CRITIC: frozen, fresh context): it never learns which round it is.
+  if (ctx.round !== undefined && !judging && !step.frozenPrompt) slots.round = String(ctx.round);
   for (const port of step.consumes) {
     switch (port) {
       case 'intent':
