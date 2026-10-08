@@ -1,0 +1,30 @@
+{
+  "name": "@byway/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The runner: a Temporal workflow that interprets recipes, its activities, the worker, the Runner client and the local dev engine",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build:workflows": "tsx scripts/build-workflows.ts"
+  },
+  "dependencies": {
+    "@byway/catalog": "workspace:*",
+    "@byway/contracts": "workspace:*",
+    "@byway/gateway": "workspace:*",
+    "@byway/protocol": "workspace:*",
+    "@byway/recipe": "workspace:*",
+    "@byway/store": "workspace:*",
+    "@temporalio/activity": "1.24.0",
+    "@temporalio/client": "1.24.0",
+    "@temporalio/common": "1.24.0",
+    "@temporalio/testing": "1.24.0",
+    "@temporalio/worker": "1.24.0",
+    "@temporalio/workflow": "1.24.0",
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0",
+    "zod": "^4.6.5"
+  }
+}
