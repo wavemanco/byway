@@ -12,5 +12,6 @@ export { storeCaps } from './caps.ts';
 export { NO_AUDIO_NOTE, NO_IMAGES_NOTE } from './activities/asset.ts';
 export { NO_COMPOSITING_NOTE, NO_VIDEO_NOTE } from './activities/relay.ts';
 export { OK_FALLBACK_NOTE } from './activities/critic.ts';
+export { NOTHING_TO_REMOVE } from './workflow/wording.ts';
 export { OK_BAR } from './gates.ts';
 export { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';

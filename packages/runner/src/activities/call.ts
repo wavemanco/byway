@@ -49,6 +49,8 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
     runId: req.run.runId,
     stepId: req.call.stepId,
     purpose: req.purpose,
+    // Provenance (spec §3.3): the template behind the call goes into the hash-chained ledger entry, retries included.
+    prompt: { id: rendered.id, version: rendered.version, hash: rendered.hash, fidelity: rendered.fidelity },
     tier: req.tier,
     profileId: req.run.profileId,
     ...(rendered.system ? { system: rendered.system } : {}),

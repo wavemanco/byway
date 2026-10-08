@@ -14,6 +14,7 @@
     "@byway/catalog": "workspace:*",
     "@byway/contracts": "workspace:*",
     "@byway/gateway": "workspace:*",
+    "@byway/prompts": "workspace:*",
     "@byway/protocol": "workspace:*",
     "@byway/recipe": "workspace:*",
     "@byway/store": "workspace:*",

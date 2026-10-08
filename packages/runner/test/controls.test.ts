@@ -1,6 +1,7 @@
 /**
  * The run's controls and operators through the real workflow, on small recipes and one shared harness: answers and
- * their validation, pause and resume, cancel, budget, routes, SEED, critic modes, relay repair, policy caps, keepsVoice.
+ * their validation, pause and resume, cancel and failure (withdrawn questions), controls on ended runs, budget, routes,
+ * SEED, provenance in the ledger, critic modes (GREAT ranked blind), relay repair, empty cuts, policy caps, keepsVoice.
  */
 import { afterAll, beforeAll } from 'vitest';
 import { controlScenarios } from './e2e/controls.ts';

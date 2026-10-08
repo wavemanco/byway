@@ -4,7 +4,8 @@
  */
 import type { RunStatus } from '@byway/contracts';
 import { textView } from '../formats.ts';
-import { labelled, labels } from '../labels.ts';
+import { labelled } from '@byway/prompts/pure';
+import { labels } from '../labels.ts';
 import { parseChoice } from '../parse.ts';
 import type { BudgetRaiseInput, FailRunInput, FinishRunInput, RerankInput, RerankResult, SkipInput, WorkflowEvent } from '../types.ts';
 import { askModel } from './call.ts';
@@ -38,6 +39,15 @@ export async function emitEvents(deps: RunnerDeps, input: { runId: string; event
 export async function skipStep(deps: RunnerDeps, input: SkipInput): Promise<void> {
   await stepStarted(deps, input.run, input.call, input.step, input.meta);
   await stepFinished(deps, input.run, input.call, { costUsd: 0, skipped: true, note: input.note });
+}
+
+/**
+ * A step that has nothing to do (the fix after "Nothing to remove."): it finishes at once with the work unchanged and
+ * says why. Not "skipped", which means the product could not run it.
+ */
+export async function passStep(deps: RunnerDeps, input: SkipInput): Promise<void> {
+  await stepStarted(deps, input.run, input.call, input.step, input.meta);
+  await stepFinished(deps, input.run, input.call, { costUsd: 0, note: input.note });
 }
 
 /**
@@ -109,11 +119,16 @@ export async function finishRun(deps: RunnerDeps, input: FinishRunInput): Promis
   await emit(deps.store, input.runId, 'run-finished', { outputArtifactId: input.outputArtifactId, costUsd }, { dedupeKey: `${input.runId}/run-finished` });
 }
 
+/**
+ * A failed or cancelled run withdraws the questions it left open (contracts v4 Runner semantics): nobody will act on an
+ * answer, and the app's "Your turn" list must not offer them. Withdrawing is idempotent, so a retried activity is safe.
+ */
 export async function failRun(deps: RunnerDeps, input: FailRunInput): Promise<void> {
   const run = await deps.store.getRun(input.runId);
   if (!run) throw new Error(`no run ${input.runId}`);
   const costUsd = await ledgerCost(deps, input.runId, input.workspaceId, run.costUsd);
   if (!ENDED.has(run.status)) await deps.store.updateRun(input.runId, { status: 'failed', error: input.error, costUsd });
+  await deps.store.withdrawCheckpoints(input.runId);
   await emit(deps.store, input.runId, 'run-failed', { error: input.error }, { dedupeKey: `${input.runId}/run-failed` });
 }
 
@@ -122,5 +137,6 @@ export async function cancelRun(deps: RunnerDeps, input: { runId: string; worksp
   if (!run) throw new Error(`no run ${input.runId}`);
   const costUsd = await ledgerCost(deps, input.runId, input.workspaceId, run.costUsd);
   if (!ENDED.has(run.status)) await deps.store.updateRun(input.runId, { status: 'cancelled', costUsd });
+  await deps.store.withdrawCheckpoints(input.runId);
   await emit(deps.store, input.runId, 'run-cancelled', {}, { dedupeKey: `${input.runId}/run-cancelled` });
 }

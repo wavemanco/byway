@@ -34,7 +34,8 @@ export interface DevEngineOptions {
   dataDir: string;
   gateway: Gateway;
   store: Store;
-  prompts: PromptRenderer;
+  /** The prompt templates; defaults to @byway/prompts. */
+  prompts?: PromptRenderer;
   /** Defaults to 7233 (DEFAULT_TEMPORAL_ADDRESS). */
   port?: number;
   pages?: PageRenderer;
@@ -60,7 +61,7 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
     },
   });
   try {
-    const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, prompts: opts.prompts, ...(opts.pages ? { pages: opts.pages } : {}) });
+    const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, ...(opts.prompts ? { prompts: opts.prompts } : {}), ...(opts.pages ? { pages: opts.pages } : {}) });
     const running = worker.run();
     const runner = createRunnerClient({ client: env.client, store: opts.store });
     return {

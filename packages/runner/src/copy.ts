@@ -14,7 +14,7 @@
  */
 import type { Medium } from '@byway/contracts';
 import { joinCodeDiff, parseOptions, parseStoryboard, serializeJson, splitCodeDiff, type Parsed } from './formats.ts';
-import { labelOf } from './labels.ts';
+import { labelOf } from '@byway/prompts/pure';
 
 // ---- HTML tokens -------------------------------------------------------------------------------------------------
 

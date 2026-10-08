@@ -108,6 +108,8 @@ export function c2c5Scenarios(use: () => Harness): void {
           const results = pass.map((v) => v.result as VideoResult);
           expect(reqs.map((r) => r.purpose)).toEqual(Array(5).fill('relay:media'));
           expect(reqs.slice(0, 4).map((r) => /^Shot (\d+)/.exec(r.prompt)?.[1])).toEqual(['1', '2', '3', '4']);
+          // Each request names its shot (VideoRequest.shot): four links, then the render-in-scene on the last shot.
+          expect(reqs.map((r) => r.shot)).toEqual([1, 2, 3, 4, 5]);
           for (let i = 1; i < 5; i++) expect(reqs[i]!.startFrameArtifactId).toBe(results[i - 1]!.lastFrameArtifactId);
         }
         // The first link starts from shot 1's anchor frame.
@@ -127,6 +129,10 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(sb.storyboard.filter((s) => s.clipArtifactId).map((s) => s.shot)).toEqual([1, 2, 3, 4, 5]);
         // Clip and frame artifacts are announced with their shot.
         expect(ofType(view, 'artifact').filter((e) => /^Clip for shot/.test(e.data.label as string)).map((e) => e.data.shot)).toEqual([1, 2, 3, 4, 5, 1, 2, 3, 4, 5]);
+        // Under the types the gateway stored: the demo's SVG placeholder clips, and their frames.
+        expect(new Set(ofType(view, 'artifact').filter((e) => /^Clip for shot/.test(e.data.label as string)).map((e) => e.data.mediaType))).toEqual(new Set(['image/svg+xml']));
+        const frames = ofType(view, 'artifact').filter((e) => /^Last frame of shot/.test(e.data.label as string));
+        expect(frames.map((e) => e.data.mediaType)).toEqual(videos.map((v) => (v.result as VideoResult).lastFrameMediaType));
         // The relay prompt gets the storyboard, "Shot N", and the anchor frame attached.
         const clipPrompt = h.prompts.calls.find((c) => c.id === 'product.c5.clip')!;
         expect(clipPrompt.slots.brief).toBe('Shot 1');
@@ -136,9 +142,18 @@ export function c2c5Scenarios(use: () => Harness): void {
       }
     }, 180_000);
 
-    it('with no video model, every relay link finishes skipped and says so; the storyboard and anchor pass through', async () => {
-      // GREAT mode (three references): ours second in the lineup, which meets the hidden rank.
-      h.responders['critic:media'] = (ctx) => `- Fine.\nRank: 2 of ${/\((\d+) items/.exec(ctx.prompt)?.[1] ?? '?'}`;
+    it('with keys but no video model, every relay link finishes skipped and says so; the storyboard and anchor pass through', async () => {
+      // GREAT mode (three references). The critic is blind (ADR-0072), so this one tells our storyboard from the
+      // reference images by its text, and ranks it second: at or above the hidden rank of 3.
+      h.responders['critic:media'] = (ctx) => {
+        const m = Number(/\((\d+) items, labelled/.exec(ctx.prompt)?.[1] ?? 0);
+        const all = Array.from({ length: m }, (_, i) => String.fromCharCode(65 + i));
+        const ours = [...ctx.prompt.matchAll(/^### ([A-Z])\n(.*)$/gm)].find((x) => !x[2]!.startsWith('(see the images'))?.[1] ?? 'A';
+        const others = all.filter((l) => l !== ours);
+        return `### ${ours}\n- Intent: one feeling, landed.\n- The payoff shot is short.\n\nRanking: ${[others[0], ours, ...others.slice(1)].join(', ')}`;
+      };
+      // Keys are present (a placeholder; every profile here is backed by the mock), so the run's own profile decides.
+      h.useKeys(true);
       try {
         const refs = [png(4, 3, [10, 20, 30]), png(4, 3, [40, 50, 60]), png(4, 3, [70, 80, 90])];
         const refIds: string[] = [];
@@ -157,12 +172,15 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(ofType(view, 'step-finished', 'clip')).toHaveLength(4);
         const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { imageArtifactId?: string; clipArtifactId?: string }[] };
         expect(sb.storyboard.every((s) => s.imageArtifactId && !s.clipArtifactId)).toBe(true);
-        // With three references the gate's critic ranks in GREAT mode: two fixed shuffles, averaged.
+        // With three references the gate's critic ranks in GREAT mode: two shuffles, our place averaged (2 of 4).
         const gate = h.succeeded(run.id).filter((c) => c.stepId === 'gate-critic');
         expect(gate).toHaveLength(2);
         expect(view.checkpoints.some((c) => c.prompt === GATE_FAILED_PROMPT)).toBe(false);
         expect(notes(view, 'gate-critic')).toEqual([undefined]);
+        const note = await h.store.artifacts.getText((ofType(view, 'step-finished', 'gate-critic')[0]!.data.outputArtifactIds as string[])[0]!);
+        expect(note).toBe('- Intent: one feeling, landed.\n- The payoff shot is short.\n');
       } finally {
+        h.useKeys(false);
         delete h.responders['critic:media'];
       }
     }, 180_000);

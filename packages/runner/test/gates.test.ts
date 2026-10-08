@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { labelOf } from '@byway/prompts/pure';
 import { bestSnapshots, converging, OK_BAR, passes, plateaued, raiseAmount } from '../src/gates.ts';
-import { indexOfLabel, labelOf, labelled, vanillaLabelled } from '../src/labels.ts';
+import { indexOfLabel, labels } from '../src/labels.ts';
 import type { Score } from '../src/types.ts';
 
 const score = (value: number): Score => ({ kind: 'score', value });
@@ -64,14 +65,10 @@ describe('plateau, probe and best snapshots', () => {
 });
 
 describe('labels', () => {
-  it('labels candidates A…Z, AA… and maps labels back', () => {
-    expect([0, 1, 25, 26, 27].map(labelOf)).toEqual(['A', 'B', 'Z', 'AA', 'AB']);
-    expect(['A', 'B', 'Z', 'AA'].map(indexOfLabel)).toEqual([0, 1, 25, 26]);
+  it('maps @byway/prompts’ labels back to candidates, A…Z, AA… (the inverse of labelOf)', () => {
+    for (let i = 0; i < 800; i++) expect(indexOfLabel(labelOf(i))).toBe(i);
+    expect(labels(4)).toEqual(['A', 'B', 'C', 'D']);
     expect(indexOfLabel('a')).toBe(-1);
-  });
-
-  it('lays options out as ### headings, and unseeded answers as V1, V2…', () => {
-    expect(labelled(['one', 'two'])).toBe('### A\none\n\n### B\ntwo');
-    expect(vanillaLabelled(['x'])).toBe('### V1\nx');
+    expect(indexOfLabel('A1')).toBe(-1);
   });
 });
