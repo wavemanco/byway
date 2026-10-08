@@ -49,6 +49,15 @@ export function controlScenarios(use: () => Harness): void {
     }, 60_000);
   });
 
+  describe('starting a run', () => {
+    it('refuses a recipe that does not parse, before any run exists', async () => {
+      const before = (await h.store.listRuns(h.workspaceId)).length;
+      const broken = { ...tiny, stages: [{ stage: 'D1', body: { op: 'step', id: 'x' } }] } as unknown as typeof tiny;
+      await expect(h.start(broken)).rejects.toThrow();
+      expect((await h.store.listRuns(h.workspaceId)).length).toBe(before);
+    }, 30_000);
+  });
+
   describe('checkpoint answers', () => {
     it('refuses a mismatched answer and a stale one, in the workflow’s own words', async () => {
       const run = await h.start(tiny);

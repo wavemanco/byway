@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
-import { recipeHash } from '@byway/recipe';
+import { parseRecipe, recipeHash } from '@byway/recipe';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
@@ -46,14 +46,16 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
 
   return {
     async start(input: StartRunInput): Promise<RunRecord> {
-      const medium = input.recipe.medium;
-      if (!medium) throw new Error(`Recipe "${input.recipe.id}" names no medium, so it cannot run.`);
+      // A recipe that does not parse would only fail inside the workflow; refuse it before a run exists.
+      const recipe = parseRecipe(input.recipe);
+      const medium = recipe.medium;
+      if (!medium) throw new Error(`Recipe "${recipe.id}" names no medium, so it cannot run.`);
       const id = randomUUID();
       const record = await store.createRun({
         id,
         workspaceId: input.workspaceId,
-        recipeId: input.recipe.id,
-        recipeHash: input.recipe.hash ?? recipeHash(input.recipe),
+        recipeId: recipe.id,
+        recipeHash: recipeHash(recipe),
         profileId: input.profileId,
         ...(input.intakeId ? { intakeId: input.intakeId } : {}),
         title: titleOf(input.problem.text),
@@ -65,7 +67,7 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       const args: RunInput = {
         runId: id,
         workspaceId: input.workspaceId,
-        recipe: input.recipe,
+        recipe,
         problem: input.problem,
         profileId: input.profileId,
         budgetUsd: input.budgetUsd,
