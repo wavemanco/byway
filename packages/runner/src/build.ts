@@ -39,6 +39,8 @@ export async function buildWorkflows(opts: BuildWorkflowsOptions = {}): Promise<
   const result = await build({
     entryPoints: [WORKFLOW_ENTRY],
     outfile,
+    // The bundle's file comments are relative to this folder, so its hash does not depend on where byway was started.
+    absWorkingDir: PACKAGE_DIR,
     bundle: true,
     format: 'esm',
     platform: 'neutral',

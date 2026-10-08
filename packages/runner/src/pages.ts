@@ -88,10 +88,10 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
 
   /** The shared browser, launched again after a failed launch, a crash or a disconnect. */
   const getBrowser = async (): Promise<Browser> => {
-    const current = browser;
-    if (current) {
+    for (let current = browser; current; current = browser) {
       const b = await current.catch(() => undefined);
       if (b?.isConnected()) return b;
+      // Gone: forget it, unless a concurrent render already launched a new one (then look again).
       if (browser === current) browser = undefined;
     }
     const launching = (async () => {
@@ -168,15 +168,16 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     let timer: NodeJS.Timeout | undefined;
     let onAbort: (() => void) | undefined;
     try {
-      await context.routeWebSocket(/.*/, (ws) => ws.close());
-      await context.route('**/*', route(html, resolve));
-      const page = await context.newPage();
-      page.setDefaultTimeout(timeout);
       const work = (async () => {
+        await context.routeWebSocket(/.*/, (ws) => ws.close());
+        await context.route('**/*', route(html, resolve));
+        const page = await context.newPage();
+        page.setDefaultTimeout(timeout);
         await page.goto(`${ORIGIN}/page`, { waitUntil: 'load', timeout });
         await page.evaluate('document.fonts ? document.fonts.ready.then(() => true) : true');
         const out: SurfaceShots[] = [];
-        for (const surface of want) {
+        // The first screen is taken before anything else touches the page: as a visitor lands.
+        for (const surface of [...want].sort((a, b) => Number(b === 'fold') - Number(a === 'fold'))) {
           if (surface === 'fold') {
             await page.evaluate('window.scrollTo(0, 0)');
             out.push({ surface, tiles: [new Uint8Array(await page.screenshot({ type: 'png', animations: 'disabled' }))] });
