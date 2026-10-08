@@ -1030,12 +1030,20 @@
     width: 100%;
   }
 
-  /* The sticky header stays short on a phone: a long title keeps two lines. */
-  .run-head h1 {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow: hidden;
+  /*
+   * On a phone only the strip with the meter, status, Pause and Cancel stays in view (UX-10): the title scrolls away,
+   * so the strip is short. The header lets its children take part in the page flow, and the strip sticks.
+   */
+  .run-head {
+    display: contents;
+  }
+
+  .run-side {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    padding: var(--s-2) 0;
+    background: var(--bg);
   }
 }
 
