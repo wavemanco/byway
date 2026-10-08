@@ -5,7 +5,8 @@
   "type": "module",
   "description": "The runner: a Temporal workflow that interprets recipes, its activities, the worker, the Runner client and the local dev engine",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client-entry.ts"
   },
   "scripts": {
     "build:workflows": "tsx scripts/build-workflows.ts"

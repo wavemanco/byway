@@ -45,7 +45,9 @@ describe('artifact route headers', () => {
     expect(csp).toContain("connect-src 'none'");
     expect(csp).toContain("form-action 'none'");
     expect(csp).toContain("frame-ancestors 'self'");
-    expect(csp).toContain('img-src http://127.0.0.1:3000/artifacts/ data: blob:');
+    // Generated images load from the artifact route and from /api/artifacts/<id>, the address the runner gives the model.
+    expect(csp).toContain('img-src http://127.0.0.1:3000/artifacts/ http://127.0.0.1:3000/api/artifacts/ data: blob:');
+    expect(csp).toContain('media-src http://127.0.0.1:3000/artifacts/ http://127.0.0.1:3000/api/artifacts/ data: blob:');
     expect(h['Content-Type']).toBe('text/html; charset=utf-8');
     expect(h['X-Content-Type-Options']).toBe('nosniff');
     expect(h['Cache-Control']).toContain('immutable');

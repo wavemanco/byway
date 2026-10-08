@@ -30,6 +30,10 @@ export function activeCheckpoint(checkpoints: CheckpointRecord[]): CheckpointRec
 /**
  * Questions you can still answer. The store keeps a cancelled or failed run's last question open (it only takes
  * real answers), so a question counts only while its run has not ended.
+ *
+ * TODO(v4): contracts v4 withdraw a run's open checkpoints when it is cancelled or fails (CheckpointRecord.status
+ * 'withdrawn', Store.withdrawCheckpoints) and openCheckpoints lists only open ones; keep this filter for runs that
+ * ended before v4, and show 'withdrawn' questions as withdrawn on the Run screen.
  */
 export function liveQuestions(openCheckpoints: CheckpointRecord[], runs: Pick<RunRecord, 'id' | 'status'>[]): CheckpointRecord[] {
   const live = new Set(runs.filter((r) => !isEnded(r.status)).map((r) => r.id));

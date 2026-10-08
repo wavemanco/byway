@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: 'Settings' };
 
 /** Settings (spec §5, screen 7): providers (configured or not, never the key), profile, budget, demo mode, names. */
 export default async function SettingsPage() {
-  const { services, workspaceId, preferences } = await getContext();
+  const { services, workspaceId, preferences, demoForced } = await getContext();
   const workspace = (await services.store.getWorkspace(workspaceId)) ?? (await services.store.ensureDefaultWorkspace());
   const spend = workspaceSpend(workspace.budgetUsd, await services.store.listRuns(workspaceId));
   return (
@@ -18,7 +18,7 @@ export default async function SettingsPage() {
           <p>These apply to this computer’s byway workspace. Changes save as you make them.</p>
         </div>
       </div>
-      <SettingsView providers={services.gateway.providers()} profiles={services.gateway.profileStatus()} preferences={preferences} spend={spend} mode={services.mode} />
+      <SettingsView providers={services.gateway.providers()} profiles={services.gateway.profileStatus()} preferences={preferences} spend={spend} mode={services.mode} demoForced={demoForced} />
     </div>
   );
 }

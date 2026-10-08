@@ -54,7 +54,7 @@ export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit }: Props)
   }, [spec.panel]);
 
   return (
-    <section className="turn" data-kind={cp.kind} aria-labelledby={promptId}>
+    <section className="turn" data-kind={cp.kind} data-checkpoint={cp.id} aria-labelledby={promptId}>
       <header className="turn-head">
         <p className="turn-kicker">
           <span className="tag tag-you">{technical ? `${TERMS.checkpoint.plain} (${TERMS.checkpoint.code})` : TERMS.checkpoint.plain}</span>

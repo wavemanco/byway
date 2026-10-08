@@ -28,9 +28,11 @@ interface Props {
   preferences: Preferences;
   spend: WorkspaceSpend;
   mode: 'demo' | 'live';
+  /** byway was started with `pnpm demo`: demo mode stays on whatever this setting says. */
+  demoForced?: boolean;
 }
 
-export function SettingsView({ providers, profiles, preferences: initial, spend, mode }: Props) {
+export function SettingsView({ providers, profiles, preferences: initial, spend, mode, demoForced = false }: Props) {
   const router = useRouter();
   const ids = useId();
   const [prefs, setPrefs] = useState(initial);
@@ -107,7 +109,9 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
           <div>
             <h2 id={`${ids}-demo`}>Demo mode</h2>
             <p id={`${ids}-demo-help`} className="muted">
-              {realConfigured
+              {demoForced
+                ? 'byway was started with pnpm demo, so every run uses sample outputs and costs nothing. Start it with pnpm dev to use real models.'
+                : realConfigured
                 ? 'Use sample outputs instead of real models, at no cost.'
                 : 'No provider key is set, so every run uses sample outputs and costs nothing. Add a key to use real models.'}
             </p>
@@ -117,7 +121,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
             onChange={(on) => void save({ demoMode: on }, on ? 'Demo mode on.' : 'Demo mode off.')}
             labelledBy={`${ids}-demo`}
             describedBy={`${ids}-demo-help`}
-            disabled={!realConfigured}
+            disabled={demoForced || !realConfigured}
           />
         </div>
       </section>

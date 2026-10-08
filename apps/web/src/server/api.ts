@@ -1,7 +1,7 @@
 /**
  * What the route handlers do, as plain functions over the services. The route files only parse requests and
- * turn results into responses, so this logic is tested directly against the demo services (no server, no
- * network). Errors meant for people are HttpErrors with a status and a plain-language message.
+ * turn results into responses, so this logic is tested directly against the real services on a temp folder, with a
+ * fake Runner (no server, no network). Errors meant for people are HttpErrors with a status and a plain-language message.
  *
  * Everything here goes through the four contracts: intakes and preferences live in the Store, recipes come from
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RunRecord } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
+import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
 import { budgetProblem, workspaceSpend } from '../view/history.ts';
 import { takesRefs } from '../view/refs.ts';
@@ -55,6 +56,9 @@ export async function createIntake(deps: Deps, input: z.infer<typeof ProblemInpu
 /**
  * Recommends for the intake's problem. Answers you flipped are passed in and routing re-runs; the answers and the
  * recommendation are kept on the intake, so coming back to the screen shows them as you left them.
+ *
+ * TODO(v4): Advisor.recommend takes opts.routes; pass route choices the person made on the Recommendation screen so a
+ * re-route keeps them.
  */
 export async function recommendIntake(deps: Deps, intakeId: string, answers?: ChooserAnswer[]): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
@@ -178,6 +182,7 @@ export async function resolveInRun(deps: Deps, runId: string, checkpointId: stri
       ...(input.approved !== undefined ? { approved: input.approved } : {}),
     });
   } catch (err) {
+    if (isEngineUnavailable(err)) throw err;
     throw new HttpError(400, err instanceof Error && err.message ? err.message : 'That answer was not accepted.');
   }
 }

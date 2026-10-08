@@ -73,6 +73,27 @@ const LABEL_CODES: Record<string, string> = {
   Brief: 'BRIEF',
   Composite: 'RELAY',
   'Voice-over audio': 'ASSET',
+  // The catalog's presentations (@byway/catalog PRESENTATIONS).
+  'Pick one': 'pick(H)',
+  'Pick an angle': 'pick(H)',
+  'Pick a concept': 'pick(H)',
+  'Pick a premise': 'pick(H)',
+  Shortlist: 'pick(H)',
+  'First draft': 'build',
+  'Option map': 'build',
+  Concepts: 'build',
+  'Merge near-duplicates': 'dedupe',
+  'Obvious-answer check': 'vanilla-overlap',
+  'Framings to react to': 'VISION',
+  'Angles from your material': 'VISION',
+  'Spec interview': 'VISION',
+  'Sign off the facts': 'VOICE',
+  'Your words: the script': 'VOICE',
+  'Outside critique: defect check': 'CRITIC-check',
+  'Outside critique: launch check': 'CRITIC',
+  'Last cliché read': 'TELLS',
+  'Trim the scope': 'CUT',
+  'Trim what review added': 'CUT',
 };
 
 /** The protocol code behind a plain step label, when there is one. */

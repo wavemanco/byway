@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BLOCK_CODES } from '@byway/protocol';
 import type { ChooserAnswer, EvidenceLabel, ModelProfile, RunStatus } from '@byway/contracts';
 import { BLOCK_NAMES, RECIPE_NAMES, TERMS, codeForLabel, recipeTitle, stageFromCode, stepTitle, whoLabel } from '../src/view/vocabulary.ts';
-import { PRESENTATIONS } from '../src/services/demo/catalog.ts';
+import { PRESENTATIONS } from '@byway/catalog';
 import {
   answerNote,
   decidingQuestion,

@@ -11,5 +11,5 @@ export async function GET(request: NextRequest, ctx: RouteContext<'/artifacts/[i
   // proxy.ts has already refused any Host that is not this computer's loopback address.
   const host = request.headers.get('host');
   const origin = host ? `${request.nextUrl.protocol}//${host}` : request.nextUrl.origin;
-  return artifactResponse(getServices(), id, request.nextUrl, origin);
+  return artifactResponse(await getServices(), id, request.nextUrl, origin);
 }

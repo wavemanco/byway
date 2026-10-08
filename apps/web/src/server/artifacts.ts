@@ -14,8 +14,12 @@ export function isArtifactId(value: string): boolean {
 
 const CDNS = 'https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com';
 
+/**
+ * A generated page's own images and clips: the artifact route, and `/api/artifacts/<id>`, the address the runner gives
+ * the model for generated images (spec §3.3 `images` slot).
+ */
 function pageCsp(origin: string): string {
-  const own = `${origin}/artifacts/`;
+  const own = `${origin}/artifacts/ ${origin}/api/artifacts/`;
   return [
     "default-src 'none'",
     `script-src 'unsafe-inline' ${CDNS}`,
