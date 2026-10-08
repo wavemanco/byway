@@ -4,3 +4,6 @@ packages:
 allowBuilds:
   # esbuild (used by tsx and vitest) verifies its platform binary on install.
   esbuild: true
+  # Not needed: @google/genai runs a no-op preinstall echo; protobufjs a postinstall we do not use.
+  "@google/genai": false
+  protobufjs: false
