@@ -1,6 +1,6 @@
 import type { Medium } from '@byway/contracts';
 import { labelsIn } from './extract.ts';
-import { int, pick, rng, sample } from './seed.ts';
+import { int, pick, rng, sample, seedOf } from './seed.ts';
 
 /**
  * Demo-mode judges. Outputs follow the spec §3.3 contracts exactly. The critic's score rises by one per iteration of
@@ -43,26 +43,49 @@ const GAPS: Record<Medium, string[]> = {
   ],
 };
 
+const INTENTS: Record<Medium, string[]> = {
+  'web-page': ['a calm, exact page that gets a visitor to act', 'a warm, direct page that earns trust quickly', 'a quietly confident page that lets one idea lead'],
+  prose: ['one clear case the reader can act on, leaving them confident', 'a frank account that leaves the reader trusting the writer', 'a sharp argument that leaves the reader with one new idea'],
+  options: ['a spread of genuinely different bets, leaving the reader curious', 'a short list of cheap tests, leaving the reader ready to start'],
+  media: ['one feeling landed in a few shots, leaving the viewer wanting the product', 'a small story with a clear payoff'],
+  'code-diff': ['a smaller change that keeps behaviour and reads at a glance', 'the same fix with less for a reviewer to hold in mind'],
+};
+
 export interface CriticInput {
   seed: number;
   medium: Medium;
   iteration: number;
-  /** GREAT mode answers with a rank against a lineup. */
-  rankOf?: number;
 }
 
+/** OK mode: the gaps, then `Score: N/10`, rising by one per iteration of the same loop. */
 export function critique(o: CriticInput): string {
   const rand = rng(o.seed);
   const gaps = sample(rand, GAPS[o.medium], Math.max(1, 3 - Math.min(2, o.iteration)));
   const bullets = gaps.map((g) => `- ${g}`).join('\n');
-  if (o.rankOf !== undefined) {
-    // Ours starts just above the bottom and climbs a third of the lineup per round, so a demo rank loop (stop at
-    // rank 3 within 2–3 rounds, 03 C3/C4/C7) converges in a lineup of 4 to 12 the way the score loops do.
-    const rank = Math.max(1, o.rankOf - 1 - o.iteration * Math.ceil(o.rankOf / 3));
-    return `${bullets}\nRank: ${rank} of ${o.rankOf}`;
-  }
   const start = int(rand, 6, 7);
   return `${bullets}\nScore: ${Math.min(10, start + o.iteration)}/10`;
+}
+
+export interface GreatCriticInput {
+  medium: Medium;
+  /** Each item in lineup order: its label and what it looks like (seeds its critique). */
+  items: readonly { label: string; look: string }[];
+  /** Every label once, best first (lineup.ts blindRanking). */
+  ranking: readonly string[];
+}
+
+/**
+ * GREAT mode (ADR-0072): the critic is not told which item is ours, so it critiques every item under its "### X"
+ * heading (what it is going for, then its biggest gaps) and ends with `Ranking: C, A, E, B, D`, every label once,
+ * best first. The runner finds our place in the ranking and keeps only our item's section for the fix.
+ */
+export function greatCritique(o: GreatCriticInput): string {
+  const sections = o.items.map((item) => {
+    const rand = rng(seedOf(`${item.label}\n${item.look}`));
+    const gaps = sample(rand, GAPS[o.medium], 2).map((g) => `- ${g}`);
+    return [`### ${item.label}`, `- Intent: ${pick(rand, INTENTS[o.medium])}.`, ...gaps].join('\n');
+  });
+  return `${sections.join('\n\n')}\n\nRanking: ${o.ranking.join(', ')}`;
 }
 
 /** judge, select and rerank: short reasoning, then `Choice: <label>`. */

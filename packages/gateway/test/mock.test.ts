@@ -75,10 +75,13 @@ describe('mock provider: output contracts for every purpose and medium', () => {
     expect(JSON.parse(lastBlock(out, 'json') as string).images).toHaveLength(2);
   });
 
-  it('critic answers with a rank in GREAT mode', async () => {
-    const out = await ask('critic:prose', 'Compare the draft with the 4 references. End with "Rank: N of M".');
-    expect(out.trim().split('\n').at(-1)).toMatch(/^Rank: \d+ of 5$/);
-    expect(checkContract('critic:prose', out)).toEqual([]);
+  it('critic answers with a ranking of every label in GREAT mode', async () => {
+    const out = await ask('critic:prose', 'GREAT mode. There are 4 references and 1 of ours (5 items, labelled A–E).');
+    expect(out.trim().split('\n').at(-1)).toMatch(/^Ranking: [A-E](, [A-E]){4}$/);
+    expect(checkContract('critic:prose', out, { mode: 'GREAT', lineup: 5 })).toEqual([]);
+    // A hand-written GREAT prompt with only a reference count still gets a full ranking.
+    const loose = await ask('critic:prose', 'GREAT mode: compare the draft with the 4 references.');
+    expect(checkContract('critic:prose', loose, { mode: 'GREAT', lineup: 5 })).toEqual([]);
   });
 
   it('check reports placeholders as defects', async () => {

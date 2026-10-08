@@ -261,28 +261,6 @@ describe('mock responders: the conventions they read', () => {
     expect(out).toEqual({ flags: [] });
   });
 
-  it('a GREAT critic ranks among the lineup it is told, and its rank improves round by round', async () => {
-    const adapter = mockAdapter();
-    const lineup = 'GREAT mode.\nThere are 9 references and 1 of ours (10 items, labelled A–J).';
-    const ranks: number[] = [];
-    for (let round = 0; round < 3; round++) {
-      const out = await adapter.complete({
-        model: 'mock-big',
-        messages: [{ role: 'user', content: [{ type: 'text', text: lineup }] }],
-        maxOutputTokens: 4000,
-        responseFormat: 'text',
-        context: { workspaceId: 'ws', runId: 'great-run', stepId: 'critic', purpose: 'critic:prose', profileId: 'demo' },
-      });
-      const m = /Rank: (\d+) of (\d+)$/.exec(out.text.trim());
-      expect(m?.[2]).toBe('10');
-      ranks.push(Number(m?.[1]));
-    }
-    // C3's loop stops at rank 3 or better within its 3 rounds, so the demo converges.
-    expect(ranks[0]).toBeGreaterThan(3);
-    expect(ranks.at(-1)).toBeLessThanOrEqual(3);
-    expect(ranks).toEqual([...ranks].sort((a, b) => b - a));
-  });
-
   it('asset.briefs on media and options follow the storyboard shots and option labels', async () => {
     const media = JSON.parse(lastBlock(await ask('asset.briefs:media', ARTIFACT.media), 'json') as string) as { images: { slot: string; prompt: string; size: string }[] };
     expect(media.images.map((b) => [b.slot, b.prompt])).toEqual(STORYBOARD.storyboard.map((s) => [String(s.shot), s.imagePrompt]));
