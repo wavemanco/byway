@@ -3,9 +3,11 @@
  * (also while paused), budget refusals, routes, SEED and GREAT-mode critics.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { RunEvent } from '@byway/contracts';
+import type { CompletionRequest, RunEvent } from '@byway/contracts';
 import { RESOLVE_UPDATE } from '@byway/contracts';
+import { DEFAULT_RESPONDERS } from '@byway/gateway';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
+import { sectionOf } from '../../src/parse.ts';
 import { ResolutionRejectedError } from '../../src/client.ts';
 import { workflowIdFor } from '../../src/types.ts';
 import { fakeHash } from '../helpers/fake-prompts.ts';
@@ -304,25 +306,57 @@ export function controlScenarios(use: () => Harness): void {
       expect(call.user).not.toMatch(/GREAT/);
     }, 60_000);
 
-    it('runs in GREAT mode with three or more references: a shuffled lineup, ranked, with no threshold in sight', async () => {
+    const exemplars = async () => {
       const refs: string[] = [];
       for (const text of ['# Exemplar one\n\nClear ask up top.', '# Exemplar two\n\nOne point, landed.', '# Exemplar three\n\nShort and plain.']) {
         refs.push((await h.store.artifacts.putText(text, 'text/markdown')).id);
       }
-      const run = await h.start(judged, { inputs: { refs } });
+      return refs;
+    };
+
+    it('runs in GREAT mode with three or more references: a shuffled, blind lineup, ranked whole, with no threshold in sight (ADR-0072)', async () => {
+      const run = await h.start(judged, { inputs: { refs: await exemplars() } });
       const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
       const finished = view.events.find((e) => e.type === 'step-finished' && e.stepId === 'critic')!;
       expect(finished.data.note).toBeUndefined();
       const call = h.prompts.calls.filter((c) => c.id === 'product.test.critic').at(-1)!;
+      // The slots of @byway/prompts' greatLineup: nothing says which item is ours.
       expect(call.slots.refs).toBe('3');
-      expect(call.slots.labels).toMatch(/^4 items, labelled A–D; ours is [A-D]$/);
-      expect(call.user).toContain('There are 3 references and 1 of ours (4 items, labelled A–D');
+      expect(call.slots.labels).toBe('4 items, labelled A–D');
+      expect(call.user).toContain('There are 3 references and 1 of ours (4 items, labelled A–D).');
+      expect(call.user).not.toMatch(/ours is|\bours:|which is ours/i);
       expect(call.slots.view).toContain('Exemplar one');
       expect(call.slots.artifact).toBeUndefined();
       expect(call.user).not.toMatch(/\b9\/10\b|threshold/i);
       const gw = h.succeeded(run.id).filter((c) => c.purpose === 'critic:prose');
       expect(gw).toHaveLength(1);
       expect(gw[0]!.request).toMatchObject({ tier: 'big' });
+      // The critic ranked every label; the note beside the work is our item's own section, found by the runner.
+      const answer = (gw[0]!.result as { text: string }).text;
+      expect([...(/\nRanking: (.+)$/.exec(answer)?.[1]?.split(', ') ?? [])].sort()).toEqual(['A', 'B', 'C', 'D']);
+      const draft = await h.store.artifacts.getText(view.events.find((e) => e.type === 'artifact' && e.stepId === 'draft')!.data.artifactId as string);
+      const ours = [...call.slots.view!.matchAll(/^### ([A-D])\n([\s\S]*?)(?=\n### [A-D]\n|$)/gm)].find((m) => m[2]!.includes(draft.split('\n')[0]!))![1]!;
+      const note = await h.store.artifacts.getText((finished.data.outputArtifactIds as string[])[0]!);
+      expect(note).toBe(`${sectionOf(answer, ours)}\n`);
+      expect(note).toMatch(/^- Intent: /);
+      expect(note).not.toMatch(/^###/m);
+    }, 60_000);
+
+    it('asks once more when the ranking does not name every label exactly once', async () => {
+      let n = 0;
+      h.responders['critic:prose'] = (ctx) => (++n === 1 ? '### A\n- Fine.\n\nRanking: A, B' : DEFAULT_RESPONDERS.critic!(ctx));
+      try {
+        const run = await h.start(judged, { inputs: { refs: await exemplars() } });
+        const view = await h.drive(run.id);
+        expect(view.run.status).toBe('done');
+        const gw = h.succeeded(run.id).filter((c) => c.purpose === 'critic:prose');
+        expect(gw).toHaveLength(2);
+        const retry = (gw[1]!.request as CompletionRequest).messages.at(-1)!.content[0];
+        expect(retry?.type === 'text' && retry.text).toMatch(/every label exactly once \(missing C, D\)/);
+      } finally {
+        delete h.responders['critic:prose'];
+      }
     }, 60_000);
   });
 

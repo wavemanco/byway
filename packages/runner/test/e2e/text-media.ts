@@ -54,6 +54,33 @@ export function textMediaScenarios(use: () => Harness): void {
     }, 120_000);
   });
 
+  describe('C4 with references (GREAT mode, ADR-0072)', () => {
+    it('ranks our draft blind among four exemplars; each round shows our rank of five, and the loop stops at the hidden middle', async () => {
+      const refs: string[] = [];
+      for (const n of ['one', 'two', 'three', 'four']) refs.push((await h.store.artifacts.putText(`# Exemplar ${n}\n\nDecision needed: ${n}.\n`, 'text/markdown')).id);
+      const from = h.prompts.calls.length;
+      const run = await h.start(c4, { problem: { text: 'A status memo for leadership on the billing migration, 3 weeks in' }, inputs: { refs } });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      checkEvents(view, 'c4');
+      const rendered = h.prompts.calls.slice(from);
+      expect(notes(view, 'recipient').every((n) => n === undefined)).toBe(true);
+      // The demo critic ranks a first draft fourth of five, and the revision second: at or above the middle (rank 3).
+      const iterations = ofType(view, 'loop-iteration', 'critic-loop');
+      expect(iterations.map((e) => e.data)).toEqual([
+        { iteration: 1, max: 2, rank: 4, of: 5 },
+        { iteration: 2, max: 2, rank: 2, of: 5 },
+      ]);
+      // Every round the lineup slots say nothing about which item is ours, and the fix got only our item's critique.
+      const critics = rendered.filter((c) => c.id === 'product.c4.recipient');
+      expect(critics.map((c) => c.slots.labels)).toEqual(['5 items, labelled A–E', '5 items, labelled A–E']);
+      const revise = rendered.filter((c) => c.id === 'product.c4.revise');
+      expect(revise).toHaveLength(1);
+      expect(revise[0]!.slots.critique).toMatch(/^- Intent: /);
+      expect(revise[0]!.slots.critique).not.toMatch(/^###/m);
+    }, 120_000);
+  });
+
   describe('C6a on prose', () => {
     it('your draft by a write checkpoint, three readers who only point, your call when it is done; no model writes a sentence', async () => {
       let ready = 0;

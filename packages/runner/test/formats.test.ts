@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyCopy, extractCopy, lostVoiceLines, pageCopy, pageVoiceProblems, placePageCopy, skeleton } from '../src/copy.ts';
 import { joinCodeDiff, parseArtifact, parseCodeDiff, splitCodeDiff, textView } from '../src/formats.ts';
-import { parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep } from '../src/parse.ts';
+import { parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep, sectionOf } from '../src/parse.ts';
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Northloaf</title><style>h1{color:red}</style></head>
@@ -42,11 +42,31 @@ describe('artifact parsers (spec §3.3)', () => {
 });
 
 describe('judging parsers (spec §3.3)', () => {
-  it('reads a critic by the mode it was asked in', () => {
-    expect(parseCritic('- gap\nScore: 7/10', 'OK')).toEqual({ ok: true, value: { critique: '- gap', score: { kind: 'score', value: 7 } } });
-    expect(parseCritic('- gap\n**Rank: 2 of 5**', 'GREAT', 5)).toEqual({ ok: true, value: { critique: '- gap', score: { kind: 'rank', rank: 2, of: 5 } } });
-    expect(parseCritic('- gap\nRank: 2 of 5', 'OK')).toMatchObject({ ok: false });
-    expect(parseCritic('- gap\nRank: 2 of 4', 'GREAT', 5)).toMatchObject({ ok: false });
+  it('reads a critic by the mode it was asked in: OK scores, GREAT ranks the whole lineup (ADR-0072)', () => {
+    const lineup = ['A', 'B', 'C', 'D', 'E'];
+    expect(parseCritic('- gap\nScore: 7/10')).toEqual({ ok: true, value: { mode: 'OK', critique: '- gap', score: 7 } });
+    expect(parseCritic('- gap\nScore: 11/10')).toMatchObject({ ok: false });
+    expect(parseCritic('### A\n- gap\n\nRanking: C, A, E, B, D', lineup)).toEqual({ ok: true, value: { mode: 'GREAT', critique: '### A\n- gap', ranking: ['C', 'A', 'E', 'B', 'D'] } });
+    // Emphasis, a full stop and loose spacing are a model's habits, not a different answer.
+    expect(parseCritic('- gap\n**Ranking: c,A ,E, B, D.**', lineup)).toMatchObject({ ok: true, value: { ranking: ['C', 'A', 'E', 'B', 'D'] } });
+    // Each mode refuses the other's answer.
+    expect(parseCritic('- gap\nRanking: C, A, E, B, D')).toMatchObject({ ok: false });
+    expect(parseCritic('- gap\nScore: 7/10', lineup)).toMatchObject({ ok: false });
+    // Every label exactly once: none missing, none twice, none unknown.
+    for (const bad of ['Ranking: C, A, E, B', 'Ranking: C, A, E, B, D, A', 'Ranking: C, A, E, B, F', 'Ranking: C, A, E, B, B', 'Rank: 2 of 5']) {
+      const r = parseCritic(`- gap\n${bad}`, lineup);
+      expect(r, bad).toMatchObject({ ok: false });
+      if (!r.ok) expect(r.problem).toMatch(/Ranking: /);
+    }
+  });
+
+  it('finds one item’s section of a lineup critique, heading stripped', () => {
+    const critique = '### A\n- Intent: calm.\n- Too long.\n\n### B — the bakery\n- Intent: warm.\n- The ask is buried.\n\n### C\n- Intent: plain.';
+    expect(sectionOf(critique, 'B')).toBe('- Intent: warm.\n- The ask is buried.');
+    expect(sectionOf(critique, 'C')).toBe('- Intent: plain.');
+    expect(sectionOf('## A\n- Fine.\n## AB\n- Other.', 'A')).toBe('- Fine.');
+    expect(sectionOf(critique, 'D')).toBeUndefined();
+    expect(sectionOf('### B\n', 'B')).toBeUndefined();
   });
 
   it('reads choices, checks, cuts, keeps', () => {
@@ -56,6 +76,10 @@ describe('judging parsers (spec §3.3)', () => {
     expect(parseCheck('- Text overflows.')).toMatchObject({ ok: true, value: { clean: false } });
     expect(parseCut('- Remove the banner.\n- Make it pop.')).toEqual({ ok: true, value: '- Remove the banner.' });
     expect(parseCut('- Make it pop.')).toMatchObject({ ok: false });
+    // "Nothing to remove." is an empty directive, not a miss.
+    expect(parseCut('Nothing to remove.')).toEqual({ ok: true, value: '' });
+    expect(parseCut('**Nothing to remove**\n')).toEqual({ ok: true, value: '' });
+    expect(parseCut('')).toMatchObject({ ok: false });
     expect(parseKeep('Better.\nKeep: B')).toEqual({ ok: true, value: 'B' });
   });
 

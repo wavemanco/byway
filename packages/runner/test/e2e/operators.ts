@@ -5,7 +5,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { VideoRequest, VideoResult } from '@byway/contracts';
 import { checkEvents, ofType } from '../helpers/events.ts';
-import type { Harness } from '../helpers/harness.ts';
+import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
 import { judgedPick, policyLoop, randomPick, scripted, shortAd, tiny } from '../helpers/recipes.ts';
 
 let h: Harness;
@@ -45,6 +45,17 @@ export function operatorScenarios(use: () => Harness): void {
       } finally {
         delete h.responders['check:media'];
       }
+    }, 60_000);
+  });
+
+  describe('demo mode decides media by the demo profile (contracts v4 Gateway.demo)', () => {
+    it('a run on a profile without a video model still gets the demo clips, because every call goes to the mock', async () => {
+      const run = await h.start(shortAd, { profileId: NO_VIDEO_PROFILE.id, problem: { text: 'A 10-second ad for a reusable cup' } });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      const videos = h.succeeded(run.id).filter((c) => c.kind === 'video');
+      expect(videos.map((v) => (v.request as VideoRequest).shot)).toEqual([1, 2]);
+      expect(ofType(view, 'step-finished', 'clip').every((e) => e.data.skipped === undefined)).toBe(true);
     }, 60_000);
   });
 

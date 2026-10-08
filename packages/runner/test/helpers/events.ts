@@ -20,8 +20,11 @@ const PAYLOADS: Record<RunEventType, z.ZodType> = {
   'checkpoint-opened': z.object({ checkpointId: z.string().min(1), kind: z.enum(['pick', 'react', 'confirm', 'compare', 'directive', 'write', 'choose']) }).strict(),
   'checkpoint-resolved': z.object({ checkpointId: z.string().min(1) }).strict(),
   artifact: z.object({ artifactId: id, mediaType: z.string().min(1), label: z.string().min(1), shot: z.number().int().positive().optional() }).strict(),
-  // Extra keys are allowed (rank and of for GREAT loops), not relied on.
-  'loop-iteration': z.object({ iteration: z.number().int().positive(), max: z.number().int().positive(), score: z.number().optional() }),
+  // A score (OK mode) or our rank of `of` (GREAT mode; averaged over shuffles, so not always whole).
+  'loop-iteration': z
+    .object({ iteration: z.number().int().positive(), max: z.number().int().positive(), score: z.number().optional(), rank: z.number().min(1).optional(), of: z.number().int().min(2).optional() })
+    .strict()
+    .refine((d) => (d.rank === undefined) === (d.of === undefined) && !(d.score !== undefined && d.rank !== undefined), 'a score, or a rank with its lineup size'),
   cost: z.object({ totalUsd: z.number().min(0), budgetUsd: z.number().min(0) }),
   'run-finished': z.object({ outputArtifactId: id, costUsd: z.number().min(0) }).strict(),
   'run-failed': z.object({ error: z.string().min(1) }).strict(),

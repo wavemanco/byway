@@ -8,9 +8,9 @@ import type { Tier } from '@byway/contracts';
 import { parseArtifact, textView, type Parsed } from '../formats.ts';
 import { labelled, labels } from '../labels.ts';
 import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseTellsSweep, parseVision, type CriticAnswer } from '../parse.ts';
-import type { ModelStepInput, ModelStepResult, Score } from '../types.ts';
+import type { ModelStepInput, ModelStepResult } from '../types.ts';
 import { askModel } from './call.ts';
-import { greatLineup, planCritic } from './critic.ts';
+import { buildLineup, planCritic, verdictOf, type Lineup } from './critic.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
@@ -51,16 +51,15 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   if (step.role === 'critic') {
     const random = deps.random ?? defaultRandom;
     const plan = planCritic(step, input.refs, random);
-    const answers: CriticAnswer[] = [];
+    const answers: { answer: CriticAnswer; lineup?: Lineup }[] = [];
     for (let i = 0; i < plan.shuffles; i++) {
       const built = await buildPrompt(reader, { medium: run.medium, problem: run.problem, step, ports: input.ports, ...(input.round !== undefined ? { round: input.round } : {}) });
-      let lineup: number | undefined;
-      if (plan.mode === 'GREAT') {
-        const l = await greatLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle);
-        lineup = l.size;
-        Object.assign(built.slots, l.slots);
-        built.images = l.images;
+      const lineup = plan.mode === 'GREAT' ? await buildLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle) : undefined;
+      if (lineup) {
+        Object.assign(built.slots, lineup.slots);
+        built.images = lineup.images;
       }
+      // A GREAT answer must rank every label of this lineup exactly once; anything else is a miss, asked once more.
       const answer = await askModel(deps, reader, {
         run,
         call,
@@ -71,13 +70,14 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
         tier,
         what,
         maxOutputTokens: JUDGE_MAX_OUTPUT,
-        parse: (text) => parseCritic(text, plan.mode, lineup),
+        parse: (text) => parseCritic(text, lineup?.labels),
       });
       result.costUsd += answer.costUsd;
-      answers.push(answer.value);
+      answers.push({ answer: answer.value, ...(lineup ? { lineup } : {}) });
     }
-    result.text = answers[0]!.critique;
-    result.score = averaged(answers.map((a) => a.score));
+    const verdict = verdictOf(answers);
+    result.text = verdict.critique;
+    result.score = verdict.score;
     result.criticMode = plan.mode;
     if (plan.note) result.note = plan.note;
   } else {
@@ -142,14 +142,6 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   }
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(result.note ? { note: result.note } : {}), ...(outputs.length ? { outputArtifactIds: outputs } : {}) }, true);
   return result;
-}
-
-/** GREAT answers over several fixed shuffles are averaged by rank (03 C5 gate). */
-function averaged(scores: Score[]): Score {
-  const first = scores[0]!;
-  if (scores.length === 1 || first.kind === 'score') return first;
-  const ranks = scores.map((s) => (s.kind === 'rank' ? s.rank : 0));
-  return { kind: 'rank', rank: ranks.reduce((a, b) => a + b, 0) / ranks.length, of: first.of };
 }
 
 /** The tell catalog for the medium (spec §3.1 `tells`), unless the run brought its own. */
