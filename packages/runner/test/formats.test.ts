@@ -111,5 +111,8 @@ describe('VOICE copy', () => {
     const sb = (vo: string) => JSON.stringify({ storyboard: [{ shot: 1, description: 'd', imagePrompt: 'p', durationSec: 4 }], voiceover: vo });
     expect(lostVoiceLines('media', sb('Less time. More life.'), 'Less time. More life.')).toEqual([]);
     expect(lostVoiceLines('media', sb('Something else.'), 'Less time. More life.')).toEqual(['Less time. More life.']);
+    // Measured against where the write started: words that were never placed are not required.
+    expect(lostVoiceLines('media', sb('Something else.'), 'Less time. More life.', sb('Earlier draft.'))).toEqual([]);
+    expect(lostVoiceLines('media', sb('Something else.'), 'Less time. More life.', sb('Less time. More life.'))).toEqual(['Less time. More life.']);
   });
 });

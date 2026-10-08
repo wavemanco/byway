@@ -98,7 +98,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     }
     const seeds = seed ? [...run.seeds, seed] : run.seeds;
     const voice = step.keepsVoice ? input.ports.voice : undefined;
-    const parse = parserFor(step.role, run.medium, ports, (text) => writeProblems({ seeds, medium: run.medium }, text, voice));
+    const before = voice && input.ports.artifact ? await reader.text(input.ports.artifact) : undefined;
+    const parse = parserFor(step.role, run.medium, ports, (text) => writeProblems({ seeds, medium: run.medium }, text, voice, before));
     const answer = await askModel(deps, reader, {
       run,
       call,

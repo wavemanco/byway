@@ -12,13 +12,13 @@ import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
 
 /** Problems that keep a text from being written as the run's artifact. */
-export function writeProblems(run: Pick<RunRef, 'seeds' | 'medium'>, text: string, voice?: string): string[] {
+export function writeProblems(run: Pick<RunRef, 'seeds' | 'medium'>, text: string, voice?: string, before?: string): string[] {
   const problems: string[] = [];
   if (run.seeds.some((s) => s && text.includes(s))) {
     problems.push('The answer contains the random string it was given. Interpret it for direction, but never write it into the work.');
   }
   if (voice?.trim()) {
-    const lost = lostVoiceLines(run.medium, text, voice);
+    const lost = lostVoiceLines(run.medium, text, voice, before);
     if (lost.length) problems.push(`The person's own words must stay exactly as written; these lines changed or went missing: ${lost.map((l) => `"${l.slice(0, 80)}"`).join('; ')}.`);
   }
   return problems;

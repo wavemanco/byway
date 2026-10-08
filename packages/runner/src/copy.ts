@@ -232,14 +232,21 @@ export function applyCopy(medium: Exclude<Medium, 'web-page'>, artifact: string,
 
 /**
  * The person's words a machine write must keep (keepsVoice, port rule 6): every non-empty line of their copy must still
- * be in the artifact's copy. Returns the lines that went missing.
+ * be in the artifact's copy. With `before` (the artifact the write started from), only the lines that were there count:
+ * a write may not remove the person's words, but it is not asked to add words that were never placed (a copy deck
+ * handed in before any VOICE step, say). Returns the lines that went missing.
  */
-export function lostVoiceLines(medium: Medium, artifact: string, voice: string): string[] {
-  const now = squash(medium === 'web-page' ? pageCopy(artifact).join('\n') : extractCopy(medium, artifact));
+export function lostVoiceLines(medium: Medium, artifact: string, voice: string, before?: string): string[] {
+  const copyOf = (text: string) => squash(medium === 'web-page' ? pageCopy(text).join('\n') : extractCopy(medium, text));
+  const now = copyOf(artifact);
+  const was = before === undefined ? undefined : copyOf(before);
   return splitLines(voice)
     .map(squash)
     .filter((l) => l && !/^###\s/.test(l))
-    .filter((l) => !now.includes(l.replace(/^(Title|Pitch|Rationale):\s*/, '')));
+    .filter((l) => {
+      const bare = l.replace(/^(Title|Pitch|Rationale):\s*/, '');
+      return (was === undefined || was.includes(bare)) && !now.includes(bare);
+    });
 }
 
 /** Sentences that carry numbers, dates or other checkable claims, for a claim-log sign-off (03 C4). */

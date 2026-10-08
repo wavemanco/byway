@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { VideoRequest, VideoResult } from '@byway/contracts';
 import { checkEvents, ofType } from './helpers/events.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
-import { policyLoop, shortAd, tiny } from './helpers/recipes.ts';
+import { policyLoop, scripted, shortAd, tiny } from './helpers/recipes.ts';
 
 let h: Harness;
 beforeAll(async () => {
@@ -74,6 +74,30 @@ describe('a loop capped by policy', () => {
       delete h.responders['critic:prose'];
       delete h.responders['rerank:prose'];
       delete h.responders['fix:prose'];
+    }
+  }, 60_000);
+});
+
+describe('keepsVoice (port rule 6)', () => {
+  it('refuses a machine write that changes the words you wrote, and keeps the one that does not', async () => {
+    const script = 'Less time on the road.\nMore time on the trail.';
+    let n = 0;
+    h.responders['fix:media'] = (ctx) => {
+      const board = JSON.parse([...ctx.prompt.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)![1]!) as { voiceover: string };
+      if (++n === 1) board.voiceover = 'Run further, faster, freer.';
+      return '```json\n' + JSON.stringify(board) + '\n```';
+    };
+    try {
+      const run = await h.start(scripted, { problem: { text: 'A 10-second ad for trail shoes' } });
+      const view = await h.drive(run.id, (cp) => (cp.kind === 'write' ? { checkpointId: cp.id, text: script } : undefined));
+      expect(view.run.status).toBe('done');
+      const fixes = h.succeeded(run.id).filter((c) => c.purpose === 'fix:media');
+      expect(fixes).toHaveLength(2);
+      expect(JSON.stringify(fixes[1]!.request)).toMatch(/own words must stay exactly as written/);
+      const out = JSON.parse(await h.store.artifacts.getText(view.run.outputArtifactId!)) as { voiceover: string };
+      expect(out.voiceover).toBe(script);
+    } finally {
+      delete h.responders['fix:media'];
     }
   }, 60_000);
 });

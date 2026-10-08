@@ -119,7 +119,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
         const missing = made.filter((m) => !doc.value.includes(imageRoute(m.artifactId)));
         const problems = [
           ...(missing.length ? [`Place every image by its address; missing: ${missing.map((m) => imageRoute(m.artifactId)).join(', ')}.`] : []),
-          ...writeProblems(run, doc.value, step.keepsVoice ? ports.voice : undefined),
+          ...writeProblems(run, doc.value, step.keepsVoice ? ports.voice : undefined, current),
         ];
         return problems.length ? { ok: false, problem: problems.join(' ') } : doc;
       },
@@ -131,7 +131,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     else result.asset = made.map((m) => m.artifactId);
   } else {
     const attached = attach(medium, current, made);
-    const problems = writeProblems(run, attached, step.keepsVoice ? ports.voice : undefined);
+    const problems = writeProblems(run, attached, step.keepsVoice ? ports.voice : undefined, current);
     if (problems.length) throw new StepError(`The ${what} step could not attach its images: ${problems.join(' ')}`);
     const id = await storeText(deps, run, call, attached, { label: writes ? what : `${what} (kept beside the work)`, name: 'work' });
     outputs.push(id);

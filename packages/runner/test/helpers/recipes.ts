@@ -85,3 +85,14 @@ export const policyLoop = recipe(
     ),
   ),
 );
+
+/** A storyboard whose voice-over you write, then a machine pass that must keep your words (keepsVoice). */
+export const scripted = recipe(
+  'scripted',
+  'media',
+  seq(
+    build('board'),
+    step({ id: 'script', role: 'voice', block: 'VOICE', actor: 'human', consumes: ['artifact'], produces: ['voice', 'artifact'], writes: true, variant: 'VOICE-early', knobs: { scope: 'every-line' } }),
+    step({ id: 'polish', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.test.polish', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true, keepsVoice: true }),
+  ),
+);

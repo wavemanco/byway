@@ -88,7 +88,7 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   await announce(deps, run.runId, call, clip.lastFrameArtifactId, 'image/png', { label: `Last frame of shot ${shot}`, name: 'last-frame', shot });
 
   const next = serializeJson({ ...sb.value, storyboard: sb.value.storyboard.map((s) => (s.shot === shot ? { ...s, clipArtifactId: clip.artifactId } : s)) });
-  const problems = writeProblems(run, next, step.keepsVoice ? ports.voice : undefined);
+  const problems = writeProblems(run, next, step.keepsVoice ? ports.voice : undefined, storyboardText);
   if (problems.length) throw new StepError(`The ${what} step could not update the storyboard: ${problems.join(' ')}`);
   const artifactId = await storeText(deps, run, call, next, { label: `Storyboard with the clip for shot ${shot}`, name: 'work', shot });
   await stepFinished(deps, run, call, { costUsd, outputArtifactIds: [clip.artifactId, clip.lastFrameArtifactId, artifactId] }, true);
