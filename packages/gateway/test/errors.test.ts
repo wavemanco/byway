@@ -16,8 +16,15 @@ describe('makeRedactor', () => {
     expect(out).toContain('[redacted]');
   });
 
+  it('removes fal.ai keys (key id, colon, secret) even when they are not in the environment', () => {
+    const out = makeRedactor({})('Authorization: Key 0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff rejected');
+    expect(out).toBe('Authorization: Key [redacted] rejected');
+  });
+
   it('leaves ordinary text alone', () => {
     expect(makeRedactor({})('Score: 7/10')).toBe('Score: 7/10');
+    // A request id is a bare UUID, not a key.
+    expect(makeRedactor({})('request 0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6 done')).toBe('request 0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6 done');
   });
 });
 

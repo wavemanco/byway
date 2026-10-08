@@ -29,12 +29,28 @@ describe('profiles', () => {
 
   it('runs demo entirely on the mock', () => {
     const demo = byId('demo');
-    expect([demo.tiers.big.provider, demo.tiers.mid.provider, demo.image?.provider]).toEqual(['mock', 'mock', 'mock']);
+    expect([demo.tiers.big.provider, demo.tiers.mid.provider, demo.image?.provider, demo.video?.provider]).toEqual(['mock', 'mock', 'mock', 'mock']);
+  });
+
+  it('gives balanced and best a verified fal.ai image-to-video model for C5 relay links (ADR-0069)', () => {
+    expect(byId('balanced').video).toEqual({ provider: 'fal', model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video' });
+    expect(byId('best').video).toEqual({ provider: 'fal', model: 'fal-ai/kling-video/v3/pro/image-to-video' });
+  });
+
+  it('reports video as usable only when the profile has a video model and its provider has a key', () => {
+    const of = (env: Record<string, string>, id: string) => profileStatus(PROFILES, env).find((s) => s.profile.id === id);
+    const anthropic = { ANTHROPIC_API_KEY: 'sk-ant-test-key-123456' };
+    expect(of(anthropic, 'balanced')).toMatchObject({ usable: true, video: false });
+    expect(of({ ...anthropic, FAL_KEY: 'id:secret-not-real' }, 'balanced')).toMatchObject({ usable: true, video: true });
+    // Video does not make a profile usable: its text tiers still need their keys.
+    expect(of({ FAL_KEY: 'id:secret-not-real' }, 'best')).toMatchObject({ usable: false, video: true });
+    expect(of({ FAL_KEY: 'id:secret-not-real' }, 'openai')).toMatchObject({ video: false });
+    expect(of({}, 'demo')).toMatchObject({ video: true });
   });
 
   it('prices every model a profile can call', () => {
     for (const p of PROFILES) {
-      for (const ref of [p.tiers.big, p.tiers.mid, ...(p.image ? [p.image] : [])]) {
+      for (const ref of [p.tiers.big, p.tiers.mid, ...(p.image ? [p.image] : []), ...(p.video ? [p.video] : [])]) {
         expect(priceFor(PRICES, ref.provider, ref.model, today), `${p.id}: ${ref.provider}/${ref.model}`).toBeDefined();
       }
     }
@@ -57,7 +73,7 @@ describe('profiles', () => {
     expect(of('openai')).toMatchObject({ usable: false, missing: ['openai'] });
     expect(of('google')).toMatchObject({ usable: false, missing: ['google'] });
     expect(of('openrouter')).toMatchObject({ usable: false, missing: ['openrouter'] });
-    expect(of('demo')).toMatchObject({ usable: true, images: true });
+    expect(of('demo')).toMatchObject({ usable: true, images: true, video: true });
     expect(JSON.stringify(status)).not.toContain('sk-ant-test-key');
   });
 });
@@ -70,6 +86,17 @@ describe('prices', () => {
   it('applies scheduled price changes on their date', () => {
     expect(priceFor(PRICES, 'google', 'gemini-3.8-flash', today)?.inputPerMTok).toBe(0.75);
     expect(priceFor(PRICES, 'google', 'gemini-3.8-flash', new Date('2027-01-01T00:00:00Z'))?.inputPerMTok).toBe(1.5);
+  });
+
+  it('prices fal.ai video per second, with the model page each figure was read from', () => {
+    const v25 = priceFor(PRICES, 'fal', 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', today);
+    expect(v25?.perSecondUsd).toBe(0.07);
+    expect(v25?.source).toMatch(/fal\.ai\/models\/fal-ai\/kling-video\/v2\.5-turbo\/pro\/image-to-video.*2026-10-07/);
+    const v3 = priceFor(PRICES, 'fal', 'fal-ai/kling-video/v3/pro/image-to-video', today);
+    expect(v3?.perSecondUsd).toBe(0.112);
+    expect(v3?.source).toMatch(/fal\.ai\/models\/fal-ai\/kling-video\/v3\/pro\/image-to-video.*2026-10-07/);
+    expect(priceFor(PRICES, 'fal', 'fal-ai/ffmpeg-api/extract-frame', today)?.perSecondUsd).toBe(0.0002);
+    expect(priceFor(PRICES, 'mock', 'mock-video', today)?.perSecondUsd).toBe(0);
   });
 
   it('returns undefined for an unknown model', () => {

@@ -13,6 +13,8 @@ const ref = (provider: ProviderId, model: string): ModelRef => ({ provider, mode
  * - OpenAI: developers.openai.com/api/docs/models (gpt-6-astra, gpt-6.1-sol, gpt-image-2.5-flare, gpt-image-2.5-sunburst).
  * - Google: ai.google.dev/gemini-api/docs/models (gemini-3.1-pro-preview, gemini-3.8-flash, gemini-nano-banana-2.1).
  * - OpenRouter: openrouter.ai/api/v1/models (anthropic/claude-opus-5.5, anthropic/claude-sonnet-5.5).
+ * - fal.ai: fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video and fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video
+ *   (also listed in @fal-ai/client 1.10.1's endpoint types).
  */
 export const PROFILES: readonly ModelProfile[] = [
   {
@@ -21,6 +23,8 @@ export const PROFILES: readonly ModelProfile[] = [
     tiers: { big: ref('anthropic', 'claude-opus-5-5'), mid: ref('anthropic', 'claude-sonnet-5-5') },
     // The cheapest verified image model ($0.0336 per 1K image); needs a Gemini key.
     image: ref('google', 'gemini-nano-banana-2.1'),
+    // C5 relay links: Kling 2.5 Turbo Pro image-to-video at $0.07 per second; needs a fal.ai key.
+    video: ref('fal', 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video'),
   },
   {
     id: 'best',
@@ -28,6 +32,8 @@ export const PROFILES: readonly ModelProfile[] = [
     tiers: { big: ref('anthropic', 'claude-fable-5-1'), mid: ref('anthropic', 'claude-opus-5-5') },
     // OpenAI's "most capable model for image generation and editing"; needs an OpenAI key.
     image: ref('openai', 'gpt-image-2.5-sunburst'),
+    // C5 relay links: Kling 3 Pro image-to-video (3–15 s clips, audio off) at $0.112 per second; needs a fal.ai key.
+    video: ref('fal', 'fal-ai/kling-video/v3/pro/image-to-video'),
   },
   {
     id: 'openai',
@@ -51,6 +57,7 @@ export const PROFILES: readonly ModelProfile[] = [
     label: 'Demo: sample outputs, no AI calls',
     tiers: { big: ref('mock', 'mock-big'), mid: ref('mock', 'mock-mid') },
     image: ref('mock', 'mock-image'),
+    video: ref('mock', 'mock-video'),
   },
 ];
 
@@ -76,6 +83,12 @@ export function tierProviders(profile: ModelProfile): ProviderId[] {
 export function profileStatus(profiles: readonly ModelProfile[], env: Env): ProfileStatus[] {
   return profiles.map((profile) => {
     const missing = tierProviders(profile).filter((p) => !isConfigured(env, p));
-    return { profile, usable: missing.length === 0, missing, images: profile.image !== undefined && isConfigured(env, profile.image.provider) };
+    return {
+      profile,
+      usable: missing.length === 0,
+      missing,
+      images: profile.image !== undefined && isConfigured(env, profile.image.provider),
+      video: profile.video !== undefined && isConfigured(env, profile.video.provider),
+    };
   });
 }

@@ -4,13 +4,14 @@ export type Redactor = (text: string) => string;
 
 /**
  * Shapes of provider keys, so a key that is not in our environment (say, echoed back by a provider) is still removed.
- * Anthropic `sk-ant-…`, OpenRouter `sk-or-…`, OpenAI `sk-…`/`sk-proj-…`, Google `AIza…`, and bearer tokens.
+ * Anthropic `sk-ant-…`, OpenRouter `sk-or-…`, OpenAI `sk-…`/`sk-proj-…`, Google `AIza…`, fal.ai `<key id>:<secret>`, and bearer tokens.
  */
 const KEY_SHAPES = [
   /(?<![A-Za-z0-9_-])sk-ant-[A-Za-z0-9_-]{8,}/g,
   /(?<![A-Za-z0-9_-])sk-or-[A-Za-z0-9_-]{8,}/g,
   /(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}/g,
   /(?<![A-Za-z0-9_-])AIza[0-9A-Za-z_-]{20,}/g,
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{32,}/gi,
   /Bearer\s+[A-Za-z0-9._~+/-]{16,}=*/g,
 ];
 
