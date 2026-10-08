@@ -18,8 +18,10 @@ import { ArtifactReader, viewParts, type ImageGroup, type Slots } from './prompt
 /** 01 CRITIC: up to 10 references. */
 export const MAX_REFS = 10;
 
-/** The step note when a GREAT critic ran in OK mode for want of references (ADR-0071, word for word). */
+/** The step note when a GREAT critic ran in OK mode because no references were given (ADR-0071, word for word). */
 export const OK_FALLBACK_NOTE = 'No examples were supplied, so the outside critique scored the work against a quality bar instead of ranking it against examples.';
+/** The same fallback when one or two references were given: the note says what the person supplied (LABEL-2). */
+export const FEW_REFS_NOTE = 'Fewer than three examples were supplied, so the outside critique scored the work against a quality bar instead of ranking it against examples.';
 
 export interface CriticPlan {
   mode: 'OK' | 'GREAT';
@@ -38,7 +40,7 @@ export function planCritic(step: Pick<StepSpec, 'knobs'>, refs: readonly string[
   const shuffles = typeof knobs.shuffles === 'number' && knobs.shuffles > 1 ? Math.min(4, Math.floor(knobs.shuffles)) : 1;
   const shuffled = knobs.shuffle !== false;
   if (knobs.mode !== 'GREAT') return { mode: 'OK', refs: [], shuffles: 1, shuffle: shuffled };
-  if (refs.length < GREAT_MIN_REFERENCES) return { mode: 'OK', note: OK_FALLBACK_NOTE, refs: [], shuffles: 1, shuffle: shuffled };
+  if (refs.length < GREAT_MIN_REFERENCES) return { mode: 'OK', note: refs.length ? FEW_REFS_NOTE : OK_FALLBACK_NOTE, refs: [], shuffles: 1, shuffle: shuffled };
   const want = typeof knobs.refs === 'number' && knobs.refs > 0 ? knobs.refs : MAX_REFS;
   const take = Math.min(refs.length, want, MAX_REFS);
   const chosen = (shuffled ? shuffle([...refs], random) : [...refs]).slice(0, Math.max(GREAT_MIN_REFERENCES, take));
@@ -114,13 +116,17 @@ export interface CriticVerdict {
 /**
  * Our place in each GREAT ranking (1 = best), averaged over the step's shuffles (03 C5 gate: "2 fixed shuffles
  * averaged"); the critique handed to the fix is our item's own section of the first answer, heading stripped, or the
- * whole critique when the critic wrote no section for it. OK answers pass through.
+ * whole critique when the critic wrote no section for it. OK answers pass through. `writtenFor`, the lineup size the
+ * step's refs knob plans for (refs + 1), goes with a rank so its gate can scale (GATE-1).
  */
-export function verdictOf(answers: readonly { answer: CriticAnswer; lineup?: Lineup }[]): CriticVerdict {
+export function verdictOf(answers: readonly { answer: CriticAnswer; lineup?: Lineup }[], writtenFor?: number): CriticVerdict {
   const first = answers[0]!;
   if (first.answer.mode === 'OK') return { critique: first.answer.critique, score: { kind: 'score', value: first.answer.score } };
   const places = answers.map(({ answer, lineup }) => (answer.mode === 'GREAT' && lineup ? answer.ranking.indexOf(lineup.ours) + 1 : 0));
   const rank = places.reduce((a, b) => a + b, 0) / places.length;
   const critique = sectionOf(first.answer.critique, first.lineup!.ours) ?? first.answer.critique;
-  return { critique, score: { kind: 'rank', rank, of: first.lineup!.labels.length } };
+  return { critique, score: { kind: 'rank', rank, of: first.lineup!.labels.length, ...(writtenFor ? { writtenFor } : {}) } };
 }
+
+/** The lineup size a critic's rank gate is written for: its refs knob plus ours (undefined without the knob). */
+export const lineupWrittenFor = (step: Pick<StepSpec, 'knobs'>): number | undefined => (typeof step.knobs?.refs === 'number' && step.knobs.refs > 0 ? step.knobs.refs + 1 : undefined);

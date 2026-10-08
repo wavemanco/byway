@@ -50,8 +50,12 @@ export interface View {
   items: ViewRef[];
 }
 
-/** What a critic said about the work: a score out of 10 (OK mode) or our place in a lineup (GREAT mode). */
-export type Score = { kind: 'score'; value: number } | { kind: 'rank'; rank: number; of: number };
+/**
+ * What a critic said about the work: a score out of 10 (OK mode) or our place in a lineup of `of` (GREAT mode).
+ * `writtenFor` is the lineup size a rank gate's threshold was written for (the critic's refs knob plus ours), so the
+ * gate can keep its share of a smaller lineup (GATE-1, convention C6).
+ */
+export type Score = { kind: 'score'; value: number } | { kind: 'rank'; rank: number; of: number; writtenFor?: number };
 
 /** Port values by reference. Only `artifact`, `options`, `view` and the texts are ever large in meaning, never in size. */
 export interface Ports {

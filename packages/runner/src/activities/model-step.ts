@@ -6,13 +6,13 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import type { Tier } from '@byway/contracts';
 import { labelled } from '@byway/prompts/pure';
-import { parseArtifact, textView, type Parsed } from '../formats.ts';
+import { fences, parseArtifact, textView, type Parsed } from '../formats.ts';
 import { labels } from '../labels.ts';
 import { parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseTellsSweep, parseVision, type CriticAnswer } from '../parse.ts';
 import { tellsText } from '../tells.ts';
 import type { ModelStepInput, ModelStepResult } from '../types.ts';
 import { askModel } from './call.ts';
-import { buildLineup, planCritic, verdictOf, type Lineup } from './critic.ts';
+import { buildLineup, lineupWrittenFor, planCritic, verdictOf, type Lineup } from './critic.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
@@ -23,7 +23,8 @@ const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);
 /** Judging answers are short; builders get the gateway's larger default. */
 const JUDGE_MAX_OUTPUT = 4_000;
 
-export const defaultSeed = (): string => randomBytes(12).toString('base64url');
+/** 01 SEED seed_shape ⟨A⟩: 32–64 characters; 36 random bytes are 48 base64url characters (SEED-1). */
+export const defaultSeed = (): string => randomBytes(36).toString('base64url');
 export const defaultRandom = (): number => randomInt(0, 2 ** 31) / 2 ** 31;
 
 /** Where a judging step's text goes in the store: shown to the user with the step, never written into the work. */
@@ -77,7 +78,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       result.costUsd += answer.costUsd;
       answers.push({ answer: answer.value, ...(lineup ? { lineup } : {}) });
     }
-    const verdict = verdictOf(answers);
+    const verdict = verdictOf(answers, lineupWrittenFor(step));
     result.text = verdict.critique;
     result.score = verdict.score;
     result.criticMode = plan.mode;
@@ -121,6 +122,12 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       case 'artifact':
         result.artifactId = await storeText(deps, run, call, v.text, { label: what, name: 'work' });
         outputs.push(result.artifactId);
+        if (v.direction) {
+          // 01 SEED step 7 ⟨A⟩: seed → direction → artifact, logged outside the artifact. Never the string itself (PR3).
+          const direction = seeds.reduce((d, s) => (s ? d.split(s).join('(the random string)') : d), v.direction);
+          result.noteArtifactId = await storeText(deps, run, call, `${direction}\n`, { label: `${what}: Direction`, name: 'note', mediaType: 'text/markdown' });
+          outputs.push(result.noteArtifactId);
+        }
         break;
       case 'text':
         result.text = v.text;
@@ -147,6 +154,17 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   return result;
 }
 
+/**
+ * What a SEED build wrote before its block: the direction, one line per axis (the C1 SEED template asks for it). A
+ * single line ("Here is the page.") is not one, so it needs at least two lines.
+ */
+export function directionOf(answer: string): string | undefined {
+  const first = fences(answer)[0];
+  if (!first) return undefined;
+  const before = answer.slice(0, first.start).trim();
+  return before.split('\n').filter((l) => l.trim()).length >= 2 ? before : undefined;
+}
+
 /** A model keep-or-revert sees the version before the sweep (A) and after it (B). */
 async function compareSlots(reader: ArtifactReader, medium: Parameters<typeof textView>[0], ports: ModelStepInput['ports']) {
   if (!ports.previousArtifact || !ports.artifact) return {};
@@ -155,7 +173,8 @@ async function compareSlots(reader: ArtifactReader, medium: Parameters<typeof te
 }
 
 type Answer =
-  | { kind: 'artifact'; text: string }
+  /** `direction`: what a SEED build wrote before its block (SEED-1), kept as a note beside the work. */
+  | { kind: 'artifact'; text: string; direction?: string }
   /** `empty`: a CUT answered "Nothing to remove." (its text says so, for the note beside the work). */
   | { kind: 'text'; text: string; clean?: boolean; empty?: boolean }
   | { kind: 'label'; label: string }
@@ -192,7 +211,9 @@ function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports:
         const r = parseArtifact(medium, t);
         if (!r.ok) return r;
         const problems = checks(r.value);
-        return problems.length ? { ok: false, problem: problems.join(' ') } : { ok: true, value: { kind: 'artifact', text: r.value } };
+        if (problems.length) return { ok: false, problem: problems.join(' ') };
+        const direction = role === 'seed' ? directionOf(t) : undefined;
+        return { ok: true, value: { kind: 'artifact', text: r.value, ...(direction ? { direction } : {}) } };
       };
   }
 }

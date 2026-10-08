@@ -17,6 +17,7 @@ import { assetStep, NO_IMAGES_NOTE } from '../src/activities/asset.ts';
 import { ArtifactReader } from '../src/activities/prompting.ts';
 import { NO_VIDEO_NOTE, relayLink } from '../src/activities/relay.ts';
 import { createActivities } from '../src/activities/index.ts';
+import { modelStep } from '../src/activities/model-step.ts';
 import type { RunRef, StepCall, StepSpec } from '../src/types.ts';
 import { fakeHash, fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -92,6 +93,36 @@ describe('askModel', () => {
     expect(out.value).toContain('The ask.');
     expect(gateway.requests).toHaveLength(2);
     for (const r of gateway.requests) expect(r.prompt).toEqual({ id: 'product.test.draft', version: 1, hash: fakeHash('product.test.draft'), fidelity: 'project' });
+  });
+});
+
+describe('SEED (SEED-1)', () => {
+  const seedSpec: StepSpec = { id: 'spark', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'product.test.spark', consumes: ['intent'], produces: ['artifact'], writes: true };
+
+  it('hands the step a 48-character random string, and keeps the written direction as a note beside the work, never the string', async () => {
+    const run = await newRun();
+    const prompts = fakePrompts();
+    let seen = '';
+    const gateway = scripted([]);
+    gateway.complete = async (req) => {
+      seen = /Seed: (\S+)\. /.exec(JSON.stringify(req.messages))?.[1] ?? '';
+      const text = `Colour: dusk blues, from ${seen}.\nLayout: one tall column.\nType: a rounded grotesque.\n\n\`\`\`markdown\n# Spark\n\nA quiet direction.\n\`\`\``;
+      return { text, stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0, ledgerEntryId: 'l1' };
+    };
+    const out = await modelStep({ gateway, store, prompts }, { run, call: call(run, 'spark'), step: seedSpec, ports: {}, refs: [] });
+    expect(out.seed).toHaveLength(48);
+    expect(seen).toBe(out.seed);
+    expect(await store.artifacts.getText(out.artifactId!)).toBe('# Spark\n\nA quiet direction.\n');
+    const note = await store.artifacts.getText(out.noteArtifactId!);
+    expect(note).toContain('Layout: one tall column.');
+    expect(note).not.toContain(out.seed!);
+  });
+
+  it('keeps no note when the answer has no written direction (one line of preamble is not one)', async () => {
+    const run = await newRun();
+    const gateway = scripted(['Here it is.\n\n```markdown\n# Spark\n```']);
+    const out = await modelStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'spark'), step: seedSpec, ports: {}, refs: [] });
+    expect(out.noteArtifactId).toBeUndefined();
   });
 });
 

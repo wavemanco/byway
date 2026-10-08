@@ -20,6 +20,22 @@ describe('hidden gate conditions', () => {
     expect(passes(rank(4), 'critic-rank', 3)).toBe(false);
   });
 
+  it('keeps a rank gate’s share of the lineup it was written for when fewer references were given (GATE-1, convention C6)', () => {
+    // C3: top 3 of 10 (refs knob 9). With 3 references the lineup is 4: only first place passes, not all but last.
+    const c3 = (r: number, of: number): Score => ({ kind: 'rank', rank: r, of, writtenFor: 10 });
+    expect([1, 2, 3, 4].filter((r) => passes(c3(r, 4), 'critic-rank', 3))).toEqual([1]);
+    expect([1, 2, 3, 4, 5].filter((r) => passes(c3(r, 5), 'critic-rank', 3))).toEqual([1]);
+    expect([...Array(10).keys()].map((i) => i + 1).filter((r) => passes(c3(r, 10), 'critic-rank', 3))).toEqual([1, 2, 3]);
+    // C4, C5, C7: the middle of 5 (refs knob 4). Rank 3 of 4 is below the middle; 2 of 4 is not.
+    const mid = (r: number, of: number): Score => ({ kind: 'rank', rank: r, of, writtenFor: 5 });
+    expect([1, 2, 3, 4].filter((r) => passes(mid(r, 4), 'critic-rank', 3))).toEqual([1, 2]);
+    expect([1, 2, 3, 4, 5].filter((r) => passes(mid(r, 5), 'critic-rank', 3))).toEqual([1, 2, 3]);
+    // An averaged rank (two shuffles) is held to the same bar.
+    expect(passes(mid(2.5, 4), 'critic-rank', 3)).toBe(false);
+    // A score whose lineup size was not named keeps the threshold as written.
+    expect(passes(rank(3, 4), 'critic-rank', 3)).toBe(true);
+  });
+
   it('holds a rank gate to the hidden OK bar when the critic fell back to OK mode (ADR-0071)', () => {
     expect(OK_BAR).toBe(9);
     expect(passes(score(8), 'critic-rank', 3)).toBe(false);
