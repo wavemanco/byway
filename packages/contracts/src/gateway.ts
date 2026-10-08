@@ -69,6 +69,8 @@ export interface Usage {
 
 export interface CompletionResult {
   text: string;
+  /** 'max-tokens' when the answer was cut off at maxOutputTokens (callers should not trust a truncated parse). */
+  stopReason?: 'end' | 'max-tokens';
   /** Model id the provider reports it served (may differ from the requested alias). */
   servedModel: string;
   provider: ProviderId;
@@ -120,6 +122,8 @@ export interface LedgerEntry {
   usage: Usage;
   costUsd: number;
   latencyMs: number;
+  /** The host that actually served a routed call (OpenRouter's pinned upstream). Covered by the hash chain. */
+  upstreamProvider?: string;
 }
 
 export type GatewayErrorCode =
@@ -131,10 +135,24 @@ export type GatewayErrorCode =
   | 'invalid-request'
   | 'unknown-profile';
 
+/** What a 'budget-exceeded' refusal carries, so the runner can offer "Raise the budget by $X?" (spec §3.4). */
+export interface BudgetDetails {
+  scope: 'workspace' | 'run';
+  capUsd: number;
+  spentUsd: number;
+  /** In-flight calls' estimates, already counted against the cap. */
+  reservedUsd: number;
+  estimateUsd: number;
+  /** How much the cap would need to rise for this call to proceed. */
+  shortfallUsd: number;
+}
+
 export class GatewayError extends Error {
   override name = 'GatewayError';
   readonly code: GatewayErrorCode;
   readonly retryable: boolean;
+  /** Set on 'budget-exceeded'. */
+  budget?: BudgetDetails;
   constructor(code: GatewayErrorCode, message: string, retryable = false) {
     super(message);
     this.code = code;
@@ -148,12 +166,26 @@ export interface ProviderStatus {
   configured: boolean;
 }
 
+/** Whether a profile can run with the keys in the environment. Names providers only, never keys. */
+export interface ProfileStatus {
+  profile: ModelProfile;
+  /** True when every text tier's provider has a key. */
+  usable: boolean;
+  /** Providers whose keys are missing for the text tiers. */
+  missing: ProviderId[];
+  /** True when the profile has an image model and its provider has a key. */
+  images: boolean;
+}
+
 export interface Gateway {
   complete(req: CompletionRequest): Promise<CompletionResult>;
   image(req: ImageRequest): Promise<ImageResult>;
   spend(workspaceId: string): Promise<SpendSummary>;
   providers(): ProviderStatus[];
+  /** Profiles usable now (only 'demo' in demo mode or with no keys). */
   profiles(): ModelProfile[];
+  /** Every profile with what it is missing, for Settings. */
+  profileStatus(): ProfileStatus[];
   /** Verify the ledger hash chain; returns the first broken entry id, or null if intact. */
   verifyLedger(): Promise<string | null>;
 }

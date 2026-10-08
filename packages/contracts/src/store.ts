@@ -25,6 +25,8 @@ export interface RunRecord {
   problem: string;
   medium: Medium;
   status: RunStatus;
+  /** The run's spend cap in USD (raised when the user accepts a "Raise the budget" checkpoint). */
+  budgetUsd: number;
   /** Final deliverable, when done. */
   outputArtifactId?: string;
   error?: string;
@@ -98,7 +100,7 @@ export interface CheckpointRecord {
   /** Plain-language question shown to the user. */
   prompt: string;
   options?: CheckpointOption[];
-  /** For pick: how many to choose. */
+  /** For pick: how many to choose. A resolution must choose exactly k distinct options. */
   k?: number;
   /** For write/directive: starting text (e.g. the copy extracted from the page). */
   initialText?: string;
@@ -135,15 +137,22 @@ export interface Store {
   updateWorkspace(id: string, patch: Partial<Pick<Workspace, 'name' | 'budgetUsd'>>): Promise<Workspace>;
 
   createRun(run: Omit<RunRecord, 'createdAt' | 'updatedAt' | 'costUsd' | 'status'> & { status?: RunStatus }): Promise<RunRecord>;
-  updateRun(id: string, patch: Partial<Pick<RunRecord, 'status' | 'outputArtifactId' | 'error' | 'costUsd' | 'title'>>): Promise<RunRecord>;
+  /** `null` clears error or outputArtifactId; undefined leaves a field unchanged. */
+  updateRun(
+    id: string,
+    patch: Partial<Pick<RunRecord, 'status' | 'costUsd' | 'title' | 'budgetUsd'>> & { error?: string | null; outputArtifactId?: string | null },
+  ): Promise<RunRecord>;
   getRun(id: string): Promise<RunRecord | undefined>;
   listRuns(workspaceId: string, opts?: { limit?: number }): Promise<RunRecord[]>;
 
-  /** Appends an event with the next seq for the run and returns it. */
-  appendEvent(event: Omit<RunEvent, 'seq' | 'at'>): Promise<RunEvent>;
+  /**
+   * Appends an event with the next seq for the run and returns it. With a dedupeKey, a second append with the same
+   * key for the same run returns the first event instead (Temporal activities run at least once).
+   */
+  appendEvent(event: Omit<RunEvent, 'seq' | 'at'>, opts?: { dedupeKey?: string }): Promise<RunEvent>;
   events(runId: string, afterSeq?: number): Promise<RunEvent[]>;
 
-  openCheckpoint(cp: Omit<CheckpointRecord, 'status' | 'openedAt'>): Promise<CheckpointRecord>;
+  openCheckpoint(cp: Omit<CheckpointRecord, 'status' | 'openedAt' | 'resolvedAt' | 'resolution'>): Promise<CheckpointRecord>;
   resolveCheckpoint(res: CheckpointResolution): Promise<CheckpointRecord>;
   getCheckpoint(id: string): Promise<CheckpointRecord | undefined>;
   openCheckpoints(workspaceId: string): Promise<CheckpointRecord[]>;
