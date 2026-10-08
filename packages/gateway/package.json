@@ -1,0 +1,21 @@
+{
+  "name": "@byway/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Model gateway: providers, profiles, prices, hash-chained ledger, spend caps and the demo-mode mock",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "@byway/canonical": "workspace:*",
+    "@byway/contracts": "workspace:*",
+    "@google/genai": "^2.27.0",
+    "openai": "^7.28.0"
+  },
+  "devDependencies": {
+    "@byway/recipe": "workspace:*",
+    "@byway/validator": "workspace:*"
+  }
+}
