@@ -2,9 +2,10 @@
  * Product persistence (implemented by @byway/store): SQLite for records and a content-addressed artifact store.
  * Product data lives in its own data directory and never feeds a confirmatory study (ADR-0041 rule 3, CR3/CR12).
  */
+import type { ChooserAnswer, ComposeResult, ProblemBrief, Recommendation } from './advisor.ts';
 import type { Medium } from './medium.ts';
 
-export type RunStatus = 'queued' | 'running' | 'waiting' | 'done' | 'failed' | 'cancelled';
+export type RunStatus = 'queued' | 'running' | 'waiting' | 'paused' | 'done' | 'failed' | 'cancelled';
 
 export interface Workspace {
   id: string;
@@ -20,6 +21,8 @@ export interface RunRecord {
   recipeId: string;
   recipeHash: string;
   profileId: string;
+  /** The intake this run started from (problem, answers, composed recipe), for labels and presentation after a restart. */
+  intakeId?: string;
   title: string;
   /** The user's problem, as entered. */
   problem: string;
@@ -55,7 +58,34 @@ export type RunEventType =
   | 'cost'
   | 'run-finished'
   | 'run-failed'
-  | 'run-cancelled';
+  | 'run-cancelled'
+  | 'run-paused'
+  | 'run-resumed';
+
+/**
+ * The payload each event type carries (RunEvent.data). The runner emits exactly these; the app reads them. Extra keys
+ * are allowed but not relied on.
+ */
+export interface RunEventPayloads {
+  'run-started': { recipeId: string; profileId: string; budgetUsd: number };
+  'step-started': { label: string; stage: 'D1' | 'D2' | 'D3'; role: string; actor: 'model' | 'human' | 'policy' | 'tool'; block?: string; glue?: string };
+  'step-finished': { costUsd: number; skipped?: boolean; note?: string; outputArtifactIds?: string[] };
+  'step-failed': { error: string; retryable: boolean };
+  'checkpoint-opened': { checkpointId: string; kind: CheckpointKind };
+  'checkpoint-resolved': { checkpointId: string };
+  artifact: { artifactId: string; mediaType: string; label: string; shot?: number };
+  /** The score is shown to the user; it never reaches a critic (port rule 2). */
+  'loop-iteration': { iteration: number; max: number; score?: number };
+  cost: { totalUsd: number; budgetUsd: number };
+  'run-finished': { outputArtifactId: string; costUsd: number };
+  'run-failed': { error: string };
+  'run-cancelled': Record<string, never>;
+  'run-paused': Record<string, never>;
+  'run-resumed': Record<string, never>;
+}
+
+/** A RunEvent whose data is typed by its event type. */
+export type TypedRunEvent<T extends RunEventType = RunEventType> = Omit<RunEvent, 'type' | 'data'> & { type: T; data: RunEventPayloads[T] };
 
 export interface RunEvent {
   runId: string;
@@ -122,6 +152,27 @@ export interface CheckpointResolution {
   approved?: boolean;
 }
 
+/** What the user brought before a run starts: the problem, the chooser answers they set, and what the advisor proposed. */
+export interface IntakeRecord {
+  id: string;
+  workspaceId: string;
+  problem: ProblemBrief;
+  answers?: ChooserAnswer[];
+  recommendation?: Recommendation;
+  /** A composed recipe offered for this problem (its recipe is the one a run starts with). */
+  composed?: ComposeResult;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Per-workspace preferences from Settings. */
+export interface Preferences {
+  profileId: string;
+  /** Force the mock provider even when keys exist. */
+  demoMode: boolean;
+  showTechnicalNames: boolean;
+}
+
 export interface ArtifactStore {
   put(bytes: Uint8Array, mediaType: string): Promise<ArtifactRecord>;
   putText(text: string, mediaType: string): Promise<ArtifactRecord>;
@@ -157,6 +208,14 @@ export interface Store {
   getCheckpoint(id: string): Promise<CheckpointRecord | undefined>;
   openCheckpoints(workspaceId: string): Promise<CheckpointRecord[]>;
   checkpointsForRun(runId: string): Promise<CheckpointRecord[]>;
+
+  createIntake(intake: Omit<IntakeRecord, 'createdAt' | 'updatedAt'>): Promise<IntakeRecord>;
+  updateIntake(id: string, patch: Partial<Pick<IntakeRecord, 'problem' | 'answers' | 'recommendation' | 'composed'>>): Promise<IntakeRecord>;
+  getIntake(id: string): Promise<IntakeRecord | undefined>;
+
+  /** Defaults when never set: profileId 'balanced', demoMode false, showTechnicalNames false. */
+  getPreferences(workspaceId: string): Promise<Preferences>;
+  setPreferences(workspaceId: string, patch: Partial<Preferences>): Promise<Preferences>;
 
   close(): void;
 }

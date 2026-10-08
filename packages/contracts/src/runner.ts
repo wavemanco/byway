@@ -18,6 +18,8 @@ export interface StartRunInput {
    * 'choose' checkpoint when reached.
    */
   routes?: Record<string, string>;
+  /** The intake the run starts from, if any (recorded on the RunRecord). */
+  intakeId?: string;
   /** User-supplied inputs for ports the recipe declares as inputs (e.g. refs, a fixed copy deck, a draft). */
   inputs?: { refs?: string[]; voice?: string; draft?: string; tells?: string };
 }
@@ -32,6 +34,9 @@ export interface Runner {
   start(input: StartRunInput): Promise<RunRecord>;
   resolve(resolution: CheckpointResolution): Promise<void>;
   cancel(runId: string): Promise<void>;
+  /** Pause between steps (the current step finishes); status becomes 'paused'. */
+  pause(runId: string): Promise<void>;
+  resume(runId: string): Promise<void>;
   view(runId: string, afterSeq?: number): Promise<RunView>;
 }
 
@@ -39,4 +44,6 @@ export interface Runner {
 export const TASK_QUEUE = 'byway-runs';
 export const RESOLVE_UPDATE = 'resolveCheckpoint';
 export const CANCEL_SIGNAL = 'cancelRun';
+export const PAUSE_SIGNAL = 'pauseRun';
+export const RESUME_SIGNAL = 'resumeRun';
 export const DEFAULT_TEMPORAL_ADDRESS = '127.0.0.1:7233';

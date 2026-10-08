@@ -70,7 +70,11 @@ export interface RecipePresentation {
   promise: string;
   medium: Medium;
   bestFor: string[];
-  stages: { stage: 'Explore' | 'Refine' | 'Finish'; steps: { label: string; explainer: string; who: 'you' | 'ai' | 'tool' }[] }[];
+  stages: {
+    stage: 'Explore' | 'Refine' | 'Finish';
+    /** stepIds: the recipe step and pick ids this displayed step covers, so run events map to plain labels. */
+    steps: { label: string; explainer: string; who: 'you' | 'ai' | 'tool'; stepIds: string[] }[];
+  }[];
 }
 
 export interface Recommendation {
@@ -86,7 +90,10 @@ export interface Recommendation {
   routing: 'untested';
   alternatives: { recipeId: string; name: string; why: string }[];
   estimate: CostEstimate;
-  /** True when no canonical configuration fits and composing one is suggested. */
+  /**
+   * True when no chooser question was answered yes. The recommendation is then 03's fallback, C4 Reader-Ready, as a
+   * partial fit, and composing a recipe is suggested alongside it.
+   */
   composeSuggested: boolean;
   /** Route choices implied by the problem (e.g. { entry: 'seed' }). */
   routes: Record<string, string>;
@@ -111,6 +118,8 @@ export interface Advisor {
   recommend(problem: ProblemBrief, opts: { workspaceId: string; profileId: string; answers?: ChooserAnswer[] }): Promise<Recommendation>;
   compose(problem: ProblemBrief, opts: { workspaceId: string; profileId: string }): Promise<ComposeResult>;
   catalog(): RecipePresentation[];
+  /** The canonical recipe for an id (protocol channel), for starting a run. */
+  recipe(recipeId: string): Recipe | undefined;
   label(recipe: Recipe): EvidenceLabel;
   estimate(recipe: Recipe, profileId: string): CostEstimate;
 }

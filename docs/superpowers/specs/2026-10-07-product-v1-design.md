@@ -60,6 +60,8 @@ The runner interprets the recipe tree (`byway.recipe/1`) as a Temporal workflow.
 | `refs` | Artifact ids supplied by the user |
 | `seed` | Generated in an activity with `crypto.randomBytes`; passed to SEED steps only; the runner checks it never appears in an artifact (PR3) |
 | `option_set<artifact>` | An ordered list of artifact ids (candidates) |
+| `anchor` | The artifact id of a relay link's exact end state (C5: the last frame of a clip), which the next link starts from |
+| `asset` | Artifact ids of generated media kept beside the work (C2: rough mood images that never become the deliverable) |
 
 ### 3.2 Step execution
 
@@ -103,10 +105,19 @@ Prompts (WP-P), the runner's parsers (WP-D) and the mock provider (WP-C) must ag
 | `asset.briefs` | One fenced `json` block: `{"images":[{"slot":string,"prompt":string,"alt":string,"size":"1024x1024"\|"1536x1024"\|"1024x1536"}]}` |
 | `advisor.intake` | One fenced `json` block: `{"answers":[{"questionId":string,"answer":boolean,"confidence":number,"rationale":string}],"routes":{[routeId]:string}}` |
 | `advisor.compose`, `advisor.compose.repair` | One fenced `json` block holding a `byway.recipe/1` object |
+| `dedupe:<medium>` | One fenced `json` block: `{"keep":[label…],"merged":[{"into":label,"from":[label…]}]}` (labels A, B, C… of the options shown) |
+| `overlap:<medium>` | One fenced `json` block: `{"flags":[{"label":label,"overlapsWith":string,"note":string}]}` (annotation only) |
+| `relay:media` | One fenced `json` block: `{"clipPrompt":string,"durationSec":number}` — the runner generates the clip from the previous anchor when a video provider is configured; otherwise the step finishes skipped with the note "No video provider key is configured" |
+| `asset.briefs:<medium>` | As for web-page: `{"images":[{"slot","prompt","alt","size"}]}`; on `media` one image per storyboard shot (slot = shot number), on `options` one mood image per option (slot = option label), on `prose` illustrations only where the text asks for them |
+| `asset.integrate:prose` | The Markdown document with image links (`/api/artifacts/<id>`) placed where they belong; on `options` and `media` there is no integrate call — the runner attaches `imageArtifactId` to each option or storyboard shot |
 
 Parsers take the last fenced block of the expected language, fall back to the whole text, and fail the step with a clear message when the contract is not met (one automatic retry with the parse error appended).
 
 **SEED in the product.** The article has the model generate its random string with a shell command; the product has no shell, so the runner generates the string (`crypto.randomBytes`) and the SEED prompt hands it over with the article's instructions (interpret it for direction, never reveal it). This is a declared product deviation; the PR3 check verifies the string never appears in an artifact.
+
+**Storyboards.** The runner adds `imageArtifactId` to each storyboard shot when it stores the shot's frame, and `clipArtifactId` when a relay link produced a clip.
+
+**Spend authority.** The gateway's ledger is the source of truth for spend, in demo mode too (the mock records $0 entries).
 
 ### 3.4 Spend
 
@@ -114,7 +125,7 @@ The run's budget is enforced by the gateway; when it would be exceeded the step 
 
 ## 4. Recommending and composing
 
-**Chooser.** The seven questions of 03 "Choosing a configuration" are data (`packages/catalog/src/chooser.ts`, `ChooserQuestion[]`); the first "yes" decides. The **intake** model reads the problem and proposes an answer, confidence and one-line rationale per question (JSON); the user can flip any answer and the routing re-runs deterministically. Fit is `strong` when the deciding answer has confidence ≥ 0.7, `partial` otherwise, `none` when no question is answered yes (then composing is suggested). Up to two alternatives are the next "yes" answers.
+**Chooser.** The seven questions of 03 "Choosing a configuration" are data (`packages/catalog/src/chooser.ts`, `ChooserQuestion[]`); the first "yes" decides. The **intake** model reads the problem and proposes an answer, confidence and one-line rationale per question (JSON); the user can flip any answer and the routing re-runs deterministically. Fit is `strong` when the deciding answer has confidence ≥ 0.7 and `partial` otherwise. Up to two alternatives are the next "yes" answers. When no question is answered yes, the recommendation is 03's fallback, C4 Reader-Ready (`CHOOSER_FALLBACK`), as a `partial` fit with `composeSuggested: true`.
 
 **Composer.** Design-time only (ADR-0058). The composer model receives the block registry (codes, purposes, port signatures, knobs) and the nearest canonical recipe, and returns a recipe JSON on the `workspace` channel with `kind: 'composed'`. It is parsed and validated; violations go back to the model for at most two repairs; only a recipe that validates is offered. Composed recipes may use only registered blocks, knobs within range, no study manipulations and no protocol exceptions other than those their nearest canonical recipe declares; human checkpoints for VOICE and for authorship in C6/C6a are protected. The UI shows the composed recipe as a diff from the nearest canonical one, labelled "Composed — not tested".
 
