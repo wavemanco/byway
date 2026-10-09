@@ -4,6 +4,7 @@
  * - a control that starts something keeps focus while it is on its way and after it is refused, and a second press
  *   sends nothing (useAction and ActionButton): the checkpoint panels, Start, the paid Start button, Build my own, the
  *   examples' image input, and "Choose all" / "Clear", which make themselves unavailable;
+ * - a control that takes itself off the screen moves focus first: Start's attach button, gone at five attachments;
  * - closing a step opened from the timeline returns focus to the row that opened it;
  * - cases other work owns: a draft that survives opening a step (F06) and the viewer's scripts switch (F05), both
  *   merged, as plain tests; and, as owner-tagged expected failures that assert today's specific outcome, the compare
@@ -175,6 +176,19 @@ test.describe('a control that starts something keeps focus, and a second press s
     await expectFocus(page, input);
     expect(refs.count()).toBe(1);
   });
+});
+
+// A control that takes itself off the screen drops focus to the page just as a disabled one does, and the disabled guard
+// cannot see it: Start's attach button goes once five attachments are listed.
+test('Start: each attachment added by keyboard takes focus in its name field, the fifth too, when the attach button goes', async ({ page }) => {
+  await page.goto('/');
+  const attach = page.locator('form.start .start-actions').getByRole('button', { name: /^Attach (a draft or diff|another)$/ });
+  for (let n = 1; n <= 5; n++) {
+    await tabTo(page, attach);
+    await page.keyboard.press('Enter');
+    await expectFocus(page, page.getByRole('textbox', { name: `Name of attachment ${n}`, exact: true }));
+  }
+  await expect(attach).toHaveCount(0);
 });
 
 /** A 1×1 PNG. */

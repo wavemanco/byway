@@ -123,9 +123,11 @@ Logic on top of the contracts sits in view code:
   fails on any use not reviewed there with a reason (today: the examples' fieldset while a run starts, "Paste an
   example" once nine examples are listed, and the Switch's configured-unavailable state). It does not see attributes
   spread in (`{...props}`), `createElement` calls, a component's own `disabled` prop (what the component renders is
-  scanned where that is written), or a focused control that takes itself off the screen. Closing a step opened from
-  the timeline returns focus to its row. `e2e/keyboard.spec.ts` drives these with the keyboard in a real browser; it reads the focused element and the
-  browser's accessibility tree, never an audit library, and never audits a generated page as a product check (CR12).
+  scanned where that is written), or a focused control that takes itself off the screen: Start's attach button goes
+  at five attachments, so adding one moves focus to the new attachment's name first. Closing a step opened from the
+  timeline returns focus to its row. `e2e/keyboard.spec.ts` drives these with the keyboard in a real browser; it
+  reads the focused element and the browser's accessibility tree, never an audit library, and never audits a
+  generated page as a product check (CR12).
 - Evidence labels are computed by the advisor; `test/guard-claims.test.ts` fails if any app string, recipe
   presentation, prompt template or README claims efficacy.
 - Provider keys are never read into the browser, shown or sent: the services module is server-only, Settings shows

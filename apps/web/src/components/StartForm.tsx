@@ -113,10 +113,22 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
 
   useShortcuts({ 'Mod+Enter': () => submit() });
 
+  // A new attachment takes the focus in its name field, so you can name it and paste straight away (as a new example
+  // does). At the fifth the attach button goes, and focus would otherwise fall to the page with it (R5).
+  const nameFields = useRef(new Map<number, HTMLInputElement>());
+  const [focusKey, setFocusKey] = useState<number | null>(null);
+  useEffect(() => {
+    if (focusKey === null) return;
+    nameFields.current.get(focusKey)?.focus();
+    setFocusKey(null);
+  }, [focusKey]);
+
   function addAttachment() {
     attachmentsTouched.current = true;
-    setAttachments((list) => [...list, { key: nextKey, name: '', text: '' }]);
+    const key = nextKey;
+    setAttachments((list) => [...list, { key, name: '', text: '' }]);
     setNextKey((k) => k + 1);
+    setFocusKey(key);
   }
 
   function updateAttachment(key: number, patch: Partial<Attachment>) {
@@ -177,6 +189,10 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
                 </label>
                 <input
                   id={`${fieldId}-name-${a.key}`}
+                  ref={(el) => {
+                    if (el) nameFields.current.set(a.key, el);
+                    else nameFields.current.delete(a.key);
+                  }}
                   className="input attachment-name"
                   value={a.name}
                   placeholder="Name, e.g. Current draft"
