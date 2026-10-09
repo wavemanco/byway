@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { OPTION_SET } from '@byway/protocol';
-import { audit, loop, oneShotGate, pick, relay, replicate, seq, step, type Gate, type Node, type Recipe, type Seq, type Step } from '@byway/recipe';
+import { audit, loop, oneShotGate, optional, pick, relay, replicate, seq, step, type Gate, type Node, type Recipe, type Seq, type Step } from '@byway/recipe';
 import { flowRecipe, validate } from '../src/index.ts';
 import { okGate, stepById, studio } from './fixtures.ts';
 
@@ -114,6 +114,50 @@ describe("ST9/ST10 human-write: a lens or a gate body holds no person's write", 
     const v = d3(r).steps[i]!;
     d3(r).steps[i] = oneShotGate('final', seq(v, render('gate-render'), critic('gate-critic')), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' });
     expect(only(r, 'ST10')).toEqual(['ST10:human-write', 'ST10:writes']);
+  });
+});
+
+/**
+ * A person's list of what to remove, or a reaction of theirs given as a critique, is an answer the step after it acts
+ * on. Where the operator around it drops that answer, the step after it acts on an earlier critique instead, and the
+ * person's answer is lost without a word (the round-3 verification's C3 and C4 cases): refused where it is asked.
+ */
+describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person's answer that an operator drops", () => {
+  const personCut = (id: string): Step => step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] });
+  const personCritique = (id: string): Step => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] });
+  /** The studio with its person's CUT replaced by f(it). */
+  const cutIn = (f: (cut: Step) => Node): Recipe => {
+    const r = studio();
+    const i = indexOf(d3(r), 'cut');
+    d3(r).steps[i] = f(d3(r).steps[i] as Step);
+    return r;
+  };
+  const answers = (r: Recipe) => clauses(r).filter((c) => /human-critique|critique-per-candidate/.test(c)).sort();
+
+  it('inside replicate or each: a candidate hands on only its work, so the list never reaches the step after it', () => {
+    expect(answers(cutIn((cut) => replicate('twice', 2, cut)))).toEqual(['ST12:critique-per-candidate']);
+    expect(answers(cutIn((cut) => replicate('once', 1, cut)))).toEqual(['ST12:critique-per-candidate']);
+    const r = studio();
+    const d2 = r.stages[1]!.body as Seq;
+    const each = d2.steps[0] as Extract<Node, { op: 'each' }>;
+    (each.body as Seq).steps.unshift(render('cand-render'), personCritique('cand-taste'));
+    expect(answers(r)).toEqual(['ST12:critique-per-candidate']);
+    // Elsewhere it is asked as before: at stage level, or under an optional, whose body hands on what it made.
+    expect(answers(studio())).toEqual([]);
+    expect(answers(cutIn((cut) => optional('maybe', 'a person wants to trim', cut)))).toEqual([]);
+  });
+
+  it('in an audit lens or a one-shot gate body: an empty answer is dropped there, and the next fix applies an earlier critique', () => {
+    expect(answers(cutIn((cut) => audit('trim', [{ name: 'trim', body: cut }])))).toEqual(['ST9:human-critique']);
+    expect(answers(cutIn((cut) => oneShotGate('final', seq(cut, critic('gate-critic')), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' })))).toEqual(['ST10:human-critique']);
+    const r = studio();
+    insertAfter(d3(r), 'render-5', audit('notes', [{ name: 'yours', body: personCritique('lens-critique') }]));
+    expect(answers(r)).toEqual(['ST9:human-critique']);
+    // A person's taste is not a critique: the fix never applies it, so a lens may hold it.
+    const taste = step({ id: 'lens-taste', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['taste'] });
+    const t = studio();
+    insertAfter(d3(t), 'render-5', audit('notes', [{ name: 'yours', body: taste }]));
+    expect(answers(t)).toEqual([]);
   });
 });
 

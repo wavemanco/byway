@@ -1,4 +1,4 @@
-import { c1, c2, c4, c5, c6, c6a, c7, PROTOCOL_CONFIGS, presentationOf, presentedStepFor } from '@byway/catalog';
+import { c1, c2, c3, c4, c5, c6, c6a, c7, PROTOCOL_CONFIGS, presentationOf, presentedStepFor } from '@byway/catalog';
 import { lockedScripts, walk, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
 import { checkAnswer, COMPOSED_EXPLAINERS, diffFromNearest, nodeIds, presentComposed, stepLabel } from '../src/index.ts';
@@ -366,6 +366,17 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(shown(flagged, 'angles2')).toMatchObject({ label: 'Directions', explainer: E.visionAi });
     // The diff names the added step as the composed recipe has it.
     expect(diffFromNearest(flagged, c5, 'x', presentationOf('c5'))).toContain('Added: Directions (Explore)');
+  });
+
+  it('a CUT of yours where the operator around it drops your list is refused, never explained as removed (round 3: C3, C4)', () => {
+    const refusals = (raw: N, nearest: Recipe) =>
+      checkAnswer(fencedJson(raw), nearest, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, `composed-${nearest.id}`).violations.map((v) => `${v.ruleId}:${v.clause ?? ''}`);
+    // C3 with your CUT in a replicate of two: the replicate hands on only the candidates' work.
+    expect(refusals(edited(c3, 'cut', (n) => ({ op: 'replicate', id: 'rep', n: 2, body: n })), c3)).toEqual(['ST12:critique-per-candidate']);
+    // C4 with your CUT in an audit lens: a list left empty is dropped with the lens.
+    expect(refusals(edited(c4, 'cut', (n) => ({ op: 'audit', id: 'aud', lenses: [{ name: 'trim', body: n }] })), c4)).toEqual(['ST9:human-critique']);
+    // As the catalog has it, your CUT is admitted and explained as the list the AI removes.
+    expect(explained(admitted(copy(c3), c3), 'cut')).toBe(E.cutYoursApplies);
   });
 
   it('the diff names an added step as the composed recipe has it where it sits', () => {

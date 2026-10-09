@@ -163,6 +163,15 @@ export function replacesCritique(n: Node): boolean {
   }
 }
 
+/**
+ * A person's answer kept as the critique (human()): their CUT's list of what to remove, or a reaction of theirs that
+ * produces a critique. The step after it acts on it, so it may sit only where the run hands it on: not in replicate or
+ * each (a candidate hands on only its work), an audit lens or a one-shot gate's body (an empty answer is dropped there,
+ * and the fix after it applies an earlier critique). Admission refuses it there (ST12 'critique-per-candidate', ST9
+ * and ST10 'human-critique'; ADR-0098).
+ */
+export const personCritique = (s: Step): boolean => s.actor === 'human' && replacesCritique(s);
+
 // ---- Declarations about the person's words ----------------------------------------------------------------------
 
 /** A step that declares itself VOICE: the VOICE block label or the 'voice' port. A declaration, never a protection. */

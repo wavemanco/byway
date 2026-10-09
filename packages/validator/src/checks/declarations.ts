@@ -3,6 +3,7 @@ import {
   blockAgrees,
   declaresVoice,
   machineWrites,
+  personCritique,
   personWrite,
   PICK_ACTOR,
   PICK_JUDGE_ROLES,
@@ -21,7 +22,8 @@ import type { Findings } from '../context.ts';
 import { flowRecipe } from '../flow.ts';
 
 /**
- * ST12 (ADR-0092): what a recipe declares agrees with what it runs, and nothing it puts back undoes a person's write.
+ * ST12 (ADR-0092): what a recipe declares agrees with what it runs, nothing it puts back undoes a person's write, and
+ * no person's list or critique is asked per candidate, where the run drops it (ADR-0098).
  * Protections are granted only by what executes (@byway/recipe semantics); a declaration may add arming or refusals,
  * never take one away. So a declaration that says less than execution is refused, and for VOICE and block labels, one
  * that says anything else.
@@ -44,6 +46,11 @@ export function checkDeclarations(recipe: Recipe, findings: Findings): void {
     }
     if (perCandidate && voiceArm(step)) {
       findings.add('ST12', path, `VOICE "${step.id}" runs once per candidate; the person's words go into the one work, after the pick`, 'voice-per-candidate');
+    }
+    // A person's list or critique asked per candidate is dropped when the candidates end: replicate and each hand on
+    // only their work, so the step after them acts on an earlier critique (ADR-0098).
+    if (perCandidate && personCritique(step)) {
+      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique once per candidate; replicate and each hand on only the candidates' work, so their answer never reaches the steps after them`, 'critique-per-candidate');
     }
   }
   walk(recipe, (node, path) => {
