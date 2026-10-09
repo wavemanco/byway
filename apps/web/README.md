@@ -22,7 +22,7 @@ Next sees it and is the only port listening.
 
 | Path | What lives there |
 |---|---|
-| `app/` | Screens (Start, Recommendation, Run, Result, Library, History, Settings), route handlers under `app/api`, and the artifact routes `app/artifacts/[id]` and `app/api/artifacts/[id]` |
+| `app/` | Screens (Start, Recommendation, Run, Result, Library, History, Settings, and the whole-artifact viewer `app/view/[id]`), route handlers under `app/api`, and the artifact routes `app/artifacts/[id]` and `app/api/artifacts/[id]` |
 | `src/services/` | **The seam.** `getContext()` / `getServices()` return `{ advisor, runner, store, gateway, mode }`: the four `@byway/contracts` interfaces and nothing else. Screens and route handlers reach data only through it. Server-only |
 | `src/server/` | Route-handler logic as plain functions (`api.ts`), the loopback/CSRF guard used by `proxy.ts`, artifact headers, request schemas, storing your examples (`refs.ts`) |
 | `src/view/` | Pure view models: the step index and timeline, the cost meter, checkpoint panels, labels, formatting, the claims rule. Unit-tested in `test/` |
@@ -95,9 +95,19 @@ Logic on top of the contracts sits in view code:
   scripts from navigating itself, and so sending what it contains to another site, so a page inside byway runs its
   scripts only after you turn them on for that page ("Run the page's scripts"), and only while the screen shows it:
   the choice is never stored, and a reload or another page starts with scripts off. Thumbnails never run scripts.
+- The consent is in the response too (ADR-0085): `/artifacts/<id>` serves a page inert (a bare `sandbox`: no scripts,
+  no meta refresh), and adds `allow-scripts` only for `?scripts=1` asked by a same-origin frame (Fetch Metadata),
+  never cached. So a page opened top-level, by any link, typed address or history, runs nothing. Every "Open" in the
+  app goes to the whole-artifact viewer `/view/<id>` (`openHref`), which shows a page with the same switch, text
+  whole, and images and clips as themselves; the raw address is only an element's `src` and a download. The app's
+  CSP has `frame-src 'self'`, so a framed page cannot be carried to another site by a link or its own script.
   `/api/artifacts/<id>` serves media only, so a
   page cannot move itself to an address without its sandbox. Markdown shows images only from byway's artifact routes.
   Other media are served inert; an uploaded example image must really be PNG, JPEG or WebP.
+- The Run screen's polled data carries at most 16 KB of each text, marked as an excerpt (`complete`, `bytes`;
+  ADR-0086). Step rows and cards show it as a snippet, with counts (a diff's size, an option map's titles) taken from
+  the whole artifact on the server; views you decide in (compare, references, a step's detail) load the whole text and
+  say so while they show only the opening.
 - Evidence labels are computed by the advisor; `test/guard-claims.test.ts` fails if any app string, recipe
   presentation, prompt template or README claims efficacy.
 - Provider keys are never read into the browser, shown or sent: the services module is server-only, Settings shows
