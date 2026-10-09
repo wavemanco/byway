@@ -161,6 +161,71 @@ describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person
   });
 });
 
+/**
+ * A person's list of what to remove ("What should go? List what to remove") or a reaction of theirs given as a critique
+ * says it will be acted on. Where no AI writer takes it in on any path, it is dropped without a word: refused where it
+ * is asked (ADR-0098). Some path is enough: a path on which it goes unapplied while another applies it is one the
+ * person's later answer selects (an optional, a route, the end of their loop) or a judge in a relay link skipped with
+ * nothing to see.
+ */
+describe("ST12 'critique-unapplied': no person's list or critique that no writer applies on any path", () => {
+  const personCut = (id: string): Step => step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] });
+  const yourCritique = (id: string): Step => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] });
+  const unapplied = (r: Recipe) => validate(r).violations.filter((v) => v.clause === 'critique-unapplied');
+
+  it('a CUT with no fix after it is refused, at its place, in plain words', () => {
+    expect(unapplied(studio())).toEqual([]);
+    const r = studio();
+    d3(r).steps.splice(indexOf(d3(r), 'apply-cut'), 1);
+    const v = unapplied(r);
+    expect(v.map((x) => `${x.ruleId} ${x.path}`)).toEqual(['ST12 stages[2].body.steps[1]']);
+    expect(v[0]!.message).toBe('step "cut" asks a person for a list or a critique that no AI writer takes in on any path: another critique takes its place, or nothing that changes the work reads it, so their answer is dropped');
+  });
+
+  it("a direction of the person's given as a critique between the CUT and its fix: the later answer replaces the list", () => {
+    const r = studio();
+    insertAfter(d3(r), 'cut', yourCritique('direction'));
+    expect(unapplied(r).map((x) => x.path)).toEqual(['stages[2].body.steps[1]']);
+    // The direction itself is applied by the fix.
+    expect(clauses(r).filter((c) => c.startsWith('ST12'))).toEqual(['ST12:critique-unapplied']);
+  });
+
+  it('a CUT that the next round, an optional fix or a route branch applies is admitted (some path)', () => {
+    const optionalFix = studio();
+    const i = indexOf(d3(optionalFix), 'apply-cut');
+    d3(optionalFix).steps[i] = optional('apply-if-wanted', 'a person wants the cuts made', d3(optionalFix).steps[i]!);
+    expect(unapplied(optionalFix)).toEqual([]);
+    // A critique that a person may run first puts another in its place on that path only.
+    const review = studio();
+    insertAfter(d3(review), 'cut', optional('review', 'a person wants a review first', critic('extra-critic')));
+    expect(unapplied(review)).toEqual([]);
+  });
+
+  it('only once per step: where a candidate, a lens or a gate body drops it, those clauses say so', () => {
+    const cutIn = (f: (cut: Step) => Node): Recipe => {
+      const r = studio();
+      const i = indexOf(d3(r), 'cut');
+      d3(r).steps[i] = f(d3(r).steps[i] as Step);
+      return r;
+    };
+    expect(clauses(cutIn((cut) => replicate('twice', 2, cut))).filter((c) => /critique/.test(c))).toEqual(['ST12:critique-per-candidate']);
+    expect(clauses(cutIn((cut) => audit('trim', [{ name: 'trim', body: cut }]))).filter((c) => /critique/.test(c))).toEqual(['ST9:human-critique']);
+    // A list no writer applies, asked per candidate, is refused once, as asked per candidate.
+    const r = studio();
+    d3(r).steps.splice(indexOf(d3(r), 'apply-cut'), 1);
+    const i = indexOf(d3(r), 'cut');
+    d3(r).steps[i] = replicate('twice', 2, d3(r).steps[i]!);
+    expect(clauses(r).filter((c) => /critique/.test(c))).toEqual(['ST12:critique-per-candidate']);
+  });
+
+  it('a person’s own draft is not a writer that applies it: the run shows a person no critique', () => {
+    const own = studio();
+    const i = indexOf(d3(own), 'apply-cut');
+    d3(own).steps[i] = humanDraft('own-trim', ['critique', 'artifact']);
+    expect(unapplied(own).map((x) => x.path)).toEqual(['stages[2].body.steps[1]']);
+  });
+});
+
 describe('set-aside: nothing put back undoes a person’s write', () => {
   it('ST5: a pick after a person’s write picks from options made before it (Q1, QA)', () => {
     const r = studio();

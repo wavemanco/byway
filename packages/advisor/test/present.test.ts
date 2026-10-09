@@ -380,6 +380,39 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(explained(admitted(copy(c3), c3), 'cut')).toBe(E.cutYoursApplies);
   });
 
+  it('a CUT of yours that no AI writer applies on any path is refused (C4: no fix after it, or a direction of yours before the fix)', () => {
+    const refused = (raw: N, nearest: Recipe) =>
+      checkAnswer(fencedJson(raw), nearest, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, `composed-${nearest.id}`).violations.filter((v) => v.clause === 'critique-unapplied').map((v) => `${v.ruleId} ${v.message}`);
+    const message = 'ST12 step "cut" asks a person for a list or a critique that no AI writer takes in on any path: another critique takes its place, or nothing that changes the work reads it, so their answer is dropped';
+    expect(refused(removed(c4, 'apply-cut'), c4)).toEqual([message]);
+    const direction = { op: 'step', id: 'your-direction', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] };
+    expect(refused(edited(c4, 'cut', (n) => n, direction), c4)).toEqual([message]);
+    // A direction of yours after the trim's fix: the cliché sweep puts its finds in its place before the swap step.
+    expect(refused(edited(c4, 'apply-cut', (n) => n, { ...direction, id: 'late-direction' }), c4)).toEqual([message.replace('"cut"', '"late-direction"')]);
+  });
+
+  it('a skipped step is never said to apply a critique: an audio ASSET that takes one in finishes skipped (ADR-0069)', () => {
+    const r = asComposed({
+      ...c3,
+      stages: [
+        {
+          stage: 'D2',
+          body: {
+            op: 'seq',
+            steps: [
+              { op: 'step', id: 'draft', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['intent'], produces: ['artifact'], writes: true },
+              { op: 'step', id: 'render', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] },
+              { op: 'step', id: 'critic', role: 'critic', block: 'CRITIC', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'p.c', consumes: ['view'], produces: ['critique', 'score'], knobs: { mode: 'OK' } },
+              { op: 'step', id: 'vo', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'p.a', consumes: ['voice', 'critique', 'artifact'], produces: ['artifact'], writes: true },
+            ],
+          },
+        },
+      ],
+    } as Recipe);
+    expect(explained(r, 'critic')).toBe(E.critic);
+    expect(explained(r, 'vo')).toBe(E.audioSkipped);
+  });
+
   it('findings are said to be applied only by a writer they reach on every path, not by the writer that comes next', () => {
     // C3 and C4 with the cliché sweep in a replicate of two: the replicate hands on the critique it started with, so the
     // swap step applies your trim list again, not the sweep's finds.

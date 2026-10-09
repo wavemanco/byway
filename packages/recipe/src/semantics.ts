@@ -12,7 +12,8 @@
  * - what can run after a step, from walk order, the loops and relays around it and the final checks that re-run a
  *   stage: a script VOICE is locked after it only where nothing the person writes later can change it;
  * - where a run's paths go (the one flow walk, `flowRecipe`, that every path rule reads), and what reaches a step along
- *   them: whose critique a writer applies, and whose directions the person's next VISION is shown.
+ *   them: whose critique a writer applies, which of a person's lists and critiques no writer applies, and whose
+ *   directions the person's next VISION is shown.
  *
  * Admission (the validator, the composed profile, web start) reads these facts from here. A step's own declarations
  * (`writes`, `produces: ['voice']`, `block`, `keepsVoice`) may only add arming or refusals, never grant a protection,
@@ -168,7 +169,8 @@ export function replacesCritique(n: Node): boolean {
  * A person's answer kept as the critique (human()): their CUT's list of what to remove, or a reaction of theirs that
  * produces a critique. The step after it acts on it, so it may sit only where the run hands it on: not in replicate or
  * each (a candidate hands on only its work), an audit lens or a one-shot gate's body (an empty answer is dropped there,
- * and the fix after it applies an earlier critique). Admission refuses it there (ST12 'critique-per-candidate', ST9
+ * and the fix after it applies an earlier critique), and only where some writer applies it on some path
+ * (`unappliedCritiques`). Admission refuses it elsewhere (ST12 'critique-per-candidate' and 'critique-unapplied', ST9
  * and ST10 'human-critique'; ADR-0098).
  */
 export const personCritique = (s: Step): boolean => s.actor === 'human' && replacesCritique(s);
@@ -807,9 +809,27 @@ function skippableJudges(recipe: Recipe): Map<string, boolean> {
 }
 
 /**
- * Whose critique a step applies: for each step that takes in a critique, the one step whose critique reaches it on
- * every path, at every place it sits. None when another step's critique can reach it instead on some path, or none
- * at all. Read on the exit-aware flow walk, with the operators handing the critique on as the interpreter does:
+ * A writer that applies the critique it takes in, where it sits: a machine writer (by what it runs, never by its
+ * `writes` flag) that consumes the critique or reads it when it is there (ADR-0089: a read fills the same slot of its
+ * prompt), and that runs in this version (`hasNoExecutor`: an ASSET that makes voice-over audio finishes skipped, ADR-0069).
+ * Not where what it writes never reaches the work (`contained`: an audit lens, a one-shot gate's body or a pick's judge).
+ * A person's own write is never one: the run puts a critique only in a model's prompt (the interpreter shows a person
+ * the work and the latest notes, never the critique).
+ */
+export const appliesCritique = (s: Step, contained: boolean): boolean => !contained && machineWrites(s) && takesCritique(s) && !hasNoExecutor(s);
+
+/** A place a step that takes in a critique sits, with the places whose critique may be the latest there when it runs. */
+interface CritiqueTaker {
+  step: Step;
+  contained: boolean;
+  /** Walk paths of the steps whose critique may be the latest; '' when none may have been given yet. */
+  from: Set<string>;
+}
+
+/**
+ * The one walk `critiqueSources` and `unappliedCritiques` read: what critique may be the latest at each place a step
+ * that takes one in sits, by the places (walk paths) of the steps that put it there. Read on the exit-aware flow walk,
+ * with the operators handing the critique on as the interpreter does:
  *
  * - A step that puts another critique in place (`replacesCritique`) is the latest one's source from then on; a write, a
  *   render or a person's taste leaves it as it was. A cliché sweep stays the source when the person chooses which of
@@ -820,47 +840,76 @@ function skippableJudges(recipe: Recipe): Map<string, boolean> {
  *   unless it reports to the loop around it, whose round then ends there (ADR-0090). A person's answer in a lens or a
  *   gate body may be empty, which is dropped (admission refuses one there, ST9 and ST10 'human-critique').
  *
+ * A may-analysis over a walk that holds every run (and some that never happen: a loop also leaves from the end of its
+ * body), so "may be the latest" covers every run, and "on no path" holds of every run.
+ */
+function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<string, CritiqueTaker> } {
+  // A state: the places of the steps whose critique may be the latest, sorted; '' is none yet.
+  const at = new Map<string, Step>();
+  const takers = new Map<string, CritiqueTaker>();
+  const union = (a: readonly string[], b: readonly string[]): string[] => [...new Set([...a, ...b])].sort();
+  const skippable = skippableJudges(recipe);
+  flowRecipe<string[]>(recipe, [''], {
+    step(s, path, _stage, st, contained) {
+      if (takesCritique(s)) {
+        const t = takers.get(path) ?? takers.set(path, { step: s, contained, from: new Set() }).get(path)!;
+        for (const x of st) t.from.add(x);
+      }
+      if (!replacesCritique(s)) return st;
+      at.set(path, s);
+      // A judge skipped where the run goes on past it, or a person's empty answer that a lens or a gate drops.
+      if (skippable.get(path) === false || (s.actor === 'human' && contained)) return union(st, [path]);
+      return [path];
+    },
+    join: (states) => states.reduce<string[]>((a, b) => union(a, b), []),
+    // Walk paths hold no '|'.
+    key: (st) => st.join('|'),
+    after: (node, entry, inner) => (node.op === 'audit' || node.op === 'gate' ? inner : entry),
+    exit: (_s, path, before, after) => (skippable.get(path) ? union(before, after) : after),
+  });
+  return { at, takers };
+}
+
+/**
+ * Whose critique a step applies: for each step that takes in a critique, the one step whose critique reaches it on
+ * every path, at every place it sits. None when another step's critique can reach it instead on some path, or none
+ * at all (`critiqueFlow`, by the step objects at those places).
+ *
  * The presentation says a step's findings are applied only by a writer that applies them and no other critique
  * (present.ts), as the run applies them: a writer that comes next in the recipe may apply another step's critique.
  */
 export function critiqueSources(recipe: Recipe): Map<Step, Step> {
-  // A state: the numbers of the steps whose critique may be the latest, sorted; -1 is none yet.
-  const numbers = new Map<Step, number>();
-  const byNumber: Step[] = [];
-  const num = (s: Step): number => {
-    let n = numbers.get(s);
-    if (n === undefined) {
-      n = byNumber.length;
-      numbers.set(s, n);
-      byNumber.push(s);
-    }
-    return n;
-  };
-  const union = (a: readonly number[], b: readonly number[]): number[] => [...new Set([...a, ...b])].sort((x, y) => x - y);
-  const skippable = skippableJudges(recipe);
-  const seen = new Map<Step, Set<number>>();
-  flowRecipe<number[]>(recipe, [-1], {
-    step(s, path, _stage, st, contained) {
-      if (takesCritique(s)) {
-        const acc = seen.get(s) ?? seen.set(s, new Set()).get(s)!;
-        for (const x of st) acc.add(x);
-      }
-      if (!replacesCritique(s)) return st;
-      // A judge skipped where the run goes on past it, or a person's empty answer that a lens or a gate drops.
-      if (skippable.get(path) === false || (s.actor === 'human' && contained)) return union(st, [num(s)]);
-      return [num(s)];
-    },
-    join: (states) => states.reduce<number[]>((a, b) => union(a, b), []),
-    key: (st) => st.join(','),
-    after: (node, entry, inner) => (node.op === 'audit' || node.op === 'gate' ? inner : entry),
-    exit: (_s, path, before, after) => (skippable.get(path) ? union(before, after) : after),
-  });
+  const { at, takers } = critiqueFlow(recipe);
+  const seen = new Map<Step, Set<Step | undefined>>();
+  for (const t of takers.values()) {
+    const acc = seen.get(t.step) ?? seen.set(t.step, new Set()).get(t.step)!;
+    for (const p of t.from) acc.add(p ? at.get(p) : undefined);
+  }
   const out = new Map<Step, Step>();
   for (const [s, from] of seen) {
     const only = [...from];
-    if (only.length === 1 && only[0]! >= 0) out.set(s, byNumber[only[0]!]!);
+    if (only.length === 1 && only[0] !== undefined) out.set(s, only[0]);
   }
   return out;
+}
+
+/**
+ * A person's lists and critiques (`personCritique`) that no writer applies: the places where one is asked whose answer
+ * no `appliesCritique` step takes in, on any path (`critiqueFlow`, by place). The run asks "What should go? List what to
+ * remove", or what the next version should avoid, and drops the answer without a word: before any writer that takes a
+ * critique in, another critique takes its place (a critic, a check, a CUT, a sweep, a direction of the person's given
+ * as a critique, or an audit or a final check that notes anything), or none comes after it at all. Admission refuses
+ * one (ST12 'critique-unapplied', ADR-0098).
+ *
+ * Some path, not every path. The paths on which an answer goes unapplied while another path applies it are chosen by
+ * the person's own later answers (an optional they run or decline, a route branch, the end of a loop they hold) or by
+ * a judge in a relay link skipped with nothing to see; an every-path reading would refuse those, and, on a walk that
+ * also leaves a loop from the end of its body, some whose answer every run applies.
+ */
+export function unappliedCritiques(recipe: Recipe): Placement[] {
+  const applied = new Set<string>();
+  for (const t of critiqueFlow(recipe).takers.values()) if (appliesCritique(t.step, t.contained)) for (const p of t.from) applied.add(p);
+  return placements(recipe).filter((p) => personCritique(p.step) && !applied.has(p.path));
 }
 
 /**

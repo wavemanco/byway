@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   ACTORS,
+  appliesCritique,
   asksSwaps,
   audioAsset,
   audit,
@@ -42,6 +43,7 @@ import {
   seq,
   step,
   stepEffect,
+  unappliedCritiques,
   voiceScope,
   voiceWrite,
   authorWrite,
@@ -468,6 +470,74 @@ describe('whose critique a writer applies (critiqueSources)', () => {
     const f = fix('f');
     expect(sources(recipeOf(seq(critic('c'), f, check('k'), f)))).toEqual({});
     expect(sources(recipeOf(seq(critic('c'), f, render('r'), f)))).toEqual({ f: 'c' });
+  });
+});
+
+describe("a person's list or critique that no writer applies (unappliedCritiques, appliesCritique)", () => {
+  const personCut = (id: string): Step => step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] });
+  const yourCritique = (id: string): Step => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] });
+  const unapplied = (body: Node) => ids(unappliedCritiques(recipeOf(body)));
+  const { consumes: _c, ...fixRest } = fix('reads');
+  const readsFix = step({ ...fixRest, consumes: ['artifact'], reads: ['critique'] });
+
+  it('applied where an AI writer takes it in on some path; dropped where none does on any path', () => {
+    expect(unapplied(seq(render('r'), personCut('cut'), fix('f')))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), render('r'), authorDraft('own'), fix('f')))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), readsFix))).toEqual([]);
+    // No writer after it, or one only before it.
+    expect(unapplied(seq(fix('f'), render('r'), personCut('cut')))).toEqual(['cut']);
+    // Another critique put in its place first: a direction of yours given as a critique (C4's case), a critic.
+    expect(unapplied(seq(render('r'), personCut('cut'), yourCritique('direction'), fix('f')))).toEqual(['cut']);
+    expect(unapplied(seq(personCut('cut'), render('r'), critic('c'), fix('f')))).toEqual(['cut']);
+    // Some path is enough: a fix you may decline, or one that a critic you may run comes before.
+    expect(unapplied(seq(personCut('cut'), optional('o', 'you want it', fix('f'))))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), optional('o', 'you want a review', seq(render('r'), critic('c'))), fix('f')))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), route('rt', 'how', [{ name: 'ai', body: fix('f') }, { name: 'yours', body: authorDraft('own') }])))).toEqual([]);
+    // The next round's fix applies a list given at the end of a round (the last round's goes unapplied).
+    expect(unapplied(loop('l', seq(fix('f'), render('r'), personCut('cut')), gate('human')))).toEqual([]);
+  });
+
+  it('only a machine writer that runs in this version and whose work is kept applies it', () => {
+    expect(appliesCritique(fix('f'), false)).toBe(true);
+    expect(appliesCritique(readsFix, false)).toBe(true);
+    expect(appliesCritique(fix('f'), true)).toBe(false);
+    // Your own draft is shown no critique (the run puts it in a model's prompt only).
+    const ownWithCritique = step({ ...authorDraft('own'), consumes: ['critique', 'artifact'] });
+    expect(appliesCritique(ownWithCritique, false)).toBe(false);
+    expect(unapplied(seq(personCut('cut'), ownWithCritique))).toEqual(['cut']);
+    // A fix in a lens or a final check's body drafts what never becomes the work.
+    expect(unapplied(seq(personCut('cut'), audit('au', [{ name: 'x', body: seq(fix('f'), render('r'), critic('c')) }])))).toEqual(['cut']);
+    expect(unapplied(seq(personCut('cut'), oneShotGate('g', seq(fix('f'), render('r'), critic('c')), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' })))).toEqual(['cut']);
+    // A step that takes it in to make something else: an AI direction from it, which a build then follows.
+    const sharpen = step({ id: 'sharpen', role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes: ['critique'], produces: ['brief'] });
+    const build = step({ id: 'b', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['brief'], produces: ['artifact'], writes: true });
+    expect(unapplied(seq(personCut('cut'), sharpen, build))).toEqual(['cut']);
+    // An ASSET that makes voice-over audio finishes skipped in this version (ADR-0069).
+    const vo = step({ id: 'vo', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'p.a', consumes: ['voice', 'critique', 'artifact'], produces: ['artifact'], writes: true });
+    expect(hasNoExecutor(vo)).toBe(true);
+    expect(appliesCritique(vo, false)).toBe(false);
+    expect(unapplied(seq(personCut('cut'), vo))).toEqual(['cut']);
+  });
+
+  it('as the operators hand it on: candidates take it in, and hand on the critique they started with', () => {
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, fix('f'))))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), each('e', fix('f'))))).toEqual([]);
+    expect(unapplied(seq(replicate('x', 2, personCut('cut')), fix('f')))).toEqual(['cut']);
+    expect(unapplied(seq(replicate('x', 2, seq(render('r'), personCut('cut'), fix('f')))))).toEqual([]);
+    // A lens or a final check hands a non-empty answer on (admission refuses a person's answer there: ST9, ST10).
+    expect(unapplied(seq(audit('au', [{ name: 'p', body: personCut('cut') }]), fix('f')))).toEqual([]);
+    // A judge in a relay link with nothing to see is skipped, and the fix after it applies the list (ADR-0090).
+    expect(unapplied(relay('chain', 2, seq(personCut('cut'), render('r'), check('k'), fix('f'))))).toEqual([]);
+    expect(unapplied(relay('chain', 2, loop('repair', seq(personCut('cut'), render('r'), check('k'), fix('f')), gate('check-clean'))))).toEqual(['cut']);
+  });
+
+  it('at every place a step object sits, by its place', () => {
+    const cut = personCut('cut');
+    const f = fix('f');
+    const r = recipeOf(seq(cut, f, render('r'), cut));
+    expect(unappliedCritiques(r).map((p) => p.path)).toEqual(['stages[0].body.steps[3]']);
+    // The same walk as critiqueSources, which reads the step object: the fix's one source is the CUT.
+    expect(critiqueSources(r).get(f)).toBe(cut);
   });
 });
 

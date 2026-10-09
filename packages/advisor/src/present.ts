@@ -1,6 +1,7 @@
 import type { RecipePresentation } from '@byway/contracts';
 import { BLOCK_NAMES, STAGE_NAMES } from '@byway/catalog';
 import {
+  appliesCritique,
   asksSwaps,
   audioAsset,
   authorWrite,
@@ -314,11 +315,12 @@ function whoDoes(units: Unit[]): Who {
 /** Roles whose output is a critique a following writer applies, when the step makes one (a tool's is skipped: replacesCritique). */
 const FINDS = new Set(['critic', 'check', 'cut', 'tells-sweep']);
 /**
- * A machine writer that takes in a critique, consumed or read when it is there (ADR-0089: a read fills the same slot):
- * it applies the findings, by what it runs (not by its `writes` flag), unless what it writes never reaches the work
- * (inside an audit lens or a final check's body).
+ * A writer that applies the findings it takes in (@byway/recipe appliesCritique, the one admission reads): a machine
+ * writer by what it runs (not by its `writes` flag) that takes in a critique, consumed or read when it is there
+ * (ADR-0089), and runs in this version, unless what it writes never reaches the work at some place it sits (inside an
+ * audit lens or a final check's body).
  */
-const appliesFindings = (u: Unit, near: Around) => u.op === 'step' && machineWrites(u) && inputsOf(u).includes('critique') && !near.containedSomewhere.has(u);
+const appliesFindings = (u: Unit, near: Around) => u.op === 'step' && appliesCritique(u, near.containedSomewhere.has(u));
 const isRender = (u: Unit) => u.op === 'step' && u.role === 'render';
 /** The node a group is named after: the first that is not a render. */
 const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group[0]!;
