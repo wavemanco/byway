@@ -13,9 +13,10 @@
  *
  * Nothing on a card is hidden (F13, ADR-0087). The estimate is only an estimate, so the card has no height cap and no
  * hidden overflow: a render shows how tall it really is, and fitCard measures every render. Words that do not fit one
- * tile are cut at a word boundary, and the card ends with a line saying how many were left out; the caller records the
- * cut. A card that does not fit even without its words is refused, never shown as its first tile. A critic that reads
- * text gets an item's words under its label instead, so its card says so in one fixed line and is never cut.
+ * tile are cut at a word boundary (at a character boundary for text with runs too long to cut between: CJK, minified
+ * JSON, a long token), and the card ends with a line saying how many were left out; the caller records the cut. A card
+ * that does not fit even without its words is refused, never shown as its first tile. A critic that reads text gets
+ * an item's words under its label instead, so its card says so in one fixed line and is never cut.
  */
 
 export const CARD_WIDTH = 1440;
@@ -53,10 +54,32 @@ export interface CardContent {
   /** Text set below the images (a storyboard's words, a text reference). */
   text: string;
   /**
-   * How many of the item's words this card leaves out, said in a closing line so whoever reads the card knows the
-   * text stops early: "[… N more words not shown]" after the words shown, "[all N words not shown]" when none are.
+   * How many of the item's words (or characters, by `unit`) this card leaves out, said in a closing line so whoever
+   * reads the card knows the text stops early: "[… N more words not shown]" after the words shown, "[all N words not
+   * shown]" when none are.
    */
   omitted?: number;
+  /** What `omitted` counts: words unless said. */
+  unit?: CutUnit;
+  /**
+   * Set the words at the 12 px floor even when the estimate says a larger size fits: fitCard's try after the whole
+   * text came out too tall at that size, before it cuts any.
+   */
+  floor?: boolean;
+}
+
+/**
+ * What a card's text is cut by. Words, at their boundaries, unless a run of non-space characters is longer than a line
+ * at the floor (by the estimate): then a word cut could only drop the whole run (a CJK paragraph, minified JSON, a
+ * long token), so the text is cut by characters as people see them (grapheme clusters, never splitting one).
+ */
+export type CutUnit = 'words' | 'characters';
+
+/** A text as the units it is cut by: how many there are, and the text up to the end of the first `n`. */
+export interface TextUnits {
+  unit: CutUnit;
+  total: number;
+  first: (n: number) => string;
 }
 
 const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -83,11 +106,26 @@ export function firstWords(text: string, n: number): string {
   return text.slice(0, end);
 }
 
-/** The closing line of a card that leaves words out. */
-function cutLine(omitted: number, anyShown: boolean): string {
-  const words = omitted === 1 ? 'word' : 'words';
-  if (anyShown) return `[… ${count.format(omitted)} more ${words} not shown]`;
-  return omitted === 1 ? '[1 word not shown]' : `[all ${count.format(omitted)} words not shown]`;
+/** The longest run of non-space characters cut between as a word: one line at the floor, by the estimate. */
+const LONG_RUN = Math.floor(INNER / (MIN_FONT * CHAR_EM));
+
+const graphemes = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
+/** A text as the units a card cuts it by (CutUnit): its words, or its characters when a run is too long to cut between. */
+export function unitsOf(text: string): TextUnits {
+  if (!(text.match(/\S+/g) ?? []).some((run) => run.length > LONG_RUN)) return { unit: 'words', total: wordCount(text), first: (n) => firstWords(text, n) };
+  const chars = Array.from(graphemes.segment(text.trim()), (s) => s.segment);
+  return { unit: 'characters', total: chars.length, first: (n) => chars.slice(0, Math.max(0, n)).join('') };
+}
+
+/** A count of units as the card and the step note say it: "1 word", "5 characters". */
+export const unitNoun = (unit: CutUnit, n: number): string => (unit === 'words' ? (n === 1 ? 'word' : 'words') : n === 1 ? 'character' : 'characters');
+
+/** The closing line of a card that leaves words (or characters) out. */
+function cutLine(omitted: number, unit: CutUnit, anyShown: boolean): string {
+  const noun = unitNoun(unit, omitted);
+  if (anyShown) return `[… ${count.format(omitted)} more ${noun} not shown]`;
+  return omitted === 1 ? `[1 ${noun} not shown]` : `[all ${count.format(omitted)} ${noun} not shown]`;
 }
 
 /** Whether a card sets anything below its images: words, or the line saying they were left out. */
@@ -144,28 +182,30 @@ export function fontSizeFor(text: string, height: number): number {
 const estimatedHeight = (text: string, px: number): number => rowsAt(text, px) * px * LINE_HEIGHT;
 
 /**
- * How many of a card's words the estimate fits at the 12 px floor: all of them when they fit, else as many as fit
- * with room left for the closing line. `scale` is the browser's height per estimated pixel, once a render has measured
- * it (1 before). Only a guess either way: fitCard measures what the renderer makes of it.
+ * How many of a card's words (or characters, by unitsOf) the estimate fits at the 12 px floor: all of them when they
+ * fit, else as many as fit with room left for the closing line. `scale` is the browser's height per estimated pixel,
+ * once a render has measured it (1 before). Only a guess either way: fitCard measures what the renderer makes of it.
  */
-export function wordsThatFit(card: CardContent, scale = 1): number {
-  const total = wordCount(card.text);
+export function unitsThatFit(card: CardContent, scale = 1, units: TextUnits = unitsOf(card.text)): number {
   const height = (text: string) => estimatedHeight(text, MIN_FONT) * scale;
-  if (height(card.text.trim()) <= textRoom({ ...card, omitted: undefined })) return total;
+  if (height(card.text.trim()) <= textRoom({ ...card, omitted: undefined })) return units.total;
   const room = textRoom({ ...card, omitted: 1 }) - CUT_LINE;
-  // The largest count whose words fit (0 when none does): more words never take fewer lines.
+  // The largest count whose text fits (0 when none does): more text never takes fewer lines.
   let lo = 0;
-  let hi = total - 1;
+  let hi = units.total - 1;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (height(firstWords(card.text, mid)) <= room) lo = mid;
+    if (height(units.first(mid)) <= room) lo = mid;
     else hi = mid - 1;
   }
   return lo;
 }
 
-/** The size a card's words are set at: the floor when some are cut (to show as many as it can), else as large as fits. */
-const fontOf = (card: CardContent): number => (card.omitted ? MIN_FONT : fontSizeFor(card.text.trim(), textRoom(card)));
+/**
+ * The size a card's words are set at: the floor when some are cut (to show as many as it can) or when fitCard asks
+ * for it, else as large as fits.
+ */
+const fontOf = (card: CardContent): number => (card.omitted || card.floor ? MIN_FONT : fontSizeFor(card.text.trim(), textRoom(card)));
 
 /** One lineup item as a card page, for the renderer's wide screen. */
 export function cardHtml(card: CardContent): string {
@@ -186,7 +226,7 @@ export function cardHtml(card: CardContent): string {
     images = `<div class="frames" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${card.images.map((im) => `<img src="${src(im.artifactId)}" alt="" style="max-height:${rowMax}px">`).join('')}</div>`;
   }
   const words = text ? `<p class="text" style="font-size:${fontOf(card)}px">${escapeHtml(text)}</p>` : '';
-  const closing = omitted ? `<p class="cut" style="font-size:${MIN_FONT}px">${escapeHtml(cutLine(omitted, text !== ''))}</p>` : '';
+  const closing = omitted ? `<p class="cut" style="font-size:${MIN_FONT}px">${escapeHtml(cutLine(omitted, card.unit ?? 'words', text !== ''))}</p>` : '';
   return [
     '<!doctype html><html><head><meta charset="utf-8"><style>',
     `html,body{margin:0;background:#fff}body{width:${CARD_WIDTH}px}`,
@@ -203,8 +243,15 @@ export function cardHtml(card: CardContent): string {
 /** Renders a card page and returns its screenshot tiles, top to bottom, each at most CARD_MAX_HEIGHT tall. */
 export type CardRender = (html: string) => Promise<readonly Uint8Array[]>;
 
-/** A card fitted into one image, with the words it left out if any; or why it could not be. */
-export type FittedCard = { ok: true; png: Uint8Array; html: string; cut?: { shownWords: number; totalWords: number } } | { ok: false; reason: 'empty' | 'too-tall' };
+/** How much of a card's text one image showed: the first `shown` of its `total` words (or characters). */
+export interface CardCut {
+  unit: CutUnit;
+  shown: number;
+  total: number;
+}
+
+/** A card fitted into one image, with what it left out if anything; or why it could not be. */
+export type FittedCard = { ok: true; png: Uint8Array; html: string; cut?: CardCut } | { ok: false; reason: 'empty' | 'too-tall' };
 
 /** Renders one card may take: tries with words, then one without (each render is a browser page load). */
 export const MAX_CARD_RENDERS = 6;
@@ -236,37 +283,45 @@ function measuredScale(d: Drawn): number {
  * A card rendered into exactly one tile (F13). The first try keeps the words the estimate fits. Its render calibrates
  * the estimate against the browser (the estimate is cautious for ordinary prose and can be wrong for odd text either
  * way), and the next try keeps as many words as the calibrated estimate fits: more when the first fitted with room to
- * spare, fewer when it did not fit. A try that comes out too tall is measured the same way, and the next keeps fewer
- * words still; the card with the most words that fit is kept. When no try with words fits, every word goes and the
- * card says so. A card taller than one tile even then is refused (`too-tall`): it is never cut to its first tile.
- * With `cut: false` (a card whose words reach the critic another way) the card is rendered once, as it is.
+ * spare, fewer when it did not fit. A whole text that comes out too tall at a size above the floor (glyphs wider than
+ * the estimate's average, such as capitals) is tried whole at the floor before any word is cut. A try that comes out
+ * too tall is measured the same way, and the next keeps fewer words still; the card with the most words that fit is
+ * kept. When no try with words fits, every word goes and the card says so. A card taller than one tile even then is
+ * refused (`too-tall`): it is never cut to its first tile. Text with runs too long to cut between is cut by
+ * characters instead (unitsOf). With `cut: false` (a card whose words reach the critic another way) the card is
+ * rendered once, as it is.
  */
 export async function fitCard(card: CardContent, render: CardRender, opts: { cut?: boolean } = {}): Promise<FittedCard> {
-  const total = wordCount(card.text);
-  const draw = async (shown: number): Promise<Drawn> => {
-    const page: CardContent = shown >= total ? { ...card, omitted: undefined } : { ...card, text: firstWords(card.text, shown), omitted: total - shown };
+  const units = unitsOf(card.text);
+  const { total } = units;
+  const draw = async (shown: number, floor = false): Promise<Drawn> => {
+    const page: CardContent = shown >= total ? { ...card, omitted: undefined, ...(floor ? { floor } : {}) } : { ...card, text: units.first(shown), omitted: total - shown, unit: units.unit };
     const html = cardHtml(page);
     return { shown, page, html, tiles: await render(html) };
   };
   const fitted = (d: Drawn): FittedCard => {
     if (d.tiles.length !== 1) return { ok: false, reason: d.tiles.length ? 'too-tall' : 'empty' };
-    return { ok: true, png: d.tiles[0]!, html: d.html, ...(d.shown < total ? { cut: { shownWords: d.shown, totalWords: total } } : {}) };
+    return { ok: true, png: d.tiles[0]!, html: d.html, ...(d.shown < total ? { cut: { unit: units.unit, shown: d.shown, total } } : {}) };
   };
 
   if (opts.cut === false || total === 0) return fitted(await draw(total));
   let best: Drawn | undefined;
-  let shown = wordsThatFit(card);
+  let shown = unitsThatFit(card, 1, units);
+  let floor = false;
   for (let renders = 1; renders < MAX_CARD_RENDERS && shown > (best?.shown ?? 0); renders++) {
-    const d = await draw(shown);
+    const d = await draw(shown, floor);
     if (!d.tiles.length) return fitted(d);
     if (d.tiles.length === 1) {
       best = d;
       // A fit after a calibration is the answer; only the estimate's own first guess may leave words out.
       if (renders > 1 || shown === total) break;
-      shown = wordsThatFit(card, measuredScale(d));
+      shown = unitsThatFit(card, measuredScale(d), units);
+    } else if (shown === total && fontOf(d.page) > MIN_FONT) {
+      // The whole text, too tall at the size the estimate chose: the same words at the floor may still fit.
+      floor = true;
     } else {
       // Too tall: as many words as this render's own measurement says fit, and always some fewer than this try.
-      shown = Math.max(0, Math.min(wordsThatFit(card, measuredScale(d)), shown - Math.max(1, Math.ceil(shown * MIN_STEP))));
+      shown = Math.max(0, Math.min(unitsThatFit(card, measuredScale(d), units), shown - Math.max(1, Math.ceil(shown * MIN_STEP))));
     }
   }
   return fitted(best ?? (await draw(0)));

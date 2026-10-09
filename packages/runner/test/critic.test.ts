@@ -4,7 +4,7 @@
  * BLIND-1); web pages shown by their named surfaces, references too (RENDER-1); and the rank a GREAT critic hands its
  * gate, with the lineup size the gate's threshold was written for (GATE-1). On cards, a critic that reads text gets
  * every item's whole words under its label, and an image-only critic's cards cut words only visibly, with the cut
- * kept for retries and said once in the step's note (F13, ADR-0087).
+ * kept for retries and said once in the verdict's note for the step (F13, ADR-0087).
  */
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Gateway } from '@byway/contracts';
-import { buildLineup, CARD_NOTE, FEW_REFS_NOTE, OK_FALLBACK_NOTE, planCritic, verdictOf, WORDS_UNDER_LABEL, type Lineup } from '../src/activities/critic.ts';
+import { buildLineup, CARD_NOTE, cutNote, FEW_REFS_NOTE, OK_FALLBACK_NOTE, planCritic, verdictOf, WORDS_UNDER_LABEL, type Lineup } from '../src/activities/critic.ts';
 import { StepError } from '../src/activities/failures.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { ArtifactReader, userMessage } from '../src/activities/prompting.ts';
@@ -316,8 +316,8 @@ describe('a card lineup shows every word or says what it left out (F13)', () => 
     const card = cardOf(lineup, lineup.labels.find((l) => cardOf(lineup, l).includes('Every spring'))!);
     expect(card).not.toContain('REF-END-SENTINEL');
     expect(card).toMatch(/\[… [\d,]+ more words not shown\]/);
-    expect(lineup.cut).toEqual([{ item: { ref: long }, shownWords: expect.any(Number), totalWords: 5_941, begins: 'Every spring the river takes a…' }]);
-    expect(lineup.cut[0]!.shownWords).toBeLessThan(5_941);
+    expect(lineup.cut).toEqual([{ item: { ref: long }, unit: 'words', shown: expect.any(Number), total: 5_941, begins: 'Every spring the river takes a…' }]);
+    expect(lineup.cut[0]!.shown).toBeLessThan(5_941);
     // Ours fitted whole, so it is not in the record, and its words are on its card.
     expect(cardOf(lineup, lineup.ours)).toContain('Voice-over: Less time.');
   });
@@ -350,12 +350,23 @@ describe('a card lineup shows every word or says what it left out (F13)', () => 
     const shuffles = [await buildLineup(deps, reader, 'media', { view }, refs, () => 0.1, true, undefined, runId), await buildLineup(deps, reader, 'media', { view }, refs, () => 0.9, true, undefined, runId)];
     expect(shuffles[0]!.ours).not.toBe(shuffles[1]!.ours);
     const { note } = verdictOf(shuffles.map(answerFor));
-    expect(note).toMatch(/^The outside critic was not shown every word: it saw the first [\d,]+ of [\d,]+ words of your work and the first [\d,]+ of 5,941 words of the example that begins “Every spring the river takes a…”\.$/);
+    expect(note).toMatch(/^The outside critic was not shown all the text: it saw the first [\d,]+ of [\d,]+ words of your work and the first [\d,]+ of 5,941 words of the example that begins “Every spring the river takes a…”\.$/);
     expect(note!.match(/your work/g)).toHaveLength(1);
     expect(note!.match(/Every spring/g)).toHaveLength(1);
     expect(note).not.toMatch(/\b[A-D]\b/);
     // Nothing cut, nothing said.
     expect(verdictOf([answerFor({ ...shuffles[0]!, cut: [] })]).note).toBeUndefined();
+  });
+
+  it('the note says a cut in the unit the card cut by, and reads plainly whatever the count', () => {
+    const with_ = (cut: Lineup['cut']): Lineup => ({ slots: {}, images: [], labels: ['A', 'B', 'C', 'D'], ours: 'A', form: 'cards', cut });
+    expect(cutNote([with_([{ item: { ref: 'x' }, unit: 'characters', shown: 9_000, total: 20_000, begins: '春眠不觉晓…' }])])).toBe(
+      'The outside critic was not shown all the text: it saw the first 9,000 of 20,000 characters of the example that begins “春眠不觉晓…”.',
+    );
+    expect(cutNote([with_([{ item: 'ours', unit: 'words', shown: 0, total: 1 }])])).toBe('The outside critic was not shown all the text: it saw none of the text of your work (1 word).');
+    expect(cutNote([with_([{ item: { ref: 'x' }, unit: 'words', shown: 0, total: 5_941, begins: 'Every spring the river takes a…' }])])).toBe(
+      'The outside critic was not shown all the text: it saw none of the text of the example that begins “Every spring the river takes a…” (5,941 words).',
+    );
   });
 
   it('a card that does not fit in one picture stops the step, naming the item, rather than show part of it', async () => {

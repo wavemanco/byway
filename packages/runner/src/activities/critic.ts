@@ -13,13 +13,14 @@
  * On cards no word is lost silently (F13, ADR-0087). A critic that reads text (prose, options, a diff) gets every item's
  * whole words under its label, as a text lineup would give them, and the cards carry only pictures. A critic that sees
  * only images (an ad, a page) gets the words on the cards, as its template says; a card cuts what does not fit one
- * image visibly, the cut is kept with the card for the run, and the step's note says whose words were cut and how
- * many the critic saw, naming items as the person knows them and never by their blind labels.
+ * image visibly, the cut is kept with the card for the run, and the verdict carries one sentence for the step's note
+ * saying whose words were cut and how many the critic saw, naming items as the person knows them and never by their
+ * blind labels (cutNote, for the model step to append to the note it reports: see ADR-0087 for when that lands).
  */
 import { createHash } from 'node:crypto';
 import type { Medium } from '@byway/contracts';
 import { GREAT_MIN_REFERENCES, greatLineup, labelled, labelOf } from '@byway/prompts/pure';
-import { cardHtml, fitCard, imageSize, type CardContent, type CardImage } from '../cards.ts';
+import { cardHtml, fitCard, imageSize, unitNoun, type CardContent, type CardCut, type CardImage } from '../cards.ts';
 import { textView, viewKindOf } from '../formats.ts';
 import { labels } from '../labels.ts';
 import type { ArtifactResolver } from '../pages.ts';
@@ -85,12 +86,13 @@ export interface Lineup {
   cut: LineupCut[];
 }
 
-/** An item whose card showed the critic only some of its words: who it is, never its blind label, and how many. */
-export interface LineupCut {
+/**
+ * An item whose card showed the critic only some of its words: who it is, never its blind label, and how much, in
+ * words or, for text with runs too long to cut between, characters (CardCut).
+ */
+export interface LineupCut extends CardCut {
   /** Ours, or a reference by its artifact id. */
   item: 'ours' | { ref: string };
-  shownWords: number;
-  totalWords: number;
   /**
    * A text reference's opening words, by which the note names it. Not a number: the person never sees the blind
    * labels, and the Start form numbers blank example fields that are dropped before the run.
@@ -217,10 +219,10 @@ function nameOf(item: Item): string {
   return item.kind === 'image' ? 'one of the example images' : 'one of the example pages';
 }
 
-/** A card as kept for the run: its PNG's artifact id, and the words it left out, if any. */
+/** A card as kept for the run: its PNG's artifact id, and how much of its text it showed when it left some out. */
 interface KeptCard {
   artifactId: string;
-  cut?: { shownWords: number; totalWords: number };
+  cut?: CardCut;
 }
 
 /**
@@ -323,27 +325,29 @@ export async function buildLineup(
 const count = new Intl.NumberFormat('en-US');
 
 /**
- * The sentence a critic step adds to its note when a card left words out (F13): whose words, and how many of them the
- * critic saw. One sentence over all of the step's shuffles: an item's card is the same in each, so it is named once
- * (with the fewest words shown, should two ever differ). Items are named as the person knows them, your work first,
- * then each example by its opening words; never by a blind label. Undefined when nothing was cut.
+ * The sentence a critic step's verdict gives for its note when a card left words out (F13): whose words, and how many
+ * of them the critic saw (in characters for text cut by characters). One sentence over all of the step's shuffles: an
+ * item's card is the same in each, so it is named once (with the least shown, should two ever differ). Items are
+ * named as the person knows them, your work first, then each example by its opening words; never by a blind label.
+ * Undefined when nothing was cut.
  */
 export function cutNote(lineups: readonly (Lineup | undefined)[]): string | undefined {
   const byItem = new Map<string, LineupCut>();
   for (const c of lineups.flatMap((l) => l?.cut ?? [])) {
     const key = c.item === 'ours' ? 'ours' : `ref:${c.item.ref}`;
     const had = byItem.get(key);
-    if (!had || c.shownWords < had.shownWords) byItem.set(key, c);
+    if (!had || c.shown < had.shown) byItem.set(key, c);
   }
   if (!byItem.size) return undefined;
   const cuts = [...byItem.values()].sort((a, b) => Number(b.item === 'ours') - Number(a.item === 'ours'));
   const parts = cuts.map((c) => {
-    const seen = c.shownWords ? `the first ${count.format(c.shownWords)} of ${count.format(c.totalWords)} words` : `none of the ${count.format(c.totalWords)} words`;
     const whose = c.item === 'ours' ? 'your work' : c.begins ? `the example that begins “${c.begins}”` : 'one of the examples';
-    return `${seen} of ${whose}`;
+    const all = `${count.format(c.total)} ${unitNoun(c.unit, c.total)}`;
+    // Shown is always fewer than the total, so "the first N of M" has a plural M; nothing shown names the total apart.
+    return c.shown ? `the first ${count.format(c.shown)} of ${all} of ${whose}` : `none of the text of ${whose} (${all})`;
   });
   const listed = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
-  return `The outside critic was not shown every word: it saw ${listed}.`;
+  return `The outside critic was not shown all the text: it saw ${listed}.`;
 }
 
 /** What a critic step hands on: its critique (ours only, in GREAT mode) and its score or our averaged rank. */
