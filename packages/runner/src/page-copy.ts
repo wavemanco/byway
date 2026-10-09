@@ -864,7 +864,13 @@ export const deckLines = (p: PageDeck): string[] => p.units.map((u) => u.display
 
 // ---- the person's answer as an exact positional edit ---------------------------------------------------------------
 
-export type EditLine = { changed: false } | { changed: true; text: string; segs: Seg[] };
+/**
+ * A line of the person's answer. A changed line's `text` and `segs` are read with whitespace collapsed and the ends
+ * trimmed; `lead` and `trail` say that the person's line, with its brackets taken out, begins or ends with whitespace:
+ * a space at that edge, which parts the line from text a browser shows beside it (placement writes it where nothing
+ * else parts them).
+ */
+export type EditLine = { changed: false } | { changed: true; text: string; segs: Seg[]; lead?: true; trail?: true };
 export type PageEdit = { ok: true; lines: EditLine[] };
 /** A refused page answer: the problem, and the 1-based lines it names. */
 export type PageRefusal = { ok: false; problem: string; lines: number[] };
@@ -997,7 +1003,9 @@ export function readPageEdit(p: PageDeck, answer: string, offered?: string, firs
       refuse(i, `Line ${i + 1} has ${want} link${want === 1 ? '' : 's'} in [brackets] and your line has ${links}: keep one pair per link, in order; leave a pair empty, [], to remove its link.`);
       return;
     }
-    changed({ changed: true, text: ns.map((t) => t.text).join(''), segs: ns });
+    const flat = segs.map((t) => t.text).join('');
+    const text = ns.map((t) => t.text).join('');
+    changed({ changed: true, text, segs: ns, ...(text && isHtmlSpace(flat[0]) ? { lead: true as const } : {}), ...(text && isHtmlSpace(flat.at(-1)) ? { trail: true as const } : {}) });
   });
   if (problems.length) return { ok: false, problem: problems.join(' '), lines: named };
   return { ok: true, lines: out };
@@ -1750,13 +1758,18 @@ function place(before: string, edit: PageEdit, notOffered?: ReadonlySet<number>)
     for (const [s, ws] of u.trail) if (!stranded.trail.has(s)) texts.set(s, `${texts.get(s)}${ws}`);
     // The line's edge whitespace also parts it from text beside it on the same screen line. Where new words went past the
     // slot that held it (into a shallower slot beyond formatting, or beyond a dropped piece), the line's new edge would
-    // touch that text: a space goes at the new edge, beside the words ("<b>$20 </b> only " before "Now $15").
+    // touch that text: a space goes at the new edge, beside the words ("<b>$20 </b> only " before "Now $15"). So does a
+    // space the person typed at the line's edge (" there" beside "Hello", or "[] menu" with the link before "menu"
+    // removed). Whitespace already beside the line is not weighed (a space more shows as one, and the reader cannot
+    // always tell whether whitespace shows, as at a button's edge).
     if (line.text) {
       const words = u.slots.filter((s) => noHtmlSpace(texts.get(s)!) !== '');
       const joined = u.slots.map((s) => texts.get(s)!).join('');
       const had = (m: Map<number, string>) => [...m.values()].some((ws) => ws !== '');
-      if (words.length && had(u.lead) && !isHtmlSpace(joined[0]) && shownBefore(p, u.slots[0]!)) texts.set(words[0]!, ` ${texts.get(words[0]!)}`);
-      if (words.length && had(u.trail) && !isHtmlSpace(joined.at(-1)) && shownAfter(p, u.slots.at(-1)!)) texts.set(words.at(-1)!, `${texts.get(words.at(-1)!)} `);
+      const first = u.slots[0]!;
+      const last = u.slots.at(-1)!;
+      if (words.length && !isHtmlSpace(joined[0]) && shownBefore(p, first) && (had(u.lead) || line.lead)) texts.set(words[0]!, ` ${texts.get(words[0]!)}`);
+      if (words.length && !isHtmlSpace(joined.at(-1)) && shownAfter(p, last) && (had(u.trail) || line.trail)) texts.set(words.at(-1)!, `${texts.get(words.at(-1)!)} `);
     }
     for (const [s, t] of texts) newText.set(s, t);
   });
@@ -2093,7 +2106,7 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness,
       let t = slotText(p, k);
       if (line?.changed) {
         const u = p.units[i]!;
-        t = `${u.lead.get(k) ?? ''}${anchor.get(i) === k ? line.text : ''}${u.trail.get(k) ?? ''}`;
+        t = `${u.lead.get(k) ?? ''}${anchor.get(i) === k ? `${line.lead ? ' ' : ''}${line.text}${line.trail ? ' ' : ''}` : ''}${u.trail.get(k) ?? ''}`;
       }
       shownWant.set(s.vregion, `${shownWant.get(s.vregion) ?? ''}${t}`);
     });

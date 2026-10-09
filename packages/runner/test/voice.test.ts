@@ -617,6 +617,21 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     }
   });
 
+  it('a space the person types at a changed line\'s edge, or keeps beside a link they remove, shows beside the text the page glues on (r8)', async () => {
+    for (const [html, answer, shown] of [
+      ['<p><b>Hello</b><font>world</font></p>', 'T\nHello\n there', 'Hello there'],
+      ['<p><b>Hello</b><font>world</font></p>', 'T\nHi \nworld', 'Hi world'],
+      ['<p><b>Sale,</b><font><a href="/d">$20</a> menu</font></p>', 'T\nSale,\n[] menu', 'Sale, menu'],
+      // The round-7 verifier's three: a removed first link, and a trailing space after a kept one (round 7 ran them together).
+      ['bread. here, —<a href="/c" id="k">  x,<svg width="4" height="4"><title>Tip</svg>ok🚀: today, Call?</a>\nhere: Intro here! open', 'T\nbread. here, — [(x,]\n[] here: Intro here! open', 'bread. here, — (x, here: Intro here! open'],
+      ['<sub>  <a>  Order <a href="/c" id="k">Intro, ok🚀: &nbsp;,<button type="button"> </button>$20</a>  menu Call, here</a></sub>', 'T\nOrder [Intro, ok🚀:  ,]\n[] menu Call, here', 'Order Intro, ok🚀:  , menu Call, here'],
+      ['<blockquote><ins><small> <a href="/c" id="k"><a href="/b">\nprice,</a></a></small> sale,</ins>now: Order us! </blockquote>', 'T\n[price,] \nx Order us!', 'price, x Order us!'],
+    ] as const) {
+      const out = await (await open(page(html))).answer(answer);
+      expect(await shows(out.artifactId!), html).toBe(shown);
+    }
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // A button's content is an inline block: a browser shows no space at its edge, so "now" took the gap with it.

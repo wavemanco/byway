@@ -915,6 +915,41 @@ describe('a deleted line leaves only a space a browser showed (F07, r7)', () => 
   });
 });
 
+describe('a space the person types at a changed line\'s edge parts it from text beside it (F07, r8)', () => {
+  it('is written at the line\'s edge where the page shows text beside the line with no space between', () => {
+    for (const [page, answer, written] of [
+      // Round 7 dropped these spaces, so "Hello" and "there" ran together.
+      ['<p><b>Hello</b><font>world</font></p>', 'T\nHello\n there', '<p><b>Hello</b><font> there</font></p>'],
+      ['<p><b>Hello</b><font>world</font></p>', 'T\nHi \nworld', '<p><b>Hi </b><font>world</font></p>'],
+      // A link removed at a line's start or end: the space the person kept beside its brackets stays at the line's edge.
+      ['<p><b>Sale,</b><font><a href="/d">$20</a> menu</font></p>', 'T\nSale,\n[] menu', '<p><b>Sale,</b><font> menu</font></p>'],
+      ['<p><font>Intro <a href="/m">more</a></font><b>x</b></p>', 'T\nIntro []\nx', '<p><font>Intro </font><b>x</b></p>'],
+      // The space goes beside the line's first or last word, as a line's own edge space does when words move past it, so
+      // inside a link that ends the line (layout only).
+      ['<p><b>price,</b><font><a href="/p">price</a> sale,</font><i>now</i></p>', 'T\nprice,\n[price] \nnow', '<p><b>price,</b><font><a href="/p">price </a></font><i>now</i></p>'],
+    ] as const) {
+      const r = run(page, () => answer);
+      expect(r, page).toMatchObject(clean(written));
+    }
+  });
+
+  it('adds nothing where nothing stands beside the line, or on a line whose words are unchanged; beside a space already there, one more shows as one', () => {
+    expect(run('<p>Hello</p><p>world</p>', () => 'T\n Hi \nworld')).toMatchObject(clean('<p>Hi</p><p>world</p>'));
+    // Whitespace beside the line is not weighed: the reader cannot always tell whether it shows (a button's edge).
+    expect(run('<p><b>Hello </b><font>world</font></p>', () => 'T\nHello\n there')).toMatchObject(clean('<p><b>Hello </b><font> there</font></p>'));
+    expect(run('<p><b>Hello</b> <font>world</font></p>', () => 'T\nHello \n there ')).toMatchObject(clean('<p><b>Hello</b> <font> there</font></p>'));
+    // Edge spaces alone are layout: the line is unchanged, and nothing is written.
+    const p = readPageCopy(pageOf('<p><b>Hello</b><font>world</font></p>'));
+    expect(readPageEdit(p, 'T\nHello\n world')).toEqual({ ok: true, lines: [{ changed: false }, { changed: false }, { changed: false }] });
+  });
+
+  it('the verifier holds placement to it: the person\'s edge space must part the line from the text beside it', () => {
+    expect(verifyBad(pageOf('<p><b>Hello</b><font>world</font></p>'), pageOf('<p><b>Hello</b><font>there</font></p>'), 'T\nHello\n there')).toEqual([
+      'The page, read again, runs words together that a browser showed apart: it shows "Hellothere".',
+    ]);
+  });
+});
+
 describe('markup that is not copy stays byte for byte (F07, r7)', () => {
   it('an emptied element holding a script, style, noscript, template or comment is kept, with those bytes', () => {
     for (const inner of ['<script>window.x=1</script>', '<noscript>Enable JS</noscript>', '<template><p>T</p></template>', '<!-- keep -->', '<style>p{}</style>']) {

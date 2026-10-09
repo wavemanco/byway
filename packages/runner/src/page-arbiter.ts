@@ -310,6 +310,15 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
         hrefs.push(seg.kind === 'link' ? (partHref[part] ?? null) : null);
       }
     }
+    // A space the person typed at the line's edge (brackets taken out) parts it from text beside it.
+    if (line.text && line.lead) {
+      text = ` ${text}`;
+      hrefs.unshift(null);
+    }
+    if (line.text && line.trail) {
+      text = `${text} `;
+      hrefs.push(null);
+    }
     // Gaps: one space each; inside a line Chromium broke over screen lines, a space or a line break.
     const broken = /[\n\r\t]/.test(oldText.trim());
     if (broken) text = text.replace(/ /g, ANY_GAP);
