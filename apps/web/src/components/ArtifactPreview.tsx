@@ -1,6 +1,7 @@
 'use client';
 
 import { partShown } from '../view/format.ts';
+import { FIRST_SCREEN_ONLY, firstScreenName } from '../view/pages.ts';
 import type { ArtifactInfo } from '../view/rundata.ts';
 import { artifactUrl, openHref } from './api.ts';
 import { ScaledPage } from './ScaledPage.tsx';
@@ -87,14 +88,19 @@ export function PartialNotice({ id, title, part, failed }: { id: string; title: 
   );
 }
 
-/** A large page preview with its own scripts switch, scoped to this page while it is shown, unless the caller holds one. */
+/**
+ * A large page preview with its own scripts switch, scoped to this page while it is shown, unless the caller holds one.
+ * Not interactive, it is a picture of the page's first screen: named as that for assistive technology, and saying so on
+ * screen, so a view people decide in never shows it as the whole page (F13). The caller gives the way to the whole page.
+ */
 function LargePage({ id, title, interactive, scripts }: { id: string; title: string; interactive: boolean; scripts: boolean | undefined }) {
   const [own, setOwn] = usePageScripts(id);
   const held = scripts !== undefined;
   return (
     <div className="page-preview">
       {held ? null : <ScriptsToggle on={own} onChange={setOwn} />}
-      <ScaledPage id={id} title={title} interactive={interactive} virtualHeight={900} scripts={held ? scripts : own} />
+      <ScaledPage id={id} title={title} interactive={interactive} virtualHeight={900} scripts={held ? scripts : own} {...(interactive ? {} : { alt: firstScreenName(title) })} />
+      {interactive ? null : <p className="page-preview-note small muted">{FIRST_SCREEN_ONLY}</p>}
     </div>
   );
 }

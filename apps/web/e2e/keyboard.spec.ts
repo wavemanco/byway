@@ -6,11 +6,11 @@
  *   examples' image input, and "Choose all" / "Clear", which make themselves unavailable;
  * - a control that takes itself off the screen moves focus first: Start's attach button, gone at five attachments;
  * - closing a step opened from the timeline returns focus to the row that opened it;
- * - cases other work owns: a draft that survives opening a step (F06) and the viewer's scripts switch (F05), both
- *   merged, as plain tests; and, as owner-tagged expected failures that assert today's specific outcome, the compare
- *   view of two pages (F13 compare view) and a page's links after its copy is edited (F07). Each expected failure
- *   returns early (and so goes red) unless it sees exactly today's outcome, and goes red when the owner's fix lands,
- *   which forces it to become a plain test.
+ * - cases other work owns: a draft that survives opening a step (F06), the viewer's scripts switch (F05) and the compare
+ *   view of two pages (F13 compare view), as plain tests; and, as an owner-tagged expected failure that asserts today's
+ *   specific outcome, a page's links after its copy is edited (F07). The expected failure returns early (and so goes
+ *   red) unless it sees exactly today's outcome, and goes red when the owner's fix lands, which forces it to become a
+ *   plain test.
  *
  * Sends are refused in the browser (page.route), so no seeded question is ever answered and no run is started here,
  * except the F07 case's own Landing Page Studio run in demo mode.
@@ -262,20 +262,61 @@ async function guarded<T>(outcome: () => Promise<T>): Promise<T | { broken: stri
   }
 }
 
-// Owner: F13's compare view (the verification's P2 triage beyond F13's merged human half). Today both pages are
-// pictures to assistive technology (aria-hidden, out of the Tab order, clipped to their top) with no way to open either
-// whole. This fails only on exactly that, and goes red when the view exposes them.
-test.fail('[F13 compare view] each version of a page compare can be opened whole from the keyboard', async ({ page }) => {
+/** Presses Enter on the focused link, which opens a new tab, and returns that tab, loaded. */
+async function enterOpens(page: Page): Promise<Page> {
+  const tab = page.context().waitForEvent('page');
+  await page.keyboard.press('Enter');
+  const opened = await tab;
+  await opened.waitForLoadState();
+  return opened;
+}
+
+/** The whole-artifact viewer showing page `id` in a frame, its scripts off and not asked for (ADR-0085). */
+async function expectViewerOff(tab: Page, id: string): Promise<void> {
+  expect(new URL(tab.url()).pathname).toBe(`/view/${encodeURIComponent(id)}`);
+  const frame = tab.locator('.page-frame iframe');
+  await expect(frame).toHaveAttribute('sandbox', '');
+  expect(await frame.getAttribute('src')).toBe(`/artifacts/${encodeURIComponent(id)}`);
+  await expect(tab.getByRole('button', { name: 'Run the page’s scripts' })).toHaveAttribute('aria-pressed', 'false');
+}
+
+// F13's compare view (beyond F13's merged human half), by ADR-0085's and ADR-0086's rules. Each version's preview is a
+// picture of the page's first screen, out of the Tab order: it is named for assistive technology, says on screen that it
+// is only the first screen, and has its own Open to the whole page in the viewer, scripts off.
+test('[F13 compare view] each version of a page compare is a named picture of its first screen, said so, and opens whole from the keyboard', async ({ page }) => {
+  const sends = await refuseSlowly(page, (p) => p.startsWith(`/api/runs/${data().pages.runId}/checkpoints/`), 'e2e: nothing is kept here');
+  await page.goto(`/runs/${data().pages.runId}`);
   const columns = turn(page).locator('.compare-col');
-  const today = await guarded(async () => {
-    await page.goto(`/runs/${data().pages.runId}`);
-    await expect(columns).toHaveCount(2);
-    return Promise.all([0, 1].map(async (i) => ({ links: await columns.nth(i).getByRole('link').count(), hidden: await columns.nth(i).locator('iframe').getAttribute('aria-hidden') })));
-  });
-  if (JSON.stringify(today) !== JSON.stringify([{ links: 0, hidden: 'true' }, { links: 0, hidden: 'true' }])) return;
+  await expect(columns).toHaveCount(2);
+  await expectNamedControls(turn(page));
   for (const [i, label] of [KB.versionA, KB.versionB].entries()) {
-    await expect(columns.nth(i).getByRole('link', { name: new RegExp(label) }), `no way to open ${label} whole`).toHaveCount(1, { timeout: 1000 });
+    const column = columns.nth(i);
+    const id = data().versions[i] as string;
+    await expect(column.getByRole('img', { name: new RegExp(`^${label}: `) })).toHaveCount(1);
+    await expect(column).toContainText('Only the first screen of the page shows here');
+    const open = column.getByRole('link', { name: new RegExp(label) });
+    await expect(open).toHaveCount(1);
+    await tabTo(page, open, 60);
+    const viewer = await enterOpens(page);
+    await expectViewerOff(viewer, id);
+    await viewer.close();
+    await expectFocus(page, open);
   }
+
+  // Flipped, the version shown has its Open, and only it.
+  await turn(page).locator('.segmented').getByRole('button', { name: 'Flip' }).click();
+  for (const [i, label] of [KB.versionA, KB.versionB].entries()) {
+    const open = turn(page).locator('.compare-flip').getByRole('link');
+    await expect(open).toHaveCount(1);
+    await expect(open).toHaveAccessibleName(new RegExp(label));
+    await expect(turn(page).locator('.compare-flip').getByRole('img')).toHaveAccessibleName(new RegExp(`^${label}: `));
+    await open.focus();
+    const viewer = await enterOpens(page);
+    await expectViewerOff(viewer, data().versions[i] as string);
+    await viewer.close();
+    if (i === 0) await turn(page).locator('.compare-bar > button.button', { hasText: 'Flip' }).click();
+  }
+  expect(sends.count(), 'answers sent').toBe(0);
 });
 
 /** The nav line the demo page's VOICE editor shows: its two links' text run together (F07's probe E). */

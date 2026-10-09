@@ -16,6 +16,8 @@ export interface KeyboardSeed {
   reactAfterStep: SeededRun;
   /** A compare of two generated pages (the C1 decision view). */
   pages: SeededRun;
+  /** The artifact ids of the compared pages: KB.versionA's, then KB.versionB's. */
+  versions: [string, string];
   /** Ended, with two steps ("Opening memo", "Plain page") to open from the timeline. */
   done: SeededRun;
   /** A plain page with no scripts that leave, for the viewer's scripts switch. */
@@ -57,7 +59,7 @@ export async function seedKeyboard(): Promise<KeyboardSeed> {
         { id: 'B', label: KB.versionB, artifactId: after },
       ],
     });
-    return { confirm, react, select, reactAfterStep, pages, done, plainPage };
+    return { confirm, react, select, reactAfterStep, pages, versions: [before, after], done, plainPage };
   } finally {
     store.close();
   }

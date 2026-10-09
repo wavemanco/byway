@@ -109,7 +109,10 @@ Logic on top of the contracts sits in view code:
 - The Run screen's polled data carries at most 16 KB of each text, marked as an excerpt (`complete`, `bytes`;
   ADR-0086). Step rows and cards show it as a snippet, with counts (a diff's size, an option map's titles) taken from
   the whole artifact on the server; views you decide in (compare, references, a step's detail) load the whole text and
-  say so while they show only the opening.
+  say so while they show only the opening. A page there is a picture of its first screen that cannot be scrolled: it is
+  named as that for assistive technology (its frame stays hidden from it and out of the Tab order), says on screen that
+  only the first screen shows, and every such view has a way to the whole page (each version in a compare has its own
+  Open to the viewer).
 - **A control that acts never disables itself** (R5). A focused control given the native `disabled` state drops
   keyboard focus to the page, and on Start and the paid Start button `disabled` was also the only guard against a
   second press (run start has no server-side idempotency). So an action runs through `useAction`
