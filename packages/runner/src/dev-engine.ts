@@ -6,7 +6,8 @@
  * fail to bind and the SDK would still connect to whatever answers there (another `temporal server start-dev`, or a
  * server left over from an earlier byway that was killed), putting runs in a database that is not this one. It runs a
  * CLI binary only this user can have put there (SEC-7) with the HTTP API switched off (SEC-2). And before the worker
- * polls, runs left by an older workflow bundle are retired (C7), so they fail plainly instead of hanging.
+ * polls, runs left by an older workflow bundle are retired (C7), so they fail plainly instead of hanging, and the store
+ * and the engine are brought to agree in both directions (OPS-1, R4; settleBeforePolling).
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -64,7 +65,41 @@ export interface DevEngine {
   runner: Runner;
   client: Client;
   worker: RunnerWorker;
+  /** What the engine ended at start, before its worker polled; byway prints it. */
+  atStart: EngineStartReport;
   stop(): Promise<void>;
+}
+
+/** The runs the engine ended at start, before its worker polled, as run ids. */
+export interface EngineStartReport {
+  /** Started by another workflow bundle, whose history this one cannot replay (C7): failed plainly. */
+  retired: string[];
+  /** Shown as going by the store, not run by the engine (OPS-1): failed plainly. */
+  lost: string[];
+  /** Run by the engine, missing from the store (R4: a store older than the engine): their workflows were terminated. */
+  orphaned: string[];
+}
+
+/** What the engine ended at start, as the lines byway prints under "engine"; none when it ended nothing. */
+export function engineStartLines(report: EngineStartReport): string[] {
+  const runs = (n: number) => `${n} ${n === 1 ? 'run' : 'runs'}`;
+  return [
+    ...(report.retired.length > 0 ? [`ended ${runs(report.retired.length)} started by an older version of byway, which cannot continue`] : []),
+    ...(report.lost.length > 0 ? [`ended ${runs(report.lost.length)} the engine no longer has, which cannot continue`] : []),
+    ...(report.orphaned.length > 0 ? [`stopped ${runs(report.orphaned.length)} that byway's records do not have (the data directory was probably restored from an older backup)`] : []),
+  ];
+}
+
+/**
+ * What the engine does after it connects and before its worker polls: runs another workflow bundle started cannot
+ * replay on this one (C7), and the store and the engine are brought to agree in both directions (OPS-1, R4), so a run
+ * nobody can move on fails plainly and a workflow whose run the store does not have is stopped before any step of it
+ * runs. Exported so that order is tested with a worker that has not polled yet.
+ */
+export async function settleBeforePolling(client: Client, worker: RunnerWorker, store: Store): Promise<EngineStartReport> {
+  const retired = await worker.retireStaleRuns(client);
+  const { lost, orphaned } = await reconcileLostRuns(client, store, [(await store.ensureDefaultWorkspace()).id], { taskQueue: worker.taskQueue });
+  return { retired, lost, orphaned };
 }
 
 /** The plain message for a port that is taken (OPS-1). */
@@ -99,11 +134,9 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
     // The server we reached keeps its state in this data directory, so it is the one we started.
     if (!existsSync(dbFilename)) throw new Error(`The Temporal server on port ${port} is not the one byway started (it does not use ${dbFilename}). ${portInUseMessage(port)}`);
     const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, ...(opts.prompts ? { prompts: opts.prompts } : {}), ...(opts.pages ? { pages: opts.pages } : {}) });
+    let atStart: EngineStartReport;
     try {
-      // Before the worker polls: runs another workflow bundle started cannot replay on this one (C7), and runs the
-      // store shows as going that this server does not run will never move again (OPS-1). Both end plainly.
-      await worker.retireStaleRuns(env.client);
-      await reconcileLostRuns(env.client, opts.store, [(await opts.store.ensureDefaultWorkspace()).id]);
+      atStart = await settleBeforePolling(env.client, worker, opts.store);
     } catch (e) {
       await worker.shutdown();
       throw e;
@@ -115,6 +148,7 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
       runner,
       client: env.client,
       worker,
+      atStart,
       async stop() {
         // The Temporal server is stopped even if the worker did not stop cleanly: a server left running would hold the
         // port and this data directory's database (OPS-1).

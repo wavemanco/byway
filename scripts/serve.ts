@@ -20,6 +20,11 @@
  * under the repo (SEC-3). The web process gets them: it recommends and composes with real models. The page renderer's
  * Chromium, which the engine starts, gets none of them and nothing else from the secrets file (F18; ADR-0084).
  *
+ * Data check (R4; ADR-0096): before the engine starts, byway reads the data directory and prints a "checked" line: the
+ * database file, every recorded artifact file, the spend ledger, and runs whose recorded cost the ledger lacks (a partial
+ * restore). It only reads, and byway starts either way. The engine then ends what the store and it disagree on, and
+ * says so under "engine".
+ *
  * Renderer: while the engine starts, byway launches the page renderer's Chromium once and closes it again, and prints a
  * "renderer" line saying whether it can start. byway keeps running either way: prose, options and code-diff runs need
  * no renderer unless a lineup forms cards, and a web-page run whose renderer cannot start is refused before it spends.
@@ -40,7 +45,7 @@ import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engi
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { checkRenderer, RENDERER_OS_SANDBOX, startDevEngine, storeCaps, type DevEngine, type RendererCheck } from '../packages/runner/src/index.ts';
+import { checkRenderer, dataDirReport, engineStartLines, RENDERER_OS_SANDBOX, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheck } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -153,6 +158,14 @@ async function main(): Promise<void> {
   if (keys.found) console.log(`  keys       .env.agents (${keys.loaded.length} loaded; values are never shown)`);
   const withKeys = gateway.providers().filter((p) => p.provider !== 'mock' && p.configured).map((p) => p.provider);
   console.log(`  providers  ${withKeys.length > 0 ? withKeys.join(', ') : 'none (every run uses sample outputs)'}`);
+  // R4: what a partial restore left behind is said before anything runs. The check only reads and never stops byway.
+  try {
+    const checked = reportLines(await dataDirReport({ dataDir, store, gateway, workspaceIds: [(await store.ensureDefaultWorkspace()).id] }));
+    console.log(`  checked    ${checked.lines[0]}`);
+    for (const line of checked.lines.slice(1)) console.log(`             - ${line}`);
+  } catch (err) {
+    console.log(`  checked    the data directory could not be checked (${err instanceof Error ? err.message : String(err)}); byway starts anyway`);
+  }
 
   // The engine starts while the app builds.
   console.log('  engine     starting Temporal and the runner worker…');
@@ -179,6 +192,7 @@ async function main(): Promise<void> {
     throw err;
   }
   console.log(`  engine     ${engine.address}`);
+  for (const line of engineStartLines(engine.atStart)) console.log(`             ${line}`);
   const renderer = await rendererChecking;
   console.log(`  renderer   ${renderer.ready ? `Playwright's Chromium, ready (${RENDERER_OS_SANDBOX ? 'inside its OS sandbox' : 'its OS sandbox is off; see Renderer in the README'})` : `not available: ${renderer.message}`}`);
 

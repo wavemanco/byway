@@ -74,6 +74,8 @@ export interface Harness {
   pages: FakePages;
   worker: RunnerWorker;
   taskQueue: string;
+  /** This harness's workflow bundle, for a test that starts a worker of its own on another task queue. */
+  workflowsPath: string;
   /**
    * Leave demo mode for the calls that follow (a placeholder key is "configured", so profiles are taken at their
    * word: a profile with no video model has no video). Every profile these tests run is backed by the mock.
@@ -259,6 +261,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     pages,
     worker,
     taskQueue,
+    workflowsPath,
     useKeys(on) {
       inner = on ? keyedGateway : demoGateway;
     },
