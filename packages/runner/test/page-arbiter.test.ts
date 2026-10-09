@@ -298,11 +298,13 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
         '<p>Call<span style="position:absolute;clip-path:circle(0)"> us</span> now</p>',
         '<p>Open<span style="display:inline-block;clip-path:polygon(0 0, 0 0, 0 0)"> late</span> daily</p>',
         '<p>Order <span style="opacity:0.01"></span>today</p>',
+        // A part a style does not lay out at all (the reader reads it as the line's) is said the same way.
+        '<p>Get started<span style="display:none"> free</span> now</p>',
       ].join(''),
     );
     const { offered, why, loc } = await offer(html);
     expect(offered).toEqual(['T', 'Order today']);
-    expect(why).toEqual({ 'Rated 4.5 out of 5 stars': 'part-hidden', 'Sale ends today': 'part-hidden', 'Call us now': 'part-hidden', 'Open late daily': 'part-hidden' });
+    expect(why).toEqual({ 'Rated 4.5 out of 5 stars': 'part-hidden', 'Sale ends today': 'part-hidden', 'Call us now': 'part-hidden', 'Open late daily': 'part-hidden', 'Get started free now': 'part-hidden' });
     expect(loc.hidden).toEqual([['out of 5', null], ['ends', null], ['us', null], ['late', null]]);
     // A write that puts the person's words into the empty faint span: refused.
     expect((await check(html, 'T\nOrder online today', html.replace('opacity:0.01"></span>', 'opacity:0.01">online </span>')))?.problem).toMatch(/a style on this page would hide "online" from sight there/);

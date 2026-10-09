@@ -413,7 +413,8 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     expect(shown.title).toBe('My page');
     // Letters as written (text-transform does not change them); the script ran, as in a visitor's browser (round 9 read
     // with JavaScript off); a no-break space is kept.
-    expect(shown.text).toBe('Hello world\nA bold text\nscript-made\nEnd here');
+    // GONE_HERE marks where text that is not laid out stands (the hidden span, the paragraph styled away).
+    expect(shown.text).toBe('Hello world\nA\ufdec bold text\ufdec\nscript-made\nEnd\u00a0here');
     expect(shown.hrefs).toEqual([]);
     expect(shown.unlaid).toBe('');
   }, 60_000);
@@ -579,7 +580,7 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       const shown = await scripted.shownText(html, none);
       // sr-only applies (round 9, with JavaScript off, read "out of 5" as shown); md:inline shows at 1440 px; hidden is
       // not laid out; ml-1 parts two flex items.
-      expect(shown.text).toBe('Rated 4.5﷭\nstars\nGet started free\nCall us\ntoday');
+      expect(shown.text).toBe('Rated 4.5\ufded\nstars\nGet started free\ufdec\nCall us\ntoday');
       expect(shown.hidden).toEqual([['out of 5', null]]);
     } finally {
       cdn.close();

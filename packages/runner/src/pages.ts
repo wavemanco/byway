@@ -106,8 +106,9 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   floated or positioned box, an inline block, a button, an image or a control) or a forced break does (a `<br>`, a
  *   newline a white-space style keeps); else a space (apart within one flow of text: on one row, or on rows the text
  *   wraps over with whitespace between). A row is a vertical overlap of at least half the shorter box. HIDDEN_HERE
- *   follows the shown character after which text hidden from sight stands (or begins the text). In a marked copy
- *   (page-arbiter.ts), the line marks stand beside the characters they mark;
+ *   follows the shown character after which text a visitor does not see stands, hidden from sight or in an element
+ *   that is not laid out (or begins the text). In a marked copy (page-arbiter.ts), the line marks stand beside the
+ *   characters they mark;
  * - `linked`: the same with each link's (`a[href]`) characters wrapped in markers: LINK_OPEN, the link's index in
  *   `hrefs` in the digits from LINK_DIGIT_0, LINK_INDEX_END, the characters, LINK_CLOSE;
  * - `hidden`: each run of characters hidden from sight within one text node, in document order: its text (whitespace
@@ -138,6 +139,8 @@ export const NUMBER_END = '﷕';
 /** In ShownText.text: text hidden from sight stands here; and two neighbours a visitor sees in the other order. */
 export const HIDDEN_HERE = '﷭';
 export const REVERSED = '﷮';
+/** In ShownText.text: text that is not laid out stands here (it tells why a line is not offered; it is not compared). */
+export const GONE_HERE = '﷬';
 
 export interface PageRenderer {
   /** PNG tiles of the whole page on a wide screen, top to bottom. */
@@ -889,9 +892,20 @@ const VISITOR_BEGIN = `(() => {
     const hidden = [];
     let unlaid = '';
     let hidFirst = false;
+    let goneFirst = false;
     const linkIndex = new Map();
     const hrefs = [];
     const range = document.createRange();
+    // Text hidden from sight stands here (unseen), or text that is not laid out (gone): after the last shown character,
+    // or before the first.
+    const unseen = () => {
+      if (all.length) all[all.length - 1].hid = true;
+      else hidFirst = true;
+    };
+    const gone = () => {
+      if (all.length) all[all.length - 1].gone = true;
+      else goneFirst = true;
+    };
     const visit = (t) => {
       const p = t.parentElement;
       const pre = preserves(style(p));
@@ -902,6 +916,7 @@ const VISITOR_BEGIN = `(() => {
       range.selectNodeContents(t);
       const laid = range.getClientRects().length > 0 && P.rendered(p);
       if (!rec && laid && !P.faded(p)) rec = P.measure(t);
+      if (!laid && /[^ \\t\\n\\f\\r]/.test(t.data)) gone();
       const a = P.linkOf(p);
       let link = -1;
       if (a) { link = linkIndex.get(a); if (link === undefined) { link = hrefs.length; linkIndex.set(a, link); hrefs.push(a.getAttribute('href')); } }
@@ -930,8 +945,7 @@ const VISITOR_BEGIN = `(() => {
             all.push({ c, starts, ends, box: ch.box, fs: ch.fs, d: ch.d, breaks, ws, link, marquee: rec.marquee, hid: false });
           } else {
             run = (run || '') + starts + c + ends;
-            if (all.length) all[all.length - 1].hid = true;
-            else hidFirst = true;
+            unseen();
           }
         }
         i += w;
@@ -957,13 +971,20 @@ const VISITOR_BEGIN = `(() => {
       if (c.nodeType !== 1) continue;
       const name = c.tagName.toUpperCase();
       // Text not shown as text (a script, a style, a textarea's value, an svg or math title, a template, a noscript), or
-      // in an element not laid out: only its line marks are noted.
+      // in an element not laid out: only its line marks are noted, and, for text an element not laid out holds, that
+      // text a visitor does not see stands here.
       const skip = SKIP.has(name);
       if (skip && name === 'TEXTAREA' && c.getClientRects().length) breaks += 2;
       const d = skip ? 'none' : style(c).display;
       if (d === 'none') {
         const inner = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
-        for (let t = inner.nextNode(); t; t = inner.nextNode()) { const m = marks.get(t); if (m && m.data === t.data) for (const x of m.at) unlaid += x[1]; }
+        let text = false;
+        for (let t = inner.nextNode(); t; t = inner.nextNode()) {
+          const m = marks.get(t);
+          if (m && m.data === t.data) for (const x of m.at) unlaid += x[1];
+          if (!skip && !P.skipped(t.parentElement) && /[^ \\t\\n\\f\\r]/.test(t.data)) text = true;
+        }
+        if (text) gone();
         continue;
       }
       if (d === 'contents') { todo.push({ child: c.firstChild, box: false }); continue; }
@@ -993,7 +1014,8 @@ const VISITOR_BEGIN = `(() => {
       return flow ? ' ' : '';
     };
     const HID = ${JSON.stringify(HIDDEN_HERE)};
-    let text = hidFirst ? HID : '';
+    const GONE = ${JSON.stringify(GONE_HERE)};
+    let text = (hidFirst ? HID : '') + (goneFirst ? GONE : '');
     let linked = text;
     let open = -1;
     for (let k = 0; k < all.length; k++) {
@@ -1006,8 +1028,9 @@ const VISITOR_BEGIN = `(() => {
         linked += ${JSON.stringify(LINK_OPEN)} + String(x.link).replace(/[0-9]/g, (d) => String.fromCharCode(${LINK_DIGIT_0} + Number(d))) + ${JSON.stringify(LINK_INDEX_END)};
         open = x.link;
       }
-      text += x.starts + x.c + x.ends + (x.hid ? HID : '');
-      linked += x.starts + x.c + x.ends + (x.hid ? HID : '');
+      const after = (x.hid ? HID : '') + (x.gone ? GONE : '');
+      text += x.starts + x.c + x.ends + after;
+      linked += x.starts + x.c + x.ends + after;
     }
     if (open >= 0) linked += ${JSON.stringify(LINK_CLOSE)};
     return { title: pageTitle, text, linked, hrefs, hidden, unlaid };

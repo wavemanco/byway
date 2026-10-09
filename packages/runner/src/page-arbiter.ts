@@ -39,6 +39,7 @@ import { parseEntities } from 'parse-entities';
 import { isHtmlSpace } from './html-tokens.ts';
 import { editPairs, readPageCopy, type PageDeck, type PageEdit } from './page-copy.ts';
 import {
+  GONE_HERE,
   HIDDEN_HERE,
   LINE_END,
   LINE_START,
@@ -149,7 +150,7 @@ function unmark(s: string, hrefs: readonly string[] = []): Unmarked {
       else m.set(n, [length]);
       i = j;
     } else {
-      // A run of plain characters at once (HIDDEN_HERE and REVERSED are plain here).
+      // A run of plain characters at once (HIDDEN_HERE, GONE_HERE and REVERSED are plain here).
       let j = i + 1;
       while (j < s.length && s[j] !== LINK_OPEN && s[j] !== LINK_CLOSE && s[j] !== LINE_START && s[j] !== LINE_END) j++;
       const run = s.slice(i, j);
@@ -196,13 +197,15 @@ interface Seq {
   /** Text hidden from sight follows cs[k] (before the next shown character). */
   hid: boolean[];
   hidFirst: boolean;
+  /** Text that is not laid out follows cs[k]: it only says why a line is not offered, and is not compared. */
+  gone: boolean[];
   hrefs: (string | null)[];
   /** Where cs[k] is in the text it was read from. */
   src: number[];
 }
 
 function seqOf(text: string, hrefs?: readonly (string | null)[]): Seq {
-  const out: Seq = { cs: [], gaps: [], hid: [], hidFirst: false, hrefs: [], src: [] };
+  const out: Seq = { cs: [], gaps: [], hid: [], hidFirst: false, gone: [], hrefs: [], src: [] };
   let gap: Gap | undefined;
   for (let i = 0; i < text.length; ) {
     const cp = text.codePointAt(i)!;
@@ -211,6 +214,8 @@ function seqOf(text: string, hrefs?: readonly (string | null)[]): Seq {
     if (c === HIDDEN_HERE) {
       if (out.cs.length) out.hid[out.cs.length - 1] = true;
       else out.hidFirst = true;
+    } else if (c === GONE_HERE) {
+      if (out.cs.length) out.gone[out.cs.length - 1] = true;
     } else if (isHtmlSpace(c) || c === REVERSED) {
       const g: Gap = c === REVERSED ? 'R' : c === '\n' || c === '\r' ? 'B' : 'S';
       gap = gap ? stronger(gap, g) : g;
@@ -218,6 +223,7 @@ function seqOf(text: string, hrefs?: readonly (string | null)[]): Seq {
       out.gaps.push(out.cs.length ? (gap ?? 'G') : 'G');
       out.cs.push(c);
       out.hid.push(false);
+      out.gone.push(false);
       out.hrefs.push(hrefs?.[i] ?? null);
       out.src.push(i);
       gap = undefined;
@@ -339,7 +345,9 @@ export function locate(html: string, plain: ShownText, marked: ShownText | undef
       const e = (body.ends.get(k) ?? title.ends.get(k))![0]!;
       const read = body.starts.has(k) ? body : title;
       const slice = s <= e ? seqOf(read.text.slice(s, e)) : undefined;
-      r = !slice ? 'layout' : slice.hid.some((h, x) => h && x < slice.cs.length - 1) ? 'part-hidden' : slice.cs.join('') !== deckChars(u.text).cs.join('') ? 'changed' : 'layout';
+      const inside = (flags: boolean[]) => !!slice && flags.some((h, x) => h && x < slice.cs.length - 1);
+      const changed = !!slice && slice.cs.join('') !== deckChars(u.text).cs.join('');
+      r = !slice ? 'layout' : inside(slice.hid) || (changed && inside(slice.gone)) ? 'part-hidden' : changed ? 'changed' : 'layout';
     }
     why.set(k, r);
   });
@@ -357,7 +365,7 @@ export function notShown(html: string, loc: Location): Set<number> {
 export const WHY_NOT_SHOWN: Record<NotShownWhy, string> = {
   unlaid: 'not shown on this page at all (hidden, closed, or shown only on another screen size)',
   hidden: 'hidden from sight (for screen readers, or until a visitor opens it)',
-  'part-hidden': 'part of it is hidden from sight (for screen readers) or cut off',
+  'part-hidden': 'part of it is hidden (from sight, for screen readers, or not shown at all) or cut off',
   layout: 'a browser shows its words run together or in another order',
   changed: 'a browser shows other words there (a script on the page changes it, or other text shows inside it)',
   script: 'a script on the page changes or removes it',

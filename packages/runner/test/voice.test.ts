@@ -722,7 +722,7 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     const q = await open(html);
     expect(q.offered).toBe('T\nQuiet interfaces\nFresh bread daily');
     expect(q.prompt).toMatch(
-      / These lines of the page are not offered, because a browser does not show them as one line here, and stay as they are: part of it is hidden from sight \(for screen readers\) or cut off: "Rated 4\.5 out of 5 stars", "Send message to Saltbox", "Read more about quiet interfaces", "Sale ends today", "HiddenShown"; a browser shows its words run together or in another order: "Sale today"\.$/,
+      / These lines of the page are not offered, because a browser does not show them as one line here, and stay as they are: part of it is hidden \(from sight, for screen readers, or not shown at all\) or cut off: "Rated 4\.5 out of 5 stars", "Send message to Saltbox", "Read more about quiet interfaces", "Sale ends today", "HiddenShown"; a browser shows its words run together or in another order: "Sale today"\.$/,
     );
     const out = await q.answer('T\nQuiet interfaces, in practice\nWarm bread daily');
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<h3>Quiet interfaces</h3>', '<h3>Quiet interfaces, in practice</h3>').replace('Fresh bread', 'Warm bread'));
