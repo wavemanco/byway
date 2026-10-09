@@ -774,6 +774,22 @@ describe('two lines a browser shows on one screen line stay apart, or together, 
   });
 });
 
+describe('what browsers move out of a table is never removed (F07, r6)', () => {
+  it('an element in a table outside any cell, which browsers put before the table, is kept, as is anything holding one', () => {
+    // Browsers put the span, and "After", before the table: removing the emptied span would show "late:After".
+    const F = '<div>late:<table><tr><span><section>Gone</section></span>After<td>Cell</td></tr></table></div>';
+    expect(run(F, set(2, ''))).toMatchObject({ deck: ['T', 'late:', 'Gone', 'After', 'Cell'], ...clean('<div>late:<table><tr><span><section></section></span>After<td>Cell</td></tr></table></div>') });
+    // A row opened inside a cell ends the cell in browsers: what follows is outside any cell again.
+    const R = '<div>late:<table><tr><td>A</td><tr><b><i><section>Gone</section></i></b>After</tr></table></div>';
+    expect(run(R, set(3, ''))).toMatchObject(clean('<div>late:<table><tr><td>A</td><tr><b><i><section></section></i></b>After</tr></table></div>'));
+    // Inside a cell nothing moves: an emptied span there goes as before.
+    expect(run('<table><tr><td>Keep <span>gone</span> this</td></tr></table>', set(1, 'Keep this'))).toMatchObject(clean('<table><tr><td>Keep this</td></tr></table>'));
+    // The round-5 review's page: the link around the deleted line would be left empty and cannot go, so the edit is refused.
+    const page = '<!doctype html><title>T</title> late:\n<table><tbody><tr><td><tr><b></span>\n<tt> <a href="/b"> <section>🎉?</section></a><tr> $20? x! &nbsp;,</b></td><td>\n  today, daily</td></tr></table>\n';
+    expect(run(page, set(2, ''), { full: true }).placeProblems).toEqual(['Line 3: this link cannot be removed in this step and would be left empty; keep some words for it, or leave the line as it was.']);
+  });
+});
+
 describe('characters outside the Basic Multilingual Plane are one character each (F07, r6)', () => {
   it('a line of several slots whose kept word is an emoji or an astral letter is placed', () => {
     expect(run('<p><strong>Free shipping</strong> on all orders 🎉</p>', set(1, 'Free shipping on every order 🎉'))).toMatchObject(clean('<p><strong>Free shipping</strong> on every order 🎉</p>'));

@@ -67,6 +67,8 @@ const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input'
 const BLOCK = new Set(['address', 'article', 'aside', 'blockquote', 'body', 'center', 'details', 'dialog', 'dir', 'div', 'dl', 'dd', 'dt', 'fieldset', 'figcaption', 'figure', 'footer', 'head', 'header', 'hgroup', 'hr', 'html', 'legend', 'li', 'listing', 'main', 'menu', 'nav', 'ol', 'p', 'plaintext', 'pre', 'search', 'section', 'summary', 'ul', 'xmp', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'caption', 'colgroup', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
 /** Outside a table, browsers ignore these tags. */
 const TABLE_PART = new Set(['caption', 'colgroup', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
+/** A table and its parts: the innermost open one says whether content stands in a cell (see OpenElements.fosters). */
+const TABLE_STRUCT = new Set(['table', ...TABLE_PART]);
 /**
  * WHATWG's "special" elements (HTML namespace): an end tag for an element that is neither special nor formatting is
  * ignored when one of these is open inside it, and the adoption agency closes formatting past them, leaving them open.
@@ -223,6 +225,8 @@ export interface PageDeck {
   reachEnds: Map<number, number[]>;
   /** Every <a> and </a> tag, in order. */
   aTags: number[];
+  /** Start tags (and void tags) browsers move out of a table (OpenElements.fosters): never removed, nor what holds one. */
+  fostered: Uint8Array;
 }
 
 /** An <a> with an address is a link; one without is a placeholder (browsers show its words plain). */
@@ -264,7 +268,8 @@ function hiddenTag(t: TagToken): boolean {
  * heading a heading that is the innermost element, and body content the head; an <a> marks an open <a> superseded.
  * Browsers ignore a table part outside a table, a second html or body, a head in the body and a form inside a form:
  * the reader opens no element for them. Foster parenting and the reconstruction of formatting are not modelled (links
- * are read where browsers end them, see readPageCopy). Lookups go through stacks of positions per name and per kind,
+ * are read where browsers end them, see readPageCopy); an element browsers foster-parent is marked (fosters), and never
+ * removed. Lookups go through stacks of positions per name and per kind,
  * so each tag costs a constant amount, amortized.
  */
 class OpenElements {
@@ -276,6 +281,8 @@ class OpenElements {
   private readonly special: number[] = [];
   private readonly scope: number[] = [];
   private readonly tableScope: number[] = [];
+  /** Positions of open table structure (TABLE_STRUCT): the innermost says whether content sits in a cell. */
+  private readonly tableCtx: number[] = [];
   /** Positions of open special elements other than address, div and p: an li, dd or dt start tag stops at one. */
   private readonly hardSpecial: number[] = [];
   private headSeen = false;
@@ -329,6 +336,16 @@ class OpenElements {
     if (HEADING.includes(n) && this.open.length && HEADING.includes(this.els.get(this.open.at(-1)!)!.name)) this.endImplicitly(this.open.length - 1);
     return this.open.length < depth;
   }
+  /**
+   * Browsers move this start tag's element out of the table, before it (foster parenting): it stands in a table, a row
+   * group, a row or a column group, outside any cell or caption (a row opened inside a cell ends the cell in browsers,
+   * and the reader keeps that row innermost). The reader does not move it, so it never removes it (see markOf).
+   */
+  fosters(t: TagToken): boolean {
+    if (t.foreign || TABLE_STRUCT.has(t.name) || t.name === 'col' || t.name === 'script' || t.name === 'style' || t.name === 'template') return false;
+    const k = lastOf(this.tableCtx);
+    return k >= 0 && !['td', 'th', 'caption'].includes(this.els.get(this.open[k]!)!.name);
+  }
   /** Whether a start tag browsers do not ignore starts a new line (see BLOCK): read before the element is pushed. */
   startBreaks(t: TagToken): boolean {
     if (t.foreign || this.hiddenDepth > 0) return false;
@@ -356,6 +373,7 @@ class OpenElements {
     }
     if (t.foreign ? FOREIGN_SCOPE.has(name) : SCOPE.has(name)) this.scope.push(k);
     if (!t.foreign && (name === 'html' || name === 'table' || name === 'template')) this.tableScope.push(k);
+    if (!t.foreign && TABLE_STRUCT.has(name)) this.tableCtx.push(k);
     if (!INLINE.has(name)) this.blocks.push(k);
     if (name === 'pre') this.preDepth++;
     if (hidden) this.hiddenDepth++;
@@ -425,6 +443,7 @@ class OpenElements {
     if (lastOf(this.hardSpecial) === k) this.hardSpecial.pop();
     if (lastOf(this.scope) === k) this.scope.pop();
     if (lastOf(this.tableScope) === k) this.tableScope.pop();
+    if (lastOf(this.tableCtx) === k) this.tableCtx.pop();
     if (el.name === 'pre') this.preDepth--;
     if (el.hidden) this.hiddenDepth--;
     if (el.foreign && el.name === 'title') this.foreignTitleDepth--;
@@ -466,6 +485,7 @@ export function readPageCopy(html: string): PageDeck {
   const els = new Map<number, El>();
   const open = new OpenElements(els);
   const slotEndingAt = new Int32Array(tokens.length + 1).fill(-1);
+  const fostered = new Uint8Array(tokens.length);
   let region = 0;
   let vregion = 0;
   // The inline elements opened in the current run and still open (start tokens), with their positions by name.
@@ -512,6 +532,7 @@ export function readPageCopy(html: string): PageDeck {
       const opens = !t.closing && !ignored && !VOID.has(name) && !(t.selfClosing && (t.foreign || name === 'svg' || name === 'math'));
       if (!t.closing) {
         const endsOthers = !ignored && open.startTag(t);
+        if (!ignored && open.fosters(t)) fostered[i] = 1;
         breaks = !ignored && open.startBreaks(t);
         if (opens) open.push(i, t, breaks, endsOthers);
       } else breaks = open.endTag(i, t);
@@ -609,7 +630,7 @@ export function readPageCopy(html: string): PageDeck {
     const outer = aStack.find((e) => e.start <= startTok && s.end <= e.end!);
     if (outer) s.link = outer.start;
   });
-  const page: PageDeck = { tokens, slots, els, units: [], slotEndingAt, blockOfRegion, reachEnds, aTags };
+  const page: PageDeck = { tokens, slots, els, units: [], slotEndingAt, blockOfRegion, reachEnds, aTags, fostered };
   const byRegion = new Map<number, number[]>();
   slots.forEach((s, i) => {
     if (!s.visible) return;
@@ -974,7 +995,10 @@ export function pageLockView(html: string): string {
 interface Marks {
   /** Start tags of elements a person sees without text (EMBEDDED). */
   embedded: Int32Array;
-  /** Start tags that are embedded or carry a hook: an element holding one is never removed. */
+  /**
+   * Start tags that are embedded, carry a hook, or that browsers move out of a table (PageDeck.fostered): an element
+   * holding one is never removed.
+   */
   kept: Int32Array;
   /** Start tags whose own aria-label or aria-labelledby, or (an image's) alt, is filled: they name what holds them. */
   naming: Int32Array;
@@ -993,7 +1017,7 @@ function markOf(p: PageDeck): Marks {
     if (t.kind === 'tag' && !t.closing) {
       const attrs = attributesOf(t.raw);
       e = EMBEDDED.has(t.name) ? 1 : 0;
-      k = e || attrs.some((a) => isHook(a.name)) ? 1 : 0;
+      k = e || attrs.some((a) => isHook(a.name)) || p.fostered[i] ? 1 : 0;
       nm = filled(attrs, (x) => x === 'aria-label' || x === 'aria-labelledby' || (x === 'alt' && ALT_NAMED.has(t.name))) ? 1 : 0;
     }
     m.embedded[i + 1] = m.embedded[i]! + e;
@@ -1044,9 +1068,10 @@ function crossesReach(p: PageDeck, a: number, b: number): boolean {
 
 /**
  * An emptied element may go, from its start tag to its own closing tag: inline or a text block, outside svg and math,
- * with nothing inside that carries a hook or shows without text. It must be balanced (El.balanced): closed by its own
- * end tag as browsers close it, with every element inside it whole, so removing it leaves no end tag browsers would
- * ignore and takes no start tag of a block browsers end later. A link the page leaves open (virtual, with no closing tag
+ * with nothing inside that carries a hook or shows without text, and neither one browsers move out of a table (foster
+ * parenting, which the reader does not model) nor one holding such an element. It must be balanced (El.balanced):
+ * closed by its own end tag as browsers close it, with every element inside it whole, so removing it leaves no end tag
+ * browsers would ignore and takes no start tag of a block browsers end later. A link the page leaves open (virtual, with no closing tag
  * of its own) never goes; nor does an element holding one end of a virtual link's reach and not the other (removing it
  * would move where browsers end that link). An <a> written around another goes whole, the inner link with it.
  */
@@ -1078,7 +1103,7 @@ function brRuns(p: PageDeck, deletedUnits: Set<number>): number[] {
       for (let t = p.slots[p.units[us[k]!]!.slots.at(-1)!]!.end; t < p.tokens.length; t++) {
         const tk = p.tokens[t]!;
         if (tk.kind === 'tag' && tk.name === 'br') {
-          if (hasHook(tk.raw)) return [];
+          if (hasHook(tk.raw) || p.fostered[t]) return [];
           run.push(t);
         } else if (tk.kind === 'text' && noHtmlSpace(tk.raw)) break;
         else if (tk.kind === 'tag' && !INLINE.has(tk.name)) break;
