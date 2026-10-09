@@ -319,6 +319,14 @@ describe('explainers claim only what the recipe establishes about the steps arou
     }
   });
 
+  it('a step object used twice makes a claim only where both places establish it', () => {
+    const c4c = structuredClone(c4) as Recipe;
+    const d3 = c4c.stages.find((s) => s.stage === 'D3')!.body as Extract<Node, { op: 'seq' }>;
+    const voice = d3.steps.find((s) => s.op === 'step' && s.id === 'voice')!;
+    d3.steps = [...d3.steps, voice];
+    expect(explained(asComposed(c4c), 'voice')).toBe(E.voiceKeyLines);
+  });
+
   it('the plain sentences make none of those claims', () => {
     for (const text of [E.voiceKeyLines, E.voiceClaims, E.voiceScript, E.cut, E.tells, E.visionAi]) expect(text).toMatch(/\.$/);
     expect(E.voiceKeyLines).not.toMatch(/the rest/);
