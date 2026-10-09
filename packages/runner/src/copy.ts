@@ -46,6 +46,9 @@ export {
 /** The page's visible copy, one line per run of text (see page-copy.ts), in reading order, as the person is shown it (link words in brackets). */
 export const pageCopy = (html: string): string[] => deckLines(readPageCopy(html));
 
+/** The deck a page's VOICE offers: its lines but those a browser does not show (`notOffered`, from page-arbiter.ts). */
+export const offeredPageCopy = (html: string, notOffered?: ReadonlySet<number>): string => deckLines(readPageCopy(html, notOffered)).join('\n');
+
 // ---- Per medium ---------------------------------------------------------------------------------------------------
 
 /** Line endings as the decks use them. */

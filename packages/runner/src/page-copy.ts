@@ -221,6 +221,8 @@ interface Unit {
   block: number;
   /** In the reach of a tangled link (see readPageCopy): byway cannot tell which of its words are link words. */
   tangled?: true;
+  /** The line's parts as the deck shows them: outside links, or one link's words (whitespace collapsed, ends trimmed). */
+  words: Seg[];
 }
 
 /** A page read for its copy. */
@@ -242,6 +244,11 @@ export interface PageDeck {
   aTags: number[];
   /** Start tags (and void tags) browsers move out of a table (OpenElements.fosters): never removed, nor what holds one. */
   fostered: Uint8Array;
+  /**
+   * Lines of the page that are not offered (VOICE's arbiter found no place where a browser shows them, ADR-0081): their
+   * text is the page's own, like text the deck never offers, and stays byte for byte. In reading order.
+   */
+  unoffered: Unit[];
 }
 
 /** An <a> with an address is a link; one without is a placeholder (browsers show its words plain). */
@@ -528,8 +535,11 @@ class OpenElements {
   }
 }
 
-/** Read a page's copy deck (one pass over its tokens, plus link membership by token index). */
-export function readPageCopy(html: string): PageDeck {
+/**
+ * Read a page's copy deck (one pass over its tokens, plus link membership by token index). `notOffered` holds the
+ * indices of lines (in the deck read without it) that are not offered: they become the page's own text.
+ */
+export function readPageCopy(html: string, notOffered?: ReadonlySet<number>): PageDeck {
   // Browsers read a start tag named "image" as <img> (tree construction): an image, void.
   const tokens = tokenize(html).map((t) => (t.kind === 'tag' && !t.closing && !t.foreign && t.name === 'image' ? { ...t, name: 'img' } : t));
   const slots: Slot[] = [];
@@ -691,7 +701,7 @@ export function readPageCopy(html: string): PageDeck {
     const outer = aStack.find((e) => e.start <= startTok && s.end <= e.end!);
     if (outer) s.link = outer.start;
   });
-  const page: PageDeck = { tokens, slots, els, units: [], slotEndingAt, blockOfRegion, reachEnds, aTags, fostered };
+  const page: PageDeck = { tokens, slots, els, units: [], slotEndingAt, blockOfRegion, reachEnds, aTags, fostered, unoffered: [] };
   const byRegion = new Map<number, number[]>();
   slots.forEach((s, i) => {
     if (!s.visible) return;
@@ -727,6 +737,10 @@ export function readPageCopy(html: string): PageDeck {
       const k = u.slots.at(-1)!;
       if (k > 0 && slots[k - 1]!.end >= tangledAt) u.tangled = true;
     }
+  }
+  if (notOffered?.size) {
+    page.unoffered = page.units.filter((_, i) => notOffered.has(i));
+    page.units = page.units.filter((_, i) => !notOffered.has(i));
   }
   return page;
 }
@@ -789,11 +803,13 @@ function makeUnit(p: PageDeck, g: number[]): Unit {
     return m;
   };
   const region = p.slots[g[0]!]!.region;
+  const text = texts.map((t) => t.text).join('');
   return {
     slots: g,
     segs: marked ? alt : [{ kind: 'out', slots: g }],
     marked,
-    text: texts.map((t) => t.text).join(''),
+    text,
+    words: marked ? texts : [{ kind: links.length === 1 ? 'link' : 'out', text }],
     display: marked ? displayOf(texts) : escMarks(texts.map((t) => t.text).join('')),
     lead: edge(g, /^[ \t\n\f\r]*/),
     trail: edge([...g].reverse(), /[ \t\n\f\r]*$/),
@@ -1657,17 +1673,20 @@ export interface Placed extends Witness {
   problems: string[];
 }
 
-/** Place an edit into the page. Never throws: a fault inside placement is a problem, and the page is returned unchanged. */
-export function placePageEdit(before: string, edit: PageEdit): Placed {
+/**
+ * Place an edit into the page (`notOffered`: the lines the deck the edit answers did not offer, see readPageCopy). Never
+ * throws: a fault inside placement is a problem, and the page is returned unchanged.
+ */
+export function placePageEdit(before: string, edit: PageEdit, notOffered?: ReadonlySet<number>): Placed {
   try {
-    return place(before, edit);
+    return place(before, edit, notOffered);
   } catch (e) {
     return { page: before, problems: [`byway could not place this edit (${(e as Error).message}); change the line again, or leave it as it was offered.`], removed: [], brs: [] };
   }
 }
 
-function place(before: string, edit: PageEdit): Placed {
-  const p = readPageCopy(before);
+function place(before: string, edit: PageEdit, notOffered?: ReadonlySet<number>): Placed {
+  const p = readPageCopy(before, notOffered);
   const raws = p.tokens.map((t) => t.raw);
   const newText = new Map<number, string>();
   const inserts = new Map<number, string>();
@@ -1783,16 +1802,16 @@ function place(before: string, edit: PageEdit): Placed {
 // ---- the exact verifier ------------------------------------------------------------------------------------------
 
 /** Check a written page against the edit and placement's witness. Never throws: a fault is a problem. */
-export function pageEditProblems(before: string, after: string, edit: PageEdit, witness: Witness): string[] {
+export function pageEditProblems(before: string, after: string, edit: PageEdit, witness: Witness, notOffered?: ReadonlySet<number>): string[] {
   try {
-    return verify(before, after, edit, witness);
+    return verify(before, after, edit, witness, notOffered);
   } catch (e) {
     return [`byway could not check this edit (${(e as Error).message}).`];
   }
 }
 
-function verify(before: string, after: string, edit: PageEdit, witness: Witness): string[] {
-  const p = readPageCopy(before);
+function verify(before: string, after: string, edit: PageEdit, witness: Witness, notOffered?: ReadonlySet<number>): string[] {
+  const p = readPageCopy(before, notOffered);
   // 0. No changed line in a tangled link's reach: byway cannot tell its link words (the reader refuses these too).
   const tangled = p.units.flatMap((u, i) => (u.tangled && edit.lines[i]!.changed ? [i + 1] : []));
   if (tangled.length) return tangled.map((n) => `Line ${n} cannot be changed in this step: a link on the page is left open or holds another link there.`);
@@ -2026,8 +2045,10 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   // edge are refused, whichever way they got there).
   const wantRegion = new Map<number, { parts: Part[]; line: number }>();
   const linkPart = (el: number | undefined, raw: string): Part => (el === undefined ? { raw } : { el, href: hrefOf(p.tokens[el]!.raw), raw });
-  p.units.forEach((u, i) => {
-    const line = edit.lines[i]!;
+  // Lines not offered are the page's own text, unchanged.
+  const all = [...p.units.map((u, i) => ({ u, i })), ...p.unoffered.map((u) => ({ u, i: -1 }))].sort((x, y) => x.u.slots[0]! - y.u.slots[0]!);
+  for (const { u, i } of all) {
+    const line: EditLine = i >= 0 ? edit.lines[i]! : { changed: false };
     const r = p.slots[u.slots[0]!]!.region;
     let parts: Part[];
     if (!line.changed) parts = partsOf(p, u.slots);
@@ -2035,9 +2056,11 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     else if (u.marked) parts = u.segs.map((seg, k) => linkPart(seg.kind === 'link' ? seg.link : undefined, line.segs[k]!.text));
     else parts = [linkPart(u.wholeLink, line.text)];
     const w = wantRegion.get(r);
-    if (w) w.parts.push({ raw: ' ' }, ...parts);
-    else wantRegion.set(r, { parts, line: i + 1 });
-  });
+    if (w) {
+      w.parts.push({ raw: ' ' }, ...parts);
+      if (!w.line && i >= 0) w.line = i + 1;
+    } else wantRegion.set(r, { parts, line: i + 1 });
+  }
   const want = [...wantRegion.entries()].sort((x, y) => x[0] - y[0]).map(([, w]) => ({ ...w, form: formOf(w.parts) })).filter((w) => w.form.text);
   const q = readPageCopy(after);
   const gotRegion = new Map<number, number[]>();
@@ -2051,7 +2074,7 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   if (got.length !== want.length || got.some((g, k) => g.text !== want[k]!.form.text)) problems.push(`The page, read again, does not have your lines block by block (expected ${want.length} blocks of text, found ${got.length}).`);
   else {
     got.forEach((g, k) => {
-      if (g.links !== want[k]!.form.links) problems.push(`Line ${want[k]!.line}, read again, does not have its link words where you put them (it reads "${g.shown}").`);
+      if (g.links !== want[k]!.form.links) problems.push(`${want[k]!.line ? `Line ${want[k]!.line}` : 'Text you were not offered'}, read again, does not have its link words where ${want[k]!.line ? 'you put them' : 'they were'} (it reads "${g.shown}").`);
     });
     // And read as browsers show blocks (BLOCK; end tags browsers ignore break nothing), with HTML whitespace collapsed:
     // each block of text is the page before with the person's lines in place, each changed or deleted line keeping the

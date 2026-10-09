@@ -2,7 +2,7 @@
  * VOICE writes the person's copy exactly, without a model (F07, ADR-0081), and keepsVoice holds it exactly against
  * later machine writes. Activities on their own, against a temp store and a scripted gateway that records every call.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Medium } from '@byway/contracts';
 import { AnswerRejected, StepError } from '../src/activities/failures.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
@@ -10,12 +10,17 @@ import { modelStep } from '../src/activities/model-step.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import { pageCopy, pageLockView } from '../src/copy.ts';
 import { joinCodeDiff, serializeJson, splitCodeDiff } from '../src/formats.ts';
+import { playwrightPages } from '../src/pages.ts';
 import type { StepSpec } from '../src/types.ts';
 import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
+// The runner's own Chromium: a page's VOICE is checked by the browser (ADR-0081).
+const chromium = playwrightPages();
+afterAll(() => chromium.close(), 60_000);
+
 let b: VoiceBench;
 beforeEach(async () => {
-  b = await voiceBench();
+  b = await voiceBench([], { pages: chromium });
 });
 afterEach(() => b.close());
 
@@ -446,10 +451,11 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
   });
 
   it('an svg or math <title> before such a block, self-closed or left open, does not stop that: the block is still kept (r6)', async () => {
-    for (const [icon, iconLines] of [
-      ['<p><svg width="9" height="9"><title/></svg></p>', ''],
-      ['<p>X<svg width="9" height="9"><title>Tip</svg></p>', 'X\nTip\n'],
-      ['<p>x<math><title/></math></p>', 'x\n'],
+    // An svg <title>'s text is a tooltip: a browser does not show it, so it is not offered (r7); the lock still holds it.
+    for (const [icon, iconLines, locked] of [
+      ['<p><svg width="9" height="9"><title/></svg></p>', '', ''],
+      ['<p>X<svg width="9" height="9"><title>Tip</svg></p>', 'X\n', 'X\nTip\n'],
+      ['<p>x<math><title/></math></p>', 'x\n', 'x\n'],
     ] as const) {
       for (const [html, answer, written, deck] of [
         ['<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>', 'Intro\n\nOrder today', '<div><font face="Arial">Intro<p></p></font>Order today</div>', ['Intro', 'Order today']],
@@ -457,9 +463,10 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
         ['<div>Name<label><p>(required)</p></label>here</div>', 'Name\n\nhere', '<div>Name<label><p></p></label>here</div>', ['Name', 'here']],
       ] as const) {
         const q = await open(page(`${icon}${html}`));
+        expect(q.offered!.split('\n').slice(0, -3)).toEqual(['T', ...iconLines.split('\n').filter((l) => l)]);
         const out = await q.answer(`T\n${iconLines}${answer}`);
         expect(await stored(out.artifactId!)).toBe(`${icon}${written}`);
-        expect(JSON.parse(pageLockView(await b.store.artifacts.getText(out.artifactId!))).deck).toEqual(['T', ...iconLines.split('\n').filter((l) => l), ...deck]);
+        expect(JSON.parse(pageLockView(await b.store.artifacts.getText(out.artifactId!))).deck).toEqual(['T', ...locked.split('\n').filter((l) => l), ...deck]);
       }
     }
     expect(b.gateway.requests).toEqual([]);
@@ -549,6 +556,83 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(q.offered).toBe('T\nWe launched on 3 May.');
     const out = await q.answer('T\nWe launched on 4 May.');
     expect(await stored(out.artifactId!)).toBe('<h1>We launched on 4 May.</h1>');
+  });
+});
+
+describe('the browser has the last word on a page write (F07, r7)', () => {
+  const page = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>\n`;
+  const open = async (html: string) => VoiceQuestion.open(b, await benchRun(b, 'web-page'), await putWork(b, 'web-page', html));
+  const none = async () => undefined;
+  /** What Chromium shows of a stored page. */
+  const shows = async (id: string) => (await chromium.shownText(await b.store.artifacts.getText(id), none)).text;
+
+  it('the round 4 to 6 glue reproductions are written as Chromium shows the person\'s lines', async () => {
+    for (const [html, answer, shown] of [
+      ['<p>Price: <del>$20</del><span> now </span><ins>$15</ins></p>', 'T\nPrice:\n$20\n\n$15', 'Price: $20 $15'],
+      ['<p><del>Was <b>$20 </b></del>Now $15</p>', 'T\nWas $20 only\nNow $15', 'Was $20 only Now $15'],
+      ['<p><label>Email</label><a href="/help"> help</a> is here</p>', 'T\nEmail\nGet [help] is here', 'Email Get help is here'],
+      ['<p><label>First</label><b> and </b><label>second</label></p>', 'T\nFirst\n\nsecond', 'First second'],
+      ['<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>', 'T\nIntro\n\nOrder today', 'Intro\n\nOrder today'],
+      ['<p>Visit\n  <a href="/shop">\n    our shop\n  </a>\n</p>', 'T\nVisit [our shop].', 'Visit our shop.'],
+      ['<p><svg width="9" height="9"><title/></svg></p><div>Call us<ins><p>New offer</p></ins>today</div>', 'T\nCall us\n\ntoday', 'Call us\n\ntoday'],
+    ] as const) {
+      const out = await (await open(page(html))).answer(answer);
+      expect(await shows(out.artifactId!), html).toBe(shown);
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
+
+  it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
+    for (const [html, answer, problem] of [
+      // A button's content is an inline block: a browser shows no space at its edge, so "now" took the gap with it.
+      ['<p>Pay <button type="button"><b>$20</b> <label>now</label></button>Total</p>', 'T\nPay\n$20\n\nTotal', 'byway could not put line 4 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show "Pay $20Total". Change line 4 again, or leave it as it was offered. As first offered, line 4 read "now".'],
+      // Browsers move the font out of the table, right after "Middle".
+      ['<div>Lead<p>Middle</p><table><tr><font>F</font><td>Cell</td></tr></table></div>', 'T\nLead\n\nF\nCell', 'byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show "LeadF / Cell". Change line 3 again, or leave it as it was offered. As first offered, line 3 read "Middle".'],
+      // A <b> inside a MathML <title> breaks out of it, so "Text" shows.
+      ['<p><math><title><b>Text</b></title></math><span> b </span><font>C</font></p>', 'T\nText\n\nC', 'byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show "TextC". Change line 3 again, or leave it as it was offered. As first offered, line 3 read "b".'],
+    ] as const) {
+      const q = await open(page(html));
+      expect(await rejected(q.answer(answer)), html).toBe(problem);
+      expect(await b.store.events(q.run.runId)).not.toContainEqual(expect.objectContaining({ type: 'artifact' }));
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
+
+  it('a line a browser does not show is not offered, and stays byte for byte; the prompt says so', async () => {
+    const html = page('<p>X<svg width="9" height="9"><title>Tip</p><p>Hello</p>');
+    const q = await open(html);
+    // An svg <title> left open over the paragraph's end hides "Tip" and everything after it in a browser.
+    expect(q.offered).toBe('T\nX');
+    expect(q.prompt).toMatch(/ Text a browser does not show \(hidden, or shown only as a tooltip\) is not offered, and stays as it is\.$/);
+    const out = await q.answer('T\nX marks');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<p>X<svg', '<p>X marks<svg'));
+    const hidden = page('<div hidden>Menu</div><details><summary>More</summary><p>Inside</p></details><dialog>Closed</dialog><p class="x" style="display:none">Styled away</p><p>After</p>');
+    const h = await open(hidden);
+    expect(h.offered).toBe('T\nMore\nAfter');
+    const out2 = await h.answer('T\nMore\nAfter all');
+    expect(await b.store.artifacts.getText(out2.artifactId!)).toBe(hidden.replace('<p>After</p>', '<p>After all</p>'));
+  });
+
+  it('a line a style breaks over two screen lines is written, its break kept where the words around it were kept', async () => {
+    const html = page('<style>.b{display:block}</style><h1>Fresh <span class="b">bread daily</span></h1>');
+    const out = await (await open(html)).answer('T\nWarm bread daily');
+    expect(await shows(out.artifactId!)).toBe('Warm\nbread daily');
+  });
+
+  it('with no page renderer, a page\'s VOICE fails plainly: it never writes a page no browser checked', async () => {
+    const bare = await voiceBench();
+    try {
+      const run = await benchRun(bare, 'web-page');
+      const work = await putWork(bare, 'web-page', page('<h1>Head</h1>'));
+      const err = await VoiceQuestion.open(bare, run, work).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(StepError);
+      expect((err as Error).message).toBe('The words on a web page cannot be written in this step: no page renderer is configured, and byway writes a page only when a browser shows it as you wrote it.');
+      const finish = await finishHumanStep(bare.deps, { run, call: stepCall(run, 'voice'), step: voiceStep(), kind: 'write', resolution: { checkpointId: 'cp', text: 'T\nNew head' }, ports: { artifact: work }, initialText: 'T\nHead' }).catch((e: unknown) => e);
+      expect(finish).toBeInstanceOf(StepError);
+      expect(await bare.store.events(run.runId)).not.toContainEqual(expect.objectContaining({ type: 'artifact' }));
+    } finally {
+      bare.close();
+    }
   });
 });
 

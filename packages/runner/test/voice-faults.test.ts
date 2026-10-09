@@ -11,6 +11,7 @@ import { AnswerRejected, StepError, toFailure } from '../src/activities/failures
 import { modelStep } from '../src/activities/model-step.ts';
 import { serializeJson } from '../src/formats.ts';
 import { FAILURE, type StepSpec } from '../src/types.ts';
+import { fakePages } from './helpers/fake-pages.ts';
 import { benchRun, putWork, storyboard, voiceBench, VoiceQuestion, type VoiceBench } from './helpers/voice-activity.ts';
 
 /** Which copy.ts function throws, if any. */
@@ -38,7 +39,8 @@ vi.mock('../src/copy.ts', async (importOriginal) => {
 
 let b: VoiceBench;
 beforeEach(async () => {
-  b = await voiceBench();
+  // The page reader's model stands in for Chromium here: these tests force faults in byway's own code.
+  b = await voiceBench([], { pages: fakePages() });
 });
 afterEach(() => {
   fault.in = undefined;

@@ -829,6 +829,25 @@ describe('characters outside the Basic Multilingual Plane are one character each
   });
 });
 
+describe('lines a browser does not show are not offered (the arbiter\'s offer rule, F07, r7)', () => {
+  it('are the page\'s own text: left out of the deck, kept byte for byte by placement, and read as unchanged by the verifier', () => {
+    const before = pageOf('<div hidden>Menu</div><p>Hello <b>big</b> world</p><nav><a href="/a">Shown</a><a href="/b">Gone</a></nav>');
+    expect(deckLines(readPageCopy(before))).toEqual(['T', 'Menu', 'Hello big world', 'Shown', 'Gone']);
+    const hide = new Set([1, 4]);
+    const p = readPageCopy(before, hide);
+    expect(deckLines(p)).toEqual(['T', 'Hello big world', 'Shown']);
+    expect(pageVoiceSuffix(p)).toMatch(/line 3 "Shown" goes to \/a\.$/);
+    const e = readPageEdit(p, 'T\nHello world\nSeen');
+    if (!e.ok) throw new Error(e.problem);
+    const placed = placePageEdit(before, e, hide);
+    expect(body(placed.page)).toBe('<div hidden>Menu</div><p>Hello world</p><nav><a href="/a">Seen</a><a href="/b">Gone</a></nav>');
+    expect(placed.problems).toEqual([]);
+    expect(pageEditProblems(before, placed.page, e, placed, hide)).toEqual([]);
+    // A placement that changed a line not offered is refused.
+    expect(pageEditProblems(before, placed.page.replace('>Gone<', '>Went<'), e, placed, hide)).not.toEqual([]);
+  });
+});
+
 describe('a link or button keeps words a browser shows (F07, r7)', () => {
   it('one whose only other words are hidden is refused, not left without a name: words a browser hides do not name it', () => {
     // A submit button whose label is deleted, with a hidden "Sending…" beside it: a browser shows an empty button.

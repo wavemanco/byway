@@ -12,6 +12,7 @@ import { PROFILES } from '@byway/gateway';
 import type { RunnerDeps } from '../../src/activities/deps.ts';
 import { finishHumanStep, openCheckpoint } from '../../src/activities/human.ts';
 import { serializeJson } from '../../src/formats.ts';
+import type { PageRenderer } from '../../src/pages.ts';
 import type { FinishHumanResult, RunRef, StepCall, StepSpec } from '../../src/types.ts';
 import { fakePrompts } from './fake-prompts.ts';
 import { createTestStore, type MemoStore } from './memo.ts';
@@ -55,7 +56,8 @@ export interface VoiceBench {
   close(): void;
 }
 
-export async function voiceBench(answers: (string | ((req: CompletionRequest) => string))[] = []): Promise<VoiceBench> {
+/** `pages`: the page renderer a page's VOICE reads with (the arbiter); none means no renderer is configured. */
+export async function voiceBench(answers: (string | ((req: CompletionRequest) => string))[] = [], opts: { pages?: PageRenderer } = {}): Promise<VoiceBench> {
   const dir = mkdtempSync(path.join(tmpdir(), 'byway-voice-'));
   const store = createTestStore({ dataDir: dir });
   const workspaceId = (await store.ensureDefaultWorkspace()).id;
@@ -63,7 +65,7 @@ export async function voiceBench(answers: (string | ((req: CompletionRequest) =>
   return {
     store,
     gateway,
-    deps: { gateway, store, prompts: fakePrompts() },
+    deps: { gateway, store, prompts: fakePrompts(), ...(opts.pages ? { pages: opts.pages } : {}) },
     workspaceId,
     close() {
       store.close();
