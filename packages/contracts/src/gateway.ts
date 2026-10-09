@@ -53,6 +53,17 @@ export interface SpendContext {
    * `advisor.intake`, `advisor.compose`, `advisor.compose.repair`). The mock provider answers by purpose.
    */
   purpose: string;
+  /**
+   * The call's identity across Temporal's attempts of its step, and its caller's liveness (stage 3, ADR-0099). The
+   * runner's memo layer sets it on a step's calls, after hashing the request, so memo keys are unchanged. Never sent to a
+   * provider or recorded.
+   * - `key`: the run and memo key of the call (AdmitRequest.operationKey). While one attempt holds it, another waits for
+   *   its result (GatewayError 'in-flight') instead of paying again; a dead or timed-out holder's call is taken over.
+   * - `cancel`: aborts when Temporal cancels the attempt (a cancel, a timeout, a lost worker): an unsettled call is held
+   *   no longer, so a later attempt can take it over within one lease.
+   * - `until`: aborts when the attempt's invocation ends: a settled call is held until then, while its result is kept.
+   */
+  operation?: { key: string; until: AbortSignal; cancel?: AbortSignal };
 }
 
 /** Which prompt template produced a call (from RenderedPrompt), recorded in the ledger for provenance (CR14). */

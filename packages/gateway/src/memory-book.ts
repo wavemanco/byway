@@ -48,6 +48,9 @@ interface Row {
   providerJobs?: Partial<Record<ProviderJobRole, string>>;
   owner?: string;
   leaseUntil: number;
+  /** The operation key it holds (AdmitRequest.operationKey), until it gives the key up to a later attempt. */
+  key?: string;
+  releasedKey?: string;
   settleSeq?: number;
   settledAt?: string;
   settledUsd?: number;
@@ -72,6 +75,8 @@ interface Fault {
 const EPSILON = 1e-9;
 
 const live = (r: Row, now: number) => r.leaseUntil > now;
+/** The states in which a live row holds its operation key (as the store's book). */
+const HOLDING: ReadonlySet<PaidOperationState> = new Set(['open', 'sent', 'accepted', 'settled']);
 const inFlight = (r: Row, now: number) => (r.state === 'open' || r.state === 'sent' || r.state === 'accepted') && live(r, now);
 /** May have been billed and counts its reservation until cleared (the retained part is counted separately). */
 const uncertain = (r: Row, now: number) => r.clearedAt === undefined && (r.state === 'uncertain' || ((r.state === 'sent' || r.state === 'accepted') && !live(r, now)));
@@ -95,6 +100,10 @@ export class MemorySpendBook implements SpendBook {
       if (fault) return { fault: memoryFaultMessage(fault.offset) };
     }
     const at = this.stamp();
+    if (req.operationKey !== undefined) {
+      const held = this.resolveKey(req.operationKey, req.owner, now, req.leaseMs, at);
+      if (held) return held;
+    }
     for (const r of this.rows.values()) {
       if (live(r, now)) continue;
       if (r.state === 'open') Object.assign(r, { state: 'released', updatedAt: at });
@@ -131,6 +140,7 @@ export class MemorySpendBook implements SpendBook {
       state: 'open',
       owner: req.owner,
       leaseUntil: now + req.leaseMs,
+      ...(req.operationKey !== undefined ? { key: req.operationKey } : {}),
       createdAt: at,
       updatedAt: at,
     });
@@ -186,6 +196,7 @@ export class MemorySpendBook implements SpendBook {
       updatedAt: this.stamp(),
       ...(settlement.entry.priceBasis !== undefined ? { priceBasis: settlement.entry.priceBasis } : {}),
     });
+    if (settlement.holdMs !== undefined && r.key !== undefined) r.leaseUntil = Math.max(r.leaseUntil, this.ms() + settlement.holdMs);
     return { ledgerEntryId };
   }
 
@@ -193,7 +204,15 @@ export class MemorySpendBook implements SpendBook {
     const until = this.ms() + leaseMs;
     for (const id of opIds) {
       const r = this.rows.get(id);
-      if (r && r.owner === owner && (r.state === 'open' || r.state === 'sent' || r.state === 'accepted')) r.leaseUntil = until;
+      if (r && r.owner === owner && (r.state === 'open' || r.state === 'sent' || r.state === 'accepted' || (r.state === 'settled' && r.key !== undefined))) r.leaseUntil = until;
+    }
+  }
+
+  async letGo(opIds: readonly string[], owner: string): Promise<void> {
+    const now = this.ms();
+    for (const id of opIds) {
+      const r = this.rows.get(id);
+      if (r && r.owner === owner) r.leaseUntil = Math.min(r.leaseUntil, now);
     }
   }
 
@@ -203,6 +222,7 @@ export class MemorySpendBook implements SpendBook {
       if (r.owner !== owner) continue;
       if (r.state === 'open') Object.assign(r, { state: 'released', updatedAt: at });
       else if (r.state === 'sent' || r.state === 'accepted') Object.assign(r, { state: 'uncertain', uncertainReason: 'interrupted', updatedAt: at });
+      else if (r.state === 'settled' && r.key !== undefined) r.leaseUntil = Math.min(r.leaseUntil, this.ms());
     }
   }
 
@@ -357,6 +377,24 @@ export class MemorySpendBook implements SpendBook {
       createdAt: at,
       updatedAt: at,
     });
+    return undefined;
+  }
+
+  /** As the store's book (#resolveKey there): in flight, resumed, or given up so a new row can hold the key. */
+  private resolveKey(key: string, owner: string, now: number, leaseMs: number, at: string): AdmitOutcome | undefined {
+    const r = [...this.rows.values()].find((x) => x.key === key);
+    if (!r) return undefined;
+    if (live(r, now) && HOLDING.has(r.state)) return { inFlight: true };
+    const jobs = { ...r.providerJobs };
+    if (jobs.generation !== undefined && r.clearedAt === undefined && (r.state === 'accepted' || r.state === 'uncertain')) {
+      Object.assign(r, { state: 'accepted', owner, leaseUntil: now + leaseMs, updatedAt: at });
+      delete r.uncertainReason;
+      return { resume: { opId: r.id, jobs } };
+    }
+    if (r.state === 'open') Object.assign(r, { state: 'released', updatedAt: at });
+    else if (r.state === 'sent' || r.state === 'accepted') Object.assign(r, { state: 'uncertain', uncertainReason: 'interrupted', updatedAt: at });
+    Object.assign(r, { releasedKey: key, updatedAt: at });
+    delete r.key;
     return undefined;
   }
 

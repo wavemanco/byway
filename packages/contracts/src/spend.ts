@@ -39,6 +39,14 @@ export type ProviderJobRole = 'generation' | 'extract';
 export interface AdmitRequest {
   /** A fresh id the caller chose for this operation. */
   opId: string;
+  /**
+   * The call's identity across retries (stage 3, ADR-0099): for a step's call, its run and memo key, the same on every
+   * Temporal attempt of the step. One live row holds a key at a time. Admitting a key a live row holds answers
+   * `inFlight` (an earlier attempt is still under way, or still keeping its result); a key whose holder is gone is
+   * taken over: an accepted call is resumed (`resume`), and anything else gives the key up to a new row (a call that was
+   * settled and whose result was not kept is bought again, and counted). Absent for calls outside a step (the advisor's).
+   */
+  operationKey?: string;
   /** The process-and-gateway that holds the operation; only it may mark it sent or renew its lease. */
   owner: string;
   /** How long the operation stays live without a renewal. */
@@ -62,7 +70,15 @@ export type AdmitOutcome =
   /** A cap would be broken: the details the runner turns into "Raise the budget by $X?". */
   | { budget: BudgetDetails }
   /** An unacknowledged accounting fault blocks paid calls (the message says what and where). */
-  | { fault: string };
+  | { fault: string }
+  /** A live row holds the operation key: another attempt of the same call is under way, or keeping its result. */
+  | { inFlight: true }
+  /**
+   * The operation key's row had queue jobs the provider accepted, and its holder is gone (its lease ran out, or it
+   * stopped and handed the call back): this caller now holds that row (`opId`, owner and lease) and polls the jobs by
+   * their ids instead of submitting new ones. Nothing more is reserved: the row was already counted.
+   */
+  | { resume: { opId: string; jobs: Partial<Record<ProviderJobRole, string>> } };
 
 /** A settled call as the audit file will record it: a ledger entry without what the ledger assigns. */
 export type SettledCall = Omit<LedgerEntry, 'id' | 'seq' | 'at' | 'prevHash' | 'hash' | 'operationId'>;
@@ -71,6 +87,12 @@ export interface Settlement {
   /** When the call settled, the ledger entry's `at`. */
   at: string;
   entry: SettledCall;
+  /**
+   * For a call with an operation key: how long it stays held from settlement (its lease is extended to at least now
+   * plus this), so its caller can keep the result before another attempt may take the key, even when the call settled
+   * near the end of a lease its caller had stopped renewing (ADR-0099).
+   */
+  holdMs?: number;
 }
 
 /**
@@ -339,9 +361,10 @@ export interface BrokenLine {
 
 export interface SpendBook {
   /**
-   * In one transaction: refuse a paid call while an unacknowledged fault exists; sweep (an open row no longer live is
+   * In one transaction: refuse a paid call while an unacknowledged fault exists; resolve the operation key, if any
+   * (AdmitRequest.operationKey: in flight, resumed, or given up to this call); sweep (an open row no longer live is
    * released, a sent or accepted one becomes uncertain); check both caps against exposure plus the reservation; insert
-   * the row as open, with its owner and lease.
+   * the row as open, with its owner, lease and key.
    */
   admit(req: AdmitRequest): Promise<AdmitOutcome>;
   /** Compare-and-set from open to sent, for the live row this owner holds. False when it was swept meanwhile. */
@@ -359,14 +382,23 @@ export interface SpendBook {
   abandon(opId: string): Promise<void>;
   /** The provider answered: records the true cost from any state but settled; idempotent, returning the entry id chosen. */
   settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }>;
-  /** Extends the lease of this owner's unsettled operations. */
+  /**
+   * Extends the lease of this owner's unsettled operations, and of its settled ones that hold an operation key (their
+   * caller is still keeping the result: another attempt waits for it rather than buy the call again; ADR-0099).
+   */
   renew(opIds: readonly string[], owner: string, leaseMs: number): Promise<void>;
+  /**
+   * This owner's caller has ended (the activity invocation is over), so these operations are held no longer: their
+   * leases end now, and their operation keys are free for a later attempt. Only this owner's rows change. Idempotent.
+   */
+  letGo(opIds: readonly string[], owner: string): Promise<void>;
   /**
    * This owner is stopping cleanly (its gateway is closing), so its operations are given up at once rather than when
    * their leases run out: in one transaction its open rows are released (never sent, they count nothing) and its sent
    * and accepted rows become uncertain, as interrupted (they may have been billed, and count against the workspace cap
-   * only until cleared). Other owners' rows and settled rows are untouched; a later settlement still records the true
-   * cost. Idempotent. An owner that crashes never gets here: its rows wait for their leases to run out.
+   * only until cleared), and its settled rows are held no longer (their operation keys are free for a later attempt).
+   * Other owners' rows are untouched; a later settlement still records the true cost. Idempotent. An owner that crashes
+   * never gets here: its rows wait for their leases to run out.
    */
   endLeases(owner: string): Promise<void>;
   cursor(): Promise<LedgerCursor>;

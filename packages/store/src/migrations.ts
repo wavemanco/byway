@@ -270,6 +270,19 @@ CREATE TABLE spend_book_meta (
 INSERT INTO spend_book_meta (id, ledger_offset, ledger_tail_start, ledger_tail_sha256) VALUES (1, 0, 0, NULL);
 `,
   },
+  {
+    version: 7,
+    name: 'operation-keys',
+    sql: `
+-- Stage 3 of the spend book (ADR-0099): a paid call's identity across Temporal's attempts of its step. op_key is the
+-- runner's run and memo key for the call; one row holds a key at a time (the unique index), and a row gives it up to
+-- a later attempt by moving it to released_key, which keeps the history. Rows from before this migration, the
+-- advisor's calls and absorbed ledger entries have no key.
+ALTER TABLE paid_operations ADD COLUMN op_key TEXT CHECK (op_key IS NULL OR op_key <> '');
+ALTER TABLE paid_operations ADD COLUMN released_key TEXT;
+CREATE UNIQUE INDEX paid_operations_by_key ON paid_operations (op_key) WHERE op_key IS NOT NULL;
+`,
+  },
 ];
 
 /** The schema version this build writes. */
