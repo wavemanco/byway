@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**84 records:** 77 accepted (15 of them by continuation, awaiting ratification; 22 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**85 records:** 78 accepted (15 of them by continuation, awaiting ratification; 23 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -119,6 +119,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0080](0080-phase-4-recheck-corrections.md) | Corrections after the independent re-check of the Phase 4 fixes | Accepted | Delegated | 2026-10-08 02:00 |
 | [ADR-0084](0084-renderer-launch-without-secrets.md) | The page renderer launches with no secrets and one stated containment policy; the OS sandbox awaits the owner's decision | Accepted | Delegated | 2026-10-08 16:30 |
 | [ADR-0088](0088-provider-boundary-held-keys-and-media-admission.md) | The provider-key promise is enforced at every crossing; provider media is admitted by one rule on every URL and redirect hop | Accepted | Delegated | 2026-10-08 16:45 |
+| [ADR-0087](0087-lineup-evidence-full-words-and-disclosed-card-budget.md) | Lineup evidence: text critics read every item's full words; image-only critics get a measured, visible, disclosed budget | Accepted | Delegated | 2026-10-08 16:45 |
 
 ## Open decisions (not yet ADRs)
 
