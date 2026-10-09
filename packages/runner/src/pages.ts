@@ -81,7 +81,9 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *
  * What a character is. Each character (code point) that is not HTML whitespace, in the body's text nodes (not in a
  * script, a style, a textarea, a title, a template or a noscript), in document order:
- * - not laid out (its node has no box: display none, a closed details, an option, a canvas's or video's fallback): not
+ * - not laid out (its node has no box: display none, a closed details, an option, a canvas's or video's fallback, the
+ *   content of a box with content-visibility: hidden, which skips its content only where layout containment applies,
+ *   not on an inline box or a table row; text in a display: contents element is laid out where its parent is): not
  *   in the text, and not listed;
  * - shown: its box, when it was measured, keeps more than a pixel in each direction once clipped by every ancestor
  *   whose overflow is hidden or clip or that has paint containment (an absolutely or fixed positioned element escapes
@@ -670,12 +672,26 @@ const VISITOR_BEGIN = `(() => {
       return alpha(s.color) === 0 && alpha(s.webkitTextFillColor || s.color) === 0 && !stroke && (s.textShadow || 'none') === 'none' && !clipsText(e);
     };
     // Whether e is rendered at all: not under display none, nor in content a browser skips (content-visibility: hidden,
-    // the body of a closed details), where boxes may still be reported.
+    // the body of a closed details), where boxes may still be reported. An element with display: contents has no box of
+    // its own (checkVisibility says no), and its text is rendered where its nearest ancestor with a box is.
     const renderedMemo = new Map();
-    const rendered = (e) => { let v = renderedMemo.get(e); if (v === undefined) { v = !e.checkVisibility || e.checkVisibility(); renderedMemo.set(e, v); } return v; };
+    const rendered = (e) => {
+      let v = renderedMemo.get(e);
+      if (v === undefined) {
+        let b = e;
+        while (b.parentElement && style(b).display === 'contents') b = b.parentElement;
+        v = !b.checkVisibility || b.checkVisibility();
+        renderedMemo.set(e, v);
+      }
+      return v;
+    };
+    // content-visibility: hidden skips an element's content only where layout containment applies: not on an inline box
+    // (a span, a ruby), a table row, row group or column, or an element with no box (display: contents). Chromium paints
+    // the text of a span with hidden="until-found".
+    const UNCONTAINED = new Set(['inline', 'contents', 'ruby', 'ruby-base', 'ruby-text', 'ruby-base-container', 'ruby-text-container', 'table-row', 'table-row-group', 'table-header-group', 'table-footer-group', 'table-column', 'table-column-group']);
     // Whether the text directly in e is rendered: e is, and does not skip its own content (a closed details shows only
     // its summary; content-visibility: hidden keeps the box and skips what is in it).
-    const textRendered = (e) => rendered(e) && !(tag(e) === 'DETAILS' && !e.open) && style(e).contentVisibility !== 'hidden';
+    const textRendered = (e) => rendered(e) && !(tag(e) === 'DETAILS' && !e.open) && !(style(e).contentVisibility === 'hidden' && !UNCONTAINED.has(style(e).display));
     /** Whether a style keeps the text in e from sight as a whole: almost transparent, invisible, or coloured clear. */
     const faded = (e) => opacity(e) < 0.05 || /hidden|collapse/.test(style(e).visibility) || clear(e);
     const NO_OVERFLOW = new Set(['inline', 'contents', 'none', 'table', 'inline-table', 'table-row', 'table-row-group', 'table-header-group', 'table-footer-group', 'table-column', 'table-column-group', 'ruby', 'ruby-text']);

@@ -287,6 +287,17 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await check(html, 'T\n Our pricing', html.replace('>Pricing<', '> Our pricing<'))).toBeUndefined();
   }, 60_000);
 
+  it('content-visibility skips only a box that can contain its content, and display: contents shows its text (r10 hand cases)', async () => {
+    // hidden="until-found" on an inline span is content-visibility: hidden on a box it does not apply to: Chromium
+    // paints " ends", so the line the reader reads as "Sale today" is shown with other words in it, and is not offered
+    // (round 10 at first read " ends" as not laid out, offered the line and stored "Sale ends starts today").
+    const found = pageOf('<p>Sale<span hidden="until-found"> ends</span> today</p><div hidden="until-found">Found</div><p>Hi <em style="display:contents">there</em> you</p>');
+    const o = await offer(found);
+    expect(o.offered).toEqual(['T', 'Hi there you']);
+    expect(o.why).toEqual({ 'Sale today': 'changed', Found: 'unlaid' });
+    expect(await check(found, 'T\nHi there, you', found.replace('</em> you', '</em>, you'))).toBeUndefined();
+  }, 60_000);
+
   it('a deleted line glued to a box beside it leaves its neighbours apart, in the flow or across the box\'s edge (r10)', async () => {
     // "price" touches the svg's visible "S", which hides the svg's edge between them; once "price" is gone, the edge
     // stands between "S" and "Name.": a visitor sees them apart on one row, as "price" and "Name." were.

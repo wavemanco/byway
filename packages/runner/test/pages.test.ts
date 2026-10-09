@@ -481,6 +481,12 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       // A gap beside a character its box cuts off is measured from the part that shows (r10 generator).
       ['<p><span style="display:inline-block;width:.15em;overflow:hidden;vertical-align:bottom">MW</span> Menu</p>', 'M﷭\nMenu'],
       ['<p><span style="display:inline-block;width:.15em;overflow:hidden;vertical-align:bottom">MW</span>Menu</p>', 'M﷭Menu'],
+      // content-visibility: hidden skips content only where it applies (not on an inline box or a table row); text in
+      // a display: contents element shows (r10 hand cases).
+      ['<p>Sale<span hidden="until-found"> ends</span> today</p>', 'Sale ends today'],
+      ['<p>A<ruby style="content-visibility:hidden">Kan<rt>k</rt></ruby>B</p>', 'AKankB'],
+      ['<table><tbody style="content-visibility:hidden"><tr><td>Cell</td></tr></tbody></table><p style="content-visibility:hidden">Gone</p>', 'Cell﷬'],
+      ['<p>Hi <em style="display:contents">there</em> you</p>', 'Hi there you'],
       // Inline blocks, buttons and a display:block cite are boxes of their own.
       ['<p>Tags: <span style="display:inline-block;padding:2px 6px">New</span><span style="display:inline-block;padding:2px 6px">tech</span></p>', 'Tags:\nNew\ntech'],
       ['<blockquote>“Worth it.”<cite style="display:block">— Maya R.</cite></blockquote>', '“Worth it.”\n— Maya R.'],
