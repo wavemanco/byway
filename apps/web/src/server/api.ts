@@ -15,6 +15,7 @@ import type { Services } from '../services/index.ts';
 import { budgetProblem, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
 import { auditText } from '../view/spending.ts';
 import { takesRefs } from '../view/refs.ts';
+import { onlyProtocolChecks } from '../view/composed.ts';
 import { COMPOSED_CHANGED, COMPOSED_REFUSED } from '../view/refusals.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
@@ -234,7 +235,9 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
   } else {
     if (!intake.composed) throw new HttpError(400, 'Choose a recipe, or build your own first.');
     // Only a recipe that validates is ever offered (spec §4).
-    if (!intake.composed.ok) throw new HttpError(400, 'The composed recipe did not pass the protocol checks, so it cannot run.');
+    if (!intake.composed.ok) {
+      throw new HttpError(400, onlyProtocolChecks(intake.composed.violations) ? 'The composed recipe did not pass the protocol checks, so it cannot run.' : 'The composed recipe cannot run. The screen says why; build your own again.');
+    }
     recipe = await admitComposed(deps, intake.id, intake.composed, intake.problem);
   }
   const refs = input.refs ?? [];

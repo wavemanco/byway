@@ -61,6 +61,9 @@ function scripted(answers: string[]): Gateway {
     profiles: () => [],
     profileStatus: () => [media],
     verifyLedger: async () => null,
+    spendRecords: async () => ({ inFlight: [], uncertain: [], faults: [], notInAuditFile: 0, setAside: [] }),
+    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 }),
+    close: async () => undefined,
   };
 }
 

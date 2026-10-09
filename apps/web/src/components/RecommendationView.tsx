@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ComposeResultView, ComposeView, RecommendResult } from '../server/api.ts';
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
-import { diffLine } from '../view/composed.ts';
+import { composedRefusalLead, diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
 import { composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
@@ -458,7 +458,7 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
           </ul>
           {composed.violations.length > 0 ? (
             <div className="notice notice-danger">
-              <p>It did not pass the protocol checks, so it cannot run:</p>
+              <p>{composedRefusalLead(composed.violations)}</p>
               <ul>
                 {composed.violations.map((v) => (
                   <li key={`${v.ruleId}-${v.message}`}>

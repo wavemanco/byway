@@ -7,6 +7,7 @@ import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../src/server/api.ts';
 import { composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState } from '../src/view/recommendation.ts';
 import { COMPOSED_CHANGED, COMPOSED_REFUSED, HELD_KEY_REFUSAL } from '../src/view/refusals.ts';
+import { composedRefusalLead } from '../src/view/composed.ts';
 
 const rec = (recipeId: string): Recommendation =>
   ({
@@ -99,5 +100,13 @@ describe('a composed recipe admitted again at start (ADR-0092)', () => {
     expect(composedAfterStart(before, { code: HELD_KEY_REFUSAL, body: { composed: now } })).toBe(before);
     expect(composedAfterStart(before, { code: COMPOSED_CHANGED, body: { composed: 'no' } })).toBe(before);
     expect(composedAfterStart(before, {})).toBe(before);
+  });
+});
+
+describe('the line above a composed recipe’s refusals', () => {
+  it('names the protocol checks only when every refusal is one; a check at Start that is not (ADMIT-HASH, ADMIT-NEAREST) gets a plain lead', () => {
+    expect(composedRefusalLead([{ ruleId: 'ST12' }, { ruleId: 'COMP-1' }])).toBe('It did not pass the protocol checks, so it cannot run:');
+    expect(composedRefusalLead([{ ruleId: 'ADMIT-NEAREST' }])).toBe('It cannot run:');
+    expect(composedRefusalLead([{ ruleId: 'ADMIT-HASH' }, { ruleId: 'ST12' }])).toBe('It cannot run:');
   });
 });
