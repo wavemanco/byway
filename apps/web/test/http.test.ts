@@ -47,6 +47,19 @@ describe('parseBody refuses a body holding a held provider key', () => {
     expect(await other.response.json()).toEqual({ error: 'Describe what you are working on.' });
   });
 
+  it.each([
+    ['the problem text only', { text: `Use my key ${ANTHROPIC} for this`, attachments: [{ name: 'notes', text: 'Spring classes' }] }, ['text']],
+    ['an attachment only', { text: 'A memo', attachments: [{ name: 'notes', text: `config: ${FAL_SECRET}` }] }, ['attachments']],
+    ['both', { text: `Use ${ANTHROPIC}`, attachments: [{ name: ANTHROPIC, text: 'x' }] }, ['text', 'attachments']],
+  ] as const)('names the top-level fields that held a key (%s), so Start stops keeping only those (ADR-0088)', async (_where, body, fields) => {
+    const result = await parseBody(post(body), ProblemInput, heldKeyIn);
+    if (result.ok) throw new Error('expected a refusal');
+    const answer = (await result.response.json()) as { fields?: unknown };
+    expect(answer).toMatchObject({ code: HELD_KEY_REFUSAL, fields });
+    expect(JSON.stringify(answer)).not.toContain(ANTHROPIC);
+    expect(JSON.stringify(answer)).not.toContain(FAL_SECRET);
+  });
+
   it('accepts text that only looks like a key, and returns the parsed body', async () => {
     const body = { text: 'The fixture uses sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX as a placeholder.' };
     expect(await parseBody(post(body), ProblemInput, heldKeyIn)).toEqual({ ok: true, data: body });

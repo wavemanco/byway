@@ -59,15 +59,28 @@ export function loadStartAttachments(): KeptAttachment[] {
   return attachmentsSlot().load() ?? [];
 }
 
-/**
- * After a run starts: the problem and its attachments went with it. Also after Start was refused for holding a provider
- * key (ADR-0088): the tab's session must not keep a key byway refused, though the form still shows it to be edited.
- */
-export function clearStartDraft(): void {
+function forgetText(): void {
   try {
     sessionStorage.removeItem(KEY);
   } catch {
     // Nothing to clear.
   }
+}
+
+/** After a run starts: the problem and its attachments went with it. */
+export function clearStartDraft(): void {
+  forgetText();
   attachmentsSlot().clear();
+}
+
+/**
+ * After Start was refused for holding a provider key (ADR-0088): the tab's session must not keep a key byway refused,
+ * though the form still shows it to be edited. Only the part that held it stops being kept (`fields`, from the
+ * refusal: `text`, `attachments` or both); the rest is unsent work and stays kept (spec §5, ADR-0082 R1). The part
+ * that held the key is kept again once it is edited. A refusal that does not say where drops both.
+ */
+export function forgetRefusedStart(fields: readonly string[] | undefined): void {
+  const unknown = fields === undefined || fields.length === 0;
+  if (unknown || fields.includes('text')) forgetText();
+  if (unknown || fields.includes('attachments')) attachmentsSlot().clear();
 }

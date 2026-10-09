@@ -4,11 +4,16 @@ export class ApiError extends Error {
   override name = 'ApiError';
   /** The server's refusal code, for the refusals a screen acts on (view/refusals.ts). */
   readonly code: string | undefined;
-  constructor(message: string, code?: string) {
+  /** The request's top-level fields the refusal names (for a held key: those that held one), when it names any. */
+  readonly fields: readonly string[] | undefined;
+  constructor(message: string, code?: string, fields?: readonly string[]) {
     super(message);
     this.code = code;
+    this.fields = fields;
   }
 }
+
+const stringList = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((v) => typeof v === 'string') ? value : undefined);
 
 async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Promise<T> {
   let res: Response;
@@ -17,16 +22,16 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   } catch {
     throw new ApiError('byway is not reachable. Check that it is still running, then try again.');
   }
-  let data: { error?: string; code?: string };
+  let data: { error?: string; code?: unknown; fields?: unknown };
   try {
-    data = (await res.json()) as { error?: string; code?: string };
+    data = (await res.json()) as { error?: string; code?: unknown; fields?: unknown };
   } catch {
     // A successful status whose body cannot be read is a failure, never an empty object standing in for the result:
     // the Recommendation commands apply what comes back directly (ADR-0082).
     if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
     data = {};
   }
-  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, typeof data.code === 'string' ? data.code : undefined);
+  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, typeof data.code === 'string' ? data.code : undefined, stringList(data.fields));
   return data as T;
 }
 
