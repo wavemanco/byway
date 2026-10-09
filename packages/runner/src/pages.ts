@@ -99,9 +99,12 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * The fields:
  * - `text`: the shown characters in document order, each pair of neighbours with one separator between them, from
  *   where their boxes are and what lies between them in the document: REVERSED when a visitor sees the second before
- *   the first on one row (two letters or digits of a left-to-right script, or two of a right-to-left one); none when a
- *   visitor sees them glued (on one row, no more than a tenth of the smaller font size apart, whatever lies between
- *   them, as for flex items with no gap; or on two rows a word is broken over, with nothing between); a line break when
+ *   the first on one row (two characters of a left-to-right script, or two of a right-to-left one: a letter or digit by
+ *   its script, punctuation or a symbol by the letters around it in its text node when those on both sides agree, else
+ *   by its block's direction); none when a visitor sees them glued (on one row, no more than a tenth of the smaller
+ *   font size apart, whatever lies between them, as for flex items with no gap; or on two rows a word is broken over,
+ *   with nothing between; the gap is measured between the parts of the two boxes a visitor sees, so a character its
+ *   box cuts off part of ends at the cut); a line break when
  *   they are apart and the edge of a box of its own lies between them (a block, a flex or grid item, a table cell, a
  *   floated or positioned box, an inline block, a button, an image or a control) or a forced break does (a `<br>`, a
  *   newline a white-space style keeps); else a space (apart within one flow of text: on one row, or on rows the text
@@ -819,22 +822,38 @@ const VISITOR_BEGIN = `(() => {
             const rs = range.getClientRects();
             for (let k = 0; k < rs.length && !q; k++) if (rs[k].width > 0 && rs[k].height > 0) q = rs[k];
           }
-          let shown = false, box = null;
+          let shown = false, box = null, vis = null;
           if (q) {
             box = { l: q.left + scrollX, t: q.top + scrollY, r: q.right + scrollX, b: q.bottom + scrollY };
             const l = Math.max(q.left, clip.l), t = Math.max(q.top, clip.t), r = Math.min(q.right, clip.r), b = Math.min(q.bottom, clip.b);
             const off = b + scrollY <= 0 || (rtlPage ? l + scrollX >= pageWidth : r + scrollX <= 0);
             shown = r - l > 1 && b - t > 1 && !off;
+            // The part a visitor sees: a gap beside a character its box cuts off is measured from the cut.
+            if (shown) vis = { l: l + scrollX, t: t + scrollY, r: r + scrollX, b: b + scrollY };
             if (shown && ell && (!ell.clamp || q.bottom > ell.bottom - ell.lh) && (ell.rtl ? q.left < ell.at - 0.5 : q.right > ell.at + 0.5)) shown = false;
           } else if (last && last.box) {
             // A character with no box of its own (a zero-width or combining one) goes with the one before it.
             box = last.box;
+            vis = last.vis;
             shown = last.shown;
           }
-          last = { i, box, shown, fs, d: dirOf(c) };
+          last = { i, box, vis, shown, fs, d: dirOf(c) };
           chars.push(last);
         }
         i += w;
+      }
+      // Punctuation and symbols take a direction from the letters around them, as the bidi algorithm resolves them: the
+      // letters' on both sides when they agree, else the paragraph's.
+      const base = style(block || parent).direction === 'rtl' ? 'R' : 'L';
+      for (let k = 0; k < chars.length; k++) {
+        if (chars[k].d !== 'N') continue;
+        let a = k - 1, b = k + 1;
+        while (a >= 0 && chars[a].d === 'N') a--;
+        while (b < chars.length && chars[b].d === 'N') b++;
+        const da = a >= 0 ? chars[a].d : null, db = b < chars.length ? chars[b].d : null;
+        const d = da && da === db ? da : base;
+        for (let j = k; j < b; j++) chars[j].d = d;
+        k = b - 1;
       }
       return { data, chars, marquee };
     };
@@ -945,7 +964,7 @@ const VISITOR_BEGIN = `(() => {
           if (!laid) unlaid += starts + ends;
           else if (ch && ch.shown && !(clipX && (rtlPage ? ch.box.r <= 0 : ch.box.l >= vw)) && !(clipY && ch.box.t >= vh)) {
             flush();
-            all.push({ c, starts, ends, box: ch.box, fs: ch.fs, d: ch.d, breaks, ws, link, marquee: rec.marquee, hid: false });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, breaks, ws, link, marquee: rec.marquee, hid: false });
           } else {
             run = (run || '') + starts + c + ends;
             unseen();
@@ -1006,10 +1025,11 @@ const VISITOR_BEGIN = `(() => {
       if (row) {
         const tol = Math.max(0.5, 0.1 * Math.min(a.fs, b.fs));
         const ca = (a.box.l + a.box.r) / 2, cb = (b.box.l + b.box.r) / 2;
+        const va = a.vis || a.box, vb = b.vis || b.box;
         let gap;
-        if (a.d === 'L' && b.d === 'L') { if (cb < ca - tol) return ${JSON.stringify(REVERSED)}; gap = b.box.l - a.box.r; }
-        else if (a.d === 'R' && b.d === 'R') { if (cb > ca + tol) return ${JSON.stringify(REVERSED)}; gap = a.box.l - b.box.r; }
-        else gap = Math.max(b.box.l - a.box.r, a.box.l - b.box.r);
+        if (a.d === 'L' && b.d === 'L') { if (cb < ca - tol) return ${JSON.stringify(REVERSED)}; gap = vb.l - va.r; }
+        else if (a.d === 'R' && b.d === 'R') { if (cb > ca + tol) return ${JSON.stringify(REVERSED)}; gap = va.l - vb.r; }
+        else gap = Math.max(vb.l - va.r, va.l - vb.r);
         if (gap <= tol) return '';
         return structural ? '\\n' : ' ';
       }

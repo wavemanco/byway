@@ -476,6 +476,11 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       ['<p>Alpha <span style="float:right">Beta</span> Gamma</p>', 'Alpha\nBeta﷮Gamma'],
       ['<p style="display:flex;gap:6px;flex-direction:row-reverse"><span>Hello</span> <span>world</span></p>', 'Hello﷮world'],
       ['<p><bdo dir="rtl">Hi</bdo></p>', 'H﷮i'],
+      // Punctuation takes the direction of the letters around it, so "New!" is as reversed as "New" (r10 generator).
+      ['<p><span style="float:right">New!</span>Annual</p>', 'New!﷮Annual'],
+      // A gap beside a character its box cuts off is measured from the part that shows (r10 generator).
+      ['<p><span style="display:inline-block;width:.15em;overflow:hidden;vertical-align:bottom">MW</span> Menu</p>', 'M﷭\nMenu'],
+      ['<p><span style="display:inline-block;width:.15em;overflow:hidden;vertical-align:bottom">MW</span>Menu</p>', 'M﷭Menu'],
       // Inline blocks, buttons and a display:block cite are boxes of their own.
       ['<p>Tags: <span style="display:inline-block;padding:2px 6px">New</span><span style="display:inline-block;padding:2px 6px">tech</span></p>', 'Tags:\nNew\ntech'],
       ['<blockquote>“Worth it.”<cite style="display:block">— Maya R.</cite></blockquote>', '“Worth it.”\n— Maya R.'],

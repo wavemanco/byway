@@ -273,6 +273,20 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await check(html, 'T\nflag \nOrder now\nEnd', html.replace('>fl<', '>flag<'))).toBeUndefined();
   }, 60_000);
 
+  it('a neighbour the page shows in the other order stays so when the line beside it now ends in punctuation (r10 generator)', async () => {
+    // The float shows its badge at the right of the paragraph's row: "New" and "New!" both stand after "Annual plan".
+    const html = pageOf('<div style="float:right">New</div><p>Annual plan</p>');
+    expect((await offer(html)).offered).toEqual(['T', 'New', 'Annual plan']);
+    expect(await check(html, 'T\nNew!\nAnnual plan', html.replace('>New<', '>New!<'))).toBeUndefined();
+  }, 60_000);
+
+  it('a gap beside text its box cuts off is measured from what shows, not from where the cut-off characters would be (r10 generator)', async () => {
+    // The svg is 9px wide: its "S" shows in part, the rest is cut off. A space typed before "Our" shows as one.
+    const html = pageOf('<h2><svg width="9" height="9" aria-hidden="true"><text y="8">Svg</text></svg>Pricing</h2>');
+    expect((await offer(html)).offered).toEqual(['T', 'Pricing']);
+    expect(await check(html, 'T\n Our pricing', html.replace('>Pricing<', '> Our pricing<'))).toBeUndefined();
+  }, 60_000);
+
   it('a deleted line glued to a box beside it leaves its neighbours apart, in the flow or across the box\'s edge (r10)', async () => {
     // "price" touches the svg's visible "S", which hides the svg's edge between them; once "price" is gone, the edge
     // stands between "S" and "Name.": a visitor sees them apart on one row, as "price" and "Name." were.
