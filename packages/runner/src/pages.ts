@@ -6,8 +6,8 @@
  * - `fold`: the first screen as a visitor lands, 1440 × 900, not scrolled.
  * Whole pages are tiled into screenshots at most 2576 px tall, and at most 2576 px wide (a page wider than its screen
  * is shot as wide as it overflows, so the overflow shows). Motion is reduced; the network is blocked except an
- * allowlist (Google Fonts, jsDelivr, unpkg, cdnjs) and the local artifact route, served from the artifact store, and
- * WebSockets and non-proxied WebRTC are blocked as well (ENG-14).
+ * allowlist (Google Fonts, jsDelivr, unpkg, cdnjs), checked on every redirect hop too, and the local artifact route,
+ * served from the artifact store, and WebSockets and non-proxied WebRTC are blocked as well (ENG-14).
  *
  * A render is bounded (SEC-5): everything from loading the page to the last screenshot runs under one deadline. A
  * page that never settles (a script that loops after load) has its context closed, which stops its renderer, and the
@@ -64,6 +64,11 @@ export interface PageRenderer {
 /** Hosts a rendered page may load from (spec §3.2). Everything else is blocked. */
 export const RENDER_ALLOWLIST: readonly string[] = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com'];
 
+/** Whether a rendered page may load `url` from the network: HTTPS from an allowlisted host. */
+export function allowedUrl(url: URL, hosts: ReadonlySet<string>): boolean {
+  return url.protocol === 'https:' && hosts.has(url.hostname);
+}
+
 /** Chromium flags: WebRTC may not open UDP paths around the request filter. */
 const LAUNCH_ARGS: readonly string[] = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
 
@@ -116,6 +121,11 @@ export interface PlaywrightPagesOptions {
   /** A runaway page stops here rather than producing dozens of tiles (per surface). */
   maxTiles?: number;
   allowHosts?: readonly string[];
+  /**
+   * For tests only: which network URLs a page may load, in place of the rule (HTTPS from `allowHosts`), because a local
+   * test server speaks plain HTTP. Production passes none.
+   */
+  admit?: (url: URL) => boolean;
   /** How long one surface may take, from loading the page to its last screenshot. */
   timeoutMs?: number;
   /** How long closing a stuck page may take before the whole browser is closed and relaunched. */
@@ -126,6 +136,10 @@ export interface PlaywrightPagesOptions {
 
 /** A private origin the page is served from, so relative artifact routes resolve without touching the network. */
 const ORIGIN = 'http://byway-render.localhost';
+/** The statuses a response redirects with. */
+const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+/** Redirects one request may follow inside the allowlist (a CDN resolving a version takes one or two); more is a loop. */
+const MAX_REDIRECTS = 5;
 const FOLD_HEIGHT = 900;
 
 const sleep = (ms: number) => new Promise<'late'>((r) => setTimeout(() => r('late'), ms).unref());
@@ -137,6 +151,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   const maxWidth = opts.maxTileWidth ?? 2576;
   const maxTiles = opts.maxTiles ?? 8;
   const allow = new Set(opts.allowHosts ?? RENDER_ALLOWLIST);
+  const admit = opts.admit ?? ((url: URL) => allowedUrl(url, allow));
   const timeout = opts.timeoutMs ?? 30_000;
   const closeTimeout = opts.closeTimeoutMs ?? 5_000;
   let browser: Promise<Browser> | undefined;
@@ -172,6 +187,30 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     }
   };
 
+  /**
+   * An admitted request, fetched hop by hop. Playwright asks the route handler about a request's first URL only, and
+   * Chromium follows a redirect by itself, so a request merely continued could be sent on from an allowlisted CDN to
+   * any host. Here Playwright's request API fetches each hop without following redirects; a hop is followed only to a
+   * URL the same rule admits, for a GET or HEAD, at most MAX_REDIRECTS times, and anything else is blocked. The page
+   * gets the final response under the URL it asked for, so relative URLs inside it resolve against an admitted URL too.
+   */
+  const fetchAdmitted = async (r: Route, first: URL): Promise<void> => {
+    const followable = ['GET', 'HEAD'].includes(r.request().method());
+    let url = first;
+    let response = await r.fetch({ maxRedirects: 0, timeout });
+    for (let hops = 0; REDIRECTS.has(response.status()); hops++) {
+      const location = response.headers()['location'];
+      const next = location ? new URL(location, url) : undefined;
+      await response.dispose();
+      if (!next || !followable || hops >= MAX_REDIRECTS || !admit(next)) return await r.abort('blockedbyclient');
+      url = next;
+      response = await r.fetch({ url: next.href, maxRedirects: 0, timeout });
+    }
+    // The request API decodes the body (gzip, br), so the encoding and the encoded length no longer describe it.
+    const headers = Object.fromEntries(Object.entries(response.headers()).filter(([name]) => name !== 'content-encoding' && name !== 'content-length'));
+    await r.fulfill({ response, headers });
+  };
+
   const route = (html: string, resolve: ArtifactResolver) => async (r: Route) => {
     try {
       const url = new URL(r.request().url());
@@ -181,7 +220,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         const found = m ? await resolve(decodeURIComponent(m[1] as string)) : undefined;
         return await (found ? r.fulfill({ status: 200, contentType: found.contentType, body: Buffer.from(found.body) }) : r.fulfill({ status: 404, body: '' }));
       }
-      if (url.protocol === 'https:' && allow.has(url.hostname)) return await r.continue();
+      if (admit(url)) return await fetchAdmitted(r, url);
       return await r.abort('blockedbyclient');
     } catch {
       // A resolver that failed (a missing or corrupt artifact) is a 404; a page already closed needs no answer.
@@ -255,7 +294,9 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         timer = setTimeout(() => reject(new StepError(`The page did not finish rendering within ${Math.round(timeout / 1000)} s, so it could not be shown.`)), timeout);
         if (signal) {
           onAbort = () => reject(stopped(signal));
-          signal.addEventListener('abort', onAbort, { once: true });
+          // A cancel that came while the browser started or the context opened has already fired: no event will follow.
+          if (signal.aborted) onAbort();
+          else signal.addEventListener('abort', onAbort, { once: true });
         }
       });
       limit.catch(() => undefined);

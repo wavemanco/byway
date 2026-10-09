@@ -11,10 +11,11 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Browser, LaunchOptions } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { chromiumLaunchOptions, launchChromium, playwrightPages, RENDERER_OS_SANDBOX } from '../src/pages.ts';
+import { allowedUrl, chromiumLaunchOptions, launchChromium, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX } from '../src/pages.ts';
 
 const pages = playwrightPages({ maxTileHeight: 1200 });
 const opened: { close(): Promise<void> }[] = [pages];
@@ -47,6 +48,11 @@ const runNode = (file: string, args: string[]) =>
 const PIXEL =Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
 const SIMPLE = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0"><div style="height:500px;background:#345">Hi</div></body></html>';
 const none = async () => undefined;
+/** A page that never settles: once loaded, its script loops forever. */
+const BUSY = '<!doctype html><html><body><script>addEventListener("load", () => setTimeout(() => { for (;;) {} }, 0));</script>Busy</body></html>';
+
+/** Chromium's own local-network checks would also stop a page reaching 127.0.0.1; off, so only byway's rule is tested. */
+const LOCAL_NETWORK_CHECKS_OFF = ['--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests'];
 
 /**
  * Test-only: the stated launch with flags added in test code. Production cannot add any (launchChromium takes no
@@ -67,6 +73,17 @@ async function commandLine(browser: Browser): Promise<string[]> {
     await session.detach();
   }
 }
+
+describe('the rule for what a rendered page may load from the network (spec §3.2)', () => {
+  it('admits HTTPS from an allowlisted host, and nothing else', () => {
+    const hosts = new Set(RENDER_ALLOWLIST);
+    expect(allowedUrl(new URL('https://unpkg.com/react@18/umd/react.production.min.js'), hosts)).toBe(true);
+    expect(allowedUrl(new URL('https://fonts.gstatic.com/s/inter/v1/a.woff2'), hosts)).toBe(true);
+    for (const url of ['http://unpkg.com/react', 'https://unpkg.com.evil.example/x', 'https://evil.example/unpkg.com', 'https://127.0.0.1/x', 'https://cdn.jsdelivr.net.:443/x']) {
+      expect(allowedUrl(new URL(url), hosts), url).toBe(false);
+    }
+  });
+});
 
 describe('web-page RENDER with Playwright Chromium', () => {
   it('screenshots the full page at 1440 wide in tiles, serving artifacts and blocking other hosts', async () => {
@@ -115,14 +132,20 @@ describe('web-page RENDER with Playwright Chromium', () => {
   }, 60_000);
 
   it('bounds a page that never settles: the render fails plainly and is not retried, and the next render works (SEC-5)', async () => {
-    const quick = playwrightPages({ timeoutMs: 2_000, closeTimeoutMs: 2_000 });
+    // The limit is short, to keep the test quick, and long enough for the plain page after it to render on a busy
+    // machine. Launching the browser comes before a render's deadline and is the slowest step under load, so the
+    // browser is started first and the time measured is the render's own.
+    const limitMs = 5_000;
+    const closeMs = 2_000;
+    const quick = playwrightPages({ timeoutMs: limitMs, closeTimeoutMs: closeMs });
     opened.push(quick);
-    const busy = '<!doctype html><html><body><script>addEventListener("load", () => setTimeout(() => { for (;;) {} }, 0));</script>Busy</body></html>';
+    await quick.ready();
     const started = Date.now();
-    const err = await quick.screenshots(busy, none).catch((e: unknown) => e);
-    expect(Date.now() - started).toBeLessThan(15_000);
+    const err = await quick.screenshots(BUSY, none).catch((e: unknown) => e);
+    // The deadline, then closing the stuck page and, if it will not close, the browser: each one bounded.
+    expect(Date.now() - started).toBeLessThan(limitMs + 2 * closeMs + 5_000);
     expect(err).toBeInstanceOf(StepError);
-    expect((err as Error).message).toMatch(/did not finish rendering within 2 s/);
+    expect((err as Error).message).toMatch(/did not finish rendering within 5 s/);
     expect((await quick.screenshots(SIMPLE, none)).length).toBe(1);
   }, 60_000);
 
@@ -148,13 +171,29 @@ describe('web-page RENDER with Playwright Chromium', () => {
   }, 60_000);
 
   it('stops a render when its step is cancelled', async () => {
-    const slow = '<!doctype html><html><body><script>addEventListener("load", () => setTimeout(() => { for (;;) {} }, 0));</script>Busy</body></html>';
     const ctrl = new AbortController();
     const reason = new Error('cancelled by the run');
     setTimeout(() => ctrl.abort(reason), 500);
     const started = Date.now();
-    await expect(pages.screenshots(slow, none, { signal: ctrl.signal })).rejects.toBe(reason);
+    await expect(pages.screenshots(BUSY, none, { signal: ctrl.signal })).rejects.toBe(reason);
     expect(Date.now() - started).toBeLessThan(15_000);
+  }, 60_000);
+
+  it('stops a render whose step is cancelled while the browser is still starting', async () => {
+    // The cancel lands after the render's first check and before it waits on the page: it must still stop the render,
+    // not leave it running to the deadline.
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled while the browser started');
+    const starting = playwrightPages({
+      timeoutMs: 30_000,
+      launch: async () => {
+        const b = await launchChromium();
+        ctrl.abort(reason);
+        return b;
+      },
+    });
+    opened.push(starting);
+    await expect(starting.screenshots(BUSY, none, { signal: ctrl.signal })).rejects.toBe(reason);
   }, 60_000);
 
   it('blocks WebSockets, which request routing does not see (ENG-14)', async () => {
@@ -166,8 +205,7 @@ describe('web-page RENDER with Playwright Chromium', () => {
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
     const port = (server.address() as AddressInfo).port;
-    // Chromium's own local-network checks would also stop a socket to 127.0.0.1; turn them off so only byway's block is tested.
-    const open = playwrightPages({ launch: () => launchWith(['--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests']) });
+    const open = playwrightPages({ launch: () => launchWith(LOCAL_NETWORK_CHECKS_OFF) });
     opened.push(open);
     try {
       const html = `<!doctype html><html><body><script>try { new WebSocket('ws://127.0.0.1:${port}/exfil'); } catch (e) {}</script><div style="height:50px">x</div></body></html>`;
@@ -176,6 +214,45 @@ describe('web-page RENDER with Playwright Chromium', () => {
       expect(upgrades).toBe(0);
     } finally {
       await new Promise((r) => server.close(r));
+    }
+  }, 60_000);
+
+  it('holds the allowlist on every redirect hop: a hop to another host is blocked, hops within it are followed, a loop is cut', async () => {
+    // Playwright asks the route handler about a request's first URL only; Chromium follows its redirects by itself. So
+    // an allowlisted CDN answering with a redirect could send the page on to any host (the class of F17, at the
+    // renderer's boundary). Each hop's target must pass the same rule.
+    const hits = { cdn: [] as string[], other: [] as string[] };
+    const other = createServer((req, res) => {
+      hits.other.push(req.url ?? '');
+      res.end('/* reached a host off the allowlist */');
+    });
+    const cdn = createServer((req, res) => {
+      hits.cdn.push(req.url ?? '');
+      if (req.url === '/out.js') return void res.writeHead(302, { location: `http://127.0.0.1:${(other.address() as AddressInfo).port}/exfil.js` }).end();
+      if (req.url === '/in.js') return void res.writeHead(302, { location: '/final.js' }).end();
+      if (req.url === '/loop.js') return void res.writeHead(307, { location: '/loop.js' }).end();
+      // Served compressed, as CDNs do: the page must still get a script it can run. Running, it asks for an image, which
+      // the page's load then waits for, so the render cannot finish before the request arrives.
+      if (req.url === '/final.js') {
+        const ran = `const img = document.createElement('img'); img.src = 'http://${cdnHost}/ran.png'; document.documentElement.appendChild(img);`;
+        return void res.writeHead(200, { 'content-type': 'text/javascript', 'content-encoding': 'gzip' }).end(gzipSync(ran));
+      }
+      res.writeHead(404).end();
+    });
+    await Promise.all([other, cdn].map((s) => new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()))));
+    const cdnHost = `127.0.0.1:${(cdn.address() as AddressInfo).port}`;
+    // The test CDN speaks plain HTTP, so the rule is the test's: this one host and port. Chromium's own local-network
+    // checks are off, so only byway's rule decides what the page reaches.
+    const strict = playwrightPages({ admit: (u) => u.protocol === 'http:' && u.host === cdnHost, launch: () => launchWith(LOCAL_NETWORK_CHECKS_OFF) });
+    opened.push(strict);
+    try {
+      const html = `<!doctype html><html><head><script src="http://${cdnHost}/out.js"></script><script src="http://${cdnHost}/in.js"></script><script src="http://${cdnHost}/loop.js"></script></head><body><div style="height:50px">x</div></body></html>`;
+      expect((await strict.screenshots(html, none)).length).toBe(1);
+      expect(hits.other).toEqual([]);
+      // A redirect loop inside the allowlist stops after five hops: the first request and five redirects.
+      expect([...hits.cdn].sort()).toEqual(['/final.js', '/in.js', ...Array<string>(6).fill('/loop.js'), '/out.js', '/ran.png']);
+    } finally {
+      await Promise.all([other, cdn].map((s) => new Promise((r) => s.close(r))));
     }
   }, 60_000);
 
