@@ -186,6 +186,15 @@ describe('set-aside: nothing put back undoes a person’s write', () => {
     expect(validate(r).violations.find((v) => v.clause === 'set-aside')!.message).toMatch(/own-link.*later round of relay "links"/);
   });
 
+  it('ST12 through nesting: an inner loop’s pick reached again by the outer loop’s next round, after your write', () => {
+    const r = studio();
+    const d2 = r.stages[1]!.body as Seq;
+    const inner = loop('inner-rounds', seq(pick('pick-final', 'H', 1, 'human'), render('inner-render')), personsRounds);
+    d2.steps[indexOf(d2, 'pick-final')] = loop('outer-rounds', seq(inner, humanDraft('own-draft')), personsRounds);
+    expect(only(r, 'ST12')).toEqual(['ST12:set-aside']);
+    expect(validate(r).violations.find((v) => v.clause === 'set-aside')!.message).toMatch(/own-draft.*later round of loop "outer-rounds"/);
+  });
+
   it('a pick of one with no write of yours after it, round after round, is not a set-aside', () => {
     const r = studio();
     const d2 = r.stages[1]!.body as Seq;
