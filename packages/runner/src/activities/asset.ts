@@ -201,8 +201,9 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
 /**
  * A billed failure on one image, as the step's and the run's failure (ADR-0099, ADR-0090). It keeps the gateway's code,
  * its "billed" mark and its message, which says what was billed and that it is not bought again, and adds what that
- * leaves: which image it was, that the run stops here, and that the images this step already made were billed too and
- * are not in the work (the step stops before attaching or placing them).
+ * leaves: which image it was, that the run stops here and buys no more images (a billed failure is a storage or ledger
+ * fault that more images could repeat), and that the images this step already made were billed too and are not in the
+ * work (the step stops before attaching or placing them).
  */
 function billedStop(e: GatewayError, plan: SlotPlan, slot: string, made: MadeImage[], what: string): GatewayError {
   const name = (id: string) => slotName(plan, id);
@@ -211,7 +212,7 @@ function billedStop(e: GatewayError, plan: SlotPlan, slot: string, made: MadeIma
     : made.length === 1
       ? ` The image already made for ${name(made[0]!.slot)} was billed too, and it is not in the work.`
       : ` The ${made.length} images already made for ${list(made.map((m) => name(m.slot)))} were billed too, and they are not in the work.`;
-  const message = `${e.message} That was the image for ${name(slot)}, so the run stops here, at the ${what} step, rather than buy it again.${already}`;
+  const message = `${e.message} That was the image for ${name(slot)}, so the run stops here, at the ${what} step, and buys no more images.${already}`;
   return new GatewayError(e.code, message, e.retryable, { billed: true });
 }
 

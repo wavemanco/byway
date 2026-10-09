@@ -271,7 +271,7 @@ describe('an image billed but not kept stops the run and says what that leaves (
     const message = (result as GatewayError).message;
     expect(message).toBe(
       'mock made the image and billed it, but it could not be stored: ENOSPC. It is not retried, because a retry would pay again. ' +
-        'That was the image for shot 2, so the run stops here, at the Custom imagery step, rather than buy it again. ' +
+        'That was the image for shot 2, so the run stops here, at the Custom imagery step, and buys no more images. ' +
         'The image already made for shot 1 was billed too, and it is not in the work.',
     );
     // The run's failure is this message, not retried (FAILURE.step): every GatewayError fails the step for good.
@@ -283,11 +283,11 @@ describe('an image billed but not kept stops the run and says what that leaves (
   it('several already made are named; with none made, nothing is said of them', async () => {
     const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 3') ? lost() : false));
     const { result } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
-    expect((result as GatewayError).message).toMatch(/That was the image for shot 3, so the run stops here, at the Custom imagery step, rather than buy it again\. The 2 images already made for shot 1 and shot 2 were billed too, and they are not in the work\.$/);
+    expect((result as GatewayError).message).toMatch(/That was the image for shot 3, so the run stops here, at the Custom imagery step, and buys no more images. The 2 images already made for shot 1 and shot 2 were billed too, and they are not in the work\.$/);
     const h = fake([briefsOf('1', '2', '3')], () => lost());
     const first = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), h);
     expect(h.images).toHaveLength(1);
-    expect((first.result as GatewayError).message).toMatch(/That was the image for shot 1, so the run stops here, at the Custom imagery step, rather than buy it again\.$/);
+    expect((first.result as GatewayError).message).toMatch(/That was the image for shot 1, so the run stops here, at the Custom imagery step, and buys no more images.$/);
   });
 });
 
