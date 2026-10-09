@@ -1028,13 +1028,16 @@ describe('questions in flight across the upgrade (F07)', () => {
     expect(run('<p>See [beta] notes</p><p>Two</p>', set(2, 'Two!'), { offered: 'T\nSee [beta] notes\nTwo' })).toMatchObject(clean('<p>See [beta] notes</p><p>Two!</p>'));
   });
 
-  it('the old 24-line demo answer is refused, naming line 3 as split', () => {
+  it('an answer with as many lines as were offered, to a page now read with more, is refused as read differently, naming line 3 as split (r9)', () => {
     const html = demoPage();
     const d = deckLines(readPageCopy(html));
     const contact = d.indexOf('Contact');
     const oldDeck = d.slice(0, contact - 1).concat([`${d[contact - 1]}${d[contact]}`], d.slice(contact + 1));
     const r = readPageEdit(readPageCopy(html), oldDeck.map((l, i) => (i === 0 ? `${l} (edited)` : l)).join('\n'), oldDeck.join('\n'));
-    expect(r.ok ? 'accepted' : r.problem).toBe('This page has one line per block of text: 25 lines, and your text has 24. Keep one line per block: merge a line you added into the line next to it, or put back a line you removed (an empty line empties its block). The page is now read with line 3 ("How it worksContact") as two lines: "How it works" and "Contact".');
+    expect(r.ok ? 'accepted' : r.problem).toBe('This page is now read with 25 lines, where this question offered 24 (a browser shows it differently than when the question was asked, as when a stylesheet or font it loads comes back differently, or byway reads it differently), so byway cannot tell which lines you changed. The page is now read with line 3 ("How it worksContact") as two lines: "How it works" and "Contact". Answer again with 25 lines, one for each line the page has now.');
+    // An answer that adds or drops a line against the offer itself is told to keep one line per block, as before.
+    const extra = readPageEdit(readPageCopy(html), [...oldDeck, 'More', 'Again'].join('\n'), oldDeck.join('\n'));
+    expect(extra.ok ? 'accepted' : extra.problem).toMatch(/^This page has one line per block of text: 25 lines, and your text has 26\. Keep one line per block/);
   });
 
   it('"unchanged" is per line with HTML whitespace collapsed', () => {

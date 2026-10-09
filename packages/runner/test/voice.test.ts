@@ -10,7 +10,7 @@ import { modelStep } from '../src/activities/model-step.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import { pageCopy, pageLockView } from '../src/copy.ts';
 import { joinCodeDiff, serializeJson, splitCodeDiff } from '../src/formats.ts';
-import { playwrightPages } from '../src/pages.ts';
+import { playwrightPages, type PageRenderer } from '../src/pages.ts';
 import type { StepSpec } from '../src/types.ts';
 import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
@@ -715,6 +715,24 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(q.prompt).toMatch(/ Text a browser does not show as one line here \(hidden, out of sight, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
     const out = await q.answer('T\nQuiet interfaces, in practice\nWarm bread daily');
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<h3>Quiet interfaces</h3>', '<h3>Quiet interfaces, in practice</h3>').replace('Fresh bread', 'Warm bread'));
+  });
+
+  it('a page a browser shows differently when the answer comes is asked again as read differently, not as lines added or dropped (r9)', async () => {
+    // The question's two reads see a stylesheet that hides the promotion, the write's do not (as when an allowlisted CDN
+    // answers once and not again). The person kept the three lines they were offered.
+    let reads = 0;
+    const drift: PageRenderer = { ...chromium, shownText: (html, resolve, opts) => chromium.shownText(++reads <= 2 ? html.replace('</head>', '<style>.promo{display:none}</style></head>') : html, resolve, opts) };
+    const bench = await voiceBench([], { pages: drift });
+    try {
+      const html = page('<p>Fresh bread</p><p class="promo">Half price today</p><p>Order by nine</p>');
+      const q = await VoiceQuestion.open(bench, await benchRun(bench, 'web-page'), await putWork(bench, 'web-page', html));
+      expect(q.offered).toBe('T\nFresh bread\nOrder by nine');
+      expect(await rejected(q.answer('T\nWarm bread\nOrder by nine'))).toBe(
+        'This page is now read with 4 lines, where this question offered 3 (a browser shows it differently than when the question was asked, as when a stylesheet or font it loads comes back differently, or byway reads it differently), so byway cannot tell which lines you changed. The page is now read differently from line 3: it reads "Half price today". Answer again with 4 lines, one for each line the page has now.',
+      );
+    } finally {
+      bench.close();
+    }
   });
 
   it('a canvas\'s fallback, which Chromium shows with JavaScript off but a visitor does not see, is not offered and stays byte for byte (r9)', async () => {

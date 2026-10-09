@@ -933,6 +933,15 @@ export function readPageEdit(p: PageDeck, answer: string, offered?: string, firs
         break;
       }
     }
+    // The person kept the lines they were offered, and the page is read with another number since: say so, not that
+    // they added or dropped a line.
+    if (off && off.length !== n && lines.length === off.length) {
+      return {
+        ok: false,
+        problem: `This page is now read with ${n} lines, where this question offered ${off.length} (a browser shows it differently than when the question was asked, as when a stylesheet or font it loads comes back differently, or byway reads it differently), so byway cannot tell which lines you changed.${hint} Answer again with ${n} lines, one for each line the page has now.`,
+        lines: [],
+      };
+    }
     return {
       ok: false,
       problem: `This page has one line per block of text: ${n} lines, and your text has ${lines.length}. Keep one line per block: merge a line you added into the line next to it, or put back a line you removed (an empty line empties its block).${hint}`,
