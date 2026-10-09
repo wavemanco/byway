@@ -101,8 +101,9 @@ describe('model steps: the answer becomes the work exactly where the table says 
     expect(stepEffect({ actor: 'model', role: 'critic', produces: ['critique', 'score', 'artifact'] })).toBe('annotates');
   });
 
-  it('the prompt contracts agree for the writer roles they cover (known differences pinned until the runtime stage)', () => {
-    const pinned = new Set<Role>(['voice', 'render', 'relay', 'asset']);
+  it('the prompt contracts agree with the effects table for every role a model step answers as the work', () => {
+    // RELAY and ASSET write the work through their own executors: their model call answers a clip prompt or image briefs.
+    const pinned = new Set<Role>(['relay', 'asset']);
     for (const role of ROLES.filter((r) => !pinned.has(r))) {
       let output: string;
       try {
@@ -112,10 +113,10 @@ describe('model steps: the answer becomes the work exactly where the table says 
       }
       expect(output.startsWith('artifact:'), role).toBe(stepEffect({ actor: 'model', role, produces: ['artifact'] }) === 'writes');
     }
-    // outputs.ts (in the workflow bundle) names no artifact contract for a model VOICE or render, which the runner's
-    // parser writes as the work; aligning it is left to the stage that changes the bundle again (ADR-0092).
-    expect(outputForStep({ role: 'voice', consumes: ['artifact'] }, 'prose')).toBe('none');
-    expect(outputForStep({ role: 'render', consumes: ['artifact'] }, 'prose')).toBe('none');
+    // A model VOICE or render is parsed as the work, and its prompt contract now says so (ADR-0092 stage 4).
+    expect(outputForStep({ role: 'voice', consumes: ['artifact'] }, 'prose')).toBe('artifact:prose');
+    expect(outputForStep({ role: 'render', consumes: ['artifact'] }, 'prose')).toBe('artifact:prose');
+    expect(outputForStep({ role: 'asset', consumes: ['voice', 'artifact'] }, 'media')).toBe('none');
   });
 });
 
