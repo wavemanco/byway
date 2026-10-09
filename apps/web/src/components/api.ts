@@ -6,10 +6,13 @@ export class ApiError extends Error {
   readonly code: string | undefined;
   /** The request's top-level fields the refusal names (for a held key: those that held one), when it names any. */
   readonly fields: readonly string[] | undefined;
-  constructor(message: string, code?: string, fields?: readonly string[]) {
+  /** For a held-key refusal, the key's variable name (never its value), so a screen can say where it was in its own words. */
+  readonly heldKey: string | undefined;
+  constructor(message: string, code?: string, fields?: readonly string[], heldKey?: string) {
     super(message);
     this.code = code;
     this.fields = fields;
+    this.heldKey = heldKey;
   }
 }
 
@@ -22,16 +25,19 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   } catch {
     throw new ApiError('byway is not reachable. Check that it is still running, then try again.');
   }
-  let data: { error?: string; code?: unknown; fields?: unknown };
+  let data: { error?: string; code?: unknown; fields?: unknown; key?: unknown };
   try {
-    data = (await res.json()) as { error?: string; code?: unknown; fields?: unknown };
+    data = (await res.json()) as { error?: string; code?: unknown; fields?: unknown; key?: unknown };
   } catch {
     // A successful status whose body cannot be read is a failure, never an empty object standing in for the result:
     // the Recommendation commands apply what comes back directly (ADR-0082).
     if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
     data = {};
   }
-  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, typeof data.code === 'string' ? data.code : undefined, stringList(data.fields));
+  if (!res.ok) {
+    const code = typeof data.code === 'string' ? data.code : undefined;
+    throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, code, stringList(data.fields), typeof data.key === 'string' ? data.key : undefined);
+  }
   return data as T;
 }
 

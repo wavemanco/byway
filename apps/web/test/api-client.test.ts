@@ -67,6 +67,15 @@ describe('post() and patch()', () => {
     await expect(post('/api/intakes', {})).rejects.toMatchObject({ code: undefined });
   });
 
+  it('carry the name of the key a held-key refusal found, and only a string', async () => {
+    vi.stubGlobal('fetch', async () => response(400, async () => ({ error: 'This text contains your ANTHROPIC_API_KEY.', code: 'held-key', fields: ['text'], key: 'ANTHROPIC_API_KEY' })));
+    await expect(post('/api/refs', {})).rejects.toMatchObject({ code: 'held-key', heldKey: 'ANTHROPIC_API_KEY' });
+    for (const key of [undefined, 1, ['ANTHROPIC_API_KEY'], null]) {
+      vi.stubGlobal('fetch', async () => response(400, async () => ({ error: 'Refused.', code: 'held-key', key })));
+      await expect(post('/api/refs', {})).rejects.toMatchObject({ heldKey: undefined });
+    }
+  });
+
   it('carry the fields a refusal names, and only a list of strings', async () => {
     vi.stubGlobal('fetch', async () => response(400, async () => ({ error: 'This text contains your ANTHROPIC_API_KEY.', code: 'held-key', fields: ['attachments'] })));
     await expect(post('/api/intakes', {})).rejects.toMatchObject({ code: 'held-key', fields: ['attachments'] });
