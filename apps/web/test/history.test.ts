@@ -25,15 +25,20 @@ describe('History', () => {
 });
 
 describe('workspace spend', () => {
-  it('takes what the ledger says was spent and what is left of the workspace budget', () => {
-    expect(workspaceSpend(20, 1.75)).toEqual({ spentUsd: 1.75, remainingUsd: 18.25, capUsd: 20 });
-    expect(workspaceSpend(1, 3).remainingUsd).toBe(0);
-    expect(workspaceSpend(5, 0.123456).spentUsd).toBe(0.12);
+  it('takes what the spend book says was spent and what is left of the workspace budget', () => {
+    expect(workspaceSpend(20, { spentUsd: 1.75 })).toEqual({ spentUsd: 1.75, inFlightUsd: 0, uncertainUsd: 0, remainingUsd: 18.25, capUsd: 20 });
+    expect(workspaceSpend(1, { spentUsd: 3 }).remainingUsd).toBe(0);
+    expect(workspaceSpend(5, { spentUsd: 0.123456 }).spentUsd).toBe(0.12);
+  });
+
+  it('leaves out calls under way and calls that may have been billed, as admission does (ADR-0095)', () => {
+    expect(workspaceSpend(10, { spentUsd: 1.2, inFlightUsd: 0.4, uncertainUsd: 0.1 })).toEqual({ spentUsd: 1.2, inFlightUsd: 0.4, uncertainUsd: 0.1, remainingUsd: 8.3, capUsd: 10 });
+    expect(workspaceSpend(1, { spentUsd: 0.5, inFlightUsd: 0.3, uncertainUsd: 0.3 }).remainingUsd).toBe(0);
   });
 
   it('refuses a run budget larger than what is left, with a way out', () => {
-    expect(budgetProblem(2, { spentUsd: 0, remainingUsd: 20, capUsd: 20 })).toBeNull();
-    expect(budgetProblem(5, { spentUsd: 17, remainingUsd: 3, capUsd: 20 })).toBe(
+    expect(budgetProblem(2, { remainingUsd: 20 })).toBeNull();
+    expect(budgetProblem(5, { remainingUsd: 3 })).toBe(
       'This budget ($5.00) is more than what is left of your workspace budget ($3.00). Lower it, or raise the workspace budget in Settings.',
     );
   });
@@ -50,10 +55,14 @@ describe('Settings: calls settled at an assumed price (F04, ADR-0091)', () => {
   });
 });
 
-describe('Settings: checking the spend ledger (ADR-0091, ADR-0094)', () => {
-  it('for a line that is not an entry: its spending may be uncounted, a torn last line is set aside, and a backup is the whole data directory', () => {
+describe('Settings: checking the spend ledger (ADR-0091, ADR-0094, ADR-0095)', () => {
+  it('for a line that is not an entry: a torn last line is set aside, any other stops paid calls until acknowledged, and a backup is the whole data directory', () => {
     expect(ledgerCheckText('line:7')).toBe(
-      'Line 7 of the spend ledger cannot be read as an entry, so its spending may not be counted. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).',
+      'Line 7 of the spend ledger cannot be read as an entry. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. Otherwise it is listed under Spending records, and byway makes no paid call until you acknowledge it there. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).',
     );
+  });
+
+  it('for a broken chain: the budgets do not depend on the file', () => {
+    expect(ledgerCheckText('entry-9')).toMatch(/^The spend ledger fails its check at entry entry-9: .* The budgets count from byway's spending records in its database, not from this file.$/);
   });
 });

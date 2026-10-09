@@ -579,6 +579,37 @@
   text-align: right;
 }
 
+/* Spending records (ADR-0095): a call that may have been billed, or a ledger line that cannot be read, with its action. */
+.spend-heading {
+  font-size: inherit;
+  margin: 0 0 var(--s-2);
+}
+
+.spend-list {
+  list-style: none;
+  margin: 0 0 var(--s-3);
+  padding: 0;
+}
+
+.spend-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line);
+}
+
+.spend-item > .button {
+  flex: none;
+}
+
+@media (max-width: 560px) {
+  .spend-item {
+    flex-direction: column;
+  }
+}
+
 .profiles {
   display: grid;
   gap: var(--s-2);

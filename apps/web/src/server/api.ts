@@ -7,12 +7,13 @@
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
  */
 import { randomUUID } from 'node:crypto';
-import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RunRecord } from '@byway/contracts';
+import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
 import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
-import { budgetProblem, ledgerCheckText, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
+import { budgetProblem, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
+import { auditText } from '../view/spending.ts';
 import { takesRefs } from '../view/refs.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
@@ -22,7 +23,7 @@ import { firstRecommendation } from './first-recommendation.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
-import type { ControlInput, ProblemInput, RecommendInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
+import type { ControlInput, ProblemInput, RecommendInput, RefInput, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
   override name = 'HttpError';
@@ -135,20 +136,43 @@ export async function composeIntake(deps: Deps, intakeId: string): Promise<Compo
   return composeView(result);
 }
 
-/** The workspace's budget, spend and what is left, as of now (the ledger is re-read). */
+/**
+ * The workspace's budget, spend and what is left, as of now: settled spend, calls under way and calls that may have
+ * been billed, from the spend book (ADR-0095).
+ */
 export async function workspaceRemaining(deps: Deps): Promise<WorkspaceSpend & { workspaceId: string }> {
   const workspace = await deps.services.store.ensureDefaultWorkspace();
-  return { ...workspaceSpend(workspace.budgetUsd, (await deps.services.gateway.spend(workspace.id)).spentUsd), workspaceId: workspace.id };
+  return { ...workspaceSpend(workspace.budgetUsd, await deps.services.gateway.spend(workspace.id)), workspaceId: workspace.id };
 }
 
 /**
- * Settings' "Check the spend ledger" (GET /api/ledger; ADR-0091): the ledger's hash chain and head, checked when the
- * person asks rather than on every page. The gateway keeps the result until the ledger or its head changes, so asking
- * again is cheap.
+ * Settings' "Check the spend ledger" (GET /api/ledger; ADR-0091, ADR-0095): the ledger's hash chain and head, and every
+ * call the spend book holds as written there found at the same cost, checked when the person asks rather than on every
+ * page. The gateway keeps the chain's result until the ledger or its head changes, so asking again is cheap.
  */
 export async function checkLedger(deps: Deps): Promise<{ intact: boolean; message: string }> {
-  const brokenAt = await deps.services.gateway.verifyLedger();
-  return { intact: brokenAt === null, message: ledgerCheckText(brokenAt) };
+  const audit = await deps.services.gateway.auditLedger();
+  return { intact: audit.brokenAt === null && audit.missing.length === 0, message: auditText(audit) };
+}
+
+/** Settings' "Spending records" (ADR-0095): calls under way, calls that may have been billed, faults, set-aside tails. */
+export async function spendRecords(deps: Deps): Promise<{ records: SpendRecords; spend: WorkspaceSpend }> {
+  const workspace = await deps.services.store.ensureDefaultWorkspace();
+  const records = await deps.services.gateway.spendRecords(workspace.id);
+  return { records, spend: workspaceSpend(workspace.budgetUsd, await deps.services.gateway.spend(workspace.id)) };
+}
+
+/**
+ * The two Spending records actions (POST /api/spend): clear calls that may have been billed (the person checked them in
+ * the provider's dashboard), or acknowledge a line of the audit file the book could not read, which lets paid calls go
+ * on. Returns the records and spend as they are after it, so the screen applies them in one step.
+ */
+export async function spendAction(deps: Deps, input: z.infer<typeof SpendAction>): Promise<{ records: SpendRecords; spend: WorkspaceSpend }> {
+  // Both are idempotent: a second click, or a call that settled meanwhile, simply finds nothing left to change.
+  const book = deps.services.store.spendBook;
+  if ('clear' in input) await book.clearUncertain(deps.workspaceId, input.clear);
+  else await book.acknowledgeFault(input.acknowledge);
+  return spendRecords(deps);
 }
 
 /**
