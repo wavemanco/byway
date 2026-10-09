@@ -11,14 +11,12 @@
 import type { Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import type { Store } from '@byway/contracts';
-import { settleLostRun } from './lost-runs.ts';
+import { runIdOfWorkflow, settleLostRun } from './lost-runs.ts';
 import { RUN_WORKFLOW } from './types.ts';
 import { WORKFLOW_HASH_MEMO } from './workflow/version.ts';
 
 /** C7's message, word for word. */
 export const OLDER_VERSION_MESSAGE = 'This run was started by an older version of byway and cannot continue. Start it again.';
-
-const RUN_PREFIX = 'byway-run-';
 
 /** A started workflow's first two events (started, first task scheduled): nothing has run yet. */
 const NOTHING_RAN = 2;
@@ -36,7 +34,8 @@ export async function retireStaleRuns(opts: RetireOptions): Promise<string[]> {
   const retired: string[] = [];
   const open = opts.client.workflow.list({ query: `WorkflowType = '${RUN_WORKFLOW}' AND ExecutionStatus = 'Running'` });
   for await (const wf of open) {
-    if (wf.taskQueue !== opts.taskQueue || !wf.workflowId.startsWith(RUN_PREFIX)) continue;
+    const runId = runIdOfWorkflow(wf.workflowId);
+    if (wf.taskQueue !== opts.taskQueue || runId === undefined) continue;
     const handle = opts.client.workflow.getHandle(wf.workflowId, wf.runId);
     // The listing's memo can lag the workflow's own; describe reads the current one.
     const d = await handle.describe();
@@ -50,7 +49,6 @@ export async function retireStaleRuns(opts: RetireOptions): Promise<string[]> {
       // It closed on its own meanwhile; it is still settled below if the store shows it as going.
       if (!(e instanceof WorkflowNotFoundError)) throw e;
     }
-    const runId = wf.workflowId.slice(RUN_PREFIX.length);
     await settleLostRun(opts.store, runId, { status: 'failed', error: OLDER_VERSION_MESSAGE });
     retired.push(runId);
   }

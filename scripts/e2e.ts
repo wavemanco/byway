@@ -144,6 +144,13 @@ async function main(): Promise<number> {
     console.error(`e2e: byway did not say at start-up that its page renderer is ready (${renderer ?? 'no "renderer" line'}).`);
     code ||= 1;
   }
+  // The start-up "checked" line (serve.ts; R4, ADR-0096): a fresh data directory is reported complete, not damaged.
+  const checked = /^ {2}checked {4}(.*)$/m.exec(startup)?.[1]?.trim();
+  if (checked?.startsWith('the database and its ') && checked.endsWith("covers every run's recorded cost")) console.log(`e2e: checked ${checked}`);
+  else {
+    console.error(`e2e: byway's start-up check of a fresh data directory did not report it complete (${checked ?? 'no "checked" line'}).`);
+    code ||= 1;
+  }
   // The build ran with the stand-in keys in byway's environment: none may have reached the build folder.
   const leaked = filesWithKeys(path.join(WEB, DIST_DIR));
   if (leaked.length > 0) {

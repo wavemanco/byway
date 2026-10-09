@@ -6,6 +6,9 @@ import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
 
+/** How long a request or a handshake may wait for an answer: generous for a loaded machine, so a test never hangs. */
+export const ANSWER_MS = 20_000;
+
 export function request(port: number, path: string, headers: Record<string, string>, method = 'GET'): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port, path, method, headers, agent: false }, (res) => {
@@ -13,6 +16,7 @@ export function request(port: number, path: string, headers: Record<string, stri
       res.on('data', (c) => (body += c));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
     });
+    req.setTimeout(ANSWER_MS, () => req.destroy(new Error(`no answer from 127.0.0.1:${port}${path} within ${ANSWER_MS / 1000} s`)));
     req.on('error', reject);
     req.end();
   });
@@ -38,7 +42,7 @@ export function upgrade(port: number, headers: Record<string, string>, opts: Upg
       const lines = Object.entries(all).map(([k, v]) => `${k}: ${v}`);
       socket.write(`GET ${opts.path ?? '/_next/hmr?id=byway-test'} HTTP/1.1\r\n${lines.join('\r\n')}\r\n\r\n`);
     });
-    socket.setTimeout(20_000, () => done({ status: status() || 'no answer' }));
+    socket.setTimeout(ANSWER_MS, () => done({ status: status() || 'no answer' }));
     socket.on('data', (d) => {
       data += d.toString();
       if (!data.includes('\r\n')) return;

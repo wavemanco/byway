@@ -38,13 +38,21 @@ async function deps(): Promise<Deps> {
   return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: current.host.heldKeyIn };
 }
 
+/**
+ * Every test here runs the real store, gateway and advisor on a fresh data directory, so it creates a database and
+ * writes artifact files that are flushed to disk. Alone, a test takes about 0.1 s; with the machine busy (several suites,
+ * their Chromium and Temporal servers) the compose test has run past vitest's 5 s default. The limit is realistic for
+ * that, and still bounded.
+ */
+const PRODUCT_PATH = { timeout: 30_000 };
+
 async function openQuestion(d: Deps, runId: string): Promise<CheckpointRecord> {
   const open = (await d.services.runner.view(runId)).checkpoints.find((c) => c.status === 'open');
   if (!open) throw new Error('no open question');
   return open;
 }
 
-describe('route handler logic', () => {
+describe('route handler logic', PRODUCT_PATH, () => {
   it('takes a problem from Start to a recommendation, re-routes on a flipped answer, keeps it, and starts the run', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
@@ -166,7 +174,7 @@ describe('route handler logic', () => {
   });
 });
 
-describe('examples you admire (ADR-0071)', () => {
+describe('examples you admire (ADR-0071)', PRODUCT_PATH, () => {
   it('stores pasted text and images, and passes them to the run as inputs.refs', async () => {
     const d = await deps();
     const text = await addRef(d, { text: '  A memo I admire.  ' });
@@ -194,7 +202,7 @@ describe('examples you admire (ADR-0071)', () => {
   });
 });
 
-describe('the artifact route', () => {
+describe('the artifact route', PRODUCT_PATH, () => {
   it('serves stored artifacts with their headers, as downloads on request, and refuses bad ids', async () => {
     const d = await deps();
     const page = await d.services.store.artifacts.putText('<!doctype html><title>x</title>', 'text/html');
@@ -240,7 +248,7 @@ describe('the artifact route', () => {
   });
 });
 
-describe('model errors while recommending or composing (UX-2)', () => {
+describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, () => {
   const gatewayError = (code: GatewayErrorCode, scope?: 'workspace' | 'run') =>
     Object.assign(new GatewayError(code, `${code} from the provider`), scope ? { budget: { scope, capUsd: 5, spentUsd: 5, reservedUsd: 0, estimateUsd: 0.1, shortfallUsd: 0.1 } } : {});
 
@@ -281,7 +289,7 @@ describe('model errors while recommending or composing (UX-2)', () => {
   });
 });
 
-describe('exports carry their images (EXP-1)', () => {
+describe('exports carry their images (EXP-1)', PRODUCT_PATH, () => {
   it('inlines byway-served images into a downloaded page or Markdown file, so it works away from byway', async () => {
     const d = await deps();
     const png = await d.services.store.artifacts.put(Buffer.from(TINY_PNG_BASE64, 'base64'), 'image/png');
