@@ -135,6 +135,16 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
   const result: FinishHumanResult = { costUsd: 0 };
   const outputs: string[] = [];
   const text = resolution.text ?? '';
+  if (input.kind === 'write') {
+    // Text no store can hold (half of a surrogate pair) is asked about again, before anything is stored (ENG-6): a store
+    // error would be retried, and fail the same way every time.
+    const broken = lfLines(text).findIndex((l) => !l.isWellFormed());
+    if (broken >= 0) {
+      const kind = run.medium === 'web-page' ? 'web-page' : deckKindOf(run.medium, mediaCopyOf(step));
+      const quotes = step.role === 'voice' ? offeredQuotes(kind, input.initialText, { lines: [broken + 1] }) : '';
+      throw new AnswerRejected(`Line ${broken + 1} has a broken character (half of a surrogate pair, not valid Unicode), so it cannot be stored: type that character again, or take it out.${quotes}`);
+    }
+  }
   if (input.kind === 'write' && step.role === 'voice' && isClaimLog(run.medium, step) && step.produces.includes('artifact') && ports.artifact) {
     // The claim log (ENG-2): the owner's corrections replace the claims where they stood; nothing else changes.
     const before = await deps.store.artifacts.getText(ports.artifact);
@@ -180,6 +190,9 @@ function lockedVoiceover(medium: FinishHumanInput['run']['medium'], step: Finish
   const now = parseStoryboard(after);
   return was.ok && now.ok && was.value.voiceover !== now.value.voiceover ? ['The voice-over was locked after the script step: keep it exactly as it was.'] : [];
 }
+
+/** An answer's lines, any line ending. */
+const lfLines = (t: string): string[] => t.replace(/\r\n?/g, '\n').split('\n');
 
 /** The lines of an answer that differ from what was offered, by position (1-based): what a fault message quotes. */
 const changedLines = (offered: string | undefined, answer: string): number[] => {

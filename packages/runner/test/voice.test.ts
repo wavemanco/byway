@@ -3,13 +3,15 @@
  * later machine writes. Activities on their own, against a temp store and a scripted gateway that records every call.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { Medium } from '@byway/contracts';
 import { AnswerRejected, StepError } from '../src/activities/failures.ts';
+import { finishHumanStep } from '../src/activities/human.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import { pageCopy, pageLockView } from '../src/copy.ts';
 import { joinCodeDiff, serializeJson, splitCodeDiff } from '../src/formats.ts';
 import type { StepSpec } from '../src/types.ts';
-import { benchRun, putWork, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
+import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
 let b: VoiceBench;
 beforeEach(async () => {
@@ -212,6 +214,40 @@ describe('VOICE on prose and code diffs (F07)', () => {
     expect(err).toBeInstanceOf(Error);
     expect(err).not.toBeInstanceOf(AnswerRejected);
     expect(err).not.toBeInstanceOf(StepError);
+  });
+});
+
+describe('a broken character is asked about again, in every medium, before anything is stored (F07, r7)', () => {
+  const HALF = '\uD83D'; // the first half of an emoji, alone: not valid Unicode, so no store can hold it
+  const why = (line: number) => new RegExp(`^Line ${line} has a broken character \\(half of a surrogate pair, not valid Unicode\\), so it cannot be stored: type that character again, or take it out\\.`);
+  const nothingStored = async (runId: string) => expect(await b.store.events(runId)).not.toContainEqual(expect.objectContaining({ type: 'artifact' }));
+
+  it('VOICE on options, prose, a code diff, a storyboard, a claim log and a page', async () => {
+    const cases: [Medium, string, (offered: string) => string, number, Partial<StepSpec>?, 'claims'?][] = [
+      ['options', OPTIONS, (o) => o.replace('Pitch: Fresh bread at seven.', `Pitch: Fresh bread ${HALF} at seven.`), 3],
+      ['prose', '# Memo\n\nOne.\n', (o) => `${o}\n\nTwo ${HALF}.`, 5],
+      ['code-diff', joinCodeDiff({ why: 'Fix the bug.', diff: 'diff --git a/x b/x\n' }), () => `Fix the ${HALF} bug.`, 1],
+      ['media', storyboard({ voiceover: 'V.', headline: 'H', tagline: 'T', storyboard: [{ shot: 1, caption: 'C' }] }), (o) => o.replace('Tagline: T', `Tagline: T${HALF}`), 2],
+      ['prose', '# Memo\n\nWe launched on 3 May.\n', (o) => o.replace('3 May', `4 May${HALF}`), 1, { variant: 'claim-log' }, 'claims'],
+      ['web-page', '<!doctype html><html><head><title>T</title></head><body><p>Hello</p><p>World</p></body></html>', () => `T\nHello\nWorld ${HALF}`, 3],
+    ];
+    for (const [medium, work, answerOf, line, step, from] of cases) {
+      const run = await benchRun(b, medium);
+      const q = await VoiceQuestion.open(b, run, await putWork(b, medium, work), voiceStep(step), from);
+      const msg = await rejected(q.answer(answerOf(q.offered!)));
+      expect(msg, medium).toMatch(why(line));
+      await nothingStored(run.runId);
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
+
+  it('the author\'s own draft too', async () => {
+    const run = await benchRun(b, 'prose');
+    const draft: StepSpec = { id: 'draft', role: 'build', actor: 'human', consumes: [], produces: ['artifact'], writes: true };
+    const err = await finishHumanStep(b.deps, { run, call: stepCall(run, 'draft'), step: draft, kind: 'write', resolution: { checkpointId: 'cp-draft', text: `# Mine\n\nA ${HALF}.` }, ports: {} }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AnswerRejected);
+    expect((err as Error).message).toMatch(why(3));
+    await nothingStored(run.runId);
   });
 });
 
