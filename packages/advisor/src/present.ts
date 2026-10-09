@@ -31,9 +31,9 @@ import {
  * The plain-language presentation of a composed recipe (spec §5 vocabulary). The catalog's presentations are written
  * by hand for the eight configurations and its builder takes only those, so a composed recipe's steps are labelled
  * from block names (`BLOCK_NAMES`) and roles instead, and grouped the way the catalog groups them: a render belongs to
- * the step that reads it, and a writer that applies a critique belongs to the step whose critique reaches it on every
- * path ("Outside critique" is render, critic and fix; @byway/recipe critiqueSources). Every step, pick and operator id lands in exactly one shown step's `stepIds`,
- * so any run event can be labelled.
+ * the step that reads it, and a writer that applies a critique belongs to the step whose critique it applies on every
+ * path (@byway/recipe critiqueSources; "Outside critique" is render, critic and fix). Every step, pick and operator id
+ * lands in exactly one shown step's `stepIds`, so any run event can be labelled.
  *
  * Labels and explainers read what runs (F08, ADR-0092): a step's block is its role's (a label is a declaration), only
  * a step that writes your words into the work is "your words", worded by what it covers, a random pick says so, a
@@ -99,7 +99,8 @@ export function stepLabel(n: Unit, near?: Pick_<Around, 'reactedTo'>): string {
  * deleted, that you react to the directions) is used only where the recipe establishes it (`Around`): by its order,
  * or, for the directions, by what reaches your next VISION. The sentence without that claim is used everywhere else.
  * So is a sentence about how a step runs where it sits: separate sessions only for a seed that fans out, a chain of
- * clips only inside a relay chain. A step's findings are said to be applied only by a writer they reach on every path.
+ * clips only inside a relay chain. A step's findings are said to be applied only by a writer that applies them and no
+ * other critique.
  *
  * A step is described by what this version runs (ADR-0069): one with no executor yet (@byway/recipe hasNoExecutor: a
  * tool relay's compositing, voice-over audio, any other tool or policy step that is not a render) finishes skipped and
@@ -324,7 +325,7 @@ const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group
 
 /**
  * The shown steps of one stage, from its steps and picks in order: renders wait for the next node (the one that reads
- * them), and a writer that applies a critique joins the group of the step whose critique reaches it on every path
+ * them), and a writer that applies a critique joins the group of the step whose critique it applies on every path
  * (`from`: @byway/recipe critiqueSources), once, with the renders before it. Not the group before it: a writer that
  * comes next may apply another step's critique (one that a replicate hands on, say), and one a render or a step of
  * yours sits before may still apply this one's.

@@ -11,7 +11,8 @@
  * - which steps have no executor yet and finish skipped, and which can put another critique in place of the last;
  * - what can run after a step, from walk order, the loops and relays around it and the final checks that re-run a
  *   stage: a script VOICE is locked after it only where nothing the person writes later can change it;
- * - where a run's paths go: the one flow walk (`flowRecipe`) that every path rule reads.
+ * - where a run's paths go (the one flow walk, `flowRecipe`, that every path rule reads), and what reaches a step along
+ *   them: whose critique a writer applies, and whose directions the person's next VISION is shown.
  *
  * Admission (the validator, the composed profile, web start) reads these facts from here. A step's own declarations
  * (`writes`, `produces: ['voice']`, `block`, `keepsVoice`) may only add arming or refusals, never grant a protection,
@@ -611,10 +612,10 @@ export interface FlowOps<S> {
   /** Combine the states of alternative paths (route branches, optional ran or skipped, loop iterations, loop exits). */
   join(states: S[]): S;
   /**
-   * An exact key of a state: two states with the same key are the same to `step`, `join` and `after`. With it, a node
-   * walked again from a state with a key already seen there is answered from the first walk (its findings were recorded
-   * then), so nested loops cost a bounded number of walks per node instead of doubling with each level. Without it,
-   * every walk is made.
+   * An exact key of a state: two states with the same key are the same to every op here. With it, a node walked again
+   * from a state with a key already seen there is answered from the first walk (its findings were recorded then), so
+   * nested loops cost a bounded number of walks per node instead of doubling with each level. Without it, every walk is
+   * made.
    */
   key?(state: S): string;
   /**
@@ -819,8 +820,8 @@ function skippableJudges(recipe: Recipe): Map<string, boolean> {
  *   unless it reports to the loop around it, whose round then ends there (ADR-0090). A person's answer in a lens or a
  *   gate body may be empty, which is dropped (admission refuses one there, ST9 and ST10 'human-critique').
  *
- * The presentation says a step's findings are applied only by the writer they reach (present.ts), as the run applies
- * them: a writer that comes next in the recipe may apply another step's critique.
+ * The presentation says a step's findings are applied only by a writer that applies them and no other critique
+ * (present.ts), as the run applies them: a writer that comes next in the recipe may apply another step's critique.
  */
 export function critiqueSources(recipe: Recipe): Map<Step, Step> {
   // A state: the numbers of the steps whose critique may be the latest, sorted; -1 is none yet.
