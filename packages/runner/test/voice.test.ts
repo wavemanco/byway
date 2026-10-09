@@ -779,6 +779,12 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     const html = page('<style>.b{display:block}</style><h1>Fresh <span class="b">bread daily</span></h1>');
     const out = await (await open(html)).answer('T\nWarm bread daily');
     expect(await shows(out.artifactId!)).toBe('Warm\nbread daily');
+    // An address a white-space style breaks over lines keeps every break where only a word changed (r10; round 9 put
+    // it on one line), and the browser shows it so.
+    const address = page('<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street\nLondon NW1 6XE</address>');
+    const moved = await (await open(address)).answer('T\nCrumb & Co. 12 Baker Street London NW2 6XE');
+    expect(await b.store.artifacts.getText(moved.artifactId!)).toBe(address.replace('NW1', 'NW2'));
+    expect(await shows(moved.artifactId!)).toBe('Crumb & Co.\n12 Baker Street\nLondon NW2 6XE');
   });
 
   it('a page that navigates away as it loads cannot be read, so its VOICE fails plainly, not with a retried error (r8)', async () => {

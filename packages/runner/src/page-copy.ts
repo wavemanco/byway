@@ -34,7 +34,9 @@
  * - placePageEdit: deterministic placement. Changed text goes into the line's text slots, words aligned to the old
  *   words so formatting follows whole words or pieces (a documented rule, not verified); link words go where the
  *   person put their brackets, and no word crosses a link's edge (words outside brackets never go into an image or
- *   icon link, and a whole-link line's words all stay in its link). A line's edge whitespace stays in the slot that
+ *   icon link, and a whole-link line's words all stay in its link). A gap between two words the person kept, which
+ *   stood side by side, keeps the page's own whitespace where it lay in one run of text (so a white-space style keeps
+ *   an address's line breaks); every other gap is the person's single space. A line's edge whitespace stays in the slot that
  *   held it, unless it would then show as a space where the person's line has none (text glued to a link whose edge
  *   space sat inside it): then it is dropped. Elements left empty are removed when the shared rule allows (never one
  *   that carries a hook such as id, data-* or aria-*, never one browsers close elsewhere than its own end tag, never
@@ -44,8 +46,9 @@
  *   edge gets a space if text beside it on its screen line needs one. The <br> run a deleted line leaves goes with it.
  *   It returns its removals as a witness;
  * - pageEditProblems: the verifier. It checks the witness against the shared rule, compares the markup token for token
- *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each line's words,
- *   the line as it shows (edge whitespace included, whitespace collapsed) and its edge whitespace, and each link
+ *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each line's words
+ *   (a gap other than one space only where the line before had those bytes between the same two words), the line as
+ *   it shows (edge whitespace included, whitespace collapsed) and its edge whitespace, and each link
  *   part's words, that no link or button whose shown words were in a changed line is left without words a browser
  *   shows, unnamed (an image's alt or a label names one that keeps an image or icon; hidden words name nothing), and
  *   reads the written page fresh: each run's words, which of them are in which link (with its address), and each block
@@ -1595,11 +1598,15 @@ type Side = 'start' | 'end' | 'between';
 function alignInto(p: PageDeck, group: number[], next: string, own: number | undefined, side: Side): Map<number, string> {
   const out = new Map<number, string>(group.map((s) => [s, '']));
   if (!group.length || !next) return out;
-  const oc: { c: string; s: number }[] = [];
+  // The old characters, each run of whitespace one ' ' with the page's own bytes (`ws`; undefined once the run spans
+  // two slots, so formatting lies inside it).
+  const oc: { c: string; s: number; ws?: string | undefined }[] = [];
   for (const s of group) {
     for (const c of slotText(p, s)) {
       if (isHtmlSpace(c)) {
-        if (oc.length && oc.at(-1)!.c !== ' ') oc.push({ c: ' ', s });
+        const last = oc.at(-1);
+        if (last && last.c !== ' ') oc.push({ c: ' ', s, ws: c });
+        else if (last) last.ws = last.s === s && last.ws !== undefined ? last.ws + c : undefined;
       } else oc.push({ c, s });
     }
   }
@@ -1632,11 +1639,6 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
     while (i + 1 < group.length && group[i + 1] === group[i]! + 1 && closesFormatting(p, p.slots[group[i]!]!.end)) i++;
     return best(group.slice(indexIn.get(l)!, i + 1), false) ?? shallowest(l, group.at(-1)!);
   };
-  if (holding.length <= 1) {
-    const at = holding[0] ?? (side === 'start' ? nearLeft(group.at(-1)!) : side === 'end' ? nearRight(group[0]!) : shallowest(group[0]!, group.at(-1)!));
-    out.set(at, next);
-    return out;
-  }
   const nc = [...next];
   const wordsOf = (cs: string[]) => {
     const w: { w: string; from: number; to: number }[] = [];
@@ -1656,6 +1658,22 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
   const ow = wordsOf(oc.map((x) => x.c));
   const nw = wordsOf(nc);
   const pairs = wordPairs(ow.map((x) => x.w), nw.map((x) => x.w));
+  // A gap between two words the person kept, which stood side by side with that gap between them, keeps the page's own
+  // whitespace (its line breaks, where a white-space style keeps them) when it lay in one run of text; every other gap
+  // is the person's single space (by its place in the new text).
+  const kept = new Map<number, string>();
+  for (let i = 1; i < pairs.length; i++) {
+    const [a0, b0] = pairs[i - 1]!;
+    const [a1, b1] = pairs[i]!;
+    const ws = oc[ow[a0]!.to]?.ws;
+    if (a1 === a0 + 1 && b1 === b0 + 1 && ws !== undefined && nc[nw[b0]!.to] === ' ') kept.set(nw[b0]!.to, ws);
+  }
+  const spaced = (c: string, k: number): string => (c === ' ' ? (kept.get(k) ?? ' ') : c);
+  if (holding.length <= 1) {
+    const at = holding[0] ?? (side === 'start' ? nearLeft(group.at(-1)!) : side === 'end' ? nearRight(group[0]!) : shallowest(group[0]!, group.at(-1)!));
+    out.set(at, kept.size ? nc.map(spaced).join('') : next);
+    return out;
+  }
   const ns: (number | undefined)[] = new Array(nc.length).fill(undefined);
   // Positions count characters (code points), as `oc` and `nc` do; a word's string length counts UTF-16 units.
   for (const [a, b] of pairs) for (let t = 0; t < nw[b]!.to - nw[b]!.from; t++) ns[nw[b]!.from + t] = oc[ow[a]!.from + t]!.s;
@@ -1703,7 +1721,7 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
     }
   }
   if (!ns.every((s, k) => k === 0 || s! >= ns[k - 1]!)) throw new Error('placement out of order');
-  nc.forEach((c, k) => out.set(ns[k]!, `${out.get(ns[k]!)}${c}`));
+  nc.forEach((c, k) => out.set(ns[k]!, `${out.get(ns[k]!)}${spaced(c, k)}`));
   return out;
 }
 
@@ -2065,7 +2083,9 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness,
       return t;
     };
     const text = decodeText(u.slots.map(wordsOf).join('')).replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '');
-    if (text !== line.text) problems.push(`Line ${i + 1} must read exactly "${line.text}" (it reads "${text}").`);
+    // A gap other than one space must be the page's own: the same whitespace between the same two words in the line
+    // before (placement keeps it where both words stood side by side, unchanged).
+    if (text !== line.text && !(squashHtml(text) === line.text && ownGaps(decodeText(u.slots.map((s) => slotRaw(p, s)).join('')), text))) problems.push(`Line ${i + 1} must read exactly "${line.text}" (it reads "${text}").`);
     else if (line.text) {
       // The line as it shows: all of its text, edge whitespace included, with HTML whitespace collapsed, is the
       // person's line. So edge space left between two characters, where the person wrote none, is refused.
@@ -2246,6 +2266,28 @@ function partsOf(p: PageDeck, slots: number[]): Part[] {
  * whitespace are one run: the deck may show one link as two lines (side by side, when the reader nests links), and the
  * written page reads it as one.
  */
+/**
+ * Whether every gap of `written` (a line's text) that is not one space stands, with the same bytes, between the same
+ * two words in `before` (the line's text before), each gap of the line before used once.
+ */
+function ownGaps(before: string, written: string): boolean {
+  const triples = (t: string) => {
+    const parts = t.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '').split(/([ \t\n\f\r]+)/);
+    const out: string[] = [];
+    for (let k = 1; k + 1 < parts.length; k += 2) out.push(`${parts[k - 1]}\u0000${parts[k]}\u0000${parts[k + 1]}`);
+    return out;
+  };
+  const had = new Map<string, number>();
+  for (const x of triples(before)) had.set(x, (had.get(x) ?? 0) + 1);
+  for (const x of triples(written)) {
+    if (x.split('\u0000')[1] === ' ') continue;
+    const n = had.get(x) ?? 0;
+    if (!n) return false;
+    had.set(x, n - 1);
+  }
+  return true;
+}
+
 function formOf(parts: Part[]): { text: string; links: string; shown: string } {
   const runs: Part[] = [];
   for (const part of parts) {

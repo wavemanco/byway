@@ -989,6 +989,36 @@ describe('a space the person types at a changed line\'s edge parts it from text 
   });
 });
 
+describe('a gap between two characters the person kept keeps the page\'s own whitespace (F07, r10)', () => {
+  it('an address, opening hours and a poem a white-space style breaks over lines keep their breaks where only one word changed', () => {
+    // Round 9 wrote each gap as the person's single space, so changing "NW1" put the whole address on one line.
+    const address = '<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street\nLondon NW1 6XE</address>';
+    expect(run(address, same).deck).toEqual(['T', 'Crumb & Co. 12 Baker Street London NW1 6XE']);
+    expect(run(address, set(1, 'Crumb & Co. 12 Baker Street London NW2 6XE'))).toMatchObject(clean(address.replace('NW1', 'NW2')));
+    const hours = '<p style="white-space:pre-line">Mon–Fri 7am–6pm\nSat 8am–4pm\nSun closed</p>';
+    expect(run(hours, set(1, 'Mon–Fri 7am–6pm Sat 8am–4pm Sun 9am–1pm'))).toMatchObject(clean(hours.replace('closed', '9am–1pm')));
+    const poem = '<p style="white-space:pre">Roses are red,\n  violets are blue</p>';
+    expect(run(poem, set(1, 'Roses are red, violets are new'))).toMatchObject(clean(poem.replace('blue', 'new')));
+    // A gap beside a word the person changed or added, or where they deleted one, is the person's single space: only a
+    // gap whose two neighbours stood side by side, unchanged, keeps the page's bytes.
+    expect(run(address, set(1, 'Crumb & Co. 12 Baker Street, London NW1 6XE'))).toMatchObject(clean('<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street, London NW1 6XE</address>'));
+    expect(run(address, set(1, 'Crumb & Co. Bakery 12 Baker Street London NW1 6XE'))).toMatchObject(clean('<address style="white-space:pre-line">Crumb &amp; Co. Bakery 12 Baker Street\nLondon NW1 6XE</address>'));
+    expect(run(address, set(1, 'Crumb & Co. 12 Baker Street NW1 6XE'))).toMatchObject(clean('<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street NW1 6XE</address>'));
+    // A gap that spans formatting (whitespace in two runs of text) is the person's single space too.
+    const split = '<p style="white-space:pre-line"><b>Open daily\n</b>\n7am to 6pm</p>';
+    expect(run(split, set(1, 'Open daily 7am to 5pm'))).toMatchObject(clean('<p style="white-space:pre-line"><b>Open daily </b>7am to 5pm</p>'));
+    // The verifier holds placement to that: a gap other than one space must be the page's own, between the same words.
+    expect(verifyBad(pageOf(address), pageOf(address.replace('NW1', 'NW2').replace('12 Baker', '12\nBaker')), 'T\nCrumb & Co. 12 Baker Street London NW2 6XE')).toContain(
+      'Line 2 must read exactly "Crumb & Co. 12 Baker Street London NW2 6XE" (it reads "Crumb & Co.\n12\nBaker Street\nLondon NW2 6XE").',
+    );
+  });
+
+  it('pretty-printed source keeps its own whitespace between kept words, which shows as one space', () => {
+    const p = '<p>\n  Fresh bread,\n  baked every\n  morning.\n</p>';
+    expect(run(p, set(1, 'Fresh bread, baked every evening.'))).toMatchObject(clean('<p>\n  Fresh bread,\n  baked every evening.\n</p>'));
+  });
+});
+
 describe('markup that is not copy stays byte for byte (F07, r7)', () => {
   it('an emptied element holding a script, style, noscript, template or comment is kept, with those bytes', () => {
     for (const inner of ['<script>window.x=1</script>', '<noscript>Enable JS</noscript>', '<template><p>T</p></template>', '<!-- keep -->', '<style>p{}</style>']) {
