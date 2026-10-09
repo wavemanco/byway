@@ -168,15 +168,6 @@ export const PICK_ACTOR: Readonly<Record<PickNode['mode'], Actor>> = { H: 'human
 export const PICK_JUDGE_ROLES: ReadonlySet<Role> = new Set<Role>(['judge', 'select']);
 
 /**
- * Operators whose inner steps' outputs never reach the work: an audit lens returns only annotations, a one-shot gate
- * keeps only its body's critique, and a pick's judge only names a label. Steps inside them are "contained".
- */
-export const CONTAINER_OPS: ReadonlySet<Node['op']> = new Set<Node['op']>(['audit', 'gate', 'pick']);
-
-/** Operators whose body runs once per candidate, concurrently (replicate and each). */
-export const PER_CANDIDATE_OPS: ReadonlySet<Node['op']> = new Set<Node['op']>(['replicate', 'each']);
-
-/**
  * Operators that hand an enclosing loop's context on to their body, so a critic or check inside reports to that loop's
  * gate: seq, relay, route and optional. replicate, each, audit and a one-shot gate start a fresh context, and an inner
  * loop starts its own (interpreter.ts: they run their bodies without `ctx.loop`).
@@ -224,7 +215,10 @@ export interface Placement {
   /** The walk path (`stages[0].body.steps[2]`), as @byway/recipe's walk() writes it. */
   path: string;
   stage: Stage['stage'];
-  /** Inside an audit lens, a one-shot gate's body or a pick's judge: its output never reaches the work. */
+  /**
+   * Inside an audit lens, a one-shot gate's body or a pick's judge: its output never reaches the work (a lens returns
+   * only annotations, a gate keeps only its body's critique, a judge only names a label).
+   */
   contained: boolean;
   /** Inside replicate or each: it runs once per candidate. */
   perCandidate: boolean;
