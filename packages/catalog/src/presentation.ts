@@ -291,7 +291,7 @@ const COPY: readonly Copy[] = [
       {
         label: 'Motion',
         explainer:
-          'Shot by shot, each clip starts from the last frame of the one before. Every shot is checked for visible defects and remade when needed. Without a video provider set up, the run stops at the storyboard and images.',
+          'Shot by shot, each clip starts from the last frame of the one before. Each clip’s last frame is checked for visible defects against the frame it started from, and the clip is remade when needed; the motion between them is not checked. Without a video provider set up, the run stops at the storyboard and images, and nothing is checked.',
         covers: ['clip', 'shot-render', 'shot-check', 'regenerate'],
       },
       {

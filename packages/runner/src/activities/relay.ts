@@ -1,8 +1,8 @@
 /**
  * The `relayLink` activity: one RELAY link (01 RELAY, ADR-0069). The relay step's prompt answers `relay:media` with
  * `{clipPrompt, durationSec}` for the shot the brief names ("Shot N"); the runner then calls `gateway.video` starting
- * from the anchor (the previous link's last frame, or shot 1's frame), attaches `clipArtifactId` to the shot, and hands
- * the clip's last frame on as the next anchor. With no usable video model the link finishes as skipped with
+ * from the anchor (the previous link's last frame, or shot 1's frame), attaches `clipArtifactId` and the clip's
+ * `lastFrameArtifactId` to the shot, and hands that last frame on as the next anchor. With no usable video model the link finishes as skipped with
  * ADR-0069's note, and the storyboard and anchor pass through unchanged. So does a link with no frame to start from
  * (shot 1's frame was not made, F12): a clip is never started from another shot's still, nor sent without a start
  * frame for the video model to refuse.
@@ -92,7 +92,9 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   await announce(deps, run.runId, call, clip.artifactId, clip.mediaType, { label: `Clip for shot ${shot}`, name: 'clip', shot });
   await announce(deps, run.runId, call, clip.lastFrameArtifactId, clip.lastFrameMediaType, { label: `Last frame of shot ${shot}`, name: 'last-frame', shot });
 
-  const next = serializeJson({ ...sb.value, storyboard: sb.value.storyboard.map((s) => (s.shot === shot ? { ...s, clipArtifactId: clip.artifactId } : s)) });
+  // The clip and its last frame go on the shot together (a regeneration replaces both), so the shot check inside this
+  // link sees the clip's own last frame (F10, ADR-0090).
+  const next = serializeJson({ ...sb.value, storyboard: sb.value.storyboard.map((s) => (s.shot === shot ? { ...s, clipArtifactId: clip.artifactId, lastFrameArtifactId: clip.lastFrameArtifactId } : s)) });
   const problems = writeProblems(run, next, step.keepsVoice ? ports.voice : undefined, storyboardText);
   if (problems.length) throw new StepError(`The ${what} step could not update the storyboard: ${problems.join(' ')}`);
   const artifactId = await storeText(deps, run, call, next, { label: `Storyboard with the clip for shot ${shot}`, name: 'work', shot });

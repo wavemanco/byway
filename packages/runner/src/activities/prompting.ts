@@ -24,7 +24,7 @@ export type Slots = Partial<Record<PromptSlot, string>>;
 
 /**
  * Images to attach, in groups. A labelled group is introduced by its "### A" heading (once for consecutive groups with
- * the same label); a captioned group by its caption line (a web page's surface).
+ * the same label); a captioned group by its caption line (a web page's surface, a relay link's frames).
  */
 export interface ImageGroup {
   label?: string;
@@ -33,11 +33,14 @@ export interface ImageGroup {
 }
 
 /**
- * One view item's images as groups: one per surface, captioned, when the item is a web page rendered by surface
- * (narrowed to `renders` when given; all of them if none is left), else one group of all its images.
+ * One view item's images as groups: its captioned groups when it has them (a relay link's frames); one per surface,
+ * captioned, when the item is a web page rendered by surface (narrowed to `renders` when given; all of them if none is
+ * left); else one group of all its images.
  */
 export function surfaceGroups(item: ViewRef, label?: string, renders?: readonly Surface[]): ImageGroup[] {
   const at = label === undefined ? {} : { label };
+  // Captioned images (a relay link's start frame and its clip's last frame): each under the caption saying what it is.
+  if (item.groups?.length) return item.groups.filter((g) => g.imageArtifactIds.length).map((g) => ({ ...at, caption: g.caption, artifactIds: g.imageArtifactIds }));
   if (!item.surfaces?.length) return item.imageArtifactIds.length ? [{ ...at, artifactIds: item.imageArtifactIds }] : [];
   const picked = renders?.length ? item.surfaces.filter((s) => renders.includes(s.surface)) : [];
   return (picked.length ? picked : item.surfaces).filter((s) => s.imageArtifactIds.length).map((s) => ({ ...at, caption: SURFACE_CAPTIONS[s.surface], artifactIds: s.imageArtifactIds }));

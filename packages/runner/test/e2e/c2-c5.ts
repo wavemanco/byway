@@ -10,7 +10,8 @@ import type { CompletionRequest, VideoRequest, VideoResult } from '@byway/contra
 import { NO_AUDIO_NOTE } from '../../src/activities/asset.ts';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { NO_COMPOSITING_NOTE, NO_VIDEO_NOTE } from '../../src/activities/relay.ts';
-import { GATE_FAILED_PROMPT, GATE_RETRY_NOTE, READY_PROMPT } from '../../src/workflow/wording.ts';
+import { BEST_SO_FAR_PROMPT, GATE_FAILED_PROMPT, GATE_RETRY_NOTE, READY_PROMPT } from '../../src/workflow/wording.ts';
+import { noClipNote } from '../../src/activities/render.ts';
 import { checkEvents, notes, ofType } from '../helpers/events.ts';
 import { fakeShots, png } from '../helpers/fake-pages.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
@@ -89,6 +90,9 @@ export function c2c5Scenarios(use: () => Harness): void {
   describe('C5 on media', () => {
     it('runs the relay one shot after another from the anchor frames, holds your script, and retries D2 when the launch gate fails', async () => {
       h.responders['critic:media'] = () => '- The payoff shot is too short.\nScore: 5/10';
+      // A stand-in shot check that finds a defect in any image beyond the link's own two frames: a flaw in another
+      // shot's still, which the check used to be shown and no regeneration of this shot could remove (F10).
+      h.responders['check:media'] = (ctx) => (ctx.images > 2 ? '- Garbled lettering on the box in one of the frames.' : 'No defects.');
       const script = 'Less time on the road.\nMore time on the trail.';
       try {
         const headline = 'Less road. More trail.';
@@ -135,6 +139,18 @@ export function c2c5Scenarios(use: () => Harness): void {
         const framed = (await json(anchorRun.at(-1)!)) as { storyboard: { shot: number; imageArtifactId?: string }[] };
         expect((videos[0]!.request as VideoRequest).startFrameArtifactId).toBe(framed.storyboard.find((s) => s.shot === 1)!.imageArtifactId);
 
+        // Each shot check sees its link's two frames, the clip's start and its last frame, and no other shot's still:
+        // no regeneration, no "best version so far?" question (F10).
+        const checks = h.succeeded(run.id).filter((c) => c.stepId === 'shot-check');
+        expect(checks).toHaveLength(2 * 4);
+        const shown = (c: (typeof checks)[number]) => (c.request as CompletionRequest).messages.flatMap((m) => m.content.flatMap((p) => (p.type === 'image' ? [p.artifactId] : [])));
+        for (const [i, c] of checks.slice(0, 4).entries()) {
+          const start = (videos[i]!.request as VideoRequest).startFrameArtifactId;
+          expect(shown(c)).toEqual([start, (videos[i]!.result as VideoResult).lastFrameArtifactId]);
+        }
+        expect(ofType(view, 'step-started', 'regenerate')).toEqual([]);
+        expect(view.checkpoints.some((c) => c.prompt === BEST_SO_FAR_PROMPT)).toBe(false);
+
         // Honest skips for the steps v1 cannot do.
         expect(notes(view, 'matte')).toEqual([NO_COMPOSITING_NOTE, NO_COMPOSITING_NOTE]);
         expect(notes(view, 'vo-audio')).toEqual([NO_AUDIO_NOTE, NO_AUDIO_NOTE]);
@@ -158,6 +174,7 @@ export function c2c5Scenarios(use: () => Harness): void {
         expect(JSON.parse(clipPrompt.slots.artifact!)).toHaveProperty('storyboard');
       } finally {
         delete h.responders['critic:media'];
+        delete h.responders['check:media'];
       }
     }, 180_000);
 
@@ -192,6 +209,12 @@ export function c2c5Scenarios(use: () => Harness): void {
           expect(fin.every((e) => e.data.skipped === true && e.data.note === NO_VIDEO_NOTE)).toBe(true);
         }
         expect(ofType(view, 'step-finished', 'clip')).toHaveLength(4);
+        // No clip, nothing to check: no shot check is asked, each says why, and nothing is regenerated (F10).
+        expect(h.succeeded(run.id).filter((c) => c.stepId === 'shot-check')).toEqual([]);
+        expect(ofType(view, 'step-finished', 'shot-check').map((e) => e.data)).toEqual([1, 2, 3, 4].map((shot) => ({ costUsd: 0, skipped: true, note: noClipNote(shot) })));
+        expect(ofType(view, 'step-started', 'regenerate')).toEqual([]);
+        expect(ofType(view, 'loop-iteration', 'shot-repair')).toEqual([]);
+        expect(view.checkpoints.some((c) => c.prompt === BEST_SO_FAR_PROMPT)).toBe(false);
         const sb = (await json(view.run.outputArtifactId!)) as { storyboard: { imageArtifactId?: string; clipArtifactId?: string }[] };
         expect(sb.storyboard.every((s) => s.imageArtifactId && !s.clipArtifactId)).toBe(true);
         // With three references the gate's critic ranks in GREAT mode: two shuffles, our place averaged (2 of 4).
