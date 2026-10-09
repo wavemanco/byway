@@ -61,7 +61,7 @@ The verification recommended option C of its cluster A: write the executed seman
    - `voice-per-candidate`: a VOICE inside replicate or each.
    - `pick-judge`: a C pick needs a model judge or select step.
    - `pick-actor`: a pick's actor is its mode's.
-   - `set-aside`, read on the exit-aware flow: a keep-or-revert whose previous version may predate a person's write; a critic-score or critic-rank loop holding a person's write; an option consumer reached again through a loop's back-edge after one.
+   - `set-aside`: on the exit-aware flow, a keep-or-revert whose previous version may predate a person's write, and a critic-score or critic-rank loop holding a person's write; in scope typing, a pick, an each or another option consumer that a later round of a loop or relay link reaches after a person's write, which set the options aside. That includes the option a pick of one leaves held.
 
    `keepsVoice` is an executed declaration: it asks for the voice check that the runtime performs.
 
@@ -69,7 +69,9 @@ The verification recommended option C of its cluster A: write the executed seman
    - **One flow walk** (`flowRecipe`, now exported) is exit-aware: the state right after an exit point also reaches the loop's exit, so must-analyses are sound and may-analyses are unchanged. It is containment-aware: each step is told whether it sits in a lens, a gate body or a pick's judge. The advisor's own copy of the walk is deleted.
    - **PR6** arms on an executed VOICE write, or a declared one, and flags every machine writer whose output reaches the work, whatever its flag says.
    - **ST9 and ST10** gain a `human-write` clause: no person's write or VOICE in a lens or a gate body.
-   - **Scope typing** sets the option set aside at every person's write. A pick, an each or an option consumer after it gets ST5 `set-aside`, naming the write.
+   - **Scope typing** sets the options aside at every person's write: an open option set, and the list a pick of one leaves held (the runner keeps the chosen option as its option list, and a later pick or each takes it). A pick, an each or an option consumer after the write gets ST5 `set-aside`, naming the write.
+     - **Later rounds.** A loop body or relay link is typed again from the state its back-edge brings, round after round until that state repeats. An option consumer that such a round reaches set aside gets ST12 `set-aside`; every other port rule is checked on the first round.
+     - **Cost.** These rounds, and ST11's typing of a relay link without its anchor, are memoized by node and by the only state each reads: the option set, or the anchor. Every node is typed once on the first round, and at most once more for each option-set state that a later round brings to it. Nested loops cost one visit per node, as before this ADR. Nested relays cost at most two visits per node, where before this ADR the cost doubled with each level. `scope-cost.test.ts` counts the visits.
    - **DR9** counts executed VOICE writes for `fixed-input` and `missing`, and adds `claims-only`.
 
 4. **The composed profile reads execution.**
@@ -80,8 +82,9 @@ The verification recommended option C of its cluster A: write the executed seman
 
 5. **Re-admission at start.** `Advisor.admit` (additive, [ADR-0068](0068-contracts-first-parallel-build.md)) re-runs the composer's checks on a stored composed recipe under its own id, and recomputes its differences, presentation, label and estimate. It makes no model call. Web start uses it, and the intake keeps the result either way, so the estimate is refreshed silently:
    - a recipe that no longer passes, or no longer hashes to the one offered (`ADMIT-HASH`), gets 400 `composed-refused`;
+   - one built from a recipe the catalog no longer has cannot be checked again, so `admit` refuses its id; start records it as not passing (`ADMIT-NEAREST`) and gives 400 `composed-refused`, asking the person to build their own again;
    - one whose explanation changed gets 409 `composed-changed` and does not start;
-   - both refusals carry the screen's view of the recipe, which the Recommendation screen shows.
+   - every one of these refusals carries the screen's view of the recipe, which the Recommendation screen shows.
 
    Runner and workflow start enforce no product policy.
 
@@ -111,7 +114,7 @@ The verification recommended option C of its cluster A: write the executed seman
 
 **Positive**
 
-- Every reproduced F01 case is refused at admission: the writes spoof in three forms, V1, V1b, M1–M3, W1, W2, W2b, W2d, Q1+W2, X1–X4, K1 (C1, C1b, C2, C5, relay, C6c), K2b, K2f, K2m, K2g, Q1, QA, QRh, QS, R1, V2a–V2c, V3, V3c, variants4, and the three prompt mismatches. C6 with its author write as a human fix is now admitted. The mock composer's widened C4 VOICE stays admitted.
+- Every reproduced F01 case is refused at admission: the writes spoof in three forms, V1, V1b, M1–M3, W1, W2, W2b, W2d, Q1+W2, X1–X4, K1 (C1, C1b, C2, C5, relay, C6c), K2b, K2f, K2m, K2g, Q1–Q4, QA, QRh, QS, R1, V2a–V2c, V3, V3c, variants4, and the three prompt mismatches. So are the branch verifier's A1 and A3, a pick of one and then a person's write in a loop, whose next round takes back the option from before that write. C6 with its author write as a human fix is now admitted. The mock composer's widened C4 VOICE stays admitted.
 - A composed recipe stored under older rules is checked again before it can start, and the person sees what changed.
 - Rule and exception edits no longer change the workflow bundle, so they no longer end open runs.
 - A model's pathological answer is refused instead of crashing compose.
@@ -123,6 +126,7 @@ The verification recommended option C of its cluster A: write the executed seman
 - **The evidence has stated limits.** The oracle shares step-level predicates with the rules. Its writers-after criterion is the profile's own unit. The sweeps try single changes and single moves only.
 - **A changed explanation costs the person a second Start**, after the screen shows the new one.
 - **The prompt check renders each reused step prompt once per check.** It makes no model call, but it is a render.
+- **Admission time still doubles with each level of nested loops.** The shared flow walk (`flowRecipe`) runs a loop body twice, as before this ADR, and this stage adds walks of its own (ST12's flow clauses, the composed profile's per-VOICE counts). On the branch verifier's shapes, `checkAnswer` took about 1.5 to 1.7 times main's time at 20 and 22 nested loops (about 0.23 s and 1 s against 0.15 s and 0.6 s), and less than main's on nested relays. Scope typing adds nothing that grows with nesting. Stage 2's composed limits bound the depth.
 - **Three fixture tests changed expectations**, as the rule intends: a model step declaring VOICE now also gets ST12, under DR9 and SM-6, and a scored author loop gets ST12 `set-aside`. The advisor's prompts dependency widened to `PromptLibrary`, and `alwaysRunSteps` left the advisor's exports in favour of `runsEveryTime`.
 - **`present.ts` and `estimate.ts` still read the declared `writes`** until stage 3. Prompt contracts for a model VOICE or render still read "none" until stage 4; the agreement test pins that.
 
@@ -136,7 +140,7 @@ The verification recommended option C of its cluster A: write the executed seman
   - catalog: `packages/catalog/test/semantics.test.ts`;
   - runner: `packages/runner/test/semantics-effects.test.ts`, `semantics-exits.test.ts` and `build.test.ts`;
   - prompts: `packages/prompts/test/step-slots.test.ts`;
-  - validator: `packages/validator/test/semantics-rules.test.ts`;
+  - validator: `packages/validator/test/semantics-rules.test.ts` and `scope-cost.test.ts`;
   - advisor: `packages/advisor/test/semantics-admission.test.ts`, `admit.test.ts` and `corpus.test.ts`;
   - web: `apps/web/test/start-admission.test.ts` and `recommendation.test.ts`.
 - It supersedes no ADR. It makes [ADR-0058](0058-design-time-composition-only.md)'s "cannot be removed" mean one-to-one counterparts of executed checkpoints that run every time, and holds [ADR-0069](0069-product-c5-relay-and-honest-skips.md)'s honest skips to their declarations.
