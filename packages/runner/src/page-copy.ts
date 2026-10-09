@@ -908,6 +908,37 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
   return out;
 }
 
+/**
+ * The line's edge whitespace pieces (by slot) that would show as a space where the person's line has none. With every
+ * piece back in its slot, at its end, the line's text is read in order: a run of whitespace between two characters
+ * that holds no space of the person's own is made only of edge pieces, and would show as a space the person did not
+ * write. Every other piece sits beside the person's own space or at the line's edge, where it shows nothing more.
+ */
+function strandedEdges(u: Unit, placed: Map<number, string>): { lead: Set<number>; trail: Set<number> } {
+  const out = { lead: new Set<number>(), trail: new Set<number>() };
+  let run: [Set<number>, number][] = [];
+  let own = false; // the current run of whitespace holds a space the person typed
+  let text = false; // a character came before the current run
+  const piece = (set: Set<number>, s: number, ws: string | undefined) => {
+    if (ws) run.push([set, s]);
+  };
+  for (const s of u.slots) {
+    piece(out.lead, s, u.lead.get(s));
+    for (const c of placed.get(s) ?? '') {
+      if (isHtmlSpace(c)) {
+        own = true;
+        continue;
+      }
+      if (text && !own) for (const [set, x] of run) set.add(x);
+      run = [];
+      own = false;
+      text = true;
+    }
+    piece(out.trail, s, u.trail.get(s));
+  }
+  return out;
+}
+
 /** What placement removed: the start token of each removed element (outermost only) and each removed <br>. */
 export interface Witness {
   removed: number[];
@@ -964,9 +995,11 @@ function place(before: string, edit: PageEdit): Placed {
     // Edge whitespace goes back into the slot that held it, at the same end: before the line's words at its start,
     // after them at its end, wherever the new words went. The new words carry their own spaces, so a gap beside an
     // empty icon or an arrow inside a link stays on its side of it (a space beside another one, with only formatting
-    // between, shows as one).
-    for (const [s, ws] of u.lead) texts.set(s, `${ws}${texts.get(s)}`);
-    for (const [s, ws] of u.trail) texts.set(s, `${texts.get(s)}${ws}`);
+    // between, shows as one). A piece that would show as a space where the person's line has none is dropped: the
+    // person glued new text to a word whose edge space sat inside a link or formatting ("our shop\n  </a>" + ".").
+    const stranded = strandedEdges(u, texts);
+    for (const [s, ws] of u.lead) if (!stranded.lead.has(s)) texts.set(s, `${ws}${texts.get(s)}`);
+    for (const [s, ws] of u.trail) if (!stranded.trail.has(s)) texts.set(s, `${texts.get(s)}${ws}`);
     for (const [s, t] of texts) newText.set(s, t);
   });
   for (const [s, t] of newText) {
@@ -1116,17 +1149,48 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     };
     const text = decodeText(u.slots.map(wordsOf).join('')).replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '');
     if (text !== line.text) problems.push(`Line ${i + 1} must read exactly "${line.text}" (it reads "${text}").`);
+    else if (line.text) {
+      // The line as it shows: all of its text, edge whitespace included, with HTML whitespace collapsed, is the
+      // person's line. So edge space left between two characters, where the person wrote none, is refused.
+      const shown = squashHtml(decodeText(u.slots.map(at).join('')));
+      if (shown !== line.text) problems.push(`Line ${i + 1} must read exactly "${line.text}" (it reads "${shown}").`);
+    }
     // Edge whitespace stays in its slot, at the same end, across every segment of the line: each slot before the
     // first that holds words keeps exactly the whitespace it held, and every other one still starts with it (so a gap
-    // beside an empty icon or an image link never moves past it); the same at the end. Slots a removal merged are
+    // beside an empty icon or an image link never moves past it); the same at the end. A piece may be gone only where
+    // it would have shown as a space between two characters (the line's characters on both sides of it, as written,
+    // are not whitespace): new text glued to a word whose edge space sat inside a link. Slots a removal merged are
     // skipped.
     const words = line.text ? u.slots.filter((s) => noHtmlSpace(at(s))) : [];
     if (words.length) {
       const f = words[0]!;
       const l = words.at(-1)!;
-      const leadMoved = [...u.lead].some(([s, ws]) => alone.has(s) && (s < f ? at(s) !== ws : !at(s).startsWith(ws)));
-      const trailMoved = [...u.trail].some(([s, ws]) => alone.has(s) && (s > l ? at(s) !== ws : !at(s).endsWith(ws)));
-      if (leadMoved || trailMoved) problems.push(`Line ${i + 1}: the space before or after its words moved.`);
+      const shownAt = u.slots.map((s) => decodeText(at(s)));
+      const index = new Map(u.slots.map((s, k) => [s, k]));
+      // The line's last character before each slot, and its first character after each slot, as written.
+      const before: (string | undefined)[] = [];
+      const after: (string | undefined)[] = [];
+      let last: string | undefined;
+      shownAt.forEach((t, k) => {
+        before[k] = last;
+        if (t) last = t.at(-1);
+      });
+      let first: string | undefined;
+      for (let k = shownAt.length - 1; k >= 0; k--) {
+        after[k] = first;
+        if (shownAt[k]) first = shownAt[k]![0];
+      }
+      const glued = (x: string | undefined, y: string | undefined) => x !== undefined && y !== undefined && !isHtmlSpace(x) && !isHtmlSpace(y);
+      const leadOk = (s: number, ws: string) => {
+        const k = index.get(s)!;
+        return (s < f ? at(s) === ws : at(s).startsWith(ws)) || glued(before[k], shownAt[k] ? shownAt[k]![0] : after[k]);
+      };
+      const trailOk = (s: number, ws: string) => {
+        const k = index.get(s)!;
+        return (s > l ? at(s) === ws : at(s).endsWith(ws)) || glued(shownAt[k] ? shownAt[k]!.at(-1) : before[k], after[k]);
+      };
+      const moved = [...u.lead].some(([s, ws]) => alone.has(s) && !leadOk(s, ws)) || [...u.trail].some(([s, ws]) => alone.has(s) && !trailOk(s, ws));
+      if (moved) problems.push(`Line ${i + 1}: the space before or after its words moved.`);
     }
     const unitSlots = new Set(u.slots);
     u.segs.forEach((seg, k) => {

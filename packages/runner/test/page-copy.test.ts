@@ -145,6 +145,39 @@ describe('the deck and exact placement (F07)', () => {
     expect(verifyBad(BOLD, pageOf('<p>Big  <b> Hello</b> world</p>'), 'T\nBig Hello world')).toEqual(['Line 2 must read exactly "Big Hello world" (it reads "Big  Hello world").']);
   });
 
+  it('text glued to a link at a line\'s edge is written glued: the link\'s edge space would show between them, so it goes (r4)', () => {
+    const fresh = (placed: string) => deckLines(readPageCopy(pageOf(placed)));
+    for (const [page, answer, written] of [
+      // Pretty-printed: the link holds the line's edge whitespace inside it.
+      ['<p>Visit\n  <a href="/shop">\n    our shop\n  </a>\n</p>', 'Visit [our shop].', '<p>Visit <a href="/shop">our shop</a>.\n</p>'],
+      ['<p>Questions?\n  <a href="/contact">\n    Contact us\n  </a>\n</p>', 'Questions? [Contact us]!', '<p>Questions? <a href="/contact">Contact us</a>!\n</p>'],
+      ['<p>Read <a href="/x">more </a></p>', 'Read [more].', '<p>Read <a href="/x">more</a>.</p>'],
+      // The leading side.
+      ['<p>\n  <a href="/x">\n    Read more\n  </a>\n  today\n</p>', '"[Read more]" today', '<p>\n  "<a href="/x">Read more</a>" today\n</p>'],
+      ['<p><a href="/x"> Read</a> more</p>', '([Read]) more', '<p>(<a href="/x">Read</a>) more</p>'],
+      // An arrow at the end of the link: the deck shows no space between the link and "!", so none is written there,
+      // and the gap before the arrow goes with it (the deck cannot show the arrow).
+      ['<p>Ready? <a href="/order">Order now <i class="arrow"></i></a></p>', 'Ready? [Order now]!', '<p>Ready? <a href="/order">Order now<i class="arrow"></i></a>!</p>'],
+      // With a space typed after the link, the gap before the arrow stays (r3).
+      ['<p>Ready? <a href="/order">Order now <i class="arrow"></i></a></p>', 'Ready? [Order now] today', '<p>Ready? <a href="/order">Order now <i class="arrow"></i></a> today</p>'],
+    ] as const) {
+      const r = run(page, set(1, answer));
+      expect(r, page).toMatchObject(clean(written));
+      expect(fresh(r.placed!)[1], page).toBe(answer);
+    }
+  });
+
+  it('the verifier reads a line with its edge space: a space shown where the person wrote none is refused, and edge space dropped where none would show (r4)', () => {
+    // Round 3's write: the link's edge space left between its words and the "." the person glued to it.
+    const SHOP = pageOf('<p>Visit\n  <a href="/shop">\n    our shop\n  </a>\n</p>');
+    expect(verifyBad(SHOP, pageOf('<p>Visit <a href="/shop">our shop\n  </a>.\n</p>'), 'T\nVisit [our shop].')).toEqual(['Line 2 must read exactly "Visit our shop." (it reads "Visit our shop .").']);
+    const READ = pageOf('<p><a href="/x"> Read</a> more</p>');
+    expect(verifyBad(READ, pageOf('<p>(<a href="/x"> Read</a>) more</p>'), 'T\n([Read]) more')).toEqual(['Line 2 must read exactly "(Read) more" (it reads "( Read) more").']);
+    // Edge space dropped where it would have shown nothing: the gap before the arrow, with a space typed after the link.
+    const ARROW = pageOf('<p>Order online: <a href="/order">Order now <i class="arrow"></i></a></p>');
+    expect(verifyBad(ARROW, pageOf('<p>Order online: <a href="/order">Order now<i class="arrow"></i></a> today</p>'), 'T\nOrder online: [Order now] today')).toEqual(['Line 2: the space before or after its words moved.']);
+  });
+
   it('one bracket grammar on every line', () => {
     const NAV = '<nav><a href="#how">How it works</a><a href="#start">Contact</a></nav>';
     expect(run(NAV, set(2, '[Contact us]'))).toMatchObject(clean('<nav><a href="#how">How it works</a><a href="#start">Contact us</a></nav>'));

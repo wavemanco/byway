@@ -366,6 +366,15 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('punctuation glued to a pretty-printed link is stored glued, and the stored page locks the person\'s deck (r4)', async () => {
+    const q = await open(page('<p>Visit\n  <a href="/shop">\n    our shop\n  </a>\n</p>'));
+    expect(q.offered).toBe('T\nVisit [our shop]');
+    const out = await q.answer('T\nVisit [our shop].');
+    expect(await stored(out.artifactId!)).toBe('<p>Visit <a href="/shop">our shop</a>.\n</p>');
+    expect(JSON.parse(pageLockView(await b.store.artifacts.getText(out.artifactId!)))).toEqual({ deck: ['T', 'Visit [our shop].'], links: ['/shop'] });
+    expect(b.gateway.requests).toEqual([]);
+  });
+
   it('an answer equal to the offer writes nothing, whatever its whitespace', async () => {
     const q = await open(page('<h1>Head</h1><p>Sub</p>'));
     expect((await q.answer('T\n  Head \nSub\n\n')).artifactId).toBeUndefined();
