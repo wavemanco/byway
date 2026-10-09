@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import config, { configFor } from '../next.config.ts';
 import { artifactHeaders, isArtifactId, pageScriptsGranted } from '../src/server/artifacts.ts';
 import { checkRequest } from '../src/server/guard.ts';
 import { sniffImage } from '../src/server/refs.ts';
 import { ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from '../src/server/schemas.ts';
+import { REPO } from './guards/scan.ts';
 
 const ID = `sha256:${'a'.repeat(64)}`;
 
@@ -188,6 +191,15 @@ describe('how the app is built and served (C8, SEC-3, DEV-1)', () => {
     expect(configFor({})).toMatchObject({ distDir: '.next', typescript: { tsconfigPath: 'tsconfig.json' } });
     // Its own tsconfig too: Next.js adds a build folder's type paths to the tsconfig it builds with.
     expect(configFor({ BYWAY_NEXT_DIST_DIR: '.next-e2e' })).toMatchObject({ distDir: '.next-e2e', typescript: { tsconfigPath: 'tsconfig.e2e.json' } });
+    expect(configFor({ BYWAY_NEXT_DIST_DIR: '.next-dev-test' })).toMatchObject({ distDir: '.next-dev-test', typescript: { tsconfigPath: 'tsconfig.dev-test.json' } });
     expect(() => configFor({ BYWAY_NEXT_DIST_DIR: '../outside' })).toThrow(/BYWAY_NEXT_DIST_DIR/);
+  });
+
+  it('runs the real next dev test in a folder of its own: a suite building into .next-e2e at the same time stops a next dev there', () => {
+    // Next 16 allows one dev server per build folder ("Another next dev server is already running"), and the e2e suite
+    // and the Playwright config build into .next-e2e; the real next dev test uses .next-dev-test, which nothing else does.
+    const real = readFileSync(path.join(REPO, 'apps', 'web', 'test', 'dev-server.real.test.ts'), 'utf8');
+    expect(real).toContain("BYWAY_NEXT_DIST_DIR: '.next-dev-test'");
+    for (const other of ['scripts/e2e.ts', 'apps/web/playwright.config.ts']) expect(readFileSync(path.join(REPO, other), 'utf8')).not.toContain('.next-dev-test');
   });
 });
