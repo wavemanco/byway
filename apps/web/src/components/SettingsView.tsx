@@ -28,12 +28,14 @@ interface Props {
   /** Store preferences: the profile, demo mode and technical names. */
   preferences: Preferences;
   spend: WorkspaceSpend;
+  /** Calls settled at an assumed price (assumedPricingNote), or null. */
+  pricingNote?: string | null;
   mode: 'demo' | 'live';
   /** byway was started with `pnpm demo`: demo mode stays on whatever this setting says. */
   demoForced?: boolean;
 }
 
-export function SettingsView({ providers, profiles, preferences: initial, spend, mode, demoForced = false }: Props) {
+export function SettingsView({ providers, profiles, preferences: initial, spend, pricingNote = null, mode, demoForced = false }: Props) {
   const router = useRouter();
   const ids = useId();
   const [prefs, setPrefs] = useState(initial);
@@ -189,6 +191,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
             Save budget
           </button>
         </form>
+        {pricingNote ? <p className="section-note">{pricingNote}</p> : null}
       </section>
 
       <section className="settings-section" aria-labelledby={`${ids}-names`}>

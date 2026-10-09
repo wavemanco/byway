@@ -59,3 +59,14 @@ export function budgetProblem(budgetUsd: number, spend: WorkspaceSpend): string 
   if (budgetUsd <= spend.remainingUsd + 1e-9) return null;
   return `This budget (${formatUsd(budgetUsd)}) is more than what is left of your workspace budget (${formatUsd(spend.remainingUsd)}). Lower it, or raise the workspace budget in Settings.`;
 }
+
+/**
+ * Settings' note on calls the gateway settled at an assumed price (SpendSummary.assumedPricing, F04): the provider
+ * said a model served them that byway has no price for, so they were counted at the requested model's price. Null when
+ * there are none, so the note appears only when there is something to know.
+ */
+export function assumedPricingNote(assumed: { calls: number; usd: number } | undefined): string | null {
+  if (!assumed || assumed.calls <= 0) return null;
+  const one = assumed.calls === 1;
+  return `${assumed.calls} ${one ? 'call was' : 'calls were'} answered by a model byway has no price for, so ${one ? 'it was' : 'they were'} counted at the price of the model byway asked for (${formatUsd(assumed.usd)}${one ? '' : ' in all'}). Your provider’s bill may differ.`;
+}

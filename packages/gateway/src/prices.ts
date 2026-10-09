@@ -124,6 +124,29 @@ export function priceFor(table: readonly PriceRow[], provider: ProviderId, model
   return best;
 }
 
+/**
+ * A dated or versioned snapshot suffix as providers report served models: `-YYYY-MM-DD` and `-YYYYMMDD` (OpenAI,
+ * Anthropic), a three-digit `-NNN` (Gemini versions) or `@<version>`. The forms are this narrow on purpose: Anthropic
+ * warns that `claude-opus-5-5` starts with `claude-opus-5`, and no rule here can read one as a snapshot of the other.
+ */
+const SNAPSHOT_SUFFIX = /(?:-\d{4}-\d{2}-\d{2}|-\d{8}|-\d{3}|@[A-Za-z0-9._-]+)$/;
+
+/**
+ * The row a served model is settled at (F04, ADR-0091): its own row first, so a known model is never priced above or
+ * below its own rates; then, for a dated or versioned snapshot of a priced model, that model's row; otherwise the
+ * requested model's row, flagged `assumed`, which the ledger records (LedgerEntry.priceBasis) and Settings shows.
+ */
+export function servedPrice(table: readonly PriceRow[], provider: ProviderId, servedModel: string, requested: PriceRow, at: Date): { row: PriceRow; assumed: boolean } {
+  // Adapters copy the reported label unchecked (ADR-0083): one that is not a string names no row.
+  if (typeof servedModel !== 'string') return { row: requested, assumed: true };
+  const own = priceFor(table, provider, servedModel, at);
+  if (own) return { row: own, assumed: false };
+  const base = servedModel.replace(SNAPSHOT_SUFFIX, '');
+  const snapshotOf = base !== servedModel ? priceFor(table, provider, base, at) : undefined;
+  if (snapshotOf) return { row: snapshotOf, assumed: false };
+  return { row: requested, assumed: true };
+}
+
 /** Detailed token counts some providers report, beyond the contract's Usage. */
 export interface TokenBreakdown extends Usage {
   cacheReadTokens?: number;

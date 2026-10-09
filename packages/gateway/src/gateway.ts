@@ -26,7 +26,7 @@ import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVid
 import { ExposureRegister, exposurePath } from './exposure.ts';
 import { findHeldKey, heldKeyError } from './held-key.ts';
 import { Ledger, type LedgerDraft } from './ledger.ts';
-import { PRICES, priceFor, roundUsd, tokenCost, type PriceRow, type TokenBreakdown } from './prices.ts';
+import { PRICES, priceFor, roundUsd, servedPrice, tokenCost, type PriceRow, type TokenBreakdown } from './prices.ts';
 import { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus } from './profiles.ts';
 import { anthropicAdapter, createAnthropicClient, type AnthropicClientLike } from './providers/anthropic.ts';
 import { createFalClient, falAdapter, type FalClientLike } from './providers/fal.ts';
@@ -217,7 +217,7 @@ export class ModelGateway implements Gateway {
           throw toGatewayError(e, ref.provider, redact);
         }
       }, this.retry, BILLABLE_CALL);
-      const costUsd = this.completionCost(ref, out);
+      const { costUsd, assumed } = this.completionCost(ref, out);
       const entry = await this.record(
         {
           workspaceId: req.workspaceId,
@@ -233,6 +233,7 @@ export class ModelGateway implements Gateway {
           ...(out.upstreamProvider ? { upstreamProvider: out.upstreamProvider } : {}),
           // Provenance (spec §3.3): the template behind the call, inside the hash chain like every other field.
           ...(prompt ? { prompt } : {}),
+          ...(assumed ? { priceBasis: 'assumed' as const } : {}),
         },
         { profileId: req.profileId, tier: req.tier, provider: ref.provider, model: ref.model, wire: out.requestBody },
         { servedModel: out.servedModel, usage: out.usage, ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
@@ -284,7 +285,9 @@ export class ModelGateway implements Gateway {
           throw toGatewayError(e, ref.provider, redact);
         }
       }, this.retry, BILLABLE_CALL);
-      const costUsd = roundUsd(tokenCost(price, out.usage) + (price.perImageUsd ?? 0) * (out.usage.units ?? 1));
+      // Settled at the served model's row where it has one (F04): see servedPrice.
+      const settled = servedPrice(this.prices, ref.provider, out.servedModel, price, this.now());
+      const costUsd = roundUsd(tokenCost(settled.row, out.usage) + (settled.row.perImageUsd ?? 0) * (out.usage.units ?? 1));
       // Billed from here: keeping the image may fail, but the call is ledgered first either way (ENG-3).
       const kept = out.refusal ? undefined : await keep(() => this.artifacts.put(out.bytes, out.mediaType));
       const stored = kept?.record;
@@ -300,6 +303,7 @@ export class ModelGateway implements Gateway {
           usage: out.usage,
           costUsd,
           latencyMs: Date.now() - started,
+          ...(settled.assumed ? { priceBasis: 'assumed' as const } : {}),
         },
         { profileId: req.profileId, provider: ref.provider, model: ref.model, wire: out.requestBody },
         { servedModel: out.servedModel, usage: out.usage, ...(stored ? { artifactId: stored.id } : {}), ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
@@ -438,12 +442,17 @@ export class ModelGateway implements Gateway {
   async spend(workspaceId: string): Promise<SpendSummary> {
     const byRun: Record<string, number> = {};
     let spent = 0;
+    const assumed = { calls: 0, usd: 0 };
     for (const e of await this.ledger.entries()) {
       if (e.workspaceId !== workspaceId) continue;
       spent += e.costUsd;
       if (e.runId) byRun[e.runId] = roundUsd((byRun[e.runId] ?? 0) + e.costUsd);
+      if (e.priceBasis === 'assumed') {
+        assumed.calls += 1;
+        assumed.usd = roundUsd(assumed.usd + e.costUsd);
+      }
     }
-    return { workspaceId, spentUsd: roundUsd(spent), capUsd: await this.caps.workspaceCapUsd(workspaceId), byRun };
+    return { workspaceId, spentUsd: roundUsd(spent), capUsd: await this.caps.workspaceCapUsd(workspaceId), byRun, ...(assumed.calls > 0 ? { assumedPricing: assumed } : {}) };
   }
 
   verifyLedger(): Promise<string | null> {
@@ -572,14 +581,25 @@ export class ModelGateway implements Gateway {
     return reservation;
   }
 
-  /** Provider-reported cost first (OpenRouter), else per-model prices for fallbacks, else the served model's price. */
-  private completionCost(ref: ModelRef, out: ProviderCompletion): number {
-    if (out.reportedCostUsd !== undefined) return roundUsd(out.reportedCostUsd);
+  /**
+   * Provider-reported cost first (OpenRouter), else each model that served the call (every billed attempt of a refusal
+   * fallback) at its own price (servedPrice). `assumed` is true when any of them had no price row and was settled at the
+   * requested model's rates; the ledger records that (priceBasis), so the guess is visible, never silent (F04).
+   */
+  private completionCost(ref: ModelRef, out: ProviderCompletion): { costUsd: number; assumed: boolean } {
+    if (out.reportedCostUsd !== undefined) return { costUsd: roundUsd(out.reportedCostUsd), assumed: false };
     const at = this.now();
-    // A served model we have no price for is charged at the requested model's price, which we know exists.
-    const priceOf = (model: string) => priceFor(this.prices, ref.provider, model, at) ?? this.price(ref);
-    if (out.usageByModel) return roundUsd(out.usageByModel.reduce((usd, u) => usd + tokenCost(priceOf(u.model), u.usage as TokenBreakdown), 0));
-    return tokenCost(priceOf(out.servedModel), out.usage);
+    const requested = this.price(ref);
+    let assumed = false;
+    const priceOf = (model: string) => {
+      const settled = servedPrice(this.prices, ref.provider, model, requested, at);
+      assumed ||= settled.assumed;
+      return settled.row;
+    };
+    const costUsd = out.usageByModel
+      ? roundUsd(out.usageByModel.reduce((usd, u) => usd + tokenCost(priceOf(u.model), u.usage as TokenBreakdown), 0))
+      : tokenCost(priceOf(out.servedModel), out.usage);
+    return { costUsd, assumed };
   }
 
   /**

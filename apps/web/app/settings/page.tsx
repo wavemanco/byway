@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { SettingsView } from '../../src/components/SettingsView.tsx';
 import { getContext } from '../../src/services/index.ts';
-import { workspaceSpend } from '../../src/view/history.ts';
+import { assumedPricingNote, workspaceSpend } from '../../src/view/history.ts';
 
 export const metadata: Metadata = { title: 'Settings' };
 
@@ -9,7 +9,8 @@ export const metadata: Metadata = { title: 'Settings' };
 export default async function SettingsPage() {
   const { services, workspaceId, preferences, demoForced } = await getContext();
   const workspace = (await services.store.getWorkspace(workspaceId)) ?? (await services.store.ensureDefaultWorkspace());
-  const spend = workspaceSpend(workspace.budgetUsd, (await services.gateway.spend(workspace.id)).spentUsd);
+  const summary = await services.gateway.spend(workspace.id);
+  const spend = workspaceSpend(workspace.budgetUsd, summary.spentUsd);
   return (
     <div className="page page-narrow">
       <div className="page-head">
@@ -18,7 +19,7 @@ export default async function SettingsPage() {
           <p>These apply to this computer’s byway workspace. Changes save as you make them.</p>
         </div>
       </div>
-      <SettingsView providers={services.gateway.providers()} profiles={services.gateway.profileStatus()} preferences={preferences} spend={spend} mode={services.mode} demoForced={demoForced} />
+      <SettingsView providers={services.gateway.providers()} profiles={services.gateway.profileStatus()} preferences={preferences} spend={spend} pricingNote={assumedPricingNote(summary.assumedPricing)} mode={services.mode} demoForced={demoForced} />
     </div>
   );
 }

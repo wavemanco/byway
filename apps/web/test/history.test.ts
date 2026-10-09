@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { budgetProblem, exportLabel, formatWhen, workspaceSpend } from '../src/view/history.ts';
+import { assumedPricingNote, budgetProblem, exportLabel, formatWhen, workspaceSpend } from '../src/view/history.ts';
 
 const NOW = new Date('2026-10-07T15:00:00.000Z');
 
@@ -36,5 +36,16 @@ describe('workspace spend', () => {
     expect(budgetProblem(5, { spentUsd: 17, remainingUsd: 3, capUsd: 20 })).toBe(
       'This budget ($5.00) is more than what is left of your workspace budget ($3.00). Lower it, or raise the workspace budget in Settings.',
     );
+  });
+});
+
+describe('Settings: calls settled at an assumed price (F04, ADR-0091)', () => {
+  it('says plainly how many calls were counted at the requested model’s price, and nothing when there are none', () => {
+    expect(assumedPricingNote(undefined)).toBeNull();
+    expect(assumedPricingNote({ calls: 0, usd: 0 })).toBeNull();
+    expect(assumedPricingNote({ calls: 1, usd: 0.028 })).toBe(
+      '1 call was answered by a model byway has no price for, so it was counted at the price of the model byway asked for ($0.03). Your provider’s bill may differ.',
+    );
+    expect(assumedPricingNote({ calls: 3, usd: 1.2 })).toMatch(/^3 calls were answered .* so they were counted .* \(\$1\.20 in all\)\./);
   });
 });
