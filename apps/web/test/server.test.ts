@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import config, { configFor } from '../next.config.ts';
-import { artifactHeaders, isArtifactId } from '../src/server/artifacts.ts';
+import { artifactHeaders, isArtifactId, pageScriptsGranted } from '../src/server/artifacts.ts';
 import { checkRequest } from '../src/server/guard.ts';
 import { sniffImage } from '../src/server/refs.ts';
 import { ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from '../src/server/schemas.ts';
@@ -37,11 +37,13 @@ describe('artifact route headers', () => {
     expect(isArtifactId('a'.repeat(64))).toBe(false);
   });
 
-  it('sandboxes pages with a strict CSP: scripts yes, same origin no, no network writes', () => {
+  it('serves pages inert by default: a sandbox with no scripts and no same origin, and no network writes (F05)', () => {
     const h = artifactHeaders('text/html', 'http://127.0.0.1:3000');
     const csp = h['Content-Security-Policy'] ?? '';
     expect(csp).toContain("default-src 'none'");
-    expect(csp).toMatch(/(^|; )sandbox allow-scripts(;|$)/);
+    // A bare sandbox: no scripts, and no automatic features either (a meta refresh cannot carry the page away).
+    expect(csp).toMatch(/(^|; )sandbox$/);
+    expect(csp).not.toContain('allow-scripts');
     expect(csp).not.toContain('allow-same-origin');
     expect(csp).toContain("connect-src 'none'");
     expect(csp).toContain("form-action 'none'");
@@ -52,6 +54,40 @@ describe('artifact route headers', () => {
     expect(h['Content-Type']).toBe('text/html; charset=utf-8');
     expect(h['X-Content-Type-Options']).toBe('nosniff');
     expect(h['Cache-Control']).toContain('immutable');
+  });
+
+  it('runs a page’s scripts only for a frame that asked with consent, and never caches that answer (F05)', () => {
+    const origin = 'http://127.0.0.1:3000';
+    const granted = artifactHeaders('text/html', origin, undefined, { asked: true, granted: true });
+    expect(granted['Content-Security-Policy']).toMatch(/(^|; )sandbox allow-scripts$/);
+    expect(granted['Content-Security-Policy']).not.toContain('allow-same-origin');
+    expect(granted['Cache-Control']).toBe('no-store');
+    // Asked for, but not by a same-origin frame: inert, and not cached either.
+    const refused = artifactHeaders('text/html', origin, undefined, { asked: true, granted: false });
+    expect(refused['Content-Security-Policy']).toMatch(/(^|; )sandbox$/);
+    expect(refused['Cache-Control']).toBe('no-store');
+    // Other media never run scripts, whatever was asked.
+    expect(artifactHeaders('image/svg+xml', origin, undefined, { asked: true, granted: true })['Content-Security-Policy']).not.toContain('allow-scripts');
+  });
+
+  it('grants a page’s scripts only to ?scripts=1 asked by a same-origin frame (Fetch Metadata), so a top-level open never runs them (F05)', () => {
+    const url = (q: string) => new URL(`http://127.0.0.1:3000/artifacts/${ID}${q}`);
+    const frame = new Headers({ 'sec-fetch-dest': 'iframe', 'sec-fetch-site': 'same-origin' });
+    expect(pageScriptsGranted(url('?scripts=1'), frame)).toBe(true);
+    expect(pageScriptsGranted(url(''), frame)).toBe(false);
+    expect(pageScriptsGranted(url('?scripts=true'), frame)).toBe(false);
+    expect(pageScriptsGranted(url('?scripts=1&download=1'), frame)).toBe(false);
+    for (const headers of [
+      {},
+      { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'same-origin' },
+      { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'none' },
+      { 'sec-fetch-dest': 'iframe', 'sec-fetch-site': 'cross-site' },
+      { 'sec-fetch-dest': 'iframe', 'sec-fetch-site': 'same-site' },
+      { 'sec-fetch-dest': 'iframe' },
+      { 'sec-fetch-dest': 'empty', 'sec-fetch-site': 'same-origin' },
+    ]) {
+      expect(pageScriptsGranted(url('?scripts=1'), new Headers(headers)), JSON.stringify(headers)).toBe(false);
+    }
   });
 
   it('never lets other media run scripts', () => {
@@ -132,6 +168,12 @@ describe('app screens load images only from byway (SEC-4)', () => {
     const csp = headers.flatMap((h) => h.headers).find((x) => x.key === 'Content-Security-Policy')?.value ?? '';
     expect(csp).toContain("img-src 'self' data: blob:");
     expect(csp).toContain("media-src 'self' data: blob:");
+  });
+
+  it('lets the app’s frames show only byway’s own addresses, so a framed page cannot be carried to another site (F05)', async () => {
+    const headers = (await config.headers?.()) ?? [];
+    const csp = headers.flatMap((h) => h.headers).find((x) => x.key === 'Content-Security-Policy')?.value ?? '';
+    expect(csp).toContain("frame-src 'self'");
   });
 });
 
