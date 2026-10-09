@@ -1341,18 +1341,19 @@ const isTag = (p: PageDeck, tok: number, name: string, closing: boolean): boolea
  */
 function buttonEdge(p: PageDeck, s: number, side: 'start' | 'end'): number {
   const shows = (k: number) => p.slots[k]!.rendered && noHtmlSpace(slotText(p, k)) !== '';
+  // A button's other tag between means the slot is outside that button (after its end, or before its start).
   if (side === 'start') {
     for (let k = s - 1; k >= 0; k--) {
       const tok = p.slots[k]!.end;
       if (isTag(p, tok, 'button', false)) return tok;
-      if (shows(k)) return -1;
+      if (isTag(p, tok, 'button', true) || shows(k)) return -1;
     }
     return -1;
   }
   for (let k = s; k < p.slots.length; k++) {
     const tok = p.slots[k]!.end;
     if (isTag(p, tok, 'button', true)) return tok;
-    if (k + 1 < p.slots.length && shows(k + 1)) return -1;
+    if (isTag(p, tok, 'button', false) || (k + 1 < p.slots.length && shows(k + 1))) return -1;
   }
   return -1;
 }
