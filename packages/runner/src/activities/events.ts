@@ -43,8 +43,9 @@ export const at = (call: StepCall, suffix: string): EmitOptions => ({
 });
 
 /**
- * Bring the run's cost up to date from the gateway's ledger (spec §3.3 "Spend authority": the ledger is the source of
- * truth, in demo mode too) and emit a cost event. Concurrent steps may finish out of order, so the cost never goes down.
+ * Bring the run's cost up to date from the gateway's settled spend (spec §3.3 "Spend authority": the spend book is the
+ * source of truth, in demo mode too; ADR-0095) and emit a cost event. Concurrent steps may finish out of order, so the
+ * cost never goes down.
  */
 export async function recordCost(store: Store, gateway: Gateway, runId: string, workspaceId: string, call: StepCall): Promise<void> {
   const spend = await gateway.spend(workspaceId);
