@@ -208,6 +208,8 @@ function measuringPages(tiles?: number): MeasuringPages {
     async screenshots(html) {
       return shots(html);
     },
+    // PageRenderer.ready (ADR-0084): this fake renderer is always ready.
+    async ready() {},
     async close() {},
   };
 }

@@ -44,7 +44,10 @@ interface Props {
 
 export function Examples({ entries, onChange, disabled = false }: Props) {
   const id = useId();
-  const nextKey = useRef(1);
+  const lastKey = useRef(0);
+  // A new entry's key comes after every key in use, kept ones restored from this tab included (ADR-0082), and after any
+  // handed out earlier in a loop that has not re-rendered yet.
+  const newKey = () => (lastKey.current = Math.max(lastKey.current, ...entries.map((e) => e.key)) + 1);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusKey, setFocusKey] = useState<number | null>(null);
@@ -74,7 +77,7 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
   }, [focusKey]);
 
   function addText() {
-    const key = nextKey.current++;
+    const key = newKey();
     onChange((list) => [...list, { key, kind: 'text', text: '' }]);
     setFocusKey(key);
   }
@@ -99,7 +102,7 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
           continue;
         }
         const stored = await post<{ artifactId: string }>('/api/refs', { image: { mediaType: file.type, base64: await toBase64(file) } });
-        const key = nextKey.current++;
+        const key = newKey();
         onChange((list) => [...list, { key, kind: 'image', name: file.name, artifactId: stored.artifactId }]);
       }
     } catch (err) {

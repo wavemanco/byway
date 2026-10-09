@@ -15,13 +15,25 @@ type Mode = 'side' | 'flip';
  * compare: two versions, side by side or flipped in place (flipping is how a small change becomes visible). Space
  * flips, J and K move between versions, and Enter keeps the highlighted one. Nothing is highlighted until you move,
  * flip or click a version, so a stray Enter as the panel opens keeps nothing (UX-1); "Keep this" keeps that version.
+ *
+ * The highlight is the person's draft: kept by the Run screen while they look at another step, never across a reload
+ * (view/drafts.ts persisted, ADR-0082). How the versions are shown (side by side or flipped, which one, and whether the
+ * pages' scripts run) is this view's own and starts afresh.
  */
-export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
+export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId, draft, onDraft, sent }: PanelProps) {
   const options = cp.options ?? [];
   const [mode, setMode] = useState<Mode>('side');
+  const kept = options.findIndex((o) => o.id === draft.choice[0]);
   // The version shown in Flip mode, and the one highlighted once you have chosen (null until then).
-  const [shown, setShown] = useState(0);
-  const [chosen, setChosen] = useState<number | null>(null);
+  const [shown, setShown] = useState(Math.max(0, kept));
+  const [chosen, setChosenState] = useState<number | null>(kept >= 0 ? kept : null);
+  const setChosen = (index: number) => {
+    // Sent: the highlight stays on the version sent until byway settles the question; flipping still shows the other.
+    if (sent) return;
+    setChosenState(index);
+    const option = options[index];
+    if (option) onDraft({ ...draft, choice: [option.id] });
+  };
   const [hint, setHint] = useState<string | null>(null);
   const current = options[shown];
   const highlighted = chosen === null ? undefined : options[chosen];
@@ -119,6 +131,7 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
         kind={cp.kind}
         ready={highlighted !== undefined}
         busy={busy}
+        sent={sent}
         onSubmit={() => keep(chosen)}
         action={highlighted ? `Keep “${highlighted.label}”` : undefined}
         status={mode === 'side' ? (highlighted ? `Highlighted: ${highlighted.id}` : 'Nothing highlighted yet.') : undefined}

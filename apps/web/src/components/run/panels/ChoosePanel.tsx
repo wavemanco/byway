@@ -16,17 +16,23 @@ function parts(label: string): { name: string; detail?: string } {
 
 /**
  * choose: the branches of a route as a radio list; J and K move, Enter goes the chosen way. Nothing is chosen at
- * first, so a stray Enter cannot send the run down the first branch (UX-1).
+ * first, so a stray Enter cannot send the run down the first branch (UX-1). The choice is kept by the Run screen while
+ * the person looks at another step, never across a reload (view/drafts.ts persisted, ADR-0082).
  */
-export function ChoosePanel({ cp, busy, onSubmit, promptId }: PanelProps) {
+export function ChoosePanel({ cp, busy, onSubmit, promptId, draft, onDraft, sent }: PanelProps) {
   const options = cp.options ?? [];
-  const [chosen, setChosen] = useState<number | null>(null);
+  const kept = options.findIndex((o) => o.id === draft.choice[0]);
+  const [chosen, setChosen] = useState<number | null>(kept >= 0 ? kept : null);
   const [hint, setHint] = useState<string | null>(null);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
 
   function choose(index: number) {
+    // Sent: the choice stays as sent until byway settles the question (ADR-0082).
+    if (sent) return;
     setChosen(index);
     setHint(null);
+    const option = options[index];
+    if (option) onDraft({ ...draft, choice: [option.id] });
   }
 
   function move(delta: number) {
@@ -76,7 +82,7 @@ export function ChoosePanel({ cp, busy, onSubmit, promptId }: PanelProps) {
       <p className="turn-hint" role="status">
         {hint}
       </p>
-      <TurnFooter kind={cp.kind} ready={chosen !== null} busy={busy} onSubmit={submit} />
+      <TurnFooter kind={cp.kind} ready={chosen !== null} busy={busy} onSubmit={submit} sent={sent} />
     </>
   );
 }

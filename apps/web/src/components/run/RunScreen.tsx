@@ -1,9 +1,11 @@
 'use client';
 
 import type { CheckpointResolution, EvidenceLabel as Label, RecipePresentation } from '@byway/contracts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { answerable } from '../../view/drafts.ts';
 import { controlPendingLabel, runStatusLabel, type ControlAction } from '../../view/labels.ts';
 import { runMeter } from '../../view/meter.ts';
+import type { Connection } from '../../view/refresh.ts';
 import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
 import type { StepIndex } from '../../view/steps.ts';
@@ -13,10 +15,16 @@ import { get, post } from '../api.ts';
 import { EvidenceLabel } from '../EvidenceLabel.tsx';
 import { Route } from '../Route.tsx';
 import { useTechnicalNames } from '../TechNames.tsx';
+import { usePolling, useRefresher } from '../useRefresher.ts';
+import { createDraftStore } from './draftStore.ts';
 import { RunStatusPanel } from './RunStatusPanel.tsx';
 import { StepDetail } from './StepDetail.tsx';
 import { Timeline } from './Timeline.tsx';
+import { UnsentWords } from './UnsentWords.tsx';
 import { YourTurn } from './YourTurn.tsx';
+
+/** How long to wait before retrying while byway is not answering, whatever the run's status. */
+const LOST_RETRY_MS = 3000;
 
 interface Props {
   initial: RunData;
@@ -26,13 +34,23 @@ interface Props {
   steps: StepIndex | null;
 }
 
+/**
+ * Run (spec §5, screen 3). This component owns the screen's state (ADR-0082): the latest applied server snapshot, which
+ * only the latest-issued request may replace (useRefresher, F15), and the person's unsent answers, kept per question
+ * above the working area's conditional render and settled only by snapshots the refresher applied (the draft store,
+ * F06). It is mounted once per run (the page keys it by the run's id).
+ */
 export function RunScreen({ initial, presentation, label, steps }: Props) {
   const technical = useTechnicalNames();
   const [data, setData] = useState(initial);
+  // Whether `data` includes a snapshot byway served to this screen's refresher. Until then it is only `initial`: the
+  // server render, or on Back the Next.js router cache's copy of it, which can be older than the person's own drafts.
+  const [served, setServed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [connection, setConnection] = useState<'ok' | 'lost'>('ok');
+  const [connection, setConnection] = useState<Connection>('ok');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // An answer's error belongs to its question: a refusal of one is not shown above the next ('control': Pause etc.).
+  const [error, setError] = useState<{ checkpointId: string; message: string } | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   // UX-10: Pause, Resume and Cancel take a moment to reach the engine; the button says so at once.
   const [pending, setPending] = useState<ControlAction | null>(null);
@@ -58,55 +76,67 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   const runId = run.id;
   const stages = useMemo(() => buildTimeline(events, checkpoints, run.status, steps), [events, checkpoints, run.status, steps]);
   const active = activeCheckpoint(checkpoints);
+  // R3: the turn is shown only while its question is open AND the run has not ended, read from the whole snapshot.
+  const turn = active && answerable(active, run.status) ? active : undefined;
   const step = currentStep(stages);
   const ended = isEnded(run.status);
   const paused = run.status === 'paused';
   const meter = runMeter(run, events);
   const selectedStep = selected ? stages.flatMap((s) => s.steps).find((s) => s.key === selected) : undefined;
 
-  const refresh = useCallback(async () => {
-    try {
-      const next = await get<RunData>(`/api/runs/${encodeURIComponent(runId)}?after=${lastSeq(latest.current)}`);
+  // F15: one owner of the request sequence. Only the latest-issued request applies a snapshot or sets the connection.
+  const refresher = useRefresher(
+    runId,
+    (signal) => get<RunData>(`/api/runs/${encodeURIComponent(runId)}?after=${lastSeq(latest.current)}`, signal),
+    (next) => {
       setData((prev) => mergeRunData(prev, next));
-      setConnection('ok');
-    } catch {
-      setConnection('lost');
-    }
-  }, [runId]);
+      setServed(true);
+    },
+    setConnection,
+  );
+  // Poll while the run can still change: briskly while the AI works, lazily while it waits for you. While byway is not
+  // answering, keep retrying whatever the last status said, so the banner clears on an ended run too.
+  usePolling(refresher, connection === 'lost' ? LOST_RETRY_MS : pollDelay(run.status));
 
-  // Poll while the run can still change: briskly while the AI works, lazily while it waits for you.
-  const delay = pollDelay(run.status);
+  // F06: the person's unsent answers, owned here, above the working area's conditional render. The store is made once
+  // per mount without side effects; it loads after hydration (so the server HTML and the first client render agree)
+  // and an unmount only flushes, never ends it, because StrictMode runs setup, cleanup and setup again.
+  const [drafts] = useState(() => createDraftStore(runId));
+  useSyncExternalStore(drafts.subscribe, drafts.getVersion, drafts.getVersion);
+  const draftsReady = drafts.isReady();
   useEffect(() => {
-    if (delay === null) return;
-    let timer = 0;
-    const tick = () => {
-      // A hidden tab skips its polls; the run carries on and the screen catches up when you come back.
-      if (document.visibilityState === 'visible') void refresh();
-      timer = window.setTimeout(tick, delay);
-    };
-    timer = window.setTimeout(tick, delay);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void refresh();
-    };
-    document.addEventListener('visibilitychange', onVisible);
+    drafts.load();
+    const detach = drafts.attach();
     return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener('visibilitychange', onVisible);
+      drafts.flush();
+      detach();
     };
-  }, [delay, refresh]);
+  }, [drafts]);
+  // Drafts are settled only by server state byway has just served: after every snapshot the refresher applied, once
+  // they are loaded. Never by `initial`: on Back it is the cached page, which can show an answered question still open
+  // (unlocking a sent answer) or predate a question altogether.
+  useEffect(() => {
+    if (draftsReady && served) drafts.settle(checkpoints, run.status);
+  }, [drafts, draftsReady, served, checkpoints, run.status]);
+  const unsent = draftsReady ? drafts.unsent(checkpoints, run.status) : [];
 
   async function resolve(resolution: CheckpointResolution) {
+    const { checkpointId, ...answer } = resolution;
+    const cp = checkpoints.find((c) => c.id === checkpointId);
     setBusy(true);
     setError(null);
     try {
-      const { checkpointId, ...answer } = resolution;
       await post(`/api/runs/${encodeURIComponent(runId)}/checkpoints/${encodeURIComponent(checkpointId)}`, answer);
-      await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'That answer was not sent. Try again.');
-    } finally {
+      // Not accepted: the draft is untouched, so the person can send it again.
+      setError({ checkpointId, message: err instanceof Error ? err.message : 'That answer was not sent. Try again.' });
       setBusy(false);
+      return;
     }
+    // Accepted: the turn stays locked with the person's own answer until a snapshot shows the question closed.
+    if (cp) drafts.markSent(cp);
+    await refresher.now();
+    setBusy(false);
   }
 
   async function control(action: ControlAction) {
@@ -118,16 +148,17 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
       setConfirmCancel(false);
       // The Cancel dialog that had focus is gone: focus goes to the run's status, which now says what happened (UX-2).
       if (action === 'cancel') statusRef.current?.focus();
-      await refresh();
+      await refresher.now();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'That did not work. Try again.');
+      setError({ checkpointId: 'control', message: err instanceof Error ? err.message : 'That did not work. Try again.' });
     } finally {
       setPending(null);
     }
   }
 
+  const shownError = error && (error.checkpointId === 'control' || error.checkpointId === turn?.id) ? error.message : null;
   const status = runStatusLabel(run.status);
-  const announcement = paused ? 'Run paused.' : active && !ended ? `Your turn: ${active.prompt}` : ended ? `Run ${status.toLowerCase()}.` : '';
+  const announcement = paused ? 'Run paused.' : turn ? `Your turn: ${turn.prompt}` : ended ? `Run ${status.toLowerCase()}.` : '';
 
   return (
     <div className="run" ref={rootRef}>
@@ -202,9 +233,9 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
           byway is not answering. Retrying; check that it is still running.
         </p>
       ) : null}
-      {error ? (
+      {shownError ? (
         <p className="notice notice-danger" role="alert">
-          {error}
+          {shownError}
         </p>
       ) : null}
       <p className="sr-only" aria-live="polite">
@@ -214,10 +245,27 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
       <div className="run-body">
         {/* The working area comes first in reading and Tab order; wide screens place the timeline to its left (UX-11). */}
         <div className="run-work">
+          {unsent.length > 0 ? <UnsentWords items={unsent} onDiscard={(id) => drafts.discard(id)} /> : null}
+          {/* Opening a step replaces the turn on screen; the turn's draft lives in the store, so nothing is lost. */}
           {selectedStep ? (
-            <StepDetail step={selectedStep} artifacts={data.artifacts} onClose={() => setSelected(null)} closeLabel={active ? 'Back to your turn' : 'Back'} />
-          ) : active && !ended ? (
-            <YourTurn key={active.id} cp={active} step={stages.flatMap((s) => s.steps).find((s) => s.checkpointIds.includes(active.id))} artifacts={data.artifacts} busy={busy} paused={paused} onSubmit={resolve} />
+            <StepDetail step={selectedStep} artifacts={data.artifacts} onClose={() => setSelected(null)} closeLabel={turn ? 'Back to your turn' : 'Back'} />
+          ) : turn ? (
+            // Until the kept drafts are loaded (one tick after hydration) the slot stays empty, so the panel opens with
+            // the person's draft rather than the starting text, and the status panel never flashes in between.
+            draftsReady ? (
+              <YourTurn
+                key={turn.id}
+                cp={turn}
+                step={stages.flatMap((s) => s.steps).find((s) => s.checkpointIds.includes(turn.id))}
+                artifacts={data.artifacts}
+                busy={busy}
+                paused={paused}
+                onSubmit={resolve}
+                draft={drafts.get(turn)}
+                onDraft={(draft) => drafts.put(turn, draft)}
+                sent={drafts.isSent(turn.id)}
+              />
+            ) : null
           ) : (
             <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} />
           )}

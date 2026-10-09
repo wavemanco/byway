@@ -11,7 +11,15 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   } catch {
     throw new ApiError('byway is not reachable. Check that it is still running, then try again.');
   }
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  let data: { error?: string };
+  try {
+    data = (await res.json()) as { error?: string };
+  } catch {
+    // A successful status whose body cannot be read is a failure, never an empty object standing in for the result:
+    // the Recommendation commands apply what comes back directly (ADR-0082).
+    if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
+    data = {};
+  }
   if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`);
   return data as T;
 }
@@ -19,9 +27,20 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
 export const post = <T>(url: string, body: unknown) => send<T>('POST', url, body);
 export const patch = <T>(url: string, body: unknown) => send<T>('PATCH', url, body);
 
+/**
+ * Reads JSON the screens poll (view/refresh.ts). A successful status whose body cannot be read (cut off by the
+ * caller's signal, or not JSON) is a failure, never an empty object standing in for the data.
+ */
 export async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { cache: 'no-store', ...(signal ? { signal } : {}) });
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  let data: { error?: string };
+  try {
+    data = (await res.json()) as { error?: string };
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
+    data = {};
+  }
   if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}).`);
   return data as T;
 }

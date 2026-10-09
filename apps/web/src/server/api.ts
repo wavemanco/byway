@@ -12,7 +12,7 @@ import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
 import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
-import { budgetProblem, workspaceSpend } from '../view/history.ts';
+import { budgetProblem, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
 import { takesRefs } from '../view/refs.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
@@ -21,7 +21,7 @@ import { exportsInline, selfContained } from './export.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
-import type { ControlInput, ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
+import type { ControlInput, ProblemInput, RecommendInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
   override name = 'HttpError';
@@ -129,6 +129,44 @@ export async function composeIntake(deps: Deps, intakeId: string): Promise<Compo
   return composeView(result);
 }
 
+/** The workspace's budget, spend and what is left, as of now (the ledger is re-read). */
+export async function workspaceRemaining(deps: Deps): Promise<WorkspaceSpend & { workspaceId: string }> {
+  const workspace = await deps.services.store.ensureDefaultWorkspace();
+  return { ...workspaceSpend(workspace.budgetUsd, (await deps.services.gateway.spend(workspace.id)).spentUsd), workspaceId: workspace.id };
+}
+
+/**
+ * What a Recommendation screen command returns: everything it changes that the screen shows, so the screen applies it
+ * in one step and never re-runs its server render (F14, ADR-0082). That render is not a pure read: while no
+ * recommendation is stored it asks the model for one, so re-running it to refresh a figure could make an unrequested call.
+ * The remaining amount is read after the command, so it includes what the command itself spent.
+ */
+export interface RecommendResult {
+  recommendation: Recommendation;
+  remainingUsd: number;
+}
+
+export interface ComposeResultView {
+  composed: ComposeView;
+  remainingUsd: number;
+}
+
+/**
+ * POST /recommend: `{ answers }` re-routes with the chooser answers as the person left them; `{ ensure: true }` (Try
+ * again) returns the stored recommendation, or makes and stores the first one. Called in sequence, ensure asks the model
+ * at most once; deduplicating it against a concurrent first page render is F03's work (paid-operation identity).
+ */
+export async function recommendCommand(deps: Deps, intakeId: string, input: z.infer<typeof RecommendInput>): Promise<RecommendResult> {
+  const recommendation = 'ensure' in input ? await currentRecommendation(deps, intakeId) : await recommendIntake(deps, intakeId, input.answers);
+  return { recommendation, remainingUsd: (await workspaceRemaining(deps)).remainingUsd };
+}
+
+/** POST /compose ("Build my own"). It never asks for a recommendation, so it works while recommending is refused. */
+export async function composeCommand(deps: Deps, intakeId: string): Promise<ComposeResultView> {
+  const composed = await composeIntake(deps, intakeId);
+  return { composed, remainingUsd: (await workspaceRemaining(deps)).remainingUsd };
+}
+
 /** Stores one of your examples before the run starts; the run gets its artifact id (StartRunInput.inputs.refs). */
 export async function addRef(deps: Deps, input: z.infer<typeof RefInput>): Promise<{ artifactId: string; mediaType: string }> {
   try {
@@ -159,12 +197,11 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
       if (!(await services.store.artifacts.has(id))) throw new HttpError(400, 'One of your examples was not found. Add it again.');
     }
   }
-  const workspace = await services.store.ensureDefaultWorkspace();
-  const spend = workspaceSpend(workspace.budgetUsd, (await services.gateway.spend(workspace.id)).spentUsd);
+  const spend = await workspaceRemaining(deps);
   const problem = budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
   const run = await services.runner.start({
-    workspaceId: workspace.id,
+    workspaceId: spend.workspaceId,
     recipe,
     problem: intake.problem,
     profileId: deps.profileId,

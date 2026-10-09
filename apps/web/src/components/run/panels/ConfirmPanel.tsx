@@ -10,7 +10,7 @@ import type { PanelProps } from './types.ts';
  * expected answer, because both are yours to give. The answers sit in the sticky footer, so long notes above
  * never push them out of reach.
  */
-export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
+export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId, sent }: PanelProps) {
   const answer = (approved: boolean) => {
     if (!busy) onSubmit({ checkpointId: cp.id, approved });
   };
@@ -34,7 +34,7 @@ export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
         <div className="yes-no" role="group" aria-describedby={promptId}>
           {busy ? (
             <span className="muted" role="status">
-              Sending…
+              {sent ? 'Sent' : 'Sending…'}
             </span>
           ) : null}
           <button type="button" className="button button-large yes-no-button" onClick={() => answer(true)} disabled={busy}>

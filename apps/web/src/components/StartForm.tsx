@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { post } from './api.ts';
-import { loadStartDraft, saveStartDraft } from './startDraft.ts';
+import { loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft } from './startDraft.ts';
 import { useTechnicalNames } from './TechNames.tsx';
 import { useShortcuts } from './useShortcuts.ts';
 import { focusAfterRemoval } from '../view/focus.ts';
@@ -47,6 +47,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
   }, [refocus]);
 
   function removeAttachment(key: number) {
+    attachmentsTouched.current = true;
     setRefocus({ key: focusAfterRemoval(attachments.map((a) => a.key), key) });
     setAttachments((list) => list.filter((x) => x.key !== key));
   }
@@ -56,11 +57,22 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
 
   const ready = text.trim().length > 0 && !busy;
 
-  // Restore what you wrote before following "Change" back from the Recommendation screen (after hydration).
+  // Restore what you wrote, and what you attached, before following "Change" back from the Recommendation screen (after
+  // hydration, so the server HTML and the first client render agree; ADR-0082).
   useEffect(() => {
     const draft = loadStartDraft();
     if (draft) setText((current) => current || draft);
+    const kept = loadStartAttachments();
+    if (kept.length > 0) {
+      setAttachments((current) => (current.length > 0 ? current : kept.map((a, i) => ({ key: i + 1, ...a }))));
+      setNextKey((k) => Math.max(k, kept.length + 1));
+    }
   }, []);
+  // Attachments are kept as you change them; nothing is written until you do, so a restore is never overwritten.
+  const attachmentsTouched = useRef(false);
+  useEffect(() => {
+    if (attachmentsTouched.current) saveStartAttachments(attachments.map(({ name, text: body }) => ({ name, text: body })));
+  }, [attachments]);
 
   function edit(next: string) {
     setText(next);
@@ -93,11 +105,13 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
   useShortcuts({ 'Mod+Enter': () => void submit() });
 
   function addAttachment() {
+    attachmentsTouched.current = true;
     setAttachments((list) => [...list, { key: nextKey, name: '', text: '' }]);
     setNextKey((k) => k + 1);
   }
 
   function updateAttachment(key: number, patch: Partial<Attachment>) {
+    attachmentsTouched.current = true;
     setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
   }
 

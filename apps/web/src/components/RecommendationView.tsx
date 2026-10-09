@@ -3,16 +3,18 @@
 import type { ChooserAnswer, ChooserQuestion, CostEstimate, EvidenceLabel as Label, Recommendation, RecipePresentation } from '@byway/contracts';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useRef, useState } from 'react';
-import type { ComposeView } from '../server/api.ts';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { ComposeResultView, ComposeView, RecommendResult } from '../server/api.ts';
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
 import { diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
+import { composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { post } from './api.ts';
 import { EvidenceLabel } from './EvidenceLabel.tsx';
 import { Route, RouteDetails, RouteLegend } from './Route.tsx';
 import { Examples, exampleCount, storeExamples, type ExampleEntry } from './Examples.tsx';
+import { examplesSlot } from './examplesDraft.ts';
 import { clearStartDraft } from './startDraft.ts';
 import { Switch } from './Switch.tsx';
 import { useTechnicalNames } from './TechNames.tsx';
@@ -24,8 +26,6 @@ export interface RecipeOption {
   /** The recipe takes your examples (its `refs` input), so the "Examples you admire" field is offered. */
   takesRefs: boolean;
 }
-
-type Selection = { kind: 'recipe'; recipeId: string } | { kind: 'composed' };
 
 interface Props {
   intakeId: string;
@@ -43,19 +43,52 @@ interface Props {
   demo: boolean;
 }
 
+/**
+ * Recommendation (spec §5, screen 2). The screen owns its state (F14, ADR-0082): the recommendation, why it failed,
+ * what is selected, the composed recipe and what is left in the workspace are seeded once from the server render and
+ * then change only through the commands here (Try again, a flipped answer, Build my own), each applying its whole result
+ * in one step (view/recommendation.ts). The screen never re-runs its server render: that render asks the model for a
+ * recommendation while none is stored, so a refresh could make a call nobody asked for. The page keys this component
+ * by intake and library recipe; the other props (the problem, its attachments, the questions, the recipes on offer,
+ * demo mode) cannot change while it is shown.
+ */
 export function RecommendationView(props: Props) {
-  const { intakeId, recommendation: initial, chosenRecipeId, options, questions, demo } = props;
+  const { intakeId, chosenRecipeId, options, questions, demo } = props;
   const router = useRouter();
   const technical = useTechnicalNames();
-  const [rec, setRec] = useState(initial);
-  const [composed, setComposed] = useState<ComposeView | null>(props.composed ?? null);
-  const [selection, setSelection] = useState<Selection>({ kind: 'recipe', recipeId: chosenRecipeId ?? initial?.recipeId ?? 'c4' });
+  const [state, setState] = useState<RecState>(() =>
+    initialRecState({
+      recommendation: props.recommendation,
+      recommendProblem: props.recommendProblem ?? null,
+      chosenRecipeId,
+      composed: props.composed ?? null,
+      remainingUsd: props.remainingUsd,
+    }),
+  );
+  const { rec, composed, selection } = state;
+  const recipes = useMemo(() => new Set(Object.keys(options)), [options]);
   const [routing, setRouting] = useState(false);
   const [composing, setComposing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Kept here, not in the proposal, so your examples survive switching to another recipe that takes them.
+  // Kept here, not in the proposal, so your examples survive switching to another recipe that takes them; and kept for
+  // this tab's session (examplesDraft.ts), so they survive a detour to Settings and back (ADR-0082, R1).
   const [examples, setExamples] = useState<ExampleEntry[]>([]);
+  const examplesTouched = useRef(false);
+  useEffect(() => {
+    const kept = examplesSlot(intakeId).load();
+    if (kept && kept.length > 0) setExamples((current) => (current.length > 0 ? current : kept.map((e, i) => ({ ...e, key: i + 1 }))));
+  }, [intakeId]);
+  useEffect(() => {
+    if (!examplesTouched.current) return;
+    if (examples.length > 0) examplesSlot(intakeId).save(examples.map(({ key: _key, ...e }) => e));
+    else examplesSlot(intakeId).clear();
+  }, [intakeId, examples]);
+  const onExamples = (update: (entries: ExampleEntry[]) => ExampleEntry[]) => {
+    examplesTouched.current = true;
+    setExamples(update);
+  };
   // UX-2: an action that replaces what has focus (Build my own, switching recipe) moves focus to the new proposal's
   // title, so keyboard and screen-reader users land on what changed instead of the top of the page.
   const [focusProposal, setFocusProposal] = useState(0);
@@ -63,32 +96,52 @@ export function RecommendationView(props: Props) {
     if (focusProposal > 0) document.getElementById('proposal-title')?.focus();
   }, [focusProposal]);
   const select = (next: Selection) => {
-    setSelection(next);
+    setState((s) => selected(s, next));
     setFocusProposal((n) => n + 1);
   };
 
   const current: RecipeOption | null =
-    selection.kind === 'composed'
+    selection?.kind === 'composed'
       ? composed
         ? { presentation: composed.presentation, label: composed.label, estimate: composed.estimate, takesRefs: composed.takesRefs }
         : null
-      : (options[selection.recipeId] ?? null);
-  const isRecommended = rec !== null && selection.kind === 'recipe' && selection.recipeId === rec.recipeId;
+      : selection
+        ? (options[selection.recipeId] ?? null)
+        : null;
+  const isRecommended = rec !== null && selection?.kind === 'recipe' && selection.recipeId === rec.recipeId;
+  const shown = screen(state, chosenRecipeId, recipes);
+
+  /** "Try again": the stored recommendation, or a new one, applied with what is left in the workspace. */
+  async function retry() {
+    if (retrying) return;
+    setRetrying(true);
+    setError(null);
+    try {
+      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { ensure: true });
+      setState((s) => recovered(s, result));
+      setNotice(`Now recommending ${recipeTitle(result.recommendation.presentation, technical)}.`);
+      setFocusProposal((n) => n + 1);
+    } catch (err) {
+      setState((s) => retryFailed(s, err instanceof Error ? err.message : 'byway could not recommend a recipe. Try again.'));
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   async function flip(questionId: string, answer: boolean) {
     if (!rec) return;
     const answers = rec.answers.map((a): ChooserAnswer => (a.questionId === questionId ? { ...a, answer, confidence: 1, setBy: 'user' } : a));
-    setRec({ ...rec, answers });
+    setState((s) => ({ ...s, rec: { ...rec, answers } }));
     setRouting(true);
     setError(null);
     try {
-      const next = await post<Recommendation>(`/api/intakes/${intakeId}/recommend`, { answers });
+      const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { answers });
+      const next = result.recommendation;
       const changed = next.recipeId !== rec.recipeId;
-      setRec(next);
-      setSelection({ kind: 'recipe', recipeId: next.recipeId });
+      setState((s) => rerouted(s, result));
       setNotice(changed ? `Now recommending ${recipeTitle(next.presentation, technical)}.` : `Still ${recipeTitle(next.presentation, technical)}.`);
     } catch (err) {
-      setRec(rec);
+      setState((s) => ({ ...s, rec }));
       setError(err instanceof Error ? err.message : 'Routing failed. Try again.');
     } finally {
       setRouting(false);
@@ -100,10 +153,10 @@ export function RecommendationView(props: Props) {
     setComposing(true);
     setError(null);
     try {
-      const result = await post<ComposeView>(`/api/intakes/${intakeId}/compose`, {});
-      setComposed(result);
-      select({ kind: 'composed' });
-      setNotice(result.ok ? 'Your recipe is ready. It is shown above.' : 'byway built a recipe, but it did not pass the protocol checks. It is shown above.');
+      const result = await post<ComposeResultView>(`/api/intakes/${intakeId}/compose`, {});
+      setState((s) => composedReady(s, result));
+      setFocusProposal((n) => n + 1);
+      setNotice(result.composed.ok ? 'Your recipe is ready. It is shown above.' : 'byway built a recipe, but it did not pass the protocol checks. It is shown above.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Composing failed. Try again.');
     } finally {
@@ -111,7 +164,8 @@ export function RecommendationView(props: Props) {
     }
   }
 
-  const tag = selection.kind === 'composed' ? null : isRecommended && rec ? fitText(rec.fit) : chosenRecipeId === selection.recipeId ? 'From the library' : 'Your choice';
+  // "Your choice" only for a recipe the person picked from the alternatives: never for a default nobody chose.
+  const tag = selection?.kind !== 'recipe' ? null : isRecommended && rec ? fitText(rec.fit) : chosenRecipeId === selection.recipeId ? 'From the library' : 'Your choice';
 
   return (
     <div className="recommend">
@@ -123,20 +177,20 @@ export function RecommendationView(props: Props) {
       </p>
 
       <div className="recommend-grid">
-        {props.recommendProblem && !rec && !chosenRecipeId ? (
+        {shown === 'failed' ? (
           <div className="empty" role="alert">
             <h1>byway could not recommend a recipe</h1>
-            <p>{props.recommendProblem}</p>
+            <p>{state.problem}</p>
             <div className="empty-actions">
-              <button type="button" className="button button-primary" onClick={() => router.refresh()}>
-                Try again
+              <button type="button" className="button button-primary" onClick={() => void retry()} aria-disabled={retrying} aria-busy={retrying}>
+                {retrying ? 'Trying again…' : 'Try again'}
               </button>
               <Link className="button" href="/library">
                 Choose from the Library
               </Link>
             </div>
           </div>
-        ) : current ? (
+        ) : shown === 'proposal' && current && selection ? (
           <Proposal
             key={selection.kind === 'composed' ? 'composed' : selection.recipeId}
             intakeId={intakeId}
@@ -146,12 +200,14 @@ export function RecommendationView(props: Props) {
             recipeId={selection.kind === 'recipe' ? selection.recipeId : undefined}
             routes={isRecommended && rec ? rec.routes : undefined}
             composed={selection.kind === 'composed' ? composed : null}
-            remainingUsd={props.remainingUsd}
+            remainingUsd={state.remainingUsd}
             demo={demo}
             examples={examples}
-            onExamples={setExamples}
+            onExamples={onExamples}
             onStarted={(runId) => {
+              // The problem, its attachments and these examples went into the run: nothing is left to keep.
               clearStartDraft();
+              examplesSlot(intakeId).clear();
               router.push(`/runs/${runId}`);
             }}
           />
@@ -169,6 +225,17 @@ export function RecommendationView(props: Props) {
             <p className="notice notice-danger" role="alert">
               {error}
             </p>
+          ) : null}
+
+          {/* While your own recipe is shown in place of the failure panel, trying again is still on offer here. */}
+          {!rec && state.problem !== null && shown !== 'failed' ? (
+            <section className="aside-section" aria-labelledby="retry-title">
+              <h2 id="retry-title">byway could not recommend a recipe</h2>
+              <p className="muted">{state.problem}</p>
+              <button type="button" className="button" onClick={() => void retry()} aria-disabled={retrying} aria-busy={retrying}>
+                {retrying ? 'Trying again…' : 'Try again'}
+              </button>
+            </section>
           ) : null}
 
           {rec ? (
@@ -192,7 +259,7 @@ export function RecommendationView(props: Props) {
                       </li>
                     ) : null}
                     {rec.alternatives
-                      .filter((alt) => !(selection.kind === 'recipe' && selection.recipeId === alt.recipeId))
+                      .filter((alt) => !(selection?.kind === 'recipe' && selection.recipeId === alt.recipeId))
                       .map((alt) => (
                         <li key={alt.recipeId}>
                           <button type="button" className="link-button" onClick={() => select({ kind: 'recipe', recipeId: alt.recipeId })}>
@@ -222,7 +289,7 @@ export function RecommendationView(props: Props) {
               the protocol’s rules, but it has not been tested.
             </p>
             <div className="compose-actions">
-              {composed && selection.kind !== 'composed' ? (
+              {composed && selection?.kind !== 'composed' ? (
                 <button type="button" className="button" onClick={() => select({ kind: 'composed' })}>
                   Show your recipe
                 </button>

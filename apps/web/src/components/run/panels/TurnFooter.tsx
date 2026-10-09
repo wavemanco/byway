@@ -14,10 +14,12 @@ interface Props {
   action?: string;
   /** Shown left of the button, e.g. "2 of 3 chosen". */
   status?: ReactNode;
+  /** The answer was accepted; the button says so until byway confirms it and the turn moves on (ADR-0082). */
+  sent?: boolean;
 }
 
 /** The panel's footer: what you have done so far, the shortcuts, and the one primary action. */
-export function TurnFooter({ kind, ready, busy, onSubmit, action, status }: Props) {
+export function TurnFooter({ kind, ready, busy, onSubmit, action, status, sent = false }: Props) {
   const spec = panelFor(kind);
   const shortcuts = listedShortcuts(kind, useSingleKeyShortcuts());
   return (
@@ -32,8 +34,8 @@ export function TurnFooter({ kind, ready, busy, onSubmit, action, status }: Prop
           ))}
         </ul>
       </div>
-      <button type="button" className="button button-primary button-large" onClick={onSubmit} disabled={busy} aria-disabled={!ready || busy}>
-        {busy ? 'Sending…' : (action ?? spec.action)}
+      <button type="button" className="button button-primary button-large" onClick={onSubmit} disabled={busy || sent} aria-disabled={!ready || busy || sent}>
+        {sent ? 'Sent' : busy ? 'Sending…' : (action ?? spec.action)}
       </button>
     </div>
   );

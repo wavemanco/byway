@@ -35,7 +35,11 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /recovery\.spec\.ts/ },
+    // Last, and only when everything else passed: it adds a spend line to the shared workspace's ledger (F14, ADR-0082).
+    { name: 'recovery', use: { ...devices['Desktop Chrome'] }, testMatch: /recovery\.spec\.ts/, dependencies: ['chromium'] },
+  ],
   ...(external
     ? {}
     : {
