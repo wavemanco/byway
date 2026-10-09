@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Recipe IR, hashing, walking and derivation transforms",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./semantics": "./src/semantics.ts"
   },
   "dependencies": {
     "@byway/canonical": "workspace:*",

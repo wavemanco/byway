@@ -115,7 +115,9 @@ describe('compose: success in demo mode', () => {
   it('records which template asked on every composer call (spec §3.3 provenance)', async () => {
     const { advisor, gateway, prompts, ledger } = demoAdvisor();
     await advisor.compose(LONG_MEMO, WS);
-    const refs = prompts.renders.map(({ rendered: r }) => ({ id: r.id, version: r.version, hash: r.hash, fidelity: r.fidelity }));
+    // The composed profile also renders each reused step prompt once, with the slots its step fills, to check it fits
+    // (ADR-0092); those renders are checks, not calls, so only the advisor's own templates go to the model.
+    const refs = prompts.renders.filter(({ id }) => id.startsWith('advisor.')).map(({ rendered: r }) => ({ id: r.id, version: r.version, hash: r.hash, fidelity: r.fidelity }));
     expect(refs.map((r) => r.id)).toEqual(['advisor.intake', 'advisor.compose']);
     expect(gateway.calls.map((c) => c.prompt)).toEqual(refs);
     expect((await ledger()).map((e) => e.prompt)).toEqual(refs);

@@ -8,11 +8,14 @@ export class ApiError extends Error {
   readonly fields: readonly string[] | undefined;
   /** For a held-key refusal, the key's variable name (never its value), so a screen can say where it was in its own words. */
   readonly heldKey: string | undefined;
-  constructor(message: string, code?: string, fields?: readonly string[], heldKey?: string) {
+  /** The whole refusal as the server sent it, for a refusal that carries more for the screen (view/refusals.ts). */
+  readonly body: Readonly<Record<string, unknown>> | undefined;
+  constructor(message: string, code?: string, fields?: readonly string[], heldKey?: string, body?: Readonly<Record<string, unknown>>) {
     super(message);
     this.code = code;
     this.fields = fields;
     this.heldKey = heldKey;
+    this.body = body;
   }
 }
 
@@ -36,7 +39,7 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   }
   if (!res.ok) {
     const code = typeof data.code === 'string' ? data.code : undefined;
-    throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, code, stringList(data.fields), typeof data.key === 'string' ? data.key : undefined);
+    throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, code, stringList(data.fields), typeof data.key === 'string' ? data.key : undefined, data);
   }
   return data as T;
 }

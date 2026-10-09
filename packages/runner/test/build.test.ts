@@ -3,6 +3,7 @@
  * only @temporalio/* stays external. The build is platform-neutral, so a Node import in workflow code fails it.
  */
 import { readFileSync, rmSync } from 'node:fs';
+import type { Plugin } from 'esbuild';
 import { describe, expect, it } from 'vitest';
 import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '../src/build.ts';
 
@@ -35,6 +36,44 @@ describe('the workflow bundle', () => {
       expect(workflowBundleHash(out)).toBe(PINNED_WORKFLOW_HASH);
     } finally {
       rmSync(out, { force: true });
+    }
+  }, 60_000);
+
+  /**
+   * ADR-0092: the protocol's rule and exception tables are admission data the workflow never reads. @byway/protocol is
+   * side-effect free, so they stay out of the bundle and editing them (a new rule such as ST12) does not change the
+   * bundle's hash, which would end every run open at the upgrade (ADR-0078).
+   */
+  it('takes from @byway/protocol only what workflow code reads; rule and exception edits leave its hash alone', async () => {
+    const out = (name: string) => DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `${name}-${process.pid}.js`);
+    /** Rewrite one @byway/protocol source as esbuild reads it. */
+    const editing = (file: string, from: string, to: string): Plugin => ({
+      name: 'edit-on-load',
+      setup(b) {
+        b.onLoad({ filter: new RegExp(`protocol[\\\\/]src[\\\\/]${file}\\.ts$`) }, (args) => {
+          const source = readFileSync(args.path, 'utf8');
+          if (!source.includes(from)) throw new Error(`${file}.ts no longer holds ${JSON.stringify(from)}`);
+          return { contents: source.replace(from, to), loader: 'ts' };
+        });
+      },
+    });
+    const base = await buildWorkflows({ outfile: out('proto-base') });
+    // A rule added to the catalogue, as ST12 was, and an exception's wording changed.
+    const rules = await buildWorkflows({ outfile: out('proto-rules'), plugins: [editing('rules', '  PR1: r(', "  ST99: r('ST12', 'invariant', 'A new rule', 'ADR-0092'),\n  PR1: r(")] });
+    const exceptions = await buildWorkflows({ outfile: out('proto-exc'), plugins: [editing('exceptions', "families: ['C1'],", "families: ['C1', 'C1x'],")] });
+    // The control: a change to something workflow code does read moves the hash, so the edits above were really made.
+    const tells = await buildWorkflows({ outfile: out('proto-tells'), plugins: [editing('blocks', "'fiction',", "'fiction-x',")] });
+    try {
+      const code = readFileSync(base, 'utf8');
+      const protocolFiles = [...code.matchAll(/\/\/ \.\.\/protocol\/src\/([\w-]+)\.ts/g)].map((m) => m[1]);
+      expect(new Set(protocolFiles)).toEqual(new Set(['blocks', 'media']));
+      expect(code).not.toMatch(/\bvar RULES\b/);
+      expect(code).not.toMatch(/\bvar EXCEPTIONS\b/);
+      expect(workflowBundleHash(rules)).toBe(workflowBundleHash(base));
+      expect(workflowBundleHash(exceptions)).toBe(workflowBundleHash(base));
+      expect(workflowBundleHash(tells)).not.toBe(workflowBundleHash(base));
+    } finally {
+      for (const f of [base, rules, exceptions, tells]) rmSync(f, { force: true });
     }
   }, 60_000);
 

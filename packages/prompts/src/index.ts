@@ -6,5 +6,6 @@
  */
 export { createPromptRenderer, DEFAULT_TEMPLATES_DIR, type PromptLibrary, type PromptRendererOptions, type TemplateInfo } from './renderer.ts';
 export { PromptTemplateError, type PromptErrorCode } from './errors.ts';
+export { slotsForStep, type SlotStep } from './step-slots.ts';
 export { parseTemplateFile, type Template } from './template.ts';
 export * from './pure.ts';
