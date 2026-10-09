@@ -790,6 +790,34 @@ describe('what browsers move out of a table is never removed (F07, r6)', () => {
   });
 });
 
+describe('what a page hides, and what its head shows (F07, r6)', () => {
+  it('a hidden element browsers show inline is not offered: its words stay as they are, and the person\'s go beside it', () => {
+    const S = '<p>Sale<span hidden> ends</span> today</p>';
+    expect(run(S, same).deck).toEqual(['T', 'Sale today']);
+    expect(run(S, set(1, 'Sale starts today'))).toMatchObject(clean('<p>Sale<span hidden> ends</span> starts today</p>'));
+    expect(run('<p>Call <font hidden>(old) </font>us <label hidden>now</label></p>', same).deck).toEqual(['T', 'Call', 'us']);
+    // A hidden block shows when a script or the reader opens it: it is offered, as its own lines, as before.
+    expect(run('<div hidden>Menu</div><details><summary>More</summary><p>Inside</p></details><p>After</p>', same).deck).toEqual(['T', 'Menu', 'More', 'Inside', 'After']);
+  });
+
+  it('text written in the head after the title ends the head, as browsers end it: it is offered', () => {
+    const H = '<!doctype html><html><head><title>T</title>Welcome</head><body><p>Hi</p></body></html>';
+    expect(run(H, same, { full: true }).deck).toEqual(['T', 'Welcome', 'Hi']);
+    expect(run(H, set(1, 'Hello'), { full: true })).toMatchObject(clean('<!doctype html><html><head><title>T</title>Hello</head><body><p>Hi</p></body></html>'));
+    expect(run('<!doctype html><html><head><title>T</title>Hello <b>world</b></html>', same, { full: true }).deck).toEqual(['T', 'Hello world']);
+    // Whitespace in the head is the head's.
+    expect(run('<!doctype html><html><head>\n  <title>T</title>\n  <meta charset="utf-8">\n</head><body><p>Hi</p></body></html>', same, { full: true }).deck).toEqual(['T', 'Hi']);
+  });
+
+  it('an <a> without an address is not a link in a row of links either; <image> is an image; a null character is refused', () => {
+    expect(run('<p><a href="/x">Read</a><a> more</a></p>', same).deck).toEqual(['T', '[Read] more']);
+    expect(run('<p><a href="/x">Read</a><a> more</a></p>', set(1, '[Read] more today'))).toMatchObject(clean('<p><a href="/x">Read</a><a> more today</a></p>'));
+    // Browsers read <image> as <img>: the link keeps a picture, named by its alt, so its words can go.
+    expect(run('<p><a href="/h">Home<image src="h.png" alt="Home"></a> now</p>', set(1, ''))).toMatchObject(clean('<p><a href="/h"><image src="h.png" alt="Home"></a> now</p>'));
+    expect(run('<p>Hello world</p>', set(1, 'Hello\u0000 world')).rejected).toBe('Line 2 has a null character (U+0000), which browsers drop: take it out.');
+  });
+});
+
 describe('characters outside the Basic Multilingual Plane are one character each (F07, r6)', () => {
   it('a line of several slots whose kept word is an emoji or an astral letter is placed', () => {
     expect(run('<p><strong>Free shipping</strong> on all orders 🎉</p>', set(1, 'Free shipping on every order 🎉'))).toMatchObject(clean('<p><strong>Free shipping</strong> on every order 🎉</p>'));

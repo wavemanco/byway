@@ -175,8 +175,13 @@ interface El {
   foreign?: true;
   /** A block as browsers show it (its start tag was a line break, see BLOCK). */
   block?: true;
-  /** A hidden block (the hidden attribute, a closed dialog, a datalist): nothing inside it shows. */
+  /** A hidden element (the hidden attribute, a closed dialog, a datalist): nothing inside it shows. */
   hidden?: true;
+  /**
+   * A hidden element browsers show inline (outside BLOCK): its text would sit inside a line a person sees, so it is not
+   * offered (a hidden block is offered as its own lines: a script or the reader may open it).
+   */
+  concealed?: true;
   /** An <a> a later <a> start tag ends in browsers: closing it implicitly after that is not out of order. */
   superseded?: true;
   /** Its start tag ended other elements (an open p, li, heading or the head): it is never balanced. */
@@ -243,7 +248,7 @@ function isControl(p: PageDeck, el: El): boolean {
 
 type TagToken = Extract<Token, { kind: 'tag' }>;
 const lastOf = (xs: readonly number[]): number => (xs.length ? xs[xs.length - 1]! : -1);
-/** A hidden block: the hidden attribute, a dialog that is not open, or a datalist. Only checked on blocks' tags. */
+/** A hidden element: the hidden attribute, a dialog that is not open, or a datalist. */
 function hiddenTag(t: TagToken): boolean {
   if (t.name === 'datalist') return true;
   if (t.name !== 'dialog' && !/hidden/i.test(t.raw)) return false;
@@ -290,6 +295,8 @@ class OpenElements {
   private readonly blocks: number[] = [];
   preDepth = 0;
   hiddenDepth = 0;
+  /** Open concealed elements (El.concealed): their content is not offered. */
+  concealDepth = 0;
   /** Open svg or math <title> elements: their text is a tooltip, not shown. A self-closed one opens nothing. */
   foreignTitleDepth = 0;
   private readonly els: Map<number, El>;
@@ -304,6 +311,17 @@ class OpenElements {
   /** The head is open: its content is not shown. */
   get inHead(): boolean {
     return this.named('head') >= 0;
+  }
+  /**
+   * Text that is not whitespace, outside the title: browsers end an open head there and put the text in the body ("in
+   * head" and "before head"), so a <head> after it is ignored. Whether it ended the head.
+   */
+  text(): boolean {
+    this.headSeen = true;
+    const k = this.named('head');
+    if (k < 0) return false;
+    this.endImplicitly(k);
+    return true;
   }
   /** Browsers ignore this start tag: no element opens. */
   ignores(t: TagToken): boolean {
@@ -359,8 +377,9 @@ class OpenElements {
       const k = this.named('a');
       if (k >= 0 && k > lastOf(this.scope)) this.els.get(this.open[k]!)!.superseded = true;
     }
-    const hidden = !t.foreign && !INLINE.has(name) && hiddenTag(t);
-    const el: El = { start: i, name, ...(t.foreign ? { foreign: true as const } : {}), ...(block ? { block: true as const } : {}), ...(hidden ? { hidden: true as const } : {}), ...(endsOthers ? { endsOthers: true as const } : {}) };
+    const hidden = !t.foreign && hiddenTag(t);
+    const concealed = hidden && !BLOCK.has(name);
+    const el: El = { start: i, name, ...(t.foreign ? { foreign: true as const } : {}), ...(block ? { block: true as const } : {}), ...(hidden ? { hidden: true as const } : {}), ...(concealed ? { concealed: true as const } : {}), ...(endsOthers ? { endsOthers: true as const } : {}) };
     this.els.set(i, el);
     const k = this.open.length;
     this.open.push(i);
@@ -377,6 +396,7 @@ class OpenElements {
     if (!INLINE.has(name)) this.blocks.push(k);
     if (name === 'pre') this.preDepth++;
     if (hidden) this.hiddenDepth++;
+    if (concealed) this.concealDepth++;
     if (t.foreign && name === 'title') this.foreignTitleDepth++;
     this.dirtyAt.set(i, this.dirty);
   }
@@ -446,6 +466,7 @@ class OpenElements {
     if (lastOf(this.tableCtx) === k) this.tableCtx.pop();
     if (el.name === 'pre') this.preDepth--;
     if (el.hidden) this.hiddenDepth--;
+    if (el.concealed) this.concealDepth--;
     if (el.foreign && el.name === 'title') this.foreignTitleDepth--;
   }
   /** End the element at position k and everything open inside it, as browsers end them for a start tag: no end. */
@@ -480,7 +501,8 @@ class OpenElements {
 
 /** Read a page's copy deck (one pass over its tokens, plus link membership by token index). */
 export function readPageCopy(html: string): PageDeck {
-  const tokens = tokenize(html);
+  // Browsers read a start tag named "image" as <img> (tree construction): an image, void.
+  const tokens = tokenize(html).map((t) => (t.kind === 'tag' && !t.closing && !t.foreign && t.name === 'image' ? { ...t, name: 'img' } : t));
   const slots: Slot[] = [];
   const els = new Map<number, El>();
   const open = new OpenElements(els);
@@ -504,12 +526,21 @@ export function readPageCopy(html: string): PageDeck {
     vregion,
     depth: inline.length,
     outer: inline.length ? inline[0]! : -1,
-    visible: (!open.inHead || inTitle) && open.preDepth === 0,
+    visible: (!open.inHead || inTitle) && open.preDepth === 0 && open.concealDepth === 0,
     rendered: !open.inHead && !inTitle && open.hiddenDepth === 0 && open.foreignTitleDepth === 0,
   });
   let cur = next();
   tokens.forEach((t, i) => {
     if (t.kind === 'text') {
+      if (!inTitle && noHtmlSpace(t.raw) !== '' && open.text() && !cur.toks.length) {
+        // Text in the head ended it: the text is the body's, and starts a run and a block of its own.
+        region++;
+        vregion++;
+        inline.length = 0;
+        inlineAt.clear();
+        blockOfRegion.set(region, open.innermostBlock());
+        cur = next();
+      }
       cur.toks.push(i);
       return;
     }
@@ -654,7 +685,7 @@ export function readPageCopy(html: string): PageDeck {
     }
     const tops = [...byTop.entries()].filter(([, g]) => text(g)).map(([top]) => top);
     // A block of links side by side (a nav) reads as one line per link, not one glued line.
-    const sideBySide = !text(own) && tops.length >= 2 && tops.every((t) => els.get(t)?.name === 'a');
+    const sideBySide = !text(own) && tops.length >= 2 && tops.every((t) => els.get(t)?.name === 'a' && hasHref(tokens[t]!));
     const groups = sideBySide ? tops.map((top) => byTop.get(top)!) : [ids];
     for (const g of groups) if (text(g)) page.units.push(makeUnit(page, g));
   }
@@ -878,6 +909,11 @@ export function readPageEdit(p: PageDeck, answer: string, offered?: string, firs
     };
     if (!noHtmlSpace(raw)) {
       changed({ changed: true, text: '', segs: u.segs.map((s) => ({ kind: s.kind, text: '' })) });
+      return;
+    }
+    // Browsers drop a null character from a page's text, so it could not show as written.
+    if (raw.includes('\u0000')) {
+      refuse(i, `Line ${i + 1} has a null character (U+0000), which browsers drop: take it out.`);
       return;
     }
     let segs = parseMarked(raw);
