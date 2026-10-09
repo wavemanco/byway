@@ -44,14 +44,14 @@ describe('workspace spend', () => {
   });
 });
 
-describe('Settings: calls settled at an assumed price (F04, ADR-0091)', () => {
-  it('says plainly how many calls were counted at the requested model’s price, and nothing when there are none', () => {
+describe('Settings: calls recorded on an assumption (F04, ADR-0091, ADR-0095 decision 7)', () => {
+  it('says plainly how many calls were counted on an assumption, and every reason one can be, and nothing when there are none', () => {
     expect(assumedPricingNote(undefined)).toBeNull();
     expect(assumedPricingNote({ calls: 0, usd: 0 })).toBeNull();
     expect(assumedPricingNote({ calls: 1, usd: 0.028 })).toBe(
-      '1 call was answered by a model byway has no price for, so it was counted at the price of the model byway asked for ($0.03). Your provider’s bill may differ.',
+      '1 call was counted on an assumption ($0.03): the provider named a model byway has no price for, named no model, or reported usage or a cost byway could not use. Your provider’s bill may differ.',
     );
-    expect(assumedPricingNote({ calls: 3, usd: 1.2 })).toMatch(/^3 calls were answered .* so they were counted .* \(\$1\.20 in all\)\./);
+    expect(assumedPricingNote({ calls: 3, usd: 1.2 })).toMatch(/^3 calls were counted on an assumption \(\$1\.20 in all\): /);
   });
 });
 

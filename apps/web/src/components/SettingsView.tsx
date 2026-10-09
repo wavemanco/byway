@@ -43,7 +43,7 @@ interface Props {
   spend: WorkspaceSpend;
   /** What the spend book holds that Settings shows (Gateway.spendRecords; ADR-0095). */
   records: SpendRecords;
-  /** Calls settled at an assumed price (assumedPricingNote), or null. */
+  /** Calls counted on an assumption (assumedPricingNote), or null. */
   pricingNote?: string | null;
   mode: 'demo' | 'live';
   /** byway was started with `pnpm demo`: demo mode stays on whatever this setting says. */

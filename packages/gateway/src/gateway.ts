@@ -748,6 +748,12 @@ export class ModelGateway implements Gateway {
     // cannot be believed, so the call is settled at its planning estimate (which admission held to the ceiling), flagged
     // assumed, as when a figure is not a number at all. The usage the provider reported stays in the entry as reported.
     if (!(draft.costUsd >= 0 && draft.costUsd <= MAX_PLAUSIBLE_CALL_USD)) draft = { ...draft, costUsd: op.reserveUsd, priceBasis: 'assumed' };
+    // An answer that names no served model (adapters copy the field unchecked: it can be missing, null or empty) was
+    // still billed. It is recorded as the requested model and flagged assumed (ADR-0095 decision 7); it was priced as
+    // the requested model too (servedPrice falls back to its row when a label names none), unless the provider reported
+    // its cost. A label that is there but is not text is recorded as its JSON text (providerLabel), as before.
+    const served: unknown = draft.servedModel;
+    if (served === undefined || served === null || served === '') draft = { ...draft, servedModel: draft.requestedModel, priceBasis: 'assumed' };
     // Labels are first made hashable (providerLabel, F19), then scrubbed of held keys (scrubLabels, ADR-0088): the
     // redactor works on well-formed strings, and one value then flows to both the ledger and the caller.
     draft = scrubLabels(
@@ -784,7 +790,8 @@ export class ModelGateway implements Gateway {
  * can carry a lone surrogate through a \u escape, which has no canonical form, yet a call the provider answered was
  * billed and must be ledgered (ENG-3, F19). So a lone surrogate is written as U+FFFD; the exact reply stays in the
  * stored response under responseSha256. A label that is not a string at all (adapters copy it unchecked) is written as
- * its JSON text, which escapes lone surrogates, for the same reason; an absent one stays absent, as before. Results
+ * its JSON text, which escapes lone surrogates, for the same reason. An absent upstream host stays absent; a served
+ * model that is absent, null or empty never reaches here (record writes the requested model, flagged assumed). Results
  * returned to callers carry the same value the ledger recorded (ADR-0088), so caller and ledger never disagree.
  */
 function providerLabel(label: string): string {

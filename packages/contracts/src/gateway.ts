@@ -162,8 +162,9 @@ export interface SpendSummary {
    */
   uncertainUsd?: number;
   /**
-   * Calls in this workspace whose served model had no price row, so they were settled at the requested model's rates
-   * (LedgerEntry.priceBasis 'assumed'): how many, and what they were counted at. Absent when there are none.
+   * Calls in this workspace recorded on an assumption (LedgerEntry.priceBasis 'assumed': a served model with no price
+   * row, an answer that named no served model, or usage or a cost byway could not use): how many, and what they were
+   * counted at. Absent when there are none.
    */
   assumedPricing?: { calls: number; usd: number };
 }
@@ -193,8 +194,16 @@ export interface LedgerEntry {
   /** The prompt template behind a completion (CompletionRequest.prompt). Covered by the hash chain. */
   prompt?: PromptRef;
   /**
-   * 'assumed' when a served model had no price row and was settled at the requested model's rates (F04, ADR-0091);
-   * absent when every model was priced at its own row or as a snapshot of a priced model. Covered by the hash chain.
+   * 'assumed' when byway assumed part of what this entry records instead of reading it from the provider's answer:
+   * - a served model with no price row (or a label that is not text) was settled at the requested model's rates (F04,
+   *   ADR-0091);
+   * - the answer named no served model (the field missing, null or empty): it is recorded as the requested model, and
+   *   was priced at that model's rates unless the provider reported its cost (ADR-0095 decision 7);
+   * - a usage count or cost that was not a finite, non-negative number was replaced by the call's planning figure; or
+   *   the reported figures would price the call above MAX_PLAUSIBLE_CALL_USD, so it was settled at its planning
+   *   estimate (ADR-0095 decision 7).
+   * Absent when every model was priced at its own row or as a snapshot of a priced model, from figures the provider
+   * reported. Covered by the hash chain.
    */
   priceBasis?: 'assumed';
   /**

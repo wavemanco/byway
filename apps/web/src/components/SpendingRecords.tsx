@@ -10,7 +10,7 @@ import { get, post } from './api.ts';
 
 interface Props {
   records: SpendRecords;
-  /** Calls settled at an assumed price (assumedPricingNote), or null. */
+  /** Calls counted on an assumption (assumedPricingNote), or null. */
   pricingNote?: string | null;
 }
 
