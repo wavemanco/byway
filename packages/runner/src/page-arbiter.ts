@@ -279,8 +279,9 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
     if (!span) return cannot('a browser does not show that line where byway reads it, so byway cannot check a change to it');
     const oldText = (span.in === 'body' ? loc.body : loc.title).slice(span.start, span.end);
     // The line's link words as Chromium shows them must be the deck's: each bracketed part one address, nothing else in a link.
+    // A deleted line has no words to give a link (the page's other text keeps its links, checked against the written page).
     const partHref: (string | null)[] = [];
-    if (span.in === 'body') {
+    if (span.in === 'body' && line.text) {
       const shownHrefs = loc.hrefs.slice(span.start, span.end).filter((_, x) => !isHtmlSpace(oldText[x]));
       let x = 0;
       let part = -1;

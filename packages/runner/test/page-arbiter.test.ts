@@ -135,6 +135,16 @@ describe('the check of a written page: Chromium against the person\'s edit, what
     );
   }, 60_000);
 
+  it('a deleted line has no link words to check: a line whose link words the reader misreads can be deleted, not changed (r8)', async () => {
+    // An <a> in a MathML <title> is MathML's, not a link, and the <dd> breaks out of math: a browser shows "Now bread" as
+    // plain words, while the reader reads them as a link's.
+    const html = pageOf('<p>Call</p><math><title><a href="/c"><dd>Now bread</a></title></math><p>End</p>');
+    expect(await check(html, 'T\nCall\n\nEnd', pageOf('<p>Call</p><math><title><a href="/c"><dd></a></title></math><p>End</p>'))).toBeUndefined();
+    expect((await check(html, 'T\nCall\nNew bread\nEnd', pageOf('<p>Call</p><math><title><a href="/c"><dd>New bread</a></title></math><p>End</p>')))?.problem).toBe(
+      'byway could not put line 3 on this page exactly as you wrote it, because a browser shows its link words differently from how they were offered ("Now bread" is not a link\'s words there). Leave line 3 as it was offered.',
+    );
+  }, 60_000);
+
   it('a control left with only hidden words shows the same text, so the in-code check, not the arbiter, refuses it', async () => {
     const html = pageOf('<form><p>Ready? <button type="submit"><span>Send</span><span hidden>Sending…</span></button> We reply fast.</p></form>');
     expect(await check(html, 'T\nReady?\n\nWe reply fast.', html.replace('<span>Send</span>', ''))).toBeUndefined();
