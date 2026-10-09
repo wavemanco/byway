@@ -2,9 +2,14 @@
  * What a recipe runs, as a value two recipes can be compared by (F08, ADR-0092 stage 3): its semantic projection.
  *
  * Built from FIELD_ROLES (semantics.ts), so every field of every schema object is accounted for: a 'name' field (an
- * id, a title, a question shown to people) is dropped, a 'semantic-set' field is sorted, a 'semantic' field is kept as
- * it is, and children are projected in turn. A seq is only order, so nested seqs are flattened and a seq of one is
- * its child. Two recipes with equal projections run the same; the composed diff says "The same steps" only then.
+ * id, a title) is dropped, a 'semantic-set' field is sorted, a 'semantic' field is kept as it is, and children are
+ * projected in turn. Two recipes with equal projections run the same; the composed diff says "The same steps" only then.
+ *
+ * A seq keeps its nesting, a seq of one included. The interpreter reads a step's siblings in its own seq (a TELLS
+ * sweep asks the person which finds to swap only when the swap step follows it there: semantics.ts asksSwaps), so
+ * the same steps nested differently can run differently. Flattening them made a composed recipe that drops the
+ * person's swap choice read "The same steps" (the F08 fix round). A re-nesting that changes nothing now reads as a
+ * technical change: the projection may tell apart two recipes that run the same, but never equates two that do not.
  *
  * Of the recipe's own fields, only those that say how it runs are compared (RUN_FIELDS). The others identify it, and
  * the composer forces them on every composed recipe (compose.ts forceComposed): its kind, channel, family, schema and
@@ -41,13 +46,8 @@ function byRoles(kind: Kind, value: Record<string, unknown>, child: (field: stri
 /** A node's projection: its semantic fields, and its children's. */
 export function projectNode(n: Node): Json {
   switch (n.op) {
-    case 'seq': {
-      const flat = n.steps.flatMap((c) => {
-        const p = projectNode(c);
-        return isSeq(p) ? p.steps : [p];
-      });
-      return flat.length === 1 ? flat[0]! : { op: 'seq', steps: flat };
-    }
+    case 'seq':
+      return byRoles('seq', n as unknown as Record<string, unknown>, () => n.steps.map(projectNode));
     case 'step':
       return byRoles('step', n as unknown as Record<string, unknown>, () => null);
     case 'gate':
@@ -64,8 +64,6 @@ export function projectNode(n: Node): Json {
       return byRoles(n.op, n as unknown as Record<string, unknown>, (_f, v) => projectNode(v as Node));
   }
 }
-
-const isSeq = (p: Json): p is { op: 'seq'; steps: Json[] } => p !== null && typeof p === 'object' && !Array.isArray(p) && (p as Record<string, Json>).op === 'seq';
 
 /** A recipe's projection: the fields that say how it runs (RUN_FIELDS), each projected. */
 export function projectRecipe(r: Recipe): Json {

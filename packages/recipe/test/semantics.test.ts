@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   ACTORS,
+  asksSwaps,
   audit,
   BLOCK_OF_ROLE,
   blockAgrees,
@@ -264,9 +265,32 @@ describe('field roles', () => {
     expect(Object.keys(full).filter((k) => !(k in FIELD_ROLES.step))).toEqual([]);
     expect(Object.keys(minimalRecipe()).filter((k) => !(k in FIELD_ROLES.recipe))).toEqual([]);
     expect(FIELD_ROLES.step.id).toBe('name');
-    expect(FIELD_ROLES.step.consumes).toBe('semantic-set');
+    // The runner reads a step's consumed ports in order (buildPrompt lays out their images in that order).
+    expect(FIELD_ROLES.step.consumes).toBe('semantic');
+    expect(FIELD_ROLES.step.produces).toBe('semantic-set');
     expect(FIELD_ROLES.step.variant).toBe('semantic');
     expect(FIELD_ROLES.route.id).toBe('semantic');
+    // A route's question is what a person is asked to choose on at run time (routePrompt), as an optional's trigger is.
+    expect(FIELD_ROLES.route.on).toBe('semantic');
+    expect(FIELD_ROLES.optional.trigger).toBe('semantic');
+  });
+});
+
+describe("a TELLS sweep's swap choice (asksSwaps, the interpreter's seq)", () => {
+  const sweep = step({ id: 'sweep', role: 'tells-sweep', block: 'TELLS', actor: 'model', tier: 'mid', prompt: 'p.s', consumes: ['artifact', 'tells'], produces: ['critique'] });
+  const swaps = step({ id: 'swaps', role: 'fix', actor: 'model', tier: 'mid', prompt: 'p.f', consumes: ['artifact', 'critique'], produces: ['artifact'], writes: true });
+  const compare = (actor: 'human' | 'model') => step({ id: 'compare', role: 'tells-compare', block: 'TELLS', actor, ...(actor === 'model' ? { tier: 'mid' as const, prompt: 'p.c' } : {}), consumes: ['artifact'], produces: ['taste'] });
+
+  it('asks when the next step in its own seq that reads a critique is a model fix, and no machine keeps or reverts', () => {
+    expect(asksSwaps(sweep, [swaps, compare('human')])).toBe(true);
+    expect(asksSwaps(sweep, [swaps, compare('model')])).toBe(false);
+    expect(asksSwaps(sweep, [compare('human')])).toBe(false);
+    expect(asksSwaps({ ...sweep, actor: 'human' } as Node, [swaps])).toBe(false);
+    expect(asksSwaps(swaps, [swaps])).toBe(false);
+  });
+
+  it('reads only its own seq: the same steps behind a nested seq never ask', () => {
+    expect(asksSwaps(sweep, [seq(swaps, compare('human'))])).toBe(false);
   });
 });
 

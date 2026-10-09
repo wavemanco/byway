@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { c1, c2, c3, c4, c5, c6, c6a, c7, presentationOf } from '@byway/catalog';
 import { FIELD_ROLES, walk, withHash, type FieldRole, type Node, type Recipe } from '@byway/recipe';
 import { diffFromNearest } from '../src/index.ts';
+import { OTHER_CHANGES } from '../src/diff.ts';
 
 type N = Record<string, any>;
 const SEVEN = [c1, c2, c3, c4, c5, c6, c6a, c7];
@@ -143,19 +144,66 @@ describe('what changes that are not semantic read', () => {
     expect(diff(r, nearest)).toEqual(same(nearest));
   });
 
-  it.each(SEVEN.map((r) => [r.id, r] as const))('%s: every port list reordered reads "The same steps"', (_id, nearest) => {
+  it.each(SEVEN.map((r) => [r.id, r] as const))('%s: every produces list and the inputs reordered read "The same steps"', (_id, nearest) => {
     const r = clone(nearest);
     walk(r as Recipe, (n: Node) => {
-      if (n.op === 'step') Object.assign(n, { consumes: [...n.consumes].reverse(), produces: [...n.produces].reverse() });
+      if (n.op === 'step') Object.assign(n, { produces: [...n.produces].reverse() });
     });
     r.inputs = [...r.inputs].reverse();
     expect(diff(r, nearest)).toEqual(same(nearest));
   });
 
-  it('a seq wrapped around a seq changes nothing', () => {
+  it('a consumes list reordered is a technical change: the runner lays out the images a step sees in that order', () => {
+    const r = edit(clone(c2), 'vanilla-flag', (n) => ({ ...n, consumes: [...n.consumes].reverse() }));
+    expect(diff(r, c2)).toEqual([OTHER_CHANGES]);
+  });
+
+  it("a seq wrapped around steps is a technical change: the interpreter reads a step's siblings in its own seq", () => {
     const r = clone(c4);
     r.stages[2].body = { op: 'seq', steps: [{ op: 'seq', steps: r.stages[2].body.steps.slice(0, 3) }, ...r.stages[2].body.steps.slice(3)] };
-    expect(diff(r, c4)).toEqual(same(c4));
+    expect(diff(r, c4)).toEqual([OTHER_CHANGES]);
+  });
+});
+
+// ---- A TELLS sweep's swap choice reads its siblings ------------------------------------------------------------
+
+/** The steps after the cliché sweep wrapped in a seq of their own: the same steps, but the sweep no longer asks. */
+function sweepRestNested(r: N): N {
+  const c = clone(r as Recipe);
+  let done = false;
+  const visit = (n: N): void => {
+    if (done || !n || typeof n !== 'object') return;
+    if (n.op === 'seq') {
+      const i = n.steps.findIndex((s: N) => s.op === 'step' && s.role === 'tells-sweep');
+      if (i >= 0 && i < n.steps.length - 1) {
+        n.steps = [...n.steps.slice(0, i + 1), { op: 'seq', steps: n.steps.slice(i + 1) }];
+        done = true;
+        return;
+      }
+      n.steps.forEach(visit);
+    }
+    if (n.body) visit(n.body);
+    (n.branches ?? []).forEach((b: N) => visit(b.body));
+    (n.lenses ?? []).forEach((l: N) => visit(l.body));
+  };
+  c.stages.forEach((s: N) => visit(s.body));
+  if (!done) throw new Error('no TELLS sweep with steps after it');
+  return c;
+}
+
+describe("a TELLS sweep's swap choice (the verifier's nested-seq case)", () => {
+  it.each([
+    ['c1', c1, 'Cliché sweep (Finish)'],
+    ['c7', c7, 'Cliché sweep (Finish)'],
+  ] as const)('%s: the rest of the sweep’s seq wrapped in a seq of its own says you no longer choose the swaps', (_id, nearest, label) => {
+    const lines = diff(sweepRestNested(nearest), nearest);
+    expect(lines).not.toEqual(same(nearest));
+    expect(lines).toEqual([`Changed: ${label}: no longer asks you which of its finds to swap`]);
+  });
+
+  it('a sweep that never asks (its keep-or-revert by a machine, as in a headless arm) reads only the technical change', () => {
+    const headless = edit(clone(c1), 'tells-compare', (n) => ({ ...n, actor: 'model', tier: 'mid', prompt: 'study1.A13' })) as Recipe;
+    expect(diff(sweepRestNested(headless), headless)).toEqual([OTHER_CHANGES]);
   });
 });
 
@@ -216,6 +264,10 @@ describe("the verification's cases each read what changed", () => {
       return rest;
     }), c5);
     expect(lines).toEqual(['Changed: Your words: the script (Explore): you write the on-screen copy instead of the voice-over script']);
+  });
+
+  it("C3's route question reworded: what you are asked to choose at run time", () => {
+    expect(diff(edit(clone(c3), 'draft', (n) => ({ ...n, on: 'whether you want the AI to replace your words' })), c3)).toEqual(['Changed: First draft (Refine): asks you to choose whether you want the AI to replace your words, instead of who writes the first draft']);
   });
 
   it("C1's optional trigger reworded", () => {

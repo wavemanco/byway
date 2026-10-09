@@ -15,7 +15,7 @@ import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '
 import type { CheckpointResolution } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
-import { machineWrites, voiceWrite } from '@byway/recipe/semantics';
+import { asksSwaps, machineWrites, voiceWrite } from '@byway/recipe/semantics';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
@@ -181,7 +181,7 @@ export class Interpreter {
         for (const [i, child] of n.steps.entries()) {
           p = await this.node(child, p, ctx);
           // A sweep whose hits a swap step will act on: the person decides each hit first (TELLS-1, convention C2).
-          if (child.op === 'step' && child.actor === 'model' && child.role === 'tells-sweep' && swapsFollow(n.steps.slice(i + 1))) p = await this.chooseSwaps(child, p, ctx);
+          if (child.op === 'step' && asksSwaps(child, n.steps.slice(i + 1))) p = await this.chooseSwaps(child, p, ctx);
         }
         return p;
       }
@@ -791,17 +791,6 @@ function beside(ports: Ports, work?: string[]): string[] {
 function withCritique(ports: Ports, critique: string | undefined, empty?: string): Ports {
   const { emptyCritique: _was, critique: _old, hits: _hits, ...rest } = ports;
   return { ...rest, ...(critique !== undefined ? { critique } : {}), ...(empty ? { emptyCritique: empty } : {}) };
-}
-
-/**
- * Whether a TELLS sweep's hits feed a swap step a person stands behind: the next step that reads a critique is a model
- * fix, and the keep-or-revert after it is a person's. A headless arm (C1-H, its keep-or-revert by a proxy) and a sweep
- * that only flags (C6, C6a) are left as they are.
- */
-function swapsFollow(rest: readonly Node[]): boolean {
-  const steps = rest.filter((n): n is Step => n.op === 'step');
-  const fix = steps.find((s) => s.consumes.includes('critique'));
-  return fix?.role === 'fix' && fix.actor === 'model' && !steps.some((s) => s.role === 'tells-compare' && s.actor !== 'human');
 }
 
 /** The problem with a person's answer that an activity could not use as it is (ENG-6), or undefined. */

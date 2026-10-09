@@ -168,6 +168,21 @@ export const PICK_ACTOR: Readonly<Record<PickNode['mode'], Actor>> = { H: 'human
 export const PICK_JUDGE_ROLES: ReadonlySet<Role> = new Set<Role>(['judge', 'select']);
 
 /**
+ * Whether a TELLS sweep's finds go to the person first, who chooses which are swapped (TELLS-1, convention C2; the
+ * interpreter's seq calls this after each step). It reads only the nodes after the sweep in its own seq: the next step
+ * there that reads a critique is a model fix, and no keep-or-revert there is a machine's. A headless arm (C1-H, its
+ * keep-or-revert by a proxy) and a sweep that only flags (C6, C6a) are left as they are, and so is a sweep whose swap
+ * step sits in a seq of its own: the same steps nested differently run differently, so the semantic projection keeps a
+ * seq's nesting (projection.ts).
+ */
+export function asksSwaps(sweep: Node, rest: readonly Node[]): boolean {
+  if (sweep.op !== 'step' || sweep.actor !== 'model' || sweep.role !== 'tells-sweep') return false;
+  const steps = rest.filter((n): n is Step => n.op === 'step');
+  const fix = steps.find((s) => s.consumes.includes('critique'));
+  return fix?.role === 'fix' && fix.actor === 'model' && !steps.some((s) => s.role === 'tells-compare' && s.actor !== 'human');
+}
+
+/**
  * Operators that hand an enclosing loop's context on to their body, so a critic or check inside reports to that loop's
  * gate: seq, relay, route and optional. replicate, each, audit and a one-shot gate start a fresh context, and an inner
  * loop starts its own (interpreter.ts: they run their bodies without `ctx.loop`).
@@ -383,7 +398,7 @@ export const voiceWrites = (recipe: Recipe): Placement[] => placements(recipe).f
  * - `name`: an id or a text shown to people; renaming it changes nothing that runs;
  * - `child`: a nested node or schema object, classified field by field in turn;
  * - `semantic`: a value execution acts on;
- * - `semantic-set`: a list execution reads as a set (its order does not matter).
+ * - `semantic-set`: a list execution reads as a set (its order does not matter anywhere it is read).
  */
 export type FieldRole = 'name' | 'child' | 'semantic' | 'semantic-set';
 
@@ -443,7 +458,8 @@ export const FIELD_ROLES: {
     isolated: 'semantic',
     frozenPrompt: 'semantic',
     prompt: 'semantic',
-    consumes: 'semantic-set',
+    // Read in order: the runner lays out the images a step sees port by port (buildPrompt), so a reordering is a change.
+    consumes: 'semantic',
     produces: 'semantic-set',
     writes: 'semantic',
     keepsVoice: 'semantic',
@@ -467,8 +483,9 @@ export const FIELD_ROLES: {
     onCap: 'semantic',
     onNoConverge: 'semantic',
   },
-  // A route's id keys the run's up-front route choices, so it is semantic; `on` is the question shown to the person.
-  route: { op: 'semantic', id: 'semantic', on: 'name', branches: 'child' },
+  // A route's id keys the run's up-front route choices. `on` is what the person is asked to choose on at run time
+  // (routePrompt; the catalog's plain question stands in only for a catalog recipe), as an optional's trigger is.
+  route: { op: 'semantic', id: 'semantic', on: 'semantic', branches: 'child' },
   // A branch is chosen by its name.
   branch: { name: 'semantic', body: 'child' },
   // The trigger is what the person is asked to decide on.

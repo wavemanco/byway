@@ -57,14 +57,20 @@ describe('the projection', () => {
     expect(sameRun(recipeWith(build('a'), { id: 'one', title: 'One' }), recipeWith(build('b'), { id: 'two', title: 'Two' }))).toBe(true);
   });
 
-  it('reads port lists and inputs as sets', () => {
-    expect(sameNode(build('a'), build('a', { consumes: ['brief', 'intent'] } as never))).toBe(true);
+  it('reads what a step produces and the inputs as sets', () => {
+    expect(sameNode(build('a', { produces: ['artifact', 'critique'] } as never), build('a', { produces: ['critique', 'artifact'] } as never))).toBe(true);
     expect(sameRun(recipeWith(build('a'), { inputs: ['intent', 'tells'] }), recipeWith(build('a'), { inputs: ['tells', 'intent'] }))).toBe(true);
   });
 
-  it('reads a seq as order only: nested seqs flatten, and a seq of one is its step', () => {
-    expect(sameNode(seq(seq(build('a'), build('b')), build('c')), seq(build('a'), seq(build('b'), build('c'))))).toBe(true);
-    expect(sameNode(seq(build('a')), build('a'))).toBe(true);
+  it('keeps the order of what a step consumes: the runner shows its images in that order (buildPrompt)', () => {
+    const judge = (consumes: string[]) => step({ id: 'j', role: 'judge', actor: 'model', tier: 'big', prompt: 'p.j', consumes, produces: ['choice'] } as never);
+    expect(sameNode(judge(['view', 'option_set<artifact>']), judge(['option_set<artifact>', 'view']))).toBe(false);
+  });
+
+  it("keeps a seq's nesting: the interpreter reads a step's siblings in its own seq (a TELLS sweep's swap choice)", () => {
+    expect(sameNode(seq(seq(build('a'), build('b')), build('c')), seq(build('a'), seq(build('b'), build('c'))))).toBe(false);
+    expect(sameNode(seq(build('a')), build('a'))).toBe(false);
+    expect(sameNode(seq(build('a'), build('b')), seq(build('x'), build('y')))).toBe(true);
     const big = build('b', { tier: 'big' } as never);
     expect(sameNode(seq(build('a'), big), seq(big, build('a')))).toBe(false);
   });

@@ -2,6 +2,7 @@ import { BLOCK_NAMES, presentedStepFor, STAGE_NAMES } from '@byway/catalog';
 import type { Medium, RecipePresentation } from '@byway/contracts';
 import type { BlockCode } from '@byway/protocol';
 import {
+  asksSwaps,
   feedsGate,
   machineWrites,
   projectNode,
@@ -38,8 +39,9 @@ import { stepLabel } from './present.ts';
  * are described: who does a step, where it runs (its stage, whether it always runs, a side-by-side review or a final
  * check it sits in, once per draft, behind a check that can end its round, after your words), who picks and how many,
  * how a repeat ends and stops early, the quality bar (described, never quoted: the bar stays hidden from everyone who
- * could game it), what your words cover, when an optional step is offered, and a final check's re-runs. Any other
- * difference reads "Other technical changes that affect how it runs."
+ * could game it), what your words cover, whether you choose a cliché sweep's swaps, when an optional step is offered,
+ * what a choice between branches asks, and a final check's re-runs. Any other difference reads "Other technical changes
+ * that affect how it runs."
  *
  * Plain words by default (spec §5, UX-13): steps, repeats and parallel drafts are named by the labels the person saw
  * (the nearest recipe's presentation where it has the step, else the block or role name), with the stage they run in;
@@ -79,6 +81,8 @@ interface Placed<T> {
   feeds: boolean;
   /** How many steps before it in the walk write your words into the work. */
   afterVoice: number;
+  /** A cliché sweep that asks you which of its finds to swap (asksSwaps: it reads its own seq). */
+  swaps: boolean;
 }
 
 interface Collected {
@@ -101,10 +105,10 @@ function collect(recipe: Recipe): Collected {
   let index = 0;
   let voiced = 0;
   type Frame = { metric: string; fed: boolean };
-  const visit = (n: Node, stage: Stage['stage'], w: Where, loop: Frame | undefined): void => {
+  const visit = (n: Node, stage: Stage['stage'], w: Where, loop: Frame | undefined, swaps = false): void => {
     // Inside the loop's body, after a step that can end the round.
     const here: Where = loop?.fed && !w.afterExit ? { ...w, afterExit: exitKind(loop.metric) } : w;
-    const placed = <T>(node: T, feeds = false): Placed<T> => ({ node, stage, where: here, index: index++, feeds, afterVoice: voiced });
+    const placed = <T>(node: T, feeds = false): Placed<T> => ({ node, stage, where: here, index: index++, feeds, afterVoice: voiced, swaps });
     switch (n.op) {
       case 'step': {
         const feeds = !!loop && feedsGate(n, loop.metric);
@@ -114,7 +118,8 @@ function collect(recipe: Recipe): Collected {
         return;
       }
       case 'seq':
-        n.steps.forEach((c) => visit(c, stage, here, loop));
+        // The interpreter asks for a sweep's swaps from the steps after it in this seq only.
+        n.steps.forEach((c, i) => visit(c, stage, here, loop, asksSwaps(c, n.steps.slice(i + 1))));
         return;
       case 'pick':
         out.picks.push(placed(n));
@@ -303,6 +308,7 @@ function stepChanges(a: Placed<Step>, b: Placed<Step>, media: [Medium | undefine
   words.push(...moves);
   if ((x.tier ?? '') !== (y.tier ?? '') && y.tier) words.push(y.tier === 'big' ? 'uses the bigger model' : 'uses the faster model');
   if ((x.prompt ?? '') !== (y.prompt ?? '')) words.push('uses different instructions');
+  if (a.swaps !== b.swaps) words.push(b.swaps ? 'now asks you which of its finds to swap' : 'no longer asks you which of its finds to swap');
   const ka = x.knobs ?? {};
   const kb = y.knobs ?? {};
   for (const name of [...new Set([...Object.keys(ka), ...Object.keys(kb)])]) {
@@ -447,7 +453,13 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
   for (const [x, y] of pair(a.optionals, b.optionals, () => 'optional').pairs) {
     if (x.node.trigger !== y.node.trigger) lines.push(`Changed: ${firstLabel(x.node, shown)} (${STAGE_NAMES[x.stage]}): asks to run it when ${y.node.trigger.replace(/[.\s]+$/, '')}, instead of when ${x.node.trigger.replace(/[.\s]+$/, '')}`);
   }
-  for (const [x, y] of pair(a.routes, b.routes, () => 'route').pairs) if (differs(own(x.node) as Json, own(y.node) as Json)) other = true;
+  // A choice between branches: what it asks you at run time (a composed recipe has no catalog question to stand in).
+  for (const [x, y] of pair(a.routes, b.routes, () => 'route').pairs) {
+    if (x.node.on !== y.node.on) lines.push(`Changed: ${firstLabel(x.node, shown)} (${STAGE_NAMES[x.stage]}): asks you to choose ${y.node.on.replace(/[.\s]+$/, '')}, instead of ${x.node.on.replace(/[.\s]+$/, '')}`);
+    const { on: _x, ...ox } = own(x.node);
+    const { on: _y, ...oy } = own(y.node);
+    if (differs(ox as Json, oy as Json)) other = true;
+  }
 
   // Side-by-side reviews and final checks: their steps only comment, so they are named when they come or go.
   const audits = pair(a.audits, b.audits, () => 'audit');
