@@ -6,8 +6,9 @@
  * - `fold`: the first screen as a visitor lands, 1440 × 900, not scrolled.
  * Whole pages are tiled into screenshots at most 2576 px tall, and at most 2576 px wide (a page wider than its screen
  * is shot as wide as it overflows, so the overflow shows). Motion is reduced; the network is blocked except an
- * allowlist (Google Fonts, jsDelivr, unpkg, cdnjs), checked on every redirect hop too, and the local artifact route,
- * served from the artifact store, and WebSockets and non-proxied WebRTC are blocked as well (ENG-14).
+ * allowlist (Google Fonts, jsDelivr, unpkg, cdnjs), checked on every redirect hop too and held to a byte cap per
+ * response (render-fetch.ts), and the local artifact route, served from the artifact store, and WebSockets and
+ * non-proxied WebRTC are blocked as well (ENG-14).
  *
  * A render is bounded (SEC-5): everything from loading the page to the last screenshot runs under one deadline. A
  * page that never settles (a script that loops after load) has its context closed, which stops its renderer, and the
@@ -29,6 +30,7 @@
 import type { Browser, BrowserContext, LaunchOptions, Page, Route } from 'playwright';
 import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
+import { fetchHop, MAX_RENDER_FETCH_BYTES } from './render-fetch.ts';
 import type { Surface } from './types.ts';
 
 export type { Surface } from './types.ts';
@@ -128,6 +130,8 @@ export interface PlaywrightPagesOptions {
   admit?: (url: URL) => boolean;
   /** How long one surface may take, from loading the page to its last screenshot. */
   timeoutMs?: number;
+  /** The most one allowlisted response may hold (render-fetch.ts MAX_RENDER_FETCH_BYTES); tests pass a small one. */
+  maxFetchBytes?: number;
   /** How long closing a stuck page may take before the whole browser is closed and relaunched. */
   closeTimeoutMs?: number;
   /** For tests only: how to launch the browser. Production passes none, so it is always launchChromium(). */
@@ -153,6 +157,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   const allow = new Set(opts.allowHosts ?? RENDER_ALLOWLIST);
   const admit = opts.admit ?? ((url: URL) => allowedUrl(url, allow));
   const timeout = opts.timeoutMs ?? 30_000;
+  const maxFetchBytes = opts.maxFetchBytes ?? MAX_RENDER_FETCH_BYTES;
   const closeTimeout = opts.closeTimeoutMs ?? 5_000;
   let browser: Promise<Browser> | undefined;
 
@@ -190,25 +195,30 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   /**
    * An admitted request, fetched hop by hop. Playwright asks the route handler about a request's first URL only, and
    * Chromium follows a redirect by itself, so a request merely continued could be sent on from an allowlisted CDN to
-   * any host. Here Playwright's request API fetches each hop without following redirects; a hop is followed only to a
-   * URL the same rule admits, for a GET or HEAD, at most MAX_REDIRECTS times, and anything else is blocked. The page
-   * gets the final response under the URL it asked for, so relative URLs inside it resolve against an admitted URL too.
+   * any host. Here each hop is fetched without following redirects (render-fetch.ts); a hop is followed only to a URL
+   * the same rule admits, for a GET or HEAD, at most MAX_REDIRECTS times, and anything else is blocked. A body over
+   * maxFetchBytes is cut off and blocked too: it is never held whole. The page gets the final response under the URL it
+   * asked for, so relative URLs inside it resolve against an admitted URL too.
    */
   const fetchAdmitted = async (r: Route, first: URL): Promise<void> => {
-    const followable = ['GET', 'HEAD'].includes(r.request().method());
+    const request = r.request();
+    const method = request.method();
+    const followable = method === 'GET' || method === 'HEAD';
+    const headers = await request.allHeaders();
+    const body = followable ? undefined : (request.postDataBuffer() ?? undefined);
+    const signal = AbortSignal.timeout(timeout);
     let url = first;
-    let response = await r.fetch({ maxRedirects: 0, timeout });
-    for (let hops = 0; REDIRECTS.has(response.status()); hops++) {
-      const location = response.headers()['location'];
-      const next = location ? new URL(location, url) : undefined;
-      await response.dispose();
-      if (!next || !followable || hops >= MAX_REDIRECTS || !admit(next)) return await r.abort('blockedbyclient');
-      url = next;
-      response = await r.fetch({ url: next.href, maxRedirects: 0, timeout });
+    for (let hops = 0; ; hops++) {
+      const hop = await fetchHop({ url: url.href, method, headers, ...(body ? { body } : {}), signal, maxBytes: maxFetchBytes });
+      if (REDIRECTS.has(hop.status)) {
+        const next = hop.location ? new URL(hop.location, url) : undefined;
+        if (!next || !followable || hops >= MAX_REDIRECTS || !admit(next)) return await r.abort('blockedbyclient');
+        url = next;
+        continue;
+      }
+      if (!hop.body) return await r.abort('blockedbyclient');
+      return await r.fulfill({ status: hop.status, headers: hop.headers, body: hop.body });
     }
-    // The request API decodes the body (gzip, br), so the encoding and the encoded length no longer describe it.
-    const headers = Object.fromEntries(Object.entries(response.headers()).filter(([name]) => name !== 'content-encoding' && name !== 'content-length'));
-    await r.fulfill({ response, headers });
   };
 
   const route = (html: string, resolve: ArtifactResolver) => async (r: Route) => {
