@@ -419,10 +419,31 @@ describe('explainers claim only what the recipe establishes about the steps arou
       const both = admitted(edited(r, id, (n) => ({ ...n, produces: [port, 'critique'] })), r);
       expect(explained(both, id), r.id).toBe(E.visionYours);
     }
-    // An AI direction that takes the taste in makes its own, as for the critique: C6a's sharpening, before a draft you
-    // write yourself, is the only step that takes that reaction in.
-    const sharpened = checkAnswer(fencedJson(edited(c6a, 'react', (n) => ({ ...n, produces: ['taste', 'critique'] }))), c6a, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, 'composed-c6a');
-    expect(sharpened.violations.map((v) => `${v.ruleId}:${v.clause ?? ''}`)).toEqual(['ST12:critique-unapplied']);
+  });
+
+  it('a reaction of yours that reaches the work through an AI direction is admitted: the direction carries it on (round 7, Q1 and Q2)', () => {
+    // C6a with its reaction also given as a critique: the AI sharpening takes the taste in, and its direction is shown
+    // beside the draft you write yourself, as in the catalog.
+    admitted(edited(c6a, 'react', (n) => ({ ...n, produces: ['taste', 'critique'] })), c6a);
+    // C2 with its reaction also given as a critique and a second review before the option map, whose critique takes the
+    // place of yours: the sharpened brief, made from your taste, is what the option map drafts from.
+    const audit = c2.stages[0]!.body.op === 'seq' ? c2.stages[0]!.body.steps.find((n) => n.op === 'audit') : undefined;
+    const renamed = (n: N): N => (n && typeof n === 'object' ? Object.fromEntries(Object.entries(n).map(([k, v]) => [k, k === 'id' ? `${v}-2` : Array.isArray(v) ? v.map(renamed) : renamed(v as N)])) : n);
+    const twice = edited(c2, 'react', (n) => ({ ...n, produces: ['taste', 'critique'] }));
+    const d1 = twice.stages[0].body;
+    d1.steps.splice(d1.steps.findIndex((n: N) => n.id === 'option-map'), 0, renamed(structuredClone(audit) as N));
+    admitted(twice, c2);
+    // C6a with a critic after the sharpening: its note, not the direction, is beside your draft, and nothing takes the
+    // sharpened brief in, so your reaction reaches the work on no path.
+    let critic: N | undefined;
+    walk(c6a, (n) => {
+      if (n.op === 'step' && n.id === 'critic') critic = structuredClone(n);
+    });
+    const render = { op: 'step', id: 'sharpen-render', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] };
+    const noted = edited(edited(c6a, 'react', (n) => ({ ...n, produces: ['taste', 'critique'] })), 'sharpen', (n) => n, render);
+    const withCritic = edited(noted, 'sharpen-render', (n) => n, { ...critic!, id: 'sharpen-critic' });
+    const refused = checkAnswer(fencedJson(withCritic), c6a, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, 'composed-c6a');
+    expect(refused.violations.map((v) => `${v.ruleId}:${v.clause ?? ''}`)).toEqual(['ST12:critique-unapplied']);
   });
 
   it('a CUT of yours where the operator around it drops your list is refused, never explained as removed (round 3: C3, C4)', () => {
@@ -430,6 +451,15 @@ describe('explainers claim only what the recipe establishes about the steps arou
       checkAnswer(fencedJson(raw), nearest, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, `composed-${nearest.id}`).violations.map((v) => `${v.ruleId}:${v.clause ?? ''}`);
     // C3 with your CUT in a replicate of two: the replicate hands on only the candidates' work.
     expect(refusals(edited(c3, 'cut', (n) => ({ op: 'replicate', id: 'rep', n: 2, body: n })), c3)).toEqual(['ST12:critique-per-candidate']);
+    // With its fix in the same candidate, each candidate's list is applied to it, and you pick one (round 7, P).
+    for (const r of [c3, c4, c5]) {
+      const raw = copy(r);
+      const d3 = raw.stages.find((st: N) => st.stage === 'D3').body;
+      const i = d3.steps.findIndex((n: N) => n.id === 'cut-render');
+      const trim = d3.steps.splice(i, 3);
+      d3.steps.splice(i, 0, { op: 'replicate', id: 'two-trims', n: 2, body: { op: 'seq', steps: trim } }, { op: 'pick', id: 'pick-trim', mode: 'H', k: 1, actor: 'human' });
+      expect(refusals(raw, r), r.id).toEqual([]);
+    }
     // C4 with your CUT in an audit lens: a list left empty is dropped with the lens.
     expect(refusals(edited(c4, 'cut', (n) => ({ op: 'audit', id: 'aud', lenses: [{ name: 'trim', body: n }] })), c4)).toEqual(['ST9:human-critique']);
     // As the catalog has it, your CUT is admitted and explained as the list the AI removes.
@@ -439,7 +469,7 @@ describe('explainers claim only what the recipe establishes about the steps arou
   it('a CUT of yours that no AI writer applies on any path is refused (C4: no fix after it, or a direction of yours before the fix)', () => {
     const refused = (raw: N, nearest: Recipe) =>
       checkAnswer(fencedJson(raw), nearest, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, `composed-${nearest.id}`).violations.filter((v) => v.clause === 'critique-unapplied').map((v) => `${v.ruleId} ${v.message}`);
-    const message = 'ST12 step "cut" asks a person for a list or a critique, and no AI writer takes their answer in on any path, as the critique or as the brief or taste it also gives: before one does, another takes its place, or none comes after it';
+    const message = 'ST12 step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: no AI writer takes it in and no draft of their own is shown it, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it';
     expect(refused(removed(c4, 'apply-cut'), c4)).toEqual([message]);
     const direction = { op: 'step', id: 'your-direction', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] };
     expect(refused(edited(c4, 'cut', (n) => n, direction), c4)).toEqual([message]);

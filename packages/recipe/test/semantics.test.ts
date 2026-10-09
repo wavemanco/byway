@@ -455,6 +455,23 @@ describe('the flow walk (flowRecipe)', () => {
     expect(leavesOnlyAtExits(loop('k', seq(render('r'), check('k'), fix('f')), gate('critic-score')))).toBe(false);
   });
 
+  it('a loop body and a relay link are walked twice, or with `untilStable` until the state a round starts from stops changing', () => {
+    // A count of rounds, up to 3: two walks see a body run at most twice.
+    const rounds = (r: Recipe, untilStable: boolean) =>
+      [
+        ...flowRecipe<string[]>(r, ['0'], {
+          step: (_s, _p, _st, state) => [...new Set(state.map((x) => String(Math.min(Number(x) + 1, 3))))].sort(),
+          join: (states) => [...new Set(states.flat())].sort(),
+          key: (state) => state.join(','),
+          untilStable,
+        }),
+      ].sort();
+    expect(rounds(recipeOf(loop('l', critic('c'), gate('human'))), false)).toEqual(['1', '2']);
+    expect(rounds(recipeOf(loop('l', critic('c'), gate('human'))), true)).toEqual(['1', '2', '3']);
+    expect(rounds(recipeOf(relay('chain', 3, critic('c'))), false)).toEqual(['1', '2']);
+    expect(rounds(recipeOf(relay('chain', 3, critic('c'))), true)).toEqual(['1', '2', '3']);
+  });
+
   it('`after` says what an operator that hands on less than what ran inside it hands on: here, its entry state', () => {
     const entry = (_node: Node, before: string[]) => before;
     expect(paths(recipeOf(seq(critic('a'), replicate('x', 2, critic('b')), critic('c'))), entry)).toEqual(['a c']);
@@ -558,10 +575,6 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // A fix in a lens or a final check's body drafts what never becomes the work.
     expect(unapplied(seq(personCut('cut'), audit('au', [{ name: 'x', body: seq(fix('f'), render('r'), critic('c')) }])))).toEqual(['cut']);
     expect(unapplied(seq(personCut('cut'), oneShotGate('g', seq(fix('f'), render('r'), critic('c')), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' })))).toEqual(['cut']);
-    // A step that takes it in to make something else: an AI direction from it, which a build then follows.
-    const sharpen = step({ id: 'sharpen', role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes: ['critique'], produces: ['brief'] });
-    const build = step({ id: 'b', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['brief'], produces: ['artifact'], writes: true });
-    expect(unapplied(seq(personCut('cut'), sharpen, build))).toEqual(['cut']);
     // An ASSET that makes voice-over audio finishes skipped in this version (ADR-0069).
     const vo = step({ id: 'vo', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'p.a', consumes: ['voice', 'critique', 'artifact'], produces: ['artifact'], writes: true });
     expect(hasNoExecutor(vo)).toBe(true);
@@ -607,12 +620,13 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(answerPorts(yours('d', ['taste', 'brief', 'critique']))).toEqual(['critique', 'brief', 'taste']);
     expect(answerPorts(fix('f'))).toEqual([]);
     expect(unapplied(seq(step({ ...personCut('cut'), produces: ['critique', 'brief'] }), draft('b', 'brief')))).toEqual(['cut']);
-    // Another brief in its place first, an AI direction's, or none taken in by an AI writer: your own draft is shown no
-    // brief, and an AI direction that takes it in makes its own.
+    // Another brief in its place first, an AI direction's made from nothing of yours, or none taken in by an AI writer:
+    // your own draft is shown no brief.
     const aiBrief = (id: string, consumes: Step['consumes'] = ['intent']): Step => step({ id, role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes, produces: ['brief'] });
     expect(unapplied(seq(yours('d', ['brief', 'critique']), aiBrief('v'), draft('b', 'brief')))).toEqual(['d']);
-    expect(unapplied(seq(yours('d', ['brief', 'critique']), aiBrief('v', ['brief']), draft('b', 'brief')))).toEqual(['d']);
     expect(unapplied(seq(yours('d', ['brief', 'critique']), step({ ...authorDraft('own'), consumes: ['brief'] })))).toEqual(['d']);
+    // An AI direction that takes your brief in makes its own from it, and the draft takes that in (below).
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), aiBrief('v', ['brief']), draft('b', 'brief')))).toEqual([]);
     // A later answer of yours puts its own brief in place, unless it revises that brief in place: it opens with your
     // earlier answer, which may go on as it is (C7's spec, ADR-0090).
     expect(unapplied(seq(yours('d', ['brief', 'critique']), yours('e', ['brief']), draft('b', 'brief')))).toEqual(['d']);
@@ -629,6 +643,60 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // A keep-or-revert may say which version it kept in the taste's place, or ask nothing: it does not always.
     const compare = step({ id: 'compare', role: 'tells-compare', block: 'TELLS', actor: 'human', consumes: ['view'], produces: ['taste'] });
     expect(unapplied(seq(yours('d', ['taste', 'critique']), compare, draft('b', 'taste')))).toEqual([]);
+  });
+
+  it('carried by an AI step that takes it in: what that step makes from it is followed onward, to an AI writer or your own draft', () => {
+    const yours = (id: string, produces: Step['produces']): Step => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces });
+    const sharpen = (consumes: Step['consumes'], id = 'sharpen'): Step => step({ id, role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes, produces: ['brief'] });
+    const build = step({ id: 'b', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['brief'], produces: ['artifact'], writes: true });
+    const own = step({ ...authorDraft('own'), consumes: ['intent', 'brief'] });
+    const aiCut = step({ id: 'ai-cut', role: 'cut', block: 'CUT', actor: 'model', tier: 'mid', prompt: 'p.c', consumes: ['view', 'critique'], produces: ['critique'] });
+    const review = audit('review', [{ name: 'critic', body: critic('lens-critic') }]);
+    // Your list, taken in by an AI direction whose brief a build drafts from.
+    expect(unapplied(seq(personCut('cut'), sharpen(['critique']), build))).toEqual([]);
+    // C2's shape: your reaction's taste, sharpened into the brief the option map drafts from, though a review puts its
+    // critique in place of the critique your reaction also gave (the round-7 verification's Q2).
+    const react = yours('react', ['taste', 'critique']);
+    expect(unapplied(seq(react, review, sharpen(['taste', 'artifact']), build))).toEqual([]);
+    // An AI CUT that takes your list in makes its own list from it, which the fix applies.
+    expect(unapplied(seq(personCut('cut'), render('r'), aiCut, fix('f')))).toEqual([]);
+    // An AI step in a lens or a final check's body that takes your brief in: the critique it makes is handed on.
+    const briefCritic = step({ ...critic('brief-critic'), consumes: ['view', 'brief'] });
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), render('r'), audit('au', [{ name: 'c', body: briefCritic }]), fix('f')))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), render('r'), oneShotGate('g', briefCritic, { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }), fix('f')))).toEqual([]);
+    // A candidate's AI direction reaches its own build, never a step after the candidates.
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, seq(sharpen(['critique']), build))))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, sharpen(['critique'])), build))).toEqual(['cut']);
+    // C6a's shape: your reaction's taste, sharpened into a direction shown beside the draft you write yourself (the
+    // run shows a person the latest notes, an AI direction's among them).
+    expect(unapplied(seq(react, sharpen(['taste', 'artifact']), own))).toEqual([]);
+    // A later answer of yours shown that direction gives its answer with it beside them, and an AI writer takes it in.
+    expect(unapplied(seq(personCut('cut'), sharpen(['critique']), render('r'), yours('d', ['critique']), fix('f')))).toEqual([]);
+    // Followed only as far as the run hands it on: another brief in its place before the build, another note in its
+    // place before your draft, nothing after it that takes it in, or a VOICE, which is shown the work alone.
+    expect(unapplied(seq(react, sharpen(['taste']), sharpen(['intent'], 'other'), build))).toEqual(['react']);
+    expect(unapplied(seq(react, sharpen(['taste', 'artifact']), render('r'), critic('c'), own))).toEqual(['react']);
+    expect(unapplied(seq(personCut('cut'), sharpen(['critique']), render('r'), critic('c'), fix('f')))).toEqual(['cut']);
+    expect(unapplied(seq(personCut('cut'), sharpen(['critique']), voice('v')))).toEqual(['cut']);
+    // An AI step that takes nothing of yours in puts its own in place, as before.
+    expect(unapplied(seq(personCut('cut'), render('r'), step({ ...aiCut, consumes: ['view'] }), fix('f')))).toEqual(['cut']);
+    // A later answer of yours that revises your brief in place starts from it, and gives the critique too: the fix
+    // takes that in (the differential's C5 variant, with your thesis and a spec in the shot repair).
+    const spec = step({ id: 'spec', role: 'vision', block: 'VISION', actor: 'human', consumes: ['brief'], produces: ['brief', 'critique'] });
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), spec, fix('f')))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), step({ ...spec, consumes: ['view'] }), fix('f')))).toEqual(['d']);
+  });
+
+  it('followed through as many rounds as it takes: a list carried on in the next round reaches your draft in the round after', () => {
+    // Your check at the end of each round you hold; the next round's AI sweep takes it in, and its flags are shown beside
+    // your draft the round after that (the differential's C6a variant). Two walks of the body never see the third round.
+    const sweep = step({ id: 'flags', role: 'tells-sweep', block: 'TELLS', actor: 'model', tier: 'big', isolated: true, prompt: 'p.t', consumes: ['view', 'tells', 'critique'], produces: ['critique'] });
+    const yourCheck = step({ id: 'your-check', role: 'check', actor: 'human', consumes: ['view'], produces: ['critique'] });
+    const round = seq(authorDraft('write'), render('r'), audit('au', [{ name: 'tells', body: sweep }]), render('r2'), yourCheck);
+    expect(unapplied(loop('author', round, gate('human')))).toEqual([]);
+    // Without the sweep taking the critique in, nothing carries it on.
+    const plain = seq(authorDraft('write'), render('r'), audit('au', [{ name: 'tells', body: step({ ...sweep, consumes: ['view', 'tells'] }) }]), render('r2'), yourCheck);
+    expect(unapplied(loop('author', plain, gate('human')))).toEqual(['your-check']);
   });
 });
 

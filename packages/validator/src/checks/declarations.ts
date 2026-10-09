@@ -3,7 +3,6 @@ import {
   blockAgrees,
   declaresVoice,
   machineWrites,
-  personCritique,
   personWrite,
   PICK_ACTOR,
   PICK_JUDGE_ROLES,
@@ -24,8 +23,7 @@ import { flowRecipe } from '../flow.ts';
 
 /**
  * ST12 (ADR-0092): what a recipe declares agrees with what it runs, nothing it puts back undoes a person's write, and
- * no person's list or critique is asked where the run drops it: per candidate, or where no AI writer takes the answer
- * in on any path, by any port it fills (ADR-0098).
+ * no person's list or critique is asked whose answer reaches the work on no path (ADR-0098).
  * Protections are granted only by what executes (@byway/recipe semantics); a declaration may add arming or refusals,
  * never take one away. So a declaration that says less than execution is refused, and for VOICE and block labels, one
  * that says anything else.
@@ -49,18 +47,18 @@ export function checkDeclarations(recipe: Recipe, findings: Findings): void {
     if (perCandidate && voiceArm(step)) {
       findings.add('ST12', path, `VOICE "${step.id}" runs once per candidate; the person's words go into the one work, after the pick`, 'voice-per-candidate');
     }
-    // A person's list or critique asked per candidate is dropped when the candidates end: replicate and each hand on
-    // only their work, so the step after them acts on an earlier critique (ADR-0098).
-    if (perCandidate && personCritique(step)) {
-      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique once per candidate; replicate and each hand on only the candidates' work, so their answer never reaches the steps after them`, 'critique-per-candidate');
-    }
   }
-  // A person's list or critique whose answer no AI writer takes in on any path, by any port it fills, is asked for
-  // nothing an AI writer acts on (ADR-0098). Asked in a candidate, a lens or a gate body, it is refused as such (above,
-  // ST9 and ST10 'human-critique'), once.
+  // A person's list or critique whose answer reaches the work on no path: no AI writer takes it in and no draft of their
+  // own is shown it, by any port it fills, directly or in what an AI step makes from it (ADR-0098). Asked in a candidate,
+  // only that candidate's own steps can take it in: replicate and each hand on only the candidates' work. Asked in a lens
+  // or a gate body, it is refused as such (ST9 and ST10 'human-critique'), once.
   for (const { step, path, contained, perCandidate } of unappliedCritiques(recipe)) {
-    if (contained || perCandidate) continue;
-    findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique, and no AI writer takes their answer in on any path, as the critique or as the brief or taste it also gives: before one does, another takes its place, or none comes after it`, 'critique-unapplied');
+    if (contained) continue;
+    if (perCandidate) {
+      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique once per candidate, and nothing in that candidate takes their answer to the work; replicate and each hand on only the candidates' work, so their answer never reaches the steps after them`, 'critique-per-candidate');
+    } else {
+      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique, and their answer reaches the work on no path: no AI writer takes it in and no draft of their own is shown it, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it`, 'critique-unapplied');
+    }
   }
   walk(recipe, (node, path) => {
     if (node.op !== 'pick') return;
