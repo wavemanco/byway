@@ -12,8 +12,8 @@ export interface Io {
 
 const USAGE = [
   'usage: byway <command> <file>',
-  '  validate <recipe.json>   check a recipe against the protocol rules (exit 0 ok, 1 violations, 2 unreadable)',
-  '  hash <recipe.json>       print the recipe content hash',
+  '  validate <recipe.json>   check a recipe against the protocol rules (exit 0 ok, 1 violations, 2 unreadable or not a recipe)',
+  '  hash <recipe.json>       print the recipe content hash (exit 0 ok, 2 unreadable or not a recipe)',
 ].join('\n');
 
 class InputError extends Error {}

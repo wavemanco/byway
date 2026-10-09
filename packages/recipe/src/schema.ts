@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { CanonicalizationError } from '@byway/canonical';
 import { BLOCK_CODES, GLUE_CODES, MEDIA, PORT_TYPES, type BlockCode, type Channel, type GlueCode, type Medium, type PortType, type RecipeKind } from '@byway/protocol';
+// hash.ts imports only the Recipe type from this file, so this is no runtime import cycle.
+import { recipeHash } from './hash.ts';
 
 export const RECIPE_SCHEMA_ID = 'byway.recipe/1';
 
@@ -217,6 +220,10 @@ export const NodeSchema: z.ZodType<Node> = z.discriminatedUnion('op', [
   RelayChainSchema,
 ]) as z.ZodType<Node>;
 
+/**
+ * The shape of a recipe only: it neither reserves key names nor guarantees that what it accepts can be hashed. Parse
+ * untrusted input with {@link parseRecipe}.
+ */
 export const RecipeSchema: z.ZodType<Recipe> = z.strictObject({
   schema: z.literal(RECIPE_SCHEMA_ID),
   id: Id,
@@ -254,11 +261,27 @@ function reservedKeyPaths(value: unknown, path: (string | number)[] = []): (stri
   ]);
 }
 
-/** Parse untrusted input into a Recipe. Throws ZodError with paths on invalid input. */
+/**
+ * Parse untrusted input into a Recipe. Throws ZodError with paths on invalid input.
+ *
+ * Every Recipe returned can be hashed: recipeHash never throws on it. The hasher itself decides, so this rule cannot
+ * drift from it (F19, ADR-0083). Text holding a lone surrogate, which arrives as a JSON backslash-u escape in a model's
+ * answer or a file, is refused here as one issue at the recipe's root that names the canonical path in its message (the
+ * canonicalizer quotes a bad property name escaped, so the message is well-formed). Callers then handle it on their
+ * existing ZodError path instead of meeting a CanonicalizationError later.
+ */
 export function parseRecipe(input: unknown): Recipe {
   const reserved = reservedKeyPaths(input);
   if (reserved.length) {
     throw new z.ZodError(reserved.map((path) => ({ code: 'custom' as const, path, message: 'reserved key name', input: undefined })));
   }
-  return RecipeSchema.parse(input);
+  const recipe = RecipeSchema.parse(input);
+  try {
+    recipeHash(recipe);
+  } catch (e) {
+    // Anything else (a stack overflow on pathological nesting, say) is not a hashability rule and is rethrown as is.
+    if (!(e instanceof CanonicalizationError)) throw e;
+    throw new z.ZodError([{ code: 'custom', path: [], message: `the recipe cannot be hashed: ${e.message}`, input: undefined }]);
+  }
+  return recipe;
 }

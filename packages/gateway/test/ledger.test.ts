@@ -132,6 +132,64 @@ describe('Ledger', () => {
   });
 });
 
+/**
+ * F19: verify() reports damage, it does not throw on it. A stored line can hold text that has no canonical form (a
+ * lone surrogate written as a JSON \u escape, a number too large for JSON) or not be an entry at all.
+ */
+describe('Ledger.verify on lines that cannot be hashed', () => {
+  const id = (line: string | undefined) => JSON.parse(line as string).id as string;
+
+  it('names an entry whose value was changed to hold a lone surrogate', async () => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([ls[0] as string, (ls[1] as string).replace('"purpose":"build:web-page"', '"purpose":"probe\\ud800"')]);
+    expect(lines()[1]).toContain('probe\\ud800');
+    expect(await ledger.verify()).toBe(id(ls[1]));
+  });
+
+  it('names an entry that was given a property name holding a lone surrogate', async () => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([ls[0] as string, `{"\\ud800":1,${(ls[1] as string).slice(1)}`]);
+    expect(await ledger.verify()).toBe(id(ls[1]));
+  });
+
+  it.each([
+    ['the last', 1],
+    ['the first', 0],
+  ])('names %s entry when its hash was removed and a value made unhashable (no head record)', async (_label, at) => {
+    const ledger = await seed(2);
+    const ls = lines();
+    const edited = JSON.parse(ls[at] as string) as Record<string, unknown>;
+    delete edited.hash;
+    edited.purpose = 'p\ud800';
+    ls[at] = JSON.stringify(edited);
+    rewrite(ls);
+    await fsp.rm(`${path}.head`);
+    // Never judged by hash equality: an absent hash and an uncomputable one must not compare as equal.
+    expect(await ledger.verify()).toBe(edited.id);
+  });
+
+  it.each([
+    ['null', 'null'],
+    ['an array', '[1,2]'],
+    ['a string', '"entry"'],
+    ['a number', '7'],
+  ])('reports a line that is %s, not an entry, by its line number', async (_label, line) => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([line, ls[1] as string]);
+    expect(await ledger.verify()).toBe('line:1');
+  });
+
+  it('names an entry whose cost was changed to a number too large for JSON', async () => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([ls[0] as string, (ls[1] as string).replace('"costUsd":0.02', '"costUsd":1e400')]);
+    expect(await ledger.verify()).toBe(id(ls[1]));
+  });
+});
+
 describe('Ledger: prompt provenance (contracts v4, CR14)', () => {
   const prompt = { id: 'product.c3.critic', version: 4, hash: `sha256:${'c'.repeat(64)}`, fidelity: 'paraphrase' as const };
 

@@ -28,9 +28,11 @@ Toolchain: Node 24, pnpm 11, TypeScript (strict, NodeNext), vitest, zod. No othe
 
 ## Canonical hashing
 
-- `canonicalize(value)`: RFC 8785 (JCS). Object keys sorted by UTF-16 code units, no whitespace, primitives serialized with ECMAScript `JSON.stringify` rules. Rejects `NaN`, `±Infinity`, `undefined`, functions, symbols, `bigint` and cyclic structures with a `CanonicalizationError`.
+- `canonicalize(value)`: RFC 8785 (JCS). Object keys sorted by UTF-16 code units, no whitespace, primitives serialized with ECMAScript `JSON.stringify` rules. Rejects `NaN`, `±Infinity`, `undefined`, functions, symbols, `bigint`, cyclic structures, and strings or property names holding a lone surrogate (RFC 8785 §3.2.2.2) with a `CanonicalizationError`.
 - `contentHash(value)`: `"sha256:" + hex(SHA-256(UTF-8(canonicalize(value))))`.
+- `sha256Hex(text)` hashes the UTF-8 encoding, so it refuses text holding a lone surrogate (it has no UTF-8 encoding) with a `CanonicalizationError` instead of hashing it as U+FFFD.
 - A recipe's hash is the content hash of the recipe with its `hash` field removed. The schema version (`schema: "byway.recipe/1"`) is inside the hashed content.
+- `parseRecipe` returns only recipes that can be hashed: it asks the hasher, and a recipe holding text with no canonical form is refused with a `ZodError` whose one issue, at the recipe root, names the canonical path ([ADR-0083](../../adr/0083-hashed-text-is-well-formed-unicode.md)).
 
 ## Port types
 
@@ -167,7 +169,7 @@ interface Verdict { ok: boolean; recipeHash: string; violations: Violation[]; wa
 
 ## Tests
 
-- Canonical JSON: RFC 8785 vectors for key ordering (including non-ASCII keys), number formatting and rejection of non-JSON values.
+- Canonical JSON: RFC 8785 vectors for key ordering (including non-ASCII keys), number formatting and rejection of non-JSON values, including lone surrogates in values and property names.
 - Hashing: stable across key order; any field change changes the hash.
 - Each rule has at least one broken fixture that produces exactly that rule ID.
 - Every catalog recipe validates with no violations, and its `exceptionsUsed` equals its cited exceptions.

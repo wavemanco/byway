@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { promises as nodeFs } from 'node:fs';
 import { dirname } from 'node:path';
-import { canonicalize, contentHash } from '@byway/canonical';
+import { CanonicalizationError, canonicalize, contentHash } from '@byway/canonical';
 import type { LedgerEntry } from '@byway/contracts';
 
 /**
@@ -56,6 +56,20 @@ function defined<T extends object>(value: T): T {
 /** The chain hash: SHA-256 of the RFC 8785 canonical form of the entry without its own hash (CR7). */
 export function entryHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string {
   return contentHash(defined(entry));
+}
+
+/**
+ * The chain hash of a stored line read back, or undefined when it has none: a damaged line can hold text with no
+ * canonical form (a lone surrogate written as a JSON \u escape, a number too large for JSON). verify() reports such a
+ * line as broken; it does not throw on it (F19).
+ */
+function expectedHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string | undefined {
+  try {
+    return entryHash(entry);
+  } catch (e) {
+    if (e instanceof CanonicalizationError) return undefined;
+    throw e;
+  }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -256,7 +270,8 @@ export class Ledger {
 
   /**
    * Re-read the whole file and check every link. Returns the id of the first entry that breaks the chain (an edited,
-   * moved or missing predecessor), `line:<n>` for an unparseable line, or null when the ledger is intact.
+   * moved or missing predecessor, or one with no canonical form), `line:<n>` for an unparseable line or one that is not
+   * an entry object (or an entry without an id), or null when the ledger is intact.
    */
   async verify(): Promise<string | null> {
     let text = '';
@@ -269,14 +284,22 @@ export class Ledger {
     if (raw.at(-1) === '') raw.pop();
     let prev: GatewayLedgerEntry | undefined;
     for (let i = 0; i < raw.length; i++) {
-      let entry: GatewayLedgerEntry;
+      let parsed: unknown;
       try {
-        entry = JSON.parse(raw[i] as string) as GatewayLedgerEntry;
+        parsed = JSON.parse(raw[i] as string);
       } catch {
         return `line:${i + 1}`;
       }
+      // A line that is not an entry object at all (null, an array, a bare value) is broken in its own right.
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return `line:${i + 1}`;
+      const entry = parsed as GatewayLedgerEntry;
       const { hash, ...rest } = entry;
-      if (entry.seq !== i + 1 || entry.prevHash !== (prev?.hash ?? GENESIS_HASH) || hash !== entryHash(rest)) return entry.id ?? `line:${i + 1}`;
+      const expected = expectedHash(rest);
+      // An entry with no canonical form is broken explicitly, never by comparing hashes: a line whose hash field was
+      // removed would otherwise compare undefined with undefined and pass.
+      if (expected === undefined || entry.seq !== i + 1 || entry.prevHash !== (prev?.hash ?? GENESIS_HASH) || hash !== expected) {
+        return entry.id ?? `line:${i + 1}`;
+      }
       prev = entry;
     }
     const head = await this.readHead();

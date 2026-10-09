@@ -118,6 +118,30 @@ describe('byway hash', () => {
   });
 });
 
+describe('a lone surrogate in a recipe file (F19)', () => {
+  // The file holds a JSON \u escape for half a surrogate pair: valid JSON and valid UTF-8, but text that has no
+  // canonical form, so the recipe has no hash.
+  const plain = () => readFileSync(join(RECIPES, 'b-plain.json'), 'utf8');
+  const files = {
+    'a knob name': () => plain().replace('"writes": true', '"writes": true,\n          "knobs": { "\\ud800": "x" }'),
+    'the title': () => plain().replace('"title": "B-Plain (article Baseline 1)"', '"title": "B-Plain \\ud800"'),
+  };
+
+  it.each(Object.entries(files))('in %s: validate and hash both exit 2 with "is not a valid recipe"', async (_label, text) => {
+    const file = tempFile('lone.json', text());
+    expect(text()).toContain('\\ud800');
+    for (const command of ['validate', 'hash']) {
+      const io = capture();
+      expect(await run([command, file], io), command).toBe(2);
+      const err = io.stderr.join('\n');
+      expect(err).toContain('is not a valid recipe');
+      expect(err).toContain('the recipe cannot be hashed');
+      expect(err.isWellFormed()).toBe(true);
+      expect(io.stdout).toEqual([]);
+    }
+  });
+});
+
 describe('usage', () => {
   it('exits 2 with usage for no or unknown commands', async () => {
     for (const argv of [[], ['frobnicate'], ['validate']]) {

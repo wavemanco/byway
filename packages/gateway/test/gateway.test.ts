@@ -6,6 +6,7 @@ import { GatewayError, type BudgetDetails, type CompletionRequest } from '@byway
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
+import type { AnthropicMessageLike } from '../src/providers/anthropic.ts';
 import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, httpError, MemoryArtifacts } from './fakes.ts';
 
 const ANTHROPIC_KEY = 'sk-ant-api03-test-not-a-real-key-000000';
@@ -247,6 +248,61 @@ describe('gateway: complete', () => {
     expect(readFileSync(join(dir, 'ledger.jsonl'), 'utf8')).not.toContain(ANTHROPIC_KEY);
     expect(artifacts.allText()).not.toContain(ANTHROPIC_KEY);
     expect(artifacts.allText()).toContain('[redacted]');
+  });
+});
+
+/**
+ * F19 at the provider boundary: provider JSON can carry a lone surrogate through a \u escape. A call the provider
+ * answered was billed, so it must be ledgered and counted (ENG-3) even when what the provider reported has no
+ * canonical form.
+ */
+describe('gateway: malformed provider labels still reach the ledger', () => {
+  const anthropicGateway = (reply: AnthropicMessageLike) => {
+    const { client } = fakeAnthropic([reply]);
+    return gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+  };
+
+  it('ledgers and counts a billed call whose served model holds a lone surrogate, keeping the exact reply stored', async () => {
+    const g = anthropicGateway(anthropicMessage({ model: 'claude-opus-5-5\ud800' }));
+    const res = await g.complete(req());
+    const [entry] = ledgerLines();
+    expect(entry.servedModel).toBe('claude-opus-5-5�');
+    expect(entry.costUsd).toBeCloseTo(0.014, 9);
+    expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(0.014, 9);
+    expect(await g.verifyLedger()).toBeNull();
+    const response = await artifacts.getText(entry.responseSha256);
+    expect(response.isWellFormed()).toBe(true);
+    expect(response).toContain('claude-opus-5-5\\ud800');
+    expect(entry.responseSha256).toBe(`sha256:${sha256Hex(response)}`);
+    // Only the hashed ledger copy is changed; the caller is told what the provider reported.
+    expect(res.servedModel).toBe('claude-opus-5-5\ud800');
+  });
+
+  it('ledgers an upstream host that holds a lone surrogate with U+FFFD in its place', async () => {
+    const { client } = fakeOpenAI([{ model: 'anthropic/claude-opus-5.5', provider: 'Anthropic\ud800', choices: [{ message: { content: 'Choice: A' } }], usage: { prompt_tokens: 100, completion_tokens: 10, cost: 0.0123 } }]);
+    const g = gateway({ env: { OPENROUTER_API_KEY: 'sk-or-v1-test-not-real-000000' }, clients: { openrouter: client } });
+    await g.complete(req({ profileId: 'openrouter' }));
+    expect(ledgerLines()[0]).toMatchObject({ provider: 'openrouter', upstreamProvider: 'Anthropic�', costUsd: 0.0123 });
+    expect(await g.verifyLedger()).toBeNull();
+  });
+
+  it('ledgers a reply with a lone surrogate in a property name, under the hash of the text it stores', async () => {
+    const g = anthropicGateway({ ...anthropicMessage(), 'x\ud800': 1 } as AnthropicMessageLike);
+    await g.complete(req());
+    const [entry] = ledgerLines();
+    const response = await artifacts.getText(entry.responseSha256);
+    expect(response.isWellFormed()).toBe(true);
+    expect(response).toContain('"x\\ud800":1');
+    expect(entry.responseSha256).toBe(`sha256:${sha256Hex(response)}`);
+    expect(await g.verifyLedger()).toBeNull();
+  });
+
+  it('ledgers a served model that is not a string as its JSON text', async () => {
+    const g = anthropicGateway(anthropicMessage({ model: ['claude\ud800'] as unknown as string }));
+    await g.complete(req());
+    expect(ledgerLines()[0].servedModel).toBe('["claude\\ud800"]');
+    expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(0.014, 9);
+    expect(await g.verifyLedger()).toBeNull();
   });
 });
 
