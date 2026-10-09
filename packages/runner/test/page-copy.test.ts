@@ -14,6 +14,8 @@ const body = (html: string) => html.replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, 
 const same = (d: string[]) => d.join('\n');
 const set = (k: number, v: string) => (d: string[]) => d.map((l, i) => (i === k ? v : l)).join('\n');
 const sets = (m: Record<number, string>) => (d: string[]) => d.map((l, i) => (i in m ? m[i]! : l)).join('\n');
+/** Each link part's address, by position, as the page lock holds them. */
+const linkHrefs = (html: string): string[] => (JSON.parse(pageLockView(html)) as { links: string[] }).links;
 
 interface Outcome {
   deck: string[];
@@ -423,6 +425,86 @@ describe('the verifier refuses a page placement did not make (F07)', () => {
     const broken = { ok: true as const, lines: [] };
     expect(placePageEdit(b, broken).problems).toEqual([expect.stringMatching(/^byway could not place this edit \(/)]);
     expect(pageEditProblems(b, b, broken, { removed: [], brs: [] })).toEqual([expect.stringMatching(/^byway could not check this edit \(/)]);
+  });
+});
+
+describe('an <a> left open, or holding another: read as browsers read it, or refused where byway cannot tell (F07, r4)', () => {
+  const OPEN = '<p>Hello <a href="/x">world</p><p>Next block</p>';
+
+  it('an unclosed <a> (and "<a href=x/>") carries its link into the following blocks, as browsers carry it', () => {
+    const p = readPageCopy(pageOf(OPEN));
+    expect(deckLines(p)).toEqual(['T', 'Hello [world]', 'Next block']);
+    expect(pageVoiceSuffix(p)).toMatch(/Where each one goes: line 2 "world" goes to \/x; line 3 "Next block" goes to \/x\.$/);
+    expect(pageLockView(pageOf(OPEN))).toBe(JSON.stringify({ deck: ['T', 'Hello [world]', 'Next block'], links: ['/x', '/x'] }));
+    expect(run(OPEN, set(2, 'Next blocks'))).toMatchObject(clean('<p>Hello <a href="/x">world</p><p>Next blocks</p>'));
+    expect(run(OPEN, set(1, 'Hello [big world]'))).toMatchObject(clean('<p>Hello <a href="/x">big world</p><p>Next block</p>'));
+    expect(run(OPEN, set(1, 'Hello world')).rejected).toMatch(/^Line 2 has 1 link in \[brackets\] and your line has 0/);
+    expect(deckLines(readPageCopy(pageOf('<p>Go <a href="/x"/> now</p><p>More</p>')))).toEqual(['T', 'Go [now]', 'More']);
+    // It ends at the next </a> or <a ...> tag, as browsers end it.
+    expect(deckLines(readPageCopy(pageOf('<p>A <a href="/x">b</p><p>c</a> d</p><p>e</p>')))).toEqual(['T', 'A [b]', '[c] d', 'e']);
+    expect(deckLines(readPageCopy(pageOf('<p>A <a href="/x">b</p><p>c <a href="/y">d</a> e</p>')))).toEqual(['T', 'A [b]', '[c] [d] e']);
+    // A misnested </b> pops the link, and browsers open it again for the words after.
+    expect(deckLines(readPageCopy(pageOf('<p><b>bold <a href="/x">link</b> more</a> after</p>')))).toEqual(['T', 'bold [link more] after']);
+    expect(deckLines(readPageCopy(pageOf('<div><a href="/x">Hi<div>there</div></div><p>after</p>')))).toEqual(['T', 'Hi', 'there', 'after']);
+    expect(linkHrefs(pageOf('<div><a href="/x">Hi<div>there</div></div><p>after</p>'))).toEqual(['/x', '/x', '/x']);
+  });
+
+  it('an <a> inside another: browsers end the first where the second starts', () => {
+    const N = '<p>See <a href="/1">one <a href="/2">two</a> three</a> end</p>';
+    expect(deckLines(readPageCopy(pageOf(N)))).toEqual(['T', 'See [one] [two] three end']);
+    expect(run(N, set(1, 'See [one] [2] three end'))).toMatchObject(clean('<p>See <a href="/1">one <a href="/2">2</a> three</a> end</p>'));
+    expect(deckLines(readPageCopy(pageOf('<a href="/1">x<p>y<a href="/2">z</a></p>w</a>')))).toEqual(['T', 'x', '[y][z]', 'w']);
+    // Two links with no place between them outside both: a space can go between them, words cannot.
+    const T2 = '<p><a href="/1">One<a href="/2">Two</a></p>';
+    expect(deckLines(readPageCopy(pageOf(T2)))).toEqual(['T', '[One][Two]']);
+    expect(run(T2, set(1, '[One] [Two]'))).toMatchObject(clean('<p><a href="/1">One <a href="/2">Two</a></p>'));
+    expect(run(T2, set(1, '[One] and [Two]')).placeProblems).toEqual(['Line 2: words cannot be added between these two links here: the page leaves the first one open, so a browser starts the second right where the first ends.']);
+    // The same with a wordless link left open between them: its empty reach is no place outside the links either.
+    const T3 = '<p><a href="/1">One<a href="/2"><a href="/3">Two</a></p>';
+    expect(deckLines(readPageCopy(pageOf(T3)))).toEqual(['T', '[One][Two]']);
+    expect(run(T3, set(1, '[One] [Two]'))).toMatchObject(clean('<p><a href="/1">One <a href="/2"><a href="/3">Two</a></p>'));
+    expect(run(T3, set(1, '[One] and [Two]')).placeProblems).toEqual(['Line 2: words cannot be added between these two links here: the page leaves the first one open, so a browser starts the second right where the first ends.']);
+  });
+
+  it('a link left open is never removed, nor anything holding one end of its reach and not the other', () => {
+    expect(run(OPEN, sets({ 1: 'Hello []', 2: '' })).placeProblems).toEqual(['Line 2: this link cannot be removed in this step and would be left empty; keep some words for it, or leave the line as it was.']);
+    // The block holding the link's start tag stays (empty): removing it would take the link off the next block's words.
+    expect(run('<p>Intro</p><p><a href="/x">Lead</p><p>Carried</p>', set(2, ''))).toMatchObject(clean('<p>Intro</p><p><a href="/x"></p><p>Carried</p>'));
+    // The link whose start tag ends the reach stays: removing it would carry the first link on to "d".
+    expect(run('<p>A <a href="/x">b</p><p><a href="/y">c</a></p><p>d</p>', set(2, '')).placeProblems).toEqual(['Line 3: this link cannot be removed in this step and would be left empty; keep some words for it, or leave the line as it was.']);
+    // A block holding the whole reach can go.
+    expect(run('<p>Intro</p><p><a href="/1">x <a href="/2">y</a></p><p>End</p>', set(2, ''))).toMatchObject(clean('<p>Intro</p><p>End</p>'));
+    // Inside a wrapper that is never removed, the two links are named once.
+    expect(run('<p>Intro</p><div><a href="/1">x <a href="/2">y</a></div><p>End</p>', set(2, '')).placeProblems).toEqual(['Line 3: this link cannot be removed in this step and would be left empty; keep some words for it, or leave the line as it was.']);
+    // An <a> written around another, with its own closing tag: emptied, it goes whole, from its start tag to that
+    // closing tag (the inner link with it), as round 3 removed it.
+    expect(run('<p>Intro</p><p><a href="/1"><a href="/2">café six</a></a> <em>R&amp;D</em> <svg width="8" height="8"></svg></p>', set(2, ''))).toMatchObject(clean('<p>Intro</p><p> <svg width="8" height="8"></svg></p>'));
+    const AROUND = '<p>Intro</p><div>bread <a href="/8"><a href="/7">us now</a> bread</a> Fresh</div>';
+    expect(run(AROUND, same).deck).toEqual(['T', 'Intro', 'bread [us now] bread Fresh']);
+    expect(run(AROUND, set(2, 'bread [] Fresh'))).toMatchObject(clean('<p>Intro</p><div>bread Fresh</div>'));
+    // The verifier holds the same rule.
+    const lead = pageOf('<p>Intro</p><p><a href="/x">Lead</p><p>Carried</p>');
+    const lp = readPageCopy(lead);
+    const leadP = [...lp.els.values()].find((x) => x.name === 'p' && lp.tokens[x.start + 1]?.raw === '<a href="/x">')!;
+    expect(pageEditProblems(lead, pageOf('<p>Intro</p><p>Carried</p>'), edit(lead, 'T\nIntro\n\nCarried'), { removed: [leadP.start], brs: [] })).toEqual(['The page changed beyond its text: it removes an element this edit may not remove.']);
+  });
+
+  it('where a table, a list box or an svg makes it unclear, the lines from that link on are refused, named, and the prompt says so', () => {
+    const TP = '<p>Intro</p><p>Hello <a href="/x">world</p><table><tr><td>Cell</td></tr></table><p>After</p>';
+    const p = readPageCopy(pageOf(TP));
+    expect(deckLines(p)).toEqual(['T', 'Intro', 'Hello world', 'Cell', 'After']);
+    const why = "a link on the page (to /x) is left open or holds another link, around a table, a list box, an svg or other markup where byway cannot tell which words a browser shows as that link's words";
+    expect(pageVoiceSuffix(p)).toBe(`One line per block of text; leave a line empty to remove its text. Lines 3 to 5 cannot be changed in this step: ${why}; leave them as they are.`);
+    expect(run(TP, set(3, 'Cells')).rejected).toBe(`Line 4 cannot be changed in this step: ${why}, so byway cannot write this line exactly. Leave line 4 as it was offered.`);
+    expect(run(TP, set(2, '')).rejected).toBe(`Line 3 cannot be changed in this step: ${why}, so byway cannot write this line exactly. Leave line 3 as it was offered.`);
+    expect(run(TP, set(1, 'Intro!'))).toMatchObject(clean(TP.replace('Intro', 'Intro!')));
+    expect(run(TP, same)).toMatchObject(clean(TP));
+    // A list box: a </a> inside it is ignored by browsers, so the link may go on after it.
+    expect(pageVoiceSuffix(readPageCopy(pageOf('<p>Hi <a href="/x">there</p><select><option>Opt</option></select><p>after</p>')))).toMatch(/Lines 2 to 4 cannot be changed in this step/);
+    // The verifier refuses such a line too, whatever reads the answer.
+    const before = pageOf(TP);
+    const e: PageEdit = { ok: true, lines: p.units.map((_, i) => (i === 3 ? { changed: true as const, text: 'Cells', segs: [{ kind: 'out' as const, text: 'Cells' }] } : { changed: false as const })) };
+    expect(pageEditProblems(before, before.replace('Cell<', 'Cells<'), e, { removed: [], brs: [] })).toEqual(['Line 4 cannot be changed in this step: a link on the page is left open or holds another link there.']);
   });
 });
 

@@ -375,6 +375,25 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('a link the page leaves open: the prompt names where its carried words go, and an edit to them is stored (r4)', async () => {
+    const q = await open(page('<p>Hello <a href="/x">world</p><p>Next block</p>'));
+    expect(q.offered).toBe('T\nHello [world]\nNext block');
+    expect(q.prompt).toMatch(/line 3 "Next block" goes to \/x\.$/);
+    const out = await q.answer('T\nHello [world]\nNext blocks');
+    expect(await stored(out.artifactId!)).toBe('<p>Hello <a href="/x">world</p><p>Next blocks</p>');
+    expect(JSON.parse(pageLockView(await b.store.artifacts.getText(out.artifactId!)))).toEqual({ deck: ['T', 'Hello [world]', 'Next blocks'], links: ['/x', '/x'] });
+  });
+
+  it('where byway cannot tell a left-open link\'s words, the prompt says so and a change there is refused, never mis-written (r4)', async () => {
+    const q = await open(page('<p>Intro</p><p>Hello <a href="/x">world</p><table><tr><td>Cell</td></tr></table><p>After</p>'));
+    expect(q.prompt).toMatch(/Lines 3 to 5 cannot be changed in this step: a link on the page \(to \/x\) is left open/);
+    const msg = await rejected(q.answer('T\nIntro\nHello world\nCells\nAfter'));
+    expect(msg).toMatch(/^Line 4 cannot be changed in this step: a link on the page \(to \/x\) is left open .* Leave line 4 as it was offered\. As first offered, line 4 read "Cell"\.$/);
+    const out = await q.answer('T\nWelcome\nHello world\nCell\nAfter');
+    expect(await stored(out.artifactId!)).toBe('<p>Welcome</p><p>Hello <a href="/x">world</p><table><tr><td>Cell</td></tr></table><p>After</p>');
+    expect(b.gateway.requests).toEqual([]);
+  });
+
   it('an answer equal to the offer writes nothing, whatever its whitespace', async () => {
     const q = await open(page('<h1>Head</h1><p>Sub</p>'));
     expect((await q.answer('T\n  Head \nSub\n\n')).artifactId).toBeUndefined();

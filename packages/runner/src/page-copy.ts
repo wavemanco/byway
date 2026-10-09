@@ -1,12 +1,18 @@
 /**
  * A web page's copy deck, and VOICE's exact write-back into the page (F07, ADR-0081). Imported only by copy.ts.
  *
- * The deck: one line ("unit") per block of visible text, in reading order, read with the browser-faithful tokenizer
- * (html-tokens.ts). Head content is not offered except the <title>; <pre>, raw text, CDATA and attribute copy are not
- * offered. A block that holds only links side by side (a nav) gives one line per link. One notation holds on every
- * line: a link's words inside a line are shown in [brackets]; a literal "[", "]", or a backslash before one of them or
- * before a bracket of the notation, is shown escaped with a backslash. A line that is exactly one link's words is shown
- * plain (a "whole-link" line).
+ * The deck: one line ("unit") per run of visible text, in reading order, read with the browser-faithful tokenizer
+ * (html-tokens.ts). A run is the text between two tags that are not inline formatting (INLINE), so a block is one line
+ * unless a <br>, an image, an svg, a control or a nested block splits it. Head content is not offered except the
+ * <title>; <pre>, raw text, CDATA and attribute copy are not offered. A block that holds only links side by side (a
+ * nav) gives one line per link. One notation holds on every line: a link's words inside a line are shown in
+ * [brackets]; a literal "[", "]", or a backslash before one of them or before a bracket of the notation, is shown
+ * escaped with a backslash. A line that is exactly one link's words is shown plain (a "whole-link" line).
+ *
+ * Links are read where browsers end them: at the next <a ...> or </a> tag. A link the page leaves open (an unclosed
+ * <a>, "<a href=x/>", one a misnested closing tag pops) reaches the following blocks, and an <a> inside another ends
+ * the first. Where that reach holds a table, a list box, svg or math (UNCLEAR), byway cannot tell without building the
+ * tree: the link is tangled, and every line from it on is offered but cannot be changed.
  *
  * The write-back has three parts that never call a model:
  * - readPageEdit: the person's answer as an exact positional edit (one line per unit; an empty line deletes its text);
@@ -14,15 +20,18 @@
  *   words so formatting follows whole words or pieces (a documented rule, not verified); link words go where the
  *   person put their brackets, and no word crosses a link's edge (words outside brackets never go into an image or
  *   icon link, and a whole-link line's words all stay in its link). A line's edge whitespace stays in the slot that
- *   held it. Elements left empty are removed when the shared rule allows (never one that carries a
- *   hook such as id, data-* or aria-*, never one whose removal would join two runs of text), and the <br> run a
- *   deleted line leaves goes with it. It returns its removals as a witness;
+ *   held it, unless it would then show as a space where the person's line has none (text glued to a link whose edge
+ *   space sat inside it): then it is dropped. Elements left empty are removed when the shared rule allows (never one
+ *   that carries a hook such as id, data-* or aria-*, never one whose removal would join two runs of text or move
+ *   where browsers end a link), and the <br> run a deleted line leaves goes with it. It returns its removals as a
+ *   witness;
  * - pageEditProblems: the verifier. It checks the witness against the shared rule, compares the markup token for token
- *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each line's words
- *   and edge whitespace and each link part's words, that no link or button whose words were in a changed line is left
- *   nameless (an image's alt or a label names one that keeps an image or icon), and reads the written page fresh:
- *   each block's words, and which of them are in which link (with its address). It is
- *   independent of placement's alignment and removal choices, not of the reader (which is tested on its own).
+ *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each line's words,
+ *   the line as it shows (edge whitespace included, whitespace collapsed) and its edge whitespace, and each link
+ *   part's words, that no link or button whose words were in a changed line is left nameless (an image's alt or a
+ *   label names one that keeps an image or icon), and reads the written page fresh: each block's words, and which of
+ *   them are in which link (with its address). It is independent of placement's alignment and removal choices, not of
+ *   the reader (which is tested on its own, and against Chromium in scratch harnesses).
  * Reading, placing and verifying are linear in the page, except that placement matches a changed block's old and new
  * words: by a table quadratic in the words of that block (a line of up to about a thousand words), and past that by
  * an edit script whose cost grows with the words changed (capped; see wordPairs). None of them throws.
@@ -36,6 +45,12 @@ const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input'
 const EMBEDDED = new Set(['img', 'svg', 'picture', 'video', 'audio', 'iframe', 'canvas', 'object', 'embed', 'input', 'select', 'textarea', 'button']);
 /** Blocks whose removal (when emptied) leaves no hole: everything else (a cell, a <dd>, a wrapper) is kept empty. */
 const TEXT_BLOCKS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'figcaption']);
+/**
+ * Markup inside which browsers may stop, skip or resume a link the page leaves open (table modes and cells, the
+ * formatting markers, a list box, svg and math): in its reach, byway cannot tell a link's words without building the
+ * tree.
+ */
+const UNCLEAR = new Set(['table', 'caption', 'colgroup', 'col', 'tbody', 'thead', 'tfoot', 'tr', 'td', 'th', 'applet', 'object', 'marquee', 'template', 'select', 'svg', 'math']);
 
 /** A hook other parts of the page may use: an element carrying one is never removed. */
 const isHook = (name: string): boolean => ['id', 'for', 'name', 'role'].includes(name) || name.startsWith('data-') || (name.startsWith('aria-') && name !== 'aria-label');
@@ -79,7 +94,19 @@ interface El {
   start: number;
   end?: number;
   name: string;
+  /**
+   * An <a> whose end is where browsers end it, not its own closing tag: the next <a ...> or </a> tag, or the page's
+   * end. Its words are read in that reach.
+   */
+  virtual?: true;
+  /**
+   * A virtual link's own closing tag in the markup, when the reader matched one (an <a> written around another): its
+   * removal span. A virtual link with none is never removed.
+   */
+  markupEnd?: number;
 }
+/** The tokens an element's removal takes, to its last one: its own closing tag in the markup. */
+const spanEnd = (el: El): number | undefined => (el.virtual ? el.markupEnd : el.end);
 interface SlotSeg {
   kind: 'out' | 'link';
   slots: number[];
@@ -100,6 +127,8 @@ interface Unit {
   trail: Map<number, string>;
   wholeLink?: number;
   block: number;
+  /** In the reach of a tangled link (see readPageCopy): byway cannot tell which of its words are link words. */
+  tangled?: true;
 }
 
 /** A page read for its copy. */
@@ -110,6 +139,13 @@ export interface PageDeck {
   units: Unit[];
   slotEndingAt: Int32Array;
   blockOfRegion: Map<number, number>;
+  /** The start token of the first tangled link: every line from it on cannot be changed. */
+  tangledAt?: number;
+  /**
+   * The tokens that bound a virtual link's reach (its start tag, and the next <a> tag that ends it), each with the
+   * other end (the page's length when it runs to the end): an element holding one end and not the other is kept.
+   */
+  reachEnds: Map<number, number[]>;
 }
 
 /** Read a page's copy deck (one pass over its tokens, plus link membership by token index). */
@@ -175,6 +211,45 @@ export function readPageCopy(html: string): PageDeck {
   });
   slotEndingAt[tokens.length] = slots.length;
   slots.push({ ...cur, end: tokens.length });
+  // Where browsers end each <a>. A link ends at the next <a ...> or </a> tag, wherever the markup puts it: a link the
+  // page leaves open (an unclosed <a>, "<a href=x/>", or one a misnested closing tag pops) is opened again in each
+  // following block until then, and an <a> inside another ends the first. Such a link's end is read as browsers read
+  // it (virtual), so the deck, placement, the verifier and the lock see the words a browser shows as its words. Where
+  // its reach holds markup in which browsers may stop or resume it (UNCLEAR), byway cannot tell without building the
+  // tree: the link is tangled, keeps the markup's reading, and every line from it on cannot be changed.
+  let tangledAt: number | undefined;
+  const reachEnds = new Map<number, number[]>();
+  const pair = (x: number, y: number) => {
+    const r = reachEnds.get(x);
+    if (r) r.push(y);
+    else reachEnds.set(x, [y]);
+  };
+  {
+    const aTags: number[] = [];
+    tokens.forEach((t, i) => {
+      if (t.kind === 'tag' && t.name === 'a') aTags.push(i);
+    });
+    let next = 0;
+    // Each link's reach runs to the next <a> tag, so the reaches do not overlap and the scan is linear.
+    for (const el of [...els.values()].filter((e) => e.name === 'a').sort((x, y) => x.start - y.start)) {
+      while (next < aTags.length && aTags[next]! <= el.start) next++;
+      const n = next < aTags.length ? aTags[next]! : tokens.length;
+      if (el.end === n) continue; // closed by its own </a>, with no <a> inside: browsers read it the same
+      const st = tokens[el.start]!;
+      let clear = !(st.kind === 'tag' && st.foreign);
+      for (let t = el.start + 1; clear && t < n; t++) {
+        const tk = tokens[t]!;
+        if (tk.kind === 'tag' && UNCLEAR.has(tk.name)) clear = false;
+      }
+      if (clear) {
+        if (el.end !== undefined) el.markupEnd = el.end;
+        el.end = n;
+        el.virtual = true;
+        pair(el.start, n);
+        if (n < tokens.length) pair(n, el.start);
+      } else tangledAt ??= el.start;
+    }
+  }
   // Link membership: the outermost closed <a> holding the slot (a link spanning a <br> covers slots in two units).
   const aEls = [...els.values()].filter((e) => e.name === 'a' && e.end !== undefined).sort((x, y) => x.start - y.start);
   let ai = 0;
@@ -190,7 +265,7 @@ export function readPageCopy(html: string): PageDeck {
     const outer = aStack.find((e) => e.start <= startTok && s.end <= e.end!);
     if (outer) s.link = outer.start;
   });
-  const page: PageDeck = { tokens, slots, els, units: [], slotEndingAt, blockOfRegion };
+  const page: PageDeck = { tokens, slots, els, units: [], slotEndingAt, blockOfRegion, reachEnds };
   const byRegion = new Map<number, number[]>();
   slots.forEach((s, i) => {
     if (!s.visible) return;
@@ -208,19 +283,29 @@ export function readPageCopy(html: string): PageDeck {
     for (const g of groups) if (text(g)) page.units.push(makeUnit(page, g));
   }
   page.units.sort((a, b) => a.slots[0]! - b.slots[0]!);
+  // A tangled link may reach the page's end, so every line with text after its start tag is flagged.
+  if (tangledAt !== undefined) {
+    page.tangledAt = tangledAt;
+    for (const u of page.units) {
+      const k = u.slots.at(-1)!;
+      if (k > 0 && slots[k - 1]!.end >= tangledAt) u.tangled = true;
+    }
+  }
   return page;
 }
 
 const slotRaw = (p: PageDeck, s: number): string => p.slots[s]!.toks.map((i) => p.tokens[i]!.raw).join('');
 const slotText = (p: PageDeck, s: number): string => decodeText(slotRaw(p, s));
-/** Slots wholly inside an element: a contiguous range, by token index. */
-function inside(p: PageDeck, el: El): number[] {
+/** Slots wholly inside an element (for a virtual link, its reach): a contiguous range, by token index. */
+function inside(p: PageDeck, el: El, end = el.end!): number[] {
   const a = p.slotEndingAt[el.start]! + 1;
-  const b = p.slotEndingAt[el.end!]!;
+  const b = p.slotEndingAt[end]!;
   const r: number[] = [];
   for (let s = a; s <= b; s++) r.push(s);
   return r;
 }
+/** Slots in an element's removal span (see spanEnd): for a virtual link, to its own closing tag. */
+const spanSlots = (p: PageDeck, el: El): number[] => inside(p, el, spanEnd(el)!);
 
 function makeUnit(p: PageDeck, g: number[]): Unit {
   const segs: SlotSeg[] = [];
@@ -409,8 +494,14 @@ export function readPageEdit(p: PageDeck, answer: string, offered?: string, firs
       refuse(i, `Line ${i + 1} was read again since this question opened; it now reads "${u.display}": write your change to that line.`);
       return;
     }
+    // A changed line in a tangled link's reach is refused: byway cannot tell which of its words a browser shows as
+    // link words, so it cannot write it exactly.
+    const changed = (line: EditLine) => {
+      if (u.tangled) refuse(i, `Line ${i + 1} cannot be changed in this step: ${tangledWhy(p)}, so byway cannot write this line exactly. Leave line ${i + 1} as it was offered.`);
+      else out.push(line);
+    };
     if (!noHtmlSpace(raw)) {
-      out.push({ changed: true, text: '', segs: u.segs.map((s) => ({ kind: s.kind, text: '' })) });
+      changed({ changed: true, text: '', segs: u.segs.map((s) => ({ kind: s.kind, text: '' })) });
       return;
     }
     let segs = parseMarked(raw);
@@ -445,7 +536,7 @@ export function readPageEdit(p: PageDeck, answer: string, offered?: string, firs
       refuse(i, `Line ${i + 1} has ${want} link${want === 1 ? '' : 's'} in [brackets] and your line has ${links}: keep one pair per link, in order; leave a pair empty, [], to remove its link.`);
       return;
     }
-    out.push({ changed: true, text: ns.map((t) => t.text).join(''), segs: ns });
+    changed({ changed: true, text: ns.map((t) => t.text).join(''), segs: ns });
   });
   if (problems.length) return { ok: false, problem: problems.join(' '), lines: named };
   return { ok: true, lines: out };
@@ -462,6 +553,27 @@ export function samePageCopy(offered: string, answer: string): boolean {
 // ---- links: where each one goes ------------------------------------------------------------------------------------
 
 const hrefOf = (raw: string): string => attributesOf(raw).find((a) => a.name === 'href')?.value ?? '(no address)';
+/** An address as the prompt and refusals name it: cut to 60 characters. */
+const shortAddress = (h: string): string => (h.length > 60 ? `${h.slice(0, 57)}...` : h);
+
+/** Why lines in a tangled link's reach cannot be changed, naming the link. */
+function tangledWhy(p: PageDeck): string {
+  const href = p.tangledAt === undefined ? '(no address)' : hrefOf(p.tokens[p.tangledAt]!.raw);
+  const link = href === '(no address)' ? 'a link on the page' : `a link on the page (to ${shortAddress(href)})`;
+  return `${link} is left open or holds another link, around a table, a list box, an svg or other markup where byway cannot tell which words a browser shows as that link's words`;
+}
+
+/** 1-based line numbers as words: "Line 3", "Lines 3 to 5", "Lines 2, 4 to 6 and 9". */
+function linesNamed(ns: number[]): string {
+  const runs: string[] = [];
+  for (let k = 0; k < ns.length; ) {
+    let j = k;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j]! + 1) j++;
+    runs.push(j === k ? `${ns[k]}` : `${ns[k]} to ${ns[j]}`);
+    k = j + 1;
+  }
+  return `${ns.length > 1 ? 'Lines' : 'Line'} ${runs.length > 1 ? `${runs.slice(0, -1).join(', ')} and ${runs.at(-1)}` : runs[0]}`;
+}
 
 /** Each link part of the deck, by position: its line (0-based), its words as shown, and its address. */
 export function linkParts(p: PageDeck): { line: number; words: string; href: string }[] {
@@ -484,12 +596,14 @@ const LEGEND_MAX = 40;
 export function pageVoiceSuffix(p: PageDeck): string {
   const parts = ['One line per block of text; leave a line empty to remove its text.'];
   if (p.units.some((u) => u.marked)) parts.push("Words in [brackets] are a link's words: keep one pair of brackets per link, in order, and leave a pair empty, [], to remove that link. To write a bracket as text, put \\ before it.");
-  const links = linkParts(p);
+  // Lines in a tangled link's reach cannot be changed, so their links are not named.
+  const links = linkParts(p).filter((x) => !p.units[x.line]!.tangled);
   if (links.length) {
-    const addr = (h: string) => (h.length > 60 ? `${h.slice(0, 57)}...` : h);
-    const shown = links.slice(0, LEGEND_MAX).map((x) => `line ${x.line + 1} "${x.words}" goes to ${addr(x.href)}`);
+    const shown = links.slice(0, LEGEND_MAX).map((x) => `line ${x.line + 1} "${x.words}" goes to ${shortAddress(x.href)}`);
     parts.push(`Links stay where they are; only their words change. Where each one goes: ${shown.join('; ')}${links.length > LEGEND_MAX ? `; and ${links.length - LEGEND_MAX} more` : ''}.`);
   }
+  const tangled = p.units.flatMap((u, i) => (u.tangled ? [i + 1] : []));
+  if (tangled.length) parts.push(`${linesNamed(tangled)} cannot be changed in this step: ${tangledWhy(p)}; leave ${tangled.length > 1 ? 'them as they are' : 'it as it is'}.`);
   return parts.join(' ');
 }
 
@@ -526,13 +640,20 @@ function namedWithoutText(p: PageDeck, el: El): boolean {
   return false;
 }
 
-/** An emptied element may go: inline or a text block, with nothing inside that carries a hook or shows without text. */
+/**
+ * An emptied element may go, from its start tag to its own closing tag: inline or a text block, with nothing inside that
+ * carries a hook or shows without text. A link the page leaves open (virtual, with no closing tag of its own) never
+ * goes; nor does an element holding one end of a virtual link's reach and not the other (removing it would move where
+ * browsers end that link). An <a> written around another goes whole, the inner link with it.
+ */
 function removable(p: PageDeck, el: El): boolean {
-  if (el.end === undefined) return false;
+  const end = spanEnd(el);
+  if (end === undefined) return false;
   if (!INLINE.has(el.name) && !TEXT_BLOCKS.has(el.name)) return false;
-  for (let i = el.start; i <= el.end; i++) {
+  for (let i = el.start; i <= end; i++) {
     const t = p.tokens[i]!;
     if (t.kind === 'tag' && !t.closing && (EMBEDDED.has(t.name) || hasHook(t.raw))) return false;
+    if (p.reachEnds.get(i)?.some((o) => o < el.start || o > end)) return false;
   }
   return true;
 }
@@ -639,7 +760,10 @@ const deletedUnitsOf = (p: PageDeck, edit: PageEdit): Set<number> =>
 /** The removals an edit makes, given which slots hold text afterwards (placement's own result). */
 function removalsFor(p: PageDeck, edit: PageEdit, hasText: (s: number) => boolean): { elements: number[]; brs: number[]; problems: string[] } {
   const problems: string[] = [];
-  const emptied = [...p.els.values()].filter((el) => el.end !== undefined && inside(p, el).some((s) => noHtmlSpace(slotText(p, s))) && !inside(p, el).some(hasText));
+  const left = (ss: number[]) => ss.some((s) => noHtmlSpace(slotText(p, s))) && !ss.some(hasText);
+  // Emptied over its removal span (a removal candidate), and, for a link or button, over its reach (left without words).
+  const emptied = [...p.els.values()].filter((el) => spanEnd(el) !== undefined && left(spanSlots(p, el)));
+  const unworded = [...p.els.values()].filter((el) => (el.name === 'a' || el.name === 'button') && el.end !== undefined && left(inside(p, el)));
   const regionHasText = new Map<number, boolean>();
   p.slots.forEach((s, k) => {
     if (s.visible && hasText(k)) regionHasText.set(s.region, true);
@@ -654,15 +778,15 @@ function removalsFor(p: PageDeck, edit: PageEdit, hasText: (s: number) => boolea
     if (el.start <= coveredTo) continue;
     if (!INLINE.has(el.name)) {
       const a = regionBefore(el.start);
-      const b = regionAfter(el.end!);
+      const b = regionAfter(spanEnd(el)!);
       if (uf.wouldJoin(a, b)) continue; // its children are not candidates either: the element stays, empty
       uf.join(a, b);
     }
     elements.push(el.start);
-    coveredTo = el.end!;
+    coveredTo = spanEnd(el)!;
   }
   const brs = brRuns(p, deletedUnitsOf(p, edit))
-    .filter((t) => !elements.some((st) => st <= t && t <= p.els.get(st)!.end!))
+    .filter((t) => !elements.some((st) => st <= t && t <= spanEnd(p.els.get(st)!)!))
     .filter((t) => {
       const a = regionBefore(t);
       const b = regionAfter(t);
@@ -671,9 +795,8 @@ function removalsFor(p: PageDeck, edit: PageEdit, hasText: (s: number) => boolea
       return true;
     });
   const gone = elements.map((st) => p.els.get(st)!);
-  for (const el of emptied) {
-    if (gone.some((g) => g.start <= el.start && g.end! >= el.end!)) continue;
-    if (el.name !== 'a' && el.name !== 'button') continue;
+  for (const el of unworded) {
+    if (gone.some((g) => g.start <= el.start && spanEnd(g)! >= Math.max(el.end!, spanEnd(el) ?? 0))) continue;
     const visible = showsWithoutText(p, el);
     if (!visible || !namedWithoutText(p, el)) {
       const slots = new Set(inside(p, el));
@@ -972,11 +1095,25 @@ function place(before: string, edit: PageEdit): Placed {
       u.segs.forEach((seg, k) => {
         const t = line.segs[k]!.text;
         if (!t) return;
-        if (!seg.slots.length) {
+        // A part outside links with no slot outside links: none at all, or only the empty reach of a wordless link the
+        // page leaves open (it ends where the next <a> starts).
+        if (seg.kind === 'out' && u.marked && !seg.slots.some((s) => p.slots[s]!.link === undefined)) {
           // Words beside a link where the line had none: right after the link before, or right before the link after.
           const prevLink = u.segs[k - 1];
           const nextLink = u.segs[k + 1];
-          const at = prevLink ? p.els.get(prevLink.link!)!.end! + 1 : p.els.get(nextLink!.link!)!.start;
+          const prev = prevLink ? p.els.get(prevLink.link!)! : undefined;
+          if (prev && (prev.end! >= p.tokens.length || !(p.tokens[prev.end!]! as { closing?: boolean }).closing)) {
+            // The link before is left open and ends where the next <a> starts: there is no place between them outside
+            // both. A space can go at the end of the first (it shows the same); words cannot.
+            if (noHtmlSpace(t)) {
+              problems.push(`Line ${i + 1}: words cannot be added between these two links here: the page leaves the first one open, so a browser starts the second right where the first ends.`);
+              return;
+            }
+            const last = prevLink!.slots.at(-1)!;
+            texts.set(last, `${texts.get(last) ?? ''}${t}`);
+            return;
+          }
+          const at = prev ? prev.end! + 1 : p.els.get(nextLink!.link!)!.start;
           const slot = p.slotEndingAt[at]!;
           if (slot < 0 || !u.slots.includes(slot) || p.slots[slot]!.link !== undefined) {
             problems.push(`Line ${i + 1}: words cannot be added on this side of the link here, because the link continues on the next or previous line.`);
@@ -1020,7 +1157,7 @@ function place(before: string, edit: PageEdit): Placed {
     const g = goneEls.get(i);
     if (g) {
       out.push(inserts.get(i) ?? '');
-      skip = g.end!;
+      skip = spanEnd(g)!;
       return;
     }
     if (goneBr.has(i)) {
@@ -1030,7 +1167,7 @@ function place(before: string, edit: PageEdit): Placed {
     out.push((inserts.get(i) ?? '') + r);
   });
   if (inserts.has(raws.length)) out.push(inserts.get(raws.length)!);
-  return { page: out.join(''), problems, removed: rem.elements, brs: rem.brs };
+  return { page: out.join(''), problems: [...new Set(problems)], removed: rem.elements, brs: rem.brs };
 }
 
 // ---- the exact verifier ------------------------------------------------------------------------------------------
@@ -1046,11 +1183,14 @@ export function pageEditProblems(before: string, after: string, edit: PageEdit, 
 
 function verify(before: string, after: string, edit: PageEdit, witness: Witness): string[] {
   const p = readPageCopy(before);
+  // 0. No changed line in a tangled link's reach: byway cannot tell its link words (the reader refuses these too).
+  const tangled = p.units.flatMap((u, i) => (u.tangled && edit.lines[i]!.changed ? [i + 1] : []));
+  if (tangled.length) return tangled.map((n) => `Line ${n} cannot be changed in this step: a link on the page is left open or holds another link there.`);
   const a = tokenize(after);
   const B = p.tokens.map((t, i) => ({ t, i })).filter((x) => x.t.kind !== 'text');
   const A = a.map((t, i) => ({ t, i })).filter((x) => x.t.kind !== 'text');
   const changedSlots = new Set(p.units.flatMap((u, i) => (edit.lines[i]!.changed ? u.slots : [])));
-  const candidate = (el: El | undefined) => !!el && removable(p, el) && inside(p, el).every((s) => !noHtmlSpace(slotText(p, s)) || changedSlots.has(s));
+  const candidate = (el: El | undefined) => !!el && removable(p, el) && spanSlots(p, el).every((s) => !noHtmlSpace(slotText(p, s)) || changedSlots.has(s));
   const brCandidates = new Set(brRuns(p, deletedUnitsOf(p, edit)));
   // 1. Markup. Each witnessed removal must be one the shared rule allows, and the written page's markup must be the page
   // before, less exactly those removals, token for token. Linear; no search.
@@ -1060,7 +1200,7 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     const el = p.els.get(st);
     if (!candidate(el)) return ['The page changed beyond its text: it removes an element this edit may not remove.'];
     removed.add(el!);
-    for (let t = el!.start; t <= el!.end!; t++) removedTok[t] = 1;
+    for (let t = el!.start; t <= spanEnd(el!)!; t++) removedTok[t] = 1;
   }
   for (const t of new Set(witness.brs)) {
     if (!brCandidates.has(t)) return ['The page changed beyond its text: it removes a line break this edit may not remove.'];
@@ -1070,7 +1210,7 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   if (kept.length !== A.length || kept.some((x, k) => x.t.raw !== A[k]!.t.raw)) return ['The page changed beyond its text: its markup is not the page before the edit, less the elements the edit emptied.'];
   const map = new Map<number, number>(kept.map((x, k) => [x.i, A[k]!.i]));
   const inRemoved = new Uint8Array(p.slots.length);
-  for (const el of removed) for (const s of inside(p, el)) inRemoved[s] = 1;
+  for (const el of removed) for (const s of spanSlots(p, el)) inRemoved[s] = 1;
   // 2 and 3. Chains: before slots the removals merged into one after slot (they share the next kept token). Every slot
   // of a chain has a known after text except one changed line's run: unchanged slots keep their bytes, a deleted
   // line's slots keep only its edge whitespace. The rest of the after slot is that changed line's text.
