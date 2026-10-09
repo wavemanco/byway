@@ -1,26 +1,16 @@
-/** How scripts/serve.ts runs byway (C8): which environment the build gets, the mode, the engine watch. */
+/**
+ * How scripts/serve.ts runs byway (C8): the mode and the engine watch. Which environment the build gets (SEC-3) is the
+ * gateway's withoutSecrets, tested with it in packages/gateway/test/env.test.ts.
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { watchEngine } from '../src/server/engine-watch.ts';
-import { parseServeArgs, withoutSecrets } from '../src/server/serving.ts';
+import { parseServeArgs } from '../src/server/serving.ts';
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe('serving byway', () => {
-  it('gives next build no provider key or other secret, so none can be cached under the repo (SEC-3)', () => {
-    const env = {
-      PATH: '/bin',
-      ANTHROPIC_API_KEY: 'sk-ant-SENTINEL',
-      FAL_KEY: 'fal-SENTINEL',
-      GITHUB_TOKEN: 'ghp-SENTINEL',
-      MY_SECRET: 'x',
-      BYWAY_DATA_DIR: '/data',
-      UNSET: undefined,
-    };
-    expect(withoutSecrets(env, ['ANTHROPIC_API_KEY', 'FAL_KEY'])).toEqual({ PATH: '/bin', BYWAY_DATA_DIR: '/data' });
-  });
-
   it('reads the mode and the demo switch', () => {
     expect(parseServeArgs([], {})).toEqual({ mode: 'start', demo: false });
     expect(parseServeArgs(['start', '--demo'], {})).toEqual({ mode: 'start', demo: true });

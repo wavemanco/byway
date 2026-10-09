@@ -1,6 +1,6 @@
 ---
 id: advisor.compose
-version: 1
+version: 2
 fidelity: project
 slots: problem, blocks, nearest
 output: recipe
@@ -31,6 +31,7 @@ The nearest standard recipe, as JSON. Start from it.
 Your recipe must follow these rules; a validator checks every one:
 - Only registered blocks, glue and roles, with knob values inside their ranges. Every model step's `prompt` is one of the prompt ids the nearest recipe uses, taken from a step with the same role.
 - The chassis: D1 diverges (SEED, VISION), D2 deepens (CRITIC, ASSET, RELAY), D3 distills in the order CUT, TELLS, VOICE.
+- A model step lists in `consumes` the ports it always needs, and in `reads` any port it uses only when an earlier optional step made it; every other step has no `reads`.
 - The port rules: critics see only views and references, never the work's source, the brief or earlier critiques; a critic's threshold stays hidden from it; seeds never enter the work; every option set is closed by a pick before D3 and before any relay chain; nothing writes over the person's own words; the tell catalog goes only to TELLS sweeps; no gate or metric scores how machine-made the work seems.
 - Keep every human checkpoint for VOICE, and the person's authorship wherever the nearest recipe has the person write the work.
 - Declare every block that sits out, with its reason. Cite no protocol exceptions other than those the nearest recipe declares, and add no study manipulations.

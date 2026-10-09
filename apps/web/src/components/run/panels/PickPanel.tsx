@@ -1,29 +1,41 @@
 'use client';
 
 import { useId, useRef, useState } from 'react';
-import { canSubmit, emptyDraft, moveFocus, picksNeeded, toResolution, toggleChoice } from '../../../view/checkpoints.ts';
+import { canSubmit, moveFocus, picksNeeded, toResolution, toggleChoice, type CheckpointDraft } from '../../../view/checkpoints.ts';
 import { outputKind } from '../../../view/run.ts';
 import type { ArtifactInfo } from '../../../view/rundata.ts';
 import { withoutLeadingTitle } from '../../../view/text.ts';
-import { artifactUrl } from '../../api.ts';
+import { openHref } from '../../api.ts';
 import { ArtifactPreview } from '../../ArtifactPreview.tsx';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { TurnFooter } from './TurnFooter.tsx';
 import type { PanelProps } from './types.ts';
 
-/** A text card shown under its caption need not repeat the caption as its own first heading. */
+const isVisual = (mediaType: string | undefined) => ['page', 'image', 'video'].includes(outputKind(mediaType));
+
+/**
+ * A text card shown under its caption need not repeat the caption as its own first heading. A card is a snippet of
+ * the draft (it clips), so it reads the excerpt; Open shows the whole draft (F13).
+ */
 function cardInfo(info: ArtifactInfo | undefined, label: string): ArtifactInfo | undefined {
-  return info?.text === undefined ? info : { ...info, text: withoutLeadingTitle(info.text, label) };
+  return info?.excerpt === undefined ? info : { ...info, excerpt: withoutLeadingTitle(info.excerpt, label) };
 }
 
 /**
  * pick: a contact sheet of the drafts. One pick behaves as a radio group, several as checkboxes; J and K move
- * between drafts, Space selects the one in focus, Enter keeps the selection once it is complete.
+ * between drafts, Space selects the one in focus, Enter keeps the selection once it is complete. The selection starts as
+ * the Run screen kept it for this question and every change is written through (ADR-0082).
  */
-export function PickPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
+export function PickPanel({ cp, artifacts, busy, onSubmit, promptId, draft: seed, onDraft, sent }: PanelProps) {
   const options = cp.options ?? [];
   const n = picksNeeded(cp);
-  const [draft, setDraft] = useState(() => emptyDraft(cp));
+  const [draft, setDraftState] = useState(seed);
+  const setDraft = (next: CheckpointDraft) => {
+    // Sent: the selection stays as sent until byway settles the question (ADR-0082).
+    if (sent) return;
+    setDraftState(next);
+    onDraft(next);
+  };
   // -1 until you move: the first J lands on the first draft.
   const [focus, setFocus] = useState(-1);
   const [hint, setHint] = useState<string | null>(null);
@@ -103,9 +115,11 @@ export function PickPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProp
                     </span>
                   ) : null}
                 </label>
-                {o.artifactId && pages ? (
-                  <a className="sheet-open" href={artifactUrl(o.artifactId)} target="_blank" rel="noopener noreferrer">
-                    Open full size<span className="sr-only">: {o.label}</span>
+                {o.artifactId ? (
+                  // Every draft can be seen whole: a card shows only its opening (F05, F13).
+                  <a className="sheet-open" href={openHref(o.artifactId)} target="_blank" rel="noopener noreferrer">
+                    {isVisual(artifacts[o.artifactId]?.mediaType) ? 'Open full size' : 'Open the whole text'}
+                    <span className="sr-only">: {o.label}</span>
                   </a>
                 ) : null}
               </li>
@@ -116,7 +130,7 @@ export function PickPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProp
       <p className="turn-hint" role="status">
         {hint}
       </p>
-      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} status={status} />
+      <TurnFooter kind={cp.kind} ready={ready} busy={busy} onSubmit={submit} status={status} sent={sent} />
     </>
   );
 }

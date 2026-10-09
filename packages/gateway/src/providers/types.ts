@@ -83,10 +83,26 @@ export interface ProviderVideoRequest {
   startFrame?: MediaBytes & { artifactId: string };
   context: CallContext;
   /**
-   * Runs one provider round trip under the gateway's retry policy and error mapping. A video call makes several
-   * (upload, generate, download, extract), and only the failed one should be repeated, never a paid generation.
+   * Runs one free round trip (an upload, a status poll, a result, a download) under the gateway's retry policy and
+   * error mapping. A video call makes several, and only the failed one is repeated.
    */
   attempt<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Runs one billable job submission (ADR-0091): retried only after failures that were certainly not billed (billingOf
+   * 'none', such as fal's own 503 body). After one that may have been, it is never sent again: the call fails, not
+   * retryable, saying the provider may have accepted `what` ("the clip").
+   */
+  submit<T>(fn: () => Promise<T>, what: string): Promise<T>;
+  /**
+   * A queue job the provider accepted, by role and its request id (ADR-0095): recorded in the spend book before the job
+   * is polled, so a call interrupted from here on is listed with the ids to look up in the provider's dashboard.
+   */
+  accepted?(role: 'generation' | 'extract', requestId: string): Promise<void>;
+  /**
+   * Queue jobs an earlier attempt of this call submitted and the provider accepted (stage 3, ADR-0099): the adapter polls
+   * them by these ids and submits only the jobs not listed here, so a retried relay link never buys its clip twice.
+   */
+  resume?: Partial<Record<'generation' | 'extract', string>>;
 }
 
 export interface ProviderVideo {

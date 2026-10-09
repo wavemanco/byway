@@ -1,15 +1,33 @@
-import type { PromptRenderer } from '@byway/contracts';
-import { BLOCKS, EXCEPTIONS, ROLE_KNOBS, type KnobDef } from '@byway/protocol';
-import { steps, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
-import { stepsAfter } from './flow.ts';
+import { outputForStep, PromptTemplateError, slotsForStep, type PromptLibrary } from '@byway/prompts';
+import { BLOCKS, EXCEPTIONS, ROLE_KNOBS, type KnobDef, type Medium } from '@byway/protocol';
+import {
+  authorWrite,
+  changesWork,
+  checkpoints,
+  declaresVoice,
+  matchCheckpoints,
+  placements,
+  steps,
+  voiceScope,
+  voiceWrite,
+  voiceWrites,
+  type Checkpoint,
+  type Json,
+  type Recipe,
+  type Step,
+  type VoiceScope,
+} from '@byway/recipe';
+import { flowRecipe } from '@byway/validator';
 
 /**
  * The composed validator profile of ADR-0058, enforced in code on top of the validator: a composed recipe may use only
- * registered blocks with knobs in range, reuse only the catalog's step prompts (frozen prompts stay untouched; a step
- * cannot borrow another role's prompt), cite no study manipulation and no exception its nearest canonical recipe does
- * not declare, and must keep the protected human checkpoints (VOICE, and the author's own writing in C6/C6a), in
- * substance as well as in name: no AI step may write the work after the author has in C6/C6a, and no more AI writers may
- * follow your own words than the nearest recipe has there (COMP-1).
+ * registered blocks with knobs in range, reuse only the catalog's step prompts in the role and medium they are written
+ * for (frozen prompts stay untouched), cite no study manipulation and no exception its nearest canonical recipe does not
+ * declare, and must keep the protected human checkpoints (VOICE, and the author's own writing in C6/C6a) in substance
+ * as well as in name (COMP-1).
+ *
+ * Every protection here is read from what the recipe runs (@byway/recipe semantics, ADR-0092), never from what a step
+ * declares: a checkpoint counts only where a person's write runs every time; writers are writers by role and actor.
  */
 
 export interface ProfileViolation {
@@ -26,6 +44,7 @@ export const COMPOSED_RULES = {
   voice: 'COMPOSED-VOICE',
   author: 'COMPOSED-AUTHOR',
   prompt: 'COMPOSED-PROMPT',
+  internal: 'COMPOSED-INTERNAL',
 } as const;
 
 function knobDefs(step: Step): Record<string, KnobDef> {
@@ -51,41 +70,6 @@ export function knobValueOk(def: KnobDef, value: Json): boolean {
   }
 }
 
-/** A human VOICE step: the reader-facing words are the person's own (02 §3 port rule 6). */
-const isHumanVoice = (s: Step) => s.role === 'voice' && s.block === 'VOICE' && s.actor === 'human' && s.produces.includes('artifact');
-/** The author writing the work themselves (C3 "own draft", C6, C6a). */
-const isAuthorship = (s: Step) => s.role === 'build' && s.actor === 'human' && s.writes === true;
-
-/**
- * Steps every run passes through: not inside an optional (which a run may skip) or a route (which takes one branch).
- * Pick judges are excluded: they run only for AI picks. A protected checkpoint counts only where it always runs, so a
- * composed recipe cannot keep VOICE in name while making it skippable.
- */
-export function alwaysRunSteps(recipe: Recipe): Step[] {
-  const out: Step[] = [];
-  const visit = (n: Node): void => {
-    switch (n.op) {
-      case 'step':
-        out.push(n);
-        return;
-      case 'seq':
-        n.steps.forEach(visit);
-        return;
-      case 'optional':
-      case 'route':
-      case 'pick':
-        return;
-      case 'audit':
-        n.lenses.forEach((l) => visit(l.body));
-        return;
-      default:
-        visit(n.body);
-    }
-  };
-  recipe.stages.forEach((s) => visit(s.body));
-  return out;
-}
-
 /** Prompt ids the catalog's model steps use, with the roles they are written for. */
 export function catalogPrompts(recipes: readonly Recipe[]): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
@@ -104,7 +88,95 @@ export interface ProfileContext {
   nearest: Recipe;
   /** The canonical recipes whose step prompts a composed recipe may reuse. */
   catalog: readonly Recipe[];
-  prompts: PromptRenderer;
+  /** The templates: a reused prompt must answer the step's contract in the recipe's medium, with the slots the step fills. */
+  prompts: PromptLibrary;
+}
+
+/**
+ * Whether a reused prompt fits the step it is put on: its template answers the output contract the runner will parse
+ * for this role in this medium, and it renders with exactly the slots the runner fills for this step (so a template that
+ * needs a port the step does not consume is refused here, not in a paid run).
+ */
+function promptProblem(step: Step, prompt: string, medium: Medium | undefined, prompts: PromptLibrary): string | undefined {
+  // A composed recipe always carries its nearest recipe's medium (forceComposed); without one there is no contract to hold.
+  if (!medium) return undefined;
+  let want: string;
+  let output: string;
+  try {
+    want = outputForStep(step, medium);
+    output = prompts.info(prompt, medium).output;
+  } catch (e) {
+    return `step "${step.id}" uses prompt "${prompt}", which cannot run as a ${step.role} step on ${medium}: ${e instanceof Error ? e.message : String(e)}`;
+  }
+  if (output !== want) return `step "${step.id}" is a ${step.role} step on ${medium}, whose answer is read as ${want}, but prompt "${prompt}" answers as ${output} there`;
+  const slots = Object.fromEntries([...slotsForStep(step, medium)].map((s) => [s, s === 'medium' ? medium : `(${s})`]));
+  try {
+    prompts.render(prompt, slots);
+  } catch (e) {
+    if (e instanceof PromptTemplateError && e.code === 'missing-slot') {
+      return `prompt "${prompt}" needs "${e.slot}", which step "${step.id}" does not provide (it takes in ${[...step.consumes, ...(step.reads ?? [])].join(', ') || 'nothing'})`;
+    }
+    return `prompt "${prompt}" does not render for step "${step.id}": ${e instanceof Error ? e.message : String(e)}`;
+  }
+  return undefined;
+}
+
+const STAGE_WORDS: Record<string, string> = { D1: 'Explore', D2: 'Refine', D3: 'Finish' };
+
+/** What a VOICE covers, in plain words. */
+function scopeWords(s: VoiceScope): string {
+  const base = { claims: 'the claims', script: 'the voice-over script', 'on-screen': 'the on-screen copy', all: 'the reader-facing words' }[s.base];
+  return s.keyLines ? `the key lines of ${base}` : base;
+}
+
+/**
+ * Machine steps that can change the work after a marked step has run, on some path along the exit-aware flow (loops
+ * run twice, so a writer earlier in the same loop counts for the next round). A writer is one by its role and actor
+ * wherever its output reaches the work; a contained one counts only if it declares writes. Each is reported once.
+ */
+export function writersAfter(recipe: Recipe, mark: (s: Step) => boolean): { step: Step; path: string }[] {
+  const found = new Map<string, { step: Step; path: string }>();
+  flowRecipe<boolean>(recipe, false, {
+    step(step, path, _stage, armed, contained) {
+      if (armed && step.actor !== 'human' && changesWork(step, contained) && !found.has(path)) found.set(path, { step, path });
+      return armed || (!contained && mark(step));
+    },
+    join: (states) => states.some(Boolean),
+  });
+  return [...found.values()];
+}
+
+function byRole(writers: { step: Step; path: string }[]): Map<string, { step: Step; path: string }[]> {
+  const out = new Map<string, { step: Step; path: string }[]>();
+  for (const w of writers) out.set(w.step.role, [...(out.get(w.step.role) ?? []), w]);
+  return out;
+}
+
+/**
+ * The writer allowance per VOICE: after each VOICE of the composed recipe, no more machine writers of a role than its
+ * nearest recipe has after the counterpart VOICE (C5 makes frames and clips after the locked script, on purpose). A
+ * VOICE with no counterpart, or a step that only declares VOICE, allows none. keepsVoice is no excuse here: the runner
+ * holds such a write to the latest VOICE answer only, so a writer moved past a later VOICE could change an earlier one.
+ */
+function extraWritersPerVoice(recipe: Recipe, nearest: Recipe): { step: Step; path: string; after: string }[] {
+  const keyed = (r: Recipe): Checkpoint[] => voiceWrites(r).map((p) => ({ kind: 'voice', stage: p.stage, scope: voiceScope(p.step, r.medium), placement: p }));
+  const counterpart = new Map<Step, Step>();
+  for (const [w, h] of matchCheckpoints(keyed(nearest), keyed(recipe))) if (h) counterpart.set(h.placement.step, w.placement.step);
+  const marks = [
+    ...voiceWrites(recipe).map((p) => p.step),
+    ...placements(recipe)
+      .filter((p) => declaresVoice(p.step) && !voiceWrite(p.step))
+      .map((p) => p.step),
+  ];
+  const out: { step: Step; path: string; after: string }[] = [];
+  for (const mark of marks) {
+    const from = counterpart.get(mark);
+    const allowed = from ? byRole(writersAfter(nearest, (s) => s === from)) : new Map<string, unknown[]>();
+    for (const [role, writers] of byRole(writersAfter(recipe, (s) => s === mark))) {
+      for (const w of writers.slice(allowed.get(role)?.length ?? 0)) out.push({ ...w, after: mark.id });
+    }
+  }
+  return out;
 }
 
 export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): ProfileViolation[] {
@@ -129,6 +201,10 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
     if (!roles) add('prompt', `${path}.prompt`, `step "${step.id}" uses prompt "${step.prompt}", which no canonical recipe's step uses`);
     else if (!roles.has(step.role)) add('prompt', `${path}.prompt`, `step "${step.id}" is a ${step.role} step, but prompt "${step.prompt}" is written for ${[...roles].join(', ')} steps`);
     else if (!ctx.prompts.has(step.prompt)) add('prompt', `${path}.prompt`, `step "${step.id}" uses prompt "${step.prompt}", which has no template`);
+    else {
+      const problem = promptProblem(step, step.prompt, recipe.medium, ctx.prompts);
+      if (problem) add('prompt', `${path}.prompt`, problem);
+    }
   }
 
   recipe.exceptions.forEach((id, i) => {
@@ -137,54 +213,29 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
     else if (!ctx.nearest.exceptions.includes(id)) add('exception', `exceptions[${i}]`, `"${id}" is not an exception the nearest recipe (${ctx.nearest.id}) declares (${ctx.nearest.exceptions.join(', ') || 'it declares none'})`);
   });
 
-  const nearestAlways = alwaysRunSteps(ctx.nearest);
-  const always = alwaysRunSteps(recipe);
-  if (nearestAlways.some(isHumanVoice) && !always.some(isHumanVoice)) {
-    add('voice', 'stages', `the nearest recipe (${ctx.nearest.id}) always has you write the reader-facing words (a human VOICE step that edits the work); keep one that always runs`);
-  }
-  if (nearestAlways.some(isAuthorship) && !always.some(isAuthorship)) {
-    add('author', 'stages', `in the nearest recipe (${ctx.nearest.id}) you write the work yourself (a human build step that writes it); keep one that always runs`);
+  // COMP-1: every protected checkpoint the nearest recipe runs every time has its own counterpart here, one to one: a
+  // VOICE that writes at least as much of the same copy in the same stage, and the author's own write in the same stage.
+  // A checkpoint counts only where it runs every time: not in an optional, a choice, a candidate or a container, and
+  // not after a check that can end its loop's round first.
+  const want = checkpoints(ctx.nearest);
+  for (const [w, h] of matchCheckpoints(want, checkpoints(recipe))) {
+    if (h) continue;
+    if (w.kind === 'voice') {
+      add('voice', 'stages', `the nearest recipe (${ctx.nearest.id}) has you write ${scopeWords(w.scope)} yourself in ${STAGE_WORDS[w.stage]} on every run; keep a VOICE step that does, where every run reaches it (not in an optional, a choice, a candidate, or after a check that can end its loop's round)`);
+    } else {
+      add('author', 'stages', `in the nearest recipe (${ctx.nearest.id}) you write the work yourself in ${STAGE_WORDS[w.stage]} on every run; keep a step where you do (a human build or fix that writes the work) where every run reaches it`);
+    }
   }
 
-  // COMP-1: the protected checkpoints must hold in substance, not only in name. A composed recipe that keeps your own
-  // writing, or your own words, but lets the AI write over the work afterwards keeps the checkpoint and undoes it.
-  if (nearestAlways.some(isAuthorship)) {
-    for (const { step, path } of modelWritersAfter(recipe, isAuthorship)) {
+  // The checkpoints hold in substance: no AI step writes the work after the author has in C6/C6a, and no more AI
+  // writers follow each VOICE than the nearest recipe has after its counterpart.
+  if (want.some((c) => c.kind === 'author')) {
+    for (const { step, path } of writersAfter(recipe, authorWrite)) {
       add('author', path, `step "${step.id}" lets the AI change the work after you wrote it; in ${ctx.nearest.id} every sentence is yours, so no AI step may write the work once you have`);
     }
   }
-  for (const { step, path } of extraWritersAfterVoice(recipe, ctx.nearest)) {
-    add('voice', path, `step "${step.id}" lets the AI write the work after your own words, which ${ctx.nearest.id} does not do there; your words stay the last word on the work`);
+  for (const { step, path, after } of extraWritersPerVoice(recipe, ctx.nearest)) {
+    add('voice', path, `step "${step.id}" lets the AI write the work after your own words in "${after}", which ${ctx.nearest.id} does not do there; your words stay the last word on the work`);
   }
   return out;
-}
-
-/** A step that puts the person's own words into the work (a VOICE step), as the validator's PR6 reads it. */
-const writesVoice = (s: Step) => s.produces.includes('voice');
-
-/**
- * Model steps that write the work and can run after a `mark` step has run on some path (flow.ts: along the control flow,
- * loops run twice, so a writer earlier in the same loop counts for the next round). Each is reported once, at its path.
- */
-export function modelWritersAfter(recipe: Recipe, mark: (s: Step) => boolean): { step: Step; path: string }[] {
-  return stepsAfter(recipe, mark).filter(({ step }) => step.actor === 'model' && step.writes === true);
-}
-
-/**
- * Model writers after your own words that the nearest recipe does not have there. The validator's PR6 already refuses
- * writers that do not declare keepsVoice; keepsVoice only checks that your lines survive, so added AI copy would pass.
- * Some configurations do write after your words on purpose (C5 makes frames and clips, and applies the swaps you chose,
- * after the voice-over is locked), so the bar is the nearest recipe: per role, no more model writers after your words
- * than it has.
- */
-function extraWritersAfterVoice(recipe: Recipe, nearest: Recipe): { step: Step; path: string }[] {
-  const allowed = new Map<string, number>();
-  for (const { step } of modelWritersAfter(nearest, writesVoice)) allowed.set(step.role, (allowed.get(step.role) ?? 0) + 1);
-  const extra: { step: Step; path: string }[] = [];
-  for (const w of modelWritersAfter(recipe, writesVoice)) {
-    const left = allowed.get(w.step.role) ?? 0;
-    if (left > 0) allowed.set(w.step.role, left - 1);
-    else extra.push(w);
-  }
-  return extra;
 }

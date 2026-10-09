@@ -2,11 +2,25 @@
  * Lineup cards (BLIND-1): one template draws every item of a mixed lineup, and the real renderer turns each card into
  * exactly one PNG, 1440 wide and at most one tile tall, whatever it holds: a contact sheet of frames with words, a
  * page's tall screenshots one under another, a single image, or a long text. Text is escaped.
+ *
+ * A card never hides what it holds (F13, ADR-0087): it has no height cap and no hidden overflow, so a render shows how
+ * tall it really is, and words that do not fit one image are cut where the critic can see it, with a closing line
+ * saying how many were left out, and recorded.
  */
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { cardHtml, CARD_MAX_HEIGHT, CARD_WIDTH, fontSizeFor, imageSize } from '../src/cards.ts';
-import { playwrightPages } from '../src/pages.ts';
+import type { Gateway } from '@byway/contracts';
+import { buildLineup } from '../src/activities/critic.ts';
+import { ArtifactReader } from '../src/activities/prompting.ts';
+import { cardHtml, CARD_MAX_HEIGHT, CARD_WIDTH, firstWords, fitCard, fontSizeFor, imageSize, MAX_CARD_RENDERS, unitsOf, wordCount, unitsThatFit, type CardContent } from '../src/cards.ts';
+import { playwrightPages, type PageRenderer } from '../src/pages.ts';
+import type { View } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
+import { fakePrompts } from './helpers/fake-prompts.ts';
+import { createTestStore } from './helpers/memo.ts';
 
 const pages = playwrightPages();
 afterAll(() => pages.close(), 60_000);
@@ -14,6 +28,14 @@ afterAll(() => pages.close(), 60_000);
 const size = (bytes: Uint8Array) => {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   return { width: v.getUint32(16), height: v.getUint32(20) };
+};
+
+/** Ordinary prose of about `chars` characters in paragraphs, ending in a sentinel sentence. */
+const essay = (chars: number, sentinel: string) => {
+  const paragraph = 'The harbour wakes before the town does, and the boats go out in the order their owners argue about every winter. ';
+  const paragraphs: string[] = [];
+  for (let n = 0; n < chars; n += paragraph.length * 4) paragraphs.push(paragraph.repeat(4).trim());
+  return `${paragraphs.join('\n\n')}\n\n${sentinel}`;
 };
 
 describe('card pages', () => {
@@ -41,6 +63,253 @@ describe('card pages', () => {
     expect(imageSize(webp)).toEqual({ width: 1024, height: 576 });
     expect(imageSize(Uint8Array.from([1, 2, 3]))).toBeUndefined();
   });
+
+  it('never clip: no height cap and no hidden overflow, so a render shows how tall a card is (F13)', () => {
+    const html = cardHtml({ images: [], layout: 'grid', text: 'A long reference essay. '.repeat(2_000) });
+    expect(html).not.toMatch(/overflow\s*:\s*hidden/);
+    expect(html).not.toMatch(new RegExp(`max-height\\s*:\\s*${CARD_MAX_HEIGHT}px`));
+  });
+
+  it('count words, keep the first ones as written, and close a cut card with a line saying how many are not shown (F13)', () => {
+    expect(wordCount('  one two\nthree  ')).toBe(3);
+    expect(wordCount('')).toBe(0);
+    expect(firstWords('one two\n\nthree four', 3)).toBe('one two\n\nthree');
+    expect(firstWords('one two', 0)).toBe('');
+    expect(firstWords('one two', 9)).toBe('one two');
+    const some = cardHtml({ images: [], layout: 'grid', text: 'one two', omitted: 5 });
+    expect(some).toContain('one two');
+    expect(some).toContain('[… 5 more words not shown]');
+    // Words being cut are set at the floor, so as many as possible are shown.
+    expect(some).toMatch(/class="text" style="font-size:12px"/);
+    const none = cardHtml({ images: [], layout: 'grid', text: '', omitted: 1_234 });
+    expect(none).toContain('[all 1,234 words not shown]');
+    expect(cardHtml({ images: [], layout: 'grid', text: '', omitted: 1 })).toContain('[1 word not shown]');
+    expect(cardHtml({ images: [], layout: 'grid', text: 'one two' })).not.toContain('not shown');
+    // Text cut by characters says so in characters.
+    expect(cardHtml({ images: [], layout: 'grid', text: '春眠', omitted: 5, unit: 'characters' })).toContain('[… 5 more characters not shown]');
+    expect(cardHtml({ images: [], layout: 'grid', text: '', omitted: 1, unit: 'characters' })).toContain('[1 character not shown]');
+  });
+
+  it('cut text with long runs of non-space characters by characters as people see them, never splitting one (F13)', () => {
+    expect(unitsOf('one two\nthree').unit).toBe('words');
+    expect(unitsOf(`${'word '.repeat(50)}https://example.com/${'a'.repeat(100)}`).unit).toBe('words');
+    // A paragraph of CJK, minified JSON or a long token is one "word": it is cut by characters instead.
+    expect(unitsOf('春眠不觉晓'.repeat(100))).toMatchObject({ unit: 'characters', total: 500 });
+    expect(unitsOf(JSON.stringify(Array.from({ length: 50 }, (_, id) => ({ id })))).unit).toBe('characters');
+    const thumbs = unitsOf('👍🏽'.repeat(300));
+    expect(thumbs).toMatchObject({ unit: 'characters', total: 300 });
+    expect(thumbs.first(2)).toBe('👍🏽👍🏽');
+  });
+
+  it('estimate how many words fit at the 12 px floor, leaving a line for the closing note (F13)', () => {
+    const card = (text: string): CardContent => ({ images: [], layout: 'grid', text });
+    expect(unitsThatFit(card('Short.'))).toBe(1);
+    const many = unitsThatFit(card('word '.repeat(100_000)));
+    expect(many).toBeGreaterThan(1_000);
+    expect(many).toBeLessThan(100_000);
+    // Frames take room from the words.
+    const frames = Array.from({ length: 6 }, (_, i) => ({ artifactId: `sha256:f${i}`, width: 1024, height: 576 }));
+    expect(unitsThatFit({ images: frames, layout: 'grid', text: 'word '.repeat(100_000) })).toBeLessThan(many);
+  });
+});
+
+/**
+ * A stand-in renderer that measures as a browser would, without one: each paragraph of words takes a row per 100
+ * characters, 17 px a row, and the rest of the card `extra` px; tiled at CARD_MAX_HEIGHT. It keeps every page.
+ */
+function measuring(extra = 100, perRow = 100) {
+  const calls: string[] = [];
+  const render = async (html: string): Promise<Uint8Array[]> => {
+    calls.push(html);
+    const paragraphs = [...html.matchAll(/<p class="(?:text|cut)"[^>]*>([^<]*)<\/p>/g)].map((m) => m[1]!.replace(/&[a-z#0-9]+;/g, '_'));
+    const rows = paragraphs.reduce((n, p) => n + Math.max(1, Math.ceil(p.length / perRow)), 0);
+    const height = Math.max(900, extra + rows * 17);
+    const tiles: Uint8Array[] = [];
+    for (let y = 0; y < height; y += CARD_MAX_HEIGHT) tiles.push(png(8, Math.min(CARD_MAX_HEIGHT, height - y), [y % 256, 1, 2]));
+    return tiles;
+  };
+  return { calls, render };
+}
+
+/**
+ * A stand-in renderer that sets words at the size the page asks for, each character `em` of that size wide (wider
+ * than the estimate's average when `em` is above 0.52, as capitals are), 1.4 lines tall, inside the card's padding;
+ * tiled at CARD_MAX_HEIGHT. It keeps every page.
+ */
+function typesetting(em: number) {
+  const calls: string[] = [];
+  const render = async (html: string): Promise<Uint8Array[]> => {
+    calls.push(html);
+    let height = 64;
+    for (const m of html.matchAll(/<p class="(?:text|cut)" style="font-size:(\d+)px">([^<]*)<\/p>/g)) {
+      const px = Number(m[1]);
+      const perLine = Math.max(1, Math.floor((CARD_WIDTH - 64) / (px * em)));
+      const lines = m[2]!.replace(/&[a-z#0-9]+;/g, '_').split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perLine)), 0);
+      height += Math.ceil(lines * px * 1.4) + 24;
+    }
+    height = Math.max(900, height);
+    const tiles: Uint8Array[] = [];
+    for (let y = 0; y < height; y += CARD_MAX_HEIGHT) tiles.push(png(8, Math.min(CARD_MAX_HEIGHT, height - y), [y % 256, 3, 4]));
+    return tiles;
+  };
+  return { calls, render };
+}
+
+/**
+ * A stand-in renderer that sets words in a proportional face: each character as wide as `widths` says (in em of the
+ * size the page asks for; 0.55 for any other), words wrapped greedily at the card's width, 1.4 lines tall; tiled at
+ * CARD_MAX_HEIGHT. `heightOf` is the height it gives a page, to find the true answer by trying every prefix.
+ */
+function proportional(widths: Record<string, number>) {
+  const calls: number[] = [];
+  const em = (c: string) => widths[c] ?? 0.55;
+  const heightOf = (html: string): number => {
+    let height = 64;
+    for (const m of html.matchAll(/<p class="(?:text|cut)" style="font-size:(\d+)px">([^<]*)<\/p>/g)) {
+      const px = Number(m[1]);
+      let lines = 0;
+      for (const para of m[2]!.replace(/&[a-z#0-9]+;/g, '_').split('\n')) {
+        let x = 0;
+        lines++;
+        for (const word of para.split(' ')) {
+          const w = [...word].reduce((s, c) => s + em(c) * px, 0);
+          const gap = em(' ') * px;
+          if (x > 0 && x + gap + w > CARD_WIDTH - 64) {
+            lines++;
+            x = w;
+          } else x += (x > 0 ? gap : 0) + w;
+        }
+      }
+      height += Math.ceil(lines * px * 1.4) + 24;
+    }
+    return Math.max(900, height);
+  };
+  const render = async (html: string): Promise<Uint8Array[]> => {
+    const height = heightOf(html);
+    calls.push(height);
+    const tiles: Uint8Array[] = [];
+    for (let y = 0; y < height; y += CARD_MAX_HEIGHT) tiles.push(png(8, Math.min(CARD_MAX_HEIGHT, height - y), [y % 256, 5, 6]));
+    return tiles;
+  };
+  return { calls, render, heightOf };
+}
+
+describe('fitting a card into one image (F13)', () => {
+  it('keeps nearly the most words that fit when the opening words are set wider than the estimate, never none', async () => {
+    // Wide capitals first, then narrow words: one scale for the whole text keeps landing just over the line. Before the
+    // search halved what was left, five tries came out too tall and the card dropped every word, though more than
+    // five thousand fit.
+    const r = proportional({ W: 1, i: 0.2, ' ': 0.2 });
+    const words = [...Array<string>(2_400).fill('WWWWWW'), ...Array<string>(10_000).fill('ii')];
+    const card: CardContent = { images: [], layout: 'grid', text: words.join(' ') };
+    const fitted = await fitCard(card, r.render);
+    expect(fitted).toMatchObject({ ok: true, cut: { unit: 'words', total: words.length } });
+    if (!fitted.ok) return;
+    // The true answer: the most words whose card is one tile on this renderer.
+    let lo = 0;
+    let hi = words.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (r.heightOf(cardHtml({ ...card, text: words.slice(0, mid).join(' '), omitted: words.length - mid, unit: 'words' })) <= CARD_MAX_HEIGHT) lo = mid;
+      else hi = mid - 1;
+    }
+    expect(lo).toBeGreaterThan(4_000);
+    expect(fitted.cut!.shown).toBeLessThanOrEqual(lo);
+    expect(fitted.cut!.shown).toBeGreaterThanOrEqual(0.9 * lo);
+    expect(fitted.html).not.toContain('[all ');
+    expect(r.calls.length).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+  });
+
+  it('keeps every word when they fit, with no closing line', async () => {
+    const r = measuring();
+    const fitted = await fitCard({ images: [], layout: 'grid', text: essay(5_000, 'THE-END') }, r.render);
+    expect(fitted.ok).toBe(true);
+    if (!fitted.ok) return;
+    expect(fitted.cut).toBeUndefined();
+    expect(fitted.html).toContain('THE-END');
+    expect(r.calls).toHaveLength(1);
+  });
+
+  it('shows every word when the browser fits more than the cautious estimate said', async () => {
+    // Words set more tightly than the estimate assumes: the first try is cut, its render shows room for all of them.
+    const r = measuring(100, 400);
+    const text = essay(30_000, 'THE-END');
+    expect(unitsThatFit({ images: [], layout: 'grid', text })).toBeLessThan(wordCount(text));
+    const fitted = await fitCard({ images: [], layout: 'grid', text }, r.render);
+    expect(fitted).toMatchObject({ ok: true });
+    if (fitted.ok) expect(fitted.cut).toBeUndefined();
+    if (fitted.ok) expect(fitted.html).toContain('THE-END');
+    expect(r.calls).toHaveLength(2);
+  });
+
+  it('cuts what the render measured as too tall, visibly, and records how many words were shown', async () => {
+    const r = measuring();
+    const text = essay(30_000, 'THE-END');
+    const fitted = await fitCard({ images: [], layout: 'grid', text }, r.render);
+    expect(fitted.ok).toBe(true);
+    if (!fitted.ok) return;
+    expect(fitted.cut).toMatchObject({ unit: 'words' });
+    const { shown, total } = fitted.cut!;
+    expect(total).toBe(wordCount(text));
+    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeLessThan(total);
+    expect(fitted.html).not.toContain('THE-END');
+    expect(fitted.html).toContain(`[… ${(total - shown).toLocaleString('en-US')} more words not shown]`);
+    expect(size(fitted.png).height).toBeLessThanOrEqual(CARD_MAX_HEIGHT);
+    expect(r.calls.length).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+  });
+
+  it('tries every word at the 12 px floor before cutting any, when the size the estimate chose came out too tall', async () => {
+    // Capitals are wider than the estimate's average character: at the size it picks the text overflows; at the
+    // floor it fits whole, so no word may be cut.
+    const r = typesetting(0.9);
+    const text = `${'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG. '.repeat(330)}THE-END`;
+    const fitted = await fitCard({ images: [], layout: 'grid', text }, r.render);
+    expect(fitted).toMatchObject({ ok: true });
+    if (!fitted.ok) return;
+    expect(fitted.cut).toBeUndefined();
+    expect(fitted.html).toContain('THE-END');
+    expect(fitted.html).toMatch(/class="text" style="font-size:12px"/);
+    expect(r.calls.length).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+  });
+
+  it('cuts a long run without spaces by characters: its first part shows, never nothing (F13)', async () => {
+    const r = measuring();
+    // 20,000 characters of one CJK paragraph: one "word" by spaces, which a word cut could only drop whole.
+    const text = '春眠不觉晓处处闻啼鸟夜来风雨声花落知多少'.repeat(1_000);
+    const fitted = await fitCard({ images: [], layout: 'grid', text }, r.render);
+    expect(fitted).toMatchObject({ ok: true, cut: { unit: 'characters', total: 20_000 } });
+    if (!fitted.ok) return;
+    const { shown, total } = fitted.cut!;
+    // The stand-in fits 144 rows of 100 characters beside the closing line.
+    expect(shown).toBeGreaterThan(12_000);
+    expect(shown).toBeLessThanOrEqual(14_400);
+    expect(fitted.html).toContain(text.slice(0, shown));
+    expect(fitted.html).toContain(`[… ${(total - shown).toLocaleString('en-US')} more characters not shown]`);
+    expect(r.calls.length).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+  });
+
+  it('drops every word when none fit beside the images, and fails when the card is taller than one image without them', async () => {
+    // The rest of the card takes all but one row of the image: no word fits beside the closing line, so all go.
+    const crowded = measuring(CARD_MAX_HEIGHT - 20);
+    const text = 'word '.repeat(5_000);
+    const fitted = await fitCard({ images: [], layout: 'grid', text }, crowded.render);
+    expect(fitted).toMatchObject({ ok: true, cut: { unit: 'words', shown: 0, total: 5_000 } });
+    if (fitted.ok) expect(fitted.html).toContain('[all 5,000 words not shown]');
+    expect(crowded.calls.length).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+    // Taller than one image even without words: never the first tile of it.
+    const tall = measuring(CARD_MAX_HEIGHT + 10);
+    expect(await fitCard({ images: [], layout: 'grid', text }, tall.render)).toEqual({ ok: false, reason: 'too-tall' });
+    expect(tall.calls.length).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+    expect(await fitCard({ images: [], layout: 'grid', text: '' }, tall.render)).toEqual({ ok: false, reason: 'too-tall' });
+    expect(await fitCard({ images: [], layout: 'grid', text: 'x' }, async () => [])).toEqual({ ok: false, reason: 'empty' });
+  });
+
+  it('a card whose words reach the critic another way is rendered once and never cut', async () => {
+    const r = measuring(CARD_MAX_HEIGHT + 10);
+    expect(await fitCard({ images: [], layout: 'grid', text: 'Its words are written out under this label.' }, r.render, { cut: false })).toEqual({ ok: false, reason: 'too-tall' });
+    expect(r.calls).toHaveLength(1);
+  });
 });
 
 describe('cards rendered by Playwright Chromium', () => {
@@ -53,10 +322,11 @@ describe('cards rendered by Playwright Chromium', () => {
     store.set(id, bytes);
     return { artifactId: id, ...imageSize(bytes)! };
   };
+  const tiles = async (html: string) => (await pages.render(html, resolve, ['desktop']))[0]!.tiles;
   const one = async (html: string) => {
-    const [shot] = await pages.render(html, resolve, ['desktop']);
-    expect(shot!.tiles).toHaveLength(1);
-    const s = size(shot!.tiles[0]!);
+    const shot = await tiles(html);
+    expect(shot).toHaveLength(1);
+    const s = size(shot[0]!);
     expect(s.width).toBe(CARD_WIDTH);
     expect(s.height).toBeLessThanOrEqual(CARD_MAX_HEIGHT);
     return s;
@@ -68,12 +338,116 @@ describe('cards rendered by Playwright Chromium', () => {
     await one(cardHtml({ images: frames, layout: 'grid', text: `${words}\n\nVoice-over: Less time.` }));
   }, 60_000);
 
-  it('a page of three tall screenshots is one image, and a long text alone is one image', async () => {
-    const tiles = [0, 1, 2].map((i) => put(`sha256:tile${i}`, png(1440, 2576, [10, 20 * i, 30])));
-    await one(cardHtml({ images: tiles, layout: 'stack', text: '' }));
-    await one(cardHtml({ images: [], layout: 'grid', text: 'A long reference essay. '.repeat(2_000) }));
+  it('a page of three tall screenshots is one image, and so is a single image', async () => {
+    const shots = [0, 1, 2].map((i) => put(`sha256:tile${i}`, png(1440, 2576, [10, 20 * i, 30])));
+    await one(cardHtml({ images: shots, layout: 'stack', text: '' }));
     const single = await one(cardHtml({ images: [put('sha256:ref', png(800, 600, [200, 10, 10]))], layout: 'grid', text: '' }));
     // A short card is as tall as the wide screen (1440 × 900): every card is at least that.
     expect(single.height).toBe(900);
   }, 60_000);
+
+  it('a long text runs past one image: nothing hides it, so the render shows it does not fit (F13)', async () => {
+    expect((await tiles(cardHtml({ images: [], layout: 'grid', text: 'A long reference essay. '.repeat(2_000) }))).length).toBeGreaterThan(1);
+  }, 60_000);
+
+  it('a card of 20,000 to 30,000 characters is fitted into one image: every word shows, or the card says how many do not (F13)', async () => {
+    const frames = [0, 1, 2].map((i) => put(`sha256:board${i}`, png(1024, 576, [30, 60 * i, 90])));
+    for (const card of [
+      { images: [], layout: 'grid', text: essay(20_000, 'THE-LAST-SENTENCE.') },
+      { images: [], layout: 'grid', text: essay(30_000, 'THE-LAST-SENTENCE.') },
+      { images: frames, layout: 'grid', text: essay(30_000, 'THE-LAST-SENTENCE.') },
+    ] satisfies CardContent[]) {
+      // Whether every word fits whole depends on this machine's fonts: whatever the browser fits, the card shows.
+      const whole = (await tiles(cardHtml(card))).length === 1;
+      let renders = 0;
+      const fitted = await fitCard(card, async (html) => {
+        renders++;
+        return tiles(html);
+      });
+      expect(fitted.ok).toBe(true);
+      if (!fitted.ok) continue;
+      expect(renders).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+      // One tile is the whole page (nothing clips it), so whatever the page holds is in the image.
+      expect(await tiles(fitted.html)).toHaveLength(1);
+      expect(size(fitted.png)).toMatchObject({ width: CARD_WIDTH });
+      // The estimate is cautious, and the first render calibrates it: words the browser fits are not lost to it.
+      if (whole) expect(fitted.cut?.shown ?? wordCount(card.text)).toBeGreaterThanOrEqual(0.95 * wordCount(card.text));
+      if (fitted.cut) {
+        expect(fitted.html).not.toContain('THE-LAST-SENTENCE.');
+        expect(fitted.html).toContain(`[… ${(fitted.cut.total - fitted.cut.shown).toLocaleString('en-US')} more words not shown]`);
+        expect(fitted.cut).toMatchObject({ unit: 'words', total: wordCount(card.text) });
+      } else {
+        expect(fitted.html).toContain('THE-LAST-SENTENCE.');
+      }
+    }
+  }, 120_000);
+
+  it('text in capitals that fits at the 12 px floor is shown whole, whatever size the estimate tried first (F13)', async () => {
+    const card: CardContent = { images: [], layout: 'grid', text: `${'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG AND KEEPS RUNNING WHILE WOMEN WATCH. '.repeat(100)}CAPS-END` };
+    let renders = 0;
+    const fitted = await fitCard(card, async (html) => (renders++, tiles(html)));
+    expect(fitted).toMatchObject({ ok: true });
+    if (!fitted.ok) return;
+    expect(fitted.cut).toBeUndefined();
+    expect(fitted.html).toContain('CAPS-END');
+    expect(await tiles(fitted.html)).toHaveLength(1);
+    expect(renders).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+  }, 60_000);
+
+  it('a long paragraph without spaces is cut by characters: its first part shows, and the card says how many do not (F13)', async () => {
+    const text = '春眠不觉晓处处闻啼鸟夜来风雨声花落知多少'.repeat(1_000);
+    let renders = 0;
+    const fitted = await fitCard({ images: [], layout: 'grid', text }, async (html) => (renders++, tiles(html)));
+    expect(fitted).toMatchObject({ ok: true, cut: { unit: 'characters', total: 20_000 } });
+    if (!fitted.ok) return;
+    const { shown, total } = fitted.cut!;
+    // About half fits at 12 px; however this machine's fonts set it, the card is never blank.
+    expect(shown).toBeGreaterThan(5_000);
+    expect(fitted.html).toContain(text.slice(0, shown));
+    expect(fitted.html).toContain(`[… ${(total - shown).toLocaleString('en-US')} more characters not shown]`);
+    expect(await tiles(fitted.html)).toHaveLength(1);
+    expect(renders).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+  }, 60_000);
+
+  it('a media lineup records whose words its cards cut, as the step note names them (F13)', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'byway-cards-'));
+    const db = createTestStore({ dataDir: dir });
+    try {
+      // The page behind every one-tile render, by the id its PNG is stored under: the card kept is the one checked,
+      // whichever try made it (a later try may come out too tall and lose to an earlier one).
+      const byId = new Map<string, string>();
+      const renderer: PageRenderer = {
+        ...pages,
+        render: async (html, res, surfaces, opts) => {
+          const shots = await pages.render(html, res, surfaces, opts);
+          const out = shots[0]?.tiles ?? [];
+          if (out.length === 1) byId.set(`sha256:${createHash('sha256').update(out[0]!).digest('hex')}`, html);
+          return shots;
+        },
+      };
+      const deps = { gateway: {} as Gateway, store: db, prompts: fakePrompts(), pages: renderer };
+      const image = async (c: number) => (await db.artifacts.put(png(1024, 576, [c, c, c]), 'image/png')).id;
+      const frames = [await image(1), await image(2), await image(3)];
+      const board = (await db.artifacts.putText('Shot 1 (3s): Open on hands.\n\nVoice-over: Less time.', 'text/plain')).id;
+      const view: View = { pool: false, items: [{ textArtifactId: board, imageArtifactIds: frames }] };
+      const longText = essay(30_000, 'THE-LAST-SENTENCE.');
+      const long = (await db.artifacts.putText(longText, 'text/plain')).id;
+      const runId = (await db.createRun({ id: 'run-cards', workspaceId: (await db.ensureDefaultWorkspace()).id, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'media', budgetUsd: 5 })).id;
+      const lineup = await buildLineup(deps, new ArtifactReader(deps), 'media', { view }, [await image(10), long, await image(30)], () => 0.5, true, undefined, runId);
+      expect(lineup.form).toBe('cards');
+      for (const g of lineup.images) expect(g.artifactIds).toHaveLength(1);
+      const kept = lineup.images.map((g) => byId.get(g.artifactIds[0]!) ?? '');
+      for (const html of kept) expect(html).toContain('class="card"');
+      const card = kept.find((h) => h.includes('The harbour wakes'))!;
+      if (card.includes('THE-LAST-SENTENCE.')) {
+        expect(lineup.cut).toEqual([]);
+      } else {
+        expect(lineup.cut).toEqual([{ item: { ref: long }, unit: 'words', shown: expect.any(Number), total: wordCount(longText), begins: expect.stringMatching(/^The harbour wakes/) }]);
+        expect(card).toContain(`[… ${(lineup.cut[0]!.total - lineup.cut[0]!.shown).toLocaleString('en-US')} more words not shown]`);
+      }
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 120_000);
 });

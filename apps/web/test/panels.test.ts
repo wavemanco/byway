@@ -10,9 +10,12 @@ import type { CheckpointKind, CheckpointRecord } from '@byway/contracts';
 import { Examples } from '../src/components/Examples.tsx';
 import { ChoosePanel } from '../src/components/run/panels/ChoosePanel.tsx';
 import { ComparePanel } from '../src/components/run/panels/ComparePanel.tsx';
+import { ConfirmPanel } from '../src/components/run/panels/ConfirmPanel.tsx';
 import { SelectPanel } from '../src/components/run/panels/SelectPanel.tsx';
-import { WritePanel } from '../src/components/run/panels/TextPanels.tsx';
+import { DirectivePanel } from '../src/components/run/panels/DirectivePanel.tsx';
+import { ReactPanel, WritePanel } from '../src/components/run/panels/TextPanels.tsx';
 import type { PanelProps } from '../src/components/run/panels/types.ts';
+import { startingDraft } from '../src/view/drafts.ts';
 import { fieldName, parseOnScreenCopy, serializeOnScreenCopy } from '../src/view/onscreen.ts';
 
 const cp = (kind: CheckpointKind, extra: Partial<CheckpointRecord> = {}): CheckpointRecord => ({
@@ -27,7 +30,7 @@ const cp = (kind: CheckpointKind, extra: Partial<CheckpointRecord> = {}): Checkp
 });
 
 const render = (Panel: ComponentType<PanelProps>, record: CheckpointRecord) =>
-  renderToStaticMarkup(createElement(Panel, { cp: record, artifacts: {}, busy: false, onSubmit: () => undefined, promptId: 'q' }));
+  renderToStaticMarkup(createElement(Panel, { cp: record, artifacts: {}, busy: false, onSubmit: () => undefined, promptId: 'q', draft: startingDraft(record), onDraft: () => undefined, sent: false }));
 
 describe('select panel (TELLS hits, C2)', () => {
   const hits = cp('select', {
@@ -106,5 +109,87 @@ describe('on-screen copy in a Your words turn (C4)', () => {
     expect(html).toContain('Shot 1 caption');
     expect(html).toContain('value="Bread, the slow way"');
     expect(html).not.toContain('<textarea');
+  });
+});
+
+describe('a panel opens with the draft the Run screen kept for its question (F06, ADR-0082)', () => {
+  const renderWith = (Panel: ComponentType<PanelProps>, record: CheckpointRecord, over: Partial<PanelProps>) =>
+    renderToStaticMarkup(
+      createElement(Panel, { cp: record, artifacts: {}, busy: false, onSubmit: () => undefined, promptId: 'q', draft: startingDraft(record), onDraft: () => undefined, sent: false, ...over }),
+    );
+
+  it('write: the person’s words, never the model’s starting text, with the way back to it offered', () => {
+    const record = cp('write', { initialText: 'The model’s draft.' });
+    const html = renderWith(WritePanel, record, { draft: { ...startingDraft(record), text: 'My own words.' } });
+    expect(html).toContain('My own words.');
+    expect(html).not.toContain('The model’s draft.</textarea>');
+    expect(html).toContain('Go back to the starting text');
+  });
+
+  it('on-screen copy: the edited fields, with the labels from the starting text', () => {
+    const record = cp('write', { initialText: 'Headline: Bread, the slow way\nTagline: Open at seven' });
+    const html = renderWith(WritePanel, record, { draft: { ...startingDraft(record), items: ['Bread, slowly', 'Open at seven'] } });
+    expect(html).toContain('value="Bread, slowly"');
+    expect(html).toContain('Headline');
+  });
+
+  it('select and compare: the kept tick and highlight', () => {
+    const hits = cp('select', { options: [{ id: 'hit-1', label: 'One' }, { id: 'hit-2', label: 'Two' }] });
+    const ticked = renderWith(SelectPanel, hits, { draft: { ...startingDraft(hits), choice: ['hit-2'] } });
+    expect(/<input[^>]*value="hit-2"[^>]*>/.exec(ticked)?.[0]).toContain('checked=""');
+    expect(/<input[^>]*value="hit-1"[^>]*>/.exec(ticked)?.[0]).not.toContain('checked=""');
+    const versions = cp('compare', { options: [{ id: 'A', label: 'Before' }, { id: 'B', label: 'After' }] });
+    const html = renderWith(ComparePanel, versions, { draft: { ...startingDraft(versions), choice: ['B'] } });
+    expect(html.match(/data-current="true"/g)).toHaveLength(1);
+    expect(html).toContain('Keep “After”');
+  });
+
+  it('a sent answer stays locked, saying Sent, until byway confirms it', () => {
+    const record = cp('write', { initialText: 'Start.' });
+    const html = renderWith(WritePanel, record, { draft: { ...startingDraft(record), text: 'Mine.' }, sent: true, busy: true });
+    expect(html).toContain('Mine.');
+    // Locked with aria-disabled, not `disabled`, so the button keeps focus (R5); a press does nothing (ActionButton).
+    expect(/<button[^>]*>Sent</.exec(html)?.[0]).toMatch(/aria-disabled="true"/);
+    expect(/<button[^>]*>Sent</.exec(html)?.[0]).not.toMatch(/\sdisabled=|aria-busy/);
+  });
+
+  it('while an answer is on its way, the buttons that send it are busy or unavailable, never natively disabled (R5)', () => {
+    const record = cp('react');
+    const footer = /<button[^>]*>Sending…</.exec(renderWith(ReactPanel, record, { draft: { ...startingDraft(record), text: 'Warmer.' }, busy: true }))?.[0];
+    expect(footer).toMatch(/aria-disabled="true"/);
+    expect(footer).toMatch(/aria-busy="true"/);
+    const confirm = renderWith(ConfirmPanel, cp('confirm'), { busy: true });
+    expect(confirm.match(/<button[^>]*aria-disabled="true"[^>]*>(Yes|No)</g)).toHaveLength(2);
+    const compare = cp('compare', { options: [{ id: 'A', label: 'Before' }, { id: 'B', label: 'After' }] });
+    expect(renderWith(ComparePanel, compare, { busy: true }).match(/<button[^>]*aria-disabled="true"[^>]*>Keep this/g)).toHaveLength(2);
+    for (const html of [confirm, renderWith(ComparePanel, compare, { busy: true })]) expect(html).not.toMatch(/<button[^>]*\sdisabled=/);
+  });
+
+  it('“Choose all” and “Clear” say when there is nothing for them to do, and stay focusable (R5)', () => {
+    const hits = cp('select', { options: [{ id: 'a', label: 'One' }, { id: 'b', label: 'Two' }] });
+    const none = renderWith(SelectPanel, hits, {});
+    expect(/<button[^>]*>Choose all</.exec(none)?.[0]).not.toMatch(/aria-disabled/);
+    expect(/<button[^>]*>Clear</.exec(none)?.[0]).toMatch(/aria-disabled="true"/);
+    const all = renderWith(SelectPanel, hits, { draft: { ...startingDraft(hits), choice: ['a', 'b'] } });
+    expect(/<button[^>]*>Choose all</.exec(all)?.[0]).toMatch(/aria-disabled="true"/);
+    for (const html of [none, all]) expect(html).not.toMatch(/<button[^>]*\sdisabled=/);
+  });
+
+  it('while sent, the fields are read-only and offer no edits: what is shown is what was sent', () => {
+    const write = cp('write', { initialText: 'Start.' });
+    const editor = renderWith(WritePanel, write, { draft: { ...startingDraft(write), text: 'Mine.' }, sent: true, busy: true });
+    expect(/<textarea[^>]*>/.exec(editor)?.[0]).toContain('readOnly=""');
+    expect(editor).not.toContain('Go back to the starting text');
+    const reaction = renderWith(ReactPanel, cp('react'), { draft: { ...startingDraft(cp('react')), text: 'Warmer.' }, sent: true, busy: true });
+    expect(/<textarea[^>]*>/.exec(reaction)?.[0]).toContain('readOnly=""');
+    const copy = cp('write', { initialText: 'Headline: Bread, the slow way\nTagline: Open at seven' });
+    const fields = renderWith(WritePanel, copy, { draft: { ...startingDraft(copy), items: ['Bread, slowly', 'Open at seven'] }, sent: true, busy: true });
+    for (const input of fields.match(/<input[^>]*>/g) ?? []) expect(input).toContain('readOnly=""');
+    const list = cp('directive');
+    const items = renderWith(DirectivePanel, list, { draft: { ...startingDraft(list), items: ['the intro', 'the outro'] }, sent: true, busy: true });
+    expect(items.match(/<input[^>]*readOnly=""[^>]*>/g)).toHaveLength(2);
+    expect(/<button[^>]*>Add an item/.exec(items)?.[0]).toContain('aria-disabled="true"');
+    // Before sending, the same panels are editable.
+    expect(/<textarea[^>]*>/.exec(renderWith(WritePanel, write, {}))?.[0]).not.toContain('readOnly');
   });
 });

@@ -5,7 +5,7 @@ import { formatUsd } from '../../view/format.ts';
 import type { ArtifactInfo } from '../../view/rundata.ts';
 import type { TimelineStep } from '../../view/timeline.ts';
 import { codeForLabel, stepTitle, whoLabel } from '../../view/vocabulary.ts';
-import { artifactUrl } from '../api.ts';
+import { openHref } from '../api.ts';
 import { ArtifactPreview } from '../ArtifactPreview.tsx';
 import { useTechnicalNames } from '../TechNames.tsx';
 import { useShortcuts } from '../useShortcuts.ts';
@@ -52,7 +52,7 @@ export function StepDetail({ step, artifacts, onClose, closeLabel }: { step: Tim
               <li key={`${a.artifactId}-${i}`} className="detail-item">
                 <div className="detail-item-head">
                   <h3>{title}</h3>
-                  <a href={artifactUrl(a.artifactId)} target="_blank" rel="noopener noreferrer">
+                  <a href={openHref(a.artifactId)} target="_blank" rel="noopener noreferrer">
                     Open<span className="sr-only"> {title} in a new tab</span>
                   </a>
                 </div>

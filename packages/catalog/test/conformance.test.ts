@@ -63,6 +63,12 @@ describe('lineage', () => {
     expect(c1h.parent).toEqual({ hash: c1.hash, derivation: { transform: 'binding', version: 1, map: 'S1-BIND' } });
   });
 
+  it('no research-frozen recipe uses optional reads (ADR-0089), so the Study 1 arms run as they were written', () => {
+    const frozen = CATALOG.filter((r) => r.channel === 'research-frozen');
+    expect(frozen.length).toBeGreaterThan(0);
+    for (const r of frozen) expect(steps(r).filter(({ step }) => step.reads !== undefined).map(({ step }) => step.id), r.id).toEqual([]);
+  });
+
   it('every ablation derives from C1-H on the research-frozen channel', () => {
     for (const a of c1hAblations) {
       expect(a.kind).toBe('ablation');

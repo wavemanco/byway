@@ -6,8 +6,9 @@ import { StartInput } from '../../../src/server/schemas.ts';
 /** Start a run of a library or composed recipe with a budget. */
 export async function POST(request: Request) {
   return handle(async () => {
-    const body = await parseBody(request, StartInput);
+    const deps = await getDeps();
+    const body = await parseBody(request, StartInput, deps.heldKeyIn);
     if (!body.ok) return body.response;
-    return json(await startRun(await getDeps(), body.data), 201);
+    return json(await startRun(deps, body.data), 201);
   });
 }

@@ -3,8 +3,17 @@
  * only @temporalio/* stays external. The build is platform-neutral, so a Node import in workflow code fails it.
  */
 import { readFileSync, rmSync } from 'node:fs';
+import type { Plugin } from 'esbuild';
 import { describe, expect, it } from 'vitest';
 import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '../src/build.ts';
+
+/**
+ * The workflow bundle's hash at main a768d4d (after ADR-0092's admission work, which changed it from e572716a… at 17eae76),
+ * before F03's stage 3, and after it: stage 3 changes no workflow code. Cluster F (ADR-0089, ADR-0090) changes it on
+ * purpose from bfdda860… (`toStepSpec` carries `reads`, the revise-in-place prefill, the link context, the unobservable
+ * skip and the `unchecked` loop exit), so runs waiting under the older bundle end plainly once (ADR-0078).
+ */
+const PINNED_WORKFLOW_HASH = 'ec88dae8006566ad8604f8fb64d6554decc806c5f9a01779f73321ca6621ecb0';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
@@ -20,6 +29,56 @@ describe('the workflow bundle', () => {
       expect(code).toContain('"cancelRun"');
     } finally {
       rmSync(out, { force: true });
+    }
+  }, 60_000);
+
+  it('is the bundle runs in flight were started under: the spend book’s stage 3 changed no workflow code, cluster F changed it on purpose (ADR-0078, ADR-0099, ADR-0090)', async () => {
+    // A run records the hash of the bundle it started under, and a worker running another bundle ends it plainly
+    // (ADR-0078). Pinned, so that a change to workflow code is a decision made with it, never a side effect of activity
+    // work: update it in the same change that alters workflow code on purpose.
+    const out = await buildWorkflows({ outfile: DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `pinned-${process.pid}.js`) });
+    try {
+      expect(workflowBundleHash(out)).toBe(PINNED_WORKFLOW_HASH);
+    } finally {
+      rmSync(out, { force: true });
+    }
+  }, 60_000);
+
+  /**
+   * ADR-0092: the protocol's rule and exception tables are admission data the workflow never reads. @byway/protocol is
+   * side-effect free, so they stay out of the bundle and editing them (a new rule such as ST12) does not change the
+   * bundle's hash, which would end every run open at the upgrade (ADR-0078).
+   */
+  it('takes from @byway/protocol only what workflow code reads; rule and exception edits leave its hash alone', async () => {
+    const out = (name: string) => DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `${name}-${process.pid}.js`);
+    /** Rewrite one @byway/protocol source as esbuild reads it. */
+    const editing = (file: string, from: string, to: string): Plugin => ({
+      name: 'edit-on-load',
+      setup(b) {
+        b.onLoad({ filter: new RegExp(`protocol[\\\\/]src[\\\\/]${file}\\.ts$`) }, (args) => {
+          const source = readFileSync(args.path, 'utf8');
+          if (!source.includes(from)) throw new Error(`${file}.ts no longer holds ${JSON.stringify(from)}`);
+          return { contents: source.replace(from, to), loader: 'ts' };
+        });
+      },
+    });
+    const base = await buildWorkflows({ outfile: out('proto-base') });
+    // A rule added to the catalogue, as ST12 was, and an exception's wording changed.
+    const rules = await buildWorkflows({ outfile: out('proto-rules'), plugins: [editing('rules', '  PR1: r(', "  ST99: r('ST12', 'invariant', 'A new rule', 'ADR-0092'),\n  PR1: r(")] });
+    const exceptions = await buildWorkflows({ outfile: out('proto-exc'), plugins: [editing('exceptions', "families: ['C1'],", "families: ['C1', 'C1x'],")] });
+    // The control: a change to something workflow code does read moves the hash, so the edits above were really made.
+    const tells = await buildWorkflows({ outfile: out('proto-tells'), plugins: [editing('blocks', "'fiction',", "'fiction-x',")] });
+    try {
+      const code = readFileSync(base, 'utf8');
+      const protocolFiles = [...code.matchAll(/\/\/ \.\.\/protocol\/src\/([\w-]+)\.ts/g)].map((m) => m[1]);
+      expect(new Set(protocolFiles)).toEqual(new Set(['blocks', 'media']));
+      expect(code).not.toMatch(/\bvar RULES\b/);
+      expect(code).not.toMatch(/\bvar EXCEPTIONS\b/);
+      expect(workflowBundleHash(rules)).toBe(workflowBundleHash(base));
+      expect(workflowBundleHash(exceptions)).toBe(workflowBundleHash(base));
+      expect(workflowBundleHash(tells)).not.toBe(workflowBundleHash(base));
+    } finally {
+      for (const f of [base, rules, exceptions, tells]) rmSync(f, { force: true });
     }
   }, 60_000);
 

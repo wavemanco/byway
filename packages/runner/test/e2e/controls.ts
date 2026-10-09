@@ -10,6 +10,7 @@ import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { sectionOf } from '../../src/parse.ts';
 import { ResolutionRejectedError } from '../../src/client.ts';
 import { workflowIdFor } from '../../src/types.ts';
+import { launchFailure } from '../../src/pages.ts';
 import { fakeHash } from '../helpers/fake-prompts.ts';
 import type { Harness } from '../helpers/harness.ts';
 import { judged, routed, seeded, threePages, tiny, twoAuthors } from '../helpers/recipes.ts';
@@ -400,6 +401,21 @@ export function controlScenarios(use: () => Harness): void {
         expect(view.run.error).toBe('The Draft step has no prompt template "product.test.draft".');
       } finally {
         h.prompts.missing.clear();
+      }
+    }, 60_000);
+
+    it('fails a web-page run whose page renderer cannot start before any step or AI call, in the renderer’s words (F18)', async () => {
+      const unavailable = launchFailure(new Error("browserType.launch: Executable doesn't exist at /pw/chrome-headless-shell"));
+      h.pages.failReady(unavailable);
+      try {
+        const run = await h.start(threePages);
+        const view = await h.drive(run.id);
+        expect(view.run.status).toBe('failed');
+        expect(view.run.error).toBe(unavailable.message);
+        expect(types(view.events)).not.toContain('step-started');
+        expect(h.calls.filter((c) => c.runId === run.id)).toEqual([]);
+      } finally {
+        h.pages.failReady(undefined);
       }
     }, 60_000);
   });

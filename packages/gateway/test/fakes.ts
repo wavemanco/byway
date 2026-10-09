@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { ArtifactRecord, ArtifactStore } from '@byway/contracts';
 import { encodePng } from '../src/mock/png.ts';
 import type { AnthropicClientLike, AnthropicMessageLike } from '../src/providers/anthropic.ts';
-import type { FalClientLike } from '../src/providers/fal.ts';
+import { FalQueueError, type FalClientLike } from '../src/providers/fal.ts';
 import type { GoogleClientLike, GoogleResponseLike } from '../src/providers/google.ts';
 import type { ChatCompletionLike, ImagesResponseLike, OpenAIClientLike } from '../src/providers/openai.ts';
 
@@ -159,23 +159,81 @@ export function fakeFal(failures: Record<string, Error[]> = {}, opts: { clipUrl?
   return { client, calls, polls, uploads, uploadedUrl, clipUrl, frameUrl };
 }
 
-/** A fake fetch for provider media downloads: .mp4 URLs serve clip bytes, .png URLs a PNG; `statuses` overrides. */
-export function fakeFetch(statuses: Record<string, number> = {}) {
+/** The start of a real MP4: an ISO-BMFF `ftyp` box (size 24, brand isom), then a little of an `mdat` box. */
+export const MP4_BYTES = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 2, 0, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x31, 0, 0, 0, 8, 0x6d, 0x64, 0x61, 0x74]);
+/** The start of a real WebM: the EBML magic, then a header element. */
+export const WEBM_BYTES = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81, 0x01, 0x42, 0xf7, 0x81, 0x01]);
+
+export interface FakeFetchOptions {
+  /** URL → the Location a 302 from it names; null answers a 302 with no Location at all. */
+  redirects?: Record<string, string | null>;
+  /** URL → a response built fresh for each request (custom bodies and headers). */
+  responses?: Record<string, () => Response>;
+}
+
+/**
+ * A fake fetch for provider media downloads: .mp4 URLs serve MP4 bytes, .webm WebM, .png a PNG. `statuses` overrides
+ * a URL with an HTTP status (a list is answered in order, then the URL is served as usual). `inits` records what each
+ * request asked for (the download must follow redirects itself: redirect 'manual').
+ */
+export function fakeFetch(statuses: Record<string, number | number[]> = {}, opts: FakeFetchOptions = {}) {
   const requested: string[] = [];
-  const fetch = async (input: string | URL | Request): Promise<Response> => {
+  const inits: (RequestInit | undefined)[] = [];
+  const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = String(input instanceof Request ? input.url : input);
     requested.push(url);
-    const status = statuses[url];
+    inits.push(init);
+    const planned = statuses[url];
+    const status = Array.isArray(planned) ? planned.shift() : planned;
     if (status !== undefined) return new Response('nope', { status });
-    if (url.endsWith('.mp4')) return new Response(new TextEncoder().encode('mp4-bytes'), { headers: { 'content-type': 'video/mp4' } });
-    if (url.endsWith('.webm')) return new Response(new TextEncoder().encode('webm-bytes'), { headers: { 'content-type': 'video/webm' } });
+    if (opts.redirects && url in opts.redirects) {
+      const location = opts.redirects[url];
+      return new Response(null, { status: 302, headers: location === null || location === undefined ? {} : { location } });
+    }
+    const custom = opts.responses?.[url];
+    if (custom) return custom();
+    if (url.endsWith('.mp4')) return new Response(MP4_BYTES.slice(), { headers: { 'content-type': 'video/mp4' } });
+    if (url.endsWith('.webm')) return new Response(WEBM_BYTES.slice(), { headers: { 'content-type': 'video/webm' } });
     if (url.endsWith('.png')) return new Response(encodePng(4, 2, new Uint8Array(24).fill(90)), { headers: { 'content-type': 'image/png' } });
     // A JPEG served with a PNG header: the frame must be stored under what its bytes are.
     if (url.endsWith('.jpg')) return new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0]), { headers: { 'content-type': 'image/png' } });
     return new Response('not found', { status: 404 });
   };
-  return { fetch: fetch as typeof globalThis.fetch, requested };
+  return { fetch: fetch as typeof globalThis.fetch, requested, inits };
 }
 
-/** An error shaped like the SDKs' API errors. */
-export const httpError = (status: number, message = `HTTP ${status}`) => Object.assign(new Error(message), { status });
+/**
+ * A body of `chunks` chunks of `chunkBytes` each, made only as it is read, that counts how many chunks were pulled and
+ * whether the reader cancelled. Every chunk is the same buffer, so even a large body costs almost no memory.
+ */
+export function countingBody(chunks: number, chunkBytes = 1024 * 1024) {
+  const chunk = new Uint8Array(chunkBytes).fill(7);
+  const seen = { pulls: 0, cancelled: false };
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (seen.pulls >= chunks) return controller.close();
+        seen.pulls++;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        seen.cancelled = true;
+      },
+    },
+    // Nothing is made ahead of a read, so `pulls` counts exactly what the reader asked for.
+    { highWaterMark: 0 },
+  );
+  return { stream, seen };
+}
+
+/**
+ * An error shaped like the SDKs' API errors: `error` is the parsed JSON body (Anthropic, OpenAI), absent when the body
+ * was not JSON (a proxy's HTML page).
+ */
+export const httpError = (status: number, message = `HTTP ${status}`, body?: unknown) => Object.assign(new Error(message), { status, ...(body !== undefined ? { error: body } : {}) });
+
+/** fal's queue answering a submission with an error: its status and, when fal sent one, its JSON error body. */
+export const falQueueError = (status: number, body?: Record<string, unknown>) => new FalQueueError(status, body, body ? JSON.stringify(body) : '<html>Bad gateway</html>');
+
+/** Node's fetch (undici) failing: TypeError('fetch failed') with the socket's code only on its cause. */
+export const fetchFailed = (code: string) => new TypeError('fetch failed', { cause: Object.assign(new Error(`${code}: socket`), { code }) });

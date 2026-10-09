@@ -6,13 +6,19 @@
  *
  * The bundle knows its own hash (C7, ENG-11): the sha256 of its code, written into the code where workflow/version.ts
  * reads it. A run records the hash it started under, so a worker built from different code can tell which waiting
- * runs it cannot replay. Comments are not part of the code esbuild emits, so editing them changes nothing.
+ * runs it cannot replay. esbuild keeps some comments in the code it emits (a doc comment on a class member can survive,
+ * as LoopExit's does), so editing a comment in workflow code can change the hash; build.test.ts pins it, so such a
+ * change shows.
+ *
+ * The bundle is replaced whole (replaceFile): written beside its final name, then renamed into place. Two byway starts
+ * from one checkout build the same file at the same time, and a worker reading it while the other wrote it in place
+ * could load half a bundle.
  */
-import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -30,6 +36,11 @@ const HASH_LITERAL = /"bywaywf:([0-9a-f]{64})"/;
 export interface BuildWorkflowsOptions {
   /** Output file; defaults to {@link DEFAULT_WORKFLOWS_BUNDLE}. */
   outfile?: string;
+  /**
+   * esbuild plugins, for tests that change a source as it is read, to show what the bundle does and does not depend on
+   * (an edit to @byway/protocol's rule table must leave the hash alone, ADR-0092). The worker passes none.
+   */
+  plugins?: Plugin[];
 }
 
 /** Compile the workflow entry into one ESM file and return its path. Fast (esbuild), so the worker rebuilds on start. */
@@ -54,6 +65,7 @@ export async function buildWorkflows(opts: BuildWorkflowsOptions = {}): Promise<
     sourcemap: 'external',
     write: false,
     logLevel: 'silent',
+    ...(opts.plugins?.length ? { plugins: opts.plugins } : {}),
   });
   const js = result.outputFiles.find((f) => f.path.endsWith('.js'));
   const map = result.outputFiles.find((f) => f.path.endsWith('.js.map'));
@@ -61,8 +73,36 @@ export async function buildWorkflows(opts: BuildWorkflowsOptions = {}): Promise<
   const hash = createHash('sha256').update(js.text).digest('hex');
   const code = js.text.split(PLACEHOLDER).join(`${HASH_PREFIX}${hash}`);
   const inline = map ? `//# sourceMappingURL=data:application/json;base64,${Buffer.from(map.text).toString('base64')}\n` : '';
-  writeFileSync(outfile, `${code.endsWith('\n') ? code : `${code}\n`}${inline}`);
+  await replaceFile(outfile, `${code.endsWith('\n') ? code : `${code}\n`}${inline}`);
   return outfile;
+}
+
+/** Errors a rename on Windows gives while another process (a worker loading the bundle, a virus scanner) briefly holds the target. */
+const BUSY = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const RENAME_TRIES = 5;
+
+/**
+ * Writes `text` to `file` so that a reader sees the old file or the new one, never part of one: the text goes to a
+ * temporary file beside it (same folder, so the rename stays on one volume), which is then renamed over it. A write
+ * that fails leaves the old file as it was and removes the temporary one.
+ */
+async function replaceFile(file: string, text: string): Promise<void> {
+  const temp = `${file}.${process.pid}-${randomBytes(4).toString('hex')}.tmp`;
+  try {
+    writeFileSync(temp, text);
+    for (let n = 1; ; n++) {
+      try {
+        renameSync(temp, file);
+        return;
+      } catch (e) {
+        if (n >= RENAME_TRIES || !BUSY.has((e as NodeJS.ErrnoException).code ?? '')) throw e;
+        await new Promise((r) => setTimeout(r, 50 * n));
+      }
+    }
+  } catch (e) {
+    rmSync(temp, { force: true });
+    throw e;
+  }
 }
 
 /** The hash a built bundle carries, or undefined for a file built some other way. */

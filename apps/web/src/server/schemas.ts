@@ -27,6 +27,13 @@ export const AnswersInput = z.object({
     .max(20),
 });
 
+/**
+ * POST /api/intakes/:id/recommend takes one of two commands (F14, ADR-0082): `{ answers }` re-routes with the chooser
+ * answers as the person left them; `{ ensure: true }` is "Try again", which returns the intake's stored recommendation,
+ * or makes and stores one when there is none. Anything else, an empty body included, is refused.
+ */
+export const RecommendInput = z.union([z.strictObject({ ensure: z.literal(true) }), AnswersInput]);
+
 export const StartInput = z.object({
   intakeId: z.string().uuid(),
   /** A canonical recipe id; omitted to start the intake's composed recipe. */
@@ -35,6 +42,15 @@ export const StartInput = z.object({
   routes: z.record(z.string().max(64), z.string().max(64)).optional(),
   /** "Examples you admire", already stored through /api/refs (StartRunInput.inputs.refs). */
   refs: z.array(ArtifactId).max(MAX_REFS, `Add at most ${MAX_REFS} examples.`).optional(),
+  /**
+   * The run's id, minted by the Recommendation screen once per Start (StartRunInput.runId; F03 P3): a Start sent twice
+   * starts one run. A lowercase UUID, as crypto.randomUUID() makes, since it becomes the run's, its workflow's and its
+   * memos' id.
+   */
+  runId: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, 'That start did not arrive intact. Start the run again.')
+    .optional(),
 });
 
 /** One example: pasted text, or an image as base64 (the bytes are checked against the type on the server). */
@@ -58,6 +74,9 @@ export const ResolutionInput = z.object({
 });
 
 export const ControlInput = z.object({ action: z.enum(['pause', 'resume', 'cancel']) });
+
+/** Settings' Spending records actions (ADR-0095): clear calls that may have been billed, or acknowledge a fault. */
+export const SpendAction = z.union([z.strictObject({ clear: z.array(z.string().min(1).max(100)).min(1).max(500) }), z.strictObject({ acknowledge: z.number().int().positive() })]);
 
 export const SettingsPatch = z.object({
   profileId: z.string().max(64).optional(),

@@ -557,6 +557,14 @@
   overflow: auto;
 }
 
+/* Under each version: the whole of it, in the viewer (F13). */
+.compare-open {
+  display: inline-block;
+  margin-top: var(--s-2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
 .compare-flip {
   margin-top: var(--s-4);
 }
@@ -878,6 +886,13 @@
   gap: var(--s-2);
 }
 
+/* What a downloaded page does away from byway (F05): under the buttons, on its own line. */
+.result-download-note {
+  flex-basis: 100%;
+  max-width: 34ch;
+  margin: 0;
+}
+
 .page-result-bar {
   display: flex;
   flex-wrap: wrap;
@@ -1173,4 +1188,48 @@
   margin-top: var(--s-1);
   font-size: var(--text-sm);
   color: var(--ink-2);
+}
+
+/* --- Your unsent words (F06, ADR-0082): typed for a question that closed before it was sent; read-only. ---- */
+
+.unsent {
+  display: grid;
+  gap: var(--s-3);
+  margin-bottom: var(--s-5);
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+
+.unsent h2 {
+  font-size: var(--text-lg);
+}
+
+.unsent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-4);
+}
+
+.unsent-item {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.unsent-prompt {
+  font-weight: 600;
+}
+
+.unsent-item textarea {
+  background: var(--bg);
+  resize: vertical;
+}
+
+.unsent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
 }

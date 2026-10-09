@@ -42,10 +42,12 @@ export const PRICES: readonly PriceRow[] = [
   // claude-opus-5-5: $4 / $20, cache hits $0.20 (0.05x), 5m cache writes $5. Source: ANTHROPIC, 2026-10-07.
   { provider: 'anthropic', model: 'claude-opus-5-5', inputPerMTok: 4, outputPerMTok: 20, cacheReadPerMTok: 0.2, cacheWritePerMTok: 5, source: ANTHROPIC },
   // claude-sonnet-5-5: $2 / $10, 5m cache writes $2.50. The pricing table lists cache hits at $0.20 while its prose says
-  // $0.10 (0.05x); we record the table's higher figure so estimates err high. Source: ANTHROPIC, 2026-10-07.
+  // $0.10 (0.05x); we record the table's higher figure, so costs lean high rather than low. Source: ANTHROPIC, 2026-10-07.
   { provider: 'anthropic', model: 'claude-sonnet-5-5', inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.2, cacheWritePerMTok: 2.5, source: ANTHROPIC },
-  // Models that `fallbacks: "default"` may serve after a refusal (cyber-category refusals go to Opus 4.8), so their
-  // tokens are priced correctly in the ledger. claude-opus-5 and claude-opus-4-8: $5 / $25. Source: ANTHROPIC, 2026-10-07.
+  // Models that `fallbacks: "default"` may serve after a refusal, so their tokens are priced correctly in the ledger:
+  // Opus 5.5 and Fable 5.1 fall back to claude-opus-5 or claude-opus-4-8 (Anthropic routes by refusal category, partly
+  // unpublished). claude-opus-5 and claude-opus-4-8: $5 / $25. Source: ANTHROPIC, 2026-10-07. Sonnet 5.5's fallback,
+  // claude-sonnet-5, has no row here: a call it serves settles at Sonnet 5.5's row, flagged 'assumed' (servedPrice).
   { provider: 'anthropic', model: 'claude-opus-5', inputPerMTok: 5, outputPerMTok: 25, cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25, source: ANTHROPIC },
   { provider: 'anthropic', model: 'claude-opus-4-8', inputPerMTok: 5, outputPerMTok: 25, cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25, source: ANTHROPIC },
 
@@ -122,6 +124,44 @@ export function priceFor(table: readonly PriceRow[], provider: ProviderId, model
     if (!best || (row.from ?? '') > (best.from ?? '')) best = row;
   }
   return best;
+}
+
+/**
+ * A dated or versioned snapshot suffix as providers report served models: `-YYYY-MM-DD` and `-YYYYMMDD` (OpenAI,
+ * Anthropic), a three-digit `-NNN` (Gemini versions) or `@<version>`. The forms are this narrow on purpose: Anthropic
+ * warns that `claude-opus-5-5` starts with `claude-opus-5`, and no rule here can read one as a snapshot of the other.
+ */
+const SNAPSHOT_SUFFIX = /(?:-\d{4}-\d{2}-\d{2}|-\d{8}|-\d{3}|@[A-Za-z0-9._-]+)$/;
+
+/**
+ * Google's dated preview snapshots: `-preview-MM-DD` (gemini-2.5-pro-preview-06-05) and `-preview-MM-YYYY`
+ * (gemini-2.5-flash-preview-09-2025). Only the date is dropped and `-preview` stays, so a dated preview is read only as
+ * a snapshot of a priced preview id, never of the model's stable id. Read for Google alone, and only a real month with a
+ * real day or a four-digit year starting 20.
+ */
+const GOOGLE_DATED_PREVIEW = /^(.+-preview)-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]|20\d{2})$/;
+
+/** The id a served model is a dated or versioned snapshot of, or undefined when it has no snapshot form. */
+function snapshotBase(provider: ProviderId, servedModel: string): string | undefined {
+  const base = servedModel.replace(SNAPSHOT_SUFFIX, '');
+  if (base !== servedModel) return base;
+  return provider === 'google' ? GOOGLE_DATED_PREVIEW.exec(servedModel)?.[1] : undefined;
+}
+
+/**
+ * The row a served model is settled at (F04, ADR-0091): its own row first, so a known model is never priced above or
+ * below its own rates; then, for a dated or versioned snapshot of a priced model, that model's row; otherwise the
+ * requested model's row, flagged `assumed`, which the ledger records (LedgerEntry.priceBasis) and Settings shows.
+ */
+export function servedPrice(table: readonly PriceRow[], provider: ProviderId, servedModel: string, requested: PriceRow, at: Date): { row: PriceRow; assumed: boolean } {
+  // Adapters copy the reported label unchecked (ADR-0083): one that is not a string names no row.
+  if (typeof servedModel !== 'string') return { row: requested, assumed: true };
+  const own = priceFor(table, provider, servedModel, at);
+  if (own) return { row: own, assumed: false };
+  const base = snapshotBase(provider, servedModel);
+  const snapshotOf = base !== undefined ? priceFor(table, provider, base, at) : undefined;
+  if (snapshotOf) return { row: snapshotOf, assumed: false };
+  return { row: requested, assumed: true };
 }
 
 /** Detailed token counts some providers report, beyond the contract's Usage. */

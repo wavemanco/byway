@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ArtifactRecord, ArtifactStore, CompletionRequest, Gateway, LedgerEntry, PromptRenderer, PromptSlot, RenderedPrompt } from '@byway/contracts';
-import { createGateway, Ledger, type GatewayOptions, type Responder } from '@byway/gateway';
-import { createPromptRenderer } from '@byway/prompts';
+import type { ArtifactRecord, ArtifactStore, CompletionRequest, Gateway, LedgerEntry, PromptSlot, RenderedPrompt } from '@byway/contracts';
+import { createGateway, Ledger, memorySpendBook, type GatewayOptions, type Responder } from '@byway/gateway';
+import { createPromptRenderer, type PromptLibrary } from '@byway/prompts';
 import { createAdvisor, type AdvisorOptions } from '../src/index.ts';
 
 /** A content-addressed artifact store in memory (ids are sha256 of the bytes), as the contract describes. */
@@ -44,6 +44,7 @@ export function demoGateway(over: Partial<GatewayOptions> = {}) {
     ledgerPath: tempLedger().ledgerPath,
     artifacts: new MemoryArtifacts(),
     caps: { workspaceCapUsd: () => 100 },
+    spendBook: memorySpendBook(),
     env: {},
     demo: true,
     now: () => new Date('2026-10-07T12:00:00Z'),
@@ -71,6 +72,9 @@ export function recording(inner: Gateway): Gateway & { calls: CompletionRequest[
     profiles: () => inner.profiles(),
     profileStatus: () => inner.profileStatus(),
     verifyLedger: () => inner.verifyLedger(),
+    spendRecords: (id) => inner.spendRecords(id),
+    auditLedger: () => inner.auditLedger(),
+    close: () => inner.close(),
   };
 }
 
@@ -85,8 +89,11 @@ export const PROMPTS = createPromptRenderer();
  */
 export function recordingPrompts(opts: { has?: (id: string) => boolean } = {}) {
   const renders: { id: string; slots: Partial<Record<PromptSlot, string>>; rendered: RenderedPrompt }[] = [];
-  const renderer: PromptRenderer = {
+  const renderer: PromptLibrary = {
     has: opts.has ?? ((id) => PROMPTS.has(id)),
+    ids: () => PROMPTS.ids(),
+    variants: (id) => PROMPTS.variants(id),
+    info: (id, medium) => PROMPTS.info(id, medium),
     render(id, slots): RenderedPrompt {
       const rendered = PROMPTS.render(id, slots);
       renders.push({ id, slots, rendered });

@@ -46,7 +46,11 @@ export interface EvidenceLabel {
   summary: string;
   /** Registry ids of the studies behind the label (empty when untested). */
   studies: string[];
-  /** ISO date after which the label degrades to "Historical", if any. */
+  /**
+   * ISO date the study's evidence expires, carried from its registry entry, if any. Nothing acts on it yet: labelFor
+   * passes it through, and `verdict` has no outcome for expired evidence. Enforcing it is a prerequisite for the
+   * registry's first entry (docs/backlog.md, "Before the study registry's first entry"); the registry is empty in v1.
+   */
   expires?: string;
 }
 
@@ -128,6 +132,13 @@ export interface Advisor {
     opts: { workspaceId: string; profileId: string; answers?: ChooserAnswer[]; routes?: Record<string, string> },
   ): Promise<Recommendation>;
   compose(problem: ProblemBrief, opts: { workspaceId: string; profileId: string }): Promise<ComposeResult>;
+  /**
+   * Admit a stored composed recipe again, before it runs (ADR-0092): the composer's checks as they are now, on the
+   * stored recipe under its own id, with what the screen says about it (differences from the nearest recipe,
+   * presentation, label) and its estimate computed afresh. No model call. `ok` is false when it no longer passes, or
+   * when it no longer hashes to the recipe that was offered (its hash is then reported as a violation).
+   */
+  admit(composed: Pick<ComposeResult, 'recipe' | 'nearestRecipeId'>, opts: { problem: ProblemBrief; profileId: string }): ComposeResult;
   catalog(): RecipePresentation[];
   /** The canonical recipe for an id (protocol channel), for starting a run. */
   recipe(recipeId: string): Recipe | undefined;

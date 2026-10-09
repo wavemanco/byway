@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { listedShortcuts } from '../../../view/checkpoints.ts';
+import { ActionButton } from '../../ActionButton.tsx';
 import { useShortcuts, useSingleKeyShortcuts } from '../../useShortcuts.ts';
 import { References } from './References.tsx';
 import type { PanelProps } from './types.ts';
@@ -10,9 +12,13 @@ import type { PanelProps } from './types.ts';
  * expected answer, because both are yours to give. The answers sit in the sticky footer, so long notes above
  * never push them out of reach.
  */
-export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
+export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId, sent }: PanelProps) {
+  // The answer being sent, so that button shows as busy and the other only as unavailable; both keep focus (R5).
+  const [given, setGiven] = useState<boolean | null>(null);
   const answer = (approved: boolean) => {
-    if (!busy) onSubmit({ checkpointId: cp.id, approved });
+    if (busy) return;
+    setGiven(approved);
+    onSubmit({ checkpointId: cp.id, approved });
   };
   useShortcuts({ Y: () => answer(true), N: () => answer(false) });
   const refs = cp.artifactIds ?? [];
@@ -34,15 +40,15 @@ export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
         <div className="yes-no" role="group" aria-describedby={promptId}>
           {busy ? (
             <span className="muted" role="status">
-              Sending…
+              {sent ? 'Sent' : 'Sending…'}
             </span>
           ) : null}
-          <button type="button" className="button button-large yes-no-button" onClick={() => answer(true)} disabled={busy}>
+          <ActionButton className="button button-large yes-no-button" onClick={() => answer(true)} busy={busy && !sent && given === true} unavailable={busy}>
             Yes
-          </button>
-          <button type="button" className="button button-large yes-no-button" onClick={() => answer(false)} disabled={busy}>
+          </ActionButton>
+          <ActionButton className="button button-large yes-no-button" onClick={() => answer(false)} busy={busy && !sent && given === false} unavailable={busy}>
             No
-          </button>
+          </ActionButton>
         </div>
       </div>
     </>

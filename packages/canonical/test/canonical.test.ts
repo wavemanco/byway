@@ -59,6 +59,50 @@ describe('canonicalize (RFC 8785)', () => {
     expect(canonicalize('😀')).toBe('"😀"');
   });
 
+  /** The error canonicalize throws for `value`, so a test can read its message. */
+  function rejection(value: unknown): CanonicalizationError {
+    try {
+      canonicalize(value);
+    } catch (e) {
+      if (e instanceof CanonicalizationError) return e;
+      throw e;
+    }
+    throw new Error('expected a CanonicalizationError');
+  }
+
+  // F19: RFC 8785 §3.2.2.2 applies to "JSON string data (which includes JSON object property names as well)".
+  it.each([
+    ['a lone high surrogate at the root', { '\ud800': 1 }, '$: property name "\\ud800"'],
+    ['a lone low surrogate at the root', { '\udc00': 1 }, '$: property name "\\udc00"'],
+    ['a lone low surrogate in a nested name', { a: [{ 'x\udc00': 1 }] }, '$.a[0]: property name "x\\udc00"'],
+    ['a reversed pair', { '\udc00\ud800': 1 }, '$: property name "\\udc00\\ud800"'],
+  ])('rejects %s in a property name, naming it escaped in a well-formed message', (_label, value, names) => {
+    const e = rejection(value);
+    expect(e.message).toBe(`${names} contains a lone surrogate`);
+    expect(e.message.isWellFormed()).toBe(true);
+  });
+
+  it('checks a property name before its value, so the outer bad name is the one reported', () => {
+    const e = rejection({ '\ud800': { 'x\udc00': 'y\ud800' } });
+    expect(e.message).toBe('$: property name "\\ud800" contains a lone surrogate');
+    expect(e.message.isWellFormed()).toBe(true);
+  });
+
+  it('keeps the message of a lone surrogate in a value as it was', () => {
+    expect(rejection({ s: ['ok', '\ud800'] }).message).toBe('$.s[1]: string contains a lone surrogate');
+  });
+
+  it('serializes well-formed property names exactly as before', () => {
+    expect(canonicalize({ '😀': 1 })).toBe('{"😀":1}');
+    expect(canonicalize({ '\u0000': 1 })).toBe('{"\\u0000":1}');
+    expect(canonicalize({ '￿': 1 })).toBe('{"￿":1}');
+    expect(canonicalize({ ' ': 1 })).toBe('{" ":1}');
+    // A literal backslash-u is six ordinary characters, not an escape.
+    expect(canonicalize({ '\\ud800': 1 })).toBe('{"\\\\ud800":1}');
+    // RFC 8785 does not normalize: a decomposed é stays two code points.
+    expect(canonicalize({ 'é': 1 })).toBe('{"é":1}');
+  });
+
   it('rejects non-plain objects that would collide as "{}"', () => {
     expect(() => canonicalize({ d: new Date(0) })).toThrow(CanonicalizationError);
     expect(() => canonicalize({ m: new Map() })).toThrow(CanonicalizationError);
@@ -88,5 +132,14 @@ describe('contentHash', () => {
     // sha256("abc")
     expect(sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
     expect(contentHash('é')).toBe(`sha256:${sha256Hex('"é"')}`);
+  });
+});
+
+describe('sha256Hex', () => {
+  it('refuses text with a lone surrogate, which has no UTF-8 encoding (F19)', () => {
+    // Node would otherwise encode the surrogate as U+FFFD, so two different texts would share one hash.
+    expect(() => sha256Hex('a\ud800b')).toThrow(CanonicalizationError);
+    expect(() => sha256Hex('a\ud800b')).toThrow('lone surrogate');
+    expect(sha256Hex('a�b')).toMatch(/^[0-9a-f]{64}$/);
   });
 });

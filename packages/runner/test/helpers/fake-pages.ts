@@ -5,6 +5,8 @@
  * test's critic tell rounds apart from what it sees, as a real critic would. Like the real renderer it makes the three
  * surfaces (RENDER-1): the wide screen and the phone as that many tiles each (phone tiles are narrower), the first
  * screen as one. It can be held, to test pause, cancel and shutdown; a held render stops when its step is cancelled.
+ * It can also be made unable to start, as a renderer whose Chromium cannot launch: ready(), every render and every text
+ * read then reject with the error given (F18).
  *
  * Its page text (shownText, for VOICE's arbiter) is the page reader's own model of what a browser shows: the reader's
  * rendered text, a line break between its blocks, links by address. The arbiter's real checks against Chromium are in
@@ -46,6 +48,10 @@ export interface FakePages extends PageRenderer {
   release(): void;
   /** Renders currently waiting on the hold. */
   waiting(): number;
+  /** From now on ready(), every render and every text read reject with this error, as a renderer that cannot start; undefined undoes it. */
+  failReady(err: Error | undefined): void;
+  /** How many times ready() was asked. */
+  readonly readyCalls: number;
 }
 
 /** How many wide-screen (and phone) tiles a page gets: one, plus one per revision mark. */
@@ -112,6 +118,8 @@ export function fakePages(): FakePages {
   let gate: Promise<void> | undefined;
   let open: (() => void) | undefined;
   let waiting = 0;
+  let notReady: Error | undefined;
+  let readyCalls = 0;
 
   const held = async (signal: AbortSignal | undefined) => {
     if (!gate) return;
@@ -128,6 +136,7 @@ export function fakePages(): FakePages {
   };
 
   const render = async (html: string, surfaces: readonly Surface[], opts: RenderOptions = {}): Promise<SurfaceShots[]> => {
+    if (notReady) throw notReady;
     rendered.push(html);
     await held(opts.signal);
     return surfaces.map((s) => fakeShots(html, s));
@@ -144,9 +153,22 @@ export function fakePages(): FakePages {
       open = undefined;
     },
     waiting: () => waiting,
+    failReady(err) {
+      notReady = err;
+    },
+    get readyCalls() {
+      return readyCalls;
+    },
+    async ready() {
+      readyCalls++;
+      if (notReady) throw notReady;
+    },
     render: (html, _resolve, surfaces, opts) => render(html, surfaces, opts),
     screenshots: async (html, _resolve, opts) => (await render(html, ['desktop'], opts))[0]!.tiles,
-    shownText: async (html) => modelShownText(html),
+    shownText: async (html) => {
+      if (notReady) throw notReady;
+      return modelShownText(html);
+    },
     async close() {},
   };
 }

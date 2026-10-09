@@ -2,14 +2,18 @@
  * Runs the engine can no longer move on end plainly instead of waiting forever, with their questions withdrawn:
  * - OPS-1: the run's workflow is gone (an engine that was not byway's own, a workflow closed from outside);
  * - C7 (ENG-11, RUN-1): the run was started by another workflow bundle, whose history the new code cannot replay.
+ * And the other direction (R4): a run workflow whose run the store does not have (byway.sqlite restored from a backup
+ * older than temporal.sqlite) is stopped at engine start, before the worker polls, so none of its steps runs.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ResolutionRejectedError } from '../src/client.ts';
-import { LOST_RUN_MESSAGE, reconcileLostRuns } from '../src/lost-runs.ts';
-import { workflowIdFor } from '../src/types.ts';
+import { engineStartLines, settleBeforePolling } from '../src/dev-engine.ts';
+import { LOST_RUN_MESSAGE, ORPHAN_RUN_MESSAGE, reconcileLostRuns } from '../src/lost-runs.ts';
+import { RUN_WORKFLOW, workflowIdFor, type RunInput } from '../src/types.ts';
+import { createWorker } from '../src/worker.ts';
 import { OLDER_VERSION_MESSAGE, retireStaleRuns } from '../src/versioning.ts';
 import { WORKFLOW_HASH_MEMO } from '../src/workflow/version.ts';
-import { createHarness, type Harness } from './helpers/harness.ts';
+import { createHarness, PROBLEM, type Harness } from './helpers/harness.ts';
 import { tiny } from './helpers/recipes.ts';
 
 let h: Harness;
@@ -70,9 +74,11 @@ describe('a run whose workflow is gone (OPS-1)', () => {
     const live = await h.start(tiny);
     await openCheckpoint(live.id);
 
-    const closed = await reconcileLostRuns(h.env.client, h.store, [h.workspaceId]);
+    const { lost: closed, orphaned } = await reconcileLostRuns(h.env.client, h.store, [h.workspaceId], { taskQueue: h.taskQueue });
     expect(closed).toEqual(expect.arrayContaining([ghost.id, lost.runId]));
     expect(closed).not.toContain(live.id);
+    // Every workflow on the queue has its run in the store: none is stopped.
+    expect(orphaned).toEqual([]);
     await expectClosed(ghost.id, ghostCp.id, 'failed', LOST_RUN_MESSAGE);
     await expectClosed(lost.runId, lost.cpId, 'failed', LOST_RUN_MESSAGE);
     expect((await h.store.getRun(live.id))?.status).toBe('waiting');
@@ -111,4 +117,50 @@ describe('runs started by another workflow bundle (C7)', () => {
     await h.runner.cancel(run.id);
     expect((await h.store.getRun(run.id))?.status).toBe('failed');
   }, 60_000);
+});
+
+describe('a run workflow whose run the store does not have (R4: a store older than the engine)', () => {
+  it('is stopped at engine start, before the worker polls, so none of its steps runs', async () => {
+    const queue = `${h.taskQueue}-restored`;
+    const runId = `orphan-${Date.now()}`;
+    const input: RunInput = { runId, workspaceId: h.workspaceId, recipe: tiny, problem: PROBLEM, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+    // Started as the Runner client starts a run, on a queue no worker polls yet, and never written to this store: as
+    // after a restore of byway.sqlite from before the run began, beside a temporal.sqlite from after.
+    await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: queue, workflowId: workflowIdFor(runId), args: [input] });
+    await h.waitFor('the workflow in the engine’s listing', async () => {
+      for await (const wf of h.env.client.workflow.list({ query: `WorkflowId = '${workflowIdFor(runId)}' AND ExecutionStatus = 'Running'` })) return wf.taskQueue === queue;
+      return false;
+    });
+    // A worker on another queue leaves it alone: each engine settles its own queue.
+    expect((await reconcileLostRuns(h.env.client, h.store, [h.workspaceId], { taskQueue: h.taskQueue })).orphaned).not.toContain(runId);
+    const worker = await createWorker({ connection: h.env.nativeConnection, taskQueue: queue, gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages, workflowsPath: h.workflowsPath });
+    let running: Promise<void> | undefined;
+    try {
+      const atStart = await settleBeforePolling(h.env.client, worker, h.store);
+      running = worker.run();
+      expect(atStart.orphaned).toEqual([runId]);
+      expect(atStart.lost).not.toContain(runId);
+      const events = (await handle(runId).fetchHistory()).events ?? [];
+      expect(events.at(-1)?.workflowExecutionTerminatedEventAttributes?.reason).toBe(ORPHAN_RUN_MESSAGE);
+      // No workflow task ever started, so no step was scheduled: no call, nothing written for a run nobody can see.
+      expect(events.some((e) => e.workflowTaskStartedEventAttributes)).toBe(false);
+      expect(h.calls.filter((c) => c.runId === runId)).toEqual([]);
+      expect(await h.store.getRun(runId)).toBeUndefined();
+    } finally {
+      await handle(runId).terminate('test cleanup').catch(() => undefined);
+      await worker.shutdown();
+      await running?.catch(() => undefined);
+    }
+  }, 60_000);
+});
+
+describe('what byway prints about the runs the engine ended at start', () => {
+  it('says what each kind was, plainly, and nothing when it ended none', () => {
+    expect(engineStartLines({ retired: [], lost: [], orphaned: [] })).toEqual([]);
+    expect(engineStartLines({ retired: ['a'], lost: ['b', 'c'], orphaned: ['d'] })).toEqual([
+      'ended 1 run started by an older version of byway, which cannot continue',
+      'ended 2 runs the engine no longer has, which cannot continue',
+      "stopped 1 run that byway's records do not have (the data directory was probably restored from an older backup)",
+    ]);
+  });
 });

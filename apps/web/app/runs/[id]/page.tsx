@@ -20,5 +20,6 @@ export default async function RunPage({ params }: PageProps<'/runs/[id]'>) {
   if (!run) notFound();
   const initial = await getRunData(deps.services, id);
   const { presentation, label, steps } = await recipeForRun(deps, run);
-  return <RunScreen initial={initial} presentation={presentation ?? null} label={label ?? null} steps={steps ?? null} />;
+  // Keyed by the run: the screen owns per-run state (its refresher and the person's drafts, ADR-0082).
+  return <RunScreen key={id} initial={initial} presentation={presentation ?? null} label={label ?? null} steps={steps ?? null} />;
 }

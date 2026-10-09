@@ -2,7 +2,7 @@
 
 import type { CheckpointRecord, CheckpointResolution } from '@byway/contracts';
 import { useEffect, useId, useRef, type ComponentType } from 'react';
-import { panelFor, type PanelKind } from '../../view/checkpoints.ts';
+import { panelFor, type CheckpointDraft, type PanelKind } from '../../view/checkpoints.ts';
 import type { ArtifactInfo } from '../../view/rundata.ts';
 import type { TimelineStep } from '../../view/timeline.ts';
 import { TERMS, codeForLabel, stepTitle } from '../../view/vocabulary.ts';
@@ -39,10 +39,15 @@ interface Props {
   busy: boolean;
   paused: boolean;
   onSubmit: (resolution: CheckpointResolution) => void;
+  /** The draft the Run screen keeps for this question, and where changes go (F06, ADR-0082). */
+  draft: CheckpointDraft;
+  onDraft: (draft: CheckpointDraft) => void;
+  /** Accepted and waiting for byway to confirm: the turn stays locked with the person's own answer. */
+  sent: boolean;
 }
 
 /** The "Your turn" panel: it takes over the working area while a checkpoint is open (spec §5, Run). */
-export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit }: Props) {
+export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit, draft, onDraft, sent }: Props) {
   const technical = useTechnicalNames();
   const promptId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -72,7 +77,7 @@ export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit }: Props)
           </h2>
         </header>
         {paused ? <p className="notice small">The run is paused. You can answer now; it carries on when you resume.</p> : null}
-        <Panel cp={cp} artifacts={artifacts} busy={busy} onSubmit={onSubmit} promptId={promptId} />
+        <Panel cp={cp} artifacts={artifacts} busy={busy || sent} onSubmit={onSubmit} promptId={promptId} draft={draft} onDraft={onDraft} sent={sent} />
       </section>
     </ShortcutScope>
   );

@@ -8,7 +8,7 @@ import { Client, Connection } from '@temporalio/client';
 import { DEFAULT_TEMPORAL_ADDRESS, type Runner, type Store } from '@byway/contracts';
 import { createRunnerClient } from './client.ts';
 
-export { createRunnerClient, ResolutionRejectedError, titleOf, type RunnerClientOptions } from './client.ts';
+export { createRunnerClient, ResolutionRejectedError, RunStartConflictError, RunStartInvalidError, titleOf, type RunnerClientOptions } from './client.ts';
 export { storeCaps } from './caps.ts';
 export { ENGINE_DOWN_AT_START, isTransportFailure } from './start-failure.ts';
 export { RUN_WORKFLOW, workflowIdFor } from './types.ts';

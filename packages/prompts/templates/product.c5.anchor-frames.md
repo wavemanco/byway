@@ -1,9 +1,10 @@
 ---
 id: product.c5.anchor-frames
-version: 1
+version: 2
 fidelity: project
 slots: artifact
 output: image-briefs
+images: each
 source: protocol/03-configurations.md C5 D2 "ASSET(anchor frames · product plates · style frames)"; 01-blocks.md RELAY procedure 4 (B1: still s0 from image generation seeds the chain) and ASSET guards (copy kept out of images). Spec §3.3: on media, one image per storyboard shot, the brief's slot is the shot number.
 ---
 ## system

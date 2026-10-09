@@ -17,7 +17,18 @@
  *
  * Keys: provider keys come from `.env.agents` at the repo root (never committed) or the shell; their values are never
  * printed. `next build` gets none of them, and Turbopack's dev cache is off (next.config.ts), so no key is written
- * under the repo (SEC-3). The web process gets them: it recommends and composes with real models.
+ * under the repo (SEC-3). The web process gets them: it recommends and composes with real models. The page renderer's
+ * Chromium, which the engine starts, gets none of them and nothing else from the secrets file (F18; ADR-0084).
+ *
+ * Data check (R4; ADR-0096): before the engine starts, byway reads the data directory and prints a "checked" line: the
+ * database file, every recorded artifact file, the spend ledger against the spend book, and runs whose recorded cost the
+ * spend book lacks (a partial restore). It changes no run record or file (the spend book reads in ledger lines it has not
+ * seen, as the first model call would), and byway starts either way. The engine then ends what the store and it disagree on, and
+ * says so under "engine".
+ *
+ * Renderer: while the engine starts, byway launches the page renderer's Chromium once and closes it again, and prints a
+ * "renderer" line saying whether it can start. byway keeps running either way: prose, options and code-diff runs need
+ * no renderer unless a lineup forms cards, and a web-page run whose renderer cannot start is refused before it spends.
  *
  * Environment: BYWAY_DATA_DIR (data directory), PORT (web, default 3000), BYWAY_TEMPORAL_PORT (default 7233),
  * BYWAY_DEMO=1 (same as `--demo`), BYWAY_NEXT_DIST_DIR (the web build's folder inside apps/web, default .next; the e2e
@@ -32,14 +43,16 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engine-watch.ts';
-import { parseServeArgs, withoutSecrets } from '../apps/web/src/server/serving.ts';
-import { createGateway, KEY_VARS, loadEnvFile } from '../packages/gateway/src/index.ts';
+import { parseServeArgs } from '../apps/web/src/server/serving.ts';
+import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { startDevEngine, storeCaps, type DevEngine } from '../packages/runner/src/index.ts';
+import { checkRenderer, dataDirReport, engineStartLines, RENDERER_OS_SANDBOX, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheck } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
+/** How long the page renderer's start-up check may take before byway says so and carries on (a launch takes ~100 ms). */
+const RENDERER_CHECK_MS = 30_000;
 /** Longer than the worker's forced shutdown (30 s), so a normal stop always finishes first. */
 const ENGINE_STOP_DEADLINE_MS = 40_000;
 
@@ -67,14 +80,18 @@ function stopTree(child: ChildProcess | undefined): Promise<void> {
 }
 
 /**
- * Stops the web process. Contributor mode's has an IPC channel and is asked first, so Next closes its dev server
- * cleanly; then, or for next start, the process tree is ended.
+ * Stops the web process. Both modes' have an IPC channel and are asked first: contributor mode's closes its dev server,
+ * and `next start` (through the app's instrumentation hook), each then closing the web app's services, so their
+ * gateways hand back the recommending and composing calls they hold at once (ADR-0099). Then, or if it does not exit in
+ * time, the process tree is ended.
  */
 async function stopWeb(child: ChildProcess): Promise<void> {
   if (child.connected && child.exitCode === null) {
     const exited = new Promise<true>((resolve) => child.once('exit', () => resolve(true)));
     child.send('stop');
-    if (await Promise.race([exited, new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000).unref())])) return;
+    // Longer than the web process's own stop deadline (10 s, apps/web/src/services/shutdown.ts), so a stop that closes the
+    // services in time is never cut short.
+    if (await Promise.race([exited, new Promise<false>((resolve) => setTimeout(() => resolve(false), 12_000).unref())])) return;
   }
   await stopTree(child);
 }
@@ -115,7 +132,7 @@ function nextBin(): string {
 /** Runs `next build` without any secret in its environment, so none can reach the build's caches (SEC-3). */
 async function build(env: Record<string, string>): Promise<void> {
   console.log('  web        building the app (next build)…');
-  const child = spawn(process.execPath, [nextBin(), 'build'], { cwd: WEB, stdio: ['ignore', 'pipe', 'pipe'], env: withoutSecrets(env, Object.values(KEY_VARS)) });
+  const child = spawn(process.execPath, [nextBin(), 'build'], { cwd: WEB, stdio: ['ignore', 'pipe', 'pipe'], env: withoutSecrets(env) });
   const output: string[] = [];
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', (chunk: Buffer) => output.push(chunk.toString()));
   const code = await exitCode(child);
@@ -138,7 +155,8 @@ async function main(): Promise<void> {
   const keys = loadEnvFile(path.join(ROOT, '.env.agents'));
   const dataDir = resolveDataDir();
   const store = createStore({ dataDir });
-  const gateway = createGateway({ ledgerPath: path.join(dataDir, 'ledger.jsonl'), artifacts: store.artifacts, caps: storeCaps(store), demo });
+  // The spend book in byway.sqlite is the caps' authority, shared with the web process's gateways (ADR-0095).
+  const gateway = createGateway({ ledgerPath: path.join(dataDir, 'ledger.jsonl'), artifacts: store.artifacts, spendBook: store.spendBook, caps: storeCaps(store), demo });
   const prompts = createPromptRenderer();
 
   console.log(`byway${demo ? ' (demo: sample outputs, no AI calls)' : ''}${mode === 'dev' ? ' — contributor mode (next dev)' : ''}`);
@@ -146,16 +164,30 @@ async function main(): Promise<void> {
   if (keys.found) console.log(`  keys       .env.agents (${keys.loaded.length} loaded; values are never shown)`);
   const withKeys = gateway.providers().filter((p) => p.provider !== 'mock' && p.configured).map((p) => p.provider);
   console.log(`  providers  ${withKeys.length > 0 ? withKeys.join(', ') : 'none (every run uses sample outputs)'}`);
+  // R4: what a partial restore left behind is said before anything runs. The check changes no run record or file and never stops byway.
+  try {
+    const checked = reportLines(await dataDirReport({ dataDir, store, gateway, workspaceIds: [(await store.ensureDefaultWorkspace()).id] }));
+    console.log(`  checked    ${checked.lines[0]}`);
+    for (const line of checked.lines.slice(1)) console.log(`             - ${line}`);
+  } catch (err) {
+    console.log(`  checked    the data directory could not be checked (${err instanceof Error ? err.message : String(err)}); byway starts anyway`);
+  }
 
   // The engine starts while the app builds.
   console.log('  engine     starting Temporal and the runner worker…');
   const engineStarting = startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort });
   engineStarting.catch(() => undefined);
+  // The renderer is checked meanwhile; the check never throws.
+  const rendererChecking = Promise.race([
+    checkRenderer(),
+    new Promise<RendererCheck>((resolve) => setTimeout(() => resolve({ ready: false, message: `Playwright's Chromium did not start within ${RENDERER_CHECK_MS / 1000} s.` }), RENDERER_CHECK_MS).unref()),
+  ]);
   const env: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
   try {
     if (mode === 'start') await build(env);
   } catch (err) {
     await engineStarting.then((e) => e.stop()).catch(() => undefined);
+    await gateway.close();
     store.close();
     throw err;
   }
@@ -163,15 +195,20 @@ async function main(): Promise<void> {
   try {
     engine = await engineStarting;
   } catch (err) {
+    await gateway.close();
     store.close();
     throw err;
   }
   console.log(`  engine     ${engine.address}`);
+  for (const line of engineStartLines(engine.atStart)) console.log(`             ${line}`);
+  const renderer = await rendererChecking;
+  console.log(`  renderer   ${renderer.ready ? `Playwright's Chromium, ready (${RENDERER_OS_SANDBOX ? 'inside its OS sandbox' : 'its OS sandbox is off; see Renderer in the README'})` : `not available: ${renderer.message}`}`);
 
   const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
   let web: ChildProcess;
   if (mode === 'start') {
-    web = spawn(process.execPath, [nextBin(), 'start', '-H', '127.0.0.1', '-p', String(webPort)], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit'], env: webEnv });
+    // With an IPC channel, which the app's instrumentation hook listens on: byway's stop closes its services (stopWeb).
+    web = spawn(process.execPath, [nextBin(), 'start', '-H', '127.0.0.1', '-p', String(webPort)], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], env: webEnv });
   } else {
     // Plain Node (it strips the script's types itself), from apps/web, as next dev ran. Over the IPC channel it is
     // asked to stop, and it stops by itself if this process goes away.
@@ -195,6 +232,8 @@ async function main(): Promise<void> {
         new Promise<false>((resolve) => setTimeout(() => resolve(false), ENGINE_STOP_DEADLINE_MS).unref()),
       ]);
       if (!stopped) console.error(`The engine did not stop within ${ENGINE_STOP_DEADLINE_MS / 1000} s; exiting anyway. Steps that were in flight will be retried when byway starts again.`);
+      // Before the store: the gateway writes what is left of its outbox and stops its timer.
+      await gateway.close();
       store.close();
       console.log('Stopped.');
       process.exit(code);

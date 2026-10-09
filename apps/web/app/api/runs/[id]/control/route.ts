@@ -7,9 +7,10 @@ import { ControlInput } from '../../../../../src/server/schemas.ts';
 export async function POST(request: Request, ctx: RouteContext<'/api/runs/[id]/control'>) {
   return handle(async () => {
     const { id } = await ctx.params;
-    const body = await parseBody(request, ControlInput);
+    const deps = await getDeps();
+    const body = await parseBody(request, ControlInput, deps.heldKeyIn);
     if (!body.ok) return body.response;
-    await controlRun(await getDeps(), id, body.data.action);
+    await controlRun(deps, id, body.data.action);
     return json({ ok: true });
   });
 }

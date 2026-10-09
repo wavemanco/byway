@@ -322,6 +322,19 @@ svg {
   color: var(--ink);
 }
 
+/* Unavailable for now (all chosen, sent): it keeps focus, so it only looks unavailable (R5). */
+.link-button[aria-disabled='true'],
+.link-button[aria-disabled='true']:hover {
+  color: var(--ink-3);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* An action on its way: the control keeps focus and shows that it is working (R5). */
+.button[aria-busy='true'] {
+  cursor: progress;
+}
+
 .field {
   display: grid;
   gap: var(--s-1);

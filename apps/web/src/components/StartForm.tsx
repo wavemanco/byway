@@ -4,9 +4,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { recipeTitle } from '../view/vocabulary.ts';
-import { post } from './api.ts';
-import { loadStartDraft, saveStartDraft } from './startDraft.ts';
+import { HELD_KEY_REFUSAL } from '../view/refusals.ts';
+import { ActionButton } from './ActionButton.tsx';
+import { ApiError, post } from './api.ts';
+import { forgetRefusedStart, loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft } from './startDraft.ts';
 import { useTechnicalNames } from './TechNames.tsx';
+import { useAction } from './useAction.ts';
 import { useShortcuts } from './useShortcuts.ts';
 import { focusAfterRemoval } from '../view/focus.ts';
 
@@ -47,34 +50,43 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
   }, [refocus]);
 
   function removeAttachment(key: number) {
+    attachmentsTouched.current = true;
     setRefocus({ key: focusAfterRemoval(attachments.map((a) => a.key), key) });
     setAttachments((list) => list.filter((x) => x.key !== key));
   }
   const [nextKey, setNextKey] = useState(1);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const ready = text.trim().length > 0 && !busy;
-
-  // Restore what you wrote before following "Change" back from the Recommendation screen (after hydration).
+  // Restore what you wrote, and what you attached, before following "Change" back from the Recommendation screen (after
+  // hydration, so the server HTML and the first client render agree; ADR-0082).
   useEffect(() => {
     const draft = loadStartDraft();
     if (draft) setText((current) => current || draft);
+    const kept = loadStartAttachments();
+    if (kept.length > 0) {
+      setAttachments((current) => (current.length > 0 ? current : kept.map((a, i) => ({ key: i + 1, ...a }))));
+      setNextKey((k) => Math.max(k, kept.length + 1));
+    }
   }, []);
+  // Attachments are kept as you change them; nothing is written until you do, so a restore is never overwritten.
+  const attachmentsTouched = useRef(false);
+  useEffect(() => {
+    if (attachmentsTouched.current) saveStartAttachments(attachments.map(({ name, text: body }) => ({ name, text: body })));
+  }, [attachments]);
 
   function edit(next: string) {
     setText(next);
     saveStartDraft(next);
   }
 
-  async function submit(event?: FormEvent) {
-    event?.preventDefault();
+  // Asking for a recommendation is one action in flight (R5): the button, Enter on it and Ctrl+Enter all run it, and a
+  // second start while one is on its way does nothing. On success it holds until the next screen replaces this one.
+  const submitting = useAction(async () => {
     if (!text.trim()) {
       setError('Describe what you are working on first.');
       field.current?.focus();
       return;
     }
-    setBusy(true);
     setError(null);
     try {
       const { intakeId } = await post<{ intakeId: string }>('/api/intakes', {
@@ -84,20 +96,43 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       });
       // A library choice travels in the address, so the Recommendation screen shows that recipe instead of choosing.
       router.push(recipe ? `/recommend/${intakeId}?recipe=${encodeURIComponent(recipe.recipeId)}` : `/recommend/${intakeId}`);
+      return 'hold';
     } catch (err) {
+      // A refused key (ADR-0088): the form keeps everything so the key can be taken out, but the tab's session stops
+      // keeping the part that held it (the text, the attachments or both) and keeps the rest. That part is kept again
+      // once it is edited: the text on each keystroke, the attachments on any change to them.
+      if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) forgetRefusedStart(err.fields);
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
-      setBusy(false);
     }
+  });
+  const busy = submitting.busy;
+  function submit(event?: FormEvent) {
+    event?.preventDefault();
+    void submitting.run();
   }
 
-  useShortcuts({ 'Mod+Enter': () => void submit() });
+  useShortcuts({ 'Mod+Enter': () => submit() });
+
+  // A new attachment takes the focus in its name field, so you can name it and paste straight away (as a new example
+  // does). At the fifth the attach button goes, and focus would otherwise fall to the page with it (R5).
+  const nameFields = useRef(new Map<number, HTMLInputElement>());
+  const [focusKey, setFocusKey] = useState<number | null>(null);
+  useEffect(() => {
+    if (focusKey === null) return;
+    nameFields.current.get(focusKey)?.focus();
+    setFocusKey(null);
+  }, [focusKey]);
 
   function addAttachment() {
-    setAttachments((list) => [...list, { key: nextKey, name: '', text: '' }]);
+    attachmentsTouched.current = true;
+    const key = nextKey;
+    setAttachments((list) => [...list, { key, name: '', text: '' }]);
     setNextKey((k) => k + 1);
+    setFocusKey(key);
   }
 
   function updateAttachment(key: number, patch: Partial<Attachment>) {
+    attachmentsTouched.current = true;
     setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
   }
 
@@ -154,6 +189,10 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
                 </label>
                 <input
                   id={`${fieldId}-name-${a.key}`}
+                  ref={(el) => {
+                    if (el) nameFields.current.set(a.key, el);
+                    else nameFields.current.delete(a.key);
+                  }}
                   className="input attachment-name"
                   value={a.name}
                   placeholder="Name, e.g. Current draft"
@@ -204,10 +243,11 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
             </Link>
           </span>
         ) : null}
-        <button type="submit" className="button button-primary button-large" disabled={busy} aria-disabled={!ready}>
+        {/* Busy, it keeps focus and a press does nothing (R5); with nothing written yet, a press says so. */}
+        <ActionButton type="submit" className="button button-primary button-large" busy={busy} incomplete={!text.trim()}>
           {busy ? 'Working…' : recipe ? 'Continue' : 'Get a recommendation'}
           <kbd aria-hidden="true">Ctrl ↵</kbd>
-        </button>
+        </ActionButton>
       </div>
       <p className="error-text" role="alert">
         {error}

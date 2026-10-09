@@ -9,7 +9,7 @@ import { finishHumanStep } from '../src/activities/human.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import { pageCopy, pageLockView } from '../src/copy.ts';
-import { joinCodeDiff, serializeJson, splitCodeDiff } from '../src/formats.ts';
+import { joinCodeDiff, parseStoryboard, serializeJson, splitCodeDiff } from '../src/formats.ts';
 import { playwrightPages, type PageRenderer } from '../src/pages.ts';
 import type { StepSpec } from '../src/types.ts';
 import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
@@ -326,10 +326,17 @@ describe('keepsVoice holds the person’s words exactly (F07)', () => {
       return { artifactId: clip.id, mediaType: 'image/svg+xml', lastFrameArtifactId: frame.id, lastFrameMediaType: 'image/png', costUsd: 0, servedModel: 'mock', provider: 'mock', ledgerEntryId: 'v1' };
     };
     const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true };
-    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, voice: script }, shot: 1 });
+    // The link starts from shot 1's frame (a link with none makes no clip, ADR-0090).
+    const start = (await b.store.artifacts.put(new Uint8Array([137, 80, 78, 71]), 'image/png')).id;
+    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, voice: script, anchor: start }, shot: 1 });
     const stored = await json(out.artifactId!);
     expect(stored.voiceover).toBe(script);
-    expect(((stored.storyboard as { clipArtifactId?: string }[])[0]!.clipArtifactId)).toBeDefined();
+    const shot = (stored.storyboard as { clipArtifactId?: string; lastFrameArtifactId?: string }[])[0]!;
+    expect(shot.clipArtifactId).toBeDefined();
+    // Byte for byte the storyboard as the link writes it (the clip and its last frame on shot 1), nothing written back.
+    const was = parseStoryboard(before);
+    if (!was.ok) throw new Error(was.problem);
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(serializeJson({ ...was.value, storyboard: was.value.storyboard.map((s) => (s.shot === 1 ? { ...s, clipArtifactId: shot.clipArtifactId, lastFrameArtifactId: shot.lastFrameArtifactId } : s)) }));
     const notes = (await b.store.events(run.runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
     expect(notes).toEqual([undefined]);
   });

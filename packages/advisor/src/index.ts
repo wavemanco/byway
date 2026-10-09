@@ -9,7 +9,7 @@ export { mergeAnswers, needsIntake } from './answers.ts';
 export { MAX_ALTERNATIVES, route, STRONG_FIT, type Routed, type RoutedAnswer } from './routing.ts';
 export { INTAKE_PROMPT, parseIntake, questionsSlot, routesFor, runIntake, type IntakeResult } from './intake.ts';
 export { COMPOSE_PROMPT, REPAIR_PROMPT, MAX_REPAIRS, checkAnswer, composeRecipe, failedSlot, forceComposed, violationsSlot, type Candidate, type ComposeOutcome, type Violation } from './compose.ts';
-export { alwaysRunSteps, catalogPrompts, checkComposedProfile, COMPOSED_RULES, type ProfileViolation } from './profile.ts';
+export { catalogPrompts, checkComposedProfile, COMPOSED_RULES, writersAfter, type ProfileContext, type ProfileViolation } from './profile.ts';
 export { blocksListing, describeKnob, portSignatures } from './blocks.ts';
 export { diffFromNearest } from './diff.ts';
 export { COMPOSED_EXPLAINERS, nodeIds, presentComposed, stepLabel, type ComposedCopy } from './present.ts';

@@ -5,9 +5,9 @@
  * - heartbeats while it runs (the long proxies set a heartbeat timeout, so a killed worker's step is retried within
  *   seconds rather than at its 15 or 45 minute limit);
  * - gets its own gateway that refuses new provider calls once the invocation is cancelled or its run has ended (a call
- *   already in flight finishes and is recorded in the ledger as usual);
+ *   already in flight finishes and is recorded as usual);
  * - gets page renders that stop when it is cancelled;
- * - and, if it called the gateway for a run that has meanwhile ended, brings that run's cost up to the ledger when it
+ * - and, if it called the gateway for a run that has meanwhile ended, brings that run's cost up to its settled spend when it
  *   finishes: spend that landed after "cancelled" or "failed" still shows on the run, and so in the workspace's total.
  */
 import { CancelledFailure, Context } from '@temporalio/activity';
@@ -29,16 +29,22 @@ export const ENDED_CALL = 'This run has ended, so no new AI call was made.';
 export interface Invocation {
   /** Aborted when Temporal cancels this invocation; undefined outside an activity (unit tests call activities directly). */
   signal: AbortSignal | undefined;
+  /**
+   * Aborted when the invocation ends (stop(), in the activity wrapper's finally), whatever its outcome. The gateway holds
+   * a step's settled call until then, while its result is kept (SpendContext.operation.until; ADR-0099).
+   */
+  done: AbortSignal;
   stop(): void;
 }
 
 /** Start heartbeating for the current activity invocation, if there is one. */
 export function startInvocation(everyMs = HEARTBEAT_EVERY_MS): Invocation {
+  const done = new AbortController();
   let ctx: Context;
   try {
     ctx = Context.current();
   } catch {
-    return { signal: undefined, stop: () => undefined };
+    return { signal: undefined, done: done.signal, stop: () => done.abort() };
   }
   const timer = setInterval(() => {
     try {
@@ -47,7 +53,14 @@ export function startInvocation(everyMs = HEARTBEAT_EVERY_MS): Invocation {
       // The invocation has already completed.
     }
   }, everyMs);
-  return { signal: ctx.cancellationSignal, stop: () => clearInterval(timer) };
+  return {
+    signal: ctx.cancellationSignal,
+    done: done.signal,
+    stop: () => {
+      clearInterval(timer);
+      done.abort();
+    },
+  };
 }
 
 export interface GuardedGateway extends Gateway {
@@ -92,13 +105,14 @@ export function guardPages(inner: PageRenderer, signal: AbortSignal | undefined)
     screenshots: (html, resolve, opts) => inner.screenshots(html, resolve, { ...opts, signal: opts?.signal ?? signal }),
     render: (html, resolve, surfaces, opts) => inner.render(html, resolve, surfaces, { ...opts, signal: opts?.signal ?? signal }),
     shownText: (html, resolve, opts) => inner.shownText(html, resolve, { ...opts, signal: opts?.signal ?? signal }),
+    ready: () => inner.ready(),
     close: () => inner.close(),
   };
 }
 
 /**
- * After an invocation: for each run it called the gateway for that has ended, raise the run's cost to the ledger's
- * figure (never lower it). A run still going records its cost at the end of each step (events.ts recordCost).
+ * After an invocation: for each run it called the gateway for that has ended, raise the run's cost to its settled spend
+ * (never lower it). A run still going records its cost at the end of each step (events.ts recordCost).
  */
 export async function settleLateCost(gateway: Pick<Gateway, 'spend'>, store: Pick<Store, 'getRun' | 'updateRun'>, calledFor: ReadonlyMap<string, string>): Promise<void> {
   for (const [runId, workspaceId] of calledFor) {

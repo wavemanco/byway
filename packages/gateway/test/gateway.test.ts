@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sha256Hex } from '@byway/canonical';
@@ -6,7 +6,10 @@ import { GatewayError, type BudgetDetails, type CompletionRequest } from '@byway
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, httpError, MemoryArtifacts } from './fakes.ts';
+import type { AnthropicMessageLike } from '../src/providers/anthropic.ts';
+import type { ProviderAdapter } from '../src/providers/types.ts';
+import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, fetchFailed, httpError, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 const ANTHROPIC_KEY = 'sk-ant-api03-test-not-a-real-key-000000';
 const OPENAI_KEY = 'sk-test-not-a-real-openai-key-0000000';
@@ -25,6 +28,7 @@ const instant = async (_ms: number) => {};
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts,
     caps: { workspaceCapUsd: () => caps.workspace, runCapUsd: (id) => caps.runs[id] },
     env: {},
@@ -136,6 +140,9 @@ describe('gateway: complete', () => {
     ['bad tier', () => req({ tier: 'huge' as 'big' }), 'invalid-request'],
     ['bad output cap', () => req({ maxOutputTokens: 0 }), 'invalid-request'],
     ['missing purpose', () => req({ purpose: '' }), 'invalid-request'],
+    // The ledger line would name run or step "", which the spend book refuses to count (ledgerEntryProblem).
+    ['empty run id', () => req({ runId: '' }), 'invalid-request'],
+    ['empty step id', () => req({ stepId: '' }), 'invalid-request'],
     ['unpriced model', () => req({ model: { provider: 'anthropic', model: 'claude-unknown-9' } }), 'invalid-request'],
     ['missing image', () => req({ messages: [{ role: 'user', content: [{ type: 'image', artifactId: 'sha256:missing', mediaType: 'image/png' }] }] }), 'invalid-request'],
   ])('rejects %s', async (_name, make, code) => {
@@ -171,10 +178,36 @@ describe('gateway: complete', () => {
   });
 
   it('gives up after the retry limit with the mapped error', async () => {
-    const { client, calls } = fakeAnthropic([httpError(503), httpError(503), httpError(503), httpError(503), httpError(503)]);
+    // Overloaded answers carry Anthropic's own error body, so nothing was billed and each is retried (ADR-0091).
+    const overloaded = () => httpError(503, 'overloaded', { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } });
+    const { client, calls } = fakeAnthropic([overloaded(), overloaded(), overloaded(), overloaded(), overloaded()]);
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client }, retry: { sleep: instant, random: () => 0, maxAttempts: 3 } });
     await expect(g.complete(req())).rejects.toMatchObject({ code: 'provider-error', retryable: true });
     expect(calls).toHaveLength(3);
+  });
+
+  it('sends a completion once more after a reset that may have been billed, and ledgers only the answer (F03)', async () => {
+    // Node's fetch wraps the reset: the code is only on the cause, which the old check never read (non-retryable).
+    const { client, calls } = fakeAnthropic([fetchFailed('ECONNRESET')]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    await expect(g.complete(req())).resolves.toMatchObject({ provider: 'anthropic' });
+    expect(calls).toHaveLength(2);
+    expect(ledgerLines()).toHaveLength(1);
+  });
+
+  it('fails plainly on a second attempt that may have been billed, without a third (F03)', async () => {
+    const { client, calls } = fakeAnthropic([fetchFailed('ECONNRESET'), httpError(502), anthropicMessage()]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    await expect(g.complete(req())).rejects.toMatchObject({ code: 'provider-error', message: expect.stringMatching(/502/) });
+    expect(calls).toHaveLength(2);
+    expect(existsSync(join(dir, 'ledger.jsonl'))).toBe(false);
+  });
+
+  it('retries a refused connection like any unbilled failure (nothing was written)', async () => {
+    const { client, calls } = fakeAnthropic([fetchFailed('ECONNREFUSED'), fetchFailed('ECONNREFUSED'), fetchFailed('ECONNREFUSED')]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    await expect(g.complete(req())).resolves.toMatchObject({ provider: 'anthropic' });
+    expect(calls).toHaveLength(4);
   });
 
   it('ledgers a refusal (it may be billed) and then raises refused', async () => {
@@ -240,18 +273,243 @@ describe('gateway: complete', () => {
     expect(await g.complete(req({ profileId: 'demo', purpose: 'build:prose' }))).toMatchObject({ text: '# Half a memo', stopReason: 'max-tokens' });
   });
 
-  it('never writes a key to the ledger or the stored bodies, even when a prompt contains one', async () => {
-    const { client } = fakeAnthropic();
+  it('never writes a key to the ledger or the stored bodies when a provider echoes one in what it answers', async () => {
+    // A prompt holding a key is refused before it is sent (below); a provider can still put one in a refusal's details.
+    const { client } = fakeAnthropic([anthropicMessage({ stop_reason: 'refusal', stop_details: { category: `policy ${ANTHROPIC_KEY}` }, content: [], usage: { input_tokens: 1000, output_tokens: 0 } })]);
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
-    await g.complete(req({ messages: [{ role: 'user', content: [{ type: 'text', text: `my key is ${ANTHROPIC_KEY}` }] }] }));
+    const err = (await g.complete(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toMatchObject({ code: 'refused' });
+    expect(err.message).not.toContain(ANTHROPIC_KEY);
     expect(readFileSync(join(dir, 'ledger.jsonl'), 'utf8')).not.toContain(ANTHROPIC_KEY);
     expect(artifacts.allText()).not.toContain(ANTHROPIC_KEY);
     expect(artifacts.allText()).toContain('[redacted]');
   });
 });
 
+/**
+ * F19 at the provider boundary: provider JSON can carry a lone surrogate through a \u escape. A call the provider
+ * answered was billed, so it must be ledgered and counted (ENG-3) even when what the provider reported has no
+ * canonical form.
+ */
+describe('gateway: malformed provider labels still reach the ledger', () => {
+  const anthropicGateway = (reply: AnthropicMessageLike) => {
+    const { client } = fakeAnthropic([reply]);
+    return gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+  };
+
+  it('ledgers and counts a billed call whose served model holds a lone surrogate, keeping the exact reply stored', async () => {
+    const g = anthropicGateway(anthropicMessage({ model: 'claude-opus-5-5\ud800' }));
+    const res = await g.complete(req());
+    const [entry] = ledgerLines();
+    expect(entry.servedModel).toBe('claude-opus-5-5�');
+    expect(entry.costUsd).toBeCloseTo(0.014, 9);
+    expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(0.014, 9);
+    expect(await g.verifyLedger()).toBeNull();
+    const response = await artifacts.getText(entry.responseSha256);
+    expect(response.isWellFormed()).toBe(true);
+    expect(response).toContain('claude-opus-5-5\\ud800');
+    expect(entry.responseSha256).toBe(`sha256:${sha256Hex(response)}`);
+    // The caller gets the value the ledger recorded (ADR-0088); the exact reply stays in the stored response.
+    expect(res.servedModel).toBe(entry.servedModel);
+  });
+
+  it('ledgers an upstream host that holds a lone surrogate with U+FFFD in its place', async () => {
+    const { client } = fakeOpenAI([{ model: 'anthropic/claude-opus-5.5', provider: 'Anthropic\ud800', choices: [{ message: { content: 'Choice: A' } }], usage: { prompt_tokens: 100, completion_tokens: 10, cost: 0.0123 } }]);
+    const g = gateway({ env: { OPENROUTER_API_KEY: 'sk-or-v1-test-not-real-000000' }, clients: { openrouter: client } });
+    await g.complete(req({ profileId: 'openrouter' }));
+    expect(ledgerLines()[0]).toMatchObject({ provider: 'openrouter', upstreamProvider: 'Anthropic�', costUsd: 0.0123 });
+    expect(await g.verifyLedger()).toBeNull();
+  });
+
+  it('ledgers a reply with a lone surrogate in a property name, under the hash of the text it stores', async () => {
+    const g = anthropicGateway({ ...anthropicMessage(), 'x\ud800': 1 } as AnthropicMessageLike);
+    await g.complete(req());
+    const [entry] = ledgerLines();
+    const response = await artifacts.getText(entry.responseSha256);
+    expect(response.isWellFormed()).toBe(true);
+    expect(response).toContain('"x\\ud800":1');
+    expect(entry.responseSha256).toBe(`sha256:${sha256Hex(response)}`);
+    expect(await g.verifyLedger()).toBeNull();
+  });
+
+  it('ledgers a served model that is not a string as its JSON text', async () => {
+    const g = anthropicGateway(anthropicMessage({ model: ['claude\ud800'] as unknown as string }));
+    await g.complete(req());
+    expect(ledgerLines()[0].servedModel).toBe('["claude\\ud800"]');
+    expect(ledgerLines()[0].priceBasis).toBe('assumed');
+    expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(0.014, 9);
+    expect(await g.verifyLedger()).toBeNull();
+  });
+});
+
+/**
+ * An answer that names no served model (the field missing, null or empty) was still billed. A missing field used to fail
+ * after billing with a raw TypeError (the label was scrubbed as if it were text) and was counted as "may have been
+ * billed"; a null or empty one was recorded as the served model "null" or "".
+ * It is settled as the requested model, at its rates, flagged `priceBasis: 'assumed'` (ADR-0095 decision 7).
+ */
+describe('gateway: an answer that names no served model is settled as the requested model, assumed', () => {
+  const noModel: [string, unknown][] = [
+    ['missing', undefined],
+    ['null', null],
+    ['empty', ''],
+  ];
+
+  it.each(noModel)('an Anthropic completion (model %s)', async (_what, model) => {
+    const { client } = fakeAnthropic([anthropicMessage({ model: model as string })]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    const res = await g.complete(req());
+    const [entry] = ledgerLines();
+    expect(entry).toMatchObject({ requestedModel: 'claude-opus-5-5', servedModel: 'claude-opus-5-5', priceBasis: 'assumed' });
+    // 1,000 input tokens at $4/M and 500 output at $20/M: claude-opus-5-5's own rates.
+    expect(entry.costUsd).toBeCloseTo(0.014, 9);
+    expect(res).toMatchObject({ servedModel: 'claude-opus-5-5', costUsd: entry.costUsd, ledgerEntryId: entry.id });
+    expect(await g.spend('ws-1')).toMatchObject({ spentUsd: entry.costUsd, inFlightUsd: 0, uncertainUsd: 0, assumedPricing: { calls: 1, usd: entry.costUsd } });
+    expect(await g.verifyLedger()).toBeNull();
+  });
+
+  it.each(noModel)('an OpenAI completion (model %s)', async (_what, model) => {
+    const { client } = fakeOpenAI([{ model: model as string, choices: [{ finish_reason: 'stop', message: { content: 'Choice: A' } }], usage: { prompt_tokens: 1000, completion_tokens: 100 } }]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, OPENAI_API_KEY: OPENAI_KEY }, clients: { openai: client } });
+    const res = await g.complete(req({ profileId: 'openai' }));
+    // gpt-6-astra: 1,000 input tokens at $10/M and 100 output at $50/M.
+    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, requestedModel: 'gpt-6-astra', servedModel: 'gpt-6-astra', priceBasis: 'assumed', costUsd: 0.015 })]);
+    expect(res.servedModel).toBe('gpt-6-astra');
+  });
+
+  it('an OpenRouter completion that reports its cost: the cost it reports, the requested model, flagged assumed', async () => {
+    const { client } = fakeOpenAI([{ provider: 'Anthropic', choices: [{ message: { content: 'Choice: A' } }], usage: { prompt_tokens: 100, completion_tokens: 10, cost: 0.0123 } } as never]);
+    const g = gateway({ env: { OPENROUTER_API_KEY: 'sk-or-v1-test-not-real-000000' }, clients: { openrouter: client } });
+    const res = await g.complete(req({ profileId: 'openrouter' }));
+    expect(ledgerLines()).toEqual([expect.objectContaining({ servedModel: 'anthropic/claude-opus-5.5', upstreamProvider: 'Anthropic', priceBasis: 'assumed', costUsd: 0.0123 })]);
+    expect(res).toMatchObject({ servedModel: 'anthropic/claude-opus-5.5', costUsd: 0.0123 });
+  });
+
+  it.each(noModel)('an image (model %s)', async (_what, model) => {
+    const adapter: ProviderAdapter = {
+      id: 'google',
+      complete: async () => {
+        throw new Error('not used');
+      },
+      image: async () => ({ bytes: encodePng(2, 2, new Uint8Array(12).fill(9)), mediaType: 'image/png', servedModel: model as string, usage: { inputTokens: 30, outputTokens: 1290, units: 1 }, requestBody: {}, responseBody: {} }),
+    };
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, GEMINI_API_KEY: 'AIza-test-not-real-0000000000000' }, adapters: { google: adapter } });
+    const res = await g.image({ workspaceId: 'ws-1', runId: 'run-1', stepId: 'asset', purpose: 'asset:web-page', profileId: 'balanced', prompt: 'A loaf', size: '1024x1024' });
+    // gemini-nano-banana-2.1: $0.0336 an image and 30 prompt tokens at $1.50/M.
+    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, kind: 'image', requestedModel: 'gemini-nano-banana-2.1', servedModel: 'gemini-nano-banana-2.1', priceBasis: 'assumed' })]);
+    expect(res.costUsd).toBeCloseTo(0.0336 + 30 * 1.5e-6, 9);
+    expect(res.servedModel).toBe('gemini-nano-banana-2.1');
+    expect(await g.spend('ws-1')).toMatchObject({ uncertainUsd: 0, assumedPricing: { calls: 1 } });
+  });
+});
+
+describe('gateway: held provider keys (ADR-0088)', () => {
+  const OPENROUTER_KEY = 'sk-or-v1-test-not-real-000000';
+  const withKey = (text: string) => req({ messages: [{ role: 'user', content: [{ type: 'text', text }] }] });
+  const nothingWritten = () => {
+    expect(existsSync(join(dir, 'ledger.jsonl'))).toBe(false);
+    expect(existsSync(join(dir, 'exposure.jsonl'))).toBe(false);
+  };
+
+  it.each([
+    ['a user message', () => withKey(`Here is my key ${ANTHROPIC_KEY}, keep it safe.`)],
+    ['the system text', () => req({ system: `Use ${ANTHROPIC_KEY} when asked.` })],
+    ['a later text part', () => req({ messages: [{ role: 'user', content: [{ type: 'text', text: 'Judge this.' }, { type: 'text', text: `p.s. ${ANTHROPIC_KEY}` }] }] })],
+  ])('refuses a completion whose %s holds a key, before any reservation, exposure record or call', async (_where, make) => {
+    caps.workspace = 0.03;
+    const { client, calls } = fakeAnthropic();
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    const err = (await g.complete(make()).catch((e: unknown) => e)) as GatewayError & { heldKey?: string };
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'invalid-request', retryable: false, heldKey: 'ANTHROPIC_API_KEY' });
+    expect(err.message).toContain('ANTHROPIC_API_KEY');
+    expect(err.message).not.toContain(ANTHROPIC_KEY);
+    expect(calls).toHaveLength(0);
+    nothingWritten();
+    // No reservation was left behind: a clean call fits the same small cap (its estimate is about $0.02).
+    await expect(g.complete(req())).resolves.toMatchObject({ provider: 'anthropic' });
+  });
+
+  it('refuses an image whose prompt holds any held key, before any call', async () => {
+    const { client, calls } = fakeOpenAI();
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, OPENAI_API_KEY: OPENAI_KEY }, clients: { openai: client } });
+    const err = await g.image({ workspaceId: 'ws-1', purpose: 'asset:web-page', profileId: 'best', prompt: `A poster that reads ${OPENAI_KEY}`, size: '1024x1024' }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ name: 'GatewayError', code: 'invalid-request', heldKey: 'OPENAI_API_KEY' });
+    expect(calls).toHaveLength(0);
+    nothingWritten();
+  });
+
+  it('refuses in demo mode too: the mock is a provider like any other', async () => {
+    const g = gateway({ demo: true, env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY } });
+    await expect(g.complete(withKey(`key: ${ANTHROPIC_KEY}`))).rejects.toMatchObject({ code: 'invalid-request', heldKey: 'ANTHROPIC_API_KEY' });
+    nothingWritten();
+  });
+
+  it('rejects a billed answer that holds a key: ledgered first, never returned, and not retried', async () => {
+    const { client, calls } = fakeAnthropic([anthropicMessage({ content: [{ type: 'text', text: `Echo ${ANTHROPIC_KEY}` }] })]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    const err = (await g.complete(req()).catch((e: unknown) => e)) as GatewayError & { heldKey?: string };
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false, heldKey: 'ANTHROPIC_API_KEY' });
+    expect(err.message).toMatch(/billed.*ANTHROPIC_API_KEY.*not retried/s);
+    expect(err.message).not.toContain(ANTHROPIC_KEY);
+    expect(calls).toHaveLength(1);
+    const lines = ledgerLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0].costUsd).toBeGreaterThan(0);
+    expect(readFileSync(join(dir, 'ledger.jsonl'), 'utf8')).not.toContain(ANTHROPIC_KEY);
+    expect(artifacts.allText()).not.toContain(ANTHROPIC_KEY);
+    expect(await artifacts.getText(lines[0].responseSha256)).toContain('Echo [redacted]');
+  });
+
+  it('returns a clean answer byte for byte, even one quoting a key-shaped string byway does not hold', async () => {
+    const text = 'The fixture uses sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX as a placeholder.';
+    const { client } = fakeAnthropic([anthropicMessage({ content: [{ type: 'text', text }] })]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    expect((await g.complete(req())).text).toBe(text);
+  });
+
+  it('scrubs a key out of the served model and the upstream host, in the ledger and the result, without refusing the call', async () => {
+    const anthropic = fakeAnthropic([anthropicMessage({ model: `claude-opus-5-5 ${ANTHROPIC_KEY}` })]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, OPENROUTER_API_KEY: OPENROUTER_KEY }, clients: { anthropic: anthropic.client, openrouter: fakeOpenAI([{ model: 'anthropic/claude-opus-5.5', provider: `Anthropic ${OPENROUTER_KEY}`, choices: [{ message: { content: 'Choice: A' } }], usage: { prompt_tokens: 100, completion_tokens: 10, cost: 0.0123 } }]).client } });
+    const served = await g.complete(req());
+    expect(served.servedModel).toBe('claude-opus-5-5 [redacted]');
+    const routed = await g.complete(req({ profileId: 'openrouter' }));
+    expect(routed.text).toBe('Choice: A');
+    const ledger = readFileSync(join(dir, 'ledger.jsonl'), 'utf8');
+    expect(ledger).not.toContain(ANTHROPIC_KEY);
+    expect(ledger).not.toContain(OPENROUTER_KEY);
+    expect(ledgerLines().map((e) => [e.servedModel, e.upstreamProvider])).toEqual([
+      ['claude-opus-5-5 [redacted]', undefined],
+      ['anthropic/claude-opus-5.5', 'Anthropic [redacted]'],
+    ]);
+    expect(await g.verifyLedger()).toBeNull();
+  });
+
+  it('scrubs a key out of an image’s served model and keeps the image: nothing is bought twice', async () => {
+    let made = 0;
+    const adapter: ProviderAdapter = {
+      id: 'openai',
+      complete: async () => {
+        throw new Error('not used');
+      },
+      image: async (r) => {
+        made++;
+        return { bytes: encodePng(2, 2, new Uint8Array(12)), mediaType: 'image/png', servedModel: `${r.model} ${OPENAI_KEY}`, usage: { inputTokens: 20, outputTokens: 4000 }, requestBody: { model: r.model }, responseBody: {} };
+      },
+    };
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, OPENAI_API_KEY: OPENAI_KEY }, adapters: { openai: adapter } });
+    const res = await g.image({ workspaceId: 'ws-1', purpose: 'asset:web-page', profileId: 'best', prompt: 'A loaf', size: '1024x1024' });
+    expect(made).toBe(1);
+    expect(res.servedModel).toMatch(/\[redacted\]$/);
+    expect(res.servedModel).not.toContain(OPENAI_KEY);
+    expect(readFileSync(join(dir, 'ledger.jsonl'), 'utf8')).not.toContain(OPENAI_KEY);
+    expect(ledgerLines()[0].servedModel).toBe(res.servedModel);
+  });
+});
+
 describe('gateway: budgets', () => {
-  it('refuses a call whose worst case would break the workspace cap, before calling', async () => {
+  it('refuses a call whose estimated cost would break the workspace cap, before calling', async () => {
     caps.workspace = 0.01;
     const { client, calls } = fakeAnthropic();
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
@@ -259,6 +517,8 @@ describe('gateway: budgets', () => {
     const err = await g.complete(req()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(GatewayError);
     expect(err).toMatchObject({ code: 'budget-exceeded', retryable: false });
+    // An estimate, said as one (ADR-0091): not "may cost up to".
+    expect((err as Error).message).toMatch(/and this call is estimated at \$0\.0\d{3}$/);
     // The contract's GatewayError carries the details: no cast to a gateway-local type needed.
     const budget: BudgetDetails | undefined = (err as GatewayError).budget;
     expect(budget).toMatchObject({ scope: 'workspace', capUsd: 0.01, spentUsd: 0, reservedUsd: 0 });

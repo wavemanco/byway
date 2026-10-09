@@ -45,6 +45,9 @@ export function scriptedGateway(answers: (string | ((req: CompletionRequest) => 
     profiles: () => [],
     profileStatus: () => [status(DEMO)],
     verifyLedger: async () => null,
+    spendRecords: async () => ({ inFlight: [], uncertain: [], faults: [], notInAuditFile: 0, setAside: [] }),
+    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 }),
+    close: async () => undefined,
   };
 }
 

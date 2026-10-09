@@ -4,7 +4,7 @@
  * workflow validates against the open checkpoint; cancel, pause and resume are signals; `view` reads the store.
  */
 import { randomUUID } from 'node:crypto';
-import { WorkflowUpdateFailedError, type Client } from '@temporalio/client';
+import { WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
 import { parseRecipe, recipeHash } from '@byway/recipe';
@@ -35,6 +35,22 @@ export class ResolutionRejectedError extends Error {
   override name = 'ResolutionRejectedError';
 }
 
+/** A start naming the id of a run in another workspace or from another intake (StartRunInput.runId). */
+export class RunStartConflictError extends Error {
+  override name = 'RunStartConflictError';
+}
+
+/** A start naming a run id that is not a lowercase UUID (StartRunInput.runId). */
+export class RunStartInvalidError extends Error {
+  override name = 'RunStartInvalidError';
+}
+
+/** A run id a caller may choose: a lowercase UUID, as crypto.randomUUID() makes. */
+const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** The code the store's errors carry (StoreError), read by shape: the client does not depend on @byway/store. */
+const storeCode = (e: unknown): unknown => (e as { code?: unknown } | null)?.code;
+
 export function createRunnerClient(opts: RunnerClientOptions): Runner {
   const { client, store } = opts;
   const taskQueue = opts.taskQueue ?? TASK_QUEUE;
@@ -58,26 +74,63 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
     }
   };
 
+  /**
+   * The run a start names, when it exists already (a start delivered twice: StartRunInput.runId): the same run if it is
+   * in the same workspace, from the same intake, of the same recipe, for the same problem and with the same model
+   * profile, else a conflict (as when it is gone: it was there a moment ago). These are what the run record holds and
+   * never changes. The recipe is compared by its hash because the app may name a recipe it composed again under the
+   * same key ('composed'): a start of another recipe is another start, whatever its id says. The budget (a person can
+   * raise it), the routes and the examples are not on the record, so the screen keeps the id only while they are
+   * unchanged (startIdentity.ts; ADR-0099).
+   */
+  const startedBefore = async (input: StartRunInput, id: string, hash: string): Promise<RunRecord> => {
+    const existing = await store.getRun(id);
+    const same =
+      existing !== undefined &&
+      existing.workspaceId === input.workspaceId &&
+      existing.intakeId === input.intakeId &&
+      existing.recipeHash === hash &&
+      existing.problem === input.problem.text &&
+      existing.profileId === input.profileId;
+    if (!existing || !same) {
+      throw new RunStartConflictError('This start names a run that was started for another problem or recipe. Start the run again.');
+    }
+    return existing;
+  };
+
   return {
     async start(input: StartRunInput): Promise<RunRecord> {
+      if (input.runId !== undefined && !RUN_ID.test(input.runId)) throw new RunStartInvalidError('A run id must be a lowercase UUID.');
       // A recipe that does not parse would only fail inside the workflow; refuse it before a run exists.
       const recipe = parseRecipe(input.recipe);
       const medium = recipe.medium;
       if (!medium) throw new Error(`Recipe "${recipe.id}" names no medium, so it cannot run.`);
-      const id = randomUUID();
-      const record = await store.createRun({
-        id,
-        workspaceId: input.workspaceId,
-        recipeId: recipe.id,
-        recipeHash: recipeHash(recipe),
-        profileId: input.profileId,
-        ...(input.intakeId ? { intakeId: input.intakeId } : {}),
-        title: titleOf(input.problem.text),
-        problem: input.problem.text,
-        medium,
-        budgetUsd: input.budgetUsd,
-        status: 'queued',
-      });
+      const id = input.runId ?? randomUUID();
+      const hash = recipeHash(recipe);
+      let record: RunRecord;
+      let created = true;
+      try {
+        record = await store.createRun({
+          id,
+          workspaceId: input.workspaceId,
+          recipeId: recipe.id,
+          recipeHash: hash,
+          profileId: input.profileId,
+          ...(input.intakeId ? { intakeId: input.intakeId } : {}),
+          title: titleOf(input.problem.text),
+          problem: input.problem.text,
+          medium,
+          budgetUsd: input.budgetUsd,
+          status: 'queued',
+        });
+      } catch (e) {
+        // The store refuses a second run with one id; a caller that named the id gets the first one back instead.
+        if (input.runId === undefined || storeCode(e) !== 'already-exists') throw e;
+        record = await startedBefore(input, id, hash);
+        created = false;
+      }
+      // Its workflow has ended (Temporal would start a new one under a closed id): the run is as it was left.
+      if (!created && ENDED.has(record.status)) return record;
       const args: RunInput = {
         runId: id,
         workspaceId: input.workspaceId,
@@ -92,7 +145,12 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       try {
         await client.workflow.start(RUN_WORKFLOW, { taskQueue, workflowId: workflowIdFor(id), args: [args] });
       } catch (e) {
-        await store.updateRun(id, { status: 'failed', error: startFailureMessage(e) });
+        // A named run's workflow id is derived from its id, and only a delivery of this same start passes the checks
+        // above, so a running execution under it is this run's: another delivery got to Temporal first, whichever of
+        // them wrote the run. One workflow, already running; the run must not be marked failed under it.
+        if (input.runId !== undefined && e instanceof WorkflowExecutionAlreadyStartedError) return record;
+        // A repeated start leaves the run as the first one made it.
+        if (created) await store.updateRun(id, { status: 'failed', error: startFailureMessage(e) });
         throw e;
       }
       return record;

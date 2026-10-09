@@ -10,7 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CancelledFailure } from '@temporalio/activity';
 import { ApplicationFailure } from '@temporalio/common';
 import type { CompletionRequest, CompletionResult, Gateway } from '@byway/contracts';
-import { CANCELLED_CALL, ENDED_CALL, guardGateway, settleLateCost } from '../src/activities/liveness.ts';
+import { CANCELLED_CALL, ENDED_CALL, guardGateway, guardPages, settleLateCost } from '../src/activities/liveness.ts';
+import { fakePages } from './helpers/fake-pages.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
 import { createTestStore } from './helpers/memo.ts';
 import { threePages, tiny } from './helpers/recipes.ts';
@@ -37,6 +38,9 @@ function counting(byRun: Record<string, number> = {}): Gateway & { sent: Complet
     profiles: () => [],
     profileStatus: () => [],
     verifyLedger: async () => null,
+    spendRecords: async () => ({ inFlight: [], uncertain: [], faults: [], notInAuditFile: 0, setAside: [] }),
+    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 }),
+    close: async () => undefined,
   };
 }
 
@@ -91,6 +95,17 @@ describe('the gateway one activity invocation sees', () => {
     expect((await store.getRun(going.runId))?.costUsd).toBe(0);
     await settleLateCost(counting({ [ended.runId]: 0.2 }), store, new Map([[ended.runId, ended.workspaceId]]));
     expect((await store.getRun(ended.runId))?.costUsd).toBe(0.3);
+  });
+});
+
+describe('the page renderer one activity invocation sees', () => {
+  it('asks the renderer itself whether it can start, so a run is refused in the renderer’s own words (F18)', async () => {
+    const inner = fakePages();
+    const pages = guardPages(inner, new AbortController().signal);
+    await pages.ready();
+    expect(inner.readyCalls).toBe(1);
+    inner.failReady(new Error('Chromium could not start'));
+    await expect(pages.ready()).rejects.toThrow('Chromium could not start');
   });
 });
 
@@ -152,6 +167,9 @@ describe('cancel and stop through the real workflow', () => {
     const slow = await h.start(tiny);
     await h.waitFor('a slow call in flight', async () => h.calls.some((c) => c.runId === slow.id && c.result === undefined));
     const started = Date.now();
+    // Expected output: the SDK logs "[ERROR] Worker failed" with GracefulShutdownPeriodExpiredError here. That is this
+    // test's intended outcome (worker.ts `abandoned`), not a failure. The suite's log is left unfiltered, so a real
+    // error of that kind elsewhere stays visible.
     const stopped = await Promise.race([h.worker.shutdown().then(() => 'stopped'), sleep(20_000).then(() => 'still stopping')]);
     expect(stopped).toBe('stopped');
     expect(Date.now() - started).toBeLessThan(10_000);

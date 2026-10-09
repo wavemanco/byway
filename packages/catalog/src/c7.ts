@@ -30,6 +30,8 @@ import {
  * product has no linter or CI, so the objective-defect check is a model check (defects only, no taste); tests and CI
  * stay EXTERNAL and outside the blocks, and correctness is not judged here. Not modelled: architecture choices
  * through C2 (greenfield only). The reviewer judges reviewability: scope creep, readability, fit with conventions.
+ * Implement reads the spec when the optional interview wrote one, and works from the request alone when it did not
+ * (`reads`, ADR-0089); the blind passes after it never see the spec, only the change and its "Why:".
  */
 export const c7: Recipe = withHash({
   schema: 'byway.recipe/1',
@@ -52,7 +54,8 @@ export const c7: Recipe = withHash({
     {
       stage: 'D2',
       body: seq(
-        build('c7', 'implement', ['intent']),
+        // The spec, when the optional interview wrote one: read if present, never required (ADR-0089).
+        build('c7', 'implement', ['intent'], { reads: ['brief'] }),
         render('defect-render'),
         objectiveCheck('c7', 'defect-check'),
         fix('c7', 'fix-defects'),

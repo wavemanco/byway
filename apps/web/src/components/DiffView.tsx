@@ -3,8 +3,11 @@ import { parseUnifiedDiff } from '../view/diff.ts';
 /**
  * A unified-diff viewer: one table per file with old and new line numbers. Added and removed lines carry
  * their + and - signs (and screen-reader words), so colour is never the only cue.
+ *
+ * `partial`: the text is the opening of a longer diff (F13), so its last file may be cut; that file's counts are not
+ * shown, since they would understate it.
  */
-export function DiffView({ text, compact = false, showWhy = true }: { text: string; compact?: boolean; showWhy?: boolean }) {
+export function DiffView({ text, compact = false, showWhy = true, partial = false }: { text: string; compact?: boolean; showWhy?: boolean; partial?: boolean }) {
   const { files, why } = parseUnifiedDiff(text);
   if (files.length === 0) return <pre className="diff-raw">{text}</pre>;
   const limit = compact ? 14 : Number.POSITIVE_INFINITY;
@@ -16,9 +19,11 @@ export function DiffView({ text, compact = false, showWhy = true }: { text: stri
           <section key={`${file.newPath}-${f}`} className="diff-file" aria-label={`Changes to ${file.newPath}`}>
             <header className="diff-file-head">
               <span className="diff-path">{file.newPath === '/dev/null' ? file.oldPath : file.newPath}</span>
-              <span className="diff-stats">
-                <span className="diff-plus">+{file.additions}</span> <span className="diff-minus">−{file.deletions}</span>
-              </span>
+              {partial && f === files.length - 1 ? null : (
+                <span className="diff-stats">
+                  <span className="diff-plus">+{file.additions}</span> <span className="diff-minus">−{file.deletions}</span>
+                </span>
+              )}
             </header>
             <table className="diff-table">
               <tbody>

@@ -20,6 +20,9 @@ const MIGRATION_3_CHECKSUM = 'sha256:ca2c930d144a72d26638620f9b9aa2e98acc2088e97
 const MIGRATION_4_CHECKSUM = 'sha256:f1f0c656cb2df7b091d1c67e0a4a71114206771feeb788b5f387cb625865b125';
 /** Pinned when migration 5 was written; it must never change. */
 const MIGRATION_5_CHECKSUM = 'sha256:9a63b55748772581a7a23f8f9eef1ef9c85100cffc88ee7a5412c0685c140729';
+/** Pinned when migration 6 (the spend book, ADR-0095) was written; it must never change. */
+const MIGRATION_6_CHECKSUM = 'sha256:8a6190b9d3d2443dc74679922806992d357242034ca7d56766d045ee89abb1f0';
+const MIGRATION_7_CHECKSUM = 'sha256:43d25171342abea916e9cdec341e2871557be594609c277f44369d45ba70113a';
 
 const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
 
@@ -189,6 +192,8 @@ describe('migrations', () => {
       [3, 'intakes-preferences-run-intake', MIGRATION_3_CHECKSUM],
       [4, 'checkpoint-withdrawn', MIGRATION_4_CHECKSUM],
       [5, 'memos', MIGRATION_5_CHECKSUM],
+      [6, 'spend-book', MIGRATION_6_CHECKSUM],
+      [7, 'operation-keys', MIGRATION_7_CHECKSUM],
     ]);
   });
 
@@ -316,6 +321,45 @@ describe('migrations', () => {
       expect(() => raw.prepare("INSERT INTO memos (run_id, key, value, created_at) VALUES ('ghost', 'k', 'v', 'now')").run()).toThrow(/FOREIGN KEY/);
     } finally {
       raw.close();
+    }
+  });
+
+  it('upgrade an existing version-5 database file in place, adding an empty spend book that reads the ledger from its start', async () => {
+    const dataDir = tempDir();
+    const db = openDatabase(join(dataDir, 'byway.sqlite'));
+    try {
+      db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+      for (const m of MIGRATIONS.slice(0, 5)) {
+        db.exec(m.sql);
+        db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-08T00:00:00.000Z');
+      }
+      db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, '2026-10-08T09:00:00.000Z');
+    } finally {
+      db.close();
+    }
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3, 4, 5]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    expect(await store.getWorkspace('ws')).toMatchObject({ budgetUsd: 25 });
+    expect(await store.spendBook.cursor()).toEqual({ offset: 0, tailStart: 0, tailSha256: null });
+    expect(await store.spendBook.spend('ws')).toEqual({ spentUsd: 0, byRun: {}, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('hold a paid operation to its contract states and a settled cost at the schema level', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      const insert = db.prepare(`INSERT INTO paid_operations (id, workspace_id, purpose, kind, provider, model, paid, reserved_usd, state, lease_until,
+        settled_usd, created_at, updated_at) VALUES (?, 'w', 'p', 'completion', 'mock', 'm', 0, 0, ?, 0, ?, 'now', 'now')`);
+      insert.run('ok', 'open', null);
+      insert.run('done', 'settled', 0.5);
+      expect(() => insert.run('odd', 'pending', null)).toThrow(/CHECK/);
+      expect(() => insert.run('unpriced', 'settled', null)).toThrow(/CHECK/);
+      expect(() => insert.run('priced-open', 'open', 0.1)).toThrow(/CHECK/);
+      expect(() => insert.run('negative', 'settled', -1)).toThrow(/CHECK/);
+      expect(db.prepare('SELECT ledger_offset FROM spend_book_meta').all()).toEqual([{ ledger_offset: 0 }]);
+    } finally {
+      db.close();
     }
   });
 

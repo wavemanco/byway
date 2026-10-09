@@ -1,7 +1,8 @@
 'use client';
 
 import { useId, useRef, useState } from 'react';
-import { emptyDraft, hitParts, moveFocus, selectAction, toResolution, toggleChoice } from '../../../view/checkpoints.ts';
+import { hitParts, moveFocus, selectAction, toResolution, toggleChoice, type CheckpointDraft } from '../../../view/checkpoints.ts';
+import { ActionButton } from '../../ActionButton.tsx';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { References } from './References.tsx';
 import { TurnFooter } from './TurnFooter.tsx';
@@ -10,19 +11,26 @@ import type { PanelProps } from './types.ts';
 /**
  * select: a checklist where any number may be chosen, none included (C2: which cliché-sweep hits to swap, decided one
  * by one). Nothing starts ticked, so sending without choosing is a deliberate "swap none", and the button says which.
- * J and K move, Space ticks, Ctrl+Enter sends; sending is never a single key, because it changes the work.
+ * J and K move, Space ticks, Ctrl+Enter sends; sending is never a single key, because it changes the work. The ticks
+ * start as the Run screen kept them for this question and every change is written through (ADR-0082).
  */
-export function SelectPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
+export function SelectPanel({ cp, artifacts, busy, onSubmit, promptId, draft: seed, onDraft, sent }: PanelProps) {
   const options = cp.options ?? [];
-  const [draft, setDraft] = useState(() => emptyDraft(cp));
+  const [draft, setDraftState] = useState(seed);
+  const setDraft = (next: CheckpointDraft) => {
+    // Sent: the selection stays as sent until byway settles the question (ADR-0082).
+    if (sent) return;
+    setDraftState(next);
+    onDraft(next);
+  };
   const [focus, setFocus] = useState(-1);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const base = useId();
   const refs = cp.artifactIds ?? [];
   const chosen = draft.choice.length;
 
-  const toggle = (id: string) => setDraft((d) => ({ ...d, choice: toggleChoice(d.choice, id, Number.POSITIVE_INFINITY) }));
-  const setAll = (all: boolean) => setDraft((d) => ({ ...d, choice: all ? options.map((o) => o.id) : [] }));
+  const toggle = (id: string) => setDraft({ ...draft, choice: toggleChoice(draft.choice, id, Number.POSITIVE_INFINITY) });
+  const setAll = (all: boolean) => setDraft({ ...draft, choice: all ? options.map((o) => o.id) : [] });
 
   function move(delta: number) {
     const next = moveFocus(focus, delta, options.length);
@@ -51,12 +59,13 @@ export function SelectPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelPr
         <legend className="sr-only">Choose which to swap</legend>
         {options.length > 1 ? (
           <p className="checklist-bulk">
-            <button type="button" className="link-button" onClick={() => setAll(true)} disabled={busy || chosen === options.length}>
+            {/* Each makes itself unavailable when pressed (all chosen, none chosen), so it must keep focus (R5). */}
+            <ActionButton className="link-button" onClick={() => setAll(true)} unavailable={busy || chosen === options.length}>
               Choose all
-            </button>
-            <button type="button" className="link-button" onClick={() => setAll(false)} disabled={busy || chosen === 0}>
+            </ActionButton>
+            <ActionButton className="link-button" onClick={() => setAll(false)} unavailable={busy || chosen === 0}>
               Clear
-            </button>
+            </ActionButton>
           </p>
         ) : null}
         <ul className="checklist-items">
@@ -100,6 +109,7 @@ export function SelectPanel({ cp, artifacts, busy, onSubmit, promptId }: PanelPr
         kind={cp.kind}
         ready
         busy={busy}
+        sent={sent}
         onSubmit={submit}
         action={selectAction(chosen)}
         status={chosen === 0 ? 'None chosen: nothing will be swapped.' : `${chosen} of ${options.length} chosen`}

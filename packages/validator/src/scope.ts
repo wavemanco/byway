@@ -1,5 +1,5 @@
-import { OPTION_SET, type PortType } from '@byway/protocol';
-import { walkNode, type Actor, type Audit, type Node, type Recipe, type RelayChain, type Role, type Stage } from '@byway/recipe';
+import { OPTION_SET, type PortType, type RuleId } from '@byway/protocol';
+import { personWrite, walkNode, type Actor, type Audit, type Node, type Recipe, type RelayChain, type Role, type Stage, type Step } from '@byway/recipe';
 import { ANNOTATION_PORTS, Findings } from './context.ts';
 
 /** Who may have produced a port: a recipe input, a step (with its role and actor) or an operator. */
@@ -14,10 +14,18 @@ export interface Producer {
  * Typing state at a point in the recipe.
  * - `must`: ports present on every path, each with every producer that may have made it (for ST5 and provenance rules).
  * - `may`: ports present on at least one path (for "may still be open" rules such as PR4 and DR2).
+ * - `aside`: ports a person's write set aside on some path, with that write's step id (ADR-0092). A finished person's
+ *   write sets the option set aside: picking from it, or working on it, would bring back what was made before their
+ *   words. It stays in `may` (the runner still holds it), but no longer in `must`.
+ * - `held`: on some path the runner still holds an option list though no option set is open: a pick of one leaves
+ *   ports.options as the one it chose (the interpreter's pick), and a later pick or each takes that list. A person's
+ *   write sets it aside like an open set.
  */
 export interface ScopeState {
   must: ReadonlyMap<PortType, readonly Producer[]>;
   may: ReadonlySet<PortType>;
+  aside: ReadonlyMap<PortType, string>;
+  held: boolean;
 }
 
 export interface Typing {
@@ -25,15 +33,36 @@ export interface Typing {
   nodeEntry: Map<Node, ScopeState>;
 }
 
+/** How much typing a recipe took: node visits, counting none for a re-typing whose answer was already known. */
+export interface TypingStats {
+  visits: number;
+}
+
 interface MutableState {
   must: Map<PortType, Producer[]>;
   may: Set<PortType>;
+  aside: Map<PortType, string>;
+  held: boolean;
 }
 
 const clone = (s: ScopeState): MutableState => ({
   must: new Map([...s.must].map(([k, v]) => [k, [...v]])),
   may: new Set(s.may),
+  aside: new Map(s.aside),
+  held: s.held,
 });
+
+/** Where findings go: the recipe's findings on the first round; a later round keeps only its set-asides. */
+interface Sink {
+  add(ruleId: RuleId, path: string, message: string, clause?: string): void;
+}
+
+/** ST5 for a consumed option set that is not in scope: 'set-aside' when a person's write set it aside. */
+function missingOptions(st: ScopeState, path: string, what: string, findings: Sink): void {
+  const by = st.aside.get(OPTION_SET);
+  if (by) findings.add('ST5', path, `${what} ${OPTION_SET}, which "${by}", a person's write, set aside: it would bring back what was made before their words`, 'set-aside');
+  else findings.add('ST5', path, `${what} ${OPTION_SET}, which is not in scope on every path`);
+}
 
 function addProducers(list: Producer[], more: readonly Producer[]): Producer[] {
   const out = [...list];
@@ -48,104 +77,283 @@ function mergeAlternatives(states: ScopeState[]): MutableState {
   const [first, ...rest] = states;
   const must = new Map<PortType, Producer[]>();
   const may = new Set<PortType>();
-  if (!first) return { must, may };
+  const aside = new Map<PortType, string>();
+  if (!first) return { must, may, aside, held: false };
   for (const [port, producers] of first.must) {
     if (rest.every((s) => s.must.has(port))) {
       must.set(port, rest.reduce((acc, s) => addProducers(acc, s.must.get(port) ?? []), [...producers]));
     }
   }
   for (const s of states) for (const p of s.may) may.add(p);
-  return { must, may };
+  for (const s of states) for (const [p, by] of s.aside) if (!aside.has(p)) aside.set(p, by);
+  return { must, may, aside, held: states.some((s) => s.held) };
 }
 
-/** Type the recipe's port flow (spec: "Scope typing"). Emits ST5 for consumed ports that are not guaranteed in scope. */
-export function typeRecipe(recipe: Recipe, findings: Findings): Typing {
-  const typing: Typing = { stageEntry: new Map(), nodeEntry: new Map() };
+/**
+ * What the option set is at a point: all that a later round's set-aside reads (missingOptions) and all that decides
+ * what the option set is after a node (steps, operators and merges never read another port for it).
+ */
+const optionKey = (s: ScopeState): string => `${s.must.has(OPTION_SET) ? 1 : 0}${s.may.has(OPTION_SET) ? 1 : 0}${s.held ? 1 : 0}${s.aside.get(OPTION_SET) ?? ''}`;
+/** All that ST11's relay probe reads: whether the anchor is in scope (whether it is after a node depends on nothing else). */
+const anchorKey = (s: ScopeState): string => (s.must.has('anchor') ? '1' : '0');
+
+/**
+ * A typing pass.
+ * - `first`: the first round, typed once per node: every finding, the typing other rules read, and from each loop or
+ *   relay its later rounds and its link check.
+ * - `again`: a later round of a loop body or relay link, from the state its back-edge brings; it reports only
+ *   set-asides, and types its own inner loops' later rounds.
+ * - `probe`: ST11's relay link typed without its anchor, for the anchor it hands on; it reports nothing.
+ */
+type Pass = 'first' | 'again' | 'probe';
+
+type Memo = Map<Node, Map<string, ScopeState>>;
+const remember = (memo: Memo, node: Node, key: string, out: ScopeState) => {
+  const byKey = memo.get(node) ?? new Map<string, ScopeState>();
+  byKey.set(key, out);
+  memo.set(node, byKey);
+};
+
+/** Where a probe's findings go: nowhere, since the first round reports every rule on the same link. */
+const NOWHERE: Sink = { add: () => undefined };
+
+/**
+ * Scope typing of one recipe. A loop body or relay link is typed again from what its back-edge brings, and a relay link
+ * once more without its anchor. Both re-typings are memoized by node and by what they read (optionKey, anchorKey), and
+ * an answer the first round already gave is not typed again, so nesting does not multiply the work (scope-cost.test.ts).
+ */
+class ScopeWalk {
+  readonly typing: Typing = { stageEntry: new Map(), nodeEntry: new Map() };
+  visits = 0;
+  /** Outputs by node and option key, of the first round and of later rounds: a later round reached again is known. */
+  private readonly rounds: Memo = new Map();
+  /** Outputs by node and anchor key, of every pass: the anchor out of a node is known once its anchor in is. */
+  private readonly probes: Memo = new Map();
+  /** Set-asides found on later rounds, by path, with what the later round was of. */
+  readonly later = new Map<string, string>();
+
+  private readonly findings: Findings;
+
+  constructor(findings: Findings) {
+    this.findings = findings;
+  }
+
+  /** Types `node` from `input`; `label` names the loop or relay a later round belongs to. */
+  type(node: Node, input: ScopeState, path: string, pass: Pass, label = ''): ScopeState {
+    if (pass !== 'first') {
+      const known = pass === 'again' ? this.rounds.get(node)?.get(optionKey(input)) : this.probes.get(node)?.get(anchorKey(input));
+      if (known) return known;
+    }
+    this.visits++;
+    const out = this.typeNode(node, input, path, pass, label);
+    if (pass !== 'probe') remember(this.rounds, node, optionKey(input), out);
+    remember(this.probes, node, anchorKey(input), out);
+    return out;
+  }
+
+  private sink(pass: Pass, label: string): Sink {
+    if (pass === 'first') return this.findings;
+    if (pass === 'probe') return NOWHERE;
+    return {
+      add: (ruleId, path, message, clause) => {
+        if (ruleId === 'ST5' && clause === 'set-aside' && !this.later.has(path)) this.later.set(path, `${message} (on a later round of ${label})`);
+      },
+    };
+  }
+
+  private typeNode(node: Node, input: ScopeState, path: string, pass: Pass, label: string): ScopeState {
+    if (pass === 'first') this.typing.nodeEntry.set(node, clone(input));
+    const findings = this.sink(pass, label);
+    const st = clone(input);
+    switch (node.op) {
+      case 'step': {
+        for (const port of node.consumes) {
+          if (st.must.has(port)) continue;
+          if (port === OPTION_SET) missingOptions(st, path, `step "${node.id}" consumes`, findings);
+          else findings.add('ST5', path, `step "${node.id}" consumes ${port}, which is not in scope on every path`);
+        }
+        checkReads(node, st, path, findings);
+        for (const port of node.produces) {
+          st.must.set(port, [{ kind: 'step', role: node.role, actor: node.actor }]);
+          st.may.add(port);
+          st.aside.delete(port);
+        }
+        setAside(node, st);
+        return st;
+      }
+      case 'seq': {
+        let s: ScopeState = st;
+        node.steps.forEach((child, i) => {
+          s = this.type(child, s, `${path}.steps[${i}]`, pass, label);
+        });
+        return s;
+      }
+      case 'replicate': {
+        const out = this.type(node.body, st, `${path}.body`, pass, label);
+        if (!out.must.has('artifact')) findings.add('ST5', path, `replicate "${node.id}" body produces no artifact`);
+        st.must.set(OPTION_SET, [{ kind: 'operator', op: 'replicate' }]);
+        st.may.add(OPTION_SET);
+        st.aside.delete(OPTION_SET);
+        return st;
+      }
+      case 'each': {
+        if (!st.must.has(OPTION_SET)) missingOptions(st, path, `each "${node.id}" needs`, findings);
+        const inner = clone(st);
+        inner.must.set('artifact', [{ kind: 'operator', op: 'each' }]);
+        inner.may.add('artifact');
+        this.type(node.body, inner, `${path}.body`, pass, label);
+        return st;
+      }
+      case 'pick': {
+        if (!st.must.has(OPTION_SET)) missingOptions(st, path, `pick "${node.id}" needs`, findings);
+        if (node.judge) {
+          // The harness renders every option for the selector.
+          const judgeScope = clone(st);
+          judgeScope.must.set('view', [{ kind: 'step', role: 'render', actor: 'tool' }]);
+          judgeScope.may.add('view');
+          this.type(node.judge, judgeScope, `${path}.judge`, pass, label);
+        }
+        if (node.k === 1) {
+          // The choice is made: no option set is open. The runner still holds the one chosen as its option list.
+          st.must.delete(OPTION_SET);
+          st.may.delete(OPTION_SET);
+          st.aside.delete(OPTION_SET);
+          st.held = true;
+          st.must.set('artifact', [{ kind: 'operator', op: 'pick' }]);
+          st.may.add('artifact');
+        }
+        return st;
+      }
+      case 'loop': {
+        // Typed once: ports must be available on the first iteration (ST5). Back-edge effects are checked by the path
+        // rules, and a set-aside reached again through the back-edge here.
+        const out = this.type(node.body, st, `${path}.body`, pass, label);
+        if (pass !== 'probe') this.laterRounds(node.body, st, out, `${path}.body`, `loop "${node.id}"`);
+        return out;
+      }
+      case 'optional': {
+        const ran = this.type(node.body, st, `${path}.body`, pass, label);
+        return mergeAlternatives([st, ran]);
+      }
+      case 'route':
+        return mergeAlternatives(node.branches.map((b, i) => this.type(b.body, st, `${path}.branches[${i}].body`, pass, label)));
+      case 'audit':
+        return this.typeAudit(node, st, path, pass, label);
+      case 'gate':
+        // The check's outputs (its view, critique and score) stay in scope after it, as after any step sequence.
+        return this.type(node.body, st, `${path}.body`, pass, label);
+      case 'relay': {
+        // Typed once, like a loop body: the first link starts from the anchor in scope before the chain.
+        const out = this.type(node.body, st, `${path}.body`, pass, label);
+        if (pass === 'first') this.checkRelayLink(node, st, path);
+        if (pass !== 'probe') this.laterRounds(node.body, st, out, `${path}.body`, `relay "${node.id}"`);
+        return out;
+      }
+    }
+  }
+
+  /**
+   * The second round of a loop body (or the next relay link) starts from what the round before left: an option consumer
+   * there may read options a person's write later in the body set aside. Rounds are typed until what they read
+   * repeats; only their set-asides are kept (ST12 'set-aside'), and every other port rule is checked on the first round.
+   */
+  private laterRounds(body: Node, entry: ScopeState, out: ScopeState, path: string, label: string): void {
+    const seen = new Set<string>([optionKey(entry)]);
+    let next = mergeAlternatives([entry, out]);
+    while (!seen.has(optionKey(next))) {
+      seen.add(optionKey(next));
+      next = mergeAlternatives([entry, this.type(body, next, path, 'again', label)]);
+    }
+  }
+
+  /**
+   * Every lens starts from the same input. After the audit only annotations come out: a port in ANNOTATION_PORTS that
+   * a lens makes on every one of its paths is in scope, with every lens that made it as a producer. Anything else a
+   * lens makes (its own renders, a vanilla control set) stays inside it.
+   */
+  private typeAudit(node: Audit, st: MutableState, path: string, pass: Pass, label: string): ScopeState {
+    const entry = clone(st);
+    const fromLenses = new Map<PortType, Producer[]>();
+    node.lenses.forEach((lens, i) => {
+      const out = this.type(lens.body, entry, `${path}.lenses[${i}].body`, pass, label);
+      const made = producedWithin(lens.body);
+      for (const port of ANNOTATION_PORTS) {
+        if (!made.has(port)) continue;
+        st.may.add(port);
+        const producers = out.must.get(port);
+        if (producers) fromLenses.set(port, addProducers(fromLenses.get(port) ?? [], producers));
+      }
+    });
+    for (const [port, producers] of fromLenses) st.must.set(port, producers);
+    return st;
+  }
+
+  /**
+   * ST11: a relay link starts from the previous link's exact end state and hands one on. It must read `anchor`, and it
+   * must make a new one on every path; the anchor it started from does not count, so the link is typed again without it.
+   */
+  private checkRelayLink(node: RelayChain, st: MutableState, path: string): void {
+    let reads = false;
+    walkNode(node.body, '', 'D1', (n) => {
+      if (n.op === 'step' && n.consumes.includes('anchor')) reads = true;
+    });
+    if (!reads) this.findings.add('ST11', path, `relay "${node.id}" link does not start from the previous link's anchor`, 'no-anchor-in');
+    const withoutAnchor = clone(st);
+    withoutAnchor.must.delete('anchor');
+    const probe = this.type(node.body, withoutAnchor, `${path}.body`, 'probe');
+    if (!probe.must.has('anchor')) this.findings.add('ST11', path, `relay "${node.id}" link does not hand on an anchor on every path`, 'no-anchor-out');
+  }
+}
+
+/**
+ * Type the recipe's port flow (spec: "Scope typing"). Emits ST5 for consumed ports that are not guaranteed in scope,
+ * ST12 'set-aside' for an option set a later round of a loop or relay reaches set aside, and ST11 for a relay link.
+ * `stats`, when given, gains the walk's node visits.
+ */
+export function typeRecipe(recipe: Recipe, findings: Findings, stats?: TypingStats): Typing {
+  const walk = new ScopeWalk(findings);
   let state: ScopeState = {
     must: new Map(recipe.inputs.map((p) => [p, [{ kind: 'input' } as Producer]])),
     may: new Set(recipe.inputs),
+    aside: new Map(),
+    held: false,
   };
   recipe.stages.forEach((s, i) => {
-    typing.stageEntry.set(s.stage, clone(state));
-    state = typeNode(s.body, state, `stages[${i}].body`, typing, findings);
+    walk.typing.stageEntry.set(s.stage, clone(state));
+    state = walk.type(s.body, state, `stages[${i}].body`, 'first');
   });
-  return typing;
+  // A set-aside a later round reaches where the first round already found one is that one.
+  const first = new Set(findings.list.filter((f) => f.clause === 'set-aside').map((f) => f.path));
+  for (const [path, message] of walk.later) if (!first.has(path)) findings.add('ST12', path, message, 'set-aside');
+  if (stats) stats.visits += walk.visits;
+  return walk.typing;
 }
 
-function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, findings: Findings): ScopeState {
-  typing.nodeEntry.set(node, clone(input));
-  const st = clone(input);
-  switch (node.op) {
-    case 'step': {
-      for (const port of node.consumes) {
-        if (!st.must.has(port)) findings.add('ST5', path, `step "${node.id}" consumes ${port}, which is not in scope on every path`);
-      }
-      for (const port of node.produces) {
-        st.must.set(port, [{ kind: 'step', role: node.role, actor: node.actor }]);
-        st.may.add(port);
-      }
-      return st;
-    }
-    case 'seq': {
-      let s: ScopeState = st;
-      node.steps.forEach((child, i) => {
-        s = typeNode(child, s, `${path}.steps[${i}]`, typing, findings);
-      });
-      return s;
-    }
-    case 'replicate': {
-      const out = typeNode(node.body, st, `${path}.body`, typing, findings);
-      if (!out.must.has('artifact')) findings.add('ST5', path, `replicate "${node.id}" body produces no artifact`);
-      st.must.set(OPTION_SET, [{ kind: 'operator', op: 'replicate' }]);
-      st.may.add(OPTION_SET);
-      return st;
-    }
-    case 'each': {
-      if (!st.must.has(OPTION_SET)) findings.add('ST5', path, `each "${node.id}" needs ${OPTION_SET} in scope`);
-      const inner = clone(st);
-      inner.must.set('artifact', [{ kind: 'operator', op: 'each' }]);
-      inner.may.add('artifact');
-      typeNode(node.body, inner, `${path}.body`, typing, findings);
-      return st;
-    }
-    case 'pick': {
-      if (!st.must.has(OPTION_SET)) findings.add('ST5', path, `pick "${node.id}" needs ${OPTION_SET} in scope`);
-      if (node.judge) {
-        // The harness renders every option for the selector.
-        const judgeScope = clone(st);
-        judgeScope.must.set('view', [{ kind: 'step', role: 'render', actor: 'tool' }]);
-        judgeScope.may.add('view');
-        typeNode(node.judge, judgeScope, `${path}.judge`, typing, findings);
-      }
-      if (node.k === 1) {
-        st.must.delete(OPTION_SET);
-        st.may.delete(OPTION_SET);
-        st.must.set('artifact', [{ kind: 'operator', op: 'pick' }]);
-        st.may.add('artifact');
-      }
-      return st;
-    }
-    case 'loop':
-      // Typed once: ports must be available on the first iteration (ST5). Back-edge effects are checked by the path rules.
-      return typeNode(node.body, st, `${path}.body`, typing, findings);
-    case 'optional': {
-      const ran = typeNode(node.body, st, `${path}.body`, typing, findings);
-      return mergeAlternatives([st, ran]);
-    }
-    case 'route':
-      return mergeAlternatives(node.branches.map((b, i) => typeNode(b.body, st, `${path}.branches[${i}].body`, typing, findings)));
-    case 'audit':
-      return typeAudit(node, st, path, typing, findings);
-    case 'gate':
-      // The check's outputs (its view, critique and score) stay in scope after it, as after any step sequence.
-      return typeNode(node.body, st, `${path}.body`, typing, findings);
-    case 'relay': {
-      // Typed once, like a loop body: the first link starts from the anchor in scope before the chain.
-      const out = typeNode(node.body, st, `${path}.body`, typing, findings);
-      checkRelayLink(node, st, path, findings);
-      return out;
-    }
+/**
+ * ST5 for a step's optional reads (ADR-0089). Only a model step reads optionally: its prompt fills an absent port's slot
+ * with nothing, and no other step has a slot to leave empty. A port is consumed or read, never both. Each read is of a
+ * port some path makes before the step (`may`), and a read never makes a port required (`must` is untouched). Loops and
+ * relays are typed on their first round, so a read of a port first made later in the same body is refused: a
+ * documented limit, which no recipe needs.
+ */
+function checkReads(step: Step, st: ScopeState, path: string, findings: Sink): void {
+  const reads = step.reads ?? [];
+  if (!reads.length) return;
+  if (step.actor !== 'model') {
+    findings.add('ST5', path, `step "${step.id}" reads ${reads.join(', ')}, but only a model step reads optionally`, 'reads-actor');
+    return;
   }
+  for (const port of reads) {
+    if (step.consumes.includes(port)) findings.add('ST5', path, `step "${step.id}" both consumes and reads ${port}`, 'reads-twice');
+    else if (!st.may.has(port)) findings.add('ST5', path, `step "${step.id}" reads ${port}, which no path makes before it`, 'reads-unmade');
+  }
+}
+
+/** A finished person's write sets the option set aside (it stays in `may`: the runner still holds it). */
+function setAside(step: Step, st: MutableState): void {
+  if (!personWrite(step) || !(st.may.has(OPTION_SET) || st.held)) return;
+  st.must.delete(OPTION_SET);
+  st.aside.set(OPTION_SET, step.id);
 }
 
 /** Ports any step inside a node produces. */
@@ -155,43 +363,4 @@ function producedWithin(node: Node): Set<PortType> {
     if (n.op === 'step') for (const p of n.produces) made.add(p);
   });
   return made;
-}
-
-/**
- * Every lens starts from the same input. After the audit only annotations come out: a port in ANNOTATION_PORTS that
- * a lens makes on every one of its paths is in scope, with every lens that made it as a producer. Anything else a
- * lens makes (its own renders, a vanilla control set) stays inside it.
- */
-function typeAudit(node: Audit, st: MutableState, path: string, typing: Typing, findings: Findings): ScopeState {
-  const entry = clone(st);
-  const fromLenses = new Map<PortType, Producer[]>();
-  node.lenses.forEach((lens, i) => {
-    const out = typeNode(lens.body, entry, `${path}.lenses[${i}].body`, typing, findings);
-    const made = producedWithin(lens.body);
-    for (const port of ANNOTATION_PORTS) {
-      if (!made.has(port)) continue;
-      st.may.add(port);
-      const producers = out.must.get(port);
-      if (producers) fromLenses.set(port, addProducers(fromLenses.get(port) ?? [], producers));
-    }
-  });
-  for (const [port, producers] of fromLenses) st.must.set(port, producers);
-  return st;
-}
-
-/**
- * ST11: a relay link starts from the previous link's exact end state and hands one on. It must read `anchor`, and it
- * must make a new one on every path; the anchor it started from does not count, so the link is typed again without it.
- */
-function checkRelayLink(node: RelayChain, st: MutableState, path: string, findings: Findings): void {
-  let reads = false;
-  walkNode(node.body, '', 'D1', (n) => {
-    if (n.op === 'step' && n.consumes.includes('anchor')) reads = true;
-  });
-  if (!reads) findings.add('ST11', path, `relay "${node.id}" link does not start from the previous link's anchor`, 'no-anchor-in');
-  const withoutAnchor = clone(st);
-  withoutAnchor.must.delete('anchor');
-  const scratch: Typing = { stageEntry: new Map(), nodeEntry: new Map() };
-  const probe = typeNode(node.body, withoutAnchor, path, scratch, new Findings());
-  if (!probe.must.has('anchor')) findings.add('ST11', path, `relay "${node.id}" link does not hand on an anchor on every path`, 'no-anchor-out');
 }

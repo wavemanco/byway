@@ -7,27 +7,38 @@
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
  */
 import { randomUUID } from 'node:crypto';
-import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RunRecord } from '@byway/contracts';
+import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
 import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
-import { budgetProblem, workspaceSpend } from '../view/history.ts';
+import { budgetProblem, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
+import { auditText } from '../view/spending.ts';
 import { takesRefs } from '../view/refs.ts';
+import { onlyProtocolChecks } from '../view/composed.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED } from '../view/refusals.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
-import { artifactHeaders, isArtifactId, mediaServing } from './artifacts.ts';
+import { artifactHeaders, isArtifactId, mediaServing, pageScriptsGranted } from './artifacts.ts';
 import { exportsInline, selfContained } from './export.ts';
+import { firstRecommendation } from './first-recommendation.ts';
+import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
-import type { ControlInput, ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from './schemas.ts';
+import type { ControlInput, ProblemInput, RecommendInput, RefInput, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
   override name = 'HttpError';
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** A refusal code a screen acts on (view/refusals.ts), sent beside the message. */
+  readonly code: string | undefined;
+  /** More for the screen to act on, sent beside the message (a refusal's new content, say). */
+  readonly body: Record<string, unknown> | undefined;
+  constructor(status: number, message: string, code?: string, body?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.code = code;
+    this.body = body;
   }
 }
 
@@ -36,6 +47,8 @@ export interface Deps {
   workspaceId: string;
   /** The model profile runs use (Store preferences). */
   profileId: string;
+  /** Names a provider key byway holds found in a request body (ADR-0088); routes hand it to parseBody. */
+  heldKeyIn: HeldKeyIn;
 }
 
 /** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */
@@ -88,10 +101,15 @@ export async function recommendIntake(deps: Deps, intakeId: string, answers?: Ch
   return rec;
 }
 
-/** The intake's recommendation as last made, or a fresh one the first time. */
+/**
+ * The intake's recommendation as last made, or a fresh one the first time. Concurrent first asks for one intake (two
+ * tabs, a reload, a render and Try again) share one advisor call (firstRecommendation, F03). Inside the shared call the
+ * intake is read again, so an ask that arrives just after another call stored its answer gets that answer, not a second call.
+ */
 export async function currentRecommendation(deps: Deps, intakeId: string): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
-  return intake.recommendation ?? recommendIntake(deps, intakeId);
+  if (intake.recommendation) return intake.recommendation;
+  return firstRecommendation(deps.services.store, intakeId, async () => (await requireIntake(deps, intakeId)).recommendation ?? recommendIntake(deps, intakeId));
 }
 
 /**
@@ -126,6 +144,77 @@ export async function composeIntake(deps: Deps, intakeId: string): Promise<Compo
   return composeView(result);
 }
 
+/**
+ * The workspace's budget, spend and what is left, as of now: settled spend, calls under way and calls that may have
+ * been billed, from the spend book (ADR-0095).
+ */
+export async function workspaceRemaining(deps: Deps): Promise<WorkspaceSpend & { workspaceId: string }> {
+  const workspace = await deps.services.store.ensureDefaultWorkspace();
+  return { ...workspaceSpend(workspace.budgetUsd, await deps.services.gateway.spend(workspace.id)), workspaceId: workspace.id };
+}
+
+/**
+ * Settings' "Check the spend ledger" (GET /api/ledger; ADR-0091, ADR-0095): the ledger's hash chain and head, and every
+ * call the spend book holds as written there found at the same cost, checked when the person asks rather than on every
+ * page. The gateway keeps the chain's result until the ledger or its head changes, so asking again is cheap.
+ */
+export async function checkLedger(deps: Deps): Promise<{ intact: boolean; message: string }> {
+  const audit = await deps.services.gateway.auditLedger();
+  return { intact: audit.brokenAt === null && audit.missing.length === 0, message: auditText(audit) };
+}
+
+/** Settings' "Spending records" (ADR-0095): calls under way, calls that may have been billed, faults, set-aside tails. */
+export async function spendRecords(deps: Deps): Promise<{ records: SpendRecords; spend: WorkspaceSpend }> {
+  const workspace = await deps.services.store.ensureDefaultWorkspace();
+  const records = await deps.services.gateway.spendRecords(workspace.id);
+  return { records, spend: workspaceSpend(workspace.budgetUsd, await deps.services.gateway.spend(workspace.id)) };
+}
+
+/**
+ * The two Spending records actions (POST /api/spend): clear calls that may have been billed (the person checked them in
+ * the provider's dashboard), or acknowledge a line of the audit file the book could not read, which lets paid calls go
+ * on. Returns the records and spend as they are after it, so the screen applies them in one step.
+ */
+export async function spendAction(deps: Deps, input: z.infer<typeof SpendAction>): Promise<{ records: SpendRecords; spend: WorkspaceSpend }> {
+  // Both are idempotent: a second click, or a call that settled meanwhile, simply finds nothing left to change.
+  const book = deps.services.store.spendBook;
+  if ('clear' in input) await book.clearUncertain(deps.workspaceId, input.clear);
+  else await book.acknowledgeFault(input.acknowledge);
+  return spendRecords(deps);
+}
+
+/**
+ * What a Recommendation screen command returns: everything it changes that the screen shows, so the screen applies it
+ * in one step and never re-runs its server render (F14, ADR-0082). That render is not a pure read: while no
+ * recommendation is stored it asks the model for one, so re-running it to refresh a figure could make an unrequested call.
+ * The remaining amount is read after the command, so it includes what the command itself spent.
+ */
+export interface RecommendResult {
+  recommendation: Recommendation;
+  remainingUsd: number;
+}
+
+export interface ComposeResultView {
+  composed: ComposeView;
+  remainingUsd: number;
+}
+
+/**
+ * POST /recommend: `{ answers }` re-routes with the chooser answers as the person left them; `{ ensure: true }` (Try
+ * again) returns the stored recommendation, or makes and stores the first one. Called in sequence, ensure asks the model
+ * at most once, and at the same time as a first page render it shares that render's call (currentRecommendation).
+ */
+export async function recommendCommand(deps: Deps, intakeId: string, input: z.infer<typeof RecommendInput>): Promise<RecommendResult> {
+  const recommendation = 'ensure' in input ? await currentRecommendation(deps, intakeId) : await recommendIntake(deps, intakeId, input.answers);
+  return { recommendation, remainingUsd: (await workspaceRemaining(deps)).remainingUsd };
+}
+
+/** POST /compose ("Build my own"). It never asks for a recommendation, so it works while recommending is refused. */
+export async function composeCommand(deps: Deps, intakeId: string): Promise<ComposeResultView> {
+  const composed = await composeIntake(deps, intakeId);
+  return { composed, remainingUsd: (await workspaceRemaining(deps)).remainingUsd };
+}
+
 /** Stores one of your examples before the run starts; the run gets its artifact id (StartRunInput.inputs.refs). */
 export async function addRef(deps: Deps, input: z.infer<typeof RefInput>): Promise<{ artifactId: string; mediaType: string }> {
   try {
@@ -146,8 +235,10 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
   } else {
     if (!intake.composed) throw new HttpError(400, 'Choose a recipe, or build your own first.');
     // Only a recipe that validates is ever offered (spec §4).
-    if (!intake.composed.ok) throw new HttpError(400, 'The composed recipe did not pass the protocol checks, so it cannot run.');
-    recipe = intake.composed.recipe;
+    if (!intake.composed.ok) {
+      throw new HttpError(400, onlyProtocolChecks(intake.composed.violations) ? 'The composed recipe did not pass the protocol checks, so it cannot run.' : 'The composed recipe cannot run. The screen says why; build your own again.');
+    }
+    recipe = await admitComposed(deps, intake.id, intake.composed, intake.problem);
   }
   const refs = input.refs ?? [];
   if (refs.length > 0) {
@@ -156,12 +247,11 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
       if (!(await services.store.artifacts.has(id))) throw new HttpError(400, 'One of your examples was not found. Add it again.');
     }
   }
-  const workspace = await services.store.ensureDefaultWorkspace();
-  const spend = workspaceSpend(workspace.budgetUsd, (await services.gateway.spend(workspace.id)).spentUsd);
+  const spend = await workspaceRemaining(deps);
   const problem = budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
-  const run = await services.runner.start({
-    workspaceId: workspace.id,
+  const run = await startOnce(services, {
+    workspaceId: spend.workspaceId,
     recipe,
     problem: intake.problem,
     profileId: deps.profileId,
@@ -169,8 +259,62 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     intakeId: intake.id,
     ...(input.routes ? { routes: input.routes } : {}),
     ...(refs.length > 0 ? { inputs: { refs: [...new Set(refs)] } } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
   });
   return { runId: run.id };
+}
+
+/** The violation a stored composed recipe gets when the recipe it was built from is no longer in the catalog. */
+const NEAREST_GONE = 'ADMIT-NEAREST';
+
+/**
+ * The advisor's refusal of a recipe id the catalog does not have (AdvisorError 'unknown-recipe'). Matched by name and
+ * code, as in model-errors.ts: the services may come from another server bundle, whose classes are other objects.
+ */
+const unknownRecipe = (err: unknown): boolean => err instanceof Error && err.name === 'AdvisorError' && (err as { code?: unknown }).code === 'unknown-recipe';
+
+/**
+ * A composed recipe is admitted again before it runs (F01, ADR-0092): the `ok` stored when it was composed is not taken
+ * on trust, because the checks may have changed since. The advisor re-runs them on the stored recipe under its own id
+ * and recomputes what the screen said about it; the intake keeps the result either way (the estimate is refreshed
+ * silently). A recipe that no longer passes, or no longer hashes the same, is refused; one whose explanation changed
+ * does not start until the person has seen the new one, which the refusal carries. One built from a recipe the catalog
+ * no longer has cannot be checked again, and is refused too (NEAREST_GONE).
+ */
+async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult, problem: IntakeRecord['problem']): Promise<Recipe> {
+  let again: ComposeResult;
+  try {
+    again = deps.services.advisor.admit(stored, { problem, profileId: deps.profileId });
+  } catch (err) {
+    if (!unknownRecipe(err)) throw err;
+    // The recipe it was built from is no longer one of byway's, so there is nothing to check it against. It is refused
+    // like one that no longer passes: the intake says why, and Start stays blocked until a new one is built.
+    const gone: ComposeResult = { ...stored, ok: false, violations: [{ ruleId: NEAREST_GONE, message: "the recipe it was built from is no longer one of byway's, so it cannot be checked again" }] };
+    await deps.services.store.updateIntake(intakeId, { composed: gone });
+    throw new HttpError(400, "This recipe was built from one byway no longer has, so it cannot be checked again or run. Build your own again.", COMPOSED_REFUSED, { composed: composeView(gone) });
+  }
+  await deps.services.store.updateIntake(intakeId, { composed: again });
+  if (!again.ok) {
+    throw new HttpError(400, "This recipe no longer passes byway's checks, so it cannot run. Build your own again for one that does.", COMPOSED_REFUSED, { composed: composeView(again) });
+  }
+  if (JSON.stringify(again.diff) !== JSON.stringify(stored.diff) || JSON.stringify(again.presentation) !== JSON.stringify(stored.presentation)) {
+    throw new HttpError(409, 'byway checked this recipe again and now explains it differently, so it did not start. Read what it does, then start it.', COMPOSED_CHANGED, { composed: composeView(again) });
+  }
+  return again.recipe;
+}
+
+/**
+ * Runner.start, with the run id the screen minted (F03 P3): a Start sent twice gives the first run back. The id of a run
+ * started for another problem or recipe is a conflict (409), matched by name as the services may come from another bundle.
+ */
+async function startOnce(services: Services, input: Parameters<Services['runner']['start']>[0]): Promise<RunRecord> {
+  try {
+    return await services.runner.start(input);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'RunStartConflictError') throw new HttpError(409, 'This start was already used for another problem or recipe, so nothing was started. Start the run again.');
+    if (err instanceof Error && err.name === 'RunStartInvalidError') throw new HttpError(400, 'That start did not arrive intact. Start the run again.');
+    throw err;
+  }
 }
 
 export interface RunRecipe {
@@ -251,8 +395,18 @@ export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsP
  * `route` is which address was asked for. `/artifacts/<id>` serves everything. `/api/artifacts/<id>` (`media`) is the
  * address generated pages and documents use for generated images and clips (spec §3.3), and serves only those: a page
  * there would be one a generated page could navigate itself to, and SVG, which can carry script, is a download there.
+ *
+ * `headers` are the request's: its Fetch Metadata decides whether a page's scripts are granted (pageScriptsGranted,
+ * F05). Left out, nothing is granted. Downloads and the media route never grant.
  */
-export async function artifactResponse(services: Services, rawId: string, url: URL, origin: string = url.origin, route: 'artifacts' | 'media' = 'artifacts'): Promise<Response> {
+export async function artifactResponse(
+  services: Services,
+  rawId: string,
+  url: URL,
+  origin: string = url.origin,
+  route: 'artifacts' | 'media' = 'artifacts',
+  headers: Headers = new Headers(),
+): Promise<Response> {
   let id = rawId;
   try {
     id = decodeURIComponent(rawId);
@@ -266,10 +420,11 @@ export async function artifactResponse(services: Services, rawId: string, url: U
   if (media === 'refuse') return new Response('Artifact not found.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   const requested = url.searchParams.get('download') === '1' ? (url.searchParams.get('name') ?? 'byway-result').slice(0, 200) : undefined;
   const download = requested ?? (media === 'attachment' ? 'byway-media' : undefined);
+  const scripts = { asked: url.searchParams.has('scripts'), granted: route === 'artifacts' && download === undefined && pageScriptsGranted(url, headers) };
   // A downloaded page or Markdown file carries its images inline, so it works away from byway (EXP-1).
   if (requested !== undefined && exportsInline(record.mediaType)) {
     const text = await selfContained(new TextDecoder().decode(bytes), services.store.artifacts);
-    return new Response(text, { status: 200, headers: artifactHeaders(record.mediaType, origin, download) });
+    return new Response(text, { status: 200, headers: artifactHeaders(record.mediaType, origin, download, scripts) });
   }
-  return new Response(new Uint8Array(bytes), { status: 200, headers: artifactHeaders(record.mediaType, origin, download) });
+  return new Response(new Uint8Array(bytes), { status: 200, headers: artifactHeaders(record.mediaType, origin, download, scripts) });
 }

@@ -9,11 +9,18 @@
  * are shown, and never with process the references lack (a storyboard's image prompts). When the references and ours
  * differ in form (images against text, one image against several frames), every item is drawn on one card by one
  * template and reaches the critic as one image (cards.ts).
+ *
+ * On cards no word is lost silently (F13, ADR-0087). A critic that reads text (prose, options, a diff) gets every item's
+ * whole words under its label, as a text lineup would give them, and the cards carry only pictures. A critic that sees
+ * only images (an ad, a page) gets the words on the cards, as its template says; a card cuts what does not fit one
+ * image visibly, the cut is kept with the card for the run, and the verdict carries one sentence for the step's note
+ * saying whose words were cut and how many the critic saw, naming items as the person knows them and never by their
+ * blind labels (cutNote, which the model step appends to the note it reports).
  */
 import { createHash } from 'node:crypto';
 import type { Medium } from '@byway/contracts';
 import { GREAT_MIN_REFERENCES, greatLineup, labelled, labelOf } from '@byway/prompts/pure';
-import { cardHtml, imageSize, type CardContent, type CardImage } from '../cards.ts';
+import { cardHtml, fitCard, imageSize, unitNoun, type CardContent, type CardCut, type CardImage } from '../cards.ts';
 import { textView, viewKindOf } from '../formats.ts';
 import { labels } from '../labels.ts';
 import type { ArtifactResolver } from '../pages.ts';
@@ -75,6 +82,22 @@ export interface Lineup {
   ours: string;
   /** How every item was shown (formOf). */
   form: LineupForm;
+  /** The items whose card left words out (only an image-only critic's cards cut words), for the step's note. */
+  cut: LineupCut[];
+}
+
+/**
+ * An item whose card showed the critic only some of its words: who it is, never its blind label, and how much, in
+ * words or, for text with runs too long to cut between, characters (CardCut).
+ */
+export interface LineupCut extends CardCut {
+  /** Ours, or a reference by its artifact id. */
+  item: 'ours' | { ref: string };
+  /**
+   * A text reference's opening words, by which the note names it. Not a number: the person never sees the blind
+   * labels, and the Start form numbers blank example fields that are dropped before the run.
+   */
+  begins?: string;
 }
 
 /**
@@ -84,6 +107,8 @@ export interface Lineup {
 interface Item {
   /** Ours, or a reference given as an image, as a page (HTML, rendered as ours was) or as text. */
   kind: 'ours' | 'image' | 'page' | 'text';
+  /** A reference's artifact id. */
+  ref?: string;
   text: string;
   groups: ImageGroup[];
   /** What a card draws: a storyboard's frames, a page's screenshots of one surface, the image itself. */
@@ -91,8 +116,11 @@ interface Item {
   layout: CardContent['layout'];
 }
 
-/** What a text critic reads under every label of a lineup shown as cards: the same words for every item. */
+/** What a text critic reads under the label of a card lineup's item that has no words: its image shows it. */
 export const CARD_NOTE = '(shown in the image under this label)';
+
+/** The one line a card draws, for a critic that reads text, in place of its item's words: they are under its label. */
+export const WORDS_UNDER_LABEL = 'Its words are written out under this label.';
 
 /**
  * A pool's members as one lineup item (ENG-7): C2's option set is ranked whole against prior art, so its members go
@@ -147,7 +175,7 @@ const hashOf = (text: string): string => createHash('sha256').update(text).diges
 
 /** A reference as the critic sees it: an image as itself, a page given as HTML rendered as ours was, text as its view. */
 async function referenceItem(deps: RunnerDeps, reader: ArtifactReader, medium: Medium, ref: string, renders: readonly Surface[] | undefined, runId: string | undefined): Promise<Item> {
-  if (await reader.isImage(ref)) return { kind: 'image', text: '', groups: [{ artifactIds: [ref] }], frames: [ref], layout: 'grid' };
+  if (await reader.isImage(ref)) return { kind: 'image', ref, text: '', groups: [{ artifactIds: [ref] }], frames: [ref], layout: 'grid' };
   const pages = deps.pages;
   if (medium === 'web-page' && (await reader.mediaType(ref)).startsWith('text/html') && pages) {
     // The same named surfaces as ours (RENDER-1), so no item stands out by how it is shown.
@@ -166,27 +194,65 @@ async function referenceItem(deps: RunnerDeps, reader: ArtifactReader, medium: M
     const surface = cardSurface(renders);
     return {
       kind: 'page',
+      ref,
       text: '',
       groups: shots.map((s) => ({ caption: SURFACE_CAPTIONS[s.surface], artifactIds: s.ids })),
       frames: (shots.find((s) => s.surface === surface) ?? shots[0])?.ids ?? [],
       layout: 'stack',
     };
   }
-  return { kind: 'text', text: textView(medium, await reader.text(ref)), groups: [], frames: [], layout: 'grid' };
+  return { kind: 'text', ref, text: textView(medium, await reader.text(ref)), groups: [], frames: [], layout: 'grid' };
 }
 
-/** One item drawn on a card (cards.ts) and rendered to one PNG; its artifact id. */
-async function cardOf(deps: RunnerDeps, item: Item, text: string, runId: string | undefined): Promise<string> {
+/** A text's first few words, as the step note quotes them to name a reference (punctuation-only runs skipped). */
+export function openingWords(text: string, max = 6): string {
+  const words = (text.match(/\S+/g) ?? []).filter((w) => /[\p{L}\p{N}]/u.test(w));
+  const shown = words.slice(0, max).join(' ');
+  const clipped = shown.length > 60 ? shown.slice(0, 60).trimEnd() : shown;
+  return clipped.length < shown.length || words.length > max ? `${clipped}…` : clipped;
+}
+
+/** An item as the person knows it, for a message: never its blind label. */
+function nameOf(item: Item): string {
+  if (item.kind === 'ours') return 'your work';
+  if (item.kind === 'text') return `the example that begins “${openingWords(item.text)}”`;
+  return item.kind === 'image' ? 'one of the example images' : 'one of the example pages';
+}
+
+/** A card as kept for the run: its PNG's artifact id, and how much of its text it showed when it left some out. */
+interface KeptCard {
+  artifactId: string;
+  cut?: CardCut;
+}
+
+/**
+ * One item drawn on a card (cards.ts) and rendered to exactly one PNG. For a critic that reads text the card carries
+ * the item's pictures and, when it has words, one line saying they are under its label; it is rendered once. For an
+ * image-only critic the card carries the words too, fitted into one image by fitCard, which cuts them visibly when
+ * they do not fit. A card that does not fit one image stops the step: its first tile is never shown as if it were the
+ * whole card. The card and its cut are kept together under the uncut card's page (`card2/`; the earlier `card/` memos
+ * held a bare id), so a retried step shows the same card and reports the same cut.
+ */
+async function cardOf(deps: RunnerDeps, item: Item, text: string, readsText: boolean, runId: string | undefined): Promise<KeptCard> {
   const images: CardImage[] = [];
   for (const id of item.frames) images.push({ artifactId: id, ...(imageSize((await deps.store.artifacts.get(id)).bytes) ?? {}) });
-  const html = cardHtml({ images, layout: item.layout, text });
-  return kept(deps, runId, `card/${hashOf(html)}`, async () => {
-    if (!deps.pages) throw new StepError('The examples could not be shown to the critic alongside the work: no page renderer is configured.');
-    const [shot] = await deps.pages.render(html, artifactRoute(deps), ['desktop']);
-    const png = shot?.tiles[0];
-    if (!png) throw new StepError('The examples could not be shown to the critic alongside the work: a card came out empty.');
-    return (await deps.store.artifacts.put(png, 'image/png')).id;
+  const card: CardContent = { images, layout: item.layout, text: readsText ? (text.trim() ? WORDS_UNDER_LABEL : '') : text };
+  const value = await kept(deps, runId, `card2/${hashOf(cardHtml(card))}`, async () => {
+    const pages = deps.pages;
+    if (!pages) throw new StepError('The examples could not be shown to the critic alongside the work: no page renderer is configured.');
+    const render = async (html: string) => (await pages.render(html, artifactRoute(deps), ['desktop']))[0]?.tiles ?? [];
+    const fitted = await fitCard(card, render, { cut: !readsText });
+    if (!fitted.ok) {
+      throw new StepError(
+        fitted.reason === 'empty'
+          ? 'The examples could not be shown to the critic alongside the work: a card came out empty.'
+          : `The examples could not be shown to the critic alongside the work: the card for ${nameOf(item)} does not fit in one picture.`,
+      );
+    }
+    const entry: KeptCard = { artifactId: (await deps.store.artifacts.put(fitted.png, 'image/png')).id, ...(fitted.cut ? { cut: fitted.cut } : {}) };
+    return JSON.stringify(entry);
   });
+  return JSON.parse(value) as KeptCard;
 }
 
 /**
@@ -209,7 +275,10 @@ function formOf(medium: Medium, mine: Item, others: readonly Item[]): LineupForm
 /**
  * One GREAT lineup: the references and ours in shuffled positions, each under its label, every item in the same form
  * (formOf). On cards, when no reference has text, ours is drawn by its frames only: a storyboard's words would make it
- * the one card that reads differently. `runId` keeps the screenshots and cards for the run (and so for retries).
+ * the one card that reads differently. Each item's words are decided once, and that one value goes where the critic
+ * reads words (F13): under the item's label for a critic that reads text, on its card for one that sees only images.
+ * So whether a label carries words follows whether its item has words, never whether it is ours. `runId` keeps the
+ * screenshots and cards, with any cut, for the run (and so for retries).
  */
 export async function buildLineup(
   deps: RunnerDeps,
@@ -233,6 +302,7 @@ export async function buildLineup(
   const form = formOf(medium, mine, others);
   let view: string;
   const images: ImageGroup[] = [];
+  const cut: LineupCut[] = [];
   if (form === 'surfaces') {
     view = '';
     items.forEach((item, i) => images.push(...item.groups.map((g) => ({ ...g, label: labelOf(i) }))));
@@ -240,19 +310,52 @@ export async function buildLineup(
     view = labelled(items.map((item) => (item.text.trim() ? item.text : '(empty)')));
   } else {
     const framesOnly = others.every((o) => !o.text.trim());
+    const texts = items.map((item) => (item.kind === 'ours' && framesOnly && item.frames.length ? '' : item.text));
+    const readsText = viewKindOf(medium) === 'text';
     for (const [i, item] of items.entries()) {
-      const text = item.kind === 'ours' && framesOnly && item.frames.length ? '' : item.text;
-      images.push({ label: labelOf(i), artifactIds: [await cardOf(deps, item, text, runId)] });
+      const card = await cardOf(deps, item, texts[i]!, readsText, runId);
+      images.push({ label: labelOf(i), artifactIds: [card.artifactId] });
+      if (card.cut) cut.push({ item: item.kind === 'ours' ? 'ours' : { ref: item.ref! }, ...card.cut, ...(item.kind === 'text' ? { begins: openingWords(item.text) } : {}) });
     }
-    view = viewKindOf(medium) === 'screenshots' ? '' : labelled(items.map(() => CARD_NOTE));
+    view = readsText ? labelled(texts.map((t) => (t.trim() ? t : CARD_NOTE))) : '';
   }
-  return { slots: { ...greatLineup(refs.length), view }, images, labels: labels(size), ours: labelOf(ours), form };
+  return { slots: { ...greatLineup(refs.length), view }, images, labels: labels(size), ours: labelOf(ours), form, cut };
+}
+
+const count = new Intl.NumberFormat('en-US');
+
+/**
+ * The sentence a critic step's verdict gives for its note when a card left words out (F13): whose words, and how many
+ * of them the critic saw (in characters for text cut by characters). One sentence over all of the step's shuffles: an
+ * item's card is the same in each, so it is named once (with the least shown, should two ever differ). Items are
+ * named as the person knows them, your work first, then each example by its opening words; never by a blind label.
+ * Undefined when nothing was cut.
+ */
+export function cutNote(lineups: readonly (Lineup | undefined)[]): string | undefined {
+  const byItem = new Map<string, LineupCut>();
+  for (const c of lineups.flatMap((l) => l?.cut ?? [])) {
+    const key = c.item === 'ours' ? 'ours' : `ref:${c.item.ref}`;
+    const had = byItem.get(key);
+    if (!had || c.shown < had.shown) byItem.set(key, c);
+  }
+  if (!byItem.size) return undefined;
+  const cuts = [...byItem.values()].sort((a, b) => Number(b.item === 'ours') - Number(a.item === 'ours'));
+  const parts = cuts.map((c) => {
+    const whose = c.item === 'ours' ? 'your work' : c.begins ? `the example that begins “${c.begins}”` : 'one of the examples';
+    const all = `${count.format(c.total)} ${unitNoun(c.unit, c.total)}`;
+    // Shown is always fewer than the total, so "the first N of M" has a plural M; nothing shown names the total apart.
+    return c.shown ? `the first ${count.format(c.shown)} of ${all} of ${whose}` : `none of the text of ${whose} (${all})`;
+  });
+  const listed = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
+  return `The outside critic was not shown all the text: it saw ${listed}.`;
 }
 
 /** What a critic step hands on: its critique (ours only, in GREAT mode) and its score or our averaged rank. */
 export interface CriticVerdict {
   critique: string;
   score: Score;
+  /** For the step's note: whose words a card cut, and how many the critic saw (cutNote). */
+  note?: string;
 }
 
 /**
@@ -267,7 +370,8 @@ export function verdictOf(answers: readonly { answer: CriticAnswer; lineup?: Lin
   const places = answers.map(({ answer, lineup }) => (answer.mode === 'GREAT' && lineup ? answer.ranking.indexOf(lineup.ours) + 1 : 0));
   const rank = places.reduce((a, b) => a + b, 0) / places.length;
   const critique = sectionOf(first.answer.critique, first.lineup!.ours) ?? first.answer.critique;
-  return { critique, score: { kind: 'rank', rank, of: first.lineup!.labels.length, ...(writtenFor ? { writtenFor } : {}) } };
+  const note = cutNote(answers.map((a) => a.lineup));
+  return { critique, score: { kind: 'rank', rank, of: first.lineup!.labels.length, ...(writtenFor ? { writtenFor } : {}) }, ...(note ? { note } : {}) };
 }
 
 /** The lineup size a critic's rank gate is written for: its refs knob plus ours (undefined without the knob). */

@@ -6,8 +6,9 @@
  * - `fold`: the first screen as a visitor lands, 1440 × 900, not scrolled.
  * Whole pages are tiled into screenshots at most 2576 px tall, and at most 2576 px wide (a page wider than its screen
  * is shot as wide as it overflows, so the overflow shows). Motion is reduced; the network is blocked except an
- * allowlist (Google Fonts, jsDelivr, unpkg, cdnjs) and the local artifact route, served from the artifact store, and
- * WebSockets and non-proxied WebRTC are blocked as well (ENG-14).
+ * allowlist (Google Fonts, jsDelivr, unpkg, cdnjs), checked on every redirect hop too and held to a byte cap per
+ * response (render-fetch.ts), and the local artifact route, served from the artifact store, and WebSockets and
+ * non-proxied WebRTC are blocked as well (ENG-14).
  *
  * A render is bounded (SEC-5): everything from loading the page to the last screenshot runs under one deadline. A
  * page that never settles (a script that loops after load) has its context closed, which stops its renderer, and the
@@ -16,14 +17,27 @@
  * page was closed is swallowed, so such a page cannot end the engine's process. A browser that crashed, disconnected or
  * failed to launch is launched again on the next render (ENG-14).
  *
- * The same renderer reads the text a page shows, for VOICE's arbiter (ADR-0081): the page is loaded with JavaScript off,
- * under the same allowlist, request filter and deadline as a render, and only its first document is read: a later
- * navigation the request filter sees (a meta refresh to an address) gets No Content, a move to a fragment of the page
- * keeps it, and a page that navigates away where no route sees it (a meta refresh to about:blank) is a plain StepError.
- * It reads what a sighted visitor sees, as the page settles (ShownText). It changes no sandbox setting.
+ * The renderer is shared by every medium, not only web pages: it draws C1 views of model-written HTML and JavaScript,
+ * web-page references given as HTML, and the cards a GREAT critic sees whenever a lineup mixes forms (BLIND-1), which
+ * decode reference images people upload and images providers return. All of that is untrusted, so its Chromium is
+ * started in one place with one stated policy (F18; ADR-0084): chromiumLaunchOptions() says how; launchChromium() is the
+ * only production launch and takes no parameter, so no caller can add a flag; Chromium's environment holds no provider
+ * key, nothing secret-looking and nothing from the secrets file; and a Chromium that cannot start fails every use with
+ * one plain message that is not retried. Whether Chromium's OS sandbox is on (RENDERER_OS_SANDBOX) is kept as it always
+ * was until the owner decides. ready() and checkRenderer() say whether the renderer can start before a run that needs
+ * it spends anything.
+ *
+ * The same renderer, launched as stated above, reads the text a page shows, for VOICE's arbiter (ADR-0081): the page is
+ * loaded with JavaScript off, under the same allowlist, request filter (every redirect hop and the byte cap included)
+ * and deadline as a render, and only its first document is read: a later navigation the request filter sees (a meta
+ * refresh to an address) gets No Content, a move to a fragment of the page keeps it, and a page that navigates away
+ * where no route sees it (a meta refresh to about:blank) is a plain StepError. It reads what a sighted visitor sees, as
+ * the page settles (ShownText). It changes no sandbox setting.
  */
-import type { Browser, BrowserContext, Page, Route } from 'playwright';
+import type { Browser, BrowserContext, LaunchOptions, Page, Route } from 'playwright';
+import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
+import { fetchHop, MAX_RENDER_FETCH_BYTES } from './render-fetch.ts';
 import type { Surface } from './types.ts';
 
 export type { Surface } from './types.ts';
@@ -60,11 +74,12 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   its containing block), by an absolutely or fixed positioned ancestor's `clip` rect and by an ancestor's
  *   `clip-path: inset(…)`, keeps more than a pixel in each direction short of the page's top or start edge, beyond
  *   which no scrolling reaches (so a screen-reader-only class, font size 0 and text moved off the page are hidden).
- *   Text in a marquee is measured by the marquee's own box, through which it scrolls. With JavaScript off, text a script would bring into sight (a section that waits at opacity 0 for a scroll
- *   animation's script) reads as hidden. An absolutely or fixed positioned element that then shows no text and holds
- *   no image or control is left out too: it stands outside the text's flow, so it breaks no line (innerText would put
- *   its box on a line of its own). Not detected: text covered by another element or coloured as its background, other
- *   clip-path shapes, masks and filters, and text clipped in part (an ellipsis);
+ *   Text in a marquee is measured by the marquee's own box, through which it scrolls. With JavaScript off, text a
+ *   script would bring into sight (a section that waits at opacity 0 for a scroll animation's script) reads as hidden.
+ *   An absolutely or fixed positioned element that then shows no text and holds no image or control is left out too:
+ *   it stands outside the text's flow, so it breaks no line (innerText would put its box on a line of its own). Not
+ *   detected: text covered by another element or coloured as its background, other clip-path shapes, masks, filters
+ *   and containment, and text clipped in part (an ellipsis);
  * - `linked` is the same text read again after each link's (`a[href]`) content is wrapped in markers: LINK_OPEN, the
  *   link's index in `hrefs` in the digits from LINK_DIGIT_0, LINK_INDEX_END, the content, LINK_CLOSE;
  * - `hidden` is each text node hidden from sight, in document order: its text (whitespace collapsed, ends trimmed) and
@@ -94,14 +109,61 @@ export interface PageRenderer {
   render(html: string, resolve: ArtifactResolver, surfaces: readonly Surface[], opts?: RenderOptions): Promise<SurfaceShots[]>;
   /** The text the page shows a sighted visitor, with JavaScript off (VOICE's arbiter). */
   shownText(html: string, resolve: ArtifactResolver, opts?: RenderOptions): Promise<ShownText>;
+  /**
+   * Starts the shared browser, or finds it running, so a run that will need it can be refused before anything is
+   * spent; rejects as a render would when it cannot start. The browser it starts is the one later renders reuse.
+   */
+  ready(): Promise<void>;
   close(): Promise<void>;
 }
 
 /** Hosts a rendered page may load from (spec §3.2). Everything else is blocked. */
 export const RENDER_ALLOWLIST: readonly string[] = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com'];
 
+/** Whether a rendered page may load `url` from the network: HTTPS from an allowlisted host. */
+export function allowedUrl(url: URL, hosts: ReadonlySet<string>): boolean {
+  return url.protocol === 'https:' && hosts.has(url.hostname);
+}
+
 /** Chromium flags: WebRTC may not open UDP paths around the request filter. */
-const LAUNCH_ARGS = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
+const LAUNCH_ARGS: readonly string[] = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
+
+/**
+ * Whether the renderer's Chromium runs inside its OS sandbox: the one place byway states it. It is off, as it always
+ * has been (Playwright's default, which adds --no-sandbox to every Chromium process), and stays off until the owner
+ * decides (docs/reviews/2026-10-08-external-review-verification.md §4 item 2; ADR-0084). Switching it on was verified
+ * on Windows 11 (the renderer drops to Untrusted integrity, tiles are pixel-identical, a launch takes about 100 ms), but
+ * a host that cannot start the sandbox (Linux with unprivileged user namespaces restricted, running as root or in a
+ * container) would then stop rendering, and whether an owner opt-out should exist belongs to the same decision.
+ */
+export const RENDERER_OS_SANDBOX: boolean = false;
+
+/**
+ * How the renderer's Chromium is launched, for every use of it. `env` exists so tests can pass a fixture; it can only
+ * take variables away. Playwright would otherwise hand Chromium the engine's whole environment, provider keys included;
+ * it gets none of them, nothing secret-looking and no name the secrets file listed (withoutSecrets, the rule `next build`
+ * also follows: ADR-0030's "keys never enter a sandbox", applied to the renderer).
+ */
+export function chromiumLaunchOptions(env: Env = process.env): LaunchOptions {
+  return { headless: true, chromiumSandbox: RENDERER_OS_SANDBOX, args: [...LAUNCH_ARGS], env: withoutSecrets(env, namesFromEnvFile(env)) };
+}
+
+/** What to run when Playwright's Chromium was never downloaded (it is a separate download from the package). */
+const INSTALL_CHROMIUM = 'pnpm --filter ./apps/web exec playwright install chromium';
+
+/**
+ * A Chromium that could not start, as one plain step failure for every use of the renderer (a web page's view, an HTML
+ * reference, a lineup card, the readiness check). Not retried: a missing or broken Chromium does not start on a second
+ * try, and a retry would only repeat the wait. Playwright's first line says what went wrong; its box of advice and its
+ * call log stay on the cause.
+ */
+export function launchFailure(err: unknown): StepError {
+  const first = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
+  const said = first.replace(/^browserType\.launch:\s*/, '').trim().replace(/\.$/, '');
+  return new StepError(`The page renderer could not start (${said}), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: ${INSTALL_CHROMIUM}`, {
+    cause: err,
+  });
+}
 
 export interface PlaywrightPagesOptions {
   /** Wide-screen width (and the first screen's). */
@@ -115,11 +177,18 @@ export interface PlaywrightPagesOptions {
   /** A runaway page stops here rather than producing dozens of tiles (per surface). */
   maxTiles?: number;
   allowHosts?: readonly string[];
+  /**
+   * For tests only: which network URLs a page may load, in place of the rule (HTTPS from `allowHosts`), because a local
+   * test server speaks plain HTTP. Production passes none.
+   */
+  admit?: (url: URL) => boolean;
   /** How long one surface may take, from loading the page to its last screenshot. */
   timeoutMs?: number;
+  /** The most one allowlisted response may hold (render-fetch.ts MAX_RENDER_FETCH_BYTES); tests pass a small one. */
+  maxFetchBytes?: number;
   /** How long closing a stuck page may take before the whole browser is closed and relaunched. */
   closeTimeoutMs?: number;
-  /** Launches the browser; defaults to headless Playwright Chromium with LAUNCH_ARGS. Tests inject their own. */
+  /** For tests only: how to launch the browser. Production passes none, so it is always launchChromium(). */
   launch?: () => Promise<Browser>;
 }
 
@@ -127,6 +196,10 @@ export interface PlaywrightPagesOptions {
 const ORIGIN = 'http://byway-render.localhost';
 /** The address the page is served at. */
 const PAGE_URL = `${ORIGIN}/page`;
+/** The statuses a response redirects with. */
+const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+/** Redirects one request may follow inside the allowlist (a CDN resolving a version takes one or two); more is a loop. */
+const MAX_REDIRECTS = 5;
 const FOLD_HEIGHT = 900;
 
 const sleep = (ms: number) => new Promise<'late'>((r) => setTimeout(() => r('late'), ms).unref());
@@ -138,7 +211,9 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   const maxWidth = opts.maxTileWidth ?? 2576;
   const maxTiles = opts.maxTiles ?? 8;
   const allow = new Set(opts.allowHosts ?? RENDER_ALLOWLIST);
+  const admit = opts.admit ?? ((url: URL) => allowedUrl(url, allow));
   const timeout = opts.timeoutMs ?? 30_000;
+  const maxFetchBytes = opts.maxFetchBytes ?? MAX_RENDER_FETCH_BYTES;
   const closeTimeout = opts.closeTimeoutMs ?? 5_000;
   let browser: Promise<Browser> | undefined;
 
@@ -174,7 +249,37 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   };
 
   /**
-   * The request filter: the page and the artifact route are served, allowlisted hosts pass, everything else is blocked.
+   * An admitted request, fetched hop by hop. Playwright asks the route handler about a request's first URL only, and
+   * Chromium follows a redirect by itself, so a request merely continued could be sent on from an allowlisted CDN to
+   * any host. Here each hop is fetched without following redirects (render-fetch.ts); a hop is followed only to a URL
+   * the same rule admits, for a GET or HEAD, at most MAX_REDIRECTS times, and anything else is blocked. A body over
+   * maxFetchBytes is cut off and blocked too: it is never held whole. The page gets the final response under the URL it
+   * asked for, so relative URLs inside it resolve against an admitted URL too.
+   */
+  const fetchAdmitted = async (r: Route, first: URL): Promise<void> => {
+    const request = r.request();
+    const method = request.method();
+    const followable = method === 'GET' || method === 'HEAD';
+    const headers = await request.allHeaders();
+    const body = followable ? undefined : (request.postDataBuffer() ?? undefined);
+    const signal = AbortSignal.timeout(timeout);
+    let url = first;
+    for (let hops = 0; ; hops++) {
+      const hop = await fetchHop({ url: url.href, method, headers, ...(body ? { body } : {}), signal, maxBytes: maxFetchBytes });
+      if (REDIRECTS.has(hop.status)) {
+        const next = hop.location ? new URL(hop.location, url) : undefined;
+        if (!next || !followable || hops >= MAX_REDIRECTS || !admit(next)) return await r.abort('blockedbyclient');
+        url = next;
+        continue;
+      }
+      if (!hop.body) return await r.abort('blockedbyclient');
+      return await r.fulfill({ status: hop.status, headers: hop.headers, body: hop.body });
+    }
+  };
+
+  /**
+   * The request filter: the page and the artifact route are served, admitted hosts are fetched hop by hop (above),
+   * everything else is blocked.
    * With `oneDocument`, a second navigation (a meta refresh, a link followed) is answered with No Content, so the
    * browser stays on the first document, the one read.
    */
@@ -196,7 +301,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
           const found = m ? await resolve(decodeURIComponent(m[1] as string)) : undefined;
           return await (found ? r.fulfill({ status: 200, contentType: found.contentType, body: Buffer.from(found.body) }) : r.fulfill({ status: 404, body: '' }));
         }
-        if (url.protocol === 'https:' && allow.has(url.hostname)) return await r.continue();
+        if (admit(url)) return await fetchAdmitted(r, url);
         return await r.abort('blockedbyclient');
       } catch {
         // A resolver that failed (a missing or corrupt artifact) is a 404; a page already closed needs no answer.
@@ -274,7 +379,9 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         timer = setTimeout(() => reject(late(left < timeout)), Math.max(left, 0));
         if (signal) {
           onAbort = () => reject(stopped(signal));
-          signal.addEventListener('abort', onAbort, { once: true });
+          // A cancel that came while the browser started or the context opened has already fired: no event will follow.
+          if (signal.aborted) onAbort();
+          else signal.addEventListener('abort', onAbort, { once: true });
         }
       });
       limit.catch(() => undefined);
@@ -305,16 +412,23 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     });
 
   const render: PageRenderer['render'] = async (html, resolve, surfaces, renderOpts = {}) => {
-    const wide = surfaces.filter((s) => s !== 'mobile');
-    const shots = [
-      ...(wide.length ? await shoot(html, resolve, 'wide', wide, renderOpts.signal) : []),
-      ...(surfaces.includes('mobile') ? await shoot(html, resolve, 'phone', ['mobile'], renderOpts.signal) : []),
-    ];
-    return surfaces.map((s) => shots.find((x) => x.surface === s)!);
+    try {
+      const wide = surfaces.filter((s) => s !== 'mobile');
+      const shots = [
+        ...(wide.length ? await shoot(html, resolve, 'wide', wide, renderOpts.signal) : []),
+        ...(surfaces.includes('mobile') ? await shoot(html, resolve, 'phone', ['mobile'], renderOpts.signal) : []),
+      ];
+      return surfaces.map((s) => shots.find((x) => x.surface === s)!);
+    } catch (e) {
+      throw drawFailure(e, renderOpts.signal);
+    }
   };
 
   return {
     render,
+    async ready() {
+      await getBrowser();
+    },
     async screenshots(html, resolve, renderOpts) {
       return (await render(html, resolve, ['desktop'], renderOpts))[0]!.tiles;
     },
@@ -535,10 +649,58 @@ const SHOWN_TEXT = `(async () => {
   return JSON.stringify({ title, text, linked: body.innerText, hrefs, hidden });
 })()`;
 
-/** Headless Chromium with the flags above. */
-export async function launchChromium(extraArgs: readonly string[] = []): Promise<Browser> {
-  const { chromium } = await import('playwright');
-  return chromium.launch({ headless: true, args: [...LAUNCH_ARGS, ...extraArgs] });
+/**
+ * The renderer's Chromium, launched once per call as chromiumLaunchOptions() says. It takes no parameter, so nothing
+ * can add a flag to the production launch; a test that needs one composes it from chromiumLaunchOptions() in test code.
+ * A failure to start is launchFailure's plain message.
+ */
+export async function launchChromium(): Promise<Browser> {
+  try {
+    const { chromium } = await import('playwright');
+    return await chromium.launch(chromiumLaunchOptions());
+  } catch (e) {
+    throw launchFailure(e);
+  }
+}
+
+export type RendererCheck = { ready: true } | { ready: false; message: string };
+
+/**
+ * Whether the renderer can start on this computer, for the "renderer" line byway prints at start-up. It makes the
+ * stated launch once and closes it again, and never throws: byway keeps running either way, since prose, options and
+ * code-diff runs need no renderer unless a lineup forms cards.
+ */
+export async function checkRenderer(): Promise<RendererCheck> {
+  const pages = playwrightPages();
+  try {
+    await pages.ready();
+    return { ready: true };
+  } catch (e) {
+    return { ready: false, message: (e instanceof StepError ? e : launchFailure(e)).message };
+  } finally {
+    await pages.close().catch(() => undefined);
+  }
+}
+
+/**
+ * A render's failure as its step sees it. A step failure (the deadline, a Chromium that could not start) and a cancel
+ * (its own reason) pass as they are. Anything else is the renderer failing while it drew the page: a Playwright protocol
+ * error ("Unable to capture screenshot", seen under load while a page opened dialogs), or a page or browser closed
+ * underneath. That reached the step raw, an error the workflow does not know, so Temporal retried it as though it were
+ * transient and the run showed Playwright's own words. It is one plain step failure instead, not retried, like the
+ * deadline: Playwright's message (its method, the protocol command, its call log) stays on the cause.
+ */
+export function drawFailure(err: unknown, signal: AbortSignal | undefined): unknown {
+  if (err instanceof StepError) return err;
+  if (signal?.aborted) return stopped(signal);
+  const first = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
+  const said = first
+    .replace(/^[\w.]+:\s*/, '')
+    .replace(/^Protocol error \([^)]*\):\s*/, '')
+    .trim()
+    .replace(/\.$/, '');
+  const what = /screenshot/i.test(first) ? 'could not take its screenshot' : 'failed while drawing it';
+  return new StepError(`The page could not be drawn: the page renderer ${what}${said ? ` (${said})` : ''}.`, { cause: err });
 }
 
 /** The error a cancelled render ends with: the signal's own reason (Temporal's CancelledFailure) when it has one. */

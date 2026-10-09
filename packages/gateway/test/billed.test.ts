@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GatewayError, type ArtifactRecord, type CompletionRequest, type ImageRequest } from '@byway/contracts';
@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { fakeAnthropic, fakeFal, fakeFetch, fakeGoogle, fakeOpenAI, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 /**
  * ENG-3 and ENG-5 (convention C5): once a provider has answered, the call was billed, so it is ledgered before anything
@@ -40,6 +41,7 @@ beforeEach(() => {
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts: new MemoryArtifacts(),
     caps: { workspaceCapUsd: () => 100 },
     env: KEYS,
@@ -85,10 +87,10 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(ledgerLines()).toEqual([expect.objectContaining({ stepId: 'framings', purpose: 'build:prose', kind: 'completion' })]);
   });
 
-  it('waits out another process holding the ledger lock instead of failing a call that was already paid for', async () => {
+  it('waits briefly for another process holding the ledger lock, then writes the call to the audit file', async () => {
     const { client, calls } = fakeAnthropic();
     const release = holdLedgerLock();
-    const g = gateway({ clients: { anthropic: client }, billedLedgerWaitMs: 5_000 });
+    const g = gateway({ clients: { anthropic: client }, drainWaitMs: 5_000 });
     const pending = g.complete(completion());
     await new Promise((r) => setTimeout(r, 300));
     // The other process finishes its append and lets go.
@@ -98,20 +100,64 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId })]);
   });
 
-  it('fails a call it could not ledger with a non-retryable GatewayError saying it was billed (never a plain Error Temporal retries)', async () => {
+  it('returns a call whose audit entry has to wait for the lock: the spend book counts it, and the entry follows (ADR-0095)', async () => {
     const { client, calls } = fakeAnthropic();
-    holdLedgerLock();
-    const g = gateway({ clients: { anthropic: client }, billedLedgerWaitMs: 100 });
-    const err = (await g.complete(completion()).catch((e: unknown) => e)) as GatewayError;
-    expect(err).toBeInstanceOf(GatewayError);
-    expect(err).toMatchObject({ code: 'provider-error', retryable: false });
-    expect(err.message).toMatch(/billed/);
-    expect(err.message).toMatch(/ledger/);
+    const release = holdLedgerLock();
+    const g = gateway({ clients: { anthropic: client }, drainWaitMs: 100 });
+    const res = await g.complete(completion());
     expect(calls).toHaveLength(1);
+    expect(ledgerLines()).toEqual([]);
+    expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(res.costUsd, 9);
+    release();
+    await g.close();
+    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId })]);
   });
 
-  it('waits up to two minutes by default for the ledger lock on a billed call', () => {
-    expect(gateway().billedLedgerWaitMs).toBe(120_000);
+  it('fails a call whose cost could not be recorded with a non-retryable GatewayError saying it was billed (never a plain Error Temporal retries)', async () => {
+    const { client, calls } = fakeAnthropic();
+    const book = memorySpendBook();
+    book.settle = async () => {
+      throw new Error('database is locked');
+    };
+    const g = gateway({ clients: { anthropic: client }, spendBook: book });
+    const err = (await g.complete(completion()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    // byway's own failure, not the provider's, and billed: trying again would pay again (follow-up (e)).
+    expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: true });
+    expect(err.message).toMatch(/billed/);
+    expect(err.message).toMatch(/spending records/);
+    expect(calls).toHaveLength(1);
+    // It stays counted at its estimate, as may have been billed, until the person checks it.
+    expect((await g.spend('ws-1')).uncertainUsd).toBeGreaterThan(0);
+  }, 15_000);
+
+  it('ledgers and counts a billed call after a crash left the ledger with a torn last line (F03)', async () => {
+    const { client, calls } = fakeAnthropic();
+    const g = gateway({ clients: { anthropic: client } });
+    const first = await g.complete(completion());
+    // An OS crash mid-append: a partial line with no newline.
+    writeFileSync(join(dir, 'ledger.jsonl'), `${readFileSync(join(dir, 'ledger.jsonl'), 'utf8')}{"workspaceId":"ws-1","cost`);
+    const second = await g.complete(completion());
+    expect(calls).toHaveLength(2);
+    expect(ledgerLines().map((e) => e.id)).toEqual([first.ledgerEntryId, second.ledgerEntryId]);
+    expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(first.costUsd + second.costUsd, 9);
+    expect(await g.verifyLedger()).toBeNull();
+    expect(readdirSync(dir).filter((n) => n.startsWith('ledger.jsonl.damaged-'))).toHaveLength(1);
+  });
+
+  it('refuses a call it could not record as sent as byway’s own failure, not the provider’s: nothing was sent or billed (follow-up (e))', async () => {
+    const { client, calls } = fakeAnthropic();
+    const book = memorySpendBook();
+    book.markSent = async () => false;
+    const g = gateway({ clients: { anthropic: client }, spendBook: book });
+    const err = (await g.complete(completion()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toMatchObject({ name: 'GatewayError', code: 'byway-failure', retryable: true, billed: false });
+    expect(err.message).toMatch(/did not send it/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('waits two seconds by default for the ledger lock on the call path: the book already counts the call', () => {
+    expect(gateway().drainWaitMs).toBe(2_000);
   });
 });
 
@@ -121,7 +167,8 @@ describe('a billed image is ledgered before anything else can fail (ENG-3)', () 
     const g = gateway({ artifacts: new FailingArtifacts(0), clients: { openai: client } });
     const err = (await g.image(imageReq({ profileId: 'best' })).catch((e: unknown) => e)) as GatewayError;
     expect(err).toBeInstanceOf(GatewayError);
-    expect(err.retryable).toBe(false);
+    // Marked billed, so a caller with tries of its own (an ASSET step) does not buy it again.
+    expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: true });
     expect(err.message).toMatch(/billed/);
     expect(calls).toHaveLength(1);
     expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'image', provider: 'openai' })]);
@@ -138,7 +185,7 @@ describe('a billed clip is ledgered even when keeping it fails (ENG-3, as video(
       .video({ workspaceId: 'ws-1', runId: 'run-1', stepId: 'clip', purpose: 'relay:media', profileId: 'balanced', prompt: 'Shot 1: dawn', startFrameArtifactId: startFrame, durationSec: 5 })
       .catch((e: unknown) => e)) as GatewayError;
     expect(err).toBeInstanceOf(GatewayError);
-    expect(err.retryable).toBe(false);
+    expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: true });
     expect(err.message).toMatch(/billed/);
     expect(fal.calls.filter((c) => !c.endpoint.includes('extract-frame'))).toHaveLength(1);
     expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'video', provider: 'fal' })]);

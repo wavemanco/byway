@@ -40,6 +40,12 @@ const shipped = (dir: string) => [
 
 const rel = (file: string) => path.relative(REPO, file).replace(/\\/g, '/');
 
+/**
+ * The scans read every source file in the repo: about 0.1 s alone, but past vitest's 5 s default with two suites
+ * running at once, when reads wait on a busy disk. The limit is realistic for that, and still bounded.
+ */
+const SCANS = { timeout: 30_000 };
+
 describe('the scanners', () => {
   it('find every kind of import, including dynamic ones the bundler is told to skip', () => {
     const source = [
@@ -61,7 +67,7 @@ describe('the scanners', () => {
   });
 });
 
-describe('dependency direction (spec §2)', () => {
+describe('dependency direction (spec §2)', SCANS, () => {
   it('knows every workspace package', () => {
     expect(packages.map((p) => p.name).filter((name) => !(name in ALLOWED))).toEqual([]);
     // And actually reads their code.
@@ -103,7 +109,7 @@ describe('dependency direction (spec §2)', () => {
   });
 });
 
-describe('the import boundary (spec §2, §6)', () => {
+describe('the import boundary (spec §2, §6)', SCANS, () => {
   it('nothing in packages/ imports apps/', () => {
     const offenders = filesUnder(path.join(REPO, 'packages'), SOURCE).flatMap((file) =>
       importSpecifiers(readFileSync(file, 'utf8'))

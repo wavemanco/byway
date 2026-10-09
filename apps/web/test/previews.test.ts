@@ -13,7 +13,7 @@ import { ScaledPage } from '../src/components/ScaledPage.tsx';
 import { ScriptsToggle } from '../src/components/ScriptsToggle.tsx';
 import { PageResult } from '../src/components/result/PageResult.tsx';
 import { createViewerFlag, type FlagStorage } from '../src/components/viewerFlags.ts';
-import { frameSandbox, isOwnArtifactUrl } from '../src/view/pages.ts';
+import { FIRST_SCREEN_ONLY, frameSandbox, isOwnArtifactUrl } from '../src/view/pages.ts';
 import { filesUnder, REPO } from './guards/scan.ts';
 
 const ID = `sha256:${'b'.repeat(64)}`;
@@ -24,21 +24,42 @@ describe('generated pages in the app', () => {
   it('run no scripts unless the person turned them on: a page could otherwise navigate itself and carry data out', () => {
     expect(frameSandbox(false)).toBe('');
     expect(frameSandbox(true)).toBe('allow-scripts');
-    expect(html(createElement(ScaledPage, { src: `/artifacts/${ID}`, title: 'Draft A' }))).toContain('sandbox=""');
-    expect(html(createElement(ScaledPage, { src: `/artifacts/${ID}`, title: 'Draft A', scripts: true }))).toContain('sandbox="allow-scripts"');
+    expect(html(createElement(ScaledPage, { id: ID, title: 'Draft A' }))).toContain('sandbox=""');
+    expect(html(createElement(ScaledPage, { id: ID, title: 'Draft A', scripts: true }))).toContain('sandbox="allow-scripts"');
     // Never same-origin, scripts or not.
-    expect(html(createElement(ScaledPage, { src: `/artifacts/${ID}`, title: 'Draft A', scripts: true }))).not.toContain('allow-same-origin');
+    expect(html(createElement(ScaledPage, { id: ID, title: 'Draft A', scripts: true }))).not.toContain('allow-same-origin');
   });
 
   it('show thumbnails as pictures with scripts off, and the finished page with scripts off until asked', () => {
     const thumb = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Draft A', size: 'thumb' }));
     expect(thumb).toContain('sandbox=""');
-    const result = html(createElement(PageResult, { src: `/artifacts/${ID}`, title: 'My page' }));
+    const result = html(createElement(PageResult, { id: ID, title: 'My page' }));
     expect(result).toContain('sandbox=""');
     expect(result).toMatch(/aria-pressed="false"[^>]*>[^<]*Run the page’s scripts/);
     const large = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Draft A', size: 'large' }));
     expect(large).toContain('sandbox=""');
     expect(large).toMatch(/aria-pressed="false"[^>]*>[^<]*Run the page’s scripts/);
+  });
+});
+
+describe('a large page preview in a view people decide in (F13)', () => {
+  it('is a picture of the first screen named for assistive technology, and says it is only that; a thumbnail stays a decoration', () => {
+    const large = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Draft A', size: 'large' }));
+    expect(large).toMatch(/<div class="scaled"[^>]*role="img" aria-label="Draft A: the first screen of the page"/);
+    // The frame inside is the picture's content, out of the Tab order and hidden from assistive technology as before.
+    expect(large).toMatch(/<iframe[^>]*tabindex="-1"[^>]*aria-hidden="true"/i);
+    expect(large).toContain(FIRST_SCREEN_ONLY);
+    // The same, with the switch held by the caller (compare).
+    const held = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Before', size: 'large', scripts: false }));
+    expect(held).toContain('aria-label="Before: the first screen of the page"');
+    expect(held).toContain(FIRST_SCREEN_ONLY);
+    const thumb = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Draft A', size: 'thumb' }));
+    expect(thumb).not.toContain('role="img"');
+    expect(thumb).not.toContain(FIRST_SCREEN_ONLY);
+    // A live preview can be scrolled and used: no picture name, and no first-screen note.
+    const live = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Draft A', size: 'large', interactive: true }));
+    expect(live).not.toContain('role="img"');
+    expect(live).not.toContain(FIRST_SCREEN_ONLY);
   });
 });
 

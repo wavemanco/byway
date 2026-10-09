@@ -1,9 +1,13 @@
 import { canonicalize, sha256Hex } from '@byway/canonical';
 import {
   GatewayError,
+  MAX_PLAUSIBLE_CALL_USD,
   type ArtifactRecord,
   type ArtifactStore,
+  type BrokenLine,
   type BudgetDetails,
+  type LedgerAudit,
+  type RecordedFault,
   type CompletionRequest,
   type CompletionResult,
   type Gateway,
@@ -16,16 +20,22 @@ import {
   type PromptRef,
   type ProviderId,
   type ProviderStatus,
+  type SettledCall,
+  type SpendBook,
+  type SpendContext,
+  type SpendRecords,
   type SpendSummary,
   type VideoRequest,
   type VideoResult,
 } from '@byway/contracts';
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
-import { toGatewayError } from './errors.ts';
-import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
+import { toGatewayError, type ClassifiedError } from './errors.ts';
+import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost, textTokens } from './estimate.ts';
 import { ExposureRegister, exposurePath } from './exposure.ts';
-import { Ledger, type LedgerDraft } from './ledger.ts';
-import { PRICES, priceFor, roundUsd, tokenCost, type PriceRow, type TokenBreakdown } from './prices.ts';
+import { findHeldKey, heldKeyError } from './held-key.ts';
+import { Ledger, setAsideTails, type LedgerDraft } from './ledger.ts';
+import { PaidCalls, type PaidCall } from './paid.ts';
+import { PRICES, priceFor, roundUsd, servedPrice, tokenCost, type PriceRow, type TokenBreakdown } from './prices.ts';
 import { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus } from './profiles.ts';
 import { anthropicAdapter, createAnthropicClient, type AnthropicClientLike } from './providers/anthropic.ts';
 import { createFalClient, falAdapter, type FalClientLike } from './providers/fal.ts';
@@ -36,7 +46,7 @@ import { createOpenRouterClient, openrouterAdapter } from './providers/openroute
 import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, ResolvedImage, ResolvedMessage } from './providers/types.ts';
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
-import { DEFAULT_RETRY, withRetries, type RetryOptions } from './retry.ts';
+import { BILLABLE_CALL, BILLABLE_JOB, DEFAULT_RETRY, FREE_READ, withRetries, type RetryHooks, type RetryOptions } from './retry.ts';
 
 /** Where spend caps come from: the workspace budget (Workspace.budgetUsd) and each run's budget (StartRunInput.budgetUsd). */
 export interface CapsSource {
@@ -51,6 +61,12 @@ export interface GatewayOptions {
   /** Request and response bodies and generated images are stored here; the ledger keeps their hashes. */
   artifacts: ArtifactStore;
   caps: CapsSource;
+  /**
+   * The spend book (contracts v6; ADR-0095), the authority spend caps are checked against. Production roots pass the
+   * store's (`store.spendBook`), which every process on the data directory shares; tests may pass one in memory
+   * (memorySpendBook). Required, so no root can fall back to reservations one process cannot see beyond itself.
+   */
+  spendBook: SpendBook;
   /** Where keys are read. Defaults to process.env. Read at call time, so keys added later are picked up. */
   env?: Env;
   /** A dotenv file (`.env.agents`) loaded into `env` at construction, filling only missing variables. */
@@ -71,14 +87,21 @@ export interface GatewayOptions {
   now?: () => Date;
   /** Output allowance when a request names none; it also bounds the pre-call estimate. */
   defaultMaxOutputTokens?: number;
-  /** Anthropic server-side refusal fallback (default on). */
+  /**
+   * Anthropic server-side refusal fallback (default on). Admission reserves one attempt on the requested model, so a
+   * refusal Anthropic routes to another model (or a sticky-routed call) can settle above its reservation (F04). Whether
+   * to turn it off waits on the owner's decision (D1 in docs/backlog.md; ADR-0091 leaves it as it is).
+   */
   anthropicRefusalFallback?: boolean;
   /**
-   * How long a call the provider has already answered (and billed) waits for the ledger's cross-process lock before the
-   * gateway gives up on ledgering it. Default two minutes: losing a billed entry under-counts spend, and failing the
-   * call would make the runner retry it and pay again (ENG-3).
+   * How long a settled call waits for the ledger's cross-process lock to write its entry to the audit file before it
+   * returns and leaves the entry to the gateway's timer. Default two seconds: the spend book already counts the call,
+   * so a busy ledger delays the audit record, never the call or the caps (ADR-0095).
    */
-  billedLedgerWaitMs?: number;
+  drainWaitMs?: number;
+  /** How long a call in progress stays live in the spend book without renewal (default 60 s), and how often it is renewed (default 15 s). */
+  leaseMs?: number;
+  renewEveryMs?: number;
 }
 
 /** The contract's budget details, re-exported under the name this package has always used. */
@@ -88,7 +111,6 @@ export type { BudgetDetails };
 export type BudgetError = GatewayError & { budget: BudgetDetails };
 
 const DEFAULT_MAX_OUTPUT = 16_000;
-const DEFAULT_BILLED_LEDGER_WAIT_MS = 120_000;
 const MAX_OUTPUT_LIMIT = 128_000;
 const TIERS = new Set(['big', 'mid']);
 const MEDIA_TYPES = new Set<MediaType>(['image/png', 'image/jpeg', 'image/webp']);
@@ -101,19 +123,14 @@ const CLIP_TYPES = new Set<VideoResult['mediaType']>(['video/mp4', 'image/svg+xm
 const FIDELITIES = new Set<PromptRef['fidelity']>(['verbatim', 'paraphrase', 'project']);
 const SHA256_ID = /^sha256:[0-9a-f]{64}$/;
 
-interface Reservation {
-  workspaceId: string;
-  runId?: string;
-  usd: number;
-}
-
 const invalid = (message: string) => new GatewayError('invalid-request', message);
 
 /**
  * The model gateway (ADR-0030): the only path out for model, image and video calls. It resolves the profile's model for the
- * tier, checks the key exists (never exposing it), loads images from the artifact store, refuses calls whose
- * worst case would break a spend cap, retries transient failures, stores request and response bodies by hash, and
- * appends every call to the hash-chained ledger.
+ * tier, checks the key exists (never exposing it), loads images from the artifact store, admits each call in the spend
+ * book, which refuses one whose estimated cost would break a spend cap (estimate.ts: planning estimates, not bounds;
+ * ADR-0095), retries transient failures, settles the true cost in the book, writes it to the hash-chained ledger, and
+ * stores request and response bodies by hash.
  */
 export class ModelGateway implements Gateway {
   private readonly forcedDemo: boolean;
@@ -127,11 +144,10 @@ export class ModelGateway implements Gateway {
   private readonly now: () => Date;
   private readonly defaultMaxOutput: number;
   private readonly adapters = new Map<ProviderId, ProviderAdapter>();
-  private readonly reservations = new Set<Reservation>();
   private readonly opts: GatewayOptions;
   private readonly exposure: ExposureRegister;
-  /** See {@link GatewayOptions.billedLedgerWaitMs}. */
-  readonly billedLedgerWaitMs: number;
+  private readonly book: SpendBook;
+  private readonly paid: PaidCalls;
 
   constructor(opts: GatewayOptions) {
     this.opts = opts;
@@ -146,7 +162,15 @@ export class ModelGateway implements Gateway {
     this.retry = { ...DEFAULT_RETRY, ...opts.retry };
     this.now = opts.now ?? (() => new Date());
     this.defaultMaxOutput = opts.defaultMaxOutputTokens ?? DEFAULT_MAX_OUTPUT;
-    this.billedLedgerWaitMs = opts.billedLedgerWaitMs ?? DEFAULT_BILLED_LEDGER_WAIT_MS;
+    if (!opts.spendBook) throw new Error('the gateway needs a spend book (GatewayOptions.spendBook): the store’s, or memorySpendBook() in a test');
+    this.book = opts.spendBook;
+    this.paid = new PaidCalls({
+      book: this.book,
+      ledger: this.ledger,
+      ...(opts.leaseMs !== undefined ? { leaseMs: opts.leaseMs } : {}),
+      ...(opts.renewEveryMs !== undefined ? { renewEveryMs: opts.renewEveryMs } : {}),
+      ...(opts.drainWaitMs !== undefined ? { drainWaitMs: opts.drainWaitMs } : {}),
+    });
     this.exposure = new ExposureRegister(exposurePath(opts.ledgerPath));
     for (const [id, adapter] of Object.entries(opts.adapters ?? {})) this.adapters.set(id as ProviderId, adapter);
   }
@@ -157,6 +181,11 @@ export class ModelGateway implements Gateway {
    * later ends demo mode without a restart. With some keys but not a profile's, calls are not mocked: they fail with
    * 'no-credentials', which Settings explains.
    */
+  /** See {@link GatewayOptions.drainWaitMs}. */
+  get drainWaitMs(): number {
+    return this.paid.drainWaitMs;
+  }
+
   get demo(): boolean {
     if (this.forcedDemo) return true;
     return (Object.keys(KEY_VARS) as (keyof typeof KEY_VARS)[]).every((provider) => !isConfigured(this.env, provider));
@@ -188,35 +217,47 @@ export class ModelGateway implements Gateway {
       throw invalid(`maxOutputTokens must be an integer from 1 to ${MAX_OUTPUT_LIMIT}`);
     }
     const prompt = req.prompt === undefined ? undefined : promptRef(req.prompt);
+    this.refuseHeldKeys(requestTexts(req));
     const profile = this.profile(req.profileId);
     const ref = this.completionModel(req, profile);
     this.requireKey(ref.provider);
     const price = this.price(ref);
     const { messages, sizes } = await this.resolveMessages(req.messages);
-    const estimate = maxCompletionCost(price, estimateInputTokens({ ...(req.system ? { system: req.system } : {}), messages, imageSizes: sizes }), maxOutputTokens);
-    const reservation = await this.reserve(req, estimate);
+    const inputTokens = estimateInputTokens({ ...(req.system ? { system: req.system } : {}), messages, imageSizes: sizes });
+    const estimate = maxCompletionCost(price, inputTokens, maxOutputTokens);
+    const op = await this.admit(req, 'completion', ref, estimate);
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
       // Before the call: a family is exposed by being used as a gate, whether or not the call then succeeds (CR12).
       await this.exposure.record(ref, req.purpose, req.workspaceId, this.now());
       const adapter = this.adapter(ref.provider);
-      const out = await withRetries(async () => {
-        try {
-          return await adapter.complete({
-            model: ref.model,
-            ...(req.system ? { system: req.system } : {}),
-            messages,
-            maxOutputTokens,
-            responseFormat: req.responseFormat ?? 'text',
-            context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, tier: req.tier, profileId: req.profileId },
-          });
-        } catch (e) {
-          throw toGatewayError(e, ref.provider, redact);
-        }
-      }, this.retry);
-      const costUsd = this.completionCost(ref, out);
+      const reported = await withRetries(
+        async () => {
+          await op.markSent();
+          try {
+            return await adapter.complete({
+              model: ref.model,
+              ...(req.system ? { system: req.system } : {}),
+              messages,
+              maxOutputTokens,
+              responseFormat: req.responseFormat ?? 'text',
+              context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, tier: req.tier, profileId: req.profileId },
+            });
+          } catch (e) {
+            const err = toGatewayError(e, ref.provider, redact);
+            op.failed(err);
+            throw err;
+          }
+        },
+        this.retry,
+        BILLABLE_CALL,
+        this.retainBeforeResend(op, req.workspaceId, estimate),
+      );
+      const { completion: out, replaced } = finiteCompletion(reported, { inputTokens, outputTokens: maxOutputTokens });
+      const { costUsd, assumed } = this.completionCost(ref, out);
       const entry = await this.record(
+        op,
         {
           workspaceId: req.workspaceId,
           ...ctxIds(req),
@@ -231,24 +272,31 @@ export class ModelGateway implements Gateway {
           ...(out.upstreamProvider ? { upstreamProvider: out.upstreamProvider } : {}),
           // Provenance (spec §3.3): the template behind the call, inside the hash chain like every other field.
           ...(prompt ? { prompt } : {}),
+          ...(assumed || replaced ? { priceBasis: 'assumed' as const } : {}),
         },
         { profileId: req.profileId, tier: req.tier, provider: ref.provider, model: ref.model, wire: out.requestBody },
         { servedModel: out.servedModel, usage: out.usage, ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
         redact,
       );
       if (out.refusal) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal}`));
+      // The answer crosses into byway here: one holding a key is never handed on (ADR-0088). The call is already
+      // ledgered with its evidence redacted, and it is not retried, because a retry would pay again.
+      const echoed = findHeldKey(this.env, [out.text]);
+      if (echoed) {
+        throw Object.assign(heldKeyError('provider-error', redact(`${ref.provider} answered and billed this call (${req.purpose}), but its answer contained your ${echoed}, so byway did not use it. It is not retried, because a retry would pay again.`), echoed), { billed: true });
+      }
       return {
         text: out.text,
         // A cut-off answer is still returned (and was billed); callers decide whether a partial parse is usable.
         stopReason: out.truncated ? 'max-tokens' : 'end',
-        servedModel: out.servedModel,
+        servedModel: entry.servedModel,
         provider: ref.provider,
         usage: { inputTokens: out.usage.inputTokens, outputTokens: out.usage.outputTokens },
-        costUsd,
+        costUsd: entry.costUsd,
         ledgerEntryId: entry.id,
       };
     } finally {
-      this.reservations.delete(reservation);
+      await op.end();
     }
   }
 
@@ -256,30 +304,45 @@ export class ModelGateway implements Gateway {
     validateSpend(req);
     if (typeof req.prompt !== 'string' || !req.prompt.trim()) throw invalid('an image needs a prompt');
     if (!IMAGE_SIZES.has(req.size)) throw invalid(`unsupported image size "${String(req.size)}"`);
+    this.refuseHeldKeys([req.prompt]);
     const profile = this.profile(req.profileId);
     const ref: ModelRef | undefined = this.demo ? { provider: 'mock', model: MOCK_MODELS.image } : profile.image;
     if (!ref) throw invalid(`profile "${profile.id}" has no image model`);
     this.requireKey(ref.provider);
     const price = this.price(ref);
-    const reservation = await this.reserve(req, maxImageCost(price, req));
+    const adapter = this.adapter(ref.provider);
+    const generate = adapter.image?.bind(adapter);
+    if (!generate) throw invalid(`${ref.provider} does not generate images`);
+    const estimate = maxImageCost(price, req);
+    const op = await this.admit(req, 'image', ref, estimate);
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
-      const adapter = this.adapter(ref.provider);
-      const generate = adapter.image?.bind(adapter);
-      if (!generate) throw invalid(`${ref.provider} does not generate images`);
-      const out = await withRetries(async () => {
-        try {
-          return await generate({ model: ref.model, prompt: req.prompt, size: req.size, context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId } });
-        } catch (e) {
-          throw toGatewayError(e, ref.provider, redact);
-        }
-      }, this.retry);
-      const costUsd = roundUsd(tokenCost(price, out.usage) + (price.perImageUsd ?? 0) * (out.usage.units ?? 1));
+      const reported = await withRetries(
+        async () => {
+          await op.markSent();
+          try {
+            return await generate({ model: ref.model, prompt: req.prompt, size: req.size, context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId } });
+          } catch (e) {
+            const err = toGatewayError(e, ref.provider, redact);
+            op.failed(err);
+            throw err;
+          }
+        },
+        this.retry,
+        BILLABLE_CALL,
+        this.retainBeforeResend(op, req.workspaceId, estimate),
+      );
+      const usage = finiteUsage(reported.usage, { inputTokens: textTokens(req.prompt), outputTokens: price.estimatedOutputTokensPerImage ?? 0, units: 1 });
+      const out = { ...reported, usage: usage.usage };
+      // Settled at the served model's row where it has one (F04): see servedPrice.
+      const settled = servedPrice(this.prices, ref.provider, out.servedModel, price, this.now());
+      const costUsd = roundUsd(tokenCost(settled.row, out.usage) + (settled.row.perImageUsd ?? 0) * (out.usage.units ?? 1));
       // Billed from here: keeping the image may fail, but the call is ledgered first either way (ENG-3).
       const kept = out.refusal ? undefined : await keep(() => this.artifacts.put(out.bytes, out.mediaType));
       const stored = kept?.record;
       const entry = await this.record(
+        op,
         {
           workspaceId: req.workspaceId,
           ...ctxIds(req),
@@ -291,6 +354,7 @@ export class ModelGateway implements Gateway {
           usage: out.usage,
           costUsd,
           latencyMs: Date.now() - started,
+          ...(settled.assumed || usage.replaced ? { priceBasis: 'assumed' as const } : {}),
         },
         { profileId: req.profileId, provider: ref.provider, model: ref.model, wire: out.requestBody },
         { servedModel: out.servedModel, usage: out.usage, ...(stored ? { artifactId: stored.id } : {}), ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
@@ -298,9 +362,9 @@ export class ModelGateway implements Gateway {
       );
       if (kept?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the image and billed it, but it could not be stored`, kept.error);
       if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`));
-      return { artifactId: stored.id, mediaType: out.mediaType, servedModel: out.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
+      return { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
     } finally {
-      this.reservations.delete(reservation);
+      await op.end();
     }
   }
 
@@ -317,6 +381,7 @@ export class ModelGateway implements Gateway {
       throw invalid(`durationSec must be a number of seconds above 0 and at most ${MAX_VIDEO_SECONDS}`);
     }
     if (req.shot !== undefined && (!Number.isSafeInteger(req.shot) || req.shot < 1)) throw invalid(`shot must be a storyboard shot number from 1, got ${String(req.shot)}`);
+    this.refuseHeldKeys([req.prompt]);
     const profile = this.profile(req.profileId);
     const ref: ModelRef | undefined = this.demo ? { provider: 'mock', model: MOCK_MODELS.video } : profile.video;
     if (!ref) throw new GatewayError('no-credentials', `profile "${profile.id}" has no video model`);
@@ -333,28 +398,57 @@ export class ModelGateway implements Gateway {
       startFrame = { artifactId: record.id, bytes, mediaType: record.mediaType };
     }
     const seconds = adapter.videoSeconds?.(ref.model, req.durationSec) ?? Math.ceil(req.durationSec);
-    const reservation = await this.reserve(req, maxVideoCost(price, seconds, extras));
+    const op = await this.admit(req, 'video', ref, maxVideoCost(price, seconds, extras));
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
-      const out = await generate({
-        model: ref.model,
-        prompt: req.prompt,
-        durationSec: seconds,
-        ...(req.shot !== undefined ? { shot: req.shot } : {}),
-        ...(startFrame ? { startFrame } : {}),
-        context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
-        attempt: (fn) =>
-          withRetries(async () => {
+      const mapped = <T>(fn: () => Promise<T>) => async () => {
+        try {
+          return await fn();
+        } catch (e) {
+          throw toGatewayError(e, ref.provider, redact);
+        }
+      };
+      let out: Awaited<ReturnType<typeof generate>>;
+      try {
+        out = await generate({
+          model: ref.model,
+          prompt: req.prompt,
+          durationSec: seconds,
+          ...(req.shot !== undefined ? { shot: req.shot } : {}),
+          ...(startFrame ? { startFrame } : {}),
+          context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
+          attempt: (fn) => withRetries(mapped(fn), this.retry, FREE_READ),
+          submit: async (fn, what) => {
+            // The submission is the call's first billable request: the spend book marks the call sent before it.
+            await op.markSent();
             try {
-              return await fn();
+              return await withRetries(mapped(fn), this.retry, BILLABLE_JOB);
             } catch (e) {
-              throw toGatewayError(e, ref.provider, redact);
+              if ((e as ClassifiedError).billing !== 'maybe') throw e;
+              // Not sent again (ADR-0091): a second submission is a second job, billed again.
+              const err: ClassifiedError = new GatewayError(
+                'provider-error',
+                redact(`${ref.provider} may have accepted ${what} (${(e as Error).message}). byway did not send it again, because a second submission could make and bill another. Check your ${ref.provider} dashboard before trying this step again.`.slice(0, 2000)),
+                false,
+              );
+              err.billing = 'maybe';
+              throw err;
             }
-          }, this.retry),
-      });
-      const units = out.usage.units ?? seconds;
-      const costUsd = roundUsd(maxVideoCost(price, units, extras));
+          },
+          accepted: (role, requestId) => op.accepted(role, requestId),
+          // An earlier attempt's jobs the provider accepted (stage 3): polled by their ids, never submitted again.
+          ...(op.resumed ? { resume: op.resumed } : {}),
+        });
+      } catch (e) {
+        // A job fal may have accepted (a lost answer, a status that could not be read) may be billed: the call ends
+        // counted at its estimate against the workspace, as may have been billed (ADR-0095).
+        op.failed(e);
+        throw e;
+      }
+      // fal bills the seconds asked for; a provider that reports none is billed for those, one that reports an unreadable count is assumed to have been.
+      const units = out.usage.units === undefined ? { value: seconds, replaced: false } : finiteNumber(out.usage.units, seconds);
+      const costUsd = roundUsd(maxVideoCost(price, units.value, extras));
       // Billed from here: keeping the clip or its frame may fail, but the clip is ledgered first either way (ENG-3).
       const madeClip = out.clip;
       const madeFrame = out.lastFrame;
@@ -364,6 +458,7 @@ export class ModelGateway implements Gateway {
       const lastFrame = keptFrame?.record;
       const failure = out.failure !== undefined ? toGatewayError(out.failure, ref.provider, redact) : undefined;
       const entry = await this.record(
+        op,
         {
           workspaceId: req.workspaceId,
           ...ctxIds(req),
@@ -372,14 +467,15 @@ export class ModelGateway implements Gateway {
           provider: ref.provider,
           requestedModel: ref.model,
           servedModel: out.servedModel,
-          usage: { inputTokens: 0, outputTokens: 0, units },
+          usage: { inputTokens: 0, outputTokens: 0, units: units.value },
           costUsd,
           latencyMs: Date.now() - started,
+          ...(units.replaced ? { priceBasis: 'assumed' as const } : {}),
         },
         { profileId: req.profileId, provider: ref.provider, model: ref.model, durationSec: req.durationSec, seconds, ...(req.shot !== undefined ? { shot: req.shot } : {}), wire: out.requestBody },
         {
           servedModel: out.servedModel,
-          usage: { units },
+          usage: { units: units.value },
           ...(clip ? { artifactId: clip.id } : {}),
           ...(lastFrame ? { lastFrameArtifactId: lastFrame.id } : {}),
           ...(failure ? { failure: failure.message } : {}),
@@ -392,45 +488,121 @@ export class ModelGateway implements Gateway {
         throw billedFailure(redact, `${ref.provider} made the clip and billed it, but its last frame could not be stored (the clip is kept as ${clip?.id ?? 'nothing'})`, keptFrame.error);
       }
       if (failure || !clip || !lastFrame) {
-        const what = !clip ? 'it could not be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
+        const what = !clip ? 'no usable clip could be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
-        throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`));
+        throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`), false, { billed: true });
       }
       // The contract names two clip types (MP4, and the demo's SVG placeholder) and three frame types. Anything else is
       // kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
       const mediaType = clip.mediaType as VideoResult['mediaType'];
       if (!CLIP_TYPES.has(mediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`);
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`, false, { billed: true });
       }
       const lastFrameMediaType = lastFrame.mediaType as MediaType;
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`);
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`, false, { billed: true });
       }
-      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: out.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
+      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
     } finally {
-      this.reservations.delete(reservation);
+      await op.end();
     }
   }
 
+  /**
+   * Spend from the spend book (ADR-0095), after reading in any ledger line it has not seen (entries from before the book,
+   * an older worker's). Settled cost and cost by run are what the audit file records; calls under way and calls that
+   * may have been billed are reported beside them.
+   */
   async spend(workspaceId: string): Promise<SpendSummary> {
-    const byRun: Record<string, number> = {};
-    let spent = 0;
-    for (const e of await this.ledger.entries()) {
-      if (e.workspaceId !== workspaceId) continue;
-      spent += e.costUsd;
-      if (e.runId) byRun[e.runId] = roundUsd((byRun[e.runId] ?? 0) + e.costUsd);
-    }
-    return { workspaceId, spentUsd: roundUsd(spent), capUsd: await this.caps.workspaceCapUsd(workspaceId), byRun };
+    await this.paid.absorb();
+    const book = await this.book.spend(workspaceId);
+    return {
+      workspaceId,
+      spentUsd: book.spentUsd,
+      capUsd: await this.caps.workspaceCapUsd(workspaceId),
+      byRun: book.byRun,
+      inFlightUsd: book.inFlightUsd,
+      uncertainUsd: book.uncertainUsd,
+      ...(book.assumedPricing ? { assumedPricing: book.assumedPricing } : {}),
+    };
   }
 
   verifyLedger(): Promise<string | null> {
     return this.ledger.verify();
   }
 
+  async spendRecords(workspaceId: string): Promise<SpendRecords> {
+    await this.paid.absorb();
+    const records = await this.book.records(workspaceId);
+    return { ...records, setAside: await setAsideTails(this.ledger.path) };
+  }
+
+  /**
+   * The audit file checked on demand (Settings, the start-up report): its hash chain, and every call the spend book holds
+   * as written to it found there at the same cost. A missing one is what a restore of an older or missing ledger.jsonl
+   * leaves (the caps still count it: the book is the authority), or an OS crash that lost a line after it was marked.
+   * Like a spend read, it first reads ledger lines the book has not seen into it, so it can say what the book did with
+   * a line that is not an entry (brokenLine) and how many faults are open; otherwise it only reads.
+   */
+  async auditLedger(): Promise<LedgerAudit> {
+    await this.paid.absorb();
+    const brokenAt = await this.ledger.verify();
+    const written = new Map<string, number>();
+    for (const e of await this.ledger.entries()) if (typeof e.id === 'string') written.set(e.id, e.costUsd);
+    const missing = (await this.book.ledgeredCalls()).filter((c) => {
+      const cost = written.get(c.entryId);
+      return cost === undefined || Math.abs(cost - c.costUsd) > 1e-9;
+    });
+    const pending = (await this.book.unledgered(10_000)).length;
+    const faults = await this.book.faults();
+    const brokenLine = await this.brokenLine(brokenAt, faults);
+    return {
+      brokenAt,
+      missing,
+      pending,
+      setAside: await setAsideTails(this.ledger.path),
+      openFaults: faults.filter((f) => !f.acknowledged).length,
+      ...(brokenLine ? { brokenLine } : {}),
+    };
+  }
+
+  /** What the spend book did with the line verify() names as `line:<n>` (see BrokenLine), from its faults and cursor. */
+  private async brokenLine(brokenAt: string | null, faults: readonly RecordedFault[]): Promise<BrokenLine | undefined> {
+    const m = /^line:(\d+)$/.exec(brokenAt ?? '');
+    if (!m) return undefined;
+    const line = Number(m[1]);
+    const at = await this.ledger.lineAt(line);
+    if (!at) return undefined;
+    if (!at.complete) return { line, book: 'torn' };
+    if (at.blank) return { line, book: 'blank' };
+    const fault = faults.find((f) => f.offset === at.offset && f.sha256 === at.sha256);
+    if (fault) return { line, book: fault.acknowledged ? 'acknowledged' : 'fault' };
+    return { line, book: at.offset < (await this.book.cursor()).offset ? 'read-before' : 'unread' };
+  }
+
+  /**
+   * A clean stop (PaidCalls.close): stops lease renewal and the outbox timer, hands this gateway's calls in progress back
+   * to the spend book at once, and makes one last bounded write of the outbox; no paid call starts afterwards. Call
+   * before closing the store.
+   */
+  close(): Promise<void> {
+    return this.paid.close();
+  }
+
   private profile(id: string): ModelProfile {
     const profile = this.allProfiles.find((p) => p.id === id);
     if (!profile) throw new GatewayError('unknown-profile', `no model profile "${id}"`);
     return profile;
+  }
+
+  /**
+   * Refuses a request whose text holds a provider key byway has, before anything is reserved, recorded or sent
+   * (ADR-0088). Every caller goes through here, so a key pasted into someone's material never reaches a provider.
+   * The request is refused, not rewritten: the person's text is never silently changed.
+   */
+  private refuseHeldKeys(texts: Iterable<string | undefined>): void {
+    const name = findHeldKey(this.env, texts);
+    if (name) throw heldKeyError('invalid-request', `This request contains your ${name}. byway never sends a key to a model; remove it from the material and try again.`, name);
   }
 
   private requireKey(provider: ProviderId): void {
@@ -464,7 +636,7 @@ export class ModelGateway implements Gateway {
         adapter = openrouterAdapter({ client: c.openrouter ?? createOpenRouterClient(key), pins: OPENROUTER_PINS });
         break;
       case 'fal':
-        adapter = falAdapter({ client: c.fal ?? createFalClient(key), ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}) });
+        adapter = falAdapter({ client: c.fal ?? createFalClient(key, this.opts.fetch), ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}) });
         break;
       case 'mock':
         adapter = mockAdapter(this.opts.mockResponders ? { responders: this.opts.mockResponders } : {});
@@ -504,49 +676,70 @@ export class ModelGateway implements Gateway {
   }
 
   /**
-   * Check the caps and reserve the call's worst case. The check and the reservation happen in one synchronous step
-   * after the last await, so concurrent calls in this process see each other's reservations. Calls from another
-   * process are seen once they reach the ledger.
+   * Admits a call in the spend book at its planning estimate (estimate.ts). The estimate is not a bound: a call can
+   * settle above it, and settlement records the true cost, against which later calls are refused (ADR-0091). The book
+   * holds every process's calls in flight, so the web process and the worker see each other's (ADR-0095). The caps are
+   * read on every call, so a raised budget applies at once.
    */
-  private async reserve(ctx: { workspaceId: string; runId?: string }, estimateUsd: number): Promise<Reservation> {
-    const wsCap = await this.caps.workspaceCapUsd(ctx.workspaceId);
-    const runCap = ctx.runId !== undefined && this.caps.runCapUsd ? await this.caps.runCapUsd(ctx.runId) : undefined;
-    const entries = await this.ledger.entries();
-    const sum = (keep: (x: { workspaceId: string; runId?: string }) => boolean) => {
-      let spent = 0;
-      for (const e of entries) if (keep(e)) spent += e.costUsd;
-      let reserved = 0;
-      for (const r of this.reservations) if (keep(r)) reserved += r.usd;
-      return { spent: roundUsd(spent), reserved: roundUsd(reserved) };
-    };
-    const check = (scope: 'workspace' | 'run', capUsd: number, keep: (x: { workspaceId: string; runId?: string }) => boolean) => {
-      const { spent, reserved } = sum(keep);
-      const total = spent + reserved + estimateUsd;
-      if (total > capUsd + 1e-9) {
-        const budget: BudgetDetails = { scope, capUsd, spentUsd: spent, reservedUsd: reserved, estimateUsd: roundUsd(estimateUsd), shortfallUsd: roundUsd(Math.max(0, total - capUsd)) };
-        const err = new GatewayError(
-          'budget-exceeded',
-          `the ${scope} budget of $${capUsd.toFixed(2)} would be exceeded: $${spent.toFixed(4)} spent, $${reserved.toFixed(4)} in flight, and this call may cost up to $${budget.estimateUsd.toFixed(4)}`,
-        );
-        err.budget = budget;
-        throw err;
-      }
-    };
-    check('workspace', wsCap, (x) => x.workspaceId === ctx.workspaceId);
-    if (runCap !== undefined) check('run', runCap, (x) => x.runId === ctx.runId);
-    const reservation: Reservation = { workspaceId: ctx.workspaceId, ...(ctx.runId !== undefined ? { runId: ctx.runId } : {}), usd: estimateUsd };
-    this.reservations.add(reservation);
-    return reservation;
+  private async admit(req: SpendContext, kind: SettledCall['kind'], ref: ModelRef, estimateUsd: number): Promise<PaidCall> {
+    const reserveUsd = roundUsd(estimateUsd);
+    // No call can cost more than MAX_PLAUSIBLE_CALL_USD (ADR-0095), so a call estimated above it is a mistake, refused
+    // before anything is reserved. It also means a call settled at its estimate (record) is always one the book can read.
+    if (!(reserveUsd <= MAX_PLAUSIBLE_CALL_USD)) {
+      throw invalid(`this call is estimated at $${reserveUsd.toFixed(2)}, more than byway allows for one call ($${MAX_PLAUSIBLE_CALL_USD.toFixed(2)})`);
+    }
+    // A step's call carries its key and its caller's signals (stage 3, ADR-0099): another attempt holding the key is
+    // waited for, and a gone holder's call is taken over (PaidCalls).
+    const op = req.operation;
+    return this.paid.admit(
+      {
+        workspaceId: req.workspaceId,
+        ...ctxIds(req),
+        purpose: req.purpose,
+        kind,
+        provider: ref.provider,
+        model: ref.model,
+        reserveUsd,
+        paid: reserveUsd > 0,
+        ...(op ? { operationKey: op.key, ...(op.rebuy === true ? { rebuy: true } : {}) } : {}),
+      },
+      async () => {
+        const workspaceUsd = await this.caps.workspaceCapUsd(req.workspaceId);
+        const runUsd = req.runId !== undefined && this.caps.runCapUsd ? await this.caps.runCapUsd(req.runId) : undefined;
+        return { workspaceUsd, ...(runUsd !== undefined ? { runUsd } : {}) };
+      },
+      op ? { until: op.until, ...(op.cancel ? { cancel: op.cancel } : {}) } : undefined,
+    );
   }
 
-  /** Provider-reported cost first (OpenRouter), else per-model prices for fallbacks, else the served model's price. */
-  private completionCost(ref: ModelRef, out: ProviderCompletion): number {
-    if (out.reportedCostUsd !== undefined) return roundUsd(out.reportedCostUsd);
+  /**
+   * Before a completion or an image is sent again after an attempt that may have been billed: that attempt's estimate
+   * is retained against the workspace cap (not the run's), or, when it does not fit, the call stops with
+   * 'budget-exceeded' at workspace scope instead of risking a second charge (ADR-0095).
+   */
+  private retainBeforeResend(op: PaidCall, workspaceId: string, estimateUsd: number): RetryHooks {
+    return { beforeMaybeResend: async () => op.retain(roundUsd(estimateUsd), await this.caps.workspaceCapUsd(workspaceId)) };
+  }
+
+  /**
+   * Provider-reported cost first (OpenRouter), else each model that served the call (every billed attempt of a refusal
+   * fallback) at its own price (servedPrice). `assumed` is true when any of them had no price row and was settled at the
+   * requested model's rates; the ledger records that (priceBasis), so the guess is visible, never silent (F04).
+   */
+  private completionCost(ref: ModelRef, out: ProviderCompletion): { costUsd: number; assumed: boolean } {
+    if (out.reportedCostUsd !== undefined) return { costUsd: roundUsd(out.reportedCostUsd), assumed: false };
     const at = this.now();
-    // A served model we have no price for is charged at the requested model's price, which we know exists.
-    const priceOf = (model: string) => priceFor(this.prices, ref.provider, model, at) ?? this.price(ref);
-    if (out.usageByModel) return roundUsd(out.usageByModel.reduce((usd, u) => usd + tokenCost(priceOf(u.model), u.usage as TokenBreakdown), 0));
-    return tokenCost(priceOf(out.servedModel), out.usage);
+    const requested = this.price(ref);
+    let assumed = false;
+    const priceOf = (model: string) => {
+      const settled = servedPrice(this.prices, ref.provider, model, requested, at);
+      assumed ||= settled.assumed;
+      return settled.row;
+    };
+    const costUsd = out.usageByModel
+      ? roundUsd(out.usageByModel.reduce((usd, u) => usd + tokenCost(priceOf(u.model), u.usage as TokenBreakdown), 0))
+      : tokenCost(priceOf(out.servedModel), out.usage);
+    return { costUsd, assumed };
   }
 
   /**
@@ -560,33 +753,67 @@ export class ModelGateway implements Gateway {
   }
 
   /**
-   * Ledgers a call the provider has answered, and so billed, then stores its request and response bodies (redacted,
-   * canonical JSON) under the hashes the entry names. The entry goes first (ENG-3): a local failure after a provider
-   * answered must not lose the spend, and a plain error would make Temporal retry the activity and pay a second time.
-   * So the ledger is given a long wait for its lock, and any failure from here on is a GatewayError that is not
-   * retryable and says the call was billed.
+   * Settles a call the provider has answered, and so billed, in the spend book, writes it to the audit file (waiting
+   * briefly for the ledger's lock; the timer writes what it could not), then stores its request and response bodies
+   * (redacted, canonical JSON) under the hashes the entry names. The settlement goes first (ENG-3): a local failure after
+   * a provider answered must not lose the spend, and a plain error would make Temporal retry the activity and pay a
+   * second time. So any failure from here on is a GatewayError that is not retryable and says the call was billed.
    */
-  private async record(draft: Omit<LedgerDraft, 'requestSha256' | 'responseSha256'>, request: unknown, response: unknown, redact: Redactor) {
+  private async record(op: PaidCall, draft: Omit<LedgerDraft, 'requestSha256' | 'responseSha256' | 'operationId'>, request: unknown, response: unknown, redact: Redactor): Promise<{ id: string; servedModel: string; costUsd: number }> {
+    // No call can cost more than MAX_PLAUSIBLE_CALL_USD (ADR-0095 decision 7): reported figures that price one above it
+    // cannot be believed, so the call is settled at its planning estimate (which admission held to the ceiling), flagged
+    // assumed, as when a figure is not a number at all. The usage the provider reported stays in the entry as reported.
+    if (!(draft.costUsd >= 0 && draft.costUsd <= MAX_PLAUSIBLE_CALL_USD)) draft = { ...draft, costUsd: op.reserveUsd, priceBasis: 'assumed' };
+    // An answer that names no served model (adapters copy the field unchecked: it can be missing, null or empty) was
+    // still billed. It is recorded as the requested model and flagged assumed (ADR-0095 decision 7); it was priced as
+    // the requested model too (servedPrice falls back to its row when a label names none), unless the provider reported
+    // its cost. A label that is there but is not text is recorded as its JSON text (providerLabel), as before.
+    const served: unknown = draft.servedModel;
+    if (served === undefined || served === null || served === '') draft = { ...draft, servedModel: draft.requestedModel, priceBasis: 'assumed' };
+    // Labels are first made hashable (providerLabel, F19), then scrubbed of held keys (scrubLabels, ADR-0088): the
+    // redactor works on well-formed strings, and one value then flows to both the ledger and the caller.
+    draft = scrubLabels(
+      {
+        ...draft,
+        servedModel: providerLabel(draft.servedModel),
+        ...(draft.upstreamProvider !== undefined ? { upstreamProvider: providerLabel(draft.upstreamProvider) } : {}),
+      },
+      redact,
+    );
     const requestText = redact(canonicalOrJson({ purpose: draft.purpose, ...(request as object) }));
     const responseText = redact(canonicalOrJson(response));
     const billed = `${draft.provider} answered and billed this call (${draft.purpose})`;
-    let entry;
+    const entry: SettledCall = { ...draft, requestSha256: `sha256:${sha256Hex(requestText)}`, responseSha256: `sha256:${sha256Hex(responseText)}` };
+    let id: string;
     try {
-      entry = await this.ledger.append(
-        { ...draft, requestSha256: `sha256:${sha256Hex(requestText)}`, responseSha256: `sha256:${sha256Hex(responseText)}` },
-        { lockTimeoutMs: this.billedLedgerWaitMs },
-      );
+      id = await op.settle({ at: this.now().toISOString(), entry });
     } catch (e) {
-      throw billedFailure(redact, `${billed}, but it could not be written to the ledger, so the spend caps do not count it`, e);
+      throw billedFailure(redact, `${billed}, but byway could not record its cost in its spending records, so it is counted at its estimate as "may have been billed" (Settings)`, e);
     }
+    await op.end();
     try {
       await this.artifacts.putText(requestText, 'application/json');
       await this.artifacts.putText(responseText, 'application/json');
     } catch (e) {
-      throw billedFailure(redact, `${billed} and it is in the ledger (entry ${entry.id}), but its request and response could not be stored`, e);
+      throw billedFailure(redact, `${billed} and its cost is recorded (entry ${id}), but its request and response could not be stored`, e);
     }
-    return entry;
+    return { id, servedModel: entry.servedModel, costUsd: entry.costUsd };
   }
+}
+
+/**
+ * A provider-reported label (the served model, the upstream host) as the hash-chained ledger records it. Provider JSON
+ * can carry a lone surrogate through a \u escape, which has no canonical form, yet a call the provider answered was
+ * billed and must be ledgered (ENG-3, F19). So a lone surrogate is written as U+FFFD; the exact reply stays in the
+ * stored response under responseSha256. A label that is not a string at all (adapters copy it unchecked) is written as
+ * its JSON text, which escapes lone surrogates, for the same reason. An absent upstream host stays absent; a served
+ * model that is absent, null or empty never reaches here (record writes the requested model, flagged assumed). Results
+ * returned to callers carry the same value the ledger recorded (ADR-0088), so caller and ledger never disagree.
+ */
+function providerLabel(label: string): string {
+  const value: unknown = label;
+  if (typeof value === 'string') return value.toWellFormed();
+  return value === undefined ? label : (JSON.stringify(value) ?? typeof value);
 }
 
 /** The outcome of keeping media a provider made: its record, or the error (kept for after the call is ledgered). */
@@ -600,17 +827,51 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
 
 /**
  * A failure after a provider was paid: never retryable, because retrying the call (here, or by Temporal re-running the
- * activity) would pay again for what was already bought.
+ * activity) would pay again for what was already bought. It is byway's own failure, not the provider's (the provider
+ * answered), and says it was billed (ADR-0099), so no caller presents it as the provider not answering, and a caller with
+ * tries of its own (an ASSET step's tries per image, ADR-0090) stops too.
  */
 function billedFailure(redact: Redactor, what: string, cause: unknown): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);
-  return new GatewayError('provider-error', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false);
+  return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true });
 }
 
-function validateSpend(req: { workspaceId?: unknown; purpose?: unknown; profileId?: unknown }): void {
+/**
+ * Provider metadata is a label, not content: a key in the served model or the upstream host is scrubbed for the ledger
+ * (and the result, which returns what the ledger recorded), never a reason to refuse a call that was paid for (ADR-0088).
+ */
+function scrubLabels<T extends { servedModel: string; upstreamProvider?: string }>(draft: T, redact: Redactor): T {
+  return { ...draft, servedModel: redact(draft.servedModel), ...(draft.upstreamProvider !== undefined ? { upstreamProvider: redact(draft.upstreamProvider) } : {}) };
+}
+
+/** The text a completion request sends: its system text and every text part (malformed parts are refused later). */
+function* requestTexts(req: CompletionRequest): Generator<string> {
+  if (typeof req.system === 'string') yield req.system;
+  for (const m of req.messages) {
+    for (const part of Array.isArray(m?.content) ? m.content : []) if (part?.type === 'text' && typeof part.text === 'string') yield part.text;
+  }
+}
+
+function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: unknown; purpose?: unknown; profileId?: unknown; operation?: unknown }): void {
   if (typeof req.workspaceId !== 'string' || !req.workspaceId) throw invalid('workspaceId is required');
+  // A ledger line naming run or step "" is one the spend book refuses to count (ledgerEntryProblem), so such a call is
+  // refused before anything is reserved or sent, never billed and then left out of the caps.
+  for (const field of ['runId', 'stepId'] as const) {
+    if (req[field] !== undefined && (typeof req[field] !== 'string' || !req[field])) throw invalid(`${field}, when given, must be a non-empty string`);
+  }
   if (typeof req.purpose !== 'string' || !req.purpose) throw invalid('purpose is required (spec §3.3)');
   if (typeof req.profileId !== 'string' || !req.profileId) throw invalid('profileId is required');
+  if (req.operation !== undefined) validateOperation(req.operation);
+}
+
+/** SpendContext.operation, checked before anything is reserved: a key, and signals that can say when the caller ends. */
+function validateOperation(value: unknown): void {
+  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; rebuy?: unknown } | null;
+  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, rebuy? }');
+  if (op.rebuy !== undefined && typeof op.rebuy !== 'boolean') throw invalid('operation.rebuy, when given, must be true or false');
+  if (typeof op.key !== 'string' || !op.key) throw invalid('operation.key must be a non-empty string');
+  if (!(op.until instanceof AbortSignal)) throw invalid('operation.until must be an AbortSignal');
+  if (op.cancel !== undefined && !(op.cancel instanceof AbortSignal)) throw invalid('operation.cancel, when given, must be an AbortSignal');
 }
 
 /**
@@ -639,6 +900,58 @@ function canonicalOrJson(body: unknown): string {
   } catch {
     return JSON.stringify(plainBody);
   }
+}
+
+/**
+ * A provider-reported count or cost as the ledger can record it (ADR-0083's hand-off, ADR-0095): one that is not a
+ * finite, non-negative number (a JSON `1e400` parses as Infinity) has no canonical form, so the entry for a call that
+ * was billed could not be written. Such a figure is replaced by the call's planning figure, and the entry says its
+ * price is assumed (priceBasis), so the guess is visible rather than silent.
+ */
+function finiteNumber(value: unknown, fallback: number): { value: number; replaced: boolean } {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? { value, replaced: false } : { value: fallback, replaced: true };
+}
+
+/**
+ * Usage with every reported count finite (finiteNumber): input and output fall back to the call's planning figures,
+ * units (when reported) to the request's, and a cache count that cannot be read is dropped (its tokens are then priced
+ * as plain input).
+ */
+function finiteUsage<U extends TokenBreakdown>(usage: U | undefined, fallback: { inputTokens: number; outputTokens: number; units?: number }): { usage: U; replaced: boolean } {
+  const input = finiteNumber(usage?.inputTokens, fallback.inputTokens);
+  const output = finiteNumber(usage?.outputTokens, fallback.outputTokens);
+  let replaced = input.replaced || output.replaced;
+  const out: TokenBreakdown = { ...usage, inputTokens: input.value, outputTokens: output.value };
+  for (const k of ['cacheReadTokens', 'cacheWriteTokens'] as const) {
+    if (out[k] === undefined || !finiteNumber(out[k], 0).replaced) continue;
+    delete out[k];
+    replaced = true;
+  }
+  if (out.units !== undefined) {
+    const units = finiteNumber(out.units, fallback.units ?? 0);
+    replaced ||= units.replaced;
+    out.units = units.value;
+  }
+  return { usage: out as U, replaced };
+}
+
+/** A completion with its usage, per-model usage and reported cost made finite; a cost that cannot be read is dropped. */
+function finiteCompletion(out: ProviderCompletion, fallback: { inputTokens: number; outputTokens: number }): { completion: ProviderCompletion; replaced: boolean } {
+  const usage = finiteUsage(out.usage, fallback);
+  let replaced = usage.replaced;
+  const completion: ProviderCompletion = { ...out, usage: usage.usage };
+  if (out.usageByModel) {
+    completion.usageByModel = out.usageByModel.map((u) => {
+      const one = finiteUsage(u.usage, fallback);
+      replaced ||= one.replaced;
+      return { ...u, usage: one.usage };
+    });
+  }
+  if (out.reportedCostUsd !== undefined && finiteNumber(out.reportedCostUsd, 0).replaced) {
+    delete completion.reportedCostUsd;
+    replaced = true;
+  }
+  return { completion, replaced };
 }
 
 export function createGateway(opts: GatewayOptions): ModelGateway {

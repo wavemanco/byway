@@ -15,6 +15,7 @@
     "demo": "tsx scripts/serve.ts start --demo",
     "dev": "tsx scripts/serve.ts dev",
     "e2e": "tsx scripts/e2e.ts",
+    "verify": "pnpm -s typecheck && pnpm test && pnpm e2e",
     "recipes:emit": "tsx packages/catalog/src/emit.ts",
     "byway": "tsx packages/cli/src/main.ts"
   },

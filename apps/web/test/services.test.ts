@@ -220,6 +220,29 @@ describe('the service host', () => {
     expect(current.host.services(true).gateway).toBe(demo.gateway);
   });
 
+  it('gives both of its gateways the store’s spend book, the one the worker shares, and closes them before the store (ADR-0095)', async () => {
+    current = testHost({ demo: false, env: { ...FAKE_KEYS } });
+    const live = current.host.services(false);
+    const demo = current.host.services(true);
+    const ws = await live.store.ensureDefaultWorkspace();
+    // A call in flight elsewhere (the worker), admitted in the store's book: both gateways see it.
+    await live.store.spendBook.admit({ opId: 'worker-call', owner: 'worker', leaseMs: 60_000, workspaceId: ws.id, purpose: 'build:prose', kind: 'completion', provider: 'anthropic', model: 'claude-opus-5-5', reserveUsd: 0.75, paid: true, caps: { workspaceUsd: 100 } });
+    expect((await live.gateway.spend(ws.id)).inFlightUsd).toBe(0.75);
+    expect((await demo.gateway.spend(ws.id)).inFlightUsd).toBe(0.75);
+    const closed: string[] = [];
+    for (const g of [live.gateway, demo.gateway]) {
+      const close = g.close.bind(g);
+      g.close = async () => {
+        // The store must still be open while the gateway writes what is left of its outbox.
+        closed.push(await live.store.spendBook.spend(ws.id).then(() => 'closed with the store open', () => 'closed after the store'));
+        await close();
+      };
+    }
+    await current.host.close();
+    expect(closed).toEqual(['closed with the store open', 'closed with the store open']);
+    await expect(live.store.spendBook.spend(ws.id)).rejects.toMatchObject({ code: 'closed' });
+  });
+
   it('is in demo mode with no keys, and reports providers without their keys', async () => {
     current = testHost({ demo: false, env: { FAL_KEY: FAKE_KEYS.FAL_KEY } });
     const services = current.host.services(false);
@@ -243,5 +266,15 @@ describe('the service host', () => {
     } finally {
       await host.close();
     }
+  });
+
+  it('finds a held provider key anywhere in a request body, a FAL_KEY by its secret half alone, naming only the variable (ADR-0088)', async () => {
+    const anthropic = 'sk-ant-test-0000-never-real-0000';
+    const falSecret = '0011223344556677never-real-secret';
+    current = testHost({ env: { ANTHROPIC_API_KEY: anthropic, FAL_KEY: `fal-test-key-id-never-real:${falSecret}` } });
+    expect(current.host.heldKeyIn({ text: `my key is ${anthropic}` })).toBe('ANTHROPIC_API_KEY');
+    expect(current.host.heldKeyIn({ routes: { [falSecret]: 'yes' } })).toBe('FAL_KEY');
+    expect(current.host.heldKeyIn({ attachments: [{ name: 'a', text: `x ${falSecret} y` }] })).toBe('FAL_KEY');
+    expect(current.host.heldKeyIn({ text: 'A landing page', budgetUsd: 2 })).toBeUndefined();
   });
 });

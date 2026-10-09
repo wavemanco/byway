@@ -122,8 +122,9 @@ describe('human-stopped loops', () => {
   it('C6-DR4 does not hide a visible critic-score threshold', () => {
     const r = secondReader();
     Object.assign(find(r, 'loop', 'author-loop').gate, { metric: 'critic-score', threshold: 9, holder: 'worker', hidden: false });
-    // C6-DR4 relaxes only the human stop, so it is now unused (ST8) and the visible threshold stays a violation.
-    expect(ruleClauses(r)).toEqual(['DR4:metric', 'PR2:not-hidden', 'ST8']);
+    // C6-DR4 relaxes only the human stop, so it is now unused (ST8) and the visible threshold stays a violation. A scored
+    // loop around the author's own writing could also end on an earlier scored draft, undoing theirs (ST12, ADR-0092).
+    expect(ruleClauses(r)).toEqual(['DR4:metric', 'PR2:not-hidden', 'ST8', 'ST12:set-aside']);
   });
 
   it('ST2: a critic metric needs a threshold', () => {

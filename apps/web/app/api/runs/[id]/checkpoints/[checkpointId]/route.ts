@@ -7,9 +7,10 @@ import { ResolutionInput } from '../../../../../../src/server/schemas.ts';
 export async function POST(request: Request, ctx: RouteContext<'/api/runs/[id]/checkpoints/[checkpointId]'>) {
   return handle(async () => {
     const { id, checkpointId } = await ctx.params;
-    const body = await parseBody(request, ResolutionInput);
+    const deps = await getDeps();
+    const body = await parseBody(request, ResolutionInput, deps.heldKeyIn);
     if (!body.ok) return body.response;
-    await resolveInRun(await getDeps(), id, checkpointId, body.data);
+    await resolveInRun(deps, id, checkpointId, body.data);
     return json({ ok: true });
   });
 }

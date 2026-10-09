@@ -28,9 +28,11 @@ Toolchain: Node 24, pnpm 11, TypeScript (strict, NodeNext), vitest, zod. No othe
 
 ## Canonical hashing
 
-- `canonicalize(value)`: RFC 8785 (JCS). Object keys sorted by UTF-16 code units, no whitespace, primitives serialized with ECMAScript `JSON.stringify` rules. Rejects `NaN`, `±Infinity`, `undefined`, functions, symbols, `bigint` and cyclic structures with a `CanonicalizationError`.
+- `canonicalize(value)`: RFC 8785 (JCS). Object keys sorted by UTF-16 code units, no whitespace, primitives serialized with ECMAScript `JSON.stringify` rules. Rejects `NaN`, `±Infinity`, `undefined`, functions, symbols, `bigint`, cyclic structures, and strings or property names holding a lone surrogate (RFC 8785 §3.2.2.2) with a `CanonicalizationError`.
 - `contentHash(value)`: `"sha256:" + hex(SHA-256(UTF-8(canonicalize(value))))`.
+- `sha256Hex(text)` hashes the UTF-8 encoding, so it refuses text holding a lone surrogate (it has no UTF-8 encoding) with a `CanonicalizationError` instead of hashing it as U+FFFD.
 - A recipe's hash is the content hash of the recipe with its `hash` field removed. The schema version (`schema: "byway.recipe/1"`) is inside the hashed content.
+- `parseRecipe` returns only recipes that can be hashed: it asks the hasher, and a recipe holding text with no canonical form is refused with a `ZodError` whose one issue, at the recipe root, names the canonical path ([ADR-0083](../../adr/0083-hashed-text-is-well-formed-unicode.md)).
 
 ## Port types
 
@@ -80,7 +82,7 @@ Operators the grammar defines but this milestone does not need (lanes, parallel 
 
 ## Scope typing
 
-The validator walks the tree carrying two scopes. The **must** scope holds the ports available on every path, each with every producer (role and actor) that may have made it; it decides ST5 and provenance rules (DR1, DR6). The **may** scope holds the ports present on at least one path; it decides "may still be open" rules (PR4, DR2). A recipe starts with `inputs`. A step requires every type in `consumes` to be in the must scope and adds its `produces`. `replicate` turns the body's `artifact` into `option_set<artifact>` in the outer scope. `each` requires `option_set<artifact>`, runs its body with `artifact` in scope, and leaves `option_set<artifact>`. `pick(k=1)` turns `option_set<artifact>` into `artifact`. A `loop` body is typed once. `route` and `optional` merge their alternatives: must is the intersection (with producers unioned), may is the union.
+The validator walks the tree carrying two scopes. The **must** scope holds the ports available on every path, each with every producer (role and actor) that may have made it; it decides ST5 and provenance rules (DR1, DR6). The **may** scope holds the ports present on at least one path; it decides "may still be open" rules (PR4, DR2). A recipe starts with `inputs`. A step requires every type in `consumes` to be in the must scope and adds its `produces`. A model step may also list `reads`: ports it takes when they are there, each of which must be in the may scope (some path makes it before the step) and none of which joins the must scope; a port is consumed or read, never both, and the port rules hold a read as they hold a consumed port ([ADR-0089](../../adr/0089-recipe-ir-optional-reads.md)). `replicate` turns the body's `artifact` into `option_set<artifact>` in the outer scope. `each` requires `option_set<artifact>`, runs its body with `artifact` in scope, and leaves `option_set<artifact>`. `pick(k=1)` turns `option_set<artifact>` into `artifact`. A `loop` body is typed once. `route` and `optional` merge their alternatives: must is the intersection (with producers unioned), may is the union.
 
 Order-sensitive rules (PR6 voice lock, DR7 Distill order) walk the control flow instead: routes and optionals fork and join, and loop bodies run twice so effects across the back-edge are seen. (Added after the Milestone 0 review, which showed that must-only typing let a write after an optional VOICE, or an option set left open by one route branch, pass.)
 
@@ -167,7 +169,7 @@ interface Verdict { ok: boolean; recipeHash: string; violations: Violation[]; wa
 
 ## Tests
 
-- Canonical JSON: RFC 8785 vectors for key ordering (including non-ASCII keys), number formatting and rejection of non-JSON values.
+- Canonical JSON: RFC 8785 vectors for key ordering (including non-ASCII keys), number formatting and rejection of non-JSON values, including lone surrogates in values and property names.
 - Hashing: stable across key order; any field change changes the hash.
 - Each rule has at least one broken fixture that produces exactly that rule ID.
 - Every catalog recipe validates with no violations, and its `exceptionsUsed` equals its cited exceptions.

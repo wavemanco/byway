@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { get } from './api.ts';
+import { usePolling, useRefresher } from './useRefresher.ts';
 
 const LINKS = [
   { href: '/', label: 'Start' },
@@ -22,31 +23,20 @@ const REFRESH_MS = 5000;
 
 /**
  * Main navigation. History carries the number of runs waiting for you; the header outlives page changes, so
- * the count refreshes itself on navigation and every few seconds while the tab is visible.
+ * the count refreshes itself on navigation and every few seconds while the tab is visible. The requests go through the
+ * same sequencer as the Run screen's (ADR-0082): one at a time, and only the latest one sets the count, so a slow older
+ * answer never puts back a count that has since changed. A failed refresh keeps the count it has.
  */
 export function Nav({ waiting: initial }: { waiting: number }) {
   const pathname = usePathname();
   const [waiting, setWaiting] = useState(initial);
-
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = () => {
-      if (document.visibilityState !== 'visible') return;
-      get<{ count: number }>('/api/waiting')
-        .then((r) => {
-          if (!cancelled) setWaiting(r.count);
-        })
-        .catch(() => undefined);
-    };
-    refresh();
-    const timer = window.setInterval(refresh, REFRESH_MS);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-  }, [pathname]);
+  const refresher = useRefresher(
+    pathname,
+    (signal) => get<{ count: number }>('/api/waiting', signal),
+    (r) => setWaiting(r.count),
+    () => undefined,
+  );
+  usePolling(refresher, REFRESH_MS);
 
   return (
     <nav className="nav" aria-label="Main">

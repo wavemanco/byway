@@ -99,6 +99,13 @@ export function locate(text: string, langs: readonly string[], opts: { bare?: bo
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; problem: string };
+/**
+ * A parsed answer, or why it misses its contract, where a miss may still be usable: an answer that is well formed but
+ * short of what was asked (an ASSET answer with fewer images than its prompt asks for) carries what it did give.
+ * askModel asks once more with the problem, and if the second answer falls short too it returns the usable part
+ * instead of failing the step (ADR-0090). A malformed answer is a plain miss and still fails it.
+ */
+export type Usable<T> = Parsed<T> | { ok: false; problem: string; usable: T };
 const fail = (problem: string): Parsed<never> => ({ ok: false, problem });
 
 // ---- Structured artifacts ----------------------------------------------------------------------------------------
@@ -124,6 +131,11 @@ export const ShotSchema = z.object({
   imageArtifactId: z.string().optional(),
   /** Added by the runner when a relay link made the shot's clip. */
   clipArtifactId: z.string().optional(),
+  /**
+   * Added with the clip: its last frame, which the gateway extracts and the next link starts from. The shot check inside
+   * the link sees it beside the frame the clip started from (F10, ADR-0090). Never in the storyboard's text (BLIND-1).
+   */
+  lastFrameArtifactId: z.string().optional(),
 });
 /**
  * A storyboard (spec §3.3): shots, the voice-over (locked after the early VOICE), and the on-screen headline and
@@ -274,9 +286,11 @@ export function optionsText(doc: OptionsDoc): string {
  */
 export function storyboardText(sb: Storyboard): string {
   const head = [...(sb.headline ? [`Headline: ${sb.headline}`] : []), ...(sb.tagline ? [`Tagline: ${sb.tagline}`] : [])];
-  const shots = sb.storyboard.map((s) => `Shot ${s.shot} (${s.durationSec}s): ${s.description}${s.caption ? `\n   On screen: ${s.caption}` : ''}`);
-  return [...head, ...(head.length ? [''] : []), ...shots, '', `Voice-over: ${sb.voiceover}`].join('\n');
+  return [...head, ...(head.length ? [''] : []), ...sb.storyboard.map(shotText), '', `Voice-over: ${sb.voiceover}`].join('\n');
 }
+
+/** One shot as storyboardText writes it: its length, what it shows and its on-screen caption. */
+export const shotText = (s: Shot): string => `Shot ${s.shot} (${s.durationSec}s): ${s.description}${s.caption ? `\n   On screen: ${s.caption}` : ''}`;
 
 /**
  * The text view of an artifact in a text medium (or the text half of a media view). Prose and diffs are read as they

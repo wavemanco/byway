@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, promises as fsp, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, promises as fsp, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalize, contentHash } from '@byway/canonical';
@@ -129,6 +129,64 @@ describe('Ledger', () => {
     const ledger = new Ledger({ path });
     expect(await ledger.entries()).toEqual([]);
     expect(await ledger.verify()).toBeNull();
+  });
+});
+
+/**
+ * F19: verify() reports damage, it does not throw on it. A stored line can hold text that has no canonical form (a
+ * lone surrogate written as a JSON \u escape, a number too large for JSON) or not be an entry at all.
+ */
+describe('Ledger.verify on lines that cannot be hashed', () => {
+  const id = (line: string | undefined) => JSON.parse(line as string).id as string;
+
+  it('names an entry whose value was changed to hold a lone surrogate', async () => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([ls[0] as string, (ls[1] as string).replace('"purpose":"build:web-page"', '"purpose":"probe\\ud800"')]);
+    expect(lines()[1]).toContain('probe\\ud800');
+    expect(await ledger.verify()).toBe(id(ls[1]));
+  });
+
+  it('names an entry that was given a property name holding a lone surrogate', async () => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([ls[0] as string, `{"\\ud800":1,${(ls[1] as string).slice(1)}`]);
+    expect(await ledger.verify()).toBe(id(ls[1]));
+  });
+
+  it.each([
+    ['the last', 1],
+    ['the first', 0],
+  ])('names %s entry when its hash was removed and a value made unhashable (no head record)', async (_label, at) => {
+    const ledger = await seed(2);
+    const ls = lines();
+    const edited = JSON.parse(ls[at] as string) as Record<string, unknown>;
+    delete edited.hash;
+    edited.purpose = 'p\ud800';
+    ls[at] = JSON.stringify(edited);
+    rewrite(ls);
+    await fsp.rm(`${path}.head`);
+    // Never judged by hash equality: an absent hash and an uncomputable one must not compare as equal.
+    expect(await ledger.verify()).toBe(edited.id);
+  });
+
+  it.each([
+    ['null', 'null'],
+    ['an array', '[1,2]'],
+    ['a string', '"entry"'],
+    ['a number', '7'],
+  ])('reports a line that is %s, not an entry, by its line number', async (_label, line) => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([line, ls[1] as string]);
+    expect(await ledger.verify()).toBe('line:1');
+  });
+
+  it('names an entry whose cost was changed to a number too large for JSON', async () => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([ls[0] as string, (ls[1] as string).replace('"costUsd":0.02', '"costUsd":1e400')]);
+    expect(await ledger.verify()).toBe(id(ls[1]));
   });
 });
 
@@ -312,5 +370,101 @@ describe('Ledger: concurrent reads in one process', () => {
     expect(a.map((e) => e.seq)).toEqual([1, 2]);
     expect(b.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
     expect((await ledger.entries()).map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+/**
+ * F03: a torn tail (an OS crash, power loss or a full disk during an append leaves a partial last line) used to make
+ * lastEntry() throw, so every later billed call failed to be ledgered and went uncounted. The next append now sets the
+ * torn bytes aside under a name Windows accepts, cuts the file back to its last complete line and continues the chain.
+ */
+describe('Ledger: a torn tail', () => {
+  const TORN = '{"workspaceId":"ws-1","purpose":"build:web-pa';
+  const damagedFiles = () => readdirSync(dir).filter((n) => n.startsWith('ledger.jsonl.damaged-'));
+
+  it('sets the torn bytes aside, continues the chain from the last complete entry, and verifies clean', async () => {
+    const ledger = await seed(2);
+    const before = lines();
+    writeFileSync(path, `${readFileSync(path, 'utf8')}${TORN}`);
+    const e = await ledger.append(draft(3));
+    expect(e).toMatchObject({ seq: 3, prevHash: JSON.parse(before[1] as string).hash });
+    expect(lines()).toEqual([...before, expect.any(String)]);
+    const [kept, ...more] = damagedFiles();
+    expect(more).toEqual([]);
+    // ledger.jsonl.damaged-<yyyyMMddTHHmmssSSSZ>-<pid>: no colons, which Windows refuses in a file name.
+    expect(kept).toMatch(/^ledger\.jsonl\.damaged-\d{8}T\d{9}Z-\d+$/);
+    expect(readFileSync(join(dir, kept as string), 'utf8')).toBe(TORN);
+    expect(await ledger.verify()).toBeNull();
+    expect((await new Ledger({ path }).entries()).map((x) => x.seq)).toEqual([1, 2, 3]);
+  });
+
+  it('sets aside a file that is nothing but a torn first line, and starts the chain afresh', async () => {
+    writeFileSync(path, TORN);
+    const e = await new Ledger({ path }).append(draft(1));
+    expect(e).toMatchObject({ seq: 1, prevHash: GENESIS_HASH });
+    expect(damagedFiles()).toHaveLength(1);
+    expect(await new Ledger({ path }).verify()).toBeNull();
+  });
+
+  it('ends a complete last entry that only lost its newline (an editor) instead of setting it aside', async () => {
+    const ledger = await seed(2);
+    writeFileSync(path, readFileSync(path, 'utf8').replace(/\n$/, ''));
+    const e = await ledger.append(draft(3));
+    expect(e.seq).toBe(3);
+    expect(damagedFiles()).toEqual([]);
+    expect(await ledger.verify()).toBeNull();
+  });
+
+  it('continues from the last line that parses when the last complete line is damaged, and verify still names it', async () => {
+    const ledger = await seed(2);
+    writeFileSync(path, `${readFileSync(path, 'utf8')}{"not":"an entry"\n`);
+    const e = await ledger.append(draft(3));
+    expect(e).toMatchObject({ seq: 3, prevHash: JSON.parse(lines()[1] as string).hash });
+    expect(await ledger.verify()).toBe('line:3');
+  });
+});
+
+/**
+ * Wave-1 follow-up (ADR-0083 left it open): verify() reports a damaged head record as broken, as it does for lines,
+ * instead of throwing a SyntaxError or reading the line before the first.
+ */
+describe('Ledger.verify on a damaged head record', () => {
+  it.each([
+    ['not JSON', '{"seq":2,'],
+    ['null', 'null'],
+    ['a seq of 0', JSON.stringify({ seq: 0, id: 'x', hash: 'y' })],
+    ['a negative seq', JSON.stringify({ seq: -1, id: 'x', hash: 'y' })],
+    ['a fractional seq', JSON.stringify({ seq: 1.5, id: 'x', hash: 'y' })],
+    ['no hash', JSON.stringify({ seq: 1, id: 'x' })],
+    ['no id', JSON.stringify({ seq: 1, hash: 'y' })],
+  ])('reports a head that is %s as "head"', async (_label, text) => {
+    const ledger = await seed(2);
+    writeFileSync(`${path}.head`, text);
+    expect(await ledger.verify()).toBe('head');
+  });
+});
+
+describe('Ledger.verify is cached by the files it reads', () => {
+  it('reads the file again only when the ledger or its head changed', async () => {
+    let reads = 0;
+    const ledger = new Ledger({
+      path,
+      fs: {
+        readFile: (async (file: string, opts?: unknown) => {
+          if (file === path) reads++;
+          return fsp.readFile(file, opts as BufferEncoding);
+        }) as typeof fsp.readFile,
+      },
+    });
+    for (let i = 1; i <= 2; i++) await ledger.append(draft(i));
+    expect(await ledger.verify()).toBeNull();
+    expect(await ledger.verify()).toBeNull();
+    expect(reads).toBe(1);
+    await ledger.append(draft(3));
+    expect(await ledger.verify()).toBeNull();
+    expect(reads).toBe(2);
+    // A damaged head alone (the ledger unchanged) is noticed too.
+    writeFileSync(`${path}.head`, 'garbage');
+    expect(await ledger.verify()).toBe('head');
   });
 });

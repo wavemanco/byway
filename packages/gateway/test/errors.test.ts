@@ -2,7 +2,7 @@ import { GatewayError } from '@byway/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { toGatewayError } from '../src/errors.ts';
 import { makeRedactor } from '../src/redact.ts';
-import { withRetries } from '../src/retry.ts';
+import { BILLABLE_CALL, withRetries } from '../src/retry.ts';
 
 const apiError = (status: number, message: string, headers?: Record<string, string>) =>
   Object.assign(new Error(message), { status, ...(headers ? { headers: new Headers(headers) } : {}) });
@@ -94,7 +94,7 @@ describe('withRetries', () => {
       calls += 1;
       if (calls < 3) throw new GatewayError('rate-limited', 'busy', true);
       return 'ok';
-    }, opts(sleep));
+    }, opts(sleep), BILLABLE_CALL);
     expect(result).toBe('ok');
     expect(calls).toBe(3);
     // Full jitter at random()=0.5: half of base * 2^attempt.
@@ -108,7 +108,7 @@ describe('withRetries', () => {
       withRetries(async () => {
         calls += 1;
         throw new GatewayError('invalid-request', 'bad', false);
-      }, opts(sleep)),
+      }, opts(sleep), BILLABLE_CALL),
     ).rejects.toMatchObject({ code: 'invalid-request' });
     expect(calls).toBe(1);
     expect(sleep).not.toHaveBeenCalled();
@@ -121,7 +121,7 @@ describe('withRetries', () => {
       withRetries(async () => {
         calls += 1;
         throw new GatewayError('provider-error', `fail ${calls}`, true);
-      }, opts(sleep)),
+      }, opts(sleep), BILLABLE_CALL),
     ).rejects.toThrow('fail 4');
     expect(calls).toBe(4);
   });
@@ -133,7 +133,7 @@ describe('withRetries', () => {
       calls += 1;
       if (calls === 1) throw Object.assign(new GatewayError('rate-limited', 'busy', true), { retryAfterMs: 5000 });
       return 'ok';
-    }, opts(sleep));
+    }, opts(sleep), BILLABLE_CALL);
     expect(sleep.mock.calls[0]?.[0]).toBe(1000);
   });
 });

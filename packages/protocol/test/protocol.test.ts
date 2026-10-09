@@ -54,7 +54,7 @@ describe('blocks and glue', () => {
 describe('rules', () => {
   const expected: Record<RuleId, string> = {
     ST1: 'invariant', ST2: 'invariant', ST3: 'invariant', ST4: 'invariant', ST5: 'invariant',
-    ST6: 'invariant', ST7: 'invariant', ST8: 'invariant', ST9: 'invariant', ST10: 'invariant', ST11: 'invariant',
+    ST6: 'invariant', ST7: 'invariant', ST8: 'invariant', ST9: 'invariant', ST10: 'invariant', ST11: 'invariant', ST12: 'invariant',
     PR1: 'hard', PR2: 'hard', PR3: 'invariant', PR4: 'hard', PR5: 'hard', PR6: 'hard',
     'PR7.1': 'hard', 'PR7.2': 'hard', PR8: 'invariant', CH3: 'hard', LS1: 'hard',
     DR1: 'default', DR2: 'default', DR3: 'default', DR4: 'default', DR5: 'default',

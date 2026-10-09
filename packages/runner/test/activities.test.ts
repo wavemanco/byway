@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
-import type { CompletionRequest, CompletionResult, Gateway, ModelProfile, ProfileStatus } from '@byway/contracts';
-import { PROFILES } from '@byway/gateway';
+import { GatewayError, type CompletionRequest, type CompletionResult, type Gateway, type ModelProfile, type ProfileStatus } from '@byway/contracts';
+import { heldKeyError, PROFILES } from '@byway/gateway';
 import { askModel } from '../src/activities/call.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { cancelRun, failRun } from '../src/activities/lifecycle.ts';
@@ -63,6 +63,9 @@ function scripted(answers: string[], opts: { demo?: boolean; statuses?: ProfileS
     profiles: () => [],
     profileStatus: () => opts.statuses ?? [status(DEMO, true), status(NO_MEDIA, false)],
     verifyLedger: async () => null,
+    spendRecords: async () => ({ inFlight: [], uncertain: [], faults: [], notInAuditFile: 0, setAside: [] }),
+    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 }),
+    close: async () => undefined,
   };
 }
 
@@ -230,5 +233,63 @@ describe('which profile says whether images and video exist', () => {
     const deps: RunnerDeps = { gateway: scripted(['```json\n{"images":[{"slot":"hero","prompt":"A loaf","alt":"A loaf","size":"1024x1024"}]}\n```'], { demo: true }), store, prompts: fakePrompts() };
     const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
     await expect(assetStep(deps, { run, call: call(run, 'art'), step: assetSpec, ports: { artifact: doc } })).rejects.toThrow(/no images here/);
+  });
+});
+
+describe('an image refused because its prompt holds a provider key (ADR-0088)', () => {
+  const assetSpec: StepSpec = { id: 'art', role: 'asset', block: 'ASSET', actor: 'model', prompt: 'product.test.art', consumes: ['artifact'], produces: ['artifact'], writes: true, knobs: { triesPerSlot: 2 } };
+  const briefs = '```json\n{"images":[{"slot":"hero","prompt":"A loaf","alt":"A loaf","size":"1024x1024"}]}\n```';
+
+  async function attempt(error: Error) {
+    const run = await newRun('no-media');
+    let tries = 0;
+    const gateway: Gateway = {
+      ...scripted([briefs], { demo: true }),
+      image: async () => {
+        tries++;
+        throw error;
+      },
+    };
+    const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
+    const outcome = await assetStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'art'), step: assetSpec, ports: { artifact: doc } }).catch((e: unknown) => e);
+    return { outcome, tries };
+  }
+
+  it('stops the step with the gateway’s message, like the other key problems, instead of skipping it', async () => {
+    const refused = heldKeyError('invalid-request', 'This request contains your OPENAI_API_KEY. byway never sends a key to a model; remove it from the material and try again.', 'OPENAI_API_KEY');
+    const { outcome, tries } = await attempt(refused);
+    expect(outcome).toBe(refused);
+    expect(tries).toBe(1);
+  });
+
+  it('stops the step on an accounting fault (ADR-0095): every paid call waits until the person acknowledges it', async () => {
+    const fault = new GatewayError('accounting-fault', 'byway found a line in its spend ledger (ledger.jsonl, at byte 0) that it cannot read.');
+    const { outcome, tries } = await attempt(fault);
+    expect(outcome).toBe(fault);
+    expect(tries).toBe(1);
+  });
+
+  it('stops the step when the image was billed but byway could not keep it: another try would buy another image (follow-up (e), ADR-0090)', async () => {
+    const lost = new GatewayError('byway-failure', 'openai made the image and billed it, but it could not be stored: ENOSPC.', false, { billed: true });
+    const { outcome, tries } = await attempt(lost);
+    // The gateway's failure, with what it leaves added (the run stops here; asset-slots.test.ts holds the wording).
+    expect(outcome).toMatchObject({ name: 'GatewayError', code: 'byway-failure', billed: true, retryable: false, message: expect.stringMatching(/^openai made the image and billed it, but it could not be stored: ENOSPC\. That was the image for “hero”, so the run stops here/) });
+    expect(tries).toBe(1);
+  });
+
+  it('tries the image again when byway did not start the call (nothing was billed), as before byway-side failures had their own code', async () => {
+    // A GatewayError fails the step for good (FAILURE.step is not retried), so a call byway did not send is tried as any
+    // other unbilled failure is: up to triesPerSlot, then the step finishes skipped.
+    for (const message of ['byway is stopping, so it did not start this call. Try again once it has started again.', 'byway could not record this call as sent in its spending records, so it did not send it. Try again.']) {
+      const { outcome, tries } = await attempt(new GatewayError('byway-failure', message, true, { billed: false }));
+      expect(outcome).toMatchObject({ skipped: true });
+      expect(tries).toBe(2);
+    }
+  });
+
+  it('still tries any other refused image again, then finishes skipped, as before', async () => {
+    const { outcome, tries } = await attempt(new GatewayError('invalid-request', 'content policy'));
+    expect(outcome).toMatchObject({ skipped: true });
+    expect(tries).toBe(2);
   });
 });

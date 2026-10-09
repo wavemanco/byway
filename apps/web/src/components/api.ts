@@ -2,7 +2,30 @@
 
 export class ApiError extends Error {
   override name = 'ApiError';
+  /** The server's refusal code, for the refusals a screen acts on (view/refusals.ts). */
+  readonly code: string | undefined;
+  /** The request's top-level fields the refusal names (for a held key: those that held one), when it names any. */
+  readonly fields: readonly string[] | undefined;
+  /** For a held-key refusal, the key's variable name (never its value), so a screen can say where it was in its own words. */
+  readonly heldKey: string | undefined;
+  /** The whole refusal as the server sent it, for a refusal that carries more for the screen (view/refusals.ts). */
+  readonly body: Readonly<Record<string, unknown>> | undefined;
+  /**
+   * The HTTP status byway answered with; none when no answer came back (the request failed on its way, or byway was not
+   * there). A Start tells the two apart: only a Start that got no answer is sent again under its id (startIdentity.ts).
+   */
+  readonly status: number | undefined;
+  constructor(message: string, code?: string, fields?: readonly string[], heldKey?: string, body?: Readonly<Record<string, unknown>>, status?: number) {
+    super(message);
+    this.code = code;
+    this.fields = fields;
+    this.heldKey = heldKey;
+    this.body = body;
+    this.status = status;
+  }
 }
+
+const stringList = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((v) => typeof v === 'string') ? value : undefined);
 
 async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Promise<T> {
   let res: Response;
@@ -11,22 +34,66 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   } catch {
     throw new ApiError('byway is not reachable. Check that it is still running, then try again.');
   }
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`);
+  let data: { error?: string; code?: unknown; fields?: unknown; key?: unknown };
+  try {
+    data = (await res.json()) as { error?: string; code?: unknown; fields?: unknown; key?: unknown };
+  } catch {
+    // A successful status whose body cannot be read is a failure, never an empty object standing in for the result:
+    // the Recommendation commands apply what comes back directly (ADR-0082).
+    if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.', undefined, undefined, undefined, undefined, res.status);
+    data = {};
+  }
+  if (!res.ok) {
+    const code = typeof data.code === 'string' ? data.code : undefined;
+    throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, code, stringList(data.fields), typeof data.key === 'string' ? data.key : undefined, data, res.status);
+  }
   return data as T;
 }
 
 export const post = <T>(url: string, body: unknown) => send<T>('POST', url, body);
 export const patch = <T>(url: string, body: unknown) => send<T>('PATCH', url, body);
 
+/**
+ * Reads JSON the screens poll (view/refresh.ts). A successful status whose body cannot be read (cut off by the
+ * caller's signal, or not JSON) is a failure, never an empty object standing in for the data.
+ */
 export async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { cache: 'no-store', ...(signal ? { signal } : {}) });
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  let data: { error?: string };
+  try {
+    data = (await res.json()) as { error?: string };
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
+    data = {};
+  }
   if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}).`);
   return data as T;
 }
 
+/**
+ * An artifact's raw address: for an element's src (an image, a clip) and, with a file name, a download. Never a link a
+ * person opens: a page opened there is inert by design (F05), so "Open" goes to openHref.
+ */
 export function artifactUrl(id: string, download?: string): string {
   const base = `/artifacts/${encodeURIComponent(id)}`;
   return download === undefined ? base : `${base}?download=1&name=${encodeURIComponent(download)}`;
+}
+
+/**
+ * Where a page frame loads a generated page: its raw address, asking for its scripts (`?scripts=1`) only when the person
+ * turned them on for that page. The server grants the ask only to a same-origin frame (F05, ADR-0085); the frame's
+ * sandbox (frameSandbox) is derived from the same switch, as a second layer.
+ */
+export function pageFrameUrl(id: string, scripts: boolean): string {
+  return scripts ? `${artifactUrl(id)}?scripts=1` : artifactUrl(id);
+}
+
+/**
+ * Every in-app "Open" of an artifact: the whole-artifact viewer, which shows a page in a frame with the per-page scripts
+ * switch, text whole, and images and clips as themselves (F05, F13). One rule for every link, so none opens a page's raw
+ * address top-level.
+ */
+export function openHref(id: string): string {
+  return `/view/${encodeURIComponent(id)}`;
 }

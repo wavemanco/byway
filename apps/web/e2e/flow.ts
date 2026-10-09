@@ -9,18 +9,31 @@ import { E2E_KEYS, SENTINEL } from './keys.ts';
 
 const TEXTUAL = /^(text\/|application\/(json|javascript|x-component)|image\/svg\+xml)/;
 
+export interface KeyWatchOptions {
+  /**
+   * The path of the one POST whose body is the person pasting a stand-in key on purpose (the refusal test, ADR-0088), or
+   * a test of the path, for a path that holds an id the test learns later (a run's checkpoint). Only that first
+   * request's body is exempt; its URL and headers, every response and every other request are checked.
+   */
+  pastedTo?: string | ((pathname: string) => boolean);
+}
+
 /** Records every place a stand-in key appeared: request URLs, headers and bodies; response headers and bodies. */
-export function watchForKeys(page: Page): { leaks: string[]; checked(): number } {
+export function watchForKeys(page: Page, opts: KeyWatchOptions = {}): { leaks: string[]; checked(): number; pastes(): number } {
   const leaks: string[] = [];
   let responses = 0;
+  let pastes = 0;
   const scan = (where: string, text: string | null | undefined) => {
     if (!text || !text.includes(SENTINEL)) return;
     for (const [name, value] of Object.entries(E2E_KEYS)) if (text.includes(value)) leaks.push(`${name} in ${where}`);
   };
+  const target = opts.pastedTo;
+  const isTarget = (pathname: string) => (typeof target === 'string' ? pathname === target : target !== undefined && target(pathname));
+  const pasted = (url: string, method: string) => method === 'POST' && isTarget(new URL(url).pathname) && pastes++ === 0;
   page.on('request', (req) => {
     scan(`request URL ${req.url()}`, req.url());
     scan(`request headers ${req.url()}`, JSON.stringify(req.headers()));
-    scan(`request body ${req.url()}`, req.postData());
+    if (!pasted(req.url(), req.method())) scan(`request body ${req.url()}`, req.postData());
   });
   page.on('response', async (res) => {
     scan(`response headers ${res.url()}`, JSON.stringify(res.headers()));
@@ -33,7 +46,7 @@ export function watchForKeys(page: Page): { leaks: string[]; checked(): number }
       // Redirects and aborted navigations have no body.
     }
   });
-  return { leaks, checked: () => responses };
+  return { leaks, checked: () => responses, pastes: () => pastes };
 }
 
 /** Start: type the problem and ask for a recommendation. */
@@ -58,19 +71,65 @@ export interface Answered {
   prompt: string;
 }
 
-type Outcome = { turn: Locator } | { done: true } | { failed: string };
+/** A turn: its panel, pinned to its checkpoint id (a later panel is another locator), with the id and kind it showed. */
+export type Outcome = { turn: Locator; id: string; kind: CheckpointKind } | { done: true } | { failed: string };
 
-async function next(page: Page, after: string | undefined, timeoutMs: number): Promise<Outcome> {
+/** How long reading a panel may wait: a panel that is not there now has gone (the run moved on, or finished). */
+const READ = { timeout: 1000 };
+
+/**
+ * Waits for a "Your turn" other than `after`, the run being done, or the run failing. A panel can go at any moment,
+ * the last one as the run finishes, so everything about it is read without waiting; one that went is looked for again,
+ * which also finds the run done.
+ */
+export async function nextTurn(page: Page, after: string | undefined, timeoutMs: number): Promise<Outcome> {
   const deadline = Date.now() + timeoutMs;
   const turn = page.locator('section.turn');
   while (Date.now() < deadline) {
     if (await page.locator('.state-done').isVisible()) return { done: true };
     const failed = page.getByRole('heading', { name: 'This run stopped with a problem' });
     if (await failed.isVisible()) return { failed: (await page.locator('.notice-danger').first().textContent()) ?? 'no reason' };
-    if ((await turn.count()) > 0 && (await turn.getAttribute('data-checkpoint')) !== after) return { turn };
+    const id = (await turn.count()) > 0 ? await turn.first().getAttribute('data-checkpoint', READ).catch(() => null) : null;
+    if (id !== null && id !== after) {
+      const pinned = page.locator(`section.turn[data-checkpoint="${id}"]`);
+      const kind = await pinned.getAttribute('data-kind', READ).catch(() => null);
+      if (kind !== null) return { turn: pinned, id, kind: kind as CheckpointKind };
+    }
     await page.waitForTimeout(250);
   }
   throw new Error(`Nothing happened in ${timeoutMs / 1000} s after ${after ? `answering ${after}` : 'starting'}.`);
+}
+
+/** A "Your turn" a spec is answering: its panel (pinned to its checkpoint id), its id and its kind. */
+export interface Turn {
+  turn: Locator;
+  id: string;
+  kind: CheckpointKind;
+}
+
+/** The next "Your turn" other than `after`; fails if the run ends first. */
+export async function turnAfter(page: Page, after?: string): Promise<Turn> {
+  const outcome = await nextTurn(page, after, 120_000);
+  if ('done' in outcome) throw new Error(`The run ended before another question${after ? ` after ${after}` : ''}.`);
+  if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
+  return { turn: outcome.turn, id: outcome.id, kind: outcome.kind };
+}
+
+/** Answers questions as they come until one of `kinds` is open. */
+export async function untilTurn(page: Page, kinds: readonly CheckpointKind[], after?: string): Promise<Turn> {
+  let last = after;
+  for (let i = 0; i < 30; i++) {
+    const t = await turnAfter(page, last);
+    if (kinds.includes(t.kind)) return t;
+    await answerTurn(page, t.turn, t.kind);
+    last = t.id;
+  }
+  throw new Error(`No ${kinds.join(' or ')} question came.`);
+}
+
+/** The text field a text question is answered in: the editor, the reaction field, or the list's first item. */
+export function answerField(t: Turn): Locator {
+  return t.kind === 'directive' ? t.turn.getByRole('textbox', { name: 'Item 1', exact: true }) : t.turn.locator('textarea, .onscreen-copy input').first();
 }
 
 /** Text answers that read like a person's. */
@@ -81,7 +140,7 @@ const WORDS = {
 };
 
 /** Answers one "Your turn" through its panel, the way a person would. */
-async function answer(page: Page, turn: Locator, kind: CheckpointKind): Promise<void> {
+export async function answerTurn(page: Page, turn: Locator, kind: CheckpointKind): Promise<void> {
   const primary = turn.locator('.turn-foot button.button-primary');
   switch (kind) {
     case 'pick': {
@@ -137,15 +196,16 @@ export async function answerUntilDone(
   const answered: Answered[] = [];
   let last: string | undefined = opts.after;
   for (let i = 0; i < (opts.maxTurns ?? 60); i++) {
-    const outcome = await next(page, last, opts.stepTimeoutMs ?? 120_000);
+    const outcome = await nextTurn(page, last, opts.stepTimeoutMs ?? 120_000);
     if ('done' in outcome) return answered;
     if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}\nAnswered so far: ${JSON.stringify(answered)}`);
-    const { turn } = outcome;
-    const kind = (await turn.getAttribute('data-kind')) as CheckpointKind;
-    const prompt = ((await turn.locator('h2').first().textContent()) ?? '').trim();
-    last = (await turn.getAttribute('data-checkpoint')) ?? undefined;
-    await answer(page, turn, kind);
-    answered.push({ kind, prompt });
+    const { turn, id, kind } = outcome;
+    const prompt = await turn.locator('h2').first().textContent(READ).catch(() => null);
+    // Gone since it was found: look again (the run may have moved on, or finished).
+    if (prompt === null) continue;
+    last = id;
+    await answerTurn(page, turn, kind);
+    answered.push({ kind, prompt: prompt.trim() });
   }
   throw new Error(`The run asked more than ${opts.maxTurns ?? 60} questions: ${JSON.stringify(answered)}`);
 }

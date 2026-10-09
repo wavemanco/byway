@@ -48,7 +48,7 @@ export async function stepStarted(deps: RunnerDeps, run: RunRef, call: StepCall,
   await emit(deps.store, run.runId, 'step-started', data, at(call, 'step-started'));
 }
 
-/** step-finished, then (for steps that called the gateway) the run's cost from the ledger. */
+/** step-finished, then (for steps that called the gateway) the run's settled cost from the spend book. */
 export async function stepFinished(deps: RunnerDeps, run: RunRef, call: StepCall, data: RunEventPayloads['step-finished'], calledGateway = false): Promise<void> {
   await emit(deps.store, run.runId, 'step-finished', data, at(call, 'step-finished'));
   if (calledGateway) await recordCost(deps.store, deps.gateway, run.runId, run.workspaceId, call);

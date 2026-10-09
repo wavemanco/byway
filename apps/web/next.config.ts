@@ -4,15 +4,17 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 /**
  * The build's folder inside apps/web and the tsconfig that build uses (DEV-1): `.next` normally; `.next-e2e` for the
- * e2e suite (BYWAY_NEXT_DIST_DIR), so running it never rebuilds under a byway you are running from the same checkout.
+ * e2e suite (BYWAY_NEXT_DIST_DIR), so running it never rebuilds under a byway you are running from the same checkout;
+ * `.next-dev-test` for the real next dev test (test/dev-server.real.test.ts) alone, because Next allows one dev server
+ * per build folder and a suite building into `.next-e2e` at the same time would stop it.
  * Next.js adds its build folder's type paths to the tsconfig it builds with, so the e2e build has its own
  * (tsconfig.e2e.json) and tsconfig.json stays as committed.
  */
-const BUILDS = { '.next': 'tsconfig.json', '.next-e2e': 'tsconfig.e2e.json' } as const;
+const BUILDS = { '.next': 'tsconfig.json', '.next-e2e': 'tsconfig.e2e.json', '.next-dev-test': 'tsconfig.dev-test.json' } as const;
 
 function build(env: Env): { distDir: keyof typeof BUILDS; tsconfigPath: string } {
   const dir = env.BYWAY_NEXT_DIST_DIR?.trim() || '.next';
-  if (!Object.hasOwn(BUILDS, dir)) throw new Error(`BYWAY_NEXT_DIST_DIR must be .next or .next-e2e, not "${dir}".`);
+  if (!Object.hasOwn(BUILDS, dir)) throw new Error(`BYWAY_NEXT_DIST_DIR must be .next, .next-e2e or .next-dev-test, not "${dir}".`);
   const distDir = dir as keyof typeof BUILDS;
   return { distDir, tsconfigPath: BUILDS[distDir] };
 }
@@ -51,10 +53,13 @@ export function configFor(env: Env): NextConfig {
           source: '/((?!artifacts/|api/artifacts/).*)',
           headers: [
             // Images and media only from byway itself (SEC-4): an image from elsewhere in generated text would be
-            // fetched as soon as it is shown, with whatever a model put in its address.
+            // fetched as soon as it is shown, with whatever a model put in its address. Frames show only byway's own
+            // addresses (F05): a click on a link in a generated page, or a page with scripts navigating itself, would
+            // otherwise carry the frame, and whatever its address holds, to another site. A second layer, not consent:
+            // a page running its scripts has ways out that CSP does not govern, so scripts stay a per-page choice.
             {
               key: 'Content-Security-Policy',
-              value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:",
+              value: "frame-ancestors 'none'; frame-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:",
             },
             { key: 'X-Content-Type-Options', value: 'nosniff' },
             { key: 'Referrer-Policy', value: 'same-origin' },

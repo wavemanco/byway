@@ -1,15 +1,21 @@
 /**
  * The local engine (spec §2 process model): a Temporal dev server persisted in `<dataDir>/temporal.sqlite`, the
  * worker (built with esbuild, ADR-0070) in the same process, and a Runner for another process via connectRunner.
+ *
+ * Engine starts and stops are slow on a busy machine (a Temporal server with its database, the worker, settling runs),
+ * so each test's limit is counted in engine starts and stops. The file builds its own workflow bundle once, so no start
+ * rebuilds it and none shares dist/workflows.js with a byway or another suite building it at the same moment.
  */
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { request } from 'node:http';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DefaultLogger, Runtime } from '@temporalio/worker';
 import { createGateway } from '@byway/gateway';
+import { buildWorkflows } from '../src/build.ts';
 import { storeCaps } from '../src/caps.ts';
 import { connectRunner, startDevEngine, TEMPORAL_DB_FILENAME, type DevEngine } from '../src/dev-engine.ts';
 import { workflowIdFor } from '../src/types.ts';
@@ -37,15 +43,28 @@ const freePort = () =>
 
 const dir = mkdtempSync(path.join(tmpdir(), 'byway-engine-'));
 const store = createTestStore({ dataDir: dir });
-const gateway = createGateway({ ledgerPath: path.join(dir, 'ledger.jsonl'), artifacts: store.artifacts, caps: storeCaps(store), demo: true, env: {} });
+const gateway = createGateway({ ledgerPath: path.join(dir, 'ledger.jsonl'), artifacts: store.artifacts, spendBook: store.spendBook, caps: storeCaps(store), demo: true, env: {} });
 let engine: DevEngine | undefined;
 let httpPort = 0;
 
+/** How long one engine start, or one stop, may take on a busy machine; a quiet one needs a few seconds. */
+const ENGINE_MS = 60_000;
+
+const bundle = fileURLToPath(new URL(`../dist/test-engine-${path.basename(dir)}.js`, import.meta.url));
+let workflowsPath = '';
+beforeAll(async () => {
+  workflowsPath = await buildWorkflows({ outfile: bundle });
+}, ENGINE_MS);
+
 afterAll(async () => {
   await engine?.stop();
+  await gateway.close();
   store.close();
   rmSync(dir, { recursive: true, force: true });
-}, 60_000);
+  rmSync(bundle, { force: true });
+}, ENGINE_MS);
+
+const start = (port: number, more: { httpPort?: number } = {}) => startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages(), workflowsPath, ...more });
 
 /** An HTTP request to the dev server's HTTP API, with the headers a hostile page or a rebinding attack would send. */
 const http = (port: number, method: 'GET' | 'POST', headers: Record<string, string>, body?: string) =>
@@ -64,7 +83,7 @@ describe('the dev engine', () => {
     const squatter = createServer();
     await new Promise<void>((r) => squatter.listen(port, '127.0.0.1', () => r()));
     try {
-      const err = await startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages() }).catch((e: unknown) => e);
+      const err = await start(port).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(Error);
       expect((err as Error).message).toContain(String(port));
       expect((err as Error).message).toMatch(/already in use/);
@@ -76,7 +95,7 @@ describe('the dev engine', () => {
 
   it('runs a recipe end to end, and keeps its history in the data directory across restarts', async () => {
     const port = await freePort();
-    engine = await startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages() });
+    engine = await start(port);
     expect(engine.address).toBe(`127.0.0.1:${port}`);
     expect(existsSync(path.join(dir, TEMPORAL_DB_FILENAME))).toBe(true);
 
@@ -97,10 +116,10 @@ describe('the dev engine', () => {
     await engine.stop();
 
     // Restarted on the same data directory, the server still knows the finished workflow.
-    engine = await startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages() });
+    engine = await start(port);
     const described = await engine.client.workflow.getHandle(workflowIdFor(run.id)).describe();
     expect(described.status.name).toBe('COMPLETED');
-  }, 120_000);
+  }, 3 * ENGINE_MS);
 
   it('keeps the Temporal HTTP API closed: no rebinding reads, no cross-site writes (SEC-2)', async () => {
     expect(engine).toBeDefined();
@@ -109,7 +128,7 @@ describe('the dev engine', () => {
     expect(await http(httpPort, 'GET', { Host: `127.0.0.1:${httpPort}` })).toBe(403);
     expect(await http(httpPort, 'GET', { Host: `rebind.attacker.example:${httpPort}` })).toBe(403);
     expect(await http(httpPort, 'POST', { Host: `127.0.0.1:${httpPort}`, Origin: 'https://evil.example', 'Sec-Fetch-Site': 'cross-site', 'Content-Type': 'text/plain;charset=UTF-8' }, '{}')).toBe(403);
-  }, 60_000);
+  }, 2 * ENGINE_MS);
 });
 
 /** The engine again on the same port, with its HTTP API pinned to a known port so the test can find it. */
@@ -117,5 +136,5 @@ async function restartWithHttpPort(port: number): Promise<DevEngine> {
   await engine?.stop();
   engine = undefined;
   httpPort = await freePort();
-  return startDevEngine({ dataDir: dir, gateway, store, prompts: fakePrompts(), port, pages: fakePages(), httpPort });
+  return start(port, { httpPort });
 }

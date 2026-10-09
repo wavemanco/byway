@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**80 records:** 73 accepted (15 of them by continuation, awaiting ratification; 18 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**95 records:** 88 accepted (15 of them by continuation, awaiting ratification; 33 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -92,6 +92,11 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0067](0067-product-c1-direct-html-builder.md) | In the product, C1 builds single-file HTML pages by direct model generation and renders them with Playwright | Accepted | Delegated | 2026-10-07 10:48 |
 | [ADR-0070](0070-runner-workflows-precompiled-with-esbuild.md) | Precompile the runner's Temporal workflows with esbuild | Accepted | Delegated | 2026-10-07 10:52 |
 | [ADR-0078](0078-runs-from-older-engine-versions-end-plainly.md) | Runs started by an older engine version end plainly when the engine changes | Accepted | Delegated | 2026-10-07 23:00 |
+| [ADR-0083](0083-hashed-text-is-well-formed-unicode.md) | Hashed text is well-formed Unicode | Accepted | Delegated | 2026-10-08 16:30 |
+| [ADR-0094](0094-backup-unit-is-the-data-directory.md) | The backup unit is the whole data directory | Accepted | Delegated | 2026-10-08 16:30 |
+| [ADR-0096](0096-partial-restores-reported-at-start.md) | Partial restores are reported at start and orphan runs are stopped; the renderer's allowlist holds on every redirect hop | Accepted | Delegated | 2026-10-08 18:20 |
+| [ADR-0092](0092-recipe-semantics-derived-from-execution.md) | Recipe semantics are derived from execution and checked at every entry | Accepted | Delegated | 2026-10-08 23:10 |
+| [ADR-0089](0089-recipe-ir-optional-reads.md) | Recipe IR: model steps may read a port when an optional branch made it | Accepted | Delegated | 2026-10-09 02:00 |
 
 ## Product & program
 
@@ -115,6 +120,16 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0077](0077-rank-gates-scale-with-the-lineup.md) | Hidden rank thresholds scale with the lineup actually used | Accepted | Delegated | 2026-10-07 23:00 |
 | [ADR-0079](0079-phase-4-runner-records.md) | Runner decisions made while fixing the Phase 4 review | Accepted | Delegated | 2026-10-08 00:30 |
 | [ADR-0080](0080-phase-4-recheck-corrections.md) | Corrections after the independent re-check of the Phase 4 fixes | Accepted | Delegated | 2026-10-08 02:00 |
+| [ADR-0084](0084-renderer-launch-without-secrets.md) | The page renderer launches with no secrets and one stated containment policy; the OS sandbox awaits the owner's decision | Accepted | Delegated | 2026-10-08 16:30 |
+| [ADR-0088](0088-provider-boundary-held-keys-and-media-admission.md) | The provider-key promise is enforced at every crossing; provider media is admitted by one rule on every URL and redirect hop | Accepted | Delegated | 2026-10-08 16:45 |
+| [ADR-0087](0087-lineup-evidence-full-words-and-disclosed-card-budget.md) | Lineup evidence: text critics read every item's full words; image-only critics get a measured, visible, disclosed budget | Accepted | Delegated | 2026-10-08 16:45 |
+| [ADR-0082](0082-web-client-state-ownership.md) | Web client state ownership: drafts, polling and the Recommendation screen | Accepted | Delegated | 2026-10-08 17:00 |
+| [ADR-0091](0091-provider-edge-billing-fixes.md) | Provider-edge billing fixes: one billing classification, fal jobs submitted once, served-model pricing, the estimate contract, torn-tail quarantine, one first-recommendation call per intake | Accepted | Delegated | 2026-10-08 20:05 |
+| [ADR-0085](0085-generated-pages-inert-unless-a-frame-asks-with-consent.md) | Generated-page responses are inert unless a same-origin frame asks with consent; every in-app "Open" goes to the whole-artifact viewer; frames navigate only within byway | Accepted | Delegated | 2026-10-08 20:30 |
+| [ADR-0086](0086-run-screen-excerpts-say-so-and-decision-views-show-whole-text.md) | Run-screen artifact info is an excerpt with its completeness stated; decision views show whole text; row facts come from whole bytes | Accepted | Delegated | 2026-10-08 20:30 |
+| [ADR-0095](0095-paid-calls-have-a-durable-spend-book.md) | Paid calls have a durable spend book: the book in byway.sqlite is the cap authority, ledger.jsonl its hash-chained audit record | Accepted | Delegated | 2026-10-08 21:45 |
+| [ADR-0099](0099-paid-operations-keyed-to-their-caller.md) | A step's paid call is keyed to its caller across retries; byway's own failures say so; byway's stop reaches the web process | Accepted | Delegated | 2026-10-09 01:15 |
+| [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md) | Execution contracts for revising humans and media steps: a reaction revises its port in place, an ASSET prompt declares its image count, the shot check sees its clip | Accepted | Delegated | 2026-10-09 02:10 |
 
 ## Open decisions (not yet ADRs)
 

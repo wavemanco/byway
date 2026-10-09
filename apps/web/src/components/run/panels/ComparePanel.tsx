@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { moveFocus } from '../../../view/checkpoints.ts';
+import { ActionButton } from '../../ActionButton.tsx';
+import { openHref } from '../../api.ts';
 import { ArtifactPreview } from '../../ArtifactPreview.tsx';
 import { ScriptsToggle, usePageScripts } from '../../ScriptsToggle.tsx';
 import { outputKind } from '../../../view/run.ts';
@@ -15,13 +17,26 @@ type Mode = 'side' | 'flip';
  * compare: two versions, side by side or flipped in place (flipping is how a small change becomes visible). Space
  * flips, J and K move between versions, and Enter keeps the highlighted one. Nothing is highlighted until you move,
  * flip or click a version, so a stray Enter as the panel opens keeps nothing (UX-1); "Keep this" keeps that version.
+ * A page shows as a named picture of its first screen that says so, and every version opens whole in the viewer (F13).
+ *
+ * The highlight is the person's draft: kept by the Run screen while they look at another step, never across a reload
+ * (view/drafts.ts persisted, ADR-0082). How the versions are shown (side by side or flipped, which one, and whether the
+ * pages' scripts run) is this view's own and starts afresh.
  */
-export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelProps) {
+export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId, draft, onDraft, sent }: PanelProps) {
   const options = cp.options ?? [];
   const [mode, setMode] = useState<Mode>('side');
+  const kept = options.findIndex((o) => o.id === draft.choice[0]);
   // The version shown in Flip mode, and the one highlighted once you have chosen (null until then).
-  const [shown, setShown] = useState(0);
-  const [chosen, setChosen] = useState<number | null>(null);
+  const [shown, setShown] = useState(Math.max(0, kept));
+  const [chosen, setChosenState] = useState<number | null>(kept >= 0 ? kept : null);
+  const setChosen = (index: number) => {
+    // Sent: the highlight stays on the version sent until byway settles the question; flipping still shows the other.
+    if (sent) return;
+    setChosenState(index);
+    const option = options[index];
+    if (option) onDraft({ ...draft, choice: [option.id] });
+  };
   const [hint, setHint] = useState<string | null>(null);
   const current = options[shown];
   const highlighted = chosen === null ? undefined : options[chosen];
@@ -36,6 +51,9 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
     setHint(null);
   }
 
+  // The version being sent, so its "Keep this" shows as busy and the other only as unavailable (R5).
+  const [keeping, setKeeping] = useState<number | null>(null);
+
   function keep(index: number | null) {
     const option = index === null ? undefined : options[index];
     if (busy) return;
@@ -43,6 +61,7 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
       setHint('Choose a version first: J and K move between them, or use Keep this.');
       return;
     }
+    setKeeping(index);
     onSubmit({ checkpointId: cp.id, choice: [option.id] });
   }
 
@@ -85,13 +104,14 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
                   </span>
                   {o.label}
                 </h3>
-                <button type="button" className="button" onClick={() => keep(i)} disabled={busy}>
+                <ActionButton className="button" onClick={() => keep(i)} busy={busy && !sent && keeping === i} unavailable={busy}>
                   Keep this<span className="sr-only">: {o.label}</span>
-                </button>
+                </ActionButton>
               </div>
               <div className="compare-view" onClick={() => show(i)}>
                 {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scripts={scripts} /> : <p>{o.label}</p>}
               </div>
+              {o.artifactId ? <OpenVersion id={o.artifactId} label={o.label} mediaType={artifacts[o.artifactId]?.mediaType} /> : null}
             </li>
           ))}
         </ul>
@@ -105,8 +125,11 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
           </p>
           {/* Both versions stay mounted so a flip is instant and lands on the same spot. */}
           {options.map((o, i) => (
-            <div key={o.id} className="compare-view" hidden={i !== shown}>
-              {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scripts={scripts} /> : null}
+            <div key={o.id} hidden={i !== shown}>
+              <div className="compare-view">
+                {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scripts={scripts} /> : null}
+              </div>
+              {o.artifactId ? <OpenVersion id={o.artifactId} label={o.label} mediaType={artifacts[o.artifactId]?.mediaType} /> : null}
             </div>
           ))}
         </div>
@@ -119,10 +142,26 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId }: PanelP
         kind={cp.kind}
         ready={highlighted !== undefined}
         busy={busy}
+        sent={sent}
         onSubmit={() => keep(chosen)}
         action={highlighted ? `Keep “${highlighted.label}”` : undefined}
         status={mode === 'side' ? (highlighted ? `Highlighted: ${highlighted.id}` : 'Nothing highlighted yet.') : undefined}
       />
     </>
+  );
+}
+
+/**
+ * Under a version: the whole of it, in the whole-artifact viewer (openHref; a page there runs no scripts until asked,
+ * ADR-0085). A large page preview is only the page's first screen, and says so (F13), so every version can be opened whole.
+ */
+function OpenVersion({ id, label, mediaType }: { id: string; label: string; mediaType: string | undefined }) {
+  const kind = outputKind(mediaType);
+  const what = kind === 'page' ? 'Open the whole page' : kind === 'image' || kind === 'video' ? 'Open full size' : kind === 'other' ? 'Open' : 'Open the whole text';
+  return (
+    <a className="compare-open" href={openHref(id)} target="_blank" rel="noopener noreferrer">
+      {what}
+      <span className="sr-only">: {label}, in a new tab</span>
+    </a>
   );
 }
