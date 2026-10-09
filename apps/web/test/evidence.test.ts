@@ -18,7 +18,7 @@ import type { Services } from '../src/services/index.ts';
 import { partShown } from '../src/view/format.ts';
 import type { ArtifactInfo } from '../src/view/rundata.ts';
 import type { TimelineStep } from '../src/view/timeline.ts';
-import { filesUnder, REPO } from './guards/scan.ts';
+import { fieldUses, filesUnder, REPO } from './guards/scan.ts';
 
 const ID = `sha256:${'d'.repeat(64)}`;
 const html = (el: ReactElement) => renderToStaticMarkup(el);
@@ -229,24 +229,67 @@ describe('loading the whole text (F13)', () => {
   });
 });
 
-describe('who reads an excerpt (F13)', () => {
+describe('who reads or sets an excerpt (F13)', () => {
   /**
-   * Each file that reads ArtifactInfo.excerpt, and why. A view that reads it shows the opening of a text, so it must be
-   * a snippet by design or say that it is partial; a new reader is reviewed here, not found later.
+   * Each file that names ArtifactInfo.excerpt, and why. A view that reads it shows the opening of a text, so it must be
+   * a snippet by design or say that it is partial; a file that sets it says what the text is. A new one is reviewed here,
+   * not found later. The scan (fieldUses) sees property and element access and the field as a key, so a destructuring
+   * reader is listed too.
    */
-  const READERS: Record<string, string> = {
+  const USES: Record<string, string> = {
     'apps/web/src/components/ArtifactPreview.tsx': 'shows the excerpt as a snippet, or with a partial notice while a large preview loads the whole text',
+    'apps/web/src/components/ArtifactViewer.tsx': 'sets it to the whole text the viewer read from the store, marked complete',
     'apps/web/src/components/run/StepThumbs.tsx': 'a step row: a 120-character snippet (counts come from server facts)',
     'apps/web/src/components/run/panels/PickPanel.tsx': 'a pick card: a clipped snippet, with Open to the whole artifact',
+    'apps/web/src/server/run-data.ts': 'makes the excerpt, with complete and bytes, from the whole artifact',
   };
 
   it('is limited to the reviewed files', () => {
     const web = path.join(REPO, 'apps', 'web');
     const files = [...filesUnder(path.join(web, 'src'), /\.(ts|tsx)$/), ...filesUnder(path.join(web, 'app'), /\.(ts|tsx)$/)];
-    const readers = files
-      .filter((f) => /\.excerpt\b/.test(readFileSync(f, 'utf8')))
+    const users = files
+      .filter((f) => fieldUses(readFileSync(f, 'utf8'), 'excerpt').length > 0)
       .map((f) => path.relative(REPO, f).replace(/\\/g, '/'))
       .sort();
-    expect(readers).toEqual(Object.keys(READERS).sort());
+    expect(users).toEqual(Object.keys(USES).sort());
+  });
+
+  it('the scan sees every way of reading or setting the field, destructuring included', () => {
+    const uses = [
+      'const text = info.excerpt;',
+      "const text = info?.excerpt ?? '';",
+      'const text = info\n  .excerpt;',
+      "const text = info['excerpt'];",
+      'const text = info?.["excerpt"];',
+      'const { excerpt } = info;',
+      'const { mediaType, excerpt: text } = info;',
+      "const { excerpt = '' } = info ?? {};",
+      'let text; ({ excerpt: text } = info);',
+      'function Row({ excerpt }: ArtifactInfo) { return excerpt; }',
+      'const Row = ({ info: { excerpt } }: { info: ArtifactInfo }) => excerpt;',
+      'for (const { excerpt } of Object.values(artifacts)) show(excerpt);',
+      "const { 'excerpt': text } = info;",
+      "const { ['excerpt']: text } = info;",
+      'const [{ excerpt }] = infos;',
+      'const {\n  mediaType,\n  excerpt,\n} = info;',
+      'const copy = { ...info, excerpt: clip(text) };',
+    ];
+    for (const source of uses) expect(fieldUses(source, 'excerpt'), source).not.toEqual([]);
+    // The regex this scan replaced saw property access only: destructuring got past it.
+    expect(uses.filter((source) => /\.excerpt\b/.test(source))).toHaveLength(3);
+  });
+
+  it('the scan does not count a function of the same name, its import, a spread, a type or a comment', () => {
+    const others = [
+      "import { excerpt } from './text.ts';\nconst line = excerpt(problem, 120);",
+      "import {\n  excerpt,\n  slugify,\n} from './text.ts';",
+      "export { excerpt } from './text.ts';",
+      'export function excerpt(text: string, max = 160): string { return text.slice(0, max); }',
+      'const merged = { ...excerpt };',
+      'interface Info { excerpt?: string }',
+      '/** Reads info.excerpt, or { excerpt } = info, in a comment only. */\nconst a = 1;',
+      '// const { excerpt } = info;\nconst b = 2;',
+    ];
+    for (const source of others) expect(fieldUses(source, 'excerpt'), source).toEqual([]);
   });
 });

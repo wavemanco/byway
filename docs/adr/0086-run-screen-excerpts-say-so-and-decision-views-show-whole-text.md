@@ -32,7 +32,8 @@ The model half of F13 (lineup cards) is [ADR-0087](0087-lineup-evidence-full-wor
   - This covers the compare, references, a step's detail and the finished run's preview without changing those panels.
 - **JSON is read only from whole text.** A large preview of a partial option map or storyboard shows the option titles (a server fact) or "Loading the whole text…", never a raw fragment.
 - **Thumbnails and pick cards are snippets, with a one-click whole view.** They show the excerpt with no notice, as they always have; every pick card now has Open to the whole-artifact viewer ([ADR-0085](0085-generated-pages-inert-unless-a-frame-asks-with-consent.md)), which reads the artifact whole from the store. A diff snippet does not show the counts of its last, cut file.
-- **Readers of the excerpt are reviewed.** A scan test lists the files allowed to read `.excerpt`, each with its reason: the artifact preview, a step row's snippet and a pick card's snippet. A new reader fails the test until it is reviewed.
+- **Readers of the excerpt are reviewed.** A scan test lists the files allowed to read or set the excerpt field, each with its reason. Three read it: the artifact preview, a step row's snippet and a pick card's snippet. Two set it: the server, which makes it, and the viewer, which marks the whole text it read as complete. A new reader or setter fails the test until it is reviewed.
+  - The scan sees property access, element access with a literal, and the field as a key in an object pattern or literal. So a destructuring reader (`const { excerpt } = info`, a parameter, a nested pattern) is caught; its test fixtures show each form, and show that the regex it replaced missed them. Comments, imports and a function of the same name are not counted. A key built at run time is not seen.
 
 This narrows spec §5: excerpts belong to step rows, cards and thumbnails; views people decide in show whole text.
 
@@ -73,7 +74,7 @@ This narrows spec §5: excerpts belong to step rows, cards and thumbnails; views
     - JSON read only from whole text;
     - the diff snippet's hidden counts;
     - the loader's cache and its retry after a failure;
-    - the reviewed readers of `.excerpt`.
+    - the reviewed readers and setters of the excerpt, with the scan's fixtures (destructuring included).
   - `apps/web/e2e/artifact-views.spec.ts`, on seeded runs:
     - a compare of two memos of about 17 KB that differ only in their endings shows both endings;
     - a 19.5 KB memo's last sentence shows in its step detail and in the viewer;

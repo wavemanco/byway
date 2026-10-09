@@ -14,7 +14,8 @@ export interface ArtifactInfo {
   mediaType: string;
   /**
    * For text media: the opening of the text, at most 16,000 bytes, cut on a character boundary. It is the whole text
-   * only when `complete` is true; otherwise a snippet. Which files may read it is reviewed (test/evidence.test.ts).
+   * only when `complete` is true; otherwise a snippet. Which files may read or set it is reviewed
+   * (test/evidence.test.ts).
    */
   excerpt?: string;
   /** For text media: whether `excerpt` is the whole text. */
