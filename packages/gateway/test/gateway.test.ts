@@ -442,7 +442,7 @@ describe('gateway: held provider keys (ADR-0088)', () => {
 });
 
 describe('gateway: budgets', () => {
-  it('refuses a call whose worst case would break the workspace cap, before calling', async () => {
+  it('refuses a call whose estimated cost would break the workspace cap, before calling', async () => {
     caps.workspace = 0.01;
     const { client, calls } = fakeAnthropic();
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });

@@ -6,7 +6,7 @@ export { createGateway, ModelGateway, type BudgetDetails, type BudgetError, type
 export { configuredProviders, isConfigured, KEY_VARS, loadEnvFile, namesFromEnvFile, parseEnv, withoutSecrets, type Env, type EnvLoadReport } from './env.ts';
 export { DEMO_PROFILE_ID, OPENROUTER_PINS, PROFILES, profileStatus, tierProviders, type ProfileStatus } from './profiles.ts';
 export { PRICES, priceFor, tokenCost, type PriceRow } from './prices.ts';
-export { estimateInputTokens, imageTokens, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
+export { estimateInputTokens, imageTokens, maxCompletionCost, maxImageCost, maxVideoCost, textTokens } from './estimate.ts';
 export { entryHash, GENESIS_HASH, Ledger, type GatewayLedgerEntry, type LedgerDraft, type LedgerOptions } from './ledger.ts';
 export { makeRedactor, type Redactor } from './redact.ts';
 export { findHeldKey, heldKeyError, isHeldKeyError, type HeldKeyError } from './held-key.ts';

@@ -113,8 +113,8 @@ const invalid = (message: string) => new GatewayError('invalid-request', message
 /**
  * The model gateway (ADR-0030): the only path out for model, image and video calls. It resolves the profile's model for the
  * tier, checks the key exists (never exposing it), loads images from the artifact store, refuses calls whose
- * worst case would break a spend cap, retries transient failures, stores request and response bodies by hash, and
- * appends every call to the hash-chained ledger.
+ * estimated cost would break a spend cap (estimate.ts: planning estimates, not bounds), retries transient failures,
+ * stores request and response bodies by hash, and appends every call to the hash-chained ledger.
  */
 export class ModelGateway implements Gateway {
   private readonly forcedDemo: boolean;
@@ -546,9 +546,10 @@ export class ModelGateway implements Gateway {
   }
 
   /**
-   * Check the caps and reserve the call's worst case. The check and the reservation happen in one synchronous step
-   * after the last await, so concurrent calls in this process see each other's reservations. Calls from another
-   * process are seen once they reach the ledger.
+   * Check the caps and reserve the call's planning estimate (estimate.ts). The estimate is not a bound: a call can
+   * settle above it, and settlement records the true cost, against which later calls are refused (ADR-0091). The check
+   * and the reservation happen in one synchronous step after the last await, so concurrent calls in this process see
+   * each other's reservations. Calls from another process are seen once they reach the ledger.
    */
   private async reserve(ctx: { workspaceId: string; runId?: string }, estimateUsd: number): Promise<Reservation> {
     const wsCap = await this.caps.workspaceCapUsd(ctx.workspaceId);
@@ -568,7 +569,7 @@ export class ModelGateway implements Gateway {
         const budget: BudgetDetails = { scope, capUsd, spentUsd: spent, reservedUsd: reserved, estimateUsd: roundUsd(estimateUsd), shortfallUsd: roundUsd(Math.max(0, total - capUsd)) };
         const err = new GatewayError(
           'budget-exceeded',
-          `the ${scope} budget of $${capUsd.toFixed(2)} would be exceeded: $${spent.toFixed(4)} spent, $${reserved.toFixed(4)} in flight, and this call may cost up to $${budget.estimateUsd.toFixed(4)}`,
+          `the ${scope} budget of $${capUsd.toFixed(2)} would be exceeded: $${spent.toFixed(4)} spent, $${reserved.toFixed(4)} in flight, and this call is estimated at ${budget.estimateUsd.toFixed(4)}`,
         );
         err.budget = budget;
         throw err;

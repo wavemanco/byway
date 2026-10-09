@@ -136,6 +136,8 @@ Parsers take the last fenced block of the expected language, fall back to the wh
 
 The run's budget is enforced by the gateway; when it would be exceeded the step fails with `budget-exceeded`, the run pauses on a `confirm` checkpoint ("Raise the budget by $X?"), and the UI shows the cost so far.
 
+Admission uses planning estimates, not bounds ([ADR-0091](../../adr/0091-provider-edge-billing-fixes.md)): a call is refused when its estimated cost would take spend past a cap, and without the provider's tokenizer no pre-call count is a bound. ASCII text counts at one token per three characters, any other text at its UTF-8 bytes, an image of unknown size at the 6,400-token maximum, and output at the call's whole allowance (gpt-image's per-image output figure is a planning number). A call can settle above its reservation; settlement records its true cost and later calls are refused against it. The screens say so: the cost range is an estimate, and the budgets are described by what byway checks before a call.
+
 ## 4. Recommending and composing
 
 **Chooser.** The seven questions of 03 "Choosing a configuration" are data (`packages/catalog/src/chooser.ts`, `ChooserQuestion[]`); the first "yes" decides. The **intake** model reads the problem and proposes an answer, confidence and one-line rationale per question (JSON); the user can flip any answer and the routing re-runs deterministically. Fit is `strong` when the deciding answer has confidence ≥ 0.7 and `partial` otherwise. Up to two alternatives are the next "yes" answers. When no question is answered yes, the recommendation is 03's fallback, C4 Reader-Ready (`CHOOSER_FALLBACK`), as a `partial` fit with `composeSuggested: true`.
