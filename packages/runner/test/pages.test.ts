@@ -544,4 +544,42 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
     setTimeout(() => ctrl.abort(reason), 300);
     await expect(pages.shownText(hang, never, { signal: ctrl.signal })).rejects.toBe(reason);
   }, 60_000);
+
+  it('turns a renderer failure while reading (a Playwright protocol error) into one plain step failure, as a render\'s is', async () => {
+    const RAW = 'page.evaluate: Protocol error (Runtime.callFunctionOn): Target crashed';
+    const crashing = (b: Browser): Browser =>
+      new Proxy(b, {
+        get(target, prop, receiver) {
+          if (prop !== 'newContext') return Reflect.get(target, prop, receiver);
+          return async (...args: Parameters<Browser['newContext']>) => {
+            const context = await target.newContext(...args);
+            return new Proxy(context, {
+              get(c, p, r) {
+                if (p !== 'newPage') return Reflect.get(c, p, r);
+                return async () => {
+                  const page = await c.newPage();
+                  return new Proxy(page, {
+                    get(pg, name, rr) {
+                      if (name === 'evaluate') return async () => Promise.reject(new Error(`${RAW}\nCall log:\n  - evaluating`));
+                      const v = Reflect.get(pg, name, rr) as unknown;
+                      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
+                    },
+                  });
+                };
+              },
+            });
+          };
+        },
+      });
+    const failing = playwrightPages({ launch: async () => crashing(await launchChromium()) });
+    opened.push(failing);
+    const err = await failing.shownText('<p>Hello</p>', none).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe('The page\'s text could not be read: the page renderer failed while reading it (Target crashed).');
+    expect((err as Error).cause).toBeInstanceOf(Error);
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled by the run');
+    ctrl.abort(reason);
+    await expect(failing.shownText('<p>Hello</p>', none, { signal: ctrl.signal })).rejects.toBe(reason);
+  }, 60_000);
 });

@@ -433,6 +433,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       return (await render(html, resolve, ['desktop'], renderOpts))[0]!.tiles;
     },
     async shownText(html, resolve, renderOpts = {}) {
+      // A failure is the read's plain step failure, as a render's is drawFailure's.
       return loaded(
         html,
         resolve,
@@ -460,7 +461,9 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
           return JSON.parse(String(read)) as ShownText;
         },
         renderOpts.deadline,
-      );
+      ).catch((e: unknown) => {
+        throw readFailure(e, renderOpts.signal);
+      });
     },
     async close() {
       const current = browser;
@@ -693,15 +696,34 @@ export async function checkRenderer(): Promise<RendererCheck> {
 export function drawFailure(err: unknown, signal: AbortSignal | undefined): unknown {
   if (err instanceof StepError) return err;
   if (signal?.aborted) return stopped(signal);
-  const first = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
-  const said = first
+  const first = firstLine(err);
+  const said = playwrightSaid(first);
+  const what = /screenshot/i.test(first) ? 'could not take its screenshot' : 'failed while drawing it';
+  return new StepError(`The page could not be drawn: the page renderer ${what}${said ? ` (${said})` : ''}.`, { cause: err });
+}
+
+/**
+ * A text read's failure as its step sees it (VOICE's arbiter, ADR-0081), as drawFailure is a render's: a step failure
+ * (the deadline, a page that navigates away, a Chromium that could not start) and a cancel pass as they are; anything
+ * else (a Playwright protocol error, a page or browser closed underneath) is one plain step failure, not retried, with
+ * Playwright's message on the cause.
+ */
+export function readFailure(err: unknown, signal: AbortSignal | undefined): unknown {
+  if (err instanceof StepError) return err;
+  if (signal?.aborted) return stopped(signal);
+  const said = playwrightSaid(firstLine(err));
+  return new StepError(`The page's text could not be read: the page renderer failed while reading it${said ? ` (${said})` : ''}.`, { cause: err });
+}
+
+const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
+
+/** What Playwright's first line says, without its method or the protocol command. */
+const playwrightSaid = (first: string): string =>
+  first
     .replace(/^[\w.]+:\s*/, '')
     .replace(/^Protocol error \([^)]*\):\s*/, '')
     .trim()
     .replace(/\.$/, '');
-  const what = /screenshot/i.test(first) ? 'could not take its screenshot' : 'failed while drawing it';
-  return new StepError(`The page could not be drawn: the page renderer ${what}${said ? ` (${said})` : ''}.`, { cause: err });
-}
 
 /** The error a cancelled render ends with: the signal's own reason (Temporal's CancelledFailure) when it has one. */
 function stopped(signal: AbortSignal): Error {

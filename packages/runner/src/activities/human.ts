@@ -123,8 +123,9 @@ const artifactRoute =
   };
 
 /**
- * Where Chromium shows each of the page's lines (page-arbiter.ts). The reads may fail as a render does (a plain error is
- * retried; a page that never loads is a StepError); a fault in byway's own code after them is `fault`'s error.
+ * Where Chromium shows each of the page's lines (page-arbiter.ts). The reads fail as a render does, with a plain
+ * StepError that is not retried (a page that never loads, a renderer that fails while reading); a fault in byway's own
+ * code after them is `fault`'s error.
  */
 async function pageLines(deps: RunnerDeps, html: string, fault: (e: Error) => Error, opts: RenderOptions = {}): Promise<Location> {
   const pages = pageRenderer(deps);
