@@ -565,12 +565,12 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
   });
 
   it('only a machine writer that runs in this version and whose work is kept applies it', () => {
-    expect(appliesCritique(fix('f'), false)).toBe(true);
-    expect(appliesCritique(readsFix, false)).toBe(true);
-    expect(appliesCritique(fix('f'), true)).toBe(false);
+    expect(appliesCritique(fix('f'), false, 'prose')).toBe(true);
+    expect(appliesCritique(readsFix, false, 'prose')).toBe(true);
+    expect(appliesCritique(fix('f'), true, 'prose')).toBe(false);
     // Your own draft is shown no critique (the run puts it in a model's prompt only).
     const ownWithCritique = step({ ...authorDraft('own'), consumes: ['critique', 'artifact'] });
-    expect(appliesCritique(ownWithCritique, false)).toBe(false);
+    expect(appliesCritique(ownWithCritique, false, 'prose')).toBe(false);
     expect(unapplied(seq(personCut('cut'), ownWithCritique))).toEqual(['cut']);
     // A fix in a lens or a final check's body drafts what never becomes the work.
     expect(unapplied(seq(personCut('cut'), audit('au', [{ name: 'x', body: seq(fix('f'), render('r'), critic('c')) }])))).toEqual(['cut']);
@@ -578,7 +578,7 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // An ASSET that makes voice-over audio finishes skipped in this version (ADR-0069).
     const vo = step({ id: 'vo', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', prompt: 'p.a', consumes: ['voice', 'critique', 'artifact'], produces: ['artifact'], writes: true });
     expect(hasNoExecutor(vo)).toBe(true);
-    expect(appliesCritique(vo, false)).toBe(false);
+    expect(appliesCritique(vo, false, 'prose')).toBe(false);
     expect(unapplied(seq(personCut('cut'), vo))).toEqual(['cut']);
   });
 
@@ -925,11 +925,20 @@ describe('whose directions your next VISION is shown (directionsReactedTo)', () 
 });
 
 describe('the module stays pure (workflow code may import it)', () => {
-  it('imports only types and no Node built-ins', () => {
-    const src = readFileSync(new URL('../src/semantics.ts', import.meta.url), 'utf8');
-    const imports = [...src.matchAll(/^import\s+(type\s+)?[^;]*?from\s+'([^']+)'/gm)];
+  const importsOf = (file: string) => {
+    const src = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+    expect(src, file).not.toMatch(/from\s+'node:/);
+    return [...src.matchAll(/^import\s+(type\s+)?[^;]*?from\s+'([^']+)'/gm)].map((m) => ({ line: m[0], type: m[1] === 'type ', from: m[2] }));
+  };
+
+  it('imports only types and no Node built-ins, besides what a prompt shows (ADR-0097), which is pure data', () => {
+    const imports = importsOf('semantics.ts');
     expect(imports.length).toBeGreaterThan(0);
-    for (const m of imports) expect(m[1], m[0]).toBe('type ');
-    expect(src).not.toMatch(/from\s+'node:/);
+    for (const m of imports) if (m.from !== './prompt-shows.ts') expect(m.type, m.line).toBe(true);
+    // What a prompt shows, and the template table it reads: type imports, the protocol's own constants and each other.
+    // No workflow code reads them, and the runner's build test pins that the bundle holds neither.
+    for (const m of [...importsOf('prompt-shows.ts'), ...importsOf('template-slots.ts')]) {
+      if (!m.type) expect(['@byway/protocol', './template-slots.ts'], m.line).toContain(m.from);
+    }
   });
 });

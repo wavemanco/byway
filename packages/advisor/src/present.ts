@@ -162,6 +162,8 @@ export const COMPOSED_EXPLAINERS = {
 
 /** What the recipe establishes about the steps around a step, for the sentences that say so. */
 interface Around {
+  /** The recipe's medium: which template a step's prompt renders, and so what it shows (ADR-0097). */
+  medium: Recipe['medium'];
   /** A VOICE that no person's write (a VOICE or your own draft) can come before: the AI wrote the rest of the work. */
   aiWroteRest: Set<Step>;
   /**
@@ -202,6 +204,7 @@ function around(recipe: Recipe): Around {
   // So are the directions you react to (directionsReactedTo), read from what reaches your next VISION.
   const placesOf = (s: Step) => steps.filter((o) => o.step === s);
   const out: Around = {
+    medium: recipe.medium,
     aiWroteRest: new Set(),
     scriptLocked: lockedScripts(recipe),
     notesOnly: new Set(),
@@ -336,10 +339,11 @@ const FINDS = new Set(['critic', 'check', 'cut', 'tells-sweep']);
 /**
  * A writer that applies the findings it takes in (@byway/recipe appliesCritique, the one admission reads): a machine
  * writer by what it runs (not by its `writes` flag) that takes in a critique, consumed or read when it is there
- * (ADR-0089), and runs in this version, unless what it writes never reaches the work at some place it sits (inside an
- * audit lens or a final check's body).
+ * (ADR-0089), whose prompt shows it (ADR-0097: a draft or image prompt that renders no critique applies none), and runs
+ * in this version, unless what it writes never reaches the work at some place it sits (inside an audit lens or a final
+ * check's body).
  */
-const appliesFindings = (u: Unit, near: Around) => u.op === 'step' && appliesCritique(u, near.containedSomewhere.has(u));
+const appliesFindings = (u: Unit, near: Around) => u.op === 'step' && appliesCritique(u, near.containedSomewhere.has(u), near.medium);
 const isRender = (u: Unit) => u.op === 'step' && u.role === 'render';
 /** The node a group is named after: the first that is not a render. */
 const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group[0]!;

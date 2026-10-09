@@ -91,6 +91,40 @@ describe('the workflow bundle', () => {
     }
   }, 60_000);
 
+  /**
+   * ADR-0097: what a prompt shows is admission data the workflow never reads. @byway/recipe's semantics read it, and
+   * workflow code imports a few of their functions, so the table and `promptShows` must stay out of the bundle: a
+   * template's slots changing, or the rule changing, would otherwise end every run open at the upgrade (ADR-0078).
+   */
+  it('holds nothing of what a prompt shows: edits to the template-slots table or to promptShows leave its hash alone', async () => {
+    const out = (name: string) => DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `${name}-${process.pid}.js`);
+    /** Rewrite one @byway/recipe source as esbuild reads it. */
+    const editing = (file: string, from: string, to: string): Plugin => ({
+      name: 'edit-on-load',
+      setup(b) {
+        b.onLoad({ filter: new RegExp(`recipe[\\\\/]src[\\\\/]${file}\\.ts$`) }, (args) => {
+          const source = readFileSync(args.path, 'utf8');
+          if (!source.includes(from)) throw new Error(`${file}.ts no longer holds ${JSON.stringify(from)}`);
+          return { contents: source.replace(from, to), loader: 'ts' };
+        });
+      },
+    });
+    const base = await buildWorkflows({ outfile: out('shows-base') });
+    const table = await buildWorkflows({ outfile: out('shows-table'), plugins: [editing('template-slots', "'product.c3.ai-draft': { '*': ['problem', 'brief'] }", "'product.c3.ai-draft': { '*': ['problem', 'brief', 'critique'] }")] });
+    const rule = await buildWorkflows({ outfile: out('shows-rule'), plugins: [editing('prompt-shows', "if (port === 'anchor') return s.role === 'relay';", "if (port === 'anchor') return true;")] });
+    // The control: a change to something workflow code does read moves the hash, so the edits above were really made.
+    const read = await buildWorkflows({ outfile: out('shows-read'), plugins: [editing('semantics', "new Set<Role>(['voice', 'build', 'fix'])", "new Set<Role>(['voice', 'build'])")] });
+    try {
+      const code = readFileSync(base, 'utf8');
+      expect(code).not.toMatch(/\/\/ \.\.\/recipe\/src\/(template-slots|prompt-shows)\.ts/);
+      expect(workflowBundleHash(table)).toBe(workflowBundleHash(base));
+      expect(workflowBundleHash(rule)).toBe(workflowBundleHash(base));
+      expect(workflowBundleHash(read)).not.toBe(workflowBundleHash(base));
+    } finally {
+      for (const f of [base, table, rule, read]) rmSync(f, { force: true });
+    }
+  }, 60_000);
+
   it('carries the hash of its own code, the same on every build of the same code (C7)', async () => {
     const a = await buildWorkflows({ outfile: DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `hash-a-${process.pid}.js`) });
     const b = await buildWorkflows({ outfile: DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `hash-b-${process.pid}.js`) });
