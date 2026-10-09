@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**93 records:** 86 accepted (15 of them by continuation, awaiting ratification; 31 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**95 records:** 88 accepted (15 of them by continuation, awaiting ratification; 33 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -96,6 +96,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0094](0094-backup-unit-is-the-data-directory.md) | The backup unit is the whole data directory | Accepted | Delegated | 2026-10-08 16:30 |
 | [ADR-0096](0096-partial-restores-reported-at-start.md) | Partial restores are reported at start and orphan runs are stopped; the renderer's allowlist holds on every redirect hop | Accepted | Delegated | 2026-10-08 18:20 |
 | [ADR-0092](0092-recipe-semantics-derived-from-execution.md) | Recipe semantics are derived from execution and checked at every entry | Accepted | Delegated | 2026-10-08 23:10 |
+| [ADR-0089](0089-recipe-ir-optional-reads.md) | Recipe IR: model steps may read a port when an optional branch made it | Accepted | Delegated | 2026-10-09 02:00 |
 
 ## Product & program
 
@@ -128,6 +129,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0086](0086-run-screen-excerpts-say-so-and-decision-views-show-whole-text.md) | Run-screen artifact info is an excerpt with its completeness stated; decision views show whole text; row facts come from whole bytes | Accepted | Delegated | 2026-10-08 20:30 |
 | [ADR-0095](0095-paid-calls-have-a-durable-spend-book.md) | Paid calls have a durable spend book: the book in byway.sqlite is the cap authority, ledger.jsonl its hash-chained audit record | Accepted | Delegated | 2026-10-08 21:45 |
 | [ADR-0099](0099-paid-operations-keyed-to-their-caller.md) | A step's paid call is keyed to its caller across retries; byway's own failures say so; byway's stop reaches the web process | Accepted | Delegated | 2026-10-09 01:15 |
+| [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md) | Execution contracts for revising humans and media steps: a reaction revises its port in place, an ASSET prompt declares its image count, the shot check sees its clip | Accepted | Delegated | 2026-10-09 02:10 |
 
 ## Open decisions (not yet ADRs)
 
