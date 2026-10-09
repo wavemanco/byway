@@ -200,6 +200,76 @@ CREATE TABLE memos (
 -- in TypeScript, never by a CHECK (see the header of migrations.ts).
 `,
   },
+  {
+    version: 6,
+    name: 'spend-book',
+    sql: `
+-- The spend book (contracts v6, SpendBook; ADR-0095): every paid call from admission to settlement, shared by the web
+-- process and the worker, and the authority the spend caps are checked against. ledger.jsonl stays the hash-chained
+-- audit record, written from here through an outbox (entry, ledger_entry_id, ledgered_seq) and read back in by one
+-- idempotent step (absorb). A row's state is one of the contract's six, which will not grow, so it has a CHECK.
+-- workspace_id has no REFERENCES: entries absorbed from an older ledger may name workspaces this database never had.
+-- lease_until is in milliseconds since the epoch: a row is live (its caller is still waiting on the provider) while it
+-- is in the future. reserved_usd is the call's planning estimate; retained_usd counts earlier attempts that may have
+-- been billed. settle_seq orders the outbox by settlement, whatever the clocks of the processes said.
+CREATE TABLE paid_operations (
+  id                TEXT PRIMARY KEY CHECK (id <> ''),
+  workspace_id      TEXT NOT NULL CHECK (workspace_id <> ''),
+  run_id            TEXT,
+  step_id           TEXT,
+  purpose           TEXT NOT NULL,
+  kind              TEXT NOT NULL,
+  provider          TEXT NOT NULL,
+  model             TEXT NOT NULL,
+  paid              INTEGER NOT NULL CHECK (paid IN (0, 1)),
+  reserved_usd      REAL NOT NULL CHECK (reserved_usd >= 0),
+  retained_usd      REAL NOT NULL DEFAULT 0 CHECK (retained_usd >= 0),
+  state             TEXT NOT NULL CHECK (state IN ('open', 'sent', 'accepted', 'settled', 'released', 'uncertain')),
+  uncertain_reason  TEXT CHECK (uncertain_reason IS NULL OR uncertain_reason IN ('interrupted', 'failed')),
+  provider_jobs     TEXT CHECK (provider_jobs IS NULL OR json_valid(provider_jobs)),
+  owner             TEXT,
+  lease_until       INTEGER NOT NULL,
+  sent_at           TEXT,
+  settled_at        TEXT,
+  settle_seq        INTEGER UNIQUE,
+  settled_usd       REAL CHECK (settled_usd IS NULL OR settled_usd >= 0),
+  served_model      TEXT,
+  price_basis       TEXT,
+  entry             TEXT CHECK (entry IS NULL OR json_valid(entry)),
+  ledger_entry_id   TEXT UNIQUE,
+  ledgered_seq      INTEGER,
+  cleared_at        TEXT,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  CHECK ((state = 'settled') = (settled_usd IS NOT NULL))
+) STRICT;
+CREATE INDEX paid_operations_by_workspace ON paid_operations (workspace_id, state);
+CREATE INDEX paid_operations_by_run ON paid_operations (run_id, state) WHERE run_id IS NOT NULL;
+CREATE INDEX paid_operations_live ON paid_operations (lease_until) WHERE state IN ('open', 'sent', 'accepted');
+CREATE INDEX paid_operations_outbox ON paid_operations (settle_seq) WHERE state = 'settled' AND ledgered_seq IS NULL;
+
+-- Lines of ledger.jsonl the book could not read as entries. Each blocks paid calls until the person acknowledges it in
+-- Settings; one line is recorded once, by where it is and what it holds, however often the file is read again.
+CREATE TABLE spend_faults (
+  id               INTEGER PRIMARY KEY,
+  ledger_offset    INTEGER NOT NULL CHECK (ledger_offset >= 0),
+  line_sha256      TEXT NOT NULL,
+  detail           TEXT NOT NULL,
+  created_at       TEXT NOT NULL,
+  acknowledged_at  TEXT,
+  UNIQUE (ledger_offset, line_sha256)
+) STRICT;
+
+-- How far the book has read ledger.jsonl (LedgerCursor): one row.
+CREATE TABLE spend_book_meta (
+  id                  INTEGER PRIMARY KEY CHECK (id = 1),
+  ledger_offset       INTEGER NOT NULL CHECK (ledger_offset >= 0),
+  ledger_tail_start   INTEGER NOT NULL CHECK (ledger_tail_start >= 0),
+  ledger_tail_sha256  TEXT
+) STRICT;
+INSERT INTO spend_book_meta (id, ledger_offset, ledger_tail_start, ledger_tail_sha256) VALUES (1, 0, 0, NULL);
+`,
+  },
 ];
 
 /** The schema version this build writes. */

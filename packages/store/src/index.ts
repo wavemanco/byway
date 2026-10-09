@@ -4,6 +4,7 @@
  */
 export { createStore, SqliteStore, DB_FILENAME, DEFAULT_WORKSPACE_BUDGET_USD, DEFAULT_WORKSPACE_NAME, type StoreOptions } from './store.ts';
 export { FileArtifactStore, artifactPath } from './artifacts.ts';
+export { faultMessage, openSpendBook, SqliteSpendBook } from './spend-book.ts';
 export { checkStore, type MissingArtifact, type StoreCheck } from './check.ts';
 export { assertSafeDataDir, defaultDataDir, resolveDataDir, unsafeLocationReason, type DataDirOptions, type Env, type UnsafeLocation } from './datadir.ts';
 export { DEFAULT_BUSY_TIMEOUT_MS, openDatabase, writeTransaction, type OpenDatabaseOptions } from './db.ts';

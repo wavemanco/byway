@@ -3,6 +3,8 @@
  * Implemented by @byway/gateway. Keys come from the environment only and never appear in requests, logs or the store.
  */
 
+import type { LedgerAudit, SpendRecords } from './spend.ts';
+
 export type ProviderId = 'anthropic' | 'openai' | 'google' | 'openrouter' | 'fal' | 'mock';
 
 /** Judgment uses the big tier, execution the mid tier (default rule 5). */
@@ -142,11 +144,23 @@ export interface VideoResult {
   ledgerEntryId: string;
 }
 
+/**
+ * Spend as the spend book holds it (ADR-0095). `spentUsd` and `byRun` are settled cost only, as the audit file records
+ * it, so a run's recorded cost never includes a guess. What is under way and what may have been billed are separate.
+ */
 export interface SpendSummary {
   workspaceId: string;
   spentUsd: number;
   capUsd: number;
   byRun: Record<string, number>;
+  /** Reservations of calls under way now (counted against the caps until they settle). */
+  inFlightUsd?: number;
+  /**
+   * Calls that may have been billed and whose cost is not known (an attempt that failed after its request may have
+   * reached the provider, or a call whose caller stopped or died while waiting), counted at their estimate against the
+   * workspace cap until the person clears them in Settings. Never charged to a run's cap.
+   */
+  uncertainUsd?: number;
   /**
    * Calls in this workspace whose served model had no price row, so they were settled at the requested model's rates
    * (LedgerEntry.priceBasis 'assumed'): how many, and what they were counted at. Absent when there are none.
@@ -183,6 +197,12 @@ export interface LedgerEntry {
    * absent when every model was priced at its own row or as a snapshot of a priced model. Covered by the hash chain.
    */
   priceBasis?: 'assumed';
+  /**
+   * The spend-book operation this entry records (ADR-0095), so the book and the audit file reconcile one-to-one: an entry
+   * written twice, or found again after a restart, is recognised. Absent on entries from before the book. Covered by the
+   * hash chain.
+   */
+  operationId?: string;
 }
 
 export type GatewayErrorCode =
@@ -192,7 +212,9 @@ export type GatewayErrorCode =
   | 'rate-limited'
   | 'refused'
   | 'invalid-request'
-  | 'unknown-profile';
+  | 'unknown-profile'
+  /** The spend book found a line in the audit file it cannot read: paid calls wait until it is acknowledged (ADR-0095). */
+  | 'accounting-fault';
 
 /** What a 'budget-exceeded' refusal carries, so the runner can offer "Raise the budget by $X?" (spec §3.4). */
 export interface BudgetDetails {
@@ -204,6 +226,8 @@ export interface BudgetDetails {
   estimateUsd: number;
   /** How much the cap would need to rise for this call to proceed. */
   shortfallUsd: number;
+  /** Workspace scope: calls that may have been billed, counted until cleared in Settings (ADR-0095). */
+  uncertainUsd?: number;
 }
 
 export class GatewayError extends Error {
@@ -261,4 +285,10 @@ export interface Gateway {
    * for a head record that cannot be read), or null if intact. Reports damage rather than throwing on it.
    */
   verifyLedger(): Promise<string | null>;
+  /** What Settings lists of the spend book (ADR-0095): calls under way, calls that may have been billed, faults, set-aside tails. */
+  spendRecords(workspaceId: string): Promise<SpendRecords>;
+  /** The audit file's chain, and the audit file against the spend book (on demand: it reads the whole file). */
+  auditLedger(): Promise<LedgerAudit>;
+  /** Stops the gateway's lease renewal and outbox timer, after a last bounded write of the outbox. Call before closing the store. */
+  close(): Promise<void>;
 }
