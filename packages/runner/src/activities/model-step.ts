@@ -88,6 +88,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       answers.push({ answer: answer.value, ...(lineup ? { lineup } : {}) });
     }
     const verdict = verdictOf(answers, lineupWrittenFor(step));
+    // A card that cut words says whose and how many in the step's note (F13, ADR-0087).
+    if (verdict.note) notes.push(verdict.note);
     result.text = verdict.critique;
     result.score = verdict.score;
     result.criticMode = plan.mode;

@@ -15,7 +15,7 @@
  * only images (an ad, a page) gets the words on the cards, as its template says; a card cuts what does not fit one
  * image visibly, the cut is kept with the card for the run, and the verdict carries one sentence for the step's note
  * saying whose words were cut and how many the critic saw, naming items as the person knows them and never by their
- * blind labels (cutNote, for the model step to append to the note it reports: see ADR-0087 for when that lands).
+ * blind labels (cutNote, which the model step appends to the note it reports).
  */
 import { createHash } from 'node:crypto';
 import type { Medium } from '@byway/contracts';
