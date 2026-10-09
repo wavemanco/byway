@@ -44,27 +44,33 @@ The findings they close, from the verification (cluster A, option C):
 4. **The composed limits** (COMPOSED-LIMIT in the composed profile) hold for model-authored recipes only: replicate 16, loop rounds 12, relay links 8, lenses 4, peak 32, 400 step runs, depth 12 operators, 100 nodes, 32 KiB.
    - **The catalog stays inside both sets of limits**, research recipes included, and each recipe's bound is pinned.
    - **C5 bounds at 201 step runs.** The design's prototype walk counted 213; the difference is in what it counted, not in C5.
-   - **B-BoN passes for every N from 1 to 64.** Its peak is 4N, so 125 is the most that runs at once.
-5. **A diff says "The same steps" only when the recipes run the same.** `projection.ts` projects a recipe from FIELD_ROLES: names dropped, sets sorted, seqs flattened, a sit-out by its block. It compares only the fields that say how it runs (medium, inputs, stages, sit-outs, exceptions, bank). The fields the composer forces are left out: kind, channel, family, schema, parent. A test holds FIELD_ROLES to the zod schema object by object.
+   - **B-BoN passes for every N from 1 to 64.** Its peak is 4N, so N may be at most 125 (500 steps at once).
+5. **A diff says "The same steps" only when the recipes run the same.** `projection.ts` projects a recipe from FIELD_ROLES: names dropped, sets sorted, a sit-out by its block. It compares only the fields that say how it runs (medium, inputs, stages, sit-outs, exceptions, bank). The fields the composer forces are left out: kind, channel, family, schema, parent. A test holds FIELD_ROLES to the zod schema object by object.
+   - **The projection may tell apart two recipes that run the same, never equate two that do not.** So it keeps what the runner reads in order or by position:
+     - **A seq keeps its nesting**, a seq of one included. The interpreter reads a step's siblings in its own seq: a model cliché sweep asks the person which finds to swap only when its swap step follows it there (`asksSwaps`, now in `@byway/recipe/semantics` and shared by the interpreter, the diff, the explainers and the estimate). Flattening, as first built, let a composed C1 or C7 with the rest of Finish wrapped in a seq of its own drop that choice and read "The same steps" (the adversarial verification of this branch).
+     - **A step's consumed ports keep their order.** `buildPrompt` lays out the images a step sees port by port.
+     - **A route's question is semantic**, as an optional's trigger is. A composed recipe's route asks its own `on` at run time: the catalog's plain question stands in only for a catalog recipe.
    - **Every node type is paired.** The diff describes:
      - who picks ("chosen at random, no one compares them") and how many;
      - a quality bar moved, never quoted, and how a repeat stops early;
-     - what your words cover, and an optional's question;
+     - what your words cover, whether you choose a cliché sweep's swaps, and an optional's or a route's question;
      - a final check's re-runs;
      - moves into or out of a review, a final check or a draft, behind a check that can end the round, and past your words.
-   - **Anything else** reads "Other technical changes that affect how it runs."
+   - **Anything else** reads "Other technical changes that affect how it runs." A re-nesting that changes nothing reads so too.
    - **A mutation test:** a single change of any semantic field, on any node of C1–C7, never reads "The same steps".
 6. **The presentation and the estimate read what runs.**
    - A step's label follows its role's block.
    - Only a VOICE write is "your words", explained by its scope: every line, key lines, the claims, the script or the on-screen words.
    - A random pick says it is random.
-   - A writer applies a critique by what it runs, and the estimator's swap step reads the same.
+   - A writer applies a critique by what it runs.
+   - A cliché sweep says "you choose which ones" only where `asksSwaps` holds; elsewhere it says the AI swaps every one. The estimator counts your choosing time at the same places.
 7. **The operators as the interpreter runs them.**
    - **`gateFeed`** names the steps a gate's verdict is read from on every run of its body. ST2 `feed` and ST10 `feed` refuse a gate with none. ST10 `metric` refuses a one-shot check-clean or human gate.
    - **What an audit hands on:** its lenses' joined critique, not a score.
    - **What a one-shot gate hands on:** its body's critique only.
    - **Inside each:** each candidate runs without the option set.
    - **Intended test changes:** a score consumed after an audit is now ST5, and the Audit doc comment says so.
+   - **LS1 names a person's loop first.** A loop a person holds whose last round goes to a policy reads "is yours to end", even with a critic in its review (C6), and is no longer called a critic loop. The verdict is the same.
 8. **The held voice at run time.** `Ports.held` collects every VOICE write's answer on the path. `ports.voice` is set only by a VOICE write, or by the fixed copy deck at start. A step that only declares VOICE sets neither.
    - **keepsVoice:** a writer is checked against the held voice plus the latest words (`keptVoice`). For C5, the only catalog recipe with such writers, that is its latest answer, as before.
    - **The guard:** a machine write after the person's words, outside a lens or gate body and without keepsVoice, fails the run before it runs. Admission refuses such a recipe first.
@@ -82,6 +88,7 @@ The findings they close, from the verification (cluster A, option C):
 - **Medium-specific view sizes.** Rejected. The web page's 2.75 KiB bounds every medium, and the composed limits keep the worst composed batch well under the engine's.
 - **Cancelling a retry's sibling branches (a CancellationScope).** Rejected, as the design did. Refusing a retrying gate inside a fan-out is simpler, and no catalog recipe has one.
 - **A describer for every semantic field.** Rejected. Projection equality decides "The same steps", and "Other technical changes" names the rest honestly.
+- **Flattening seqs and making the swap choice read past them** (the verifier's alternative). Rejected. It would change how any admitted recipe with a nested seq runs, which is a decision of its own. A projection that keeps nesting also stays sound if another rule ever reads a step's siblings.
 - **Run-time set-aside, and arming the guard from declarations.** Not done, as ADR-0092 decided: admission refuses every recipe where they would matter.
 
 ## Consequences
@@ -95,7 +102,8 @@ The findings they close, from the verification (cluster A, option C):
 
 **Negative, and residuals named**
 
-- **The workflow bundle changes once**, with ADR-0093's cap policy, from `bfdda860…` to `90d59498…` on this branch (stages 2 and 3 left it unchanged). Runs open at the upgrade end plainly ([ADR-0078](0078-runs-from-older-engine-versions-end-plainly.md)).
+- **The workflow bundle changes once**, with ADR-0093's cap policy, from `bfdda860…` to `9f872bb4…` on this branch (stages 2 and 3 left it unchanged; moving `asksSwaps` into the shared semantics changed only where its code lives). Runs open at the upgrade end plainly ([ADR-0078](0078-runs-from-older-engine-versions-end-plainly.md)).
+- **A re-nesting that changes nothing reads "Other technical changes that affect how it runs."** That overstates it, and is the price of a projection that never equates two recipes that run differently.
 - **A stored composed intake is checked again at start.** One whose explanations changed (VOICE scope wording, a random pick) gets a 409 once and starts on the second Start. One that a new rule refuses (ST2 or ST10 `feed`, LS1, the composed limits) gets a 400.
 - **Run inputs are still carried by value** in every activity input: the brief with its attachments, the fixed voice deck, and now `ports.held` and `ports.voice`. Large inputs can still pass Temporal's batch or payload limits. That is the backlog item on run inputs by reference, widened to the held voice.
 - **The bound is an over-approximation.** It counts every seed, every view at a web page's size, and a raised cap on every loop a person holds. A recipe near the limits may be refused although it would run.
@@ -110,6 +118,6 @@ The findings they close, from the verification (cluster A, option C):
   - catalog: `packages/catalog/test/limits.test.ts`;
   - validator: `packages/validator/test/limits-rules.test.ts`, `flow-memo.test.ts` and `operator-semantics.test.ts`;
   - advisor: `packages/advisor/test/limits-admission.test.ts`, `diff-semantics.test.ts` and `present.test.ts`;
-  - runner: `packages/runner/test/limits-batch.test.ts`, `start-refusal.test.ts`, `held-voice.test.ts` and `e2e/loop-cap.ts`;
+  - runner: `packages/runner/test/limits-batch.test.ts`, `start-refusal.test.ts`, `held-voice.test.ts`, `swap-choice.test.ts` and `e2e/loop-cap.ts`;
   - web: `apps/web/test/start-admission.test.ts` and `recommendation.test.ts`, and `apps/web/e2e/composed-start.spec.ts`.
 - It carries out the later stages ADR-0092 named, and supersedes no ADR.
