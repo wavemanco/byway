@@ -14,7 +14,7 @@
  */
 import { crc32, deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { attributesOf, decodeText, squashHtml } from '../../src/html-tokens.ts';
+import { attributesOf, decodeText, isHtmlSpace, squashHtml } from '../../src/html-tokens.ts';
 import { readPageCopy } from '../../src/page-copy.ts';
 import { LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, type PageRenderer, type RenderOptions, type ShownText, type SurfaceShots } from '../../src/pages.ts';
 import type { Surface } from '../../src/types.ts';
@@ -77,6 +77,9 @@ export function modelShownText(html: string): ShownText {
   let linked = '';
   let block = -1;
   let open: number | undefined;
+  // As the visitor read gives it: one separator between neighbouring characters, a space within a block (where the
+  // page has whitespace), a line break between blocks; whitespace at either end of the body nothing.
+  let gap = '';
   const close = () => {
     if (open !== undefined) linked += LINK_CLOSE;
     open = undefined;
@@ -85,16 +88,22 @@ export function modelShownText(html: string): ShownText {
     if (!s.rendered || !s.toks.length) continue;
     const t = decodeText(s.toks.map((i) => p.tokens[i]!.raw).join(''));
     if (s.vregion !== block) {
-      close();
-      if (block >= 0) {
-        text += '\n';
-        linked += '\n';
-      }
+      if (block >= 0) gap = '\n';
       block = s.vregion;
     }
-    if (s.link !== open) {
-      close();
-      if (s.link !== undefined) {
+    for (const c of t) {
+      if (isHtmlSpace(c)) {
+        if (!gap) gap = ' ';
+        continue;
+      }
+      const shown = text !== '';
+      if (s.link !== open) close();
+      if (shown) {
+        text += gap;
+        linked += gap;
+      }
+      gap = '';
+      if (s.link !== open && s.link !== undefined) {
         let k = index.get(s.link);
         if (k === undefined) {
           k = hrefs.length;
@@ -104,13 +113,13 @@ export function modelShownText(html: string): ShownText {
         linked += `${LINK_OPEN}${String(k).replace(/[0-9]/g, (d) => String.fromCharCode(LINK_DIGIT_0 + Number(d)))}${LINK_INDEX_END}`;
         open = s.link;
       }
+      text += c;
+      linked += c;
     }
-    text += t;
-    linked += t;
   }
   close();
   // The reader reads no stylesheet, so nothing is hidden from sight but what it already leaves out.
-  return { title, text, linked, hrefs, hidden: [] };
+  return { title, text, linked, hrefs, hidden: [], unlaid: '' };
 }
 
 export function fakePages(): FakePages {

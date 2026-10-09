@@ -30,7 +30,7 @@ import {
   type Refusal,
 } from '../copy.ts';
 import { parseArtifact, parseStoryboard } from '../formats.ts';
-import { arbiterProblem, expectedShown, locate, markedCopy, notShown, type Location } from '../page-arbiter.ts';
+import { arbiterProblem, expectedShown, locate, markedCopy, notShown, notShownWhy, WHY_NOT_SHOWN, type Location, type NotShownWhy } from '../page-arbiter.ts';
 import type { ArtifactResolver, PageRenderer, RenderOptions } from '../pages.ts';
 import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, StepSpec } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
@@ -95,6 +95,8 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
 interface PageQuestion {
   html: string;
   notOffered: Set<number>;
+  /** The lines not offered (by number in the whole deck), each with why, in deck order. */
+  whyNot: [number, NotShownWhy][];
   /** The browser could place the page's lines: else none of them can be changed. */
   checked: boolean;
 }
@@ -157,7 +159,7 @@ async function pageQuestion(deps: RunnerDeps, input: OpenCheckpointInput): Promi
   const unreadable = (e: Error) => new StepError(`byway could not read the copy of this work (${e.message}).`);
   const loc = await pageLines(deps, html, unreadable, { deadline: Date.now() + QUESTION_READS_MS });
   try {
-    return { html, notOffered: notShown(html, loc), checked: loc.agrees };
+    return { html, notOffered: notShown(html, loc), whyNot: notShownWhy(html, loc), checked: loc.agrees };
   } catch (e) {
     throw unreadable(e as Error);
   }
@@ -165,21 +167,39 @@ async function pageQuestion(deps: RunnerDeps, input: OpenCheckpointInput): Promi
 
 /**
  * A page's VOICE question says how its copy is written (ADR-0081): one line per run of text, the bracket rule when a line
- * has link words in brackets, and where each link goes; that text a browser does not show as one line is not offered;
- * and, when the browser could not place the page's lines, that none of them can be changed. It is read from the work, never from the
- * starting text, and appended to the prompt the workflow sent, which never carries it, so a re-ask gets it once too.
+ * has link words in brackets, and where each link goes; which lines are not offered, because a browser does not show
+ * them as one line, and why; and, when the browser could not place the page's lines, that none of them can be changed.
+ * It is read from the work, never from the starting text, and appended to the prompt the workflow sent, which never
+ * carries it, so a re-ask gets it once too.
  */
 function withPageRules(page: PageQuestion | undefined, prompt: string): string {
   if (!page) return prompt;
   let rules: string;
   try {
     rules = pageVoiceSuffix(readPageCopy(page.html, page.notOffered));
+    if (page.whyNot.length) rules += ` ${notOfferedSentence(page)}`;
   } catch (e) {
     throw new StepError(`byway could not read the copy of this work (${(e as Error).message}).`);
   }
-  if (page.notOffered.size) rules += ' Text a browser does not show as one line here (hidden, out of sight, a tooltip, or laid out differently) is not offered, and stays as it is.';
   if (!page.checked) rules += " byway could not match this page's lines to what a browser shows, so none of them can be changed in this step.";
   return `${prompt} ${rules}`;
+}
+
+/** At most this many lines not offered are quoted in the VOICE prompt, each cut to 60 characters. */
+const NOT_OFFERED_MAX = 30;
+
+/**
+ * The lines a page's VOICE does not offer, named by why (page-arbiter.ts), in deck order within each reason: "These
+ * lines of the page are not offered, …: hidden from sight (…): "Menu", "Close"; …".
+ */
+function notOfferedSentence(page: PageQuestion): string {
+  const units = readPageCopy(page.html).units;
+  const cut = (t: string) => (t.length > 60 ? `${t.slice(0, 57)}...` : t);
+  const groups = new Map<NotShownWhy, string[]>();
+  for (const [k, why] of page.whyNot.slice(0, NOT_OFFERED_MAX)) groups.set(why, [...(groups.get(why) ?? []), `"${cut(units[k]?.text ?? '')}"`]);
+  const more = page.whyNot.length - NOT_OFFERED_MAX;
+  const named = [...groups].map(([why, quotes]) => `${WHY_NOT_SHOWN[why]}: ${quotes.join(', ')}`).join('; ');
+  return `These lines of the page are not offered, because a browser does not show them as one line here, and stay as they are: ${named}${more > 0 ? `; and ${more} more` : ''}.`;
 }
 
 /**

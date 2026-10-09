@@ -1,46 +1,59 @@
 /**
  * VOICE's browser arbiter for a web page (F07, ADR-0081). The page reader (page-copy.ts and html-tokens.ts) is a model of
  * how browsers build and show a page, and placement and the in-code verifier both depend on it, so a misread there is a
- * write the verifier cannot see. The arbiter asks the browser: the runner's own Chromium, with JavaScript off
- * (PageRenderer.shownText). It is the last word on every page write, and it fails closed. It reads what a sighted
- * visitor sees: text a style hides from sight, though a browser lays it out (a screen-reader-only class, opacity 0, text
- * clipped away or moved off the page), is not in the text it compares, and is listed apart (ShownText.hidden).
+ * write the verifier cannot see. The arbiter asks the browser: the runner's own Chromium, reading the page as a visitor
+ * sees it, with JavaScript on (PageRenderer.shownText: the visitor read). It is the last word on every page write, and it
+ * fails closed. The deck (what may be offered) is the page reader's, which runs no script; what is shown, what is hidden
+ * from sight, and how each pair of neighbouring characters sits (glued, apart in one flow of text, apart across boxes,
+ * or in the other order) is the visitor read's, measured from the characters' boxes.
  *
  * - Where each line shows (`locate`). A copy of the page is marked at each deck line's first and last character (a pair
- *   of noncharacters with the line's number, put into the text, so no element changes), and Chromium reads the page
- *   and the copy. A line is shown where its two marks each appear once, the start before the end, with exactly the
- *   line's words between them (each run of whitespace read as one space, a line break included). The copy must read
- *   as the page does once the marks are taken out; if it does not, no line is placed.
- * - What is offered (`notShown`): a line a browser does not show so (hidden, out of sight, a tooltip, read where it is
- *   not shown, or laid out otherwise than in one piece with exactly its words) is not offered, and stays byte for byte.
- *   So a line holding any text a style hides from sight is not offered: its words are not all seen.
- * - What the written page must show (`expectedShown`): the page before as Chromium showed it, with each changed or
- *   deleted line's words replaced by the person's (brackets taken out, and a space at an edge where the person typed
- *   one), and everything else, the separators between lines included, as the page had it. A gap between two of the
- *   person's words is one space, except inside a line Chromium showed broken over screen lines (by a style the deck does
- *   not read), where it may be a space or a line break. Each shown character's link (by address) is as the page had it,
- *   and the person's link words are in the link they bracketed (a deleted line has none, so its link words are not
- *   checked).
- * - The check (`arbiterProblem`): Chromium's reading of the written page, with each run of whitespace read as one gap
- *   (that many table-cell boundaries when it holds tabs, else a line break when it holds one, else a space) and its ends
- *   trimmed, must equal the expected text exactly, and every shown character must be in the expected link; and the text
- *   a style hides from sight must be the page's own, node by node, in the same links. Any difference refuses the write,
- *   naming the line; one in what is hidden from sight says so (the person's words put out of sight, or the page's text
- *   pushed out of sight or brought into it).
+ *   of noncharacters with the line's number, put into the text, so no element changes; the read takes them out before
+ *   it measures anything), and Chromium reads the page and the copy. A line is placed where its two marks each show
+ *   once, the start before the end, with exactly the line's characters between them, nothing hidden from sight among
+ *   them, and each of its gaps shown as the deck allows: where the line has a space, apart (in the flow or across
+ *   boxes); where it has none, glued, or apart because the page's own boxes or styles part them (a `display: block`
+ *   cite, tag chips that are inline blocks, a margin); never in the other order. The copy must read as the page does
+ *   once the marks are taken out (the same text, separators, links and hidden text); if it does not, no line is placed.
+ * - What is offered (`notShown`, `notShownWhy`): a line that is not placed is not offered, stays byte for byte, and the
+ *   prompt names it with the reason (not laid out, hidden from sight, partly hidden, not shown as one piece, changed or
+ *   copied by a script).
+ * - What the written page must show (`expectedShown`): the page before as the visitor read showed it, every character
+ *   outside the changed lines the same, shown or hidden from sight in the same place, in the same link, with the same
+ *   separators; each changed line showing exactly the person's characters, where the person typed a space apart (in
+ *   the flow or across boxes), and where the person typed none glued, except that two characters that stood side by
+ *   side in the line before, with the same spacing in the deck (a space or none), keep the separator they had (matched
+ *   by a shortest edit script of the line's characters); the separators between a changed line and its
+ *   neighbours as before (apart where the person typed a space at that edge); a deleted line's neighbours parted by the
+ *   stronger of the two separators it had (glued < in the flow < in the other order < across boxes). The person's
+ *   link words are in the link they bracketed (a deleted line has none, so its link words are not checked).
+ * - The check (`arbiterProblem`): Chromium's visitor read of the written page must be exactly that, separator for
+ *   separator, and the text it hides from sight must be the page's own, run by run, in the same links. Any difference
+ *   refuses the write, naming the line; one in what is hidden from sight says so (the person's words put out of sight,
+ *   or the page's text pushed out of sight or brought into it), and one outside the changed lines says that other text
+ *   would change.
  *
  * Pure but for the reads (`locateLines`, `arbitrate`), which go to the renderer. Activity code only.
  */
 import { parseEntities } from 'parse-entities';
-import { isHtmlSpace, squashHtml } from './html-tokens.ts';
-import { readPageCopy, type PageDeck, type PageEdit } from './page-copy.ts';
-import { LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, type ArtifactResolver, type PageRenderer, type RenderOptions, type ShownText } from './pages.ts';
+import { isHtmlSpace } from './html-tokens.ts';
+import { editPairs, readPageCopy, type PageDeck, type PageEdit } from './page-copy.ts';
+import {
+  HIDDEN_HERE,
+  LINE_END,
+  LINE_START,
+  LINK_CLOSE,
+  LINK_DIGIT_0,
+  LINK_INDEX_END,
+  LINK_OPEN,
+  NUMBER_END,
+  REVERSED,
+  type ArtifactResolver,
+  type PageRenderer,
+  type RenderOptions,
+  type ShownText,
+} from './pages.ts';
 
-/** A line's marks in the arbiter's copy of a page: its start, its end, then its number in digits, then the end of the number. */
-const LINE_START = '﷓';
-const LINE_END = '﷔';
-const NUMBER_END = '﷕';
-/** In an expected text: a gap that may show as a space or a line break. */
-const ANY_GAP = '﷖';
 /** The noncharacters the arbiter's marks use: a page or an answer holding one cannot be checked. */
 const MARKS = /[﷐-﷯]/;
 
@@ -100,7 +113,7 @@ function edgeOf(toks: number[], p: PageDeck, at: Int32Array, which: 'first' | 'l
   return undefined;
 }
 
-/** A shown text with the marks taken out: each character's link address (null outside links), and each line's marks. */
+/** A read with the marks taken out: each character's link address (null outside links), and each line's marks. */
 interface Unmarked {
   text: string;
   hrefs: (string | null)[];
@@ -136,9 +149,9 @@ function unmark(s: string, hrefs: readonly string[] = []): Unmarked {
       else m.set(n, [length]);
       i = j;
     } else {
-      // A run of plain characters at once.
+      // A run of plain characters at once (HIDDEN_HERE and REVERSED are plain here).
       let j = i + 1;
-      while (j < s.length && !MARKS.test(s[j]!)) j++;
+      while (j < s.length && s[j] !== LINK_OPEN && s[j] !== LINK_CLOSE && s[j] !== LINE_START && s[j] !== LINE_END) j++;
       const run = s.slice(i, j);
       parts.push(run);
       length += run.length;
@@ -151,6 +164,69 @@ function unmark(s: string, hrefs: readonly string[] = []): Unmarked {
   return out;
 }
 
+/** The line marks (by line number) in a text: how many starts and ends. */
+function markCounts(s: string): Map<number, { starts: number; ends: number }> {
+  const u = unmark(s);
+  const out = new Map<number, { starts: number; ends: number }>();
+  const add = (m: Map<number, number[]>, key: 'starts' | 'ends') => {
+    for (const [k, xs] of m) {
+      const c = out.get(k) ?? { starts: 0, ends: 0 };
+      c[key] += xs.length;
+      out.set(k, c);
+    }
+  };
+  add(u.starts, 'starts');
+  add(u.ends, 'ends');
+  return out;
+}
+
+/**
+ * How two neighbouring shown characters sit, as the visitor read gives it: glued (G), apart in one flow of text (S),
+ * apart across boxes or at a forced break (B), or the second shown before the first (R).
+ */
+type Gap = 'G' | 'S' | 'B' | 'R';
+const RANK: Record<Gap, number> = { G: 0, S: 1, R: 2, B: 3 };
+const stronger = (a: Gap, b: Gap): Gap => (RANK[a] >= RANK[b] ? a : b);
+
+/** A read as compared: its characters (by code point), the gap before each, where hidden text stands, each link. */
+interface Seq {
+  cs: string[];
+  /** gaps[k]: between cs[k - 1] and cs[k] ('G' for k = 0). */
+  gaps: Gap[];
+  /** Text hidden from sight follows cs[k] (before the next shown character). */
+  hid: boolean[];
+  hidFirst: boolean;
+  hrefs: (string | null)[];
+  /** Where cs[k] is in the text it was read from. */
+  src: number[];
+}
+
+function seqOf(text: string, hrefs?: readonly (string | null)[]): Seq {
+  const out: Seq = { cs: [], gaps: [], hid: [], hidFirst: false, hrefs: [], src: [] };
+  let gap: Gap | undefined;
+  for (let i = 0; i < text.length; ) {
+    const cp = text.codePointAt(i)!;
+    const w = cp > 0xffff ? 2 : 1;
+    const c = text.slice(i, i + w);
+    if (c === HIDDEN_HERE) {
+      if (out.cs.length) out.hid[out.cs.length - 1] = true;
+      else out.hidFirst = true;
+    } else if (isHtmlSpace(c) || c === REVERSED) {
+      const g: Gap = c === REVERSED ? 'R' : c === '\n' || c === '\r' ? 'B' : 'S';
+      gap = gap ? stronger(gap, g) : g;
+    } else {
+      out.gaps.push(out.cs.length ? (gap ?? 'G') : 'G');
+      out.cs.push(c);
+      out.hid.push(false);
+      out.hrefs.push(hrefs?.[i] ?? null);
+      out.src.push(i);
+      gap = undefined;
+    }
+    i += w;
+  }
+  return out;
+}
+
 /** Where a line shows: in the page's body text or in its title, from `start` to `end`. */
 export interface Span {
   in: 'body' | 'title';
@@ -158,65 +234,22 @@ export interface Span {
   end: number;
 }
 
+/** Why a line is not offered (see notShownWhy). */
+export type NotShownWhy = 'unlaid' | 'hidden' | 'part-hidden' | 'layout' | 'script' | 'copied';
+
 /** The page before as Chromium shows it, and where each of its deck lines (by number in the whole deck) shows. */
 export interface Location {
   body: string;
   hrefs: (string | null)[];
   title: string;
-  /** The page's text a style hides from sight, node by node, with its link (ShownText.hidden). */
+  /** The page's text a style hides from sight, run by run, with its link (ShownText.hidden). */
   hidden: ShownText['hidden'];
   spans: Map<number, Span>;
+  /** Why each line that is not placed is not (when the copy agrees). */
+  why: Map<number, NotShownWhy>;
   /** The marked copy reads as the page does: else no line is placed, and none can be changed. */
   agrees: boolean;
 }
-
-/**
- * A shown text as compared: each run of whitespace one gap, ends trimmed. A gap is a cell boundary when the run holds a
- * tab (innerText's mark of a table cell's end; a run of n tabs is n boundaries, as an empty cell between gives two), a
- * line break when it holds one, else a space. The line breaks beside a cell boundary are not compared: they are a
- * block's edge (or a <br>) at the end or start of a cell's content, which parts nothing from the cell beside it, or a
- * row's end after an empty last cell (placement never moves a cell).
- */
-interface Shape {
-  /** Characters and gaps: ' ', '\n', ANY_GAP (either of those), or one '\t' per cell boundary. */
-  cs: string[];
-  hrefs: (string | null)[];
-  /** For each, the index in the text it was read from. */
-  src: number[];
-}
-
-/** A run of whitespace as one gap (see Shape). */
-function gapOf(run: string): string {
-  const tabs = run.split('\t').length - 1;
-  if (tabs) return '\t'.repeat(tabs);
-  return /[\n\r]/.test(run) ? '\n' : run.includes(ANY_GAP) ? ANY_GAP : ' ';
-}
-
-function shape(text: string, hrefs?: readonly (string | null)[]): Shape {
-  const out: Shape = { cs: [], hrefs: [], src: [] };
-  let gap = '';
-  let gapAt = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]!;
-    if (isHtmlSpace(c) || c === ANY_GAP) {
-      if (!gap) gapAt = i;
-      gap += c;
-      continue;
-    }
-    if (gap && out.cs.length) {
-      out.cs.push(gapOf(gap));
-      out.hrefs.push(null);
-      out.src.push(gapAt);
-    }
-    gap = '';
-    out.cs.push(c);
-    out.hrefs.push(hrefs?.[i] ?? null);
-    out.src.push(i);
-  }
-  return out;
-}
-const flat = (s: Shape) => s.cs.join('');
-const plainOf = (s: string) => flat(shape(s));
 
 /** The marked copy of a page Chromium reads to place its lines, or undefined when the page holds the marks' characters. */
 export const markedCopy = (html: string): string | undefined => (MARKS.test(html) ? undefined : markLines(html));
@@ -228,26 +261,88 @@ export async function locateLines(pages: PageRenderer, resolve: ArtifactResolver
   return locate(html, plain, copy === undefined ? undefined : await pages.shownText(copy, resolve, opts));
 }
 
+/** The deck line's characters (by code point) and, before each, whether the line has a space there. */
+function deckChars(text: string): { cs: string[]; space: boolean[] } {
+  const cs: string[] = [];
+  const space: boolean[] = [];
+  let sp = false;
+  for (const c of text) {
+    if (isHtmlSpace(c)) sp = true;
+    else {
+      cs.push(c);
+      space.push(cs.length > 1 && sp);
+      sp = false;
+    }
+  }
+  return { cs, space };
+}
+
+/**
+ * Whether a slice of a read (from a line's start mark to its end mark) shows exactly the deck line: its characters, no
+ * hidden text among them, and each gap as the deck allows (where the line has a space, apart; where it has none, glued
+ * or parted by the page's own boxes; never in the other order).
+ */
+function showsAsLine(slice: Seq, line: string): boolean {
+  const d = deckChars(line);
+  if (slice.hidFirst || slice.cs.length !== d.cs.length || !slice.cs.length) return false;
+  for (let k = 0; k < d.cs.length; k++) {
+    if (slice.cs[k] !== d.cs[k]) return false;
+    if (k < d.cs.length - 1 && slice.hid[k]) return false;
+    if (k === 0) continue;
+    const g = slice.gaps[k]!;
+    if (g === 'R' || (d.space[k] && g === 'G')) return false;
+  }
+  return true;
+}
+
+const stripMarks = (hidden: ShownText['hidden']): ShownText['hidden'] => hidden.map(([t, h]) => [unmark(t).text.replace(/[ \t\n\f\r]+/g, ' ').trim(), h] as [string, string | null]).filter(([t]) => t !== '');
+
 /** Place each deck line of `html` in Chromium's reading of its marked copy (see the module comment). */
 export function locate(html: string, plain: ShownText, marked: ShownText | undefined): Location {
-  const none: Location = { body: plain.text, hrefs: unmark(plain.linked, plain.hrefs).hrefs, title: plain.title, hidden: plain.hidden, spans: new Map(), agrees: false };
+  const none: Location = { body: plain.text, hrefs: unmark(plain.linked, plain.hrefs).hrefs, title: plain.title, hidden: plain.hidden, spans: new Map(), why: new Map(), agrees: false };
   if (!marked) return none;
   const body = unmark(marked.linked, marked.hrefs);
   const lines = unmark(marked.text);
   const title = unmark(marked.title);
-  // The copy must read as the page does, marks aside, and its links must not change what it shows.
-  if (plainOf(lines.text) !== plainOf(plain.text) || plainOf(body.text) !== plainOf(plain.text) || plainOf(title.text) !== plainOf(plain.title)) return none;
+  // The copy must read as the page does, marks aside, hiding the same text, and its links must not change what it shows.
+  const plainLinks = unmark(plain.linked, plain.hrefs);
+  const same = lines.text === plain.text && body.text === plain.text && plainLinks.text === plain.text && title.text === plain.title && JSON.stringify(stripMarks(marked.hidden)) === JSON.stringify(stripMarks(plain.hidden)) && body.hrefs.every((h, i) => h === plainLinks.hrefs[i]);
+  if (!same) return none;
   const p = readPageCopy(html);
   const spans = new Map<number, Span>();
+  const why = new Map<number, NotShownWhy>();
+  const hiddenMarks = markCounts(marked.hidden.map(([t]) => t).join(' '));
+  const unlaidMarks = markCounts(marked.unlaid);
   p.units.forEach((u, k) => {
     for (const [where, read] of [['body', body], ['title', title]] as const) {
       const s = read.starts.get(k);
       const e = read.ends.get(k);
-      if (!s || !e) continue;
-      if (s.length === 1 && e.length === 1 && s[0]! <= e[0]! && squashHtml(read.text.slice(s[0], e[0])) === u.text) spans.set(k, { in: where, start: s[0]!, end: e[0]! });
+      if (!s || !e || s.length !== 1 || e.length !== 1 || s[0]! > e[0]!) continue;
+      if (showsAsLine(seqOf(read.text.slice(s[0], e[0])), u.text)) spans.set(k, { in: where, start: s[0]!, end: e[0]! });
     }
+    if (spans.has(k)) return;
+    // Why not: where its marks are.
+    const shownS = (body.starts.get(k)?.length ?? 0) + (title.starts.get(k)?.length ?? 0);
+    const shownE = (body.ends.get(k)?.length ?? 0) + (title.ends.get(k)?.length ?? 0);
+    const hid = hiddenMarks.get(k) ?? { starts: 0, ends: 0 };
+    const un = unlaidMarks.get(k) ?? { starts: 0, ends: 0 };
+    const starts = shownS + hid.starts + un.starts;
+    const ends = shownE + hid.ends + un.ends;
+    let r: NotShownWhy;
+    if (starts > 1 || ends > 1) r = 'copied';
+    else if (starts === 0 || ends === 0) r = 'script';
+    else if (un.starts && un.ends) r = 'unlaid';
+    else if (!shownS && !shownE) r = 'hidden';
+    else if (!shownS || !shownE) r = 'part-hidden';
+    else {
+      const s = (body.starts.get(k) ?? title.starts.get(k))![0]!;
+      const e = (body.ends.get(k) ?? title.ends.get(k))![0]!;
+      const read = body.starts.has(k) ? body : title;
+      r = s <= e && read.text.slice(s, e).includes(HIDDEN_HERE) ? 'part-hidden' : 'layout';
+    }
+    why.set(k, r);
   });
-  return { body: body.text, hrefs: body.hrefs, title: title.text, hidden: plain.hidden, spans, agrees: true };
+  return { body: body.text, hrefs: body.hrefs, title: title.text, hidden: plain.hidden, spans, why, agrees: true };
 }
 
 /** The deck lines (by number in the whole deck) a browser does not show as the deck reads them: they are not offered. */
@@ -257,17 +352,86 @@ export function notShown(html: string, loc: Location): Set<number> {
   return new Set(p.units.map((_, k) => k).filter((k) => !loc.spans.has(k)));
 }
 
-/** What the written page must show: its body and title, each character's link, and where each changed line went. */
-interface Expected {
-  body: string;
+/** Why a line is not offered, as the VOICE prompt says it. */
+export const WHY_NOT_SHOWN: Record<NotShownWhy, string> = {
+  unlaid: 'not shown on this page at all (hidden, closed, or shown only on another screen size)',
+  hidden: 'hidden from sight (for screen readers, or until a visitor opens it)',
+  'part-hidden': 'part of it is hidden from sight (for screen readers) or cut off',
+  layout: 'a browser does not show it as one piece with exactly these words (run together, in another order, or with other words inside it)',
+  script: 'a script on the page changes or removes it',
+  copied: 'a script on the page shows it more than once',
+};
+
+/** The lines not offered (by number in the whole deck), each with why, in deck order. */
+export function notShownWhy(html: string, loc: Location): [number, NotShownWhy][] {
+  return [...notShown(html, loc)].sort((a, b) => a - b).map((k) => [k, loc.why.get(k) ?? 'layout']);
+}
+
+/** One allowed gap or more, as letters (see Gap). */
+type Allowed = string;
+/** What the written page must show (a Seq whose gaps may each allow more than one way). */
+interface Want {
+  cs: string[];
+  gaps: Allowed[];
+  hid: boolean[];
+  hidFirst: boolean;
   hrefs: (string | null)[];
-  title: string;
+  /** For each character, the offered line (1-based) whose words it is, or 0. */
+  lineAt: number[];
+  /** For each character from the page before, its place in the text read before (-1 for the person's own). */
+  src: number[];
+}
+
+/** What the written page must show: its body and title, and where each changed line went. */
+interface Expected {
+  body: Want;
+  title: Want;
   /** The text a style hides from sight, as the page before had it: no changed line holds any (the offer rule). */
   hidden: ShownText['hidden'];
-  /** For each character of `body`, the offered line (1-based) whose words it is, or 0. */
-  lineAt: number[];
-  /** Each changed line's place in `body` (a deleted line: where it was). */
+  /** Each changed line's place in `body` (a deleted line: where it was), by character. */
   places: { line: number; start: number; end: number; in: 'body' | 'title' }[];
+  /** Every placed deck line's span in the text read before, with its offered number (0 when not offered). */
+  spans: { line: number; start: number; end: number; in: 'body' | 'title' }[];
+}
+
+/** A changed line, ready to go in: its characters, the gap allowed before each, their links, and its edges. */
+interface Replacement {
+  span: Span;
+  line: number;
+  cs: string[];
+  gaps: Allowed[];
+  hrefs: (string | null)[];
+  lead: boolean;
+  trail: boolean;
+}
+
+/**
+ * The gap allowed before each of the person's characters (see the module comment): a typed space, apart (in the flow
+ * or across boxes); none, glued; except where the pair stood side by side in the line before, with the same spacing in
+ * the deck, which keeps the gap it had (matched by a shortest edit script of the line's characters, at most 2,000
+ * apart; past that, by the common start and end).
+ */
+function gapsFor(oldCs: readonly string[], oldGaps: readonly Gap[], oldSpace: readonly boolean[], cs: readonly string[], space: readonly boolean[]): Allowed[] {
+  let pairs = editPairs(oldCs, cs, 2000);
+  if (!pairs) {
+    pairs = [];
+    let a = 0;
+    while (a < oldCs.length && a < cs.length && oldCs[a] === cs[a]) {
+      pairs.push([a, a]);
+      a++;
+    }
+    const tail: [number, number][] = [];
+    for (let b = 0; b < oldCs.length - a && b < cs.length - a && oldCs[oldCs.length - 1 - b] === cs[cs.length - 1 - b]; b++) tail.push([oldCs.length - 1 - b, cs.length - 1 - b]);
+    pairs.push(...tail.reverse());
+  }
+  const from = new Int32Array(cs.length).fill(-1);
+  for (const [o, n] of pairs) from[n] = o;
+  return cs.map((_, n) => {
+    if (n === 0) return 'G';
+    const o = from[n]!;
+    if (o > 0 && from[n - 1] === o - 1 && oldSpace[o] === space[n]) return oldGaps[o]!;
+    return space[n] ? 'SB' : 'G';
+  });
 }
 
 /**
@@ -277,7 +441,9 @@ interface Expected {
 export function expectedShown(html: string, loc: Location, notOffered: ReadonlySet<number>, edit: PageEdit): Expected | { problem: string; line: number } {
   const full = readPageCopy(html);
   const offered = full.units.map((_, k) => k).filter((k) => !notOffered.has(k));
-  const repl: { span: Span; line: number; text: string; hrefs: (string | null)[] }[] = [];
+  const offeredLine = new Map(offered.map((k, i) => [k, i + 1]));
+  const before = { body: seqOf(loc.body, loc.hrefs), title: seqOf(loc.title) };
+  const repl: Replacement[] = [];
   for (const [i, line] of edit.lines.entries()) {
     if (!line.changed) continue;
     const n = i + 1;
@@ -288,90 +454,115 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
     if (MARKS.test(line.text)) return { problem: `Line ${n} has a character byway uses to mark a page while it checks it (a noncharacter, U+FDD0 to U+FDEF), which a page does not show: take it out.`, line: n };
     if (!loc.agrees) return cannot('byway could not match this page\'s lines to what a browser shows, so it cannot check a change');
     if (!span) return cannot('a browser does not show that line where byway reads it, so byway cannot check a change to it');
-    const oldText = (span.in === 'body' ? loc.body : loc.title).slice(span.start, span.end);
+    const seq = before[span.in];
+    const k0 = seq.src.findIndex((x) => x >= span.start);
+    const k1 = k0 < 0 ? seq.cs.length : (() => { let j = k0; while (j < seq.cs.length && seq.src[j]! < span.end) j++; return j; })();
     // The line's link words as Chromium shows them must be the deck's: each bracketed part one address, nothing else in a link.
     // A deleted line has no words to give a link (the page's other text keeps its links, checked against the written page).
     const partHref: (string | null)[] = [];
     if (span.in === 'body' && line.text) {
-      const shownHrefs = loc.hrefs.slice(span.start, span.end).filter((_, x) => !isHtmlSpace(oldText[x]));
-      let x = 0;
+      let x = k0;
       let part = -1;
       for (const w of u.words) {
         if (w.kind === 'link') part++;
         for (const c of w.text) {
           if (isHtmlSpace(c)) continue;
-          for (let q = 0; q < c.length; q++, x++) {
-            const h = shownHrefs[x] ?? null;
-            if (w.kind === 'out' ? h !== null : h === null || (partHref[part] !== undefined && partHref[part] !== h)) {
-              return cannot(`a browser shows its link words differently from how they were offered (${h === null ? `"${w.text}" is not a link's words there` : `its words are in the link to ${h}`})`);
-            }
-            if (w.kind === 'link') partHref[part] = h;
+          const h = seq.hrefs[x++] ?? null;
+          if (w.kind === 'out' ? h !== null : h === null || (partHref[part] !== undefined && partHref[part] !== h)) {
+            return cannot(`a browser shows its link words differently from how they were offered (${h === null ? `"${w.text}" is not a link's words there` : `its words are in the link to ${h}`})`);
           }
+          if (w.kind === 'link') partHref[part] = h;
         }
       }
     }
-    // The person's words, with their links: a bracketed part goes to its link's address, as the line's k-th link.
-    let text = '';
+    // The person's characters, with their links: a bracketed part goes to its link's address, as the line's k-th link.
+    const cs: string[] = [];
+    const space: boolean[] = [];
     const hrefs: (string | null)[] = [];
     let part = -1;
+    let sp = false;
     const segs = u.marked ? line.segs : [{ kind: u.words[0]!.kind, text: line.text }];
     for (const seg of segs) {
       if (seg.kind === 'link') part++;
-      for (let q = 0; q < seg.text.length; q++) {
-        text += seg.text[q];
+      for (const c of seg.text) {
+        if (isHtmlSpace(c)) {
+          sp = true;
+          continue;
+        }
+        cs.push(c);
+        space.push(cs.length > 1 && sp);
+        sp = false;
         hrefs.push(seg.kind === 'link' ? (partHref[part] ?? null) : null);
       }
     }
-    // A space the person typed at the line's edge (brackets taken out) parts it from text beside it.
-    if (line.text && line.lead) {
-      text = ` ${text}`;
-      hrefs.unshift(null);
-    }
-    if (line.text && line.trail) {
-      text = `${text} `;
-      hrefs.push(null);
-    }
-    // Gaps: one space each; inside a line Chromium broke over screen lines, a space or a line break.
-    const broken = /[\n\r\t]/.test(oldText.trim());
-    if (broken) text = text.replace(/ /g, ANY_GAP);
-    repl.push({ span, line: n, text: line.text ? text : '', hrefs: line.text ? hrefs : [] });
+    const old = deckChars(u.text);
+    const gaps = gapsFor(seq.cs.slice(k0, k1), seq.gaps.slice(k0, k1), old.space, cs, space);
+    repl.push({ span: { in: span.in, start: k0, end: k1 }, line: n, cs, gaps, hrefs, lead: !!line.lead && cs.length > 0, trail: !!line.trail && cs.length > 0 });
   }
   const build = (where: 'body' | 'title') => {
-    const src = where === 'body' ? loc.body : loc.title;
-    const srcHrefs = where === 'body' ? loc.hrefs : [];
+    const src = before[where];
     const rs = repl.filter((r) => r.span.in === where).sort((x, y) => x.span.start - y.span.start);
-    const chunks: string[] = [];
-    const hrefs: (string | null)[] = [];
-    const lineAt: number[] = [];
+    const out: Want = { cs: [], gaps: [], hid: [], hidFirst: src.hidFirst, hrefs: [], lineAt: [], src: [] };
     const places: Expected['places'] = [];
-    const keep = (a: number, b: number) => {
-      chunks.push(src.slice(a, b));
-      for (let x = a; x < b; x++) {
-        hrefs.push(srcHrefs[x] ?? null);
-        lineAt.push(0);
-      }
+    // The gap to put before the next character: the page's own (as merged over deleted lines), or apart for a typed space.
+    let pending: Gap | undefined;
+    let typed = false;
+    const markHid = (h: boolean) => {
+      if (!h) return;
+      if (out.cs.length) out.hid[out.cs.length - 1] = true;
+      else out.hidFirst = true;
     };
-    let from = 0;
+    const push = (c: string, gap: Allowed, href: string | null, line: number, from: number) => {
+      out.gaps.push(out.cs.length ? gap : 'G');
+      out.cs.push(c);
+      out.hid.push(false);
+      out.hrefs.push(href);
+      out.lineAt.push(line);
+      out.src.push(from);
+    };
+    const gapBefore = (own: Gap): Allowed => (typed ? 'SB' : (pending ?? own));
+    let k = 0;
     for (const r of rs) {
-      keep(from, r.span.start);
-      places.push({ line: r.line, start: hrefs.length, end: hrefs.length + r.text.length, in: where });
-      chunks.push(r.text);
-      for (let x = 0; x < r.text.length; x++) {
-        hrefs.push(r.hrefs[x] ?? null);
-        lineAt.push(r.line);
+      for (; k < r.span.start; k++) {
+        push(src.cs[k]!, gapBefore(src.gaps[k]!), src.hrefs[k]!, 0, src.src[k]!);
+        markHid(src.hid[k]!);
+        pending = undefined;
+        typed = false;
       }
-      from = r.span.end;
+      // The gap before the line, as the page had it (merged with any deleted line just before).
+      const edgeIn = r.span.start < src.cs.length && r.span.start > 0 ? src.gaps[r.span.start]! : undefined;
+      if (edgeIn) pending = pending ? stronger(pending, edgeIn) : edgeIn;
+      const start = out.cs.length;
+      if (r.cs.length) {
+        push(r.cs[0]!, r.lead || typed ? 'SB' : (pending ?? 'G'), r.hrefs[0]!, r.line, -1);
+        for (let q = 1; q < r.cs.length; q++) push(r.cs[q]!, r.gaps[q]!, r.hrefs[q]!, r.line, -1);
+        pending = undefined;
+        typed = r.trail;
+      }
+      // Hidden text right after the line stays right after what stands before it now.
+      if (r.span.end > r.span.start) markHid(src.hid[r.span.end - 1]!);
+      places.push({ line: r.line, start, end: out.cs.length, in: where });
+      // The gap after the line, as the page had it (merged into the pending one for a deleted line).
+      const edgeOut = r.span.end < src.cs.length ? src.gaps[r.span.end]! : undefined;
+      if (edgeOut) pending = pending ? stronger(pending, edgeOut) : edgeOut;
+      k = r.span.end;
     }
-    keep(from, src.length);
-    return { text: chunks.join(''), hrefs, lineAt, places };
+    for (; k < src.cs.length; k++) {
+      push(src.cs[k]!, gapBefore(src.gaps[k]!), src.hrefs[k]!, 0, src.src[k]!);
+      markHid(src.hid[k]!);
+      pending = undefined;
+      typed = false;
+    }
+    return { want: out, places };
   };
   const b = build('body');
   const t = build('title');
-  return { body: b.text, hrefs: b.hrefs, title: t.text, hidden: loc.hidden, lineAt: b.lineAt, places: [...b.places, ...t.places] };
+  const spans: Expected['spans'] = [...loc.spans].map(([k, s]) => ({ line: offeredLine.get(k) ?? 0, start: s.start, end: s.end, in: s.in }));
+  return { body: b.want, title: t.want, hidden: loc.hidden, places: [...b.places, ...t.places], spans };
 }
 
 /**
- * How the text hidden from sight differs between two pages, node by node (text and link): the first text the written
+ * How the text hidden from sight differs between two pages, run by run (text and link): the first text the written
  * page hides that the page before did not, else the first the page before hid that it does not; undefined when the
  * same text is hidden, in the same links, in the same order.
  */
@@ -390,15 +581,20 @@ function hiddenChange(before: ShownText['hidden'], after: ShownText['hidden']): 
   return undefined;
 }
 
-/** A snippet of a shape around index `d`, line breaks shown as " / ". */
-const around = (s: Shape, d: number): string => {
+const GAP_SHOWN: Record<Gap, string> = { G: '', S: ' ', B: ' / ', R: ' ' };
+/** A snippet of a read around character `d`, separators across boxes shown as " / ". */
+const around = (s: Seq, d: number): string => {
   const from = Math.max(0, d - 24);
   const to = Math.min(s.cs.length, d + 24);
-  const t = s.cs
-    .slice(from, to)
-    .map((c) => (c === '\n' ? ' / ' : c === ANY_GAP ? ' ' : isCell(c) ? ` ${'| '.repeat(c.length)}` : c))
-    .join('');
+  let t = '';
+  for (let k = from; k < to; k++) t += (k > from ? GAP_SHOWN[s.gaps[k]!] : '') + s.cs[k];
   return `${from > 0 ? '…' : ''}${t}${to < s.cs.length ? '…' : ''}`;
+};
+/** The expected text from character `a` to `b`, as `around` shows a read. */
+const wantText = (w: Want, a: number, b: number): string => {
+  let t = '';
+  for (let k = Math.max(0, a); k < Math.min(w.cs.length, b); k++) t += (k > a ? (w.gaps[k] === 'G' ? '' : w.gaps[k] === 'B' ? ' / ' : ' ') : '') + w.cs[k];
+  return t;
 };
 
 /**
@@ -406,19 +602,17 @@ const around = (s: Shape, d: number): string => {
  * where they first differ, or undefined.
  */
 export function arbiterProblem(exp: Expected, after: ShownText): { problem: string; line: number } | undefined {
-  const got = unmark(after.linked, after.hrefs);
-  // The marked read must be the page's own reading, marks aside.
-  const want = shape(exp.body, exp.hrefs);
-  const plain = shape(after.text);
-  const linked = shape(got.text, got.hrefs);
-  const nearest = (src: number): number => {
-    const at = exp.lineAt[src];
+  const linkRead = unmark(after.linked, after.hrefs);
+  const got = seqOf(after.text, linkRead.text === after.text ? linkRead.hrefs : undefined);
+  const want = exp.body;
+  const nearest = (k: number): number => {
+    const at = want.lineAt[k];
     if (at) return at;
     let best = 0;
     let dist = Infinity;
     for (const pl of exp.places) {
       if (pl.in !== 'body') continue;
-      const d = src < pl.start ? pl.start - src : src > pl.end ? src - pl.end : 0;
+      const d = k < pl.start ? pl.start - k : k >= pl.end ? k - pl.end + 1 : 0;
       if (d < dist) {
         dist = d;
         best = pl.line;
@@ -427,54 +621,58 @@ export function arbiterProblem(exp: Expected, after: ShownText): { problem: stri
     return best || (exp.places[0]?.line ?? 1);
   };
   const say = (line: number, why: string) => ({ problem: `byway could not put line ${line} on this page exactly as you wrote it, because ${why}. Change line ${line} again, or leave it as it was offered.`, line });
-  const titleWant = shape(exp.title);
-  const titleGot = shape(after.title);
-  if (flat(titleWant) !== flat(titleGot) && !sameWithGaps(titleWant, titleGot)) {
+  // The title: its characters, and a space where it had one or the person typed one.
+  const titleGot = seqOf(after.title);
+  const tw = exp.title;
+  if (tw.cs.join('') !== titleGot.cs.join('') || tw.cs.some((_, k) => k > 0 && !tw.gaps[k]!.includes(titleGot.gaps[k]!))) {
     const line = exp.places.find((pl) => pl.in === 'title')?.line ?? nearest(0);
-    return say(line, `a browser would show the page's title as "${flat(titleGot)}", not "${flat(titleWant).replace(new RegExp(ANY_GAP, 'g'), ' ')}"`);
+    return say(line, `a browser would show the page's title as "${after.title}", not "${tw.cs.map((c, k) => (k > 0 && tw.gaps[k] !== 'G' ? ' ' : '') + c).join('')}"`);
   }
   let d = 0;
-  while (d < want.cs.length && d < plain.cs.length && same(want.cs[d]!, plain.cs[d]!)) d++;
+  while (d < want.cs.length && d < got.cs.length && want.cs[d] === got.cs[d] && (d === 0 || want.gaps[d]!.includes(got.gaps[d]!)) && want.hid[d] === got.hid[d]) d++;
   // Text a style hides from sight is not in the text compared: the person's words put there would be missing from it,
   // and text the edit pushes out of sight (or brings into it) would differ. Said as such, naming the line nearest.
   const sight = hiddenChange(exp.hidden, after.hidden);
-  if (sight) return say(d < want.cs.length || d < plain.cs.length ? nearest(want.src[d] ?? exp.body.length) : (exp.places[0]?.line ?? 1), sight);
-  if (d < want.cs.length || d < plain.cs.length) {
-    const w = want.cs[d];
-    const g = plain.cs[d];
-    const line = nearest(want.src[d] ?? exp.body.length);
-    const gap = (c: string | undefined) => c === ' ' || c === '\n' || c === ANY_GAP || (c !== undefined && isCell(c));
+  if (sight) return say(d < want.cs.length || d < got.cs.length ? nearest(Math.min(d, Math.max(want.cs.length - 1, 0))) : (exp.places[0]?.line ?? 1), sight);
+  if (want.hidFirst !== got.hidFirst) return say(nearest(0), 'a browser would show the text a style on this page hides from sight in another place');
+  if (d < want.cs.length || d < got.cs.length) {
+    const line = nearest(Math.min(d, Math.max(want.cs.length - 1, 0)));
+    const shows = `it would show "${around(got, d)}"`;
     let why: string;
-    if (w === undefined) why = `a browser would show text your lines do not have: it would show "${around(plain, d)}"`;
-    else if (g === undefined) why = `a browser would not show all of your lines: it would end with "${around(plain, d)}"`;
-    else if (gap(w) && !gap(g)) why = `a browser would run words together that your lines keep apart: it would show "${around(plain, d)}"`;
-    else if (!gap(w) && gap(g)) why = `a browser would show ${g === '\n' ? 'a line break' : isCell(g) ? 'a table cell\'s edge' : 'a space'} that your lines do not have: it would show "${around(plain, d)}"`;
-    else if (isCell(w) && !isCell(g)) why = `a browser would show in one table cell what it showed in separate cells: it would show "${around(plain, d)}"`;
-    else if (!isCell(w) && isCell(g)) why = `a browser would show in separate table cells what it showed in one: it would show "${around(plain, d)}"`;
-    else if (isCell(w)) why = `a browser would show another number of table cells here: it would show "${around(plain, d)}"`;
-    else if (w === ' ' && g === '\n') why = `a browser would break a line where your lines have a space: it would show "${around(plain, d)}"`;
-    else if (w === '\n' && g === ' ') why = `a browser would show on one line what it showed on separate lines: it would show "${around(plain, d)}"`;
-    else why = `a browser would show "${around(plain, d)}" there`;
+    if (d >= want.cs.length) why = `a browser would show text your lines do not have: ${shows}`;
+    else if (d >= got.cs.length) why = `a browser would not show all of your lines: it would end with "${around(got, d)}"`;
+    else if (want.cs[d] !== got.cs[d]) {
+      // Characters differ. Outside the changed lines, that is other text of the page changing (as a script on the page
+      // may write it from the lines changed).
+      const outside = !want.lineAt[d] && !(d > 0 && want.lineAt[d - 1]) && want.src[d]! >= 0;
+      const inLine = outside ? exp.spans.find((s) => s.in === 'body' && want.src[d]! >= s.start && want.src[d]! < s.end) : undefined;
+      if (outside && inLine?.line) why = `a browser would show line ${inLine.line}, which you did not change, otherwise: ${shows}, where it showed "${wantText(want, Math.max(0, d - 12), d + 12)}"`;
+      else if (outside) why = `other text on this page, not one of your lines, would change (as when a script on the page writes it from your lines): ${shows}, where it showed "${wantText(want, Math.max(0, d - 12), d + 12)}"`;
+      else why = `a browser would show "${around(got, d)}" there`;
+    } else if (want.hid[d] !== got.hid[d]) why = `a browser would show the text a style on this page hides from sight in another place: ${shows}`;
+    else {
+      const w = want.gaps[d]!;
+      const g = got.gaps[d]!;
+      if (g === 'G') why = `a browser would run words together that your lines keep apart: ${shows}`;
+      else if (g === 'R' || w === 'R') why = `a browser would show words in another order than your lines have them: ${shows}`;
+      else if (w === 'G') why = `a browser would show ${g === 'B' ? 'a line break' : 'a space'} that your lines do not have: ${shows}`;
+      else if (w === 'B') why = `a browser would show on one line what it showed on separate lines: ${shows}`;
+      else why = `a browser would show on separate lines what it showed on one line: ${shows}`;
+    }
     return say(line, why);
   }
   // Link membership: the same characters, each in the expected link.
-  if (flat(linked) !== flat(plain)) return say(nearest(0), 'byway could not read which words a browser shows as link words on the written page');
+  if (linkRead.text !== after.text) return say(nearest(0), 'byway could not read which words a browser shows as link words on the written page');
   for (let x = 0; x < want.cs.length; x++) {
-    if (want.hrefs[x] === linked.hrefs[x]) continue;
-    const line = nearest(want.src[x]!);
-    const word = around(plain, x);
-    const h = linked.hrefs[x];
+    if (want.hrefs[x] === got.hrefs[x]) continue;
+    const line = nearest(x);
+    const word = around(got, x);
+    const h = got.hrefs[x];
     const e = want.hrefs[x];
     return say(line, h === null ? `a browser would show the words at "${word}" outside the link (to ${e}) they belong to` : e === null ? `a browser would show the words at "${word}" as words of a link (to ${h})` : `a browser would show the words at "${word}" in the link to ${h}, not ${e}`);
   }
   return undefined;
 }
-
-/** A gap that is one or more table cells' boundaries. */
-const isCell = (c: string): boolean => c[0] === '\t';
-/** Characters equal, or an either-gap against a space or a line break. */
-const same = (w: string, g: string): boolean => w === g || (w === ANY_GAP && (g === ' ' || g === '\n'));
-const sameWithGaps = (a: Shape, b: Shape): boolean => a.cs.length === b.cs.length && a.cs.every((c, i) => same(c, b.cs[i]!));
 
 /**
  * The arbiter's last word on a page write: Chromium's reading of the written page against what it must show. A

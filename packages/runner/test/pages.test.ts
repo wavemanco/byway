@@ -8,7 +8,9 @@
  * the two sandbox settings apart; and a readiness check that starts the browser the renders then share.
  */
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -398,16 +400,22 @@ describe('web-page RENDER with Playwright Chromium', () => {
   }, 60_000);
 });
 
-describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, JavaScript off', () => {
-  it('reads the body as laid out (hidden content out, blocks on lines of their own, whitespace collapsed), the title, and no script-made copy', async () => {
+describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chromium, JavaScript on', () => {
+  /** The words of a read: its characters between separators (HIDDEN_HERE and REVERSED included). */
+  const words = (t: string) => t.split(/[\s﷭﷮]+/).filter(Boolean);
+  const body = (b: string) => `<!doctype html><html><head><title>T</title></head><body style="font:16px Arial">${b}</body></html>`;
+
+  it('reads the body as a visitor sees it (hidden content out, one separator between neighbours), the title, and the text a script makes', async () => {
     const html = `<!doctype html><html><head><title> My \n page </title><style>h1{text-transform:uppercase}.gone{display:none}</style></head>
       <body><h1>Hello world</h1><p>A <span hidden>secret</span> <b>bold</b>   text</p><p class="gone">Gone</p>
       <script>document.body.append('script-made')</script><p>End&nbsp;here</p></body></html>`;
     const shown = await pages.shownText(html, none);
     expect(shown.title).toBe('My page');
-    // text-transform is undone (letters as written); the script never ran; a no-break space is kept.
-    expect(shown.text).toBe('Hello world\n\nA bold text\n\nEnd here');
+    // Letters as written (text-transform does not change them); the script ran, as in a visitor's browser (round 9 read
+    // with JavaScript off); a no-break space is kept.
+    expect(shown.text).toBe('Hello world\nA bold text\nscript-made\nEnd here');
     expect(shown.hrefs).toEqual([]);
+    expect(shown.unlaid).toBe('');
   }, 60_000);
 
   it('leaves out text a stylesheet hides from sight though a browser lays it out, and lists it with its link (r9)', async () => {
@@ -426,14 +434,16 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
       <p><span class="old">Old clip</span> rect</p>
       <h2 class="grad">Gradient</h2>
       <div style="height:20px;overflow:auto">Scroll<br>down</div>
+      <div style="height:40px"></div>
       <div style="height:0">Spills</div>
     </body></html>`;
     const shown = await pages.shownText(html, none);
-    const words = shown.text.split(/\s+/).filter(Boolean);
-    // What a sighted visitor sees, scrolling included: overflow that only scrolls, or spills, still shows.
-    expect(words).toEqual(['Rated', '4.5', 'stars', 'Sale', 'today', 'Big', 'Seen', 'Read', 'more', 'path', 'rect', 'Gradient', 'Scroll', 'down', 'Spills']);
-    expect(shown.linked.replace(/[﷐-﷯]/g, '')).toBe(shown.text);
-    expect(shown.linked).toContain(`${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}Read more${LINK_CLOSE}`);
+    // What a visitor sees, scrolling included: overflow that only scrolls, or spills, still shows. Where hidden text
+    // stands, the read says so (HIDDEN_HERE).
+    expect(words(shown.text)).toEqual(['Rated', '4.5', 'stars', 'Sale', 'today', 'Big', 'Seen', 'Read', 'more', 'path', 'rect', 'Gradient', 'Scroll', 'down', 'Spills']);
+    expect(shown.text).toMatch(/^Rated 4\.5﷭\nstars\nSale﷭ today﷭\nBig/);
+    expect(shown.linked.replace(/[﷐-﷒﷠-﷩]/g, '')).toBe(shown.text);
+    expect(shown.linked).toContain(`${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}Read more﷭${LINK_CLOSE}`);
     expect(shown.hrefs).toEqual(['/r']);
     expect(shown.hidden).toEqual([
       ['out of 5', null],
@@ -448,18 +458,152 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
       ['Clipped', null],
       ['Old clip', null],
     ]);
-    // An absolutely positioned element that shows no text stands outside the text's flow: it breaks no line, where
-    // innerText would put its box on a line of its own. One that shows text is read as innerText reads it.
-    const flow = await pages.shownText(`<style>${sr}</style><p>Sale<span class="sr"> </span>today</p><p>Rated 4.5<span class="sr"> out of 5</span> stars</p><p>Call<span style="position:absolute;top:0;right:0">Badge</span>now</p>`, none);
-    expect(flow.text).toBe('Saletoday\n\nRated 4.5 stars\n\nCall\nBadge\nnow');
-    expect(flow.hidden).toEqual([['out of 5', null]]);
+    // A screen-reader-only space between two words leaves them glued, as a visitor sees them (innerText read a line
+    // break there); an out-of-flow box between two words is a box of its own.
+    const flow = await pages.shownText(body(`<style>${sr}</style><p>Sale<span class="sr"> </span>today</p><p>Call<span style="position:absolute;top:0;right:0">Badge</span>now</p>`), none);
+    expect(flow.text).toBe('Saletoday\nCall\nBadge\nnow');
+    expect(flow.hidden).toEqual([]);
   }, 60_000);
+
+  it('separators come from where a visitor sees each character: glued, apart in the flow, apart across boxes, or in the other order (r10)', async () => {
+    const cases: [string, string][] = [
+      // Flex items with no gap show glued; a margin parts them (innerText put a line break between them).
+      ['<p style="display:flex">Call us <b>today</b></p>', 'Call ustoday'],
+      ['<p style="display:flex">Have? <a href="/l" style="margin-left:4px">Sign in</a> now</p>', 'Have?\nSign innow'],
+      ['<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><p>One</p><p>Two</p></div>', 'One\nTwo'],
+      // A float, a reversed row and a bdo: the next character is shown before the one before it.
+      ['<p>Alpha <span style="float:right">Beta</span> Gamma</p>', 'Alpha\nBeta﷮Gamma'],
+      ['<p style="display:flex;gap:6px;flex-direction:row-reverse"><span>Hello</span> <span>world</span></p>', 'Hello﷮world'],
+      ['<p><bdo dir="rtl">Hi</bdo></p>', 'H﷮i'],
+      // Inline blocks, buttons and a display:block cite are boxes of their own.
+      ['<p>Tags: <span style="display:inline-block;padding:2px 6px">New</span><span style="display:inline-block;padding:2px 6px">tech</span></p>', 'Tags:\nNew\ntech'],
+      ['<blockquote>“Worth it.”<cite style="display:block">— Maya R.</cite></blockquote>', '“Worth it.”\n— Maya R.'],
+      // A superscript, letter-spacing and a word broken over rows stay glued; words wrapped over rows are apart in the flow.
+      ['<p>x<sup>2</sup> y</p>', 'x2 y'],
+      ['<p style="letter-spacing:.3em;text-transform:uppercase">Our services</p>', 'Our services'],
+      ['<p style="width:60px;word-break:break-all">Breadbreadbread loaf</p>', 'Breadbreadbread loaf'],
+      ['<p style="width:60px">Hello world again</p>', 'Hello world again'],
+      // Table cells, a <br>, and newlines a white-space style keeps are breaks; so is a button's edge.
+      ['<table><tr><td>Name<br>Note</td><td>$9</td></tr></table>', 'Name\nNote\n$9'],
+      ['<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street</address>', 'Crumb & Co.\n12 Baker Street'],
+      ['<p>Pay <button type="button"><b>$20</b> now</button>Total</p>', 'Pay\n$20 now\nTotal'],
+      ['<p dir="rtl">שלום <b>עולם</b></p>', 'שלום עולם'],
+    ];
+    for (const [b, want] of cases) expect((await pages.shownText(body(b), none)).text, b).toBe(want);
+  }, 120_000);
+
+  it('hides from sight, character by character, what a visitor cannot see: faint, filtered, clipped by a shape, cut off by an ellipsis or a box (r10)', async () => {
+    const shown = await pages.shownText(
+      body(
+        [
+          '<p>A<span style="filter:opacity(0)">B</span>C</p>',
+          '<p>D<span style="opacity:0.01">E</span>F</p>',
+          '<p>G<span style="position:absolute;clip-path:circle(0)">H</span>I</p>',
+          '<p>J<span style="display:inline-block;clip-path:polygon(0 0, 0 0, 0 0)">K</span>L</p>',
+          '<p>M<span style="display:inline-block;clip-path:circle(40%)">N</span>O</p>',
+          '<p style="width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Fresh bread baked every day</p>',
+          '<p style="width:120px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Fresh bread baked every single day by hand</p>',
+          '<div style="height:20px;width:200px;overflow:hidden;line-height:20px"><p style="margin:0">Fresh bread baked every single morning by hand in the oven</p></div>',
+        ].join(''),
+      ),
+      none,
+    );
+    // A faint or filtered word leaves its gap; a clipped absolutely positioned one leaves none; a circle that keeps most
+    // of its word shows it. Per character: the ellipsis takes "aked", the clamp the end of its second row, the box all
+    // but its first row.
+    expect(shown.text).toBe('A﷭ C\nD﷭ F\nG﷭I\nJ﷭\nL\nMNO\nFresh bread b﷭\nFresh bread baked every﷭\nFresh bread baked every﷭');
+    expect(shown.hidden).toEqual([
+      ['B', null],
+      ['E', null],
+      ['H', null],
+      ['K', null],
+      ['aked every day', null],
+      ['single day by hand', null],
+      ['single morning by hand in the oven', null],
+    ]);
+  }, 60_000);
+
+  it('runs a page\'s scripts the same way each time: a stopped clock, a seeded Math.random, however long the page is (r10)', async () => {
+    const live = (tail: string) =>
+      body(
+        `<p>Now: <span id="c"></span></p><p>Served <span id="n">0</span>+ loaves</p><p id="q"></p>${tail}<script>setInterval(() => { document.getElementById("c").textContent = new Date().toISOString(); }, 1000); let v = 0; const t = setInterval(() => { v += 100; document.getElementById("n").textContent = v; if (v >= 2500) clearInterval(t); }, 30); document.getElementById("q").textContent = ["Alpha", "Beta", "Gamma"][Math.floor(Math.random() * 3)];</script>`,
+      );
+    const a = await pages.shownText(live('<p>End</p>'), none);
+    expect(a.text).toMatch(/^Now: 2026-01-01T12:00:\d\d\.\d{3}Z\nServed 2500\+ loaves\n(Alpha|Beta|Gamma)\nEnd$/);
+    expect((await pages.shownText(live('<p>End</p>'), none)).text).toBe(a.text);
+    // A page made longer by an edit is scrolled in more steps; its clock still reads the same at the end.
+    expect((await pages.shownText(live('<p>End</p><div style="height:12000px"></div><p>More</p>'), none)).text).toBe(`${a.text}\nMore`);
+    // A script that moves within the document (history.pushState) or tries to leave it (location) does not stop the read.
+    const moving = body('<p>Stay</p><script>history.pushState(null, "", "/elsewhere"); setTimeout(() => { location.href = "/other"; }, 100);</script>');
+    expect((await pages.shownText(moving, none)).text).toBe('Stay');
+  }, 60_000);
+
+  it('reads a page whose sections a script reveals as the visitor scrolls, revealed, whatever the script does on the way back (r10)', async () => {
+    const style = '<style>.r{opacity:0;transform:translate3d(0,40px,0);transition:opacity .6s,transform .6s}.r.in{opacity:1;transform:none}</style>';
+    const tall = '<div style="height:1500px"></div>';
+    const shown = await pages.shownText(
+      body(
+        [
+          style,
+          '<p>Top</p>',
+          tall,
+          // An IntersectionObserver reveal with a staggered delay.
+          '<section><p class="r io">Observed one</p><p class="r io">Observed two</p></section>',
+          tall,
+          // A scroll listener that adds the class in view and takes it away out of view.
+          '<p class="r toggle">Toggled</p>',
+          tall,
+          // A lazy image the page waits for before it shows its caption.
+          '<figure><img loading="lazy" src="/api/artifacts/sha256:img" width="10" height="10" onload="this.nextElementSibling.style.opacity=1"><figcaption style="opacity:0">Caption</figcaption></figure>',
+          '<script>const io = new IntersectionObserver((es) => es.forEach((e, i) => { if (e.isIntersecting) setTimeout(() => e.target.classList.add("in"), i * 150); }), { threshold: 0.3 }); document.querySelectorAll(".io").forEach((el) => io.observe(el)); addEventListener("scroll", () => document.querySelectorAll(".toggle").forEach((el) => { const b = el.getBoundingClientRect(); el.classList.toggle("in", b.top < innerHeight && b.bottom > 0); }));</script>',
+        ].join(''),
+      ),
+      async () => ({ body: PIXEL, contentType: 'image/png' }),
+    );
+    expect(shown.text).toBe('Top\nObserved one\nObserved two\nToggled\nCaption');
+    expect(shown.hidden).toEqual([]);
+  }, 60_000);
+
+  it('applies a stylesheet a script makes, as a visitor\'s browser does: Tailwind\'s browser build, from an admitted host (r10)', async () => {
+    const tw = readFileSync(createRequire(import.meta.url).resolve('@tailwindcss/browser'));
+    const cdn = createServer((_, res) => {
+      res.setHeader('content-type', 'text/javascript');
+      res.end(tw);
+    });
+    await new Promise<void>((r) => cdn.listen(0, '127.0.0.1', () => r()));
+    const cdnHost = `127.0.0.1:${(cdn.address() as AddressInfo).port}`;
+    const scripted = playwrightPages({ admit: (u) => u.protocol === 'http:' && u.host === cdnHost, launch: () => launchWith(LOCAL_NETWORK_CHECKS_OFF) });
+    opened.push(scripted);
+    try {
+      const html = `<!doctype html><html><head><title>T</title><script src="http://${cdnHost}/tw.js"></script></head><body class="p-8"><p>Rated 4.5<span class="sr-only"> out of 5</span> stars</p><a href="/s" class="px-4">Get started<span class="hidden md:inline"> free</span></a><p class="hidden">Gone</p><p class="flex"><span>Call us</span> <b class="ml-1">today</b></p></body></html>`;
+      const shown = await scripted.shownText(html, none);
+      // sr-only applies (round 9, with JavaScript off, read "out of 5" as shown); md:inline shows at 1440 px; hidden is
+      // not laid out; ml-1 parts two flex items.
+      expect(shown.text).toBe('Rated 4.5﷭\nstars\nGet started free\nCall us\ntoday');
+      expect(shown.hidden).toEqual([['out of 5', null]]);
+    } finally {
+      cdn.close();
+    }
+  }, 120_000);
+
+  it('a page nesting thousands of inline elements left open is read, once, within the deadline (r10: the JavaScript-off read crashed)', async () => {
+    for (const n of [5_000, 20_000]) {
+      const html = `<!doctype html><html><head><title>T</title></head><body><p>Keep</p><p>${'<span>'.repeat(n)}Gone${'</span>'.repeat(n)}</p></body></html>`;
+      const t0 = Date.now();
+      const shown = await pages.shownText(html, none).catch((e: unknown) => e);
+      // Whatever Chromium makes of it, one call ends in time: the text, or one plain step failure, never a raw error.
+      if (shown instanceof Error) expect(shown, String(n)).toBeInstanceOf(StepError);
+      else expect((shown as { text: string }).text, String(n)).toBe('Keep\nGone');
+      expect(Date.now() - t0).toBeLessThan(30_000);
+    }
+    expect((await pages.shownText('<p>Next</p>', none)).text).toBe('Next');
+  }, 120_000);
 
   it('text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee\'s own box (r9)', async () => {
     const html = '<p>Before</p><div><marquee>Breaking news today</marquee></div><div><marquee direction="up" style="height:20px">Up <b>and</b> away</marquee></div><p>After</p>';
     for (let k = 0; k < 3; k++) {
       const shown = await pages.shownText(html, none);
-      expect(shown.text.split(/\s+/)).toEqual(['Before', 'Breaking', 'news', 'today', 'Up', 'and', 'away', 'After']);
+      expect(shown.text).toBe('Before\nBreaking news today\nUp and away\nAfter');
       expect(shown.hidden).toEqual([]);
     }
     // A marquee a style hides is hidden with everything in it.
@@ -469,7 +613,7 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
   it('reads a page as it settles: animations and transitions are taken to their end, an endless one is stopped (r9)', async () => {
     const css = '@keyframes in{from{opacity:0}to{opacity:1}}@keyframes blink{50%{opacity:0}}.in{animation:in 2s both}.late{animation:in 1s 20s both}.blink{animation:blink 1s infinite}';
     const shown = await pages.shownText(`<style>${css}</style><h1 class="in">Welcome</h1><p class="late">Later</p><p class="blink">Live</p>`, none);
-    expect(shown.text.split(/\s+/)).toEqual(['Welcome', 'Later', 'Live']);
+    expect(shown.text).toBe('Welcome\nLater\nLive');
     expect(shown.hidden).toEqual([]);
   }, 60_000);
 
@@ -480,11 +624,11 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
     expect(shown.linked).toBe(`Read ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}the terms${LINK_CLOSE} and ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0 + 1)}${LINK_INDEX_END}FAQ${LINK_CLOSE}.`);
   }, 60_000);
 
-  it('the link marks change no whitespace a browser drops, as at the edge of a button\'s content', async () => {
+  it('a button is a box of its own: its content stands apart from the text beside it, as a visitor sees it (innerText read them glued)', async () => {
     const html = '<p>Pay <button type="button"><a href="/b"><i>now</i> today  </a></button>Total <a href="/c"> here </a></p>';
     const shown = await pages.shownText(html, none);
-    expect(shown.text).toBe('Pay now todayTotal here');
-    expect(shown.linked.replace(/[﷐-﷯]/g, '')).toBe(shown.text);
+    expect(shown.text).toBe('Pay\nnow today\nTotal here');
+    expect(shown.linked.replace(/[﷐-﷒﷠-﷩]/g, '')).toBe(shown.text);
   }, 60_000);
 
   it('reads the first document only: a meta refresh does not replace it; other hosts stay blocked', async () => {
@@ -532,12 +676,14 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
   it('is bounded and cancellable like a render (SEC-5)', async () => {
     const quick = playwrightPages({ timeoutMs: 2_000, closeTimeoutMs: 2_000 });
     opened.push(quick);
-    // With JavaScript off a busy script cannot hold the page; an artifact that never comes back holds its load.
+    // An artifact that never comes back holds its load; a script that loops once the read runs its clock holds the read.
     const hang = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Text</body></html>';
     const never = () => new Promise<undefined>(() => undefined);
-    const err = await quick.shownText(hang, never).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(StepError);
-    expect((err as Error).message).toMatch(/did not finish loading within 2 s, so its text could not be read/);
+    for (const page of [hang, BUSY]) {
+      const err = await quick.shownText(page, never).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(StepError);
+      expect((err as Error).message).toMatch(/did not finish loading within 2 s, so its text could not be read/);
+    }
     expect((await quick.shownText('<p>Next</p>', none)).text).toBe('Next');
     const ctrl = new AbortController();
     const reason = new Error('cancelled by the run');

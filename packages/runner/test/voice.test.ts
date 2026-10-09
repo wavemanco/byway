@@ -581,9 +581,9 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
       ['<p><del>Was <b>$20 </b></del>Now $15</p>', 'T\nWas $20 only\nNow $15', 'Was $20 only Now $15'],
       ['<p><label>Email</label><a href="/help"> help</a> is here</p>', 'T\nEmail\nGet [help] is here', 'Email Get help is here'],
       ['<p><label>First</label><b> and </b><label>second</label></p>', 'T\nFirst\n\nsecond', 'First second'],
-      ['<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>', 'T\nIntro\n\nOrder today', 'Intro\n\nOrder today'],
+      ['<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>', 'T\nIntro\n\nOrder today', 'Intro\nOrder today'],
       ['<p>Visit\n  <a href="/shop">\n    our shop\n  </a>\n</p>', 'T\nVisit [our shop].', 'Visit our shop.'],
-      ['<p><svg width="9" height="9"><title/></svg></p><div>Call us<ins><p>New offer</p></ins>today</div>', 'T\nCall us\n\ntoday', 'Call us\n\ntoday'],
+      ['<p><svg width="9" height="9"><title/></svg></p><div>Call us<ins><p>New offer</p></ins>today</div>', 'T\nCall us\n\ntoday', 'Call us\ntoday'],
     ] as const) {
       const out = await (await open(page(html))).answer(answer);
       expect(await shows(out.artifactId!), html).toBe(shown);
@@ -608,18 +608,18 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     );
     const before = (await chromium.shownText(menu, none)).text;
     for (const [line, row] of [
-      ['Crackling crust, open crumb', 'Country sourdough\t$9'],
-      ['Soft and sweet.', 'Milk bread\t$8'],
-      ['Twice-baked', 'Almond croissant\tContains nuts\t$5'],
-      ['Contains nuts', 'Almond croissant\tTwice-baked\t$5'],
-      ['Morning bun', '$4\tOrange zest'],
+      ['Crackling crust, open crumb', 'Country sourdough\n$9'],
+      ['Soft and sweet.', 'Milk bread\n$8'],
+      ['Twice-baked', 'Almond croissant\nContains nuts\n$5'],
+      ['Contains nuts', 'Almond croissant\nTwice-baked\n$5'],
+      ['Morning bun', '$4\nOrange zest'],
     ] as const) {
       const q = await open(menu);
       const out = await q.answer(q.offered!.split('\n').map((l) => (l === line ? '' : l)).join('\n'));
       expect(out.artifactId, line).toBeDefined();
       const shown = await shows(out.artifactId!);
-      // A line break beside a cell boundary is a block's edge inside the cell (a <br> left at a cell's end shows one).
-      expect(shown.replace(/[ \n]*\t[ \n]*/g, '\t').split('\n'), line).toContain(row);
+      // Each cell is a box of its own: its neighbours stay apart across boxes, as they were.
+      expect(shown, line).toContain(row);
       expect(shown.replace(/\s+/g, ''), line).toBe(before.replace(line, '').replace(/\s+/g, ''));
     }
   });
@@ -630,8 +630,8 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
       ['<p><b>Hello</b><font>world</font></p>', 'T\nHi \nworld', 'Hi world'],
       ['<p><b>Sale,</b><font><a href="/d">$20</a> menu</font></p>', 'T\nSale,\n[] menu', 'Sale, menu'],
       // The round-7 verifier's three: a removed first link, and a trailing space after a kept one (round 7 ran them together).
-      ['bread. here, —<a href="/c" id="k">  x,<svg width="4" height="4"><title>Tip</svg>ok🚀: today, Call?</a>\nhere: Intro here! open', 'T\nbread. here, — [(x,]\n[] here: Intro here! open', 'bread. here, — (x, here: Intro here! open'],
-      ['<sub>  <a>  Order <a href="/c" id="k">Intro, ok🚀: &nbsp;,<button type="button"> </button>$20</a>  menu Call, here</a></sub>', 'T\nOrder [Intro, ok🚀:  ,]\n[] menu Call, here', 'Order Intro, ok🚀:  , menu Call, here'],
+      ['bread. here, —<a href="/c" id="k">  x,<svg width="4" height="4"><title>Tip</svg>ok🚀: today, Call?</a>\nhere: Intro here! open', 'T\nbread. here, — [(x,]\n[] here: Intro here! open', 'bread. here, — (x,\nhere: Intro here! open'],
+      ['<sub>  <a>  Order <a href="/c" id="k">Intro, ok🚀: &nbsp;,<button type="button"> </button>$20</a>  menu Call, here</a></sub>', 'T\nOrder [Intro, ok🚀:  ,]\n[] menu Call, here', 'Order Intro, ok🚀:  ,\nmenu Call, here'],
       ['<blockquote><ins><small> <a href="/c" id="k"><a href="/b">\nprice,</a></a></small> sale,</ins>now: Order us! </blockquote>', 'T\n[price,] \nx Order us!', 'price, x Order us!'],
     ] as const) {
       const out = await (await open(page(html))).answer(answer);
@@ -643,7 +643,7 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
       'Line 2: a space at the end of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text after the button; leave the space out. As first offered, line 2 read "Order.".',
     );
     const out = await (await open(page('<p>Pay <button type="button">Now</button></p>'))).answer('T\nPay\n Later');
-    expect(await shows(out.artifactId!)).toBe('Pay Later');
+    expect(await shows(out.artifactId!)).toBe('Pay\nLater');
   });
 
   it('an emptied element holding a table cell is kept, so deleting its words is written, not refused for another number of cells (r8)', async () => {
@@ -654,19 +654,20 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect((await shows(out.artifactId!)).replace(/\s*\t\s*/g, '\t')).toBe(before.replace('Fresh bread', '').trim().replace(/\s*\t\s*/g, '\t'));
   });
 
-  it('an inline block\'s last block line, deleted beside the next inline block, is refused though the write is right (r8, as ADR-0081 states)', async () => {
-    // innerText shows the deleted block's line breaks inside the inline block, and the written page shows "Pro" beside "$29":
-    // the arbiter cannot tell an inline block's edge from a space, so it refuses rather than guess.
-    const q = await open(page('<div style="display:inline-block"><b>Pro</b><p>For teams</p></div> <div style="display:inline-block">$29</div>'));
-    expect(await rejected(q.answer('T\nPro\n\n$29'))).toBe(
-      'byway could not put line 3 on this page exactly as you wrote it, because a browser would show on one line what it showed on separate lines: it would show "Pro $29". Change line 3 again, or leave it as it was offered. As first offered, line 3 read "For teams".',
-    );
+  it('an inline block\'s last block line, deleted beside the next inline block, is written: the two blocks stay apart across boxes (r10; round 8 and 9 refused it)', async () => {
+    // A visitor sees "Pro" and "$29" in boxes of their own, before and after: innerText read the deleted block's line
+    // breaks against the space between the inline blocks, and refused this right write.
+    const html = page('<div style="display:inline-block"><b>Pro</b><p>For teams</p></div> <div style="display:inline-block">$29</div>');
+    const out = await (await open(html)).answer('T\nPro\n\n$29');
+    expect(await shows(out.artifactId!)).toBe('Pro\n$29');
+    // A button's content is an inline block: its padding parts "$20" from "Total" as it parted "now" (round 8 and 9
+    // refused this deletion, reading innerText's "Pay $20Total").
+    const button = await (await open(page('<p>Pay <button type="button"><b>$20</b> <label>now</label></button>Total</p>'))).answer('T\nPay\n$20\n\nTotal');
+    expect(await shows(button.artifactId!)).toBe('Pay\n$20\nTotal');
   });
 
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
-      // A button's content is an inline block: a browser shows no space at its edge, so "now" took the gap with it.
-      ['<p>Pay <button type="button"><b>$20</b> <label>now</label></button>Total</p>', 'T\nPay\n$20\n\nTotal', 'byway could not put line 4 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show "Pay $20Total". Change line 4 again, or leave it as it was offered. As first offered, line 4 read "now".'],
       // Browsers move the font out of the table, right after "Middle".
       ['<div>Lead<p>Middle</p><table><tr><font>F</font><td>Cell</td></tr></table></div>', 'T\nLead\n\nF\nCell', 'byway could not put line 3 on this page exactly as you wrote it, because a browser would run words together that your lines keep apart: it would show "LeadF / Cell". Change line 3 again, or leave it as it was offered. As first offered, line 3 read "Middle".'],
       // A <b> inside a MathML <title> breaks out of it, so "Text" shows.
@@ -684,14 +685,15 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     const q = await open(html);
     // An svg <title> left open over the paragraph's end hides "Tip" and everything after it in a browser.
     expect(q.offered).toBe('T\nX');
-    expect(q.prompt).toMatch(/ Text a browser does not show as one line here \(hidden, out of sight, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
+    // The prompt names each line not offered, and why (r10; round 9 named none).
+    expect(q.prompt).toMatch(/ These lines of the page are not offered, because a browser does not show them as one line here, and stay as they are: not shown on this page at all \(hidden, closed, or shown only on another screen size\): "Tip", "Hello"\.$/);
     const out = await q.answer('T\nX marks');
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<p>X<svg', '<p>X marks<svg'));
-    // A line a browser shows, but not in one piece with exactly its words, is not offered either: the prompt does not call
-    // it hidden (r8).
-    const flex = await open(page('<div style="display:flex"><span>Second</span><span>First</span></div><p>Shown</p>'));
-    expect(flex.offered).toBe('T\nShown');
-    expect(flex.prompt).toMatch(/ \(hidden, out of sight, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
+    // A line a browser shows, but not in one piece with exactly its words, is not offered either, and the prompt says
+    // that, not that it is hidden (r8). Flex items a visitor sees glued, as the line has them, are one piece (r10).
+    const flex = await open(page('<div style="display:flex;flex-direction:row-reverse;justify-content:flex-end"><span>Second</span> <span>First</span></div><div style="display:flex"><span>Glued</span><span>Here</span></div><p>Shown</p>'));
+    expect(flex.offered).toBe('T\nGluedHere\nShown');
+    expect(flex.prompt).toMatch(/: a browser does not show it as one piece with exactly these words \(run together, in another order, or with other words inside it\): "Second First"\.$/);
     const hidden = page('<div hidden>Menu</div><details><summary>More</summary><p>Inside</p></details><dialog>Closed</dialog><p class="x" style="display:none">Styled away</p><p>After</p>');
     const h = await open(hidden);
     expect(h.offered).toBe('T\nMore\nAfter');
@@ -719,7 +721,9 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     );
     const q = await open(html);
     expect(q.offered).toBe('T\nQuiet interfaces\nFresh bread daily');
-    expect(q.prompt).toMatch(/ Text a browser does not show as one line here \(hidden, out of sight, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
+    expect(q.prompt).toMatch(
+      / These lines of the page are not offered, because a browser does not show them as one line here, and stay as they are: part of it is hidden from sight \(for screen readers\) or cut off: "Rated 4\.5 out of 5 stars", "Send message to Saltbox", "Read more about quiet interfaces", "Sale ends today", "HiddenShown"; a browser does not show it as one piece with exactly these words \(run together, in another order, or with other words inside it\): "Sale today"\.$/,
+    );
     const out = await q.answer('T\nQuiet interfaces, in practice\nWarm bread daily');
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<h3>Quiet interfaces</h3>', '<h3>Quiet interfaces, in practice</h3>').replace('Fresh bread', 'Warm bread'));
   });
