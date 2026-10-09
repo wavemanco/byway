@@ -812,14 +812,17 @@ export function answerPorts(s: Step): AnswerPort[] {
 /**
  * Whether running a step puts its own value in a text port in place of the one before it: on every run, on some, or
  * never (the interpreter's applyModel and human()). The critique: `replacesCritique`. The brief and the taste: a model
- * VISION that produces it, and a reaction of a person's that does. A keep-or-revert puts the version it kept in the
- * taste when it asks, and asks nothing when there is nothing to compare.
+ * VISION that produces it, and a reaction of a person's that does. A reaction that also consumes the port revises it in
+ * place (the runner's revisesInPlace, ADR-0090): it opens with what is there, which may go on as it was. A
+ * keep-or-revert puts the version it kept in the taste when it asks, and asks nothing when there is nothing to compare.
  */
 function fillsPort(s: Step, port: AnswerPort): 'always' | 'sometimes' | 'never' {
   if (port === 'critique') return replacesCritique(s) ? 'always' : 'never';
   if (s.role === 'tells-compare') return port === 'taste' && (s.actor === 'human' || s.actor === 'model') ? 'sometimes' : 'never';
   if (!s.produces.includes(port)) return 'never';
-  return (s.actor === 'model' && s.role === 'vision') || reacts(s) ? 'always' : 'never';
+  if (s.actor === 'model' && s.role === 'vision') return 'always';
+  if (!reacts(s)) return 'never';
+  return s.consumes.includes(port) ? 'sometimes' : 'always';
 }
 
 /**
@@ -976,10 +979,10 @@ export function critiqueSources(recipe: Recipe): Map<Step, Step> {
  * the next version should avoid, and no AI writer ever acts on the answer: before one takes it in, another value takes
  * its place, or none comes after it at all. For the critique, most often the cliché sweep's finds, and also a later CUT
  * of the person's, a critic, a check, a direction of theirs given as a critique, or an audit or a final check that notes
- * anything; for the brief or the taste, an AI direction or a later answer of theirs. Admission refuses one (ST12
- * 'critique-unapplied', ADR-0098). The walk holds every run, so no run hands an answer this names to an AI writer; it
- * leaves a loop only where a run can, so a critic loop's next round, which puts its own critique in place of an answer
- * given at the end of a round, is not taken for a way out with that answer.
+ * anything; for the brief or the taste, an AI direction, or a later answer of theirs that does not revise it in place.
+ * Admission refuses one (ST12 'critique-unapplied', ADR-0098). The walk holds every run, so no run hands an answer this
+ * names to an AI writer; it leaves a loop only where a run can, so a critic loop's next round, which puts its own
+ * critique in place of an answer given at the end of a round, is not taken for a way out with that answer.
  *
  * Some path, not every path: an answer that some run hands to an AI writer is admitted. The paths on which it goes
  * unapplied are chosen by the person's own later answers (an optional they run or decline, a route branch, the end of

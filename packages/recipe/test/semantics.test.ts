@@ -613,6 +613,11 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(yours('d', ['brief', 'critique']), aiBrief('v'), draft('b', 'brief')))).toEqual(['d']);
     expect(unapplied(seq(yours('d', ['brief', 'critique']), aiBrief('v', ['brief']), draft('b', 'brief')))).toEqual(['d']);
     expect(unapplied(seq(yours('d', ['brief', 'critique']), step({ ...authorDraft('own'), consumes: ['brief'] })))).toEqual(['d']);
+    // A later answer of yours puts its own brief in place, unless it revises that brief in place: it opens with your
+    // earlier answer, which may go on as it is (C7's spec, ADR-0090).
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), yours('e', ['brief']), draft('b', 'brief')))).toEqual(['d']);
+    const inPlace = step({ id: 'spec', role: 'vision', block: 'VISION', actor: 'human', consumes: ['brief'], produces: ['brief'] });
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), inPlace, draft('b', 'brief')))).toEqual([]);
     // Some path is enough, as for the critique: a route branch where you draft yourself (C3's).
     expect(unapplied(seq(yours('d', ['brief', 'critique']), route('rt', 'who drafts', [{ name: 'ai', body: draft('b', 'brief') }, { name: 'own', body: step({ ...authorDraft('own'), consumes: ['brief'] }) }])))).toEqual([]);
     // As the operators hand the brief and the taste on: an audit and a final check the ones they started with, so a
