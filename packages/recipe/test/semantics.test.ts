@@ -15,12 +15,14 @@ import {
   changesWork,
   checkpoints,
   covers,
+  directionsReactedTo,
   declaresVoice,
   each,
   exitPoints,
   FIELD_ROLES,
   flowRecipe,
   hasNoExecutor,
+  leavesNote,
   lockedScripts,
   loop,
   matchCheckpoints,
@@ -421,6 +423,64 @@ describe('the flow walk (flowRecipe)', () => {
     expect(paths(recipeOf(seq(critic('a'), audit('au', [{ name: 'p', body: critic('p') }]), critic('c'))), entry)).toEqual(['a c']);
     // Loops, optionals and routes hand on what ran in them, whatever `after` says.
     expect(paths(recipeOf(seq(critic('a'), optional('o', 'needed', critic('b')), critic('c'))), entry)).toEqual(['a b c', 'a c']);
+  });
+});
+
+describe('whose directions your next VISION is shown (directionsReactedTo)', () => {
+  const ai = (id: string): Step => step({ id, role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes: ['intent'], produces: ['brief'] });
+  const yours = (id: string): Step => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['brief'], produces: ['taste'] });
+  const reacted = (r: Recipe) => [...directionsReactedTo(r)].map((s) => s.id).sort();
+  const finalCheck = (id: string, retry?: 'D2' | 'D3') => oneShotGate(id, critic(`${id}-critic`), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }, retry ? { stage: retry, times: 1 } : undefined);
+
+  it('the AI directions a VISION of yours follows, with nothing that leaves a note of its own between them', () => {
+    expect(leavesNote(ai('v'))).toBe(true);
+    expect(reacted(recipeOf(seq(ai('v'), yours('p'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(ai('v'), render('r'), yours('p'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(ai('v'))))).toEqual([]);
+    expect(reacted(recipeOf(seq(yours('p'), ai('v'))))).toEqual([]);
+    expect(reacted(recipeOf(seq(ai('v'), critic('c'), yours('p'))))).toEqual([]);
+    // On every path: a note that may be left between them is enough to take the claim away.
+    expect(reacted(recipeOf(seq(ai('v'), optional('o', 'needed', check('k')), yours('p'))))).toEqual([]);
+    // Only the next VISION of yours is about these directions: a later one may be shown other notes.
+    expect(reacted(recipeOf(seq(ai('v'), yours('p'), critic('c'), yours('q'))))).toEqual(['v']);
+  });
+
+  it('a loop a person holds: the directions are shown at the next round, and the last of two is the one shown (C2)', () => {
+    expect(reacted(recipeOf(loop('l', seq(yours('p'), ai('v')), gate('human'))))).toEqual(['v']);
+    expect(reacted(recipeOf(loop('l', seq(yours('p'), ai('v'), ai('w')), gate('human'))))).toEqual(['w']);
+  });
+
+  it('as the operators hand notes on: a candidate, a pick or a final check hands on the notes it started with; an audit its lenses’', () => {
+    expect(reacted(recipeOf(seq(ai('v'), replicate('x', 2, critic('c')), yours('p'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(ai('v'), finalCheck('g'), yours('p'))))).toEqual(['v']);
+    expect(reacted(recipeOf(seq(ai('v'), audit('au', [{ name: 'c', body: critic('c') }]), yours('p'))))).toEqual([]);
+    // Directions made inside a candidate stay there.
+    expect(reacted(recipeOf(seq(replicate('x', 2, ai('v')), yours('p'))))).toEqual([]);
+    expect(reacted(recipeOf(seq(audit('au', [{ name: 'v', body: ai('v') }]), yours('p'))))).toEqual([]);
+  });
+
+  it("a final check that re-runs the directions' stage starts it again without them", () => {
+    const staged = (retry: 'D2' | 'D3'): Recipe => {
+      const r = recipeOf(seq(ai('v')));
+      r.stages = [
+        { stage: 'D2', body: seq(ai('v'), finalCheck('g', retry)) },
+        { stage: 'D3', body: seq(yours('p')) },
+      ];
+      return r;
+    };
+    expect(reacted(staged('D2'))).toEqual([]);
+    const later = staged('D2');
+    later.stages = [
+      { stage: 'D2', body: seq(ai('v')) },
+      { stage: 'D3', body: seq(finalCheck('g', 'D3'), yours('p')) },
+    ];
+    expect(reacted(later)).toEqual(['v']);
+  });
+
+  it('a step object used twice is reacted to only where both places are', () => {
+    const v = ai('v');
+    expect(reacted(recipeOf(seq(v, yours('p'), v)))).toEqual([]);
+    expect(reacted(recipeOf(seq(v, yours('p'), v, yours('q'))))).toEqual(['v']);
   });
 });
 

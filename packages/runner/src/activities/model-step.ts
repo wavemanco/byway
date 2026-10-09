@@ -30,8 +30,12 @@ const JUDGE_MAX_OUTPUT = 4_000;
 /** 01 SEED seed_shape ⟨A⟩: 32–64 characters; 36 random bytes are 48 base64url characters (SEED-1). */
 export const defaultSeed = (): string => randomBytes(36).toString('base64url');
 
-/** Where a judging step's text goes in the store: shown to the user with the step, never written into the work. */
-const NOTE_LABELS: Record<string, string> = {
+/**
+ * Where a judging step's text goes in the store: shown to the user with the step, never written into the work. Its
+ * note (and a seed's direction) is what the interpreter puts beside the work, so @byway/recipe's `leavesNote` is held
+ * to these roles (semantics-effects.test.ts).
+ */
+export const NOTE_LABELS: Record<string, string> = {
   critic: 'Critique',
   check: 'Defects',
   cut: 'Removals',

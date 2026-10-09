@@ -345,6 +345,29 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(stepLabel(vision)).toBe('Directions');
   });
 
+  it('"to react to" only where your next VISION is shown those directions on every path: by what reaches it, not by order', () => {
+    /** C6's AI angles, under another id. */
+    const angles = (id: string): N => {
+      let found: N | undefined;
+      walk(c6, (n) => {
+        if (n.op === 'step' && n.id === 'angles') found = { ...structuredClone(n), id };
+      });
+      return found!;
+    };
+    const shown = (r: Recipe, id: string) => presentComposed(r, COPY).stages.flatMap((s) => s.steps).find((s) => s.stepIds.includes(id))!;
+    // C2 with a second AI direction right after the sharpened brief: the next round's VISION of yours is shown the
+    // second one's note (the latest beside the work), never the sharpened brief's.
+    const twice = admitted(edited(c2, 'sharpen', (n) => n, angles('angles2')), c2);
+    expect(shown(twice, 'sharpen')).toMatchObject({ label: 'Directions', explainer: E.visionAi });
+    expect(shown(twice, 'angles2')).toMatchObject({ label: 'Directions to react to', explainer: E.visionAiToReact });
+    // C5 with AI directions before the obvious-answer check: the check's flags are beside the options when you give
+    // your direction, in place of them.
+    const flagged = admitted(edited(c5, 'territories-render', (n) => n, angles('angles2')), c5);
+    expect(shown(flagged, 'angles2')).toMatchObject({ label: 'Directions', explainer: E.visionAi });
+    // The diff names the added step as the composed recipe has it.
+    expect(diffFromNearest(flagged, c5, 'x', presentationOf('c5'))).toContain('Added: Directions (Explore)');
+  });
+
   it('the diff names an added step as the composed recipe has it where it sits', () => {
     /** C7's AI spec interview, under another id. */
     const extra = (id: string): N => {

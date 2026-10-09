@@ -7,6 +7,7 @@ import {
   BLOCK_OF_ROLE,
   blockAgrees,
   canPrecede,
+  directionsReactedTo,
   hasNoExecutor,
   inputsOf,
   lockedScripts,
@@ -47,8 +48,8 @@ const blockOf = (n: Step) => (blockAgrees(n) ? n.block : BLOCK_OF_ROLE[n.role]);
 
 /**
  * The plain label of one step or pick, from its block or role. A label that says something about the steps around it
- * ("Directions to react to") is used only where the recipe's order establishes it (`near`: the recipe's `Around`);
- * without that context the label claims nothing about them. Labels only name steps: the diff never compares them, so a
+ * ("Directions to react to") is used only where the recipe establishes it (`near`: the recipe's `Around`); without
+ * that context the label claims nothing about them. Labels only name steps: the diff never compares them, so a
  * label that differs between two recipes is never by itself a change.
  */
 export function stepLabel(n: Unit, near?: Pick_<Around, 'reactedTo'>): string {
@@ -93,8 +94,8 @@ export function stepLabel(n: Unit, near?: Pick_<Around, 'reactedTo'>): string {
  * (asksSwaps); otherwise the swap step applies every find, and the sentence says so.
  *
  * A sentence that says what other steps do (who wrote the rest, that nothing changes the script later, that nothing is
- * deleted, that you react to the directions) is used only where the recipe's order establishes it (`Around`); the
- * sentence without that claim is used everywhere else. So is a sentence about how a step runs where it sits: separate
+ * deleted, that you react to the directions) is used only where the recipe establishes it (`Around`): by its order,
+ * or, for the directions, by what reaches your next VISION. The sentence without that claim is used everywhere else. So is a sentence about how a step runs where it sits: separate
  * sessions only for a seed that fans out, a chain of clips only inside a relay chain.
  *
  * A step is described by what this version runs (ADR-0069): one with no executor yet (@byway/recipe hasNoExecutor: a
@@ -151,7 +152,7 @@ export const COMPOSED_EXPLAINERS = {
   other: 'The AI does this step.',
 } as const;
 
-/** What the recipe's order establishes about the steps around a step, for the sentences that say so. */
+/** What the recipe establishes about the steps around a step, for the sentences that say so. */
 interface Around {
   /** A VOICE that no person's write (a VOICE or your own draft) can come before: the AI wrote the rest of the work. */
   aiWroteRest: Set<Step>;
@@ -163,7 +164,10 @@ interface Around {
   scriptLocked: Set<Step>;
   /** A model CUT or cliché sweep whose notes no AI writer can take in after it: nothing is deleted or swapped. */
   notesOnly: Set<Step>;
-  /** A model VISION that a step of yours that reacts (a person's VISION) can follow. */
+  /**
+   * A model VISION whose directions your next VISION is shown, on every path (@byway/recipe directionsReactedTo): by
+   * what reaches that step, since a VISION of yours that merely follows may be shown another step's notes instead.
+   */
   reactedTo: Set<Step>;
   /** A seed that runs in separate sessions, one per candidate (inside each, or a replicate of more than one). */
   fanOut: Set<Step>;
@@ -182,7 +186,8 @@ function around(recipe: Recipe): Around {
   const steps = runOrder(recipe).steps;
   const reaching = steps.filter((o) => !o.contained);
   // A script is locked by the shared rule the run itself asks by (lockedScripts): the explainer and the run agree.
-  const out: Around = { aiWroteRest: new Set(), scriptLocked: lockedScripts(recipe), notesOnly: new Set(), reactedTo: new Set(), fanOut: new Set(), inChain: new Set(), aside: new Set(), containedSomewhere: new Set() };
+  // So are the directions you react to (directionsReactedTo), read from what reaches your next VISION.
+  const out: Around = { aiWroteRest: new Set(), scriptLocked: lockedScripts(recipe), notesOnly: new Set(), reactedTo: directionsReactedTo(recipe), fanOut: new Set(), inChain: new Set(), aside: new Set(), containedSomewhere: new Set() };
   // A claim holds for a step only if it holds at every place the step object sits (a built recipe may reuse one).
   const failed = new Map<Set<Step>, Set<Step>>();
   const claim = (set: Set<Step>, s: Step, holds: boolean): void => {
@@ -202,7 +207,6 @@ function around(recipe: Recipe): Around {
     if (s.role === 'seed') claim(out.fanOut, s, o.fanOut);
     if (s.role === 'relay') claim(out.inChain, s, o.inRelay);
     if (s.actor === 'model' && (s.role === 'cut' || s.role === 'tells-sweep')) claim(out.notesOnly, s, !after((t) => machineWrites(t) && inputsOf(t).includes('critique')));
-    if (s.actor === 'model' && s.role === 'vision') claim(out.reactedTo, s, after((t) => t.actor === 'human' && t.role === 'vision'));
   }
   return out;
 }

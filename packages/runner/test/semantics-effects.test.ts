@@ -11,11 +11,11 @@ import type { CompletionRequest, CompletionResult, Gateway, ProfileStatus } from
 import { PROFILES } from '@byway/gateway';
 import { PROTOCOL_CONFIGS } from '@byway/catalog';
 import { outputForStep, slotsForStep } from '@byway/prompts';
-import { hasNoExecutor, HUMAN_WRITE_ROLES, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
+import { hasNoExecutor, HUMAN_WRITE_ROLES, leavesNote, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
-import { modelStep, parserFor } from '../src/activities/model-step.ts';
+import { modelStep, NOTE_LABELS, parserFor } from '../src/activities/model-step.ts';
 import { ArtifactReader, buildPrompt } from '../src/activities/prompting.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import { toStepSpec, type RunRef, type StepCall, type StepSpec } from '../src/types.ts';
@@ -227,5 +227,20 @@ describe('the slots the composed profile renders a template with are slots the r
     });
     const filled = new Set([...Object.keys(built.slots), ...activityAdds(step.role, medium)]);
     expect([...slotsForStep(step, medium)].filter((s) => !filled.has(s))).toEqual([]);
+  });
+});
+
+describe('the notes a model step leaves beside the work (leavesNote)', () => {
+  it('are the answers the runner stores as notes, and a seed build’s direction: what a person is shown beside the work', () => {
+    const leaving = ROLES.filter((role) => leavesNote({ actor: 'model', role, produces: [] }));
+    expect(new Set(leaving)).toEqual(new Set([...Object.keys(NOTE_LABELS), 'seed']));
+    // A seed's build keeps the direction it wrote as a note; another builder's preamble is not one.
+    const answer = 'Colour: dusk blues.\nLayout: one tall column.\n\n```markdown\n# Spark\n```';
+    const parsed = (role: Role) => parserFor(role, 'prose', {}, () => [])(answer);
+    expect(parsed('seed')).toMatchObject({ ok: true, value: { kind: 'artifact', direction: expect.stringContaining('dusk') } });
+    expect(parsed('build')).toMatchObject({ ok: true, value: { kind: 'artifact' } });
+    expect((parsed('build') as { value: { direction?: string } }).value.direction).toBeUndefined();
+    // No person's step and no tool leaves one.
+    expect(ROLES.some((role) => leavesNote({ actor: 'human', role, produces: [] }) || leavesNote({ actor: 'tool', role, produces: [] }))).toBe(false);
   });
 });

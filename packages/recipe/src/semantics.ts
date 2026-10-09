@@ -122,6 +122,17 @@ export const hasNoExecutor = (s: StepFacts & Pick<Step, 'consumes'>): boolean =>
 const CRITIQUE_ROLES: ReadonlySet<Role> = new Set<Role>(['critic', 'check', 'cut', 'tells-sweep', 'overlap']);
 
 /**
+ * Model roles whose step leaves a note beside the work when it runs: the runner stores a judging answer as a note
+ * (model-step.ts NOTE_LABELS: a critique, defects, removals, cliché hits, overlap flags, a direction), and a seed's
+ * build the direction it took. The interpreter puts that note in `ports.notes` in place of the notes before it
+ * (applyModel), and a person's question shows the latest notes beside the work (beside()).
+ */
+export const NOTE_ROLES: ReadonlySet<Role> = new Set<Role>(['critic', 'check', 'cut', 'tells-sweep', 'overlap', 'vision', 'seed']);
+
+/** A model step that leaves its own note in place of the notes before it when it runs. */
+export const leavesNote = (s: StepFacts): boolean => s.actor === 'model' && NOTE_ROLES.has(s.role);
+
+/**
  * Whether running a node can put another critique in place of the one before it (the interpreter's applyModel,
  * human(), audit() and gate()): a model critic, check, CUT, cliché sweep or overlap flag, a model or person's VISION
  * that produces a critique, a person's CUT directive or other reaction that produces one, an audit whose lenses do, and
@@ -727,6 +738,66 @@ function flowOnce<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stag
     case 'pick':
       return after(node, node.judge ? ops.step(node.judge, `${path}.judge`, stage, state, true) : state);
   }
+}
+
+// ---- What reaches a step ----------------------------------------------------------------------------------------
+
+/**
+ * The AI directions (model VISION steps) that a person reacts to: on every path, the next VISION of theirs that runs
+ * after the directions is shown them, and on some path one does. Decided by what reaches that step, not by order:
+ *
+ * - The directions reach a person's VISION as a note beside what it shows (the interpreter's beside(): the work, or
+ *   the options, and the latest `ports.notes`). Every model VISION leaves one.
+ * - A step that leaves a note of its own puts it in their place (`leavesNote`: a critic, check, CUT, sweep, overlap
+ *   flag, another VISION or a seed's direction), and so does an audit one of whose lenses does. That step's note, not
+ *   the directions, is then what the person reacts to.
+ * - replicate, each, a pick and a one-shot gate hand on the notes they started with, so a note made inside them stays
+ *   there; directions made inside a candidate, a lens, a gate body or a judge are never claimed.
+ * - A final check that re-runs the directions' stage, or an earlier one, starts it again from that stage's entry: what
+ *   the directions left is gone, so where it can still be waiting for its reaction there, no claim is made.
+ *
+ * Read on the exit-aware flow walk, at every place a step object sits. A must-analysis: whatever it cannot tell apart
+ * (a candidate whose VISION of yours has reacted, a note in a final check's body) only takes a claim away.
+ */
+export function directionsReactedTo(recipe: Recipe): Set<Step> {
+  // The obligation the directions leave on a path: none (IDLE), shown so far (LIVE), or replaced before it was (LOST).
+  const IDLE = 1;
+  const LIVE = 2;
+  const LOST = 4;
+  const stageAt = (stage: Stage['stage']) => recipe.stages.findIndex((s) => s.stage === stage);
+  const holds = new Map<Step, boolean>();
+  for (const p of placements(recipe)) {
+    const v = p.step;
+    if (v.actor !== 'model' || v.role !== 'vision') continue;
+    let shown = false;
+    let missed = p.contained || p.perCandidate;
+    if (!missed) {
+      const at = stageAt(p.stage);
+      flowRecipe<number>(recipe, IDLE, {
+        step(s, path, _stage, st) {
+          if (s.actor === 'human' && s.role === 'vision') {
+            if (st & LIVE) shown = true;
+            if (st & LOST) missed = true;
+            return IDLE;
+          }
+          if (s === v && path === p.path) return LIVE;
+          return leavesNote(s) && st & LIVE ? (st & ~LIVE) | LOST : st;
+        },
+        join: (states) => states.reduce((a, b) => a | b, 0),
+        key: String,
+        after(node, entry, inner) {
+          if (node.op === 'audit') return inner;
+          if (node.op === 'gate' && node.retry && node.retry.times > 0) {
+            const from = stageAt(node.retry.stage);
+            if (from >= 0 && from <= at && inner & (LIVE | LOST)) missed = true;
+          }
+          return entry;
+        },
+      });
+    }
+    holds.set(v, (holds.get(v) ?? true) && shown && !missed);
+  }
+  return new Set([...holds].flatMap(([s, ok]) => (ok ? [s] : [])));
 }
 
 // ---- Field roles ------------------------------------------------------------------------------------------------
