@@ -281,8 +281,9 @@ function hiddenTag(t: TagToken): boolean {
  * Start tags end what browsers end for them (implicitly: such an element keeps no end): a block ends an open p, an li
  * an open li and a dd or dt an open dd or dt (unless a block other than a div, an address or a p is open inside it), a
  * heading a heading that is the innermost element, and body content the head; an <a> marks an open <a> superseded.
- * Browsers ignore a table part outside a table, a second html or body, a head in the body and a form inside a form:
- * the reader opens no element for them. Foster parenting and the reconstruction of formatting are not modelled (links
+ * Browsers ignore a table part outside a table, an html start tag after anything else, a body start tag once the body
+ * has begun (explicitly, or implicitly with text or a start tag that does not belong in the head), a head once the head
+ * or the body has begun, and a form inside a form: the reader opens no element for them, so none of them breaks a line. Foster parenting and the reconstruction of formatting are not modelled (links
  * are read where browsers end them, see readPageCopy); an element browsers foster-parent is marked (fosters), and never
  * removed. Lookups go through stacks of positions per name and per kind,
  * so each tag costs a constant amount, amortized.
@@ -301,6 +302,13 @@ class OpenElements {
   /** Positions of open special elements other than address, div and p: an li, dd or dt start tag stops at one. */
   private readonly hardSpecial: number[] = [];
   private headSeen = false;
+  /** A start tag or text has been read (browsers have made the html element): a later <html> is ignored. */
+  private started = false;
+  /**
+   * The body has begun, explicitly or as browsers begin it implicitly (text, or a start tag that does not belong in the
+   * head): a later <body> is ignored, as is a <head>.
+   */
+  private bodyBegun = false;
   /** Positions of open elements outside INLINE (for the block a run belongs to); closed ones are skipped lazily. */
   private readonly blocks: number[] = [];
   preDepth = 0;
@@ -328,6 +336,8 @@ class OpenElements {
    */
   text(): boolean {
     this.headSeen = true;
+    this.started = true;
+    this.bodyBegun = true;
     const k = this.named('head');
     if (k < 0) return false;
     this.endImplicitly(k);
@@ -338,10 +348,16 @@ class OpenElements {
     if (t.foreign) return false;
     const n = t.name;
     if (TABLE_PART.has(n)) return this.named('table') < 0;
-    if (n === 'html' || n === 'body') return this.named(n) >= 0;
-    if (n === 'head') return this.headSeen || this.named('body') >= 0;
+    if (n === 'html') return this.started;
+    if (n === 'body') return this.bodyBegun;
+    if (n === 'head') return this.headSeen || this.bodyBegun;
     if (n === 'form') return this.named('form') >= 0 && this.named('template') < 0;
     return false;
+  }
+  /** Note a start tag, ignored or not (after asking `ignores`): anything but the html, the head and head content begins the body. */
+  sawStart(t: TagToken): void {
+    this.started = true;
+    if (t.foreign || (!HEAD_CONTENT.has(t.name) && t.name !== 'html' && t.name !== 'head')) this.bodyBegun = true;
   }
   /**
    * The ends browsers imply for a start tag they do not ignore (see the class comment). Whether it ended any element:
@@ -435,7 +451,10 @@ class OpenElements {
     };
     const within = (k: number, bound: number) => (k >= 0 && k >= bound ? this.close(k, i) : ignored());
     if (t.foreign) return within(this.named(name), 0);
-    if (name === 'br') return ignored(this.hiddenDepth === 0);
+    if (name === 'br') {
+      this.started = this.bodyBegun = true;
+      return ignored(this.hiddenDepth === 0);
+    }
     if (name === 'p') {
       const k = this.named('p');
       if (k >= 0 && k > Math.max(lastOf(this.scope), this.named('button'))) return this.close(k, i);
@@ -543,9 +562,9 @@ export function readPageCopy(html: string): PageDeck {
   tokens.forEach((t, i) => {
     if (t.kind === 'text') {
       if (!inTitle && noHtmlSpace(t.raw) !== '' && open.text() && !cur.toks.length) {
-        // Text in the head ended it: the text is the body's, and starts a run and a block of its own.
+        // Text in the head ended it: the text is the body's, and starts a run of its own. It continues the body's first
+        // screen line, as browsers show it (the head showed nothing, and a later <body> is ignored).
         region++;
-        vregion++;
         inline.length = 0;
         inlineAt.clear();
         blockOfRegion.set(region, open.innermostBlock());
@@ -572,6 +591,7 @@ export function readPageCopy(html: string): PageDeck {
       const ignored = !t.closing && open.ignores(t);
       const opens = !t.closing && !ignored && !VOID.has(name) && !(t.selfClosing && (t.foreign || name === 'svg' || name === 'math'));
       if (!t.closing) {
+        open.sawStart(t);
         const endsOthers = !ignored && open.startTag(t);
         if (!ignored && open.fosters(t)) fostered[i] = 1;
         breaks = !ignored && open.startBreaks(t);

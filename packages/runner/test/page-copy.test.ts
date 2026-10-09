@@ -857,6 +857,36 @@ describe('a link or button keeps words a browser shows (F07, r7)', () => {
   });
 });
 
+describe('a <body> or <html> after the body has begun is ignored, as browsers ignore it (F07, r7)', () => {
+  // Chromium shows each page before the edit as "Welcome" / "Sale" / "Order today", one line each; removing the emptied
+  // heading showed "WelcomeOrder today" (round 6), so it is kept.
+  const pages = [
+    '<!doctype html><html><head><title>T</title>Welcome</head><body><h2>Sale</h2>Order today</body></html>',
+    '<!doctype html><title>T</title>Welcome<body><h2>Sale</h2>Order today',
+    '<!doctype html><title>T</title><span>Welcome</span><body><h2>Sale</h2>Order today',
+    '<!doctype html><html><head><title>T</title></head>Welcome<body><h2>Sale</h2>Order today',
+    '<!doctype html><title>T</title><p>One</p>Welcome<html lang="en"><h2>Sale</h2>Order today',
+  ];
+  it('so a block between text before it and text after it is kept, empty, when its line is deleted', () => {
+    for (const html of pages) {
+      const deck = deckLines(readPageCopy(html));
+      expect(run(html, set(deck.indexOf('Sale'), ''), { full: true }), html).toMatchObject(clean(html.replace('<h2>Sale</h2>', '<h2></h2>')));
+    }
+  });
+
+  it('text that ends the head continues the body\'s first screen line: lines on either side of an ignored <body> stay as they showed', () => {
+    // Chromium shows "Welcometo our shop" and "Hello world": the lines are two in the deck, on one screen line.
+    const W = '<!doctype html><html><head><title>T</title>Welcome</head><body>to <b>our</b> shop';
+    expect(run(W, same, { full: true }).deck).toEqual(['T', 'Welcome', 'to our shop']);
+    expect(run(W, set(1, 'Hi'), { full: true })).toMatchObject(clean('<!doctype html><html><head><title>T</title>Hi</head><body>to <b>our</b> shop'));
+    // Chromium shows "Welcome Sale today": deleting "Sale" keeps its spaces where the emptied span was, so it shows
+    // "Welcome today" (round 6 read "Welcome" as a block of its own and wrote "Welcometoday").
+    const S = '<!doctype html><html><head><title>T</title>Welcome</head><body><span><font> Sale </font></span>today';
+    expect(run(S, same, { full: true }).deck).toEqual(['T', 'Welcome', 'Sale', 'today']);
+    expect(run(S, set(2, ''), { full: true })).toMatchObject(clean('<!doctype html><html><head><title>T</title>Welcome</head><body>  today'));
+  });
+});
+
 describe('a deleted line leaves only a space a browser showed (F07, r7)', () => {
   it('the whitespace of a line in a hidden block is not written where the block was: it never showed', () => {
     // "sale" and "Spring!" show glued; round 6 wrote the hidden block's spaces between them and its verifier refused that.

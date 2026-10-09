@@ -523,6 +523,14 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('a <body> after text that began the body is ignored, so deleting the block between them keeps it, empty (r7)', async () => {
+    const html = '<!doctype html><html><head><title>T</title>Welcome</head><body><h2>Sale</h2>Order today</body></html>';
+    const q = await VoiceQuestion.open(b, await benchRun(b, 'web-page'), await putWork(b, 'web-page', html));
+    expect(q.offered).toBe('T\nWelcome\nSale\nOrder today');
+    const out = await q.answer('T\nWelcome\n\nOrder today');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<h2>Sale</h2>', '<h2></h2>'));
+  });
+
   it('a script, noscript or comment inside an element the edit empties stays, byte for byte (r7)', async () => {
     for (const inner of ['<script>window.x=1</script>', '<noscript>Enable JS</noscript>', '<!-- keep -->']) {
       const out = await (await open(page(`<p>Hello <span>world${inner}</span></p>`))).answer('T\nHello');
