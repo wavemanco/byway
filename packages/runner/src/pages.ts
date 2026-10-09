@@ -17,8 +17,9 @@
  * failed to launch is launched again on the next render (ENG-14).
  *
  * The same renderer reads the text a page shows, for VOICE's arbiter (ADR-0081): the page is loaded with JavaScript off,
- * under the same allowlist, request filter and deadline as a render, and only its first document is read (a meta
- * refresh or any other navigation of the page is refused). It changes no sandbox setting.
+ * under the same allowlist, request filter and deadline as a render, and only its first document is read: a later
+ * navigation the request filter sees (a meta refresh to an address) gets No Content, and a page that navigates away
+ * where no route sees it (a meta refresh to about:blank) is a plain StepError. It changes no sandbox setting.
  */
 import type { Browser, BrowserContext, Page, Route } from 'playwright';
 import { StepError } from './activities/failures.ts';
@@ -36,6 +37,11 @@ export interface SurfaceShots {
 export interface RenderOptions {
   /** Stops the render (closing its page) when aborted: the step was cancelled. */
   signal?: AbortSignal;
+  /**
+   * The time (as Date.now()) by which the load must finish, as well as within the renderer's own timeout: reads that
+   * share one deadline share its time (a VOICE question's two reads, inside an activity's one minute).
+   */
+  deadline?: number;
 }
 
 /** Serves `/api/artifacts/<id>` requests from the artifact store; undefined is a 404. */
@@ -102,6 +108,8 @@ export interface PlaywrightPagesOptions {
 
 /** A private origin the page is served from, so relative artifact routes resolve without touching the network. */
 const ORIGIN = 'http://byway-render.localhost';
+/** The address the page is served at. */
+const PAGE_URL = `${ORIGIN}/page`;
 const FOLD_HEIGHT = 900;
 
 const sleep = (ms: number) => new Promise<'late'>((r) => setTimeout(() => r('late'), ms).unref());
@@ -204,11 +212,17 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
    * settles, or a step that is cancelled, has its context closed (SEC-5). `text` loads it with JavaScript off, for the
    * arbiter, and reads its first document only.
    */
-  const loaded = async <T>(html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone' | 'text', signal: AbortSignal | undefined, use: (page: Page) => Promise<T>): Promise<T> => {
+  const loaded = async <T>(html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone' | 'text', signal: AbortSignal | undefined, use: (page: Page) => Promise<T>, deadline?: number): Promise<T> => {
     if (signal?.aborted) throw stopped(signal);
+    const text = screen === 'text';
+    const late = (cut: boolean) => {
+      if (cut) return new StepError(`The page did not finish ${text ? 'loading' : 'rendering'} in the time byway gives a page's ${text ? 'reads, so its text could not be read' : 'renders, so it could not be shown'}.`);
+      const s = Math.round(timeout / 1000);
+      return new StepError(text ? `The page did not finish loading within ${s} s, so its text could not be read.` : `The page did not finish rendering within ${s} s, so it could not be shown.`);
+    };
+    if (deadline !== undefined && deadline <= Date.now()) throw late(true);
     const b = await getBrowser();
     const phone = screen === 'phone';
-    const text = screen === 'text';
     const context = await b.newContext({
       viewport: phone ? mobile : { width, height: FOLD_HEIGHT },
       deviceScaleFactor: 1,
@@ -233,15 +247,14 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         await context.route('**/*', route(html, resolve, text));
         const page = await context.newPage();
         page.setDefaultTimeout(timeout);
-        await page.goto(`${ORIGIN}/page`, { waitUntil: 'load', timeout });
+        await page.goto(PAGE_URL, { waitUntil: 'load', timeout });
         return use(page);
       })();
       // Whichever loses the race below still settles later; it must not become an unhandled rejection.
       work.catch(() => undefined);
       const limit = new Promise<never>((_, reject) => {
-        const s = Math.round(timeout / 1000);
-        const late = text ? `The page did not finish loading within ${s} s, so its text could not be read.` : `The page did not finish rendering within ${s} s, so it could not be shown.`;
-        timer = setTimeout(() => reject(new StepError(late)), timeout);
+        const left = deadline === undefined ? timeout : Math.min(timeout, deadline - Date.now());
+        timer = setTimeout(() => reject(late(left < timeout)), Math.max(left, 0));
         if (signal) {
           onAbort = () => reject(stopped(signal));
           signal.addEventListener('abort', onAbort, { once: true });
@@ -289,7 +302,32 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       return (await render(html, resolve, ['desktop'], renderOpts))[0]!.tiles;
     },
     async shownText(html, resolve, renderOpts = {}) {
-      return loaded(html, resolve, 'text', renderOpts.signal, async (page) => JSON.parse(String(await page.evaluate(SHOWN_TEXT))) as ShownText);
+      return loaded(
+        html,
+        resolve,
+        'text',
+        renderOpts.signal,
+        async (page) => {
+          // Only the first document is read. A navigation no route sees (to about:blank or about:srcdoc) replaces it, or
+          // destroys the context the read runs in: either way the page's own text cannot be read.
+          let away = false;
+          page.on('framenavigated', (frame) => {
+            if (frame === page.mainFrame() && frame.url() !== PAGE_URL) away = true;
+          });
+          const gone = () => new StepError('The page navigates away as it loads (a meta refresh, for example), so the text it shows could not be read.');
+          if (page.url() !== PAGE_URL) throw gone();
+          let read: unknown;
+          try {
+            read = await page.evaluate(SHOWN_TEXT);
+          } catch (e) {
+            if (away || page.url() !== PAGE_URL || /Execution context was destroyed/.test((e as Error).message)) throw gone();
+            throw e;
+          }
+          if (away || page.url() !== PAGE_URL) throw gone();
+          return JSON.parse(String(read)) as ShownText;
+        },
+        renderOpts.deadline,
+      );
     },
     async close() {
       const current = browser;

@@ -141,3 +141,25 @@ describe('VOICE on a page: the same boundaries', () => {
     expect((err as Error).message).toBe('byway could not read the copy of this work (forced fault in pageVoiceSuffix).');
   });
 });
+
+describe('VOICE on a page: the browser reads fit the activity that makes them (r8)', () => {
+  const PAGE = '<!doctype html><html><head><title>T</title></head><body><h1>Head</h1><p>Sub</p></body></html>\n';
+
+  it('a question\'s two reads share one deadline, well inside the one minute openCheckpoint has', async () => {
+    const pages = fakePages();
+    const deadlines: (number | undefined)[] = [];
+    const t0 = Date.now();
+    const bench = await voiceBench([], { pages: { ...pages, shownText: (html, resolve, opts) => (deadlines.push(opts?.deadline), pages.shownText(html, resolve, opts)) } });
+    try {
+      await VoiceQuestion.open(bench, await benchRun(bench, 'web-page'), await putWork(bench, 'web-page', PAGE));
+      expect(deadlines).toHaveLength(2);
+      expect(deadlines[0]).toBeDefined();
+      expect(deadlines[1]).toBe(deadlines[0]);
+      // 40 s from when the question was read, leaving the rest of the minute for launching the browser and the store.
+      expect(deadlines[0]! - t0).toBeGreaterThanOrEqual(40_000);
+      expect(deadlines[0]! - Date.now()).toBeLessThanOrEqual(40_000);
+    } finally {
+      bench.close();
+    }
+  });
+});

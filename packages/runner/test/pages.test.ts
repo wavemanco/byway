@@ -219,6 +219,33 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
     expect(asked).toEqual(['sha256:abc']);
   }, 60_000);
 
+  it('a page that navigates away as it loads (to about:blank, which no route sees) is a plain StepError, not a raw retried error (r8)', async () => {
+    for (const to of ['about:blank', 'about:srcdoc']) {
+      const html = `<!doctype html><html><head><meta http-equiv="refresh" content="0;url=${to}"></head><body><p>Gone soon</p></body></html>`;
+      for (let k = 0; k < 3; k++) {
+        const err = await pages.shownText(html, none).catch((e: unknown) => e);
+        expect(err, to).toBeInstanceOf(StepError);
+        expect((err as Error).message).toBe('The page navigates away as it loads (a meta refresh, for example), so the text it shows could not be read.');
+      }
+    }
+    // A refresh later than the read, or to the page's own address, reads the page.
+    expect((await pages.shownText('<meta http-equiv="refresh" content="5;url=about:blank"><p>Stay</p>', none)).text).toBe('Stay');
+    expect((await pages.shownText('<meta http-equiv="refresh" content="0"><p>Stay</p>', none)).text).toBe('Stay');
+  }, 60_000);
+
+  it('reads that share a deadline stop at it, whatever time each read has left (r8)', async () => {
+    const hang = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Text</body></html>';
+    const never = () => new Promise<undefined>(() => undefined);
+    const t0 = Date.now();
+    const err = await pages.shownText(hang, never, { deadline: t0 + 1_500 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe('The page did not finish loading in the time byway gives a page\'s reads, so its text could not be read.');
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    const late = await pages.shownText('<p>Next</p>', none, { deadline: Date.now() - 1 }).catch((e: unknown) => e);
+    expect(late).toBeInstanceOf(StepError);
+    expect((await pages.shownText('<p>Next</p>', none, { deadline: Date.now() + 20_000 })).text).toBe('Next');
+  }, 60_000);
+
   it('is bounded and cancellable like a render (SEC-5)', async () => {
     const quick = playwrightPages({ timeoutMs: 2_000, closeTimeoutMs: 2_000 });
     opened.push(quick);

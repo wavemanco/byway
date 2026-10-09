@@ -31,7 +31,7 @@ import {
 } from '../copy.ts';
 import { parseArtifact, parseStoryboard } from '../formats.ts';
 import { arbiterProblem, expectedShown, locate, markedCopy, notShown, type Location } from '../page-arbiter.ts';
-import type { ArtifactResolver, PageRenderer } from '../pages.ts';
+import type { ArtifactResolver, PageRenderer, RenderOptions } from '../pages.ts';
 import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, StepSpec } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
@@ -99,6 +99,13 @@ interface PageQuestion {
   checked: boolean;
 }
 
+/**
+ * How long a page question's two browser reads may take in all. openCheckpoint runs under the workflow's `quick` proxy
+ * (one minute to close, no heartbeat), so the reads share one deadline well inside it, browser launch and store reads
+ * included: a page Chromium cannot read in time is a plain StepError, not a timed-out activity Temporal retries.
+ */
+const QUESTION_READS_MS = 40_000;
+
 /** The page renderer, which a page's VOICE needs: without it byway cannot check a write, so it never writes one. */
 function pageRenderer(deps: RunnerDeps): PageRenderer {
   if (!deps.pages) throw new StepError('The words on a web page cannot be written in this step: no page renderer is configured, and byway writes a page only when a browser shows it as you wrote it.');
@@ -118,17 +125,17 @@ const artifactRoute =
  * Where Chromium shows each of the page's lines (page-arbiter.ts). The reads may fail as a render does (a plain error is
  * retried; a page that never loads is a StepError); a fault in byway's own code after them is `fault`'s error.
  */
-async function pageLines(deps: RunnerDeps, html: string, fault: (e: Error) => Error): Promise<Location> {
+async function pageLines(deps: RunnerDeps, html: string, fault: (e: Error) => Error, opts: RenderOptions = {}): Promise<Location> {
   const pages = pageRenderer(deps);
   const resolve = artifactRoute(deps);
-  const plain = await pages.shownText(html, resolve);
+  const plain = await pages.shownText(html, resolve, opts);
   let copy: string | undefined;
   try {
     copy = markedCopy(html);
   } catch (e) {
     throw fault(e as Error);
   }
-  const marked = copy === undefined ? undefined : await pages.shownText(copy, resolve);
+  const marked = copy === undefined ? undefined : await pages.shownText(copy, resolve, opts);
   try {
     return locate(html, plain, marked);
   } catch (e) {
@@ -146,7 +153,7 @@ async function pageQuestion(deps: RunnerDeps, input: OpenCheckpointInput): Promi
   const html = withoutMarks(await deps.store.artifacts.getText(artifactId));
   // No paid call is involved and a retry reads the same bytes: a fault is a plain, final failure.
   const unreadable = (e: Error) => new StepError(`byway could not read the copy of this work (${e.message}).`);
-  const loc = await pageLines(deps, html, unreadable);
+  const loc = await pageLines(deps, html, unreadable, { deadline: Date.now() + QUESTION_READS_MS });
   try {
     return { html, notOffered: notShown(html, loc), checked: loc.agrees };
   } catch (e) {

@@ -654,6 +654,12 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await shows(out.artifactId!)).toBe('Warm\nbread daily');
   });
 
+  it('a page that navigates away as it loads cannot be read, so its VOICE fails plainly, not with a retried error (r8)', async () => {
+    const err = await open('<!doctype html><html><head><title>T</title><meta http-equiv="refresh" content="0;url=about:blank"></head><body><h1>Head</h1></body></html>').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe('The page navigates away as it loads (a meta refresh, for example), so the text it shows could not be read.');
+  });
+
   it('with no page renderer, a page\'s VOICE fails plainly: it never writes a page no browser checked', async () => {
     const bare = await voiceBench();
     try {
