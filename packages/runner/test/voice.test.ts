@@ -581,6 +581,10 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
       const out = await (await open(page(html))).answer(answer);
       expect(await shows(out.artifactId!), html).toBe(shown);
     }
+    // Text that ends the head, then a <body> browsers ignore (round 6 ran "Welcome" into "Order today").
+    const head = '<!doctype html><html><head><title>T</title>Welcome</head><body><h2>Sale</h2>Order today</body></html>';
+    const out = await (await open(head)).answer('T\nWelcome\n\nOrder today');
+    expect(await shows(out.artifactId!)).toBe('Welcome\nOrder today');
     expect(b.gateway.requests).toEqual([]);
   });
 

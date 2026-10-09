@@ -281,7 +281,7 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
     const span = loc.spans.get(k);
     const cannot = (why: string) => ({ problem: `byway could not put line ${n} on this page exactly as you wrote it, because ${why}. Leave line ${n} as it was offered.`, line: n });
     if (MARKS.test(line.text)) return { problem: `Line ${n} has a character byway uses to mark a page while it checks it (a noncharacter, U+FDD0 to U+FDEF), which a page does not show: take it out.`, line: n };
-    if (!loc.agrees) return cannot('byway could not match this page\'s lines to what a browser shows (its marked copy reads differently from the page), so it cannot check a change');
+    if (!loc.agrees) return cannot('byway could not match this page\'s lines to what a browser shows, so it cannot check a change');
     if (!span) return cannot('a browser does not show that line where byway reads it, so byway cannot check a change to it');
     const oldText = (span.in === 'body' ? loc.body : loc.title).slice(span.start, span.end);
     // The line's link words as Chromium shows them must be the deck's: each bracketed part one address, nothing else in a link.

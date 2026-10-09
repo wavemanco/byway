@@ -6,9 +6,10 @@
  * code, data, dfn, em, i, kbd, mark, q, s, samp, small, span, strong, sub, sup, time, u, var, wbr), so a block is one
  * line unless a <br>, a nested block or any other tag splits it, including the tags of elements browsers show inline
  * (font, label, ins, del, button, an image, an svg, a control). Head content is not offered except the <title> (text
- * that is not whitespace ends the head, as browsers end it); <pre>, raw text, CDATA, attribute copy and the content of
- * a hidden element browsers show inline are not offered (a hidden block is, as its own lines). A block that holds only
- * links side by side (a nav) gives one line per link. One notation holds on every line: a link's words inside a line are shown in [brackets]; a literal
+ * that is not whitespace ends the head, as browsers end it, and continues the body's first line); <pre>, raw text,
+ * CDATA, attribute copy and the content of a hidden element browsers show inline are not offered (a hidden block is
+ * read as its own lines; VOICE then leaves out every line Chromium does not show: see readPageCopy's notOffered, and
+ * page-arbiter.ts). A block that holds only links side by side (a nav) gives one line per link. One notation holds on every line: a link's words inside a line are shown in [brackets]; a literal
  * "[", "]", or a backslash before one of them or before a bracket of the notation, is shown escaped with a backslash.
  * A line that is exactly one link's words is shown plain (a "whole-link" line). A link is an <a> with an href; one
  * without is a placeholder, and its words are plain.
@@ -17,8 +18,9 @@
  * OpenElements): end tags are matched by browsers' rules (scope, special elements, the adoption agency), browsers'
  * implied ends for start tags are applied, and ignored tags open nothing. Besides the deck's runs, it reads the page's
  * blocks as browsers show them by their default stylesheet (BLOCK): the removal rule and the verifier use those, so no
- * removal runs two lines together on screen. Foster parenting is not modelled: what browsers move out of a table is
- * marked, and never removed.
+ * removal runs two lines together on screen as the reader reads blocks. Foster parenting is not modelled: what browsers
+ * move out of a table is marked, and never removed. The reader is a model: the browser arbiter (page-arbiter.ts) has
+ * the last word on every VOICE write.
  *
  * Links are read where browsers end them: at the next <a ...> or </a> tag. A link the page leaves open (an unclosed
  * <a>, "<a href=x/>", one a misnested closing tag pops) reaches the following blocks, and an <a> inside another ends
@@ -44,12 +46,13 @@
  * - pageEditProblems: the verifier. It checks the witness against the shared rule, compares the markup token for token
  *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each line's words,
  *   the line as it shows (edge whitespace included, whitespace collapsed) and its edge whitespace, and each link
- *   part's words, that no link or button whose words were in a changed line is left nameless (an image's alt or a
- *   label names one that keeps an image or icon), and reads the written page fresh: each run's words, which of them
- *   are in which link (with its address), and each block as browsers show blocks, whitespace collapsed, against the
- *   page before with the person's lines in place and its own separators between lines. It shares the removal rules
- *   with placement (removable, the <br> runs, gapKept), not placement's alignment or its choices among removals, and it
- *   is not independent of the reader (which is tested on its own, and against Chromium in scratch harnesses).
+ *   part's words, that no link or button whose shown words were in a changed line is left without words a browser
+ *   shows, unnamed (an image's alt or a label names one that keeps an image or icon; hidden words name nothing), and
+ *   reads the written page fresh: each run's words, which of them are in which link (with its address), and each block
+ *   as browsers show blocks, whitespace collapsed, against the page before with the person's lines in place and its own
+ *   separators between lines. It shares the removal rules with placement (removable, the <br> runs, gapKept), not
+ *   placement's alignment or its choices among removals, and it is not independent of the reader, so a page the reader
+ *   misreads can pass it: the browser arbiter (page-arbiter.ts) checks every write after it.
  * Reading, placing and verifying are linear in the page (amortized), except that placement matches a changed block's
  * old and new words: by a table quadratic in the words of that block (a line of up to about a thousand words), and
  * past that by an edit script whose cost grows with the words changed (capped; see wordPairs). None of them throws.
