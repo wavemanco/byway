@@ -3,6 +3,7 @@ import { CanonicalizationError } from '@byway/canonical';
 import { BLOCK_CODES, GLUE_CODES, MEDIA, PORT_TYPES, type BlockCode, type Channel, type GlueCode, type Medium, type PortType, type RecipeKind } from '@byway/protocol';
 // hash.ts imports only the Recipe type from this file, so this is no runtime import cycle.
 import { recipeHash } from './hash.ts';
+import { shapeProblem } from './shape.ts';
 
 export const RECIPE_SCHEMA_ID = 'byway.recipe/1';
 
@@ -264,6 +265,9 @@ function reservedKeyPaths(value: unknown, path: (string | number)[] = []): (stri
 /**
  * Parse untrusted input into a Recipe. Throws ZodError with paths on invalid input.
  *
+ * Input beyond the shape bound (shape.ts: nesting, node count, size) is refused first, as one issue at the place it
+ * went over, so no walk below can overflow the stack on it.
+ *
  * Every Recipe returned can be hashed: recipeHash never throws on it. The hasher itself decides, so this rule cannot
  * drift from it (F19, ADR-0083). Text holding a lone surrogate, which arrives as a JSON backslash-u escape in a model's
  * answer or a file, is refused here as one issue at the recipe's root that names the canonical path in its message (the
@@ -271,6 +275,9 @@ function reservedKeyPaths(value: unknown, path: (string | number)[] = []): (stri
  * existing ZodError path instead of meeting a CanonicalizationError later.
  */
 export function parseRecipe(input: unknown): Recipe {
+  // The shape bound first (F02): every walk below recurses, so a pathological nesting must be refused before them.
+  const shape = shapeProblem(input);
+  if (shape) throw new z.ZodError([{ code: 'custom', path: shape.path, message: shape.message, input: undefined }]);
   const reserved = reservedKeyPaths(input);
   if (reserved.length) {
     throw new z.ZodError(reserved.map((path) => ({ code: 'custom' as const, path, message: 'reserved key name', input: undefined })));
