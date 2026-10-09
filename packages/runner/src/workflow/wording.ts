@@ -24,7 +24,30 @@ export function humanKind(step: Pick<Step, 'role'>): CheckpointKind {
   }
 }
 
-export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'knobs'>, round?: number): string {
+/**
+ * The text port a person's step revises in place (ADR-0090): a reaction (humanKind 'react') that both consumes and
+ * produces the same text port, as C7's spec answers the interview's questions in the brief they came in. Its checkpoint
+ * opens with the port's text, and the answer replaces the port, so the questions, the answers and the defaults the
+ * person left alone travel on together. Keyed on the step's shape, not on a recipe.
+ */
+export function revisesInPlace(step: Pick<Step, 'role' | 'consumes' | 'produces'>): 'brief' | 'taste' | undefined {
+  if (humanKind(step) !== 'react') return undefined;
+  return (['brief', 'taste'] as const).find((p) => step.consumes.includes(p) && step.produces.includes(p));
+}
+
+/** The VISION-lite spec (C7): the interview's questions with their defaults, answered in place. */
+export const SPEC_IN_PLACE_PROMPT =
+  'Answer the questions below in place, or change their defaults; anything you leave as it is keeps its default. What you send is the brief the next step works from.';
+
+/**
+ * What a person's step asks. `revising` is set when the step revises a text port in place (revisesInPlace) and that
+ * port has text to revise: the question then says so, and the text is in the box.
+ */
+export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'consumes' | 'knobs'>, round?: number, revising = false): string {
+  const port = revising ? revisesInPlace(step) : undefined;
+  if (port === 'brief')
+    return step.variant === 'VISION-lite' ? SPEC_IN_PLACE_PROMPT : 'Revise this brief in place: change what you want and leave the rest. What you send is the brief the next step works from.';
+  if (port === 'taste') return 'Revise this direction in place: change what you want and leave the rest. What you send is the direction the next step works from.';
   switch (step.role) {
     case 'vision':
       return step.produces.includes('brief')

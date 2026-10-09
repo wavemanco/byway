@@ -423,7 +423,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Your direction',
-        explainer: 'Your turn: answer them in a short spec.',
+        explainer: 'Your turn: answer the questions or change their defaults; that becomes the spec.',
         covers: ['spec'],
       },
       { label: 'Implement', explainer: 'The AI writes the change.', covers: ['implement'] },
@@ -434,7 +434,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Trim the scope',
-        explainer: 'A fresh reviewer lists what the task did not ask for, and the AI removes what it lists.',
+        explainer: 'A fresh reviewer, who sees only the change and its "why", lists what the change does not need, and the AI removes what it lists.',
         covers: ['scope-render', 'scope-cut', 'apply-scope-cut'],
       },
       {

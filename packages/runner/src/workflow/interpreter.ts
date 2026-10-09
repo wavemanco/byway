@@ -36,6 +36,7 @@ import {
   NOTHING_TO_SWAP,
   optionalPrompt,
   READY_PROMPT,
+  revisesInPlace,
   routePrompt,
   SWAPS_PROMPT,
 } from './wording.ts';
@@ -355,7 +356,10 @@ export class Interpreter {
     }
     // What the person looks at: the candidates for a step over an option set, else the view it consumes.
     const shown = s.consumes.includes('option_set<artifact>') ? optionsShown(ports) : (ports.view?.items.flatMap(viewIds) ?? []);
-    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round) };
+    // A reaction that revises a text port in place opens with that port's text, and its answer replaces it (ADR-0090).
+    const revised = revisesInPlace(s);
+    const inPlace = revised ? ports[revised]?.trim() : undefined;
+    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
     let initial: OpenCheckpointInput['initial'];
     if (kind === 'compare') {
       checkpoint = {

@@ -19,7 +19,7 @@ export const CHOOSER: readonly ChooserQuestion[] = [
   {
     id: 'code-change',
     text: 'Is it a code change written by an AI agent, where size or ease of review is the problem?',
-    help: 'Say yes when agent-written changes come out bloated or hard to review. The recipe checks the change for defects, cuts what the task did not ask for and has it reviewed; whether the code is correct stays with your own tests and CI.',
+    help: 'Say yes when agent-written changes come out bloated or hard to review. The recipe checks the change for defects, cuts what the change does not need and has it reviewed; whether the code is correct stays with your own tests and CI.',
     routesTo: 'c7',
   },
   {
