@@ -114,3 +114,73 @@ export function fieldUses(source: string, field: string): string[] {
   ];
   return patterns.flatMap((re) => [...code.matchAll(re)].map((m) => m[0].trim()));
 }
+
+/** One place source gives a control the native `disabled` state (disabledUses). */
+export interface DisabledUse {
+  /** The intrinsic element (`button`, `input`, `fieldset`, …), or `dom` for a write through the DOM. */
+  element: string;
+  /** 1-based line where the tag or the write starts. */
+  line: number;
+  /** The tag or the write as written, single-spaced, for the failure message. */
+  text: string;
+}
+
+/** Blanks comments (a line comment starts a line or follows a space, so `https://` in a string stays), keeping every line break. */
+function withoutComments(source: string): string {
+  const blank = (m: string) => m.replace(/[^\n]/g, ' ');
+  return source.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/(^|\s)(\/\/.*)$/gm, (_m, lead: string, comment: string) => lead + blank(comment));
+}
+
+/**
+ * A JSX tag's attributes from `from` (just after its name) to its closing `>`, with every `{…}` expression and quoted
+ * value blanked, so only attribute names are left; `end` is the index after the `>`. Null when no tag closes within
+ * reach (the `<` was a type argument or a comparison).
+ */
+function tagAttributes(code: string, from: number): { names: string; end: number } | null {
+  let names = '';
+  let depth = 0;
+  for (let i = from; i < code.length && i - from < 5000; i++) {
+    const c = code[i] as string;
+    if (c === '"' || c === "'" || c === '`') {
+      // A string, at the tag's level (an attribute value) or inside an expression: skipped whole, escapes included.
+      let close = i + 1;
+      while (close < code.length && code[close] !== c) close += code[close] === '\\' ? 2 : 1;
+      if (close >= code.length) return null;
+      names += ' ';
+      i = close;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') depth--;
+    else if (c === '>' && depth === 0) return { names, end: i + 1 };
+    names += depth === 0 && c !== '}' ? c : ' ';
+  }
+  return null;
+}
+
+/**
+ * Where source gives a control the native `disabled` state (R5). A focused control that becomes disabled drops focus to
+ * the page body, so byway's controls say they are unavailable with aria-disabled instead (useAction.ts), and the guard
+ * reviews every use this finds:
+ * - an intrinsic JSX element (a lower-case tag: `<button>`, `<input>`, `<fieldset>`, …) with a `disabled` attribute, bare
+ *   or with a value, on any line of a multi-line tag; `aria-disabled` and `data-disabled` are other attributes;
+ * - a write through the DOM: `el.disabled = …`, `setAttribute('disabled', …)`, `toggleAttribute('disabled')`.
+ * A component's own prop named `disabled` (`<Switch disabled>`) is not a use: what the component renders is scanned
+ * where that is written. Comments are left out. Attributes spread in (`{...props}`) are not seen.
+ */
+export function disabledUses(source: string): DisabledUse[] {
+  const code = withoutComments(source);
+  const lineAt = (index: number) => code.slice(0, index).split('\n').length;
+  const single = (text: string) => text.replace(/\s+/g, ' ').trim();
+  const uses: DisabledUse[] = [];
+  for (const m of code.matchAll(/<([a-z][\w-]*)(?=[\s/>])/g)) {
+    const start = m.index;
+    const tag = tagAttributes(code, start + m[0].length);
+    if (tag && /(^|\s)disabled(?=[\s=/]|$)/.test(tag.names)) uses.push({ element: m[1] as string, line: lineAt(start), text: single(code.slice(start, tag.end)) });
+  }
+  for (const m of code.matchAll(/\.disabled\s*=(?!=)|\b(?:set|toggle)Attribute\(\s*['"]disabled['"]/g)) {
+    const end = code.indexOf('\n', m.index);
+    uses.push({ element: 'dom', line: lineAt(m.index), text: single(code.slice(m.index, end < 0 ? undefined : end)) });
+  }
+  return uses;
+}

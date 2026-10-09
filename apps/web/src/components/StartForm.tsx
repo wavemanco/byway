@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { HELD_KEY_REFUSAL } from '../view/refusals.ts';
+import { ActionButton } from './ActionButton.tsx';
 import { ApiError, post } from './api.ts';
 import { forgetRefusedStart, loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft } from './startDraft.ts';
 import { useTechnicalNames } from './TechNames.tsx';
+import { useAction } from './useAction.ts';
 import { useShortcuts } from './useShortcuts.ts';
 import { focusAfterRemoval } from '../view/focus.ts';
 
@@ -53,10 +55,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
     setAttachments((list) => list.filter((x) => x.key !== key));
   }
   const [nextKey, setNextKey] = useState(1);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const ready = text.trim().length > 0 && !busy;
 
   // Restore what you wrote, and what you attached, before following "Change" back from the Recommendation screen (after
   // hydration, so the server HTML and the first client render agree; ADR-0082).
@@ -80,14 +79,14 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
     saveStartDraft(next);
   }
 
-  async function submit(event?: FormEvent) {
-    event?.preventDefault();
+  // Asking for a recommendation is one action in flight (R5): the button, Enter on it and Ctrl+Enter all run it, and a
+  // second start while one is on its way does nothing. On success it holds until the next screen replaces this one.
+  const submitting = useAction(async () => {
     if (!text.trim()) {
       setError('Describe what you are working on first.');
       field.current?.focus();
       return;
     }
-    setBusy(true);
     setError(null);
     try {
       const { intakeId } = await post<{ intakeId: string }>('/api/intakes', {
@@ -97,17 +96,23 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       });
       // A library choice travels in the address, so the Recommendation screen shows that recipe instead of choosing.
       router.push(recipe ? `/recommend/${intakeId}?recipe=${encodeURIComponent(recipe.recipeId)}` : `/recommend/${intakeId}`);
+      return 'hold';
     } catch (err) {
       // A refused key (ADR-0088): the form keeps everything so the key can be taken out, but the tab's session stops
       // keeping the part that held it (the text, the attachments or both) and keeps the rest. That part is kept again
       // once it is edited: the text on each keystroke, the attachments on any change to them.
       if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) forgetRefusedStart(err.fields);
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
-      setBusy(false);
+      return;
     }
+  });
+  const busy = submitting.busy;
+  function submit(event?: FormEvent) {
+    event?.preventDefault();
+    void submitting.run();
   }
 
-  useShortcuts({ 'Mod+Enter': () => void submit() });
+  useShortcuts({ 'Mod+Enter': () => submit() });
 
   function addAttachment() {
     attachmentsTouched.current = true;
@@ -223,10 +228,11 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
             </Link>
           </span>
         ) : null}
-        <button type="submit" className="button button-primary button-large" disabled={busy} aria-disabled={!ready}>
+        {/* Busy, it keeps focus and a press does nothing (R5); with nothing written yet, a press says so. */}
+        <ActionButton type="submit" className="button button-primary button-large" busy={busy} incomplete={!text.trim()}>
           {busy ? 'Working…' : recipe ? 'Continue' : 'Get a recommendation'}
           <kbd aria-hidden="true">Ctrl ↵</kbd>
-        </button>
+        </ActionButton>
       </div>
       <p className="error-text" role="alert">
         {error}

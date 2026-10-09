@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from 'react';
 import { hitParts, moveFocus, selectAction, toResolution, toggleChoice, type CheckpointDraft } from '../../../view/checkpoints.ts';
+import { ActionButton } from '../../ActionButton.tsx';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { References } from './References.tsx';
 import { TurnFooter } from './TurnFooter.tsx';
@@ -58,12 +59,13 @@ export function SelectPanel({ cp, artifacts, busy, onSubmit, promptId, draft: se
         <legend className="sr-only">Choose which to swap</legend>
         {options.length > 1 ? (
           <p className="checklist-bulk">
-            <button type="button" className="link-button" onClick={() => setAll(true)} disabled={busy || chosen === options.length}>
+            {/* Each makes itself unavailable when pressed (all chosen, none chosen), so it must keep focus (R5). */}
+            <ActionButton className="link-button" onClick={() => setAll(true)} unavailable={busy || chosen === options.length}>
               Choose all
-            </button>
-            <button type="button" className="link-button" onClick={() => setAll(false)} disabled={busy || chosen === 0}>
+            </ActionButton>
+            <ActionButton className="link-button" onClick={() => setAll(false)} unavailable={busy || chosen === 0}>
               Clear
-            </button>
+            </ActionButton>
           </p>
         ) : null}
         <ul className="checklist-items">

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { moveFocus } from '../../../view/checkpoints.ts';
+import { ActionButton } from '../../ActionButton.tsx';
 import { ArtifactPreview } from '../../ArtifactPreview.tsx';
 import { ScriptsToggle, usePageScripts } from '../../ScriptsToggle.tsx';
 import { outputKind } from '../../../view/run.ts';
@@ -48,6 +49,9 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId, draft, o
     setHint(null);
   }
 
+  // The version being sent, so its "Keep this" shows as busy and the other only as unavailable (R5).
+  const [keeping, setKeeping] = useState<number | null>(null);
+
   function keep(index: number | null) {
     const option = index === null ? undefined : options[index];
     if (busy) return;
@@ -55,6 +59,7 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId, draft, o
       setHint('Choose a version first: J and K move between them, or use Keep this.');
       return;
     }
+    setKeeping(index);
     onSubmit({ checkpointId: cp.id, choice: [option.id] });
   }
 
@@ -97,9 +102,9 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId, draft, o
                   </span>
                   {o.label}
                 </h3>
-                <button type="button" className="button" onClick={() => keep(i)} disabled={busy}>
+                <ActionButton className="button" onClick={() => keep(i)} busy={busy && !sent && keeping === i} unavailable={busy}>
                   Keep this<span className="sr-only">: {o.label}</span>
-                </button>
+                </ActionButton>
               </div>
               <div className="compare-view" onClick={() => show(i)}>
                 {o.artifactId ? <ArtifactPreview id={o.artifactId} info={artifacts[o.artifactId]} title={o.label} size="large" scripts={scripts} /> : <p>{o.label}</p>}
