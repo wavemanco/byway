@@ -16,7 +16,8 @@
  * gate may not sit inside a fan-out (ST10 'retry-scope'): there a retry would restart its stage while the sibling
  * branches kept running and spending.
  *
- * Pure: type-only imports and no Node built-ins, so workflow code can import it through `@byway/recipe/limits`.
+ * Pure: no Node built-ins, and nothing imported but types and semantics.ts, so workflow code can import it through
+ * `@byway/recipe/limits`.
  */
 import type { Gate, Node, OneShotGate, Pick as PickNode, Recipe, Stage, Step } from './schema.ts';
 import { PICK_JUDGE_ROLES } from './semantics.ts';
@@ -40,7 +41,8 @@ export const ENGINE_LIMITS = {
 
 /**
  * Limits on a recipe a model composed (ADR-0058's composed profile), far inside the engine's. The catalog's largest
- * counts: replicate 12 (C2), loop rounds 10, relay links 4, lenses 3, depth 6, 42 nodes, 6.3 KB, 213 step runs.
+ * counts: replicate 12 (C2), loop rounds 10, relay links 4, lenses 3, depth 6, 42 nodes, 6.3 KB, 201 step runs (C5, as
+ * workBound counts them).
  */
 export const COMPOSED_LIMITS = {
   replicate: 16,

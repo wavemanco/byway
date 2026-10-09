@@ -314,6 +314,7 @@ function stepChanges(a: Placed<Step>, b: Placed<Step>, media: [Medium | undefine
     const sa = voiceScope(x, media[0]);
     const sb = voiceScope(y, media[1]);
     if (sa.base !== sb.base) words.push(`you write ${scopeWords(sb)} instead of ${scopeWords(sa)}`);
+    else if ((x.variant ?? '') !== (y.variant ?? '')) other = true;
   } else if ((x.variant ?? '') !== (y.variant ?? '')) other = true;
   if ((x.tier ?? '') !== (y.tier ?? '') && !y.tier) other = true;
   const ox = own(x);
