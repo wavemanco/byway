@@ -212,6 +212,13 @@ export interface SpendFault {
   createdAt: string;
 }
 
+/** A fault as the book keeps it, open or acknowledged, with the line it was recorded for. */
+export interface RecordedFault extends SpendFault {
+  offset: number;
+  sha256: string;
+  acknowledged: boolean;
+}
+
 export interface BookRecords {
   inFlight: PaidCallSummary[];
   uncertain: UncertainCall[];
@@ -239,6 +246,28 @@ export interface LedgerAudit {
   /** Settled calls not yet written to the audit file. */
   pending: number;
   setAside: string[];
+  /** Unacknowledged faults, from any line: while there is one, every paid call waits (ADR-0095 decision 6). */
+  openFaults: number;
+  /** When brokenAt is `line:<n>`: what the book did with that line, as it is now in the file. */
+  brokenLine?: BrokenLine;
+}
+
+/**
+ * What the spend book did with a line of the audit file that is not an entry, so the ledger check says what is true of
+ * it rather than what might be (it is read into the book before the check):
+ * - `fault`: the book read the line as it is now and holds it as an unacknowledged fault, so paid calls wait;
+ * - `acknowledged`: the same, and the person acknowledged it: the budgets do not count it;
+ * - `read-before`: the line changed after the book read that part of the file; the book keeps what it read then (an
+ *   entry it counts, or a fault of its own), and the line as it is now neither counts nor pauses anything;
+ * - `blank`: a blank line, which the book skips: it neither counts nor pauses anything;
+ * - `unread`: the book has not read it yet (it was written while the check ran);
+ * - `torn`: the last line, without its line ending: an append cut short, which is never read, and which byway sets
+ *   aside the next time it writes to the ledger.
+ */
+export interface BrokenLine {
+  /** 1-based, as in `line:<n>`. */
+  line: number;
+  book: 'fault' | 'acknowledged' | 'read-before' | 'blank' | 'unread' | 'torn';
 }
 
 export interface SpendBook {
@@ -291,4 +320,6 @@ export interface SpendBook {
   /** Stops counting calls that may have been billed (the person checked them); returns how many were cleared. */
   clearUncertain(workspaceId: string, opIds: readonly string[]): Promise<number>;
   acknowledgeFault(id: number): Promise<boolean>;
+  /** Every fault the book has recorded, open or acknowledged, oldest first (the ledger check, the start-up report). */
+  faults(): Promise<RecordedFault[]>;
 }

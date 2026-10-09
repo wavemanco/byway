@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
 import { formatUsd } from '../view/format.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
-import { callPurpose, FAULT_ADVICE, inFlightNote, outboxNote, providerName, setAsideNote, UNCERTAIN_ADVICE, uncertainReason } from '../view/spending.ts';
+import { callPurpose, FAULT_ADVICE, inFlightNote, outboxNote, providerName, quietNote, setAsideNote, UNCERTAIN_ADVICE, uncertainReason } from '../view/spending.ts';
 import { get, post } from './api.ts';
 
 interface Props {
@@ -43,19 +43,24 @@ export function SpendingRecords({ records: initial, pricingNote = null }: Props)
     }
   }
 
-  /** Checks the spend ledger on demand (GET /api/ledger; ADR-0091, ADR-0095). */
+  /**
+   * Checks the spend ledger on demand (GET /api/ledger; ADR-0091, ADR-0095). The check reads any new ledger line into the
+   * spend book first, so the records are read again after it: a line it found that pauses paid calls is listed here.
+   */
   async function checkLedger() {
     setCheck({ checking: true, message: null });
     try {
       const { message } = await get<{ intact: boolean; message: string }>('/api/ledger');
       setCheck({ checking: false, message });
+      const next = await get<{ records: SpendRecords; spend: WorkspaceSpend }>('/api/spend').catch(() => null);
+      if (next) setRecords(next.records);
     } catch (err) {
       setCheck({ checking: false, message: err instanceof Error ? err.message : 'The check did not run. Try again.' });
     }
   }
 
   const notes = [inFlightNote(records), outboxNote(records), setAsideNote(records.setAside), pricingNote].filter((n): n is string => n !== null);
-  const quiet = records.faults.length === 0 && records.uncertain.length === 0;
+  const quiet = quietNote(records);
 
   return (
     <section className="settings-section" id="spending" aria-labelledby={`${ids}-spending`}>
@@ -114,7 +119,7 @@ export function SpendingRecords({ records: initial, pricingNote = null }: Props)
         </div>
       ) : null}
 
-      {quiet ? <p className="section-note">Nothing needs you here: no call may have been billed without its cost being known, and every line of the spend ledger can be read.</p> : null}
+      {quiet ? <p className="section-note">{quiet}</p> : null}
       {notes.map((note) => (
         <p key={note} className="section-note">
           {note}

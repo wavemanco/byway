@@ -287,8 +287,16 @@ export interface Gateway {
   verifyLedger(): Promise<string | null>;
   /** What Settings lists of the spend book (ADR-0095): calls under way, calls that may have been billed, faults, set-aside tails. */
   spendRecords(workspaceId: string): Promise<SpendRecords>;
-  /** The audit file's chain, and the audit file against the spend book (on demand: it reads the whole file). */
+  /**
+   * The audit file's chain, and the audit file against the spend book (on demand: it reads the whole file). New ledger
+   * lines are read into the book first, so it can say what the book did with a line that is not an entry, and how many
+   * faults are open.
+   */
   auditLedger(): Promise<LedgerAudit>;
-  /** Stops the gateway's lease renewal and outbox timer, after a last bounded write of the outbox. Call before closing the store. */
+  /**
+   * A clean stop: stops the gateway's lease renewal and outbox timer, hands its calls in progress back to the spend book
+   * at once (SpendBook.endLeases), and makes a last bounded write of the outbox; it starts no paid call afterwards. Call
+   * before closing the store.
+   */
   close(): Promise<void>;
 }

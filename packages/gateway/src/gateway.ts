@@ -4,7 +4,9 @@ import {
   type ArtifactRecord,
   type ArtifactStore,
   type BudgetDetails,
+  type BrokenLine,
   type LedgerAudit,
+  type RecordedFault,
   type CompletionRequest,
   type CompletionResult,
   type Gateway,
@@ -536,9 +538,11 @@ export class ModelGateway implements Gateway {
    * The audit file checked on demand (Settings, the start-up report): its hash chain, and every call the spend book holds
    * as written to it found there at the same cost. A missing one is what a restore of an older or missing ledger.jsonl
    * leaves (the caps still count it: the book is the authority), or an OS crash that lost a line after it was marked.
-   * It only reads.
+   * Like a spend read, it first reads ledger lines the book has not seen into it, so it can say what the book did with
+   * a line that is not an entry (brokenLine) and how many faults are open; otherwise it only reads.
    */
   async auditLedger(): Promise<LedgerAudit> {
+    await this.paid.absorb();
     const brokenAt = await this.ledger.verify();
     const written = new Map<string, number>();
     for (const e of await this.ledger.entries()) if (typeof e.id === 'string') written.set(e.id, e.costUsd);
@@ -547,7 +551,30 @@ export class ModelGateway implements Gateway {
       return cost === undefined || Math.abs(cost - c.costUsd) > 1e-9;
     });
     const pending = (await this.book.unledgered(10_000)).length;
-    return { brokenAt, missing, pending, setAside: await setAsideTails(this.ledger.path) };
+    const faults = await this.book.faults();
+    const brokenLine = await this.brokenLine(brokenAt, faults);
+    return {
+      brokenAt,
+      missing,
+      pending,
+      setAside: await setAsideTails(this.ledger.path),
+      openFaults: faults.filter((f) => !f.acknowledged).length,
+      ...(brokenLine ? { brokenLine } : {}),
+    };
+  }
+
+  /** What the spend book did with the line verify() names as `line:<n>` (see BrokenLine), from its faults and cursor. */
+  private async brokenLine(brokenAt: string | null, faults: readonly RecordedFault[]): Promise<BrokenLine | undefined> {
+    const m = /^line:(\d+)$/.exec(brokenAt ?? '');
+    if (!m) return undefined;
+    const line = Number(m[1]);
+    const at = await this.ledger.lineAt(line);
+    if (!at) return undefined;
+    if (!at.complete) return { line, book: 'torn' };
+    if (at.blank) return { line, book: 'blank' };
+    const fault = faults.find((f) => f.offset === at.offset && f.sha256 === at.sha256);
+    if (fault) return { line, book: fault.acknowledged ? 'acknowledged' : 'fault' };
+    return { line, book: at.offset < (await this.book.cursor()).offset ? 'read-before' : 'unread' };
   }
 
   /** Stops lease renewal and the outbox timer after one last bounded write of the outbox. Call before closing the store. */

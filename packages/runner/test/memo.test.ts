@@ -52,7 +52,7 @@ function counting(text: (n: number) => string = (n) => `answer ${n}`) {
     profileStatus: () => [],
     verifyLedger: async () => null,
     spendRecords: async () => ({ inFlight: [], uncertain: [], faults: [], notInAuditFile: 0, setAside: [] }),
-    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [] }),
+    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 }),
     close: async () => undefined,
   };
   return { gateway, made };

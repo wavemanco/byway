@@ -413,6 +413,33 @@ export class Ledger {
     }
   }
 
+  /**
+   * Where line `n` (1-based, as verify() counts lines) is: its byte offset and hash, as readFrom() reports lines to the
+   * spend book, whether it ends with a line ending (a last line without one is an append cut short, never read), and
+   * whether it is blank (readFrom() skips those). Undefined when the file has fewer lines.
+   */
+  async lineAt(n: number): Promise<{ offset: number; sha256: string; complete: boolean; blank: boolean } | undefined> {
+    let buf: Buffer;
+    try {
+      buf = await this.fs.readFile(this.path);
+    } catch (e) {
+      if (errCode(e) === 'ENOENT') return undefined;
+      throw e;
+    }
+    let start = 0;
+    for (let line = 1; start < buf.length; line++) {
+      const nl = buf.indexOf(0x0a, start);
+      const end = nl < 0 ? buf.length : nl;
+      if (line === n) {
+        const bytes = buf.subarray(start, end);
+        return { offset: start, sha256: lineHash(bytes), complete: nl >= 0, blank: !bytes.toString('utf8').trim() };
+      }
+      if (nl < 0) return undefined;
+      start = nl + 1;
+    }
+    return undefined;
+  }
+
   /** All entries, read incrementally: only bytes appended since the last call are parsed. Unparseable lines are skipped. */
   entries(): Promise<GatewayLedgerEntry[]> {
     const run = this.reads.then(() => this.readNew());

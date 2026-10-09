@@ -37,9 +37,19 @@ export function uncertainReason(call: UncertainCall): string {
 export const UNCERTAIN_ADVICE =
   'Each counts at its estimate against the workspace budget (not the run’s) until you clear it. Look it up in the provider’s own dashboard; clear it once you know whether it was billed.';
 
-/** The advice beside a line of the audit file the spend book could not read. */
+/** The advice beside the lines of the audit file the spend book could not read. */
 export const FAULT_ADVICE =
-  'byway makes no paid call until you acknowledge this, because it cannot tell what that line spent. Look at the line in ledger.jsonl first; if the data directory was damaged, restore the whole directory from a backup (see "Back up and restore" in the README). Acknowledging lets paid calls go on without counting that line.';
+  'byway makes no paid call while a line is listed here, because it cannot tell what that line spent. Look at the line in ledger.jsonl first; if the data directory was damaged, restore the whole directory from a backup (see "Back up and restore" in the README). Once every line listed here is acknowledged, paid calls go on without counting them.';
+
+/**
+ * The note when nothing in Spending records needs the person, or null. It does not say every ledger line can be read:
+ * an acknowledged line still cannot be, and a line that changed after byway read it is not a fault ("Check the spend
+ * ledger" says so).
+ */
+export function quietNote(records: Pick<SpendRecords, 'faults' | 'uncertain'>): string | null {
+  if (records.faults.length > 0 || records.uncertain.length > 0) return null;
+  return 'Nothing needs you here: no call may have been billed without its cost being known, and no line of the spend ledger is waiting to be acknowledged.';
+}
 
 /** Calls under way, or null when there are none. */
 export function inFlightNote(records: Pick<SpendRecords, 'inFlight'>): string | null {
@@ -62,9 +72,12 @@ export function setAsideNote(names: readonly string[]): string | null {
   return `After a crash cut an append short, byway set the torn end of ledger.jsonl aside as ${names.join(', ')}. ${names.length === 1 ? 'It is' : 'They are'} kept for you to inspect; nothing is blocked.`;
 }
 
-/** What Settings' "Check the spend ledger" says: the chain, then the audit file against the spend book. */
-export function auditText(audit: Pick<LedgerAudit, 'brokenAt' | 'missing' | 'pending'>): string {
-  const parts = [ledgerCheckText(audit.brokenAt)];
+/**
+ * What Settings' "Check the spend ledger" says: the chain (with what the spend book did with a line that is not an
+ * entry), then the audit file against the spend book, then whether lines waiting to be acknowledged pause paid calls.
+ */
+export function auditText(audit: Pick<LedgerAudit, 'brokenAt' | 'brokenLine' | 'missing' | 'pending' | 'openFaults'>): string {
+  const parts = [ledgerCheckText(audit.brokenAt, audit.brokenLine)];
   if (audit.missing.length > 0) {
     const n = audit.missing.length;
     const usd = audit.missing.reduce((sum, c) => sum + c.costUsd, 0);
@@ -75,5 +88,11 @@ export function auditText(audit: Pick<LedgerAudit, 'brokenAt' | 'missing' | 'pen
     parts.push('Every call byway’s spending records hold as written there is in it, at the same cost.');
   }
   if (audit.pending > 0) parts.push(`${audit.pending} settled ${audit.pending === 1 ? 'call is' : 'calls are'} not written to it yet; byway writes ${audit.pending === 1 ? 'it' : 'them'} shortly.`);
+  const n = audit.openFaults;
+  // The broken line's own words already say it pauses paid calls when it is the only line waiting.
+  const saidAlready = n === 1 && audit.brokenLine?.book === 'fault';
+  if (n > 0 && !saidAlready) {
+    parts.push(`${n === 1 ? '1 line of the spend ledger is' : `${n} lines of the spend ledger are`} listed under Spending records; byway makes no paid call until ${n === 1 ? 'it is' : 'each is'} acknowledged there.`);
+  }
   return parts.join(' ');
 }

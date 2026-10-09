@@ -26,6 +26,7 @@ import type {
   LedgeredCall,
   PaidCallSummary,
   ProviderId,
+  RecordedFault,
   ProviderJobRole,
   Settlement,
   SettledCall,
@@ -302,6 +303,17 @@ export class SqliteSpendBook implements SpendBook {
     return this.#tx(() => Number(this.#queries().acknowledge.run({ id, at: this.#stamp() }).changes) > 0);
   }
 
+  async faults(): Promise<RecordedFault[]> {
+    return (this.#queries().allFaults.all() as Row[]).map((r) => ({
+      id: Number(r.id),
+      offset: Number(r.ledger_offset),
+      sha256: String(r.line_sha256),
+      detail: String(r.detail),
+      createdAt: String(r.created_at),
+      acknowledged: r.acknowledged_at !== null,
+    }));
+  }
+
   /**
    * One audit-file entry into the book (see SpendBook.absorb), inside absorb's transaction and in a savepoint of its
    * own. An entry the database refuses (it would give one call another call's entry id) changes nothing and is returned
@@ -424,6 +436,7 @@ function prepare(db: DatabaseSync) {
     get: p('SELECT * FROM paid_operations WHERE id = ?'),
     openFault: p('SELECT ledger_offset FROM spend_faults WHERE acknowledged_at IS NULL ORDER BY id LIMIT 1'),
     openFaults: p('SELECT id, detail, created_at FROM spend_faults WHERE acknowledged_at IS NULL ORDER BY id'),
+    allFaults: p('SELECT id, ledger_offset, line_sha256, detail, created_at, acknowledged_at FROM spend_faults ORDER BY id'),
     sweepOpen: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE state = 'open' AND lease_until <= :now`),
     sweepSent: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'interrupted', updated_at = :at WHERE state IN ('sent', 'accepted') AND lease_until <= :now`),
     workspaceExposure: p(`SELECT

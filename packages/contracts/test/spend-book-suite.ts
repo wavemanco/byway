@@ -409,6 +409,27 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
     );
 
     it(
+      'lists every fault it recorded, open or acknowledged, with its line’s offset and hash, oldest first',
+      withBook(async ({ a, b }) => {
+        expect(await a.faults()).toEqual([]);
+        const first = { offset: 0, sha256: 'sha256:first', excerpt: '{corrupted' };
+        const second = { offset: 300, sha256: 'sha256:second', excerpt: '#', problem: 'it is not JSON' };
+        await a.absorb(batch([], { unreadable: [second, first] }));
+        const listed = await b.faults();
+        expect(listed).toEqual([
+          { id: expect.any(Number), offset: 0, sha256: 'sha256:first', detail: expect.stringContaining('byte 0'), createdAt: expect.any(String), acknowledged: false },
+          { id: expect.any(Number), offset: 300, sha256: 'sha256:second', detail: expect.stringContaining('byte 300 of ledger.jsonl cannot be read as a spend entry (it is not JSON)'), createdAt: expect.any(String), acknowledged: false },
+        ]);
+        await b.acknowledgeFault(listed[0]!.id);
+        expect((await a.faults()).map((f) => [f.offset, f.acknowledged])).toEqual([
+          [0, true],
+          [300, false],
+        ]);
+        expect((await a.records('ws')).faults.map((f) => f.id)).toEqual([listed[1]!.id]);
+      }),
+    );
+
+    it(
       'records an entry line it cannot record (a field missing or of the wrong type) as a fault at that line, never an error; the rest of the batch is counted',
       withBook(async ({ a, b }) => {
         const entries = [

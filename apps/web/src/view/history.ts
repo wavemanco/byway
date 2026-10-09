@@ -1,5 +1,5 @@
 /** History and Settings helpers: when a run changed, what an export is called, and what is left to spend. */
-import type { SpendSummary } from '@byway/contracts';
+import type { BrokenLine, SpendSummary } from '@byway/contracts';
 import { formatUsd } from './format.ts';
 
 const MINUTE = 60_000;
@@ -80,20 +80,34 @@ export function assumedPricingNote(assumed: { calls: number; usd: number } | und
   return `${assumed.calls} ${one ? 'call was' : 'calls were'} answered by a model byway has no price for, so ${one ? 'it was' : 'they were'} counted at the price of the model byway asked for (${formatUsd(assumed.usd)}${one ? '' : ' in all'}). Your provider’s bill may differ.`;
 }
 
+/** What the spend book did with a line of the ledger that is not an entry (LedgerAudit.brokenLine), in words. */
+const LINE_FATE: Record<BrokenLine['book'], string> = {
+  fault: 'It is listed under Spending records, and byway makes no paid call until it is acknowledged there.',
+  acknowledged: 'It was acknowledged under Spending records, so the budgets do not count it.',
+  'read-before': "It changed after byway read it: byway's spending records keep what they read there then, and the line as it is now neither counts nor pauses anything.",
+  blank: "It is blank: byway's spending records skip it, so it neither counts nor pauses anything.",
+  unread: 'byway has not read it into its spending records yet; when it does, it lists it under Spending records and makes no paid call until it is acknowledged there.',
+  torn: 'It is the last line and has no line ending, so a crash probably cut an append short; byway sets it aside the next time it writes to the ledger, and the ledger carries on.',
+};
+const LINE_FATE_UNKNOWN =
+  "If it is the last line, a crash probably cut it short, and byway sets it aside the next time it writes to the ledger. If byway read it as it is now, it is listed under Spending records, and paid calls wait until it is acknowledged there; if it changed after byway read it, byway keeps what it read there then.";
+
 /**
  * What Settings' "Check the spend ledger" says about the hash chain (Gateway.auditLedger's brokenAt; ADR-0091): null is
  * an intact chain, `head` a head record that cannot be read, `line:<n>` a line that is not an entry, anything else the id
- * of the first entry that breaks the chain. A torn last line is set aside by the next append. A complete line that is
- * not an entry is a fault in the spend book, which stops paid calls until the person acknowledges it under Spending
- * records (ADR-0095). The backup unit is the whole data directory (ADR-0094): restoring ledger.jsonl alone puts it out
- * of step with its head and with the spend book, so the text never suggests it.
+ * of the first entry that breaks the chain. For a line that is not an entry, `brokenLine` says what the spend book did
+ * with it (ADR-0095), so the words say what is true of this line: a fault that pauses paid calls, an acknowledged one,
+ * a line that changed after the book read it, a blank line, or a torn last line. Without it they say each case
+ * conditionally and claim no pause. The backup unit is the whole data directory (ADR-0094): restoring ledger.jsonl alone
+ * puts it out of step with its head and with the spend book, so the text never suggests it.
  */
-export function ledgerCheckText(brokenAt: string | null): string {
+export function ledgerCheckText(brokenAt: string | null, brokenLine?: BrokenLine): string {
   if (brokenAt === null) return 'The spend ledger checks out: every entry is intact and chained to the one before it.';
   if (brokenAt === 'head') return "The spend ledger's head record cannot be read, so whether entries were cut off the end cannot be checked. The next model call rewrites it.";
   const line = /^line:(\d+)$/.exec(brokenAt);
   if (line) {
-    return `Line ${line[1]} of the spend ledger cannot be read as an entry. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. Otherwise it is listed under Spending records, and byway makes no paid call until it is acknowledged there. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).`;
+    const what = brokenLine && String(brokenLine.line) === line[1] ? LINE_FATE[brokenLine.book] : LINE_FATE_UNKNOWN;
+    return `Line ${line[1]} of the spend ledger cannot be read as an entry. ${what} To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).`;
   }
   return `The spend ledger fails its check at entry ${brokenAt}: an entry was changed, lost or cut off. The budgets count from byway's spending records in its database, not from this file.`;
 }

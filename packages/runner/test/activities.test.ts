@@ -64,7 +64,7 @@ function scripted(answers: string[], opts: { demo?: boolean; statuses?: ProfileS
     profileStatus: () => opts.statuses ?? [status(DEMO, true), status(NO_MEDIA, false)],
     verifyLedger: async () => null,
     spendRecords: async () => ({ inFlight: [], uncertain: [], faults: [], notInAuditFile: 0, setAside: [] }),
-    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [] }),
+    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 }),
     close: async () => undefined,
   };
 }

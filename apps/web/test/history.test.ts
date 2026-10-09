@@ -56,9 +56,33 @@ describe('Settings: calls settled at an assumed price (F04, ADR-0091)', () => {
 });
 
 describe('Settings: checking the spend ledger (ADR-0091, ADR-0094, ADR-0095)', () => {
-  it('for a line that is not an entry: a torn last line is set aside, any other stops paid calls until acknowledged, and a backup is the whole data directory', () => {
-    expect(ledgerCheckText('line:7')).toBe(
-      'Line 7 of the spend ledger cannot be read as an entry. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. Otherwise it is listed under Spending records, and byway makes no paid call until it is acknowledged there. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).',
+  const BACKUP = 'To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).';
+
+  it('for a line that is not an entry, says what byway did with it, from its spending records, and that a backup is the whole data directory', () => {
+    expect(ledgerCheckText('line:7', { line: 7, book: 'fault' })).toBe(
+      `Line 7 of the spend ledger cannot be read as an entry. It is listed under Spending records, and byway makes no paid call until it is acknowledged there. ${BACKUP}`,
+    );
+    expect(ledgerCheckText('line:7', { line: 7, book: 'acknowledged' })).toBe(
+      `Line 7 of the spend ledger cannot be read as an entry. It was acknowledged under Spending records, so the budgets do not count it. ${BACKUP}`,
+    );
+    expect(ledgerCheckText('line:7', { line: 7, book: 'read-before' })).toBe(
+      `Line 7 of the spend ledger cannot be read as an entry. It changed after byway read it: byway's spending records keep what they read there then, and the line as it is now neither counts nor pauses anything. ${BACKUP}`,
+    );
+    expect(ledgerCheckText('line:7', { line: 7, book: 'blank' })).toBe(
+      `Line 7 of the spend ledger cannot be read as an entry. It is blank: byway's spending records skip it, so it neither counts nor pauses anything. ${BACKUP}`,
+    );
+    expect(ledgerCheckText('line:7', { line: 7, book: 'unread' })).toBe(
+      `Line 7 of the spend ledger cannot be read as an entry. byway has not read it into its spending records yet; when it does, it lists it under Spending records and makes no paid call until it is acknowledged there. ${BACKUP}`,
+    );
+    expect(ledgerCheckText('line:7', { line: 7, book: 'torn' })).toBe(
+      `Line 7 of the spend ledger cannot be read as an entry. It is the last line and has no line ending, so a crash probably cut an append short; byway sets it aside the next time it writes to the ledger, and the ledger carries on. ${BACKUP}`,
+    );
+  });
+
+  it('for a line that is not an entry, without what byway did with it, says each case conditionally and claims no pause', () => {
+    const text = ledgerCheckText('line:7');
+    expect(text).toBe(
+      `Line 7 of the spend ledger cannot be read as an entry. If it is the last line, a crash probably cut it short, and byway sets it aside the next time it writes to the ledger. If byway read it as it is now, it is listed under Spending records, and paid calls wait until it is acknowledged there; if it changed after byway read it, byway keeps what it read there then. ${BACKUP}`,
     );
   });
 

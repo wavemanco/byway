@@ -209,7 +209,7 @@ describe('the audit file is written from the book (the outbox)', () => {
     await until(() => lines().length === 1);
     expect(lines()[0]).toMatchObject({ id: res.ledgerEntryId, operationId: expect.any(String), costUsd: res.costUsd });
     expect(await g.verifyLedger()).toBeNull();
-    expect(await g.auditLedger()).toEqual({ brokenAt: null, missing: [], pending: 0, setAside: [] });
+    expect(await g.auditLedger()).toEqual({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 });
   });
 
   it('many calls settling while the lock is held each wait for at most two drains, not for every other call’s', async () => {
@@ -295,6 +295,62 @@ describe('an existing ledger (spend from before the book)', () => {
     expect(faults).toEqual([expect.objectContaining({ detail: expect.stringMatching(/byte 0/) })]);
     expect(await book.acknowledgeFault(faults[0]!.id)).toBe(true);
     await expect(g.complete(ask())).resolves.toMatchObject({ provider: 'anthropic' });
+  });
+});
+
+describe('the ledger check says what the spend book did with a line that is not an entry (Settings, the start-up report)', () => {
+  async function twoEntries() {
+    const ledger = new Ledger({ path: ledgerPath });
+    await ledger.append(legacy(0.05));
+    await ledger.append(legacy(0.01));
+  }
+  /** Line 1 replaced by bytes that are not JSON, at the same length, as a bad sector or an editor can leave it. */
+  const damageFirstLine = () => {
+    const text = readFileSync(ledgerPath, 'utf8');
+    writeFileSync(ledgerPath, `#${text.slice(1)}`);
+  };
+
+  it('damaged before byway read it: a fault that pauses paid calls, then acknowledged', async () => {
+    await twoEntries();
+    damageFirstLine();
+    const g = gateway();
+    // The check reads the file into the book first, as the first model call would.
+    const audit = await g.auditLedger();
+    expect(audit).toMatchObject({ brokenAt: 'line:1', brokenLine: { line: 1, book: 'fault' }, openFaults: 1 });
+    const { faults } = await g.spendRecords('ws');
+    expect(faults).toHaveLength(1);
+    await book.acknowledgeFault(faults[0]!.id);
+    expect(await g.auditLedger()).toMatchObject({ brokenAt: 'line:1', brokenLine: { line: 1, book: 'acknowledged' }, openFaults: 0 });
+  });
+
+  it('damaged after byway read it: the book keeps what it read, and nothing pauses paid calls', async () => {
+    caps.workspace = 10;
+    await twoEntries();
+    const g = gateway({ clients: { anthropic: fakeAnthropic().client } });
+    expect((await g.spend('ws')).spentUsd).toBeCloseTo(0.06, 9);
+    damageFirstLine();
+    expect(await g.auditLedger()).toMatchObject({ brokenAt: 'line:1', brokenLine: { line: 1, book: 'read-before' }, openFaults: 0 });
+    expect((await g.spend('ws')).spentUsd).toBeCloseTo(0.06, 9);
+    await expect(g.complete(ask())).resolves.toMatchObject({ provider: 'anthropic' });
+  });
+
+  it('a torn last line: not read, not a fault; set aside when byway next writes to the ledger', async () => {
+    await twoEntries();
+    writeFileSync(ledgerPath, `${readFileSync(ledgerPath, 'utf8')}{"workspaceId":"ws","cost`);
+    const g = gateway();
+    expect(await g.auditLedger()).toMatchObject({ brokenAt: 'line:3', brokenLine: { line: 3, book: 'torn' }, openFaults: 0 });
+  });
+
+  it('a blank line: skipped by the book, so it neither counts nor pauses anything', async () => {
+    await twoEntries();
+    const [one, two] = readFileSync(ledgerPath, 'utf8').trimEnd().split('\n');
+    writeFileSync(ledgerPath, `${one}\n\n${two}\n`);
+    expect(await gateway().auditLedger()).toMatchObject({ brokenAt: 'line:2', brokenLine: { line: 2, book: 'blank' }, openFaults: 0 });
+  });
+
+  it('an intact ledger has no broken line and no open fault', async () => {
+    await twoEntries();
+    expect(await gateway().auditLedger()).toEqual({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 });
   });
 });
 

@@ -20,6 +20,7 @@ import type {
   LedgeredCall,
   PaidOperationState,
   ProviderJobRole,
+  RecordedFault,
   Settlement,
   SettledCall,
   SpendBook,
@@ -76,7 +77,7 @@ const uncertain = (r: Row, now: number) => r.clearedAt === undefined && (r.state
 
 export class MemorySpendBook implements SpendBook {
   private readonly rows = new Map<string, Row>();
-  private readonly faults: Fault[] = [];
+  private readonly faultList: Fault[] = [];
   private position: LedgerCursor = { offset: 0, tailStart: 0, tailSha256: null };
   private settleSeq = 0;
   private readonly now: () => Date;
@@ -89,7 +90,7 @@ export class MemorySpendBook implements SpendBook {
     if (this.rows.has(req.opId)) throw new Error(`paid operation ${req.opId} already exists`);
     const now = this.ms();
     if (req.paid) {
-      const fault = this.faults.find((f) => f.acknowledgedAt === undefined);
+      const fault = this.faultList.find((f) => f.acknowledgedAt === undefined);
       if (fault) return { fault: memoryFaultMessage(fault.offset) };
     }
     const at = this.stamp();
@@ -218,8 +219,8 @@ export class MemorySpendBook implements SpendBook {
     }
     let faults = 0;
     for (const { line, problem } of refused.sort((x, y) => x.line.offset - y.line.offset)) {
-      if (this.faults.some((f) => f.offset === line.offset && f.sha256 === line.sha256)) continue;
-      this.faults.push({ id: this.faults.length + 1, offset: line.offset, sha256: line.sha256, detail: spendFaultDetail(line, problem), createdAt: at });
+      if (this.faultList.some((f) => f.offset === line.offset && f.sha256 === line.sha256)) continue;
+      this.faultList.push({ id: this.faultList.length + 1, offset: line.offset, sha256: line.sha256, detail: spendFaultDetail(line, problem), createdAt: at });
       faults += 1;
     }
     this.position = { ...batch.cursor };
@@ -286,7 +287,7 @@ export class MemorySpendBook implements SpendBook {
           ...(r.providerJobs && Object.keys(r.providerJobs).length > 0 ? { providerJobs: { ...r.providerJobs } } : {}),
         };
       });
-    const open = this.faults.filter((f) => f.acknowledgedAt === undefined).map((f) => ({ id: f.id, detail: f.detail, createdAt: f.createdAt }));
+    const open = this.faultList.filter((f) => f.acknowledgedAt === undefined).map((f) => ({ id: f.id, detail: f.detail, createdAt: f.createdAt }));
     const notInAuditFile = [...this.rows.values()].filter((r) => r.state === 'settled' && r.ledgeredSeq === undefined).length;
     return { inFlight: flying, uncertain: unsure, faults: open, notInAuditFile };
   }
@@ -306,10 +307,14 @@ export class MemorySpendBook implements SpendBook {
   }
 
   async acknowledgeFault(id: number): Promise<boolean> {
-    const f = this.faults.find((x) => x.id === id && x.acknowledgedAt === undefined);
+    const f = this.faultList.find((x) => x.id === id && x.acknowledgedAt === undefined);
     if (!f) return false;
     f.acknowledgedAt = this.stamp();
     return true;
+  }
+
+  async faults(): Promise<RecordedFault[]> {
+    return this.faultList.map((f) => ({ id: f.id, offset: f.offset, sha256: f.sha256, detail: f.detail, createdAt: f.createdAt, acknowledged: f.acknowledgedAt !== undefined }));
   }
 
   /** One entry into the book; returns why it cannot be recorded (as the store's UNIQUE entry id refuses it), changing nothing. */
