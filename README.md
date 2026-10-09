@@ -34,7 +34,7 @@ OPENROUTER_API_KEY=...
 FAL_KEY=...          # video clips for Ad Video Chain
 ```
 
-Keys are read from the process environment (a key exported in your shell wins over the file). They never enter the database, the ledger, artifacts, logs, prompts or the browser, and nothing byway writes under the repo holds them: the web build gets no keys, and Next.js's build caches, which would keep a copy of the environment, are off (byway removes any an earlier version left in `apps/web/.next`). Every run has a budget, and the workspace has one too; a run stops and asks before it would spend more.
+Keys are read from the process environment (a key exported in your shell wins over the file). They never enter the database, the ledger, artifacts, logs, prompts or the browser, and nothing byway writes under the repo holds them: the web build gets no keys, and Next.js's build caches, which would keep a copy of the environment, are off (byway removes any an earlier version left in `apps/web/.next`). Every run has a budget, and the workspace has one too. A run asks before starting a call whose estimated cost would take it over its budget, and byway does not start a call whose estimated cost would take the workspace past its budget. Estimates can be low, and a single call can cost twice its estimate or more, so spending can end over a budget.
 
 ## Scripts
 
@@ -91,6 +91,7 @@ Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Win
 | `artifacts/sha256/…` | Every artifact (pages, documents, renders, images, clips), content-addressed |
 | `ledger.jsonl` | One hash-chained entry per model, image or video call: purpose, model, usage, cost (bodies by hash) |
 | `ledger.jsonl.head` | The ledger's last entry, so a cut-off ledger is detectable |
+| `ledger.jsonl.damaged-<time>-<pid>` | Only after a crash cut an append short: the torn last line, set aside by the next call so the ledger keeps working ([ADR-0091](docs/adr/0091-provider-edge-billing-fixes.md)). Kept for inspection; byway never reads it |
 | `exposure.jsonl` | The exposure register (CR12): the first time each model outside the Anthropic family judged work in a given role, per workspace |
 | `temporal.sqlite` | The local Temporal server's state, so runs survive a restart (with any `temporal.sqlite-*` files beside it) |
 | `bin/` | byway's own copy of the Temporal CLI, downloaded again when missing |

@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GatewayError, type CheckpointRecord, type GatewayErrorCode } from '@byway/contracts';
 import { AdvisorError } from '@byway/advisor';
@@ -6,6 +8,7 @@ import type { Services } from '../src/services/index.ts';
 import {
   HttpError,
   addRef,
+  checkLedger,
   artifactResponse,
   composeIntake,
   controlRun,
@@ -383,5 +386,70 @@ describe('exports carry their images (EXP-1)', PRODUCT_PATH, () => {
     const md = await d.services.store.artifacts.putText(`![gone](/api/artifacts/${missing}) [note](/artifacts/${note.id})`, 'text/markdown');
     const body = await (await artifactResponse(d.services, md.id, new URL(`http://127.0.0.1:3000/artifacts/${md.id}?download=1`))).text();
     expect(body).toBe(`![gone](/api/artifacts/${missing}) [note](/artifacts/${note.id})`);
+  });
+});
+
+describe('Settings: checking the spend ledger on demand (ADR-0091)', PRODUCT_PATH, () => {
+  it('says the ledger checks out, then names the damage once a line is broken', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    await currentRecommendation(d, intakeId);
+    expect(await checkLedger(d)).toEqual({ intact: true, message: expect.stringMatching(/checks out/) });
+    const file = path.join(current!.dataDir, 'ledger.jsonl');
+    writeFileSync(file, `{not an entry\n${readFileSync(file, 'utf8')}`);
+    expect(await checkLedger(d)).toEqual({ intact: false, message: expect.stringMatching(/^Line 1 of the spend ledger cannot be read/) });
+  });
+});
+
+describe('the first recommendation is asked for once per intake (F03, ADR-0091)', PRODUCT_PATH, () => {
+  const intakeCalls = () =>
+    readFileSync(path.join(current!.dataDir, 'ledger.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { purpose: string })
+      .filter((e) => e.purpose === 'advisor.intake').length;
+
+  it('two first loads of one intake at once share one advisor call and one ledger entry', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const [a, b] = await Promise.all([recommendationOrProblem(d, intakeId), recommendationOrProblem(d, intakeId)]);
+    expect(a).toEqual(b);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    expect(intakeCalls()).toBe(1);
+    // Later loads read the stored one.
+    await recommendationOrProblem(d, intakeId);
+    expect(recommend).toHaveBeenCalledTimes(1);
+  });
+
+  it('a page load and Try again ({ ensure: true }) at once share the call too', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const [page, command] = await Promise.all([recommendationOrProblem(d, intakeId), recommendCommand(d, intakeId, { ensure: true })]);
+    expect('recommendation' in page && page.recommendation).toEqual(command.recommendation);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    expect(intakeCalls()).toBe(1);
+  });
+
+  it('shares a failure with the loads that joined it, keeps nothing, and the next load asks again', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    recommend.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
+    const both = await Promise.all([recommendationOrProblem(d, intakeId), recommendationOrProblem(d, intakeId)]);
+    expect(both).toEqual([{ problem: expect.stringMatching(/busy/) }, { problem: expect.stringMatching(/busy/) }]);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    expect('recommendation' in (await recommendationOrProblem(d, intakeId))).toBe(true);
+    expect(recommend).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not share between intakes', async () => {
+    const d = await deps();
+    const one = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const two = await createIntake(d, { text: 'Tighten my quarterly memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    await Promise.all([currentRecommendation(d, one.intakeId), currentRecommendation(d, two.intakeId)]);
+    expect(recommend).toHaveBeenCalledTimes(2);
   });
 });

@@ -59,3 +59,32 @@ export function budgetProblem(budgetUsd: number, spend: WorkspaceSpend): string 
   if (budgetUsd <= spend.remainingUsd + 1e-9) return null;
   return `This budget (${formatUsd(budgetUsd)}) is more than what is left of your workspace budget (${formatUsd(spend.remainingUsd)}). Lower it, or raise the workspace budget in Settings.`;
 }
+
+/**
+ * Settings' note on calls the gateway settled at an assumed price (SpendSummary.assumedPricing, F04): the provider
+ * said a model served them that byway has no price for, so they were counted at the requested model's price. Null when
+ * there are none, so the note appears only when there is something to know.
+ */
+export function assumedPricingNote(assumed: { calls: number; usd: number } | undefined): string | null {
+  if (!assumed || assumed.calls <= 0) return null;
+  const one = assumed.calls === 1;
+  return `${assumed.calls} ${one ? 'call was' : 'calls were'} answered by a model byway has no price for, so ${one ? 'it was' : 'they were'} counted at the price of the model byway asked for (${formatUsd(assumed.usd)}${one ? '' : ' in all'}). Your provider’s bill may differ.`;
+}
+
+/**
+ * What Settings' "Check the spend ledger" says (Gateway.verifyLedger; ADR-0091): null is an intact chain, `head` a head
+ * record that cannot be read, `line:<n>` a line that is not an entry, anything else the id of the first entry that
+ * breaks the chain. A `line:<n>` line's spending may or may not be counted (a line that is not JSON is skipped, a JSON
+ * entry missing only its id is still summed), and a torn last line is set aside by the next append. The backup unit is
+ * the whole data directory (ADR-0094): restoring ledger.jsonl alone puts it out of step with its head and with the
+ * runs' recorded costs, so the text never suggests it.
+ */
+export function ledgerCheckText(brokenAt: string | null): string {
+  if (brokenAt === null) return 'The spend ledger checks out: every entry is intact and chained to the one before it.';
+  if (brokenAt === 'head') return "The spend ledger's head record cannot be read, so whether entries were cut off the end cannot be checked. The next model call rewrites it.";
+  const line = /^line:(\d+)$/.exec(brokenAt);
+  if (line) {
+    return `Line ${line[1]} of the spend ledger cannot be read as an entry, so its spending may not be counted. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).`;
+  }
+  return `The spend ledger fails its check at entry ${brokenAt}: an entry was changed, lost or cut off, so its totals may be short.`;
+}

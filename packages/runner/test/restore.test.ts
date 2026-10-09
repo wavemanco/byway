@@ -175,6 +175,15 @@ describe('the start-up report after a restore (R4)', () => {
     expect(reportLines(found).lines.join('\n')).toMatch(/spend ledger fails its check at entry/);
   });
 
+  it('reports a head record that cannot be read, instead of failing the report (ADR-0091)', async () => {
+    const base = await original();
+    const dir = restored(base);
+    writeFileSync(path.join(dir, HEAD), '{"seq":2,');
+    const found = await reopen(dir).report(base.workspaceId);
+    expect(found.ledgerBrokenAt).toBe('head');
+    expect(reportLines(found).lines.join('\n')).toMatch(/spend ledger's head record \(ledger\.jsonl\.head\) cannot be read/);
+  });
+
   it('only reads: the records, the ledger and the artifact files are unchanged after a report', async () => {
     const base = await original();
     const dir = restored(base, { without: [LEDGER, HEAD] });

@@ -26,7 +26,7 @@ export interface UnledgeredRun {
 
 export interface DataDirReport {
   store: StoreCheck;
-  /** The first ledger entry that breaks the hash chain (or `line:<n>`), or null when the chain and head agree. */
+  /** The first ledger entry that breaks the hash chain (or `line:<n>`, or `head` for a head record that cannot be read), or null when the chain and head agree. */
   ledgerBrokenAt: string | null;
   /** Runs whose recorded cost is more than a cent above what the ledger holds for them, in run id order. */
   unledgered: UnledgeredRun[];
@@ -79,7 +79,9 @@ export function reportLines(report: DataDirReport): { ok: boolean; lines: string
       `${plural(store.missing.length, 'artifact file is', 'artifact files are')} missing or cut short (${listed(store.missing.map((m) => m.id))}), so what ${one ? 'it holds' : 'they hold'} cannot be shown${runs.length > 0 ? `. ${runs.length === 1 ? 'Run that uses' : 'Runs that use'} ${one ? 'it' : 'them'}: ${listed(runs)}` : ''}.`,
     );
   }
-  if (report.ledgerBrokenAt !== null) {
+  if (report.ledgerBrokenAt === 'head') {
+    problems.push("The spend ledger's head record (ledger.jsonl.head) cannot be read, so whether entries were cut off the end cannot be checked; the next model call rewrites it.");
+  } else if (report.ledgerBrokenAt !== null) {
     problems.push(`The spend ledger fails its check at entry ${report.ledgerBrokenAt} (an entry was changed, lost or cut off), so its totals may be short.`);
   }
   if (report.unledgered.length > 0) {

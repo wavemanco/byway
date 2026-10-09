@@ -147,6 +147,11 @@ export interface SpendSummary {
   spentUsd: number;
   capUsd: number;
   byRun: Record<string, number>;
+  /**
+   * Calls in this workspace whose served model had no price row, so they were settled at the requested model's rates
+   * (LedgerEntry.priceBasis 'assumed'): how many, and what they were counted at. Absent when there are none.
+   */
+  assumedPricing?: { calls: number; usd: number };
 }
 
 /** One append-only, hash-chained ledger entry (CR7). Request and response bodies are stored by hash, not inline. */
@@ -173,6 +178,11 @@ export interface LedgerEntry {
   upstreamProvider?: string;
   /** The prompt template behind a completion (CompletionRequest.prompt). Covered by the hash chain. */
   prompt?: PromptRef;
+  /**
+   * 'assumed' when a served model had no price row and was settled at the requested model's rates (F04, ADR-0091);
+   * absent when every model was priced at its own row or as a snapshot of a priced model. Covered by the hash chain.
+   */
+  priceBasis?: 'assumed';
 }
 
 export type GatewayErrorCode =
@@ -246,6 +256,9 @@ export interface Gateway {
   profiles(): ModelProfile[];
   /** Every profile with what it is missing, for Settings. */
   profileStatus(): ProfileStatus[];
-  /** Verify the ledger hash chain; returns the first broken entry id, or null if intact. */
+  /**
+   * Verify the ledger hash chain; returns the first broken entry id (`line:<n>` for a line that is not an entry, `head`
+   * for a head record that cannot be read), or null if intact. Reports damage rather than throwing on it.
+   */
   verifyLedger(): Promise<string | null>;
 }

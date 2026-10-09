@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GatewayError, type ArtifactRecord, type CompletionRequest, type ImageRequest } from '@byway/contracts';
@@ -108,6 +108,20 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(err.message).toMatch(/billed/);
     expect(err.message).toMatch(/ledger/);
     expect(calls).toHaveLength(1);
+  });
+
+  it('ledgers and counts a billed call after a crash left the ledger with a torn last line (F03)', async () => {
+    const { client, calls } = fakeAnthropic();
+    const g = gateway({ clients: { anthropic: client } });
+    const first = await g.complete(completion());
+    // An OS crash mid-append: a partial line with no newline.
+    writeFileSync(join(dir, 'ledger.jsonl'), `${readFileSync(join(dir, 'ledger.jsonl'), 'utf8')}{"workspaceId":"ws-1","cost`);
+    const second = await g.complete(completion());
+    expect(calls).toHaveLength(2);
+    expect(ledgerLines().map((e) => e.id)).toEqual([first.ledgerEntryId, second.ledgerEntryId]);
+    expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(first.costUsd + second.costUsd, 9);
+    expect(await g.verifyLedger()).toBeNull();
+    expect(readdirSync(dir).filter((n) => n.startsWith('ledger.jsonl.damaged-'))).toHaveLength(1);
   });
 
   it('waits up to two minutes by default for the ledger lock on a billed call', () => {

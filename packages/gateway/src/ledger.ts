@@ -74,6 +74,32 @@ function expectedHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string | undefin
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** A stored line read back as an entry the chain can continue from, or undefined (not JSON, not an entry). */
+function chainable(line: string): GatewayLedgerEntry | undefined {
+  try {
+    const parsed = JSON.parse(line) as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    const e = parsed as Partial<GatewayLedgerEntry>;
+    return Number.isSafeInteger(e.seq) && (e.seq as number) >= 1 && typeof e.hash === 'string' ? (parsed as GatewayLedgerEntry) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A head record as append writes it, or undefined when the text is not one (not JSON, a seq below 1, a field missing). */
+function headOf(text: string): Head | undefined {
+  try {
+    const h = JSON.parse(text) as Partial<Head> | null;
+    if (h === null || typeof h !== 'object' || Array.isArray(h)) return undefined;
+    return Number.isSafeInteger(h.seq) && (h.seq as number) >= 1 && typeof h.id === 'string' && typeof h.hash === 'string' ? (h as Head) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A file name stamp without colons, which Windows refuses: 2026-10-08T12:13:14.123Z becomes 20261008T121314123Z. */
+const fileStamp = (at: Date) => at.toISOString().replace(/[-:.]/g, '');
+
 /**
  * On Windows a rename onto, or a delete of, a file another process has open fails briefly with EPERM, EBUSY or
  * EACCES; try again a bounded number of times.
@@ -116,6 +142,8 @@ export class Ledger {
    * offset, and the slower one (sized before the faster one advanced it) would ask for a negative number of bytes.
    */
   private reads: Promise<unknown> = Promise.resolve();
+  /** The last verify() result, with the sizes and modification times of the ledger and its head it was computed from. */
+  private verified: { key: string; result: string | null } | undefined;
 
   constructor(opts: LedgerOptions) {
     this.path = opts.path;
@@ -138,6 +166,7 @@ export class Ledger {
   }
 
   private async appendLocked(draft: LedgerDraft): Promise<GatewayLedgerEntry> {
+    await this.repairTail();
     const last = await this.lastEntry();
     const body = defined({
       ...draft,
@@ -199,7 +228,59 @@ export class Ledger {
     }
   }
 
-  /** The last complete line, read from the end of the file so appends stay cheap as the ledger grows. */
+  /**
+   * Run under the lock, before an append (F03, ADR-0091). A file that does not end in a newline has a torn last line:
+   * an OS crash, power loss or a full disk cut an append short (a killed process cannot: an entry is one small append).
+   * Appending after it would weld the new entry onto the fragment, and lastEntry() used to throw on it, so every later
+   * billed call failed to be ledgered and went uncounted. The fragment is copied to
+   * `<ledger>.damaged-<yyyyMMddTHHmmssSSSZ>-<pid>` (no colons: Windows refuses them), and only once that copy is written
+   * is the file cut back to its last newline, so the bytes are never lost. A last line that is a whole entry and only
+   * lost its newline (an editor strips it) is not damage: it is ended with a newline instead, and kept.
+   */
+  private async repairTail(): Promise<void> {
+    let handle: Awaited<ReturnType<LedgerFs['open']>>;
+    try {
+      handle = await this.fs.open(this.path, 'r+');
+    } catch (e) {
+      if (errCode(e) === 'ENOENT') return;
+      throw e;
+    }
+    try {
+      const { size } = await handle.stat();
+      if (size === 0) return;
+      const lastByte = Buffer.alloc(1);
+      await handle.read(lastByte, 0, 1, size - 1);
+      if (lastByte[0] === 0x0a) return;
+      let cut = 0;
+      for (let end = size; end > 0; ) {
+        const start = Math.max(0, end - 64 * 1024);
+        const buf = Buffer.alloc(end - start);
+        await handle.read(buf, 0, buf.length, start);
+        const nl = buf.lastIndexOf(0x0a);
+        if (nl >= 0) {
+          cut = start + nl + 1;
+          break;
+        }
+        end = start;
+      }
+      const tail = Buffer.alloc(size - cut);
+      await handle.read(tail, 0, tail.length, cut);
+      if (chainable(tail.toString('utf8'))) {
+        await handle.write('\n', size, 'utf8');
+        return;
+      }
+      await this.fs.writeFile(`${this.path}.damaged-${fileStamp(this.now())}-${process.pid}`, tail, { flag: 'wx' });
+      await handle.truncate(cut);
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /**
+   * The last line that is an entry, read from the end of the file so appends stay cheap as the ledger grows. A complete
+   * line that is not one (damage verify() reports) is passed over, so the chain continues from the last entry there is
+   * and a billed call is still ledgered and counted.
+   */
   private async lastEntry(): Promise<GatewayLedgerEntry | undefined> {
     let handle: Awaited<ReturnType<LedgerFs['open']>>;
     try {
@@ -214,12 +295,14 @@ export class Ledger {
         const start = Math.max(0, size - chunk);
         const buf = Buffer.alloc(size - start);
         await handle.read(buf, 0, buf.length, start);
-        const text = buf.toString('utf8').replace(/\n+$/, '');
-        const nl = text.lastIndexOf('\n');
-        if (nl >= 0 || start === 0) {
-          const line = text.slice(nl + 1);
-          return line ? (JSON.parse(line) as GatewayLedgerEntry) : undefined;
+        const lines = buf.toString('utf8').split('\n');
+        // A chunk that does not start at the beginning of the file may start mid-line.
+        if (start > 0) lines.shift();
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const entry = chainable(lines[i] as string);
+          if (entry) return entry;
         }
+        if (start === 0) return undefined;
       }
     } finally {
       await handle.close();
@@ -271,9 +354,35 @@ export class Ledger {
   /**
    * Re-read the whole file and check every link. Returns the id of the first entry that breaks the chain (an edited,
    * moved or missing predecessor, or one with no canonical form), `line:<n>` for an unparseable line or one that is not
-   * an entry object (or an entry without an id), or null when the ledger is intact.
+   * an entry object (or an entry without an id), `head` for a head record that is not one (not JSON, a seq below 1, a
+   * field missing), or null when the ledger is intact. It reports damage; it does not throw on it (ADR-0083).
+   * The result is kept with the size and modification time of the ledger and of its head, and reused while neither has
+   * changed, so it can be asked for on demand (Settings) without re-reading a large ledger each time (ADR-0091). An edit
+   * that keeps both a file's size and its modification time is therefore not seen until the file next changes.
    */
   async verify(): Promise<string | null> {
+    const key = await this.filesKey();
+    if (this.verified?.key === key) return this.verified.result;
+    const result = await this.verifyNow();
+    this.verified = { key, result };
+    return result;
+  }
+
+  /** The ledger's and the head's size and modification time, which a cached verify() result is valid for. */
+  private async filesKey(): Promise<string> {
+    const part = async (file: string) => {
+      try {
+        const st = await this.fs.stat(file);
+        return `${st.size}:${st.mtimeMs}`;
+      } catch (e) {
+        if (errCode(e) === 'ENOENT') return 'none';
+        throw e;
+      }
+    };
+    return `${await part(this.path)}|${await part(this.headPath)}`;
+  }
+
+  private async verifyNow(): Promise<string | null> {
     let text = '';
     try {
       text = await this.fs.readFile(this.path, 'utf8');
@@ -303,6 +412,7 @@ export class Ledger {
       prev = entry;
     }
     const head = await this.readHead();
+    if (head === 'damaged') return 'head';
     if (head) {
       const lastSeq = prev?.seq ?? 0;
       // The head may lag the file by one after a crash between the two writes; it may never run ahead of it.
@@ -313,12 +423,15 @@ export class Ledger {
     return null;
   }
 
-  private async readHead(): Promise<Head | undefined> {
+  /** The head record; undefined when there is none, 'damaged' when the file is not one. */
+  private async readHead(): Promise<Head | 'damaged' | undefined> {
+    let text: string;
     try {
-      return JSON.parse(await this.fs.readFile(this.headPath, 'utf8')) as Head;
+      text = await this.fs.readFile(this.headPath, 'utf8');
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      if (errCode(e) === 'ENOENT') return undefined;
       throw e;
     }
+    return headOf(text) ?? 'damaged';
   }
 }

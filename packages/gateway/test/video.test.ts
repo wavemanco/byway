@@ -1,4 +1,6 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GatewayError, type VideoRequest } from '@byway/contracts';
@@ -6,7 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { admitMediaUrl, FAL_EXTRACT_FRAME, readCapped, sniffVideoType } from '../src/providers/fal.ts';
-import { countingBody, fakeFal, fakeFetch, httpError, MemoryArtifacts, MP4_BYTES, WEBM_BYTES } from './fakes.ts';
+import { countingBody, fakeFal, fakeFetch, falQueueError, fetchFailed, httpError, MemoryArtifacts, MP4_BYTES, WEBM_BYTES } from './fakes.ts';
 
 /** Shaped like a fal key (key id, a colon, the secret), and not a real one. */
 const FAL_KEY = '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff';
@@ -153,12 +155,53 @@ describe('gateway: video through fal.ai', () => {
     expect(fal.calls).toEqual([]);
   });
 
-  it('retries transient fal failures and ledgers the clip once', async () => {
-    const fal = fakeFal({ [BALANCED_VIDEO]: [httpError(503), httpError(429)] });
+  it("re-sends a submission fal refused with its own error body (503, 429: nothing was enqueued), and ledgers the clip once", async () => {
+    const fal = fakeFal({ [BALANCED_VIDEO]: [falQueueError(503, { detail: 'Service temporarily unavailable' }), falQueueError(429, { detail: 'Too many requests' })] });
     const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
     await g.video(req());
     expect(fal.calls.filter((c) => c.endpoint === BALANCED_VIDEO)).toHaveLength(3);
     expect(ledgerLines()).toHaveLength(1);
+  });
+
+  /** F03: a submission that may have reached fal is never sent again, so a lost answer cannot buy a second clip. */
+  it.each([
+    ['a 502 from a gateway in between', () => falQueueError(502)],
+    ['a 504', () => falQueueError(504, { detail: 'Gateway Timeout' })],
+    ['a 503 with no fal body', () => falQueueError(503)],
+    ['a reset after the request was written', () => fetchFailed('ECONNRESET')],
+    ['an answer with no request id', () => Object.assign(new Error('fal answered the submission (HTTP 200) without a request id'), { billing: 'maybe' })],
+  ])('submits the clip exactly once after %s, and fails saying fal may have accepted it', async (_label, error) => {
+    const fal = fakeFal({ [BALANCED_VIDEO]: [error()] });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false });
+    expect(err.message).toMatch(/fal may have accepted the clip.*did not send it again/s);
+    expect(err.message).not.toContain(FAL_KEY);
+    expect(fal.calls).toHaveLength(1);
+    expect(() => ledgerLines()).toThrow();
+  });
+
+  it('submits the last-frame job through the same rule: once after an ambiguous failure, keeping and ledgering the clip', async () => {
+    const fal = fakeFal({ [FAL_EXTRACT_FRAME]: [falQueueError(502)] });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false });
+    expect(err.message).toMatch(/may have accepted the last-frame job/);
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
+    expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'video', costUsd: 0.352 })]);
+    expect([...artifacts.items.values()].filter((i) => i.record.mediaType === 'video/mp4')).toHaveLength(1);
+  });
+
+  it('names the request id of an accepted clip whose status cannot be read, and is not retryable (a retry would buy another)', async () => {
+    const reset = () => fetchFailed('ECONNRESET');
+    const fal = fakeFal({}, { pollFailures: { [BALANCED_VIDEO]: [reset(), reset(), reset(), reset()] } });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError & { falRequests?: Record<string, string> };
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false, falRequests: { generation: 'req-1' } });
+    expect(err.message).toMatch(/fal accepted the clip \(request req-1\).*may still make it and bill it/s);
+    expect(fal.calls).toHaveLength(1);
+    expect(fal.polls).toEqual(['req-1', 'req-1', 'req-1', 'req-1']);
   });
 
   it('retries a failed status poll by polling again, never by submitting (and paying for) a second clip', async () => {
@@ -404,6 +447,52 @@ describe('fal media helpers', () => {
     const over = countingBody(5, 4);
     expect(await readCapped(over.stream, 10, undefined)).toBeUndefined();
     expect(over.seen).toEqual({ pulls: 3, cancelled: true });
+  });
+
+  /**
+   * Wave-1 follow-up: with no declared length (or a wrong one), readCapped used to keep every chunk alive and then copy
+   * them all into a new buffer, so a download near the cap briefly held about twice the cap. It now copies each chunk
+   * as it arrives into one buffer that grows in place, so what it holds stays about the size read.
+   */
+  it.each([
+    ['no declared length', undefined],
+    ['a declared length that was too small', 1024],
+  ])('readCapped keeps no chunk alive once it is copied (%s)', async (_label, declared) => {
+    v8.setFlagsFromString('--expose-gc');
+    const gc = vm.runInNewContext('gc') as () => void;
+    let collected = 0;
+    const registry = new FinalizationRegistry<number>(() => {
+      collected++;
+    });
+    const N = 32;
+    const SIZE = 256 * 1024;
+    let sent = 0;
+    let collectedBeforeEnd = -1;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        async pull(controller) {
+          if (sent === N) {
+            // Everything has been read; whatever readCapped still holds is what it keeps for the result.
+            for (let i = 0; i < 4; i++) {
+              gc();
+              await new Promise((r) => setTimeout(r, 0));
+            }
+            collectedBeforeEnd = collected;
+            return controller.close();
+          }
+          const chunk = new Uint8Array(SIZE).fill(sent + 1);
+          registry.register(chunk, sent);
+          sent++;
+          controller.enqueue(chunk);
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const bytes = await readCapped(stream, 64 * 1024 * 1024, declared);
+    expect(bytes?.byteLength).toBe(N * SIZE);
+    expect([bytes?.[0], bytes?.[SIZE], bytes?.[N * SIZE - 1]]).toEqual([1, 2, N]);
+    expect((bytes?.buffer as ArrayBuffer | undefined)?.resizable).toBe(false);
+    expect(collectedBeforeEnd).toBeGreaterThanOrEqual(N - 2);
   });
 
   it('sniffVideoType: MP4 by its ftyp box, WebM by its EBML magic, anything else is not a video', () => {

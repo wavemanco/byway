@@ -6,10 +6,14 @@ import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type 
  * fal.ai video for C5 relay links (ADR-0069), through @fal-ai/client 1.10 (read from the package's own type
  * definitions and fal.ai's model pages, 2026-10-07):
  * - `storage.upload(blob)` puts the start frame on fal's CDN and returns its URL;
- * - the queue: `queue.submit` enqueues a job and returns its `request_id`, `queue.subscribeToStatus` polls until it is
+ * - the queue: a submission enqueues a job and returns its `request_id`, `queue.subscribeToStatus` polls until it is
  *   done, and `queue.result` returns `{ data, requestId }`. The client's `subscribe` is exactly these three calls; the
  *   adapter makes them itself so that a failed poll is retried by polling again, never by submitting (and paying for)
  *   a second clip. A clip takes minutes, so `run` (one HTTP request held open) is not used;
+ * - the submission is the one billable step, and it is made once, over fal's REST queue API (submitJob below), not
+ *   through the SDK: the SDK re-sends a submission up to three times on 429, 502, 503, 504 and network errors, whatever
+ *   the client's own retry setting (ADR-0091). Only the gateway decides whether a submission is sent again, and it never
+ *   is after a failure that may have reached fal;
  * - image-to-video models answer `{ video: { url, content_type } }` (fal's `I2VOutput`);
  * - `fal-ai/ffmpeg-api/extract-frame` with `frame_type: 'last'` answers `{ images: [{ url, content_type }] }`, so
  *   fal itself provides the last frame the next link starts from, and no local video decoder is needed.
@@ -66,13 +70,69 @@ export function falVideoSeconds(model: string, requestedSec: number): number {
   return best;
 }
 
-export function createFalClient(key: string): FalClientLike {
-  // The gateway owns retries (one policy for every provider), so the client's own are off.
-  const client = createFalSdkClient({ credentials: key, retry: { maxRetries: 0 } });
+/** fal's queue API (docs.fal.ai/model-endpoints/queue): `POST <base>/<endpoint id>` enqueues a job. */
+export const FAL_QUEUE_URL = 'https://queue.fal.run';
+/** A submission is answered at once with the job's id; a minute without an answer is a lost answer, not a slow one. */
+const SUBMIT_TIMEOUT_MS = 60_000;
+/** Endpoint ids as byway uses them: owner, then path segments (fal-ai/kling-video/v3/pro/image-to-video). */
+const ENDPOINT_ID = /^[a-z0-9-]+(?:\/[a-z0-9._-]+)+$/i;
+
+/**
+ * An answer from fal's queue that is not a success: its HTTP status and, when fal sent one, its JSON error body, which
+ * is how billingOf tells fal's own refusal (nothing was enqueued) from a proxy's 5xx page (it may have been).
+ */
+export class FalQueueError extends Error {
+  override name = 'FalQueueError';
+  readonly status: number;
+  readonly body: Record<string, unknown> | undefined;
+  constructor(status: number, body: Record<string, unknown> | undefined, text: string) {
+    const detail = typeof body?.detail === 'string' ? body.detail : typeof body?.message === 'string' ? body.message : text.slice(0, 300);
+    super(`HTTP ${status}${detail ? `: ${detail}` : ''}`);
+    this.status = status;
+    this.body = body;
+  }
+}
+
+/**
+ * Enqueues one fal job: a single HTTP request, never repeated here (see the header). A redirect is refused rather than
+ * followed with the key. An answer without a request id is an error that may have been billed: fal may have enqueued
+ * the job and only the answer was lost.
+ */
+export async function submitJob(fetchImpl: typeof fetch, key: string, endpointId: string, input: Record<string, unknown>): Promise<{ request_id: string }> {
+  if (!ENDPOINT_ID.test(endpointId)) throw new GatewayError('invalid-request', `"${endpointId}" is not a fal endpoint id`);
+  const res = await fetchImpl(`${FAL_QUEUE_URL}/${endpointId}`, {
+    method: 'POST',
+    headers: { Authorization: `Key ${key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(input),
+    redirect: 'error',
+    signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
+  });
+  const text = await res.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = undefined;
+  }
+  const json = typeof body === 'object' && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : undefined;
+  if (!res.ok) throw new FalQueueError(res.status, json, text);
+  const id = json?.request_id;
+  if (typeof id !== 'string' || !id) throw Object.assign(new Error(`fal answered the submission (HTTP ${res.status}) without a request id`), { billing: 'maybe' as const });
+  return { request_id: id };
+}
+
+/**
+ * The fal client: the job submission over fal's REST queue API (submitJob), and the SDK for the rest. The SDK's
+ * retries cannot be switched off for its queue calls (each passes its own retry setting, which overrides the client's
+ * `maxRetries: 0`), so it is given only free reads: status polls, results and the start-frame upload, which it may
+ * repeat at no cost. `fetchImpl` serves both, so tests can fake fal end to end.
+ */
+export function createFalClient(key: string, fetchImpl: typeof fetch = fetch): FalClientLike {
+  const client = createFalSdkClient({ credentials: key, retry: { maxRetries: 0 }, fetch: fetchImpl });
   return {
     storage: { upload: (file) => client.storage.upload(file) },
     queue: {
-      submit: (endpointId, options) => client.queue.submit(endpointId, options),
+      submit: (endpointId, options) => submitJob(fetchImpl, key, endpointId, options.input),
       subscribeToStatus: (endpointId, options) => client.queue.subscribeToStatus(endpointId, options),
       result: (endpointId, options) => client.queue.result(endpointId, options),
     },
@@ -110,15 +170,17 @@ const mediaError = (message: string, retryable = false) => new GatewayError('pro
 const retryableStatus = (status: number) => status === 408 || status === 429 || status >= 500;
 
 /**
- * The bytes a body yields, counted as they arrive: undefined (and the body cancelled) once they pass `cap`. With a
- * declared length within the cap the buffer is allocated once; if the body turns out longer (a Content-Length counts
- * compressed bytes, the reader yields decoded ones), the rest is gathered in chunks instead.
+ * The bytes a body yields, counted as they arrive: undefined (and the body cancelled) once they pass `cap`. Each chunk
+ * is copied as it arrives into one resizable buffer, which reserves `cap` of address space and grows in place, so a
+ * download holds about what it has read, never more than about the cap. (Gathering chunks and joining them at the end
+ * held every chunk and the joined copy at once: about twice the cap for a download near it.) A declared length within
+ * the cap sizes the buffer at the start; a body longer than declared (a Content-Length counts compressed bytes, the
+ * reader yields decoded ones) grows it. The result is handed back as an ordinary fixed-length buffer.
  */
 export async function readCapped(body: ReadableStream<Uint8Array> | null, cap: number, declared: number | undefined): Promise<Uint8Array | undefined> {
   if (!body) return new Uint8Array();
   const reader = body.getReader();
-  let buffer = declared !== undefined && declared > 0 && declared <= cap ? new Uint8Array(declared) : undefined;
-  const chunks: Uint8Array[] = [];
+  const store = new ArrayBuffer(declared !== undefined && declared > 0 && declared <= cap ? declared : 0, { maxByteLength: cap });
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
@@ -129,24 +191,10 @@ export async function readCapped(body: ReadableStream<Uint8Array> | null, cap: n
       await reader.cancel().catch(() => {});
       return undefined;
     }
-    if (buffer && total <= buffer.byteLength) {
-      buffer.set(value, at);
-      continue;
-    }
-    if (buffer) {
-      chunks.push(buffer.subarray(0, at));
-      buffer = undefined;
-    }
-    chunks.push(value);
+    if (total > store.byteLength) store.resize(total);
+    new Uint8Array(store, at, value.byteLength).set(value);
   }
-  if (buffer) return buffer.subarray(0, total);
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const c of chunks) {
-    out.set(c, at);
-    at += c.byteLength;
-  }
-  return out;
+  return new Uint8Array(store.transferToFixedLength(total));
 }
 
 /** The clip's type from its bytes: MP4 (an ISO-BMFF `ftyp` box first) or WebM (the EBML magic); otherwise not a video. */
@@ -224,14 +272,42 @@ export interface FalAdapterOptions {
   fetch?: typeof fetch;
 }
 
+/** The two jobs a relay link submits, by role: the clip, then its last frame. */
+type JobRole = 'generation' | 'extract';
+const JOB_WHAT: Record<JobRole, string> = { generation: 'the clip', extract: 'the last-frame job' };
+
+/**
+ * A job fal accepted whose status or result could not be read, even after retries: fal may still finish it and bill it.
+ * The error names the request id, so the job can be found in fal's dashboard (and resumed by a later version, which
+ * keeps these ids: `falRequests`), and it is not retryable: retrying the call would submit, and pay for, a second job.
+ */
+function acceptedButUnread(e: unknown, role: JobRole, requestId: string): GatewayError & { falRequests: Partial<Record<JobRole, string>> } {
+  const detail = e instanceof Error ? e.message : String(e);
+  const err = new GatewayError(
+    'provider-error',
+    `fal accepted ${JOB_WHAT[role]} (request ${requestId}), but its ${role === 'generation' ? 'result' : 'frame'} could not be read: ${detail}. fal may still make it and bill it; byway did not submit it again.`,
+    false,
+  );
+  return Object.assign(err, { falRequests: { [role]: requestId } });
+}
+
 export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
   const fetchImpl = opts.fetch ?? fetch;
   const { queue } = opts.client;
-  /** One queue job: submitted once (the billable step), then polled and read, each retried on its own. */
-  const runJob = async (attempt: ProviderVideoRequest['attempt'], endpointId: string, input: Record<string, unknown>) => {
-    const { request_id: requestId } = await attempt(() => queue.submit(endpointId, { input }));
-    await attempt(() => queue.subscribeToStatus(endpointId, { requestId, pollInterval: POLL_INTERVAL_MS }));
-    return attempt(() => queue.result(endpointId, { requestId }));
+  /**
+   * One queue job: submitted once (the billable step, under the gateway's submission rule), then polled and read, each
+   * retried on its own. The id fal gave the job is the one recorded: the result's own id comes from a header and may be
+   * missing.
+   */
+  const runJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, input: Record<string, unknown>) => {
+    const { request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input }), JOB_WHAT[role]);
+    try {
+      await req.attempt(() => queue.subscribeToStatus(endpointId, { requestId, pollInterval: POLL_INTERVAL_MS }));
+      const { data } = await req.attempt(() => queue.result(endpointId, { requestId }));
+      return { data, requestId };
+    } catch (e) {
+      throw acceptedButUnread(e, role, requestId);
+    }
   };
   return {
     id: 'fal',
@@ -248,10 +324,10 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
 
       // Failures before the generation job's result arrives are thrown, with no ledger entry: there is no clip to keep
       // and no usage to record. (A job whose status cannot be read even after retries may still finish and be billed
-      // by fal; that spend is in fal's dashboard, not the ledger.)
+      // by fal; that spend is in fal's dashboard, not the ledger, and the error names the job's request id.)
       const frameUrl = await req.attempt(() => opts.client.storage.upload(new Blob([Buffer.from(frame.bytes)], { type: frame.mediaType })));
       const input = { prompt: req.prompt, [spec.imageField]: frameUrl, duration: String(req.durationSec), ...spec.extra };
-      const generated = await runJob(req.attempt, req.model, input);
+      const generated = await runJob(req, 'generation', req.model, input);
 
       const requestBody = { endpoint: req.model, input: { ...input, [spec.imageField]: `artifact:${frame.artifactId}` }, extract: { endpoint: FAL_EXTRACT_FRAME, frame_type: 'last' } };
       const response: Record<string, unknown> = { requestId: generated.requestId, video: plain(generated.data) };
@@ -267,7 +343,7 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
         const clipType = sniffVideoType(clip.bytes);
         if (!clipType) throw new GatewayError('provider-error', 'the clip fal returned is not a video (its bytes are neither MP4 nor WebM)');
         out.clip = { bytes: clip.bytes, mediaType: clipType };
-        const extracted = await runJob(req.attempt, FAL_EXTRACT_FRAME, { video_url: video.url, frame_type: 'last' });
+        const extracted = await runJob(req, 'extract', FAL_EXTRACT_FRAME, { video_url: video.url, frame_type: 'last' });
         response.frame = { requestId: extracted.requestId, ...(plain(extracted.data) as object) };
         const last = await req.attempt(() => download(fetchImpl, fileUrl(extracted.data, 'images').url, 'last frame'));
         media.frame = last.via;
