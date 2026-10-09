@@ -67,6 +67,14 @@ describe('the projection', () => {
     expect(sameNode(judge(['view', 'option_set<artifact>']), judge(['option_set<artifact>', 'view']))).toBe(false);
   });
 
+  it('keeps what a step reads when it is there, in order: it fills the prompt after the consumed ports (ADR-0089)', () => {
+    expect(sameNode(build('a'), build('a', { reads: ['taste'] } as never))).toBe(false);
+    expect(sameNode(build('a', { reads: ['taste', 'view'] } as never), build('a', { reads: ['view', 'taste'] } as never))).toBe(false);
+    // A port moved from consumed to read is required no more: a change.
+    expect(sameNode(build('a'), build('a', { consumes: ['intent'], reads: ['brief'] } as never))).toBe(false);
+    expect(sameNode(build('a', { reads: ['taste'] } as never), build('b', { reads: ['taste'] } as never))).toBe(true);
+  });
+
   it("keeps a seq's nesting: the interpreter reads a step's siblings in its own seq (a TELLS sweep's swap choice)", () => {
     expect(sameNode(seq(seq(build('a'), build('b')), build('c')), seq(build('a'), seq(build('b'), build('c'))))).toBe(false);
     expect(sameNode(seq(build('a')), build('a'))).toBe(false);

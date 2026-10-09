@@ -261,12 +261,14 @@ describe('field roles', () => {
       for (const [field, role] of Object.entries(roles)) expect(['name', 'child', 'semantic', 'semantic-set'], `${obj}.${field}`).toContain(role);
     }
     // Every key of a full step and a full recipe is classified (the mapped type makes a missing one a type error).
-    const full = step({ id: 'x', role: 'fix', block: 'CUT', glue: 'RENDER', actor: 'model', tier: 'mid', isolated: true, frozenPrompt: true, prompt: 'p', consumes: [], produces: [], writes: true, keepsVoice: true, proxyFor: 'human', knobs: {}, variant: 'v' });
+    const full = step({ id: 'x', role: 'fix', block: 'CUT', glue: 'RENDER', actor: 'model', tier: 'mid', isolated: true, frozenPrompt: true, prompt: 'p', consumes: [], reads: [], produces: [], writes: true, keepsVoice: true, proxyFor: 'human', knobs: {}, variant: 'v' });
     expect(Object.keys(full).filter((k) => !(k in FIELD_ROLES.step))).toEqual([]);
     expect(Object.keys(minimalRecipe()).filter((k) => !(k in FIELD_ROLES.recipe))).toEqual([]);
     expect(FIELD_ROLES.step.id).toBe('name');
     // The runner reads a step's consumed ports in order (buildPrompt lays out their images in that order).
     expect(FIELD_ROLES.step.consumes).toBe('semantic');
+    // What a step reads when it is there fills its prompt the same way, after the consumed ports (ADR-0089).
+    expect(FIELD_ROLES.step.reads).toBe('semantic');
     expect(FIELD_ROLES.step.produces).toBe('semantic-set');
     expect(FIELD_ROLES.step.variant).toBe('semantic');
     expect(FIELD_ROLES.route.id).toBe('semantic');
@@ -291,6 +293,13 @@ describe("a TELLS sweep's swap choice (asksSwaps, the interpreter's seq)", () =>
 
   it('reads only its own seq: the same steps behind a nested seq never ask', () => {
     expect(asksSwaps(sweep, [seq(swaps, compare('human'))])).toBe(false);
+  });
+
+  it('looks for the step that consumes the critique: a fix that only reads it when there is one takes in every find', () => {
+    const { consumes: _c, ...rest } = swaps;
+    const reading = step({ ...rest, consumes: ['artifact'], reads: ['critique'] });
+    expect(asksSwaps(sweep, [reading, compare('human')])).toBe(false);
+    expect(asksSwaps(sweep, [reading, swaps, compare('human')])).toBe(true);
   });
 });
 

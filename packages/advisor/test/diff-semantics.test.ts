@@ -76,7 +76,10 @@ function mutated(kind: string, field: string, v: unknown): unknown {
   if (field === 'plateau') return v === undefined ? { minGain: 1, window: 2 } : undefined;
   if (field === 'knobs') return { ...(v as object), extra: 1 };
   if (field === 'variant') return v === undefined ? 'claim-log' : `${String(v)}-other`;
-  if (field === 'inputs' || field === 'consumes' || field === 'produces') return (v as string[]).includes('brief') ? (v as string[]).filter((x) => x !== 'brief') : [...(v as string[]), 'brief'];
+  if (field === 'inputs' || field === 'consumes' || field === 'produces' || field === 'reads') {
+    const ports = (v as string[] | undefined) ?? [];
+    return ports.includes('brief') ? ports.filter((x) => x !== 'brief') : [...ports, 'brief'];
+  }
   if (field === 'sitsOut') return [...(v as N[]), { block: 'ASSET', reason: 'none here' }];
   if (field === 'exceptions') return [...(v as string[]), 'C1-DR2'];
   if (typeof v === 'boolean' || v === undefined) return !v;
@@ -162,6 +165,33 @@ describe('what changes that are not semantic read', () => {
     const r = clone(c4);
     r.stages[2].body = { op: 'seq', steps: [{ op: 'seq', steps: r.stages[2].body.steps.slice(0, 3) }, ...r.stages[2].body.steps.slice(3)] };
     expect(diff(r, c4)).toEqual([OTHER_CHANGES]);
+  });
+});
+
+/**
+ * ADR-0089's optional reads change what a step's prompt receives: a port read when it is there fills its slot (and its
+ * images, after the consumed ports'), so a read gained or dropped is named in plain words. A reorder, or a port moved
+ * between consumed and read, is another technical change.
+ */
+describe("a step's optional reads (ADR-0089)", () => {
+  const withReads = (r: Recipe, id: string, reads: string[] | undefined, consumes?: (c: string[]) => string[]) =>
+    edit(clone(r), id, (n) => {
+      const { reads: _r, ...rest } = n;
+      return { ...rest, ...(reads ? { reads } : {}), ...(consumes ? { consumes: consumes(n.consumes) } : {}) };
+    });
+
+  it("C7's implementer no longer reading your spec interview's brief is named", () => {
+    expect(diff(withReads(c7, 'implement', undefined), c7)).toEqual(['Changed: Implement (Refine): no longer reads the brief']);
+  });
+
+  it('a read added to a step is named, with the port in plain words', () => {
+    expect(diff(withReads(c7, 'review-fix', ['brief']), c7)).toEqual(['Changed: Outside critique (Refine): now also reads the brief when there is one']);
+  });
+
+  it('reads reordered, or a read made a consumed port, are other technical changes', () => {
+    const two = withReads(c7, 'implement', ['brief', 'taste']) as Recipe;
+    expect(diff(withReads(two, 'implement', ['taste', 'brief']), two)).toEqual([OTHER_CHANGES]);
+    expect(diff(withReads(c7, 'implement', undefined, (c) => [...c, 'brief']), c7)).toEqual([OTHER_CHANGES]);
   });
 });
 

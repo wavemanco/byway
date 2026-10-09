@@ -1,6 +1,6 @@
 import { BLOCK_NAMES, presentedStepFor, STAGE_NAMES } from '@byway/catalog';
 import type { Medium, RecipePresentation } from '@byway/contracts';
-import type { BlockCode } from '@byway/protocol';
+import type { BlockCode, PortType } from '@byway/protocol';
 import {
   asksSwaps,
   feedsGate,
@@ -39,7 +39,8 @@ import { stepLabel } from './present.ts';
  * are described: who does a step, where it runs (its stage, whether it always runs, a side-by-side review or a final
  * check it sits in, once per draft, behind a check that can end its round, after your words), who picks and how many,
  * how a repeat ends and stops early, the quality bar (described, never quoted: the bar stays hidden from everyone who
- * could game it), what your words cover, whether you choose a cliché sweep's swaps, when an optional step is offered,
+ * could game it), what your words cover, what a step reads when it is there (ADR-0089), whether you choose a cliché
+ * sweep's swaps, when an optional step is offered,
  * what a choice between branches asks, and a final check's re-runs. Any other difference reads "Other technical changes
  * that affect how it runs."
  *
@@ -265,7 +266,45 @@ const PICK_NOW: Record<Pick['mode'], string> = { H: 'you choose', C: 'the AI cho
 const PICK_BEFORE: Record<Pick['mode'], string> = { H: 'you chose', C: 'the AI chose', R: 'it was chosen at random' };
 
 /** The parts of a step the describers name; any other semantic field that differs is an "other technical change". */
-const STEP_DESCRIBED = new Set(['actor', 'tier', 'prompt', 'knobs', 'variant']);
+const STEP_DESCRIBED = new Set(['actor', 'tier', 'prompt', 'knobs', 'variant', 'reads']);
+
+/** Ports in plain words, for what a step reads when it is there. */
+const PORT_WORDS: Readonly<Record<PortType, string>> = {
+  intent: 'your request',
+  seed: 'a random string',
+  'option_set<artifact>': 'the drafts',
+  taste: 'the notes on taste',
+  brief: 'the brief',
+  artifact: 'the work',
+  view: 'the work as it will be shown',
+  refs: 'your examples',
+  critique: 'the review notes',
+  score: 'the score',
+  asset: 'the images made for the work',
+  anchor: 'the frame to start from',
+  tells: 'the list of stock patterns',
+  voice: 'your words',
+  cred: 'the credentials',
+  failed: 'what failed',
+};
+
+/**
+ * What a step reads when it is there (`reads`, ADR-0089) changes what its prompt receives: a read gained or dropped is
+ * named. A reorder (buildPrompt lays out a read's images in order) or a port moved between consumed and read is not,
+ * so it is an other technical change.
+ */
+function readsChanges(x: Step, y: Step): { words: string[]; other: boolean } {
+  const ra = x.reads ?? [];
+  const rb = y.reads ?? [];
+  const gained = rb.filter((p) => !ra.includes(p) && !x.consumes.includes(p));
+  const lost = ra.filter((p) => !rb.includes(p) && !y.consumes.includes(p));
+  const words = [...gained.map((p) => `now also reads ${PORT_WORDS[p]} when there is one`), ...lost.map((p) => `no longer reads ${PORT_WORDS[p]}`)];
+  const other = differs(
+    ra.filter((p) => !lost.includes(p)),
+    rb.filter((p) => !gained.includes(p)),
+  );
+  return { words, other };
+}
 
 /** The semantic fields of a node of its own (children left out), projected. */
 function own(n: Node): Record<string, Json> {
@@ -308,6 +347,8 @@ function stepChanges(a: Placed<Step>, b: Placed<Step>, media: [Medium | undefine
   words.push(...moves);
   if ((x.tier ?? '') !== (y.tier ?? '') && y.tier) words.push(y.tier === 'big' ? 'uses the bigger model' : 'uses the faster model');
   if ((x.prompt ?? '') !== (y.prompt ?? '')) words.push('uses different instructions');
+  const reads = readsChanges(x, y);
+  words.push(...reads.words);
   if (a.swaps !== b.swaps) words.push(b.swaps ? 'now asks you which of its finds to swap' : 'no longer asks you which of its finds to swap');
   const ka = x.knobs ?? {};
   const kb = y.knobs ?? {};
@@ -315,7 +356,7 @@ function stepChanges(a: Placed<Step>, b: Placed<Step>, media: [Medium | undefine
     if (JSON.stringify(ka[name]) !== JSON.stringify(kb[name])) words.push(knobChange(name, ka[name], kb[name]));
   }
   // What your words cover: named when the copy itself changed (key lines against every line is the scope knob's).
-  let other = false;
+  let other = reads.other;
   if (voiceWrite(x) && voiceWrite(y)) {
     const sa = voiceScope(x, media[0]);
     const sb = voiceScope(y, media[1]);
