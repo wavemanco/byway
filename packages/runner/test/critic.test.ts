@@ -4,24 +4,26 @@
  * BLIND-1); web pages shown by their named surfaces, references too (RENDER-1); and the rank a GREAT critic hands its
  * gate, with the lineup size the gate's threshold was written for (GATE-1). On cards, a critic that reads text gets
  * every item's whole words under its label, and an image-only critic's cards cut words only visibly, with the cut
- * kept for retries and said once in the verdict's note for the step (F13, ADR-0087).
+ * kept for retries and said once in the verdict's note for the step (F13, ADR-0087; the step's own note carries it
+ * once model-step.ts appends it, which one test below is marked pending for).
  */
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Gateway } from '@byway/contracts';
+import type { CompletionRequest, CompletionResult, Gateway } from '@byway/contracts';
 import { buildLineup, CARD_NOTE, cutNote, FEW_REFS_NOTE, OK_FALLBACK_NOTE, planCritic, verdictOf, WORDS_UNDER_LABEL, type Lineup } from '../src/activities/critic.ts';
 import { StepError } from '../src/activities/failures.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
+import { modelStep } from '../src/activities/model-step.ts';
 import { ArtifactReader, userMessage } from '../src/activities/prompting.ts';
 import { CARD_MAX_HEIGHT } from '../src/cards.ts';
 import { textView, viewKindOf } from '../src/formats.ts';
 import { sectionOf } from '../src/parse.ts';
 import { SURFACE_CAPTIONS } from '../src/surfaces.ts';
 import type { PageRenderer } from '../src/pages.ts';
-import type { View } from '../src/types.ts';
+import type { RunRef, StepSpec, View } from '../src/types.ts';
 import { fakePages, fakeShots, png, type FakePages } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -367,6 +369,57 @@ describe('a card lineup shows every word or says what it left out (F13)', () => 
     expect(cutNote([with_([{ item: { ref: 'x' }, unit: 'words', shown: 0, total: 5_941, begins: 'Every spring the river takes a…' }])])).toBe(
       'The outside critic was not shown all the text: it saw none of the text of the example that begins “Every spring the river takes a…” (5,941 words).',
     );
+  });
+
+  describe('a GREAT critic step whose card was cut', () => {
+    const criticStep: StepSpec = { id: 'critic', role: 'critic', block: 'CRITIC', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'product.test.critic', consumes: ['view'], produces: ['critique', 'score'], knobs: { mode: 'GREAT', refs: 3 } };
+    const ranked = '### A\n- Gap.\n\n### B\n- Gap.\n\n### C\n- Gap.\n\n### D\n- Gap.\n\nRanking: A, B, C, D';
+
+    /** One media critic step against an image, the long text reference and an image, with a renderer that measures. */
+    async function criticStepWithACut() {
+      const pages = measuringPages();
+      const requests: CompletionRequest[] = [];
+      const gateway = {
+        demo: false,
+        async complete(req: CompletionRequest): Promise<CompletionResult> {
+          requests.push(req);
+          return { text: ranked, stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0, ledgerEntryId: `l${requests.length}` };
+        },
+        spend: async (id: string) => ({ workspaceId: id, spentUsd: 0, capUsd: 100, byRun: {} }),
+      } as unknown as Gateway;
+      const stepDeps: RunnerDeps = { gateway, store, prompts: fakePrompts(), pages, random: () => 0.5 };
+      const runId = await aRun('run-step-note');
+      await store.updateRun(runId, { status: 'running' });
+      const run: RunRef = { runId, workspaceId: (await store.ensureDefaultWorkspace()).id, recipeId: 'tiny', profileId: 'demo', medium: 'media', problem: { text: 'An ad' }, seeds: [] };
+      const view: View = { pool: false, items: [{ textArtifactId: await text('Shot 1 (3s): Open on hands.\n\nVoice-over: Less time.'), imageArtifactIds: [await image(1), await image(2)] }] };
+      const refs = [await image(10), await longRef(), await image(30)];
+      const out = await modelStep(stepDeps, { run, call: { key: `${runId}/critic/-/1`, stepId: 'critic', stage: 'D1' }, step: criticStep, ports: { view }, refs });
+      const notes = (await store.events(runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
+      return { out, notes, pages, requests };
+    }
+
+    it('shows the critic the cut card, one image under each label, and ranks ours', async () => {
+      const { out, pages, requests } = await criticStepWithACut();
+      expect(requests).toHaveLength(1);
+      const images = requests[0]!.messages[0]!.content.flatMap((c) => (c.type === 'image' ? [c.artifactId] : []));
+      expect(images).toHaveLength(4);
+      const cut = images.map((id) => pages.byId.get(id) ?? '').filter((html) => /\[… [\d,]+ more words not shown\]/.test(html));
+      expect(cut).toHaveLength(1);
+      expect(cut[0]).toContain('Every spring the river');
+      expect(out.score).toMatchObject({ kind: 'rank', of: 4 });
+    });
+
+    // PENDING INTEGRATION (ADR-0087). verdictOf gives the sentence as the verdict's note, but the model step, in
+    // model-step.ts, which another work package owned while this one was written, does not yet append it to the step's
+    // note. The integration adds one line after the verdictOf call in modelStep's critic branch:
+    //   if (verdict.note) notes.push(verdict.note);
+    // and then this test passes, which `it.fails` reports as a failure: take `.fails` off then. The test above runs the
+    // same step and must pass, so this one cannot be "failing as expected" because the step itself broke.
+    it.fails('says in the step’s note whose words the critic was not shown (pending: model-step.ts appends verdict.note)', async () => {
+      const { out, notes } = await criticStepWithACut();
+      expect(out.note).toMatch(/^The outside critic was not shown all the text: it saw the first [\d,]+ of 5,941 words of the example that begins “Every spring the river takes a…”\.$/);
+      expect(notes).toEqual([out.note]);
+    });
   });
 
   it('a card that does not fit in one picture stops the step, naming the item, rather than show part of it', async () => {
