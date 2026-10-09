@@ -61,6 +61,9 @@ export function budgetError(budget: BudgetDetails): GatewayError & { budget: Bud
   return err as GatewayError & { budget: BudgetDetails };
 }
 
+/** The refusal a closed gateway gives a paid call: retryable, so a step is tried again once byway has started again. */
+const stopping = () => new GatewayError('provider-error', 'byway is stopping, so it did not start this call. Try again once it has started again.', true);
+
 const changed = (batch: LedgerBatch, cursor: LedgerCursor) =>
   batch.entries.length > 0 || batch.unreadable.length > 0 || batch.cursor.offset !== cursor.offset || batch.cursor.tailSha256 !== cursor.tailSha256;
 
@@ -114,11 +117,19 @@ export class PaidCalls {
   /** @internal Admission itself, also used for the one re-admission of a call swept while its process slept. */
   async admitOnce(req: PaidCallRequest, caps: AdmitRequest['caps']): Promise<string> {
     // Nothing would renew its lease or hand it back: a closed gateway starts no paid call.
-    if (this.closed) throw new GatewayError('provider-error', 'byway is stopping, so it did not start this call. Try again once it has started again.', true);
+    if (this.closed) throw stopping();
     const opId = randomUUID();
     const outcome = await this.book.admit({ ...req, opId, owner: this.owner, leaseMs: this.leaseMs, caps });
     if ('budget' in outcome) throw budgetError(outcome.budget);
     if ('fault' in outcome) throw new GatewayError('accounting-fault', outcome.fault);
+    if (this.closed) {
+      // close() ran while the book was admitting the call, and its endLeases may have come before the row existed: the
+      // row is handed back here (it was never sent, so it counts nothing), and the call is refused as for a closed gateway.
+      await this.book.release(opId).catch((e: unknown) => {
+        this.warn(`byway could not hand back a call it did not start as it stopped (${(e as Error)?.message ?? String(e)}); it counts as under way until its lease runs out.`);
+      });
+      throw stopping();
+    }
     this.held.add(opId);
     return opId;
   }

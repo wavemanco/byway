@@ -166,6 +166,37 @@ describe('calls whose caller stopped', () => {
     expect(await book.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
   });
 
+  it('a call still being admitted when its gateway closes is handed back and refused, never sent (an asynchronous book)', async () => {
+    caps.workspace = 1;
+    // A book that answers admission after a moment, as one over a busy database might: close() runs meanwhile, and its
+    // endLeases finds no row of this call to hand back yet.
+    let admitting = 0;
+    const slow: SpendBook = new Proxy(book, {
+      get(target, prop) {
+        const v = Reflect.get(target, prop, target) as unknown;
+        if (typeof v !== 'function') return v;
+        if (prop !== 'admit') return v.bind(target);
+        return async (...args: unknown[]) => {
+          admitting++;
+          await new Promise((r) => setTimeout(r, 30));
+          return (v as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+    const held = heldAdapter();
+    const g = gateway({ spendBook: slow, adapters: { anthropic: held.adapter } });
+    const call = g.complete(ask()).catch((e: unknown) => e);
+    await until(() => admitting === 1);
+    await g.close();
+    const result = await Promise.race([call, new Promise((r) => setTimeout(() => r('still running'), 1000))]);
+    held.release();
+    expect(result).toBeInstanceOf(GatewayError);
+    expect(result).toMatchObject({ code: 'provider-error', retryable: true, message: expect.stringContaining('byway is stopping') });
+    expect(held.calls()).toBe(0);
+    expect(await book.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
+    expect((await book.records('ws')).inFlight).toEqual([]);
+  });
+
   it('a sent call whose owner died may have been billed: it counts against the workspace, not the run, until cleared', async () => {
     caps.workspace = 0.25;
     caps.runs['run-1'] = 0.1;
