@@ -52,7 +52,7 @@ This narrows spec §5: excerpts belong to step rows, cards and thumbnails; views
 **Negative**
 
 - A large view of a long text costs one extra request per artifact per page load (shared by every view of it).
-- The server parses each diff and option map in full when it is first polled.
+- The server decodes and parses a diff or an option map in full on every poll that includes it, with no cache. A poll includes an artifact when the event that made it is new to that poll (so every artifact, on a page's first poll), and includes the artifacts of open questions and the run's output on every poll. The store already read and checked each of those artifacts whole on every such poll before this change; the parse is the added cost. Remembering the facts by content-addressed id would remove it, if it shows up.
 - Thumbnails and cards stay snippets by design. Their counts (a diff's per-file numbers) may be partial, apart from the cut file's, which is hidden.
 
 ## Evidence
