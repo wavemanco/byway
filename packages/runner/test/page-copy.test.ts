@@ -829,6 +829,34 @@ describe('characters outside the Basic Multilingual Plane are one character each
   });
 });
 
+describe('a link or button keeps words a browser shows (F07, r7)', () => {
+  it('one whose only other words are hidden is refused, not left without a name: words a browser hides do not name it', () => {
+    // A submit button whose label is deleted, with a hidden "Sending…" beside it: a browser shows an empty button.
+    expect(run('<form><p>Ready? <button type="submit"><span>Send</span><span hidden>Sending…</span></button> We reply fast.</p></form>', set(2, '')).placeProblems).toEqual([
+      'Line 3: this button cannot be removed in this step (it holds words a browser hides) and would be left empty; keep some words for it, or leave the line as it was.',
+    ]);
+    // A link whose words are taken ([]), with a hidden span inside: the link cannot go (its hidden words stay), so it is refused.
+    expect(run('<p>Go <a href="/x">Read<span hidden> more</span></a> now</p>', set(1, 'Go [] now')).placeProblems).toEqual([
+      'Line 2: this link cannot be removed in this step (it holds words a browser hides) and would be left empty; keep some words for it, or leave the line as it was.',
+    ]);
+    // An icon button with a hidden span: it keeps a picture, but nothing names it.
+    expect(run('<p>Menu: <button type="button"><svg width="9" height="9"></svg><span>Open</span><span hidden>Close</span></button> here</p>', set(2, '')).placeProblems).toEqual([
+      'Line 3: this button cannot be removed in this step (it holds words a browser hides) and would be left without a name; keep some words for it, or leave the line as it was.',
+    ]);
+    // Named by its own label, it may lose its shown words; one that keeps a shown word is fine.
+    expect(run('<p>Menu: <button type="button" aria-label="Menu"><svg width="9" height="9"></svg><span>Open</span><span hidden>Close</span></button> here</p>', set(2, ''))).toMatchObject(clean('<p>Menu: <button type="button" aria-label="Menu"><svg width="9" height="9"></svg><span hidden>Close</span></button> here</p>'));
+    expect(run('<p>Go <a href="/x">Read<span hidden> more</span></a> now</p>', set(1, 'Go [Look] now'))).toMatchObject(clean('<p>Go <a href="/x">Look<span hidden> more</span></a> now</p>'));
+  });
+
+  it('the verifier counts only words a browser shows when it asks whether a control kept a name', () => {
+    const before = pageOf('<form><p>Ready? <button type="submit"><span>Send</span><span hidden>Sending…</span></button> We reply fast.</p></form>');
+    const after = before.replace('<span>Send</span>', '');
+    expect(verifyBad(before, after, 'T\nReady?\n\nWe reply fast.')).toContain('A button in your changed lines is left without a name.');
+    const link = pageOf('<p>Go <a href="/x">Read<span hidden> more</span></a> now</p>');
+    expect(verifyBad(link, link.replace('Read<span', '<span').replace('</a> now', '</a>now'), 'T\nGo [] now')).toContain('A link in your changed lines is left without a name.');
+  });
+});
+
 describe('questions in flight across the upgrade (F07)', () => {
   const pg = '<p>Intro</p><p>Please <a href="/terms">read terms</a> today.</p>';
   const oldOffered = 'T\nIntro\nPlease read terms today.';

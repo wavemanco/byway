@@ -473,6 +473,20 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('a link or button whose only other words are hidden is never left without a name: the edit is asked again, naming the line (r7)', async () => {
+    for (const [html, answer, line, what] of [
+      ['<form><p>Ready? <button type="submit"><span>Send</span><span hidden>Sending…</span></button> We reply fast.</p></form>', 'T\nReady?\n\nWe reply fast.', 3, 'button'],
+      ['<p>Go <a href="/x">Read<span hidden> more</span></a> now</p>', 'T\nGo [] now', 2, 'link'],
+      ['<p>Menu: <button type="button"><svg width="9" height="9"></svg><span>Open</span><span hidden>Close</span></button> here</p>', 'T\nMenu:\n\nhere', 3, 'button'],
+    ] as const) {
+      const q = await open(page(html));
+      const msg = await rejected(q.answer(answer));
+      expect(msg).toMatch(new RegExp(`^Line ${line}: this ${what} cannot be removed in this step \\(it holds words a browser hides\\) and would be left`));
+      expect(await b.store.events(q.run.runId)).not.toContainEqual(expect.objectContaining({ type: 'artifact' }));
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
+
   it('an answer equal to the offer writes nothing, whatever its whitespace', async () => {
     const q = await open(page('<h1>Head</h1><p>Sub</p>'));
     expect((await q.answer('T\n  Head \nSub\n\n')).artifactId).toBeUndefined();

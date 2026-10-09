@@ -1296,10 +1296,18 @@ function removalsFor(p: PageDeck, edit: PageEdit, hasText: (s: number) => boolea
   const problems: string[] = [];
   const had = slotCounts(p, (s) => noHtmlSpace(slotText(p, s)) !== '');
   const has = slotCounts(p, hasText);
+  // A control's name is the words a browser shows in it: words it hides (a hidden span) name nothing.
+  const shownHad = slotCounts(p, (s) => p.slots[s]!.rendered && noHtmlSpace(slotText(p, s)) !== '');
+  const shownHas = slotCounts(p, (s) => p.slots[s]!.rendered && hasText(s));
   const left = ([a, b]: [number, number]) => within(had, a, b) > 0 && within(has, a, b) === 0;
-  // Emptied over its removal span (a removal candidate), and, for a link or button, over its reach (left without words).
+  // Emptied over its removal span (a removal candidate: hidden words count, so they are never dropped), and, for a link
+  // or button, over its reach (left without words a browser shows).
   const emptied = [...p.els.values()].filter((el) => spanEnd(el) !== undefined && left(slotSpan(p, el.start, spanEnd(el)!)));
-  const unworded = [...p.els.values()].filter((el) => isControl(p, el) && el.end !== undefined && left(slotSpan(p, el.start, el.end)));
+  const unworded = [...p.els.values()].filter((el) => {
+    if (!isControl(p, el) || el.end === undefined) return false;
+    const [a, b] = slotSpan(p, el.start, el.end);
+    return within(shownHad, a, b) > 0 && within(shownHas, a, b) === 0;
+  });
   const runText = new Uint8Array(p.slots.at(-1)!.region + 1);
   const blockText = new Uint8Array(p.slots.at(-1)!.vregion + 1);
   p.slots.forEach((s, k) => {
@@ -1349,7 +1357,8 @@ function removalsFor(p: PageDeck, edit: PageEdit, hasText: (s: number) => boolea
       let at = -1;
       for (let s = a; s <= b && at < 0; s++) at = lineOf[s]!;
       const hook = hookOf(p.tokens[el.start]!.raw);
-      problems.push(`Line ${at + 1}: this ${el.name === 'a' ? 'link' : 'button'} cannot be removed in this step${hook ? ` (it carries ${hook}, which other parts of the page may use)` : ''} and would be left ${visible ? 'without a name' : 'empty'}; keep some words for it, or leave the line as it was.`);
+      const why = [...(hook ? [`it carries ${hook}, which other parts of the page may use`] : []), ...(within(has, a, b) > 0 ? ['it holds words a browser hides'] : [])];
+      problems.push(`Line ${at + 1}: this ${el.name === 'a' ? 'link' : 'button'} cannot be removed in this step${why.length ? ` (${why.join('; ')})` : ''} and would be left ${visible ? 'without a name' : 'empty'}; keep some words for it, or leave the line as it was.`);
     }
   }
   return { elements, brs, problems };
@@ -1974,8 +1983,9 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   // 5. No <a> or <button> whose words were in a changed line is left nameless: it keeps some text, or shows something
   // without text that is named (the removal rule's own test). One that held no words (an image or icon link beside
   // a changed line, whose empty slot after the image belongs to that line) had no name for the edit to take.
-  const changedHad = slotCounts(p, (s) => changedSlots.has(s) && noHtmlSpace(slotText(p, s)) !== '');
-  const afterHas = slotCounts(p, (s) => noHtmlSpace(decodeText(slotAfter.get(s) ?? '')) !== '');
+  // Only words a browser shows count: a hidden span names nothing.
+  const changedHad = slotCounts(p, (s) => changedSlots.has(s) && p.slots[s]!.rendered && noHtmlSpace(slotText(p, s)) !== '');
+  const afterHas = slotCounts(p, (s) => p.slots[s]!.rendered && noHtmlSpace(decodeText(slotAfter.get(s) ?? '')) !== '');
   for (const el of p.els.values()) {
     // Removed elements cover their whole token range, so one inside a removed one starts on a removed token.
     if (el.end === undefined || !isControl(p, el) || removedTok[el.start]) continue;
