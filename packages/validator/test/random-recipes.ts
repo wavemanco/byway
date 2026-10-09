@@ -32,6 +32,11 @@ const STEPS: ((id: string) => Step)[] = [
   (id) => step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] }),
   (id) => step({ id, role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] }),
   (id) => step({ id, role: 'relay', block: 'RELAY', actor: 'model', tier: 'mid', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true }),
+  // A person's reaction given as the brief and a critique, an AI direction's brief, and a draft that takes the brief in:
+  // ST12 'critique-unapplied' follows the brief too.
+  (id) => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['brief', 'critique'] }),
+  (id) => step({ id, role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', consumes: ['intent'], produces: ['brief'] }),
+  (id) => step({ id, role: 'build', actor: 'model', tier: 'mid', consumes: ['intent', 'brief'], produces: ['artifact'], writes: true }),
 ];
 
 const METRICS = ['critic-score', 'critic-rank', 'check-clean', 'human'] as const;
