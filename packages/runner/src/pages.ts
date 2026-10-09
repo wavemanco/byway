@@ -150,16 +150,18 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
 
   /**
    * The request filter: the page and the artifact route are served, allowlisted hosts pass, everything else is blocked.
-   * With `oneDocument`, a second navigation of the page (a meta refresh, a link followed) is refused, so the first
-   * document is the one read.
+   * With `oneDocument`, a second navigation (a meta refresh, a link followed) is answered with No Content, so the
+   * browser stays on the first document, the one read.
    */
   const route = (html: string, resolve: ArtifactResolver, oneDocument = false) => {
     let navigated = false;
     return async (r: Route) => {
       try {
         const request = r.request();
-        if (oneDocument && request.isNavigationRequest() && request.frame().parentFrame() === null) {
-          if (navigated) return await r.abort('blockedbyclient');
+        // (Any frame's: a frame's text is not the page's, and a navigation's frame may not be known yet.)
+        if (oneDocument && request.isNavigationRequest()) {
+          // No Content: browsers stay on the page (an aborted navigation would show an error page instead).
+          if (navigated) return await r.fulfill({ status: 204, body: '' });
           navigated = true;
         }
         const url = new URL(request.url());
