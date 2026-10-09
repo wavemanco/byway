@@ -200,6 +200,31 @@ describe('removals: conservative, and named when refused (F07)', () => {
     expect(run('<p>Intro</p><button aria-label="Search"><svg viewBox="0 0 1 1"></svg>Search</button>', set(2, ''))).toMatchObject(clean('<p>Intro</p><button aria-label="Search"><svg viewBox="0 0 1 1"></svg></button>'));
   });
 
+  it('a line beside an image-only or svg-only link can be edited: the link held no words, so the edit takes no name from it (r2)', () => {
+    const ok = { placeProblems: [], verifier: [] };
+    for (const [page, line, answer] of [
+      ['<p><a href="/shop"><img src="a.png" alt="Shop"></a> Shop now</p>', 1, 'Shop later'],
+      ['<h1><a href="/"><img src="logo.png" alt="Bakery"></a> Fresh Bakery</h1><p>Body</p>', 1, 'Warm Bakery'],
+      ['<p>Follow us <a href="https://x.com/b"><svg width="10" height="10"></svg></a></p>', 1, 'Follow me'],
+      ['<p>Follow us <a href="/tw"><svg width="10" height="10"></svg></a> on Twitter</p>', 1, 'Follow me'],
+      ['<p><a href="/g"><picture><img src="g.png" alt="Gallery"></picture></a> See the gallery</p>', 1, 'See our gallery'],
+      ['<ul><li><a href="/ship"><img src="i.svg" alt=""></a> Free shipping</li></ul>', 1, 'Fast shipping'],
+      ['<p><a href="/shop"><img src="a.png" alt="Shop"></a> Shop now</p>', 1, ''],
+    ] as const) {
+      const r = run(page, set(line, answer));
+      expect(r, page).toMatchObject(ok);
+      expect(deckLines(readPageCopy(pageOf(r.placed!)))[line] ?? '', page).toBe(answer);
+    }
+  });
+
+  it('an image with a non-empty alt names its link: the link\'s words can be deleted and the link kept (r2)', () => {
+    expect(run('<p>Intro</p><a href="/cart"><img src="c.png" alt="Cart"> Cart</a>', set(2, ''))).toMatchObject(clean('<p>Intro</p><a href="/cart"><img src="c.png" alt="Cart"> </a>'));
+    expect(run('<p>Intro</p><a href="/cart"><img src="c.png" alt=""> Cart</a>', set(2, ''))).toMatchObject({
+      placeProblems: ['Line 3: this link cannot be removed in this step and would be left without a name; keep some words for it, or leave the line as it was.'],
+      verifier: ['A link in your changed lines is left without a name.'],
+    });
+  });
+
   it('a line whose link carries a hook cannot be deleted (named), but can be edited', () => {
     expect(run('<p>Intro</p><p>See <a id="t" href="/t">terms</a> here.</p>', set(2, '')).placeProblems).toEqual(['Line 3: this link cannot be removed in this step (it carries id, which other parts of the page may use) and would be left empty; keep some words for it, or leave the line as it was.']);
     expect(run('<p>Intro</p><p>See <a id="t" href="/t">terms</a> here.</p>', set(2, 'Read [the terms] first.'))).toMatchObject(clean('<p>Intro</p><p>Read <a id="t" href="/t">the terms</a> first.</p>'));

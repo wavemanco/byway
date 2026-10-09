@@ -17,7 +17,8 @@
  *   deleted line leaves goes with it. It returns its removals as a witness;
  * - pageEditProblems: the verifier. It checks the witness against the shared rule, compares the markup token for token
  *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each link part's
- *   words, that no link or button holding a changed line is left nameless, and reads the written page fresh. It is
+ *   words, that no link or button whose words were in a changed line is left nameless (an image's alt or a label
+ *   names one that keeps an image or icon), and reads the written page fresh. It is
  *   independent of placement's alignment and removal choices, not of the reader (which is tested on its own).
  * Reading, placing and verifying are linear in the page; none of them throws.
  */
@@ -37,7 +38,8 @@ const isHook = (name: string): boolean => ['id', 'for', 'name', 'role'].includes
 const isNameAttr = (name: string): boolean => name === 'aria-label' || name === 'aria-labelledby' || name === 'title';
 const hookOf = (raw: string): string | undefined => attributesOf(raw).find((a) => isHook(a.name))?.name;
 const hasHook = (raw: string): boolean => hookOf(raw) !== undefined;
-const hasName = (raw: string): boolean => attributesOf(raw).some((a) => isNameAttr(a.name));
+/** Elements whose non-empty alt is their text alternative, so it names a link or button holding them. */
+const ALT_NAMED = new Set(['img', 'area', 'input']);
 
 /** Shown text with the notation's characters escaped. A trailing backslash is escaped when a bracket of the notation follows. */
 function escMarks(t: string, followedByMark = false): string {
@@ -475,6 +477,31 @@ export function pageLockView(html: string): string {
 
 // ---- removal: the one rule placement and the verifier share --------------------------------------------------------
 
+/** Something inside the element shows without text: an image, an icon, a control. */
+function showsWithoutText(p: PageDeck, el: El): boolean {
+  for (let t = el.start + 1; t < el.end!; t++) {
+    const tk = p.tokens[t]!;
+    if (tk.kind === 'tag' && !tk.closing && EMBEDDED.has(tk.name)) return true;
+  }
+  return false;
+}
+
+/**
+ * Something names the element without its words, as a screen reader would name it: its own aria-label,
+ * aria-labelledby or title, or inside it an image's alt or an element's own aria-label or aria-labelledby (each
+ * non-empty; an empty alt marks an image as decoration).
+ */
+function namedWithoutText(p: PageDeck, el: El): boolean {
+  const filled = (raw: string, names: (n: string) => boolean) => attributesOf(raw).some((a) => names(a.name) && a.value.trim() !== '');
+  if (filled(p.tokens[el.start]!.raw, isNameAttr)) return true;
+  for (let t = el.start + 1; t < el.end!; t++) {
+    const tk = p.tokens[t]!;
+    if (tk.kind !== 'tag' || tk.closing) continue;
+    if (filled(tk.raw, (n) => n === 'aria-label' || n === 'aria-labelledby' || (n === 'alt' && ALT_NAMED.has(tk.name)))) return true;
+  }
+  return false;
+}
+
 /** An emptied element may go: inline or a text block, with nothing inside that carries a hook or shows without text. */
 function removable(p: PageDeck, el: El): boolean {
   if (el.end === undefined) return false;
@@ -608,12 +635,8 @@ function removalsFor(p: PageDeck, edit: PageEdit, hasText: (s: number) => boolea
   for (const el of emptied) {
     if (gone.some((g) => g.start <= el.start && g.end! >= el.end!)) continue;
     if (el.name !== 'a' && el.name !== 'button') continue;
-    let visible = false;
-    for (let t = el.start + 1; t < el.end!; t++) {
-      const tk = p.tokens[t]!;
-      if (tk.kind === 'tag' && !tk.closing && EMBEDDED.has(tk.name)) visible = true;
-    }
-    if (!visible || !hasName(p.tokens[el.start]!.raw)) {
+    const visible = showsWithoutText(p, el);
+    if (!visible || !namedWithoutText(p, el)) {
       const slots = new Set(inside(p, el));
       const at = p.units.findIndex((u) => u.slots.some((s) => slots.has(s)));
       const hook = hookOf(p.tokens[el.start]!.raw);
@@ -920,20 +943,16 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
       if (got !== want) problems.push(`Line ${i + 1}: the link must read exactly "${want}" (it reads "${got}").`);
     });
   });
-  // 5. No <a> or <button> holding a changed line's text is left nameless: some text, or a visible embedded child plus
-  // a name attribute.
+  // 5. No <a> or <button> whose words were in a changed line is left nameless: it keeps some text, or shows something
+  // without text that is named (the removal rule's own test). One that held no words (an image or icon link beside
+  // a changed line, whose empty slot after the image belongs to that line) had no name for the edit to take.
   for (const el of p.els.values()) {
     // Removed elements cover their whole token range, so one inside a removed one starts on a removed token.
     if (el.end === undefined || (el.name !== 'a' && el.name !== 'button') || removedTok[el.start]) continue;
     const ss = inside(p, el);
-    if (!ss.some((s) => changedSlots.has(s))) continue;
+    if (!ss.some((s) => changedSlots.has(s) && noHtmlSpace(slotText(p, s)))) continue;
     if (noHtmlSpace(decodeText(ss.map((s) => slotAfter.get(s) ?? '').join('')))) continue;
-    let embedded = false;
-    for (let t = el.start + 1; t < el.end; t++) {
-      const tk = p.tokens[t]!;
-      if (tk.kind === 'tag' && !tk.closing && EMBEDDED.has(tk.name)) embedded = true;
-    }
-    if (!embedded || !hasName(p.tokens[el.start]!.raw)) problems.push(`A ${el.name === 'a' ? 'link' : 'button'} in your changed lines is left without a name.`);
+    if (!showsWithoutText(p, el) || !namedWithoutText(p, el)) problems.push(`A ${el.name === 'a' ? 'link' : 'button'} in your changed lines is left without a name.`);
   }
   // 6. Read fresh: the written page's blocks hold exactly the expected text, block by block, in order.
   const wantRegion = new Map<number, string>();

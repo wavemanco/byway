@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AnswerRejected, StepError } from '../src/activities/failures.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { relayLink } from '../src/activities/relay.ts';
+import { pageCopy } from '../src/copy.ts';
 import { joinCodeDiff, serializeJson, splitCodeDiff } from '../src/formats.ts';
 import type { StepSpec } from '../src/types.ts';
 import { benchRun, putWork, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
@@ -341,6 +342,14 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(problem).toMatch(/^Line 3 was read again since this question opened; it now reads "One": write your change to that line\. As first offered, line 3 read "OneTwo"\./);
     const out = await q.reask(answer, problem, answer);
     expect(await stored(out.artifactId!)).toBe('<p>A</p><nav><a href="#1">One and Two</a><a href="#2">Two</a></nav><pre>code</pre>');
+  });
+
+  it('a line beside an image link or an svg social link is written (the link held no words to lose)', async () => {
+    const q = await open(page('<h1><a href="/"><img src="logo.png" alt="Bakery"></a> Fresh Bakery</h1><p>Follow us <a href="https://x.com/b"><svg width="10" height="10"></svg></a></p>'));
+    expect(q.offered).toBe('T\nFresh Bakery\nFollow us');
+    const out = await q.answer('T\nWarm Bakery\nFollow me');
+    expect(pageCopy(await b.store.artifacts.getText(out.artifactId!))).toEqual(['T', 'Warm Bakery', 'Follow me']);
+    expect(b.gateway.requests).toEqual([]);
   });
 
   it('an answer equal to the offer writes nothing, whatever its whitespace', async () => {
