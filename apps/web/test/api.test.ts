@@ -400,3 +400,56 @@ describe('Settings: checking the spend ledger on demand (ADR-0091)', PRODUCT_PAT
     expect(await checkLedger(d)).toEqual({ intact: false, message: expect.stringMatching(/^Line 1 of the spend ledger cannot be read/) });
   });
 });
+
+describe('the first recommendation is asked for once per intake (F03, ADR-0091)', PRODUCT_PATH, () => {
+  const intakeCalls = () =>
+    readFileSync(path.join(current!.dataDir, 'ledger.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { purpose: string })
+      .filter((e) => e.purpose === 'advisor.intake').length;
+
+  it('two first loads of one intake at once share one advisor call and one ledger entry', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const [a, b] = await Promise.all([recommendationOrProblem(d, intakeId), recommendationOrProblem(d, intakeId)]);
+    expect(a).toEqual(b);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    expect(intakeCalls()).toBe(1);
+    // Later loads read the stored one.
+    await recommendationOrProblem(d, intakeId);
+    expect(recommend).toHaveBeenCalledTimes(1);
+  });
+
+  it('a page load and Try again ({ ensure: true }) at once share the call too', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const [page, command] = await Promise.all([recommendationOrProblem(d, intakeId), recommendCommand(d, intakeId, { ensure: true })]);
+    expect('recommendation' in page && page.recommendation).toEqual(command.recommendation);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    expect(intakeCalls()).toBe(1);
+  });
+
+  it('shares a failure with the loads that joined it, keeps nothing, and the next load asks again', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    recommend.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
+    const both = await Promise.all([recommendationOrProblem(d, intakeId), recommendationOrProblem(d, intakeId)]);
+    expect(both).toEqual([{ problem: expect.stringMatching(/busy/) }, { problem: expect.stringMatching(/busy/) }]);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    expect('recommendation' in (await recommendationOrProblem(d, intakeId))).toBe(true);
+    expect(recommend).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not share between intakes', async () => {
+    const d = await deps();
+    const one = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const two = await createIntake(d, { text: 'Tighten my quarterly memo' });
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    await Promise.all([currentRecommendation(d, one.intakeId), currentRecommendation(d, two.intakeId)]);
+    expect(recommend).toHaveBeenCalledTimes(2);
+  });
+});

@@ -18,6 +18,7 @@ import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
 import { artifactHeaders, isArtifactId, mediaServing } from './artifacts.ts';
 import { exportsInline, selfContained } from './export.ts';
+import { firstRecommendation } from './first-recommendation.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
@@ -91,10 +92,15 @@ export async function recommendIntake(deps: Deps, intakeId: string, answers?: Ch
   return rec;
 }
 
-/** The intake's recommendation as last made, or a fresh one the first time. */
+/**
+ * The intake's recommendation as last made, or a fresh one the first time. Concurrent first asks for one intake (two
+ * tabs, a reload, a render and Try again) share one advisor call (firstRecommendation, F03). Inside the shared call the
+ * intake is read again, so an ask that arrives just after another call stored its answer gets that answer, not a second call.
+ */
 export async function currentRecommendation(deps: Deps, intakeId: string): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
-  return intake.recommendation ?? recommendIntake(deps, intakeId);
+  if (intake.recommendation) return intake.recommendation;
+  return firstRecommendation(deps.services.store, intakeId, async () => (await requireIntake(deps, intakeId)).recommendation ?? recommendIntake(deps, intakeId));
 }
 
 /**
@@ -164,7 +170,7 @@ export interface ComposeResultView {
 /**
  * POST /recommend: `{ answers }` re-routes with the chooser answers as the person left them; `{ ensure: true }` (Try
  * again) returns the stored recommendation, or makes and stores the first one. Called in sequence, ensure asks the model
- * at most once; deduplicating it against a concurrent first page render is F03's work (paid-operation identity).
+ * at most once, and at the same time as a first page render it shares that render's call (currentRecommendation).
  */
 export async function recommendCommand(deps: Deps, intakeId: string, input: z.infer<typeof RecommendInput>): Promise<RecommendResult> {
   const recommendation = 'ensure' in input ? await currentRecommendation(deps, intakeId) : await recommendIntake(deps, intakeId, input.answers);
