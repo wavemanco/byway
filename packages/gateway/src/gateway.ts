@@ -72,7 +72,11 @@ export interface GatewayOptions {
   now?: () => Date;
   /** Output allowance when a request names none; it also bounds the pre-call estimate. */
   defaultMaxOutputTokens?: number;
-  /** Anthropic server-side refusal fallback (default on). */
+  /**
+   * Anthropic server-side refusal fallback (default on). Admission reserves one attempt on the requested model, so a
+   * refusal Anthropic routes to another model (or a sticky-routed call) can settle above its reservation (F04). Whether
+   * to turn it off waits on the owner's decision (D1 in docs/backlog.md; ADR-0091 leaves it as it is).
+   */
   anthropicRefusalFallback?: boolean;
   /**
    * How long a call the provider has already answered (and billed) waits for the ledger's cross-process lock before the
