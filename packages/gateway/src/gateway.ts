@@ -701,7 +701,7 @@ export class ModelGateway implements Gateway {
         model: ref.model,
         reserveUsd,
         paid: reserveUsd > 0,
-        ...(op ? { operationKey: op.key } : {}),
+        ...(op ? { operationKey: op.key, ...(op.rebuy === true ? { rebuy: true } : {}) } : {}),
       },
       async () => {
         const workspaceUsd = await this.caps.workspaceCapUsd(req.workspaceId);
@@ -865,8 +865,9 @@ function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: u
 
 /** SpendContext.operation, checked before anything is reserved: a key, and signals that can say when the caller ends. */
 function validateOperation(value: unknown): void {
-  const op = value as { key?: unknown; until?: unknown; cancel?: unknown } | null;
-  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel? }');
+  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; rebuy?: unknown } | null;
+  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, rebuy? }');
+  if (op.rebuy !== undefined && typeof op.rebuy !== 'boolean') throw invalid('operation.rebuy, when given, must be true or false');
   if (typeof op.key !== 'string' || !op.key) throw invalid('operation.key must be a non-empty string');
   if (!(op.until instanceof AbortSignal)) throw invalid('operation.until must be an AbortSignal');
   if (op.cancel !== undefined && !(op.cancel instanceof AbortSignal)) throw invalid('operation.cancel, when given, must be an AbortSignal');

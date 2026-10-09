@@ -62,8 +62,10 @@ export interface SpendContext {
    * - `cancel`: aborts when Temporal cancels the attempt (a cancel, a timeout, a lost worker): an unsettled call is held
    *   no longer, so a later attempt can take it over within one lease.
    * - `until`: aborts when the attempt's invocation ends: a settled call is held until then, while its result is kept.
+   * - `rebuy`: the caller was told an earlier attempt settled the call (GatewayError.settledEarlier), looked for its kept
+   *   result and found none: buy it again (counted).
    */
-  operation?: { key: string; until: AbortSignal; cancel?: AbortSignal };
+  operation?: { key: string; until: AbortSignal; cancel?: AbortSignal; rebuy?: boolean };
 }
 
 /** Which prompt template produced a call (from RenderedPrompt), recorded in the ledger for provenance (CR14). */
@@ -274,11 +276,17 @@ export class GatewayError extends Error {
    * and do not retry. False when byway knows nothing was sent. Absent when it is not known (a provider's own failure).
    */
   billed?: boolean;
-  constructor(code: GatewayErrorCode, message: string, retryable = false, opts: { billed?: boolean } = {}) {
+  /**
+   * Set on 'in-flight' when an earlier attempt settled the call and has ended (ADR-0099): its result may be kept (the
+   * runner's memo), so the caller looks for it before asking again with SpendContext.operation.rebuy.
+   */
+  settledEarlier?: boolean;
+  constructor(code: GatewayErrorCode, message: string, retryable = false, opts: { billed?: boolean; settledEarlier?: boolean } = {}) {
     super(message);
     this.code = code;
     this.retryable = retryable;
     if (opts.billed !== undefined) this.billed = opts.billed;
+    if (opts.settledEarlier) this.settledEarlier = true;
   }
 }
 

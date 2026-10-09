@@ -101,7 +101,7 @@ export class MemorySpendBook implements SpendBook {
     }
     const at = this.stamp();
     if (req.operationKey !== undefined) {
-      const held = this.resolveKey(req.operationKey, req.owner, now, req.leaseMs, at);
+      const held = this.resolveKey(req.operationKey, req.owner, now, req.leaseMs, at, req.rebuy === true);
       if (held) return held;
     }
     for (const r of this.rows.values()) {
@@ -381,10 +381,11 @@ export class MemorySpendBook implements SpendBook {
   }
 
   /** As the store's book (#resolveKey there): in flight, resumed, or given up so a new row can hold the key. */
-  private resolveKey(key: string, owner: string, now: number, leaseMs: number, at: string): AdmitOutcome | undefined {
+  private resolveKey(key: string, owner: string, now: number, leaseMs: number, at: string, rebuy: boolean): AdmitOutcome | undefined {
     const r = [...this.rows.values()].find((x) => x.key === key);
     if (!r) return undefined;
     if (live(r, now) && HOLDING.has(r.state)) return { inFlight: true };
+    if (r.state === 'settled' && !rebuy) return { settledEarlier: true };
     const jobs = { ...r.providerJobs };
     if (jobs.generation !== undefined && r.clearedAt === undefined && (r.state === 'accepted' || r.state === 'uncertain')) {
       Object.assign(r, { state: 'accepted', owner, leaseUntil: now + leaseMs, updatedAt: at });

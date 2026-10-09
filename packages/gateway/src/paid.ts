@@ -94,6 +94,16 @@ const inFlight = () =>
   new GatewayError('in-flight', 'Another attempt of this call is still under way, so byway did not make it again: this attempt waits for that one’s result.', true, { billed: false });
 
 /**
+ * An earlier attempt settled this call and has ended (stage 3): nothing was sent. Its result may have been kept, so the
+ * caller looks for it, and asks again with operation.rebuy only if it is not there.
+ */
+const settledEarlier = () =>
+  new GatewayError('in-flight', 'An earlier attempt of this call already made it, so byway did not make it again: this attempt looks for that one’s result first.', true, {
+    billed: false,
+    settledEarlier: true,
+  });
+
+/**
  * The refusal a closed gateway gives a paid call: retryable, so a step is tried again once byway has started again. It
  * is byway's own refusal, and nothing was sent or billed (ADR-0099).
  */
@@ -161,6 +171,7 @@ export class PaidCalls {
     if ('budget' in outcome) throw budgetError(outcome.budget);
     if ('fault' in outcome) throw new GatewayError('accounting-fault', outcome.fault);
     if ('inFlight' in outcome) throw inFlight();
+    if ('settledEarlier' in outcome) throw settledEarlier();
     const resumed = 'resume' in outcome ? outcome.resume : undefined;
     const opId = resumed?.opId ?? fresh;
     if (this.closed) {

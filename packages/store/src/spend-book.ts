@@ -101,7 +101,7 @@ export class SqliteSpendBook implements SpendBook {
       const at = this.#stamp();
       // Before the sweep, which would change what a key's row says about its holder.
       if (key !== undefined) {
-        const held = this.#resolveKey(key, owner, now, req.leaseMs, at);
+        const held = this.#resolveKey(key, owner, now, req.leaseMs, at, req.rebuy === true);
         if (held) return held;
       }
       q.sweepOpen.run({ now, at });
@@ -398,16 +398,18 @@ export class SqliteSpendBook implements SpendBook {
    * Inside admit's transaction: what holds an operation key (see AdmitRequest.operationKey). A live row holds it, in any
    * state but released and uncertain: the call is in flight, or its caller is keeping its result. A row whose provider
    * accepted queue jobs and whose holder is gone (accepted and no longer live, or handed back as uncertain and not
-   * cleared) is resumed by this caller. Any other row gives the key up (an open one no longer live was never sent; a
-   * sent one may have been billed), and undefined lets admission insert a new row holding it.
+   * cleared) is resumed by this caller. A settled row whose holder has ended answers settledEarlier, unless the caller
+   * looked for its kept result and found none (rebuy). Any other row gives the key up (an open one no longer live was
+   * never sent; a sent one may have been billed), and undefined lets admission insert a new row holding it.
    */
-  #resolveKey(key: string, owner: string, now: number, leaseMs: number, at: string): AdmitOutcome | undefined {
+  #resolveKey(key: string, owner: string, now: number, leaseMs: number, at: string, rebuy: boolean): AdmitOutcome | undefined {
     const q = this.#queries();
     const row = q.byKey.get(key) as Row | undefined;
     if (!row) return undefined;
     const id = String(row.id);
     const state = String(row.state);
     if (Number(row.lease_until) > now && HOLDING.has(state)) return { inFlight: true };
+    if (state === 'settled' && !rebuy) return { settledEarlier: true };
     const jobs = acceptedJobs(row.provider_jobs);
     if (jobs.generation !== undefined && row.cleared_at === null && (state === 'accepted' || state === 'uncertain')) {
       q.resume.run({ id, owner, lease: now + leaseMs, at });

@@ -617,7 +617,7 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
       );
 
       it(
-        'lets a later attempt take the key of an owner that is gone: an open row is released, a sent one may have been billed, a settled one is bought again (counted)',
+        'lets a later attempt take the key of an owner that is gone: an open row is released, a sent one may have been billed; a settled one first says so, and is bought again (counted) only when asked to',
         withBook(async ({ a, b, advance }) => {
           const open = keyed('k-open', { reserveUsd: 0.1 });
           const sent = keyed('k-sent', { reserveUsd: 0.2 });
@@ -627,8 +627,10 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           await a.markSent(settled.opId, 'owner-a');
           await a.settle(settled.opId, settlement(0.25));
           advance(LEASE + 1);
+          // The settled call's result may have been kept: the caller is told so, and looks before buying it again.
+          expect(await b.admit(keyed('k-settled', { owner: 'owner-b' }))).toEqual({ settledEarlier: true });
           for (const r of [open, sent, settled]) {
-            const next = keyed(r.operationKey!, { owner: 'owner-b', reserveUsd: 0.05 });
+            const next = keyed(r.operationKey!, { owner: 'owner-b', reserveUsd: 0.05, ...(r === settled ? { rebuy: true } : {}) });
             expect(await b.admit(next)).toEqual({ admitted: true });
             expect(await b.markSent(next.opId, 'owner-b')).toBe(true);
             // The new row holds the key now.
@@ -636,6 +638,17 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           }
           expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.25, inFlightUsd: 0.15, uncertainUsd: 0.2 });
           expect((await a.records('ws')).uncertain).toEqual([expect.objectContaining({ opId: sent.opId, reason: 'interrupted' })]);
+        }),
+      );
+
+      it(
+        'never frees a settled call’s key for rebuy while its holder is live: it is in flight',
+        withBook(async ({ a, b }) => {
+          const r = keyed('k-live');
+          await a.admit(r);
+          await a.markSent(r.opId, 'owner-a');
+          await a.settle(r.opId, { ...settlement(0.05), holdMs: LEASE });
+          expect(await b.admit(keyed('k-live', { owner: 'owner-b', rebuy: true }))).toEqual({ inFlight: true });
         }),
       );
 
@@ -716,7 +729,8 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           await b.letGo([r.opId], 'owner-b');
           expect(await b.admit(keyed('k-memo', { owner: 'owner-b' }))).toEqual({ inFlight: true });
           await a.letGo([r.opId], 'owner-a');
-          expect(await b.admit(keyed('k-memo', { owner: 'owner-b' }))).toEqual({ admitted: true });
+          expect(await b.admit(keyed('k-memo', { owner: 'owner-b' }))).toEqual({ settledEarlier: true });
+          expect(await b.admit(keyed('k-memo', { owner: 'owner-b', rebuy: true }))).toEqual({ admitted: true });
           // A settled call without a key is never renewed: it is not held by anyone.
           const plain = admitRequest();
           await a.admit(plain);
@@ -735,7 +749,8 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           await a.markSent(r.opId, 'owner-a');
           await a.settle(r.opId, { ...settlement(0.05), holdMs: LEASE });
           await a.endLeases('owner-a');
-          expect(await b.admit(keyed('k-stop', { owner: 'owner-b' }))).toEqual({ admitted: true });
+          expect(await b.admit(keyed('k-stop', { owner: 'owner-b' }))).toEqual({ settledEarlier: true });
+          expect(await b.admit(keyed('k-stop', { owner: 'owner-b', rebuy: true }))).toEqual({ admitted: true });
           expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.05, inFlightUsd: 0.1 });
         }),
       );

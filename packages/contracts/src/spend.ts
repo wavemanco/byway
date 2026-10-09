@@ -43,10 +43,17 @@ export interface AdmitRequest {
    * The call's identity across retries (stage 3, ADR-0099): for a step's call, its run and memo key, the same on every
    * Temporal attempt of the step. One live row holds a key at a time. Admitting a key a live row holds answers
    * `inFlight` (an earlier attempt is still under way, or still keeping its result); a key whose holder is gone is
-   * taken over: an accepted call is resumed (`resume`), and anything else gives the key up to a new row (a call that was
-   * settled and whose result was not kept is bought again, and counted). Absent for calls outside a step (the advisor's).
+   * taken over: an accepted call is resumed (`resume`), a settled one answers `settledEarlier` (its result may have
+   * been kept: look before buying again), and anything else gives the key up to a new row. Absent for calls outside a
+   * step (the advisor's).
    */
   operationKey?: string;
+  /**
+   * With an operation key: the caller was told `settledEarlier`, then looked for that call's kept result and found
+   * none, so the settled call gives its key up and this one is bought again (and counted): its earlier attempt ended
+   * without keeping what it bought (its process died first, or its memo could not be saved).
+   */
+  rebuy?: boolean;
   /** The process-and-gateway that holds the operation; only it may mark it sent or renew its lease. */
   owner: string;
   /** How long the operation stays live without a renewal. */
@@ -73,6 +80,12 @@ export type AdmitOutcome =
   | { fault: string }
   /** A live row holds the operation key: another attempt of the same call is under way, or keeping its result. */
   | { inFlight: true }
+  /**
+   * The key's call was settled by an earlier attempt that has ended (or died): its result may have been kept (the
+   * runner's memo), so the caller looks there first, and admits again with `rebuy` only if it is not there. A holder
+   * keeps its result before it ends, so a look that follows this answer cannot miss a result that was kept.
+   */
+  | { settledEarlier: true }
   /**
    * The operation key's row had queue jobs the provider accepted, and its holder is gone (its lease ran out, or it
    * stopped and handed the call back): this caller now holds that row (`opId`, owner and lease) and polls the jobs by

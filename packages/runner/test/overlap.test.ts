@@ -183,6 +183,37 @@ describe('two attempts of one step’s paid call (F03 stage 3, ADR-0099)', () =>
     expect(await worker.spend(workspaceId)).toMatchObject({ spentUsd: 0.1, inFlightUsd: 0, uncertainUsd: 0 });
   });
 
+  it('attempt 1 keeps its answer and ends between attempt 2’s look for it and its next ask: attempt 2 finds the answer, never buys it twice', async () => {
+    const answers = provider();
+    const worker = gateway({ anthropic: answers.adapter });
+    const first = attempt();
+    const save = slowSave(store);
+    const one = memoGateway(worker, save.memo, scope(), { ...QUICK, operation: first.operation }).complete(ask());
+    await until(() => save.saving());
+    // Attempt 2's second look finds nothing; right after it, attempt 1 keeps its answer and its invocation ends.
+    let looks = 0;
+    const racing: Pick<Store, 'getMemo' | 'setMemo' | 'artifacts'> = {
+      artifacts: store.artifacts,
+      setMemo: (r, k, v) => store.setMemo(r, k, v),
+      async getMemo(r, k) {
+        const hit = await store.getMemo(r, k);
+        looks += 1;
+        if (looks === 2) {
+          save.release();
+          await one;
+          first.invocation.stop();
+          await sleep(50);
+        }
+        return hit;
+      },
+    };
+    const second = attempt();
+    const two = await memoGateway(worker, racing, scope(), { ...QUICK, operation: second.operation }).complete(ask());
+    expect(two).toEqual(await one);
+    expect(answers.calls()).toBe(1);
+    second.invocation.stop();
+  });
+
   it('attempt 1 hung in its provider call past its timeout: attempt 2 takes the call over within one lease, and the first counts as may have been billed', async () => {
     const hung = provider({ hang: true });
     const answers = provider();

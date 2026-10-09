@@ -140,15 +140,19 @@ describe('one call across a step’s attempts (F03 stage 3, ADR-0099)', () => {
     expect(await g.spend('ws')).toMatchObject({ spentUsd: 0.1, inFlightUsd: 0 });
   });
 
-  it('holds a settled call until its caller’s invocation ends, then lets it go at once: a later call with its key is a new, counted call', async () => {
+  it('holds a settled call until its caller’s invocation ends, then lets it go at once: a later call is told so, and buys it again (counted) only when asked to', async () => {
     const provider = answering();
     const g = gateway({ adapters: { anthropic: provider.adapter } });
     const a = attempt();
     await g.complete(ask(a.operation));
     // The first attempt is still keeping its result (a memo save): another attempt waits for it rather than buy again.
     await expect(g.complete(ask(attempt().operation))).rejects.toMatchObject({ code: 'in-flight' });
+    expect(((await g.complete(ask(attempt().operation)).catch((e: unknown) => e)) as { settledEarlier?: boolean }).settledEarlier).not.toBe(true);
     a.until.abort();
-    await until(async () => (await g.complete(ask(attempt().operation)).then(() => true, () => false)));
+    // Let go: the next attempt is told an earlier one settled it (so it looks for that result first)…
+    await until(async () => (await g.complete(ask(attempt().operation)).catch((e: { settledEarlier?: boolean }) => e.settledEarlier)) === true);
+    // …and, finding none, buys it again.
+    await expect(g.complete(ask({ ...attempt().operation, rebuy: true }))).resolves.toMatchObject({ costUsd: 0.1 });
     expect(provider.calls()).toBe(2);
     expect(await g.spend('ws')).toMatchObject({ spentUsd: 0.2 });
   });
@@ -208,7 +212,7 @@ describe('one call across a step’s attempts (F03 stage 3, ADR-0099)', () => {
     clock.t += LEASE / 2;
     await expect(workerB.complete(ask(attempt().operation))).rejects.toMatchObject({ code: 'in-flight' });
     a.until.abort();
-    await until(async () => (await workerB.complete(ask(attempt().operation)).then(() => true, () => false)));
+    await until(async () => (await workerB.complete(ask({ ...attempt().operation, rebuy: true })).then(() => true, () => false)));
   });
 
   it('lets a settled call go when its gateway closes (a clean stop): a step retried on a new worker does not wait out the lease', async () => {
@@ -216,12 +220,13 @@ describe('one call across a step’s attempts (F03 stage 3, ADR-0099)', () => {
     await workerA.complete(ask(attempt().operation));
     await workerA.close();
     const workerB = gateway({ adapters: { anthropic: answering().adapter } });
-    await expect(workerB.complete(ask(attempt().operation))).resolves.toMatchObject({ costUsd: 0.1 });
+    await expect(workerB.complete(ask(attempt().operation))).rejects.toMatchObject({ code: 'in-flight', settledEarlier: true });
+    await expect(workerB.complete(ask({ ...attempt().operation, rebuy: true }))).resolves.toMatchObject({ costUsd: 0.1 });
   });
 
   it('refuses an operation that is not a key with its signals, before anything is reserved', async () => {
     const g = gateway({ adapters: { anthropic: answering().adapter } });
-    const bad = [{ key: '', until: new AbortController().signal }, { key: 'k', until: 'soon' }, { key: 'k', until: new AbortController().signal, cancel: 5 }];
+    const bad = [{ key: '', until: new AbortController().signal }, { key: 'k', until: 'soon' }, { key: 'k', until: new AbortController().signal, cancel: 5 }, { key: 'k', until: new AbortController().signal, rebuy: 'yes' }];
     for (const operation of bad) {
       await expect(g.complete(ask(operation as unknown as SpendContext['operation']))).rejects.toMatchObject({ code: 'invalid-request' });
     }

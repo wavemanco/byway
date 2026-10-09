@@ -78,10 +78,14 @@ const WAIT_POLL_MS = 2_000;
 const RECALL_EVERY_MS = 10_000;
 const WAIT_LIMIT_MS = 5 * 60_000;
 
-/** The gateway's refusal of a call another attempt holds (GatewayError 'in-flight'), by name and code. */
-const inFlight = (e: unknown): boolean => {
-  const err = e as { name?: unknown; code?: unknown } | null;
-  return err?.name === 'GatewayError' && err.code === 'in-flight';
+/**
+ * The gateway's refusal of a call another attempt holds (GatewayError 'in-flight'), by name and code: 'held' while that
+ * attempt is under way or keeping its result, 'settled' when it settled the call and has ended (settledEarlier).
+ */
+const inFlight = (e: unknown): 'held' | 'settled' | undefined => {
+  const err = e as { name?: unknown; code?: unknown; settledEarlier?: unknown } | null;
+  if (err?.name !== 'GatewayError' || err.code !== 'in-flight') return undefined;
+  return err.settledEarlier === true ? 'settled' : 'held';
 };
 
 /**
@@ -113,15 +117,28 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
   /**
    * The call, or, while another attempt holds it (in-flight), that attempt's answer once it is kept: the memo is looked
    * for every pollMs and the gateway asked again every recallMs, for at most limitMs. A cancel of this attempt ends the
-   * wait at the next ask, which the invocation's gateway refuses as stopped.
+   * wait at the next ask, which the invocation's gateway refuses as stopped. When the gateway says an earlier attempt
+   * settled the call and has ended, the memo is looked for at once, after that answer: a holder keeps its result before
+   * it ends, so a result that was kept is found, and only when there is none is the call bought again (rebuy).
    */
-  async function callOrWait<T>(kind: string, key: string, call: () => Promise<T>, load: (v: string) => Promise<T>): Promise<{ made: T } | { kept: T }> {
+  async function callOrWait<T>(kind: string, key: string, call: (rebuy: boolean) => Promise<T>, load: (v: string) => Promise<T>): Promise<{ made: T } | { kept: T }> {
     const started = Date.now();
+    let rebuy = false;
     for (;;) {
       try {
-        return { made: await call() };
+        return { made: await call(rebuy) };
       } catch (e) {
-        if (!inFlight(e)) throw e;
+        const held = inFlight(e);
+        if (!held) throw e;
+        if (held === 'settled') {
+          const hit = await store.getMemo(scope.runId, key);
+          if (hit !== undefined) return { kept: await load(hit) };
+          if (!rebuy) {
+            rebuy = true;
+            continue;
+          }
+        }
+        rebuy = false;
       }
       const recall = Date.now() + recallMs;
       while (Date.now() < recall && !opts.operation?.cancel?.aborted) {
@@ -142,8 +159,9 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
     const hit = await store.getMemo(scope.runId, key);
     if (hit !== undefined) return load(hit);
     // The operation joins the request after the memo key was made from it, so memo keys are unchanged.
-    const sent = opts.operation ? { ...request, operation: { key: `${scope.runId}/${key}`, ...opts.operation } } : request;
-    const outcome = await callOrWait(kind, key, () => call(sent as never), load);
+    const sent = (rebuy: boolean) =>
+      opts.operation ? { ...request, operation: { key: `${scope.runId}/${key}`, ...opts.operation, ...(rebuy ? { rebuy: true } : {}) } } : request;
+    const outcome = await callOrWait(kind, key, (rebuy) => call(sent(rebuy) as never), load);
     if ('kept' in outcome) return outcome.kept;
     const result = outcome.made;
     // From here on the call is paid for: keep its answer, retrying here (see the header), never by Temporal.
