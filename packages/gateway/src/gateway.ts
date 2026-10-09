@@ -37,7 +37,7 @@ import { createOpenRouterClient, openrouterAdapter } from './providers/openroute
 import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, ResolvedImage, ResolvedMessage } from './providers/types.ts';
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
-import { DEFAULT_RETRY, withRetries, type RetryOptions } from './retry.ts';
+import { BILLABLE_CALL, DEFAULT_RETRY, FREE_READ, withRetries, type RetryOptions } from './retry.ts';
 
 /** Where spend caps come from: the workspace budget (Workspace.budgetUsd) and each run's budget (StartRunInput.budgetUsd). */
 export interface CapsSource {
@@ -216,7 +216,7 @@ export class ModelGateway implements Gateway {
         } catch (e) {
           throw toGatewayError(e, ref.provider, redact);
         }
-      }, this.retry);
+      }, this.retry, BILLABLE_CALL);
       const costUsd = this.completionCost(ref, out);
       const entry = await this.record(
         {
@@ -283,7 +283,7 @@ export class ModelGateway implements Gateway {
         } catch (e) {
           throw toGatewayError(e, ref.provider, redact);
         }
-      }, this.retry);
+      }, this.retry, BILLABLE_CALL);
       const costUsd = roundUsd(tokenCost(price, out.usage) + (price.perImageUsd ?? 0) * (out.usage.units ?? 1));
       // Billed from here: keeping the image may fail, but the call is ledgered first either way (ENG-3).
       const kept = out.refusal ? undefined : await keep(() => this.artifacts.put(out.bytes, out.mediaType));
@@ -361,7 +361,7 @@ export class ModelGateway implements Gateway {
             } catch (e) {
               throw toGatewayError(e, ref.provider, redact);
             }
-          }, this.retry),
+          }, this.retry, FREE_READ),
       });
       const units = out.usage.units ?? seconds;
       const costUsd = roundUsd(maxVideoCost(price, units, extras));

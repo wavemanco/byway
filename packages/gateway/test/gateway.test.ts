@@ -8,7 +8,7 @@ import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
 import type { AnthropicMessageLike } from '../src/providers/anthropic.ts';
 import type { ProviderAdapter } from '../src/providers/types.ts';
-import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, httpError, MemoryArtifacts } from './fakes.ts';
+import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, fetchFailed, httpError, MemoryArtifacts } from './fakes.ts';
 
 const ANTHROPIC_KEY = 'sk-ant-api03-test-not-a-real-key-000000';
 const OPENAI_KEY = 'sk-test-not-a-real-openai-key-0000000';
@@ -173,10 +173,36 @@ describe('gateway: complete', () => {
   });
 
   it('gives up after the retry limit with the mapped error', async () => {
-    const { client, calls } = fakeAnthropic([httpError(503), httpError(503), httpError(503), httpError(503), httpError(503)]);
+    // Overloaded answers carry Anthropic's own error body, so nothing was billed and each is retried (ADR-0091).
+    const overloaded = () => httpError(503, 'overloaded', { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } });
+    const { client, calls } = fakeAnthropic([overloaded(), overloaded(), overloaded(), overloaded(), overloaded()]);
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client }, retry: { sleep: instant, random: () => 0, maxAttempts: 3 } });
     await expect(g.complete(req())).rejects.toMatchObject({ code: 'provider-error', retryable: true });
     expect(calls).toHaveLength(3);
+  });
+
+  it('sends a completion once more after a reset that may have been billed, and ledgers only the answer (F03)', async () => {
+    // Node's fetch wraps the reset: the code is only on the cause, which the old check never read (non-retryable).
+    const { client, calls } = fakeAnthropic([fetchFailed('ECONNRESET')]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    await expect(g.complete(req())).resolves.toMatchObject({ provider: 'anthropic' });
+    expect(calls).toHaveLength(2);
+    expect(ledgerLines()).toHaveLength(1);
+  });
+
+  it('fails plainly on a second attempt that may have been billed, without a third (F03)', async () => {
+    const { client, calls } = fakeAnthropic([fetchFailed('ECONNRESET'), httpError(502), anthropicMessage()]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    await expect(g.complete(req())).rejects.toMatchObject({ code: 'provider-error', message: expect.stringMatching(/502/) });
+    expect(calls).toHaveLength(2);
+    expect(existsSync(join(dir, 'ledger.jsonl'))).toBe(false);
+  });
+
+  it('retries a refused connection like any unbilled failure (nothing was written)', async () => {
+    const { client, calls } = fakeAnthropic([fetchFailed('ECONNREFUSED'), fetchFailed('ECONNREFUSED'), fetchFailed('ECONNREFUSED')]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    await expect(g.complete(req())).resolves.toMatchObject({ provider: 'anthropic' });
+    expect(calls).toHaveLength(4);
   });
 
   it('ledgers a refusal (it may be billed) and then raises refused', async () => {

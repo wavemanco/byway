@@ -226,5 +226,11 @@ export function countingBody(chunks: number, chunkBytes = 1024 * 1024) {
   return { stream, seen };
 }
 
-/** An error shaped like the SDKs' API errors. */
-export const httpError = (status: number, message = `HTTP ${status}`) => Object.assign(new Error(message), { status });
+/**
+ * An error shaped like the SDKs' API errors: `error` is the parsed JSON body (Anthropic, OpenAI), absent when the body
+ * was not JSON (a proxy's HTML page).
+ */
+export const httpError = (status: number, message = `HTTP ${status}`, body?: unknown) => Object.assign(new Error(message), { status, ...(body !== undefined ? { error: body } : {}) });
+
+/** Node's fetch (undici) failing: TypeError('fetch failed') with the socket's code only on its cause. */
+export const fetchFailed = (code: string) => new TypeError('fetch failed', { cause: Object.assign(new Error(`${code}: socket`), { code }) });
