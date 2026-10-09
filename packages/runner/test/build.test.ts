@@ -7,8 +7,11 @@ import type { Plugin } from 'esbuild';
 import { describe, expect, it } from 'vitest';
 import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '../src/build.ts';
 
-/** The workflow bundle's hash at main 17eae76, before F03's stage 3, and after it. */
-const PINNED_WORKFLOW_HASH = 'e572716aaa5b6d3467b705ab8510f0473b49bc6838e78510917719b06c5d90e0';
+/**
+ * The workflow bundle's hash at main a768d4d (after ADR-0092's admission work, which changed it from e572716a… at 17eae76),
+ * before F03's stage 3, and after it: stage 3 changes no workflow code.
+ */
+const PINNED_WORKFLOW_HASH = 'bfdda860bb6aff469c48f48389af1795bd1c25f0dd1689b6b45e9b2080bee074';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
