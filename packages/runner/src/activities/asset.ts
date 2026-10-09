@@ -16,6 +16,7 @@
  */
 import { GatewayError, type Medium } from '@byway/contracts';
 import { isHeldKeyError } from '@byway/gateway';
+import { audioAsset } from '@byway/recipe/semantics';
 import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson, textView, type Parsed } from '../formats.ts';
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
 import { parseBriefs } from '../parse.ts';
@@ -27,6 +28,7 @@ import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
+import { keptVoice } from './held-voice.ts';
 import { announce, storeText, writeProblems } from './writes.ts';
 
 /** Image failures that stop the asset step instead of trying the image again (a billed failure does too: see below). */
@@ -41,8 +43,8 @@ export const NO_BRIEF_NOTE = 'The AI wrote no usable image brief, even when aske
 /** The prompt lets the AI answer with no image (its minimum is 0), and it did: a choice, not a failure (F11, D3). */
 export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, which its instructions allow, so no image was made; the work is unchanged.';
 
-/** An ASSET step that turns the script into audio rather than images (03 C5 "VO audio from the locked script"). */
-export const isAudioAsset = (step: AssetInput['step']): boolean => step.consumes.includes('voice');
+/** An ASSET step that turns the script into audio rather than images: @byway/recipe/semantics' audioAsset, which the explainers and the estimate read too. */
+export const isAudioAsset = (step: AssetInput['step']): boolean => audioAsset(step);
 
 const imageRoute = (id: string): string => `/api/artifacts/${id}`;
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
@@ -145,7 +147,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
         const missing = made.filter((m) => !doc.value.includes(imageRoute(m.artifactId)));
         const problems = [
           ...(missing.length ? [`Place every image by its address; missing: ${missing.map((m) => imageRoute(m.artifactId)).join(', ')}.`] : []),
-          ...writeProblems(run, doc.value, step.keepsVoice ? ports.voice : undefined, current),
+          ...writeProblems(run, doc.value, step.keepsVoice ? keptVoice(ports) : undefined, current),
         ];
         return problems.length ? { ok: false, problem: problems.join(' ') } : doc;
       },
@@ -157,7 +159,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     else result.asset = made.map((m) => m.artifactId);
   } else {
     const attached = attach(medium, current, made);
-    const problems = writeProblems(run, attached, step.keepsVoice ? ports.voice : undefined, current);
+    const problems = writeProblems(run, attached, step.keepsVoice ? keptVoice(ports) : undefined, current);
     if (problems.length) throw new StepError(`The ${what} step could not attach its images: ${problems.join(' ')}`);
     const id = await storeText(deps, run, call, attached, { label: writes ? what : `${what} (kept beside the work)`, name: 'work' });
     outputs.push(id);

@@ -10,6 +10,7 @@ import {
   restoresWork,
   refreshesPrevious,
   SNAPSHOT_METRICS,
+  unappliedCritiques,
   voiceArm,
   voiceWrite,
   walk,
@@ -21,7 +22,8 @@ import type { Findings } from '../context.ts';
 import { flowRecipe } from '../flow.ts';
 
 /**
- * ST12 (ADR-0092): what a recipe declares agrees with what it runs, and nothing it puts back undoes a person's write.
+ * ST12 (ADR-0092): what a recipe declares agrees with what it runs, nothing it puts back undoes a person's write, and
+ * no person's list or critique is asked whose answer reaches the work on no path (ADR-0098).
  * Protections are granted only by what executes (@byway/recipe semantics); a declaration may add arming or refusals,
  * never take one away. So a declaration that says less than execution is refused, and for VOICE and block labels, one
  * that says anything else.
@@ -44,6 +46,20 @@ export function checkDeclarations(recipe: Recipe, findings: Findings): void {
     }
     if (perCandidate && voiceArm(step)) {
       findings.add('ST12', path, `VOICE "${step.id}" runs once per candidate; the person's words go into the one work, after the pick`, 'voice-per-candidate');
+    }
+  }
+  // A person's list or critique whose answer reaches the work on no path: nothing that writes the work (an AI writer, or
+  // a draft of their own shown it) or picks which version it is takes it in, by any port it fills, directly or in what
+  // an AI step makes from it, and in a candidate, only where a pick or an AI writer that takes the options in takes that
+  // candidate up (ADR-0098). Asked in a candidate, only that candidate's own steps can take it in: replicate and each
+  // hand on only the candidates' work. Asked in a lens or a gate body, it is refused as such (ST9 and ST10
+  // 'human-critique'), once.
+  for (const { step, path, contained, perCandidate } of unappliedCritiques(recipe)) {
+    if (contained) continue;
+    if (perCandidate) {
+      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick, or an AI writer that takes the options in, takes it up`, 'critique-per-candidate');
+    } else {
+      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it, or the one that does works on candidates that nothing takes up`, 'critique-unapplied');
     }
   }
   walk(recipe, (node, path) => {
@@ -96,6 +112,8 @@ function checkSetAside(recipe: Recipe, findings: Findings): void {
       return refreshesPrevious(step) ? undefined : stale;
     },
     join: (states) => states.find((s) => s !== undefined),
+    // No step: the empty key. A step id: never empty, so its key never meets that one.
+    key: (stale) => (stale === undefined ? '' : `id:${stale}`),
   });
   walk(recipe, (node, path) => {
     if (node.op !== 'loop' || !SNAPSHOT_METRICS.has(node.gate.metric)) return;

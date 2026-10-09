@@ -104,8 +104,11 @@ export function checkPorts(recipe: Recipe, typing: Typing, findings: Findings): 
       if (sharesThresholdContext(node)) {
         findings.add('PR2', path, `loop "${node.id}" critic shares the worker's context, which holds the threshold`, 'shared-context');
       }
-      // LS1: humans decide at non-convergence and at the cap.
-      if (containsCritic(node.body) && (g.onCap !== 'human' || g.onNoConverge !== 'recalibrate-human')) {
+      // LS1: humans decide at non-convergence and at the cap. A loop a person holds ends only on their answer, the last
+      // round too (ADR-0093): named first, so a person's loop with a critic in its review (C6) is not called a critic loop.
+      if (g.metric === 'human' && g.onCap !== 'human') {
+        findings.add('LS1', path, `loop "${node.id}" is yours to end, but hands its last round to a policy`);
+      } else if (containsCritic(node.body) && (g.onCap !== 'human' || g.onNoConverge !== 'recalibrate-human')) {
         findings.add('LS1', path, `critic loop "${node.id}" hands ${g.onCap !== 'human' ? 'the cap' : 'non-convergence'} to a policy`);
       }
     }

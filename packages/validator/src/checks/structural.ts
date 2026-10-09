@@ -1,8 +1,35 @@
 import { BLOCKS, ROLE_KNOBS, type KnobDef } from '@byway/protocol';
-import { declaresVoice, personWrite, steps, walk, walkNode, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
-import { ANNOTATION_PORTS, CRITIC_METRICS, DETECTOR_PATTERN, KNOWN_GATE_METRICS, MAX_GATE_RETRIES, type Findings } from '../context.ts';
+import {
+  declaresVoice,
+  engineProblems,
+  gateFeed,
+  MAX_GATE_RETRIES,
+  personCritique,
+  personWrite,
+  replacesCritique,
+  steps,
+  unappliedCritiques,
+  walk,
+  walkNode,
+  type Json,
+  type Node,
+  type Placement,
+  type Recipe,
+  type Step,
+} from '@byway/recipe';
+import { ANNOTATION_PORTS, CRITIC_METRICS, DETECTOR_PATTERN, KNOWN_GATE_METRICS, type Findings } from '../context.ts';
 
 const STAGE_ORDER = { D1: 1, D2: 2, D3: 3 } as const;
+
+/**
+ * Whether an empty answer from a person's step is what its lens or gate body ends with on every run: the step is the
+ * body, or sits in the body's own seq with nothing after it that can put a critique in place. A lens and a gate drop an
+ * empty answer, so the operator then hands on the critique it was handed.
+ */
+const endsWith = (body: Node, s: Step): boolean => body === s || (body.op === 'seq' && body.steps.includes(s) && !body.steps.slice(body.steps.indexOf(s) + 1).some(replacesCritique));
+
+/** Whether a person's list or critique asked at a place under `under` reaches the work on no path (`unappliedCritiques`). */
+const reachesNothing = (unapplied: readonly Placement[], s: Step, under: string): boolean => unapplied.some((p) => p.step === s && p.path.startsWith(`${under}.`));
 
 /** Every step inside a node. */
 function stepsWithin(node: Node): Step[] {
@@ -14,6 +41,9 @@ function stepsWithin(node: Node): Step[] {
 }
 
 export function checkStructural(recipe: Recipe, findings: Findings): void {
+  // A person's lists and critiques that reach the work on no path, for ST9 and ST10 'human-critique' (ADR-0098).
+  let unapplied: Placement[] | undefined;
+  const lost = (): Placement[] => (unapplied ??= unappliedCritiques(recipe));
   // ST1: unique ids.
   const seen = new Map<string, string>();
   walk(recipe, (node, path) => {
@@ -37,6 +67,12 @@ export function checkStructural(recipe: Recipe, findings: Findings): void {
       if (!KNOWN_GATE_METRICS.has(g.metric) && !DETECTOR_PATTERN.test(g.metric)) {
         findings.add('ST2', path, `loop "${node.id}" uses an unknown gate metric "${g.metric}"`);
       }
+      // ST2 'feed' (ADR-0092 stage 4): the gate decides only after a critic or check that reports to it; one that may not
+      // run, or runs where the gate cannot see it, leaves the loop to reach its last round with no verdict.
+      if ((CRITIC_METRICS.has(g.metric) || g.metric === 'check-clean') && !gateFeed(node).always) {
+        const what = g.metric === 'check-clean' ? 'defect check' : 'critic';
+        findings.add('ST2', path, `loop "${node.id}" ends on its ${what}, but no ${what} reports to it on every round (one in an audit, a draft, a gate or an inner loop never does; one under an optional may not run)`, 'feed');
+      }
     }
     // ST3: counts.
     if (node.op === 'replicate' && !(Number.isInteger(node.n) && node.n >= 1)) findings.add('ST3', path, `replicate "${node.id}" needs an integer n ≥ 1`);
@@ -45,9 +81,9 @@ export function checkStructural(recipe: Recipe, findings: Findings): void {
       findings.add('ST3', path, `relay "${node.id}" needs an integer maxLinks ≥ 1`);
     }
     // ST9: audit lenses only annotate.
-    if (node.op === 'audit') checkAudit(node, path, findings);
+    if (node.op === 'audit') checkAudit(node, path, lost, findings);
     // ST10: one-shot gates.
-    if (node.op === 'gate') checkGate(recipe, node, path, stage, findings);
+    if (node.op === 'gate') checkGate(recipe, node, path, stage, lost, findings);
   });
 
   // ST4: stage order.
@@ -67,14 +103,22 @@ export function checkStructural(recipe: Recipe, findings: Findings): void {
 
   // ST7: knobs.
   for (const { step, path } of steps(recipe)) checkKnobs(step, path, findings);
+
+  // ST3 'limit' and ST10 'retry-scope' (F02): what the engine itself refuses to run (@byway/recipe limits.ts), on every
+  // kind. The counts' lower bounds and the retry count are reported above, in this rule's own words.
+  for (const p of engineProblems(recipe)) {
+    if ((p.ruleId === 'ST3' && p.clause === 'limit') || (p.ruleId === 'ST10' && p.clause === 'retry-scope')) findings.add(p.ruleId, p.path, p.message, p.clause);
+  }
 }
 
 /**
  * ST9: no lens step writes, no person writes in a lens (their words would be dropped with the lens's output, or a VOICE
- * declared there would stand for one that never reaches the work; ADR-0092), every lens returns an annotation, and lens
- * names are distinct.
+ * declared there would stand for one that never reaches the work; ADR-0092), no person's list or critique is asked in
+ * one whose answer reaches the work on no path, or whose empty answer leaves the step after the audit with the critique
+ * from before it (a lens drops an empty answer, and no other lens notes one; ADR-0098), every lens returns an
+ * annotation, and lens names are distinct.
  */
-function checkAudit(node: Extract<Node, { op: 'audit' }>, path: string, findings: Findings): void {
+function checkAudit(node: Extract<Node, { op: 'audit' }>, path: string, lost: () => Placement[], findings: Findings): void {
   const names = new Set<string>();
   node.lenses.forEach((lens, i) => {
     const where = `${path}.lenses[${i}]`;
@@ -84,6 +128,12 @@ function checkAudit(node: Extract<Node, { op: 'audit' }>, path: string, findings
     for (const s of within) {
       if (s.writes) findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" writes; lenses only annotate`, 'writes');
       if (personWrite(s) || declaresVoice(s)) findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" is a person's write or a VOICE; a lens's output never reaches the work`, 'human-write');
+      if (!personCritique(s)) continue;
+      if (reachesNothing(lost(), s, where)) {
+        findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" asks a person for a list or a critique, and their answer reaches the work on no path: before anything that writes the work or picks which version it is takes it in, in its lens or after the audit, another takes its place, or none comes after it`, 'human-critique');
+      } else if (endsWith(lens.body, s) && node.lenses.every((l, j) => j === i || !replacesCritique(l.body))) {
+        findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" asks a person for a list or a critique, and no other lens notes one: a lens drops an empty answer, so the step after the audit acts on what came before it instead`, 'human-critique');
+      }
     }
     if (!within.some((s) => s.produces.some((p) => (ANNOTATION_PORTS as readonly string[]).includes(p)))) {
       findings.add('ST9', where, `lens "${lens.name}" returns no annotation (${ANNOTATION_PORTS.join(' or ')})`, 'no-annotation');
@@ -92,17 +142,32 @@ function checkAudit(node: Extract<Node, { op: 'audit' }>, path: string, findings
 }
 
 /**
- * ST10: a gate has no fix step and no person's write or VOICE (a gate keeps only its body's critique; ADR-0092), a known
- * metric (with a threshold when it is a critic's), and a bounded, earlier retry.
+ * ST10: a gate has no fix step and no person's write or VOICE (a gate keeps only its body's critique; ADR-0092), asks no
+ * person for a list or a critique whose answer reaches the work on no path, or whose empty answer the gate drops for the
+ * critique from before it (nothing after it in the body notes one; ADR-0098), a known metric (with a threshold when it
+ * is a critic's), and a bounded, earlier retry.
  */
-function checkGate(recipe: Recipe, node: Extract<Node, { op: 'gate' }>, path: string, stage: Recipe['stages'][number]['stage'], findings: Findings): void {
+function checkGate(recipe: Recipe, node: Extract<Node, { op: 'gate' }>, path: string, stage: Recipe['stages'][number]['stage'], lost: () => Placement[], findings: Findings): void {
   for (const s of stepsWithin(node.body)) {
     if (s.writes) findings.add('ST10', path, `gate "${node.id}" step "${s.id}" writes; a one-shot gate has no fix step`, 'writes');
     if (personWrite(s) || declaresVoice(s)) findings.add('ST10', path, `gate "${node.id}" step "${s.id}" is a person's write or a VOICE; a gate keeps only its body's critique`, 'human-write');
+    if (!personCritique(s)) continue;
+    if (reachesNothing(lost(), s, `${path}.body`)) {
+      findings.add('ST10', path, `gate "${node.id}" step "${s.id}" asks a person for a list or a critique, and their answer reaches the work on no path: before anything that writes the work or picks which version it is takes it in, another takes its place, or none comes after it`, 'human-critique');
+    } else if (endsWith(node.body, s)) {
+      findings.add('ST10', path, `gate "${node.id}" step "${s.id}" asks a person for a list or a critique, and nothing after it in the gate notes one: a gate drops an empty answer and keeps what came before it, which the step after it then acts on`, 'human-critique');
+    }
   }
   const p = node.pass;
   if (!KNOWN_GATE_METRICS.has(p.metric) && !DETECTOR_PATTERN.test(p.metric)) {
     findings.add('ST10', path, `gate "${node.id}" uses an unknown metric "${p.metric}"`, 'metric');
+  }
+  // A one-shot gate passes on its critic's score (interpreter): a defect check or a person gives it none, so it would never pass.
+  if (p.metric === 'check-clean' || p.metric === 'human') {
+    findings.add('ST10', path, `gate "${node.id}" passes on ${p.metric === 'human' ? "a person's say" : 'a clean check'}; a one-shot gate passes only on a critic's score (critic-score or critic-rank)`, 'metric');
+  }
+  if (CRITIC_METRICS.has(p.metric) && !gateFeed(node).always) {
+    findings.add('ST10', path, `gate "${node.id}" reads its body's score, but no critic in its body gives one on every run (one in an audit lens or under an optional may not)`, 'feed');
   }
   if (CRITIC_METRICS.has(p.metric) && !(p.threshold !== undefined && Number.isFinite(p.threshold))) {
     findings.add('ST10', path, `gate "${node.id}" gates on ${p.metric} without a finite threshold`, 'metric');

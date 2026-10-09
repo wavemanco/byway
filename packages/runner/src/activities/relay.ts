@@ -17,6 +17,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
+import { keptVoice } from './held-voice.ts';
 import { announce, storeText, writeProblems } from './writes.ts';
 
 export const NO_VIDEO_NOTE = 'No video provider key is configured';
@@ -95,7 +96,7 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   // The clip and its last frame go on the shot together (a regeneration replaces both), so the shot check inside this
   // link sees the clip's own last frame (F10, ADR-0090).
   const next = serializeJson({ ...sb.value, storyboard: sb.value.storyboard.map((s) => (s.shot === shot ? { ...s, clipArtifactId: clip.artifactId, lastFrameArtifactId: clip.lastFrameArtifactId } : s)) });
-  const problems = writeProblems(run, next, step.keepsVoice ? ports.voice : undefined, storyboardText);
+  const problems = writeProblems(run, next, step.keepsVoice ? keptVoice(ports) : undefined, storyboardText);
   if (problems.length) throw new StepError(`The ${what} step could not update the storyboard: ${problems.join(' ')}`);
   const artifactId = await storeText(deps, run, call, next, { label: `Storyboard with the clip for shot ${shot}`, name: 'work', shot });
   await stepFinished(deps, run, call, { costUsd, outputArtifactIds: [clip.artifactId, clip.lastFrameArtifactId, artifactId] }, true);

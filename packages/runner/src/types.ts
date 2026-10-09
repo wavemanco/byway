@@ -78,8 +78,16 @@ export interface Ports {
   critique?: string;
   score?: Score;
   taste?: string;
-  /** The human's own words (VOICE), kept so later machine writes can be held to them (keepsVoice). */
+  /**
+   * The person's latest words: the latest VOICE write's answer, or the fixed copy deck the run was given. What a step
+   * that reads 'voice' gets (C5's voice-over audio after the locked script).
+   */
   voice?: string;
+  /**
+   * The held voice (ADR-0092 stage 4): every VOICE write's answer on the path, in order. A machine write declared
+   * keepsVoice keeps every line of all of them, not only the latest; and no other machine write may follow them.
+   */
+  held?: string[];
   /** option_set<artifact>: candidate artifact ids, labelled A, B, C… in order. */
   options?: string[];
   /** The latest view of each candidate, aligned with `options` (renders shown at a pick). */

@@ -38,5 +38,6 @@ export function checkVoiceLock(recipe: Recipe, findings: Findings): void {
     join(states) {
       return { fromInput: states.some((s) => s.fromInput), fromStep: states.some((s) => s.fromStep) };
     },
+    key: (s) => `${s.fromInput ? 1 : 0}${s.fromStep ? 1 : 0}`,
   });
 }

@@ -20,6 +20,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
+import { keptVoice } from './held-voice.ts';
 import { storeText, writeProblems } from './writes.ts';
 
 const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);
@@ -29,8 +30,14 @@ const JUDGE_MAX_OUTPUT = 4_000;
 /** 01 SEED seed_shape ⟨A⟩: 32–64 characters; 36 random bytes are 48 base64url characters (SEED-1). */
 export const defaultSeed = (): string => randomBytes(36).toString('base64url');
 
-/** Where a judging step's text goes in the store: shown to the user with the step, never written into the work. */
-const NOTE_LABELS: Record<string, string> = {
+/**
+ * Where a judging step's text goes in the store: shown to the user with the step, never written into the work. Every
+ * answer of these roles leaves a note, which the interpreter puts beside the work; a seed's build leaves one only when
+ * it writes a direction (`directionOf`). So @byway/recipe's `leavesNote` is 'always' for these roles, and for a seed
+ * 'always' where its prompt asks for the direction first (C1's) and 'sometimes' where it asks for the block alone
+ * (semantics-effects.test.ts).
+ */
+export const NOTE_LABELS: Record<string, string> = {
   critic: 'Critique',
   check: 'Defects',
   cut: 'Removals',
@@ -113,7 +120,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       built.slots.options = labelled(await Promise.all((ports.options ?? []).map((id) => reader.candidateText(run.medium, id))));
     }
     const seeds = seed ? [...run.seeds, seed] : run.seeds;
-    const voice = step.keepsVoice ? input.ports.voice : undefined;
+    const voice = step.keepsVoice ? keptVoice(input.ports) : undefined;
     const before = voice && input.ports.artifact ? await reader.text(input.ports.artifact) : undefined;
     const parse = parserFor(step.role, run.medium, ports, (text) => writeProblems({ seeds, medium: run.medium }, text, voice, before));
     const answer = await askModel(deps, reader, {

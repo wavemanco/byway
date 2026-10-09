@@ -138,4 +138,4 @@ export function validate(recipe: Recipe): Verdict {
 }
 
 export type { Finding } from './context.ts';
-export { flowRecipe, type FlowOps } from './flow.ts';
+export { flowRecipe, withoutFlowMemo, type FlowOps } from './flow.ts';

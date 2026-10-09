@@ -1,12 +1,18 @@
 /**
  * What the run asks a person, in plain words (spec §5: plain by default, no protocol jargon). Pure: workflow code.
  */
-import type { CheckpointKind } from '@byway/contracts';
+import type { CheckpointKind, Medium } from '@byway/contracts';
 import type { Step } from '@byway/recipe';
+import { HUMAN_WRITE_ROLES, voiceScope } from '@byway/recipe/semantics';
 import { labelOf } from '@byway/prompts/pure';
 
-/** Human checkpoint kinds by role (spec §3.2): vision → react, cut → directive, tells-compare → compare, voice → write. */
+/**
+ * Human checkpoint kinds by role (spec §3.2): vision → react, cut → directive, tells-compare → compare, and a write for
+ * the roles @byway/recipe's semantics names (VOICE, and the author's own draft in C3, C6 and C6a), so the runner and
+ * admission read one list.
+ */
 export function humanKind(step: Pick<Step, 'role'>): CheckpointKind {
+  if (HUMAN_WRITE_ROLES.has(step.role)) return 'write';
   switch (step.role) {
     case 'vision':
       return 'react';
@@ -14,11 +20,6 @@ export function humanKind(step: Pick<Step, 'role'>): CheckpointKind {
       return 'directive';
     case 'tells-compare':
       return 'compare';
-    case 'voice':
-    case 'build':
-    case 'fix':
-      // VOICE, and the author's own draft in C3, C6 and C6a.
-      return 'write';
     default:
       return 'react';
   }
@@ -39,11 +40,25 @@ export function revisesInPlace(step: Pick<Step, 'role' | 'consumes' | 'produces'
 export const SPEC_IN_PLACE_PROMPT =
   'Answer the questions below in place, or change their defaults; anything you leave as it is keeps its default. What you send is the brief the next step works from.';
 
+/** What a VOICE's question needs from the run: what the VOICE covers, and whether its script is locked after it. */
+export interface VoiceContext {
+  /** The run's medium: a storyboard's early VOICE writes its script (voiceScope). */
+  medium?: Medium;
+  /** Nothing the person writes later can change this script (@byway/recipe/semantics lockedScripts). */
+  locked?: boolean;
+}
+
+/** A script VOICE that nothing later can change (lockedScripts): the only question that says the script is locked. */
+export const SCRIPT_LOCKED_PROMPT = 'Write the script yourself: change any line below. It is locked after this, and used exactly as you write it.';
+/** A script VOICE that the person can change later (a later script or claims VOICE, their own draft, or this step asked again): no lock is claimed. */
+export const SCRIPT_PROMPT = 'Write the script yourself: change any line below. Your lines are used exactly as you write them.';
+
 /**
  * What a person's step asks. `revising` is set when the step revises a text port in place (revisesInPlace) and that
- * port has text to revise: the question then says so, and the text is in the box.
+ * port has text to revise: the question then says so, and the text is in the box. A VOICE is asked by what it covers
+ * in the run's medium, and a script VOICE says it is locked only where `voice.locked` says so.
  */
-export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'consumes' | 'knobs'>, round?: number, revising = false): string {
+export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'consumes' | 'knobs'>, round?: number, revising = false, voice: VoiceContext = {}): string {
   const port = revising ? revisesInPlace(step) : undefined;
   if (port === 'brief')
     return step.variant === 'VISION-lite' ? SPEC_IN_PLACE_PROMPT : 'Revise this brief in place: change what you want and leave the rest. What you send is the brief the next step works from.';
@@ -57,12 +72,14 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
       return 'What should go? List what to remove, one item per line.';
     case 'tells-compare':
       return 'Keep the version from before the cliché sweep, or the one after the swaps?';
-    case 'voice':
-      if (step.variant === 'claim-log')
+    case 'voice': {
+      const scope = voiceScope(step, voice.medium);
+      if (scope.base === 'claims')
         return 'Sign off every number, date, name and causal claim below, one per line: correct any that is wrong, and your correction replaces it in the document. Leave just "-" on a line to take that claim out. You own them.';
-      if (step.variant === 'VOICE-early') return 'Write the script yourself: change any line below. It is locked after this, and used exactly as you write it.';
-      if (step.knobs?.scope === 'key-lines') return 'Rewrite the key lines yourself: the ask and the lines a reader acts on. Your lines are used exactly as you write them.';
+      if (scope.base === 'script') return voice.locked ? SCRIPT_LOCKED_PROMPT : SCRIPT_PROMPT;
+      if (scope.keyLines) return 'Rewrite the key lines yourself: the ask and the lines a reader acts on. Your lines are used exactly as you write them.';
       return 'Write the words yourself: change any line below. Your lines are used exactly as you write them.';
+    }
     case 'build':
     case 'fix':
       return round && round > 1 ? 'Revise your draft. The readers’ notes are beside it.' : 'Write your draft. Every sentence is yours.';
@@ -86,6 +103,19 @@ export const routePrompt = (on: string): string => `Choose: ${on.replace(/[.\s]+
 /** A person's loop gate, saying what each answer does (UX-4): No is another round, not a stop. */
 export const READY_PROMPT = 'Is this ready? Yes keeps this version and moves on; No starts another round.';
 export const BEST_SO_FAR_PROMPT = 'Use the best version so far?';
+/**
+ * A person's loop at its last planned round (ADR-0093): their answer, not the cap, ends it. No allows the planned number
+ * of rounds again, once.
+ */
+export const humanCapPrompt = (more: number): string => `That was the last planned round. Use this version? No allows up to ${more} more round${more === 1 ? '' : 's'}, once.`;
+/** A person's loop at its raised cap: no more rounds, so they keep this version or stop the run. */
+export const FINAL_CHOICE_PROMPT = 'That was the last round. Use this version, or stop the run?';
+export const FINAL_CHOICE_OPTIONS = [
+  { id: 'use', label: 'Use this version' },
+  { id: 'stop', label: 'Stop the run' },
+] as const;
+/** What a run stopped at a loop's last choice says: nothing failed, the person ended it. */
+export const STOPPED_AT_CAP = 'You stopped the run at the last round.';
 export const NOT_CONVERGING_PROMPT = 'The outside critique is not improving the work. Keep going anyway?';
 export const GATE_FAILED_PROMPT = 'It did not pass the final check, even after another try. Use it anyway?';
 export const GATE_RETRY_NOTE = 'It did not pass the final check, so the earlier stage runs again with the same brief.';
