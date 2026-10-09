@@ -5,11 +5,13 @@
  * collector (another site) unless the person turns scripts on; even then the page cannot carry itself away. A reload
  * turns scripts off; a frame that reloads itself comes back without them. A page's own address, opened top-level, runs
  * nothing.
-
+ *
+ * F13 (ADR-0086): decision views show whole text, not the Run screen's 16 KB excerpt, and row facts count the whole
+ * artifact.
  */
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { startCollector, type Collector } from './collector.ts';
-import { ENDING_A, RAN, seed, seedDataDir, unseed, type Seeded } from './seed.ts';
+import { ENDING_A, ENDING_B, MEMO_TAIL, RAN, seed, seedDataDir, unseed, type Seeded } from './seed.ts';
 
 test.skip(!seedDataDir(), 'Needs the suite’s own data directory (BYWAY_E2E_DATA_DIR) to seed runs.');
 
@@ -153,4 +155,23 @@ test('a page’s own address, opened top-level, runs nothing, with or without ?s
   }
   expect(await messages(page)).toEqual([]);
   expect(collector.hits()).toEqual([]);
+});
+
+test.describe('decision views show whole text, and row facts count the whole artifact (F13)', () => {
+  test('a compare of two long memos that differ only in their endings shows both endings', async ({ page }) => {
+    await page.goto(`/runs/${data().compare.runId}`);
+    const columns = page.locator('.compare-col');
+    await expect(columns).toHaveCount(2);
+    await expect(columns.nth(0)).toContainText(ENDING_A);
+    await expect(columns.nth(1)).toContainText(ENDING_B);
+  });
+
+  test('a long memo is whole in its step and in the viewer; a big diff’s row counts every file', async ({ page, context }) => {
+    await page.goto(`/runs/${data().done.runId}`);
+    await expect(page.locator('.tl-step', { hasText: 'Big diff' }).locator('.thumb-diff')).toContainText('12 files, +480 −480');
+    const detail = await openStep(page, 'Long memo');
+    await expect(detail).toContainText(MEMO_TAIL);
+    const tab = await opens(context, detail.locator('.detail-item-head a'));
+    await expect(tab.locator('.result-body')).toContainText(MEMO_TAIL);
+  });
 });

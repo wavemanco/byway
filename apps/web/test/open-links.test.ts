@@ -31,7 +31,7 @@ const MEMO = `sha256:${'b'.repeat(64)}`;
 const CLIP = `sha256:${'c'.repeat(64)}`;
 const VIEW = (id: string) => `/view/${encodeURIComponent(id)}`;
 const html = (el: ReactElement) => renderToStaticMarkup(el);
-const artifacts: Record<string, ArtifactInfo> = { [PAGE]: { mediaType: 'text/html' }, [MEMO]: { mediaType: 'text/markdown', text: '# Memo\n\nThe memo.' } };
+const artifacts: Record<string, ArtifactInfo> = { [PAGE]: { mediaType: 'text/html' }, [MEMO]: { mediaType: 'text/markdown', excerpt: '# Memo\n\nThe memo.', complete: true, bytes: 17 } };
 
 /** The href of every link in the markup, decoded from HTML. */
 const hrefs = (markup: string) => [...markup.matchAll(/<a\b[^>]*\bhref="([^"]*)"/g)].map((m) => (m[1] as string).replace(/&amp;/g, '&'));

@@ -1,13 +1,11 @@
 'use client';
 
 import type { ArtifactInfo } from '../view/rundata.ts';
-import { parseOptions, parseStoryboard } from '../view/result.ts';
 import { artifactUrl, openHref } from './api.ts';
-import { DiffView } from './DiffView.tsx';
-import { Markdown } from './Markdown.tsx';
-import { OptionsList, Storyboard } from './results.tsx';
 import { ScaledPage } from './ScaledPage.tsx';
 import { ScriptsToggle, usePageScripts } from './ScriptsToggle.tsx';
+import { TextPreview, type Completeness } from './TextPreview.tsx';
+import { useWholeText } from './wholeText.ts';
 
 interface PreviewProps {
   id: string;
@@ -25,8 +23,18 @@ interface PreviewProps {
   scripts?: boolean;
 }
 
-/** Shows any artifact the way it is meant to be seen: a page rendered, text read, a diff as a diff. */
+/** "16 KB": sizes as people read them. */
+const kb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1000))} KB`;
+
+/**
+ * Shows any artifact the way it is meant to be seen: a page rendered, text read, a diff as a diff.
+ *
+ * Text arrives as the Run screen's excerpt (F13, ADR-0086). A thumbnail shows it as the snippet it is. A large preview
+ * is a view people decide on (a compare, a reference, a step opened from the timeline), so it loads the whole text and,
+ * until it has it, says that it shows only the opening, with a link to the whole.
+ */
 export function ArtifactPreview({ id, info, title, size = 'thumb', interactive = false, media, scripts }: PreviewProps) {
+  const loaded = useWholeText(id, info, size === 'large');
   const type = info?.mediaType ?? '';
   if (type === 'text/html') {
     // Thumbnails are pictures and never run scripts; a large preview runs them only once asked, for that page (SEC-4).
@@ -39,17 +47,26 @@ export function ArtifactPreview({ id, info, title, size = 'thumb', interactive =
   if (type.startsWith('video/')) {
     return <video className="preview-image" src={artifactUrl(id)} controls preload="metadata" aria-label={title} />;
   }
-  const text = info?.text;
-  if (text !== undefined) {
-    if (type === 'text/x-diff') return <DiffView text={text} compact={size === 'thumb'} />;
-    if (type === 'application/json') {
-      const options = parseOptions(text);
-      if (options) return <OptionsList options={options} compact={size === 'thumb'} />;
-      const board = size === 'large' ? parseStoryboard(text) : null;
-      if (board) return <Storyboard board={board} {...(media ? { media } : {})} />;
-      return <pre className="preview-raw">{text}</pre>;
-    }
-    return <Markdown text={text} className={size === 'thumb' ? 'prose prose-card' : 'prose'} />;
+  const excerpt = info?.excerpt;
+  if (excerpt !== undefined) {
+    const completeness: Completeness =
+      info?.complete !== false || loaded.text !== undefined ? 'whole' : size === 'thumb' ? 'snippet' : loaded.failed ? 'failed' : 'loading';
+    const preview = (
+      <TextPreview type={type} text={loaded.text ?? excerpt} size={size} completeness={completeness} {...(info?.titles ? { titles: info.titles } : {})} {...(media ? { media } : {})} />
+    );
+    if (completeness !== 'loading' && completeness !== 'failed') return preview;
+    return (
+      <div className="preview-partial">
+        <p className="preview-partial-note notice small">
+          Showing the first {kb(new TextEncoder().encode(excerpt).length)} of {kb(info?.bytes ?? 0)}
+          {completeness === 'failed' ? '; the rest could not be loaded here. ' : ' while the rest loads. '}
+          <a href={openHref(id)} target="_blank" rel="noopener noreferrer">
+            Open the whole text<span className="sr-only"> of {title} in a new tab</span>
+          </a>
+        </p>
+        {preview}
+      </div>
+    );
   }
   // Nothing known about it (no info yet, or a type this preview cannot show): the viewer knows what it is (F05).
   return (

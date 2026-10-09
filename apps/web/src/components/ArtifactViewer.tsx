@@ -18,6 +18,8 @@ interface Props {
   mediaType: string;
   /** The whole text, for text media. */
   text?: string;
+  /** The artifact's size in bytes. */
+  bytes: number;
   /** Media types of what a storyboard shows (its frames and clips). */
   media?: Record<string, ArtifactInfo>;
 }
@@ -27,7 +29,7 @@ interface Props {
  * same per-page scripts switch as everywhere else (off until turned on, for this visit only), text whole and rendered as
  * its kind, and images and clips as themselves.
  */
-export function ArtifactViewer({ id, mediaType, text, media }: Props) {
+export function ArtifactViewer({ id, mediaType, text, bytes, media }: Props) {
   const name = artifactName(mediaType);
   const kind = outputKind(mediaType);
   return (
@@ -52,7 +54,8 @@ export function ArtifactViewer({ id, mediaType, text, media }: Props) {
         ) : kind === 'video' ? (
           <video className="preview-image" src={artifactUrl(id)} controls preload="metadata" aria-label={name} />
         ) : (
-          <ArtifactPreview id={id} info={{ mediaType, ...(text !== undefined ? { text } : {}) }} title={name} size="large" {...(media ? { media } : {})} />
+          // The whole text, marked as whole: nothing here is an excerpt (F13).
+          <ArtifactPreview id={id} info={{ mediaType, ...(text !== undefined ? { excerpt: text, complete: true, bytes } : {}) }} title={name} size="large" {...(media ? { media } : {})} />
         )}
       </section>
     </article>

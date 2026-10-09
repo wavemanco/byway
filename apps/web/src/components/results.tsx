@@ -18,6 +18,19 @@ export function OptionsList({ options, compact = false }: { options: OptionItem[
   );
 }
 
+/** An option map known only by its titles (a snippet of a long one, F13): the titles, in order. */
+export function OptionTitles({ titles }: { titles: string[] }) {
+  return (
+    <ol className="options options-compact">
+      {titles.map((title, i) => (
+        <li key={`${title}-${i}`}>
+          <h3>{title}</h3>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /** A shot's clip: a real clip plays; the demo's placeholder (an image, contracts VideoResult) is shown as an image. */
 function Clip({ shot, id, media }: { shot: StoryboardShot; id: string; media: Record<string, ArtifactInfo> }) {
   const kind = clipKind(media[id]?.mediaType);

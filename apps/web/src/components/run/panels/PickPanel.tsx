@@ -13,9 +13,12 @@ import type { PanelProps } from './types.ts';
 
 const isVisual = (mediaType: string | undefined) => ['page', 'image', 'video'].includes(outputKind(mediaType));
 
-/** A text card shown under its caption need not repeat the caption as its own first heading. */
+/**
+ * A text card shown under its caption need not repeat the caption as its own first heading. A card is a snippet of
+ * the draft (it clips), so it reads the excerpt; Open shows the whole draft (F13).
+ */
 function cardInfo(info: ArtifactInfo | undefined, label: string): ArtifactInfo | undefined {
-  return info?.text === undefined ? info : { ...info, text: withoutLeadingTitle(info.text, label) };
+  return info?.excerpt === undefined ? info : { ...info, excerpt: withoutLeadingTitle(info.excerpt, label) };
 }
 
 /**

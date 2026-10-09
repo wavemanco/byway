@@ -47,7 +47,7 @@ export default async function ViewPage({ params }: PageProps<'/view/[id]'>) {
   const media = board ? await artifactInfo(services, storyboardArtifacts(board)) : undefined;
   return (
     <div className="page page-result">
-      <ArtifactViewer id={id} mediaType={mediaType} {...(text !== undefined ? { text } : {})} {...(media ? { media } : {})} />
+      <ArtifactViewer id={id} mediaType={mediaType} bytes={bytes.length} {...(text !== undefined ? { text } : {})} {...(media ? { media } : {})} />
     </div>
   );
 }
