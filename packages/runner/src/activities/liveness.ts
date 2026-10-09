@@ -85,12 +85,13 @@ export function guardGateway(inner: Gateway, store: Pick<Store, 'getRun'>, signa
   }) as GuardedGateway;
 }
 
-/** Page renders that stop (closing the page) when the invocation is cancelled. */
+/** Page renders and reads that stop (closing the page) when the invocation is cancelled. */
 export function guardPages(inner: PageRenderer, signal: AbortSignal | undefined): PageRenderer {
   if (!signal) return inner;
   return {
     screenshots: (html, resolve, opts) => inner.screenshots(html, resolve, { ...opts, signal: opts?.signal ?? signal }),
     render: (html, resolve, surfaces, opts) => inner.render(html, resolve, surfaces, { ...opts, signal: opts?.signal ?? signal }),
+    shownText: (html, resolve, opts) => inner.shownText(html, resolve, { ...opts, signal: opts?.signal ?? signal }),
     close: () => inner.close(),
   };
 }

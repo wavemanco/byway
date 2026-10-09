@@ -15,6 +15,10 @@
  * the page opens (alert, confirm, prompt, even in a loop) are dismissed by byway, and a dismissal that fails because the
  * page was closed is swallowed, so such a page cannot end the engine's process. A browser that crashed, disconnected or
  * failed to launch is launched again on the next render (ENG-14).
+ *
+ * The same renderer reads the text a page shows, for VOICE's arbiter (ADR-0081): the page is loaded with JavaScript off,
+ * under the same allowlist, request filter and deadline as a render, and only its first document is read (a meta
+ * refresh or any other navigation of the page is refused). It changes no sandbox setting.
  */
 import type { Browser, BrowserContext, Page, Route } from 'playwright';
 import { StepError } from './activities/failures.ts';
@@ -37,11 +41,36 @@ export interface RenderOptions {
 /** Serves `/api/artifacts/<id>` requests from the artifact store; undefined is a 404. */
 export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Array; contentType: string } | undefined>;
 
+/**
+ * The text Chromium shows of a page, with JavaScript off (VOICE's arbiter, ADR-0081).
+ * - `text` is the body's innerText: the text as laid out, after display, visibility, the hidden attribute, whitespace
+ *   collapsing and block breaks, with CSS text-transform undone first so letters read as written ('' with no body);
+ * - `linked` is the same text read again after each link's (`a[href]`) content is wrapped in markers: LINK_OPEN, the
+ *   link's index in `hrefs` in the digits from LINK_DIGIT_0, LINK_INDEX_END, the content, LINK_CLOSE;
+ * - `title` is document.title.
+ */
+export interface ShownText {
+  title: string;
+  text: string;
+  linked: string;
+  /** Each link's href attribute, by index. */
+  hrefs: string[];
+}
+
+/** The markers in ShownText.linked: noncharacters, which a page does not show. */
+export const LINK_OPEN = '﷐';
+export const LINK_INDEX_END = '﷑';
+export const LINK_CLOSE = '﷒';
+/** The digit 0 of a link's index; 1 to 9 follow it. */
+export const LINK_DIGIT_0 = 0xfde0;
+
 export interface PageRenderer {
   /** PNG tiles of the whole page on a wide screen, top to bottom. */
   screenshots(html: string, resolve: ArtifactResolver, opts?: RenderOptions): Promise<Uint8Array[]>;
   /** The page as each surface shows it, in the order asked. */
   render(html: string, resolve: ArtifactResolver, surfaces: readonly Surface[], opts?: RenderOptions): Promise<SurfaceShots[]>;
+  /** The text the page shows, with JavaScript off (VOICE's arbiter). */
+  shownText(html: string, resolve: ArtifactResolver, opts?: RenderOptions): Promise<ShownText>;
   close(): Promise<void>;
 }
 
@@ -119,21 +148,34 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     }
   };
 
-  const route = (html: string, resolve: ArtifactResolver) => async (r: Route) => {
-    try {
-      const url = new URL(r.request().url());
-      if (url.origin === ORIGIN) {
-        if (url.pathname === '/page') return await r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html });
-        const m = /^\/api\/artifacts\/(.+)$/.exec(url.pathname);
-        const found = m ? await resolve(decodeURIComponent(m[1] as string)) : undefined;
-        return await (found ? r.fulfill({ status: 200, contentType: found.contentType, body: Buffer.from(found.body) }) : r.fulfill({ status: 404, body: '' }));
+  /**
+   * The request filter: the page and the artifact route are served, allowlisted hosts pass, everything else is blocked.
+   * With `oneDocument`, a second navigation of the page (a meta refresh, a link followed) is refused, so the first
+   * document is the one read.
+   */
+  const route = (html: string, resolve: ArtifactResolver, oneDocument = false) => {
+    let navigated = false;
+    return async (r: Route) => {
+      try {
+        const request = r.request();
+        if (oneDocument && request.isNavigationRequest() && request.frame().parentFrame() === null) {
+          if (navigated) return await r.abort('blockedbyclient');
+          navigated = true;
+        }
+        const url = new URL(request.url());
+        if (url.origin === ORIGIN) {
+          if (url.pathname === '/page') return await r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html });
+          const m = /^\/api\/artifacts\/(.+)$/.exec(url.pathname);
+          const found = m ? await resolve(decodeURIComponent(m[1] as string)) : undefined;
+          return await (found ? r.fulfill({ status: 200, contentType: found.contentType, body: Buffer.from(found.body) }) : r.fulfill({ status: 404, body: '' }));
+        }
+        if (url.protocol === 'https:' && allow.has(url.hostname)) return await r.continue();
+        return await r.abort('blockedbyclient');
+      } catch {
+        // A resolver that failed (a missing or corrupt artifact) is a 404; a page already closed needs no answer.
+        await r.fulfill({ status: 404, body: '' }).catch(() => undefined);
       }
-      if (url.protocol === 'https:' && allow.has(url.hostname)) return await r.continue();
-      return await r.abort('blockedbyclient');
-    } catch {
-      // A resolver that failed (a missing or corrupt artifact) is a 404; a page already closed needs no answer.
-      await r.fulfill({ status: 404, body: '' }).catch(() => undefined);
-    }
+    };
   };
 
   /** Whole-page tiles at the page's width (at least the screen's, at most maxWidth). */
@@ -155,17 +197,24 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     return tiles;
   };
 
-  /** One screen size: load the page once and take the surfaces it serves, all under one deadline. */
-  const shoot = async (html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone', want: readonly Surface[], signal: AbortSignal | undefined): Promise<SurfaceShots[]> => {
+  /**
+   * Load the page once in a fresh context and run `use` on it, everything under one deadline: a page that never
+   * settles, or a step that is cancelled, has its context closed (SEC-5). `text` loads it with JavaScript off, for the
+   * arbiter, and reads its first document only.
+   */
+  const loaded = async <T>(html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone' | 'text', signal: AbortSignal | undefined, use: (page: Page) => Promise<T>): Promise<T> => {
     if (signal?.aborted) throw stopped(signal);
     const b = await getBrowser();
     const phone = screen === 'phone';
+    const text = screen === 'text';
     const context = await b.newContext({
       viewport: phone ? mobile : { width, height: FOLD_HEIGHT },
       deviceScaleFactor: 1,
       reducedMotion: 'reduce',
       serviceWorkers: 'block',
       ...(phone ? { isMobile: true, hasTouch: true } : {}),
+      // The arbiter reads the page as its markup and stylesheets make it: no script-made copy.
+      ...(text ? { javaScriptEnabled: false } : {}),
     });
     // Every dialog any page of this context opens (alert, confirm, prompt, also from a popup) is answered here, and a
     // failed answer is swallowed. Without a listener Playwright answers them itself, and when the deadline closes the
@@ -179,27 +228,18 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     try {
       const work = (async () => {
         await context.routeWebSocket(/.*/, (ws) => ws.close());
-        await context.route('**/*', route(html, resolve));
+        await context.route('**/*', route(html, resolve, text));
         const page = await context.newPage();
         page.setDefaultTimeout(timeout);
         await page.goto(`${ORIGIN}/page`, { waitUntil: 'load', timeout });
-        await page.evaluate('document.fonts ? document.fonts.ready.then(() => true) : true');
-        const out: SurfaceShots[] = [];
-        // The first screen is taken before anything else touches the page: as a visitor lands.
-        for (const surface of [...want].sort((a, b) => Number(b === 'fold') - Number(a === 'fold'))) {
-          if (surface === 'fold') {
-            await page.evaluate('window.scrollTo(0, 0)');
-            out.push({ surface, tiles: [new Uint8Array(await page.screenshot({ type: 'png', animations: 'disabled' }))] });
-          } else {
-            out.push({ surface, tiles: await tilesOf(page, phone ? mobile.width : width) });
-          }
-        }
-        return out;
+        return use(page);
       })();
       // Whichever loses the race below still settles later; it must not become an unhandled rejection.
       work.catch(() => undefined);
       const limit = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new StepError(`The page did not finish rendering within ${Math.round(timeout / 1000)} s, so it could not be shown.`)), timeout);
+        const s = Math.round(timeout / 1000);
+        const late = text ? `The page did not finish loading within ${s} s, so its text could not be read.` : `The page did not finish rendering within ${s} s, so it could not be shown.`;
+        timer = setTimeout(() => reject(new StepError(late)), timeout);
         if (signal) {
           onAbort = () => reject(stopped(signal));
           signal.addEventListener('abort', onAbort, { once: true });
@@ -213,6 +253,24 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       await dispose(b, context);
     }
   };
+
+  /** One screen size: load the page once and take the surfaces it serves, all under one deadline. */
+  const shoot = (html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone', want: readonly Surface[], signal: AbortSignal | undefined): Promise<SurfaceShots[]> =>
+    loaded(html, resolve, screen, signal, async (page) => {
+      const phone = screen === 'phone';
+      await page.evaluate('document.fonts ? document.fonts.ready.then(() => true) : true');
+      const out: SurfaceShots[] = [];
+      // The first screen is taken before anything else touches the page: as a visitor lands.
+      for (const surface of [...want].sort((a, b) => Number(b === 'fold') - Number(a === 'fold'))) {
+        if (surface === 'fold') {
+          await page.evaluate('window.scrollTo(0, 0)');
+          out.push({ surface, tiles: [new Uint8Array(await page.screenshot({ type: 'png', animations: 'disabled' }))] });
+        } else {
+          out.push({ surface, tiles: await tilesOf(page, phone ? mobile.width : width) });
+        }
+      }
+      return out;
+    });
 
   const render: PageRenderer['render'] = async (html, resolve, surfaces, renderOpts = {}) => {
     const wide = surfaces.filter((s) => s !== 'mobile');
@@ -228,6 +286,9 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     async screenshots(html, resolve, renderOpts) {
       return (await render(html, resolve, ['desktop'], renderOpts))[0]!.tiles;
     },
+    async shownText(html, resolve, renderOpts = {}) {
+      return loaded(html, resolve, 'text', renderOpts.signal, async (page) => JSON.parse(String(await page.evaluate(SHOWN_TEXT))) as ShownText);
+    },
     async close() {
       const current = browser;
       browser = undefined;
@@ -236,6 +297,30 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     },
   };
 }
+
+/**
+ * Read in the page (a string: this package compiles without the DOM library). Text-transform is undone on every
+ * element (inline and important, so no page rule wins) and on first letters and lines; the body's innerText is read;
+ * then each link's content is wrapped in the ShownText markers and the text is read again.
+ */
+const SHOWN_TEXT = `(() => {
+  const title = document.title;
+  const body = document.body;
+  if (!body) return JSON.stringify({ title, text: '', linked: '', hrefs: [] });
+  for (const el of document.querySelectorAll('*')) if (el.style) el.style.setProperty('text-transform', 'none', 'important');
+  const sheet = document.createElement('style');
+  sheet.textContent = '*::first-letter, *::first-line { text-transform: none !important; }';
+  (document.head || document.documentElement).appendChild(sheet);
+  const text = body.innerText;
+  const hrefs = [];
+  for (const a of document.querySelectorAll('a[href]')) {
+    const index = String(hrefs.length).replace(/[0-9]/g, (d) => String.fromCharCode(${LINK_DIGIT_0} + Number(d)));
+    hrefs.push(a.getAttribute('href'));
+    a.insertBefore(document.createTextNode(${JSON.stringify(LINK_OPEN)} + index + ${JSON.stringify(LINK_INDEX_END)}), a.firstChild);
+    a.appendChild(document.createTextNode(${JSON.stringify(LINK_CLOSE)}));
+  }
+  return JSON.stringify({ title, text, linked: body.innerText, hrefs });
+})()`;
 
 /** Headless Chromium with the flags above. */
 export async function launchChromium(extraArgs: readonly string[] = []): Promise<Browser> {

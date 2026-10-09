@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { launchChromium, playwrightPages } from '../src/pages.ts';
+import { launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, playwrightPages } from '../src/pages.ts';
 
 const pages = playwrightPages({ maxTileHeight: 1200 });
 const opened: { close(): Promise<void> }[] = [pages];
@@ -178,5 +178,53 @@ describe('web-page RENDER with Playwright Chromium', () => {
     await launched[0]!.close();
     expect((await flaky.screenshots(SIMPLE, none)).length).toBe(1);
     expect(launched.length).toBe(2);
+  }, 60_000);
+});
+
+describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, JavaScript off', () => {
+  it('reads the body as laid out (hidden content out, blocks on lines of their own, whitespace collapsed), the title, and no script-made copy', async () => {
+    const html = `<!doctype html><html><head><title> My \n page </title><style>h1{text-transform:uppercase}.gone{display:none}</style></head>
+      <body><h1>Hello world</h1><p>A <span hidden>secret</span> <b>bold</b>   text</p><p class="gone">Gone</p>
+      <script>document.body.append('script-made')</script><p>End&nbsp;here</p></body></html>`;
+    const shown = await pages.shownText(html, none);
+    expect(shown.title).toBe('My page');
+    // text-transform is undone (letters as written); the script never ran; a no-break space is kept.
+    expect(shown.text).toBe('Hello world\n\nA bold text\n\nEnd here');
+    expect(shown.hrefs).toEqual([]);
+  }, 60_000);
+
+  it('marks each link\'s words with its index, and lists each address', async () => {
+    const shown = await pages.shownText('<p>Read <a href="/terms">the terms</a> and <a href="/faq">FAQ</a>.</p>', none);
+    expect(shown.text).toBe('Read the terms and FAQ.');
+    expect(shown.hrefs).toEqual(['/terms', '/faq']);
+    expect(shown.linked).toBe(`Read ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}the terms${LINK_CLOSE} and ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0 + 1)}${LINK_INDEX_END}FAQ${LINK_CLOSE}.`);
+  }, 60_000);
+
+  it('reads the first document only: a meta refresh does not replace it; other hosts stay blocked', async () => {
+    const asked: string[] = [];
+    const html = '<!doctype html><html><head><meta http-equiv="refresh" content="0;url=/elsewhere"><link rel="stylesheet" href="https://example.com/evil.css"></head><body><p>Stay here</p><img src="/api/artifacts/sha256:abc"></body></html>';
+    const first = await pages.shownText(html, async (id) => {
+      asked.push(id);
+      return undefined;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(first.text).toBe('Stay here');
+    expect(asked).toEqual(['sha256:abc']);
+  }, 60_000);
+
+  it('is bounded and cancellable like a render (SEC-5)', async () => {
+    const quick = playwrightPages({ timeoutMs: 2_000, closeTimeoutMs: 2_000 });
+    opened.push(quick);
+    // With JavaScript off a busy script cannot hold the page; an artifact that never comes back holds its load.
+    const hang = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Text</body></html>';
+    const never = () => new Promise<undefined>(() => undefined);
+    const err = await quick.shownText(hang, never).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toMatch(/did not finish loading within 2 s, so its text could not be read/);
+    expect((await quick.shownText('<p>Next</p>', none)).text).toBe('Next');
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled by the run');
+    setTimeout(() => ctrl.abort(reason), 300);
+    await expect(pages.shownText(hang, never, { signal: ctrl.signal })).rejects.toBe(reason);
   }, 60_000);
 });
