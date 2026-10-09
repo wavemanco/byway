@@ -223,7 +223,19 @@ export type GatewayErrorCode =
   | 'invalid-request'
   | 'unknown-profile'
   /** The spend book found a line in the audit file it cannot read: paid calls wait until it is acknowledged (ADR-0095). */
-  | 'accounting-fault';
+  | 'accounting-fault'
+  /**
+   * byway's own failure around a call, not the provider's (ADR-0099): it could not keep or record a call the provider
+   * answered (`billed` is then true: trying again pays again), or it did not start the call at all (it is stopping, or
+   * could not record the call as sent; `billed` false). These used to be 'provider-error', which read as the provider
+   * not answering.
+   */
+  | 'byway-failure'
+  /**
+   * Another attempt of the same call (the same operation key: a step Temporal runs again while its first attempt still
+   * holds the call) is under way. The runner waits for that attempt's result instead of paying again (ADR-0099).
+   */
+  | 'in-flight';
 
 /** What a 'budget-exceeded' refusal carries, so the runner can offer "Raise the budget by $X?" (spec §3.4). */
 export interface BudgetDetails {
@@ -245,10 +257,17 @@ export class GatewayError extends Error {
   readonly retryable: boolean;
   /** Set on 'budget-exceeded'. */
   budget?: BudgetDetails;
-  constructor(code: GatewayErrorCode, message: string, retryable = false) {
+  /**
+   * Whether the provider was paid for this call before it failed (ADR-0099). True when the provider answered and billed
+   * it but byway could not use, keep or record the answer: trying the call again pays for it again, so callers say so
+   * and do not retry. False when byway knows nothing was sent. Absent when it is not known (a provider's own failure).
+   */
+  billed?: boolean;
+  constructor(code: GatewayErrorCode, message: string, retryable = false, opts: { billed?: boolean } = {}) {
     super(message);
     this.code = code;
     this.retryable = retryable;
+    if (opts.billed !== undefined) this.billed = opts.billed;
   }
 }
 

@@ -283,7 +283,7 @@ export class ModelGateway implements Gateway {
       // ledgered with its evidence redacted, and it is not retried, because a retry would pay again.
       const echoed = findHeldKey(this.env, [out.text]);
       if (echoed) {
-        throw heldKeyError('provider-error', redact(`${ref.provider} answered and billed this call (${req.purpose}), but its answer contained your ${echoed}, so byway did not use it. It is not retried, because a retry would pay again.`), echoed);
+        throw Object.assign(heldKeyError('provider-error', redact(`${ref.provider} answered and billed this call (${req.purpose}), but its answer contained your ${echoed}, so byway did not use it. It is not retried, because a retry would pay again.`), echoed), { billed: true });
       }
       return {
         text: out.text,
@@ -488,17 +488,17 @@ export class ModelGateway implements Gateway {
       if (failure || !clip || !lastFrame) {
         const what = !clip ? 'no usable clip could be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
-        throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`));
+        throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`), false, { billed: true });
       }
       // The contract names two clip types (MP4, and the demo's SVG placeholder) and three frame types. Anything else is
       // kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
       const mediaType = clip.mediaType as VideoResult['mediaType'];
       if (!CLIP_TYPES.has(mediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`);
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`, false, { billed: true });
       }
       const lastFrameMediaType = lastFrame.mediaType as MediaType;
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`);
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`, false, { billed: true });
       }
       return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
     } finally {
@@ -811,11 +811,12 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
 
 /**
  * A failure after a provider was paid: never retryable, because retrying the call (here, or by Temporal re-running the
- * activity) would pay again for what was already bought.
+ * activity) would pay again for what was already bought. It is byway's own failure, not the provider's (the provider
+ * answered), and says it was billed (ADR-0099), so no caller presents it as the provider not answering.
  */
 function billedFailure(redact: Redactor, what: string, cause: unknown): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);
-  return new GatewayError('provider-error', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false);
+  return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true });
 }
 
 /**

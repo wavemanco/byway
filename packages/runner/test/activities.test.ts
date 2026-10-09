@@ -269,6 +269,20 @@ describe('an image refused because its prompt holds a provider key (ADR-0088)', 
     expect(tries).toBe(1);
   });
 
+  it('stops the step when the image was billed but byway could not keep it: another try would buy another image (follow-up (e))', async () => {
+    const lost = new GatewayError('byway-failure', 'openai made the image and billed it, but it could not be stored: ENOSPC.', false, { billed: true });
+    const { outcome, tries } = await attempt(lost);
+    expect(outcome).toBe(lost);
+    expect(tries).toBe(1);
+  });
+
+  it('stops the step when byway did not start the image call (it is stopping): Temporal tries the step again once byway is back', async () => {
+    const stopping = new GatewayError('byway-failure', 'byway is stopping, so it did not start this call. Try again once it has started again.', true, { billed: false });
+    const { outcome, tries } = await attempt(stopping);
+    expect(outcome).toBe(stopping);
+    expect(tries).toBe(1);
+  });
+
   it('still tries any other refused image again, then finishes skipped, as before', async () => {
     const { outcome, tries } = await attempt(new GatewayError('invalid-request', 'content policy'));
     expect(outcome).toMatchObject({ skipped: true });

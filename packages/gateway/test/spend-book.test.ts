@@ -161,7 +161,8 @@ describe('calls whose caller stopped', () => {
     const { client, calls } = fakeAnthropic();
     const g = gateway({ clients: { anthropic: client } });
     await g.close();
-    await expect(g.complete(ask())).rejects.toMatchObject({ code: 'provider-error', retryable: true });
+    // byway's own refusal, not the provider's, and nothing was billed (follow-up (e)).
+    await expect(g.complete(ask())).rejects.toMatchObject({ code: 'byway-failure', retryable: true, billed: false });
     expect(calls).toHaveLength(0);
     expect(await book.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
   });
@@ -191,7 +192,7 @@ describe('calls whose caller stopped', () => {
     const result = await Promise.race([call, new Promise((r) => setTimeout(() => r('still running'), 1000))]);
     held.release();
     expect(result).toBeInstanceOf(GatewayError);
-    expect(result).toMatchObject({ code: 'provider-error', retryable: true, message: expect.stringContaining('byway is stopping') });
+    expect(result).toMatchObject({ code: 'byway-failure', retryable: true, billed: false, message: expect.stringContaining('byway is stopping') });
     expect(held.calls()).toBe(0);
     expect(await book.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
     expect((await book.records('ws')).inFlight).toEqual([]);

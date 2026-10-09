@@ -61,8 +61,11 @@ export function budgetError(budget: BudgetDetails): GatewayError & { budget: Bud
   return err as GatewayError & { budget: BudgetDetails };
 }
 
-/** The refusal a closed gateway gives a paid call: retryable, so a step is tried again once byway has started again. */
-const stopping = () => new GatewayError('provider-error', 'byway is stopping, so it did not start this call. Try again once it has started again.', true);
+/**
+ * The refusal a closed gateway gives a paid call: retryable, so a step is tried again once byway has started again. It
+ * is byway's own refusal, and nothing was sent or billed (ADR-0099).
+ */
+const stopping = () => new GatewayError('byway-failure', 'byway is stopping, so it did not start this call. Try again once it has started again.', true, { billed: false });
 
 const changed = (batch: LedgerBatch, cursor: LedgerCursor) =>
   batch.entries.length > 0 || batch.unreadable.length > 0 || batch.cursor.offset !== cursor.offset || batch.cursor.tailSha256 !== cursor.tailSha256;
@@ -255,7 +258,7 @@ export class PaidCall {
       this.calls.letGo(this.opId);
       this.opId = await this.calls.admitOnce(this.req, await this.caps());
       if (!(await this.calls.book.markSent(this.opId, this.calls.owner))) {
-        throw new GatewayError('provider-error', 'byway could not record this call as sent in its spending records, so it did not send it. Try again.', true);
+        throw new GatewayError('byway-failure', 'byway could not record this call as sent in its spending records, so it did not send it. Try again.', true, { billed: false });
       }
     }
     this.sent = true;
