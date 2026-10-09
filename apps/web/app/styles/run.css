@@ -878,6 +878,13 @@
   gap: var(--s-2);
 }
 
+/* What a downloaded page does away from byway (F05): under the buttons, on its own line. */
+.result-download-note {
+  flex-basis: 100%;
+  max-width: 34ch;
+  margin: 0;
+}
+
 .page-result-bar {
   display: flex;
   flex-wrap: wrap;

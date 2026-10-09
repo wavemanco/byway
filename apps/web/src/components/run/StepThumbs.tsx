@@ -36,7 +36,7 @@ export function StepThumbs({ step, artifacts }: { step: TimelineStep; artifacts:
           {visual.slice(0, MAX_THUMBS).map((a, i) => (
             <li key={`${a.artifactId}-${i}`} className="thumb">
               {kindOf(a) === 'page' ? (
-                <ScaledPage src={artifactUrl(a.artifactId)} title={a.label ?? `Page ${i + 1}`} virtualHeight={900} />
+                <ScaledPage id={a.artifactId} title={a.label ?? `Page ${i + 1}`} virtualHeight={900} />
               ) : kindOf(a) === 'video' ? (
                 <video src={artifactUrl(a.artifactId)} preload="metadata" muted aria-label={a.label ?? `Clip ${i + 1}`} />
               ) : (

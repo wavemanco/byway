@@ -2,7 +2,7 @@
 import { useId } from 'react';
 import type { ArtifactInfo } from '../view/rundata.ts';
 import { clipKind, type OptionItem, type StoryboardModel, type StoryboardShot } from '../view/result.ts';
-import { artifactUrl } from './api.ts';
+import { artifactUrl, openHref } from './api.ts';
 
 export function OptionsList({ options, compact = false }: { options: OptionItem[]; compact?: boolean }) {
   return (
@@ -25,7 +25,7 @@ function Clip({ shot, id, media }: { shot: StoryboardShot; id: string; media: Re
   if (kind === 'video') return <video src={artifactUrl(id)} controls preload="metadata" aria-label={`Clip for ${name}`} />;
   if (kind === 'image') return <img src={artifactUrl(id)} alt={`Placeholder clip for ${name}`} loading="lazy" />;
   return (
-    <a href={artifactUrl(id)} target="_blank" rel="noopener noreferrer">
+    <a href={openHref(id)} target="_blank" rel="noopener noreferrer">
       Open the clip for shot {shot.shot}
     </a>
   );

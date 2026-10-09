@@ -45,7 +45,29 @@ export async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
   return data as T;
 }
 
+/**
+ * An artifact's raw address: for an element's src (an image, a clip) and, with a file name, a download. Never a link a
+ * person opens: a page opened there is inert by design (F05), so "Open" goes to openHref.
+ */
 export function artifactUrl(id: string, download?: string): string {
   const base = `/artifacts/${encodeURIComponent(id)}`;
   return download === undefined ? base : `${base}?download=1&name=${encodeURIComponent(download)}`;
+}
+
+/**
+ * Where a page frame loads a generated page: its raw address, asking for its scripts (`?scripts=1`) only when the person
+ * turned them on for that page. The server grants the ask only to a same-origin frame (F05, ADR-0085); the frame's
+ * sandbox (frameSandbox) is derived from the same switch, as a second layer.
+ */
+export function pageFrameUrl(id: string, scripts: boolean): string {
+  return scripts ? `${artifactUrl(id)}?scripts=1` : artifactUrl(id);
+}
+
+/**
+ * Every in-app "Open" of an artifact: the whole-artifact viewer, which shows a page in a frame with the per-page scripts
+ * switch, text whole, and images and clips as themselves (F05, F13). One rule for every link, so none opens a page's raw
+ * address top-level.
+ */
+export function openHref(id: string): string {
+  return `/view/${encodeURIComponent(id)}`;
 }

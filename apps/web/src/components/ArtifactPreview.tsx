@@ -2,7 +2,7 @@
 
 import type { ArtifactInfo } from '../view/rundata.ts';
 import { parseOptions, parseStoryboard } from '../view/result.ts';
-import { artifactUrl } from './api.ts';
+import { artifactUrl, openHref } from './api.ts';
 import { DiffView } from './DiffView.tsx';
 import { Markdown } from './Markdown.tsx';
 import { OptionsList, Storyboard } from './results.tsx';
@@ -30,7 +30,7 @@ export function ArtifactPreview({ id, info, title, size = 'thumb', interactive =
   const type = info?.mediaType ?? '';
   if (type === 'text/html') {
     // Thumbnails are pictures and never run scripts; a large preview runs them only once asked, for that page (SEC-4).
-    if (size === 'thumb') return <ScaledPage src={artifactUrl(id)} title={title} interactive={interactive} virtualHeight={860} />;
+    if (size === 'thumb') return <ScaledPage id={id} title={title} interactive={interactive} virtualHeight={860} />;
     return <LargePage id={id} title={title} interactive={interactive} scripts={scripts} />;
   }
   if (type.startsWith('image/')) {
@@ -51,8 +51,9 @@ export function ArtifactPreview({ id, info, title, size = 'thumb', interactive =
     }
     return <Markdown text={text} className={size === 'thumb' ? 'prose prose-card' : 'prose'} />;
   }
+  // Nothing known about it (no info yet, or a type this preview cannot show): the viewer knows what it is (F05).
   return (
-    <a href={artifactUrl(id)} target="_blank" rel="noopener noreferrer">
+    <a href={openHref(id)} target="_blank" rel="noopener noreferrer">
       Open {title}
     </a>
   );
@@ -65,7 +66,7 @@ function LargePage({ id, title, interactive, scripts }: { id: string; title: str
   return (
     <div className="page-preview">
       {held ? null : <ScriptsToggle on={own} onChange={setOwn} />}
-      <ScaledPage src={artifactUrl(id)} title={title} interactive={interactive} virtualHeight={900} scripts={held ? scripts : own} />
+      <ScaledPage id={id} title={title} interactive={interactive} virtualHeight={900} scripts={held ? scripts : own} />
     </div>
   );
 }

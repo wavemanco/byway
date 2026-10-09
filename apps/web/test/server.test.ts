@@ -77,7 +77,7 @@ describe('artifact route headers', () => {
     expect(pageScriptsGranted(url(''), frame)).toBe(false);
     expect(pageScriptsGranted(url('?scripts=true'), frame)).toBe(false);
     expect(pageScriptsGranted(url('?scripts=1&download=1'), frame)).toBe(false);
-    for (const headers of [
+    const asks: Record<string, string>[] = [
       {},
       { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'same-origin' },
       { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'none' },
@@ -85,7 +85,8 @@ describe('artifact route headers', () => {
       { 'sec-fetch-dest': 'iframe', 'sec-fetch-site': 'same-site' },
       { 'sec-fetch-dest': 'iframe' },
       { 'sec-fetch-dest': 'empty', 'sec-fetch-site': 'same-origin' },
-    ]) {
+    ];
+    for (const headers of asks) {
       expect(pageScriptsGranted(url('?scripts=1'), new Headers(headers)), JSON.stringify(headers)).toBe(false);
     }
   });

@@ -7,8 +7,9 @@ import { exportLabel, formatWhen } from '../../view/history.ts';
 import { parseOptions, parseStoryboard, resultKind } from '../../view/result.ts';
 import type { HowItWasMade, SideImage } from '../../view/run.ts';
 import type { ArtifactInfo } from '../../view/rundata.ts';
+import { DOWNLOADED_PAGE } from '../../view/pages.ts';
 import { codeForLabel, recipeTitle, stepTitle, whoLabel } from '../../view/vocabulary.ts';
-import { artifactUrl } from '../api.ts';
+import { artifactUrl, openHref } from '../api.ts';
 import { DiffView } from '../DiffView.tsx';
 import { EvidenceLabel } from '../EvidenceLabel.tsx';
 import { Markdown } from '../Markdown.tsx';
@@ -63,7 +64,7 @@ function SideImages({ images }: { images: SideImage[] }) {
 
 function Deliverable({ run, artifactId, text, made, media }: Pick<Props, 'run' | 'artifactId' | 'text' | 'made' | 'media'>) {
   const kind = resultKind(run.medium);
-  if (kind === 'page') return <PageResult src={artifactUrl(artifactId)} title={run.title} />;
+  if (kind === 'page') return <PageResult id={artifactId} title={run.title} />;
   if (text === null) return null;
   if (kind === 'markdown') return <Markdown text={text} className="prose prose-read" />;
   if (kind === 'diff') return <DiffView text={text} />;
@@ -104,10 +105,11 @@ export function ResultView({ run, artifactId, mediaType, text, made, media, pres
           </a>
           {text !== null ? <CopyButton text={text} {...(mediaType === 'text/markdown' ? { exportUrl: artifactUrl(artifactId, run.title) } : {})} /> : null}
           {mediaType === 'text/html' ? (
-            <a className="button" href={artifactUrl(artifactId)} target="_blank" rel="noopener noreferrer">
+            <a className="button" href={openHref(artifactId)} target="_blank" rel="noopener noreferrer">
               Open in a new tab
             </a>
           ) : null}
+          {mediaType === 'text/html' ? <p className="result-download-note small muted">{DOWNLOADED_PAGE}</p> : null}
         </div>
       </header>
 
