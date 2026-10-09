@@ -583,15 +583,89 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
   });
 
   it('as the operators hand it on: candidates take it in, and hand on the critique they started with', () => {
-    expect(unapplied(seq(personCut('cut'), replicate('x', 2, fix('f'))))).toEqual([]);
-    expect(unapplied(seq(personCut('cut'), each('e', fix('f'))))).toEqual([]);
+    const picked = pick('p', 'H', 1, 'human');
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, fix('f')), picked))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), each('e', fix('f')), picked))).toEqual([]);
     expect(unapplied(seq(replicate('x', 2, personCut('cut')), fix('f')))).toEqual(['cut']);
-    expect(unapplied(seq(replicate('x', 2, seq(render('r'), personCut('cut'), fix('f')))))).toEqual([]);
+    expect(unapplied(seq(replicate('x', 2, seq(render('r'), personCut('cut'), fix('f'))), picked))).toEqual([]);
     // A lens or a final check hands a non-empty answer on (admission refuses a person's answer there: ST9, ST10).
     expect(unapplied(seq(audit('au', [{ name: 'p', body: personCut('cut') }]), fix('f')))).toEqual([]);
     // A judge in a relay link with nothing to see is skipped, and the fix after it applies the list (ADR-0090).
     expect(unapplied(relay('chain', 2, seq(personCut('cut'), render('r'), check('k'), fix('f'))))).toEqual([]);
     expect(unapplied(relay('chain', 2, loop('repair', seq(personCut('cut'), render('r'), check('k'), fix('f')), gate('check-clean'))))).toEqual(['cut']);
+  });
+
+  it('a candidate reaches the work only where a pick, or an AI writer that takes the options in, takes it up after the candidates', () => {
+    const picked = pick('p', 'H', 1, 'human');
+    const trim = seq(render('r'), personCut('cut'), fix('f'));
+    // The trim on two candidates, none of which is ever picked: the run delivers the work it had before them, and the
+    // list you give for each candidate reaches only that candidate (the round-8 verification's u1, lost on 64 of 64).
+    expect(unapplied(seq(replicate('x', 2, trim)))).toEqual(['cut']);
+    expect(unapplied(seq(replicate('x', 2, trim), render('after'), fix('g')))).toEqual(['cut']);
+    expect(unapplied(seq(replicate('x', 2, trim), picked))).toEqual([]);
+    // Your CUT outside, and its fix only in candidates that are never picked (the round-8 verification's 32 more).
+    expect(unapplied(seq(render('r'), personCut('cut'), replicate('x', 2, fix('f'))))).toEqual(['cut']);
+    expect(unapplied(seq(render('r'), personCut('cut'), each('e', fix('f'))))).toEqual(['cut']);
+    // each carries the candidates on to a pick after it; an AI writer that takes the options in drafts the work from them
+    // (C2's option map).
+    expect(unapplied(seq(replicate('x', 2, trim), each('e', render('r2')), picked))).toEqual([]);
+    const fromOptions = step({ id: 'map', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.m', consumes: ['option_set<artifact>'], produces: ['artifact'], writes: true });
+    expect(unapplied(seq(replicate('x', 2, trim), fromOptions))).toEqual([]);
+    // A dedupe keeps some of them, and takes none up; a pick in a lens or a final check's body takes up nothing that is
+    // kept; a pick inside a candidate takes them up for that candidate only, which must be taken up in turn.
+    const dedupe = step({ id: 'dedupe', role: 'dedupe', actor: 'model', tier: 'mid', prompt: 'p.d', consumes: ['option_set<artifact>'], produces: ['option_set<artifact>'] });
+    expect(unapplied(seq(replicate('x', 2, trim), dedupe))).toEqual(['cut']);
+    expect(unapplied(seq(replicate('x', 2, trim), dedupe, picked))).toEqual([]);
+    expect(unapplied(seq(replicate('x', 2, trim), audit('au', [{ name: 'choose', body: seq(pick('lp', 'H', 1, 'human'), render('lr'), critic('lc')) }])))).toEqual(['cut']);
+    expect(unapplied(seq(replicate('outer', 2, seq(replicate('inner', 2, trim), pick('ip', 'H', 1, 'human')))))).toEqual(['cut']);
+    expect(unapplied(seq(replicate('outer', 2, seq(replicate('inner', 2, trim), pick('ip', 'H', 1, 'human'))), picked))).toEqual([]);
+    // The same for a draft of your own in a candidate, shown a note made from your list, and for an AI step that decides
+    // which version a candidate keeps.
+    const sharpen = step({ id: 'sharpen', role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes: ['critique'], produces: ['brief'] });
+    expect(unapplied(seq(render('r'), personCut('cut'), sharpen, replicate('x', 2, authorDraft('own'))))).toEqual(['cut']);
+    expect(unapplied(seq(render('r'), personCut('cut'), sharpen, replicate('x', 2, authorDraft('own')), picked))).toEqual([]);
+    const keep = step({ id: 'keep', role: 'tells-compare', block: 'TELLS', actor: 'model', tier: 'mid', prompt: 'p.k', consumes: ['view', 'critique'], produces: ['taste'] });
+    expect(unapplied(seq(render('r'), personCut('cut'), replicate('x', 2, seq(fix('f0'), render('r2'), keep))))).toEqual(['cut']);
+  });
+
+  it('an empty answer in a lens or a final check’s body is dropped there: the operator hands on what came before it, not an earlier answer in its body', () => {
+    const yourCheck = (id: string): Step => step({ id, role: 'check', actor: 'human', consumes: ['view'], produces: ['critique'] });
+    const pass = { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' } as const;
+    // Your CUT, then another answer of yours in its lens, beside a lens of yours: listed, the later answer takes the
+    // CUT's place; left empty, its lens is dropped, and the audit hands on the other lens's answer or what came before
+    // the audit (the round-8 verification's st9c, lost on 64 of 64).
+    const trimThenCheck = seq(personCut('cut'), yourCheck('hc'));
+    expect(unapplied(seq(render('r'), audit('au', [{ name: 'trim', body: trimThenCheck }, { name: 'other', body: yourCritique('o') }]), fix('f')))).toEqual(['cut']);
+    expect(unapplied(seq(render('r'), audit('au', [{ name: 'trim', body: trimThenCheck }]), fix('f')))).toEqual(['cut']);
+    // What came before the operator is handed on where every lens may note nothing new: an answer before the audit then
+    // reaches the fix after it when the answers in it are left empty.
+    expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'yours', body: yourCritique('o') }]), fix('f')))).toEqual([]);
+    expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'maybe', body: optional('o', 'needed', critic('c')) }]), fix('f')))).toEqual([]);
+    expect(unapplied(seq(render('r'), personCut('before'), oneShotGate('g', seq(critic('g1'), yourCheck('gc')), pass), fix('f')))).toEqual([]);
+    expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'k', body: seq(critic('lc'), yourCheck('lk')) }]), fix('f')))).toEqual([]);
+    // Not where a lens always notes something new: the audit then hands on the lenses' critiques alone.
+    expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'k', body: check('k') }, { name: 'maybe', body: optional('o', 'needed', critic('c')) }]), fix('f')))).toEqual(['before']);
+    expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'k', body: check('k') }, { name: 'yours', body: yourCritique('o') }]), fix('f')))).toEqual(['before']);
+    // A lens step that takes the critique from before the audit in makes something new from it, which is handed on.
+    const carrier = step({ ...check('carrier'), consumes: ['view', 'critique'] });
+    expect(unapplied(seq(render('r'), personCut('before'), audit('au', [{ name: 'k', body: check('k') }, { name: 'c', body: carrier }]), fix('f')))).toEqual([]);
+  });
+
+  it('the notes an audit hands on: only its lenses’ where one of them always leaves a note, else also the notes from before it', () => {
+    const react = step({ id: 'react', role: 'vision', block: 'VISION', actor: 'human', consumes: ['artifact'], produces: ['taste', 'critique'] });
+    const sharpen = step({ id: 'sharpen', role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes: ['taste', 'artifact'], produces: ['brief'] });
+    const own = step({ ...authorDraft('write'), consumes: ['intent', 'brief'] });
+    const aiCut = step({ id: 'cut-marks', role: 'cut', block: 'CUT', actor: 'model', tier: 'big', prompt: 'p.c', consumes: ['view'], produces: ['critique'] });
+    // C6a with your draft moved after the author loop (the round-8 verification's 3577, lost on 400 of 400): the audit's
+    // lenses always note, so their notes, not the sharpened direction, are beside your draft.
+    const author = loop('author', seq(render('r'), audit('au', [{ name: 'cut', body: aiCut }, { name: 'critic', body: critic('c') }])), gate('human'));
+    expect(unapplied(seq(react, sharpen, author, own))).toEqual(['react']);
+    expect(unapplied(seq(react, sharpen, render('r'), audit('au', [{ name: 'critic', body: critic('c') }]), own))).toEqual(['react']);
+    // With your draft in the loop before the audit (as in the catalog), the direction is beside it in the first round.
+    expect(unapplied(seq(react, sharpen, loop('author', seq(own, render('r'), audit('au', [{ name: 'critic', body: critic('c') }])), gate('human'))))).toEqual([]);
+    // A lens that may note nothing (under an optional, or a person's answer alone) leaves the direction beside your draft.
+    expect(unapplied(seq(react, sharpen, render('r'), audit('au', [{ name: 'maybe', body: optional('o', 'needed', critic('c')) }]), own))).toEqual([]);
+    expect(unapplied(seq(react, sharpen, render('r'), audit('au', [{ name: 'yours', body: step({ ...yourCritique('o'), produces: ['taste'] }) }]), own))).toEqual([]);
   });
 
   it('at every place a step object sits, by its place', () => {
@@ -613,8 +687,9 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(yours('d', ['brief', 'critique']), draft('b', 'brief'), review))).toEqual([]);
     expect(unapplied(seq(yours('d', ['brief', 'critique']), draft('b', 'brief', 'reads'), review))).toEqual([]);
     expect(unapplied(seq(yours('d', ['critique']), draft('b', 'brief'), review))).toEqual(['d']);
-    // C5's direction as the taste and a critique: each concept takes the taste in.
-    expect(unapplied(seq(yours('d', ['taste', 'critique']), each('e', draft('b', 'taste'))))).toEqual([]);
+    // C5's direction as the taste and a critique: each concept takes the taste in, and you pick one of them.
+    expect(unapplied(seq(yours('d', ['taste', 'critique']), each('e', draft('b', 'taste')), pick('p', 'H', 1, 'human')))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['taste', 'critique']), each('e', draft('b', 'taste'))))).toEqual(['d']);
     // A CUT of yours is a directive: its answer fills the critique alone, whatever else it declares.
     expect(answerPorts(step({ ...personCut('cut'), produces: ['critique', 'brief'] }))).toEqual(['critique']);
     expect(answerPorts(yours('d', ['taste', 'brief', 'critique']))).toEqual(['critique', 'brief', 'taste']);
@@ -638,7 +713,7 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // brief given inside them never leaves; a candidate's writer takes in the one it started with.
     expect(unapplied(seq(yours('d', ['brief', 'critique']), audit('au', [{ name: 'c', body: critic('c') }]), draft('b', 'brief')))).toEqual([]);
     expect(unapplied(seq(yours('d', ['brief', 'critique']), oneShotGate('g', critic('g1'), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }), draft('b', 'brief')))).toEqual([]);
-    expect(unapplied(seq(yours('d', ['brief', 'critique']), replicate('x', 2, draft('b', 'brief'))))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), replicate('x', 2, draft('b', 'brief')), pick('p', 'H', 1, 'human')))).toEqual([]);
     expect(unapplied(seq(yours('d', ['brief', 'critique']), audit('au', [{ name: 'x', body: draft('b', 'brief') }])))).toEqual(['d']);
     // A keep-or-revert may say which version it kept in the taste's place, or ask nothing: it does not always.
     const compare = step({ id: 'compare', role: 'tells-compare', block: 'TELLS', actor: 'human', consumes: ['view'], produces: ['taste'] });
@@ -665,7 +740,7 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(yours('d', ['brief', 'critique']), render('r'), audit('au', [{ name: 'c', body: briefCritic }]), fix('f')))).toEqual([]);
     expect(unapplied(seq(yours('d', ['brief', 'critique']), render('r'), oneShotGate('g', briefCritic, { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }), fix('f')))).toEqual([]);
     // A candidate's AI direction reaches its own build, never a step after the candidates.
-    expect(unapplied(seq(personCut('cut'), replicate('x', 2, seq(sharpen(['critique']), build))))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, seq(sharpen(['critique']), build)), pick('p', 'H', 1, 'human')))).toEqual([]);
     expect(unapplied(seq(personCut('cut'), replicate('x', 2, sharpen(['critique'])), build))).toEqual(['cut']);
     // C6a's shape: your reaction's taste, sharpened into a direction shown beside the draft you write yourself (the
     // run shows a person the latest notes, an AI direction's among them).
@@ -696,7 +771,11 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(personCut('cut'), replicate('x', 2, build), pick('p', 'C', 1, 'model', step({ ...judge, consumes: ['option_set<artifact>'] }))))).toEqual(['cut']);
     // A dedupe that keeps the options it reads your list for, or an AI keep-or-revert that keeps a version by it.
     const dedupe = step({ id: 'dedupe', role: 'dedupe', actor: 'model', tier: 'mid', prompt: 'p.d', consumes: ['option_set<artifact>', 'critique'], produces: ['option_set<artifact>'] });
-    expect(unapplied(seq(personCut('cut'), replicate('x', 2, build), dedupe))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, build), dedupe, pick('p', 'H', 1, 'human')))).toEqual([]);
+    // Only where a pick or an AI writer takes the options it keeps up: kept options no step takes up decide nothing.
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, build), dedupe))).toEqual(['cut']);
+    // A pick's judge in a lens or a final check's body chooses what is dropped with it (the round-8 verification's probe).
+    expect(unapplied(seq(personCut('cut'), audit('au', [{ name: 'choose', body: seq(replicate('y', 2, build), pick('lp', 'C', 1, 'model', judge), render('lr'), critic('lc')) }])))).toEqual(['cut']);
     const keep = step({ id: 'keep', role: 'tells-compare', block: 'TELLS', actor: 'model', tier: 'mid', prompt: 'p.k', consumes: ['view', 'critique'], produces: ['taste'] });
     expect(unapplied(seq(fix('f0'), render('r'), personCut('cut'), keep))).toEqual([]);
     // Your brief, read by the critic whose score ends the loop: when it ends decides which version leaves it. A critic
@@ -707,6 +786,8 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(d, loop('l', seq(build, render('r'), critic('c')), gate('critic-score'))))).toEqual(['d']);
     expect(unapplied(seq(d, loop('l', seq(build, render('r'), briefCritic), gate('human'))))).toEqual(['d']);
     expect(unapplied(seq(d, render('r'), oneShotGate('g', briefCritic, { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' })))).toEqual([]);
+    // A loop in a lens ends on a version that is dropped with it: its critic decides nothing.
+    expect(unapplied(seq(d, audit('au', [{ name: 'l', body: loop('l', seq(build, render('r'), briefCritic), gate('critic-score')) }])))).toEqual(['d']);
   });
 
   it('followed through as many rounds as it takes: a list carried on in the next round reaches your draft in the round after', () => {

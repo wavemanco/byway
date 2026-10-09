@@ -121,8 +121,10 @@ describe("ST9/ST10 human-write: a lens or a gate body holds no person's write", 
  * A person's list of what to remove, or a reaction of theirs given as a critique, is an answer the step after it acts
  * on. Where the operator around it drops that answer, the step after it acts on an earlier critique instead, and the
  * person's answer is lost without a word (the round-3 verification's C3 and C4 cases): refused where it is asked. In a
- * candidate, only where nothing in that candidate takes it to the work (replicate and each hand on only the candidates'
- * work); a lens or a gate body drops an empty answer, so a person's list is never asked there.
+ * candidate, unless a step of that candidate takes it in and a pick, or an AI writer that takes the options in, takes
+ * that candidate up (replicate and each hand on only the candidates' work); in a lens or a gate body, where it reaches
+ * the work on no path, or where an empty answer, which is dropped there, always leaves the step after with what came
+ * before.
  */
 describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person's answer that an operator drops", () => {
   const personCut = (id: string): Step => step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] });
@@ -140,7 +142,7 @@ describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person
     expect(answers(cutIn((cut) => replicate('twice', 2, cut)))).toEqual(['ST12:critique-per-candidate']);
     expect(answers(cutIn((cut) => replicate('once', 1, cut)))).toEqual(['ST12:critique-per-candidate']);
     expect(validate(cutIn((cut) => replicate('twice', 2, cut))).violations.find((v) => v.clause === 'critique-per-candidate')!.message).toBe(
-      `step "cut" asks a person for a list or a critique once per candidate, and nothing in that candidate takes their answer to the work; replicate and each hand on only the candidates' work, so their answer never reaches the steps after them`,
+      `step "cut" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick, or an AI writer that takes the options in, takes it up`,
     );
     const r = studio();
     const d2 = r.stages[1]!.body as Seq;
@@ -170,6 +172,34 @@ describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person
     const [render2, cut, applyCut] = e.steps.splice(j, 3);
     e.steps.splice(j, 0, replicate('two-trims', 2, seq(render2!, cut!, critic('cand-critic'), applyCut!)), pick('pick-trim', 'H', 1, 'human'));
     expect(answers(replaced)).toEqual(['ST12:critique-per-candidate']);
+  });
+
+  it('only where a pick, or an AI writer that takes the options in, takes a candidate up: candidates no step takes up are never the work (the round-8 verification)', () => {
+    // The trim on two candidates, and no pick: the run delivers the version from before them, and every list you give
+    // is lost (u1, 64 of 64 runs).
+    const r = studio();
+    const d = d3(r);
+    const i = indexOf(d, 'render-2');
+    d.steps.splice(i, 0, replicate('two-trims', 2, seq(...d.steps.splice(i, 3))));
+    expect(answers(r)).toEqual(['ST12:critique-per-candidate']);
+    expect(validate(r).violations.find((v) => v.clause === 'critique-per-candidate')!.message).toBe(
+      `step "cut" asks a person for a list or a critique once per candidate, and their answer reaches the work on no path: replicate and each hand on only the candidates' work, so only a step of that candidate can take it in, and that candidate reaches the work only where a pick, or an AI writer that takes the options in, takes it up`,
+    );
+    // An AI writer that drafts the work from the options takes them up, as a pick does (C2's option map).
+    const map = step({ id: 'option-map', role: 'build', actor: 'model', tier: 'mid', consumes: [OPTION_SET], produces: ['artifact'], writes: true });
+    const mapped = studio();
+    const m = d3(mapped);
+    const k = indexOf(m, 'render-2');
+    m.steps.splice(k, 0, replicate('two-trims', 2, seq(...m.steps.splice(k, 3))), map);
+    expect(answers(mapped)).toEqual([]);
+    expect(only(mapped, 'ST12')).toEqual([]);
+    // Your CUT outside, and its fix only in two candidates that no step takes up (32 more of the verification's).
+    const outside = studio();
+    const o = d3(outside);
+    o.steps[indexOf(o, 'apply-cut')] = replicate('two-fixes', 2, o.steps[indexOf(o, 'apply-cut')]!);
+    expect(validate(outside).violations.filter((v) => /critique/.test(v.clause ?? '')).map((v) => `${v.ruleId}:${v.clause} ${v.message}`)).toEqual([
+      `ST12:critique-unapplied step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it, or the one that does works on candidates that nothing takes up`,
+    ]);
   });
 
   it('in an audit lens or a one-shot gate body: an empty answer is dropped there, and the next fix applies an earlier critique', () => {
@@ -208,7 +238,15 @@ describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person
     const late = studio();
     insertAfter(d3(late), 'apply-cut', audit('late', [{ name: 'yours', body: personCritique('late-critique') }, { name: 'critic', body: critic('late-critic') }]));
     expect(messages(late)).toEqual([
-      'lens "yours" step "late-critique" asks a person for a list or a critique, and their answer reaches the work on no path: the audit hands it on as its critique, and before anything that writes the work or picks which version it is takes that in, another takes its place, or none comes after it',
+      'lens "yours" step "late-critique" asks a person for a list or a critique, and their answer reaches the work on no path: before anything that writes the work or picks which version it is takes it in, in its lens or after the audit, another takes its place, or none comes after it',
+    ]);
+    // Your CUT, then another answer of yours in its lens, beside a lens of yours: listed, the later answer takes the
+    // list's place; left empty, its lens is dropped, and the audit hands on the other lens's answer or what came before
+    // it, never the list (the round-8 verification's st9c, lost on 64 of 64 runs).
+    const yourCheck = step({ id: 'lens-check', role: 'check', actor: 'human', consumes: ['view'], produces: ['critique'] });
+    const st9c = cutIn((cut) => audit('trim', [{ name: 'trim', body: seq(cut, yourCheck) }, { name: 'other', body: personCritique('lens-other') }]));
+    expect(messages(st9c)).toEqual([
+      'lens "trim" step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: before anything that writes the work or picks which version it is takes it in, in its lens or after the audit, another takes its place, or none comes after it',
     ]);
   });
 });
@@ -234,7 +272,7 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     d3(r).steps.splice(indexOf(d3(r), 'apply-cut'), 1);
     const v = unapplied(r);
     expect(v.map((x) => `${x.ruleId} ${x.path}`)).toEqual(['ST12 stages[2].body.steps[1]']);
-    expect(v[0]!.message).toBe('step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it');
+    expect(v[0]!.message).toBe('step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it, or the one that does works on candidates that nothing takes up');
   });
 
   it("a direction of the person's given as a critique between the CUT and its fix: the later answer replaces the list", () => {
@@ -305,7 +343,7 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     insertAfter(d3(alone), 'cut-render', reaction(['critique']));
     insertAfter(d3(alone), 'apply-cut', render('redraft-render'), redraft);
     expect(unapplied(alone).map((x) => x.message)).toEqual([
-      'step "direction" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it',
+      'step "direction" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it, or the one that does works on candidates that nothing takes up',
     ]);
   });
 });
