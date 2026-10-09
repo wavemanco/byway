@@ -21,3 +21,22 @@ describe('scripts/serve.ts composes the gateway on the spend book (ADR-0095)', (
     for (const at of storeCloses) expect(serve.slice(Math.max(0, at - 200), at)).toMatch(/await gateway\.close\(\);\s*(\/\/[^\n]*\n\s*)?$/);
   });
 });
+
+describe('byway’s stop reaches the web process’s services (follow-up (f); ADR-0099)', () => {
+  const serve = read('scripts/serve.ts');
+  const devWeb = read('scripts/dev-web.ts');
+  const instrumentation = read('apps/web/instrumentation.ts');
+
+  it('starts next start with an IPC channel, which the app’s instrumentation hook listens on, and asks it to stop before ending it', () => {
+    expect(serve).toMatch(/\[nextBin\(\), 'start'[^\n]*stdio: \['ignore', 'inherit', 'inherit', 'ipc'\]/);
+    expect(instrumentation).toMatch(/stopOnRequest\(\)/);
+    const stopWeb = serve.slice(serve.indexOf('async function stopWeb'), serve.indexOf('const exitCode'));
+    expect(stopWeb.indexOf("child.send('stop')")).toBeGreaterThan(0);
+    expect(stopWeb.indexOf("child.send('stop')")).toBeLessThan(stopWeb.indexOf('stopTree(child)'));
+  });
+
+  it('in contributor mode, closes the guarded server first, then the services, and owns its stop', () => {
+    expect(devWeb).toMatch(/\[STOPPER_KEY\] = 'dev-web'/);
+    expect(devWeb.indexOf('.close()')).toBeLessThan(devWeb.indexOf('closeServices()'));
+  });
+});

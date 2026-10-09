@@ -9,11 +9,12 @@ import { connection } from 'next/server';
 import { runProfileId, servicesConfig } from './config.ts';
 import { createServiceHost, type ServiceHost } from './create.ts';
 import { loadEngine } from './engine.ts';
+import { SERVICES_KEY, stopping } from './shutdown.ts';
 import type { Services } from './types.ts';
 
 export type { Services } from './types.ts';
 
-const KEY = Symbol.for('byway.services');
+const KEY = SERVICES_KEY;
 
 type Holder = { [KEY]?: Promise<ServiceHost> };
 
@@ -33,8 +34,10 @@ async function createHost(): Promise<ServiceHost> {
  * One set per server process. Next.js compiles route handlers and pages into separate bundles, and hot reload
  * re-evaluates modules, so the host lives on globalThis rather than in module scope: a reload must not open a second
  * database handle or a second engine connection. A host that failed to open is not kept, so the next request retries.
+ * Once byway is stopping (shutdown.ts), no request opens or uses the services: they are being closed.
  */
 function host(): Promise<ServiceHost> {
+  if (stopping()) return Promise.reject(new Error('byway is stopping, so the web app takes no more requests.'));
   const holder = globalThis as Holder;
   holder[KEY] ??= createHost().catch((err: unknown) => {
     delete holder[KEY];

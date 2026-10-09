@@ -80,14 +80,18 @@ function stopTree(child: ChildProcess | undefined): Promise<void> {
 }
 
 /**
- * Stops the web process. Contributor mode's has an IPC channel and is asked first, so Next closes its dev server
- * cleanly; then, or for next start, the process tree is ended.
+ * Stops the web process. Both modes' have an IPC channel and are asked first: contributor mode's closes its dev server,
+ * and `next start` (through the app's instrumentation hook), each then closing the web app's services, so their
+ * gateways hand back the recommending and composing calls they hold at once (ADR-0099). Then, or if it does not exit in
+ * time, the process tree is ended.
  */
 async function stopWeb(child: ChildProcess): Promise<void> {
   if (child.connected && child.exitCode === null) {
     const exited = new Promise<true>((resolve) => child.once('exit', () => resolve(true)));
     child.send('stop');
-    if (await Promise.race([exited, new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000).unref())])) return;
+    // Longer than the web process's own stop deadline (10 s, apps/web/src/services/shutdown.ts), so a stop that closes the
+    // services in time is never cut short.
+    if (await Promise.race([exited, new Promise<false>((resolve) => setTimeout(() => resolve(false), 12_000).unref())])) return;
   }
   await stopTree(child);
 }
@@ -203,7 +207,8 @@ async function main(): Promise<void> {
   const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
   let web: ChildProcess;
   if (mode === 'start') {
-    web = spawn(process.execPath, [nextBin(), 'start', '-H', '127.0.0.1', '-p', String(webPort)], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit'], env: webEnv });
+    // With an IPC channel, which the app's instrumentation hook listens on: byway's stop closes its services (stopWeb).
+    web = spawn(process.execPath, [nextBin(), 'start', '-H', '127.0.0.1', '-p', String(webPort)], { cwd: WEB, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], env: webEnv });
   } else {
     // Plain Node (it strips the script's types itself), from apps/web, as next dev ran. Over the IPC channel it is
     // asked to stop, and it stops by itself if this process goes away.

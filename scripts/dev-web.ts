@@ -5,11 +5,14 @@
  * way.
  *
  * It tells its parent it is ready over IPC ({ ready: true }), and stops cleanly when the parent asks ('stop'), when the
- * parent goes away (the IPC channel closes), or on SIGINT and SIGTERM.
+ * parent goes away (the IPC channel closes), or on SIGINT and SIGTERM. Stopping closes the guarded server first, so no
+ * request comes in, then the web app's services, whose gateways hand back the recommending and composing calls they
+ * hold at once (apps/web/src/services/shutdown.ts; ADR-0099).
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startGuardedDev } from '../apps/web/src/server/dev-server.ts';
+import { closeServices, STOPPER_KEY } from '../apps/web/src/services/shutdown.ts';
 
 const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'apps', 'web');
 /** How long a clean stop may take before the process exits anyway. */
@@ -22,16 +25,22 @@ async function main(): Promise<void> {
   // React and Next choose their development builds from this when they first load.
   if (process.env.NODE_ENV !== 'development') Object.assign(process.env, { NODE_ENV: 'development' });
 
+  // This process stops itself (below), closing the services on the way; the app's instrumentation hook leaves it to us.
+  (globalThis as Record<symbol, unknown>)[STOPPER_KEY] = 'dev-web';
   const dev = await startGuardedDev({ dir: WEB, port });
   let stopping = false;
   const stop = (code: number) => {
     if (stopping) return;
     stopping = true;
     setTimeout(() => process.exit(code), STOP_DEADLINE_MS).unref();
-    dev.close().then(
-      () => process.exit(code),
-      () => process.exit(code),
-    );
+    dev
+      .close()
+      .catch(() => undefined)
+      .then(() => closeServices())
+      .then(
+        () => process.exit(code),
+        () => process.exit(code),
+      );
   };
   process.on('SIGINT', () => stop(0));
   process.on('SIGTERM', () => stop(0));

@@ -8,8 +8,9 @@
  * per demo setting, created when first needed. Both admit and settle their calls in the store's spend book, which the
  * worker's gateway shares (ADR-0095), so the caps see every process's calls in flight; both write the same
  * hash-chained ledger, which takes a lock for every append. Closing the host closes the gateways first (their lease
- * renewal and outbox timer, and the calls they hold, handed back), then the store. Nothing calls close() when byway
- * stops yet, so the web process's calls in flight then wait out their leases (ADR-0095 decision 5).
+ * renewal and outbox timer, and the calls they hold, handed back), then the store. byway's stop closes it
+ * (shutdown.ts; ADR-0099), so the web process's calls in flight are handed back at once rather than waiting out their
+ * leases (the residual ADR-0095 decision 5 named).
  */
 import path from 'node:path';
 import type { Advisor, Gateway, PromptRenderer, Runner, Store } from '@byway/contracts';
