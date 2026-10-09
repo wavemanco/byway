@@ -647,9 +647,8 @@ export interface FlowOps<S> {
   exit?(step: Step, path: string, before: S, after: S): S;
   /**
    * Leave a loop that can leave only through its exit points (`leavesOnlyAtExits`) only through them, not also from the
-   * end of its body. Off by default: a path no run takes can only add findings to the rules that leave it out and take
-   * claims away from the analyses that do. An analysis whose finding is that something happens on no path sets it, so a
-   * path no run takes cannot hide one.
+   * end of its body. Off by default, so every other rule reads the walk as before. An analysis whose finding is that
+   * something happens on no path (`unappliedCritiques`) sets it: there a path no run takes could hide the finding.
    */
   exactLoops?: boolean;
 }
