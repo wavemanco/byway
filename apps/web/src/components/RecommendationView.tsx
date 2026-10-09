@@ -489,7 +489,7 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
           </span>
         </div>
         <p id={`${budgetId}-help`} className="start-bar-help">
-          The run asks before starting a call whose estimated cost would take it over this budget. Estimates can be low, so a run can end slightly over. {formatUsd(remainingUsd)} left in your workspace.
+          The run asks before starting a call whose estimated cost would take it over this budget. Estimates can be low, and a single call can cost twice its estimate or more, so a run can end over this budget. {formatUsd(remainingUsd)} left in your workspace.
           {demo ? ' Demo mode: costs are sample figures and nothing is charged.' : null}
         </p>
         <button type="submit" className="button button-primary button-large" disabled={busy || blocked}>

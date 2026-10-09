@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assumedPricingNote, budgetProblem, exportLabel, formatWhen, workspaceSpend } from '../src/view/history.ts';
+import { assumedPricingNote, budgetProblem, exportLabel, formatWhen, ledgerCheckText, workspaceSpend } from '../src/view/history.ts';
 
 const NOW = new Date('2026-10-07T15:00:00.000Z');
 
@@ -47,5 +47,13 @@ describe('Settings: calls settled at an assumed price (F04, ADR-0091)', () => {
       '1 call was answered by a model byway has no price for, so it was counted at the price of the model byway asked for ($0.03). Your provider’s bill may differ.',
     );
     expect(assumedPricingNote({ calls: 3, usd: 1.2 })).toMatch(/^3 calls were answered .* so they were counted .* \(\$1\.20 in all\)\./);
+  });
+});
+
+describe('Settings: checking the spend ledger (ADR-0091, ADR-0094)', () => {
+  it('for a line that is not an entry: its spending may be uncounted, a torn last line is set aside, and a backup is the whole data directory', () => {
+    expect(ledgerCheckText('line:7')).toBe(
+      'Line 7 of the spend ledger cannot be read as an entry, so its spending may not be counted. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).',
+    );
   });
 });

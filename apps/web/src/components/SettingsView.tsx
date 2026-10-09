@@ -182,7 +182,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
       <section className="settings-section" aria-labelledby={`${ids}-budget`}>
         <h2 id={`${ids}-budget`}>Workspace budget</h2>
         <p className="section-note">
-          byway does not start a call whose estimated cost would take your spending past this amount. Estimates can be low, so spending can end slightly over. {formatUsd(spend.spentUsd)} spent so far; {formatUsd(Math.max(0, cap - spend.spentUsd))} left. Each run also has its own
+          byway does not start a call whose estimated cost would take your spending past this amount. Estimates can be low, and a single call can cost twice its estimate or more, so spending can end over this amount. {formatUsd(spend.spentUsd)} spent so far; {formatUsd(Math.max(0, cap - spend.spentUsd))} left. Each run also has its own
           budget, set when you start it.
         </p>
         <form

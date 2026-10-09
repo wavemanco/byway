@@ -31,6 +31,10 @@ describe('servedPrice', () => {
     ['anthropic', 'claude-opus-5', 'claude-opus-5-5', 'claude-opus-5-5'],
     // A dated snapshot of another priced model is priced at that model's row, not the requested one's.
     ['anthropic', 'claude-opus-5-5', 'claude-opus-4-8-20261001', 'claude-opus-4-8'],
+    // Google's dated previews (gemini-2.5-pro-preview-06-05, gemini-2.5-flash-preview-09-2025): the date goes, -preview stays.
+    ['google', 'gemini-3.1-pro-preview', 'gemini-3.1-pro-preview-10-01', 'gemini-3.1-pro-preview'],
+    ['google', 'gemini-3.1-pro-preview', 'gemini-3.1-pro-preview-09-2026', 'gemini-3.1-pro-preview'],
+    ['google', 'gemini-3.8-flash', 'gemini-3.1-pro-preview-12-31', 'gemini-3.1-pro-preview'],
   ] as const)('%s: %s served as %s is priced at %s, unflagged', (provider, requested, served, expected) => {
     expect(servedPrice(PRICES, provider, served, row(provider, requested), AT)).toEqual({ row: row(provider, expected), assumed: false });
   });
@@ -38,6 +42,35 @@ describe('servedPrice', () => {
   it.each([['claude-unpriced-x'], ['claude-opus-5-5-preview'], ['claude-opus-5-55'], ['gpt-6.1-sol-2026-09']])('prices %s, which has no row, at the requested row, flagged assumed', (served) => {
     const requested = row('anthropic', 'claude-opus-5-5');
     expect(servedPrice(PRICES, 'anthropic', served, requested, AT)).toEqual({ row: requested, assumed: true });
+  });
+
+  it.each([
+    // Not a month and day, or a month and year.
+    ['gemini-3.1-pro-preview-13-01'],
+    ['gemini-3.1-pro-preview-10-32'],
+    ['gemini-3.1-pro-preview-10-1'],
+    ['gemini-3.1-pro-preview-10-202'],
+    // Not after -preview: a dated form of a model that is not a preview, or a preview with no priced row.
+    ['gemini-3.8-flash-10-01'],
+    ['gemini-3.8-flash-preview-10-01'],
+  ])('google: prices %s, which is no dated preview of a priced model, at the requested row, flagged assumed', (served) => {
+    const requested = row('google', 'gemini-3.8-flash');
+    expect(servedPrice(PRICES, 'google', served, requested, AT)).toEqual({ row: requested, assumed: true });
+  });
+
+  it('reads the dated preview form only for Google', () => {
+    const requested = row('anthropic', 'claude-opus-5-5');
+    const table = [...PRICES, { ...requested, model: 'claude-opus-5-5-preview' }];
+    expect(servedPrice(table, 'anthropic', 'claude-opus-5-5-preview-10-01', requested, AT)).toEqual({ row: requested, assumed: true });
+  });
+
+  it('never reads a priced id as a snapshot of another priced id, and a dated preview only as its own preview', () => {
+    for (const r of PRICES) {
+      const other = PRICES.find((o) => o.provider === r.provider && o.model !== r.model) ?? r;
+      expect(servedPrice(PRICES, r.provider, r.model, other, AT).row.model, `${r.provider}/${r.model}`).toBe(r.model);
+      const dated = servedPrice(PRICES, r.provider, `${r.model}-10-01`, other, AT);
+      if (!dated.assumed) expect(dated.row.model, `${r.provider}/${r.model}-10-01`).toBe(r.model);
+    }
   });
 });
 

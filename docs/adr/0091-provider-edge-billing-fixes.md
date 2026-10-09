@@ -36,22 +36,23 @@ What the verifiers reproduced at the provider edge:
    - The stored evidence records the ids fal gave at submission. The result's own id comes from a header and may be missing.
 3. **Served-model pricing.** `servedPrice()` settles a served model in this order:
    - its own row;
-   - then a dated or versioned snapshot (`-YYYY-MM-DD`, `-YYYYMMDD`, `-NNN`, `@<version>`) of any priced model of that provider, at that model's row;
+   - then a dated or versioned snapshot (`-YYYY-MM-DD`, `-YYYYMMDD`, `-NNN`, `@<version>`, and for Google a dated preview, `-preview-MM-DD` or `-preview-MM-YYYY`, read as its `-preview` id) of any priced model of that provider, at that model's row;
    - otherwise the requested row, with the ledger entry flagged `priceBasis: 'assumed'`.
 
-   The suffix forms are narrow, so `claude-opus-5-5` can never read as a snapshot of `claude-opus-5`. `LedgerEntry.priceBasis` is optional and covered by the hash chain, so old entries verify unchanged. Images settle the same way. `SpendSummary.assumedPricing` counts the flagged calls, and Settings says so in words.
+   The suffix forms are narrow, so `claude-opus-5-5` can never read as a snapshot of `claude-opus-5`, and a dated Google preview only as a snapshot of a priced `-preview` id. `LedgerEntry.priceBasis` is optional and covered by the hash chain, so old entries verify unchanged. Images settle the same way. `SpendSummary.assumedPricing` counts the flagged calls, and Settings says so in words.
 4. **The estimate contract.** Admission reserves planning estimates, not bounds. `estimate.ts`, `reserve()`, the budget message and spec §3.4 say this. A call can settle above its reservation; the true cost is recorded and later calls are refused against it. Where a cheap true bound exists, it is used:
    - ASCII text stays at a third of a token per character;
    - any other character counts at its UTF-8 bytes, a bound for byte-level tokenizers;
    - an image whose size cannot be read counts at the 6,400-token maximum.
 
-   The Recommendation screen labels its range "Estimated cost". The run-budget sentence now reads "asks before starting a call whose estimated cost would take it over this budget". The Settings sentence now reads "does not start a call whose estimated cost would take your spending past this amount". Both add that estimates can be low. A guard test keeps bound claims out of the app.
+   The Recommendation screen labels its range "Estimated cost". The run-budget sentence now reads "asks before starting a call whose estimated cost would take it over this budget". The Settings sentence now reads "does not start a call whose estimated cost would take your spending past this amount". Both add that estimates can be low, and a single call can cost twice its estimate or more, so spending can end over a budget. That is the honest size while D1 keeps the refusal fallbacks on (decision 7); the wording is to be revisited once D1 is decided. The README says the same. A guard test keeps bound claims, and calling the overrun slight, out of the app and the README.
 5. **Torn-tail quarantine and verify.**
    - Under the lock, before each append, a file that does not end in a newline has its torn last line copied to `ledger.jsonl.damaged-<yyyyMMddTHHmmssSSSZ>-<pid>`. The name has no colons, which Windows refuses. Only once that copy is written is the file cut back to its last newline, and the chain continues.
    - A last line that is a whole entry and only lost its newline (an editor strips it) is ended with a newline instead, and kept.
    - `lastEntry()` continues from the last line that is an entry.
    - `verify()` reports a head record that is not one (not JSON, a `seq` below 1, a field missing) as `head`, and the start-up report words it.
    - `verify()` is cached by the size and modification time of the ledger and its head, and Settings runs it on demand ("Check the spend ledger", `GET /api/ledger`).
+   - For a line that is not an entry, Settings says its spending may not be counted, that a torn last line is set aside by the next model call, and that going back to a backup means restoring the whole data directory, not `ledger.jsonl` alone ([ADR-0094](0094-backup-unit-is-the-data-directory.md); README "Back up and restore").
 6. **One first-recommendation call per intake.** `firstRecommendation()` (`apps/web/src/server/first-recommendation.ts`) shares one advisor call among concurrent first asks for an intake.
    - What shares a call: page renders and Try again alike.
    - Where it lives: a map on `globalThis` keyed by the host's store, kept the way the service host is.
