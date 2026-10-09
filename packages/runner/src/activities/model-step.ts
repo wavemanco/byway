@@ -5,7 +5,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import type { Tier } from '@byway/contracts';
-import { labelled } from '@byway/prompts/pure';
+import { GREAT_MIN_REFERENCES, labelled } from '@byway/prompts/pure';
 import { fences, parseArtifact, textView, type Parsed } from '../formats.ts';
 import { labels } from '../labels.ts';
 import { rendersKnob } from '../surfaces.ts';
@@ -49,6 +49,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   if (!step.prompt) throw new StepError(`The ${what} step names no prompt.`);
   const promptId = step.prompt;
   const tells = step.consumes.includes('tells') ? tellsText(deps.prompts, run.medium, step, input.tells) : undefined;
+  await rendererReady(deps, reader, input.refs);
 
   const result: ModelStepResult = { costUsd: 0 };
   const outputs: string[] = [];
@@ -165,6 +166,23 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   }
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(result.note ? { note: result.note } : {}), ...(outputs.length ? { outputArtifactIds: outputs } : {}) }, true);
   return result;
+}
+
+/**
+ * Readiness before spend for runs of any medium (ADR-0084). A GREAT lineup with an image among at least three references
+ * mixes forms, so its critic sees cards, which only the page renderer draws (BLIND-1). Such a run's references are
+ * workflow input, which beginRun cannot see, so every model step asks the renderer before its first provider call:
+ * a run whose renderer cannot start stops, with the renderer's plain message, before anything is spent. Asking again
+ * finds the shared browser running. A web page's run is asked when it begins (beginRun) and is asked here too.
+ */
+async function rendererReady(deps: RunnerDeps, reader: ArtifactReader, refs: readonly string[]): Promise<void> {
+  if (!deps.pages || refs.length < GREAT_MIN_REFERENCES) return;
+  for (const ref of refs) {
+    if (await reader.isImage(ref)) {
+      await deps.pages.ready();
+      return;
+    }
+  }
 }
 
 /**
