@@ -269,12 +269,21 @@ describe('an image refused because its prompt holds a provider key (ADR-0088)', 
     expect(tries).toBe(1);
   });
 
-  it('an image the provider made and billed but byway could not keep is not bought again: the step stops and says so', async () => {
-    // The gateway's billed failure (gateway.ts billedFailure): the provider was paid, and a second try would pay again.
-    const billed = Object.assign(new GatewayError('provider-error', 'mock made the image and billed it, but it could not be stored: disk full. It is not retried, because a retry would pay again.'), { billed: true as const });
-    const { outcome, tries } = await attempt(billed);
-    expect(outcome).toBe(billed);
+  it('stops the step when the image was billed but byway could not keep it: another try would buy another image (follow-up (e), ADR-0090)', async () => {
+    const lost = new GatewayError('byway-failure', 'openai made the image and billed it, but it could not be stored: ENOSPC.', false, { billed: true });
+    const { outcome, tries } = await attempt(lost);
+    expect(outcome).toBe(lost);
     expect(tries).toBe(1);
+  });
+
+  it('tries the image again when byway did not start the call (nothing was billed), as before byway-side failures had their own code', async () => {
+    // A GatewayError fails the step for good (FAILURE.step is not retried), so a call byway did not send is tried as any
+    // other unbilled failure is: up to triesPerSlot, then the step finishes skipped.
+    for (const message of ['byway is stopping, so it did not start this call. Try again once it has started again.', 'byway could not record this call as sent in its spending records, so it did not send it. Try again.']) {
+      const { outcome, tries } = await attempt(new GatewayError('byway-failure', message, true, { billed: false }));
+      expect(outcome).toMatchObject({ skipped: true });
+      expect(tries).toBe(2);
+    }
   });
 
   it('still tries any other refused image again, then finishes skipped, as before', async () => {

@@ -39,6 +39,21 @@ export type ProviderJobRole = 'generation' | 'extract';
 export interface AdmitRequest {
   /** A fresh id the caller chose for this operation. */
   opId: string;
+  /**
+   * The call's identity across retries (stage 3, ADR-0099): for a step's call, its run and memo key, the same on every
+   * Temporal attempt of the step. One live row holds a key at a time. Admitting a key a live row holds answers
+   * `inFlight` (an earlier attempt is still under way, or still keeping its result); a key whose holder is gone is
+   * taken over: an accepted call is resumed (`resume`), a settled one answers `settledEarlier` (its result may have
+   * been kept: look before buying again), and anything else gives the key up to a new row. Absent for calls outside a
+   * step (the advisor's).
+   */
+  operationKey?: string;
+  /**
+   * With an operation key: the caller was told `settledEarlier`, then looked for that call's kept result and found
+   * none, so the settled call gives its key up and this one is bought again (and counted): its earlier attempt ended
+   * without keeping what it bought (its process died first, or its memo could not be saved).
+   */
+  rebuy?: boolean;
   /** The process-and-gateway that holds the operation; only it may mark it sent or renew its lease. */
   owner: string;
   /** How long the operation stays live without a renewal. */
@@ -62,7 +77,21 @@ export type AdmitOutcome =
   /** A cap would be broken: the details the runner turns into "Raise the budget by $X?". */
   | { budget: BudgetDetails }
   /** An unacknowledged accounting fault blocks paid calls (the message says what and where). */
-  | { fault: string };
+  | { fault: string }
+  /** A live row holds the operation key: another attempt of the same call is under way, or keeping its result. */
+  | { inFlight: true }
+  /**
+   * The key's call was settled by an earlier attempt that has ended (or died): its result may have been kept (the
+   * runner's memo), so the caller looks there first, and admits again with `rebuy` only if it is not there. A holder
+   * keeps its result before it ends, so a look that follows this answer cannot miss a result that was kept.
+   */
+  | { settledEarlier: true }
+  /**
+   * The operation key's row had queue jobs the provider accepted, and its holder is gone (its lease ran out, or it
+   * stopped and handed the call back): this caller now holds that row (`opId`, owner and lease) and polls the jobs by
+   * their ids instead of submitting new ones. Nothing more is reserved: the row was already counted.
+   */
+  | { resume: { opId: string; jobs: Partial<Record<ProviderJobRole, string>> } };
 
 /** A settled call as the audit file will record it: a ledger entry without what the ledger assigns. */
 export type SettledCall = Omit<LedgerEntry, 'id' | 'seq' | 'at' | 'prevHash' | 'hash' | 'operationId'>;
@@ -71,6 +100,12 @@ export interface Settlement {
   /** When the call settled, the ledger entry's `at`. */
   at: string;
   entry: SettledCall;
+  /**
+   * For a call with an operation key: how long it stays held from settlement (its lease is extended to at least now
+   * plus this), so its caller can keep the result before another attempt may take the key, even when the call settled
+   * near the end of a lease its caller had stopped renewing (ADR-0099).
+   */
+  holdMs?: number;
 }
 
 /**
@@ -149,7 +184,7 @@ export function spendFaultDetail(line: LedgerLine, problem?: string): string {
  * is one (ADR-0095 decision 6). Every field the book records is checked, by the contract's types: an id, a workspace,
  * a purpose and a time that are non-empty text; a sequence number that is a whole number from 1; a kind and a provider
  * the contract names; the requested and served models as text; a cost from 0 to MAX_PLAUSIBLE_CALL_USD, byway's ceiling
- * for one call; and, when present, a run, a step and an operation as text and a price basis the contract names. Fields
+ * for one call; and, when present, a run, a step and an operation as non-empty text and a price basis the contract names. Fields
  * the book does not record (the hashes, usage, latency) are left to the chain check: usage counts feed no sum the caps
  * use. What fails here is a fault, not something counted as nothing.
  */
@@ -165,7 +200,9 @@ export function ledgerEntryProblem(value: unknown): string | undefined {
   if (typeof e.costUsd !== 'number' || !(e.costUsd >= 0 && e.costUsd <= MAX_PLAUSIBLE_CALL_USD)) {
     return `its "costUsd" is not a number from 0 to ${MAX_PLAUSIBLE_CALL_USD}, the most byway counts for one call (in USD)`;
   }
-  for (const field of ['runId', 'stepId'] as const) if (e[field] !== undefined && typeof e[field] !== 'string') return `its "${field}" is not text`;
+  // Absent for a call outside a run (the advisor's); present, a run or step id is never empty: a hand-edited line with
+  // one would record spend under run "" (no run has that id), so it is a fault like any other value the book cannot use.
+  for (const field of ['runId', 'stepId'] as const) if (e[field] !== undefined && !text(e[field])) return `its "${field}" is empty or not text`;
   if (e.operationId !== undefined && !text(e.operationId)) return 'its "operationId" is not text';
   if (e.priceBasis !== undefined && !own(PRICE_BASES, e.priceBasis)) return 'its "priceBasis" is not "assumed"';
   return undefined;
@@ -337,9 +374,10 @@ export interface BrokenLine {
 
 export interface SpendBook {
   /**
-   * In one transaction: refuse a paid call while an unacknowledged fault exists; sweep (an open row no longer live is
+   * In one transaction: refuse a paid call while an unacknowledged fault exists; resolve the operation key, if any
+   * (AdmitRequest.operationKey: in flight, resumed, or given up to this call); sweep (an open row no longer live is
    * released, a sent or accepted one becomes uncertain); check both caps against exposure plus the reservation; insert
-   * the row as open, with its owner and lease.
+   * the row as open, with its owner, lease and key.
    */
   admit(req: AdmitRequest): Promise<AdmitOutcome>;
   /** Compare-and-set from open to sent, for the live row this owner holds. False when it was swept meanwhile. */
@@ -357,14 +395,23 @@ export interface SpendBook {
   abandon(opId: string): Promise<void>;
   /** The provider answered: records the true cost from any state but settled; idempotent, returning the entry id chosen. */
   settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }>;
-  /** Extends the lease of this owner's unsettled operations. */
+  /**
+   * Extends the lease of this owner's unsettled operations, and of its settled ones that hold an operation key (their
+   * caller is still keeping the result: another attempt waits for it rather than buy the call again; ADR-0099).
+   */
   renew(opIds: readonly string[], owner: string, leaseMs: number): Promise<void>;
+  /**
+   * This owner's caller has ended (the activity invocation is over), so these operations are held no longer: their
+   * leases end now, and their operation keys are free for a later attempt. Only this owner's rows change. Idempotent.
+   */
+  letGo(opIds: readonly string[], owner: string): Promise<void>;
   /**
    * This owner is stopping cleanly (its gateway is closing), so its operations are given up at once rather than when
    * their leases run out: in one transaction its open rows are released (never sent, they count nothing) and its sent
    * and accepted rows become uncertain, as interrupted (they may have been billed, and count against the workspace cap
-   * only until cleared). Other owners' rows and settled rows are untouched; a later settlement still records the true
-   * cost. Idempotent. An owner that crashes never gets here: its rows wait for their leases to run out.
+   * only until cleared), and its settled rows are held no longer (their operation keys are free for a later attempt).
+   * Other owners' rows are untouched; a later settlement still records the true cost. Idempotent. An owner that crashes
+   * never gets here: its rows wait for their leases to run out.
    */
   endLeases(owner: string): Promise<void>;
   cursor(): Promise<LedgerCursor>;

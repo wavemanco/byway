@@ -3,46 +3,34 @@
  * provider, no keys, no network), a temp store, a recorded prompt renderer (the fake by default, the real templates on
  * request) and fake pages, and the real worker and Runner client. One per test file; tests within a file run one after
  * another.
+ *
+ * With `book: 'store'` the worker runs as production's does (F03 stage 3; ADR-0099): on a store connection of its own,
+ * with the store's spend book in byway.sqlite and one ledger, so a test can stop it cleanly (serve.ts's order: the
+ * worker, its gateways, its store) and start a new one on the same data directory and task queue, or run a worker as a
+ * process of its own and kill it outright mid-step (spawnWorkerProcess).
  */
+import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Duration } from '@temporalio/common';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { DefaultLogger, Runtime } from '@temporalio/worker';
-import { GatewayError, type CheckpointRecord, type CheckpointResolution, type CompletionRequest, type Gateway, type ImageRequest, type LedgerEntry, type ModelProfile, type ProblemBrief, type PromptRenderer, type RunRecord, type RunView, type StartRunInput, type VideoRequest } from '@byway/contracts';
-import { createGateway, memorySpendBook, PRICES, PROFILES, type ModelGateway, type PriceRow, type Responder } from '@byway/gateway';
+import { GatewayError, type CheckpointRecord, type CheckpointResolution, type CompletionRequest, type Gateway, type ImageRequest, type LedgerEntry, type ProblemBrief, type PromptRenderer, type ProviderId, type RunRecord, type RunView, type StartRunInput, type VideoRequest } from '@byway/contracts';
+import type { ModelGateway, ProviderAdapter, Responder } from '@byway/gateway';
 import type { Recipe } from '@byway/recipe';
 import { buildWorkflows } from '../../src/build.ts';
 import { cachedTemporalExecutable } from '../../src/dev-engine.ts';
 import { createRunnerClient, ResolutionRejectedError } from '../../src/client.ts';
-import { storeCaps } from '../../src/caps.ts';
 import { createWorker, type RunnerWorker } from '../../src/worker.ts';
 import { workflowIdFor } from '../../src/types.ts';
 import { fakePages, type FakePages } from './fake-pages.ts';
 import { fakePrompts, recordPrompts, type RecordingPrompts } from './fake-prompts.ts';
 import { createTestStore, type MemoStore } from './memo.ts';
+import { testGateways, type TestGateways } from './worker-config.ts';
+import type { WorkerProcessOptions } from './worker-process.ts';
 
-/**
- * A stand-in for "a provider key is configured", so the gateway leaves demo mode (contracts v4: demo means forced or no
- * key at all). Not a key: only mock-backed profiles run in these tests, so it is never sent anywhere.
- */
-const PLACEHOLDER_KEY_ENV = { ANTHROPIC_API_KEY: 'placeholder-not-a-key' };
-
-/** A demo profile with no video model: with keys present, C5 relay links finish as skipped (ADR-0069). */
-export const NO_VIDEO_PROFILE: ModelProfile = {
-  id: 'demo-novideo',
-  label: 'Demo without video',
-  tiers: { big: { provider: 'mock', model: 'mock-big' }, mid: { provider: 'mock', model: 'mock-mid' } },
-  image: { provider: 'mock', model: 'mock-image' },
-};
-
-/** Mock text models with a small price, so costs, cost events and budgets are exercised (the real mock is free). */
-const PRICED: PriceRow[] = [
-  ...PRICES.filter((p) => !(p.provider === 'mock' && (p.model === 'mock-big' || p.model === 'mock-mid'))),
-  { provider: 'mock', model: 'mock-big', inputPerMTok: 0.1, outputPerMTok: 1, source: 'runner tests' },
-  { provider: 'mock', model: 'mock-mid', inputPerMTok: 0.1, outputPerMTok: 1, source: 'runner tests' },
-];
+export { NO_VIDEO_PROFILE } from './worker-config.ts';
 
 export interface GatewayCall {
   kind: 'complete' | 'image' | 'video';
@@ -64,6 +52,20 @@ export interface HarnessOptions {
   /** Worker shutdown timing, for the shutdown tests. */
   shutdownGraceTime?: Duration;
   shutdownForceTime?: Duration;
+  /** 'store': the worker on its own store connection, with the store's spend book and one ledger (see the header). */
+  book?: 'memory' | 'store';
+  /** Provider adapters the workers' gateways use in place of the built-in ones (the relay board's mock). */
+  adapters?: Partial<Record<ProviderId, ProviderAdapter>>;
+  /** The spend book's lease and renewal, shortened for the restart tests. */
+  leaseMs?: number;
+  renewEveryMs?: number;
+}
+
+/** A worker the harness started as a process of its own (spawnWorkerProcess). */
+export interface WorkerProcess {
+  child: ChildProcess;
+  /** Kills it outright: no clean stop, nothing handed back. Resolves once it has exited. */
+  kill(): Promise<void>;
 }
 
 export interface Harness {
@@ -104,6 +106,18 @@ export interface Harness {
   /** Answer checkpoints as they open (default answers unless `answer` says otherwise) until the run ends. */
   drive(runId: string, answer?: Answer, timeoutMs?: number): Promise<RunView>;
   waitFor<T>(what: string, probe: () => Promise<T | undefined | false>, timeoutMs?: number): Promise<T>;
+  /**
+   * `book: 'store'` only. Stops the worker as byway stops cleanly (scripts/serve.ts's order): the Temporal worker, then
+   * its gateways (which hand back the calls they hold), then its store.
+   */
+  stopWorker(): Promise<void>;
+  /** `book: 'store'` only. Starts a new worker in this process: a new store connection, new gateways, the same task queue. */
+  startWorker(): Promise<void>;
+  /**
+   * `book: 'store'` only, with no worker running here. Starts a worker as a process of its own on the same data directory,
+   * Temporal server and task queue (worker-process.ts), and resolves once it polls.
+   */
+  spawnWorkerProcess(extra?: Pick<WorkerProcessOptions, 'boardUrl'>): Promise<WorkerProcess>;
   close(): Promise<void>;
 }
 
@@ -151,24 +165,23 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const ws = await store.ensureDefaultWorkspace();
   const responders: Record<string, Responder> = {};
   const calls: GatewayCall[] = [];
-  const ledgers = { demo: path.join(dir, 'ledger.jsonl'), keyed: path.join(dir, 'ledger-keyed.jsonl') };
-  const make = (keyed: boolean): ModelGateway =>
-    createGateway({
-      ledgerPath: keyed ? ledgers.keyed : ledgers.demo,
-      // Each of the two ledgers has its own book: one book reads one audit file (production has one of each).
-      spendBook: memorySpendBook(),
-      artifacts: store.artifacts,
-      caps: storeCaps(store),
-      demo: !keyed,
-      env: keyed ? { ...PLACEHOLDER_KEY_ENV } : {},
-      mockResponders: responders,
-      profiles: [...PROFILES, NO_VIDEO_PROFILE],
-      prices: PRICED,
-      retry: { maxAttempts: 1 },
+  const own = opts.book === 'store';
+  /** The worker's store: the harness's own, or (book 'store') a connection of its own, which stopWorker closes. */
+  let workerStore: MemoStore = own ? createTestStore({ dataDir: dir }) : store;
+  const gatewaysFor = (s: MemoStore): TestGateways =>
+    testGateways({
+      dir,
+      store: s,
+      book: opts.book ?? 'memory',
+      responders,
+      ...(opts.adapters ? { adapters: opts.adapters } : {}),
+      ...(opts.leaseMs !== undefined ? { leaseMs: opts.leaseMs } : {}),
+      ...(opts.renewEveryMs !== undefined ? { renewEveryMs: opts.renewEveryMs } : {}),
     });
-  const demoGateway = make(false);
-  const keyedGateway = make(true);
-  let inner = demoGateway;
+  let gateways = gatewaysFor(workerStore);
+  const ledgers = gateways.ledgers;
+  let keysOn = false;
+  let inner: ModelGateway = gateways.demo;
   let latencyMs = 0;
   const refusals: ((call: GatewayCall) => boolean)[] = [];
   const record = async <T>(kind: GatewayCall['kind'], request: GatewayCall['request'], send: () => Promise<T>): Promise<T> => {
@@ -227,13 +240,12 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const bundle = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..', 'dist', `test-${path.basename(dir)}.js`);
   const workflowsPath = await buildWorkflows({ outfile: bundle });
   let seeds = 0;
-  let worker: RunnerWorker;
-  try {
-    worker = await createWorker({
+  const newWorker = () =>
+    createWorker({
       connection: env.nativeConnection,
       taskQueue,
       gateway,
-      store,
+      store: workerStore,
       prompts,
       pages,
       workflowsPath,
@@ -241,12 +253,29 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
       ...(opts.shutdownGraceTime ? { shutdownGraceTime: opts.shutdownGraceTime } : {}),
       ...(opts.shutdownForceTime ? { shutdownForceTime: opts.shutdownForceTime } : {}),
     });
+  let worker: RunnerWorker;
+  try {
+    worker = await newWorker();
   } catch (e) {
     await env.teardown();
     throw e;
   }
-  const running = worker.run();
+  let running: Promise<void> | undefined = worker.run();
+  const processes: WorkerProcess[] = [];
   const runner = createRunnerClient({ client: env.client, store, taskQueue });
+  const storeMode = (what: string) => {
+    if (!own) throw new Error(`${what} needs createHarness({ book: 'store' })`);
+  };
+  const stopWorker = async () => {
+    storeMode('stopWorker');
+    if (!running) return;
+    await worker.shutdown();
+    await running.catch(() => undefined);
+    running = undefined;
+    await gateways.demo.close();
+    await gateways.keyed.close();
+    workerStore.close();
+  };
 
   const waitFor = async <T>(what: string, probe: () => Promise<T | undefined | false>, timeoutMs = 30_000): Promise<T> => {
     const deadline = Date.now() + timeoutMs;
@@ -268,9 +297,11 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     taskQueue,
     workflowsPath,
     useKeys(on) {
-      inner = on ? keyedGateway : demoGateway;
+      keysOn = on;
+      inner = on ? gateways.keyed : gateways.demo;
     },
-    ledger: (runId) => [...readLedger(ledgers.demo), ...readLedger(ledgers.keyed)].filter((e) => e.runId === runId),
+    // One ledger with book 'store' (both gateways write it), two otherwise.
+    ledger: (runId) => [...new Set([ledgers.demo, ledgers.keyed])].flatMap(readLedger).filter((e) => e.runId === runId),
     runner,
     workspaceId: ws.id,
     responders,
@@ -312,17 +343,68 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
         await sleep(15);
       }
     },
+    stopWorker,
+    async startWorker() {
+      storeMode('startWorker');
+      if (running) throw new Error('a worker is already running here');
+      workerStore = createTestStore({ dataDir: dir });
+      gateways = gatewaysFor(workerStore);
+      inner = keysOn ? gateways.keyed : gateways.demo;
+      worker = await newWorker();
+      running = worker.run();
+    },
+    async spawnWorkerProcess(extra = {}) {
+      storeMode('spawnWorkerProcess');
+      if (running) throw new Error('stop this process’s worker first: two workers would share the task queue');
+      const options: WorkerProcessOptions = {
+        address: env.address,
+        taskQueue,
+        dataDir: dir,
+        workflowsPath,
+        ...extra,
+        ...(opts.leaseMs !== undefined ? { leaseMs: opts.leaseMs } : {}),
+        ...(opts.renewEveryMs !== undefined ? { renewEveryMs: opts.renewEveryMs } : {}),
+      };
+      const file = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), 'worker-process.ts');
+      const child = spawn(process.execPath, [file, JSON.stringify(options)], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const output: string[] = [];
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`the worker process was not ready in 60 s:\n${output.join('')}`)), 60_000);
+        child.stdout?.on('data', (d: Buffer) => {
+          output.push(d.toString());
+          if (output.join('').includes('ready')) (clearTimeout(timer), resolve());
+        });
+        child.stderr?.on('data', (d: Buffer) => output.push(d.toString()));
+        child.once('exit', (code) => (clearTimeout(timer), reject(new Error(`the worker process exited with code ${code}:\n${output.join('')}`))));
+      });
+      const exited = new Promise<void>((r) => child.once('exit', () => r()));
+      const handle: WorkerProcess = {
+        child,
+        async kill() {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+          await exited;
+        },
+      };
+      processes.push(handle);
+      return handle;
+    },
     async close() {
       // The Temporal server is always stopped, even when the worker did not stop cleanly: it is a child process.
       try {
-        await worker.shutdown();
-        await running.catch(() => undefined);
+        for (const p of processes) await p.kill();
+        if (running) {
+          await worker.shutdown();
+          await running.catch(() => undefined);
+        }
       } finally {
         await env.teardown();
-        await demoGateway.close();
-        await keyedGateway.close();
+        if (running || !own) {
+          await gateways.demo.close();
+          await gateways.keyed.close();
+        }
+        if (own && running) workerStore.close();
         store.close();
-        rmSync(dir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
         rmSync(bundle, { force: true });
       }
     },

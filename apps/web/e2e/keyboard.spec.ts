@@ -146,7 +146,8 @@ test.describe('a control that starts something keeps focus, and a second press s
     await expect(page.locator('#proposal-title')).toHaveText('Memo Polish', { timeout: 60_000 });
     const intakeId = new URL(page.url()).pathname.split('/').pop() as string;
 
-    // The paid Start button: run start has no server-side idempotency, so a second Enter must not start a second run.
+    // The paid Start button: a second Enter while the start is on its way does nothing (the server also keeps one run per
+    // Start id, F03 P3, but the screen must not send a second start at all).
     const runs = await refuseSlowly(page, (p) => p === '/api/runs', 'e2e: the run did not start');
     await pressTwiceWhileRefused(page, page.getByRole('button', { name: /^Start/ }), runs, 'e2e: the run did not start');
 

@@ -444,14 +444,18 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           odd(0.07, { requestedModel: ['m'] }),
           odd(0.07, { runId: 5 }),
           odd(0.07, { kind: 'telegram' }),
+          // An empty run or step would record spend under a run "" (a hand edit): no call has one.
+          odd(0.07, { runId: '' }),
+          odd(0.07, { stepId: '' }),
           ledgerEntry(0.02),
         ];
-        expect(await a.absorb(batch(entries))).toEqual({ faults: 7 });
+        expect(await a.absorb(batch(entries))).toEqual({ faults: 9 });
         // Read again (a restart, another process): the same lines are the same faults.
         expect(await b.absorb(batch(entries))).toEqual({ faults: 0 });
         expect(await b.spend('ws')).toEqual({ spentUsd: 0.07, byRun: { run: 0.07 }, inFlightUsd: 0, uncertainUsd: 0 });
         const { faults } = await b.records('ws');
-        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300, 400, 500, 600, 700].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be counted as a spend entry`)));
+        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be counted as a spend entry`)));
+        expect(faults.slice(7).map((f) => f.detail)).toEqual([expect.stringContaining('its "runId" is empty or not text'), expect.stringContaining('its "stepId" is empty or not text')]);
         expect(await a.admit(admitRequest())).toEqual({ fault: expect.stringMatching(/byte 100\b/) });
         expect(await a.admit(admitRequest({ paid: false, reserveUsd: 0 }))).toEqual({ admitted: true });
         for (const f of faults) expect(await b.acknowledgeFault(f.id)).toBe(true);
@@ -589,6 +593,168 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         });
       }),
     );
+
+    // Stage 3 (ADR-0099): an operation key names one call across Temporal's attempts of its step (the runner's run and
+    // memo key). One live row holds a key; an attempt that finds it held waits, and one that finds its holder gone takes
+    // the key over, resuming queue jobs the provider accepted instead of submitting new ones.
+    describe('operation keys', () => {
+      const keyed = (key: string, over: Partial<AdmitRequest> = {}) => admitRequest({ operationKey: key, caps: { workspaceUsd: 10, runUsd: 10 }, ...over });
+
+      it(
+        'answers a second admission of a key a live row holds with inFlight, in every state, settled included; it reserves nothing more',
+        withBook(async ({ a, b }) => {
+          const states = ['open', 'sent', 'accepted', 'settled'] as const;
+          for (const state of states) {
+            const r = keyed(`k-${state}`, { reserveUsd: 0.1 });
+            expect(await a.admit(r)).toEqual({ admitted: true });
+            if (state !== 'open') await a.markSent(r.opId, 'owner-a');
+            if (state === 'accepted') await a.accept(r.opId, 'generation', 'req-1');
+            if (state === 'settled') await a.settle(r.opId, { ...settlement(0.05), holdMs: LEASE });
+            expect(await b.admit(keyed(`k-${state}`, { owner: 'owner-b' }))).toEqual({ inFlight: true });
+          }
+          expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.05, inFlightUsd: 0.3 });
+        }),
+      );
+
+      it(
+        'lets a later attempt take the key of an owner that is gone: an open row is released, a sent one may have been billed; a settled one first says so, and is bought again (counted) only when asked to',
+        withBook(async ({ a, b, advance }) => {
+          const open = keyed('k-open', { reserveUsd: 0.1 });
+          const sent = keyed('k-sent', { reserveUsd: 0.2 });
+          const settled = keyed('k-settled', { reserveUsd: 0.3 });
+          for (const r of [open, sent, settled]) await a.admit(r);
+          await a.markSent(sent.opId, 'owner-a');
+          await a.markSent(settled.opId, 'owner-a');
+          await a.settle(settled.opId, settlement(0.25));
+          advance(LEASE + 1);
+          // The settled call's result may have been kept: the caller is told so, and looks before buying it again.
+          expect(await b.admit(keyed('k-settled', { owner: 'owner-b' }))).toEqual({ settledEarlier: true });
+          for (const r of [open, sent, settled]) {
+            const next = keyed(r.operationKey!, { owner: 'owner-b', reserveUsd: 0.05, ...(r === settled ? { rebuy: true } : {}) });
+            expect(await b.admit(next)).toEqual({ admitted: true });
+            expect(await b.markSent(next.opId, 'owner-b')).toBe(true);
+            // The new row holds the key now.
+            expect(await a.admit(keyed(r.operationKey!))).toEqual({ inFlight: true });
+          }
+          expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.25, inFlightUsd: 0.15, uncertainUsd: 0.2 });
+          expect((await a.records('ws')).uncertain).toEqual([expect.objectContaining({ opId: sent.opId, reason: 'interrupted' })]);
+        }),
+      );
+
+      it(
+        'never frees a settled call’s key for rebuy while its holder is live: it is in flight',
+        withBook(async ({ a, b }) => {
+          const r = keyed('k-live');
+          await a.admit(r);
+          await a.markSent(r.opId, 'owner-a');
+          await a.settle(r.opId, { ...settlement(0.05), holdMs: LEASE });
+          expect(await b.admit(keyed('k-live', { owner: 'owner-b', rebuy: true }))).toEqual({ inFlight: true });
+        }),
+      );
+
+      it(
+        'frees the key of a call that ended without an answer at once (released, or may have been billed), live lease or not',
+        withBook(async ({ a, b }) => {
+          const released = keyed('k-released');
+          const abandoned = keyed('k-abandoned');
+          for (const r of [released, abandoned]) {
+            await a.admit(r);
+            await a.markSent(r.opId, 'owner-a');
+          }
+          await a.release(released.opId);
+          await a.abandon(abandoned.opId);
+          expect(await b.admit(keyed('k-released', { owner: 'owner-b' }))).toEqual({ admitted: true });
+          expect(await b.admit(keyed('k-abandoned', { owner: 'owner-b' }))).toEqual({ admitted: true });
+        }),
+      );
+
+      it(
+        'resumes an accepted call whose owner is gone: the new owner holds it with its job ids, nothing new is reserved, and it settles once',
+        withBook(async ({ a, b, advance }) => {
+          const first = keyed('k-clip', { kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
+          await a.admit(first);
+          await a.markSent(first.opId, 'owner-a');
+          await a.accept(first.opId, 'generation', 'req-gen');
+          advance(LEASE + 1);
+          const retry = keyed('k-clip', { owner: 'owner-b', kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
+          expect(await b.admit(retry)).toEqual({ resume: { opId: first.opId, jobs: { generation: 'req-gen' } } });
+          expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.7, uncertainUsd: 0 });
+          // Held by its new owner: renewed by it, not by the old one.
+          advance(LEASE - 1000);
+          await b.renew([first.opId], 'owner-b', LEASE);
+          advance(2000);
+          expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.7 });
+          await b.accept(first.opId, 'extract', 'req-frame');
+          await b.settle(first.opId, settlement(0.66));
+          expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.66, inFlightUsd: 0, uncertainUsd: 0 });
+          expect((await a.unledgered(10)).map((u) => u.opId)).toEqual([first.opId]);
+        }),
+      );
+
+      it(
+        'resumes an accepted call its owner handed back as it stopped (endLeases), and not one the person has cleared',
+        withBook(async ({ a, b }) => {
+          const clip = (key: string) => keyed(key, { kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
+          const stopped = clip('k-stopped');
+          const cleared = clip('k-cleared');
+          for (const r of [stopped, cleared]) {
+            await a.admit(r);
+            await a.markSent(r.opId, 'owner-a');
+            await a.accept(r.opId, 'generation', `req-${r.operationKey}`);
+          }
+          await a.endLeases('owner-a');
+          expect(await a.clearUncertain('ws', [cleared.opId])).toBe(1);
+          expect(await b.admit({ ...clip('k-stopped'), owner: 'owner-b' })).toEqual({ resume: { opId: stopped.opId, jobs: { generation: 'req-k-stopped' } } });
+          expect(await b.admit({ ...clip('k-cleared'), owner: 'owner-b' })).toEqual({ admitted: true });
+          // The resumed call is in flight again, under its new owner, and no longer counted as may have been billed.
+          expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 1.4, uncertainUsd: 0 });
+        }),
+      );
+
+      it(
+        'keeps a settled keyed call held while its caller renews it (keeping its result), and lets it go at once when asked',
+        withBook(async ({ a, b, advance }) => {
+          const r = keyed('k-memo');
+          await a.admit(r);
+          await a.markSent(r.opId, 'owner-a');
+          // Settled close to the end of its lease: the settlement itself holds it for another lease.
+          advance(LEASE - 1000);
+          await a.settle(r.opId, { ...settlement(0.05), holdMs: LEASE });
+          advance(LEASE - 1000);
+          expect(await b.admit(keyed('k-memo', { owner: 'owner-b' }))).toEqual({ inFlight: true });
+          await a.renew([r.opId], 'owner-a', LEASE);
+          advance(LEASE - 1000);
+          expect(await b.admit(keyed('k-memo', { owner: 'owner-b' }))).toEqual({ inFlight: true });
+          // Another owner's letGo changes nothing; the owner's frees the key now.
+          await b.letGo([r.opId], 'owner-b');
+          expect(await b.admit(keyed('k-memo', { owner: 'owner-b' }))).toEqual({ inFlight: true });
+          await a.letGo([r.opId], 'owner-a');
+          expect(await b.admit(keyed('k-memo', { owner: 'owner-b' }))).toEqual({ settledEarlier: true });
+          expect(await b.admit(keyed('k-memo', { owner: 'owner-b', rebuy: true }))).toEqual({ admitted: true });
+          // A settled call without a key is never renewed: it is not held by anyone.
+          const plain = admitRequest();
+          await a.admit(plain);
+          await a.markSent(plain.opId, 'owner-a');
+          await a.settle(plain.opId, settlement(0.01));
+          await a.renew([plain.opId], 'owner-a', LEASE);
+          expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.06 });
+        }),
+      );
+
+      it(
+        'lets the settled keyed calls of an owner that stops cleanly go at once, so a step retried on a new worker does not wait out the lease',
+        withBook(async ({ a, b }) => {
+          const r = keyed('k-stop');
+          await a.admit(r);
+          await a.markSent(r.opId, 'owner-a');
+          await a.settle(r.opId, { ...settlement(0.05), holdMs: LEASE });
+          await a.endLeases('owner-a');
+          expect(await b.admit(keyed('k-stop', { owner: 'owner-b' }))).toEqual({ settledEarlier: true });
+          expect(await b.admit(keyed('k-stop', { owner: 'owner-b', rebuy: true }))).toEqual({ admitted: true });
+          expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.05, inFlightUsd: 0.1 });
+        }),
+      );
+    });
 
     it(
       'admits concurrent calls against one remaining budget exactly as far as it reaches',

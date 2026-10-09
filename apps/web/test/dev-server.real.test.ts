@@ -5,7 +5,8 @@
  * refused by byway's guard; byway's own HMR upgrade still reaches Next; and the guarded port is the only one the
  * process tree listens on, so there is no unguarded next dev port to find.
  *
- * It builds into apps/web/.next-e2e (the test suites' own folder), so a `pnpm dev` you are running is not disturbed.
+ * It builds into apps/web/.next-dev-test, a folder only this test uses: a `pnpm dev` you are running is not disturbed,
+ * and neither is a suite building into .next-e2e at the same time (Next allows one dev server per build folder).
  * Nothing here renders a page, so no model is called and no key is read.
  *
  * Each answer is bounded (ANSWER_MS), and each test's limit is a few of them: next dev answers in milliseconds on a
@@ -89,7 +90,7 @@ beforeAll(async () => {
       PORT: String(port),
       BYWAY_DATA_DIR: dataDir,
       BYWAY_DEMO: '1',
-      BYWAY_NEXT_DIST_DIR: '.next-e2e',
+      BYWAY_NEXT_DIST_DIR: '.next-dev-test',
       // No engine runs here; nothing in this test reaches it.
       BYWAY_TEMPORAL_ADDRESS: '127.0.0.1:9',
     },

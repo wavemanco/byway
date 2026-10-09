@@ -294,14 +294,8 @@ function acceptedButUnread(e: unknown, role: JobRole, requestId: string): Gatewa
 export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
   const fetchImpl = opts.fetch ?? fetch;
   const { queue } = opts.client;
-  /**
-   * One queue job: submitted once (the billable step, under the gateway's submission rule), then polled and read, each
-   * retried on its own. The id fal gave the job is the one recorded: the result's own id comes from a header and may be
-   * missing.
-   */
-  const runJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, input: Record<string, unknown>) => {
-    const { request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input }), JOB_WHAT[role]);
-    await req.accepted?.(role, requestId);
+  /** A job fal accepted, polled until done and read, each round trip retried on its own (free reads). */
+  const pollJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, requestId: string) => {
     try {
       await req.attempt(() => queue.subscribeToStatus(endpointId, { requestId, pollInterval: POLL_INTERVAL_MS }));
       const { data } = await req.attempt(() => queue.result(endpointId, { requestId }));
@@ -309,6 +303,19 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     } catch (e) {
       throw acceptedButUnread(e, role, requestId);
     }
+  };
+  /**
+   * One queue job: submitted once (the billable step, under the gateway's submission rule), recorded as accepted, then
+   * polled and read. The id fal gave the job is the one recorded: the result's own id comes from a header and may be
+   * missing. A job an earlier attempt of the call already submitted (req.resume; stage 3) is only polled.
+   */
+  const runJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, input: () => Promise<Record<string, unknown>>) => {
+    const resumed = req.resume?.[role];
+    if (resumed !== undefined) return pollJob(req, role, endpointId, resumed);
+    const body = await input();
+    const { request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input: body }), JOB_WHAT[role]);
+    await req.accepted?.(role, requestId);
+    return pollJob(req, role, endpointId, requestId);
   };
   return {
     id: 'fal',
@@ -325,12 +332,21 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
 
       // Failures before the generation job's result arrives are thrown, with no ledger entry: there is no clip to keep
       // and no usage to record. (A job whose status cannot be read even after retries may still finish and be billed
-      // by fal; that spend is in fal's dashboard, not the ledger, and the error names the job's request id.)
-      const frameUrl = await req.attempt(() => opts.client.storage.upload(new Blob([Buffer.from(frame.bytes)], { type: frame.mediaType })));
-      const input = { prompt: req.prompt, [spec.imageField]: frameUrl, duration: String(req.durationSec), ...spec.extra };
-      const generated = await runJob(req, 'generation', req.model, input);
+      // by fal; the spend book counts the call as may have been billed, with the job's request id, and the error names
+      // it.) A generation job an earlier attempt submitted is polled by its id: no upload, no second submission.
+      const input = { prompt: req.prompt, duration: String(req.durationSec), ...spec.extra };
+      const generated = await runJob(req, 'generation', req.model, async () => {
+        const frameUrl = await req.attempt(() => opts.client.storage.upload(new Blob([Buffer.from(frame.bytes)], { type: frame.mediaType })));
+        return { ...input, [spec.imageField]: frameUrl };
+      });
 
-      const requestBody = { endpoint: req.model, input: { ...input, [spec.imageField]: `artifact:${frame.artifactId}` }, extract: { endpoint: FAL_EXTRACT_FRAME, frame_type: 'last' } };
+      const requestBody = {
+        endpoint: req.model,
+        input: { ...input, [spec.imageField]: `artifact:${frame.artifactId}` },
+        extract: { endpoint: FAL_EXTRACT_FRAME, frame_type: 'last' },
+        // A resumed call says which of its jobs an earlier attempt submitted (stage 3).
+        ...(req.resume && Object.keys(req.resume).length > 0 ? { resumed: { ...req.resume } } : {}),
+      };
       const response: Record<string, unknown> = { requestId: generated.requestId, video: plain(generated.data) };
       // The hosts each download used, in the stored evidence: a live link shows which media hosts fal really serves from.
       const media: { clip?: string[]; frame?: string[] } = {};
@@ -344,7 +360,7 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
         const clipType = sniffVideoType(clip.bytes);
         if (!clipType) throw new GatewayError('provider-error', 'the clip fal returned is not a video (its bytes are neither MP4 nor WebM)');
         out.clip = { bytes: clip.bytes, mediaType: clipType };
-        const extracted = await runJob(req, 'extract', FAL_EXTRACT_FRAME, { video_url: video.url, frame_type: 'last' });
+        const extracted = await runJob(req, 'extract', FAL_EXTRACT_FRAME, async () => ({ video_url: video.url, frame_type: 'last' }));
         response.frame = { requestId: extracted.requestId, ...(plain(extracted.data) as object) };
         const last = await req.attempt(() => download(fetchImpl, fileUrl(extracted.data, 'images').url, 'last frame'));
         media.frame = last.via;

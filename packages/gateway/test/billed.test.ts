@@ -122,10 +122,10 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     const g = gateway({ clients: { anthropic: client }, spendBook: book });
     const err = (await g.complete(completion()).catch((e: unknown) => e)) as GatewayError;
     expect(err).toBeInstanceOf(GatewayError);
-    expect(err).toMatchObject({ code: 'provider-error', retryable: false });
+    // byway's own failure, not the provider's, and billed: trying again would pay again (follow-up (e)).
+    expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: true });
     expect(err.message).toMatch(/billed/);
     expect(err.message).toMatch(/spending records/);
-    expect(err.billed).toBe(true);
     expect(calls).toHaveLength(1);
     // It stays counted at its estimate, as may have been billed, until the person checks it.
     expect((await g.spend('ws-1')).uncertainUsd).toBeGreaterThan(0);
@@ -145,6 +145,17 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(readdirSync(dir).filter((n) => n.startsWith('ledger.jsonl.damaged-'))).toHaveLength(1);
   });
 
+  it('refuses a call it could not record as sent as byway’s own failure, not the provider’s: nothing was sent or billed (follow-up (e))', async () => {
+    const { client, calls } = fakeAnthropic();
+    const book = memorySpendBook();
+    book.markSent = async () => false;
+    const g = gateway({ clients: { anthropic: client }, spendBook: book });
+    const err = (await g.complete(completion()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toMatchObject({ name: 'GatewayError', code: 'byway-failure', retryable: true, billed: false });
+    expect(err.message).toMatch(/did not send it/);
+    expect(calls).toHaveLength(0);
+  });
+
   it('waits two seconds by default for the ledger lock on the call path: the book already counts the call', () => {
     expect(gateway().drainWaitMs).toBe(2_000);
   });
@@ -156,12 +167,11 @@ describe('a billed image is ledgered before anything else can fail (ENG-3)', () 
     const g = gateway({ artifacts: new FailingArtifacts(0), clients: { openai: client } });
     const err = (await g.image(imageReq({ profileId: 'best' })).catch((e: unknown) => e)) as GatewayError;
     expect(err).toBeInstanceOf(GatewayError);
-    expect(err.retryable).toBe(false);
+    // Marked billed, so a caller with tries of its own (an ASSET step) does not buy it again.
+    expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: true });
     expect(err.message).toMatch(/billed/);
     expect(calls).toHaveLength(1);
     expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'image', provider: 'openai' })]);
-    // Marked billed, so a caller with tries of its own (an ASSET step) does not buy it again.
-    expect(err.billed).toBe(true);
   });
 });
 
@@ -175,11 +185,10 @@ describe('a billed clip is ledgered even when keeping it fails (ENG-3, as video(
       .video({ workspaceId: 'ws-1', runId: 'run-1', stepId: 'clip', purpose: 'relay:media', profileId: 'balanced', prompt: 'Shot 1: dawn', startFrameArtifactId: startFrame, durationSec: 5 })
       .catch((e: unknown) => e)) as GatewayError;
     expect(err).toBeInstanceOf(GatewayError);
-    expect(err.retryable).toBe(false);
+    expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: true });
     expect(err.message).toMatch(/billed/);
     expect(fal.calls.filter((c) => !c.endpoint.includes('extract-frame'))).toHaveLength(1);
     expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'video', provider: 'fal' })]);
-    expect(err.billed).toBe(true);
   });
 });
 

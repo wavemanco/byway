@@ -29,16 +29,22 @@ export const ENDED_CALL = 'This run has ended, so no new AI call was made.';
 export interface Invocation {
   /** Aborted when Temporal cancels this invocation; undefined outside an activity (unit tests call activities directly). */
   signal: AbortSignal | undefined;
+  /**
+   * Aborted when the invocation ends (stop(), in the activity wrapper's finally), whatever its outcome. The gateway holds
+   * a step's settled call until then, while its result is kept (SpendContext.operation.until; ADR-0099).
+   */
+  done: AbortSignal;
   stop(): void;
 }
 
 /** Start heartbeating for the current activity invocation, if there is one. */
 export function startInvocation(everyMs = HEARTBEAT_EVERY_MS): Invocation {
+  const done = new AbortController();
   let ctx: Context;
   try {
     ctx = Context.current();
   } catch {
-    return { signal: undefined, stop: () => undefined };
+    return { signal: undefined, done: done.signal, stop: () => done.abort() };
   }
   const timer = setInterval(() => {
     try {
@@ -47,7 +53,14 @@ export function startInvocation(everyMs = HEARTBEAT_EVERY_MS): Invocation {
       // The invocation has already completed.
     }
   }, everyMs);
-  return { signal: ctx.cancellationSignal, stop: () => clearInterval(timer) };
+  return {
+    signal: ctx.cancellationSignal,
+    done: done.signal,
+    stop: () => {
+      clearInterval(timer);
+      done.abort();
+    },
+  };
 }
 
 export interface GuardedGateway extends Gateway {

@@ -42,6 +42,15 @@ export const StartInput = z.object({
   routes: z.record(z.string().max(64), z.string().max(64)).optional(),
   /** "Examples you admire", already stored through /api/refs (StartRunInput.inputs.refs). */
   refs: z.array(ArtifactId).max(MAX_REFS, `Add at most ${MAX_REFS} examples.`).optional(),
+  /**
+   * The run's id, minted by the Recommendation screen once per Start (StartRunInput.runId; F03 P3): a Start sent twice
+   * starts one run. A lowercase UUID, as crypto.randomUUID() makes, since it becomes the run's, its workflow's and its
+   * memos' id.
+   */
+  runId: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, 'That start did not arrive intact. Start the run again.')
+    .optional(),
 });
 
 /** One example: pasted text, or an image as base64 (the bytes are checked against the type on the server). */

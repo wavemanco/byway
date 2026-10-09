@@ -40,9 +40,10 @@ spendBookContract('SQLite in memory', () => {
 });
 
 describe('the store’s spend book', () => {
-  it('is migration 6, and two stores on one data directory share it', async () => {
-    expect(SCHEMA_VERSION).toBe(6);
+  it('is migration 6 (with its operation keys, migration 7), and two stores on one data directory share it', async () => {
+    expect(SCHEMA_VERSION).toBe(7);
     expect(MIGRATIONS[5]?.name).toBe('spend-book');
+    expect(MIGRATIONS[6]?.name).toBe('operation-keys');
     const dataDir = tempDir();
     const web = openStore({ dataDir });
     const worker = openStore({ dataDir });
