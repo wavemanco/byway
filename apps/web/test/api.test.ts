@@ -9,6 +9,8 @@ import {
   HttpError,
   addRef,
   checkLedger,
+  spendAction,
+  spendRecords,
   artifactResponse,
   composeIntake,
   controlRun,
@@ -302,6 +304,8 @@ describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, ()
       [gatewayError('budget-exceeded', 'workspace'), 400, /workspace budget.*Settings/],
       [gatewayError('rate-limited'), 503, /busy/],
       [gatewayError('provider-error'), 503, /did not answer/],
+      // ADR-0095: a line of the ledger the spend book cannot read pauses paid calls until the person acknowledges it.
+      [gatewayError('accounting-fault'), 409, /cannot read.*Settings, Spending records/],
       [new AdvisorError('intake-unreadable', 'unreadable'), 502, /could not read/],
       // A held key (ADR-0088): the gateway's own message, which names the variable and says what to do.
       [heldKeyError('invalid-request', 'This request contains your ANTHROPIC_API_KEY. byway never sends a key to a model; remove it from the material and try again.', 'ANTHROPIC_API_KEY'), 400, /^This request contains your ANTHROPIC_API_KEY\. .*remove it/],
@@ -432,6 +436,58 @@ describe('Settings: checking the spend ledger on demand (ADR-0091)', PRODUCT_PAT
     const file = path.join(current!.dataDir, 'ledger.jsonl');
     writeFileSync(file, `{not an entry\n${readFileSync(file, 'utf8')}`);
     expect(await checkLedger(d)).toEqual({ intact: false, message: expect.stringMatching(/^Line 1 of the spend ledger cannot be read/) });
+  });
+});
+
+describe('Settings: Spending records (F03, ADR-0095)', PRODUCT_PATH, () => {
+  /** A call admitted and sent in the spend book whose answer never came: it may have been billed. */
+  async function interruptedCall(d: Deps, usd: number): Promise<string> {
+    const book = d.services.store.spendBook;
+    const opId = `op-${Math.random().toString(36).slice(2)}`;
+    await book.admit({ opId, owner: 'gone', leaseMs: 60_000, workspaceId: d.workspaceId, purpose: 'advisor.intake', kind: 'completion', provider: 'anthropic', model: 'claude-opus-5-5', reserveUsd: usd, paid: true, caps: { workspaceUsd: 1000 } });
+    await book.markSent(opId, 'gone');
+    await book.abandon(opId);
+    return opId;
+  }
+
+  it('lists a call that may have been billed, counts it against what is left, and clears it', async () => {
+    const d = await deps();
+    const before = await workspaceRemaining(d);
+    const opId = await interruptedCall(d, 0.5);
+    const { records, spend } = await spendRecords(d);
+    expect(records.uncertain).toEqual([expect.objectContaining({ opId, usd: 0.5, reason: 'failed', provider: 'anthropic', purpose: 'advisor.intake' })]);
+    expect(spend).toMatchObject({ uncertainUsd: 0.5, remainingUsd: before.remainingUsd - 0.5 });
+    const cleared = await spendAction(d, { clear: [opId] });
+    expect(cleared.records.uncertain).toEqual([]);
+    expect(cleared.spend.remainingUsd).toBe(before.remainingUsd);
+    // A second click finds nothing left to clear.
+    expect((await spendAction(d, { clear: [opId] })).records.uncertain).toEqual([]);
+  });
+
+  it('pauses paid calls on a line of the ledger it cannot read, names it, and lets them go on once acknowledged; demo calls go on meanwhile', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    await currentRecommendation(d, intakeId);
+    const file = path.join(current!.dataDir, 'ledger.jsonl');
+    writeFileSync(file, `{"workspaceId":"x"}\n${readFileSync(file, 'utf8')}`);
+    const { records } = await spendRecords(d);
+    expect(records.faults).toEqual([expect.objectContaining({ detail: expect.stringMatching(/byte 0 of ledger\.jsonl/) })]);
+    const paid = await d.services.store.spendBook.admit({ opId: 'paid-1', owner: 'me', leaseMs: 60_000, workspaceId: d.workspaceId, purpose: 'advisor.intake', kind: 'completion', provider: 'anthropic', model: 'claude-opus-5-5', reserveUsd: 0.1, paid: true, caps: { workspaceUsd: 1000 } });
+    expect(paid).toEqual({ fault: expect.stringMatching(/Settings/) });
+    // The demo's calls cost nothing, so they go on.
+    await expect(recommendIntake(d, intakeId)).resolves.toMatchObject({ recipeId: expect.any(String) });
+    expect(await checkLedger(d)).toEqual({ intact: false, message: expect.stringMatching(/^Line 1 of the spend ledger cannot be read as an entry\. .*Spending records/) });
+    const after = await spendAction(d, { acknowledge: records.faults[0]!.id });
+    expect(after.records.faults).toEqual([]);
+    expect(await d.services.store.spendBook.admit({ opId: 'paid-2', owner: 'me', leaseMs: 60_000, workspaceId: d.workspaceId, purpose: 'advisor.intake', kind: 'completion', provider: 'anthropic', model: 'claude-opus-5-5', reserveUsd: 0.1, paid: true, caps: { workspaceUsd: 1000 } })).toEqual({ admitted: true });
+  });
+
+  it('notes a torn ledger tail that was set aside, and settled calls not yet in the ledger', async () => {
+    const d = await deps();
+    writeFileSync(path.join(current!.dataDir, 'ledger.jsonl.damaged-20261008T120000000Z-77'), '{"workspaceId":"ws","cost');
+    const { records } = await spendRecords(d);
+    expect(records.setAside).toEqual(['ledger.jsonl.damaged-20261008T120000000Z-77']);
+    expect(records.notInAuditFile).toBe(0);
   });
 });
 

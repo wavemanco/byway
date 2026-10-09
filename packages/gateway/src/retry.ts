@@ -34,6 +34,14 @@ export const BILLABLE_JOB: RetryPolicy = { maybeResends: 0 };
 /** A read that bills nothing (a status poll, a result, an upload, a media download): retried whatever its billing. */
 export const FREE_READ: RetryPolicy = { maybeResends: Number.POSITIVE_INFINITY };
 
+export interface RetryHooks {
+  /**
+   * Runs before an attempt that may have been billed is sent again (ADR-0095: the spend book retains that attempt's
+   * bound against the workspace). If it throws, nothing is sent again and its error is the call's.
+   */
+  beforeMaybeResend?: (err: ClassifiedError) => Promise<void>;
+}
+
 /**
  * Run `fn`, retrying retryable GatewayErrors (429, 5xx, timeouts, network failures) with exponential backoff and full
  * jitter, so a burst of parallel candidates does not retry in lockstep. A provider's retry-after hint replaces the
@@ -43,7 +51,7 @@ export const FREE_READ: RetryPolicy = { maybeResends: Number.POSITIVE_INFINITY }
  * own retry setting, which overrides the client's, so job submissions do not go through it at all (providers/fal.ts),
  * and its status, result and upload reads keep their own retries, which only repeat free reads.
  */
-export async function withRetries<T>(fn: (attempt: number) => Promise<T>, opts: RetryOptions, policy: RetryPolicy): Promise<T> {
+export async function withRetries<T>(fn: (attempt: number) => Promise<T>, opts: RetryOptions, policy: RetryPolicy, hooks: RetryHooks = {}): Promise<T> {
   let maybes = 0;
   for (let attempt = 0; ; attempt++) {
     try {
@@ -51,7 +59,10 @@ export async function withRetries<T>(fn: (attempt: number) => Promise<T>, opts: 
     } catch (err) {
       const retryable = err instanceof GatewayError && err.retryable;
       if (!retryable || attempt + 1 >= opts.maxAttempts) throw err;
-      if ((err as ClassifiedError).billing === 'maybe' && ++maybes > policy.maybeResends) throw err;
+      if ((err as ClassifiedError).billing === 'maybe') {
+        if (++maybes > policy.maybeResends) throw err;
+        await hooks.beforeMaybeResend?.(err as ClassifiedError);
+      }
       const hint = (err as ClassifiedError).retryAfterMs;
       const backoff = Math.floor(opts.random() * opts.baseDelayMs * 2 ** attempt);
       await opts.sleep(Math.min(opts.maxDelayMs, hint ?? backoff));

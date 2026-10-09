@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { PRICES, priceFor, servedPrice } from '../src/prices.ts';
 import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 /**
  * F04: settlement prices what the provider says served the call (ADR-0091). The served model's own row first; then a
@@ -84,6 +85,7 @@ const KEYS = { ANTHROPIC_API_KEY: 'sk-ant-api03-test-not-a-real-key-000000', OPE
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts: new MemoryArtifacts(),
     caps: { workspaceCapUsd: () => 100 },
     env: KEYS,

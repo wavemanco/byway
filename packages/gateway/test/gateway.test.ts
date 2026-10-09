@@ -9,6 +9,7 @@ import { encodePng } from '../src/mock/png.ts';
 import type { AnthropicMessageLike } from '../src/providers/anthropic.ts';
 import type { ProviderAdapter } from '../src/providers/types.ts';
 import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, fetchFailed, httpError, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 const ANTHROPIC_KEY = 'sk-ant-api03-test-not-a-real-key-000000';
 const OPENAI_KEY = 'sk-test-not-a-real-openai-key-0000000';
@@ -27,6 +28,7 @@ const instant = async (_ms: number) => {};
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts,
     caps: { workspaceCapUsd: () => caps.workspace, runCapUsd: (id) => caps.runs[id] },
     env: {},
@@ -331,8 +333,70 @@ describe('gateway: malformed provider labels still reach the ledger', () => {
     const g = anthropicGateway(anthropicMessage({ model: ['claude\ud800'] as unknown as string }));
     await g.complete(req());
     expect(ledgerLines()[0].servedModel).toBe('["claude\\ud800"]');
+    expect(ledgerLines()[0].priceBasis).toBe('assumed');
     expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(0.014, 9);
     expect(await g.verifyLedger()).toBeNull();
+  });
+});
+
+/**
+ * An answer that names no served model (the field missing, null or empty) was still billed. A missing field used to fail
+ * after billing with a raw TypeError (the label was scrubbed as if it were text) and was counted as "may have been
+ * billed"; a null or empty one was recorded as the served model "null" or "".
+ * It is settled as the requested model, at its rates, flagged `priceBasis: 'assumed'` (ADR-0095 decision 7).
+ */
+describe('gateway: an answer that names no served model is settled as the requested model, assumed', () => {
+  const noModel: [string, unknown][] = [
+    ['missing', undefined],
+    ['null', null],
+    ['empty', ''],
+  ];
+
+  it.each(noModel)('an Anthropic completion (model %s)', async (_what, model) => {
+    const { client } = fakeAnthropic([anthropicMessage({ model: model as string })]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
+    const res = await g.complete(req());
+    const [entry] = ledgerLines();
+    expect(entry).toMatchObject({ requestedModel: 'claude-opus-5-5', servedModel: 'claude-opus-5-5', priceBasis: 'assumed' });
+    // 1,000 input tokens at $4/M and 500 output at $20/M: claude-opus-5-5's own rates.
+    expect(entry.costUsd).toBeCloseTo(0.014, 9);
+    expect(res).toMatchObject({ servedModel: 'claude-opus-5-5', costUsd: entry.costUsd, ledgerEntryId: entry.id });
+    expect(await g.spend('ws-1')).toMatchObject({ spentUsd: entry.costUsd, inFlightUsd: 0, uncertainUsd: 0, assumedPricing: { calls: 1, usd: entry.costUsd } });
+    expect(await g.verifyLedger()).toBeNull();
+  });
+
+  it.each(noModel)('an OpenAI completion (model %s)', async (_what, model) => {
+    const { client } = fakeOpenAI([{ model: model as string, choices: [{ finish_reason: 'stop', message: { content: 'Choice: A' } }], usage: { prompt_tokens: 1000, completion_tokens: 100 } }]);
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, OPENAI_API_KEY: OPENAI_KEY }, clients: { openai: client } });
+    const res = await g.complete(req({ profileId: 'openai' }));
+    // gpt-6-astra: 1,000 input tokens at $10/M and 100 output at $50/M.
+    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, requestedModel: 'gpt-6-astra', servedModel: 'gpt-6-astra', priceBasis: 'assumed', costUsd: 0.015 })]);
+    expect(res.servedModel).toBe('gpt-6-astra');
+  });
+
+  it('an OpenRouter completion that reports its cost: the cost it reports, the requested model, flagged assumed', async () => {
+    const { client } = fakeOpenAI([{ provider: 'Anthropic', choices: [{ message: { content: 'Choice: A' } }], usage: { prompt_tokens: 100, completion_tokens: 10, cost: 0.0123 } } as never]);
+    const g = gateway({ env: { OPENROUTER_API_KEY: 'sk-or-v1-test-not-real-000000' }, clients: { openrouter: client } });
+    const res = await g.complete(req({ profileId: 'openrouter' }));
+    expect(ledgerLines()).toEqual([expect.objectContaining({ servedModel: 'anthropic/claude-opus-5.5', upstreamProvider: 'Anthropic', priceBasis: 'assumed', costUsd: 0.0123 })]);
+    expect(res).toMatchObject({ servedModel: 'anthropic/claude-opus-5.5', costUsd: 0.0123 });
+  });
+
+  it.each(noModel)('an image (model %s)', async (_what, model) => {
+    const adapter: ProviderAdapter = {
+      id: 'google',
+      complete: async () => {
+        throw new Error('not used');
+      },
+      image: async () => ({ bytes: encodePng(2, 2, new Uint8Array(12).fill(9)), mediaType: 'image/png', servedModel: model as string, usage: { inputTokens: 30, outputTokens: 1290, units: 1 }, requestBody: {}, responseBody: {} }),
+    };
+    const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, GEMINI_API_KEY: 'AIza-test-not-real-0000000000000' }, adapters: { google: adapter } });
+    const res = await g.image({ workspaceId: 'ws-1', runId: 'run-1', stepId: 'asset', purpose: 'asset:web-page', profileId: 'balanced', prompt: 'A loaf', size: '1024x1024' });
+    // gemini-nano-banana-2.1: $0.0336 an image and 30 prompt tokens at $1.50/M.
+    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, kind: 'image', requestedModel: 'gemini-nano-banana-2.1', servedModel: 'gemini-nano-banana-2.1', priceBasis: 'assumed' })]);
+    expect(res.costUsd).toBeCloseTo(0.0336 + 30 * 1.5e-6, 9);
+    expect(res.servedModel).toBe('gemini-nano-banana-2.1');
+    expect(await g.spend('ws-1')).toMatchObject({ uncertainUsd: 0, assumedPricing: { calls: 1 } });
   });
 });
 

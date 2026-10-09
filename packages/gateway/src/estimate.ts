@@ -10,8 +10,8 @@ import type { ResolvedMessage } from './providers/types.ts';
  * - Text: ASCII at one token per three characters (current tokenizers run about 30% above the old four-characters
  *   rule); every other character at its UTF-8 bytes, which bounds byte-level tokenizers (dense CJK text, accents and
  *   emoji would otherwise be counted at a third of a token per character).
- * - Images: width × height / 750 (Anthropic's vision formula, close for the others), capped at IMAGE_TOKENS_MAX; an
- *   image whose size cannot be read (WebP, or damaged bytes) counts at the maximum.
+ * - Images: width × height / 750 (Anthropic's vision formula, close for the others), capped at IMAGE_TOKENS_MAX. The size
+ *   is read from PNG, JPEG and WebP headers; an image whose size cannot be read (damaged bytes) counts at the maximum.
  * - Output: the call's whole output allowance; gpt-image's per-image output figure is a planning number (prices.ts).
  * - Video: the clip's seconds at the per-second price, plus helper endpoints at their upper bound.
  */
@@ -84,10 +84,11 @@ export function maxVideoCost(price: PriceRow, seconds: number, extras: readonly 
   return (price.perSecondUsd ?? 0) * seconds + extras.reduce((usd, x) => usd + (x.price.perSecondUsd ?? 0) * x.seconds, 0);
 }
 
-/** Width and height from PNG or JPEG bytes; undefined for other formats. */
+/** Width and height from PNG, JPEG or WebP bytes; undefined for other formats, and for headers that cannot be read. */
 export function imageSize(bytes: Uint8Array): { width: number; height: number } | undefined {
   const b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (b.length >= 24 && b.readUInt32BE(0) === 0x89504e47) return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+  if (b.length >= 16 && b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return webpSize(b);
   if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {
     let i = 2;
     while (i + 9 < b.length) {
@@ -101,5 +102,30 @@ export function imageSize(bytes: Uint8Array): { width: number; height: number } 
       i += 2 + len;
     }
   }
+  return undefined;
+}
+
+/**
+ * A WebP's size from its first chunk (Google's WebP container and bitstream specifications), so a WebP gets its real
+ * estimate instead of the 6,400-token maximum (ADR-0095):
+ * - 'VP8 ' (lossy): after a 3-byte frame tag and the start code 9d 01 2a, the width and height as 14-bit little-endian
+ *   numbers (the top two bits of each are a scale, not size);
+ * - 'VP8L' (lossless): after the signature byte 0x2f, width − 1 and height − 1 in 14 bits each;
+ * - 'VP8X' (extended: alpha, animation, metadata): after 4 bytes of flags, the canvas width − 1 and height − 1 in 24 bits each.
+ * Anything else, or a header cut short, is unknown.
+ */
+function webpSize(b: Buffer): { width: number; height: number } | undefined {
+  const chunk = b.toString('latin1', 12, 16);
+  const known = (width: number, height: number) => (width > 0 && height > 0 ? { width, height } : undefined);
+  if (chunk === 'VP8 ' && b.length >= 30) {
+    if (b[23] !== 0x9d || b[24] !== 0x01 || b[25] !== 0x2a) return undefined;
+    return known(b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff);
+  }
+  if (chunk === 'VP8L' && b.length >= 25) {
+    if (b[20] !== 0x2f) return undefined;
+    const bits = b.readUInt32LE(21);
+    return known((bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1);
+  }
+  if (chunk === 'VP8X' && b.length >= 30) return known(b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1);
   return undefined;
 }

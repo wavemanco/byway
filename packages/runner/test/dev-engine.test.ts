@@ -43,7 +43,7 @@ const freePort = () =>
 
 const dir = mkdtempSync(path.join(tmpdir(), 'byway-engine-'));
 const store = createTestStore({ dataDir: dir });
-const gateway = createGateway({ ledgerPath: path.join(dir, 'ledger.jsonl'), artifacts: store.artifacts, caps: storeCaps(store), demo: true, env: {} });
+const gateway = createGateway({ ledgerPath: path.join(dir, 'ledger.jsonl'), artifacts: store.artifacts, spendBook: store.spendBook, caps: storeCaps(store), demo: true, env: {} });
 let engine: DevEngine | undefined;
 let httpPort = 0;
 
@@ -58,6 +58,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await engine?.stop();
+  await gateway.close();
   store.close();
   rmSync(dir, { recursive: true, force: true });
   rmSync(bundle, { force: true });

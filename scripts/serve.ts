@@ -21,8 +21,9 @@
  * Chromium, which the engine starts, gets none of them and nothing else from the secrets file (F18; ADR-0084).
  *
  * Data check (R4; ADR-0096): before the engine starts, byway reads the data directory and prints a "checked" line: the
- * database file, every recorded artifact file, the spend ledger, and runs whose recorded cost the ledger lacks (a partial
- * restore). It only reads, and byway starts either way. The engine then ends what the store and it disagree on, and
+ * database file, every recorded artifact file, the spend ledger against the spend book, and runs whose recorded cost the
+ * spend book lacks (a partial restore). It changes no run record or file (the spend book reads in ledger lines it has not
+ * seen, as the first model call would), and byway starts either way. The engine then ends what the store and it disagree on, and
  * says so under "engine".
  *
  * Renderer: while the engine starts, byway launches the page renderer's Chromium once and closes it again, and prints a
@@ -150,7 +151,8 @@ async function main(): Promise<void> {
   const keys = loadEnvFile(path.join(ROOT, '.env.agents'));
   const dataDir = resolveDataDir();
   const store = createStore({ dataDir });
-  const gateway = createGateway({ ledgerPath: path.join(dataDir, 'ledger.jsonl'), artifacts: store.artifacts, caps: storeCaps(store), demo });
+  // The spend book in byway.sqlite is the caps' authority, shared with the web process's gateways (ADR-0095).
+  const gateway = createGateway({ ledgerPath: path.join(dataDir, 'ledger.jsonl'), artifacts: store.artifacts, spendBook: store.spendBook, caps: storeCaps(store), demo });
   const prompts = createPromptRenderer();
 
   console.log(`byway${demo ? ' (demo: sample outputs, no AI calls)' : ''}${mode === 'dev' ? ' — contributor mode (next dev)' : ''}`);
@@ -158,7 +160,7 @@ async function main(): Promise<void> {
   if (keys.found) console.log(`  keys       .env.agents (${keys.loaded.length} loaded; values are never shown)`);
   const withKeys = gateway.providers().filter((p) => p.provider !== 'mock' && p.configured).map((p) => p.provider);
   console.log(`  providers  ${withKeys.length > 0 ? withKeys.join(', ') : 'none (every run uses sample outputs)'}`);
-  // R4: what a partial restore left behind is said before anything runs. The check only reads and never stops byway.
+  // R4: what a partial restore left behind is said before anything runs. The check changes no run record or file and never stops byway.
   try {
     const checked = reportLines(await dataDirReport({ dataDir, store, gateway, workspaceIds: [(await store.ensureDefaultWorkspace()).id] }));
     console.log(`  checked    ${checked.lines[0]}`);
@@ -181,6 +183,7 @@ async function main(): Promise<void> {
     if (mode === 'start') await build(env);
   } catch (err) {
     await engineStarting.then((e) => e.stop()).catch(() => undefined);
+    await gateway.close();
     store.close();
     throw err;
   }
@@ -188,6 +191,7 @@ async function main(): Promise<void> {
   try {
     engine = await engineStarting;
   } catch (err) {
+    await gateway.close();
     store.close();
     throw err;
   }
@@ -223,6 +227,8 @@ async function main(): Promise<void> {
         new Promise<false>((resolve) => setTimeout(() => resolve(false), ENGINE_STOP_DEADLINE_MS).unref()),
       ]);
       if (!stopped) console.error(`The engine did not stop within ${ENGINE_STOP_DEADLINE_MS / 1000} s; exiting anyway. Steps that were in flight will be retried when byway starts again.`);
+      // Before the store: the gateway writes what is left of its outbox and stops its timer.
+      await gateway.close();
       store.close();
       console.log('Stopped.');
       process.exit(code);

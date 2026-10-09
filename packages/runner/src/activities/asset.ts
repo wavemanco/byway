@@ -90,9 +90,10 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
         outputs.push(img.artifactId);
         break;
       } catch (e) {
-        // A refused or failed image is tried again up to triesPerSlot; budget and key problems stop the step (a prompt
-        // holding a provider key is one, ADR-0088: trying it again would be refused again).
-        if (!(e instanceof GatewayError) || e.code === 'budget-exceeded' || e.code === 'no-credentials' || e.code === 'unknown-profile' || isHeldKeyError(e)) throw e;
+        // A refused or failed image is tried again up to triesPerSlot; budget, key and accounting problems stop the step (a
+        // prompt holding a provider key is one, ADR-0088: trying it again would be refused again; an accounting fault
+        // refuses every paid call until the person acknowledges it, ADR-0095).
+        if (!(e instanceof GatewayError) || e.code === 'budget-exceeded' || e.code === 'accounting-fault' || e.code === 'no-credentials' || e.code === 'unknown-profile' || isHeldKeyError(e)) throw e;
       }
     }
   }

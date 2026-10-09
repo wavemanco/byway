@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { EXPOSURE_FILENAME, exposurePath, isJudgingPurpose, readExposure } from '../src/exposure.ts';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { fakeAnthropic, fakeGoogle, fakeOpenAI, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 /**
  * CR12-1 and convention C3: every non-Anthropic-family judging call (critic, judge, check, rerank and gate purposes) is
@@ -23,6 +24,7 @@ let clock = new Date('2026-10-07T12:00:00Z');
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts: new MemoryArtifacts(),
     caps: { workspaceCapUsd: () => 100 },
     env: KEYS,

@@ -21,6 +21,7 @@ import type {
   RunEvent,
   RunRecord,
   RunStatus,
+  SpendBook,
   Store,
   Workspace,
 } from '@byway/contracts';
@@ -33,6 +34,7 @@ import { migrate } from './migrations.ts';
 import { PREFERENCE_KEYS, mergePreferences, toPreferences } from './preferences.ts';
 import { prepareQueries, type Queries } from './queries.ts';
 import { checkResolution } from './resolution.ts';
+import { SqliteSpendBook } from './spend-book.ts';
 import { toCheckpoint, toEvent, toRun, toWorkspace } from './rows.ts';
 import {
   CHECKPOINT_KINDS,
@@ -106,6 +108,8 @@ export class SqliteStore implements Store {
   readonly dataDir: string;
   readonly dbPath: string;
   readonly artifacts: ArtifactStore;
+  /** The spend book (contracts v6), on this store's connection and clock: see spend-book.ts. */
+  readonly spendBook: SpendBook;
 
   readonly #db: DatabaseSync;
   readonly #now: () => Date;
@@ -121,6 +125,7 @@ export class SqliteStore implements Store {
       migrate(this.#db, this.#now);
       this.#q = prepareQueries(this.#db);
       this.artifacts = new FileArtifactStore(dataDir, this.#db, this.#now, () => this.#ensureOpen());
+      this.spendBook = new SqliteSpendBook(this.#db, this.#now, () => this.#ensureOpen());
     } catch (e) {
       // A half-built store would hold the file open (and locked, on Windows) with nobody left to close it.
       this.#db.close();

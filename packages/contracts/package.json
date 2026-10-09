@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Shared interfaces between the engine packages and the product app (contracts-first, ADR-0068)",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./spend-book-suite": "./test/spend-book-suite.ts"
   },
   "dependencies": {
     "@byway/protocol": "workspace:*",

@@ -5,9 +5,9 @@
  * - heartbeats while it runs (the long proxies set a heartbeat timeout, so a killed worker's step is retried within
  *   seconds rather than at its 15 or 45 minute limit);
  * - gets its own gateway that refuses new provider calls once the invocation is cancelled or its run has ended (a call
- *   already in flight finishes and is recorded in the ledger as usual);
+ *   already in flight finishes and is recorded as usual);
  * - gets page renders that stop when it is cancelled;
- * - and, if it called the gateway for a run that has meanwhile ended, brings that run's cost up to the ledger when it
+ * - and, if it called the gateway for a run that has meanwhile ended, brings that run's cost up to its settled spend when it
  *   finishes: spend that landed after "cancelled" or "failed" still shows on the run, and so in the workspace's total.
  */
 import { CancelledFailure, Context } from '@temporalio/activity';
@@ -97,8 +97,8 @@ export function guardPages(inner: PageRenderer, signal: AbortSignal | undefined)
 }
 
 /**
- * After an invocation: for each run it called the gateway for that has ended, raise the run's cost to the ledger's
- * figure (never lower it). A run still going records its cost at the end of each step (events.ts recordCost).
+ * After an invocation: for each run it called the gateway for that has ended, raise the run's cost to its settled spend
+ * (never lower it). A run still going records its cost at the end of each step (events.ts recordCost).
  */
 export async function settleLateCost(gateway: Pick<Gateway, 'spend'>, store: Pick<Store, 'getRun' | 'updateRun'>, calledFor: ReadonlyMap<string, string>): Promise<void> {
   for (const [runId, workspaceId] of calledFor) {

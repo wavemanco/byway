@@ -1,15 +1,14 @@
 'use client';
 
-import type { Preferences, ProfileStatus, ProviderId, ProviderStatus } from '@byway/contracts';
+import type { Preferences, ProfileStatus, ProviderId, ProviderStatus, SpendRecords } from '@byway/contracts';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
 import { formatUsd, parseBudgetInput } from '../view/format.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
 import { profileNeeds, videoAvailability } from '../view/labels.ts';
-import { ActionButton } from './ActionButton.tsx';
-import { get, patch } from './api.ts';
+import { patch } from './api.ts';
+import { SpendingRecords } from './SpendingRecords.tsx';
 import { Switch } from './Switch.tsx';
-import { useAction } from './useAction.ts';
 import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
 
 const PROVIDERS: Record<ProviderId, { name: string; does: string; env?: string }> = {
@@ -23,6 +22,18 @@ const PROVIDERS: Record<ProviderId, { name: string; does: string; env?: string }
 
 const TIER_WORDS = { big: 'Judgment', mid: 'Drafting' } as const;
 
+/**
+ * "$1.20 spent so far, $0.40 in calls under way and $0.10 that may have been billed; $8.30 left." What is left is the
+ * cap less all three, the sum byway checks a new call against (ADR-0095); `cap` is the budget as last saved here.
+ */
+function spentSentence(spend: WorkspaceSpend, cap: number): string {
+  const counted = [`${formatUsd(spend.spentUsd)} spent so far`];
+  if (spend.inFlightUsd > 0) counted.push(`${formatUsd(spend.inFlightUsd)} in calls under way`);
+  if (spend.uncertainUsd > 0) counted.push(`${formatUsd(spend.uncertainUsd)} that may have been billed (see Spending records)`);
+  const list = counted.length > 1 ? `${counted.slice(0, -1).join(', ')} and ${counted.at(-1)}` : counted[0];
+  return `${list}; ${formatUsd(Math.max(0, cap - spend.spentUsd - spend.inFlightUsd - spend.uncertainUsd))} left.`;
+}
+
 interface Props {
   providers: ProviderStatus[];
   /** Every profile with what it is missing (Gateway.profileStatus), so you can see what a key would unlock. */
@@ -30,14 +41,16 @@ interface Props {
   /** Store preferences: the profile, demo mode and technical names. */
   preferences: Preferences;
   spend: WorkspaceSpend;
-  /** Calls settled at an assumed price (assumedPricingNote), or null. */
+  /** What the spend book holds that Settings shows (Gateway.spendRecords; ADR-0095). */
+  records: SpendRecords;
+  /** Calls counted on an assumption (assumedPricingNote), or null. */
   pricingNote?: string | null;
   mode: 'demo' | 'live';
   /** byway was started with `pnpm demo`: demo mode stays on whatever this setting says. */
   demoForced?: boolean;
 }
 
-export function SettingsView({ providers, profiles, preferences: initial, spend, pricingNote = null, mode, demoForced = false }: Props) {
+export function SettingsView({ providers, profiles, preferences: initial, spend, records, pricingNote = null, mode, demoForced = false }: Props) {
   const router = useRouter();
   const ids = useId();
   const [prefs, setPrefs] = useState(initial);
@@ -47,7 +60,6 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
   const [cap, setCap] = useState(spend.capUsd);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ledgerCheck, setLedgerCheck] = useState<{ checking: boolean; message: string | null }>({ checking: false, message: null });
   const realConfigured = providers.some((p) => p.provider !== 'mock' && p.configured);
   const [singleKeys, setSingleKeys] = useViewerFlag(SINGLE_KEY_SHORTCUTS);
 
@@ -65,19 +77,6 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
       return false;
     }
   }
-
-  /** Checks the spend ledger's chain on demand (GET /api/ledger; ADR-0091). */
-  async function checkLedger() {
-    setLedgerCheck({ checking: true, message: null });
-    try {
-      const { message } = await get<{ intact: boolean; message: string }>('/api/ledger');
-      setLedgerCheck({ checking: false, message });
-    } catch (err) {
-      setLedgerCheck({ checking: false, message: err instanceof Error ? err.message : 'The check did not run. Try again.' });
-    }
-  }
-  // One check at a time; its button keeps focus while it runs (R5).
-  const checking = useAction(checkLedger);
 
   async function saveBudget() {
     const value = parseBudgetInput(budgetText);
@@ -186,7 +185,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
       <section className="settings-section" aria-labelledby={`${ids}-budget`}>
         <h2 id={`${ids}-budget`}>Workspace budget</h2>
         <p className="section-note">
-          byway does not start a call whose estimated cost would take your spending past this amount. Estimates can be low, and a single call can cost twice its estimate or more, so spending can end over this amount. {formatUsd(spend.spentUsd)} spent so far; {formatUsd(Math.max(0, cap - spend.spentUsd))} left. Each run also has its own
+          byway does not start a call whose estimated cost would take your spending past this amount. Estimates can be low, and a single call can cost twice its estimate or more, so spending can end over this amount. {spentSentence(spend, cap)} Each run also has its own
           budget, set when you start it.
         </p>
         <form
@@ -207,16 +206,9 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
             Save budget
           </button>
         </form>
-        {pricingNote ? <p className="section-note">{pricingNote}</p> : null}
-        <div className="inline-form">
-          <ActionButton className="button" onClick={() => void checking.run()} busy={checking.busy}>
-            {checking.busy ? 'Checking…' : 'Check the spend ledger'}
-          </ActionButton>
-        </div>
-        <p className="section-note" role="status" aria-live="polite">
-          {ledgerCheck.message}
-        </p>
       </section>
+
+      <SpendingRecords records={records} pricingNote={pricingNote} />
 
       <section className="settings-section" aria-labelledby={`${ids}-names`}>
         <div className="setting-row">

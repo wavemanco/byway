@@ -11,11 +11,13 @@ import { createGoogleClient } from '../src/providers/google.ts';
 import { createOpenAIClient } from '../src/providers/openai.ts';
 import { createOpenRouterClient } from '../src/providers/openrouter.ts';
 import { MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 describe('@byway/gateway', () => {
   it('implements the Gateway contract', async () => {
     const g: Gateway = createGateway({
       ledgerPath: join(mkdtempSync(join(tmpdir(), 'byway-idx-')), 'ledger.jsonl'),
+      spendBook: memorySpendBook(),
       artifacts: new MemoryArtifacts(),
       caps: { workspaceCapUsd: () => 5 },
       env: {},
@@ -25,7 +27,7 @@ describe('@byway/gateway', () => {
     expect(status.map((s) => s.profile.id)).toEqual(PROFILES.map((p) => p.id));
     expect(status.find((s) => s.profile.id === 'demo')).toMatchObject({ usable: true, missing: [], images: true, video: true, otherFamily: true });
     expect(status.find((s) => s.profile.id === 'balanced')).toMatchObject({ usable: false, missing: ['anthropic'], images: false, video: false, otherFamily: false });
-    expect(await g.spend('ws')).toEqual({ workspaceId: 'ws', spentUsd: 0, capUsd: 5, byRun: {} });
+    expect(await g.spend('ws')).toEqual({ workspaceId: 'ws', spentUsd: 0, capUsd: 5, byRun: {}, inFlightUsd: 0, uncertainUsd: 0 });
     expect(await g.verifyLedger()).toBeNull();
     expect(PROFILES.length).toBeGreaterThanOrEqual(3);
   });

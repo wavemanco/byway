@@ -63,6 +63,9 @@ function scripted(answers: string[], opts: { demo?: boolean; statuses?: ProfileS
     profiles: () => [],
     profileStatus: () => opts.statuses ?? [status(DEMO, true), status(NO_MEDIA, false)],
     verifyLedger: async () => null,
+    spendRecords: async () => ({ inFlight: [], uncertain: [], faults: [], notInAuditFile: 0, setAside: [] }),
+    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [], openFaults: 0 }),
+    close: async () => undefined,
   };
 }
 
@@ -256,6 +259,13 @@ describe('an image refused because its prompt holds a provider key (ADR-0088)', 
     const refused = heldKeyError('invalid-request', 'This request contains your OPENAI_API_KEY. byway never sends a key to a model; remove it from the material and try again.', 'OPENAI_API_KEY');
     const { outcome, tries } = await attempt(refused);
     expect(outcome).toBe(refused);
+    expect(tries).toBe(1);
+  });
+
+  it('stops the step on an accounting fault (ADR-0095): every paid call waits until the person acknowledges it', async () => {
+    const fault = new GatewayError('accounting-fault', 'byway found a line in its spend ledger (ledger.jsonl, at byte 0) that it cannot read.');
+    const { outcome, tries } = await attempt(fault);
+    expect(outcome).toBe(fault);
     expect(tries).toBe(1);
   });
 
