@@ -419,6 +419,10 @@ describe('explainers claim only what the recipe establishes about the steps arou
       const both = admitted(edited(r, id, (n) => ({ ...n, produces: [port, 'critique'] })), r);
       expect(explained(both, id), r.id).toBe(E.visionYours);
     }
+    // An AI direction that takes the taste in makes its own, as for the critique: C6a's sharpening, before a draft you
+    // write yourself, is the only step that takes that reaction in.
+    const sharpened = checkAnswer(fencedJson(edited(c6a, 'react', (n) => ({ ...n, produces: ['taste', 'critique'] }))), c6a, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, 'composed-c6a');
+    expect(sharpened.violations.map((v) => `${v.ruleId}:${v.clause ?? ''}`)).toEqual(['ST12:critique-unapplied']);
   });
 
   it('a CUT of yours where the operator around it drops your list is refused, never explained as removed (round 3: C3, C4)', () => {
