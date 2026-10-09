@@ -109,7 +109,9 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const failed: string[] = [];
   const outputs: string[] = [];
   for (const brief of briefs.value.briefs) {
-    const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries);
+    const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries).catch((e: unknown) => {
+      throw e instanceof GatewayError && e.billed === true ? billedStop(e, slots, brief.slot, made, what) : e;
+    });
     if (!image) {
       failed.push(brief.slot);
       continue;
@@ -194,6 +196,23 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
     }
   }
   return undefined;
+}
+
+/**
+ * A billed failure on one image, as the step's and the run's failure (ADR-0099, ADR-0090). It keeps the gateway's code,
+ * its "billed" mark and its message, which says what was billed and that it is not bought again, and adds what that
+ * leaves: which image it was, that the run stops here, and that the images this step already made were billed too and
+ * are not in the work (the step stops before attaching or placing them).
+ */
+function billedStop(e: GatewayError, plan: SlotPlan, slot: string, made: MadeImage[], what: string): GatewayError {
+  const name = (id: string) => slotName(plan, id);
+  const already = !made.length
+    ? ''
+    : made.length === 1
+      ? ` The image already made for ${name(made[0]!.slot)} was billed too, and it is not in the work.`
+      : ` The ${made.length} images already made for ${list(made.map((m) => name(m.slot)))} were billed too, and they are not in the work.`;
+  const message = `${e.message} That was the image for ${name(slot)}, so the run stops here, at the ${what} step, rather than buy it again.${already}`;
+  return new GatewayError(e.code, message, e.retryable, { billed: true });
 }
 
 /** "a", "a and b", "a, b and c". */

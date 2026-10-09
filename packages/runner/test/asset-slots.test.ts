@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ApplicationFailure } from '@temporalio/common';
 import { CATALOG } from '@byway/catalog';
 import { GatewayError, type CompletionRequest, type CompletionResult, type Gateway, type ImageRequest, type ImageResult, type Medium, type VideoRequest } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
@@ -17,11 +18,11 @@ import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
 import { assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
-import { ContractMissed, StepError } from '../src/activities/failures.ts';
+import { ContractMissed, StepError, toFailure } from '../src/activities/failures.ts';
 import { noStartFrameNote, relayLink } from '../src/activities/relay.ts';
 import { checkBriefs, eachPlan, freePlan, slotId } from '../src/activities/slot-plan.ts';
 import { serializeJson } from '../src/formats.ts';
-import { toStepSpec, type AssetResult, type RunRef, type StepSpec } from '../src/types.ts';
+import { FAILURE, toStepSpec, type AssetResult, type RunRef, type StepSpec } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -54,9 +55,9 @@ interface Fake extends Gateway {
 
 /**
  * A demo-mode gateway: brief answers from a script, integrate answers that place every image they are given, and images
- * stored as small PNGs unless `refuse` says otherwise for that request.
+ * stored as small PNGs unless `refuse` says otherwise for that request (true: a plain refusal; an Error: that failure).
  */
-function fake(briefs: string[], refuse: (req: ImageRequest) => boolean = () => false): Fake {
+function fake(briefs: string[], refuse: (req: ImageRequest) => boolean | Error = () => false): Fake {
   const completions: CompletionRequest[] = [];
   const images: ImageRequest[] = [];
   const videos: VideoRequest[] = [];
@@ -80,7 +81,9 @@ function fake(briefs: string[], refuse: (req: ImageRequest) => boolean = () => f
     },
     async image(req): Promise<ImageResult> {
       images.push(req);
-      if (refuse(req)) throw new GatewayError('refused', 'mock refused this image');
+      const refusal = refuse(req);
+      if (refusal instanceof Error) throw refusal;
+      if (refusal) throw new GatewayError('refused', 'mock refused this image');
       const { id } = await store.artifacts.put(png(4, 3, [images.length * 20, 10, 10]), 'image/png');
       return { artifactId: id, mediaType: 'image/png', servedModel: 'mock-image', provider: 'mock', costUsd: 0.04, ledgerEntryId: `i${images.length}` };
     },
@@ -252,6 +255,38 @@ describe('a short answer keeps every usable brief across the two tries (round 2)
     const g = fake([briefsOf('1', '2'), later]);
     await runAsset('media', frames(), storyboard(), g);
     expect(g.images.map((r) => r.prompt).sort()).toEqual(['An image for 2', 'Shot 1, as asked again']);
+  });
+});
+
+describe('an image billed but not kept stops the run and says what that leaves (ADR-0099, ADR-0090 round 2)', () => {
+  const lost = () => new GatewayError('byway-failure', 'mock made the image and billed it, but it could not be stored: ENOSPC. It is not retried, because a retry would pay again.', false, { billed: true });
+
+  it('on media: not bought again; the failure says the run stops, what was billed, and that the images already made are not in the work', async () => {
+    const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 2') ? lost() : false));
+    const { result, run } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for 1', 'An image for 2']);
+    expect(result).toBeInstanceOf(GatewayError);
+    expect(result).toMatchObject({ code: 'byway-failure', billed: true, retryable: false });
+    const message = (result as GatewayError).message;
+    expect(message).toBe(
+      'mock made the image and billed it, but it could not be stored: ENOSPC. It is not retried, because a retry would pay again. ' +
+        'That was the image for shot 2, so the run stops here, at the Custom imagery step, rather than buy it again. ' +
+        'The image already made for shot 1 was billed too, and it is not in the work.',
+    );
+    // The run's failure is this message, not retried (FAILURE.step): every GatewayError fails the step for good.
+    const failure = toFailure(result) as ApplicationFailure;
+    expect(failure).toMatchObject({ type: FAILURE.step, message, nonRetryable: true });
+    expect((await store.events(run.runId)).filter((e) => e.type === 'step-finished')).toEqual([]);
+  });
+
+  it('several already made are named; with none made, nothing is said of them', async () => {
+    const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 3') ? lost() : false));
+    const { result } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    expect((result as GatewayError).message).toMatch(/That was the image for shot 3, so the run stops here, at the Custom imagery step, rather than buy it again\. The 2 images already made for shot 1 and shot 2 were billed too, and they are not in the work\.$/);
+    const h = fake([briefsOf('1', '2', '3')], () => lost());
+    const first = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), h);
+    expect(h.images).toHaveLength(1);
+    expect((first.result as GatewayError).message).toMatch(/That was the image for shot 1, so the run stops here, at the Custom imagery step, rather than buy it again\.$/);
   });
 });
 

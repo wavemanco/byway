@@ -272,7 +272,8 @@ describe('an image refused because its prompt holds a provider key (ADR-0088)', 
   it('stops the step when the image was billed but byway could not keep it: another try would buy another image (follow-up (e), ADR-0090)', async () => {
     const lost = new GatewayError('byway-failure', 'openai made the image and billed it, but it could not be stored: ENOSPC.', false, { billed: true });
     const { outcome, tries } = await attempt(lost);
-    expect(outcome).toBe(lost);
+    // The gateway's failure, with what it leaves added (the run stops here; asset-slots.test.ts holds the wording).
+    expect(outcome).toMatchObject({ name: 'GatewayError', code: 'byway-failure', billed: true, retryable: false, message: expect.stringMatching(/^openai made the image and billed it, but it could not be stored: ENOSPC\. That was the image for “hero”, so the run stops here/) });
     expect(tries).toBe(1);
   });
 
