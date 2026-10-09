@@ -24,8 +24,10 @@
  *   the flow or across boxes), and where the person typed none glued, except that two characters that stood side by
  *   side in the line before, with the same spacing in the deck (a space or none), keep the separator they had (matched
  *   by a shortest edit script of the line's characters); the separators between a changed line and its
- *   neighbours as before (apart where the person typed a space at that edge); a deleted line's neighbours parted by the
- *   stronger of the two separators it had (glued < in the flow < in the other order < across boxes). The person's
+ *   neighbours as before (apart where the person typed a space at that edge, also in the other order where the page
+ *   had them so); a deleted line's neighbours parted by the stronger of the two separators it had (glued < in the
+ *   flow < in the other order < across boxes), or, where it was glued at one edge and apart at the other, apart in the
+ *   flow or across boxes (a glued neighbour can hide a box's edge the deletion brings out). The person's
  *   link words are in the link they bracketed (a deleted line has none, so its link words are not checked).
  * - The check (`arbiterProblem`): Chromium's visitor read of the written page must be exactly that, separator for
  *   separator, and the text it hides from sight must be the page's own, run by run, in the same links. Any difference
@@ -517,6 +519,11 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
     // The gap to put before the next character: the page's own (as merged over deleted lines), or apart for a typed space.
     let pending: Gap | undefined;
     let typed = false;
+    // A deleted line stood between, glued to a neighbour at one edge and apart at the other: its neighbours are apart,
+    // in the flow or across a box's edge (glued to the line, a neighbour can hide the edge of a box the deletion brings
+    // out, as beside an svg). With both edges apart, the stronger one says how.
+    let merged = false;
+    const held = (gap: Gap): Allowed => (merged && (gap === 'S' || gap === 'B') ? 'SB' : gap);
     const markHid = (h: boolean) => {
       if (!h) return;
       if (out.cs.length) out.hid[out.cs.length - 1] = true;
@@ -533,7 +540,7 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
     // A space the person typed at a line's edge: apart, in the flow or across boxes, or as the page had them apart
     // (in the other order, as beside a float).
     const apart = (old: Gap | undefined): Allowed => (old === 'R' ? 'SBR' : 'SB');
-    const gapBefore = (own: Gap): Allowed => (typed ? apart(pending ?? own) : (pending ?? own));
+    const gapBefore = (own: Gap): Allowed => (typed ? apart(pending ?? own) : pending ? held(pending) : own);
     let k = 0;
     for (const r of rs) {
       for (; k < r.span.start; k++) {
@@ -541,22 +548,24 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
         markHid(src.hid[k]!);
         pending = undefined;
         typed = false;
+        merged = false;
       }
       // The gap before the line, as the page had it (merged with any deleted line just before).
       const edgeIn = r.span.start < src.cs.length && r.span.start > 0 ? src.gaps[r.span.start]! : undefined;
       if (edgeIn) pending = pending ? stronger(pending, edgeIn) : edgeIn;
+      // The gap after the line, as the page had it (merged into the pending one for a deleted line, below).
+      const edgeOut = r.span.end < src.cs.length ? src.gaps[r.span.end]! : undefined;
       const start = out.cs.length;
       if (r.cs.length) {
-        push(r.cs[0]!, r.lead || typed ? apart(pending) : (pending ?? 'G'), r.hrefs[0]!, r.line, -1);
+        push(r.cs[0]!, r.lead || typed ? apart(pending) : pending ? held(pending) : 'G', r.hrefs[0]!, r.line, -1);
         for (let q = 1; q < r.cs.length; q++) push(r.cs[q]!, r.gaps[q]!, r.hrefs[q]!, r.line, -1);
         pending = undefined;
         typed = r.trail;
-      }
+        merged = false;
+      } else merged = edgeIn === 'G' || edgeOut === 'G' || merged;
       // Hidden text right after the line stays right after what stands before it now.
       if (r.span.end > r.span.start) markHid(src.hid[r.span.end - 1]!);
       places.push({ line: r.line, start, end: out.cs.length, in: where });
-      // The gap after the line, as the page had it (merged into the pending one for a deleted line).
-      const edgeOut = r.span.end < src.cs.length ? src.gaps[r.span.end]! : undefined;
       if (edgeOut) pending = pending ? stronger(pending, edgeOut) : edgeOut;
       k = r.span.end;
     }
@@ -565,6 +574,7 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
       markHid(src.hid[k]!);
       pending = undefined;
       typed = false;
+      merged = false;
     }
     return { want: out, places };
   };

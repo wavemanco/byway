@@ -273,6 +273,17 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await check(html, 'T\nflag \nOrder now\nEnd', html.replace('>fl<', '>flag<'))).toBeUndefined();
   }, 60_000);
 
+  it('a deleted line glued to a box beside it leaves its neighbours apart, in the flow or across the box\'s edge (r10)', async () => {
+    // "price" touches the svg's visible "S", which hides the svg's edge between them; once "price" is gone, the edge
+    // stands between "S" and "Name.": a visitor sees them apart on one row, as "price" and "Name." were.
+    const html = pageOf('<p>Intro <del><svg width="9" height="9"><text y="5">Svgt</text></svg>price</del>\nName. Call late</p>');
+    expect((await offer(html)).offered).toEqual(['T', 'Intro', 'price', 'Name. Call late']);
+    expect(await check(html, 'T\nIntro\n\nName. Call late', html.replace('</svg>price</del>', '</svg></del>'))).toBeUndefined();
+    // Glued on both sides, the neighbours must stay glued.
+    const glued = pageOf('<p><b>Hello</b><font>big</font><i>world</i></p>');
+    expect((await check(glued, 'T\nHello\n\nworld', glued.replace('<font>big</font>', ' ')))?.problem).toMatch(/a browser would show a space that your lines do not have/);
+  }, 60_000);
+
   it('a block break where the line has no space (a display:block cite) is the page\'s own: the line is offered, and an edit keeps the break', async () => {
     const quote = pageOf('<blockquote><p>“Worth every penny.”<cite style="display:block">— Maya R., Hackney</cite></p></blockquote>');
     expect((await offer(quote)).offered).toEqual(['T', '“Worth every penny.”— Maya R., Hackney']);
