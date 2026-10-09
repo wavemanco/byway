@@ -163,10 +163,11 @@ describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person
 
 /**
  * A person's list of what to remove ("What should go? List what to remove") or a reaction of theirs given as a critique
- * says it will be acted on. Where no AI writer takes it in on any path, it is dropped without a word: refused where it
- * is asked (ADR-0098). Some path is enough: a path on which it goes unapplied while another applies it is one the
- * person's later answer selects (an optional, a route, the end of their loop) or a judge in a relay link skipped with
- * nothing to see.
+ * says it will be acted on. Where no AI writer takes the answer in on any path, by any port it fills (the critique, or
+ * the brief or taste a reaction also gives), no AI writer acts on it: refused where it is asked (ADR-0098). Some path is
+ * enough: a path on which it goes unapplied while another applies it is one the person's later answer selects (an
+ * optional, a route, the end of their loop), or whether a judge in a relay link has a clip to see, or how many shots a
+ * storyboard has (an answer at the end of a relay link that only the next link takes in).
  */
 describe("ST12 'critique-unapplied': no person's list or critique that no writer applies on any path", () => {
   const personCut = (id: string): Step => step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] });
@@ -179,7 +180,7 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     d3(r).steps.splice(indexOf(d3(r), 'apply-cut'), 1);
     const v = unapplied(r);
     expect(v.map((x) => `${x.ruleId} ${x.path}`)).toEqual(['ST12 stages[2].body.steps[1]']);
-    expect(v[0]!.message).toBe('step "cut" asks a person for a list or a critique that no AI writer takes in on any path: another critique takes its place, or nothing that changes the work reads it, so their answer is dropped');
+    expect(v[0]!.message).toBe('step "cut" asks a person for a list or a critique, and no AI writer takes their answer in on any path, as the critique or as the brief or taste it also gives: before one does, another takes its place, or none comes after it');
   });
 
   it("a direction of the person's given as a critique between the CUT and its fix: the later answer replaces the list", () => {
@@ -236,6 +237,22 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     const i = indexOf(d3(own), 'apply-cut');
     d3(own).steps[i] = humanDraft('own-trim', ['critique', 'artifact']);
     expect(unapplied(own).map((x) => x.path)).toEqual(['stages[2].body.steps[1]']);
+  });
+
+  it('a reaction of yours that also gives the brief an AI writer takes in is admitted, though the CUT replaces its critique', () => {
+    const reaction = (produces: Step['produces']): Step => step({ id: 'direction', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces });
+    const redraft = modelFix('redraft', { role: 'build', consumes: ['artifact', 'brief'] });
+    const withBrief = studio();
+    insertAfter(d3(withBrief), 'cut-render', reaction(['brief', 'critique']));
+    insertAfter(d3(withBrief), 'apply-cut', render('redraft-render'), redraft);
+    expect(unapplied(withBrief)).toEqual([]);
+    // Given as a critique alone, the CUT's list takes its place before the fix, and the redraft has no brief from it.
+    const alone = studio();
+    insertAfter(d3(alone), 'cut-render', reaction(['critique']));
+    insertAfter(d3(alone), 'apply-cut', render('redraft-render'), redraft);
+    expect(unapplied(alone).map((x) => x.message)).toEqual([
+      'step "direction" asks a person for a list or a critique, and no AI writer takes their answer in on any path, as the critique or as the brief or taste it also gives: before one does, another takes its place, or none comes after it',
+    ]);
   });
 });
 

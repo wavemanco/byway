@@ -10,6 +10,7 @@ import {
   canPrecede,
   critiqueSources,
   directionsReactedTo,
+  followsEveryRun,
   hasNoExecutor,
   inputsOf,
   lockedScripts,
@@ -33,7 +34,8 @@ import {
  * by hand for the eight configurations and its builder takes only those, so a composed recipe's steps are labelled
  * from block names (`BLOCK_NAMES`) and roles instead, and grouped the way the catalog groups them: a render belongs to
  * the step that reads it, and a writer that applies a critique belongs to the step whose critique it applies on every
- * path (@byway/recipe critiqueSources; "Outside critique" is render, critic and fix). Every step, pick and operator id
+ * path, every time that step runs (@byway/recipe critiqueSources and followsEveryRun; "Outside critique" is render,
+ * critic and fix). Every step, pick and operator id
  * lands in exactly one shown step's `stepIds`, so any run event can be labelled.
  *
  * Labels and explainers read what runs (F08, ADR-0092): a step's block is its role's (a label is a declaration), only
@@ -93,15 +95,16 @@ export function stepLabel(n: Unit, near?: Pick_<Around, 'reactedTo'>): string {
  * Every sentence a composed step can be explained with, in one place: product copy like the catalog's, so it says what
  * a step does, never what it achieves (CR11, CRED-1), and the web app's claims guard scans this list. A cliché sweep
  * says the person chooses which finds are swapped (convention C2) exactly where the interpreter asks them (asksSwaps,
- * at every place the sweep sits); that the AI swaps every one where a writer in its stage applies its finds and no one
- * is asked; and neither anywhere else.
+ * at every place the sweep sits); that the AI swaps every one where a writer in its stage applies its finds, every time
+ * it runs, and no one is asked; and neither anywhere else.
  *
  * A sentence that says what other steps do (who wrote the rest, that nothing changes the script later, that nothing is
  * deleted, that you react to the directions) is used only where the recipe establishes it (`Around`): by its order,
  * or, for the directions, by what reaches your next VISION. The sentence without that claim is used everywhere else.
  * So is a sentence about how a step runs where it sits: separate sessions only for a seed that fans out, a chain of
  * clips only inside a relay chain. A step's findings are said to be applied only by a writer that applies them and no
- * other critique.
+ * other critique, and that every run of the step reaches: not from a loop round or relay link that runs the step again
+ * before the writer has taken the last run's findings in.
  *
  * A step is described by what this version runs (ADR-0069): one with no executor yet (@byway/recipe hasNoExecutor: a
  * tool relay's compositing, voice-over audio, any other tool or policy step that is not a render) finishes skipped and
@@ -182,6 +185,11 @@ interface Around {
   aside: Set<Step>;
   /** In one of those at some place: a writer there cannot be said to apply a critique to the work. */
   containedSomewhere: Set<Step>;
+  /**
+   * Whether a writer comes after every run of a step, at every place the step sits (@byway/recipe followsEveryRun): no
+   * loop round or relay link runs the step again before the writer has taken its findings in.
+   */
+  everyRun(step: Step, writer: Step): boolean;
 }
 
 /** TypeScript's `Pick`, which the recipe's `Pick` node type shadows here. */
@@ -192,7 +200,18 @@ function around(recipe: Recipe): Around {
   const reaching = steps.filter((o) => !o.contained);
   // A script is locked by the shared rule the run itself asks by (lockedScripts): the explainer and the run agree.
   // So are the directions you react to (directionsReactedTo), read from what reaches your next VISION.
-  const out: Around = { aiWroteRest: new Set(), scriptLocked: lockedScripts(recipe), notesOnly: new Set(), reactedTo: directionsReactedTo(recipe), fanOut: new Set(), inChain: new Set(), aside: new Set(), containedSomewhere: new Set() };
+  const placesOf = (s: Step) => steps.filter((o) => o.step === s);
+  const out: Around = {
+    aiWroteRest: new Set(),
+    scriptLocked: lockedScripts(recipe),
+    notesOnly: new Set(),
+    reactedTo: directionsReactedTo(recipe),
+    fanOut: new Set(),
+    inChain: new Set(),
+    aside: new Set(),
+    containedSomewhere: new Set(),
+    everyRun: (s, writer) => placesOf(s).every((a) => placesOf(writer).some((b) => followsEveryRun(a, b))),
+  };
   // A claim holds for a step only if it holds at every place the step object sits (a built recipe may reuse one).
   const failed = new Map<Set<Step>, Set<Step>>();
   const claim = (set: Set<Step>, s: Step, holds: boolean): void => {
@@ -328,9 +347,11 @@ const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group
 /**
  * The shown steps of one stage, from its steps and picks in order: renders wait for the next node (the one that reads
  * them), and a writer that applies a critique joins the group of the step whose critique it applies on every path
- * (`from`: @byway/recipe critiqueSources), once, with the renders before it. Not the group before it: a writer that
- * comes next may apply another step's critique (one that a replicate hands on, say), and one a render or a step of
- * yours sits before may still apply this one's.
+ * (`from`: @byway/recipe critiqueSources), once, with the renders before it, where it comes after every run of that
+ * step (`near.everyRun`). Not the group before it: a writer that comes next may apply another step's critique (one
+ * that a replicate hands on, say), and one a render or a step of yours sits before may still apply this one's. Nor where
+ * a loop round or a relay link runs the step again first: the writer applies only the last run's findings, and stands
+ * on its own.
  */
 function groupStage(units: Unit[], near: Around, from: ReadonlyMap<Step, Step>): Unit[][] {
   const groups: Unit[][] = [];
@@ -340,9 +361,12 @@ function groupStage(units: Unit[], near: Around, from: ReadonlyMap<Step, Step>):
       renders.push(u);
       continue;
     }
-    const source = u.op === 'step' && appliesFindings(u, near) ? from.get(u) : undefined;
+    const writer = u.op === 'step' && appliesFindings(u, near) ? u : undefined;
+    const source = writer ? from.get(writer) : undefined;
     const into =
-      source && FINDS.has(source.role) && replacesCritique(source) ? groups.find((g) => leadOf(g) === source && !g.some((x) => appliesFindings(x, near))) : undefined;
+      writer && source && FINDS.has(source.role) && replacesCritique(source) && near.everyRun(source, writer)
+        ? groups.find((g) => leadOf(g) === source && !g.some((x) => appliesFindings(x, near)))
+        : undefined;
     if (into) into.push(...renders, u);
     else groups.push([...renders, u]);
     renders = [];

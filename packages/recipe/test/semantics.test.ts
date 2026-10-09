@@ -23,6 +23,7 @@ import {
   exitPoints,
   FIELD_ROLES,
   flowRecipe,
+  followsEveryRun,
   hasNoExecutor,
   leavesNote,
   leavesOnlyAtExits,
@@ -394,6 +395,21 @@ describe('run order: what can run after a step', () => {
     expect(locked(recipeOf(seq(vo, onScreen('words'), vo), 'media'))).toEqual([]);
   });
 
+  it('a step that runs after every run of another before it runs again: each loop or relay around the first holds it later', () => {
+    const after = (body: Node) => {
+      const steps = runOrder(recipeOf(body)).steps;
+      const at = (id: string) => steps.find((o) => o.step.id === id)!;
+      return followsEveryRun(at('a'), at('b'));
+    };
+    expect(after(seq(critic('a'), fix('b')))).toBe(true);
+    expect(after(loop('l', seq(critic('a'), fix('b')), gate('critic-score')))).toBe(true);
+    expect(after(relay('chain', 2, seq(critic('a'), loop('l', fix('b'), gate('human')))))).toBe(true);
+    // A next round or link runs the first again before the second has.
+    expect(after(seq(loop('l', critic('a'), gate('human')), fix('b')))).toBe(false);
+    expect(after(seq(relay('chain', 2, critic('a')), fix('b')))).toBe(false);
+    expect(after(loop('l', seq(fix('b'), critic('a')), gate('human')))).toBe(false);
+  });
+
   it('fans out in separate sessions only inside each or a replicate of more than one, and knows a relay link', () => {
     const order = runOrder(recipeOf(seq(replicate('one', 1, critic('a')), replicate('four', 4, critic('b')), each('e', critic('c')), relay('chain', 2, critic('d')))));
     expect(order.steps.map((o) => [o.step.id, o.fanOut, o.inRelay])).toEqual([
@@ -572,6 +588,39 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // The same walk as critiqueSources, which reads the step object: the fix's one source is the CUT.
     expect(critiqueSources(r).get(f)).toBe(cut);
   });
+
+  it('applied where an AI writer takes the answer in through any port it fills: a reaction of yours fills its brief and its taste too', () => {
+    const yours = (id: string, produces: Step['produces']): Step => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces });
+    const draft = (id: string, port: 'brief' | 'taste', how: 'consumes' | 'reads' = 'consumes'): Step =>
+      step({ id, role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: how === 'consumes' ? ['intent', port] : ['intent'], ...(how === 'reads' ? { reads: [port] } : {}), produces: ['artifact'], writes: true });
+    const review = seq(render('r'), critic('c'), fix('f'));
+    // C4 with your direction given as the brief and a critique: the draft takes the brief in, though the critic's
+    // critique always takes the critique's place before a fix.
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), draft('b', 'brief'), review))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), draft('b', 'brief', 'reads'), review))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['critique']), draft('b', 'brief'), review))).toEqual(['d']);
+    // C5's direction as the taste and a critique: each concept takes the taste in.
+    expect(unapplied(seq(yours('d', ['taste', 'critique']), each('e', draft('b', 'taste'))))).toEqual([]);
+    // A CUT of yours is a directive: its answer fills the critique alone, whatever else it declares.
+    expect(unapplied(seq(step({ ...personCut('cut'), produces: ['critique', 'brief'] }), draft('b', 'brief')))).toEqual(['cut']);
+    // Another brief in its place first, an AI direction's, or none taken in by an AI writer: your own draft is shown no
+    // brief, and an AI direction that takes it in makes its own.
+    const aiBrief = (id: string, consumes: Step['consumes'] = ['intent']): Step => step({ id, role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes, produces: ['brief'] });
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), aiBrief('v'), draft('b', 'brief')))).toEqual(['d']);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), aiBrief('v', ['brief']), draft('b', 'brief')))).toEqual(['d']);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), step({ ...authorDraft('own'), consumes: ['brief'] })))).toEqual(['d']);
+    // Some path is enough, as for the critique: a route branch where you draft yourself (C3's).
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), route('rt', 'who drafts', [{ name: 'ai', body: draft('b', 'brief') }, { name: 'own', body: step({ ...authorDraft('own'), consumes: ['brief'] }) }])))).toEqual([]);
+    // As the operators hand the brief and the taste on: an audit and a final check the ones they started with, so a
+    // brief given inside them never leaves; a candidate's writer takes in the one it started with.
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), audit('au', [{ name: 'c', body: critic('c') }]), draft('b', 'brief')))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), oneShotGate('g', critic('g1'), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }), draft('b', 'brief')))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), replicate('x', 2, draft('b', 'brief'))))).toEqual([]);
+    expect(unapplied(seq(yours('d', ['brief', 'critique']), audit('au', [{ name: 'x', body: draft('b', 'brief') }])))).toEqual(['d']);
+    // A keep-or-revert may say which version it kept in the taste's place, or ask nothing: it does not always.
+    const compare = step({ id: 'compare', role: 'tells-compare', block: 'TELLS', actor: 'human', consumes: ['view'], produces: ['taste'] });
+    expect(unapplied(seq(yours('d', ['taste', 'critique']), compare, draft('b', 'taste')))).toEqual([]);
+  });
 });
 
 describe('whose directions your next VISION is shown (directionsReactedTo)', () => {
@@ -596,6 +645,18 @@ describe('whose directions your next VISION is shown (directionsReactedTo)', () 
   it('a loop a person holds: the directions are shown at the next round, and the last of two is the one shown (C2)', () => {
     expect(reacted(recipeOf(loop('l', seq(yours('p'), ai('v')), gate('human'))))).toEqual(['v']);
     expect(reacted(recipeOf(loop('l', seq(yours('p'), ai('v'), ai('w')), gate('human'))))).toEqual(['w']);
+  });
+
+  it('the directions run again before your next VISION: the later run is what you are shown, never the earlier', () => {
+    // A loop round or a relay link that makes them again with no VISION of yours between (C2's sharpen in a loop of its
+    // own; C5 with AI directions at the end of each link, your direction after the chain).
+    expect(reacted(recipeOf(seq(loop('l', ai('v'), gate('human')), yours('p'))))).toEqual([]);
+    expect(reacted(recipeOf(seq(relay('chain', 3, seq(render('r'), ai('v'))), yours('p'))))).toEqual([]);
+    expect(reacted(recipeOf(loop('outer', seq(yours('p'), loop('more', ai('v'), gate('human'))), gate('human'))))).toEqual([]);
+    // Replaced unseen in an earlier round stays replaced, whatever the directions do next.
+    expect(reacted(recipeOf(seq(loop('l', seq(critic('c'), ai('v')), gate('human')), yours('p'))))).toEqual([]);
+    // With your VISION in the same round or link they are shown each time (C2, C6a).
+    expect(reacted(recipeOf(relay('chain', 3, seq(ai('v'), yours('p')))))).toEqual(['v']);
   });
 
   it('as the operators hand notes on: a candidate, a pick or a final check hands on the notes it started with; an audit its lenses’', () => {

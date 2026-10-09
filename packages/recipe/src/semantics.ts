@@ -22,7 +22,7 @@
  *
  * Pure: type-only imports and no Node built-ins, so workflow code can import it through `@byway/recipe/semantics`.
  */
-import type { BlockCode, Medium } from '@byway/protocol';
+import type { BlockCode, Medium, PortType } from '@byway/protocol';
 import type { Actor, Audit, Each, Gate, Loop, Node, OneShotGate, Optional, PassCondition, Pick as PickNode, Recipe, RelayChain, Replicate, Role, Route, Seq, Stage, Step } from './schema.ts';
 
 /** The facts about a step that decide what it does to the work. */
@@ -169,9 +169,9 @@ export function replacesCritique(n: Node): boolean {
  * A person's answer kept as the critique (human()): their CUT's list of what to remove, or a reaction of theirs that
  * produces a critique. The step after it acts on it, so it may sit only where the run hands it on: not in replicate or
  * each (a candidate hands on only its work), an audit lens or a one-shot gate's body (an empty answer is dropped there,
- * and the fix after it applies an earlier critique), and only where some writer applies it on some path
- * (`unappliedCritiques`). Admission refuses it elsewhere (ST12 'critique-per-candidate' and 'critique-unapplied', ST9
- * and ST10 'human-critique'; ADR-0098).
+ * and the fix after it applies an earlier critique), and only where some AI writer takes it in on some path, as the
+ * critique or as the brief or taste a reaction also gives (`unappliedCritiques`). Admission refuses it elsewhere (ST12
+ * 'critique-per-candidate' and 'critique-unapplied', ST9 and ST10 'human-critique'; ADR-0098).
  */
 export const personCritique = (s: Step): boolean => s.actor === 'human' && replacesCritique(s);
 
@@ -583,6 +583,14 @@ export const canRunAfter = (order: RunOrder, a: Ordered, b: Ordered): boolean =>
   canPrecede(a, b) || order.reruns.some((g) => (a.index < g.index || a.repeats.some((r) => g.repeats.includes(r))) && a.stage >= g.from && b.stage >= g.from);
 
 /**
+ * Whether `b` comes after each run of `a` before `a` runs again, as far as the loops and relays around `a` go: every one
+ * of them also holds `b`, later in its body. Otherwise a next round or link runs `a` again first, and what `a` made in
+ * the round or link before is replaced before `b` takes it in. Structural: it says nothing of what a route, an optional
+ * or a loop's exit chooses between them.
+ */
+export const followsEveryRun = (a: Ordered, b: Ordered): boolean => a.repeats.every((r) => b.repeats.includes(r) && b.index > a.index);
+
+/**
  * A person's write that can change a storyboard's voice-over: their own draft (the whole work), a script VOICE, or a
  * claim log (its corrections replace the claims wherever they stand in the work, claims.ts). The on-screen VOICE is
  * refused any voice-over line (copy.ts applyOnScreen, human.ts lockedVoiceover).
@@ -778,8 +786,41 @@ function flowOnce<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stag
 
 // ---- What reaches a step ----------------------------------------------------------------------------------------
 
-/** A step that takes in a critique: it consumes one, or reads it when it is there (ADR-0089). */
-const takesCritique = (s: Step): boolean => s.consumes.includes('critique') || (s.reads?.includes('critique') ?? false);
+/** A step that takes a port in: it consumes it, or reads it when it is there (ADR-0089). */
+const takesIn = (s: Step, port: PortType): boolean => s.consumes.includes(port) || (s.reads?.includes(port) ?? false);
+
+/** The text ports a person's answer can fill, and an AI writer can take it in by (the interpreter's human()). */
+export type AnswerPort = 'critique' | 'brief' | 'taste';
+
+/**
+ * A person's reaction (the runner's humanKind 'react'): a step of theirs that is not a write, a CUT's directive or a
+ * keep-or-revert. Its answer fills every text port it produces.
+ */
+const reacts = (s: Step): boolean => s.actor === 'human' && !HUMAN_WRITE_ROLES.has(s.role) && s.role !== 'cut' && s.role !== 'tells-compare';
+
+/**
+ * The text ports a person's answer fills (the interpreter's human()): a CUT's directive fills the critique alone,
+ * whatever else it declares; a reaction fills each of the critique, the brief and the taste it produces, with the same
+ * answer. None for any other step.
+ */
+export function answerPorts(s: Step): AnswerPort[] {
+  if (s.actor !== 'human') return [];
+  if (s.role === 'cut') return ['critique'];
+  return reacts(s) ? (['critique', 'brief', 'taste'] as const).filter((p) => s.produces.includes(p)) : [];
+}
+
+/**
+ * Whether running a step puts its own value in a text port in place of the one before it: on every run, on some, or
+ * never (the interpreter's applyModel and human()). The critique: `replacesCritique`. The brief and the taste: a model
+ * VISION that produces it, and a reaction of a person's that does. A keep-or-revert puts the version it kept in the
+ * taste when it asks, and asks nothing when there is nothing to compare.
+ */
+function fillsPort(s: Step, port: AnswerPort): 'always' | 'sometimes' | 'never' {
+  if (port === 'critique') return replacesCritique(s) ? 'always' : 'never';
+  if (s.role === 'tells-compare') return port === 'taste' && (s.actor === 'human' || s.actor === 'model') ? 'sometimes' : 'never';
+  if (!s.produces.includes(port)) return 'never';
+  return (s.actor === 'model' && s.role === 'vision') || reacts(s) ? 'always' : 'never';
+}
 
 /**
  * The judges that may be skipped where they sit: a model critic or check inside a relay link, whose view has nothing
@@ -834,26 +875,33 @@ function skippableJudges(recipe: Recipe): Map<string, boolean> {
  * A person's own write is never one: the run puts a critique only in a model's prompt (the interpreter shows a person
  * the work and the latest notes, never the critique).
  */
-export const appliesCritique = (s: Step, contained: boolean): boolean => !contained && machineWrites(s) && takesCritique(s) && !hasNoExecutor(s);
+export const appliesCritique = (s: Step, contained: boolean): boolean => appliesPort(s, 'critique', contained);
 
-/** A place a step that takes in a critique sits, with the places whose critique may be the latest there when it runs. */
-interface CritiqueTaker {
+/**
+ * A writer that applies what it takes in by a port, where it sits, as `appliesCritique` decides it for the critique: a
+ * brief or a taste an AI draft takes in is in its prompt, as a critique a fix takes in is (buildPrompt).
+ */
+const appliesPort = (s: Step, port: AnswerPort, contained: boolean): boolean => !contained && machineWrites(s) && takesIn(s, port) && !hasNoExecutor(s);
+
+/** A place a step that takes a port in sits, with the places whose value may be the latest there when it runs. */
+interface PortTaker {
   step: Step;
   contained: boolean;
-  /** Walk paths of the steps whose critique may be the latest; '' when none may have been given yet. */
+  /** Walk paths of the steps whose value may be the latest; '' when none may have been given yet. */
   from: Set<string>;
 }
 
 /**
- * The one walk `critiqueSources` and `unappliedCritiques` read: what critique may be the latest at each place a step
- * that takes one in sits, by the places (walk paths) of the steps that put it there. Read on the exit-aware flow walk,
- * with the operators handing the critique on as the interpreter does:
+ * The one walk `critiqueSources` and `unappliedCritiques` read: what value of a text port may be the latest at each
+ * place a step that takes the port in sits, by the places (walk paths) of the steps that put it there. Read on the
+ * exit-aware flow walk, with the operators handing the port on as the interpreter does:
  *
- * - A step that puts another critique in place (`replacesCritique`) is the latest one's source from then on; a write, a
- *   render or a person's taste leaves it as it was. A cliché sweep stays the source when the person chooses which of
- *   its finds are swapped (the interpreter's chooseSwaps narrows the sweep's own finds).
- * - replicate, each and a pick hand on the critique they started with; an audit its lenses' (joined under their names);
- *   a one-shot gate its body's.
+ * - A step that puts its own value in the port (`fillsPort`) is the latest one's source from then on; any other step
+ *   leaves it as it was. For the critique: a write, a render or a person's taste leaves it, and a cliché sweep stays the
+ *   source when the person chooses which of its finds are swapped (the interpreter's chooseSwaps narrows the sweep's own
+ *   finds). A keep-or-revert that may ask nothing is a source on some runs only.
+ * - replicate, each and a pick hand on what they started with. An audit hands on its lenses' critique (joined under
+ *   their names) and a one-shot gate its body's; both hand on the brief and the taste they started with.
  * - A judge in a relay link may be skipped, with nothing to see, and the run goes on with the critique from before it,
  *   unless it reports to the loop around it, whose round then ends there (ADR-0090). A person's answer in a lens or a
  *   gate body may be empty, which is dropped (admission refuses one there, ST9 and ST10 'human-critique').
@@ -863,28 +911,32 @@ interface CritiqueTaker {
  * can only take a claim of `critiqueSources` away, but it could make a dropped answer look applied, so
  * `unappliedCritiques` reads the walk `exact` (`exactLoops`: a loop leaves only where a run can leave it).
  */
-function critiqueFlow(recipe: Recipe, exact: boolean): { at: Map<string, Step>; takers: Map<string, CritiqueTaker> } {
-  // A state: the places of the steps whose critique may be the latest, sorted; '' is none yet.
+function portFlow(recipe: Recipe, port: AnswerPort, exact: boolean): { at: Map<string, Step>; takers: Map<string, PortTaker> } {
+  // A state: the places of the steps whose value may be the latest, sorted; '' is none yet.
   const at = new Map<string, Step>();
-  const takers = new Map<string, CritiqueTaker>();
+  const takers = new Map<string, PortTaker>();
   const union = (a: readonly string[], b: readonly string[]): string[] => [...new Set([...a, ...b])].sort();
-  const skippable = skippableJudges(recipe);
+  const critique = port === 'critique';
+  // Only a judge sets the critique where it may be skipped.
+  const skippable = critique ? skippableJudges(recipe) : new Map<string, boolean>();
   flowRecipe<string[]>(recipe, [''], {
     step(s, path, _stage, st, contained) {
-      if (takesCritique(s)) {
+      if (takesIn(s, port)) {
         const t = takers.get(path) ?? takers.set(path, { step: s, contained, from: new Set() }).get(path)!;
         for (const x of st) t.from.add(x);
       }
-      if (!replacesCritique(s)) return st;
+      const fills = fillsPort(s, port);
+      if (fills === 'never') return st;
       at.set(path, s);
-      // A judge skipped where the run goes on past it, or a person's empty answer that a lens or a gate drops.
-      if (skippable.get(path) === false || (s.actor === 'human' && contained)) return union(st, [path]);
+      // Not on every run: a keep-or-revert with nothing to compare, a judge skipped where the run goes on past it, or a
+      // person's empty answer that a lens or a gate drops.
+      if (fills === 'sometimes' || skippable.get(path) === false || (critique && s.actor === 'human' && contained)) return union(st, [path]);
       return [path];
     },
     join: (states) => states.reduce<string[]>((a, b) => union(a, b), []),
     // Walk paths hold no '|'.
     key: (st) => st.join('|'),
-    after: (node, entry, inner) => (node.op === 'audit' || node.op === 'gate' ? inner : entry),
+    after: (node, entry, inner) => (critique && (node.op === 'audit' || node.op === 'gate') ? inner : entry),
     exit: (_s, path, before, after) => (skippable.get(path) ? union(before, after) : after),
     exactLoops: exact,
   });
@@ -894,13 +946,15 @@ function critiqueFlow(recipe: Recipe, exact: boolean): { at: Map<string, Step>; 
 /**
  * Whose critique a step applies: for each step that takes in a critique, the one step whose critique reaches it on
  * every path, at every place it sits. None when another step's critique can reach it instead on some path, or none
- * at all (`critiqueFlow`, by the step objects at those places).
+ * at all (`portFlow` of the critique, by the step objects at those places).
  *
  * The presentation says a step's findings are applied only by a writer that applies them and no other critique
- * (present.ts), as the run applies them: a writer that comes next in the recipe may apply another step's critique.
+ * (present.ts), as the run applies them: a writer that comes next in the recipe may apply another step's critique. It
+ * also asks that every run of the step reach that writer (`followsEveryRun`): this map says only whose critique is the
+ * latest when the writer runs, and a loop round or a relay link may run the step again first.
  */
 export function critiqueSources(recipe: Recipe): Map<Step, Step> {
-  const { at, takers } = critiqueFlow(recipe, false);
+  const { at, takers } = portFlow(recipe, 'critique', false);
   const seen = new Map<Step, Set<Step | undefined>>();
   for (const t of takers.values()) {
     const acc = seen.get(t.step) ?? seen.set(t.step, new Set()).get(t.step)!;
@@ -915,24 +969,33 @@ export function critiqueSources(recipe: Recipe): Map<Step, Step> {
 }
 
 /**
- * A person's lists and critiques (`personCritique`) that no writer applies: the places where one is asked whose answer
- * no `appliesCritique` step takes in, on any path (`critiqueFlow`, by place, read `exact`). The run asks "What should
- * go? List what to remove", or what the next version should avoid, and drops the answer without a word: before any
- * writer that takes a critique in, another critique takes its place (a critic, a check, a CUT, a sweep, a direction of
- * the person's given as a critique, or an audit or a final check that notes anything), or none comes after it at all.
- * Admission refuses one (ST12 'critique-unapplied', ADR-0098). The walk holds every run, so no run applies an answer
- * this names; it leaves a loop only where a run can, so a critic loop's next round, which puts its own critique in
- * place of an answer given at the end of a round, is not taken for a way out with that answer.
+ * A person's lists and critiques (`personCritique`) that no AI writer takes in: the places where one is asked whose
+ * answer reaches no writer that applies it, on any path, through any text port it fills (`answerPorts`: a CUT's list is
+ * the critique alone; a reaction of theirs is also the brief or the taste it produces, which an AI draft may take in).
+ * Read on `portFlow` of each such port, by place, `exact`. The run asks "What should go? List what to remove", or what
+ * the next version should avoid, and no AI writer ever acts on the answer: before one takes it in, another value takes
+ * its place, or none comes after it at all. For the critique, most often the cliché sweep's finds, and also a later CUT
+ * of the person's, a critic, a check, a direction of theirs given as a critique, or an audit or a final check that notes
+ * anything; for the brief or the taste, an AI direction or a later answer of theirs. Admission refuses one (ST12
+ * 'critique-unapplied', ADR-0098). The walk holds every run, so no run hands an answer this names to an AI writer; it
+ * leaves a loop only where a run can, so a critic loop's next round, which puts its own critique in place of an answer
+ * given at the end of a round, is not taken for a way out with that answer.
  *
- * Some path, not every path. The paths on which an answer goes unapplied while another path applies it are chosen by
- * the person's own later answers (an optional they run or decline, a route branch, the end of a loop they hold) or by
- * a judge in a relay link skipped with nothing to see; an every-path reading would refuse those, where the person, not
- * the recipe, decides.
+ * Some path, not every path: an answer that some run hands to an AI writer is admitted. The paths on which it goes
+ * unapplied are chosen by the person's own later answers (an optional they run or decline, a route branch, the end of
+ * a loop they hold), by whether a judge in a relay link has a clip to see (skipped with nothing to see, it leaves the
+ * answer in place), or by how many shots the storyboard has: an answer at the end of a relay link that only the next
+ * link takes in goes unapplied at the last link, and at the only link of a one-shot storyboard. The person chooses
+ * neither of the last two; ADR-0098 names them as residuals.
  */
 export function unappliedCritiques(recipe: Recipe): Placement[] {
+  const asked = placements(recipe).filter((p) => personCritique(p.step));
+  // `${port} ${path}`: the places whose answer an AI writer takes in by that port, on some path.
   const applied = new Set<string>();
-  for (const t of critiqueFlow(recipe, true).takers.values()) if (appliesCritique(t.step, t.contained)) for (const p of t.from) applied.add(p);
-  return placements(recipe).filter((p) => personCritique(p.step) && !applied.has(p.path));
+  for (const port of new Set(asked.flatMap((p) => answerPorts(p.step)))) {
+    for (const t of portFlow(recipe, port, true).takers.values()) if (appliesPort(t.step, port, t.contained)) for (const p of t.from) applied.add(`${port} ${p}`);
+  }
+  return asked.filter((p) => !answerPorts(p.step).some((port) => applied.has(`${port} ${p.path}`)));
 }
 
 /**
@@ -943,7 +1006,9 @@ export function unappliedCritiques(recipe: Recipe): Placement[] {
  *   the options, and the latest `ports.notes`). Every model VISION leaves one.
  * - A step that leaves a note of its own puts it in their place (`leavesNote`: a critic, check, CUT, sweep, overlap
  *   flag, another VISION or a seed's direction), and so does an audit one of whose lenses does. That step's note, not
- *   the directions, is then what the person reacts to.
+ *   the directions, is then what the person reacts to. So do the directions themselves, made again at their own place
+ *   (a loop's next round, a relay's next link) before a VISION of the person's: the later directions are shown, never
+ *   the earlier.
  * - replicate, each, a pick and a one-shot gate hand on the notes they started with, so a note made inside them stays
  *   there; directions made inside a candidate, a lens, a gate body or a judge are never claimed.
  * - A final check that re-runs the directions' stage, or an earlier one, starts it again from that stage's entry: what
@@ -973,7 +1038,8 @@ export function directionsReactedTo(recipe: Recipe): Set<Step> {
             if (st & LOST) missed = true;
             return IDLE;
           }
-          if (s === v && path === p.path) return LIVE;
+          // Made again while the earlier directions still wait (or were already replaced): those are lost.
+          if (s === v && path === p.path) return st & (LIVE | LOST) ? LIVE | LOST : LIVE;
           return leavesNote(s) && st & LIVE ? (st & ~LIVE) | LOST : st;
         },
         join: (states) => states.reduce((a, b) => a | b, 0),

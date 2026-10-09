@@ -369,6 +369,58 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(diffFromNearest(flagged, c5, 'x', presentationOf('c5'))).toContain('Added: Directions (Explore)');
   });
 
+  it('"to react to" not where the AI directions run again before your next VISION: you are shown only the last run', () => {
+    const shown = (r: Recipe, id: string) => presentComposed(r, COPY).stages.flatMap((s) => s.steps).find((s) => s.stepIds.includes(id))!;
+    const humanGate = { metric: 'human', hidden: false, holder: 'human', probe: 1, max: 2, onCap: 'human', onNoConverge: 'recalibrate-human' };
+    // C5 with AI directions at the end of each relay link and your direction after the chain: a storyboard of three
+    // shots makes three, and your direction is shown the last (the round-6 verification's R1).
+    const linkIdeas = { op: 'step', id: 'link-ideas', role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'product.c4.framings', consumes: ['intent'], produces: ['brief'] };
+    const yourTake = { op: 'step', id: 'your-take', role: 'vision', block: 'VISION', actor: 'human', consumes: ['artifact'], produces: ['taste'] };
+    const r1 = admitted(edited(edited(c5, 'shot-repair', (n) => n, linkIdeas), 'shot-chain', (n) => n, yourTake), c5);
+    expect(shown(r1, 'link-ideas')).toMatchObject({ label: 'Directions', explainer: E.visionAi });
+    // C4 with its AI framings in a loop you hold, before your direction: each round's framings replace the last.
+    const r2 = admitted(edited(c4, 'framings-if-wanted', (n) => ({ op: 'loop', id: 'more-framings', body: n.body, gate: humanGate })), c4);
+    expect(shown(r2, 'framings')).toMatchObject({ label: 'Directions', explainer: E.visionAi });
+    // Where your VISION runs in the same round as the directions, they are shown each time (C2, C6a).
+    expect(shown(admitted(copy(c2), c2), 'sharpen')).toMatchObject({ label: 'Directions to react to', explainer: E.visionAiToReact });
+  });
+
+  it('findings are said to be applied only where every run of the step reaches the writer: not from a loop that runs it again first', () => {
+    const humanGate = { metric: 'human', hidden: false, holder: 'human', probe: 1, max: 2, onCap: 'human', onNoConverge: 'recalibrate-human' };
+    /** The recipe with the two steps from `first` wrapped in a loop you hold. */
+    const looped = (r: Recipe, first: string): N => {
+      const raw = copy(r);
+      const d3 = raw.stages.find((s: N) => s.stage === 'D3').body;
+      const i = d3.steps.findIndex((s: N) => s.id === first);
+      d3.steps.splice(i, 0, { op: 'loop', id: 'again', body: { op: 'seq', steps: d3.steps.splice(i, 2) }, gate: humanGate });
+      return raw;
+    };
+    // C1 and C4 with the cliché sweep alone in a loop you hold, its swap step after the loop: the swap step applies the
+    // last round's finds only (the round-6 verification's 42 admitted variants read "the AI swaps every one").
+    for (const r of [c1, c4]) {
+      const steps = presentComposed(admitted(looped(r, 'tells-render'), r), COPY).stages.flatMap((s) => s.steps);
+      const sweep = steps.find((s) => s.stepIds.includes('tells-sweep'))!;
+      expect(sweep.explainer, r.id).toBe(E.tells);
+      expect(sweep.stepIds).not.toContain('apply-swaps');
+      expect(steps.find((s) => s.stepIds.includes('apply-swaps'))!.explainer).toBe(E.fix);
+    }
+    // C3 with your trim in a loop you hold: the fix after it removes the last round's list only.
+    const trim = admitted(looped(c3, 'cut-render'), c3);
+    expect(explained(trim, 'cut')).toBe(E.cutYours);
+    expect(explained(trim, 'apply-cut')).toBe(E.fix);
+    // A loop that runs the writer after the step in every round keeps the claim (C4's critic loop).
+    expect(explained(admitted(copy(c4), c4), 'recipient')).toBe(E.criticApplies);
+  });
+
+  it('a reaction of yours that also gives the brief or the taste an AI writer takes in is admitted: its answer reaches the work', () => {
+    // C4's direction, C3's thesis and C5's direction each also given as a critique, which another critique always
+    // replaces before a fix: the draft, or each concept, takes the answer in as the brief or the taste (round 6, V1 to V3).
+    for (const [r, id, port] of [[c4, 'vision-lite', 'brief'], [c3, 'thesis', 'brief'], [c5, 'direction', 'taste']] as const) {
+      const both = admitted(edited(r, id, (n) => ({ ...n, produces: [port, 'critique'] })), r);
+      expect(explained(both, id), r.id).toBe(E.visionYours);
+    }
+  });
+
   it('a CUT of yours where the operator around it drops your list is refused, never explained as removed (round 3: C3, C4)', () => {
     const refusals = (raw: N, nearest: Recipe) =>
       checkAnswer(fencedJson(raw), nearest, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, `composed-${nearest.id}`).violations.map((v) => `${v.ruleId}:${v.clause ?? ''}`);
@@ -383,7 +435,7 @@ describe('explainers claim only what the recipe establishes about the steps arou
   it('a CUT of yours that no AI writer applies on any path is refused (C4: no fix after it, or a direction of yours before the fix)', () => {
     const refused = (raw: N, nearest: Recipe) =>
       checkAnswer(fencedJson(raw), nearest, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, `composed-${nearest.id}`).violations.filter((v) => v.clause === 'critique-unapplied').map((v) => `${v.ruleId} ${v.message}`);
-    const message = 'ST12 step "cut" asks a person for a list or a critique that no AI writer takes in on any path: another critique takes its place, or nothing that changes the work reads it, so their answer is dropped';
+    const message = 'ST12 step "cut" asks a person for a list or a critique, and no AI writer takes their answer in on any path, as the critique or as the brief or taste it also gives: before one does, another takes its place, or none comes after it';
     expect(refused(removed(c4, 'apply-cut'), c4)).toEqual([message]);
     const direction = { op: 'step', id: 'your-direction', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] };
     expect(refused(edited(c4, 'cut', (n) => n, direction), c4)).toEqual([message]);
