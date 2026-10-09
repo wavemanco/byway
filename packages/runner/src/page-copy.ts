@@ -1329,6 +1329,30 @@ function shownAfter(p: PageDeck, s: number): boolean {
   const t = s + 1 < p.slots.length ? shownText(p).next[s + 1]! : -1;
   return t >= 0 && p.slots[t]!.vregion === p.slots[s]!.vregion;
 }
+/** Token `tok` is a `name` start tag (or, with `closing`, its end tag). */
+const isTag = (p: PageDeck, tok: number, name: string, closing: boolean): boolean => {
+  const t = p.tokens[tok];
+  return !!t && t.kind === 'tag' && t.name === name && !!t.closing === closing && !t.foreign;
+};
+
+/**
+ * Whitespace a browser shows parts the text it shows nearest slot `s` on that side (in a slot at or before `s`, or at or
+ * after it) from what follows it, or precedes it: that slot's text ends (or starts) with whitespace, or a rendered slot
+ * between holds some.
+ */
+function spaceBeside(p: PageDeck, s: number, side: 'before' | 'after'): boolean {
+  const { prev, next } = shownText(p);
+  const t = side === 'before' ? prev[s]! : next[s]!;
+  if (t < 0) return false;
+  for (let k = s; side === 'before' ? k >= t : k <= t; k += side === 'before' ? -1 : 1) {
+    if (!p.slots[k]!.rendered) continue;
+    const text = slotText(p, k);
+    if (k === t) return isHtmlSpace(side === 'before' ? text.at(-1) : text[0]);
+    if ([...text].some(isHtmlSpace)) return true;
+  }
+  return false;
+}
+
 /**
  * The shared rule for the whitespace a deleted line held inside an element the edit removes: it is written where the
  * element was when text browsers show stands on both sides of the element in one block, as the page was, so the lines
@@ -1773,8 +1797,21 @@ function place(before: string, edit: PageEdit, notOffered?: ReadonlySet<number>)
       const had = (m: Map<number, string>) => [...m.values()].some((ws) => ws !== '');
       const first = u.slots[0]!;
       const last = u.slots.at(-1)!;
-      if (words.length && !isHtmlSpace(joined[0]) && shownBefore(p, first) && (had(u.lead) || line.lead)) texts.set(words[0]!, ` ${texts.get(words[0]!)}`);
-      if (words.length && !isHtmlSpace(joined.at(-1)) && shownAfter(p, last) && (had(u.trail) || line.trail)) texts.set(words.at(-1)!, `${texts.get(words.at(-1)!)} `);
+      // A typed space at the edge of a button's content never shows there (a button lays its content out on its own, so
+      // whitespace at its edges is dropped). It is not written there; where the line would touch the text beside the
+      // button, with no whitespace a browser shows between, it is refused, so it is never dropped unsaid.
+      let lead = line.lead;
+      let trail = line.trail;
+      if (lead && first > 0 && isTag(p, p.slots[first - 1]!.end, 'button', false)) {
+        if (shownBefore(p, first) && !spaceBeside(p, first - 1, 'before')) problems.push(`Line ${i + 1}: a space at the start of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text before the button; leave the space out.`);
+        lead = undefined;
+      }
+      if (trail && isTag(p, p.slots[last]!.end, 'button', true)) {
+        if (shownAfter(p, last) && !spaceBeside(p, last + 1, 'after')) problems.push(`Line ${i + 1}: a space at the end of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text after the button; leave the space out.`);
+        trail = undefined;
+      }
+      if (words.length && !isHtmlSpace(joined[0]) && shownBefore(p, first) && (had(u.lead) || lead)) texts.set(words[0]!, ` ${texts.get(words[0]!)}`);
+      if (words.length && !isHtmlSpace(joined.at(-1)) && shownAfter(p, last) && (had(u.trail) || trail)) texts.set(words.at(-1)!, `${texts.get(words.at(-1)!)} `);
     }
     for (const [s, t] of texts) newText.set(s, t);
   });

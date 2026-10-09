@@ -952,6 +952,19 @@ describe('a space the person types at a changed line\'s edge parts it from text 
     expect(readPageEdit(p, 'T\nHello\n world')).toEqual({ ok: true, lines: [{ changed: false }, { changed: false }, { changed: false }] });
   });
 
+  it('at the edge of a button\'s content a space never shows: one typed there is refused where the line touches the text beside the button', () => {
+    expect(run('<p><button type="button">Order.</button>$20: Order</p>', () => 'T\n(Order. \n$20: Order')).toMatchObject({
+      placeProblems: ['Line 2: a space at the end of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text after the button; leave the space out.'],
+    });
+    expect(run('<p>late!<button type="button"> caf&eacute;.</button></p>', () => 'T\nlate!\n (café.')).toMatchObject({
+      placeProblems: ['Line 3: a space at the start of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text before the button; leave the space out.'],
+    });
+    // Where whitespace outside the button already parts them, the typed space is satisfied: nothing is added, nothing refused.
+    expect(run('<p>Pay <button type="button">Now</button></p>', () => 'T\nPay\n Later')).toMatchObject(clean('<p>Pay <button type="button">Later</button></p>'));
+    // Inside a button, between two of its lines, a space shows as anywhere else.
+    expect(run('<p><button type="button"><b>Buy</b><font>now</font></button></p>', () => 'T\nBuy\n later')).toMatchObject(clean('<p><button type="button"><b>Buy</b><font> later</font></button></p>'));
+  });
+
   it('the verifier holds placement to it: the person\'s edge space must part the line from the text beside it', () => {
     expect(verifyBad(pageOf('<p><b>Hello</b><font>world</font></p>'), pageOf('<p><b>Hello</b><font>there</font></p>'), 'T\nHello\n there')).toEqual([
       'The page, read again, runs words together that a browser showed apart: it shows "Hellothere".',

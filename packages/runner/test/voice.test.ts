@@ -630,6 +630,13 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
       const out = await (await open(page(html))).answer(answer);
       expect(await shows(out.artifactId!), html).toBe(shown);
     }
+    // At a button's content edge a space never shows: one typed there is refused where the button touches the text beside
+    // it (the person is told to leave it out), and needs nothing where a space outside the button already parts them.
+    expect(await rejected((await open(page('<p><button type="button">Order.</button>$20: Order</p>'))).answer('T\n(Order. \n$20: Order'))).toBe(
+      'Line 2: a space at the end of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text after the button; leave the space out. As first offered, line 2 read "Order.".',
+    );
+    const out = await (await open(page('<p>Pay <button type="button">Now</button></p>'))).answer('T\nPay\n Later');
+    expect(await shows(out.artifactId!)).toBe('Pay Later');
   });
 
   it('an emptied element holding a table cell is kept, so deleting its words is written, not refused for another number of cells (r8)', async () => {
