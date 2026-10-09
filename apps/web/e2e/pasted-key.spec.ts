@@ -36,6 +36,13 @@ test('a provider key pasted on Start is refused before anything is stored, namin
   // Nothing was kept: still on Start, and no intake was stored.
   expect(new URL(page.url()).pathname).toBe('/');
   expect(intakes(key)).toEqual({ all: before.all, holding: 0 });
+  // Nor in this tab: the paste stays in the field, to be edited, but Start no longer keeps it for "Change" (ADR-0088).
+  const keptInTab = () => page.evaluate(() => Object.entries(window.sessionStorage).filter(([k]) => k.startsWith('byway.start')).map(([, v]) => v).join('\n'));
+  await expect(page.getByLabel('What are you working on?')).toHaveValue(new RegExp(`My Anthropic key is ${key}`));
+  expect(await keptInTab()).not.toContain(key);
+  // Once the key is taken out, what is left is kept again, as any draft is.
+  await page.getByLabel('What are you working on?').fill('A landing page for my pottery studio.');
+  await expect.poll(keptInTab).toContain('A landing page for my pottery studio.');
   expect(keys.pastes()).toBe(1);
   expect(keys.leaks).toEqual([]);
 });

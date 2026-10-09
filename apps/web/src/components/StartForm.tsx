@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { recipeTitle } from '../view/vocabulary.ts';
-import { post } from './api.ts';
-import { loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft } from './startDraft.ts';
+import { HELD_KEY_REFUSAL } from '../view/refusals.ts';
+import { ApiError, post } from './api.ts';
+import { clearStartDraft, loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft } from './startDraft.ts';
 import { useTechnicalNames } from './TechNames.tsx';
 import { useShortcuts } from './useShortcuts.ts';
 import { focusAfterRemoval } from '../view/focus.ts';
@@ -97,6 +98,9 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       // A library choice travels in the address, so the Recommendation screen shows that recipe instead of choosing.
       router.push(recipe ? `/recommend/${intakeId}?recipe=${encodeURIComponent(recipe.recipeId)}` : `/recommend/${intakeId}`);
     } catch (err) {
+      // A refused key (ADR-0088): the field keeps the text so the key can be taken out, but the tab's session no longer
+      // does. Anything typed next is kept again, as usual.
+      if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) clearStartDraft();
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
       setBusy(false);
     }

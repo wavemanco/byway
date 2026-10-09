@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { findHeldKey } from '@byway/gateway';
 import { parseBody } from '../src/server/http.ts';
+import { HELD_KEY_REFUSAL } from '../src/view/refusals.ts';
 import { ProblemInput, StartInput } from '../src/server/schemas.ts';
 import { stringsIn } from '../src/services/strings-in.ts';
 
@@ -34,6 +35,16 @@ describe('parseBody refuses a body holding a held provider key', () => {
     expect(error).toContain(name);
     expect(error).not.toContain(ANTHROPIC);
     expect(error).not.toContain(FAL_SECRET);
+  });
+
+  it('marks the refusal as a held-key refusal, so Start can stop keeping the paste in the tab (ADR-0088)', async () => {
+    const result = await parseBody(post({ text: `Use my key ${ANTHROPIC} for this` }), ProblemInput, heldKeyIn);
+    if (result.ok) throw new Error('expected a refusal');
+    expect(await result.response.json()).toMatchObject({ code: HELD_KEY_REFUSAL });
+    // Other refusals carry no code.
+    const other = await parseBody(post({ text: ' ' }), ProblemInput, heldKeyIn);
+    if (other.ok) throw new Error('expected a refusal');
+    expect(await other.response.json()).toEqual({ error: 'Describe what you are working on.' });
   });
 
   it('accepts text that only looks like a key, and returns the parsed body', async () => {

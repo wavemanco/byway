@@ -1,12 +1,14 @@
 /** Small helpers for route handlers: JSON responses, body parsing, and plain-language errors. */
 import type { z } from 'zod';
+import { HELD_KEY_REFUSAL } from '../view/refusals.ts';
 
 export function json(data: unknown, status = 200): Response {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-export function fail(status: number, message: string): Response {
-  return json({ error: message }, status);
+/** A refusal: its message for people, and, for the few a screen acts on, a code (view/refusals.ts). */
+export function fail(status: number, message: string, code?: string): Response {
+  return json(code === undefined ? { error: message } : { error: message, code }, status);
 }
 
 type Parsed<T> = { ok: true; data: T } | { ok: false; response: Response };
@@ -36,7 +38,7 @@ export async function parseBody<T extends z.ZodType>(request: Request, schema: T
     return { ok: false, response: fail(400, message) };
   }
   const held = heldKeyIn(parsed.data);
-  if (held) return { ok: false, response: fail(400, `This text contains your ${held}. Remove it and try again — byway never stores or sends its keys.`) };
+  if (held) return { ok: false, response: fail(400, `This text contains your ${held}. Remove it and try again — byway never stores or sends its keys.`, HELD_KEY_REFUSAL) };
   return { ok: true, data: parsed.data };
 }
 

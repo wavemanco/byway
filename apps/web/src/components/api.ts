@@ -2,6 +2,12 @@
 
 export class ApiError extends Error {
   override name = 'ApiError';
+  /** The server's refusal code, for the refusals a screen acts on (view/refusals.ts). */
+  readonly code: string | undefined;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Promise<T> {
@@ -11,16 +17,16 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   } catch {
     throw new ApiError('byway is not reachable. Check that it is still running, then try again.');
   }
-  let data: { error?: string };
+  let data: { error?: string; code?: string };
   try {
-    data = (await res.json()) as { error?: string };
+    data = (await res.json()) as { error?: string; code?: string };
   } catch {
     // A successful status whose body cannot be read is a failure, never an empty object standing in for the result:
     // the Recommendation commands apply what comes back directly (ADR-0082).
     if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
     data = {};
   }
-  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`);
+  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, typeof data.code === 'string' ? data.code : undefined);
   return data as T;
 }
 

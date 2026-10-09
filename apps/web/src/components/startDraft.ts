@@ -59,7 +59,10 @@ export function loadStartAttachments(): KeptAttachment[] {
   return attachmentsSlot().load() ?? [];
 }
 
-/** After a run starts: the problem and its attachments went with it. */
+/**
+ * After a run starts: the problem and its attachments went with it. Also after Start was refused for holding a provider
+ * key (ADR-0088): the tab's session must not keep a key byway refused, though the form still shows it to be edited.
+ */
 export function clearStartDraft(): void {
   try {
     sessionStorage.removeItem(KEY);
