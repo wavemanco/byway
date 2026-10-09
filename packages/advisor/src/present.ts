@@ -90,9 +90,10 @@ export function stepLabel(n: Unit, near?: Pick_<Around, 'reactedTo'>): string {
 
 /**
  * Every sentence a composed step can be explained with, in one place: product copy like the catalog's, so it says what
- * a step does, never what it achieves (CR11, CRED-1), and the web app's claims guard scans this list. The swapping
- * cliché sweep says the person chooses which finds are swapped (convention C2) only where the interpreter asks them
- * (asksSwaps); otherwise the swap step applies every find, and the sentence says so.
+ * a step does, never what it achieves (CR11, CRED-1), and the web app's claims guard scans this list. A cliché sweep
+ * says the person chooses which finds are swapped (convention C2) exactly where the interpreter asks them (asksSwaps,
+ * at every place the sweep sits); that the AI swaps every one where a writer in its stage applies its finds and no one
+ * is asked; and neither anywhere else.
  *
  * A sentence that says what other steps do (who wrote the rest, that nothing changes the script later, that nothing is
  * deleted, that you react to the directions) is used only where the recipe establishes it (`Around`): by its order,
@@ -225,11 +226,14 @@ function voiceExplainer(n: Step, medium: Recipe['medium'], near: Around): string
   return aiRest ? E.voiceKeyLinesAiRest : E.voiceKeyLines;
 }
 
+/** Where the run asks the person which of a cliché sweep's finds to swap: at every place the sweep sits, at some, or at none. */
+type Asks = 'every' | 'some' | 'none';
+
 /**
- * One plain sentence on what a shown step does, from its lead node; `applies` when it also applies its own findings,
- * `asks` when the person chooses which of a cliché sweep's finds are applied.
+ * One plain sentence on what a shown step does, from its lead node; `applies` when a writer shown with it applies its
+ * findings, `asks` where the person chooses which of a cliché sweep's finds are applied.
  */
-function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['medium'], near: Around): string {
+function explainer(n: Unit, applies: boolean, asks: Asks, medium: Recipe['medium'], near: Around): string {
   const E = COMPOSED_EXPLAINERS;
   if (n.op === 'pick') return n.mode === 'H' ? E.pickYours : n.mode === 'R' ? E.pickRandom : E.pickAi;
   if (n.actor === 'human') return yoursExplainer(n, applies, medium, near);
@@ -253,8 +257,10 @@ function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['med
     case 'TELLS':
       // A machine keep-or-revert is not your turn (PR7.2 refuses one in a composed recipe).
       if (n.role === 'tells-compare') return E.other;
-      if (!applies) return near.notesOnly.has(n) ? E.tellsFlagsOnly : E.tells;
-      return asks ? E.tellsApplies : E.tellsAppliesAll;
+      // Asked: the swap step after it applies the finds you chose. "Every one" only where no one is ever asked.
+      if (asks === 'every') return E.tellsApplies;
+      if (!applies || asks === 'some') return near.notesOnly.has(n) ? E.tellsFlagsOnly : E.tells;
+      return E.tellsAppliesAll;
   }
   switch (n.role) {
     case 'build':
@@ -396,19 +402,26 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
     if (first !== undefined) owner.set(n.id, first);
   });
 
-  // The cliché sweeps that ask you which finds to swap: the interpreter reads the steps after each in its own seq.
-  const asking = new Set<Node>();
+  // The cliché sweeps that ask you which finds to swap: the interpreter reads the steps after each in its own seq. A
+  // step object may sit in more than one place, and asks at every one, some or none of them.
+  const places = new Map<Node, number>();
+  const asked = new Map<Node, number>();
   walk(recipe, (n) => {
+    if (n.op === 'step') places.set(n, (places.get(n) ?? 0) + 1);
     if (n.op !== 'seq') return;
     n.steps.forEach((c, i) => {
-      if (asksSwaps(c, n.steps.slice(i + 1))) asking.add(c);
+      if (asksSwaps(c, n.steps.slice(i + 1))) asked.set(c, (asked.get(c) ?? 0) + 1);
     });
   });
+  const asking = (n: Node): Asks => {
+    const k = asked.get(n) ?? 0;
+    return k === 0 ? 'none' : k === places.get(n) ? 'every' : 'some';
+  };
 
   const shown = groups.map(({ stage, units }) => {
     const lead = leadOf(units);
     const applies = units.some((u) => u !== lead && appliesFindings(u, near));
-    return { stage: STAGE_NAMES[stage], label: stepLabel(lead, near), explainer: explainer(lead, applies, asking.has(lead), recipe.medium, near), who: whoDoes(units), stepIds: [] as string[] };
+    return { stage: STAGE_NAMES[stage], label: stepLabel(lead, near), explainer: explainer(lead, applies, asking(lead), recipe.medium, near), who: whoDoes(units), stepIds: [] as string[] };
   });
   for (const [id, i] of [...owner].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0))) shown[i]!.stepIds.push(id);
 

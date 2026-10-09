@@ -480,6 +480,17 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(explained(asComposed(c4c), 'voice')).toBe(E.voiceKeyLines);
   });
 
+  it('a cliché sweep used twice, asked at one place and not the other, says neither that you choose nor that the AI swaps every one', () => {
+    const c1c = structuredClone(c1) as Recipe;
+    const d3 = c1c.stages.find((s) => s.stage === 'D3')!.body as Extract<Node, { op: 'seq' }>;
+    const sweep = d3.steps.find((s) => s.op === 'step' && s.role === 'tells-sweep')!;
+    d3.steps = [...d3.steps, sweep];
+    // Each place is shown on its own; the first, with its swap step, is asked, the second (after the last check) not.
+    const places = presentComposed(asComposed(c1c), COPY).stages.flatMap((st) => st.steps).filter((x) => x.label === 'Cliché sweep');
+    expect(places.map((x) => x.explainer)).toEqual([E.tells, E.tells]);
+    expect(explained(asComposed(c1), 'tells-sweep')).toBe(E.tellsApplies);
+  });
+
   it('the plain sentences make none of those claims', () => {
     for (const text of [E.voiceKeyLines, E.voiceClaims, E.voiceScript, E.cut, E.tells, E.visionAi]) expect(text).toMatch(/\.$/);
     expect(E.voiceKeyLines).not.toMatch(/the rest/);
