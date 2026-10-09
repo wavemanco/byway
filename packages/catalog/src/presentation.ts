@@ -202,7 +202,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Custom imagery',
-        explainer: 'If you want one, the AI makes a header image for the piece. Charts computed from your data are not made in this version.',
+        explainer: 'If you want one, the AI makes a header image for the piece, unless it judges the piece better without one. Charts computed from your data are not made in this version.',
         covers: ['asset'],
       },
       trimByYou('Your turn: list what the piece could lose, and the AI removes it.'),

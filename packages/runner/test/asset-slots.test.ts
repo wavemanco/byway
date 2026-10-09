@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
-import { CATALOG } from '@byway/catalog';
+import { CATALOG, stepPresentation } from '@byway/catalog';
 import { GatewayError, type CompletionRequest, type CompletionResult, type Gateway, type ImageRequest, type ImageResult, type Medium, type VideoRequest } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
@@ -319,6 +319,14 @@ describe('how many images a prose step may make is the prompt’s to say', () =>
     expect((result as AssetResult).artifactId).toBeUndefined();
     expect(skipped).toEqual([undefined]);
     expect(notes).toEqual([NO_IMAGE_CHOSEN_NOTE]);
+  });
+
+  it('C3’s explainer promises no image its prompt may decline (round 2; D3 pending, so the copy says what runs today)', () => {
+    const step = spec('c3', 'asset');
+    expect(library.info(step.prompt!, 'prose').images).toEqual({ min: 0, max: 1 });
+    expect(stepPresentation('c3', 'asset')?.explainer).toBe(
+      'If you want one, the AI makes a header image for the piece, unless it judges the piece better without one. Charts computed from your data are not made in this version.',
+    );
   });
 
   it('C3 asks for one image at most', async () => {
