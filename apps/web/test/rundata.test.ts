@@ -27,7 +27,7 @@ const data = (over: Partial<RunData> & { events?: RunEvent[]; status?: RunRecord
 
 describe('polling the Run screen', () => {
   it('appends only new events, in order, and takes the latest run record', () => {
-    const prev = data({ events: [event(1), event(2)], artifacts: { a: { mediaType: 'text/markdown', text: 'A' } } });
+    const prev = data({ events: [event(1), event(2)], artifacts: { a: { mediaType: 'text/markdown', excerpt: 'A', complete: true, bytes: 1 } } });
     const next = data({ events: [event(2), event(4), event(3)], status: 'paused', artifacts: { b: { mediaType: 'text/html' } } });
     const merged = mergeRunData(prev, next);
     expect(merged.view.events.map((e) => e.seq)).toEqual([1, 2, 3, 4]);

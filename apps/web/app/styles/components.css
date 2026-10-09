@@ -388,6 +388,17 @@ code {
   background: var(--bg-sunken);
 }
 
+/* A large preview that shows only the opening of a text while the rest loads (F13): it says so, above the text. */
+.preview-partial-note {
+  margin: 0 0 var(--s-3);
+  padding: var(--s-2) var(--s-3);
+}
+
+.preview-loading {
+  margin: 0;
+  padding: var(--s-3) 0;
+}
+
 .preview-raw,
 .diff-raw {
   margin: 0;

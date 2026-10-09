@@ -5,44 +5,16 @@
  * (examples you admire, Start attachments) survives a detour. Memo Polish (C4) is used because it asks every kind of
  * text question early.
  */
-import { expect, test, type APIResponse, type Locator, type Page, type Route } from '@playwright/test';
+import { expect, test, type APIResponse, type Page, type Route } from '@playwright/test';
 import type { CheckpointKind } from '@byway/contracts';
-import { answerTurn, answerUntilDone, describeProblem, nextTurn, startRecommended, timelineLabels } from './flow.ts';
+import { answerField as field, answerTurn, answerUntilDone, describeProblem, nextTurn, startRecommended, timelineLabels, turnAfter, untilTurn, type Turn } from './flow.ts';
 
 const MEMO = 'Tighten my quarterly status memo for the leadership team before Friday';
 const NOT_ANSWERING = 'byway is not answering';
 
-interface Turn {
-  turn: Locator;
-  id: string;
-  kind: CheckpointKind;
-}
-
 async function startMemo(page: Page): Promise<string> {
   await describeProblem(page, MEMO);
   return startRecommended(page, 'Memo Polish');
-}
-
-/** The next "Your turn" other than `after`; fails if the run ends first. */
-async function turnAfter(page: Page, after?: string): Promise<Turn> {
-  const outcome = await nextTurn(page, after, 120_000);
-  if ('done' in outcome) throw new Error(`The run ended before another question${after ? ` after ${after}` : ''}.`);
-  if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
-  const id = (await outcome.turn.getAttribute('data-checkpoint')) ?? '';
-  const kind = (await outcome.turn.getAttribute('data-kind')) as CheckpointKind;
-  return { turn: page.locator(`section.turn[data-checkpoint="${id}"]`), id, kind };
-}
-
-/** Answers questions as they come until one of `kinds` is open. */
-async function untilTurn(page: Page, kinds: readonly CheckpointKind[], after?: string): Promise<Turn> {
-  let last = after;
-  for (let i = 0; i < 30; i++) {
-    const t = await turnAfter(page, last);
-    if (kinds.includes(t.kind)) return t;
-    await answerTurn(page, t.turn, t.kind);
-    last = t.id;
-  }
-  throw new Error(`No ${kinds.join(' or ')} question came.`);
 }
 
 /** Checks for `ms` that `ok` stays true (an assertion that something never happens in that time). */
@@ -55,11 +27,6 @@ async function staysTrue(page: Page, ms: number, ok: () => Promise<boolean>, mes
 }
 
 const draftKeys = (page: Page) => page.evaluate(() => Object.keys(window.sessionStorage).filter((k) => k.startsWith('byway.draft.')));
-
-/** The text field a text question is answered in: the editor, the reaction field, or the list's first item. */
-function field(t: Turn): Locator {
-  return t.kind === 'directive' ? t.turn.getByRole('textbox', { name: 'Item 1', exact: true }) : t.turn.locator('textarea, .onscreen-copy input').first();
-}
 
 /** Open an earlier step from the timeline, then go back to the question with the button. */
 async function inspectEarlierStep(page: Page): Promise<void> {
@@ -255,9 +222,8 @@ async function roundTripEachKind(page: Page): Promise<Set<CheckpointKind>> {
     const outcome = await nextTurn(page, after, 120_000);
     if ('done' in outcome) return checked;
     if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
-    const id = (await outcome.turn.getAttribute('data-checkpoint')) ?? '';
-    const kind = (await outcome.turn.getAttribute('data-kind')) as CheckpointKind;
-    const t: Turn = { turn: page.locator(`section.turn[data-checkpoint="${id}"]`), id, kind };
+    const { id, kind } = outcome;
+    const t: Turn = { turn: outcome.turn, id, kind };
     after = id;
     if (checked.has(kind)) {
       await answerTurn(page, t.turn, kind);

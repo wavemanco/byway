@@ -6,12 +6,13 @@ import { answerable } from '../../view/drafts.ts';
 import { controlPendingLabel, runStatusLabel, type ControlAction } from '../../view/labels.ts';
 import { runMeter } from '../../view/meter.ts';
 import type { Connection } from '../../view/refresh.ts';
+import { HELD_KEY_REFUSAL } from '../../view/refusals.ts';
 import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
 import type { StepIndex } from '../../view/steps.ts';
 import { buildTimeline, currentStep } from '../../view/timeline.ts';
 import { recipeTitle } from '../../view/vocabulary.ts';
-import { get, post } from '../api.ts';
+import { ApiError, get, post } from '../api.ts';
 import { EvidenceLabel } from '../EvidenceLabel.tsx';
 import { Route } from '../Route.tsx';
 import { useTechnicalNames } from '../TechNames.tsx';
@@ -128,7 +129,9 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
     try {
       await post(`/api/runs/${encodeURIComponent(runId)}/checkpoints/${encodeURIComponent(checkpointId)}`, answer);
     } catch (err) {
-      // Not accepted: the draft is untouched, so the person can send it again.
+      // Not accepted: the draft is untouched, so the person can send it again. If it was refused for holding one of
+      // byway's provider keys (ADR-0088), the panel keeps it to be edited, but the tab stops keeping it until it is.
+      if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL && cp) drafts.withhold(cp, resolution);
       setError({ checkpointId, message: err instanceof Error ? err.message : 'That answer was not sent. Try again.' });
       setBusy(false);
       return;

@@ -24,16 +24,16 @@ describe('generated pages in the app', () => {
   it('run no scripts unless the person turned them on: a page could otherwise navigate itself and carry data out', () => {
     expect(frameSandbox(false)).toBe('');
     expect(frameSandbox(true)).toBe('allow-scripts');
-    expect(html(createElement(ScaledPage, { src: `/artifacts/${ID}`, title: 'Draft A' }))).toContain('sandbox=""');
-    expect(html(createElement(ScaledPage, { src: `/artifacts/${ID}`, title: 'Draft A', scripts: true }))).toContain('sandbox="allow-scripts"');
+    expect(html(createElement(ScaledPage, { id: ID, title: 'Draft A' }))).toContain('sandbox=""');
+    expect(html(createElement(ScaledPage, { id: ID, title: 'Draft A', scripts: true }))).toContain('sandbox="allow-scripts"');
     // Never same-origin, scripts or not.
-    expect(html(createElement(ScaledPage, { src: `/artifacts/${ID}`, title: 'Draft A', scripts: true }))).not.toContain('allow-same-origin');
+    expect(html(createElement(ScaledPage, { id: ID, title: 'Draft A', scripts: true }))).not.toContain('allow-same-origin');
   });
 
   it('show thumbnails as pictures with scripts off, and the finished page with scripts off until asked', () => {
     const thumb = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Draft A', size: 'thumb' }));
     expect(thumb).toContain('sandbox=""');
-    const result = html(createElement(PageResult, { src: `/artifacts/${ID}`, title: 'My page' }));
+    const result = html(createElement(PageResult, { id: ID, title: 'My page' }));
     expect(result).toContain('sandbox=""');
     expect(result).toMatch(/aria-pressed="false"[^>]*>[^<]*Run the page’s scripts/);
     const large = html(createElement(ArtifactPreview, { id: ID, info: { mediaType: 'text/html' }, title: 'Draft A', size: 'large' }));

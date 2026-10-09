@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CheckpointKind, CheckpointRecord } from '@byway/contracts';
 import { createDraftStore } from '../src/components/run/draftStore.ts';
-import type { CheckpointDraft } from '../src/view/checkpoints.ts';
+import { toResolution, type CheckpointDraft } from '../src/view/checkpoints.ts';
 
 class StubStorage {
   readonly map = new Map<string, string>();
@@ -265,5 +265,91 @@ describe('the draft store', () => {
     store.settle([a], 'waiting');
     expect(store.isSent(a.id)).toBe(false);
     expect(store.get(a).text).toBe('mine');
+  });
+});
+
+/**
+ * An answer byway refused because it held one of byway's provider keys (ADR-0088): the tab stops keeping that question's
+ * draft, though the panel still shows it to be edited, and keeps it again once the answer it would send changes. The
+ * run's other drafts are untouched. Before, the refused words stayed in sessionStorage, key and all.
+ */
+describe('an answer refused for holding a provider key (ADR-0088)', () => {
+  const HELD = 'Warmer, please. My key is sk-ant-unit-test-not-a-key.';
+
+  it('is no longer kept in the tab, though the panel still shows it; the run’s other drafts stay kept', () => {
+    const store = make();
+    store.load();
+    const a = cp(1, 'react');
+    const b = cp(2, 'write');
+    store.put(a, draft({ text: HELD }));
+    store.put(b, draft({ text: 'other words' }));
+    vi.advanceTimersByTime(400);
+    expect(storage.map.get(key(a))).toContain(HELD);
+    store.withhold(a, toResolution(a, draft({ text: HELD })));
+    expect(storage.map.has(key(a))).toBe(false);
+    expect(store.get(a).text).toBe(HELD);
+    expect(storage.map.get(key(b))).toContain('other words');
+    // Neither a flush (pagehide, unmount) nor a later timer writes it back.
+    store.flush();
+    vi.advanceTimersByTime(1000);
+    expect(storage.map.has(key(a))).toBe(false);
+  });
+
+  it('a write still pending when the refusal comes never brings it back', () => {
+    const store = make();
+    const a = cp(1, 'react');
+    store.put(a, draft({ text: HELD }));
+    store.withhold(a, toResolution(a, draft({ text: HELD })));
+    vi.advanceTimersByTime(400);
+    store.flush();
+    expect(storage.map.has(key(a))).toBe(false);
+  });
+
+  it('is kept again once the answer it would send changes, and not for a change that sends the same', () => {
+    const store = make();
+    const a = cp(1, 'directive');
+    store.put(a, draft({ items: ['Cut the second paragraph.', HELD] }));
+    store.withhold(a, toResolution(a, draft({ items: ['Cut the second paragraph.', HELD] })));
+    // An empty item added: the answer would still be the refused one.
+    store.put(a, draft({ items: ['Cut the second paragraph.', HELD, ''] }));
+    vi.advanceTimersByTime(400);
+    store.flush();
+    expect(storage.map.has(key(a))).toBe(false);
+    store.put(a, draft({ items: ['Cut the second paragraph.', ''] }));
+    vi.advanceTimersByTime(400);
+    expect(storage.map.get(key(a))).toContain('Cut the second paragraph.');
+    expect(storage.map.get(key(a))).not.toContain('sk-ant-');
+    // Typed back in exactly as refused: not kept again.
+    store.put(a, draft({ items: ['Cut the second paragraph.', HELD] }));
+    vi.advanceTimersByTime(400);
+    expect(storage.map.get(key(a)) ?? '').not.toContain('sk-ant-');
+  });
+
+  it('after a reload the refused answer is gone and the run’s other drafts come back', () => {
+    const first = make();
+    const a = cp(1, 'react');
+    const b = cp(2, 'write');
+    first.put(a, draft({ text: HELD }));
+    first.put(b, draft({ text: 'other words' }));
+    first.flush();
+    first.withhold(a, toResolution(a, draft({ text: HELD })));
+    const second = make();
+    second.load();
+    expect(second.get(a).text).toBe('');
+    expect(second.get(b).text).toBe('other words');
+  });
+
+  it('settling, a send or an unlock while it is refused never writes the refused words', () => {
+    const store = make();
+    const a = cp(1, 'react');
+    store.put(a, draft({ text: HELD }));
+    store.withhold(a, toResolution(a, draft({ text: HELD })));
+    store.settle([a], 'waiting');
+    store.markSent(a);
+    expect(store.isSent(a.id)).toBe(true);
+    store.settle([a], 'waiting');
+    vi.advanceTimersByTime(400);
+    store.flush();
+    expect(storage.map.has(key(a))).toBe(false);
   });
 });

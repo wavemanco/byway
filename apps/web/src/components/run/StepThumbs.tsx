@@ -1,7 +1,5 @@
 'use client';
 
-import { parseUnifiedDiff } from '../../view/diff.ts';
-import { parseOptions } from '../../view/result.ts';
 import { outputKind } from '../../view/run.ts';
 import type { ArtifactInfo } from '../../view/rundata.ts';
 import { excerpt } from '../../view/text.ts';
@@ -11,17 +9,17 @@ import { ScaledPage } from '../ScaledPage.tsx';
 
 const MAX_THUMBS = 4;
 
+/** A row's one line about a text: an option map's titles (from the whole map), or the opening of the text. */
 function textOf(a: TimelineArtifact, artifacts: Record<string, ArtifactInfo>): string {
   const info = artifacts[a.artifactId];
-  const text = info?.text ?? '';
-  if (outputKind(info?.mediaType ?? a.mediaType) === 'data') {
-    const options = parseOptions(text);
-    if (options) return options.map((o) => o.title).join(', ');
-  }
-  return excerpt(text, 120);
+  if (info?.titles) return info.titles.join(', ');
+  return excerpt(info?.excerpt ?? '', 120);
 }
 
-/** A step's outputs at a glance: page and image thumbnails, a text excerpt, or a diff's size. */
+/**
+ * A step's outputs at a glance: page and image thumbnails, a text excerpt, or a diff's size. The size is the server's
+ * count of the whole diff (F13): counted from the excerpt, a long diff would read as a smaller one.
+ */
 export function StepThumbs({ step, artifacts }: { step: TimelineStep; artifacts: Record<string, ArtifactInfo> }) {
   const items = step.artifacts;
   const kindOf = (a: TimelineArtifact) => outputKind(artifacts[a.artifactId]?.mediaType ?? a.mediaType);
@@ -36,7 +34,7 @@ export function StepThumbs({ step, artifacts }: { step: TimelineStep; artifacts:
           {visual.slice(0, MAX_THUMBS).map((a, i) => (
             <li key={`${a.artifactId}-${i}`} className="thumb">
               {kindOf(a) === 'page' ? (
-                <ScaledPage src={artifactUrl(a.artifactId)} title={a.label ?? `Page ${i + 1}`} virtualHeight={900} />
+                <ScaledPage id={a.artifactId} title={a.label ?? `Page ${i + 1}`} virtualHeight={900} />
               ) : kindOf(a) === 'video' ? (
                 <video src={artifactUrl(a.artifactId)} preload="metadata" muted aria-label={a.label ?? `Clip ${i + 1}`} />
               ) : (
@@ -55,14 +53,12 @@ export function StepThumbs({ step, artifacts }: { step: TimelineStep; artifacts:
         <p className="thumb-text">{textOf(textual[0], artifacts) || textual[0].label}</p>
       ) : null}
       {diffs.map((a, i) => {
-        const text = artifacts[a.artifactId]?.text;
-        const files = text ? parseUnifiedDiff(text).files : [];
-        const add = files.reduce((n, f) => n + f.additions, 0);
-        const del = files.reduce((n, f) => n + f.deletions, 0);
+        const stat = artifacts[a.artifactId]?.diffstat;
+        if (!stat) return a.label ? <p key={`${a.artifactId}-${i}`} className="thumb-text thumb-diff">{a.label}</p> : null;
         return (
           <p key={`${a.artifactId}-${i}`} className="thumb-text thumb-diff">
             {a.label ? `${a.label}: ` : ''}
-            {files.length} {files.length === 1 ? 'file' : 'files'}, <span className="diff-plus">+{add}</span> <span className="diff-minus">−{del}</span>
+            {stat.files} {stat.files === 1 ? 'file' : 'files'}, <span className="diff-plus">+{stat.additions}</span> <span className="diff-minus">−{stat.deletions}</span>
           </p>
         );
       })}

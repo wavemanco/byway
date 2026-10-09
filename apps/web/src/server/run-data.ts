@@ -2,15 +2,40 @@
  * What the Run screen polls: the runner's view of the run, plus the media type and a text excerpt of each artifact
  * it shows, so step rows and contact sheets can render drafts without fetching each artifact. Whether the run is
  * paused, its budget and its spend all come from the view itself (the run's status and its `cost` events).
+ *
+ * The excerpt is marked as one (complete, bytes) and never ends in half a character; a diff's size and an option map's
+ * titles are counted here from the whole artifact, so a step row never states a count of the excerpt as the
+ * artifact's (F13, ADR-0086). The whole text itself is never polled: a view that needs it loads it once.
  */
 import type { Services } from '../services/index.ts';
+import { parseUnifiedDiff } from '../view/diff.ts';
 import { ArtifactData, read } from '../view/events.ts';
+import { parseOptions } from '../view/result.ts';
 import type { ArtifactInfo, RunData } from '../view/rundata.ts';
 
 export type { ArtifactInfo, RunData } from '../view/rundata.ts';
 
 const TEXT_TYPES = new Set(['text/markdown', 'text/plain', 'application/json', 'text/x-diff']);
-const EXCERPT_BYTES = 16_000;
+export const EXCERPT_BYTES = 16_000;
+
+/** Facts about the whole artifact that a step row states: a diff's size, an option map's titles. */
+function wholeFacts(mediaType: string, bytes: Uint8Array): Pick<ArtifactInfo, 'diffstat' | 'titles'> {
+  if (mediaType !== 'text/x-diff' && mediaType !== 'application/json') return {};
+  const text = new TextDecoder().decode(bytes);
+  if (mediaType === 'text/x-diff') {
+    const { files } = parseUnifiedDiff(text);
+    return { diffstat: { files: files.length, additions: files.reduce((n, f) => n + f.additions, 0), deletions: files.reduce((n, f) => n + f.deletions, 0) } };
+  }
+  const options = parseOptions(text);
+  return options ? { titles: options.map((o) => o.title) } : {};
+}
+
+/** A text artifact's info: the excerpt, cut on a character boundary (a streaming decode holds back a split character). */
+function textInfo(mediaType: string, bytes: Uint8Array): ArtifactInfo {
+  const complete = bytes.length <= EXCERPT_BYTES;
+  const excerpt = complete ? new TextDecoder().decode(bytes) : new TextDecoder().decode(bytes.subarray(0, EXCERPT_BYTES), { stream: true });
+  return { mediaType, excerpt, complete, bytes: bytes.length, ...wholeFacts(mediaType, bytes) };
+}
 
 export async function artifactInfo(services: Services, ids: Iterable<string>): Promise<Record<string, ArtifactInfo>> {
   const out: Record<string, ArtifactInfo> = {};
@@ -18,7 +43,7 @@ export async function artifactInfo(services: Services, ids: Iterable<string>): P
     if (!(await services.store.artifacts.has(id))) continue;
     const { record, bytes } = await services.store.artifacts.get(id);
     const mediaType = record.mediaType.split(';')[0]?.trim() ?? 'application/octet-stream';
-    out[id] = TEXT_TYPES.has(mediaType) ? { mediaType, text: new TextDecoder().decode(bytes.slice(0, EXCERPT_BYTES)) } : { mediaType };
+    out[id] = TEXT_TYPES.has(mediaType) ? textInfo(mediaType, bytes) : { mediaType };
   }
   return out;
 }

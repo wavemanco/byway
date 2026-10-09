@@ -5,6 +5,7 @@ import {
   formatMinutes,
   formatUsd,
   parseBudgetInput,
+  partShown,
   suggestBudget,
 } from '../src/view/format.ts';
 
@@ -67,5 +68,34 @@ describe('budgets', () => {
     expect(parseBudgetInput('-1')).toBeNull();
     expect(parseBudgetInput('abc')).toBeNull();
     expect(parseBudgetInput('5000')).toBeNull();
+  });
+});
+
+describe('partShown', () => {
+  it('names how much of a text is shown, and of how much, in KB', () => {
+    expect(partShown(16_000, 23_000)).toBe('the first 16 KB of 23 KB');
+    expect(partShown(16_000, 16_500)).toBe('the first 16 KB of 17 KB');
+  });
+
+  it('gives bytes when both sizes round to the same KB, so it never reads as if nothing were missing (F13)', () => {
+    expect(partShown(16_000, 16_113)).toBe('the first 16,000 of 16,113 bytes');
+    expect(partShown(15_999, 16_001)).toBe('the first 15,999 of 16,001 bytes');
+    // Every total a 16,000-byte excerpt can have up to 17 KB: the two sizes shown always differ.
+    for (let total = 16_001; total <= 17_000; total++) {
+      const sizes = /^the first (.+) of (.+)$/.exec(partShown(16_000, total) ?? '');
+      expect(sizes, String(total)).not.toBeNull();
+      const [shown, whole] = [sizes?.[1] ?? '', (sizes?.[2] ?? '').replace(/ bytes$/, '')];
+      expect(shown, String(total)).not.toBe(whole);
+    }
+  });
+
+  it('says only that it is the opening when the whole size is not known', () => {
+    expect(partShown(16_000, undefined)).toBe('the opening');
+  });
+
+  it('is null when nothing is missing: a whole text never gets a partial notice', () => {
+    expect(partShown(16_113, 16_113)).toBeNull();
+    expect(partShown(7, 7)).toBeNull();
+    expect(partShown(16_000, 15_000)).toBeNull();
   });
 });

@@ -5,15 +5,20 @@ import { canSubmit, moveFocus, picksNeeded, toResolution, toggleChoice, type Che
 import { outputKind } from '../../../view/run.ts';
 import type { ArtifactInfo } from '../../../view/rundata.ts';
 import { withoutLeadingTitle } from '../../../view/text.ts';
-import { artifactUrl } from '../../api.ts';
+import { openHref } from '../../api.ts';
 import { ArtifactPreview } from '../../ArtifactPreview.tsx';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { TurnFooter } from './TurnFooter.tsx';
 import type { PanelProps } from './types.ts';
 
-/** A text card shown under its caption need not repeat the caption as its own first heading. */
+const isVisual = (mediaType: string | undefined) => ['page', 'image', 'video'].includes(outputKind(mediaType));
+
+/**
+ * A text card shown under its caption need not repeat the caption as its own first heading. A card is a snippet of
+ * the draft (it clips), so it reads the excerpt; Open shows the whole draft (F13).
+ */
 function cardInfo(info: ArtifactInfo | undefined, label: string): ArtifactInfo | undefined {
-  return info?.text === undefined ? info : { ...info, text: withoutLeadingTitle(info.text, label) };
+  return info?.excerpt === undefined ? info : { ...info, excerpt: withoutLeadingTitle(info.excerpt, label) };
 }
 
 /**
@@ -110,9 +115,11 @@ export function PickPanel({ cp, artifacts, busy, onSubmit, promptId, draft: seed
                     </span>
                   ) : null}
                 </label>
-                {o.artifactId && pages ? (
-                  <a className="sheet-open" href={artifactUrl(o.artifactId)} target="_blank" rel="noopener noreferrer">
-                    Open full size<span className="sr-only">: {o.label}</span>
+                {o.artifactId ? (
+                  // Every draft can be seen whole: a card shows only its opening (F05, F13).
+                  <a className="sheet-open" href={openHref(o.artifactId)} target="_blank" rel="noopener noreferrer">
+                    {isVisual(artifacts[o.artifactId]?.mediaType) ? 'Open full size' : 'Open the whole text'}
+                    <span className="sr-only">: {o.label}</span>
                   </a>
                 ) : null}
               </li>

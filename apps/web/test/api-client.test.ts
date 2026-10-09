@@ -59,4 +59,20 @@ describe('post() and patch()', () => {
     vi.stubGlobal('fetch', async () => response(503, () => Promise.reject(new SyntaxError('empty'))));
     await expect(post('/api/runs', {})).rejects.toThrow('The request failed (503). Try again.');
   });
+
+  it('carry the server’s refusal code, so a screen can tell a held-key refusal from the rest', async () => {
+    vi.stubGlobal('fetch', async () => response(400, async () => ({ error: 'This text contains your ANTHROPIC_API_KEY.', code: 'held-key' })));
+    await expect(post('/api/intakes', {})).rejects.toMatchObject({ name: 'ApiError', code: 'held-key', message: 'This text contains your ANTHROPIC_API_KEY.' });
+    vi.stubGlobal('fetch', async () => response(400, async () => ({ error: 'Describe what you are working on.' })));
+    await expect(post('/api/intakes', {})).rejects.toMatchObject({ code: undefined });
+  });
+
+  it('carry the fields a refusal names, and only a list of strings', async () => {
+    vi.stubGlobal('fetch', async () => response(400, async () => ({ error: 'This text contains your ANTHROPIC_API_KEY.', code: 'held-key', fields: ['attachments'] })));
+    await expect(post('/api/intakes', {})).rejects.toMatchObject({ code: 'held-key', fields: ['attachments'] });
+    for (const fields of [undefined, 'text', [1], null]) {
+      vi.stubGlobal('fetch', async () => response(400, async () => ({ error: 'Refused.', code: 'held-key', fields })));
+      await expect(post('/api/intakes', {})).rejects.toMatchObject({ fields: undefined });
+    }
+  });
 });

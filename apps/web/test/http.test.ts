@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { findHeldKey } from '@byway/gateway';
 import { parseBody } from '../src/server/http.ts';
+import { HELD_KEY_REFUSAL } from '../src/view/refusals.ts';
 import { ProblemInput, StartInput } from '../src/server/schemas.ts';
 import { stringsIn } from '../src/services/strings-in.ts';
 
@@ -34,6 +35,29 @@ describe('parseBody refuses a body holding a held provider key', () => {
     expect(error).toContain(name);
     expect(error).not.toContain(ANTHROPIC);
     expect(error).not.toContain(FAL_SECRET);
+  });
+
+  it('marks the refusal as a held-key refusal, so Start can stop keeping the paste in the tab (ADR-0088)', async () => {
+    const result = await parseBody(post({ text: `Use my key ${ANTHROPIC} for this` }), ProblemInput, heldKeyIn);
+    if (result.ok) throw new Error('expected a refusal');
+    expect(await result.response.json()).toMatchObject({ code: HELD_KEY_REFUSAL });
+    // Other refusals carry no code.
+    const other = await parseBody(post({ text: ' ' }), ProblemInput, heldKeyIn);
+    if (other.ok) throw new Error('expected a refusal');
+    expect(await other.response.json()).toEqual({ error: 'Describe what you are working on.' });
+  });
+
+  it.each([
+    ['the problem text only', { text: `Use my key ${ANTHROPIC} for this`, attachments: [{ name: 'notes', text: 'Spring classes' }] }, ['text']],
+    ['an attachment only', { text: 'A memo', attachments: [{ name: 'notes', text: `config: ${FAL_SECRET}` }] }, ['attachments']],
+    ['both', { text: `Use ${ANTHROPIC}`, attachments: [{ name: ANTHROPIC, text: 'x' }] }, ['text', 'attachments']],
+  ] as const)('names the top-level fields that held a key (%s), so Start stops keeping only those (ADR-0088)', async (_where, body, fields) => {
+    const result = await parseBody(post(body), ProblemInput, heldKeyIn);
+    if (result.ok) throw new Error('expected a refusal');
+    const answer = (await result.response.json()) as { fields?: unknown };
+    expect(answer).toMatchObject({ code: HELD_KEY_REFUSAL, fields });
+    expect(JSON.stringify(answer)).not.toContain(ANTHROPIC);
+    expect(JSON.stringify(answer)).not.toContain(FAL_SECRET);
   });
 
   it('accepts text that only looks like a key, and returns the parsed body', async () => {

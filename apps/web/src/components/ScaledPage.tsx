@@ -2,9 +2,11 @@
 
 import { useLayoutEffect, useRef, useState } from 'react';
 import { frameSandbox } from '../view/pages.ts';
+import { pageFrameUrl } from './api.ts';
 
 interface ScaledPageProps {
-  src: string;
+  /** The page's artifact id: the frame's address and its sandbox both follow `scripts` (pageFrameUrl, frameSandbox). */
+  id: string;
   title: string;
   /** The width the page is laid out at before scaling (a desktop viewport by default). */
   virtualWidth?: number;
@@ -19,10 +21,11 @@ interface ScaledPageProps {
  * A generated page shown at desktop width, scaled to fit its box, in a sandboxed iframe without the app's origin (no
  * allow-same-origin), so the page cannot reach byway or its data. Its scripts run only when `scripts` is set: a
  * page's CSP blocks every request but one, navigating itself, and with scripts it can do that the moment it is
- * shown, carrying what it holds in the address (SEC-4). So `scripts` comes from a per-page switch, never a setting. A thumbnail is a picture: it takes no pointer events or
- * focus, and shows no scrollbars.
+ * shown, carrying what it holds in the address (SEC-4). So `scripts` comes from a per-page switch, never a setting, and
+ * the same switch picks the address: the server grants scripts only to a frame that asks with `?scripts=1` (F05). A
+ * thumbnail is a picture: it takes no pointer events or focus, and shows no scrollbars.
  */
-export function ScaledPage({ src, title, virtualWidth = 1280, virtualHeight = 800, interactive = false, scripts = false }: ScaledPageProps) {
+export function ScaledPage({ id, title, virtualWidth = 1280, virtualHeight = 800, interactive = false, scripts = false }: ScaledPageProps) {
   const box = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.25);
 
@@ -41,7 +44,7 @@ export function ScaledPage({ src, title, virtualWidth = 1280, virtualHeight = 80
       <iframe
         // A sandbox applies when a frame loads, so turning scripts on or off loads the page again.
         key={scripts ? 'scripts' : 'static'}
-        src={src}
+        src={pageFrameUrl(id, scripts)}
         title={title}
         sandbox={frameSandbox(scripts)}
         referrerPolicy="no-referrer"

@@ -8,7 +8,8 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
 import { focusAfterRemoval } from '../view/focus.ts';
 import { MAX_REF_IMAGE_BYTES, MAX_REF_TEXT, MAX_REFS, REF_IMAGE_TYPES, REFS_NOTE, refsStatus, type RefImageType } from '../view/refs.ts';
-import { artifactUrl, post } from './api.ts';
+import { HELD_KEY_REFUSAL } from '../view/refusals.ts';
+import { ApiError, artifactUrl, post } from './api.ts';
 
 export type ExampleEntry = { key: number; kind: 'text'; text: string } | { key: number; kind: 'image'; name: string; artifactId: string };
 
@@ -17,12 +18,23 @@ export function exampleCount(entries: ExampleEntry[]): number {
   return entries.filter((e) => e.kind === 'image' || e.text.trim().length > 0).length;
 }
 
-/** Stores the pasted examples and returns every example's artifact id, in the order you added them. */
-export async function storeExamples(entries: ExampleEntry[]): Promise<string[]> {
+/**
+ * Stores the pasted examples and returns every example's artifact id, in the order you added them. When byway refuses a
+ * pasted example because it holds one of byway's provider keys (ADR-0088), `onHeldKey` is given that example's text, so
+ * the screen stops keeping it in the tab, and the refusal is thrown on; nothing after it is sent.
+ */
+export async function storeExamples(entries: ExampleEntry[], onHeldKey?: (text: string) => void): Promise<string[]> {
   const ids: string[] = [];
   for (const e of entries) {
     if (e.kind === 'image') ids.push(e.artifactId);
-    else if (e.text.trim()) ids.push((await post<{ artifactId: string }>('/api/refs', { text: e.text })).artifactId);
+    else if (e.text.trim()) {
+      try {
+        ids.push((await post<{ artifactId: string }>('/api/refs', { text: e.text })).artifactId);
+      } catch (err) {
+        if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) onHeldKey?.(e.text);
+        throw err;
+      }
+    }
   }
   return ids;
 }
