@@ -668,6 +668,20 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await b.store.artifacts.getText(out2.artifactId!)).toBe(hidden.replace('<p>After</p>', '<p>After all</p>'));
   });
 
+  it('text a stylesheet hides from sight but a browser lays out (a screen-reader-only class) is offered and read as shown (r8, as ADR-0081 states)', async () => {
+    const sr = '<style>.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style>';
+    const html = page(`${sr}<p>Rated 4.5<span class="sr"> out of 5</span> stars</p>`);
+    const q = await open(html);
+    expect(q.offered).toBe('T\nRated 4.5 out of 5 stars');
+    const out = await q.answer('T\nRated 4.8 out of 5 stars');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('4.5', '4.8'));
+    // A word placed where a hidden word was stays hidden from sight: "5" lines up with the hidden "5", so a sighted visitor
+    // sees "Rated by every single baker" while a screen reader reads the line as written. The arbiter reads innerText,
+    // which lays such text out, so it cannot see this.
+    const out2 = await (await open(html)).answer('T\nRated 5 by every single baker');
+    expect(await b.store.artifacts.getText(out2.artifactId!)).toBe(html.replace('<p>Rated 4.5<span class="sr"> out of 5</span> stars</p>', '<p>Rated <span class="sr">5</span> by every single baker</p>'));
+  });
+
   it('a line a style breaks over two screen lines is written, its break kept where the words around it were kept', async () => {
     const html = page('<style>.b{display:block}</style><h1>Fresh <span class="b">bread daily</span></h1>');
     const out = await (await open(html)).answer('T\nWarm bread daily');
