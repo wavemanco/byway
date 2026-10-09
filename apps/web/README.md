@@ -117,10 +117,14 @@ Logic on top of the contracts sits in view code:
   and its control is an `ActionButton`: busy or unavailable, it says so with `aria-disabled` (and `aria-busy`), keeps
   focus and its Tab stop, and a press does nothing (a submit is prevented, so Enter in a field cannot submit either).
   An action that leaves the screen on success holds the guard until the next screen replaces it.
-  `test/guard-disabled.test.ts` fails on any `disabled` attribute of an element in `src/` or `app/` that is not
-  reviewed there with a reason (today: the examples' fieldset while a run starts, "Paste an example" once five are
-  listed, and the Switch's configured-unavailable state). Closing a step opened from the timeline returns focus to its
-  row. `e2e/keyboard.spec.ts` drives these with the keyboard in a real browser; it reads the focused element and the
+  `test/guard-disabled.test.ts` scans the `.ts` and `.tsx` files in `src/` and `app/`, comments left out, for a
+  `disabled` attribute on an intrinsic JSX element (a lower-case tag such as `<button>` or `<fieldset>`, bare or with a
+  value) and for a write through the DOM (`.disabled =`, or `setAttribute` or `toggleAttribute` with `'disabled'`). It
+  fails on any use not reviewed there with a reason (today: the examples' fieldset while a run starts, "Paste an
+  example" once nine examples are listed, and the Switch's configured-unavailable state). It does not see attributes
+  spread in (`{...props}`), `createElement` calls, a component's own `disabled` prop (what the component renders is
+  scanned where that is written), or a focused control that takes itself off the screen. Closing a step opened from
+  the timeline returns focus to its row. `e2e/keyboard.spec.ts` drives these with the keyboard in a real browser; it reads the focused element and the
   browser's accessibility tree, never an audit library, and never audits a generated page as a product check (CR12).
 - Evidence labels are computed by the advisor; `test/guard-claims.test.ts` fails if any app string, recipe
   presentation, prompt template or README claims efficacy.

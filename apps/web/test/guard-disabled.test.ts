@@ -23,7 +23,7 @@ const ALLOWED: { file: string; element: string; reason: string }[] = [
   {
     file: 'apps/web/src/components/Examples.tsx',
     element: 'button',
-    reason: '"Paste an example", disabled once five examples are listed. Pressing it moves focus to the new example’s field, so it is never disabled under focus.',
+    reason: '"Paste an example", disabled once nine examples (MAX_REFS) are listed. Pressing it moves focus to the new example’s field, so it is never disabled under focus.',
   },
   {
     file: 'apps/web/src/components/Switch.tsx',
