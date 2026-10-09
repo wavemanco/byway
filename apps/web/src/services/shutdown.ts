@@ -58,14 +58,16 @@ export function closeServices(holder: Holder = globalThis as unknown as Holder):
 export interface StoppableProcess {
   send?: unknown;
   on(event: 'message', listener: (message: unknown) => void): unknown;
-  on(event: 'disconnect', listener: () => void): unknown;
+  on(event: 'disconnect' | 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
   exit(code: number): void;
 }
 
 /**
- * In a web process byway started with an IPC channel (`next start` from scripts/serve.ts): when byway asks ('stop') or
- * goes away (the channel closes), close the services, then exit. Does nothing without a channel (`next start` run by
- * hand, where Next's own signal handling applies) or where the process already stops itself (STOPPER_KEY).
+ * In a web process byway started with an IPC channel (`next start` from scripts/serve.ts): when byway asks ('stop'), goes
+ * away (the channel closes), or the process is interrupted or terminated (Ctrl+C reaches every process in the console),
+ * close the services, then exit. Next's own signal handler runs too, but waits for requests in flight, and a model call
+ * in flight is one: the services are closed first. Does nothing without a channel (`next start` run by hand, where
+ * Next's own signal handling applies) or where the process already stops itself (STOPPER_KEY).
  */
 export function stopOnRequest(proc: StoppableProcess = process as unknown as StoppableProcess, holder: Holder = globalThis as unknown as Holder): void {
   if (typeof proc.send !== 'function' || holder[STOPPER_KEY] !== undefined) return;
@@ -85,4 +87,6 @@ export function stopOnRequest(proc: StoppableProcess = process as unknown as Sto
     if (message === 'stop') stop();
   });
   proc.on('disconnect', stop);
+  proc.on('SIGINT', stop);
+  proc.on('SIGTERM', stop);
 }

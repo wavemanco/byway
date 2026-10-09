@@ -107,6 +107,18 @@ describe('the web process closes its services when byway stops (follow-up (f))',
     }
   });
 
+  it('stops the same way on Ctrl+C or a terminate signal, which reach the web process too', async () => {
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+      const { host } = hostWithHangingProvider(hanging().adapter);
+      const holder: Record<symbol, unknown> = { [SERVICES_KEY]: Promise.resolve(host) };
+      const proc = fakeProcess();
+      stopOnRequest(proc, holder);
+      proc.emit(signal);
+      await until(() => proc.exited.length > 0);
+      expect(stopping(holder)).toBe(true);
+    }
+  });
+
   it('stops the same way when byway goes away (the channel closes), and only once', async () => {
     const { host } = hostWithHangingProvider(hanging().adapter);
     let closes = 0;
