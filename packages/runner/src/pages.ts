@@ -309,12 +309,16 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   };
 
   const render: PageRenderer['render'] = async (html, resolve, surfaces, renderOpts = {}) => {
-    const wide = surfaces.filter((s) => s !== 'mobile');
-    const shots = [
-      ...(wide.length ? await shoot(html, resolve, 'wide', wide, renderOpts.signal) : []),
-      ...(surfaces.includes('mobile') ? await shoot(html, resolve, 'phone', ['mobile'], renderOpts.signal) : []),
-    ];
-    return surfaces.map((s) => shots.find((x) => x.surface === s)!);
+    try {
+      const wide = surfaces.filter((s) => s !== 'mobile');
+      const shots = [
+        ...(wide.length ? await shoot(html, resolve, 'wide', wide, renderOpts.signal) : []),
+        ...(surfaces.includes('mobile') ? await shoot(html, resolve, 'phone', ['mobile'], renderOpts.signal) : []),
+      ];
+      return surfaces.map((s) => shots.find((x) => x.surface === s)!);
+    } catch (e) {
+      throw drawFailure(e, renderOpts.signal);
+    }
   };
 
   return {
@@ -365,6 +369,27 @@ export async function checkRenderer(): Promise<RendererCheck> {
   } finally {
     await pages.close().catch(() => undefined);
   }
+}
+
+/**
+ * A render's failure as its step sees it. A step failure (the deadline, a Chromium that could not start) and a cancel
+ * (its own reason) pass as they are. Anything else is the renderer failing while it drew the page: a Playwright protocol
+ * error ("Unable to capture screenshot", seen under load while a page opened dialogs), or a page or browser closed
+ * underneath. That reached the step raw, an error the workflow does not know, so Temporal retried it as though it were
+ * transient and the run showed Playwright's own words. It is one plain step failure instead, not retried, like the
+ * deadline: Playwright's message (its method, the protocol command, its call log) stays on the cause.
+ */
+export function drawFailure(err: unknown, signal: AbortSignal | undefined): unknown {
+  if (err instanceof StepError) return err;
+  if (signal?.aborted) return stopped(signal);
+  const first = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
+  const said = first
+    .replace(/^[\w.]+:\s*/, '')
+    .replace(/^Protocol error \([^)]*\):\s*/, '')
+    .trim()
+    .replace(/\.$/, '');
+  const what = /screenshot/i.test(first) ? 'could not take its screenshot' : 'failed while drawing it';
+  return new StepError(`The page could not be drawn: the page renderer ${what}${said ? ` (${said})` : ''}.`, { cause: err });
 }
 
 /** The error a cancelled render ends with: the signal's own reason (Temporal's CancelledFailure) when it has one. */
