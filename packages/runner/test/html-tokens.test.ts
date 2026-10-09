@@ -69,6 +69,14 @@ describe('the page tokenizer (F07)', () => {
     expect(toks('<script>a = "</script>"</script>')).toEqual(['script', 'other:a = "', '/script', 'text:"', '/script']);
   });
 
+  it('the self-closing flag is a "/" right before ">" outside a value, not a value that ends in "/" (r2)', () => {
+    const flag = (h: string) => tokenize(h).filter((t) => t.kind === 'tag').map((t) => `${t.kind === 'tag' && t.name}:${t.kind === 'tag' && !!t.selfClosing}`);
+    expect(flag('<a href=/shop/>Shop</a>')).toEqual(['a:false', 'a:false']);
+    expect(flag('<a title="x/">x</a><br/><img src="a.png" /><i class="icon"/><path d="M0 0"/>')).toEqual(['a:false', 'a:false', 'br:true', 'img:true', 'i:true', 'path:true']);
+    // An svg opened by "<svg width=10/>" is open (the "/" is in the value): CDATA inside it is a CDATA section.
+    expect(toks('<svg width=10/><text><![CDATA[a > b]]></text></svg>')).toEqual(['svg', 'text', 'other:<![CDATA[a > b]]>', '/text', '/svg']);
+  });
+
   it('reads attributes with the same scanner, values decoded', () => {
     expect(attributesOf('<a title="a > b" href="/x?a=1&amp;b=2" hidden data-x=y>')).toEqual([
       { name: 'title', value: 'a > b' },
@@ -82,8 +90,10 @@ describe('the page tokenizer (F07)', () => {
     expect(decodeText('A &#99999999; B &#xD800; C &#x110000; &eacute; &copy 2026 &amp;')).toBe('A � B � C � é © 2026 &');
   });
 
-  it('the C1 demo page tokenizes exactly as before', () => {
+  it('the C1 demo page tokenizes exactly as before (the same tokens; the flags are new)', () => {
     const html = demoPage();
-    expect(tokenize(html)).toEqual(legacyTokenize(html));
+    const bare = (ts: Token[]) => ts.map((t) => (t.kind === 'tag' ? { kind: t.kind, raw: t.raw, name: t.name, closing: t.closing } : t));
+    expect(bare(tokenize(html))).toEqual(legacyTokenize(html));
+    expect(tokenize(html).filter((t) => t.kind === 'tag' && t.selfClosing).map((t) => t.raw)).toEqual([...html.matchAll(/<[a-z][^<>]*\/>/gi)].map((m) => m[0]));
   });
 });

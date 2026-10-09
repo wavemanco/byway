@@ -17,7 +17,13 @@
  */
 import { parseEntities } from 'parse-entities';
 
-export type Token = { kind: 'tag'; raw: string; name: string; closing: boolean } | { kind: 'text'; raw: string } | { kind: 'other'; raw: string };
+/**
+ * A tag's `selfClosing` is WHATWG's self-closing flag: a "/" right before the ">", outside any value (so `href=/shop/`
+ * does not set it). `foreign` marks a tag read inside an open <svg> or <math>. Readers decide what the flag does:
+ * browsers honour it on void elements, on <svg> and <math>, and inside them, and ignore it on other HTML elements.
+ * Both are absent rather than false, so token lists compare as before.
+ */
+export type Token = { kind: 'tag'; raw: string; name: string; closing: boolean; selfClosing?: true; foreign?: true } | { kind: 'text'; raw: string } | { kind: 'other'; raw: string };
 
 /** Opaque up to their end tag: raw text, or RCDATA the deck does not offer (textarea's default value). */
 const RAW_TEXT = new Set(['script', 'style', 'noscript', 'template', 'textarea', 'iframe', 'xmp', 'noembed', 'noframes']);
@@ -48,43 +54,47 @@ export interface Attribute {
 }
 
 /**
- * Walk a tag from its name at `i`: the index just past the ">" that ends it (or -1 when the input ends inside the
- * tag), and its attributes. The one scanner for tag ends and attribute values.
+ * Walk a tag from its name at `i`: the index just past the ">" that ends it (`end`, or -1 when the input ends inside
+ * the tag), whether its self-closing flag is set, and its attributes. The one scanner for tag ends and attribute
+ * values.
  */
-function scanTag(h: string, i: number, attrs?: Attribute[]): number {
+function scanTag(h: string, i: number, attrs?: Attribute[]): { end: number; selfClosing: boolean } {
+  const cut = { end: -1, selfClosing: false }; // the input ends inside the tag
   let k = i;
   while (k < h.length && !isHtmlSpace(h[k]) && h[k] !== '/' && h[k] !== '>') k++; // tag name
   for (;;) {
+    const from = k;
     while (k < h.length && (isHtmlSpace(h[k]) || h[k] === '/')) k++; // before attribute name (and a self-closing "/")
-    if (k >= h.length) return -1;
-    if (h[k] === '>') return k + 1;
+    if (k >= h.length) return cut;
+    // The flag is set only by a "/" this state read itself, right before ">": never one that ended a value.
+    if (h[k] === '>') return { end: k + 1, selfClosing: k > from && h[k - 1] === '/' };
     const nameAt = k;
     k++; // an attribute name's first character may be anything, "=" and quotes included
     while (k < h.length && !isHtmlSpace(h[k]) && h[k] !== '/' && h[k] !== '>' && h[k] !== '=') k++;
     const name = h.slice(nameAt, k).toLowerCase();
     while (k < h.length && isHtmlSpace(h[k])) k++; // after attribute name
-    if (k >= h.length) return -1;
+    if (k >= h.length) return cut;
     if (h[k] !== '=') {
       attrs?.push({ name, value: '' });
       continue;
     }
     k++;
     while (k < h.length && isHtmlSpace(h[k])) k++; // before attribute value
-    if (k >= h.length) return -1;
+    if (k >= h.length) return cut;
     const q = h[k];
     let value = '';
     if (q === '"' || q === "'") {
       const close = h.indexOf(q, k + 1);
-      if (close < 0) return -1;
+      if (close < 0) return cut;
       value = h.slice(k + 1, close);
       k = close + 1;
     } else if (q === '>') {
       attrs?.push({ name, value: '' });
-      return k + 1;
+      return { end: k + 1, selfClosing: false };
     } else {
-      const from = k;
+      const valueAt = k;
       while (k < h.length && !isHtmlSpace(h[k]) && h[k] !== '>') k++; // unquoted value
-      value = h.slice(from, k);
+      value = h.slice(valueAt, k);
     }
     attrs?.push({ name, value: parseEntities(value, { attribute: true }) });
   }
@@ -237,7 +247,7 @@ export function tokenize(h: string): Token[] {
       i++;
       continue;
     }
-    const end = scanTag(h, nameAt);
+    const { end, selfClosing } = scanTag(h, nameAt);
     flush();
     if (end < 0) {
       // The input ends inside a tag: browsers drop it.
@@ -248,16 +258,16 @@ export function tokenize(h: string): Token[] {
     let ne = nameAt;
     while (ne < h.length && !isHtmlSpace(h[ne]) && h[ne] !== '/' && h[ne] !== '>') ne++;
     const name = h.slice(nameAt, ne).toLowerCase();
-    out.push({ kind: 'tag', raw, name, closing });
+    out.push({ kind: 'tag', raw, name, closing, ...(selfClosing ? { selfClosing: true as const } : {}), ...(foreign > 0 ? { foreign: true as const } : {}) });
     i = end;
-    if ((name === 'svg' || name === 'math') && !raw.endsWith('/>')) foreign = closing ? Math.max(0, foreign - 1) : foreign + 1;
+    if ((name === 'svg' || name === 'math') && !selfClosing) foreign = closing ? Math.max(0, foreign - 1) : foreign + 1;
     if (!closing && name === 'plaintext' && foreign === 0) {
       if (i < h.length) out.push({ kind: 'other', raw: h.slice(i) });
       break;
     }
     // In HTML content a "/>" on a non-void element is ignored, so "<textarea/>" still opens raw text.
     const raws = RAW_TEXT.has(name) || (RCDATA_TEXT.has(name) && foreign === 0);
-    if (!closing && raws && (foreign === 0 || !raw.endsWith('/>'))) {
+    if (!closing && raws && (foreign === 0 || !selfClosing)) {
       const stop = rawTextEnd(h, i, name, foreign === 0);
       if (stop > i) out.push(RCDATA_TEXT.has(name) ? { kind: 'text', raw: h.slice(i, stop) } : { kind: 'other', raw: h.slice(i, stop) });
       i = stop;

@@ -137,8 +137,11 @@ export function readPageCopy(html: string): PageDeck {
       const name = t.name;
       if (name === 'head') inHead = !t.closing;
       if (name === 'title') inTitle = !t.closing;
+      // A start tag opens an element unless it is void or honours its self-closing flag (in svg or math, and <svg/>
+      // and <math/> themselves); browsers ignore "/>" on other HTML elements, so "<a href=x/>" and "<span/>" open one.
+      const opens = !t.closing && !VOID.has(name) && !(t.selfClosing && (t.foreign || name === 'svg' || name === 'math'));
       if (!t.closing) {
-        if (!VOID.has(name) && !t.raw.endsWith('/>')) {
+        if (opens) {
           els.set(i, { start: i, name });
           open.push(i);
           if (name === 'pre') preDepth++;
@@ -156,7 +159,7 @@ export function readPageCopy(html: string): PageDeck {
         region++;
         inline = [];
         blockOfRegion.set(region, name === 'br' ? (blockOfRegion.get(region - 1) ?? -1) : innermostBlock());
-      } else if (!t.closing && !VOID.has(name)) inline = [...inline, i];
+      } else if (opens) inline = [...inline, i];
       else if (t.closing) {
         const k = inline.map((s) => els.get(s)?.name).lastIndexOf(name);
         if (k >= 0) inline = inline.slice(0, k);
@@ -194,7 +197,7 @@ export function readPageCopy(html: string): PageDeck {
     const own = ids.filter((i) => slots[i]!.stack.length === 0);
     const tops = [...new Set(ids.filter((i) => slots[i]!.stack.length > 0).map((i) => slots[i]!.stack[0]!))].filter((top) => text(ids.filter((i) => slots[i]!.stack[0] === top)));
     // A block of links side by side (a nav) reads as one line per link, not one glued line.
-    const sideBySide = !text(own) && tops.length >= 2 && tops.every((t) => els.get(t)!.name === 'a');
+    const sideBySide = !text(own) && tops.length >= 2 && tops.every((t) => els.get(t)?.name === 'a');
     const groups = sideBySide ? tops.map((top) => ids.filter((i) => slots[i]!.stack[0] === top)) : [ids];
     for (const g of groups) if (text(g)) page.units.push(makeUnit(page, g));
   }

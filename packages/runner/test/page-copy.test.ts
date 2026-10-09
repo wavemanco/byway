@@ -172,6 +172,21 @@ describe('the deck and exact placement (F07)', () => {
     expect(run('<p><button onclick="if (a > b) go()">Send</button> it</p>', set(1, 'Send it now'))).toMatchObject({ deck: ['T', 'Send', 'it'], ...clean('<p><button onclick="if (a > b) go()">Send it now</button> it</p>') });
   });
 
+  it('a "/" at the end of an unquoted address does not self-close the link; "/>" on a link in HTML is ignored, as browsers ignore it (r2)', () => {
+    for (const P of ['<p>Go <a href=/shop/>Shop</a> now</p>', '<p>Go <a href="/shop/"/>Shop</a> now</p>']) {
+      const p = readPageCopy(pageOf(P));
+      expect(deckLines(p), P).toEqual(['T', 'Go [Shop] now']);
+      expect(pageVoiceSuffix(p), P).toMatch(/line 2 "Shop" goes to \/shop\/\./);
+      expect(pageLockView(pageOf(P.replace('/shop/', '/elsewhere/'))), P).not.toBe(pageLockView(pageOf(P)));
+      expect(run(P, set(1, 'Go [Shop] today')), P).toMatchObject(clean(P.replace('now', 'today')));
+    }
+    // "<span/>" opens a span, as in browsers: a link beside one no longer throws while the page is read.
+    expect(deckLines(readPageCopy(pageOf('<p><a href="/a">A</a><span/>B</p>')))).toEqual(['T', '[A]B']);
+    expect(run('<nav><a href="/a">A</a><i class="icon"/><a href="/b">B</a></nav>', set(1, '[Alpha][Beta]'))).toMatchObject({ deck: ['T', '[A][B]'], ...clean('<nav><a href="/a">Alpha</a><i class="icon"/><a href="/b">Beta</a></nav>') });
+    // In svg, "/>" closes the element: the path holds no text and the svg's text is one line.
+    expect(run('<svg viewBox="0 0 1 1"><path d="M0 0"/><text>Hi</text></svg>', set(1, 'Hello'))).toMatchObject({ deck: ['T', 'Hi'], ...clean('<svg viewBox="0 0 1 1"><path d="M0 0"/><text>Hello</text></svg>') });
+  });
+
   it('the title is RCDATA: offered whole, written escaped', () => {
     const t = '<!doctype html><html><head><title>A <b>x</b> &amp; y</title></head><body><p>Body</p></body></html>';
     const p = readPageCopy(t);
