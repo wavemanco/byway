@@ -135,6 +135,13 @@ describe('LS1: a loop a person holds ends on their answer', () => {
     expect(clauses(r)).toEqual(['LS1']);
   });
 
+  it('a person’s loop with a critic in its review (C6) is named as yours to end, not as a critic loop', () => {
+    const r = secondReader();
+    find(r, 'loop', 'author-loop').gate.onCap = 'policy-best-snapshot';
+    const ls1 = validate(r).violations.filter((v) => v.ruleId === 'LS1');
+    expect(ls1.map((v) => v.message)).toEqual([expect.stringMatching(/loop "author-loop" is yours to end, but hands its last round to a policy/)]);
+  });
+
   it('a person’s loop as the catalog writes it', () => {
     expect(clauses(secondReader())).toEqual([]);
     expect(loop).toBeDefined();
