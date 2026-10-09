@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { CompletionRequest } from '@byway/contracts';
 import { c3, c4, c6a, c7 } from '@byway/catalog';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
+import { NO_IMAGE_CHOSEN_NOTE } from '../../src/activities/asset.ts';
 import { splitCodeDiff } from '../../src/formats.ts';
 import { BEST_SO_FAR_PROMPT, DECLINED_NOTE, READY_PROMPT, SPEC_IN_PLACE_PROMPT } from '../../src/workflow/wording.ts';
 import { checkEvents, notes, ofType } from '../helpers/events.ts';
@@ -240,6 +241,26 @@ export function textMediaScenarios(use: () => Harness): void {
       const integrate = h.prompts.calls.filter((c) => c.id === 'helper.asset.integrate').at(-1)!;
       expect(integrate.slots.images).toMatch(/^!\[[^\]]*\]\(\/api\/artifacts\/sha256:[0-9a-f]{64}\)$/);
       expect(await text(view.run.outputArtifactId!)).toMatch(/!\[[^\]]*\]\(\/api\/artifacts\/sha256:[0-9a-f]{64}\)/);
+    }, 120_000);
+
+    it('takes the AI at its word when it judges the piece better with no image: one brief call, nothing bought or placed, not skipped (D3: C3 keeps its veto)', async () => {
+      h.responders['asset.briefs:prose'] = () => '```json\n{"images":[]}\n```';
+      try {
+        const run = await h.start(c3, { problem: { text: 'A newsletter piece on teaching fractions with recipes' }, inputs: { draft: AUTHOR_DRAFT } });
+        const view = await h.drive(run.id, (cp) => (cp.kind === 'choose' ? { checkpointId: cp.id, choice: ['own'] } : undefined));
+        expect(view.run.status).toBe('done');
+        checkEvents(view, 'c3');
+        // You said yes to the optional step; its prompt declares 0-1 images (read from the real template), and the step got it.
+        expect(view.checkpoints.find((c) => c.stepId === 'asset-if-wanted')?.prompt).toMatch(/^Run this step\? It is meant for when you want a header image/);
+        expect(h.prompts.calls.filter((c) => c.id === 'product.c3.asset').at(-1)!.rendered.images).toEqual({ min: 0, max: 1 });
+        expect(h.succeeded(run.id).filter((c) => c.stepId === 'asset').map((c) => c.purpose)).toEqual(['asset.briefs:prose']);
+        const finished = ofType(view, 'step-finished', 'asset').map((e) => e.data);
+        expect(finished).toEqual([expect.objectContaining({ note: NO_IMAGE_CHOSEN_NOTE })]);
+        expect(finished[0]!.skipped).toBeUndefined();
+        expect(await text(view.run.outputArtifactId!)).not.toMatch(/\/api\/artifacts\//);
+      } finally {
+        delete h.responders['asset.briefs:prose'];
+      }
     }, 120_000);
   });
 }

@@ -4,11 +4,15 @@
  *   read them as they would read the real templates: the problem in <problem>…</problem>, labelled options and views as
  *   given ("### A", "### V1"), the GREAT lineup line, the relay brief ("Shot N"), and the current artifact last, as one
  *   fenced block in its medium's language. It names each template with a well-formed hash, as the gateway requires.
+ *   For an id that is an image-briefs template in @byway/prompts' library (an ASSET step's prompt), it returns the
+ *   image count that template declares (`images:`, ADR-0090), read from the real template, so the harness's ASSET
+ *   steps are held to the same count as production's (C3's 0-1 included).
  * - `recordPrompts(renderer)` wraps any renderer (the real @byway/prompts one in the agreement test) the same way, and
  *   also keeps every render that threw (a missing slot, an unknown template).
  */
 import { createHash } from 'node:crypto';
-import type { Medium, PromptRenderer, PromptSlot, RenderedPrompt } from '@byway/contracts';
+import type { ImageCount, Medium, PromptRenderer, PromptSlot, RenderedPrompt } from '@byway/contracts';
+import { createPromptRenderer, type PromptLibrary } from '@byway/prompts';
 
 const FENCE: Record<Medium, string> = { 'web-page': 'html', prose: 'markdown', options: 'json', media: 'json', 'code-diff': 'diff' };
 
@@ -61,11 +65,30 @@ export function recordPrompts(inner: PromptRenderer): RecordingPrompts {
   };
 }
 
+let library: PromptLibrary | undefined;
+
+/**
+ * The image count the real template for `id` (and the medium's variant) declares, when it is an image-briefs template
+ * in @byway/prompts' library; undefined for any other id, as the real renderer returns none for them.
+ */
+export function declaredImages(id: string, medium: string | undefined): ImageCount | undefined {
+  library ??= createPromptRenderer();
+  if (!library.has(id)) return undefined;
+  try {
+    const info = library.info(id, medium);
+    return info.output === 'image-briefs' ? info.images : undefined;
+  } catch {
+    // No variant for this medium: the real renderer would refuse it; the fake renders it with no count.
+    return undefined;
+  }
+}
+
 function fakeRenderer(): PromptRenderer {
   return {
     has: () => true,
     render(id, s): RenderedPrompt {
-      const meta = { id, version: 1, hash: fakeHash(id), fidelity: 'project' as const };
+      const images = declaredImages(id, s.medium);
+      const meta = { id, version: 1, hash: fakeHash(id), fidelity: 'project' as const, ...(images !== undefined ? { images } : {}) };
       if (id.startsWith('tells.')) return { ...meta, user: `${TELLS_CATALOG}\n- (${id})` };
       const parts: string[] = [`Prompt: ${id}`];
       if (s.problem !== undefined) parts.push(`<problem>${s.problem}</problem>`);

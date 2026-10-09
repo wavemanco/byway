@@ -24,6 +24,7 @@ import { checkBriefs, eachPlan, freePlan, slotId } from '../src/activities/slot-
 import { serializeJson } from '../src/formats.ts';
 import { FAILURE, toStepSpec, type AssetResult, type RunRef, type StepSpec } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
+import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
 const library = createPromptRenderer();
@@ -327,6 +328,26 @@ describe('how many images a prose step may make is the prompt’s to say', () =>
     expect(stepPresentation('c3', 'asset')?.explainer).toBe(
       'If you want one, the AI makes a header image for the piece, unless it judges the piece better without one. Charts computed from your data are not made in this version.',
     );
+  });
+
+  it('the harness’s fake prompts carry the count each real image-briefs template declares, so e2e ASSET steps are held to it (round 2)', () => {
+    const fake = fakePrompts();
+    const checked: string[] = [];
+    for (const id of library.ids()) {
+      for (const medium of [undefined, ...library.variants(id)]) {
+        let info;
+        try {
+          info = library.info(id, medium);
+        } catch {
+          continue;
+        }
+        if (info.output !== 'image-briefs') continue;
+        expect(fake.render(id, medium ? { medium } : {}).images, `${id}@${medium ?? 'base'}`).toEqual(info.images);
+        checked.push(`${id}@${medium ?? 'base'}`);
+      }
+    }
+    expect(checked).toEqual(expect.arrayContaining(['product.c3.asset@base', 'article.ASSET@base', 'helper.asset.briefs@prose', 'helper.asset.briefs@media']));
+    expect(fake.render('product.c4.draft', { medium: 'prose' }).images).toBeUndefined();
   });
 
   it('C3 asks for one image at most', async () => {
