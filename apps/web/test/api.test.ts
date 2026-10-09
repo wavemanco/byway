@@ -132,7 +132,7 @@ describe('route handler logic', PRODUCT_PATH, () => {
     await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500 })).rejects.toThrow(/workspace budget/);
   });
 
-  it('starts one run for a Start sent twice with the same run id; the id for another problem is a conflict (F03 P3)', async () => {
+  it('starts one run for a Start sent twice with the same run id; the id for another problem or recipe is a conflict (F03 P3)', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
     const runId = '5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e';
@@ -143,6 +143,8 @@ describe('route handler logic', PRODUCT_PATH, () => {
     expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
     const { intakeId: other } = await createIntake(d, { text: 'Another memo', recipeId: 'c4' });
     await expect(startRun(d, { intakeId: other, recipeId: 'c4', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem/) });
+    // The same Start id asking for another recipe is another start, whatever its id says (the screen mints a new id then).
+    await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
   });
 
   it('resolves a question only within its own run, and passes validation messages through', async () => {

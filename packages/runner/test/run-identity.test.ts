@@ -15,7 +15,7 @@ import type { StartRunInput } from '@byway/contracts';
 import { createRunnerClient, RunStartConflictError, RunStartInvalidError } from '../src/client.ts';
 import { workflowIdFor } from '../src/types.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
-import { tiny } from './helpers/recipes.ts';
+import { seeded, tiny } from './helpers/recipes.ts';
 
 let dir: string;
 let store: MemoStore;
@@ -33,19 +33,25 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+interface TemporalOptions {
+  /** Runs, and is awaited, while the first start sent is still on the wire: what reaches Temporal before it. */
+  whileFirstIsOnTheWire?: () => Promise<unknown>;
+}
+
 /** Temporal's side, as far as starting goes: one execution per workflow id while it runs. */
-function temporal() {
+function temporal(opts: TemporalOptions = {}) {
   const started: string[] = [];
   const attempts: string[] = [];
   const client = {
     workflow: {
-      async start(workflowType: string, opts: { workflowId: string }) {
-        attempts.push(opts.workflowId);
+      async start(workflowType: string, o: { workflowId: string }) {
+        attempts.push(o.workflowId);
         // A moment on the wire, so two starts sent at once overlap.
         await new Promise((r) => setTimeout(r, 10));
-        if (started.includes(opts.workflowId)) throw new WorkflowExecutionAlreadyStartedError('Workflow execution already started', opts.workflowId, workflowType);
-        started.push(opts.workflowId);
-        return { workflowId: opts.workflowId };
+        if (attempts.length === 1) await opts.whileFirstIsOnTheWire?.();
+        if (started.includes(o.workflowId)) throw new WorkflowExecutionAlreadyStartedError('Workflow execution already started', o.workflowId, workflowType);
+        started.push(o.workflowId);
+        return { workflowId: o.workflowId };
       },
     },
   } as unknown as Client;
@@ -70,6 +76,22 @@ describe('starting a run the caller named (F03 P3)', () => {
     expect((await store.getRun(RUN_ID))?.status).toBe('queued');
   });
 
+  it('two starts at once where the repeat’s workflow start wins: one workflow, and the run is not marked failed', async () => {
+    // The request that wrote the run is the slower one to Temporal: the repeat is sent, and answered, while the first
+    // start is still on its way, so the first is refused as already started. That is this run's workflow, started by
+    // the repeat. Before, the request that wrote the run marked it failed while its workflow ran.
+    let repeat: Promise<unknown> | undefined;
+    const t = temporal({ whileFirstIsOnTheWire: () => (repeat = runner.start(input()).catch((e: unknown) => e)) });
+    const runner = createRunnerClient({ client: t.client, store });
+    const first = await runner.start(input()).catch((e: unknown) => e);
+    expect(first).toMatchObject({ id: RUN_ID });
+    expect(await repeat).toEqual(first);
+    expect(t.started).toEqual([workflowIdFor(RUN_ID)]);
+    expect(t.attempts).toEqual([workflowIdFor(RUN_ID), workflowIdFor(RUN_ID)]);
+    expect(await store.getRun(RUN_ID)).toMatchObject({ status: 'queued' });
+    expect((await store.getRun(RUN_ID))?.error).toBeUndefined();
+  });
+
   it('a start repeated after its run ended returns that run and starts nothing', async () => {
     const t = temporal();
     const runner = createRunnerClient({ client: t.client, store });
@@ -89,6 +111,15 @@ describe('starting a run the caller named (F03 P3)', () => {
     await expect(runner.start(input({ intakeId: elsewhere.id }))).rejects.toMatchObject({ name: 'RunStartConflictError' });
     await expect(runner.start(input({ intakeId: undefined }))).rejects.toBeInstanceOf(RunStartConflictError);
     expect(await store.listRuns(workspaceId)).toHaveLength(1);
+    expect(t.attempts).toEqual([workflowIdFor(RUN_ID)]);
+  });
+
+  it('the same id asking for another recipe is a conflict, not the earlier run (the screen composed again, or chose another)', async () => {
+    const t = temporal();
+    const runner = createRunnerClient({ client: t.client, store });
+    await runner.start(input());
+    await expect(runner.start(input({ recipe: seeded }))).rejects.toBeInstanceOf(RunStartConflictError);
+    expect(await store.getRun(RUN_ID)).toMatchObject({ recipeId: tiny.id, status: 'queued' });
     expect(t.attempts).toEqual([workflowIdFor(RUN_ID)]);
   });
 

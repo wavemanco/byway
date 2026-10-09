@@ -305,13 +305,13 @@ async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult
 
 /**
  * Runner.start, with the run id the screen minted (F03 P3): a Start sent twice gives the first run back. The id of a run
- * started for another problem is a conflict (409), matched by name as the services may come from another bundle.
+ * started for another problem or recipe is a conflict (409), matched by name as the services may come from another bundle.
  */
 async function startOnce(services: Services, input: Parameters<Services['runner']['start']>[0]): Promise<RunRecord> {
   try {
     return await services.runner.start(input);
   } catch (err) {
-    if (err instanceof Error && err.name === 'RunStartConflictError') throw new HttpError(409, 'This start was already used for another problem. Start the run again.');
+    if (err instanceof Error && err.name === 'RunStartConflictError') throw new HttpError(409, 'This start was already used for another problem or recipe, so nothing was started. Start the run again.');
     if (err instanceof Error && err.name === 'RunStartInvalidError') throw new HttpError(400, 'That start did not arrive intact. Start the run again.');
     throw err;
   }

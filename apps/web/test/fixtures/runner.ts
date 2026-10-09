@@ -36,7 +36,7 @@ export function fakeRunner(store: Store): FakeRunner {
       if (!medium) throw new Error('The recipe names no medium.');
       const before = input.runId === undefined ? undefined : await store.getRun(input.runId);
       if (before) {
-        if (before.workspaceId !== input.workspaceId || before.intakeId !== input.intakeId) throw Object.assign(new Error('another problem'), { name: 'RunStartConflictError' });
+        if (before.workspaceId !== input.workspaceId || before.intakeId !== input.intakeId || before.recipeHash !== recipeHash(input.recipe)) throw Object.assign(new Error('another problem or recipe'), { name: 'RunStartConflictError' });
         return before;
       }
       started.push(input);

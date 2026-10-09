@@ -76,12 +76,14 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
 
   /**
    * The run a start names, when it exists already (a start delivered twice: StartRunInput.runId): the same run if it is
-   * in the same workspace and from the same intake, else a conflict (as when it is gone: it was there a moment ago).
+   * in the same workspace, from the same intake and of the same recipe, else a conflict (as when it is gone: it was
+   * there a moment ago). The recipe is compared by its hash because the app may name a recipe it composed again under
+   * the same key ('composed'): a start of another recipe is another start, whatever its id says.
    */
-  const startedBefore = async (input: StartRunInput, id: string): Promise<RunRecord> => {
+  const startedBefore = async (input: StartRunInput, id: string, hash: string): Promise<RunRecord> => {
     const existing = await store.getRun(id);
-    if (!existing || existing.workspaceId !== input.workspaceId || existing.intakeId !== input.intakeId) {
-      throw new RunStartConflictError('This start names a run that was started for another problem. Start the run again.');
+    if (!existing || existing.workspaceId !== input.workspaceId || existing.intakeId !== input.intakeId || existing.recipeHash !== hash) {
+      throw new RunStartConflictError('This start names a run that was started for another problem or recipe. Start the run again.');
     }
     return existing;
   };
@@ -94,6 +96,7 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       const medium = recipe.medium;
       if (!medium) throw new Error(`Recipe "${recipe.id}" names no medium, so it cannot run.`);
       const id = input.runId ?? randomUUID();
+      const hash = recipeHash(recipe);
       let record: RunRecord;
       let created = true;
       try {
@@ -101,7 +104,7 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
           id,
           workspaceId: input.workspaceId,
           recipeId: recipe.id,
-          recipeHash: recipeHash(recipe),
+          recipeHash: hash,
           profileId: input.profileId,
           ...(input.intakeId ? { intakeId: input.intakeId } : {}),
           title: titleOf(input.problem.text),
@@ -113,7 +116,7 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       } catch (e) {
         // The store refuses a second run with one id; a caller that named the id gets the first one back instead.
         if (input.runId === undefined || storeCode(e) !== 'already-exists') throw e;
-        record = await startedBefore(input, id);
+        record = await startedBefore(input, id, hash);
         created = false;
       }
       // Its workflow has ended (Temporal would start a new one under a closed id): the run is as it was left.
@@ -132,8 +135,10 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       try {
         await client.workflow.start(RUN_WORKFLOW, { taskQueue, workflowId: workflowIdFor(id), args: [args] });
       } catch (e) {
-        // The first delivery of this start got there first (or is getting there): one workflow, already running.
-        if (!created && e instanceof WorkflowExecutionAlreadyStartedError) return record;
+        // A named run's workflow id is derived from its id, and only a delivery of this same start passes the checks
+        // above, so a running execution under it is this run's: another delivery got to Temporal first, whichever of
+        // them wrote the run. One workflow, already running; the run must not be marked failed under it.
+        if (input.runId !== undefined && e instanceof WorkflowExecutionAlreadyStartedError) return record;
         // A repeated start leaves the run as the first one made it.
         if (created) await store.updateRun(id, { status: 'failed', error: startFailureMessage(e) });
         throw e;
