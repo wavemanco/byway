@@ -9,6 +9,7 @@ import { encodePng } from '../src/mock/png.ts';
 import type { AnthropicMessageLike } from '../src/providers/anthropic.ts';
 import type { ProviderAdapter } from '../src/providers/types.ts';
 import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, fetchFailed, httpError, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 const ANTHROPIC_KEY = 'sk-ant-api03-test-not-a-real-key-000000';
 const OPENAI_KEY = 'sk-test-not-a-real-openai-key-0000000';
@@ -27,6 +28,7 @@ const instant = async (_ms: number) => {};
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts,
     caps: { workspaceCapUsd: () => caps.workspace, runCapUsd: (id) => caps.runs[id] },
     env: {},

@@ -5,8 +5,10 @@
  * client entry (engine.ts loads the packages).
  *
  * Demo mode can be switched in Settings while the app runs, so the host keeps one gateway (and the advisor over it)
- * per demo setting, created when first needed. Both append to the same hash-chained ledger, which takes a lock for
- * every append.
+ * per demo setting, created when first needed. Both admit and settle their calls in the store's spend book, which the
+ * worker's gateway shares (ADR-0095), so the caps see every process's calls in flight; both write the same
+ * hash-chained ledger, which takes a lock for every append. Closing the host closes the gateways first (their lease
+ * renewal and outbox timer), then the store.
  */
 import path from 'node:path';
 import type { Advisor, Gateway, PromptRenderer, Runner, Store } from '@byway/contracts';
@@ -62,6 +64,7 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
       const gateway = engine.gateway.createGateway({
         ledgerPath: path.join(opts.dataDir, LEDGER_FILENAME),
         artifacts: store.artifacts,
+        spendBook: store.spendBook,
         caps: engine.runner.storeCaps(store),
         env: opts.env,
         demo,
@@ -87,6 +90,7 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
     // An arrow, so routes can pass it on unbound. Reads the environment on every call, as the gateway does.
     heldKeyIn: (value: unknown) => engine.gateway.findHeldKey(opts.env, stringsIn(value)),
     async close() {
+      for (const { gateway } of pairs.values()) await gateway.close();
       store.close();
     },
   };

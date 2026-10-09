@@ -9,6 +9,7 @@ import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { admitMediaUrl, FAL_EXTRACT_FRAME, readCapped, sniffVideoType } from '../src/providers/fal.ts';
 import { countingBody, fakeFal, fakeFetch, falQueueError, fetchFailed, httpError, MemoryArtifacts, MP4_BYTES, WEBM_BYTES } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 /** Shaped like a fal key (key id, a colon, the secret), and not a real one. */
 const FAL_KEY = '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff';
@@ -31,6 +32,7 @@ const instant = async (_ms: number) => {};
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts,
     caps: { workspaceCapUsd: () => caps.workspace, runCapUsd: (id) => caps.runs[id] },
     env: { FAL_KEY },

@@ -8,6 +8,7 @@ import { createGateway } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { createFalClient, FAL_EXTRACT_FRAME, FalQueueError } from '../src/providers/fal.ts';
 import { fakeFetch, fetchFailed, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 /**
  * F03: every fal queue job is submitted once over fal's REST queue API, outside @fal-ai/client, whose queue.submit
@@ -91,6 +92,7 @@ const req = (over: Partial<VideoRequest> = {}): VideoRequest => ({
 function gateway(http: ReturnType<typeof fakeFalHttp>) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts,
     caps: { workspaceCapUsd: () => 100 },
     env: { FAL_KEY },

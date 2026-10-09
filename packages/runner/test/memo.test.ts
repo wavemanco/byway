@@ -51,6 +51,9 @@ function counting(text: (n: number) => string = (n) => `answer ${n}`) {
     profiles: () => [],
     profileStatus: () => [],
     verifyLedger: async () => null,
+    spendRecords: async () => ({ inFlight: [], uncertain: [], faults: [], notInAuditFile: 0, setAside: [] }),
+    auditLedger: async () => ({ brokenAt: null, missing: [], pending: 0, setAside: [] }),
+    close: async () => undefined,
   };
   return { gateway, made };
 }
@@ -189,6 +192,7 @@ describe('an answer that holds a provider key (ADR-0088)', () => {
     let calls = 0;
     const real = createGateway({
       ledgerPath: path.join(dir, 'ledger.jsonl'),
+      spendBook: store.spendBook,
       artifacts: store.artifacts,
       caps: { workspaceCapUsd: () => 100 },
       env: { ANTHROPIC_API_KEY: key },

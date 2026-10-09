@@ -125,6 +125,10 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
     profiles: () => inner.profiles(),
     profileStatus: () => inner.profileStatus(),
     verifyLedger: () => inner.verifyLedger(),
+    spendRecords: (id) => inner.spendRecords(id),
+    auditLedger: () => inner.auditLedger(),
+    // One invocation's view: the gateway it wraps is shared by the worker and closed by whoever made it.
+    close: async () => undefined,
   };
 }
 

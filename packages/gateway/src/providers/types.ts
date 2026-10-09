@@ -93,6 +93,11 @@ export interface ProviderVideoRequest {
    * retryable, saying the provider may have accepted `what` ("the clip").
    */
   submit<T>(fn: () => Promise<T>, what: string): Promise<T>;
+  /**
+   * A queue job the provider accepted, by role and its request id (ADR-0095): recorded in the spend book before the job
+   * is polled, so a call interrupted from here on is listed with the ids to look up in the provider's dashboard.
+   */
+  accepted?(role: 'generation' | 'extract', requestId: string): Promise<void>;
 }
 
 export interface ProviderVideo {

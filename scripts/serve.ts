@@ -150,7 +150,8 @@ async function main(): Promise<void> {
   const keys = loadEnvFile(path.join(ROOT, '.env.agents'));
   const dataDir = resolveDataDir();
   const store = createStore({ dataDir });
-  const gateway = createGateway({ ledgerPath: path.join(dataDir, 'ledger.jsonl'), artifacts: store.artifacts, caps: storeCaps(store), demo });
+  // The spend book in byway.sqlite is the caps' authority, shared with the web process's gateways (ADR-0095).
+  const gateway = createGateway({ ledgerPath: path.join(dataDir, 'ledger.jsonl'), artifacts: store.artifacts, spendBook: store.spendBook, caps: storeCaps(store), demo });
   const prompts = createPromptRenderer();
 
   console.log(`byway${demo ? ' (demo: sample outputs, no AI calls)' : ''}${mode === 'dev' ? ' — contributor mode (next dev)' : ''}`);
@@ -181,6 +182,7 @@ async function main(): Promise<void> {
     if (mode === 'start') await build(env);
   } catch (err) {
     await engineStarting.then((e) => e.stop()).catch(() => undefined);
+    await gateway.close();
     store.close();
     throw err;
   }
@@ -188,6 +190,7 @@ async function main(): Promise<void> {
   try {
     engine = await engineStarting;
   } catch (err) {
+    await gateway.close();
     store.close();
     throw err;
   }
@@ -223,6 +226,8 @@ async function main(): Promise<void> {
         new Promise<false>((resolve) => setTimeout(() => resolve(false), ENGINE_STOP_DEADLINE_MS).unref()),
       ]);
       if (!stopped) console.error(`The engine did not stop within ${ENGINE_STOP_DEADLINE_MS / 1000} s; exiting anyway. Steps that were in flight will be retried when byway starts again.`);
+      // Before the store: the gateway writes what is left of its outbox and stops its timer.
+      await gateway.close();
       store.close();
       console.log('Stopped.');
       process.exit(code);

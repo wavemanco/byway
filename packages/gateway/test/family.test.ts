@@ -7,6 +7,7 @@ import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { PRICES, priceFor } from '../src/prices.ts';
 import { PROFILES, profileStatus } from '../src/profiles.ts';
 import { fakeOpenAI, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 /**
  * Contracts v5, convention C3 (FID-1): each profile names a big model of another provider family for critics whose
@@ -74,6 +75,7 @@ describe('gateway: other-family calls', () => {
     const dir = mkdtempSync(join(tmpdir(), 'byway-gw-family-'));
     return createGateway({
       ledgerPath: join(dir, 'ledger.jsonl'),
+      spendBook: memorySpendBook(),
       artifacts: new MemoryArtifacts(),
       caps: { workspaceCapUsd: () => 100 },
       env: {},
