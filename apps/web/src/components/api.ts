@@ -11,7 +11,15 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   } catch {
     throw new ApiError('byway is not reachable. Check that it is still running, then try again.');
   }
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  let data: { error?: string };
+  try {
+    data = (await res.json()) as { error?: string };
+  } catch {
+    // A successful status whose body cannot be read is a failure, never an empty object standing in for the result:
+    // the Recommendation commands apply what comes back directly (ADR-0082).
+    if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
+    data = {};
+  }
   if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`);
   return data as T;
 }

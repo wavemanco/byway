@@ -4,7 +4,7 @@
  * the refresher's timeout was applied as an empty snapshot that crashed the Run screen.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, get } from '../src/components/api.ts';
+import { ApiError, get, patch, post } from '../src/components/api.ts';
 
 /** A response whose headers have arrived; its body is whatever `body` does. */
 const response = (status: number, body: () => Promise<unknown>) => ({ ok: status >= 200 && status < 300, status, json: body }) as unknown as Response;
@@ -40,5 +40,23 @@ describe('get()', () => {
     await expect(get('/api/runs/x')).rejects.toThrow('No such run.');
     vi.stubGlobal('fetch', async () => response(503, () => Promise.reject(new SyntaxError('empty'))));
     await expect(get('/api/runs/x')).rejects.toThrow('The request failed (503).');
+  });
+});
+
+describe('post() and patch()', () => {
+  it('fail, saying so, when a successful response has a body that cannot be read, rather than returning an empty object', async () => {
+    // The Recommendation commands apply what post() returns directly; an empty object would throw inside a state updater.
+    vi.stubGlobal('fetch', async () => response(200, () => Promise.reject(new SyntaxError('Unexpected end of JSON input'))));
+    await expect(post('/api/intakes/i1/recommend', { ensure: true })).rejects.toBeInstanceOf(ApiError);
+    await expect(patch('/api/settings', { demoMode: true })).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('return the parsed body of a successful response, and keep the server’s message for a refusal', async () => {
+    vi.stubGlobal('fetch', async () => response(200, async () => ({ runId: 'r1' })));
+    await expect(post<{ runId: string }>('/api/runs', {})).resolves.toEqual({ runId: 'r1' });
+    vi.stubGlobal('fetch', async () => response(409, async () => ({ error: 'That question has already been answered.' })));
+    await expect(post('/api/checkpoints/c1', {})).rejects.toThrow('That question has already been answered.');
+    vi.stubGlobal('fetch', async () => response(503, () => Promise.reject(new SyntaxError('empty'))));
+    await expect(post('/api/runs', {})).rejects.toThrow('The request failed (503). Try again.');
   });
 });
