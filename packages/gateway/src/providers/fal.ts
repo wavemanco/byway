@@ -170,15 +170,17 @@ const mediaError = (message: string, retryable = false) => new GatewayError('pro
 const retryableStatus = (status: number) => status === 408 || status === 429 || status >= 500;
 
 /**
- * The bytes a body yields, counted as they arrive: undefined (and the body cancelled) once they pass `cap`. With a
- * declared length within the cap the buffer is allocated once; if the body turns out longer (a Content-Length counts
- * compressed bytes, the reader yields decoded ones), the rest is gathered in chunks instead.
+ * The bytes a body yields, counted as they arrive: undefined (and the body cancelled) once they pass `cap`. Each chunk
+ * is copied as it arrives into one resizable buffer, which reserves `cap` of address space and grows in place, so a
+ * download holds about what it has read, never more than about the cap. (Gathering chunks and joining them at the end
+ * held every chunk and the joined copy at once: about twice the cap for a download near it.) A declared length within
+ * the cap sizes the buffer at the start; a body longer than declared (a Content-Length counts compressed bytes, the
+ * reader yields decoded ones) grows it. The result is handed back as an ordinary fixed-length buffer.
  */
 export async function readCapped(body: ReadableStream<Uint8Array> | null, cap: number, declared: number | undefined): Promise<Uint8Array | undefined> {
   if (!body) return new Uint8Array();
   const reader = body.getReader();
-  let buffer = declared !== undefined && declared > 0 && declared <= cap ? new Uint8Array(declared) : undefined;
-  const chunks: Uint8Array[] = [];
+  const store = new ArrayBuffer(declared !== undefined && declared > 0 && declared <= cap ? declared : 0, { maxByteLength: cap });
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
@@ -189,24 +191,10 @@ export async function readCapped(body: ReadableStream<Uint8Array> | null, cap: n
       await reader.cancel().catch(() => {});
       return undefined;
     }
-    if (buffer && total <= buffer.byteLength) {
-      buffer.set(value, at);
-      continue;
-    }
-    if (buffer) {
-      chunks.push(buffer.subarray(0, at));
-      buffer = undefined;
-    }
-    chunks.push(value);
+    if (total > store.byteLength) store.resize(total);
+    new Uint8Array(store, at, value.byteLength).set(value);
   }
-  if (buffer) return buffer.subarray(0, total);
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const c of chunks) {
-    out.set(c, at);
-    at += c.byteLength;
-  }
-  return out;
+  return new Uint8Array(store.transferToFixedLength(total));
 }
 
 /** The clip's type from its bytes: MP4 (an ISO-BMFF `ftyp` box first) or WebM (the EBML magic); otherwise not a video. */

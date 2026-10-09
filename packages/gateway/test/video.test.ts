@@ -1,4 +1,6 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GatewayError, type VideoRequest } from '@byway/contracts';
@@ -445,6 +447,52 @@ describe('fal media helpers', () => {
     const over = countingBody(5, 4);
     expect(await readCapped(over.stream, 10, undefined)).toBeUndefined();
     expect(over.seen).toEqual({ pulls: 3, cancelled: true });
+  });
+
+  /**
+   * Wave-1 follow-up: with no declared length (or a wrong one), readCapped used to keep every chunk alive and then copy
+   * them all into a new buffer, so a download near the cap briefly held about twice the cap. It now copies each chunk
+   * as it arrives into one buffer that grows in place, so what it holds stays about the size read.
+   */
+  it.each([
+    ['no declared length', undefined],
+    ['a declared length that was too small', 1024],
+  ])('readCapped keeps no chunk alive once it is copied (%s)', async (_label, declared) => {
+    v8.setFlagsFromString('--expose-gc');
+    const gc = vm.runInNewContext('gc') as () => void;
+    let collected = 0;
+    const registry = new FinalizationRegistry<number>(() => {
+      collected++;
+    });
+    const N = 32;
+    const SIZE = 256 * 1024;
+    let sent = 0;
+    let collectedBeforeEnd = -1;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        async pull(controller) {
+          if (sent === N) {
+            // Everything has been read; whatever readCapped still holds is what it keeps for the result.
+            for (let i = 0; i < 4; i++) {
+              gc();
+              await new Promise((r) => setTimeout(r, 0));
+            }
+            collectedBeforeEnd = collected;
+            return controller.close();
+          }
+          const chunk = new Uint8Array(SIZE).fill(sent + 1);
+          registry.register(chunk, sent);
+          sent++;
+          controller.enqueue(chunk);
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const bytes = await readCapped(stream, 64 * 1024 * 1024, declared);
+    expect(bytes?.byteLength).toBe(N * SIZE);
+    expect([bytes?.[0], bytes?.[SIZE], bytes?.[N * SIZE - 1]]).toEqual([1, 2, N]);
+    expect((bytes?.buffer as ArrayBuffer | undefined)?.resizable).toBe(false);
+    expect(collectedBeforeEnd).toBeGreaterThanOrEqual(N - 2);
   });
 
   it('sniffVideoType: MP4 by its ftyp box, WebM by its EBML magic, anything else is not a video', () => {
