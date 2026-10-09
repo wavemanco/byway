@@ -44,7 +44,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   const technical = useTechnicalNames();
   const [data, setData] = useState(initial);
   // Whether `data` includes a snapshot byway served to this screen's refresher. Until then it is only `initial`: the
-  // server render, or on Back the browser's cached copy of it, which can be older than the person's own drafts.
+  // server render, or on Back the Next.js router cache's copy of it, which can be older than the person's own drafts.
   const [served, setServed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [connection, setConnection] = useState<Connection>('ok');

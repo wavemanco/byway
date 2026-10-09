@@ -92,7 +92,7 @@ export function sanitize(cp: CheckpointRecord, stored: StoredDraft): CheckpointD
 /**
  * What server state means for a draft:
  * - 'keep': its question can still be answered, and it has not been sent; or the snapshot does not list its question
- *   while the run goes on, because a snapshot can predate the question (Back shows the browser's cached copy of the
+ *   while the run goes on, because a snapshot can predate the question (Back shows the Next.js router cache's copy of the
  *   page, rendered before the question opened), and only a listed, closed question may end a draft;
  * - 'unlock': it was sent, but the server still shows the question open (server state wins: answer again);
  * - 'drop': it was sent and its question closed, its answer landed (the stored resolution is the draft, after a lost
