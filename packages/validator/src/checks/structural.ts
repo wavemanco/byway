@@ -1,5 +1,5 @@
 import { BLOCKS, ROLE_KNOBS, type KnobDef } from '@byway/protocol';
-import { steps, walk, walkNode, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
+import { declaresVoice, personWrite, steps, walk, walkNode, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
 import { ANNOTATION_PORTS, CRITIC_METRICS, DETECTOR_PATTERN, KNOWN_GATE_METRICS, MAX_GATE_RETRIES, type Findings } from '../context.ts';
 
 const STAGE_ORDER = { D1: 1, D2: 2, D3: 3 } as const;
@@ -69,7 +69,11 @@ export function checkStructural(recipe: Recipe, findings: Findings): void {
   for (const { step, path } of steps(recipe)) checkKnobs(step, path, findings);
 }
 
-/** ST9: no lens step writes, every lens returns an annotation, and lens names are distinct. */
+/**
+ * ST9: no lens step writes, no person writes in a lens (their words would be dropped with the lens's output, or a VOICE
+ * declared there would stand for one that never reaches the work; ADR-0092), every lens returns an annotation, and lens
+ * names are distinct.
+ */
 function checkAudit(node: Extract<Node, { op: 'audit' }>, path: string, findings: Findings): void {
   const names = new Set<string>();
   node.lenses.forEach((lens, i) => {
@@ -79,6 +83,7 @@ function checkAudit(node: Extract<Node, { op: 'audit' }>, path: string, findings
     const within = stepsWithin(lens.body);
     for (const s of within) {
       if (s.writes) findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" writes; lenses only annotate`, 'writes');
+      if (personWrite(s) || declaresVoice(s)) findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" is a person's write or a VOICE; a lens's output never reaches the work`, 'human-write');
     }
     if (!within.some((s) => s.produces.some((p) => (ANNOTATION_PORTS as readonly string[]).includes(p)))) {
       findings.add('ST9', where, `lens "${lens.name}" returns no annotation (${ANNOTATION_PORTS.join(' or ')})`, 'no-annotation');
@@ -86,10 +91,14 @@ function checkAudit(node: Extract<Node, { op: 'audit' }>, path: string, findings
   });
 }
 
-/** ST10: a gate has no fix step, a known metric (with a threshold when it is a critic's), and a bounded, earlier retry. */
+/**
+ * ST10: a gate has no fix step and no person's write or VOICE (a gate keeps only its body's critique; ADR-0092), a known
+ * metric (with a threshold when it is a critic's), and a bounded, earlier retry.
+ */
 function checkGate(recipe: Recipe, node: Extract<Node, { op: 'gate' }>, path: string, stage: Recipe['stages'][number]['stage'], findings: Findings): void {
   for (const s of stepsWithin(node.body)) {
     if (s.writes) findings.add('ST10', path, `gate "${node.id}" step "${s.id}" writes; a one-shot gate has no fix step`, 'writes');
+    if (personWrite(s) || declaresVoice(s)) findings.add('ST10', path, `gate "${node.id}" step "${s.id}" is a person's write or a VOICE; a gate keeps only its body's critique`, 'human-write');
   }
   const p = node.pass;
   if (!KNOWN_GATE_METRICS.has(p.metric) && !DETECTOR_PATTERN.test(p.metric)) {

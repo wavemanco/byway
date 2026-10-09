@@ -272,7 +272,8 @@ describe('default rules', () => {
   it('DR9 a model writing the voice', () => {
     const r = studio();
     Object.assign(stepById(r, 'voice'), { actor: 'model', tier: 'mid' });
-    expect(ids(validate(r))).toEqual(['DR9']);
+    // A step that declares VOICE but writes no words of a person's is also refused outright (ST12, ADR-0092).
+    expect(ids(validate(r))).toEqual(['DR9', 'ST12']);
   });
 
   it('DR10 is a warning, not a violation', () => {
@@ -311,7 +312,8 @@ describe('clause-scoped exceptions', () => {
     r.inputs.push('voice');
     Object.assign(stepById(r, 'voice'), { actor: 'model', tier: 'mid' });
     const v = validate(r);
-    expect(v.violations.map((x) => `${x.ruleId}:${x.clause}`)).toEqual(['DR9:model-voice']);
+    // ST12 is an invariant: no exception hides a VOICE that is declared but not written (ADR-0092).
+    expect(v.violations.map((x) => `${x.ruleId}:${x.clause}`)).toEqual(['DR9:model-voice', 'ST12:voice-not-written']);
   });
 });
 

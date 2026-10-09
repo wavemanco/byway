@@ -1,5 +1,5 @@
 import { OPTION_SET, type PortType } from '@byway/protocol';
-import { walkNode, type Actor, type Audit, type Node, type Recipe, type RelayChain, type Role, type Stage } from '@byway/recipe';
+import { personWrite, walkNode, type Actor, type Audit, type Node, type Recipe, type RelayChain, type Role, type Stage, type Step } from '@byway/recipe';
 import { ANNOTATION_PORTS, Findings } from './context.ts';
 
 /** Who may have produced a port: a recipe input, a step (with its role and actor) or an operator. */
@@ -14,10 +14,14 @@ export interface Producer {
  * Typing state at a point in the recipe.
  * - `must`: ports present on every path, each with every producer that may have made it (for ST5 and provenance rules).
  * - `may`: ports present on at least one path (for "may still be open" rules such as PR4 and DR2).
+ * - `aside`: ports a person's write set aside on some path, with that write's step id (ADR-0092). A finished person's
+ *   write sets the option set aside: picking from it, or working on it, would bring back what was made before their
+ *   words. It stays in `may` (the runner still holds it), but no longer in `must`.
  */
 export interface ScopeState {
   must: ReadonlyMap<PortType, readonly Producer[]>;
   may: ReadonlySet<PortType>;
+  aside: ReadonlyMap<PortType, string>;
 }
 
 export interface Typing {
@@ -28,12 +32,21 @@ export interface Typing {
 interface MutableState {
   must: Map<PortType, Producer[]>;
   may: Set<PortType>;
+  aside: Map<PortType, string>;
 }
 
 const clone = (s: ScopeState): MutableState => ({
   must: new Map([...s.must].map(([k, v]) => [k, [...v]])),
   may: new Set(s.may),
+  aside: new Map(s.aside),
 });
+
+/** ST5 for a consumed option set that is not in scope: 'set-aside' when a person's write set it aside. */
+function missingOptions(st: ScopeState, path: string, what: string, findings: Findings): void {
+  const by = st.aside.get(OPTION_SET);
+  if (by) findings.add('ST5', path, `${what} ${OPTION_SET}, which "${by}", a person's write, set aside: it would bring back what was made before their words`, 'set-aside');
+  else findings.add('ST5', path, `${what} ${OPTION_SET}, which is not in scope on every path`);
+}
 
 function addProducers(list: Producer[], more: readonly Producer[]): Producer[] {
   const out = [...list];
@@ -48,14 +61,16 @@ function mergeAlternatives(states: ScopeState[]): MutableState {
   const [first, ...rest] = states;
   const must = new Map<PortType, Producer[]>();
   const may = new Set<PortType>();
-  if (!first) return { must, may };
+  const aside = new Map<PortType, string>();
+  if (!first) return { must, may, aside };
   for (const [port, producers] of first.must) {
     if (rest.every((s) => s.must.has(port))) {
       must.set(port, rest.reduce((acc, s) => addProducers(acc, s.must.get(port) ?? []), [...producers]));
     }
   }
   for (const s of states) for (const p of s.may) may.add(p);
-  return { must, may };
+  for (const s of states) for (const [p, by] of s.aside) if (!aside.has(p)) aside.set(p, by);
+  return { must, may, aside };
 }
 
 /** Type the recipe's port flow (spec: "Scope typing"). Emits ST5 for consumed ports that are not guaranteed in scope. */
@@ -64,6 +79,7 @@ export function typeRecipe(recipe: Recipe, findings: Findings): Typing {
   let state: ScopeState = {
     must: new Map(recipe.inputs.map((p) => [p, [{ kind: 'input' } as Producer]])),
     may: new Set(recipe.inputs),
+    aside: new Map(),
   };
   recipe.stages.forEach((s, i) => {
     typing.stageEntry.set(s.stage, clone(state));
@@ -78,12 +94,16 @@ function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, f
   switch (node.op) {
     case 'step': {
       for (const port of node.consumes) {
-        if (!st.must.has(port)) findings.add('ST5', path, `step "${node.id}" consumes ${port}, which is not in scope on every path`);
+        if (st.must.has(port)) continue;
+        if (port === OPTION_SET) missingOptions(st, path, `step "${node.id}" consumes`, findings);
+        else findings.add('ST5', path, `step "${node.id}" consumes ${port}, which is not in scope on every path`);
       }
       for (const port of node.produces) {
         st.must.set(port, [{ kind: 'step', role: node.role, actor: node.actor }]);
         st.may.add(port);
+        st.aside.delete(port);
       }
+      setAside(node, st);
       return st;
     }
     case 'seq': {
@@ -98,10 +118,11 @@ function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, f
       if (!out.must.has('artifact')) findings.add('ST5', path, `replicate "${node.id}" body produces no artifact`);
       st.must.set(OPTION_SET, [{ kind: 'operator', op: 'replicate' }]);
       st.may.add(OPTION_SET);
+      st.aside.delete(OPTION_SET);
       return st;
     }
     case 'each': {
-      if (!st.must.has(OPTION_SET)) findings.add('ST5', path, `each "${node.id}" needs ${OPTION_SET} in scope`);
+      if (!st.must.has(OPTION_SET)) missingOptions(st, path, `each "${node.id}" needs`, findings);
       const inner = clone(st);
       inner.must.set('artifact', [{ kind: 'operator', op: 'each' }]);
       inner.may.add('artifact');
@@ -109,7 +130,7 @@ function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, f
       return st;
     }
     case 'pick': {
-      if (!st.must.has(OPTION_SET)) findings.add('ST5', path, `pick "${node.id}" needs ${OPTION_SET} in scope`);
+      if (!st.must.has(OPTION_SET)) missingOptions(st, path, `pick "${node.id}" needs`, findings);
       if (node.judge) {
         // The harness renders every option for the selector.
         const judgeScope = clone(st);
@@ -120,14 +141,19 @@ function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, f
       if (node.k === 1) {
         st.must.delete(OPTION_SET);
         st.may.delete(OPTION_SET);
+        st.aside.delete(OPTION_SET);
         st.must.set('artifact', [{ kind: 'operator', op: 'pick' }]);
         st.may.add('artifact');
       }
       return st;
     }
-    case 'loop':
-      // Typed once: ports must be available on the first iteration (ST5). Back-edge effects are checked by the path rules.
-      return typeNode(node.body, st, `${path}.body`, typing, findings);
+    case 'loop': {
+      // Typed once: ports must be available on the first iteration (ST5). Back-edge effects are checked by the path
+      // rules, and a set-aside reached again through the back-edge here.
+      const out = typeNode(node.body, st, `${path}.body`, typing, findings);
+      setAsideAgain(node.body, mergeAlternatives([st, out]), `${path}.body`, `loop "${node.id}"`, findings);
+      return out;
+    }
     case 'optional': {
       const ran = typeNode(node.body, st, `${path}.body`, typing, findings);
       return mergeAlternatives([st, ran]);
@@ -143,8 +169,31 @@ function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, f
       // Typed once, like a loop body: the first link starts from the anchor in scope before the chain.
       const out = typeNode(node.body, st, `${path}.body`, typing, findings);
       checkRelayLink(node, st, path, findings);
+      setAsideAgain(node.body, mergeAlternatives([st, out]), `${path}.body`, `relay "${node.id}"`, findings);
       return out;
     }
+  }
+}
+
+/** A finished person's write sets the option set aside (it stays in `may`: the runner still holds it). */
+function setAside(step: Step, st: MutableState): void {
+  if (!personWrite(step) || !st.may.has(OPTION_SET)) return;
+  st.must.delete(OPTION_SET);
+  st.aside.set(OPTION_SET, step.id);
+}
+
+/**
+ * The second round of a loop body (or the next relay link) starts from what the first left: an option consumer there
+ * may read options a person's write later in the body set aside. Only those findings are kept (ST12 'set-aside'); every
+ * other port rule is checked on the first round, as before.
+ */
+function setAsideAgain(body: Node, entry: ScopeState, path: string, what: string, findings: Findings): void {
+  const again = new Findings();
+  typeNode(body, entry, path, { stageEntry: new Map(), nodeEntry: new Map() }, again);
+  const first = new Set(findings.list.filter((f) => f.clause === 'set-aside').map((f) => f.path));
+  for (const f of again.list) {
+    if (f.ruleId !== 'ST5' || f.clause !== 'set-aside' || first.has(f.path)) continue;
+    findings.add('ST12', f.path, `${f.message} (on a later round of ${what})`, 'set-aside');
   }
 }
 
