@@ -51,7 +51,7 @@ The verification's recommendation (cluster A, option C, stage 4) drafted this re
 
 - No loop ends at its cap on anyone's behalf. A person's last round is a question with the work and its notes beside it, and they can allow more rounds once. A round with nothing to check ends its loop before the cap, unchecked and saying so (decision 6).
 - One cap policy, read by the interpreter, LS1, the estimator, the work bound and the copy.
-- Tests drive a person's loop to its cap at max 1 and max N, with repeated No, the raise, both last choices, a feedless critic loop, and Cancel while the cap question is open. The last two are end to end through the real workflow, on C6a's author loop capped at two rounds.
+- Tests drive a loop to its cap. Unit tests (`loop-cap.test.ts`: the real interpreter with its activities stubbed) take a person's loop at max 1 and max N, with repeated No, the raise and both last choices, and a critic loop whose gate never sees its critic. End to end through the real workflow (`e2e/loop-cap.ts`), on C6a's author loop capped at two rounds: the cap question, No raising the cap once, both last choices ("Use this version", and "Stop the run", which ends the run cancelled), and Cancel while the cap question is open.
 
 **Negative**
 
