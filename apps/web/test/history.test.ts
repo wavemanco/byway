@@ -58,7 +58,7 @@ describe('Settings: calls settled at an assumed price (F04, ADR-0091)', () => {
 describe('Settings: checking the spend ledger (ADR-0091, ADR-0094, ADR-0095)', () => {
   it('for a line that is not an entry: a torn last line is set aside, any other stops paid calls until acknowledged, and a backup is the whole data directory', () => {
     expect(ledgerCheckText('line:7')).toBe(
-      'Line 7 of the spend ledger cannot be read as an entry. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. Otherwise it is listed under Spending records, and byway makes no paid call until you acknowledge it there. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).',
+      'Line 7 of the spend ledger cannot be read as an entry. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. Otherwise it is listed under Spending records, and byway makes no paid call until it is acknowledged there. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).',
     );
   });
 

@@ -392,3 +392,34 @@ describe('a fal relay link in the spend book', () => {
     expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
   });
 });
+
+describe('leases while a call is in progress', () => {
+  it('the gateway renews a call it is still waiting on, so a long call stays in flight, not "may have been billed"', async () => {
+    caps.workspace = 1;
+    const held = heldAdapter();
+    const g = gateway({ adapters: { anthropic: held.adapter }, renewEveryMs: 20 });
+    const pending = g.complete(ask());
+    await until(() => held.waiting() === 1);
+    for (let i = 0; i < 4; i++) {
+      clock.t += 40_000;
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0.1, uncertainUsd: 0 });
+    held.release();
+    await pending;
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0.1, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('a call whose lease ran out before it was sent (its process slept) is admitted once more, then sent', async () => {
+    const calls = new PaidCalls({ book, ledger: new Ledger({ path: ledgerPath }), warn: () => undefined });
+    const op = await calls.admit({ workspaceId: 'ws', runId: 'run-1', purpose: 'build:prose', kind: 'completion', provider: 'anthropic', model: 'claude-opus-5-5', reserveUsd: 0.1, paid: true }, async () => ({ workspaceUsd: 1 }));
+    const first = op.id;
+    clock.t += 61_000;
+    await op.markSent();
+    expect(op.id).not.toBe(first);
+    const { inFlight } = await book.records('ws');
+    expect(inFlight.map((c) => c.opId)).toEqual([op.id]);
+    await op.end();
+    await calls.close();
+  });
+});

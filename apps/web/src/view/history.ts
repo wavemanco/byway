@@ -93,7 +93,7 @@ export function ledgerCheckText(brokenAt: string | null): string {
   if (brokenAt === 'head') return "The spend ledger's head record cannot be read, so whether entries were cut off the end cannot be checked. The next model call rewrites it.";
   const line = /^line:(\d+)$/.exec(brokenAt);
   if (line) {
-    return `Line ${line[1]} of the spend ledger cannot be read as an entry. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. Otherwise it is listed under Spending records, and byway makes no paid call until you acknowledge it there. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).`;
+    return `Line ${line[1]} of the spend ledger cannot be read as an entry. If it is the last line, a crash probably cut it short, and the next model call sets it aside so the ledger carries on. Otherwise it is listed under Spending records, and byway makes no paid call until it is acknowledged there. To go back to a backup, restore the whole data directory, not ledger.jsonl alone (see "Back up and restore" in the README).`;
   }
   return `The spend ledger fails its check at entry ${brokenAt}: an entry was changed, lost or cut off. The budgets count from byway's spending records in its database, not from this file.`;
 }
