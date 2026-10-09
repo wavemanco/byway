@@ -19,6 +19,7 @@ import {
   each,
   exitPoints,
   FIELD_ROLES,
+  flowRecipe,
   hasNoExecutor,
   lockedScripts,
   loop,
@@ -395,6 +396,31 @@ describe('run order: what can run after a step', () => {
       ['c', true, false],
       ['d', false, true],
     ]);
+  });
+});
+
+describe('the flow walk (flowRecipe)', () => {
+  /** The ids of the steps on each path, as sets of sorted strings. */
+  const paths = (r: Recipe, after?: (node: Node, entry: string[], inner: string[]) => string[]) =>
+    [...flowRecipe<string[]>(r, [''], {
+      step: (s, _p, _st, state) => state.map((x) => `${x}${x ? ' ' : ''}${s.id}`),
+      join: (states) => [...new Set(states.flat())].sort(),
+      ...(after ? { after: (node, entry, inner) => after(node, entry, inner) } : {}),
+    })].sort();
+
+  it('forks and joins: a replicate joins its body with the state before it, an audit its lenses, a gate its body', () => {
+    expect(paths(recipeOf(seq(critic('a'), replicate('x', 2, critic('b')), critic('c'))))).toEqual(['a b c', 'a c']);
+    expect(paths(recipeOf(seq(audit('au', [{ name: 'p', body: critic('p') }, { name: 'q', body: critic('q') }]), critic('c'))))).toEqual(['p c', 'q c']);
+    expect(paths(recipeOf(seq(oneShotGate('g', critic('g1'), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }), critic('c'))))).toEqual(['g1 c']);
+  });
+
+  it('`after` says what an operator that hands on less than what ran inside it hands on: here, its entry state', () => {
+    const entry = (_node: Node, before: string[]) => before;
+    expect(paths(recipeOf(seq(critic('a'), replicate('x', 2, critic('b')), critic('c'))), entry)).toEqual(['a c']);
+    expect(paths(recipeOf(seq(critic('a'), each('e', critic('b')), critic('c'))), entry)).toEqual(['a c']);
+    expect(paths(recipeOf(seq(critic('a'), audit('au', [{ name: 'p', body: critic('p') }]), critic('c'))), entry)).toEqual(['a c']);
+    // Loops, optionals and routes hand on what ran in them, whatever `after` says.
+    expect(paths(recipeOf(seq(critic('a'), optional('o', 'needed', critic('b')), critic('c'))), entry)).toEqual(['a b c', 'a c']);
   });
 });
 
