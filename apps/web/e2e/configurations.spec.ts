@@ -32,6 +32,8 @@ const CASES: Case[] = [
       await expect(note).toContainText('A page running its scripts can send what it contains to other sites.');
       await result.getByRole('button', { name: 'Run the page’s scripts' }).click();
       await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+      // The frame asks the route for the page's scripts (F05): the address follows the switch too.
+      await expect(frame).toHaveAttribute('src', /\?scripts=1$/);
       await expect(note).toContainText('A page running its scripts can send what it contains to other sites.');
       await expect(page.frameLocator('.result-body iframe').locator('body')).not.toBeEmpty();
 
@@ -51,10 +53,15 @@ const CASES: Case[] = [
 
       // SEC-1: next.config headers apply only in the running server, so the page's own address is checked here. The
       // artifact route sandboxes it; /api/artifacts never serves it, so the page cannot move there to run as byway.
+      // F05: at its own address the page is inert, and asking for its scripts without being a same-origin frame (this
+      // request sends no Fetch Metadata) changes nothing.
       const src = (await frame.getAttribute('src')) ?? '';
-      expect(src).toMatch(/^\/artifacts\/sha256/);
+      expect(src).toMatch(/^\/artifacts\/sha256[^?]*$/);
       const own = await page.request.get(src);
-      expect(own.headers()['content-security-policy']).toMatch(/sandbox allow-scripts/);
+      expect(own.headers()['content-security-policy']).toMatch(/(^|; )sandbox$/);
+      const asked = await page.request.get(`${src}?scripts=1`);
+      expect(asked.headers()['content-security-policy']).toMatch(/(^|; )sandbox$/);
+      expect(asked.headers()['cache-control']).toBe('no-store');
       const elsewhere = await page.request.get(`/api${src}`);
       const unsandboxedPage = elsewhere.status() === 200 && (elsewhere.headers()['content-type'] ?? '').startsWith('text/html') && !/sandbox/.test(elsewhere.headers()['content-security-policy'] ?? '');
       expect(unsandboxedPage).toBe(false);
