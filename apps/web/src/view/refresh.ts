@@ -9,7 +9,7 @@
  * - `now()` issues a request at once and aborts the one before it (an action needs the state after itself).
  * - `poll()` joins the request in flight, if any, so timer and visibility polls never overlap.
  * - A request this instance aborted itself never sets the connection state; one that fails, or takes longer than
- *   `timeoutMs`, sets it to 'lost' when it is still the latest.
+ *   `timeoutMs` (its body included), sets it to 'lost' when it is still the latest, and applies nothing.
  * - `dispose()` makes the instance inert and is final for this instance only; its owner creates a new one.
  *
  * For a local, single-user app this gives the ordering a server-side snapshot revision would: each applied snapshot was
@@ -63,6 +63,12 @@ export function createRefresher<T>(opts: RefresherOptions<T>): Refresher {
       .then(
         (data) => {
           if (!latest()) return;
+          // Aborted, yet answered: the headers came in time but the body did not, and a reader that swallowed the cut-off
+          // body handed back something that is not a snapshot. A timed-out request is lost whatever it resolved with.
+          if (ctl.signal.aborted) {
+            if (timedOut) opts.status('lost');
+            return;
+          }
           opts.apply(data);
           opts.status('ok');
         },

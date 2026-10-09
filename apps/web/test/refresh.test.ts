@@ -143,6 +143,26 @@ describe('refresh sequencing (F15)', () => {
     expect(requests).toHaveLength(2);
   });
 
+  it('a request whose answer comes only after its timeout is lost, never applied (a body that stalls after the headers)', async () => {
+    vi.useFakeTimers();
+    const applied: unknown[] = [];
+    const statuses: Connection[] = [];
+    let finish: (value: object) => void = () => undefined;
+    // Like get(): the headers came, so the request resolves even though reading its body was cut off by the abort.
+    const refresher = createRefresher<object>({
+      fetch: () => new Promise<object>((resolve) => (finish = resolve)),
+      apply: (data) => applied.push(data),
+      status: (c) => statuses.push(c),
+      timeoutMs: 5_000,
+    });
+    const stalled = refresher.poll();
+    await vi.advanceTimersByTimeAsync(5_000);
+    finish({});
+    await stalled;
+    expect(applied).toEqual([]);
+    expect(statuses).toEqual(['lost']);
+  });
+
   it('a synchronous throw from fetch is a failed request, not a stuck one', async () => {
     const statuses: Connection[] = [];
     let calls = 0;
