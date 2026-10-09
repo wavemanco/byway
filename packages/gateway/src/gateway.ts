@@ -828,7 +828,8 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
 /**
  * A failure after a provider was paid: never retryable, because retrying the call (here, or by Temporal re-running the
  * activity) would pay again for what was already bought. It is byway's own failure, not the provider's (the provider
- * answered), and says it was billed (ADR-0099), so no caller presents it as the provider not answering.
+ * answered), and says it was billed (ADR-0099), so no caller presents it as the provider not answering, and a caller with
+ * tries of its own (an ASSET step's tries per image, ADR-0090) stops too.
  */
 function billedFailure(redact: Redactor, what: string, cause: unknown): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);

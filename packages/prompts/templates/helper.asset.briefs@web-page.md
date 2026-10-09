@@ -1,9 +1,10 @@
 ---
 id: helper.asset.briefs
-version: 1
+version: 2
 fidelity: project
 slots: artifact
 output: image-briefs
+images: 1-3
 source: protocol/01-blocks.md ASSET procedure 1–6 (find the native stand-ins; 1–3 slots ⟨A⟩; copy kept out of images ⟨A⟩; never as evidence ⟨A⟩); spec §3.2 ASSET on web-page and §3.3 asset.briefs. The generic helper for an ASSET step on a page; C1's own step prompt is article.ASSET.
 ---
 ## system

@@ -113,7 +113,7 @@ describe('no outcome claims in copy that describes recipes and steps (CRED-1)', 
     for (const text of [
       'Four drafts start in separate sessions, each told to take its creative direction from its own random string.',
       'The AI merges options that say the same thing into one.',
-      'A fresh reviewer lists what the task did not ask for, and the AI removes what it lists.',
+      'A fresh reviewer, who sees only the change and its "why", lists what the change does not need, and the AI removes what it lists.',
       'Not available in this version: no voice-over audio is made, and your locked script stays with the storyboard.',
       'Not yet tested.',
     ]) {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PROMPT_SLOTS, type PromptSlot, type RenderedPrompt } from '@byway/contracts';
+import { PROMPT_SLOTS, type ImageCount, type PromptSlot, type RenderedPrompt } from '@byway/contracts';
 import { MEDIA, type Medium } from '@byway/protocol';
 import { z } from 'zod';
 import { PromptTemplateError } from './errors.ts';
@@ -16,6 +16,7 @@ import { parseBody, slotsUsed, type BodyNode } from './syntax.ts';
  *     slots: problem, brief
  *     output: artifact:prose
  *     source: where the wording comes from
+ *     images: 1-3       (image-briefs templates only: `each`, or a range `min-max`)
  *     ---
  *     ## system          (optional)
  *     …
@@ -35,6 +36,11 @@ export interface Template {
   slots: PromptSlot[];
   output: OutputId;
   source: string;
+  /**
+   * How many images an image-briefs template asks for (ADR-0090): `each` (one per storyboard shot or option) or a range.
+   * Required on image-briefs templates and refused on any other, so the runtime reads the count the prompt states.
+   */
+  images: ImageCount | undefined;
   /** "sha256:<hex>" of the file, line endings normalized to LF. */
   hash: string;
   file: string;
@@ -49,7 +55,16 @@ const FrontMatter = z.strictObject({
   slots: z.string(),
   output: z.enum(OUTPUT_IDS as [OutputId, ...OutputId[]]),
   source: z.string().min(1, 'source must say where the wording comes from'),
+  images: z.string().regex(/^(?:each|\d+-\d+)$/, 'images is "each" or a range such as 1-3').optional(),
 });
+
+/** The images field as a count: `each`, or a range whose minimum is at most its maximum. */
+function imageCount(raw: string | undefined, file: string): ImageCount | undefined {
+  if (raw === undefined || raw === 'each') return raw;
+  const [min, max] = raw.split('-').map(Number) as [number, number];
+  if (min > max) throw new PromptTemplateError('bad-template', `${file}: images "${raw}" has a minimum above its maximum`);
+  return { min, max };
+}
 
 const SECTION = /^## (system|user)[ \t]*$/m;
 
@@ -97,6 +112,9 @@ export function parseTemplateFile(raw: string, name: string): Template {
   }
   const fm = parsed.data;
   if (fm.id !== baseId) throw new PromptTemplateError('bad-template', `${name}: front-matter id "${fm.id}" does not match the file name`);
+  if ((fm.output === 'image-briefs') !== (fm.images !== undefined)) {
+    throw new PromptTemplateError('bad-template', fm.images === undefined ? `${name}: an image-briefs template must declare images (each, or a range such as 1-3)` : `${name}: only an image-briefs template declares images`);
+  }
 
   const declared = fm.slots
     .split(',')
@@ -123,6 +141,7 @@ export function parseTemplateFile(raw: string, name: string): Template {
     slots: declared as PromptSlot[],
     output: fm.output,
     source: fm.source,
+    images: imageCount(fm.images, name),
     hash,
     file: name,
     system,

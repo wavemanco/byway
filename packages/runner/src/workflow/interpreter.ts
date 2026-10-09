@@ -15,6 +15,7 @@ import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '
 import type { CheckpointResolution } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
+import { feedsGate } from '@byway/recipe/semantics';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
@@ -36,6 +37,7 @@ import {
   NOTHING_TO_SWAP,
   optionalPrompt,
   READY_PROMPT,
+  revisesInPlace,
   routePrompt,
   SWAPS_PROMPT,
 } from './wording.ts';
@@ -59,8 +61,11 @@ class RetryStage extends Error {
 class LoopExit extends Error {
   override name = 'LoopExit';
   readonly loopId: string;
-  /** threshold/clean: the gate passed; plateau/stopped: take the best snapshot; accepted: the cap's chosen version. */
-  readonly reason: 'threshold' | 'clean' | 'plateau' | 'stopped' | 'accepted';
+  /**
+   * threshold/clean: the gate passed; plateau/stopped: take the best snapshot; accepted: the cap's chosen version;
+   * unchecked: the judge had nothing to see (a relay link that made no clip), so the round ends as it is (F10).
+   */
+  readonly reason: 'threshold' | 'clean' | 'plateau' | 'stopped' | 'accepted' | 'unchecked';
   readonly ports: Ports;
   readonly artifactId: string | undefined;
   constructor(loopId: string, reason: LoopExit['reason'], ports: Ports, artifactId?: string) {
@@ -261,6 +266,14 @@ export class Interpreter {
   private async step(s: Step, ports: Ports, ctx: Ctx): Promise<Ports> {
     const call = this.call(s.id, ctx);
     if (s.actor === 'human') return this.human(s, ports, ctx, call);
+    const unseen = unobservable(s, ports);
+    if (unseen !== undefined) {
+      // Inside a relay link, a judge whose view shows nothing to judge (no clip was made) is not asked: it is skipped
+      // with the view's reason, and a loop it reports to ends 'not checked', with no repair and no cap question (F10).
+      await this.control.machine(() => this.act(call, () => quick.skipStep({ run: this.run, call, step: toStepSpec(s), note: unseen })));
+      if (ctx.loop && feedsGate(s, ctx.loop.loop.gate.metric)) throw new LoopExit(ctx.loop.loop.id, 'unchecked', ports);
+      return ports;
+    }
     const out = await this.control.machine(async (): Promise<Ports> => {
       const spec = toStepSpec(s);
       if (s.actor === 'tool') {
@@ -268,7 +281,9 @@ export class Interpreter {
           const pool = s.consumes.includes('option_set<artifact>') && !s.consumes.includes('artifact');
           const ids = pool ? (ports.options ?? []) : ports.artifact ? [ports.artifact] : [];
           if (!ids.length) throw new RunFailure(`There is nothing to render at step "${s.id}".`);
-          const { view } = await this.act(call, () => model.renderView({ run: this.run, call, step: spec, artifactIds: ids, pool }));
+          // Inside a relay link the view is of that link's shot and clip (F10, ADR-0090).
+          const link = ports.shot !== undefined ? { link: { shot: ports.shot, ...(ports.linkStart ? { startFrame: ports.linkStart } : {}) } } : {};
+          const { view } = await this.act(call, () => model.renderView({ run: this.run, call, step: spec, artifactIds: ids, pool, ...link }));
           return pool ? { ...ports, view, optionViews: view.items } : { ...ports, view };
         }
         await this.act(call, () => quick.skipStep({ run: this.run, call, step: spec, note: s.role === 'relay' ? SKIP_COMPOSITING : SKIP_NO_EXECUTOR }));
@@ -355,7 +370,10 @@ export class Interpreter {
     }
     // What the person looks at: the candidates for a step over an option set, else the view it consumes.
     const shown = s.consumes.includes('option_set<artifact>') ? optionsShown(ports) : (ports.view?.items.flatMap(viewIds) ?? []);
-    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round) };
+    // A reaction that revises a text port in place opens with that port's text, and its answer replaces it (ADR-0090).
+    const revised = revisesInPlace(s);
+    const inPlace = revised ? ports[revised]?.trim() : undefined;
+    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
     let initial: OpenCheckpointInput['initial'];
     if (kind === 'compare') {
       checkpoint = {
@@ -515,7 +533,7 @@ export class Interpreter {
         current = e.ports;
       }
       if (exit) {
-        if (exit.reason === 'threshold' || exit.reason === 'clean') return current;
+        if (exit.reason === 'threshold' || exit.reason === 'clean' || exit.reason === 'unchecked') return current;
         if (exit.reason === 'accepted') return exit.artifactId && exit.artifactId !== current.artifact ? this.withArtifact(current, exit.artifactId, frame) : current;
         return scored ? this.bestOf(frame, current, ctx) : current;
       }
@@ -698,6 +716,18 @@ export class Interpreter {
 }
 
 const cand = (call: StepCall): { candidate?: number } => (call.candidate !== undefined ? { candidate: call.candidate } : {});
+
+/**
+ * Why a judging step (a model critic or check) inside a relay link has nothing to see: every item of the view it would
+ * judge is one with nothing to judge (a shot whose clip was not made, render.ts). Undefined anywhere else: outside a
+ * link (relay() clears the shot on exit) a judge always runs.
+ */
+function unobservable(s: Step, ports: Ports): string | undefined {
+  if (s.actor !== 'model' || (s.role !== 'check' && s.role !== 'critic') || ports.shot === undefined) return undefined;
+  const items = ports.view?.items ?? [];
+  if (!items.length || !items.every((v) => v.unobservable !== undefined)) return undefined;
+  return [...new Set(items.map((v) => v.unobservable!))].join(' ');
+}
 
 const viewIds = (v: ViewRef | undefined): string[] => (v ? [...(v.textArtifactId ? [v.textArtifactId] : []), ...v.imageArtifactIds] : []);
 

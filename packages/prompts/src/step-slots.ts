@@ -5,6 +5,8 @@ import type { Medium } from '@byway/protocol';
 export interface SlotStep {
   role: string;
   consumes: readonly string[];
+  /** Ports the step reads when they are there (ADR-0089): their slots are filled too, empty when absent. */
+  reads?: readonly string[];
 }
 
 /** Roles that judge the work and so never see its source (port rule 1; the runner's JUDGING_ROLES). */
@@ -26,7 +28,8 @@ const BY_PORT: Readonly<Record<string, readonly PromptSlot[]>> = {
 
 /**
  * The slots the runner fills for a recipe step's own prompt, every time it runs (its activities' buildPrompt plus the
- * per-role conventions): the medium; the slot of each port it consumes (the artifact never for a judging step); a SEED
+ * per-role conventions): the medium; the slot of each port it consumes or reads (a read port's slot is empty when no
+ * step made it, so a template tests it with {{#if}}; the artifact never for a judging step); a SEED
  * step's random string; a judge's options; a RELAY link's storyboard and shot; an ASSET step's work (and option labels
  * on options). Slots the runner fills only sometimes are left out, so a template must not need them: `round` (only
  * inside a loop), a critic's GREAT lineup without the refs port (only with enough references), and a model
@@ -38,7 +41,7 @@ const BY_PORT: Readonly<Record<string, readonly PromptSlot[]>> = {
 export function slotsForStep(step: SlotStep, medium: Medium): Set<PromptSlot> {
   const out = new Set<PromptSlot>(['medium']);
   const judging = JUDGING.has(step.role);
-  for (const port of step.consumes) {
+  for (const port of [...step.consumes, ...(step.reads ?? [])]) {
     if (port === 'artifact') {
       if (!judging) out.add('artifact');
       continue;

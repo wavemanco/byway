@@ -257,6 +257,8 @@ export type FittedCard = { ok: true; png: Uint8Array; html: string; cut?: CardCu
 export const MAX_CARD_RENDERS = 6;
 /** A try that came out too tall is followed by one with at least this share of its words fewer. */
 const MIN_STEP = 0.02;
+/** A try aims at most this share of a tile under where the calibrated estimate puts the line. */
+const AIM = 0.02;
 
 /** A render's full height, from its tiles' PNG headers (a tile counts as CARD_MAX_HEIGHT when its size is unknown). */
 const heightOf = (tiles: readonly Uint8Array[]): number => tiles.reduce((h, t) => h + (imageSize(t)?.height ?? CARD_MAX_HEIGHT), 0);
@@ -280,16 +282,47 @@ function measuredScale(d: Drawn): number {
 }
 
 /**
- * A card rendered into exactly one tile (F13). The first try keeps the words the estimate fits. Its render calibrates
- * the estimate against the browser (the estimate is cautious for ordinary prose and can be wrong for odd text either
- * way), and the next try keeps as many words as the calibrated estimate fits: more when the first fitted with room to
- * spare, fewer when it did not fit. A whole text that comes out too tall at a size above the floor (glyphs wider than
- * the estimate's average, such as capitals) is tried whole at the floor before any word is cut. A try that comes out
- * too tall is measured the same way, and the next keeps fewer words still; the card with the most words that fit is
- * kept. When no try with words fits, every word goes and the card says so. A card taller than one tile even then is
- * refused (`too-tall`): it is never cut to its first tile. Text with runs too long to cut between is cut by
- * characters instead (unitsOf). With `cut: false` (a card whose words reach the critic another way) the card is
- * rendered once, as it is.
+ * Between a try that fit and one that did not, the most units whose height stays within `limit`, interpolating the two
+ * measured heights by the estimate of the words in between. It reads only the words where the answer lies, so text
+ * that is not uniform elsewhere (wider opening words, say) does not mislead it as one scale for the whole text would.
+ */
+function unitsBetween(fit: Drawn, over: Drawn, units: TextUnits, limit: number): number {
+  const estimated = (n: number) => estimatedHeight(units.first(n).trim(), MIN_FONT);
+  const [e0, e1] = [estimated(fit.shown), estimated(over.shown)];
+  const [h0, h1] = [heightOf(fit.tiles), heightOf(over.tiles)];
+  if (e1 <= e0 || h1 <= h0) return fit.shown;
+  const height = (n: number) => h0 + ((estimated(n) - e0) * (h1 - h0)) / (e1 - e0);
+  let lo = fit.shown;
+  let hi = over.shown - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (height(mid) <= limit) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/**
+ * A card rendered into exactly one tile (F13), with as many words as fit, found within MAX_CARD_RENDERS. The first try
+ * keeps the words the estimate fits. Every render then narrows where the answer lies, between the try with the most
+ * words known to fit and the one with the fewest known not to, and the next try is chosen from the measurements: by
+ * the try's own scale before anything fits; then by the fit's scale and by interpolating between the fit and the try
+ * that did not, the more cautious of the two (the interpolation alone after two fits in a row showed caution too
+ * cautious). A try aims a little under the line (AIM, narrowing as the fit nears the line), since an estimate a hair
+ * over it wastes the render. The search ends when the bounds meet, or when the measurements put the line no more than
+ * a small share of words past a fit.
+ *
+ * One scale for the whole text is misled by text that is not uniform: with opening words set wider than the rest, each
+ * try lands just over the line again, and the search used to run out of renders and drop every word though thousands
+ * fit. So a try that comes out too tall while nothing has fit yet, or right after another that did not, is followed by
+ * one no more than half way down to what is known to fit: the search always finds a fit, and the interpolation then
+ * closes in on the line from both sides.
+ *
+ * A whole text that comes out too tall at a size above the floor (glyphs wider than the estimate's average, such as
+ * capitals) is tried whole at the floor before any word is cut. When no try with words fits, every word goes and the
+ * card says so. A card taller than one tile even then is refused (`too-tall`): it is never cut to its first tile. Text
+ * with runs too long to cut between is cut by characters instead (unitsOf). With `cut: false` (a card whose words
+ * reach the critic another way) the card is rendered once, as it is.
  */
 export async function fitCard(card: CardContent, render: CardRender, opts: { cut?: boolean } = {}): Promise<FittedCard> {
   const units = unitsOf(card.text);
@@ -305,24 +338,56 @@ export async function fitCard(card: CardContent, render: CardRender, opts: { cut
   };
 
   if (opts.cut === false || total === 0) return fitted(await draw(total));
+  /** The try with the most units that fit, and the one with the fewest that did not. */
   let best: Drawn | undefined;
+  let over: Drawn | undefined;
+  const lo = () => best?.shown ?? 0;
+  const hi = () => over?.shown ?? total + 1;
   let shown = unitsThatFit(card, 1, units);
   let floor = false;
-  for (let renders = 1; renders < MAX_CARD_RENDERS && shown > (best?.shown ?? 0); renders++) {
+  /** Whether the previous try fit (undefined before the first). */
+  let last: boolean | undefined;
+  for (let renders = 1; renders < MAX_CARD_RENDERS && shown > lo() && shown < hi(); renders++) {
     const d = await draw(shown, floor);
     if (!d.tiles.length) return fitted(d);
-    if (d.tiles.length === 1) {
-      best = d;
-      // A fit after a calibration is the answer; only the estimate's own first guess may leave words out.
-      if (renders > 1 || shown === total) break;
-      shown = unitsThatFit(card, measuredScale(d), units);
-    } else if (shown === total && fontOf(d.page) > MIN_FONT) {
+    if (d.tiles.length > 1 && shown === total && !floor && fontOf(d.page) > MIN_FONT) {
       // The whole text, too tall at the size the estimate chose: the same words at the floor may still fit.
       floor = true;
-    } else {
-      // Too tall: as many words as this render's own measurement says fit, and always some fewer than this try.
-      shown = Math.max(0, Math.min(unitsThatFit(card, measuredScale(d), units), shown - Math.max(1, Math.ceil(shown * MIN_STEP))));
+      continue;
     }
+    const fits = d.tiles.length === 1;
+    if (fits) best = d;
+    else over = d;
+    if (fits && shown === total) break;
+    const again = last === fits;
+    last = fits;
+    const step = Math.max(1, Math.ceil(shown * MIN_STEP));
+    const middle = Math.floor((lo() + hi()) / 2);
+    /**
+     * How many units the measurements say fit, `aim` short of the line: calibrated by the latest fit and, between a fit
+     * and a try that did not, by interpolating; the more cautious of the two unless `bold` (the cautious one was just
+     * shown too cautious). Before any fit, by this try's own scale.
+     */
+    const estimate = (aim: number, bold: boolean): number => {
+      if (!best) return unitsThatFit(card, measuredScale(d) * (1 + aim), units);
+      const byFit = unitsThatFit(card, measuredScale(best) * (1 + aim), units);
+      if (!over) return byFit;
+      const between = unitsBetween(best, over, units, CARD_MAX_HEIGHT * (1 - aim));
+      return bold ? between : Math.min(byFit, between);
+    };
+    let next: number;
+    if (!fits) {
+      // Too tall: always some fewer than this try, and no more than half way down while no try has fit or after two
+      // that did not: a misled estimate cannot spend every render just over the line.
+      next = Math.min(estimate(AIM, false), shown - step, ...(!best || again ? [middle] : []));
+    } else {
+      // A fit: after two fits in a row the cautious calibration was too cautious, so the interpolation alone. When the
+      // measurements put the line no more than a small share of units further on, this is the answer. Close to the
+      // line the aim narrows with the room left, so the last few lines are not given up to it.
+      if (estimate(0, again) < shown + step) break;
+      next = Math.max(estimate(Math.min(AIM, (CARD_MAX_HEIGHT - heightOf(d.tiles)) / CARD_MAX_HEIGHT / 4), again), shown + step);
+    }
+    shown = Math.min(hi() - 1, Math.max(lo() + 1, next));
   }
   return fitted(best ?? (await draw(0)));
 }

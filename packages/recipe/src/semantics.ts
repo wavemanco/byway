@@ -408,6 +408,7 @@ export const FIELD_ROLES: {
     frozenPrompt: 'semantic',
     prompt: 'semantic',
     consumes: 'semantic-set',
+    reads: 'semantic-set',
     produces: 'semantic-set',
     writes: 'semantic',
     keepsVoice: 'semantic',

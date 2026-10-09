@@ -1,9 +1,10 @@
 ---
 id: helper.asset.briefs
-version: 1
+version: 2
 fidelity: project
 slots: artifact
 output: image-briefs
+images: each
 source: protocol/01-blocks.md RELAY procedure 4 (still s0 from image generation seeds each clip) and ASSET guards; spec §3.3 asset.briefs on media (one image per storyboard shot, slot = shot number). The generic helper; C5's own step prompt is product.c5.anchor-frames.
 ---
 ## system

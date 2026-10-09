@@ -9,9 +9,11 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
 
 /**
  * The workflow bundle's hash at main a768d4d (after ADR-0092's admission work, which changed it from e572716a… at 17eae76),
- * before F03's stage 3, and after it: stage 3 changes no workflow code.
+ * before F03's stage 3, and after it: stage 3 changes no workflow code. Cluster F (ADR-0089, ADR-0090) changes it on
+ * purpose from bfdda860… (`toStepSpec` carries `reads`, the revise-in-place prefill, the link context, the unobservable
+ * skip and the `unchecked` loop exit), so runs waiting under the older bundle end plainly once (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = 'bfdda860bb6aff469c48f48389af1795bd1c25f0dd1689b6b45e9b2080bee074';
+const PINNED_WORKFLOW_HASH = 'ec88dae8006566ad8604f8fb64d6554decc806c5f9a01779f73321ca6621ecb0';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
@@ -30,7 +32,7 @@ describe('the workflow bundle', () => {
     }
   }, 60_000);
 
-  it('is the bundle runs in flight were started under: the spend book’s stage 3 changed no workflow code (ADR-0078, ADR-0099)', async () => {
+  it('is the bundle runs in flight were started under: the spend book’s stage 3 changed no workflow code, cluster F changed it on purpose (ADR-0078, ADR-0099, ADR-0090)', async () => {
     // A run records the hash of the bundle it started under, and a worker running another bundle ends it plainly
     // (ADR-0078). Pinned, so that a change to workflow code is a decision made with it, never a side effect of activity
     // work: update it in the same change that alters workflow code on purpose.

@@ -62,7 +62,16 @@ export interface RenderedPrompt {
   fidelity: 'verbatim' | 'paraphrase' | 'project';
   system?: string;
   user: string;
+  /**
+   * For an image-briefs template (an ASSET step's prompt, output `image-briefs`), how many images it asks for, as its
+   * front matter declares (ADR-0090): `each` (one per storyboard shot or per option, as the work lists them) or a
+   * range. The runner holds the answer to it, so the prompt and the runtime share one definition. Absent elsewhere.
+   */
+  images?: ImageCount;
 }
+
+/** How many images an image-briefs template asks for: one per shot or option, or between `min` and `max`. */
+export type ImageCount = 'each' | { min: number; max: number };
 
 export interface PromptRenderer {
   has(id: string): boolean;

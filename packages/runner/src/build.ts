@@ -6,7 +6,9 @@
  *
  * The bundle knows its own hash (C7, ENG-11): the sha256 of its code, written into the code where workflow/version.ts
  * reads it. A run records the hash it started under, so a worker built from different code can tell which waiting
- * runs it cannot replay. Comments are not part of the code esbuild emits, so editing them changes nothing.
+ * runs it cannot replay. esbuild keeps some comments in the code it emits (a doc comment on a class member can survive,
+ * as LoopExit's does), so editing a comment in workflow code can change the hash; build.test.ts pins it, so such a
+ * change shows.
  *
  * The bundle is replaced whole (replaceFile): written beside its final name, then renamed into place. Two byway starts
  * from one checkout build the same file at the same time, and a worker reading it while the other wrote it in place

@@ -12,6 +12,7 @@ import {
   TELLS_MEDIUM_IDS,
   tellsPromptIds,
 } from '../src/index.ts';
+import { inputsOf } from '@byway/recipe';
 import { FILES, library, PROMPT_STEPS, slotsForPorts } from './library.ts';
 
 describe('every prompt id has a template', () => {
@@ -35,7 +36,7 @@ describe('every prompt id has a template', () => {
 
   it.each(PROMPT_STEPS.map((p) => [`${p.recipe.id} ${p.step.id}`, p] as const))('%s: the template uses only slots its ports fill (spec §3.2)', (_name, p) => {
     const info = library.info(p.step.prompt as string, p.medium);
-    const allowed = slotsForPorts(p.step.consumes);
+    const allowed = slotsForPorts(inputsOf(p.step));
     // Slots the conventions add beyond the ports: the runner's string for SEED, a GREAT lineup's labels, the relay
     // link's "Shot N" in the brief slot, the option labels an ASSET step on options draws one image for.
     if (p.step.role === 'seed') allowed.add('seed');
@@ -43,9 +44,6 @@ describe('every prompt id has a template', () => {
     if (p.step.role === 'critic') for (const s of ['refs', 'labels'] as const) allowed.add(s);
     if (p.step.role === 'relay') allowed.add('brief');
     if (p.step.role === 'asset' && p.medium === 'options') allowed.add('options');
-    // C7: the spec interview's brief is produced but the implement step does not consume it (reported as a catalog
-    // issue); the template takes it when given.
-    if (p.step.prompt === 'product.c7.implement') allowed.add('brief');
     expect(info.slots.filter((s: PromptSlot) => !allowed.has(s))).toEqual([]);
   });
 

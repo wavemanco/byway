@@ -33,6 +33,12 @@ export interface Step {
   /** Prompt template id, e.g. "article.B1" or "project.A6". Template text is registered separately. */
   prompt?: string;
   consumes: PortType[];
+  /**
+   * Ports a model step reads when they are there, and works without when they are not (ADR-0089): a port only an
+   * optional branch may have made, such as the brief of C7's optional spec interview. Never required: scope typing
+   * holds each to `may`, never to `must`. The port rules hold a read as they hold a consumed port.
+   */
+  reads?: PortType[];
   produces: PortType[];
   /** True if the step changes the artifact. */
   writes?: boolean;
@@ -47,6 +53,9 @@ export interface Step {
   knobs?: Record<string, Json>;
   variant?: string;
 }
+/** Every port a step takes in: the ports it consumes, then the ports it reads when they are there (ADR-0089). */
+export const inputsOf = (s: { consumes: readonly PortType[]; reads?: readonly PortType[] }): PortType[] => [...s.consumes, ...(s.reads ?? [])];
+
 export interface Seq { op: 'seq'; id?: string; steps: Node[] }
 export interface Replicate { op: 'replicate'; id: string; n: number; body: Node }
 export interface Each { op: 'each'; id: string; body: Node }
@@ -147,6 +156,7 @@ export const StepSchema = z.strictObject({
   frozenPrompt: z.boolean().optional(),
   prompt: z.string().min(1).optional(),
   consumes: z.array(Port),
+  reads: z.array(Port).optional(),
   produces: z.array(Port),
   writes: z.boolean().optional(),
   keepsVoice: z.boolean().optional(),

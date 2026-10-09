@@ -272,8 +272,10 @@ export class GatewayError extends Error {
   budget?: BudgetDetails;
   /**
    * Whether the provider was paid for this call before it failed (ADR-0099). True when the provider answered and billed
-   * it but byway could not use, keep or record the answer: trying the call again pays for it again, so callers say so
-   * and do not retry. False when byway knows nothing was sent. Absent when it is not known (a provider's own failure).
+   * it but byway could not use, keep or record the answer (its media could not be stored, its cost or its request and
+   * response could not be written): trying the call again pays for it again, so callers say so and do not ask for the
+   * same thing again, here or with tries of their own (an ASSET step's tries per image, ADR-0090). False when byway
+   * knows nothing was sent. Absent when it is not known (a provider's own failure).
    */
   billed?: boolean;
   /**

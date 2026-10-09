@@ -167,6 +167,7 @@ describe('a billed image is ledgered before anything else can fail (ENG-3)', () 
     const g = gateway({ artifacts: new FailingArtifacts(0), clients: { openai: client } });
     const err = (await g.image(imageReq({ profileId: 'best' })).catch((e: unknown) => e)) as GatewayError;
     expect(err).toBeInstanceOf(GatewayError);
+    // Marked billed, so a caller with tries of its own (an ASSET step) does not buy it again.
     expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: true });
     expect(err.message).toMatch(/billed/);
     expect(calls).toHaveLength(1);

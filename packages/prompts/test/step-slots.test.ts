@@ -28,6 +28,11 @@ describe('slotsForStep', () => {
     expect(slotsForStep({ role: 'build', consumes: ['intent'] }, 'prose').has('round')).toBe(false);
   });
 
+  it('fills a port the step reads when it is there, as the runner does (ADR-0089)', () => {
+    expect([...slotsForStep({ role: 'build', consumes: ['intent'], reads: ['brief'] }, 'code-diff')].sort()).toEqual(['brief', 'medium', 'problem']);
+    expect(slotsForStep({ role: 'critic', consumes: ['view'], reads: ['artifact'] }, 'prose').has('artifact')).toBe(false);
+  });
+
   it('a fix that does not read the critique cannot run a template that needs it', () => {
     expect(() => library.render('product.c3.revise', filled(slotsForStep({ role: 'fix', consumes: ['artifact'] }, 'prose'), 'prose'))).toThrow(/critique/);
   });

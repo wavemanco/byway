@@ -147,11 +147,13 @@ describe('ASSET and RELAY steps', () => {
   it.each([[['artifact', 'anchor'] as StepSpec['produces']], [['anchor'] as StepSpec['produces']]])('a RELAY link writes the storyboard whatever it declares (%j)', async (produces) => {
     const run = await newRun('media');
     const board = (await store.artifacts.putText('{"storyboard":[{"shot":1,"description":"d","imagePrompt":"p","durationSec":3}],"voiceover":"v"}', 'application/json')).id;
+    // The frame the link starts from: without one the link is skipped (ADR-0090).
+    const start = (await store.artifacts.put(new Uint8Array([137, 80, 78, 71, 2]), 'image/png')).id;
     const res = await relayLink({ gateway: scripted(['```json\n{"clipPrompt":"A slow pan","durationSec":3}\n```']), store, prompts: fakePrompts() }, {
       run,
       call: call(run, 'clip'),
       step: spec('relay', 'model', produces, { block: 'RELAY', consumes: ['anchor', 'artifact'] }),
-      ports: { artifact: board },
+      ports: { artifact: board, anchor: start },
       shot: 1,
     });
     expect(res.artifactId).toBeDefined();

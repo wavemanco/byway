@@ -1,10 +1,11 @@
 ---
 id: product.c3.asset
-version: 1
+version: 2
 fidelity: project
 slots: artifact
 output: image-briefs
-source: protocol/03-configurations.md C3 "ASSET?(header image · diagram computed from real data)" (real photos often beat generated ones; charts must come from data); 01-blocks.md ASSET guards (never present generated imagery as evidence ⟨A⟩). The product cannot compute charts, so this step briefs a header image only. Spec §3.3: on prose, illustrations only where the text asks for them.
+images: 0-1
+source: protocol/03-configurations.md C3 "ASSET?(header image · diagram computed from real data)" (real photos often beat generated ones; charts must come from data); 01-blocks.md ASSET guards (never present generated imagery as evidence ⟨A⟩). The product cannot compute charts, so this step briefs a header image only. Spec §3.3: on prose, illustrations only where the text asks for them. Images 0-1 (ADR-0090): the empty list stays an answer the runner honours, pending the owner's decision on this veto (2026-10-08 review verification §4 item 3).
 ---
 ## system
 You art-direct one header image for a piece of writing. The image sets the piece's mood; it never claims anything.
