@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GatewayError, type CheckpointRecord, type GatewayErrorCode } from '@byway/contracts';
 import { AdvisorError } from '@byway/advisor';
+import { heldKeyError } from '@byway/gateway';
 import type { Services } from '../src/services/index.ts';
 import {
   HttpError,
@@ -34,7 +35,7 @@ async function deps(): Promise<Deps> {
   current = testHost();
   const services: Services = current.host.services(true);
   const ws = await services.store.ensureDefaultWorkspace();
-  return { services, workspaceId: ws.id, profileId: 'demo' };
+  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: current.host.heldKeyIn };
 }
 
 async function openQuestion(d: Deps, runId: string): Promise<CheckpointRecord> {
@@ -253,6 +254,9 @@ describe('model errors while recommending or composing (UX-2)', () => {
       [gatewayError('rate-limited'), 503, /busy/],
       [gatewayError('provider-error'), 503, /did not answer/],
       [new AdvisorError('intake-unreadable', 'unreadable'), 502, /could not read/],
+      // A held key (ADR-0088): the gateway's own message, which names the variable and says what to do.
+      [heldKeyError('invalid-request', 'This request contains your ANTHROPIC_API_KEY. byway never sends a key to a model; remove it from the material and try again.', 'ANTHROPIC_API_KEY'), 400, /^This request contains your ANTHROPIC_API_KEY\. .*remove it/],
+      [heldKeyError('provider-error', 'anthropic answered and billed this call (intake), but its answer contained your ANTHROPIC_API_KEY, so byway did not use it.', 'ANTHROPIC_API_KEY'), 502, /^anthropic answered and billed this call .*did not use it/],
     ];
     for (const [err, status, message] of cases) {
       recommend.mockRejectedValueOnce(err);

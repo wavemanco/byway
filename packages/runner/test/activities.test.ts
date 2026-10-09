@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
-import type { CompletionRequest, CompletionResult, Gateway, ModelProfile, ProfileStatus } from '@byway/contracts';
-import { PROFILES } from '@byway/gateway';
+import { GatewayError, type CompletionRequest, type CompletionResult, type Gateway, type ModelProfile, type ProfileStatus } from '@byway/contracts';
+import { heldKeyError, PROFILES } from '@byway/gateway';
 import { askModel } from '../src/activities/call.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { cancelRun, failRun } from '../src/activities/lifecycle.ts';
@@ -230,5 +230,38 @@ describe('which profile says whether images and video exist', () => {
     const deps: RunnerDeps = { gateway: scripted(['```json\n{"images":[{"slot":"hero","prompt":"A loaf","alt":"A loaf","size":"1024x1024"}]}\n```'], { demo: true }), store, prompts: fakePrompts() };
     const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
     await expect(assetStep(deps, { run, call: call(run, 'art'), step: assetSpec, ports: { artifact: doc } })).rejects.toThrow(/no images here/);
+  });
+});
+
+describe('an image refused because its prompt holds a provider key (ADR-0088)', () => {
+  const assetSpec: StepSpec = { id: 'art', role: 'asset', block: 'ASSET', actor: 'model', prompt: 'product.test.art', consumes: ['artifact'], produces: ['artifact'], writes: true, knobs: { triesPerSlot: 2 } };
+  const briefs = '```json\n{"images":[{"slot":"hero","prompt":"A loaf","alt":"A loaf","size":"1024x1024"}]}\n```';
+
+  async function attempt(error: Error) {
+    const run = await newRun('no-media');
+    let tries = 0;
+    const gateway: Gateway = {
+      ...scripted([briefs], { demo: true }),
+      image: async () => {
+        tries++;
+        throw error;
+      },
+    };
+    const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
+    const outcome = await assetStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'art'), step: assetSpec, ports: { artifact: doc } }).catch((e: unknown) => e);
+    return { outcome, tries };
+  }
+
+  it('stops the step with the gateway’s message, like the other key problems, instead of skipping it', async () => {
+    const refused = heldKeyError('invalid-request', 'This request contains your OPENAI_API_KEY. byway never sends a key to a model; remove it from the material and try again.', 'OPENAI_API_KEY');
+    const { outcome, tries } = await attempt(refused);
+    expect(outcome).toBe(refused);
+    expect(tries).toBe(1);
+  });
+
+  it('still tries any other refused image again, then finishes skipped, as before', async () => {
+    const { outcome, tries } = await attempt(new GatewayError('invalid-request', 'content policy'));
+    expect(outcome).toMatchObject({ skipped: true });
+    expect(tries).toBe(2);
   });
 });

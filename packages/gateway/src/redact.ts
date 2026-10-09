@@ -1,4 +1,5 @@
 import type { Env } from './env.ts';
+import { heldKeyCandidates } from './held-key.ts';
 
 export type Redactor = (text: string) => string;
 
@@ -19,14 +20,17 @@ const KEY_SHAPES = [
 const SECRET_NAME = /(KEY|TOKEN|SECRET|PASSWORD)$/;
 
 /**
- * Build a function that scrubs secrets from text bound for errors, logs, the ledger or artifacts.
- * Keys never leave the gateway (spec §2 "Keys"); this is the last line of defence, applied to every outbound string.
+ * Build a function that scrubs secrets from the gateway's diagnostic copies: the request and response bodies it
+ * stores, provider metadata in the ledger (servedModel, upstreamProvider) and error messages. It is lossy on purpose
+ * (key shapes too), which is safe only because those copies are evidence, not product. Product text (prompts, answers,
+ * what a person submits) is never rewritten: it is checked with findHeldKey and refused when it holds a key (ADR-0088).
+ * Every ':'-part a held key is matched by (held-key.ts) is scrubbed too, so these copies are never narrower than that rule.
  */
 export function makeRedactor(env: Env): Redactor {
-  const secrets = Object.entries(env)
+  const named = Object.entries(env)
     .filter(([name, value]) => SECRET_NAME.test(name) && value !== undefined && value.trim().length >= 8)
-    .map(([, value]) => (value as string).trim())
-    .sort((a, b) => b.length - a.length);
+    .map(([, value]) => (value as string).trim());
+  const secrets = [...new Set([...named, ...heldKeyCandidates(env).map((c) => c.value)])].sort((a, b) => b.length - a.length);
   return (text: string) => {
     let out = text;
     for (const secret of secrets) out = out.split(secret).join('[redacted]');

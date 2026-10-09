@@ -14,6 +14,7 @@ import type { Env as GatewayEnv } from '@byway/gateway';
 import { effectiveMode } from './config.ts';
 import type { EngineModules } from './engine.ts';
 import { engineRunner } from './engine-runner.ts';
+import { stringsIn } from './strings-in.ts';
 import type { Services } from './types.ts';
 
 /** The ledger of every model call, beside the database (spec §2 "Data"). */
@@ -39,6 +40,11 @@ export interface ServiceHost {
   readonly demoForced: boolean;
   /** The services with the mock forced on (`demo`) or not. */
   services(demo: boolean): Services;
+  /**
+   * The name of a provider key byway holds that appears anywhere in a request body (any string, property names
+   * included), or undefined. Never the value. Routes refuse such a body before storing anything (ADR-0088).
+   */
+  heldKeyIn(value: unknown): string | undefined;
   close(): Promise<void>;
 }
 
@@ -78,6 +84,8 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
       const mode = effectiveMode({ forced: forced || gateway.demo, preference: false, statuses: gateway.profileStatus() });
       return { advisor, runner, store, gateway, mode };
     },
+    // An arrow, so routes can pass it on unbound. Reads the environment on every call, as the gateway does.
+    heldKeyIn: (value: unknown) => engine.gateway.findHeldKey(opts.env, stringsIn(value)),
     async close() {
       store.close();
     },

@@ -11,11 +11,16 @@ export interface ModelProblem {
   message: string;
 }
 
-const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown } } => err instanceof Error && err.name === name;
+const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown }; heldKey?: unknown } => err instanceof Error && err.name === name;
 
 /** The plain problem for a model error, or undefined when the error is something else (left to fail as it would). */
 export function modelProblem(err: unknown): ModelProblem | undefined {
   if (named(err, 'GatewayError')) {
+    // A held provider key (ADR-0088): the gateway's message names the variable, never the value, and says what to do.
+    if (typeof err.heldKey === 'string') {
+      if (err.code === 'invalid-request') return { status: 400, message: err.message };
+      if (err.code === 'provider-error') return { status: 502, message: err.message };
+    }
     switch (err.code) {
       case 'no-credentials':
         return { status: 400, message: 'A model provider did not accept byway’s key, or no key is set for it. Check the key in .env.agents (Settings shows which providers have one), restart byway, then try again.' };

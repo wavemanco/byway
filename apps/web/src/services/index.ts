@@ -57,6 +57,8 @@ export interface Context {
   preferences: Preferences;
   /** Started with `pnpm demo` (BYWAY_DEMO=1): demo mode cannot be switched off in Settings. */
   demoForced: boolean;
+  /** ServiceHost.heldKeyIn: beside the services, not in them, so the Services seam stays the four contracts and the mode. */
+  heldKeyIn(value: unknown): string | undefined;
 }
 
 /**
@@ -71,5 +73,5 @@ export async function getContext(): Promise<Context> {
   const preferences = await h.store.getPreferences(workspace.id);
   const services = h.services(h.demoForced || preferences.demoMode);
   const profileId = runProfileId(services.mode, preferences.profileId, services.gateway.profileStatus());
-  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced };
+  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced, heldKeyIn: h.heldKeyIn };
 }
