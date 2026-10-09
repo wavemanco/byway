@@ -200,6 +200,13 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
     expect(shown.linked).toBe(`Read ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}the terms${LINK_CLOSE} and ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0 + 1)}${LINK_INDEX_END}FAQ${LINK_CLOSE}.`);
   }, 60_000);
 
+  it('the link marks change no whitespace a browser drops, as at the edge of a button\'s content', async () => {
+    const html = '<p>Pay <button type="button"><a href="/b"><i>now</i> today  </a></button>Total <a href="/c"> here </a></p>';
+    const shown = await pages.shownText(html, none);
+    expect(shown.text).toBe('Pay now todayTotal here');
+    expect(shown.linked.replace(/[﷐-﷯]/g, '')).toBe(shown.text);
+  }, 60_000);
+
   it('reads the first document only: a meta refresh does not replace it; other hosts stay blocked', async () => {
     const asked: string[] = [];
     const html = '<!doctype html><html><head><meta http-equiv="refresh" content="0;url=/elsewhere"><link rel="stylesheet" href="https://example.com/evil.css"></head><body><p>Stay here</p><img src="/api/artifacts/sha256:abc"></body></html>';

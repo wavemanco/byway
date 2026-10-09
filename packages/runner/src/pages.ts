@@ -303,7 +303,10 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
 /**
  * Read in the page (a string: this package compiles without the DOM library). Text-transform is undone on every
  * element (inline and important, so no page rule wins) and on first letters and lines; the body's innerText is read;
- * then each link's content is wrapped in the ShownText markers and the text is read again.
+ * then, in each text node inside a link, the characters between its first and last that are not whitespace are
+ * wrapped in the ShownText markers, and the text is read again. A marker stands beside a character, never beside
+ * whitespace alone, so it changes no whitespace a browser collapses or drops (as at a button's edge). Text a page does
+ * not show as text (a script, a style, a textarea's value, a title) is left alone.
  */
 const SHOWN_TEXT = `(() => {
   const title = document.title;
@@ -315,11 +318,24 @@ const SHOWN_TEXT = `(() => {
   (document.head || document.documentElement).appendChild(sheet);
   const text = body.innerText;
   const hrefs = [];
-  for (const a of document.querySelectorAll('a[href]')) {
-    const index = String(hrefs.length).replace(/[0-9]/g, (d) => String.fromCharCode(${LINK_DIGIT_0} + Number(d)));
-    hrefs.push(a.getAttribute('href'));
-    a.insertBefore(document.createTextNode(${JSON.stringify(LINK_OPEN)} + index + ${JSON.stringify(LINK_INDEX_END)}), a.firstChild);
-    a.appendChild(document.createTextNode(${JSON.stringify(LINK_CLOSE)}));
+  const index = new Map();
+  const nodes = [];
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+  for (const n of nodes) {
+    const parent = n.parentElement;
+    const a = parent && parent.closest('a[href]');
+    if (!a || parent.closest('script, style, textarea, title, template')) continue;
+    const m = /^([ \\t\\n\\f\\r]*)([\\s\\S]*?)([ \\t\\n\\f\\r]*)$/.exec(n.data);
+    if (!m || !m[2]) continue;
+    let i = index.get(a);
+    if (i === undefined) {
+      i = hrefs.length;
+      index.set(a, i);
+      hrefs.push(a.getAttribute('href'));
+    }
+    const digits = String(i).replace(/[0-9]/g, (d) => String.fromCharCode(${LINK_DIGIT_0} + Number(d)));
+    n.data = m[1] + ${JSON.stringify(LINK_OPEN)} + digits + ${JSON.stringify(LINK_INDEX_END)} + m[2] + ${JSON.stringify(LINK_CLOSE)} + m[3];
   }
   return JSON.stringify({ title, text, linked: body.innerText, hrefs });
 })()`;
