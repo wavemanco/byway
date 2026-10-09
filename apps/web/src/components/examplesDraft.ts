@@ -2,7 +2,8 @@
  * "Examples you admire" on the Recommendation screen, kept per problem for this tab's session (ADR-0082, R1). A budget
  * refusal sends the person to Settings (view/history.ts budgetProblem); the screen unmounts on the way, and examples
  * kept only in its state were lost. Pasted text is kept as text; an image as the artifact it was already stored as.
- * Cleared when the run starts.
+ * Cleared when the run starts. Text byway refused for holding a provider key is not kept until it is edited
+ * (keepExamples, ADR-0088).
  */
 import { MAX_REF_TEXT, MAX_REFS } from '../view/refs.ts';
 import { sessionSlot, type SessionSlot, type StorageSource } from './sessionSlot.ts';
@@ -26,4 +27,15 @@ export function decodeExamples(raw: unknown): KeptExample[] | null {
 
 export function examplesSlot(intakeId: string, source?: StorageSource): SessionSlot<KeptExample[]> {
   return sessionSlot(`byway.examples.${intakeId}`, decodeExamples, source);
+}
+
+/**
+ * Keeps the examples for this tab's session, all but pasted text that byway refused for holding one of its provider keys
+ * (`refused`, ADR-0088). Such an example stays on screen to be edited, and is kept again once its text is not the
+ * refused text; the other examples are unsent work and stay kept. With nothing left to keep, the slot is cleared.
+ */
+export function keepExamples(intakeId: string, examples: readonly KeptExample[], refused: ReadonlySet<string>, source?: StorageSource): void {
+  const kept = examples.filter((e) => e.kind !== 'text' || !refused.has(e.text));
+  if (kept.length > 0) examplesSlot(intakeId, source).save(kept);
+  else examplesSlot(intakeId, source).clear();
 }

@@ -12,10 +12,13 @@
  *   write still persists.
  *
  * put() does not notify: a keystroke must not re-render the run screen. Sending, settling and discarding do.
+ *
+ * An answer byway refused for holding one of its provider keys (ADR-0088) is withheld: it stays in memory, so its panel
+ * still shows it to be edited, but this tab's storage does not keep it while it would send the refused answer.
  */
-import type { CheckpointRecord, RunStatus } from '@byway/contracts';
-import type { CheckpointDraft } from '../../view/checkpoints.ts';
-import { decodeStoredDraft, isDirty, persisted, sanitize, settle, startingDraft, unsentText, type StoredDraft } from '../../view/drafts.ts';
+import type { CheckpointRecord, CheckpointResolution, RunStatus } from '@byway/contracts';
+import { toResolution, type CheckpointDraft } from '../../view/checkpoints.ts';
+import { decodeStoredDraft, isDirty, persisted, sameResolution, sanitize, settle, startingDraft, unsentText, type StoredDraft } from '../../view/drafts.ts';
 import { keysWithPrefix, sessionSlot, type StorageSource } from '../sessionSlot.ts';
 
 const PREFIX = 'byway.draft.';
@@ -41,6 +44,14 @@ export interface DraftStore {
   put(cp: CheckpointRecord, draft: CheckpointDraft): void;
   /** The answer was accepted: lock the turn until a snapshot shows its question closed. Any kind, confirm included. */
   markSent(cp: CheckpointRecord): void;
+  /**
+   * byway refused this answer (`resolution`, as sent) because it held one of its provider keys (ADR-0088): the tab stops
+   * keeping this question's draft, at once and whatever is pending, and keeps the run's other drafts. The draft stays in
+   * memory, so the panel still shows it to be edited; it is kept again once the answer it would send is not the refused
+   * one, and never while it is. An answer is one question's draft, so whichever of its fields held the key, that draft
+   * is what is withheld.
+   */
+  withhold(cp: CheckpointRecord, resolution: CheckpointResolution): void;
   isSent(id: string): boolean;
   /**
    * Applies a snapshot byway has just served: drops what is settled, unlocks what the server still shows open. The
@@ -63,6 +74,12 @@ export function createDraftStore(runId: string, opts: DraftStoreOptions = {}): D
   const debounceMs = opts.debounceMs ?? DEBOUNCE_MS;
   const slot = (id: string) => sessionSlot(`${PREFIX}${id}`, decodeStoredDraft, opts.storage);
   const memory = new Map<string, StoredDraft>();
+  /** Answers byway refused for holding a provider key, by question: never written while the draft would send them. */
+  const withheld = new Map<string, { cp: CheckpointRecord; resolution: CheckpointResolution }>();
+  const refused = (entry: StoredDraft) => {
+    const r = withheld.get(entry.id);
+    return r !== undefined && sameResolution(r.resolution, toResolution(r.cp, entry.draft));
+  };
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   const listeners = new Set<() => void>();
   let loaded = false;
@@ -80,12 +97,13 @@ export function createDraftStore(runId: string, opts: DraftStoreOptions = {}): D
   const write = (id: string) => {
     cancel(id);
     const entry = memory.get(id);
-    if (entry && persisted(entry.kind)) slot(id).save(entry);
+    if (entry && persisted(entry.kind) && !refused(entry)) slot(id).save(entry);
     else slot(id).clear();
   };
   const remove = (id: string) => {
     cancel(id);
     memory.delete(id);
+    withheld.delete(id);
     slot(id).clear();
   };
   const flush = () => {
@@ -137,6 +155,10 @@ export function createDraftStore(runId: string, opts: DraftStoreOptions = {}): D
       memory.set(cp.id, { ...entry, sent: true });
       write(cp.id);
       notify();
+    },
+    withhold(cp, resolution) {
+      withheld.set(cp.id, { cp, resolution });
+      write(cp.id);
     },
     isSent: (id) => memory.get(id)?.sent === true,
     settle(checkpoints, runStatus) {

@@ -14,7 +14,7 @@ import { post } from './api.ts';
 import { EvidenceLabel } from './EvidenceLabel.tsx';
 import { Route, RouteDetails, RouteLegend } from './Route.tsx';
 import { Examples, exampleCount, storeExamples, type ExampleEntry } from './Examples.tsx';
-import { examplesSlot } from './examplesDraft.ts';
+import { examplesSlot, keepExamples } from './examplesDraft.ts';
 import { clearStartDraft } from './startDraft.ts';
 import { Switch } from './Switch.tsx';
 import { useTechnicalNames } from './TechNames.tsx';
@@ -76,19 +76,22 @@ export function RecommendationView(props: Props) {
   // this tab's session (examplesDraft.ts), so they survive a detour to Settings and back (ADR-0082, R1).
   const [examples, setExamples] = useState<ExampleEntry[]>([]);
   const examplesTouched = useRef(false);
+  // Pasted text byway refused for holding one of its provider keys (ADR-0088): it stays on screen to be edited, but the
+  // tab stops keeping it, and keeps the other examples. It is kept again once its text is edited.
+  const [refusedExamples, setRefusedExamples] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     const kept = examplesSlot(intakeId).load();
     if (kept && kept.length > 0) setExamples((current) => (current.length > 0 ? current : kept.map((e, i) => ({ ...e, key: i + 1 }))));
   }, [intakeId]);
   useEffect(() => {
-    if (!examplesTouched.current) return;
-    if (examples.length > 0) examplesSlot(intakeId).save(examples.map(({ key: _key, ...e }) => e));
-    else examplesSlot(intakeId).clear();
-  }, [intakeId, examples]);
+    if (!examplesTouched.current && refusedExamples.size === 0) return;
+    keepExamples(intakeId, examples.map(({ key: _key, ...e }) => e), refusedExamples);
+  }, [intakeId, examples, refusedExamples]);
   const onExamples = (update: (entries: ExampleEntry[]) => ExampleEntry[]) => {
     examplesTouched.current = true;
     setExamples(update);
   };
+  const onExampleRefused = (text: string) => setRefusedExamples((refused) => new Set(refused).add(text));
   // UX-2: an action that replaces what has focus (Build my own, switching recipe) moves focus to the new proposal's
   // title, so keyboard and screen-reader users land on what changed instead of the top of the page.
   const [focusProposal, setFocusProposal] = useState(0);
@@ -204,6 +207,7 @@ export function RecommendationView(props: Props) {
             demo={demo}
             examples={examples}
             onExamples={onExamples}
+            onExampleRefused={onExampleRefused}
             onStarted={(runId) => {
               // The problem, its attachments and these examples went into the run: nothing is left to keep.
               clearStartDraft();
@@ -363,10 +367,12 @@ interface ProposalProps {
   demo: boolean;
   examples: ExampleEntry[];
   onExamples: (update: (entries: ExampleEntry[]) => ExampleEntry[]) => void;
+  /** byway refused this pasted example for holding one of its provider keys (ADR-0088). */
+  onExampleRefused: (text: string) => void;
   onStarted: (runId: string) => void;
 }
 
-function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, remainingUsd, demo, examples, onExamples, onStarted }: ProposalProps) {
+function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, remainingUsd, demo, examples, onExamples, onExampleRefused, onStarted }: ProposalProps) {
   const technical = useTechnicalNames();
   const budgetId = useId();
   const { presentation, label, estimate } = option;
@@ -387,7 +393,7 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
     setError(null);
     try {
       // Examples go only to a recipe that takes them; they stay on this screen if you switch to one that does not.
-      const refs = option.takesRefs && exampleCount(examples) > 0 ? await storeExamples(examples) : [];
+      const refs = option.takesRefs && exampleCount(examples) > 0 ? await storeExamples(examples, onExampleRefused) : [];
       const { runId } = await post<{ runId: string }>('/api/runs', {
         intakeId,
         budgetUsd: budget,

@@ -11,10 +11,11 @@ const TEXTUAL = /^(text\/|application\/(json|javascript|x-component)|image\/svg\
 
 export interface KeyWatchOptions {
   /**
-   * The path of the one POST whose body is the person pasting a stand-in key on purpose (the refusal test, ADR-0088).
-   * Only that first request's body is exempt; its URL and headers, every response and every other request are checked.
+   * The path of the one POST whose body is the person pasting a stand-in key on purpose (the refusal test, ADR-0088), or
+   * a test of the path, for a path that holds an id the test learns later (a run's checkpoint). Only that first
+   * request's body is exempt; its URL and headers, every response and every other request are checked.
    */
-  pastedTo?: string;
+  pastedTo?: string | ((pathname: string) => boolean);
 }
 
 /** Records every place a stand-in key appeared: request URLs, headers and bodies; response headers and bodies. */
@@ -26,7 +27,9 @@ export function watchForKeys(page: Page, opts: KeyWatchOptions = {}): { leaks: s
     if (!text || !text.includes(SENTINEL)) return;
     for (const [name, value] of Object.entries(E2E_KEYS)) if (text.includes(value)) leaks.push(`${name} in ${where}`);
   };
-  const pasted = (url: string, method: string) => opts.pastedTo !== undefined && method === 'POST' && new URL(url).pathname === opts.pastedTo && pastes++ === 0;
+  const target = opts.pastedTo;
+  const isTarget = (pathname: string) => (typeof target === 'string' ? pathname === target : target !== undefined && target(pathname));
+  const pasted = (url: string, method: string) => method === 'POST' && isTarget(new URL(url).pathname) && pastes++ === 0;
   page.on('request', (req) => {
     scan(`request URL ${req.url()}`, req.url());
     scan(`request headers ${req.url()}`, JSON.stringify(req.headers()));
@@ -95,6 +98,38 @@ export async function nextTurn(page: Page, after: string | undefined, timeoutMs:
     await page.waitForTimeout(250);
   }
   throw new Error(`Nothing happened in ${timeoutMs / 1000} s after ${after ? `answering ${after}` : 'starting'}.`);
+}
+
+/** A "Your turn" a spec is answering: its panel (pinned to its checkpoint id), its id and its kind. */
+export interface Turn {
+  turn: Locator;
+  id: string;
+  kind: CheckpointKind;
+}
+
+/** The next "Your turn" other than `after`; fails if the run ends first. */
+export async function turnAfter(page: Page, after?: string): Promise<Turn> {
+  const outcome = await nextTurn(page, after, 120_000);
+  if ('done' in outcome) throw new Error(`The run ended before another question${after ? ` after ${after}` : ''}.`);
+  if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
+  return { turn: outcome.turn, id: outcome.id, kind: outcome.kind };
+}
+
+/** Answers questions as they come until one of `kinds` is open. */
+export async function untilTurn(page: Page, kinds: readonly CheckpointKind[], after?: string): Promise<Turn> {
+  let last = after;
+  for (let i = 0; i < 30; i++) {
+    const t = await turnAfter(page, last);
+    if (kinds.includes(t.kind)) return t;
+    await answerTurn(page, t.turn, t.kind);
+    last = t.id;
+  }
+  throw new Error(`No ${kinds.join(' or ')} question came.`);
+}
+
+/** The text field a text question is answered in: the editor, the reaction field, or the list's first item. */
+export function answerField(t: Turn): Locator {
+  return t.kind === 'directive' ? t.turn.getByRole('textbox', { name: 'Item 1', exact: true }) : t.turn.locator('textarea, .onscreen-copy input').first();
 }
 
 /** Text answers that read like a person's. */
