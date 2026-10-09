@@ -20,6 +20,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
+import { keptVoice } from './held-voice.ts';
 import { announce, storeText, writeProblems } from './writes.ts';
 
 export const NO_IMAGES_NOTE = 'No image provider key is configured, so no images were made; the work passes through unchanged.';
@@ -122,7 +123,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
         const missing = made.filter((m) => !doc.value.includes(imageRoute(m.artifactId)));
         const problems = [
           ...(missing.length ? [`Place every image by its address; missing: ${missing.map((m) => imageRoute(m.artifactId)).join(', ')}.`] : []),
-          ...writeProblems(run, doc.value, step.keepsVoice ? ports.voice : undefined, current),
+          ...writeProblems(run, doc.value, step.keepsVoice ? keptVoice(ports) : undefined, current),
         ];
         return problems.length ? { ok: false, problem: problems.join(' ') } : doc;
       },
@@ -134,7 +135,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     else result.asset = made.map((m) => m.artifactId);
   } else {
     const attached = attach(medium, current, made);
-    const problems = writeProblems(run, attached, step.keepsVoice ? ports.voice : undefined, current);
+    const problems = writeProblems(run, attached, step.keepsVoice ? keptVoice(ports) : undefined, current);
     if (problems.length) throw new StepError(`The ${what} step could not attach its images: ${problems.join(' ')}`);
     const id = await storeText(deps, run, call, attached, { label: writes ? what : `${what} (kept beside the work)`, name: 'work' });
     outputs.push(id);

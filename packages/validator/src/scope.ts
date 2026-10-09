@@ -251,7 +251,7 @@ class ScopeWalk {
         // and score stay inside).
         const out = this.type(node.body, st, `${path}.body`, pass, label);
         const critique = out.must.get('critique');
-        if (critique) st.must.set('critique', critique);
+        if (critique) st.must.set('critique', [...critique]);
         if (out.may.has('critique')) st.may.add('critique');
         return st;
       }

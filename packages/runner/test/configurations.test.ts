@@ -6,6 +6,7 @@
 import { afterAll, beforeAll } from 'vitest';
 import { c1Scenarios } from './e2e/c1.ts';
 import { c2c5Scenarios } from './e2e/c2-c5.ts';
+import { loopCapScenarios } from './e2e/loop-cap.ts';
 import { textMediaScenarios } from './e2e/text-media.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
 
@@ -20,3 +21,4 @@ afterAll(async () => {
 c1Scenarios(() => h);
 c2c5Scenarios(() => h);
 textMediaScenarios(() => h);
+loopCapScenarios(() => h);

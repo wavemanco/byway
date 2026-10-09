@@ -5,14 +5,19 @@
  *   answers are refused) and recorded in the store before the Update returns;
  * - CANCEL_SIGNAL: stop now, whatever the run is doing (also while paused or waiting);
  * - PAUSE_SIGNAL / RESUME_SIGNAL: stop starting steps (the running ones finish), and start again.
+ *
+ * The status names what ended the run (ADR-0093): done; failed when something failed, a final check the person then
+ * chose not to use included; cancelled when a person stopped it with nothing failed (Cancel, or "Stop the run" at a
+ * loop's last choice).
  */
 import { ApplicationFailure, CancellationScope, allHandlersFinished, condition, defineSignal, defineUpdate, isCancellation, setHandler, upsertMemo } from '@temporalio/workflow';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, type CheckpointResolution } from '@byway/contracts';
+import { engineProblems } from '@byway/recipe/limits';
 import { checkResolution } from '@byway/store/resolution';
 import type { RunInput } from '../types.ts';
 import { quick } from './acts.ts';
 import { RunControl } from './control.ts';
-import { Interpreter, failureMessage } from './interpreter.ts';
+import { Interpreter, RunFailure, RunStopped, failureMessage } from './interpreter.ts';
 import { WORKFLOW_HASH, WORKFLOW_HASH_MEMO } from './version.ts';
 
 export const resolveUpdate = defineUpdate<void, [CheckpointResolution]>(RESOLVE_UPDATE);
@@ -82,6 +87,10 @@ export async function runRecipe(input: RunInput): Promise<RunOutcome> {
   };
 
   try {
+    // What the engine cannot run (F02, ADR-0092), whoever started the workflow: refused before the run begins, inside
+    // this try, so the run ends failed and says why instead of staying queued (Runner.start refuses it first).
+    const problems = engineProblems(input.recipe);
+    if (problems.length) throw new RunFailure(`This recipe cannot run: ${problems.map((p) => p.message).join('; ')}.`);
     await quick.beginRun({ runId: input.runId, recipeId: input.recipe.id, profileId: input.profileId, budgetUsd: input.budgetUsd });
     if (control.cancelRequested) throw ApplicationFailure.nonRetryable('cancelled', 'Cancelled');
     const ports = await main.run(() => interpreter.runStages());
@@ -92,7 +101,8 @@ export async function runRecipe(input: RunInput): Promise<RunOutcome> {
   } catch (e) {
     // Stop every candidate still running before the run is closed.
     main.cancel();
-    if (control.cancelRequested || isCancellation(e)) {
+    // A person who stopped the run at a loop's last choice ended it, as Cancel does; nothing failed (ADR-0093).
+    if (control.cancelRequested || isCancellation(e) || e instanceof RunStopped) {
       await end(() => quick.cancelRun({ runId: input.runId, workspaceId: input.workspaceId }));
       return { status: 'cancelled' };
     }

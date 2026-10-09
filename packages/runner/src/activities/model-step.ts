@@ -20,6 +20,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
+import { keptVoice } from './held-voice.ts';
 import { storeText, writeProblems } from './writes.ts';
 
 const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);
@@ -110,7 +111,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       built.slots.options = labelled(await Promise.all((ports.options ?? []).map((id) => reader.candidateText(run.medium, id))));
     }
     const seeds = seed ? [...run.seeds, seed] : run.seeds;
-    const voice = step.keepsVoice ? input.ports.voice : undefined;
+    const voice = step.keepsVoice ? keptVoice(input.ports) : undefined;
     const before = voice && input.ports.artifact ? await reader.text(input.ports.artifact) : undefined;
     const parse = parserFor(step.role, run.medium, ports, (text) => writeProblems({ seeds, medium: run.medium }, text, voice, before));
     const answer = await askModel(deps, reader, {

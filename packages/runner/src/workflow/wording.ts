@@ -3,10 +3,16 @@
  */
 import type { CheckpointKind } from '@byway/contracts';
 import type { Step } from '@byway/recipe';
+import { HUMAN_WRITE_ROLES } from '@byway/recipe/semantics';
 import { labelOf } from '@byway/prompts/pure';
 
-/** Human checkpoint kinds by role (spec §3.2): vision → react, cut → directive, tells-compare → compare, voice → write. */
+/**
+ * Human checkpoint kinds by role (spec §3.2): vision → react, cut → directive, tells-compare → compare, and a write for
+ * the roles @byway/recipe's semantics names (VOICE, and the author's own draft in C3, C6 and C6a), so the runner and
+ * admission read one list.
+ */
 export function humanKind(step: Pick<Step, 'role'>): CheckpointKind {
+  if (HUMAN_WRITE_ROLES.has(step.role)) return 'write';
   switch (step.role) {
     case 'vision':
       return 'react';
@@ -14,11 +20,6 @@ export function humanKind(step: Pick<Step, 'role'>): CheckpointKind {
       return 'directive';
     case 'tells-compare':
       return 'compare';
-    case 'voice':
-    case 'build':
-    case 'fix':
-      // VOICE, and the author's own draft in C3, C6 and C6a.
-      return 'write';
     default:
       return 'react';
   }
@@ -63,6 +64,19 @@ export const routePrompt = (on: string): string => `Choose: ${on.replace(/[.\s]+
 /** A person's loop gate, saying what each answer does (UX-4): No is another round, not a stop. */
 export const READY_PROMPT = 'Is this ready? Yes keeps this version and moves on; No starts another round.';
 export const BEST_SO_FAR_PROMPT = 'Use the best version so far?';
+/**
+ * A person's loop at its last planned round (ADR-0093): their answer, not the cap, ends it. No allows the planned number
+ * of rounds again, once.
+ */
+export const humanCapPrompt = (more: number): string => `That was the last planned round. Use this version? No allows up to ${more} more round${more === 1 ? '' : 's'}, once.`;
+/** A person's loop at its raised cap: no more rounds, so they keep this version or stop the run. */
+export const FINAL_CHOICE_PROMPT = 'That was the last round. Use this version, or stop the run?';
+export const FINAL_CHOICE_OPTIONS = [
+  { id: 'use', label: 'Use this version' },
+  { id: 'stop', label: 'Stop the run' },
+] as const;
+/** What a run stopped at a loop's last choice says: nothing failed, the person ended it. */
+export const STOPPED_AT_CAP = 'You stopped the run at the last round.';
 export const NOT_CONVERGING_PROMPT = 'The outside critique is not improving the work. Keep going anyway?';
 export const GATE_FAILED_PROMPT = 'It did not pass the final check, even after another try. Use it anyway?';
 export const GATE_RETRY_NOTE = 'It did not pass the final check, so the earlier stage runs again with the same brief.';

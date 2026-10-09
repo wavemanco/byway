@@ -1,6 +1,6 @@
 import type { CostEstimate, Medium, ModelProfile, Tier } from '@byway/contracts';
 import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, falVideoSeconds, priceFor, tokenCost, type PriceRow } from '@byway/gateway';
-import { machineWrites, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
+import { loopRounds, machineWrites, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
 /**
@@ -267,7 +267,10 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
   return NONE;
 }
 
-/** The loop's extra work at its cap: "Use the best version so far?", and a fresh re-rank of the best snapshots. */
+/**
+ * The loop's extra work at its cap: "Use the best version so far?" and a fresh re-rank of the best snapshots for a critic
+ * loop. A person's loop asks its cap question in place of the last "Is this ready?", so it adds nothing here.
+ */
 function atCap(w: Walk, gate: Gate): Span {
   const parts: Span[] = [];
   if (gate.metric !== 'human' && gate.onCap === 'human') parts.push(minutes('confirm'));
@@ -310,8 +313,11 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
     }
     case 'loop': {
       const body = walkNode(w, n.body, set);
-      const rounds = count(Math.min(n.gate.probe, n.gate.max), n.gate.max);
-      // A loop a person ends asks "Is this ready?" after every round (spec §3.2).
+      // The planned rounds. At the cap a person may allow as many again, once (ADR-0073, ADR-0093): their choice, made
+      // when they are asked, so the estimate does not count it.
+      const planned = loopRounds(n.gate).planned;
+      const rounds = count(Math.min(n.gate.probe, planned), planned);
+      // A loop a person ends asks one question a round: "Is this ready?", and at the last round the cap's question.
       const perRound = n.gate.metric === 'human' ? add(body.span, minutes('confirm')) : body.span;
       return { span: add(times(perRound, rounds), atCap(w, n.gate)), set: body.set };
     }

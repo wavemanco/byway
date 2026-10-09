@@ -4,7 +4,8 @@ import { authorWrites, critic, cutByModel, humanGate, humanVision, modelVision, 
 
 /**
  * 03 sets no cap on the author's loop ("you decide when it's done"). The IR needs a bound so a run ends; at it the
- * human decides as at any cap (02 §2), and the run budget bounds cost before that.
+ * person decides as at any cap (02 §2, ADR-0093): they keep the draft or allow as many rounds again, once, and at that
+ * raised cap keep it or stop the run. The run budget bounds cost before that.
  */
 export const AUTHOR_ROUNDS = 10;
 
