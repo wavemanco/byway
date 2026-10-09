@@ -24,9 +24,10 @@ export interface StartRunInput {
   inputs?: { refs?: string[]; voice?: string; draft?: string; tells?: string };
   /**
    * The run's id, chosen by the caller (a UUID the app mints once per Start; F03's P3, ADR-0099), so a start delivered
-   * twice starts one run: starting again with the id of a run in the same workspace and from the same intake returns
-   * that run (and its workflow is started once). The id of a run in another workspace or from another intake is a
-   * conflict; an id that is not a lowercase UUID is refused. Absent: the Runner chooses a new one, as before.
+   * twice starts one run: starting again with the id of a run in the same workspace, from the same intake, of the same
+   * recipe (by hash), for the same problem and with the same profile returns that run (and its workflow is started
+   * once). Any other start naming that id is a conflict; an id that is not a lowercase UUID is refused. The budget, the
+   * routes and the inputs are not compared: the caller mints a new id when they change. Absent: the Runner chooses a new one, as before.
    */
   runId?: string;
 }

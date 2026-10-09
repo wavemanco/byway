@@ -123,6 +123,16 @@ describe('starting a run the caller named (F03 P3)', () => {
     expect(t.attempts).toEqual([workflowIdFor(RUN_ID)]);
   });
 
+  it('the same id with another problem or another model profile is a conflict: the run record holds both, and neither changes', async () => {
+    const t = temporal();
+    const runner = createRunnerClient({ client: t.client, store });
+    await runner.start(input());
+    await expect(runner.start(input({ problem: { text: 'A memo for the staff' } }))).rejects.toBeInstanceOf(RunStartConflictError);
+    await expect(runner.start(input({ profileId: 'balanced' }))).rejects.toBeInstanceOf(RunStartConflictError);
+    expect(await store.getRun(RUN_ID)).toMatchObject({ problem: 'A memo for the board', profileId: 'demo', status: 'queued' });
+    expect(t.attempts).toEqual([workflowIdFor(RUN_ID)]);
+  });
+
   it('refuses an id that is not a UUID before anything is written', async () => {
     const t = temporal();
     const runner = createRunnerClient({ client: t.client, store });

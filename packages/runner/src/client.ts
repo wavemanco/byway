@@ -76,13 +76,23 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
 
   /**
    * The run a start names, when it exists already (a start delivered twice: StartRunInput.runId): the same run if it is
-   * in the same workspace, from the same intake and of the same recipe, else a conflict (as when it is gone: it was
-   * there a moment ago). The recipe is compared by its hash because the app may name a recipe it composed again under
-   * the same key ('composed'): a start of another recipe is another start, whatever its id says.
+   * in the same workspace, from the same intake, of the same recipe, for the same problem and with the same model
+   * profile, else a conflict (as when it is gone: it was there a moment ago). These are what the run record holds and
+   * never changes. The recipe is compared by its hash because the app may name a recipe it composed again under the
+   * same key ('composed'): a start of another recipe is another start, whatever its id says. The budget (a person can
+   * raise it), the routes and the examples are not on the record, so the screen keeps the id only while they are
+   * unchanged (startIdentity.ts; ADR-0099).
    */
   const startedBefore = async (input: StartRunInput, id: string, hash: string): Promise<RunRecord> => {
     const existing = await store.getRun(id);
-    if (!existing || existing.workspaceId !== input.workspaceId || existing.intakeId !== input.intakeId || existing.recipeHash !== hash) {
+    const same =
+      existing !== undefined &&
+      existing.workspaceId === input.workspaceId &&
+      existing.intakeId === input.intakeId &&
+      existing.recipeHash === hash &&
+      existing.problem === input.problem.text &&
+      existing.profileId === input.profileId;
+    if (!existing || !same) {
       throw new RunStartConflictError('This start names a run that was started for another problem or recipe. Start the run again.');
     }
     return existing;
