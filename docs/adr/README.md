@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**80 records:** 73 accepted (15 of them by continuation, awaiting ratification; 18 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**84 records:** 77 accepted (15 of them by continuation, awaiting ratification; 22 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -92,6 +92,8 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0067](0067-product-c1-direct-html-builder.md) | In the product, C1 builds single-file HTML pages by direct model generation and renders them with Playwright | Accepted | Delegated | 2026-10-07 10:48 |
 | [ADR-0070](0070-runner-workflows-precompiled-with-esbuild.md) | Precompile the runner's Temporal workflows with esbuild | Accepted | Delegated | 2026-10-07 10:52 |
 | [ADR-0078](0078-runs-from-older-engine-versions-end-plainly.md) | Runs started by an older engine version end plainly when the engine changes | Accepted | Delegated | 2026-10-07 23:00 |
+| [ADR-0083](0083-hashed-text-is-well-formed-unicode.md) | Hashed text is well-formed Unicode | Accepted | Delegated | 2026-10-08 16:30 |
+| [ADR-0094](0094-backup-unit-is-the-data-directory.md) | The backup unit is the whole data directory | Accepted | Delegated | 2026-10-08 16:30 |
 
 ## Product & program
 
@@ -115,6 +117,8 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0077](0077-rank-gates-scale-with-the-lineup.md) | Hidden rank thresholds scale with the lineup actually used | Accepted | Delegated | 2026-10-07 23:00 |
 | [ADR-0079](0079-phase-4-runner-records.md) | Runner decisions made while fixing the Phase 4 review | Accepted | Delegated | 2026-10-08 00:30 |
 | [ADR-0080](0080-phase-4-recheck-corrections.md) | Corrections after the independent re-check of the Phase 4 fixes | Accepted | Delegated | 2026-10-08 02:00 |
+| [ADR-0084](0084-renderer-launch-without-secrets.md) | The page renderer launches with no secrets and one stated containment policy; the OS sandbox awaits the owner's decision | Accepted | Delegated | 2026-10-08 16:30 |
+| [ADR-0088](0088-provider-boundary-held-keys-and-media-admission.md) | The provider-key promise is enforced at every crossing; provider media is admitted by one rule on every URL and redirect hop | Accepted | Delegated | 2026-10-08 16:45 |
 
 ## Open decisions (not yet ADRs)
 

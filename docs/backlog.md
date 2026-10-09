@@ -49,6 +49,32 @@ All figures are estimates from the Study 1 design pass ([protocol v1.1 §13](stu
 | Temporal metrics port has no Host check | Read-only metrics; not probed for DNS-rebinding reads (Phase 4 re-check, low) | runner |
 | Reconcile lost runs while the engine runs, not only at start | A workflow terminated from outside (now only via local gRPC) stays "waiting" until the next start (Phase 4 re-check, low) | runner |
 | Advisor diff as structured data | The web strips step ids from "How it differs" lines; the advisor could return structured differences (UX-13 remainder) | advisor, apps/web |
+| Provider-reported usage and cost must be finite before the ledger draft | A JSON `1e400` token count or cost makes the ledger append throw after billing, so the call is billed but not counted (ENG-3). Handed to the F03 spend-book work; drop when it lands (ADR-0083) | gateway |
+| Renderer egress: narrow the CDN allowlist | It admits any npm package through unpkg and jsDelivr (host-only). Decide whether to pin paths or require SRI (ADR-0084) | runner |
+| Playwright bump policy | Playwright is pinned at 1.63.0, so its Chromium accumulates known n-day bugs. Set a bump cadence and re-check the launch-failure texts on each bump (ADR-0084) | runner, release |
+| Windows: Chromium's network service runs at Medium integrity | Even with the OS sandbox on, the broker and network-service utility stay at Medium. Investigate whether the network service can be sandboxed; add no untested flag (ADR-0084) | runner |
+| Renderer environment as an allowlist | The scrub is a deny-list: a secret exported in the shell under a harmless-looking name still reaches Chromium. Switch to an allowlist once the needed Linux/macOS font and locale variables are known (ADR-0084) | gateway, runner |
+| Protocol runbook's RENDER snippet | protocol/06-runbook.md §1 calls chromium.launch() with Playwright's defaults (no sandbox, full environment); the protocol track should decide on it so harness users do not copy it | protocol (research track) |
+| Confirm fal's live media host set | First, at no cost, read the stored response of any earlier live C5 relay link (video.url, wire.media.clip, wire.media.frame). Otherwise run one live link if the owner chooses. Until confirmed, a clip served outside fal.media fails after billing, one clip per attempt, with the host named (ADR-0088) | gateway |
+
+## Owner decisions from the external-review verification (2026-10-08)
+
+Everything else from [the verification](reviews/2026-10-08-external-review-verification.md) is implemented or scheduled; these four wait on the owner.
+
+| Decision | What waits on it | Today |
+|---|---|---|
+| D1 Anthropic server-side refusal fallbacks off? | F04's fallback overrun (a refused call can settle at up to about 2× its reservation; sticky routing). Turning them off keeps caps exact and matches the research protocol, but a classifier false positive then fails the step instead of being rescued | On (unchanged) |
+| D2 Renderer's Chromium OS sandbox on? | The OS-containment half of F18. Hosts that cannot start it would stop rendering (Linux with restricted user namespaces, root, containers); also decide whether an owner opt-out should exist, printed at start-up and never automatic. Switching on needs: `RENDERER_OS_SANDBOX` in packages/runner/src/pages.ts, a plain message for Playwright's 'Chromium sandboxing failed!', a drift test on that text, a README section on a per-binary AppArmor profile, and the test that pins the value | Off (unchanged; stated in the start-up line and ADR-0084) |
+| D3 C3 illustration: does the person's "yes" decide? | Whether C3's asset prompt keeps the model's "no image" option. Today C3 declares 0–1 images and the runtime honours the prompt | Model may decline |
+| D4 Repo administration and ADR-log rules | Running `pnpm verify` in CI (Actions minutes, branch protection; pinned Node 24.13.1 and pnpm 11.12.0, Chromium and the Temporal CLI provisioned, the never-exercised POSIX paths), and the ADR-log rules (structured Changes/Later-records relations, CR14 enforced against git history, an ADR-0041 note). Until then the "CI check" statements in spec §4/§6, ADR-0059, CR14 and ADR-0068's merge gate are kept by hand: run `pnpm verify` before merging | Local `pnpm verify` only |
+
+## Before any distribution
+
+Applies to a packaged build or the replication kit (R2). Verified facts: `@img/sharp-win32-x64` 0.35.5 (Apache-2.0 AND LGPL-3.0-or-later) is only next@16.3.8's lazily loaded optional image optimizer; byway never imports next/image, and sharp's binary bundles LGPL and MPL-1.1 libraries. `lightningcss` and `lightningcss-win32-x64-msvc` 1.33.0 (MPL-2.0) are dev-only (through vitest and vite). `caniuse-lite` (CC-BY-4.0) is a production dependency that needs attribution. The Temporal CLI and Playwright's Chromium are downloaded at runtime and carry their own licences. `unionfs` 4.6.0 has no licence field but ships an Unlicense LICENSE file. The root package.json says Apache-2.0 but there is no LICENSE file (the owner's call). Required step: the distribution job generates a licence and notice manifest from the actual artifact, not from npm metadata alone.
+
+## Before the study registry's first entry
+
+Research prerequisites (RS). `labelFor` enforces `expires`, with an outcome the verdict union can represent (for example Historical). `StudyEntry` gets the CR11 scope tuple (ruleset, model profile, checkpoint binding, domain/task, outcome, rater population; ADR-0054). Labels key on the ADR-0041 frozen snapshot (recipe, prompt template versions, models, engine, renderer, fallback policy), not on the recipe hash alone. The lineage check must not trust an `exposure.jsonl` restored from an older backup; it cross-checks against the ledger's judging calls. The review's other activation prerequisites (treatment-fidelity dry run, instrument separation, operational governance, independent metric validation) restate ADR-0041/0044/0052/0054/0055 and apply before confirmatory collection.
 
 ## Deferred decisions (non-code)
 
@@ -62,3 +88,4 @@ All figures are estimates from the Study 1 design pass ([protocol v1.1 §13](stu
 | D10 Ratifications and charter interpretations | — | Before Stage 0 |
 | D13 Spending ceiling | — | After the cost probe and quotes |
 | D24 Product consequences ("Worse" rows) | Draft table in protocol v1.1 | Before Stage 1 |
+| SEED string source in the product | Runner-injected (crypto.randomBytes, model-step.ts defaultSeed), which is SSoT v3 App. D.6's "Seed Injection" form; D.6 found model-written strings generally scored higher on DeepSeek-R1-0528 / NoveltyBench Curated. The alternative is a model-written string. No behaviour or recipe-hash change until decided (cited by spec §3.3) | Before SEED is studied or claimed |
