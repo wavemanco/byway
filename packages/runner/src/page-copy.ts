@@ -75,6 +75,8 @@ const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input'
 const BLOCK = new Set(['address', 'article', 'aside', 'blockquote', 'body', 'center', 'details', 'dialog', 'dir', 'div', 'dl', 'dd', 'dt', 'fieldset', 'figcaption', 'figure', 'footer', 'head', 'header', 'hgroup', 'hr', 'html', 'legend', 'li', 'listing', 'main', 'menu', 'nav', 'ol', 'p', 'plaintext', 'pre', 'search', 'section', 'summary', 'ul', 'xmp', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'caption', 'colgroup', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
 /** Outside a table, browsers ignore these tags. */
 const TABLE_PART = new Set(['caption', 'colgroup', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
+/** A table's tags: an element holding one is never removed (markOf). */
+const TABLE_TAGS = new Set(['table', 'caption', 'colgroup', 'col', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
 /** A table and its parts: the innermost open one says whether content stands in a cell (see OpenElements.fosters). */
 const TABLE_STRUCT = new Set(['table', ...TABLE_PART]);
 /**
@@ -1109,10 +1111,13 @@ function markOf(p: PageDeck): Marks {
     let k = 0;
     let nm = 0;
     if (t.kind === 'other') k = 1;
-    else if (t.kind === 'tag' && !t.closing) {
+    // A table or a part of one, start or end tag: removing what holds it would change the table (round 7 removed an
+    // emptied <sub> holding a <td> that ended its cell in browsers).
+    else if (t.kind === 'tag' && TABLE_TAGS.has(t.name)) k = 1;
+    if (t.kind === 'tag' && !t.closing) {
       const attrs = attributesOf(t.raw);
       e = EMBEDDED.has(t.name) ? 1 : 0;
-      k = e || RAW_KEPT.has(t.name) || attrs.some((a) => isHook(a.name)) || p.fostered[i] ? 1 : 0;
+      k = k || e || RAW_KEPT.has(t.name) || attrs.some((a) => isHook(a.name)) || p.fostered[i] ? 1 : 0;
       nm = filled(attrs, (x) => x === 'aria-label' || x === 'aria-labelledby' || (x === 'alt' && ALT_NAMED.has(t.name))) ? 1 : 0;
     }
     m.embedded[i + 1] = m.embedded[i]! + e;

@@ -915,6 +915,15 @@ describe('a deleted line leaves only a space a browser showed (F07, r7)', () => 
   });
 });
 
+describe('an element holding a table\'s part is never removed (F07, r8)', () => {
+  it('an emptied element with a cell, a row or a table inside it is kept, so no removal changes a table', () => {
+    // Browsers end the first cell at the <td> inside the <sub>; removing the emptied <sub> took that cell with it (round 7,
+    // which the arbiter refused: "another number of table cells").
+    expect(run('<table><tr><td>Menu<sub><td></td> Fresh bread</sub><td>Sale</td></tr></table>', set(2, ''))).toMatchObject(clean('<table><tr><td>Menu<sub><td></td> </sub><td>Sale</td></tr></table>'));
+    expect(run('<p>Intro <span>Gone<table><tr><td></td></tr></table></span></p>', set(1, 'Intro'))).toMatchObject(clean('<p>Intro<span><table><tr><td></td></tr></table></span></p>'));
+  });
+});
+
 describe('a space the person types at a changed line\'s edge parts it from text beside it (F07, r8)', () => {
   it('is written at the line\'s edge where the page shows text beside the line with no space between', () => {
     for (const [page, answer, written] of [

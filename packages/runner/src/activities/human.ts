@@ -101,8 +101,9 @@ interface PageQuestion {
 
 /**
  * How long a page question's two browser reads may take in all. openCheckpoint runs under the workflow's `quick` proxy
- * (one minute to close, no heartbeat), so the reads share one deadline well inside it, browser launch and store reads
- * included: a page Chromium cannot read in time is a plain StepError, not a timed-out activity Temporal retries.
+ * (one minute to close, no heartbeat), so the reads (launching the browser included) share one deadline well inside it,
+ * leaving the rest for the store: a page Chromium cannot read in time is a plain StepError, not a timed-out activity
+ * Temporal retries.
  */
 const QUESTION_READS_MS = 40_000;
 
@@ -163,8 +164,8 @@ async function pageQuestion(deps: RunnerDeps, input: OpenCheckpointInput): Promi
 
 /**
  * A page's VOICE question says how its copy is written (ADR-0081): one line per run of text, the bracket rule when a line
- * has link words in brackets, and where each link goes; that text a browser does not show as one line is not offered; and, when the
- * browser could not place the page's lines, that none of them can be changed. It is read from the work, never from the
+ * has link words in brackets, and where each link goes; that text a browser does not show as one line is not offered;
+ * and, when the browser could not place the page's lines, that none of them can be changed. It is read from the work, never from the
  * starting text, and appended to the prompt the workflow sent, which never carries it, so a re-ask gets it once too.
  */
 function withPageRules(page: PageQuestion | undefined, prompt: string): string {

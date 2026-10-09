@@ -632,6 +632,14 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     }
   });
 
+  it('an emptied element holding a table cell is kept, so deleting its words is written, not refused for another number of cells (r8)', async () => {
+    const html = page('<table><tr><td>Menu<sub><td></td> Fresh bread</sub><td>Sale</td></tr></table>');
+    const before = (await chromium.shownText(html, none)).text;
+    const out = await (await open(html)).answer('T\nMenu\n\nSale');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace(' Fresh bread', ' '));
+    expect((await shows(out.artifactId!)).replace(/\s*\t\s*/g, '\t')).toBe(before.replace('Fresh bread', '').trim().replace(/\s*\t\s*/g, '\t'));
+  });
+
   it('an inline block\'s last block line, deleted beside the next inline block, is refused though the write is right (r8, as ADR-0081 states)', async () => {
     // innerText shows the deleted block's line breaks inside the inline block, and the written page shows "Pro" beside "$29":
     // the arbiter cannot tell an inline block's edge from a space, so it refuses rather than guess.
