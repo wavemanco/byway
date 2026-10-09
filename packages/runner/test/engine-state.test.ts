@@ -131,6 +131,8 @@ describe('a run workflow whose run the store does not have (R4: a store older th
       for await (const wf of h.env.client.workflow.list({ query: `WorkflowId = '${workflowIdFor(runId)}' AND ExecutionStatus = 'Running'` })) return wf.taskQueue === queue;
       return false;
     });
+    // A worker on another queue leaves it alone: each engine settles its own queue.
+    expect((await reconcileLostRuns(h.env.client, h.store, [h.workspaceId], { taskQueue: h.taskQueue })).orphaned).not.toContain(runId);
     const worker = await createWorker({ connection: h.env.nativeConnection, taskQueue: queue, gateway: h.gateway, store: h.store, prompts: h.prompts, pages: h.pages, workflowsPath: h.workflowsPath });
     let running: Promise<void> | undefined;
     try {
