@@ -7,6 +7,9 @@
  *
  * It builds into apps/web/.next-e2e (the test suites' own folder), so a `pnpm dev` you are running is not disturbed.
  * Nothing here renders a page, so no model is called and no key is read.
+ *
+ * Each answer is bounded (ANSWER_MS), and each test's limit is a few of them: next dev answers in milliseconds on a
+ * quiet machine but has taken seconds on a busy one, past vitest's 5 s default.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -15,7 +18,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withoutSecrets } from '@byway/gateway';
-import { request, upgrade } from './fixtures/http.ts';
+import { ANSWER_MS, request, upgrade } from './fixtures/http.ts';
 import { REPO } from './guards/scan.ts';
 
 const WEB = path.join(REPO, 'apps', 'web');
@@ -122,7 +125,7 @@ const INTERNALS = [
   '/_next/%2e%2e/__nextjs_launch-editor?file=C%3A%5Cnope%5Cbyway-test.txt&lineNumber=1',
 ];
 
-describe('pnpm dev’s web server, with the real next dev', () => {
+describe('pnpm dev’s web server, with the real next dev', { timeout: 3 * ANSWER_MS }, () => {
   it('refuses a foreign Host (DNS rebinding) on Next’s internal endpoints and the app, before Next sees it', async () => {
     for (const path of [...INTERNALS, '/', '/settings', '/_next/static/chunks/main.js']) {
       for (const method of ['GET', 'POST']) {
@@ -157,5 +160,5 @@ describe('pnpm dev’s web server, with the real next dev', () => {
     const found = listening(child!.pid!);
     console.log(`dev-web.ts (pid ${child!.pid}) listens on: ${found.join(', ')}`);
     expect(found).toEqual([`TCP 127.0.0.1:${port}`]);
-  }, 30_000);
+  });
 });

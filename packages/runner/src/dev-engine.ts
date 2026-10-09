@@ -57,6 +57,11 @@ export interface DevEngineOptions {
   pages?: PageRenderer;
   /** Pin the dev server's (closed) HTTP API to this port; by default the CLI picks a random free one. For tests. */
   httpPort?: number;
+  /**
+   * A workflow bundle built beforehand (buildWorkflows). By default the worker builds dist/workflows.js on every start;
+   * a test passes its own file, so it never shares that one with a byway or another suite building it at the same time.
+   */
+  workflowsPath?: string;
 }
 
 export interface DevEngine {
@@ -133,7 +138,7 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
   try {
     // The server we reached keeps its state in this data directory, so it is the one we started.
     if (!existsSync(dbFilename)) throw new Error(`The Temporal server on port ${port} is not the one byway started (it does not use ${dbFilename}). ${portInUseMessage(port)}`);
-    const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, ...(opts.prompts ? { prompts: opts.prompts } : {}), ...(opts.pages ? { pages: opts.pages } : {}) });
+    const worker = await createWorker({ connection: env.nativeConnection, namespace: env.namespace ?? 'default', gateway: opts.gateway, store: opts.store, ...(opts.prompts ? { prompts: opts.prompts } : {}), ...(opts.pages ? { pages: opts.pages } : {}), ...(opts.workflowsPath ? { workflowsPath: opts.workflowsPath } : {}) });
     let atStart: EngineStartReport;
     try {
       atStart = await settleBeforePolling(env.client, worker, opts.store);
