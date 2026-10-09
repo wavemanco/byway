@@ -1,6 +1,7 @@
 /**
- * Number formatting for money and time. Costs are shown before anything is spent (spec §5, "agency: clear
- * consequences before spending"), so a real cost must never round down to "$0.00".
+ * Number formatting for money, time and sizes. Costs are shown before anything is spent (spec §5, "agency: clear
+ * consequences before spending"), so a real cost must never round down to "$0.00". A size says how much of a text
+ * is shown, so it must never round a missing part away.
  */
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -39,6 +40,24 @@ export function formatCallRange(range: { low: number; high: number }): string {
   const { low, high } = range;
   const noun = high === 1 ? 'AI call' : 'AI calls';
   return low === high ? `${high} ${noun}` : `${low}–${high} ${noun}`;
+}
+
+const count = new Intl.NumberFormat('en-US');
+
+/** "16 KB": a size as people read it, never below 1 KB. */
+const kb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1000))} KB`;
+
+/**
+ * How much of a text a view shows, for its partial notice (F13, ADR-0086): "the first 16 KB of 23 KB". When both sizes
+ * round to the same KB (16,000 of 16,113 bytes), it gives the bytes instead, so the notice never reads "16 KB of
+ * 16 KB", as if nothing were missing. "the opening" when the whole size is not known; null when nothing is missing, so
+ * a whole text never gets a partial notice.
+ */
+export function partShown(shownBytes: number, totalBytes: number | undefined): string | null {
+  if (totalBytes === undefined) return 'the opening';
+  if (shownBytes >= totalBytes) return null;
+  const [shown, total] = [kb(shownBytes), kb(totalBytes)];
+  return shown === total ? `the first ${count.format(shownBytes)} of ${count.format(totalBytes)} bytes` : `the first ${shown} of ${total}`;
 }
 
 /** A default run budget: a quarter above the high estimate, rounded up to 50 cents; $1 when nothing is spent. */

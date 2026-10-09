@@ -9,12 +9,13 @@ import path from 'node:path';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ArtifactPreview } from '../src/components/ArtifactPreview.tsx';
+import { ArtifactPreview, PartialNotice } from '../src/components/ArtifactPreview.tsx';
 import { StepThumbs } from '../src/components/run/StepThumbs.tsx';
 import { TextPreview } from '../src/components/TextPreview.tsx';
 import { forgetWholeTexts, loadWholeText } from '../src/components/wholeText.ts';
 import { artifactInfo } from '../src/server/run-data.ts';
 import type { Services } from '../src/services/index.ts';
+import { partShown } from '../src/view/format.ts';
 import type { ArtifactInfo } from '../src/view/rundata.ts';
 import type { TimelineStep } from '../src/view/timeline.ts';
 import { filesUnder, REPO } from './guards/scan.ts';
@@ -149,6 +150,29 @@ describe('views of an excerpt (F13)', () => {
     expect(html(createElement(ArtifactPreview, { id: ID, info, title: 'Memo', size: 'thumb' }))).not.toContain('Showing the first');
     // Complete: no notice.
     expect(html(createElement(ArtifactPreview, { id: ID, info: { ...info, excerpt: long, complete: true }, title: 'Memo', size: 'large' }))).not.toContain('Showing the first');
+  });
+
+  it('the partial notice states sizes that differ, never "16 KB of 16 KB", while loading and after a failed load', () => {
+    // 16,113 bytes: in KB, the excerpt and the whole text would both round to 16.
+    const text = memo(16_113, 'TAIL-SENTINEL');
+    const info: ArtifactInfo = { mediaType: 'text/markdown', excerpt: text.slice(0, 16_000), complete: false, bytes: 16_113 };
+    const loading = html(createElement(ArtifactPreview, { id: ID, info, title: 'Memo', size: 'large' }));
+    expect(loading).toContain('Showing the first 16,000 of 16,113 bytes while the rest loads.');
+    expect(loading).not.toContain('16 KB of 16 KB');
+    const part = partShown(16_000, 16_113);
+    expect(part).not.toBeNull();
+    const failed = html(createElement(PartialNotice, { id: ID, title: 'Memo', part: part ?? '', failed: true }));
+    expect(failed).toContain('Showing the first 16,000 of 16,113 bytes; the rest could not be loaded here.');
+    expect(failed).toContain(`href="/view/${encodeURIComponent(ID)}"`);
+  });
+
+  it('never shows a partial notice for a text that is all there, whatever its flag says', () => {
+    const text = memo(16_113, 'TAIL-SENTINEL');
+    // An excerpt as long as the whole text is the whole text.
+    const whole: ArtifactInfo = { mediaType: 'text/markdown', excerpt: text, complete: false, bytes: 16_113 };
+    const out = html(createElement(ArtifactPreview, { id: ID, info: whole, title: 'Memo', size: 'large' }));
+    expect(out).not.toContain('Showing');
+    expect(out).toContain('TAIL-SENTINEL');
   });
 
   it('the whole text is shown to its last words', () => {

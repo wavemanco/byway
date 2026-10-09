@@ -1,5 +1,6 @@
 'use client';
 
+import { partShown } from '../view/format.ts';
 import type { ArtifactInfo } from '../view/rundata.ts';
 import { artifactUrl, openHref } from './api.ts';
 import { ScaledPage } from './ScaledPage.tsx';
@@ -22,9 +23,6 @@ interface PreviewProps {
    */
   scripts?: boolean;
 }
-
-/** "16 KB": sizes as people read them. */
-const kb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1000))} KB`;
 
 /**
  * Shows any artifact the way it is meant to be seen: a page rendered, text read, a diff as a diff.
@@ -49,21 +47,18 @@ export function ArtifactPreview({ id, info, title, size = 'thumb', interactive =
   }
   const excerpt = info?.excerpt;
   if (excerpt !== undefined) {
+    // How much of the text the excerpt is; null when it is all of it, whatever the flag says, so a whole text never gets
+    // a partial notice.
+    const part = info?.complete === false ? partShown(new TextEncoder().encode(excerpt).length, info.bytes) : null;
     const completeness: Completeness =
-      info?.complete !== false || loaded.text !== undefined ? 'whole' : size === 'thumb' ? 'snippet' : loaded.failed ? 'failed' : 'loading';
+      part === null || loaded.text !== undefined ? 'whole' : size === 'thumb' ? 'snippet' : loaded.failed ? 'failed' : 'loading';
     const preview = (
       <TextPreview type={type} text={loaded.text ?? excerpt} size={size} completeness={completeness} {...(info?.titles ? { titles: info.titles } : {})} {...(media ? { media } : {})} />
     );
-    if (completeness !== 'loading' && completeness !== 'failed') return preview;
+    if (part === null || completeness === 'whole' || completeness === 'snippet') return preview;
     return (
       <div className="preview-partial">
-        <p className="preview-partial-note notice small">
-          Showing the first {kb(new TextEncoder().encode(excerpt).length)} of {kb(info?.bytes ?? 0)}
-          {completeness === 'failed' ? '; the rest could not be loaded here. ' : ' while the rest loads. '}
-          <a href={openHref(id)} target="_blank" rel="noopener noreferrer">
-            Open the whole text<span className="sr-only"> of {title} in a new tab</span>
-          </a>
-        </p>
+        <PartialNotice id={id} title={title} part={part} failed={completeness === 'failed'} />
         {preview}
       </div>
     );
@@ -73,6 +68,22 @@ export function ArtifactPreview({ id, info, title, size = 'thumb', interactive =
     <a href={openHref(id)} target="_blank" rel="noopener noreferrer">
       Open {title}
     </a>
+  );
+}
+
+/**
+ * Above a large preview that shows only the opening of a text: how much of it (`part`, from partShown: sizes that differ
+ * whenever something is missing), whether the rest is loading or could not be loaded, and a link to the whole text.
+ */
+export function PartialNotice({ id, title, part, failed }: { id: string; title: string; part: string; failed: boolean }) {
+  return (
+    <p className="preview-partial-note notice small">
+      Showing {part}
+      {failed ? '; the rest could not be loaded here. ' : ' while the rest loads. '}
+      <a href={openHref(id)} target="_blank" rel="noopener noreferrer">
+        Open the whole text<span className="sr-only"> of {title} in a new tab</span>
+      </a>
+    </p>
   );
 }
 

@@ -27,6 +27,7 @@ The model half of F13 (lineup cards) is [ADR-0087](0087-lineup-evidence-full-wor
 - **Row facts are counted from the whole artifact, on the server.** `diffstat` (files, additions, deletions) comes from parsing the whole diff, and `titles` from the whole option map. A step row reads these, never the excerpt.
 - **Views people decide in show the whole text.** A large preview whose excerpt is not complete loads the whole text once from the artifact's own address. The loader keeps one promise per content-addressed id for the page's lifetime and forgets a failed load, so the next view retries.
   - Until the text arrives, or if loading fails, the preview says "Showing the first 16 KB of 23 KB while the rest loads" (or "…; the rest could not be loaded here"), with a link to open the whole text in the viewer.
+  - The two sizes always differ. When both would round to the same KB, as 16,000 and 16,113 bytes do, the notice gives bytes ("the first 16,000 of 16,113 bytes"). An excerpt as long as the whole text gets no notice, whatever its flag says.
   - The loaded state starts empty and is set after mounting, so the server's HTML and the first render in the browser agree.
   - This covers the compare, references, a step's detail and the finished run's preview without changing those panels.
 - **JSON is read only from whole text.** A large preview of a partial option map or storyboard shows the option titles (a server fact) or "Loading the whole text…", never a raw fragment.
@@ -67,7 +68,7 @@ This narrows spec §5: excerpts belong to step rows, cards and thumbnails; views
 
     Run against the previous `artifactInfo`, these four failed. The same file also covers:
     - the step row's count;
-    - the partial notice and its link;
+    - the partial notice and its link, with sizes that differ for a 16,113-byte text while loading and after a failed load (`test/format.test.ts` checks every total up to 17 KB), and no notice for an excerpt that is the whole text;
     - the whole text rendered to its last words;
     - JSON read only from whole text;
     - the diff snippet's hidden counts;
