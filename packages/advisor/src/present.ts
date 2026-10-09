@@ -1,6 +1,6 @@
 import type { RecipePresentation } from '@byway/contracts';
 import { BLOCK_NAMES, STAGE_NAMES } from '@byway/catalog';
-import { walk, walkNode, type Node, type Pick, type Recipe, type Stage, type Step } from '@byway/recipe';
+import { BLOCK_OF_ROLE, blockAgrees, machineWrites, voiceScope, voiceWrite, walk, walkNode, type Node, type Pick, type Recipe, type Stage, type Step } from '@byway/recipe';
 
 /**
  * The plain-language presentation of a composed recipe (spec §5 vocabulary). The catalog's presentations are written
@@ -9,10 +9,17 @@ import { walk, walkNode, type Node, type Pick, type Recipe, type Stage, type Ste
  * the step that reads it, and a writer that applies a critique belongs to the step that made the critique ("Outside
  * critique" is render, critic and fix). Every step, pick and operator id lands in exactly one shown step's `stepIds`,
  * so any run event can be labelled.
+ *
+ * Labels and explainers read what runs (F08, ADR-0092): a step's block is its role's (a label is a declaration), only
+ * a step that writes your words into the work is "your words", worded by what it covers, a random pick says so, and a
+ * writer applies a critique by what it is, not by its `writes` flag.
  */
 
 type Who = RecipePresentation['stages'][number]['steps'][number]['who'];
 type Unit = Step | Pick;
+
+/** The block a step is by what it runs: its role's, whatever its label says (a check's CRITIC label stays). */
+const blockOf = (n: Step) => (blockAgrees(n) ? n.block : BLOCK_OF_ROLE[n.role]);
 
 /** The plain label of one step or pick, from its block or role. */
 export function stepLabel(n: Unit): string {
@@ -22,9 +29,12 @@ export function stepLabel(n: Unit): string {
   }
   if (n.role === 'check') return 'Defect check';
   if (n.role === 'tells-compare') return 'Keep or revert';
-  if (n.block === 'VISION' && n.actor !== 'human') return 'Directions to react to';
-  if (n.block === 'CUT' && n.actor !== 'human') return 'Trim marks';
-  if (n.block) return BLOCK_NAMES[n.block];
+  const block = blockOf(n);
+  if (block === 'VISION' && n.actor !== 'human') return 'Directions to react to';
+  if (block === 'CUT' && n.actor !== 'human') return 'Trim marks';
+  // Your words only where your words are written into the work (a model VOICE step is labelled by its role).
+  if (block === 'VOICE' && !voiceWrite(n)) return n.actor === 'human' ? 'Your turn' : 'Revise';
+  if (block) return BLOCK_NAMES[block];
   switch (n.role) {
     case 'build':
       return n.actor === 'human' ? 'Your draft' : 'Draft';
@@ -52,6 +62,7 @@ export function stepLabel(n: Unit): string {
 export const COMPOSED_EXPLAINERS = {
   pickYours: 'Your turn: choose what to keep.',
   pickAi: 'The AI chooses what to keep.',
+  pickRandom: 'Chosen at random; no one compares them.',
   seed: 'Separate sessions, each told to take its direction from its own random string.',
   visionYours: 'Your turn: say what you want, what pulls you and what to avoid.',
   visionAi: 'The AI offers directions for you to react to.',
@@ -68,6 +79,10 @@ export const COMPOSED_EXPLAINERS = {
   tellsApplies: 'A fresh reviewer lists the stock patterns it finds, each with an alternative; you choose which ones, if any, the AI swaps.',
   tells: 'A fresh reviewer flags stock patterns. It flags only.',
   voice: 'Your turn: write the words readers will take as yours.',
+  voiceKeyLines: 'Your turn: rewrite the key lines readers act on; the AI wrote the rest.',
+  voiceClaims: 'Your turn: sign off every number, date, name and claim; the AI wrote the rest of the words.',
+  voiceScript: 'Your turn: write the voice-over script. It is locked after this.',
+  voiceOnScreen: 'Your turn: write the on-screen words: headline, tagline and captions.',
   buildYours: 'Your turn: write or revise the work yourself.',
   build: 'The AI drafts the work.',
   checkApplies: 'A look for defects only, which the AI then fixes.',
@@ -79,12 +94,22 @@ export const COMPOSED_EXPLAINERS = {
   other: 'The AI does this step.',
 } as const;
 
-/** One plain sentence on what a shown step does, from its lead node; `applies` when it also applies its own findings. */
-function explainer(n: Unit, applies: boolean): string {
+/** Your words, by what the VOICE covers in this medium. */
+function voiceExplainer(n: Step, medium: Recipe['medium']): string {
   const E = COMPOSED_EXPLAINERS;
-  if (n.op === 'pick') return n.mode === 'H' ? E.pickYours : E.pickAi;
+  const scope = voiceScope(n, medium);
+  if (scope.base === 'claims') return E.voiceClaims;
+  if (scope.base === 'script') return E.voiceScript;
+  if (scope.base === 'on-screen') return E.voiceOnScreen;
+  return scope.keyLines ? E.voiceKeyLines : E.voice;
+}
+
+/** One plain sentence on what a shown step does, from its lead node; `applies` when it also applies its own findings. */
+function explainer(n: Unit, applies: boolean, medium: Recipe['medium']): string {
+  const E = COMPOSED_EXPLAINERS;
+  if (n.op === 'pick') return n.mode === 'H' ? E.pickYours : n.mode === 'R' ? E.pickRandom : E.pickAi;
   const yours = n.actor === 'human';
-  switch (n.block) {
+  switch (blockOf(n)) {
     case 'SEED':
       return E.seed;
     case 'VISION':
@@ -103,7 +128,7 @@ function explainer(n: Unit, applies: boolean): string {
       if (n.role === 'tells-compare') return E.tellsCompare;
       return applies ? E.tellsApplies : E.tells;
     case 'VOICE':
-      return E.voice;
+      if (voiceWrite(n)) return voiceExplainer(n, medium);
   }
   switch (n.role) {
     case 'build':
@@ -132,7 +157,8 @@ function whoDoes(units: Unit[]): Who {
 
 /** Roles whose output is a critique a following writer applies. */
 const FINDS = new Set(['critic', 'check', 'cut', 'tells-sweep']);
-const appliesFindings = (u: Unit) => u.op === 'step' && u.writes === true && u.consumes.includes('critique');
+/** A machine writer that reads a critique: it applies the findings, by what it runs (not by its `writes` flag). */
+const appliesFindings = (u: Unit) => u.op === 'step' && machineWrites(u) && u.consumes.includes('critique');
 const isRender = (u: Unit) => u.op === 'step' && u.role === 'render';
 /** The node a group is named after: the first that is not a render. */
 const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group[0]!;
@@ -217,7 +243,7 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
   const shown = groups.map(({ stage, units }) => {
     const lead = leadOf(units);
     const applies = units.some((u) => u !== lead && appliesFindings(u));
-    return { stage: STAGE_NAMES[stage], label: stepLabel(lead), explainer: explainer(lead, applies), who: whoDoes(units), stepIds: [] as string[] };
+    return { stage: STAGE_NAMES[stage], label: stepLabel(lead), explainer: explainer(lead, applies, recipe.medium), who: whoDoes(units), stepIds: [] as string[] };
   });
   for (const [id, i] of [...owner].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0))) shown[i]!.stepIds.push(id);
 

@@ -140,6 +140,14 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     expect(withChoice.low - noSwaps.low).toBeGreaterThanOrEqual(HUMAN_MINUTES.select[0]);
   });
 
+  it('reads the swap step by what it runs (the effects table), not by its writes flag (F08, ADR-0092)', () => {
+    const undeclared = edit(c4, 'apply-swaps', (n) => {
+      const { writes: _w, ...rest } = n as Extract<Node, { op: 'step' }>;
+      return rest as Node;
+    });
+    expect(advisor.estimate(undeclared, 'balanced')).toEqual(advisor.estimate(c4, 'balanced'));
+  });
+
   it('counts your time by checkpoint: authorship takes longer than polishing a memo', () => {
     const memo = advisor.estimate(c4, 'balanced').humanMinutes;
     const fiction = advisor.estimate(c6a, 'balanced').humanMinutes;

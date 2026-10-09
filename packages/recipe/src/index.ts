@@ -6,3 +6,4 @@ export * from './derive.ts';
 export * from './semantics.ts';
 export * from './shape.ts';
 export * from './limits.ts';
+export * from './projection.ts';

@@ -1,5 +1,5 @@
 import { c1, c4, c5, c6a, PROTOCOL_CONFIGS, presentationOf, presentedStepFor } from '@byway/catalog';
-import { walk, withHash, type Recipe } from '@byway/recipe';
+import { walk, withHash, type Node, type Recipe } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
 import { COMPOSED_EXPLAINERS, diffFromNearest, nodeIds, presentComposed, stepLabel } from '../src/index.ts';
 
@@ -142,5 +142,65 @@ describe('composed explainers: what steps do, not what they achieve (CRED-1)', (
   it('the swapping cliché sweep says you choose which finds are swapped (TELLS-1, C2)', () => {
     const steps = presentComposed(asComposed(c1), COPY).stages.flatMap((s) => s.steps);
     expect(steps.find((s) => s.stepIds.includes('tells-sweep'))?.explainer).toMatch(/you choose which/);
+  });
+});
+
+/**
+ * F08 (ADR-0092 stage 3): the explainers read what runs, not what a step declares. A random pick is not the AI's
+ * choice; a claim log is not "the words readers will take as yours"; a step labelled VOICE that writes no person's
+ * words is not "your words"; and a fix applies its critique by what it is, whatever its `writes` flag says.
+ */
+describe('presentComposed explains what runs (F08)', () => {
+  type N = Record<string, any>;
+  /** The recipe with the node of this id replaced by f(it); the replacement is not walked again. */
+  const edited = (r: Recipe, id: string, f: (s: N) => N): Recipe => {
+    const map = (n: N): N => {
+      if (n.id === id) return f({ ...n });
+      const c: N = { ...n };
+      if (c.steps) c.steps = c.steps.map(map);
+      if (c.body) c.body = map(c.body);
+      if (c.branches) c.branches = c.branches.map((x: N) => ({ ...x, body: map(x.body) }));
+      if (c.lenses) c.lenses = c.lenses.map((x: N) => ({ ...x, body: map(x.body) }));
+      return c;
+    };
+    return asComposed({ ...r, stages: r.stages.map((st) => ({ ...st, body: map(st.body as N) as Node })) });
+  };
+  const shownFor = (r: Recipe, id: string) => presentComposed(r, COPY).stages.flatMap((s) => s.steps).find((s) => s.stepIds.includes(id))!;
+
+  it('a random pick: chosen at random, no one compares them', () => {
+    const r = edited(c1, 'pick-one', (n) => ({ ...n, mode: 'R', actor: 'policy' }));
+    expect(shownFor(r, 'pick-one')).toMatchObject({ label: 'Random pick', explainer: COMPOSED_EXPLAINERS.pickRandom });
+    expect(COMPOSED_EXPLAINERS.pickRandom).not.toBe(COMPOSED_EXPLAINERS.pickAi);
+    expect(COMPOSED_EXPLAINERS.pickRandom).toMatch(/at random/);
+  });
+
+  it('a claim log is your sign-off on the claims, not the words readers take as yours', () => {
+    const r = edited(c4, 'voice', (n) => ({ ...n, variant: 'claim-log', knobs: undefined }));
+    expect(shownFor(r, 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voiceClaims);
+    expect(COMPOSED_EXPLAINERS.voiceClaims).not.toMatch(/take as yours/);
+  });
+
+  it('each VOICE is worded by what it covers', () => {
+    expect(shownFor(asComposed(c1), 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voice);
+    expect(shownFor(asComposed(c4), 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voiceKeyLines);
+    expect(shownFor(asComposed(c5), 'vo-script').explainer).toBe(COMPOSED_EXPLAINERS.voiceScript);
+    expect(shownFor(asComposed(c5), 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voiceOnScreen);
+  });
+
+  it('a step labelled VOICE that writes no person’s words is neither labelled nor explained as your words', () => {
+    const r = edited(c1, 'tells-compare', (n) => ({ op: 'seq', steps: [n, { op: 'step', id: 'fake-voice', role: 'vision', block: 'VOICE', actor: 'human', consumes: ['view'], produces: ['voice', 'artifact'] }] }));
+    const fake = shownFor(r, 'fake-voice');
+    expect(fake.label).not.toBe('Your words');
+    expect(fake.explainer).not.toBe(COMPOSED_EXPLAINERS.voice);
+  });
+
+  it("a fix applies the critique by what it is, whatever its writes flag says", () => {
+    const r = edited(c1, 'critic-fix', (n) => {
+      const { writes: _w, ...rest } = n;
+      return rest;
+    });
+    const critique = shownFor(r, 'critic');
+    expect(critique.stepIds).toContain('critic-fix');
+    expect(critique.explainer).toBe(COMPOSED_EXPLAINERS.criticApplies);
   });
 });

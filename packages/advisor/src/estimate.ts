@@ -1,6 +1,6 @@
 import type { CostEstimate, Medium, ModelProfile, Tier } from '@byway/contracts';
 import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, falVideoSeconds, priceFor, tokenCost, type PriceRow } from '@byway/gateway';
-import type { Gate, Node, Recipe, Stage, Step } from '@byway/recipe';
+import { machineWrites, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
 /**
@@ -346,9 +346,12 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
   }
 }
 
-/** A model TELLS sweep immediately followed by the model step that applies its finds. */
+/**
+ * A model TELLS sweep immediately followed by the model step that applies its finds: a writer by what it runs (the
+ * effects table, ADR-0092), not by its `writes` flag.
+ */
 function feedsSwaps(n: Node, next: Node | undefined): boolean {
-  return n.op === 'step' && n.role === 'tells-sweep' && n.actor === 'model' && next?.op === 'step' && next.actor === 'model' && next.writes === true && next.consumes.includes('critique');
+  return n.op === 'step' && n.role === 'tells-sweep' && n.actor === 'model' && next?.op === 'step' && next.actor === 'model' && machineWrites(next) && next.consumes.includes('critique');
 }
 
 function walkStages(w: Walk, recipe: Recipe): { total: Span; byStage: Map<Stage['stage'], Span> } {
