@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   ACTORS,
+  answerPorts,
   appliesCritique,
   asksSwaps,
   audioAsset,
@@ -602,6 +603,9 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // C5's direction as the taste and a critique: each concept takes the taste in.
     expect(unapplied(seq(yours('d', ['taste', 'critique']), each('e', draft('b', 'taste'))))).toEqual([]);
     // A CUT of yours is a directive: its answer fills the critique alone, whatever else it declares.
+    expect(answerPorts(step({ ...personCut('cut'), produces: ['critique', 'brief'] }))).toEqual(['critique']);
+    expect(answerPorts(yours('d', ['taste', 'brief', 'critique']))).toEqual(['critique', 'brief', 'taste']);
+    expect(answerPorts(fix('f'))).toEqual([]);
     expect(unapplied(seq(step({ ...personCut('cut'), produces: ['critique', 'brief'] }), draft('b', 'brief')))).toEqual(['cut']);
     // Another brief in its place first, an AI direction's, or none taken in by an AI writer: your own draft is shown no
     // brief, and an AI direction that takes it in makes its own.
