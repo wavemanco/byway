@@ -6,11 +6,9 @@
  *   examples' image input, and "Choose all" / "Clear", which make themselves unavailable;
  * - a control that takes itself off the screen moves focus first: Start's attach button, gone at five attachments;
  * - closing a step opened from the timeline returns focus to the row that opened it;
- * - cases other work owns: a draft that survives opening a step (F06), the viewer's scripts switch (F05) and the compare
- *   view of two pages (F13 compare view), as plain tests; and, as an owner-tagged expected failure that asserts today's
- *   specific outcome, a page's links after its copy is edited (F07). The expected failure returns early (and so goes
- *   red) unless it sees exactly today's outcome, and goes red when the owner's fix lands, which forces it to become a
- *   plain test.
+ * - cases other work owns, as plain tests: a draft that survives opening a step (F06), the viewer's scripts switch (F05),
+ *   the compare view of two pages (F13 compare view), and a page's links after its copy is edited (F07; an
+ *   owner-tagged expected failure until F07's fix landed, ADR-0081).
  *
  * Sends are refused in the browser (page.route), so no seeded question is ever answered and no run is started here,
  * except the F07 case's own Landing Page Studio run in demo mode.
@@ -250,19 +248,6 @@ test('[F05] the viewer’s scripts switch is reached with Tab, named, and turned
   await expectFocus(page, toggle);
 });
 
-/**
- * Runs `outcome`, turning any throw (a broken setup) into a value. An expected failure checks that value is exactly
- * today's outcome before its one assertion, so it cannot fail for another reason: any other outcome returns early,
- * the test passes, and test.fail reports that as a failure. A timeout is reported as one too.
- */
-async function guarded<T>(outcome: () => Promise<T>): Promise<T | { broken: string }> {
-  try {
-    return await outcome();
-  } catch (e) {
-    return { broken: e instanceof Error ? e.message : String(e) };
-  }
-}
-
 /** Presses Enter on the focused link, which opens a new tab, and returns that tab, loaded. */
 async function enterOpens(page: Page): Promise<Page> {
   const tab = page.context().waitForEvent('page');
@@ -320,9 +305,9 @@ test('[F13 compare view] each version of a page compare is a named picture of it
   expect(sends.count(), 'answers sent').toBe(0);
 });
 
-/** The nav line the demo page's VOICE editor shows: its two links' text run together (F07's probe E). */
-const NAV_LINE = /^\s*How it works\s*Contact\s*$/;
-const EDITED_NAV = 'How it works | Contact us';
+/** The demo page's nav, as its VOICE editor offers it: one line per link (ADR-0081). */
+const NAV_LINES = ['How it works', 'Contact'];
+const EDITED_CONTACT = 'Contact us';
 
 /** The hrefs of links in `html` with no accessible name (no text, aria-label, title or image alt): a structural check, never an audit. */
 function unnamedLinks(page: Page, html: string): Promise<string[]> {
@@ -334,36 +319,48 @@ function unnamedLinks(page: Page, html: string): Promise<string[]> {
   }, html);
 }
 
-// Owner: F07 (exact page copy). In demo mode the model's write-back returns the page unchanged, so byway places the
-// edited line itself; today it moves the whole line into the first link and leaves the second empty (a link with no
-// name, WCAG 2.4.4 and 4.1.2), and the VOICE check accepts it. This fails only on exactly that empty link.
-test.fail('[F07] after the nav line of a page is edited, every link on the page still has a name', async ({ page }) => {
+/** The words of the first link to `href` in `html`, whitespace collapsed, or null when there is none. */
+function linkWords(page: Page, html: string, href: string): Promise<string | null> {
+  return page.evaluate(
+    ([source, target]) => {
+      const doc = new DOMParser().parseFromString(source, 'text/html');
+      const a = [...doc.querySelectorAll('a[href]')].find((x) => x.getAttribute('href') === target);
+      return a ? (a.textContent ?? '').replace(/\s+/g, ' ').trim() : null;
+    },
+    [html, href] as const,
+  );
+}
+
+// Owner: F07 (exact page copy, ADR-0081). The demo page's nav is offered one line per link, and an edit to the second
+// link's words is written into that link, so every link on the page keeps a name. Before F07's fix an edited nav line was
+// moved whole into the first link and the second left empty, a link with no name (WCAG 2.4.4 and 4.1.2), and VOICE's
+// check accepted it; this was an expected failure until then.
+test('[F07] after a nav link of a page is edited, every link on the page still has a name', async ({ page }) => {
   test.setTimeout(8 * 60_000);
-  const outcome = await guarded(async () => {
-    await describeProblem(page, 'A landing page for the spring classes at my pottery studio');
-    const runId = await startRecommended(page, 'Landing Page Studio');
-    let after: string | undefined;
-    for (let i = 0; i < 30; i++) {
-      const t = await turnAfter(page, after);
-      after = t.id;
-      const field = t.turn.locator('textarea');
-      if (t.kind === 'write' && (await field.count()) > 0) {
-        const lines = (await field.inputValue()).split('\n');
-        const nav = lines.findIndex((l) => NAV_LINE.test(l));
-        if (nav >= 0) {
-          lines[nav] = EDITED_NAV;
-          await field.fill(lines.join('\n'));
-          await field.press('Control+Enter');
-          await answerUntilDone(page, { after: t.id });
-          const run = (await (await page.request.get(`/api/runs/${runId}`)).json()) as { view: { run: { outputArtifactId?: string } } };
-          const html = await (await page.request.get(`/artifacts/${encodeURIComponent(run.view.run.outputArtifactId ?? '')}`)).text();
-          return { placed: html.includes(EDITED_NAV), unnamed: await unnamedLinks(page, html) };
-        }
+  await describeProblem(page, 'A landing page for the spring classes at my pottery studio');
+  const runId = await startRecommended(page, 'Landing Page Studio');
+  let after: string | undefined;
+  for (let i = 0; i < 30; i++) {
+    const t = await turnAfter(page, after);
+    after = t.id;
+    const field = t.turn.locator('textarea');
+    if (t.kind === 'write' && (await field.count()) > 0) {
+      const lines = (await field.inputValue()).split('\n');
+      const nav = lines.findIndex((l, k) => l.trim() === NAV_LINES[0] && lines[k + 1]?.trim() === NAV_LINES[1]);
+      if (nav >= 0) {
+        lines[nav + 1] = EDITED_CONTACT;
+        await field.fill(lines.join('\n'));
+        await field.press('Control+Enter');
+        await answerUntilDone(page, { after: t.id });
+        const run = (await (await page.request.get(`/api/runs/${runId}`)).json()) as { view: { run: { outputArtifactId?: string } } };
+        const html = await (await page.request.get(`/artifacts/${encodeURIComponent(run.view.run.outputArtifactId ?? '')}`)).text();
+        expect(await linkWords(page, html, '#start'), 'the edited link holds the new words').toBe(EDITED_CONTACT);
+        expect(await linkWords(page, html, '#how'), 'the other link keeps its words').toBe(NAV_LINES[0]);
+        expect(await unnamedLinks(page, html), 'links without a name on the placed page').toEqual([]);
+        return;
       }
-      await answerTurn(page, t.turn, t.kind);
     }
-    return { broken: 'no page-copy question with the nav line' };
-  });
-  if (!('unnamed' in outcome) || !outcome.placed || JSON.stringify(outcome.unnamed) !== JSON.stringify(['#start'])) return;
-  expect(outcome.unnamed, 'links without a name on the placed page').toEqual([]);
+    await answerTurn(page, t.turn, t.kind);
+  }
+  throw new Error('The run asked no page-copy question with the nav lines.');
 });
