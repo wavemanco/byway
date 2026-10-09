@@ -9,9 +9,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CompletionRequest, CompletionResult, Gateway, ProfileStatus } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
-import { PROTOCOL_CONFIGS } from '@byway/catalog';
-import { outputForStep, slotsForStep } from '@byway/prompts';
-import { hasNoExecutor, HUMAN_WRITE_ROLES, leavesNote, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
+import { CATALOG, PROTOCOL_CONFIGS } from '@byway/catalog';
+import { createPromptRenderer, outputForStep, slotsForStep } from '@byway/prompts';
+import { DIRECTION_FIRST_SEED_PROMPTS, hasNoExecutor, HUMAN_WRITE_ROLES, leavesNote, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
@@ -240,7 +240,7 @@ describe('the notes a model step leaves beside the work (leavesNote)', () => {
     expect(leaving('sometimes')).toEqual(new Set(['seed']));
     expect(leaving('never')).toEqual(new Set(ROLES.filter((r) => !(r in NOTE_LABELS) && r !== 'seed')));
     // A seed's build keeps what it wrote before its block as a note only when that is a direction: two lines or more.
-    // The product's seed prompts ask for the fenced block alone, so most seeds leave none. Another builder's preamble is
+    // Whether its prompt asks for one first decides whether that is every run (below). Another builder's preamble is
     // never one.
     expect(directionOf(CARD)).toBeUndefined();
     expect(directionOf(`Here is the card.\n\n${CARD}`)).toBeUndefined();
@@ -253,6 +253,33 @@ describe('the notes a model step leaves beside the work (leavesNote)', () => {
     // No person's step and no tool leaves one.
     expect(leaving('never', 'human')).toEqual(new Set(ROLES));
     expect(leaving('never', 'tool')).toEqual(new Set(ROLES));
+  });
+
+  it('a seed: on every run where its prompt asks for the direction first, on some where it asks for the block alone; its prompt renders only the problem and the string', () => {
+    // The seed prompts a recipe can name: a composed recipe may reuse only a catalog step's prompt in that step's role
+    // (the advisor's profile).
+    const prompts = createPromptRenderer();
+    const seedPrompts = [...new Set(CATALOG.flatMap((r) => steps(r).map(({ step }) => step)).filter((s) => s.actor === 'model' && s.role === 'seed').map((s) => s.prompt!))].sort();
+    expect(seedPrompts).toEqual(['article.SEED', 'product.c2.seed-option', 'product.c3.seed-angle', 'product.c5.seed-territory', 'product.c6a.seed-card']);
+    for (const id of seedPrompts) {
+      // The direction is the string's decision on each axis, made from the problem and the string: no seed prompt
+      // renders the critique, the brief or the taste, whatever the step takes in (buildPrompt fills those slots; the
+      // template never reads them). So @byway/recipe reads a seed's note as carrying nothing a person answered.
+      expect(prompts.info(id).slots.sort(), id).toEqual(['problem', 'seed']);
+      expect(prompts.variants(id), id).toEqual([]);
+      // Its answer format asks for the direction before the block exactly where the table says so.
+      const user = prompts.render(id, { problem: 'A problem.', seed: 'a-random-string' }).user;
+      const format = user.slice(user.indexOf('## Answer format'));
+      expect(format.startsWith('## Answer format'), id).toBe(true);
+      const directionFirst = /^First the direction, one line per axis\./m.test(format);
+      expect(directionFirst, id).toBe(DIRECTION_FIRST_SEED_PROMPTS.has(id));
+      if (!directionFirst) expect(/\bdirection\b/i.test(format), id).toBe(false);
+      expect(leavesNote({ actor: 'model', role: 'seed', produces: ['artifact'], prompt: id }), id).toBe(directionFirst ? 'always' : 'sometimes');
+    }
+    expect([...DIRECTION_FIRST_SEED_PROMPTS].every((id) => seedPrompts.includes(id))).toBe(true);
+    // C1's direction is a line per axis, five of them, so a run that answers as asked leaves it (two lines or more).
+    const c1Answer = 'Colour: ink on bone.\nLayout: one long scroll.\nTypography: a slab serif.\nImagery: drawn diagrams.\nStructure: a question, then three answers.\n\n```html\n<!doctype html><title>x</title>\n```';
+    expect(directionOf(c1Answer)?.split('\n')).toHaveLength(5);
   });
 
   it('as modelStep runs: a noting role leaves a note with every answer, nothing found included; a seed only with a direction', async () => {

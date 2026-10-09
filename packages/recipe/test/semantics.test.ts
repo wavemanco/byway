@@ -668,31 +668,46 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(react, sharpen, render('r'), audit('au', [{ name: 'yours', body: step({ ...yourCritique('o'), produces: ['taste'] }) }]), own))).toEqual([]);
   });
 
-  it('a seed leaves its direction as a note only when it writes one: a note made from your answer may still be beside your draft after it', () => {
+  it('a seed leaves its direction as a note on every run where its prompt asks for it first, on some where it asks for the block alone; the direction carries nothing of yours', () => {
     // C3 with your critique, an AI direction that reads it, a seed angle from the intent alone, then your own draft or
-    // a reaction of yours whose brief an AI draft takes in (the round-9 verification's s119 and s120: reached on 32 of 64
-    // runs where the seed wrote a direction half the time).
+    // a reaction of yours whose brief an AI draft takes in (the round-9 verification's s119 and s120). C3's seed prompt
+    // asks for the angle card alone, so a run whose seed writes no direction before it leaves the AI direction beside
+    // your draft.
     const react = yourCritique('react');
     const carrier = step({ id: 'carrier', role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes: ['intent'], reads: ['critique'], produces: ['taste'] });
-    const seed = step({ id: 'angle', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'p.s', consumes: ['intent'], produces: ['artifact'] });
+    const seedOn = (prompt: string, consumes: Step['consumes'] = ['intent']) => step({ id: 'angle', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt, consumes, produces: ['artifact'] });
+    const seed = seedOn('product.c3.seed-angle');
     const own = authorDraft('own');
     const reaction = step({ id: 'reaction', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['brief'] });
     const draft = step({ id: 'draft', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['intent', 'brief'], produces: ['artifact'], writes: true });
     expect(leavesNote(seed)).toBe('sometimes');
     expect(unapplied(seq(render('r'), react, carrier, seed, own))).toEqual([]);
     expect(unapplied(seq(render('r'), react, carrier, seed, render('r2'), reaction, draft))).toEqual([]);
+    // C1's seed prompt asks for the direction first, one line per axis, so its direction is beside your draft in place
+    // of the AI's on every run that answers as asked (the round-10 verification's idx 10101: lost on 72 of 72 runs).
+    // A seed with no prompt, or one this table does not know, is read as the product's seed prompts are.
+    const directed = seedOn('article.SEED');
+    expect(leavesNote(directed)).toBe('always');
+    expect(leavesNote(seedOn('another.seed'))).toBe('sometimes');
+    expect(unapplied(seq(render('r'), react, carrier, directed, own))).toEqual(['react']);
+    expect(unapplied(seq(render('r'), react, carrier, directed, render('r2'), reaction, draft))).toEqual(['react']);
     // A step that always notes in its place still replaces the note, after the seed or before it.
     expect(unapplied(seq(render('r'), react, carrier, seed, render('r2'), critic('c'), own))).toEqual(['react']);
     expect(unapplied(seq(render('r'), react, carrier, render('r2'), critic('c'), seed, own))).toEqual(['react']);
-    // In an audit: a lens whose only note is a seed's may make nothing new, so the audit may hand on the note from
-    // before it; beside a lens that always notes, the audit hands on the lenses' notes alone.
+    // In an audit: a lens whose only note is the product's seed's may make nothing new, so the audit may hand on the
+    // note from before it; beside a lens that always notes, or with C1's seed, the audit hands on the lenses' notes alone.
     expect(unapplied(seq(render('r'), react, carrier, audit('au', [{ name: 'angle', body: seed }]), own))).toEqual([]);
+    expect(unapplied(seq(render('r'), react, carrier, audit('au', [{ name: 'angle', body: directed }]), own))).toEqual(['react']);
     expect(unapplied(seq(render('r'), react, carrier, audit('au', [{ name: 'angle', body: seed }, { name: 'critic', body: seq(render('lr'), critic('c')) }]), own))).toEqual(['react']);
-    // A seed's direction is made from what its prompt holds: in a lens, where what it writes is dropped, the direction
-    // carries your answer on to your draft. One that takes in nothing of yours carries nothing.
-    const takes = step({ ...seed, consumes: ['intent', 'critique'] });
-    expect(unapplied(seq(render('r'), react, audit('au', [{ name: 'angle', body: takes }, { name: 'critic', body: seq(render('lr'), critic('c')) }]), own))).toEqual([]);
-    expect(unapplied(seq(render('r'), react, audit('au', [{ name: 'angle', body: seed }, { name: 'critic', body: seq(render('lr'), critic('c')) }]), own))).toEqual(['react']);
+    // A seed's direction is the string's decision, made from the problem and the string: every seed prompt renders only
+    // those (the runner's test holds the catalog's seed prompts to it). So a seed that takes your critique in carries
+    // nothing of it on to your draft, in a lens beside a critic or alone, or after your answer in its own lens (the
+    // round-10 verification's 36 ST9 answers).
+    for (const takes of [seedOn('product.c3.seed-angle', ['intent', 'critique']), seedOn('article.SEED', ['intent', 'critique'])]) {
+      expect(unapplied(seq(render('r'), react, audit('au', [{ name: 'angle', body: takes }, { name: 'critic', body: seq(render('lr'), critic('c')) }]), own))).toEqual(['react']);
+      expect(unapplied(seq(render('r'), react, audit('au', [{ name: 'angle', body: takes }]), own))).toEqual(['react']);
+      expect(unapplied(seq(render('r'), audit('au', [{ name: 'yours', body: seq(yourCritique('o'), takes) }]), own))).toEqual(['o']);
+    }
   });
 
   it('at every place a step object sits, by its place', () => {
@@ -844,11 +859,13 @@ describe('whose directions your next VISION is shown (directionsReactedTo)', () 
     expect(reacted(recipeOf(seq(yours('p'), ai('v'))))).toEqual([]);
     expect(reacted(recipeOf(seq(ai('v'), critic('c'), yours('p'))))).toEqual([]);
     // On every path: a note that may be left between them is enough to take the claim away, a seed's direction among
-    // them, which it leaves only when it writes one.
+    // them, on every run (C1's seed prompt asks for it first) or on some (the product's other seed prompts).
     expect(reacted(recipeOf(seq(ai('v'), optional('o', 'needed', check('k')), yours('p'))))).toEqual([]);
-    const seed = step({ id: 'angle', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'p.s', consumes: ['intent'], produces: ['artifact'] });
-    expect(leavesNote(seed)).toBe('sometimes');
-    expect(reacted(recipeOf(seq(ai('v'), seed, yours('p'))))).toEqual([]);
+    for (const [prompt, when] of [['product.c3.seed-angle', 'sometimes'], ['article.SEED', 'always']] as const) {
+      const seed = step({ id: 'angle', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt, consumes: ['intent'], produces: ['artifact'] });
+      expect(leavesNote(seed)).toBe(when);
+      expect(reacted(recipeOf(seq(ai('v'), seed, yours('p'))))).toEqual([]);
+    }
     const build = step({ id: 'b', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['intent'], produces: ['artifact'] });
     expect(leavesNote(build)).toBe('never');
     expect(reacted(recipeOf(seq(ai('v'), build, yours('p'))))).toEqual(['v']);

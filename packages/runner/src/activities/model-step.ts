@@ -33,8 +33,9 @@ export const defaultSeed = (): string => randomBytes(36).toString('base64url');
 /**
  * Where a judging step's text goes in the store: shown to the user with the step, never written into the work. Every
  * answer of these roles leaves a note, which the interpreter puts beside the work; a seed's build leaves one only when
- * it writes a direction (`directionOf`). So @byway/recipe's `leavesNote` is 'always' for these roles and 'sometimes'
- * for a seed (semantics-effects.test.ts).
+ * it writes a direction (`directionOf`). So @byway/recipe's `leavesNote` is 'always' for these roles, and for a seed
+ * 'always' where its prompt asks for the direction first (C1's) and 'sometimes' where it asks for the block alone
+ * (semantics-effects.test.ts).
  */
 export const NOTE_LABELS: Record<string, string> = {
   critic: 'Critique',

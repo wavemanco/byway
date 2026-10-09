@@ -131,8 +131,7 @@ const CRITIQUE_ROLES: ReadonlySet<Role> = new Set<Role>(['critic', 'check', 'cut
  *   defects, removals, cliché hits, overlap flags, a direction), what it found nothing in included ("No defects.",
  *   "Nothing to remove.");
  * - `sometimes`: a seed's build keeps what it wrote before its block as a note, and only when that is a direction
- *   (model-step.ts directionOf: two lines or more). The product's seed prompts ask for the fenced block alone, so most
- *   runs leave none, and the notes before it stay.
+ *   (model-step.ts directionOf: two lines or more). Whether its prompt asks for one decides more (`leavesNote`).
  * Every other role, and every person's, tool's or policy's step, leaves none.
  */
 export const NOTE_ROLES: ReadonlyMap<Role, 'always' | 'sometimes'> = new Map<Role, 'always' | 'sometimes'>([
@@ -145,8 +144,28 @@ export const NOTE_ROLES: ReadonlyMap<Role, 'always' | 'sometimes'> = new Map<Rol
   ['seed', 'sometimes'],
 ]);
 
-/** Whether a step leaves its own note in place of the notes before it when it runs: on every run, on some, or never (`NOTE_ROLES`). */
-export const leavesNote = (s: StepFacts): 'always' | 'sometimes' | 'never' => (s.actor === 'model' ? (NOTE_ROLES.get(s.role) ?? 'never') : 'never');
+/**
+ * The seed prompts that ask for the direction before the block: C1's `article.SEED` ("First the direction, one line per
+ * axis", five axes, then the page). The product's other seed prompts (C2's option, C3's angle, C5's territory, C6a's
+ * card) ask for the fenced block alone. A composed recipe may give a seed only a catalog seed prompt (the advisor's
+ * profile), and the runner's test holds this list to those templates (semantics-effects.test.ts).
+ */
+export const DIRECTION_FIRST_SEED_PROMPTS: ReadonlySet<string> = new Set(['article.SEED']);
+
+/**
+ * Whether a step leaves its own note in place of the notes before it when it runs: on every run, on some, or never
+ * (`NOTE_ROLES`). A seed's note is the direction it writes before its block, so its prompt decides:
+ * - on every run, for a seed whose prompt asks for the direction first (`DIRECTION_FIRST_SEED_PROMPTS`), read as on
+ *   every run that answers as its prompt asks. A run whose model leaves the direction out keeps the notes before it,
+ *   and an answer that only such a run hands on is refused (ADR-0098 names this);
+ * - on some, for any other seed: its prompt asks for the fenced block alone, so a run leaves a note only where its model
+ *   writes a direction before the block anyway, and the notes before it stay on every other.
+ */
+export const leavesNote = (s: StepFacts & Pick<Step, 'prompt'>): 'always' | 'sometimes' | 'never' => {
+  if (s.actor !== 'model') return 'never';
+  if (s.role === 'seed' && s.prompt !== undefined && DIRECTION_FIRST_SEED_PROMPTS.has(s.prompt)) return 'always';
+  return NOTE_ROLES.get(s.role) ?? 'never';
+};
 
 /**
  * Whether running a node can put another critique in place of the one before it (the interpreter's applyModel,
@@ -1064,9 +1083,10 @@ const without = (xs: readonly string[], x: string): string[] => xs.filter((y) =>
 /**
  * What an audit hands on of the critique or the notes, from what each lens ended with (the interpreter's audit()): what
  * the lenses made, joined; and what the audit was handed, where every lens may end with nothing new (what it was handed,
- * or a person's empty answer). Lenses run apart, so they may all do so on one run. A lens whose only note is a seed's
- * direction, which a seed leaves only when it writes one (`leavesNote` 'sometimes'), may end with the notes it was
- * handed: the step keeps them beside its own (`answersReachingWork`), so the lens counts as possibly making nothing new.
+ * or a person's empty answer). Lenses run apart, so they may all do so on one run. A lens whose only note is the
+ * direction of a seed whose prompt asks for the block alone (`leavesNote` 'sometimes') may end with the notes it was
+ * handed: on a run where the seed writes no direction they stay (`answersReachingWork`), so the lens counts as possibly
+ * making nothing new.
  */
 function lensesHandOn(entry: readonly string[], lenses: readonly (readonly string[])[]): string[] {
   const made = unionAll(lenses.map((v) => v.filter((x) => x !== EMPTY_ANSWER && !x.startsWith(HANDED))));
@@ -1078,7 +1098,9 @@ function lensesHandOn(entry: readonly string[], lenses: readonly (readonly strin
  * An AI step that makes text of its own from what it takes in, without writing the work: a critic, a check, a CUT's
  * list, a cliché sweep, an overlap flag or a direction (the runner's note roles, which put their text in a port and
  * leave it as their note). What it takes in by a text port is in its prompt, so what it makes carries it on. A seed
- * writes the work, and only its direction, when it writes one, is a note: `answersReachingWork` follows that note alone.
+ * writes the work, and its note, the direction it writes before its block, is the string's decision on each axis, made
+ * from the problem and the string: every seed prompt renders only those (`DIRECTION_FIRST_SEED_PROMPTS`), so it carries
+ * nothing a person answered, whatever the seed takes in.
  */
 const carriesOn = (s: Step): boolean => s.actor === 'model' && stepEffect(s) === 'annotates' && leavesNote(s) !== 'never';
 
@@ -1154,8 +1176,8 @@ function decidesWork(recipe: Recipe): Set<string> {
  *   only: it may go on as it was). Any other step that fills a port (`fillsPort`) puts there what it carries: an AI
  *   step that makes text of its own (`carriesOn`) carries what it took in by the text ports it takes in, into the ports
  *   it fills and its note; any other carries nothing. A step that leaves a note of its own (`leavesNote`) puts it in
- *   place of the notes before it, made from what its prompt holds: on every run, or, for a seed, whose note is the
- *   direction it wrote before its block, only on runs where it writes one, so the notes before it may stay.
+ *   place of the notes before it: on every run, or, for a seed whose prompt asks for the fenced block alone, only on
+ *   runs where it writes a direction anyway, so the notes before it may stay. A seed's direction carries nothing.
  * - An AI writer that applies a port (`appliesPort`) applies what that port carries, and one that takes the options in
  *   (`appliesOptions`) drafts from what they carry. A draft of the person's own (an author write, not in a lens or a gate
  *   body) is shown the latest notes, and so takes in what they carry. An AI step that decides which version or option is
@@ -1168,8 +1190,10 @@ function decidesWork(recipe: Recipe): Set<string> {
  * - An audit hands on its lenses' critique and notes (the interpreter's audit()): those of the lenses that made something
  *   new, joined, and where none did on some run, what it was handed. A lens that ended with what it was handed, or with
  *   a person's empty answer, made nothing new: the interpreter drops an empty answer with its lens. So a lens in which a
- *   step always notes something new (a critic's, a check's, a CUT's, a sweep's, an overlap flag's or a direction's note)
- *   always replaces what the audit was handed, and one whose only note is a seed's may not. A one-shot gate hands on its body's critique, or the critique it was handed
+ *   step always notes something new (a critic's, a check's, a CUT's, a sweep's, an overlap flag's, a direction's, or
+ *   the direction of a seed whose prompt asks for it first) always replaces what the audit was handed, and one whose
+ *   only note is that of a seed whose prompt asks for the block alone may not. A one-shot gate hands on its body's
+ *   critique, or the critique it was handed
  *   where the body ends with a person's empty answer. Both hand on the brief and the taste they started with.
  * - A judge in a relay link may be skipped (`skippableJudges`): on those runs the port keeps what it had.
  */
@@ -1220,10 +1244,14 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
         const sometimes = fills === 'sometimes' || skippable.get(path) === false;
         out[q] = sometimes ? union(st[q], value) : value;
       }
-      // Its note, made from what its prompt holds (a seed's direction too), in place of the notes before it, but not on
-      // every run: a seed that writes no direction, or a judge skipped where the run goes on past it, leaves them.
+      // Its note in place of the notes before it, but not on every run: a seed that writes no direction, or a judge
+      // skipped where the run goes on past it, leaves them. What an AI step that makes text of its own notes is made
+      // from what its prompt holds; a seed's direction carries nothing (`carriesOn`).
       const note = leavesNote(s);
-      if (note !== 'never') out.notes = note === 'sometimes' || skippable.get(path) === false ? union(st.notes, inPrompt) : inPrompt;
+      if (note !== 'never') {
+        const made = carriesOn(s) ? inPrompt : [];
+        out.notes = note === 'sometimes' || skippable.get(path) === false ? union(st.notes, made) : made;
+      }
       return out;
     },
     join: (states) => each((c) => unionAll(states.map((x) => x[c])), states.some((x) => x.cand)),
@@ -1307,10 +1335,10 @@ export function unappliedCritiques(recipe: Recipe): Placement[] {
  *   the options, and the latest `ports.notes`). Every model VISION leaves one.
  * - A step that leaves a note of its own puts it in their place (`leavesNote`: a critic, check, CUT, sweep, overlap
  *   flag, another VISION or a seed's direction), and so does an audit one of whose lenses does. That step's note, not
- *   the directions, is then what the person reacts to. A seed leaves its direction only when it writes one, so on some
- *   runs only; as with a note under an optional, a note that may be left is enough to take the claim away, so it is
- *   read here as one that is (the same table as `answersReachingWork`, which keeps the notes before such a step: there
- *   an answer is refused, here a claim withheld). So do the directions themselves, made again at their own place
+ *   the directions, is then what the person reacts to. A seed whose prompt asks for the fenced block alone leaves its
+ *   direction only when it writes one anyway, so on some runs only; as with a note under an optional, a note that may be
+ *   left is enough to take the claim away, so it is read here as one that is (the same table as `answersReachingWork`,
+ *   which keeps the notes before such a step: there an answer is refused, here a claim withheld). So do the directions themselves, made again at their own place
  *   (a loop's next round, a relay's next link) before a VISION of the person's: the later directions are shown, never
  *   the earlier.
  * - replicate, each, a pick and a one-shot gate hand on the notes they started with, so a note made inside them stays
