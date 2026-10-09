@@ -66,6 +66,9 @@ export const ResolutionInput = z.object({
 
 export const ControlInput = z.object({ action: z.enum(['pause', 'resume', 'cancel']) });
 
+/** Settings' Spending records actions (ADR-0095): clear calls that may have been billed, or acknowledge a fault. */
+export const SpendAction = z.union([z.strictObject({ clear: z.array(z.string().min(1).max(100)).min(1).max(500) }), z.strictObject({ acknowledge: z.number().int().positive() })]);
+
 export const SettingsPatch = z.object({
   profileId: z.string().max(64).optional(),
   demoMode: z.boolean().optional(),

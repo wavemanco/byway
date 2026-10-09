@@ -4,6 +4,7 @@
  */
 import type { ChooserAnswer, ComposeResult, ProblemBrief, Recommendation } from './advisor.ts';
 import type { Medium } from './medium.ts';
+import type { SpendBook } from './spend.ts';
 
 export type RunStatus = 'queued' | 'running' | 'waiting' | 'paused' | 'done' | 'failed' | 'cancelled';
 
@@ -192,6 +193,11 @@ export interface ArtifactStore {
  */
 export interface Store {
   readonly artifacts: ArtifactStore;
+  /**
+   * The spend book in the same database (contracts v6, ADR-0095): the authority the gateway checks spend caps against,
+   * shared by every process on the data directory. Production gateways are given this one.
+   */
+  readonly spendBook: SpendBook;
   ensureDefaultWorkspace(): Promise<Workspace>;
   getWorkspace(id: string): Promise<Workspace | undefined>;
   updateWorkspace(id: string, patch: Partial<Pick<Workspace, 'name' | 'budgetUsd'>>): Promise<Workspace>;

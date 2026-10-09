@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { fakeAnthropic, fakeFal, fakeFetch, fakeGoogle, fakeOpenAI, MemoryArtifacts } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 /**
  * ENG-3 and ENG-5 (convention C5): once a provider has answered, the call was billed, so it is ledgered before anything
@@ -40,6 +41,7 @@ beforeEach(() => {
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts: new MemoryArtifacts(),
     caps: { workspaceCapUsd: () => 100 },
     env: KEYS,
@@ -85,10 +87,10 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(ledgerLines()).toEqual([expect.objectContaining({ stepId: 'framings', purpose: 'build:prose', kind: 'completion' })]);
   });
 
-  it('waits out another process holding the ledger lock instead of failing a call that was already paid for', async () => {
+  it('waits briefly for another process holding the ledger lock, then writes the call to the audit file', async () => {
     const { client, calls } = fakeAnthropic();
     const release = holdLedgerLock();
-    const g = gateway({ clients: { anthropic: client }, billedLedgerWaitMs: 5_000 });
+    const g = gateway({ clients: { anthropic: client }, drainWaitMs: 5_000 });
     const pending = g.complete(completion());
     await new Promise((r) => setTimeout(r, 300));
     // The other process finishes its append and lets go.
@@ -98,17 +100,35 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId })]);
   });
 
-  it('fails a call it could not ledger with a non-retryable GatewayError saying it was billed (never a plain Error Temporal retries)', async () => {
+  it('returns a call whose audit entry has to wait for the lock: the spend book counts it, and the entry follows (ADR-0095)', async () => {
     const { client, calls } = fakeAnthropic();
-    holdLedgerLock();
-    const g = gateway({ clients: { anthropic: client }, billedLedgerWaitMs: 100 });
+    const release = holdLedgerLock();
+    const g = gateway({ clients: { anthropic: client }, drainWaitMs: 100 });
+    const res = await g.complete(completion());
+    expect(calls).toHaveLength(1);
+    expect(ledgerLines()).toEqual([]);
+    expect((await g.spend('ws-1')).spentUsd).toBeCloseTo(res.costUsd, 9);
+    release();
+    await g.close();
+    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId })]);
+  });
+
+  it('fails a call whose cost could not be recorded with a non-retryable GatewayError saying it was billed (never a plain Error Temporal retries)', async () => {
+    const { client, calls } = fakeAnthropic();
+    const book = memorySpendBook();
+    book.settle = async () => {
+      throw new Error('database is locked');
+    };
+    const g = gateway({ clients: { anthropic: client }, spendBook: book });
     const err = (await g.complete(completion()).catch((e: unknown) => e)) as GatewayError;
     expect(err).toBeInstanceOf(GatewayError);
     expect(err).toMatchObject({ code: 'provider-error', retryable: false });
     expect(err.message).toMatch(/billed/);
-    expect(err.message).toMatch(/ledger/);
+    expect(err.message).toMatch(/spending records/);
     expect(calls).toHaveLength(1);
-  });
+    // It stays counted at its estimate, as may have been billed, until the person checks it.
+    expect((await g.spend('ws-1')).uncertainUsd).toBeGreaterThan(0);
+  }, 15_000);
 
   it('ledgers and counts a billed call after a crash left the ledger with a torn last line (F03)', async () => {
     const { client, calls } = fakeAnthropic();
@@ -124,8 +144,8 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(readdirSync(dir).filter((n) => n.startsWith('ledger.jsonl.damaged-'))).toHaveLength(1);
   });
 
-  it('waits up to two minutes by default for the ledger lock on a billed call', () => {
-    expect(gateway().billedLedgerWaitMs).toBe(120_000);
+  it('waits two seconds by default for the ledger lock on the call path: the book already counts the call', () => {
+    expect(gateway().drainWaitMs).toBe(2_000);
   });
 });
 

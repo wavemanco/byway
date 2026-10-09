@@ -11,7 +11,7 @@ import type { Duration } from '@temporalio/common';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { DefaultLogger, Runtime } from '@temporalio/worker';
 import { GatewayError, type CheckpointRecord, type CheckpointResolution, type CompletionRequest, type Gateway, type ImageRequest, type LedgerEntry, type ModelProfile, type ProblemBrief, type PromptRenderer, type RunRecord, type RunView, type StartRunInput, type VideoRequest } from '@byway/contracts';
-import { createGateway, PRICES, PROFILES, type ModelGateway, type PriceRow, type Responder } from '@byway/gateway';
+import { createGateway, memorySpendBook, PRICES, PROFILES, type ModelGateway, type PriceRow, type Responder } from '@byway/gateway';
 import type { Recipe } from '@byway/recipe';
 import { buildWorkflows } from '../../src/build.ts';
 import { cachedTemporalExecutable } from '../../src/dev-engine.ts';
@@ -155,6 +155,8 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const make = (keyed: boolean): ModelGateway =>
     createGateway({
       ledgerPath: keyed ? ledgers.keyed : ledgers.demo,
+      // Each of the two ledgers has its own book: one book reads one audit file (production has one of each).
+      spendBook: memorySpendBook(),
       artifacts: store.artifacts,
       caps: storeCaps(store),
       demo: !keyed,
@@ -196,6 +198,9 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     profiles: () => inner.profiles(),
     profileStatus: () => inner.profileStatus(),
     verifyLedger: () => inner.verifyLedger(),
+    spendRecords: (id) => inner.spendRecords(id),
+    auditLedger: () => inner.auditLedger(),
+    close: () => inner.close(),
   };
   const readLedger = (file: string): LedgerEntry[] => {
     try {
@@ -314,6 +319,8 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
         await running.catch(() => undefined);
       } finally {
         await env.teardown();
+        await demoGateway.close();
+        await keyedGateway.close();
         store.close();
         rmSync(dir, { recursive: true, force: true });
         rmSync(bundle, { force: true });

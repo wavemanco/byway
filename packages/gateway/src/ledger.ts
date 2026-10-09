@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promises as nodeFs } from 'node:fs';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { CanonicalizationError, canonicalize, contentHash } from '@byway/canonical';
-import type { LedgerEntry } from '@byway/contracts';
+import { ledgerEntryProblem, type EntryLine, type LedgerBatch, type LedgerCursor, type LedgerEntry, type UnreadableLine } from '@byway/contracts';
 
 /**
  * The gateway's entry is the contract's LedgerEntry, upstream host (OpenRouter) included; the name is kept for existing
@@ -97,6 +97,42 @@ function headOf(text: string): Head | undefined {
   }
 }
 
+/** Where the spend book starts reading a ledger it has never read. */
+export const LEDGER_START: LedgerCursor = { offset: 0, tailStart: 0, tailSha256: null };
+
+const lineHash = (bytes: Uint8Array) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+/** How much of a line that is not an entry a fault keeps, for the person to recognise it. */
+const EXCERPT_CHARS = 120;
+
+/**
+ * A stored line as the spend book absorbs it (ADR-0095): the entry, or why it is not one the book can count (not JSON,
+ * or a field the book records missing or of the wrong type: ledgerEntryProblem in @byway/contracts). Stricter than
+ * entries(), which sums any JSON line: what the book cannot count, it must not count as nothing, so it becomes a fault
+ * that blocks paid calls until the person looks.
+ */
+export function readLedgerLine(line: string): { entry: GatewayLedgerEntry } | { problem: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return { problem: 'it is not JSON' };
+  }
+  const problem = ledgerEntryProblem(parsed);
+  return problem === undefined ? { entry: parsed as GatewayLedgerEntry } : { problem };
+}
+
+/** A stored line as an entry the spend book can count, or undefined (see readLedgerLine for why not). */
+export function absorbable(line: string): GatewayLedgerEntry | undefined {
+  const read = readLedgerLine(line);
+  return 'entry' in read ? read.entry : undefined;
+}
+
+/** What the drain may do while it holds the ledger's lock (Ledger.exclusive). */
+export interface LockedLedger {
+  readFrom(cursor: LedgerCursor): Promise<LedgerBatch>;
+  append(draft: LedgerDraft, opts?: { id?: string; at?: string }): Promise<GatewayLedgerEntry>;
+}
+
 /** A file name stamp without colons, which Windows refuses: 2026-10-08T12:13:14.123Z becomes 20261008T121314123Z. */
 const fileStamp = (at: Date) => at.toISOString().replace(/[-:.]/g, '');
 
@@ -165,14 +201,31 @@ export class Ledger {
     return run;
   }
 
-  private async appendLocked(draft: LedgerDraft): Promise<GatewayLedgerEntry> {
+  /**
+   * Runs `fn` holding the cross-process lock, after setting aside a torn tail, so the spend book's outbox can read what
+   * is new and append entries with the ids it chose (ADR-0095) with nobody appending in between. `lockTimeoutMs` bounds
+   * the wait for the lock.
+   */
+  exclusive<T>(fn: (ledger: LockedLedger) => Promise<T>, opts: { lockTimeoutMs?: number } = {}): Promise<T> {
+    const locked: LockedLedger = { readFrom: (cursor) => this.readFrom(cursor), append: (draft, o) => this.appendLocked(draft, o) };
+    const run = this.queue.then(() =>
+      this.withLock(async () => {
+        await this.repairTail();
+        return fn(locked);
+      }, opts.lockTimeoutMs ?? this.lockTimeoutMs),
+    );
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async appendLocked(draft: LedgerDraft, opts: { id?: string; at?: string } = {}): Promise<GatewayLedgerEntry> {
     await this.repairTail();
     const last = await this.lastEntry();
     const body = defined({
       ...draft,
-      id: randomUUID(),
+      id: opts.id ?? randomUUID(),
       seq: (last?.seq ?? 0) + 1,
-      at: this.now().toISOString(),
+      at: opts.at ?? this.now().toISOString(),
       prevHash: last?.hash ?? GENESIS_HASH,
     }) as Omit<GatewayLedgerEntry, 'hash'>;
     const entry: GatewayLedgerEntry = { ...body, hash: entryHash(body) };
@@ -309,6 +362,84 @@ export class Ledger {
     }
   }
 
+  /**
+   * The complete lines after `cursor`, for the spend book (ADR-0095): entries it can count, and lines it cannot, by byte
+   * offset. The line that ended at the cursor must still be there (the bytes from `tailStart` hash to `tailSha256`);
+   * when it is not, or the file is now shorter (a torn tail set aside, a restore), reading starts again from the
+   * beginning, which is safe because absorbing is idempotent. A last line without its newline is not read yet: an
+   * append may be under way, or a crash cut it short, which the next append sets aside.
+   */
+  async readFrom(cursor: LedgerCursor): Promise<LedgerBatch> {
+    let handle: Awaited<ReturnType<LedgerFs['open']>>;
+    try {
+      handle = await this.fs.open(this.path, 'r');
+    } catch (e) {
+      if (errCode(e) === 'ENOENT') return { entries: [], unreadable: [], cursor: { ...LEDGER_START } };
+      throw e;
+    }
+    try {
+      const { size } = await handle.stat();
+      let start = cursor.offset;
+      if (start > size || (start > 0 && (cursor.tailSha256 === null || cursor.tailStart >= start))) start = 0;
+      if (start > 0) {
+        const tail = Buffer.alloc(start - 1 - cursor.tailStart);
+        await handle.read(tail, 0, tail.length, cursor.tailStart);
+        const ended = Buffer.alloc(1);
+        await handle.read(ended, 0, 1, start - 1);
+        if (ended[0] !== 0x0a || lineHash(tail) !== cursor.tailSha256) start = 0;
+      }
+      const buf = Buffer.alloc(size - start);
+      if (buf.length > 0) await handle.read(buf, 0, buf.length, start);
+      const entries: EntryLine[] = [];
+      const unreadable: UnreadableLine[] = [];
+      let next: LedgerCursor = start === 0 ? { ...LEDGER_START } : { offset: start, tailStart: cursor.tailStart, tailSha256: cursor.tailSha256 };
+      for (let pos = 0; ; ) {
+        const nl = buf.indexOf(0x0a, pos);
+        if (nl < 0) break;
+        const bytes = buf.subarray(pos, nl);
+        const text = bytes.toString('utf8');
+        if (text.trim()) {
+          const at = { offset: start + pos, sha256: lineHash(bytes), excerpt: text.slice(0, EXCERPT_CHARS) };
+          const read = readLedgerLine(text);
+          if ('entry' in read) entries.push({ ...at, entry: read.entry });
+          else unreadable.push({ ...at, problem: read.problem });
+        }
+        next = { offset: start + nl + 1, tailStart: start + pos, tailSha256: lineHash(bytes) };
+        pos = nl + 1;
+      }
+      return { entries, unreadable, cursor: next };
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /**
+   * Where line `n` (1-based, as verify() counts lines) is: its byte offset and hash, as readFrom() reports lines to the
+   * spend book, whether it ends with a line ending (a last line without one is an append cut short, never read), and
+   * whether it is blank (readFrom() skips those). Undefined when the file has fewer lines.
+   */
+  async lineAt(n: number): Promise<{ offset: number; sha256: string; complete: boolean; blank: boolean } | undefined> {
+    let buf: Buffer;
+    try {
+      buf = await this.fs.readFile(this.path);
+    } catch (e) {
+      if (errCode(e) === 'ENOENT') return undefined;
+      throw e;
+    }
+    let start = 0;
+    for (let line = 1; start < buf.length; line++) {
+      const nl = buf.indexOf(0x0a, start);
+      const end = nl < 0 ? buf.length : nl;
+      if (line === n) {
+        const bytes = buf.subarray(start, end);
+        return { offset: start, sha256: lineHash(bytes), complete: nl >= 0, blank: !bytes.toString('utf8').trim() };
+      }
+      if (nl < 0) return undefined;
+      start = nl + 1;
+    }
+    return undefined;
+  }
+
   /** All entries, read incrementally: only bytes appended since the last call are parsed. Unparseable lines are skipped. */
   entries(): Promise<GatewayLedgerEntry[]> {
     const run = this.reads.then(() => this.readNew());
@@ -433,5 +564,19 @@ export class Ledger {
       throw e;
     }
     return headOf(text) ?? 'damaged';
+  }
+}
+
+/**
+ * The torn tails set aside beside a ledger (`<ledger>.damaged-<stamp>-<pid>`, ADR-0091), by file name, oldest first.
+ * Settings and the start-up report name them as a note: they are kept for inspection, never read, and block nothing.
+ */
+export async function setAsideTails(ledgerPath: string): Promise<string[]> {
+  const prefix = `${basename(ledgerPath)}.damaged-`;
+  try {
+    return (await nodeFs.readdir(dirname(ledgerPath))).filter((name) => name.startsWith(prefix)).sort();
+  } catch (e) {
+    if (errCode(e) === 'ENOENT') return [];
+    throw e;
   }
 }

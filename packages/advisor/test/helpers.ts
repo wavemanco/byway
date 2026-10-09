@@ -3,7 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ArtifactRecord, ArtifactStore, CompletionRequest, Gateway, LedgerEntry, PromptRenderer, PromptSlot, RenderedPrompt } from '@byway/contracts';
-import { createGateway, Ledger, type GatewayOptions, type Responder } from '@byway/gateway';
+import { createGateway, Ledger, memorySpendBook, type GatewayOptions, type Responder } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { createAdvisor, type AdvisorOptions } from '../src/index.ts';
 
@@ -44,6 +44,7 @@ export function demoGateway(over: Partial<GatewayOptions> = {}) {
     ledgerPath: tempLedger().ledgerPath,
     artifacts: new MemoryArtifacts(),
     caps: { workspaceCapUsd: () => 100 },
+    spendBook: memorySpendBook(),
     env: {},
     demo: true,
     now: () => new Date('2026-10-07T12:00:00Z'),
@@ -71,6 +72,9 @@ export function recording(inner: Gateway): Gateway & { calls: CompletionRequest[
     profiles: () => inner.profiles(),
     profileStatus: () => inner.profileStatus(),
     verifyLedger: () => inner.verifyLedger(),
+    spendRecords: (id) => inner.spendRecords(id),
+    auditLedger: () => inner.auditLedger(),
+    close: () => inner.close(),
   };
 }
 

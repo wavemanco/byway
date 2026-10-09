@@ -7,8 +7,10 @@ import { GatewayError, type VideoRequest } from '@byway/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { admitMediaUrl, FAL_EXTRACT_FRAME, readCapped, sniffVideoType } from '../src/providers/fal.ts';
+import { admitMediaUrl, FAL_EXTRACT_FRAME, falAdapter, readCapped, sniffVideoType } from '../src/providers/fal.ts';
+import type { ProviderAdapter } from '../src/providers/types.ts';
 import { countingBody, fakeFal, fakeFetch, falQueueError, fetchFailed, httpError, MemoryArtifacts, MP4_BYTES, WEBM_BYTES } from './fakes.ts';
+import { memorySpendBook } from '../src/memory-book.ts';
 
 /** Shaped like a fal key (key id, a colon, the secret), and not a real one. */
 const FAL_KEY = '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff';
@@ -31,6 +33,7 @@ const instant = async (_ms: number) => {};
 function gateway(over: Partial<GatewayOptions> = {}) {
   return createGateway({
     ledgerPath: join(dir, 'ledger.jsonl'),
+    spendBook: memorySpendBook(),
     artifacts,
     caps: { workspaceCapUsd: () => caps.workspace, runCapUsd: (id) => caps.runs[id] },
     env: { FAL_KEY },
@@ -95,6 +98,21 @@ describe('gateway: video through fal.ai', () => {
     expect(entry).toMatchObject({ id: res.ledgerEntryId, kind: 'video', provider: 'fal', purpose: 'relay:media', requestedModel: BALANCED_VIDEO, usage: { inputTokens: 0, outputTokens: 0, units: 5 }, costUsd: 0.352, runId: 'run-1', stepId: 'clip' });
     expect(await g.verifyLedger()).toBeNull();
     expect((await g.spend('ws-1')).spentUsd).toBe(0.352);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['empty', ''],
+  ])('settles a clip whose answer names no served model (%s) as the requested model, flagged assumed (ADR-0095 decision 7)', async (_what, model) => {
+    const fal = fakeFal();
+    const real = falAdapter({ client: fal.client, fetch: fakeFetch().fetch });
+    const adapter: ProviderAdapter = { ...real, video: async (r) => ({ ...(await real.video!(r)), servedModel: model as string }) };
+    const g = gateway({ adapters: { fal: adapter } });
+    const res = await g.video(req());
+    expect(res).toMatchObject({ servedModel: BALANCED_VIDEO, costUsd: 0.352 });
+    expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, requestedModel: BALANCED_VIDEO, servedModel: BALANCED_VIDEO, priceBasis: 'assumed', costUsd: 0.352 })]);
+    expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0.352, uncertainUsd: 0, assumedPricing: { calls: 1, usd: 0.352 } });
   });
 
   it('snaps the duration to what the model can make, and bills what it makes', async () => {

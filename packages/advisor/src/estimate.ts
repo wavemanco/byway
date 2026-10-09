@@ -9,8 +9,8 @@ import { AdvisorError } from './errors.ts';
  * profile's models at the gateway's dated price table. The result is a low–high range, because the run decides how
  * many rounds a loop takes, whether an optional step runs and which branch a route takes.
  *
- * It is an estimate, not a quote: the gateway's ledger is the source of truth for spend (spec §3.3), and the run's
- * budget is what actually stops spending (§3.4).
+ * It is an estimate, not a quote: the gateway's spend book is the source of truth for spend (spec §3.3, ADR-0095), and
+ * the run's budget is what actually stops spending (§3.4).
  */
 
 /** What the profile can do now: its models, and whether its image and video providers have keys (ProfileStatus). */

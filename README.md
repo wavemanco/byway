@@ -34,7 +34,7 @@ OPENROUTER_API_KEY=...
 FAL_KEY=...          # video clips for Ad Video Chain
 ```
 
-Keys are read from the process environment (a key exported in your shell wins over the file). They never enter the database, the ledger, artifacts, logs, prompts or the browser, and nothing byway writes under the repo holds them: the web build gets no keys, and Next.js's build caches, which would keep a copy of the environment, are off (byway removes any an earlier version left in `apps/web/.next`). Every run has a budget, and the workspace has one too. A run asks before starting a call whose estimated cost would take it over its budget, and byway does not start a call whose estimated cost would take the workspace past its budget. Estimates can be low, and a single call can cost twice its estimate or more, so spending can end over a budget.
+Keys are read from the process environment (a key exported in your shell wins over the file). They never enter the database, the ledger, artifacts, logs, prompts or the browser, and nothing byway writes under the repo holds them: the web build gets no keys, and Next.js's build caches, which would keep a copy of the environment, are off (byway removes any an earlier version left in `apps/web/.next`). Every run has a budget, and the workspace has one too. A run asks before starting a call whose estimated cost would take it over its budget, and byway does not start a call whose estimated cost would take the workspace past its budget. Estimates can be low, and a single call can cost twice its estimate or more, so spending can end over a budget. Calls under way count against both budgets at their estimate; a call that may have been billed without byway learning its cost (the connection dropped after the request went out, or byway stopped mid-call) counts against the workspace budget only, until you clear it in Settings ([ADR-0095](docs/adr/0095-paid-calls-have-a-durable-spend-book.md)). When byway is stopped, that holds for a run's calls from the moment it stops; a call made while recommending or composing first counts as under way, against the workspace budget, for up to a minute (the web app does not yet hand its calls back as byway stops). If byway crashed or was killed instead, all its calls first count as under way for up to a minute, a run's against its budget too.
 
 ## Scripts
 
@@ -86,10 +86,10 @@ Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Win
 
 | File | Contents |
 |---|---|
-| `byway.sqlite` | Workspaces, intakes, runs, run events, checkpoints, preferences |
+| `byway.sqlite` | Workspaces, intakes, runs, run events, checkpoints, preferences, and the spend book: every paid call from admission to settlement, which the budgets are checked against ([ADR-0095](docs/adr/0095-paid-calls-have-a-durable-spend-book.md)) |
 | `byway.sqlite-wal`, `byway.sqlite-shm` | SQLite's write-ahead log and its index, present while byway runs (and after a crash). Recent commits sit in the `-wal` file until SQLite folds them into `byway.sqlite`, so together they are one database |
 | `artifacts/sha256/…` | Every artifact (pages, documents, renders, images, clips), content-addressed |
-| `ledger.jsonl` | One hash-chained entry per model, image or video call: purpose, model, usage, cost (bodies by hash) |
+| `ledger.jsonl` | The audit record of the spend book: one hash-chained entry per model, image or video call, with purpose, model, usage and cost (bodies by hash) |
 | `ledger.jsonl.head` | The ledger's last entry, so a cut-off ledger is detectable |
 | `ledger.jsonl.damaged-<time>-<pid>` | Only after a crash cut an append short: the torn last line, set aside by the next call so the ledger keeps working ([ADR-0091](docs/adr/0091-provider-edge-billing-fixes.md)). Kept for inspection; byway never reads it |
 | `exposure.jsonl` | The exposure register (CR12): the first time each model outside the Anthropic family judged work in a given role, per workspace |
@@ -114,18 +114,18 @@ The backup unit is the whole data directory, copied while byway is stopped ([ADR
 2. Move the current data directory aside (or delete it), then copy the whole backup into its place. Do not copy a backup over a live directory or merge the two.
 3. Start byway.
 
+A backup holds what was spent up to the moment it was taken. After restoring an older one, calls made since are in neither the spend book nor the ledger, so the budgets count from the backup's totals; your providers' own dashboards show what was spent since.
+
 **Mixing files from different backups is not supported.** Each mix fails differently. byway reports some of them when it starts (below) and does not detect the others:
 
-- An older or missing `ledger.jsonl` (or `ledger.jsonl.head`): spend recorded after the backup is gone, so the run and workspace caps count from the older total, or from zero when the file is missing. At start byway names the runs whose recorded cost the ledger no longer holds.
+- An older or missing `ledger.jsonl` (or `ledger.jsonl.head`): the audit record of calls made after the backup is gone. The budgets still count those calls, because the spend book in `byway.sqlite` is their authority ([ADR-0095](docs/adr/0095-paid-calls-have-a-durable-spend-book.md)). At start byway names the calls the file lacks, by run.
 - A `byway.sqlite` older than `temporal.sqlite`: runs the engine has and the store does not are stopped at the next start, before they run another step, and byway says how many. Steps they ran before the restore, and what those cost, are not undone.
 - A `temporal.sqlite` older than `byway.sqlite`, or missing: runs the store shows as going that the engine does not have end at the next start, with a plain message.
 - An engine ahead of the store on the same run: the run waits on a question the store does not have, and nothing reports it.
 - Missing files under `artifacts/`: named at start, with the runs that use them. A missing page, document or image cannot be shown.
 - An older `exposure.jsonl`: the register forgets which outside model families judged work after the backup, so the research side cannot rely on it for that period (CR12).
 
-**At start** byway checks the data directory before its engine starts and prints a `checked` line ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)): whether SQLite finds the database file sound, whether every recorded artifact file is there at its recorded size, whether the spend ledger's hash chain and head agree, and which runs have a recorded cost the ledger lacks. Spend that belongs to no run (recommending and composing) and differences under a cent per run are not cross-checked. The check only reads, and byway starts either way.
-
-**Spend after a restore.** byway counts spend from `ledger.jsonl`. After restoring an older backup, calls made since that backup are not counted against the run and workspace caps, so byway can spend that amount again before a cap stops it. Check your providers' own dashboards for what was actually spent. This caveat stays until the fix for review finding F03 (durable spend accounting) lands.
+**At start** byway checks the data directory before its engine starts and prints a `checked` line ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)): whether SQLite finds the database file sound, whether every recorded artifact file is there at its recorded size, whether the spend ledger's hash chain and head agree, which calls the spend book holds as written to `ledger.jsonl` that the file lacks, which runs have a recorded cost the spend book lacks (only a ledger lost before byway first read it into the book can leave one), and whether lines of the ledger the spend book could not read are waiting for you to acknowledge them in Settings (paid calls wait until you do); differences under a cent per run are not reported. Settled calls the spend book has not written to `ledger.jsonl` yet, and a torn ledger tail set aside after a crash, are named as notes. When nothing is found, the `checked` line says the ledger's chain is intact and holds every call the spend book records as written to it, at the same cost; calls still under way, or that may have been billed, are never in the ledger. The check changes no run record, ledger line or artifact file (the spend book reads in ledger lines it has not seen, as the first model call would), and byway starts either way.
 
 ## Renderer
 
