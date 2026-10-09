@@ -2,17 +2,28 @@
  * A web page's copy deck, and VOICE's exact write-back into the page (F07, ADR-0081). Imported only by copy.ts.
  *
  * The deck: one line ("unit") per run of visible text, in reading order, read with the browser-faithful tokenizer
- * (html-tokens.ts). A run is the text between two tags that are not inline formatting (INLINE), so a block is one line
- * unless a <br>, an image, an svg, a control or a nested block splits it. Head content is not offered except the
- * <title>; <pre>, raw text, CDATA and attribute copy are not offered. A block that holds only links side by side (a
- * nav) gives one line per link. One notation holds on every line: a link's words inside a line are shown in
- * [brackets]; a literal "[", "]", or a backslash before one of them or before a bracket of the notation, is shown
- * escaped with a backslash. A line that is exactly one link's words is shown plain (a "whole-link" line).
+ * (html-tokens.ts). A run is text with no tag inside it but inline formatting (INLINE: a, abbr, b, bdi, bdo, cite,
+ * code, data, dfn, em, i, kbd, mark, q, s, samp, small, span, strong, sub, sup, time, u, var, wbr), so a block is one
+ * line unless a <br>, a nested block or any other tag splits it, including the tags of elements browsers show inline
+ * (font, label, ins, del, button, an image, an svg, a control). Head content is not offered except the <title>;
+ * <pre>, raw text, CDATA and attribute copy are not offered. A block that holds only links side by side (a nav) gives
+ * one line per link. One notation holds on every line: a link's words inside a line are shown in [brackets]; a literal
+ * "[", "]", or a backslash before one of them or before a bracket of the notation, is shown escaped with a backslash.
+ * A line that is exactly one link's words is shown plain (a "whole-link" line). A link is an <a> with an href; one
+ * without is a placeholder, and its words are plain.
+ *
+ * The reader builds no tree, but tracks the open elements as browsers do where that decides what is copy (see
+ * OpenElements): end tags are matched by browsers' rules (scope, special elements, the adoption agency), browsers'
+ * implied ends for start tags are applied, and ignored tags open nothing. Besides the deck's runs, it reads the page's
+ * blocks as browsers show them by their default stylesheet (BLOCK): the removal rule and the verifier use those, so no
+ * removal runs two lines together on screen.
  *
  * Links are read where browsers end them: at the next <a ...> or </a> tag. A link the page leaves open (an unclosed
  * <a>, "<a href=x/>", one a misnested closing tag pops) reaches the following blocks, and an <a> inside another ends
- * the first. Where that reach holds a table, a list box, svg or math (UNCLEAR), byway cannot tell without building the
- * tree: the link is tangled, and every line from it on is offered but cannot be changed.
+ * the first. Where browsers may stop, skip or resume it (its reach holds a table, a list box, svg or math; something
+ * like that it holds is still open at its own </a>; or eight or more blocks opened inside it are open where it ends),
+ * byway cannot tell without building the tree: the link is tangled, and every line from it on is offered but cannot be
+ * changed.
  *
  * The write-back has three parts that never call a model:
  * - readPageEdit: the person's answer as an exact positional edit (one line per unit; an empty line deletes its text);
@@ -22,25 +33,67 @@
  *   icon link, and a whole-link line's words all stay in its link). A line's edge whitespace stays in the slot that
  *   held it, unless it would then show as a space where the person's line has none (text glued to a link whose edge
  *   space sat inside it): then it is dropped. Elements left empty are removed when the shared rule allows (never one
- *   that carries a hook such as id, data-* or aria-*, never one whose removal would join two runs of text or move
- *   where browsers end a link), and the <br> run a deleted line leaves goes with it. It returns its removals as a
- *   witness;
+ *   that carries a hook such as id, data-* or aria-*, never one browsers close elsewhere than its own end tag, never
+ *   one whose removal would join two runs of text, as runs or as blocks on screen, or move where browsers end a link),
+ *   and the whitespace placement put inside a removed element is written where it was. The <br> run a deleted line
+ *   leaves goes with it. It returns its removals as a witness;
  * - pageEditProblems: the verifier. It checks the witness against the shared rule, compares the markup token for token
  *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each line's words,
  *   the line as it shows (edge whitespace included, whitespace collapsed) and its edge whitespace, and each link
  *   part's words, that no link or button whose words were in a changed line is left nameless (an image's alt or a
- *   label names one that keeps an image or icon), and reads the written page fresh: each block's words, and which of
- *   them are in which link (with its address). It is independent of placement's alignment and removal choices, not of
- *   the reader (which is tested on its own, and against Chromium in scratch harnesses).
- * Reading, placing and verifying are linear in the page, except that placement matches a changed block's old and new
- * words: by a table quadratic in the words of that block (a line of up to about a thousand words), and past that by
- * an edit script whose cost grows with the words changed (capped; see wordPairs). None of them throws.
+ *   label names one that keeps an image or icon), and reads the written page fresh: each run's words, which of them
+ *   are in which link (with its address), and each block's words as browsers show blocks. It is independent of
+ *   placement's alignment and removal choices, not of the reader (which is tested on its own, and against Chromium in
+ *   scratch harnesses).
+ * Reading, placing and verifying are linear in the page (amortized), except that placement matches a changed block's
+ * old and new words: by a table quadratic in the words of that block (a line of up to about a thousand words), and
+ * past that by an edit script whose cost grows with the words changed (capped; see wordPairs). None of them throws.
  */
 import { attributesOf, decodeText, escapeText, isHtmlSpace, noHtmlSpace, squashHtml, tokenize, type Token } from './html-tokens.ts';
 
-/** Formatting that sits inside a line of text; any other tag ends the line. */
+/**
+ * Formatting that sits inside a line of text (a deck run); any other tag ends the run, even one browsers show inline
+ * (font, label, ins, del, button, img, svg), as does an end tag at which browsers end a block (see BLOCK).
+ */
 const INLINE = new Set(['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'data', 'dfn', 'em', 'i', 'kbd', 'mark', 'q', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var', 'wbr']);
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+/**
+ * Elements browsers show as blocks by their default stylesheet: text on either side of one's start tag, or of the end
+ * tag that closes it, shows on separate lines, as it does on either side of a <br>. Every other element shows inline
+ * (formatting, font, label, ins, del, images, svg, controls, custom elements) or not at all (script, a hidden element),
+ * so removing what stood between two runs of text with only those between them would run the two together. A form is
+ * left out: browsers ignore a form inside another. The table parts are blocks only inside a table (TABLE_PART).
+ */
+const BLOCK = new Set(['address', 'article', 'aside', 'blockquote', 'body', 'center', 'details', 'dialog', 'dir', 'div', 'dl', 'dd', 'dt', 'fieldset', 'figcaption', 'figure', 'footer', 'head', 'header', 'hgroup', 'hr', 'html', 'legend', 'li', 'listing', 'main', 'menu', 'nav', 'ol', 'p', 'plaintext', 'pre', 'search', 'section', 'summary', 'ul', 'xmp', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'caption', 'colgroup', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
+/** Outside a table, browsers ignore these tags. */
+const TABLE_PART = new Set(['caption', 'colgroup', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
+/**
+ * WHATWG's "special" elements (HTML namespace): an end tag for an element that is neither special nor formatting is
+ * ignored when one of these is open inside it, and the adoption agency closes formatting past them, leaving them open.
+ */
+const SPECIAL = new Set(['address', 'applet', 'area', 'article', 'aside', 'base', 'basefont', 'bgsound', 'blockquote', 'body', 'br', 'button', 'caption', 'center', 'col', 'colgroup', 'dd', 'details', 'dir', 'div', 'dl', 'dt', 'embed', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'frame', 'frameset', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'head', 'header', 'hgroup', 'hr', 'html', 'iframe', 'img', 'input', 'keygen', 'li', 'link', 'listing', 'main', 'marquee', 'menu', 'meta', 'nav', 'noembed', 'noframes', 'noscript', 'object', 'ol', 'p', 'param', 'plaintext', 'pre', 'script', 'search', 'section', 'select', 'source', 'style', 'summary', 'table', 'tbody', 'td', 'template', 'textarea', 'tfoot', 'th', 'thead', 'title', 'tr', 'track', 'ul', 'wbr', 'xmp']);
+/** Inside svg or math, the elements that are special and bound a scope (integration points). */
+const FOREIGN_SCOPE = new Set(['foreignobject', 'desc', 'title', 'mi', 'mo', 'mn', 'ms', 'mtext', 'annotation-xml']);
+/** The adoption agency's formatting elements. */
+const FORMATTING = new Set(['a', 'b', 'big', 'code', 'em', 'font', 'i', 'nobr', 's', 'small', 'strike', 'strong', 'tt', 'u']);
+/**
+ * What an end tag does not reach past ("has an element in scope"), with the adoption agency's markers and a list box:
+ * an end tag for an element open outside a cell, a caption, a table, an object, a marquee, a template or a list box is
+ * ignored inside it.
+ */
+const SCOPE = new Set(['applet', 'caption', 'html', 'table', 'td', 'th', 'marquee', 'object', 'template', 'select']);
+/** End tags browsers close by scope: the element and everything still open inside it. */
+const SCOPED_END = new Set(['address', 'article', 'aside', 'blockquote', 'button', 'center', 'details', 'dialog', 'dir', 'div', 'dl', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'header', 'hgroup', 'listing', 'main', 'menu', 'nav', 'ol', 'pre', 'search', 'section', 'summary', 'ul', 'dd', 'dt', 'applet', 'marquee', 'object']);
+const HEADING = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+/** Start tags that end an open p (WHATWG "close a p element"; a table only in no-quirks mode, so not here). */
+const CLOSES_P = new Set(['address', 'article', 'aside', 'blockquote', 'center', 'details', 'dialog', 'dir', 'div', 'dl', 'fieldset', 'figcaption', 'figure', 'footer', 'header', 'hgroup', 'main', 'menu', 'nav', 'ol', 'p', 'search', 'section', 'summary', 'ul', ...HEADING, 'pre', 'listing', 'form', 'li', 'dd', 'dt', 'plaintext', 'hr', 'xmp']);
+/** What may stand in the head: any other start tag ends it. */
+const HEAD_CONTENT = new Set(['base', 'basefont', 'bgsound', 'link', 'meta', 'noframes', 'noscript', 'script', 'style', 'template', 'title']);
+/**
+ * The adoption agency runs at most eight times, each time past one block opened inside the link: an </a> (or the next
+ * <a>) with eight or more blocks open inside the link leaves it open in browsers.
+ */
+const AAA_DEPTH = 8;
 /** Elements a person sees without text: a link or button holding one keeps a visible face. */
 const EMBEDDED = new Set(['img', 'svg', 'picture', 'video', 'audio', 'iframe', 'canvas', 'object', 'embed', 'input', 'select', 'textarea', 'button']);
 /** Blocks whose removal (when emptied) leaves no hole: everything else (a cell, a <dd>, a wrapper) is kept empty. */
@@ -82,12 +135,18 @@ interface Slot {
   toks: number[];
   /** The non-text token that ends it. */
   end: number;
-  /** Runs of text separated by non-inline tags. */
+  /** Deck runs: text separated by tags outside INLINE, and by end tags at which browsers end a block. */
   region: number;
-  /** The open inline elements (their start tokens), outermost first. */
-  stack: number[];
+  /** Blocks as browsers show them: text separated by the tags at which browsers start a new line (see BLOCK). A run lies in one. */
+  vregion: number;
+  /** The inline elements opened in its run and still open: how many, and the outermost one's start token (-1: none). */
+  depth: number;
+  outer: number;
+  /** Offered: outside the head (the title aside) and outside <pre>. */
   visible: boolean;
-  /** The outermost closed <a> holding it (its start token). */
+  /** Shown by browsers: outside the head and the title, and not inside a hidden block (the hidden attribute, a closed dialog). */
+  rendered: boolean;
+  /** The outermost closed link holding it (its start token). */
   link?: number;
 }
 interface El {
@@ -104,6 +163,22 @@ interface El {
    * removal span. A virtual link with none is never removed.
    */
   markupEnd?: number;
+  /**
+   * Closed by its own end tag while it was the innermost open element, with nothing inside it ignored, closed out of
+   * order or closed by another end tag: its tokens hold whole elements, as browsers read them. Only such an element is
+   * removed.
+   */
+  balanced?: true;
+  /** Inside svg or math. */
+  foreign?: true;
+  /** A block as browsers show it (its start tag was a line break, see BLOCK). */
+  block?: true;
+  /** A hidden block (the hidden attribute, a closed dialog, a datalist): nothing inside it shows. */
+  hidden?: true;
+  /** An <a> a later <a> start tag ends in browsers: closing it implicitly after that is not out of order. */
+  superseded?: true;
+  /** Its start tag ended other elements (an open p, li, heading or the head): it is never balanced. */
+  endsOthers?: true;
 }
 /** The tokens an element's removal takes, to its last one: its own closing tag in the markup. */
 const spanEnd = (el: El): number | undefined => (el.virtual ? el.markupEnd : el.end);
@@ -146,6 +221,238 @@ export interface PageDeck {
    * other end (the page's length when it runs to the end): an element holding one end and not the other is kept.
    */
   reachEnds: Map<number, number[]>;
+  /** Every <a> and </a> tag, in order. */
+  aTags: number[];
+}
+
+/** An <a> with an address is a link; one without is a placeholder (browsers show its words plain). */
+const hasHref = (t: Token): boolean => t.kind === 'tag' && attributesOf(t.raw).some((a) => a.name === 'href');
+/**
+ * A control a person activates, which must keep a name: a button, a link, or an <a> without an address that a script
+ * or a role makes one (role, tabindex or an on... handler). A placeholder <a> (a name or id only) may be left empty.
+ */
+function isControl(p: PageDeck, el: El): boolean {
+  if (el.name === 'button') return true;
+  if (el.name !== 'a') return false;
+  return attributesOf(p.tokens[el.start]!.raw).some((a) => a.name === 'href' || a.name === 'role' || a.name === 'tabindex' || a.name.startsWith('on'));
+}
+
+type TagToken = Extract<Token, { kind: 'tag' }>;
+const lastOf = (xs: readonly number[]): number => (xs.length ? xs[xs.length - 1]! : -1);
+/** A hidden block: the hidden attribute, a dialog that is not open, or a datalist. Only checked on blocks' tags. */
+function hiddenTag(t: TagToken): boolean {
+  if (t.name === 'datalist') return true;
+  if (t.name !== 'dialog' && !/hidden/i.test(t.raw)) return false;
+  const names = attributesOf(t.raw).map((a) => a.name);
+  return names.includes('hidden') || (t.name === 'dialog' && !names.includes('open'));
+}
+
+/**
+ * The elements the reader holds open, as a stack of start tokens, with end tags matched as browsers match them
+ * (WHATWG tree construction, without building the tree):
+ * - p, li, dd, dt, the headings and the block end tags close the element (any heading for a heading) and everything
+ *   open inside it, unless a scope boundary (a table, a cell, a caption, an object, a marquee, a template, a list box)
+ *   is open inside it; table parts close within their table. "</p>" with no p open makes an empty p, and "</br>" is a
+ *   <br>, so both break the line;
+ * - a formatting end tag (a, b, em, font, ...) closes its element; when a special element (a block, a control) is open
+ *   inside it, browsers' adoption agency closes the formatting element and leaves the block open, and so does the
+ *   reader (the element stays on the stack, closed, until the block above it closes);
+ * - any other end tag closes its element unless a special element is open inside it; then browsers ignore it;
+ * - "</body>" and "</html>" close nothing.
+ * Start tags end what browsers end for them (implicitly: such an element keeps no end): a block ends an open p, an li
+ * an open li and a dd or dt an open dd or dt (unless a block other than a div, an address or a p is open inside it), a
+ * heading a heading that is the innermost element, and body content the head; an <a> marks an open <a> superseded.
+ * Browsers ignore a table part outside a table, a second html or body, a head in the body and a form inside a form:
+ * the reader opens no element for them. Foster parenting and the reconstruction of formatting are not modelled (links
+ * are read where browsers end them, see readPageCopy). Lookups go through stacks of positions per name and per kind,
+ * so each tag costs a constant amount, amortized.
+ */
+class OpenElements {
+  readonly open: number[] = [];
+  /** Out-of-order events so far (an ignored end tag, an element closed implicitly or past a block): see El.balanced. */
+  private dirty = 0;
+  private readonly dirtyAt = new Map<number, number>();
+  private readonly byName = new Map<string, number[]>();
+  private readonly special: number[] = [];
+  private readonly scope: number[] = [];
+  private readonly tableScope: number[] = [];
+  /** Positions of open special elements other than address, div and p: an li, dd or dt start tag stops at one. */
+  private readonly hardSpecial: number[] = [];
+  private headSeen = false;
+  /** Positions of open elements outside INLINE (for the block a run belongs to); closed ones are skipped lazily. */
+  private readonly blocks: number[] = [];
+  preDepth = 0;
+  hiddenDepth = 0;
+  private readonly els: Map<number, El>;
+  constructor(els: Map<number, El>) {
+    this.els = els;
+  }
+
+  /** The position of the innermost open element with this name, or -1. */
+  named(name: string): number {
+    return lastOf(this.byName.get(name) ?? []);
+  }
+  /** The head is open: its content is not shown. */
+  get inHead(): boolean {
+    return this.named('head') >= 0;
+  }
+  /** Browsers ignore this start tag: no element opens. */
+  ignores(t: TagToken): boolean {
+    if (t.foreign) return false;
+    const n = t.name;
+    if (TABLE_PART.has(n)) return this.named('table') < 0;
+    if (n === 'html' || n === 'body') return this.named(n) >= 0;
+    if (n === 'head') return this.headSeen || this.named('body') >= 0;
+    if (n === 'form') return this.named('form') >= 0 && this.named('template') < 0;
+    return false;
+  }
+  /**
+   * The ends browsers imply for a start tag they do not ignore (see the class comment). Whether it ended any element:
+   * then the element it opens is never removed (without its start tag, what it ended would run on past it).
+   */
+  startTag(t: TagToken): boolean {
+    if (t.foreign) return false;
+    const depth = this.open.length;
+    const n = t.name;
+    if (n === 'head') this.headSeen = true;
+    else if (this.inHead && !HEAD_CONTENT.has(n)) this.endImplicitly(this.named('head'));
+    if (n === 'li' || n === 'dd' || n === 'dt') {
+      const k = n === 'li' ? this.named('li') : Math.max(this.named('dd'), this.named('dt'));
+      if (k >= 0 && lastOf(this.hardSpecial) <= k) this.endImplicitly(k);
+    }
+    if (CLOSES_P.has(n)) {
+      const k = this.named('p');
+      if (k >= 0 && k > Math.max(lastOf(this.scope), this.named('button'))) this.endImplicitly(k);
+    }
+    if (HEADING.includes(n) && this.open.length && HEADING.includes(this.els.get(this.open.at(-1)!)!.name)) this.endImplicitly(this.open.length - 1);
+    return this.open.length < depth;
+  }
+  /** Whether a start tag browsers do not ignore starts a new line (see BLOCK): read before the element is pushed. */
+  startBreaks(t: TagToken): boolean {
+    if (t.foreign || this.hiddenDepth > 0) return false;
+    if (t.name === 'br') return true;
+    return BLOCK.has(t.name) && !hiddenTag(t);
+  }
+  push(i: number, t: TagToken, block: boolean, endsOthers = false): void {
+    const name = t.name;
+    // Browsers end an open <a> (outside a cell, a table or a list box) where the next <a> starts.
+    if (name === 'a' && !t.foreign) {
+      const k = this.named('a');
+      if (k >= 0 && k > lastOf(this.scope)) this.els.get(this.open[k]!)!.superseded = true;
+    }
+    const hidden = !t.foreign && !INLINE.has(name) && hiddenTag(t);
+    const el: El = { start: i, name, ...(t.foreign ? { foreign: true as const } : {}), ...(block ? { block: true as const } : {}), ...(hidden ? { hidden: true as const } : {}), ...(endsOthers ? { endsOthers: true as const } : {}) };
+    this.els.set(i, el);
+    const k = this.open.length;
+    this.open.push(i);
+    const list = this.byName.get(name);
+    if (list) list.push(k);
+    else this.byName.set(name, [k]);
+    if (t.foreign ? FOREIGN_SCOPE.has(name) : SPECIAL.has(name)) {
+      this.special.push(k);
+      if (t.foreign || !['address', 'div', 'p'].includes(name)) this.hardSpecial.push(k);
+    }
+    if (t.foreign ? FOREIGN_SCOPE.has(name) : SCOPE.has(name)) this.scope.push(k);
+    if (!t.foreign && (name === 'html' || name === 'table' || name === 'template')) this.tableScope.push(k);
+    if (!INLINE.has(name)) this.blocks.push(k);
+    if (name === 'pre') this.preDepth++;
+    if (hidden) this.hiddenDepth++;
+    this.dirtyAt.set(i, this.dirty);
+  }
+  /** The innermost open element outside INLINE (its start token), or -1. */
+  innermostBlock(): number {
+    while (this.blocks.length && this.isClosed(lastOf(this.blocks))) this.blocks.pop();
+    return this.blocks.length ? this.open[lastOf(this.blocks)]! : -1;
+  }
+  /** Open special elements started after token `tok`. */
+  specialsAfter(tok: number): number {
+    let lo = 0;
+    let hi = this.special.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.open[this.special[mid]!]! > tok) hi = mid;
+      else lo = mid + 1;
+    }
+    return this.special.length - lo;
+  }
+  /** Match an end tag; whether it breaks the line in browsers. */
+  endTag(i: number, t: TagToken): boolean {
+    const name = t.name;
+    const ignored = (breaks = false) => {
+      this.dirty++;
+      return breaks;
+    };
+    const within = (k: number, bound: number) => (k >= 0 && k >= bound ? this.close(k, i) : ignored());
+    if (t.foreign) return within(this.named(name), 0);
+    if (name === 'br') return ignored(this.hiddenDepth === 0);
+    if (name === 'p') {
+      const k = this.named('p');
+      if (k >= 0 && k > Math.max(lastOf(this.scope), this.named('button'))) return this.close(k, i);
+      return ignored(this.hiddenDepth === 0 && this.named('select') < 0);
+    }
+    if (name === 'li') return within(this.named('li'), Math.max(lastOf(this.scope), this.named('ol'), this.named('ul')) + 1);
+    if (HEADING.includes(name)) return within(Math.max(...HEADING.map((h) => this.named(h))), lastOf(this.scope) + 1);
+    if (TABLE_PART.has(name) || name === 'table') return within(this.named(name), lastOf(this.tableScope));
+    if (name === 'select') return within(this.named('select'), 0);
+    if (FORMATTING.has(name)) {
+      const k = this.named(name);
+      if (k < 0 || lastOf(this.scope) > k) return ignored();
+      if (lastOf(this.special) < k) return this.close(k, i);
+      // A block opened inside it: browsers close the formatting here and leave the block open.
+      const el = this.els.get(this.open[k]!)!;
+      this.release(k);
+      el.end = i;
+      this.dirty++;
+      return false;
+    }
+    if (SCOPED_END.has(name)) return within(this.named(name), lastOf(this.scope));
+    if (name === 'body' || name === 'html') return ignored();
+    return within(this.named(name), lastOf(this.special));
+  }
+
+  private isClosed(k: number): boolean {
+    return k >= this.open.length || this.els.get(this.open[k]!)!.end !== undefined;
+  }
+  /** The element at position k leaves the open set (popped, or closed past a block). */
+  private release(k: number): void {
+    const el = this.els.get(this.open[k]!)!;
+    const list = this.byName.get(el.name)!;
+    if (lastOf(list) === k) list.pop();
+    if (lastOf(this.special) === k) this.special.pop();
+    if (lastOf(this.hardSpecial) === k) this.hardSpecial.pop();
+    if (lastOf(this.scope) === k) this.scope.pop();
+    if (lastOf(this.tableScope) === k) this.tableScope.pop();
+    if (el.name === 'pre') this.preDepth--;
+    if (el.hidden) this.hiddenDepth--;
+  }
+  /** End the element at position k and everything open inside it, as browsers end them for a start tag: no end. */
+  private endImplicitly(k: number): void {
+    for (let j = this.open.length - 1; j >= k; j--) if (this.els.get(this.open[j]!)!.end === undefined) this.release(j);
+    this.open.length = k;
+    while (this.open.length && this.isClosed(this.open.length - 1)) this.open.pop();
+    while (this.blocks.length && lastOf(this.blocks) >= this.open.length) this.blocks.pop();
+  }
+  /** Close the element at position k with end tag i, and everything open inside it (closed implicitly). */
+  private close(k: number, i: number): boolean {
+    let breaks = false;
+    let implicit = false;
+    for (let j = this.open.length - 1; j > k; j--) {
+      const inner = this.els.get(this.open[j]!)!;
+      if (inner.end !== undefined) continue; // closed past a block before: already released
+      this.release(j);
+      if (!inner.superseded) implicit = true;
+      if (inner.block) breaks = true;
+    }
+    const el = this.els.get(this.open[k]!)!;
+    if (!implicit && !el.endsOthers && this.dirty === this.dirtyAt.get(el.start)) el.balanced = true;
+    if (implicit) this.dirty++;
+    this.release(k);
+    el.end = i;
+    this.open.length = k;
+    while (this.open.length && this.isClosed(this.open.length - 1)) this.open.pop();
+    while (this.blocks.length && lastOf(this.blocks) >= this.open.length) this.blocks.pop();
+    return breaks || !!el.block;
+  }
 }
 
 /** Read a page's copy deck (one pass over its tokens, plus link membership by token index). */
@@ -153,21 +460,30 @@ export function readPageCopy(html: string): PageDeck {
   const tokens = tokenize(html);
   const slots: Slot[] = [];
   const els = new Map<number, El>();
-  const open: number[] = [];
+  const open = new OpenElements(els);
   const slotEndingAt = new Int32Array(tokens.length + 1).fill(-1);
   let region = 0;
-  let inline: number[] = [];
-  let inHead = false;
+  let vregion = 0;
+  // The inline elements opened in the current run and still open (start tokens), with their positions by name.
+  const inline: number[] = [];
+  const inlineAt = new Map<string, number[]>();
   let inTitle = false;
-  let preDepth = 0;
   // The block a region belongs to: the innermost open non-inline element when the region starts (for <br> runs).
   const blockOfRegion = new Map<number, number>();
-  const innermostBlock = () => {
-    for (let k = open.length - 1; k >= 0; k--) if (!INLINE.has(els.get(open[k]!)!.name)) return open[k]!;
-    return -1;
-  };
   blockOfRegion.set(0, -1);
-  let cur: Omit<Slot, 'end'> = { toks: [], region, stack: [], visible: true };
+  // At each <a> tag, the special elements open that started after the <a> tag before it (see AAA_DEPTH).
+  const aDepth = new Map<number, number>();
+  let prevA = -1;
+  const next = (): Omit<Slot, 'end'> => ({
+    toks: [],
+    region,
+    vregion,
+    depth: inline.length,
+    outer: inline.length ? inline[0]! : -1,
+    visible: (!open.inHead || inTitle) && open.preDepth === 0,
+    rendered: !open.inHead && !inTitle && open.hiddenDepth === 0,
+  });
+  let cur = next();
   tokens.forEach((t, i) => {
     if (t.kind === 'text') {
       cur.toks.push(i);
@@ -175,48 +491,58 @@ export function readPageCopy(html: string): PageDeck {
     }
     slotEndingAt[i] = slots.length;
     slots.push({ ...cur, end: i });
+    let breaks = false;
     if (t.kind === 'tag') {
       const name = t.name;
-      if (name === 'head') inHead = !t.closing;
+      if (name === 'a') {
+        aDepth.set(i, open.specialsAfter(prevA));
+        prevA = i;
+      }
       if (name === 'title') inTitle = !t.closing;
       // A start tag opens an element unless it is void or honours its self-closing flag (in svg or math, and <svg/>
       // and <math/> themselves); browsers ignore "/>" on other HTML elements, so "<a href=x/>" and "<span/>" open one.
-      const opens = !t.closing && !VOID.has(name) && !(t.selfClosing && (t.foreign || name === 'svg' || name === 'math'));
+      // Browsers ignore some start tags altogether (see OpenElements.ignores).
+      const ignored = !t.closing && open.ignores(t);
+      const opens = !t.closing && !ignored && !VOID.has(name) && !(t.selfClosing && (t.foreign || name === 'svg' || name === 'math'));
       if (!t.closing) {
-        if (opens) {
-          els.set(i, { start: i, name });
-          open.push(i);
-          if (name === 'pre') preDepth++;
-        }
-      } else {
-        let k = open.length - 1;
-        while (k >= 0 && els.get(open[k]!)!.name !== name) k--;
-        if (k >= 0) {
-          for (let x = k; x < open.length; x++) if (els.get(open[x]!)!.name === 'pre') preDepth--;
-          els.get(open[k]!)!.end = i;
-          open.length = k;
-        }
-      }
-      if (!INLINE.has(name)) {
+        const endsOthers = !ignored && open.startTag(t);
+        breaks = !ignored && open.startBreaks(t);
+        if (opens) open.push(i, t, breaks, endsOthers);
+      } else breaks = open.endTag(i, t);
+      if (!INLINE.has(name) || breaks) {
         region++;
-        inline = [];
-        blockOfRegion.set(region, name === 'br' ? (blockOfRegion.get(region - 1) ?? -1) : innermostBlock());
-      } else if (opens) inline = [...inline, i];
-      else if (t.closing) {
-        const k = inline.map((s) => els.get(s)?.name).lastIndexOf(name);
-        if (k >= 0) inline = inline.slice(0, k);
+        inline.length = 0;
+        inlineAt.clear();
+        blockOfRegion.set(region, name === 'br' ? (blockOfRegion.get(region - 1) ?? -1) : open.innermostBlock());
+      } else if (opens) {
+        const at = inlineAt.get(name);
+        if (at) at.push(inline.length);
+        else inlineAt.set(name, [inline.length]);
+        inline.push(i);
+      } else if (t.closing) {
+        const k = lastOf(inlineAt.get(name) ?? []);
+        if (k >= 0) {
+          while (inline.length > k) {
+            const s = inline.pop()!;
+            inlineAt.get(els.get(s)!.name)!.pop();
+          }
+        }
       }
     }
-    cur = { toks: [], region, stack: inline, visible: (!inHead || inTitle) && preDepth === 0 };
+    if (breaks) vregion++;
+    cur = next();
   });
   slotEndingAt[tokens.length] = slots.length;
   slots.push({ ...cur, end: tokens.length });
-  // Where browsers end each <a>. A link ends at the next <a ...> or </a> tag, wherever the markup puts it: a link the
-  // page leaves open (an unclosed <a>, "<a href=x/>", or one a misnested closing tag pops) is opened again in each
-  // following block until then, and an <a> inside another ends the first. Such a link's end is read as browsers read
-  // it (virtual), so the deck, placement, the verifier and the lock see the words a browser shows as its words. Where
-  // its reach holds markup in which browsers may stop or resume it (UNCLEAR), byway cannot tell without building the
-  // tree: the link is tangled, keeps the markup's reading, and every line from it on cannot be changed.
+  // Where browsers end each link (an <a> with an address; one without is a placeholder, and its words are plain). A
+  // link ends at the next <a ...> or </a> tag, wherever the markup puts it: a link the page leaves open (an unclosed
+  // <a>, "<a href=x/>", or one a misnested closing tag pops) is opened again in each following block until then, and
+  // an <a> inside another ends the first. Such a link's end is read as browsers read it (virtual), so the deck,
+  // placement, the verifier and the lock see the words a browser shows as its words. Where browsers may stop, skip or
+  // resume it, byway cannot tell without building the tree: the link is tangled, keeps the markup's reading, and every
+  // line from it on cannot be changed. That is when its reach holds UNCLEAR markup, when something UNCLEAR opened inside
+  // it is still open at its own </a> (an </a> behind a cell, a caption, an object, a marquee, a table or a list box is
+  // ignored: the reader does not match it), or when eight or more blocks opened inside it are open where it ends.
   let tangledAt: number | undefined;
   const reachEnds = new Map<number, number[]>();
   const pair = (x: number, y: number) => {
@@ -224,19 +550,31 @@ export function readPageCopy(html: string): PageDeck {
     if (r) r.push(y);
     else reachEnds.set(x, [y]);
   };
+  const aTags: number[] = [];
+  tokens.forEach((t, i) => {
+    if (t.kind === 'tag' && t.name === 'a') aTags.push(i);
+  });
   {
-    const aTags: number[] = [];
-    tokens.forEach((t, i) => {
-      if (t.kind === 'tag' && t.name === 'a') aTags.push(i);
-    });
-    let next = 0;
-    // Each link's reach runs to the next <a> tag, so the reaches do not overlap and the scan is linear.
+    let at = 0;
+    // Each link's reach runs to the next <a> tag, so the reaches do not overlap and the scans are linear.
     for (const el of [...els.values()].filter((e) => e.name === 'a').sort((x, y) => x.start - y.start)) {
-      while (next < aTags.length && aTags[next]! <= el.start) next++;
-      const n = next < aTags.length ? aTags[next]! : tokens.length;
-      if (el.end === n) continue; // closed by its own </a>, with no <a> inside: browsers read it the same
-      const st = tokens[el.start]!;
-      let clear = !(st.kind === 'tag' && st.foreign);
+      while (at < aTags.length && aTags[at]! <= el.start) at++;
+      const n = at < aTags.length ? aTags[at]! : tokens.length;
+      if (!hasHref(tokens[el.start]!)) continue;
+      const deep = (aDepth.get(n) ?? 0) >= AAA_DEPTH;
+      if (el.end === n) {
+        // Closed by its own </a>, with no <a> inside: browsers read it the same, unless something UNCLEAR it holds is
+        // still open there, or the adoption agency runs out of turns.
+        let clear = !deep;
+        for (let t = el.start + 1; clear && t < n; t++) {
+          const tk = tokens[t]!;
+          const inner = els.get(t);
+          if (tk.kind === 'tag' && UNCLEAR.has(tk.name) && inner && (inner.end === undefined || inner.end > n)) clear = false;
+        }
+        if (!clear) tangledAt ??= el.start;
+        continue;
+      }
+      let clear = !el.foreign && !deep;
       for (let t = el.start + 1; clear && t < n; t++) {
         const tk = tokens[t]!;
         if (tk.kind === 'tag' && UNCLEAR.has(tk.name)) clear = false;
@@ -250,8 +588,8 @@ export function readPageCopy(html: string): PageDeck {
       } else tangledAt ??= el.start;
     }
   }
-  // Link membership: the outermost closed <a> holding the slot (a link spanning a <br> covers slots in two units).
-  const aEls = [...els.values()].filter((e) => e.name === 'a' && e.end !== undefined).sort((x, y) => x.start - y.start);
+  // Link membership: the outermost closed link holding the slot (a link spanning a <br> covers slots in two units).
+  const aEls = [...els.values()].filter((e) => e.name === 'a' && e.end !== undefined && hasHref(tokens[e.start]!)).sort((x, y) => x.start - y.start);
   let ai = 0;
   const aStack: El[] = [];
   slots.forEach((s, k) => {
@@ -265,7 +603,7 @@ export function readPageCopy(html: string): PageDeck {
     const outer = aStack.find((e) => e.start <= startTok && s.end <= e.end!);
     if (outer) s.link = outer.start;
   });
-  const page: PageDeck = { tokens, slots, els, units: [], slotEndingAt, blockOfRegion, reachEnds };
+  const page: PageDeck = { tokens, slots, els, units: [], slotEndingAt, blockOfRegion, reachEnds, aTags };
   const byRegion = new Map<number, number[]>();
   slots.forEach((s, i) => {
     if (!s.visible) return;
@@ -275,11 +613,22 @@ export function readPageCopy(html: string): PageDeck {
   });
   for (const ids of byRegion.values()) {
     const text = (xs: number[]) => squashHtml(xs.map((s) => slotText(page, s)).join(''));
-    const own = ids.filter((i) => slots[i]!.stack.length === 0);
-    const tops = [...new Set(ids.filter((i) => slots[i]!.stack.length > 0).map((i) => slots[i]!.stack[0]!))].filter((top) => text(ids.filter((i) => slots[i]!.stack[0] === top)));
+    // The run's slots by the outermost inline element holding them (none: the run's own text), in one pass.
+    const own: number[] = [];
+    const byTop = new Map<number, number[]>();
+    for (const i of ids) {
+      const top = slots[i]!.outer;
+      if (top < 0) own.push(i);
+      else {
+        const g = byTop.get(top);
+        if (g) g.push(i);
+        else byTop.set(top, [i]);
+      }
+    }
+    const tops = [...byTop.entries()].filter(([, g]) => text(g)).map(([top]) => top);
     // A block of links side by side (a nav) reads as one line per link, not one glued line.
     const sideBySide = !text(own) && tops.length >= 2 && tops.every((t) => els.get(t)?.name === 'a');
-    const groups = sideBySide ? tops.map((top) => ids.filter((i) => slots[i]!.stack[0] === top)) : [ids];
+    const groups = sideBySide ? tops.map((top) => byTop.get(top)!) : [ids];
     for (const g of groups) if (text(g)) page.units.push(makeUnit(page, g));
   }
   page.units.sort((a, b) => a.slots[0]! - b.slots[0]!);
@@ -615,14 +964,44 @@ export function pageLockView(html: string): string {
 
 // ---- removal: the one rule placement and the verifier share --------------------------------------------------------
 
-/** Something inside the element shows without text: an image, an icon, a control. */
-function showsWithoutText(p: PageDeck, el: El): boolean {
-  for (let t = el.start + 1; t < el.end!; t++) {
-    const tk = p.tokens[t]!;
-    if (tk.kind === 'tag' && !tk.closing && EMBEDDED.has(tk.name)) return true;
-  }
-  return false;
+/** Prefix counts over the page's tokens, built once per page when removals are weighed (see markOf). */
+interface Marks {
+  /** Start tags of elements a person sees without text (EMBEDDED). */
+  embedded: Int32Array;
+  /** Start tags that are embedded or carry a hook: an element holding one is never removed. */
+  kept: Int32Array;
+  /** Start tags whose own aria-label or aria-labelledby, or (an image's) alt, is filled: they name what holds them. */
+  naming: Int32Array;
 }
+const marksOf = new WeakMap<PageDeck, Marks>();
+function markOf(p: PageDeck): Marks {
+  const have = marksOf.get(p);
+  if (have) return have;
+  const n = p.tokens.length;
+  const m: Marks = { embedded: new Int32Array(n + 1), kept: new Int32Array(n + 1), naming: new Int32Array(n + 1) };
+  const filled = (attrs: { name: string; value: string }[], names: (n: string) => boolean) => attrs.some((a) => names(a.name) && a.value.trim() !== '');
+  p.tokens.forEach((t, i) => {
+    let e = 0;
+    let k = 0;
+    let nm = 0;
+    if (t.kind === 'tag' && !t.closing) {
+      const attrs = attributesOf(t.raw);
+      e = EMBEDDED.has(t.name) ? 1 : 0;
+      k = e || attrs.some((a) => isHook(a.name)) ? 1 : 0;
+      nm = filled(attrs, (x) => x === 'aria-label' || x === 'aria-labelledby' || (x === 'alt' && ALT_NAMED.has(t.name))) ? 1 : 0;
+    }
+    m.embedded[i + 1] = m.embedded[i]! + e;
+    m.kept[i + 1] = m.kept[i]! + k;
+    m.naming[i + 1] = m.naming[i]! + nm;
+  });
+  marksOf.set(p, m);
+  return m;
+}
+/** How many marks lie in tokens a..b (inclusive); 0 when the range is empty. */
+const within = (xs: Int32Array, a: number, b: number): number => (b < a ? 0 : xs[b + 1]! - xs[a]!);
+
+/** Something inside the element shows without text: an image, an icon, a control. */
+const showsWithoutText = (p: PageDeck, el: El): boolean => within(markOf(p).embedded, el.start + 1, el.end! - 1) > 0;
 
 /**
  * Something names the element without its words, as a screen reader would name it: its own aria-label,
@@ -630,32 +1009,47 @@ function showsWithoutText(p: PageDeck, el: El): boolean {
  * non-empty; an empty alt marks an image as decoration).
  */
 function namedWithoutText(p: PageDeck, el: El): boolean {
-  const filled = (raw: string, names: (n: string) => boolean) => attributesOf(raw).some((a) => names(a.name) && a.value.trim() !== '');
-  if (filled(p.tokens[el.start]!.raw, isNameAttr)) return true;
-  for (let t = el.start + 1; t < el.end!; t++) {
-    const tk = p.tokens[t]!;
-    if (tk.kind !== 'tag' || tk.closing) continue;
-    if (filled(tk.raw, (n) => n === 'aria-label' || n === 'aria-labelledby' || (n === 'alt' && ALT_NAMED.has(tk.name)))) return true;
+  if (attributesOf(p.tokens[el.start]!.raw).some((a) => isNameAttr(a.name) && a.value.trim() !== '')) return true;
+  return within(markOf(p).naming, el.start + 1, el.end! - 1) > 0;
+}
+
+/** The first index in sorted `xs` whose value is at least `v`. */
+function lowerBound(xs: readonly number[], v: number): number {
+  let lo = 0;
+  let hi = xs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid]! < v) lo = mid + 1;
+    else hi = mid;
   }
-  return false;
+  return lo;
 }
 
 /**
- * An emptied element may go, from its start tag to its own closing tag: inline or a text block, with nothing inside that
- * carries a hook or shows without text. A link the page leaves open (virtual, with no closing tag of its own) never
- * goes; nor does an element holding one end of a virtual link's reach and not the other (removing it would move where
- * browsers end that link). An <a> written around another goes whole, the inner link with it.
+ * Tokens a..b hold one end of a virtual link's reach and not the other. Reaches run between consecutive <a> tags, so
+ * only the first and the last <a> tag inside can pair with one outside.
+ */
+function crossesReach(p: PageDeck, a: number, b: number): boolean {
+  const lo = lowerBound(p.aTags, a);
+  const hi = lowerBound(p.aTags, b + 1) - 1;
+  if (lo > hi) return false;
+  return [p.aTags[lo]!, p.aTags[hi]!].some((t) => p.reachEnds.get(t)?.some((o) => o < a || o > b));
+}
+
+/**
+ * An emptied element may go, from its start tag to its own closing tag: inline or a text block, outside svg and math,
+ * with nothing inside that carries a hook or shows without text. It must be balanced (El.balanced): closed by its own
+ * end tag as browsers close it, with every element inside it whole, so removing it leaves no end tag browsers would
+ * ignore and takes no start tag of a block browsers end later. A link the page leaves open (virtual, with no closing tag
+ * of its own) never goes; nor does an element holding one end of a virtual link's reach and not the other (removing it
+ * would move where browsers end that link). An <a> written around another goes whole, the inner link with it.
  */
 function removable(p: PageDeck, el: El): boolean {
   const end = spanEnd(el);
-  if (end === undefined) return false;
+  if (end === undefined || !el.balanced || el.foreign) return false;
   if (!INLINE.has(el.name) && !TEXT_BLOCKS.has(el.name)) return false;
-  for (let i = el.start; i <= end; i++) {
-    const t = p.tokens[i]!;
-    if (t.kind === 'tag' && !t.closing && (EMBEDDED.has(t.name) || hasHook(t.raw))) return false;
-    if (p.reachEnds.get(i)?.some((o) => o < el.start || o > end)) return false;
-  }
-  return true;
+  if (within(markOf(p).kept, el.start, end) > 0) return false;
+  return !crossesReach(p, el.start, end);
 }
 
 /**
@@ -757,50 +1151,85 @@ const deletedUnitsOf = (p: PageDeck, edit: PageEdit): Set<number> =>
     return l.changed && l.text === '';
   }));
 
-/** The removals an edit makes, given which slots hold text afterwards (placement's own result). */
+/** Prefix counts over the page's slots of those that satisfy `f`. */
+function slotCounts(p: PageDeck, f: (s: number) => boolean): Int32Array {
+  const x = new Int32Array(p.slots.length + 1);
+  for (let s = 0; s < p.slots.length; s++) x[s + 1] = x[s]! + (f(s) ? 1 : 0);
+  return x;
+}
+/** The slots inside tokens a..b, where a is a start tag: a contiguous range [first, last] (empty when last < first). */
+const slotSpan = (p: PageDeck, a: number, b: number): [number, number] => [p.slotEndingAt[a]! + 1, p.slotEndingAt[b]!];
+/** Each slot's line (its unit's index), or -1. */
+function lineOfSlots(p: PageDeck): Int32Array {
+  const line = new Int32Array(p.slots.length).fill(-1);
+  p.units.forEach((u, i) => {
+    for (const s of u.slots) line[s] = i;
+  });
+  return line;
+}
+
+/**
+ * The removals an edit makes, given which slots hold text afterwards (placement's own result). No removal may join two
+ * runs of text: neither two deck runs (two lines, or a line and text it was apart from), nor two blocks of text as
+ * browsers show them (BLOCK; so a block between two runs of text that only inline elements, such as font, label or an
+ * icon, hold apart is kept, empty). Weighed for all removals together, by union-find over both.
+ */
 function removalsFor(p: PageDeck, edit: PageEdit, hasText: (s: number) => boolean): { elements: number[]; brs: number[]; problems: string[] } {
   const problems: string[] = [];
-  const left = (ss: number[]) => ss.some((s) => noHtmlSpace(slotText(p, s))) && !ss.some(hasText);
+  const had = slotCounts(p, (s) => noHtmlSpace(slotText(p, s)) !== '');
+  const has = slotCounts(p, hasText);
+  const left = ([a, b]: [number, number]) => within(had, a, b) > 0 && within(has, a, b) === 0;
   // Emptied over its removal span (a removal candidate), and, for a link or button, over its reach (left without words).
-  const emptied = [...p.els.values()].filter((el) => spanEnd(el) !== undefined && left(spanSlots(p, el)));
-  const unworded = [...p.els.values()].filter((el) => (el.name === 'a' || el.name === 'button') && el.end !== undefined && left(inside(p, el)));
-  const regionHasText = new Map<number, boolean>();
+  const emptied = [...p.els.values()].filter((el) => spanEnd(el) !== undefined && left(slotSpan(p, el.start, spanEnd(el)!)));
+  const unworded = [...p.els.values()].filter((el) => isControl(p, el) && el.end !== undefined && left(slotSpan(p, el.start, el.end)));
+  const runText = new Uint8Array(p.slots.at(-1)!.region + 1);
+  const blockText = new Uint8Array(p.slots.at(-1)!.vregion + 1);
   p.slots.forEach((s, k) => {
-    if (s.visible && hasText(k)) regionHasText.set(s.region, true);
+    if (!hasText(k)) return;
+    if (s.visible) runText[s.region] = 1;
+    if (s.rendered) blockText[s.vregion] = 1;
   });
-  const uf = new Regions((r) => regionHasText.get(r) ?? false, p.slots.at(-1)!.region);
-  const regionBefore = (tok: number) => p.slots[p.slotEndingAt[tok]!]!.region;
-  const regionAfter = (tok: number) => p.slots[p.slotEndingAt[tok]! + 1]!.region;
-  // Outermost removable emptied elements, in document order; a block is kept (empty) when removing it would join text.
+  const runs = new Regions((r) => runText[r] === 1, runText.length - 1);
+  const blocks = new Regions((r) => blockText[r] === 1, blockText.length - 1);
+  const before = (tok: number) => p.slots[p.slotEndingAt[tok]!]!;
+  const after = (tok: number) => p.slots[p.slotEndingAt[tok]! + 1]!;
+  // Removing tokens a..b joins the run and the block before a with those after b.
+  const joins = (a: number, b: number) => runs.wouldJoin(before(a).region, after(b).region) || blocks.wouldJoin(before(a).vregion, after(b).vregion);
+  const join = (a: number, b: number) => {
+    runs.join(before(a).region, after(b).region);
+    blocks.join(before(a).vregion, after(b).vregion);
+  };
+  // Outermost removable emptied elements, in document order; one is kept (empty) when removing it would join text, and
+  // what it holds may still go.
   const elements: number[] = [];
+  const cover = new Int32Array(p.tokens.length + 1).fill(-1); // the removed element (start token) covering each token
   let coveredTo = -1;
   for (const el of emptied.filter((e) => removable(p, e)).sort((a, b) => a.start - b.start)) {
     if (el.start <= coveredTo) continue;
-    if (!INLINE.has(el.name)) {
-      const a = regionBefore(el.start);
-      const b = regionAfter(spanEnd(el)!);
-      if (uf.wouldJoin(a, b)) continue; // its children are not candidates either: the element stays, empty
-      uf.join(a, b);
-    }
+    const end = spanEnd(el)!;
+    if (joins(el.start, end)) continue;
+    join(el.start, end);
+    for (let t = el.start; t <= end; t++) cover[t] = el.start;
     elements.push(el.start);
-    coveredTo = spanEnd(el)!;
+    coveredTo = end;
   }
   const brs = brRuns(p, deletedUnitsOf(p, edit))
-    .filter((t) => !elements.some((st) => st <= t && t <= spanEnd(p.els.get(st)!)!))
+    .filter((t) => cover[t]! < 0)
     .filter((t) => {
-      const a = regionBefore(t);
-      const b = regionAfter(t);
-      if (uf.wouldJoin(a, b)) return false;
-      uf.join(a, b);
+      if (joins(t, t)) return false;
+      join(t, t);
       return true;
     });
-  const gone = elements.map((st) => p.els.get(st)!);
+  let lineOf: Int32Array | undefined;
   for (const el of unworded) {
-    if (gone.some((g) => g.start <= el.start && spanEnd(g)! >= Math.max(el.end!, spanEnd(el) ?? 0))) continue;
+    const last = Math.max(el.end!, spanEnd(el) ?? 0);
+    if (cover[el.start]! >= 0 && cover[el.start] === cover[last]) continue;
     const visible = showsWithoutText(p, el);
     if (!visible || !namedWithoutText(p, el)) {
-      const slots = new Set(inside(p, el));
-      const at = p.units.findIndex((u) => u.slots.some((s) => slots.has(s)));
+      lineOf ??= lineOfSlots(p);
+      const [a, b] = slotSpan(p, el.start, el.end!);
+      let at = -1;
+      for (let s = a; s <= b && at < 0; s++) at = lineOf[s]!;
       const hook = hookOf(p.tokens[el.start]!.raw);
       problems.push(`Line ${at + 1}: this ${el.name === 'a' ? 'link' : 'button'} cannot be removed in this step${hook ? ` (it carries ${hook}, which other parts of the page may use)` : ''} and would be left ${visible ? 'without a name' : 'empty'}; keep some words for it, or leave the line as it was.`);
     }
@@ -930,7 +1359,7 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
   }
   while (oc.length && oc.at(-1)!.c === ' ') oc.pop();
   const holding = group.filter((s) => noHtmlSpace(slotText(p, s)));
-  const depth = (s: number) => p.slots[s]!.stack.length;
+  const depth = (s: number) => p.slots[s]!.depth;
   const allowed = (s: number) => p.slots[s]!.link === own;
   const indexIn = new Map(group.map((s, i) => [s, i]));
   /** Of `xs` (slot order), the allowed slot of least depth; of equally shallow ones the first, or the last when `nearHi`. */
@@ -1106,7 +1535,11 @@ function place(before: string, edit: PageEdit): Placed {
             // The link before is left open and ends where the next <a> starts: there is no place between them outside
             // both. A space can go at the end of the first (it shows the same); words cannot.
             if (noHtmlSpace(t)) {
-              problems.push(`Line ${i + 1}: words cannot be added between these two links here: the page leaves the first one open, so a browser starts the second right where the first ends.`);
+              problems.push(
+                nextLink
+                  ? `Line ${i + 1}: words cannot be added between these two links here: the page leaves the first one open, so a browser starts the second right where the first ends.`
+                  : `Line ${i + 1}: words cannot be added after the link "${squashHtml(line.segs[k - 1]!.text)}" on this line: the page leaves that link open, so a browser makes the words after it, up to the next link, part of it.`,
+              );
               return;
             }
             const last = prevLink!.slots.at(-1)!;
@@ -1150,13 +1583,23 @@ function place(before: string, edit: PageEdit): Placed {
   problems.push(...rem.problems);
   const goneEls = new Map(rem.elements.map((st) => [st, p.els.get(st)!]));
   const goneBr = new Set(rem.brs);
+  const lineOf = lineOfSlots(p);
   const out: string[] = [];
   let skip = -1;
   raws.forEach((r, i) => {
     if (i <= skip) return;
     const g = goneEls.get(i);
     if (g) {
-      out.push(inserts.get(i) ?? '');
+      // An element the edit emptied goes, and what placement put in it (whitespace: a line's edge space, or a space
+      // between two words) is written where it was, so the gap beside an icon stays and no two words run together. A
+      // deleted line's whitespace goes with it.
+      const [a, b] = slotSpan(p, g.start, spanEnd(g)!);
+      let kept = '';
+      for (let s = a; s <= b; s++) {
+        const line = lineOf[s]! >= 0 ? edit.lines[lineOf[s]!]! : undefined;
+        if (line?.changed && line.text) kept += newText.get(s) ?? '';
+      }
+      out.push((inserts.get(i) ?? '') + escapeText(kept));
       skip = spanEnd(g)!;
       return;
     }
@@ -1190,17 +1633,32 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   const B = p.tokens.map((t, i) => ({ t, i })).filter((x) => x.t.kind !== 'text');
   const A = a.map((t, i) => ({ t, i })).filter((x) => x.t.kind !== 'text');
   const changedSlots = new Set(p.units.flatMap((u, i) => (edit.lines[i]!.changed ? u.slots : [])));
-  const candidate = (el: El | undefined) => !!el && removable(p, el) && spanSlots(p, el).every((s) => !noHtmlSpace(slotText(p, s)) || changedSlots.has(s));
+  // Slots with text outside the changed lines: a removal may take none of them.
+  const fixedText = slotCounts(p, (s) => !changedSlots.has(s) && noHtmlSpace(slotText(p, s)) !== '');
+  const candidate = (el: El | undefined) => !!el && removable(p, el) && within(fixedText, ...slotSpan(p, el.start, spanEnd(el)!)) === 0;
   const brCandidates = new Set(brRuns(p, deletedUnitsOf(p, edit)));
   // 1. Markup. Each witnessed removal must be one the shared rule allows, and the written page's markup must be the page
-  // before, less exactly those removals, token for token. Linear; no search.
+  // before, less exactly those removals, token for token. Linear; no search (overlapping removals are marked by
+  // difference arrays).
   const removed = new Set<El>();
-  const removedTok = new Uint8Array(p.tokens.length + 1);
+  const tokMarks = new Int32Array(p.tokens.length + 2);
+  const slotMarks = new Int32Array(p.slots.length + 1);
   for (const st of new Set(witness.removed)) {
     const el = p.els.get(st);
     if (!candidate(el)) return ['The page changed beyond its text: it removes an element this edit may not remove.'];
     removed.add(el!);
-    for (let t = el!.start; t <= spanEnd(el!)!; t++) removedTok[t] = 1;
+    tokMarks[el!.start]!++;
+    tokMarks[spanEnd(el!)! + 1]!--;
+    const [s0, s1] = slotSpan(p, el!.start, spanEnd(el!)!);
+    if (s1 >= s0) {
+      slotMarks[s0]!++;
+      slotMarks[s1 + 1]!--;
+    }
+  }
+  const removedTok = new Uint8Array(p.tokens.length + 1);
+  for (let t = 0, run = 0; t <= p.tokens.length; t++) {
+    run += tokMarks[t]!;
+    if (run > 0) removedTok[t] = 1;
   }
   for (const t of new Set(witness.brs)) {
     if (!brCandidates.has(t)) return ['The page changed beyond its text: it removes a line break this edit may not remove.'];
@@ -1210,7 +1668,10 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   if (kept.length !== A.length || kept.some((x, k) => x.t.raw !== A[k]!.t.raw)) return ['The page changed beyond its text: its markup is not the page before the edit, less the elements the edit emptied.'];
   const map = new Map<number, number>(kept.map((x, k) => [x.i, A[k]!.i]));
   const inRemoved = new Uint8Array(p.slots.length);
-  for (const el of removed) for (const s of spanSlots(p, el)) inRemoved[s] = 1;
+  for (let s = 0, run = 0; s < p.slots.length; s++) {
+    run += slotMarks[s]!;
+    if (run > 0) inRemoved[s] = 1;
+  }
   // 2 and 3. Chains: before slots the removals merged into one after slot (they share the next kept token). Every slot
   // of a chain has a known after text except one changed line's run: unchanged slots keep their bytes, a deleted
   // line's slots keep only its edge whitespace. The rest of the after slot is that changed line's text.
@@ -1348,12 +1809,13 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   // 5. No <a> or <button> whose words were in a changed line is left nameless: it keeps some text, or shows something
   // without text that is named (the removal rule's own test). One that held no words (an image or icon link beside
   // a changed line, whose empty slot after the image belongs to that line) had no name for the edit to take.
+  const changedHad = slotCounts(p, (s) => changedSlots.has(s) && noHtmlSpace(slotText(p, s)) !== '');
+  const afterHas = slotCounts(p, (s) => noHtmlSpace(decodeText(slotAfter.get(s) ?? '')) !== '');
   for (const el of p.els.values()) {
     // Removed elements cover their whole token range, so one inside a removed one starts on a removed token.
-    if (el.end === undefined || (el.name !== 'a' && el.name !== 'button') || removedTok[el.start]) continue;
-    const ss = inside(p, el);
-    if (!ss.some((s) => changedSlots.has(s) && noHtmlSpace(slotText(p, s)))) continue;
-    if (noHtmlSpace(decodeText(ss.map((s) => slotAfter.get(s) ?? '').join('')))) continue;
+    if (el.end === undefined || !isControl(p, el) || removedTok[el.start]) continue;
+    const span = slotSpan(p, el.start, el.end);
+    if (within(changedHad, ...span) === 0 || within(afterHas, ...span) > 0) continue;
     if (!showsWithoutText(p, el) || !namedWithoutText(p, el)) problems.push(`A ${el.name === 'a' ? 'link' : 'button'} in your changed lines is left without a name.`);
   }
   // 6. Read fresh: the written page's blocks hold exactly the expected text, block by block, in order; and each block's
@@ -1384,9 +1846,38 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   });
   const got = [...gotRegion.entries()].sort((x, y) => x[0] - y[0]).map(([, ss]) => formOf(partsOf(q, ss))).filter((g) => g.text);
   if (got.length !== want.length || got.some((g, k) => g.text !== want[k]!.form.text)) problems.push(`The page, read again, does not have your lines block by block (expected ${want.length} blocks of text, found ${got.length}).`);
-  else got.forEach((g, k) => {
-    if (g.links !== want[k]!.form.links) problems.push(`Line ${want[k]!.line}, read again, does not have its link words where you put them (it reads "${g.shown}").`);
-  });
+  else {
+    got.forEach((g, k) => {
+      if (g.links !== want[k]!.form.links) problems.push(`Line ${want[k]!.line}, read again, does not have its link words where you put them (it reads "${g.shown}").`);
+    });
+    // And read as browsers show blocks (BLOCK; end tags browsers ignore break nothing): the same words in each block of
+    // text, so no two runs of text that showed apart now run together, whatever ran them together.
+    const shownWant = new Map<number, string>();
+    let last = -1;
+    p.slots.forEach((s, k) => {
+      if (!s.rendered) return;
+      const w = wantRegion.get(s.region);
+      if (w && s.region === last) return;
+      last = s.region;
+      shownWant.set(s.vregion, `${shownWant.get(s.vregion) ?? ''}${w ? formOf(w.parts).text : noHtmlSpace(slotText(p, k))}`);
+    });
+    const shownGot = new Map<number, string>();
+    q.slots.forEach((s, k) => {
+      if (s.rendered) shownGot.set(s.vregion, `${shownGot.get(s.vregion) ?? ''}${slotText(q, k)}`);
+    });
+    const wantBlocks = [...shownWant.entries()].sort((x, y) => x[0] - y[0]).map(([, t]) => t).filter((t) => t);
+    const gotBlocks = [...shownGot.entries()].sort((x, y) => x[0] - y[0]).map(([, t]) => t).filter((t) => noHtmlSpace(t));
+    let k = gotBlocks.findIndex((t, j) => noHtmlSpace(t) !== wantBlocks[j]);
+    if (k < 0 && gotBlocks.length !== wantBlocks.length) k = gotBlocks.length - 1;
+    if (k >= 0) {
+      const at = squashHtml(gotBlocks[k] ?? '').slice(0, 80);
+      problems.push(
+        noHtmlSpace(gotBlocks[k] ?? '').length > (wantBlocks[k] ?? '').length
+          ? `The page, read again, runs lines together that a browser showed apart: it shows "${at}" as one line.`
+          : `The page, read again, breaks a line a browser showed whole: it shows "${at}" on a line of its own.`,
+      );
+    }
+  }
   return [...new Set(problems)];
 }
 

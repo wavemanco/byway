@@ -85,7 +85,7 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
 }
 
 /**
- * A page's VOICE question says how its copy is written (ADR-0081): one line per block, the bracket rule when a line
+ * A page's VOICE question says how its copy is written (ADR-0081): one line per run of text, the bracket rule when a line
  * has link words in brackets, and where each link goes. It is read from the work (the checkpoint's artifact), never from
  * the starting text, and appended to the prompt the workflow sent, which never carries it, so a re-ask gets it once too.
  */

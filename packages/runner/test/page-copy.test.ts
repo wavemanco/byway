@@ -245,6 +245,12 @@ describe('the deck and exact placement (F07)', () => {
     expect(run('<svg viewBox="0 0 1 1"><path d="M0 0"/><text>Hi</text></svg>', set(1, 'Hello'))).toMatchObject({ deck: ['T', 'Hi'], ...clean('<svg viewBox="0 0 1 1"><path d="M0 0"/><text>Hello</text></svg>') });
   });
 
+  it('a head the page does not close ends where the body starts, as in browsers: the body is offered (r5)', () => {
+    const t = '<!doctype html><html><head><title>T</title><body><p>Hi</p></body></html>';
+    expect(deckLines(readPageCopy(t))).toEqual(['T', 'Hi']);
+    expect(run(t, set(1, 'Hello'), { full: true })).toMatchObject(clean(t.replace('Hi', 'Hello')));
+  });
+
   it('the title is RCDATA: offered whole, written escaped', () => {
     const t = '<!doctype html><html><head><title>A <b>x</b> &amp; y</title></head><body><p>Body</p></body></html>';
     const p = readPageCopy(t);
@@ -508,6 +514,146 @@ describe('an <a> left open, or holding another: read as browsers read it, or ref
   });
 });
 
+describe('no removal runs two of the person\'s lines together in a browser (F07, r5)', () => {
+  const fresh = (placed: string) => deckLines(readPageCopy(pageOf(placed)));
+  const answer = (lines: readonly string[]) => () => ['T', ...lines].join('\n');
+
+  it('a block inside an element browsers show inline (font, ins, label) is kept, empty, where removing it would join text', () => {
+    for (const [page, lines, written] of [
+      ['<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>', ['Intro', '', 'Order today'], '<div><font face="Arial">Intro<p></p></font>Order today</div>'],
+      ['<div><font face="Arial">Intro <p>Spring sale</p></font> Order today</div>', ['Intro', '', 'Order today'], '<div><font face="Arial">Intro <p></p></font> Order today</div>'],
+      ['<div>Call us<ins><p>New offer</p></ins>today</div>', ['Call us', '', 'today'], '<div>Call us<ins><p></p></ins>today</div>'],
+      ['<div>Name<label><p>(required)</p></label>here</div>', ['Name', '', 'here'], '<div>Name<label><p></p></label>here</div>'],
+      ['<ul><li><font>Item one</font></li></ul><font>Lead<li>Gone</li></font>Tail', ['Item one', 'Lead', '', 'Tail'], '<ul><li><font>Item one</font></li></ul><font>Lead<li></li></font>Tail'],
+      // A block after another block: the text after it is on its own line anyway, so it goes.
+      ['<section><p>Price</p><del><p>$20</p></del>Now $15</section>', ['Price', '', 'Now $15'], '<section><p>Price</p><del></del>Now $15</section>'],
+      // A <br> inside an emptied span: removing the span would join the lines on either side.
+      ['<p>Hello <span>one<br>two</span> world</p>', ['Hello', 'world'], '<p>Hello<span><br></span>world</p>'],
+    ] as const) {
+      const r = run(page, answer(lines));
+      expect(r, page).toMatchObject(clean(written));
+      expect(fresh(r.placed!), page).toEqual(['T', ...lines.filter((l) => l)]);
+    }
+  });
+
+  it('an element browsers end elsewhere (misnested) is never removed, so no end tag is left for browsers to ignore', () => {
+    for (const [page, lines, written] of [
+      ['<section><span>one<div>two</span>three</div>after</section>', ['', 'three', 'after'], '<section><span><div></span>three</div>after</section>'],
+      ['<div><b>one<li>two</b>three</li>after</div>', ['', 'three', 'after'], '<div><b><li></b>three</li>after</div>'],
+      ['<div><span>one<h2>two</span>three</h2>after</div>', ['', 'three', 'after'], '<div><span><h2></span>three</h2>after</div>'],
+    ] as const) {
+      const r = run(page, answer(lines));
+      expect(r, page).toMatchObject(clean(written));
+      expect(fresh(r.placed!), page).toEqual(['T', 'three', 'after']);
+    }
+    // A heading whose start tag ends the heading around it: without it, the outer heading would run on to the text
+    // after it, and the end tag browsers now ignore would end the line there.
+    const h2 = run('<div><h2><h2>Sub</h2>after</h2>more</div>', set(1, ''));
+    expect(h2).toMatchObject(clean('<div><h2><h2></h2>after</h2>more</div>'));
+    expect(fresh(h2.placed!)).toEqual(['T', 'after', 'more']);
+    // A cell outside a table: browsers ignore its tags, so the text after its end tag stays in the block.
+    const td = run('<div><td><div>Call us<li>R&amp;D</li></td>at six</div></div>', answer(['Call us', '', 'at six']));
+    expect(td).toMatchObject(clean('<div><td><div>Call us<li></li></td>at six</div></div>'));
+    expect(fresh(td.placed!)).toEqual(['T', 'Call us', 'at six']);
+    // A link around a block, misnested: it is not removed, so emptying it is refused, never written glued.
+    expect(run('<section><a href="/x">one<div>two</a>three</div>after</section>', answer(['', '[]three', 'after'])).placeProblems).toEqual([
+      'Line 2: this link cannot be removed in this step and would be left empty; keep some words for it, or leave the line as it was.',
+    ]);
+  });
+
+  it('the verifier reads the written page\'s blocks as browsers show them: lines run together are refused, whatever wrote them', () => {
+    const F = pageOf('<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>');
+    const fp = readPageCopy(F);
+    const pEl = [...fp.els.values()].find((x) => x.name === 'p')!;
+    expect(pageEditProblems(F, pageOf('<div><font face="Arial">Intro</font>Order today</div>'), edit(F, 'T\nIntro\n\nOrder today'), { removed: [pEl.start], brs: [] })).toEqual([
+      'The page, read again, runs lines together that a browser showed apart: it shows "IntroOrder today" as one line.',
+    ]);
+    const L = pageOf('<div>Name<label><p>(required)</p></label>here</div>');
+    const lp = readPageCopy(L);
+    const lpEl = [...lp.els.values()].find((x) => x.name === 'p')!;
+    expect(pageEditProblems(L, pageOf('<div>Name<label></label>here</div>'), edit(L, 'T\nName\n\nhere'), { removed: [lpEl.start], brs: [] })).toEqual([
+      'The page, read again, runs lines together that a browser showed apart: it shows "Namehere" as one line.',
+    ]);
+    // A misnested span is not a removal the shared rule allows: its end tag holds the start of a block browsers end later.
+    const M = pageOf('<section><span>one<div>two</span>three</div>after</section>');
+    const mp = readPageCopy(M);
+    const span = [...mp.els.values()].find((x) => x.name === 'span')!;
+    expect(pageEditProblems(M, pageOf('<section>three</div>after</section>'), edit(M, 'T\n\nthree\nafter'), { removed: [span.start], brs: [] })).toEqual([
+      'The page changed beyond its text: it removes an element this edit may not remove.',
+    ]);
+  });
+});
+
+describe('links: where browsers end them, and what is not a link (F07, r5)', () => {
+  const why = (to: string) => `a link on the page (to ${to}) is left open or holds another link, around a table, a list box, an svg or other markup where byway cannot tell which words a browser shows as that link's words`;
+
+  it('an </a> browsers ignore (in a cell, caption, object, marquee or list box the link holds) does not end it: those lines are refused, named', () => {
+    for (const [page, lines] of [
+      ['<div><a href="/x">Shop<table><tr><td>Cell</a> more</td></tr></table>After table</div>', 4],
+      ['<p>Hi <a href="/x">one<table><tr><td>two</a>three</td></tr></table>four</p><p>five</p>', 5],
+      ['<p>Hi <a href="/x">one<object>two</a>three</object>four</a> five</p>', 4],
+      ['<p>Hi <a href="/x">one<select><option>o</a>p</select>q</a> r</p>', 4],
+      ['<p>Hi <a href="/x">one<marquee>two</a>three</marquee>four</a> five</p>', 4],
+      ['<a href="/x">one<table><caption>two</a>three</caption></table>four</a> five', 4],
+    ] as const) {
+      const p = readPageCopy(pageOf(page));
+      expect(pageVoiceSuffix(p), page).toContain(`Lines 2 to ${lines} cannot be changed in this step: ${why('/x')}; leave them as they are.`);
+      expect(pageVoiceSuffix(p), page).not.toContain('goes to /x');
+      const d = deckLines(p);
+      expect(run(page, set(lines - 1, `${d[lines - 1]} now`)).rejected, page).toMatch(new RegExp(`^Line ${lines} cannot be changed in this step`));
+    }
+  });
+
+  it('an </a> under more than seven nested blocks does not end the link in browsers: its lines are refused; under fewer, it is read as browsers read it', () => {
+    const deep = (k: number) => `<p>Hi <a href="/x">one${Array.from({ length: k }, (_, i) => `<div>${i + 1}`).join('')}</a> after${'</div>'.repeat(k)}</p><p>next</p>`;
+    expect(pageVoiceSuffix(readPageCopy(pageOf(deep(10))))).toContain(`Lines 2 to 13 cannot be changed in this step: ${why('/x')}`);
+    // As Chromium reads it: the link ends at its </a>, so "after" and "next" are plain.
+    const four = readPageCopy(pageOf(deep(4)));
+    expect(deckLines(four)).toEqual(['T', 'Hi [one]', '1', '2', '3', '[4] after', 'next']);
+    expect(four.units.some((u) => u.tangled)).toBe(false);
+  });
+
+  it('a link holding a whole table (an email button) is read as browsers read it', () => {
+    const E = '<a href="/x"><table><tr><td>Click</td></tr></table></a><p>after</p>';
+    const p = readPageCopy(pageOf(E));
+    expect(deckLines(p)).toEqual(['T', 'Click', 'after']);
+    expect(pageVoiceSuffix(p)).toMatch(/Where each one goes: line 2 "Click" goes to \/x\.$/);
+    expect(run(E, set(1, 'Click here'))).toMatchObject(clean('<a href="/x"><table><tr><td>Click here</td></tr></table></a><p>after</p>'));
+  });
+
+  it('an <a> without an address is a placeholder, not a link: its words read plain, also when the page leaves it open', () => {
+    const N = '<h2><a name="top"/>Welcome</h2><p>Our <a href="/menu">menu</a> changes daily.</p>';
+    const p = readPageCopy(pageOf(N));
+    expect(deckLines(p)).toEqual(['T', 'Welcome', 'Our [menu] changes daily.']);
+    expect(pageVoiceSuffix(p)).toMatch(/Where each one goes: line 3 "menu" goes to \/menu\.$/);
+    expect(run(N, set(2, 'Our [menus] change daily!'))).toMatchObject(clean('<h2><a name="top"/>Welcome</h2><p>Our <a href="/menu">menus</a> change daily!</p>'));
+    expect(run(N, set(1, 'Welcome!'))).toMatchObject(clean('<h2><a name="top"/>Welcome!</h2><p>Our <a href="/menu">menu</a> changes daily.</p>'));
+    const C = readPageCopy(pageOf('<p>Go to <a name="x">here</a> now</p>'));
+    expect(deckLines(C)).toEqual(['T', 'Go to here now']);
+    expect(pageVoiceSuffix(C)).toBe('One line per block of text; leave a line empty to remove its text.');
+    expect(linkHrefs(pageOf('<p>Go to <a name="x">here</a> now</p>'))).toEqual([]);
+  });
+
+  it('words after a link the page leaves open, at the end of a line, are refused with that reason', () => {
+    const msg = 'Line 2: words cannot be added after the link "there" on this line: the page leaves that link open, so a browser makes the words after it, up to the next link, part of it.';
+    expect(run('<p>Hi <a href="/x">there</p><p>Next</p>', set(1, 'Hi [there] friend')).placeProblems).toEqual([msg]);
+    expect(run('<p>Hi <a href="/x">there</p><p>Next</p>', set(1, 'Hi [there].')).placeProblems).toEqual([msg]);
+    expect(run('<p>Hi <a href="/x">there</p>', set(1, 'Hi [there]!')).placeProblems).toEqual([msg]);
+  });
+});
+
+describe('edge space held by an element the edit empties and removes (F07, r5)', () => {
+  it('is written where the element was, so the gap beside an icon or a button stays', () => {
+    expect(run('<p>Hello <span>world </span><i class="arrow"></i></p>', set(1, 'Hello'))).toMatchObject(clean('<p>Hello <i class="arrow"></i></p>'));
+    expect(run('<p>Call us <em>today </em><button type="button" aria-label="Call"><svg width="9" height="9"></svg></button></p>', set(1, 'Call us'))).toMatchObject(
+      clean('<p>Call us <button type="button" aria-label="Call"><svg width="9" height="9"></svg></button></p>'),
+    );
+    expect(run('<p><i class="icon"></i><span> old</span> world</p>', set(1, 'world'))).toMatchObject(clean('<p><i class="icon"></i> world</p>'));
+    // A space between two words that sat inside the removed element: written, so the words stay apart.
+    expect(run('<p>Big<b> red </b>apple</p>', set(1, 'Big apple'))).toMatchObject(clean('<p>Big apple</p>'));
+  });
+});
+
 describe('questions in flight across the upgrade (F07)', () => {
   const pg = '<p>Intro</p><p>Please <a href="/terms">read terms</a> today.</p>';
   const oldOffered = 'T\nIntro\nPlease read terms today.';
@@ -643,6 +789,24 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
       expect(pairs.every(([x, y], k) => a[x] === b[y] && (k === 0 || (x > pairs[k - 1]![0] && y > pairs[k - 1]![1])))).toBe(true);
     }
     expect(editPairs(['a', 'b', 'c'], ['x', 'y', 'z'], 2)).toBeUndefined();
+  });
+
+  it('20,000 inline elements a block leaves open: read, placed and verified within the bound, without copying the open elements per run of text (r5)', () => {
+    for (const open of ['<span>', '<a href="/x">', '<b>']) {
+      const before = pageOf(`<p>${Array.from({ length: 20000 }, (_, i) => `${open}w${i} `).join('')}</p><p>Tail</p>`);
+      const t0 = performance.now();
+      const r = run(before, (d) => set(d.length - 1, 'Tail!')(d), { full: true });
+      expect(performance.now() - t0, open).toBeLessThan(BOUND_MS);
+      expect(r, open).toMatchObject(clean(before.replace('<p>Tail</p>', '<p>Tail!</p>')));
+    }
+  });
+
+  it('20,000 nested elements, emptied: the removal rule is linear too (r5)', () => {
+    const before = pageOf(`<p>Keep</p><p>${'<span>'.repeat(20000)}Gone${'</span>'.repeat(20000)}</p>`);
+    const t0 = performance.now();
+    const r = run(before, () => 'T\nKeep\n', { full: true });
+    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
+    expect(r).toMatchObject(clean(pageOf('<p>Keep</p>')));
   });
 
   it('a 20,000-path svg page and 1,000 identical items, every other one deleted', () => {

@@ -394,6 +394,38 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('a block inside an element browsers show inline, emptied, is kept where removing it would run two lines together; the lock reads as a browser shows it (r5)', async () => {
+    for (const [html, offered, answer, written, deck] of [
+      ['<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>', 'T\nIntro\nSpring sale\nOrder today', 'T\nIntro\n\nOrder today', '<div><font face="Arial">Intro<p></p></font>Order today</div>', ['T', 'Intro', 'Order today']],
+      ['<div>Call us<ins><p>New offer</p></ins>today</div>', 'T\nCall us\nNew offer\ntoday', 'T\nCall us\n\ntoday', '<div>Call us<ins><p></p></ins>today</div>', ['T', 'Call us', 'today']],
+      ['<section><span>one<div>two</span>three</div>after</section>', 'T\none\ntwothree\nafter', 'T\n\nthree\nafter', '<section><span><div></span>three</div>after</section>', ['T', 'three', 'after']],
+    ] as const) {
+      const q = await open(page(html));
+      expect(q.offered).toBe(offered);
+      const out = await q.answer(answer);
+      expect(await stored(out.artifactId!)).toBe(written);
+      expect(JSON.parse(pageLockView(await b.store.artifacts.getText(out.artifactId!)))).toEqual({ deck, links: [] });
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
+
+  it('a name-only anchor the page leaves open is not a link: the next paragraph is edited as the person sees it (r5)', async () => {
+    const q = await open(page('<h2><a name="top"/>Welcome</h2><p>Our <a href="/menu">menu</a> changes daily.</p>'));
+    expect(q.offered).toBe('T\nWelcome\nOur [menu] changes daily.');
+    expect(q.prompt).not.toContain('(no address)');
+    const out = await q.answer('T\nWelcome\nOur [menus] change daily!');
+    expect(await stored(out.artifactId!)).toBe('<h2><a name="top"/>Welcome</h2><p>Our <a href="/menu">menus</a> change daily!</p>');
+    expect(JSON.parse(pageLockView(await b.store.artifacts.getText(out.artifactId!)))).toEqual({ deck: ['T', 'Welcome', 'Our [menus] change daily!'], links: ['/menu'] });
+  });
+
+  it('an </a> inside a table cell the link holds does not end it: the prompt names those lines, and a change there is refused (r5)', async () => {
+    const q = await open(page('<div><a href="/x">Shop<table><tr><td>Cell</a> more</td></tr></table>After table</div>'));
+    expect(q.prompt).toMatch(/Lines 2 to 4 cannot be changed in this step: a link on the page \(to \/x\) is left open/);
+    const msg = await rejected(q.answer(`${q.offered!.replace('After table', 'After the table')}`));
+    expect(msg).toMatch(/^Line 4 cannot be changed in this step/);
+    expect(b.gateway.requests).toEqual([]);
+  });
+
   it('an answer equal to the offer writes nothing, whatever its whitespace', async () => {
     const q = await open(page('<h1>Head</h1><p>Sub</p>'));
     expect((await q.answer('T\n  Head \nSub\n\n')).artifactId).toBeUndefined();

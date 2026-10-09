@@ -5,8 +5,8 @@
  * checks the written artifact against what the person wrote. Later machine writes are held to the same deck
  * (keepsVoice, port rule 6): the deck locked at VOICE must be unchanged.
  *
- * - web-page: one line per block of visible text, in reading order, link words in [brackets] (page-copy.ts reads,
- *   places and verifies it).
+ * - web-page: one line per run of visible text (a block, unless a line break or a tag other than inline formatting
+ *   splits it), in reading order, link words in [brackets] (page-copy.ts reads, places and verifies it).
  * - prose: the whole Markdown document; the edited text becomes the artifact.
  * - options: each option's title, pitch and rationale under its "### A" label.
  * - media: the voice-over script at the early VOICE (locked after it), the headline, tagline and captions at the late one.
@@ -43,7 +43,7 @@ export {
   type Witness,
 } from './page-copy.ts';
 
-/** The page's visible copy, one line per block, in reading order, as the person is shown it (link words in brackets). */
+/** The page's visible copy, one line per run of text (see page-copy.ts), in reading order, as the person is shown it (link words in brackets). */
 export const pageCopy = (html: string): string[] => deckLines(readPageCopy(html));
 
 // ---- Per medium ---------------------------------------------------------------------------------------------------
