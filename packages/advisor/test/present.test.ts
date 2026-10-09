@@ -389,6 +389,16 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(refused(edited(c4, 'cut', (n) => n, direction), c4)).toEqual([message]);
     // A direction of yours after the trim's fix: the cliché sweep puts its finds in its place before the swap step.
     expect(refused(edited(c4, 'apply-cut', (n) => n, { ...direction, id: 'late-direction' }), c4)).toEqual([message.replace('"cut"', '"late-direction"')]);
+    // C3 with a direction of yours at the end of each critic round and a fix after the loop: the next round's critic
+    // puts its critique in its place, and the loop leaves only at its critic, so the fix never takes yours in.
+    const looped = edited(c3, 'revise', (n) => n, { ...direction, id: 'round-direction' });
+    const d2 = looped.stages.find((s: N) => s.stage === 'D2').body;
+    let revise: N | undefined;
+    walk(c3, (n) => {
+      if (n.op === 'step' && n.id === 'revise') revise = structuredClone(n);
+    });
+    d2.steps.splice(2, 0, { ...revise!, id: 'after-loop' });
+    expect(refused(looped, c3)).toEqual([message.replace('"cut"', '"round-direction"')]);
   });
 
   it('a skipped step is never said to apply a critique: an audio ASSET that takes one in finishes skipped (ADR-0069)', () => {

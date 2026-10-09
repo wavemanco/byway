@@ -218,6 +218,19 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     expect(clauses(r).filter((c) => /critique/.test(c))).toEqual(['ST12:critique-per-candidate']);
   });
 
+  it('read on the paths a run can take: a critic loop leaves at its critic, never from the end of a round', () => {
+    // A direction of the person's at the end of each critic round, and a fix after the loop: the next round's critic
+    // puts its critique in place of the direction, and the loop leaves only at the critic.
+    const r = studio();
+    const d2 = r.stages[1]!.body as Seq;
+    d2.steps.push(loop('final-pass', seq(render('pass-render'), critic('pass-critic'), modelFix('pass-fix'), render('round-render'), yourCritique('round-direction')), okGate()), modelFix('after-loop'));
+    expect(unapplied(r).map((x) => x.path)).toEqual(['stages[1].body.steps[2].body.steps[4]']);
+    // A loop the person holds leaves at the end of a round, with their direction for the fix after it.
+    const held = studio();
+    (held.stages[1]!.body as Seq).steps.push(loop('final-pass', seq(render('pass-render'), modelFix('pass-fix'), render('round-render'), yourCritique('round-direction')), { metric: 'human', hidden: false, holder: 'human', probe: 1, max: 3, onCap: 'human', onNoConverge: 'recalibrate-human' }), modelFix('after-loop'));
+    expect(unapplied(held)).toEqual([]);
+  });
+
   it('a person’s own draft is not a writer that applies it: the run shows a person no critique', () => {
     const own = studio();
     const i = indexOf(d3(own), 'apply-cut');

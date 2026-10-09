@@ -337,6 +337,16 @@ export function gateFeed(gate: Loop | OneShotGate): { always: boolean; steps: St
   return { always, steps };
 }
 
+/**
+ * Whether a loop leaves only through its exit points, never from the end of a round: no person holds it, and a step
+ * that reports to its gate runs on every round (`gateFeed` always). Its gate then decides right after that step every
+ * round (the interpreter's afterGateStep): a passed bar, a clean check, a plateau, a stopped probe, or the cap, where a
+ * person may raise it and the round goes on to its end and to the next round. A model critic always gives a score, and a
+ * relay link runs at least once (a storyboard has a shot). A loop a person holds leaves at the end of a round, and one
+ * whose gate's step may not run can reach its cap there (admission refuses that one: ST2 'feed').
+ */
+export const leavesOnlyAtExits = (loop: Loop): boolean => loop.gate.metric !== 'human' && gateFeed(loop).always;
+
 /** Where a step sits, and what that means for whether it runs and whether its output is kept. */
 export interface Placement {
   step: Step;
@@ -635,6 +645,13 @@ export interface FlowOps<S> {
    * before it (ADR-0090), so an analysis of a port that judge sets says so here.
    */
   exit?(step: Step, path: string, before: S, after: S): S;
+  /**
+   * Leave a loop that can leave only through its exit points (`leavesOnlyAtExits`) only through them, not also from the
+   * end of its body. Off by default: a path no run takes can only add findings to the rules that leave it out and take
+   * claims away from the analyses that do. An analysis whose finding is that something happens on no path sets it, so a
+   * path no run takes cannot hide one.
+   */
+  exactLoops?: boolean;
 }
 
 /** The exit points of the loop being walked, and the states right after each of them. */
@@ -734,6 +751,8 @@ function flowOnce<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stag
       const own: LoopExits<S> = { metric: node.gate.metric, states: [] };
       const first = flowNode(walk, node.body, state, `${path}.body`, stage, contained, own);
       const second = flowNode(walk, node.body, ops.join([state, first]), `${path}.body`, stage, contained, own);
+      // The end of a round goes on to the next round; it also leaves the loop, unless the loop can leave only at its exits.
+      if (ops.exactLoops && own.states.length && leavesOnlyAtExits(node)) return ops.join(own.states);
       return ops.join([first, second, ...own.states]);
     }
     case 'relay': {
@@ -840,10 +859,12 @@ interface CritiqueTaker {
  *   unless it reports to the loop around it, whose round then ends there (ADR-0090). A person's answer in a lens or a
  *   gate body may be empty, which is dropped (admission refuses one there, ST9 and ST10 'human-critique').
  *
- * A may-analysis over a walk that holds every run (and some that never happen: a loop also leaves from the end of its
- * body), so "may be the latest" covers every run, and "on no path" holds of every run.
+ * A may-analysis over a walk that holds every run: "may be the latest" covers every run, and "on no path" holds of every
+ * run. Without `exact` the walk also leaves every loop from the end of its body, as every other rule reads it. That path
+ * can only take a claim of `critiqueSources` away, but it could make a dropped answer look applied, so
+ * `unappliedCritiques` reads the walk `exact` (`exactLoops`: a loop leaves only where a run can leave it).
  */
-function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<string, CritiqueTaker> } {
+function critiqueFlow(recipe: Recipe, exact: boolean): { at: Map<string, Step>; takers: Map<string, CritiqueTaker> } {
   // A state: the places of the steps whose critique may be the latest, sorted; '' is none yet.
   const at = new Map<string, Step>();
   const takers = new Map<string, CritiqueTaker>();
@@ -866,6 +887,7 @@ function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<stri
     key: (st) => st.join('|'),
     after: (node, entry, inner) => (node.op === 'audit' || node.op === 'gate' ? inner : entry),
     exit: (_s, path, before, after) => (skippable.get(path) ? union(before, after) : after),
+    exactLoops: exact,
   });
   return { at, takers };
 }
@@ -879,7 +901,7 @@ function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<stri
  * (present.ts), as the run applies them: a writer that comes next in the recipe may apply another step's critique.
  */
 export function critiqueSources(recipe: Recipe): Map<Step, Step> {
-  const { at, takers } = critiqueFlow(recipe);
+  const { at, takers } = critiqueFlow(recipe, false);
   const seen = new Map<Step, Set<Step | undefined>>();
   for (const t of takers.values()) {
     const acc = seen.get(t.step) ?? seen.set(t.step, new Set()).get(t.step)!;
@@ -895,20 +917,22 @@ export function critiqueSources(recipe: Recipe): Map<Step, Step> {
 
 /**
  * A person's lists and critiques (`personCritique`) that no writer applies: the places where one is asked whose answer
- * no `appliesCritique` step takes in, on any path (`critiqueFlow`, by place). The run asks "What should go? List what to
- * remove", or what the next version should avoid, and drops the answer without a word: before any writer that takes a
- * critique in, another critique takes its place (a critic, a check, a CUT, a sweep, a direction of the person's given
- * as a critique, or an audit or a final check that notes anything), or none comes after it at all. Admission refuses
- * one (ST12 'critique-unapplied', ADR-0098).
+ * no `appliesCritique` step takes in, on any path (`critiqueFlow`, by place, read `exact`). The run asks "What should
+ * go? List what to remove", or what the next version should avoid, and drops the answer without a word: before any
+ * writer that takes a critique in, another critique takes its place (a critic, a check, a CUT, a sweep, a direction of
+ * the person's given as a critique, or an audit or a final check that notes anything), or none comes after it at all.
+ * Admission refuses one (ST12 'critique-unapplied', ADR-0098). The walk holds every run, so no run applies an answer
+ * this names; it leaves a loop only where a run can, so a critic loop's next round, which puts its own critique in
+ * place of an answer given at the end of a round, is not taken for a way out with that answer.
  *
  * Some path, not every path. The paths on which an answer goes unapplied while another path applies it are chosen by
  * the person's own later answers (an optional they run or decline, a route branch, the end of a loop they hold) or by
- * a judge in a relay link skipped with nothing to see; an every-path reading would refuse those, and, on a walk that
- * also leaves a loop from the end of its body, some whose answer every run applies.
+ * a judge in a relay link skipped with nothing to see; an every-path reading would refuse those, where the person, not
+ * the recipe, decides.
  */
 export function unappliedCritiques(recipe: Recipe): Placement[] {
   const applied = new Set<string>();
-  for (const t of critiqueFlow(recipe).takers.values()) if (appliesCritique(t.step, t.contained)) for (const p of t.from) applied.add(p);
+  for (const t of critiqueFlow(recipe, true).takers.values()) if (appliesCritique(t.step, t.contained)) for (const p of t.from) applied.add(p);
   return placements(recipe).filter((p) => personCritique(p.step) && !applied.has(p.path));
 }
 

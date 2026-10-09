@@ -18,14 +18,18 @@ describe('the memoized walk finds exactly what the full walk finds', () => {
   it('on 600 random recipes of every operator, nested up to 4 levels: the same verdict, finding for finding', () => {
     const next = rng(20261009);
     let findings = 0;
+    let unapplied = 0;
     for (let i = 0; i < 600; i++) {
       const r = randomRecipe(next, 4);
       const memoized = validate(r);
       expect(memoized).toEqual(withoutFlowMemo(() => validate(r)));
       findings += memoized.violations.length;
+      unapplied += memoized.violations.filter((v) => v.clause === 'critique-unapplied').length;
     }
-    // The recipes do exercise the rules: they are refused for many reasons.
+    // The recipes do exercise the rules: they are refused for many reasons, a person's unapplied list among them (read
+    // on the walk that leaves a loop only where a run can).
     expect(findings).toBeGreaterThan(3000);
+    expect(unapplied).toBeGreaterThan(0);
   });
 });
 

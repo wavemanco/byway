@@ -25,6 +25,7 @@ import {
   flowRecipe,
   hasNoExecutor,
   leavesNote,
+  leavesOnlyAtExits,
   lockedScripts,
   loop,
   matchCheckpoints,
@@ -419,6 +420,24 @@ describe('the flow walk (flowRecipe)', () => {
     expect(paths(recipeOf(seq(oneShotGate('g', critic('g1'), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }), critic('c'))))).toEqual(['g1 c']);
   });
 
+  it('a loop also leaves from the end of its body, unless `exactLoops` and it can leave only at its exit points', () => {
+    const exact = (r: Recipe) =>
+      [...flowRecipe<string[]>(r, [''], { step: (s, _p, _st, state) => state.map((x) => `${x}${x ? ' ' : ''}${s.id}`), join: (states) => [...new Set(states.flat())].sort(), exactLoops: true })].sort();
+    const scored = loop('l', seq(render('r'), critic('c'), fix('f')), gate('critic-score'));
+    expect(leavesOnlyAtExits(scored)).toBe(true);
+    expect(paths(recipeOf(scored))).toEqual(['r c', 'r c f', 'r c f r c', 'r c f r c f']);
+    expect(exact(recipeOf(scored))).toEqual(['r c', 'r c f r c']);
+    // A loop a person holds leaves at the end of a round; one whose gate's step may not run can reach its cap there.
+    const held = loop('h', seq(render('r'), fix('f')), gate('human'));
+    expect(leavesOnlyAtExits(held)).toBe(false);
+    expect(exact(recipeOf(held))).toEqual(paths(recipeOf(held)));
+    const maybe = loop('m', seq(render('r'), optional('o', 'needed', critic('c')), fix('f')), gate('critic-score'));
+    expect(leavesOnlyAtExits(maybe)).toBe(false);
+    expect(exact(recipeOf(maybe))).toEqual(paths(recipeOf(maybe)));
+    expect(leavesOnlyAtExits(loop('k', seq(render('r'), check('k'), fix('f')), gate('check-clean')))).toBe(true);
+    expect(leavesOnlyAtExits(loop('k', seq(render('r'), check('k'), fix('f')), gate('critic-score')))).toBe(false);
+  });
+
   it('`after` says what an operator that hands on less than what ran inside it hands on: here, its entry state', () => {
     const entry = (_node: Node, before: string[]) => before;
     expect(paths(recipeOf(seq(critic('a'), replicate('x', 2, critic('b')), critic('c'))), entry)).toEqual(['a c']);
@@ -477,6 +496,7 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
   const personCut = (id: string): Step => step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] });
   const yourCritique = (id: string): Step => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] });
   const unapplied = (body: Node) => ids(unappliedCritiques(recipeOf(body)));
+  const sourcesOf = (r: Recipe) => Object.fromEntries([...critiqueSources(r)].map(([w, src]) => [w.id, src.id]));
   const { consumes: _c, ...fixRest } = fix('reads');
   const readsFix = step({ ...fixRest, consumes: ['artifact'], reads: ['critique'] });
 
@@ -495,6 +515,19 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(personCut('cut'), route('rt', 'how', [{ name: 'ai', body: fix('f') }, { name: 'yours', body: authorDraft('own') }])))).toEqual([]);
     // The next round's fix applies a list given at the end of a round (the last round's goes unapplied).
     expect(unapplied(loop('l', seq(fix('f'), render('r'), personCut('cut')), gate('human')))).toEqual([]);
+  });
+
+  it('read on the paths a run can take: a loop that decides at its critic every round never leaves from the end of a round', () => {
+    // Your direction at the end of a critic loop's round, and a fix after the loop: the next round's critic puts its
+    // critique in its place, and the loop leaves only at the critic (a passed bar, a plateau or the cap).
+    const tail = (metric: string, judge: Step) => seq(loop('l', seq(render('r'), judge, fix('revise'), render('r2'), yourCritique('direction')), gate(metric)), fix('after'));
+    expect(unapplied(tail('critic-score', critic('c')))).toEqual(['direction']);
+    expect(unapplied(tail('check-clean', check('k')))).toEqual(['direction']);
+    // A loop a person holds leaves at the end of a round, with the direction as the latest critique.
+    expect(unapplied(seq(loop('l', seq(render('r'), fix('revise'), render('r2'), yourCritique('direction')), gate('human')), fix('after')))).toEqual([]);
+    // critiqueSources reads the walk as every other rule does, which can only take a claim away.
+    const r = recipeOf(tail('critic-score', critic('c')));
+    expect(sourcesOf(r).after).toBeUndefined();
   });
 
   it('only a machine writer that runs in this version and whose work is kept applies it', () => {

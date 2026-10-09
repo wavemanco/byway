@@ -34,7 +34,7 @@ export const RULES: Record<RuleId, RuleDef> = {
   ST12: r(
     'ST12',
     'invariant',
-    "What a recipe declares agrees with what it runs (writers, VOICE, block labels, who picks), nothing it puts back undoes a person's write, and no person's list or critique is asked once per candidate",
+    "What a recipe declares agrees with what it runs (writers, VOICE, block labels, who picks), nothing it puts back undoes a person's write, and no person's list or critique is asked once per candidate or where no AI writer applies it on any path",
     'ADR-0092; ADR-0098',
   ),
   PR1: r('PR1', 'hard', 'Critics see views, never process', '02 §3 port rule 1'),
