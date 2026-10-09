@@ -68,8 +68,9 @@ export interface Loop { op: 'loop'; id: string; body: Node; gate: Gate }
 export interface Route { op: 'route'; id: string; on: string; branches: { name: string; body: Node }[] }
 export interface Optional { op: 'optional'; id: string; trigger: string; body: Node }
 /**
- * Parallel audit `{{ A ‖ B }}` (02 §2, ⟨A⟩): every lens reads the same input and returns annotations only
- * (`critique`, `score`). Nothing a lens makes is merged or edited into the work, and no lens writes.
+ * Parallel audit `{{ A ‖ B }}` (02 §2, ⟨A⟩): every lens reads the same input and annotates only. The audit returns
+ * its lenses' critiques joined under their names, and their notes; not a score, since several lenses cannot make one
+ * score (ADR-0092 stage 4). Nothing a lens makes is merged or edited into the work, and no lens writes.
  */
 export interface Audit { op: 'audit'; id: string; lenses: { name: string; body: Node }[] }
 /** The pass condition of a one-shot gate: a loop gate's condition without probe, cap or plateau. */

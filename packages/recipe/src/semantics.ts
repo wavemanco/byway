@@ -209,6 +209,42 @@ export function exitPoints(loop: Loop): Step[] {
   return out;
 }
 
+/**
+ * What a gate's verdict is read from on every run of its body (ADR-0092 stage 4): the steps that report to it and
+ * run whenever the body does. For a loop, its exit points; for a one-shot gate, the model critics whose score it reads
+ * (interpreter: the gate reads its body's `score`). Reached the same way: through seq, relay (a storyboard has at least
+ * one shot) and every branch of a route, never through an optional (it may not run) or through replicate, each, an
+ * audit, a gate or an inner loop (they run without the gate's context, or keep only notes).
+ *
+ * `always` false: some run of the body gives the gate no verdict, so a loop reaches its cap without one and a one-shot
+ * gate reads no score of its own (a stale one, or none). Admission refuses that (ST2 and ST10 'feed').
+ */
+export function gateFeed(gate: Loop | OneShotGate): { always: boolean; steps: Step[] } {
+  const feeds = (s: Step): boolean => (gate.op === 'loop' ? feedsGate(s, gate.gate.metric) : s.actor === 'model' && s.role === 'critic');
+  const steps: Step[] = [];
+  const visit = (n: Node): boolean => {
+    switch (n.op) {
+      case 'step':
+        if (!feeds(n)) return false;
+        steps.push(n);
+        return true;
+      case 'seq':
+        return n.steps.map(visit).some(Boolean);
+      case 'relay':
+        return visit(n.body);
+      case 'route':
+        return n.branches.map((b) => visit(b.body)).every(Boolean);
+      case 'optional':
+        visit(n.body);
+        return false;
+      default:
+        return false;
+    }
+  };
+  const always = visit(gate.body);
+  return { always, steps };
+}
+
 /** Where a step sits, and what that means for whether it runs and whether its output is kept. */
 export interface Placement {
   step: Step;

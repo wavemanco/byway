@@ -1,5 +1,5 @@
 import { BLOCKS, ROLE_KNOBS, type KnobDef } from '@byway/protocol';
-import { declaresVoice, engineProblems, MAX_GATE_RETRIES, personWrite, steps, walk, walkNode, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
+import { declaresVoice, engineProblems, gateFeed, MAX_GATE_RETRIES, personWrite, steps, walk, walkNode, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
 import { ANNOTATION_PORTS, CRITIC_METRICS, DETECTOR_PATTERN, KNOWN_GATE_METRICS, type Findings } from '../context.ts';
 
 const STAGE_ORDER = { D1: 1, D2: 2, D3: 3 } as const;
@@ -36,6 +36,12 @@ export function checkStructural(recipe: Recipe, findings: Findings): void {
       if (CRITIC_METRICS.has(g.metric) && g.threshold === undefined) findings.add('ST2', path, `loop "${node.id}" gates on ${g.metric} without a threshold`);
       if (!KNOWN_GATE_METRICS.has(g.metric) && !DETECTOR_PATTERN.test(g.metric)) {
         findings.add('ST2', path, `loop "${node.id}" uses an unknown gate metric "${g.metric}"`);
+      }
+      // ST2 'feed' (ADR-0092 stage 4): the gate decides only after a critic or check that reports to it; one that may not
+      // run, or runs where the gate cannot see it, leaves the loop to reach its last round with no verdict.
+      if ((CRITIC_METRICS.has(g.metric) || g.metric === 'check-clean') && !gateFeed(node).always) {
+        const what = g.metric === 'check-clean' ? 'defect check' : 'critic';
+        findings.add('ST2', path, `loop "${node.id}" ends on its ${what}, but no ${what} reports to it on every round (one in an audit, a draft, a gate or an inner loop never does; one under an optional may not run)`, 'feed');
       }
     }
     // ST3: counts.
@@ -109,6 +115,13 @@ function checkGate(recipe: Recipe, node: Extract<Node, { op: 'gate' }>, path: st
   const p = node.pass;
   if (!KNOWN_GATE_METRICS.has(p.metric) && !DETECTOR_PATTERN.test(p.metric)) {
     findings.add('ST10', path, `gate "${node.id}" uses an unknown metric "${p.metric}"`, 'metric');
+  }
+  // A one-shot gate passes on its critic's score (interpreter): a defect check or a person gives it none, so it would never pass.
+  if (p.metric === 'check-clean' || p.metric === 'human') {
+    findings.add('ST10', path, `gate "${node.id}" passes on ${p.metric === 'human' ? "a person's say" : 'a clean check'}; a one-shot gate passes only on a critic's score (critic-score or critic-rank)`, 'metric');
+  }
+  if (CRITIC_METRICS.has(p.metric) && !gateFeed(node).always) {
+    findings.add('ST10', path, `gate "${node.id}" reads its body's score, but no critic in its body gives one on every run (one in an audit lens or under an optional may not)`, 'feed');
   }
   if (CRITIC_METRICS.has(p.metric) && !(p.threshold !== undefined && Number.isFinite(p.threshold))) {
     findings.add('ST10', path, `gate "${node.id}" gates on ${p.metric} without a finite threshold`, 'metric');

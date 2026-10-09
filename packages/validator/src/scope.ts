@@ -1,6 +1,9 @@
 import { OPTION_SET, type PortType, type RuleId } from '@byway/protocol';
 import { personWrite, walkNode, type Actor, type Audit, type Node, type Recipe, type RelayChain, type Role, type Stage, type Step } from '@byway/recipe';
-import { ANNOTATION_PORTS, Findings } from './context.ts';
+import { Findings } from './context.ts';
+
+/** What comes out of an audit: its lenses' critiques, joined (runner interpreter audit). */
+const AUDIT_OUT = ['critique'] as const;
 
 /** Who may have produced a port: a recipe input, a step (with its role and actor) or an operator. */
 export interface Producer {
@@ -197,9 +200,14 @@ class ScopeWalk {
       }
       case 'each': {
         if (!st.must.has(OPTION_SET)) missingOptions(st, path, `each "${node.id}" needs`, findings);
+        // Each candidate runs on its own option: the runner hands it the option as the work, and no option list.
         const inner = clone(st);
         inner.must.set('artifact', [{ kind: 'operator', op: 'each' }]);
         inner.may.add('artifact');
+        inner.must.delete(OPTION_SET);
+        inner.may.delete(OPTION_SET);
+        inner.aside.delete(OPTION_SET);
+        inner.held = false;
         this.type(node.body, inner, `${path}.body`, pass, label);
         return st;
       }
@@ -238,9 +246,15 @@ class ScopeWalk {
         return mergeAlternatives(node.branches.map((b, i) => this.type(b.body, st, `${path}.branches[${i}].body`, pass, label)));
       case 'audit':
         return this.typeAudit(node, st, path, pass, label);
-      case 'gate':
-        // The check's outputs (its view, critique and score) stay in scope after it, as after any step sequence.
-        return this.type(node.body, st, `${path}.body`, pass, label);
+      case 'gate': {
+        // The runner keeps only the body's critique: after the gate, the ports before it and that critique (its view
+        // and score stay inside).
+        const out = this.type(node.body, st, `${path}.body`, pass, label);
+        const critique = out.must.get('critique');
+        if (critique) st.must.set('critique', critique);
+        if (out.may.has('critique')) st.may.add('critique');
+        return st;
+      }
       case 'relay': {
         // Typed once, like a loop body: the first link starts from the anchor in scope before the chain.
         const out = this.type(node.body, st, `${path}.body`, pass, label);
@@ -266,9 +280,10 @@ class ScopeWalk {
   }
 
   /**
-   * Every lens starts from the same input. After the audit only annotations come out: a port in ANNOTATION_PORTS that
-   * a lens makes on every one of its paths is in scope, with every lens that made it as a producer. Anything else a
-   * lens makes (its own renders, a vanilla control set) stays inside it.
+   * Every lens starts from the same input. After the audit only the lenses' critiques come out, joined under their names
+   * (the runner keeps no lens's score: several lenses cannot make one score): `critique` is in scope when a lens makes
+   * it on every one of its paths, with every lens that made it as a producer. Anything else a lens makes (a score, its
+   * own renders, a vanilla control set) stays inside it.
    */
   private typeAudit(node: Audit, st: MutableState, path: string, pass: Pass, label: string): ScopeState {
     const entry = clone(st);
@@ -276,7 +291,7 @@ class ScopeWalk {
     node.lenses.forEach((lens, i) => {
       const out = this.type(lens.body, entry, `${path}.lenses[${i}].body`, pass, label);
       const made = producedWithin(lens.body);
-      for (const port of ANNOTATION_PORTS) {
+      for (const port of AUDIT_OUT) {
         if (!made.has(port)) continue;
         st.may.add(port);
         const producers = out.must.get(port);

@@ -105,6 +105,9 @@ export function checkPorts(recipe: Recipe, typing: Typing, findings: Findings): 
       // LS1: humans decide at non-convergence and at the cap.
       if (containsCritic(node.body) && (g.onCap !== 'human' || g.onNoConverge !== 'recalibrate-human')) {
         findings.add('LS1', path, `critic loop "${node.id}" hands ${g.onCap !== 'human' ? 'the cap' : 'non-convergence'} to a policy`);
+      } else if (g.metric === 'human' && g.onCap !== 'human') {
+        // A loop a person holds ends only on their answer, the last round too (ADR-0093).
+        findings.add('LS1', path, `loop "${node.id}" is yours to end, but hands its last round to a policy`);
       }
     }
     if (node.op === 'gate') checkThreshold('gate', node.id, node.pass, path, findings);
