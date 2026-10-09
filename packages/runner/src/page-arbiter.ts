@@ -247,24 +247,6 @@ interface Expected {
   places: { line: number; start: number; end: number; in: 'body' | 'title' }[];
 }
 
-/** A line's words and the gaps between them, as Chromium showed them. */
-const wordsOf = (t: string): { words: string[]; gaps: string[] } => {
-  const words: string[] = [];
-  const gaps: string[] = [];
-  let i = 0;
-  while (i < t.length && isHtmlSpace(t[i])) i++;
-  while (i < t.length) {
-    let j = i;
-    while (j < t.length && !isHtmlSpace(t[j])) j++;
-    words.push(t.slice(i, j));
-    let k = j;
-    while (k < t.length && isHtmlSpace(t[k])) k++;
-    if (k < t.length) gaps.push(t.slice(j, k));
-    i = k;
-  }
-  return { words, gaps };
-};
-
 /**
  * The text the written page must show (see the module comment), or a refusal naming the line. `notOffered` is the set
  * the offered deck was read with (readPageCopy), so offered line i is the i-th line not in it.
