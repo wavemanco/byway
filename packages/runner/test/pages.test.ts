@@ -238,6 +238,17 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
     expect(flow.hidden).toEqual([['out of 5', null]]);
   }, 60_000);
 
+  it('text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee\'s own box (r9)', async () => {
+    const html = '<p>Before</p><div><marquee>Breaking news today</marquee></div><div><marquee direction="up" style="height:20px">Up <b>and</b> away</marquee></div><p>After</p>';
+    for (let k = 0; k < 3; k++) {
+      const shown = await pages.shownText(html, none);
+      expect(shown.text.split(/\s+/)).toEqual(['Before', 'Breaking', 'news', 'today', 'Up', 'and', 'away', 'After']);
+      expect(shown.hidden).toEqual([]);
+    }
+    // A marquee a style hides is hidden with everything in it.
+    expect((await pages.shownText('<p>Before</p><div style="opacity:0"><marquee>Gone</marquee></div>', none)).hidden).toEqual([['Gone', null]]);
+  }, 60_000);
+
   it('reads a page as it settles: animations and transitions are taken to their end, an endless one is stopped (r9)', async () => {
     const css = '@keyframes in{from{opacity:0}to{opacity:1}}@keyframes blink{50%{opacity:0}}.in{animation:in 2s both}.late{animation:in 1s 20s both}.blink{animation:blink 1s infinite}';
     const shown = await pages.shownText(`<style>${css}</style><h1 class="in">Welcome</h1><p class="late">Later</p><p class="blink">Live</p>`, none);

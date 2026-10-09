@@ -60,7 +60,7 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   its containing block), by an absolutely or fixed positioned ancestor's `clip` rect and by an ancestor's
  *   `clip-path: inset(…)`, keeps more than a pixel in each direction short of the page's top or start edge, beyond
  *   which no scrolling reaches (so a screen-reader-only class, font size 0 and text moved off the page are hidden).
- *   With JavaScript off, text a script would bring into sight (a section that waits at opacity 0 for a scroll
+ *   Text in a marquee is measured by the marquee's own box, through which it scrolls. With JavaScript off, text a script would bring into sight (a section that waits at opacity 0 for a scroll
  *   animation's script) reads as hidden. An absolutely or fixed positioned element that then shows no text and holds
  *   no image or control is left out too: it stands outside the text's flow, so it breaks no line (innerText would put
  *   its box on a line of its own). Not detected: text covered by another element or coloured as its background, other
@@ -454,29 +454,34 @@ const SHOWN_TEXT = `(async () => {
   const contains = (s) => s.transform !== 'none' || s.filter !== 'none' || /paint|layout|strict|content/.test(s.contain || '');
   // Every rect that clips a text node whose parent is e: walking up, an absolutely positioned element escapes the overflow
   // of ancestors below its containing block (the nearest positioned one), and a fixed one that of every ancestor below
-  // one with a transform, a filter or containment.
-  const clips = memo((start) => {
+  // one with a transform, a filter or containment. A marquee's own box is measured without its overflow (see unseen).
+  const clipsFrom = (start, marquee) => {
     const out = [];
     let escape = '';
     for (let e = start; e && e !== body && e !== document.documentElement; e = e.parentElement) {
       const s = style(e);
       if ((escape === 'abs' && positioned(s)) || (escape === 'fixed' && contains(s))) escape = '';
-      out.push(...own(e, !escape));
+      out.push(...own(e, !escape && !(marquee && e === start)));
       if (escape !== 'fixed' && s.position === 'absolute') escape = 'abs';
       if (s.position === 'fixed') escape = 'fixed';
     }
     return out;
-  });
+  };
+  const clips = memo((start) => clipsFrom(start, false));
+  const marqueeClips = memo((start) => clipsFrom(start, true));
   const rtl = style(document.documentElement).direction === 'rtl';
   const pageWidth = document.documentElement.clientWidth;
   const unseen = (n) => {
     const parent = n.parentElement;
     if (faded(parent) || clear(parent)) return true;
+    // A marquee scrolls its content through its own box, so text in one is measured by that box (clipped as the marquee
+    // is), wherever the scrolling has taken it when the page is read.
+    const marquee = parent.closest('marquee');
     const range = document.createRange();
     range.selectNodeContents(n);
-    const boxes = [...range.getClientRects()];
-    if (!boxes.length) return false;
-    const cs = clips(parent);
+    const boxes = marquee ? [...marquee.getClientRects()] : [...range.getClientRects()];
+    if (!boxes.length || (marquee && !range.getClientRects().length)) return false;
+    const cs = marquee ? marqueeClips(marquee) : clips(parent);
     return !boxes.some((q) => {
       let l = q.left, t = q.top, r = q.right, b = q.bottom;
       for (const c of cs) { l = Math.max(l, c.l); t = Math.max(t, c.t); r = Math.min(r, c.r); b = Math.min(b, c.b); }

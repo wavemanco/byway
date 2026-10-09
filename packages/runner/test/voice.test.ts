@@ -735,6 +735,16 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     }
   });
 
+  it('a page with a marquee is read the same way each time, so its lines can be changed (r9)', async () => {
+    // The marquee's text moves; measured where it happened to be, the page and its marked copy read differently and no
+    // line could be changed (found by the round-9 links runs).
+    const html = page('<div><a href="/t0"><b><i class="icon"></i></b></a>\n   Fresh</div>\n<p>Order <a href="/t3">Call<marquee>Call</a>Order\n caf&eacute;</marquee>bread</a> six Fresh</p>');
+    const q = await open(html);
+    expect(q.offered).toBe('T\nFresh\nOrder [Call]\nCallOrder café\n[bread] six Fresh');
+    const out = await q.answer('T\na b Fresh\nOrder [Call]\nCallOrder café\n[bread] six Fresh');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('   Fresh', '   a b Fresh'));
+  });
+
   it('a canvas\'s fallback, which Chromium shows with JavaScript off but a visitor does not see, is not offered and stays byte for byte (r9)', async () => {
     const html = page('<p>Sales by month: <canvas width="300" height="150">No chart: sales rose <b>12%</b>.</canvas> Updated daily</p>');
     const q = await open(html);
