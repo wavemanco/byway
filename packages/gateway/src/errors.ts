@@ -12,9 +12,6 @@ export type Billing = 'none' | 'maybe';
 /** A GatewayError with what classification found: the provider's retry-after hint, and whether the attempt was billed. */
 export type ClassifiedError = GatewayError & { retryAfterMs?: number; billing?: Billing };
 
-/** The name this module has always exported for a GatewayError carrying a retry-after hint. */
-export type RetryHintedError = ClassifiedError;
-
 /**
  * Socket and DNS failures that happen before a request is written: nothing reached the provider. Node's fetch (undici)
  * raises them as TypeError('fetch failed') with the code on the cause, and the SDKs wrap that again, so the code is

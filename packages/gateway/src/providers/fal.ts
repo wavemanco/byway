@@ -300,7 +300,7 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
    * missing.
    */
   const runJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, input: Record<string, unknown>) => {
-    const { request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input }), `${JOB_WHAT[role]}`);
+    const { request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input }), JOB_WHAT[role]);
     try {
       await req.attempt(() => queue.subscribeToStatus(endpointId, { requestId, pollInterval: POLL_INTERVAL_MS }));
       const { data } = await req.attempt(() => queue.result(endpointId, { requestId }));
