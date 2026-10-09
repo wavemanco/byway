@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**87 records:** 80 accepted (15 of them by continuation, awaiting ratification; 25 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**88 records:** 81 accepted (15 of them by continuation, awaiting ratification; 26 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -122,6 +122,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0088](0088-provider-boundary-held-keys-and-media-admission.md) | The provider-key promise is enforced at every crossing; provider media is admitted by one rule on every URL and redirect hop | Accepted | Delegated | 2026-10-08 16:45 |
 | [ADR-0087](0087-lineup-evidence-full-words-and-disclosed-card-budget.md) | Lineup evidence: text critics read every item's full words; image-only critics get a measured, visible, disclosed budget | Accepted | Delegated | 2026-10-08 16:45 |
 | [ADR-0082](0082-web-client-state-ownership.md) | Web client state ownership: drafts, polling and the Recommendation screen | Accepted | Delegated | 2026-10-08 17:00 |
+| [ADR-0091](0091-provider-edge-billing-fixes.md) | Provider-edge billing fixes: one billing classification, fal jobs submitted once, served-model pricing, the estimate contract, torn-tail quarantine, one first-recommendation call per intake | Accepted | Delegated | 2026-10-08 20:05 |
 
 ## Open decisions (not yet ADRs)
 
