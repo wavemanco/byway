@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { admitMediaUrl, FAL_EXTRACT_FRAME, readCapped, sniffVideoType } from '../src/providers/fal.ts';
-import { countingBody, fakeFal, fakeFetch, httpError, MemoryArtifacts, MP4_BYTES, WEBM_BYTES } from './fakes.ts';
+import { countingBody, fakeFal, fakeFetch, falQueueError, fetchFailed, httpError, MemoryArtifacts, MP4_BYTES, WEBM_BYTES } from './fakes.ts';
 
 /** Shaped like a fal key (key id, a colon, the secret), and not a real one. */
 const FAL_KEY = '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff';
@@ -153,12 +153,53 @@ describe('gateway: video through fal.ai', () => {
     expect(fal.calls).toEqual([]);
   });
 
-  it('retries transient fal failures and ledgers the clip once', async () => {
-    const fal = fakeFal({ [BALANCED_VIDEO]: [httpError(503), httpError(429)] });
+  it("re-sends a submission fal refused with its own error body (503, 429: nothing was enqueued), and ledgers the clip once", async () => {
+    const fal = fakeFal({ [BALANCED_VIDEO]: [falQueueError(503, { detail: 'Service temporarily unavailable' }), falQueueError(429, { detail: 'Too many requests' })] });
     const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
     await g.video(req());
     expect(fal.calls.filter((c) => c.endpoint === BALANCED_VIDEO)).toHaveLength(3);
     expect(ledgerLines()).toHaveLength(1);
+  });
+
+  /** F03: a submission that may have reached fal is never sent again, so a lost answer cannot buy a second clip. */
+  it.each([
+    ['a 502 from a gateway in between', () => falQueueError(502)],
+    ['a 504', () => falQueueError(504, { detail: 'Gateway Timeout' })],
+    ['a 503 with no fal body', () => falQueueError(503)],
+    ['a reset after the request was written', () => fetchFailed('ECONNRESET')],
+    ['an answer with no request id', () => Object.assign(new Error('fal answered the submission (HTTP 200) without a request id'), { billing: 'maybe' })],
+  ])('submits the clip exactly once after %s, and fails saying fal may have accepted it', async (_label, error) => {
+    const fal = fakeFal({ [BALANCED_VIDEO]: [error()] });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false });
+    expect(err.message).toMatch(/fal may have accepted the clip.*did not send it again/s);
+    expect(err.message).not.toContain(FAL_KEY);
+    expect(fal.calls).toHaveLength(1);
+    expect(() => ledgerLines()).toThrow();
+  });
+
+  it('submits the last-frame job through the same rule: once after an ambiguous failure, keeping and ledgering the clip', async () => {
+    const fal = fakeFal({ [FAL_EXTRACT_FRAME]: [falQueueError(502)] });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false });
+    expect(err.message).toMatch(/may have accepted the last-frame job/);
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
+    expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'video', costUsd: 0.352 })]);
+    expect([...artifacts.items.values()].filter((i) => i.record.mediaType === 'video/mp4')).toHaveLength(1);
+  });
+
+  it('names the request id of an accepted clip whose status cannot be read, and is not retryable (a retry would buy another)', async () => {
+    const reset = () => fetchFailed('ECONNRESET');
+    const fal = fakeFal({}, { pollFailures: { [BALANCED_VIDEO]: [reset(), reset(), reset(), reset()] } });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError & { falRequests?: Record<string, string> };
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false, falRequests: { generation: 'req-1' } });
+    expect(err.message).toMatch(/fal accepted the clip \(request req-1\).*may still make it and bill it/s);
+    expect(fal.calls).toHaveLength(1);
+    expect(fal.polls).toEqual(['req-1', 'req-1', 'req-1', 'req-1']);
   });
 
   it('retries a failed status poll by polling again, never by submitting (and paying for) a second clip', async () => {

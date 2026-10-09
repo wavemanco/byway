@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { ArtifactRecord, ArtifactStore } from '@byway/contracts';
 import { encodePng } from '../src/mock/png.ts';
 import type { AnthropicClientLike, AnthropicMessageLike } from '../src/providers/anthropic.ts';
-import type { FalClientLike } from '../src/providers/fal.ts';
+import { FalQueueError, type FalClientLike } from '../src/providers/fal.ts';
 import type { GoogleClientLike, GoogleResponseLike } from '../src/providers/google.ts';
 import type { ChatCompletionLike, ImagesResponseLike, OpenAIClientLike } from '../src/providers/openai.ts';
 
@@ -231,6 +231,9 @@ export function countingBody(chunks: number, chunkBytes = 1024 * 1024) {
  * was not JSON (a proxy's HTML page).
  */
 export const httpError = (status: number, message = `HTTP ${status}`, body?: unknown) => Object.assign(new Error(message), { status, ...(body !== undefined ? { error: body } : {}) });
+
+/** fal's queue answering a submission with an error: its status and, when fal sent one, its JSON error body. */
+export const falQueueError = (status: number, body?: Record<string, unknown>) => new FalQueueError(status, body, body ? JSON.stringify(body) : '<html>Bad gateway</html>');
 
 /** Node's fetch (undici) failing: TypeError('fetch failed') with the socket's code only on its cause. */
 export const fetchFailed = (code: string) => new TypeError('fetch failed', { cause: Object.assign(new Error(`${code}: socket`), { code }) });

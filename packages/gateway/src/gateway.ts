@@ -21,7 +21,7 @@ import {
   type VideoResult,
 } from '@byway/contracts';
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
-import { toGatewayError } from './errors.ts';
+import { toGatewayError, type ClassifiedError } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost } from './estimate.ts';
 import { ExposureRegister, exposurePath } from './exposure.ts';
 import { findHeldKey, heldKeyError } from './held-key.ts';
@@ -37,7 +37,7 @@ import { createOpenRouterClient, openrouterAdapter } from './providers/openroute
 import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, ResolvedImage, ResolvedMessage } from './providers/types.ts';
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
-import { BILLABLE_CALL, DEFAULT_RETRY, FREE_READ, withRetries, type RetryOptions } from './retry.ts';
+import { BILLABLE_CALL, BILLABLE_JOB, DEFAULT_RETRY, FREE_READ, withRetries, type RetryOptions } from './retry.ts';
 
 /** Where spend caps come from: the workspace budget (Workspace.budgetUsd) and each run's budget (StartRunInput.budgetUsd). */
 export interface CapsSource {
@@ -347,6 +347,13 @@ export class ModelGateway implements Gateway {
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
+      const mapped = <T>(fn: () => Promise<T>) => async () => {
+        try {
+          return await fn();
+        } catch (e) {
+          throw toGatewayError(e, ref.provider, redact);
+        }
+      };
       const out = await generate({
         model: ref.model,
         prompt: req.prompt,
@@ -354,14 +361,20 @@ export class ModelGateway implements Gateway {
         ...(req.shot !== undefined ? { shot: req.shot } : {}),
         ...(startFrame ? { startFrame } : {}),
         context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
-        attempt: (fn) =>
-          withRetries(async () => {
-            try {
-              return await fn();
-            } catch (e) {
-              throw toGatewayError(e, ref.provider, redact);
-            }
-          }, this.retry, FREE_READ),
+        attempt: (fn) => withRetries(mapped(fn), this.retry, FREE_READ),
+        submit: async (fn, what) => {
+          try {
+            return await withRetries(mapped(fn), this.retry, BILLABLE_JOB);
+          } catch (e) {
+            if ((e as ClassifiedError).billing !== 'maybe') throw e;
+            // Not sent again (ADR-0091): a second submission is a second job, billed again.
+            throw new GatewayError(
+              'provider-error',
+              redact(`${ref.provider} may have accepted ${what} (${(e as Error).message}). byway did not send it again, because a second submission could make and bill another. Check your ${ref.provider} dashboard before trying this step again.`.slice(0, 2000)),
+              false,
+            );
+          }
+        },
       });
       const units = out.usage.units ?? seconds;
       const costUsd = roundUsd(maxVideoCost(price, units, extras));
@@ -484,7 +497,7 @@ export class ModelGateway implements Gateway {
         adapter = openrouterAdapter({ client: c.openrouter ?? createOpenRouterClient(key), pins: OPENROUTER_PINS });
         break;
       case 'fal':
-        adapter = falAdapter({ client: c.fal ?? createFalClient(key), ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}) });
+        adapter = falAdapter({ client: c.fal ?? createFalClient(key, this.opts.fetch), ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}) });
         break;
       case 'mock':
         adapter = mockAdapter(this.opts.mockResponders ? { responders: this.opts.mockResponders } : {});
