@@ -103,7 +103,6 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       // once it is edited: the text on each keystroke, the attachments on any change to them.
       if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) forgetRefusedStart(err.fields);
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
-      return;
     }
   });
   const busy = submitting.busy;

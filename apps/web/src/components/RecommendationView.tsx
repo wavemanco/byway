@@ -402,7 +402,6 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
       return 'hold';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The run did not start. Try again.');
-      return;
     }
   });
   const busy = starting.busy;
