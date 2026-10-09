@@ -195,8 +195,20 @@ describe('VOICE total readers and the round trip (F07)', () => {
     for (const v of [deck.replace('Pitch: Fresh bread at seven.', 'Pitch:\n\nFresh bread at seven.'), deck.replace('Title: Bread club', 'title:Bread club'), deck.replace('\n\n', '\n').replace(/\n/g, '\r\n'), deck.replace('Mornings matter.', 'Mornings matter.\n\nThey always have.')]) {
       expect(options(v)).toMatchObject({ roundTrip: true });
     }
-    // A reader that dropped a line (the old parseOptionCopy kept only what followed "###") fails the round trip.
-    expect(roundTripProblem('options', 'script', OPTIONS, `Lead with the club.\n\n${deck}`)).toBeDefined();
+    // A reader that dropped a line (the old parseOptionCopy kept only what followed "###") fails the round trip, and
+    // the refusal names the first line that would differ.
+    expect(roundTripProblem('options', 'script', OPTIONS, `Lead with the club.\n\n${deck}`)).toBe('byway could not write your words back exactly as you wrote them, from the line "Lead with the club." on. Leave that line as it was offered, or write it another way.');
+  });
+
+  it('a run of blank lines that ends at a label is layout, however long; blank lines inside a value are kept', () => {
+    for (const v of [deck.replace('\n\n### B', '\n\n\n### B'), deck.replace('\n\n### B', '\n\n\n\n### B'), deck.replace('\nPitch: Fresh', '\n\n\nPitch: Fresh'), deck.replace(/\n/g, '\r\n').replace('\r\n\r\n### B', '\r\n  \r\n\r\n### B')]) {
+      expect(layoutOf('options', v), JSON.stringify(v)).toBe(layoutOf('options', deck));
+      expect(sameCopy('options', 'script', deck, v)).toBe(true);
+      expect(options(v.replace('A box on Saturday.', 'A box on Sunday.'))).toEqual({ stored: ['Bread club | Fresh bread at seven.', 'Weekend box | A box on Sunday.'], roundTrip: true });
+    }
+    expect(layoutOf('options', 'Rationale: a\n\n\n### B')).toBe('Rationale: a\n### B');
+    expect(layoutOf('options', 'Rationale: a\n\n\nmore\n\n\n### B')).toBe('Rationale: a\n\n\nmore\n### B');
+    expect(layoutOf('on-screen', 'Headline: Go\n\n\nTagline: Shoes\n\n')).toBe('Headline: Go\nTagline: Shoes');
   });
 
   const SB = serializeJson({

@@ -93,6 +93,26 @@ describe('VOICE on options: a total reader, no model (F07)', () => {
     }
     expect(b.gateway.requests).toEqual([]);
   });
+
+  // Blank lines are layout wherever a run of them ends at a label, however long the run (r2: two or more were refused).
+  const blankRuns = (deck: string) => [
+    deck.replace('\n\n### B', '\n\n\n### B'),
+    deck.replace('\n\n### B', '\n\n\n\n### B'),
+    deck.replace('\nPitch: Fresh', '\n\n\nPitch: Fresh'),
+    deck.replace('\nPitch: Fresh', '\n\n\n\nPitch: Fresh'),
+    deck.replace(/\n/g, '\r\n').replace('\r\n\r\n### B', '\r\n \r\n\t\r\n### B'),
+    `\n\n${deck}\n\n\n`,
+  ];
+
+  it('blank-line runs before a label are layout: nothing is written, and an edit beside them is stored', async () => {
+    const deck = (await open()).offered!;
+    for (const answer of blankRuns(deck)) {
+      expect((await (await open()).answer(answer)).artifactId, JSON.stringify(answer)).toBeUndefined();
+      const out = await (await open()).answer(answer.replace('Weekends are slow.', 'Weekends are quiet.'));
+      expect(((await json(out.artifactId!)).options as { rationale: string }[]).map((o) => o.rationale), JSON.stringify(answer)).toEqual(['Mornings matter.', 'Weekends are quiet.']);
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
 });
 
 describe('VOICE on a storyboard (F07)', () => {
@@ -115,6 +135,17 @@ describe('VOICE on a storyboard (F07)', () => {
     expect(((await json(out.artifactId!)).storyboard as { caption?: string }[])[0]!.caption).toBe('Hot  bread');
     const again = await late();
     expect((await again.answer(again.offered!.replace('Headline: Fresh at seven', 'headline:\n\nFresh at seven'))).artifactId).toBeUndefined();
+  });
+
+  it('two or three blank lines between fields are layout: a caption edit beside them is stored', async () => {
+    for (const gap of ['\n\n\n', '\n\n\n\n', '\r\n\r\n\r\n']) {
+      const q = await late();
+      const answer = q.offered!.replace('\nTagline:', `${gap}Tagline:`);
+      const again = await late();
+      expect((await again.answer(answer)).artifactId).toBeUndefined();
+      const out = await q.answer(answer.replace('Hot bread', 'Warm bread'));
+      expect(((await json(out.artifactId!)).storyboard as { caption?: string }[]).map((s) => s.caption)).toEqual(['Warm bread', 'At your door']);
+    }
   });
 
   it('a cleared headline and a two-line caption are stored', async () => {

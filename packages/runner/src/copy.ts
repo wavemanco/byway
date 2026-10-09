@@ -186,9 +186,10 @@ export const onScreenFields = (sb: Storyboard): string[] => ['Headline', 'Taglin
 
 /**
  * The one layout of a non-web deck: line-based, keeps every line, never the reader. It normalises what is layout only:
- * line endings, trailing spaces, blank lines before a label and at the ends, a value on the line after its label, and
- * the label's case and spacing. Everything inside a value is kept, so a doubled space in a caption is a change.
- * It defines both the VOICE round trip and the "unchanged" test.
+ * line endings, trailing spaces, every run of blank lines that ends at a label or at either end (however long: the
+ * reader trims a value's blank edges, so none of them is the person's text), a value on the line after its label, and
+ * the label's case and spacing. Everything inside a value is kept, blank lines between its lines included, so a doubled
+ * space in a caption is a change. It defines both the VOICE round trip and the "unchanged" test.
  */
 export function layoutOf(kind: DeckKind, text: string): string {
   const t = lf(text);
@@ -215,9 +216,18 @@ export function layoutOf(kind: DeckKind, text: string): string {
     }
     out.push(raw);
   }
-  // Blank lines before a label line and at either end are layout.
-  const kept = out.filter((l, i) => l !== '' || (i + 1 < out.length && !labelLine(kind, out[i + 1]!) && out.slice(0, i).some((x) => x !== '')));
-  while (kept.at(-1) === '') kept.pop();
+  // A run of blank lines is layout when it starts the deck, ends it, or ends at a label line: look past the whole run.
+  const kept: string[] = [];
+  for (let i = 0; i < out.length; ) {
+    if (out[i] !== '') {
+      kept.push(out[i++]!);
+      continue;
+    }
+    let j = i;
+    while (j < out.length && out[j] === '') j++;
+    if (kept.length && j < out.length && !labelLine(kind, out[j]!)) kept.push(...out.slice(i, j));
+    i = j;
+  }
   return kept.join('\n');
 }
 
@@ -229,11 +239,20 @@ export const sameCopy = (medium: Exclude<Medium, 'web-page'>, scope: MediaCopy, 
 
 /**
  * The VOICE round trip: the deck read back from the written artifact, laid out, equals the answer laid out. A reader
- * or a write that dropped, moved or changed any of the person's text fails it.
+ * or a write that dropped, moved or changed any of the person's text fails it. The refusal quotes the first line that
+ * would differ (as laid out), so the person has somewhere to look.
  */
 export function roundTripProblem(medium: Exclude<Medium, 'web-page'>, scope: MediaCopy, written: string, answer: string): string | undefined {
   const kind = deckKindOf(medium, scope);
-  return layoutOf(kind, extractCopy(medium, written, scope)) === layoutOf(kind, answer) ? undefined : 'byway could not write your words back exactly as you wrote them.';
+  const got = layoutOf(kind, extractCopy(medium, written, scope));
+  const want = layoutOf(kind, answer);
+  if (got === want) return undefined;
+  const g = got.split('\n');
+  const w = want.split('\n');
+  let k = 0;
+  while (k < w.length && w[k] === g[k]) k++;
+  const line = (w[k] ?? g[k] ?? '').trim();
+  return `byway could not write your words back exactly as you wrote them, from the line "${line.length > 80 ? `${line.slice(0, 79)}…` : line}" on. Leave that line as it was offered, or write it another way.`;
 }
 
 /**
