@@ -409,6 +409,26 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('an svg or math <title> before such a block, self-closed or left open, does not stop that: the block is still kept (r6)', async () => {
+    for (const [icon, iconLines] of [
+      ['<p><svg width="9" height="9"><title/></svg></p>', ''],
+      ['<p>X<svg width="9" height="9"><title>Tip</svg></p>', 'X\nTip\n'],
+      ['<p>x<math><title/></math></p>', 'x\n'],
+    ] as const) {
+      for (const [html, answer, written, deck] of [
+        ['<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>', 'Intro\n\nOrder today', '<div><font face="Arial">Intro<p></p></font>Order today</div>', ['Intro', 'Order today']],
+        ['<div>Call us<ins><p>New offer</p></ins>today</div>', 'Call us\n\ntoday', '<div>Call us<ins><p></p></ins>today</div>', ['Call us', 'today']],
+        ['<div>Name<label><p>(required)</p></label>here</div>', 'Name\n\nhere', '<div>Name<label><p></p></label>here</div>', ['Name', 'here']],
+      ] as const) {
+        const q = await open(page(`${icon}${html}`));
+        const out = await q.answer(`T\n${iconLines}${answer}`);
+        expect(await stored(out.artifactId!)).toBe(`${icon}${written}`);
+        expect(JSON.parse(pageLockView(await b.store.artifacts.getText(out.artifactId!))).deck).toEqual(['T', ...iconLines.split('\n').filter((l) => l), ...deck]);
+      }
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
+
   it('a name-only anchor the page leaves open is not a link: the next paragraph is edited as the person sees it (r5)', async () => {
     const q = await open(page('<h2><a name="top"/>Welcome</h2><p>Our <a href="/menu">menu</a> changes daily.</p>'));
     expect(q.offered).toBe('T\nWelcome\nOur [menu] changes daily.');

@@ -654,6 +654,54 @@ describe('edge space held by an element the edit empties and removes (F07, r5)',
   });
 });
 
+describe('an svg or math <title> keeps the block reading for the rest of the page (F07, r6)', () => {
+  const fresh = (placed: string) => deckLines(readPageCopy(pageOf(placed)));
+  // A self-closed svg <title/> opens nothing, an unclosed one ends with its svg, and math's likewise.
+  const icons = [
+    ['<p><svg width="9" height="9"><title/></svg></p>', []],
+    ['<p>X<svg width="9" height="9"><title>Tip</svg></p>', ['X', 'Tip']],
+    ['<p>x<math><title/></math></p>', ['x']],
+    ['<p>Call <svg viewBox="0 0 9 9"><title/><path d="M0 0h9v9H0z"/></svg> us</p>', ['Call', 'us']],
+  ] as const;
+  const glue = [
+    ['<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>', ['Intro', '', 'Order today'], '<div><font face="Arial">Intro<p></p></font>Order today</div>'],
+    ['<div>Call us<ins><p>New offer</p></ins>today</div>', ['Call us', '', 'today'], '<div>Call us<ins><p></p></ins>today</div>'],
+    ['<div>Name<label><p>(required)</p></label>here</div>', ['Name', '', 'here'], '<div>Name<label><p></p></label>here</div>'],
+  ] as const;
+
+  it('a block inside an inline element after it is still kept where removing it would run two lines together', () => {
+    for (const [icon, iconLines] of icons) {
+      for (const [page, lines, written] of glue) {
+        const r = run(`${icon}${page}`, () => ['T', ...iconLines, ...lines].join('\n'));
+        expect(r, icon + page).toMatchObject(clean(`${icon}${written}`));
+        expect(fresh(r.placed!), icon + page).toEqual(['T', ...iconLines, ...lines.filter((l) => l)]);
+      }
+    }
+  });
+
+  it('the verifier reads the blocks after such a title as browsers show them', () => {
+    for (const [icon, iconLines] of icons) {
+      const F = pageOf(`${icon}<div><font face="Arial">Intro<p>Spring sale</p></font>Order today</div>`);
+      const pEl = [...readPageCopy(F).els.values()].filter((x) => x.name === 'p').at(-1)!;
+      const glued = F.replace('<p>Spring sale</p>', '');
+      expect(pageEditProblems(F, glued, edit(F, ['T', ...iconLines, 'Intro', '', 'Order today'].join('\n')), { removed: [pEl.start], brs: [] }), icon).toEqual([
+        'The page, read again, runs lines together that a browser showed apart: it shows "IntroOrder today" as one line.',
+      ]);
+    }
+  });
+
+  it('only the html <title> is the page title: the slots after a foreign one are shown by browsers', () => {
+    for (const [icon] of icons) {
+      const p = readPageCopy(pageOf(`${icon}<p>After</p>`));
+      const after = p.slots.find((s) => s.toks.some((t) => p.tokens[t]!.raw === 'After'))!;
+      expect(after.rendered, icon).toBe(true);
+    }
+    // Inside an open svg <title>, the text is not shown (a tooltip), and the html <title> is not either.
+    const p = readPageCopy(pageOf('<p><svg width="9" height="9"><title>Logo</title></svg></p>'));
+    for (const word of ['Logo', 'T']) expect(p.slots.find((s) => s.toks.some((t) => p.tokens[t]!.raw === word))!.rendered, word).toBe(false);
+  });
+});
+
 describe('questions in flight across the upgrade (F07)', () => {
   const pg = '<p>Intro</p><p>Please <a href="/terms">read terms</a> today.</p>';
   const oldOffered = 'T\nIntro\nPlease read terms today.';

@@ -283,6 +283,8 @@ class OpenElements {
   private readonly blocks: number[] = [];
   preDepth = 0;
   hiddenDepth = 0;
+  /** Open svg or math <title> elements: their text is a tooltip, not shown. A self-closed one opens nothing. */
+  foreignTitleDepth = 0;
   private readonly els: Map<number, El>;
   constructor(els: Map<number, El>) {
     this.els = els;
@@ -357,6 +359,7 @@ class OpenElements {
     if (!INLINE.has(name)) this.blocks.push(k);
     if (name === 'pre') this.preDepth++;
     if (hidden) this.hiddenDepth++;
+    if (t.foreign && name === 'title') this.foreignTitleDepth++;
     this.dirtyAt.set(i, this.dirty);
   }
   /** The innermost open element outside INLINE (its start token), or -1. */
@@ -424,6 +427,7 @@ class OpenElements {
     if (lastOf(this.tableScope) === k) this.tableScope.pop();
     if (el.name === 'pre') this.preDepth--;
     if (el.hidden) this.hiddenDepth--;
+    if (el.foreign && el.name === 'title') this.foreignTitleDepth--;
   }
   /** End the element at position k and everything open inside it, as browsers end them for a start tag: no end. */
   private endImplicitly(k: number): void {
@@ -481,7 +485,7 @@ export function readPageCopy(html: string): PageDeck {
     depth: inline.length,
     outer: inline.length ? inline[0]! : -1,
     visible: (!open.inHead || inTitle) && open.preDepth === 0,
-    rendered: !open.inHead && !inTitle && open.hiddenDepth === 0,
+    rendered: !open.inHead && !inTitle && open.hiddenDepth === 0 && open.foreignTitleDepth === 0,
   });
   let cur = next();
   tokens.forEach((t, i) => {
@@ -498,7 +502,9 @@ export function readPageCopy(html: string): PageDeck {
         aDepth.set(i, open.specialsAfter(prevA));
         prevA = i;
       }
-      if (name === 'title') inTitle = !t.closing;
+      // The html <title> is RCDATA: one text token, then its end tag. An svg or math <title> is an element like any other
+      // there (a self-closed one opens nothing, and its svg's end closes an open one), so OpenElements tracks it.
+      if (name === 'title' && !t.foreign) inTitle = !t.closing;
       // A start tag opens an element unless it is void or honours its self-closing flag (in svg or math, and <svg/>
       // and <math/> themselves); browsers ignore "/>" on other HTML elements, so "<a href=x/>" and "<span/>" open one.
       // Browsers ignore some start tags altogether (see OpenElements.ignores).
