@@ -236,15 +236,35 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
   return { runId: run.id };
 }
 
+/** The violation a stored composed recipe gets when the recipe it was built from is no longer in the catalog. */
+const NEAREST_GONE = 'ADMIT-NEAREST';
+
+/**
+ * The advisor's refusal of a recipe id the catalog does not have (AdvisorError 'unknown-recipe'). Matched by name and
+ * code, as in model-errors.ts: the services may come from another server bundle, whose classes are other objects.
+ */
+const unknownRecipe = (err: unknown): boolean => err instanceof Error && err.name === 'AdvisorError' && (err as { code?: unknown }).code === 'unknown-recipe';
+
 /**
  * A composed recipe is admitted again before it runs (F01, ADR-0092): the `ok` stored when it was composed is not taken
  * on trust, because the checks may have changed since. The advisor re-runs them on the stored recipe under its own id
  * and recomputes what the screen said about it; the intake keeps the result either way (the estimate is refreshed
  * silently). A recipe that no longer passes, or no longer hashes the same, is refused; one whose explanation changed
- * does not start until the person has seen the new one, which the refusal carries.
+ * does not start until the person has seen the new one, which the refusal carries. One built from a recipe the catalog
+ * no longer has cannot be checked again, and is refused too (NEAREST_GONE).
  */
 async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult, problem: IntakeRecord['problem']): Promise<Recipe> {
-  const again = deps.services.advisor.admit(stored, { problem, profileId: deps.profileId });
+  let again: ComposeResult;
+  try {
+    again = deps.services.advisor.admit(stored, { problem, profileId: deps.profileId });
+  } catch (err) {
+    if (!unknownRecipe(err)) throw err;
+    // The recipe it was built from is no longer one of byway's, so there is nothing to check it against. It is refused
+    // like one that no longer passes: the intake says why, and Start stays blocked until a new one is built.
+    const gone: ComposeResult = { ...stored, ok: false, violations: [{ ruleId: NEAREST_GONE, message: "the recipe it was built from is no longer one of byway's, so it cannot be checked again" }] };
+    await deps.services.store.updateIntake(intakeId, { composed: gone });
+    throw new HttpError(400, "This recipe was built from one byway no longer has, so it cannot be checked again or run. Build your own again.", COMPOSED_REFUSED, { composed: composeView(gone) });
+  }
   await deps.services.store.updateIntake(intakeId, { composed: again });
   if (!again.ok) {
     throw new HttpError(400, "This recipe no longer passes byway's checks, so it cannot run. Build your own again for one that does.", COMPOSED_REFUSED, { composed: composeView(again) });
