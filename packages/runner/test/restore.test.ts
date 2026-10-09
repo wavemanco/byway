@@ -131,7 +131,7 @@ describe('the start-up report after a restore (R4)', () => {
     expect(await readExposure(path.join(dir, EXPOSURE_FILENAME))).toHaveLength(1);
     const found = await report(base.workspaceId);
     expect(found).toEqual({ store: { database: [], artifacts: 2, missing: [] }, ledgerBrokenAt: null, unledgered: [] });
-    expect(reportLines(found)).toEqual({ ok: true, lines: ['the database, 2 artifact files and the spend ledger are complete'] });
+    expect(reportLines(found)).toEqual({ ok: true, lines: ["the database and its 2 artifact files are complete; the spend ledger's chain is intact and covers every run's recorded cost"] });
   });
 
   it('names an artifact file that did not come back, with the runs that show it', async () => {
@@ -191,6 +191,15 @@ describe('the start-up report after a restore (R4)', () => {
 /** What a call that the original spend puts over the run's $0.20 cap gets after the restore. Never throws. */
 type CallOutcome = { admitted: true; ledgerSpentUsd: number } | { refused: string } | { broken: string };
 
+/** Setup and call together: a throw anywhere (setup included) is 'broken', so an it.fails stub that sees it returns early and goes red. */
+async function guarded(run: () => Promise<CallOutcome>): Promise<CallOutcome> {
+  try {
+    return await run();
+  } catch (e) {
+    return { broken: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 async function overCapCall(dir: string, base: Original): Promise<CallOutcome> {
   try {
     const { gateway } = reopen(dir);
@@ -217,15 +226,19 @@ describe('[F03] caps after a restore that lost spend (expected failures until F0
   // Each stub may fail for one reason only, today's fail-open outcome (the call admitted, the restored ledger counting
   // `spent` for the run). A broken setup or any other outcome returns early, and an `it.fails` that finishes is red.
   it.fails('[F03] without ledger.jsonl and its head, a call the original spend puts over the run cap is refused', async () => {
-    const base = await original();
-    const outcome = await overCapCall(restored(base, { without: [LEDGER, HEAD] }), base);
+    const outcome = await guarded(async () => {
+      const base = await original();
+      return overCapCall(restored(base, { without: [LEDGER, HEAD] }), base);
+    });
     if (!('admitted' in outcome) || outcome.ledgerSpentUsd !== 0) return;
     expect(outcome).toEqual({ refused: 'budget-exceeded' });
   });
 
   it.fails('[F03] with an older ledger and head pair, a call the original spend puts over the run cap is refused', async () => {
-    const base = await original();
-    const outcome = await overCapCall(restored(base, { olderLedger: true }), base);
+    const outcome = await guarded(async () => {
+      const base = await original();
+      return overCapCall(restored(base, { olderLedger: true }), base);
+    });
     if (!('admitted' in outcome) || outcome.ledgerSpentUsd !== 0.05) return;
     expect(outcome).toEqual({ refused: 'budget-exceeded' });
   });

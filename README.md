@@ -116,13 +116,13 @@ The backup unit is the whole data directory, copied while byway is stopped ([ADR
 **Mixing files from different backups is not supported.** Each mix fails differently. byway reports some of them when it starts (below) and does not detect the others:
 
 - An older or missing `ledger.jsonl` (or `ledger.jsonl.head`): spend recorded after the backup is gone, so the run and workspace caps count from the older total, or from zero when the file is missing. At start byway names the runs whose recorded cost the ledger no longer holds.
-- A `byway.sqlite` older than `temporal.sqlite`: runs the engine has and the store does not are stopped at the next start, before any of their steps runs, and byway says how many.
+- A `byway.sqlite` older than `temporal.sqlite`: runs the engine has and the store does not are stopped at the next start, before they run another step, and byway says how many. Steps they ran before the restore, and what those cost, are not undone.
 - A `temporal.sqlite` older than `byway.sqlite`, or missing: runs the store shows as going that the engine does not have end at the next start, with a plain message.
 - An engine ahead of the store on the same run: the run waits on a question the store does not have, and nothing reports it.
 - Missing files under `artifacts/`: named at start, with the runs that use them. A missing page, document or image cannot be shown.
 - An older `exposure.jsonl`: the register forgets which outside model families judged work after the backup, so the research side cannot rely on it for that period (CR12).
 
-**At start** byway checks the data directory before its engine starts and prints a `checked` line ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)): whether SQLite finds the database file sound, whether every recorded artifact file is there at its recorded size, whether the spend ledger's hash chain and head agree, and which runs have a recorded cost the ledger lacks. The check only reads, and byway starts either way.
+**At start** byway checks the data directory before its engine starts and prints a `checked` line ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)): whether SQLite finds the database file sound, whether every recorded artifact file is there at its recorded size, whether the spend ledger's hash chain and head agree, and which runs have a recorded cost the ledger lacks. Spend that belongs to no run (recommending and composing) and differences under a cent per run are not cross-checked. The check only reads, and byway starts either way.
 
 **Spend after a restore.** byway counts spend from `ledger.jsonl`. After restoring an older backup, calls made since that backup are not counted against the run and workspace caps, so byway can spend that amount again before a cap stops it. Check your providers' own dashboards for what was actually spent. This caveat stays until the fix for review finding F03 (durable spend accounting) lands.
 

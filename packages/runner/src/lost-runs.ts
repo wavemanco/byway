@@ -28,7 +28,7 @@ const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
 export const LOST_RUN_MESSAGE = "byway's engine no longer has this run, so it cannot continue. Start it again.";
 
 /** Why the engine terminated a run workflow whose run byway's records do not have (Temporal's terminate reason). */
-export const ORPHAN_RUN_MESSAGE = "byway's records do not have this run (its data directory was probably restored from an older backup), so the engine stopped it before any step ran.";
+export const ORPHAN_RUN_MESSAGE = "byway's records do not have this run (its data directory was probably restored from an older backup), so the engine stopped it before it could run another step. Any steps it ran before the restore, and their cost, are not undone.";
 
 export type LostRunOutcome = { status: 'failed'; error: string } | { status: 'cancelled' };
 
@@ -108,9 +108,9 @@ export async function stopOrphanRuns(client: Client, store: Store, taskQueue: st
 }
 
 /**
- * At engine start, before the worker polls: both directions, store first. Runs of these workspaces that the store
- * shows as going but whose workflow is not running are closed in the store; run workflows on the task queue whose run
- * the store does not have are terminated. v1 has one workspace (the Store has no way to list or create others).
+ * At engine start, before the worker polls: both directions, engine first. Run workflows on the task queue whose run
+ * the store does not have are terminated; then runs of these workspaces that the store shows as going but whose
+ * workflow is not running are closed in the store. The two sets are disjoint, so the order does not change the result. v1 has one workspace (the Store has no way to list or create others).
  */
 export async function reconcileLostRuns(client: Client, store: Store, workspaceIds: readonly string[], opts: ReconcileOptions = {}): Promise<Reconciled> {
   const orphaned = await stopOrphanRuns(client, store, opts.taskQueue ?? TASK_QUEUE);

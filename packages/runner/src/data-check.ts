@@ -89,7 +89,7 @@ export function reportLines(report: DataDirReport): { ok: boolean; lines: string
     );
   }
   if (problems.length === 0) {
-    return { ok: true, lines: [`the database, ${plural(store.artifacts, 'artifact file', 'artifact files')} and the spend ledger are complete`] };
+    return { ok: true, lines: [`the database and its ${plural(store.artifacts, 'artifact file', 'artifact files')} are complete; the spend ledger's chain is intact and covers every run's recorded cost`] };
   }
   return {
     ok: false,

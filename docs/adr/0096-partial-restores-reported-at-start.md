@@ -49,7 +49,7 @@ It reports and never blocks. Refusing spend after a restore lost it is F03's dec
 **Positive**
 
 - The likely partial restores are named at start: a lost artifact file, a lost or older ledger, a broken chain, an orphan workflow.
-- A run workflow the store does not have is stopped before it can spend.
+- A run workflow the store does not have is stopped before it runs another step. It may already have run steps, and spent, before the restore; that is not undone.
 - The renderer's egress matches the rule the README and spec state.
 
 **Negative**
