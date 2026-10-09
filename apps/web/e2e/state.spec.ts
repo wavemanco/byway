@@ -28,9 +28,7 @@ async function turnAfter(page: Page, after?: string): Promise<Turn> {
   const outcome = await nextTurn(page, after, 120_000);
   if ('done' in outcome) throw new Error(`The run ended before another question${after ? ` after ${after}` : ''}.`);
   if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
-  const id = (await outcome.turn.getAttribute('data-checkpoint')) ?? '';
-  const kind = (await outcome.turn.getAttribute('data-kind')) as CheckpointKind;
-  return { turn: page.locator(`section.turn[data-checkpoint="${id}"]`), id, kind };
+  return { turn: outcome.turn, id: outcome.id, kind: outcome.kind };
 }
 
 /** Answers questions as they come until one of `kinds` is open. */
@@ -255,9 +253,8 @@ async function roundTripEachKind(page: Page): Promise<Set<CheckpointKind>> {
     const outcome = await nextTurn(page, after, 120_000);
     if ('done' in outcome) return checked;
     if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
-    const id = (await outcome.turn.getAttribute('data-checkpoint')) ?? '';
-    const kind = (await outcome.turn.getAttribute('data-kind')) as CheckpointKind;
-    const t: Turn = { turn: page.locator(`section.turn[data-checkpoint="${id}"]`), id, kind };
+    const { id, kind } = outcome;
+    const t: Turn = { turn: outcome.turn, id, kind };
     after = id;
     if (checked.has(kind)) {
       await answerTurn(page, t.turn, kind);

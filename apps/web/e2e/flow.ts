@@ -68,9 +68,17 @@ export interface Answered {
   prompt: string;
 }
 
-export type Outcome = { turn: Locator } | { done: true } | { failed: string };
+/** A turn: its panel, pinned to its checkpoint id (a later panel is another locator), with the id and kind it showed. */
+export type Outcome = { turn: Locator; id: string; kind: CheckpointKind } | { done: true } | { failed: string };
 
-/** Waits for a "Your turn" other than `after`, the run being done, or the run failing. */
+/** How long reading a panel may wait: a panel that is not there now has gone (the run moved on, or finished). */
+const READ = { timeout: 1000 };
+
+/**
+ * Waits for a "Your turn" other than `after`, the run being done, or the run failing. A panel can go at any moment,
+ * the last one as the run finishes, so everything about it is read without waiting; one that went is looked for again,
+ * which also finds the run done.
+ */
 export async function nextTurn(page: Page, after: string | undefined, timeoutMs: number): Promise<Outcome> {
   const deadline = Date.now() + timeoutMs;
   const turn = page.locator('section.turn');
@@ -78,9 +86,12 @@ export async function nextTurn(page: Page, after: string | undefined, timeoutMs:
     if (await page.locator('.state-done').isVisible()) return { done: true };
     const failed = page.getByRole('heading', { name: 'This run stopped with a problem' });
     if (await failed.isVisible()) return { failed: (await page.locator('.notice-danger').first().textContent()) ?? 'no reason' };
-    // The turn can go between counting it and reading it (the run moved on): read without waiting, and look again.
-    const id = (await turn.count()) > 0 ? await turn.first().getAttribute('data-checkpoint', { timeout: 1000 }).catch(() => null) : null;
-    if (id !== null && id !== after) return { turn };
+    const id = (await turn.count()) > 0 ? await turn.first().getAttribute('data-checkpoint', READ).catch(() => null) : null;
+    if (id !== null && id !== after) {
+      const pinned = page.locator(`section.turn[data-checkpoint="${id}"]`);
+      const kind = await pinned.getAttribute('data-kind', READ).catch(() => null);
+      if (kind !== null) return { turn: pinned, id, kind: kind as CheckpointKind };
+    }
     await page.waitForTimeout(250);
   }
   throw new Error(`Nothing happened in ${timeoutMs / 1000} s after ${after ? `answering ${after}` : 'starting'}.`);
@@ -153,12 +164,13 @@ export async function answerUntilDone(
     const outcome = await nextTurn(page, last, opts.stepTimeoutMs ?? 120_000);
     if ('done' in outcome) return answered;
     if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}\nAnswered so far: ${JSON.stringify(answered)}`);
-    const { turn } = outcome;
-    const kind = (await turn.getAttribute('data-kind')) as CheckpointKind;
-    const prompt = ((await turn.locator('h2').first().textContent()) ?? '').trim();
-    last = (await turn.getAttribute('data-checkpoint')) ?? undefined;
+    const { turn, id, kind } = outcome;
+    const prompt = await turn.locator('h2').first().textContent(READ).catch(() => null);
+    // Gone since it was found: look again (the run may have moved on, or finished).
+    if (prompt === null) continue;
+    last = id;
     await answerTurn(page, turn, kind);
-    answered.push({ kind, prompt });
+    answered.push({ kind, prompt: prompt.trim() });
   }
   throw new Error(`The run asked more than ${opts.maxTurns ?? 60} questions: ${JSON.stringify(answered)}`);
 }
