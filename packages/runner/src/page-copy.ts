@@ -1281,7 +1281,8 @@ function shownAfter(p: PageDeck, s: number): boolean {
  * The shared rule for the whitespace a deleted line held inside an element the edit removes: it is written where the
  * element was when text browsers show stands on both sides of the element in one block, as the page was, so the lines
  * on either side stay apart ("Price: <del>$20</del><span> now </span><ins>$15</ins>" with "now" deleted). Elsewhere it
- * would sit at a block's edge, where it shows nothing, and it goes with the element.
+ * would sit at a block's edge, where it shows nothing, and it goes with the element. Only whitespace a browser showed is
+ * kept so (a slot that is rendered): a hidden block's whitespace never showed, and it goes with the element.
  */
 function gapKept(p: PageDeck, el: El): boolean {
   const before = p.slotEndingAt[el.start]!;
@@ -1743,7 +1744,7 @@ function place(before: string, edit: PageEdit): Placed {
       let kept = '';
       for (let s = a; s <= b; s++) {
         const line = lineOf[s]! >= 0 ? edit.lines[lineOf[s]!]! : undefined;
-        if (line?.changed && (line.text || gap)) kept += newText.get(s) ?? '';
+        if (line?.changed && (line.text || (gap && p.slots[s]!.rendered))) kept += newText.get(s) ?? '';
       }
       out.push((inserts.get(i) ?? '') + escapeText(kept));
       skip = spanEnd(g)!;
@@ -1871,7 +1872,7 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     for (let s = s0; s <= s1; s++) {
       const i = lineOfSlot[s]!;
       if (i >= 0 && edit.lines[i]!.changed && (edit.lines[i] as { text: string }).text) return { line: i };
-      if (keep && isDeleted(i)) {
+      if (keep && isDeleted(i) && p.slots[s]!.rendered) {
         text += known(s)!;
         if (!gapOf.includes(i)) gapOf.push(i);
       }

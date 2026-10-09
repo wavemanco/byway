@@ -857,6 +857,15 @@ describe('a link or button keeps words a browser shows (F07, r7)', () => {
   });
 });
 
+describe('a deleted line leaves only a space a browser showed (F07, r7)', () => {
+  it('the whitespace of a line in a hidden block is not written where the block was: it never showed', () => {
+    // "sale" and "Spring!" show glued; round 6 wrote the hidden block's spaces between them and its verifier refused that.
+    expect(run('<div><font>sale<blockquote hidden> X </blockquote></font>Spring!</div>', set(2, ''))).toMatchObject(clean('<div><font>sale</font>Spring!</div>'));
+    // A shown line's space is still kept where its element was.
+    expect(run('<p>Price: <del>$20</del><span> now </span><ins>$15</ins></p>', set(3, ''))).toMatchObject(clean('<p>Price: <del>$20</del>  <ins>$15</ins></p>'));
+  });
+});
+
 describe('markup that is not copy stays byte for byte (F07, r7)', () => {
   it('an emptied element holding a script, style, noscript, template or comment is kept, with those bytes', () => {
     for (const inner of ['<script>window.x=1</script>', '<noscript>Enable JS</noscript>', '<template><p>T</p></template>', '<!-- keep -->', '<style>p{}</style>']) {
