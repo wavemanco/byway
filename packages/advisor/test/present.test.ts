@@ -1,7 +1,8 @@
-import { c1, c4, c5, c6a, PROTOCOL_CONFIGS, presentationOf, presentedStepFor } from '@byway/catalog';
+import { c1, c2, c4, c5, c6, c6a, c7, PROTOCOL_CONFIGS, presentationOf, presentedStepFor } from '@byway/catalog';
 import { walk, withHash, type Node, type Recipe } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
-import { COMPOSED_EXPLAINERS, diffFromNearest, nodeIds, presentComposed, stepLabel } from '../src/index.ts';
+import { checkAnswer, COMPOSED_EXPLAINERS, diffFromNearest, nodeIds, presentComposed, stepLabel } from '../src/index.ts';
+import { fencedJson, PROMPTS } from './helpers.ts';
 
 const COPY = { code: 'X (composed)', name: 'Your recipe', promise: 'Not tested.', bestFor: ['Your problem'] };
 const asComposed = (r: Recipe): Recipe => withHash({ ...r, id: `composed-${r.id}`, kind: 'composed', channel: 'workspace' });
@@ -190,14 +191,14 @@ describe('presentComposed explains what runs (F08)', () => {
 
   it('a claim log is your sign-off on the claims, not the words readers take as yours', () => {
     const r = edited(c4, 'voice', (n) => ({ ...n, variant: 'claim-log', knobs: undefined }));
-    expect(shownFor(r, 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voiceClaims);
-    expect(COMPOSED_EXPLAINERS.voiceClaims).not.toMatch(/take as yours/);
+    expect(shownFor(r, 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voiceClaimsAiRest);
+    expect(COMPOSED_EXPLAINERS.voiceClaimsAiRest).not.toMatch(/take as yours/);
   });
 
   it('each VOICE is worded by what it covers', () => {
     expect(shownFor(asComposed(c1), 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voice);
-    expect(shownFor(asComposed(c4), 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voiceKeyLines);
-    expect(shownFor(asComposed(c5), 'vo-script').explainer).toBe(COMPOSED_EXPLAINERS.voiceScript);
+    expect(shownFor(asComposed(c4), 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voiceKeyLinesAiRest);
+    expect(shownFor(asComposed(c5), 'vo-script').explainer).toBe(COMPOSED_EXPLAINERS.voiceScriptLocked);
     expect(shownFor(asComposed(c5), 'voice').explainer).toBe(COMPOSED_EXPLAINERS.voiceOnScreen);
   });
 
@@ -216,5 +217,115 @@ describe('presentComposed explains what runs (F08)', () => {
     const critique = shownFor(r, 'critic');
     expect(critique.stepIds).toContain('critic-fix');
     expect(critique.explainer).toBe(COMPOSED_EXPLAINERS.criticApplies);
+  });
+});
+
+/**
+ * Explainers say what the recipe establishes about the steps around them, and nothing more (the round-2 verification):
+ * "the AI wrote the rest" only on a VOICE no person's write can come before; "It is locked after this" only on a script
+ * no later write of yours can change; "Nothing is deleted for you" and "It flags only" only where no AI writer can take
+ * the notes in after them; "for you to react to" only where a step of yours that reacts can follow. Each case below is
+ * an admitted composed recipe (checkAnswer finds nothing), so the person can be shown it.
+ */
+describe('explainers claim only what the recipe establishes about the steps around them', () => {
+  type N = Record<string, any>;
+  const mapNodes = (n: N, f: (n: N) => N): N => {
+    const c: N = { ...n };
+    if (c.steps) c.steps = c.steps.map((x: N) => mapNodes(x, f));
+    if (c.body) c.body = mapNodes(c.body, f);
+    if (c.branches) c.branches = c.branches.map((b: N) => ({ ...b, body: mapNodes(b.body, f) }));
+    if (c.lenses) c.lenses = c.lenses.map((l: N) => ({ ...l, body: mapNodes(l.body, f) }));
+    return f(c);
+  };
+  const edited = (r: Recipe, id: string, f: (s: N) => N): N => {
+    const { hash: _h, ...rest } = structuredClone(r) as N;
+    return { ...rest, stages: rest.stages.map((st: N) => ({ ...st, body: mapNodes(st.body, (n) => (n.id === id ? f(n) : n)) })) };
+  };
+  /** The composed recipe as admission keeps it; fails the test when admission refuses it. */
+  const admitted = (raw: N, nearest: Recipe): Recipe => {
+    const res = checkAnswer(fencedJson(raw), nearest, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, `composed-${nearest.id}`);
+    expect(res.violations.map((v) => `${v.ruleId}:${v.clause ?? ''} ${v.message}`)).toEqual([]);
+    return res.recipe!;
+  };
+  /** A catalog recipe as the composer would hand it back: no hash. */
+  const copy = (r: Recipe): N => edited(r, '', (n) => n);
+  const explained = (r: Recipe, id: string) => presentComposed(r, COPY).stages.flatMap((s) => s.steps).find((s) => s.stepIds.includes(id))!.explainer;
+  const E = COMPOSED_EXPLAINERS;
+
+  it('the catalog: C4 says the AI wrote the rest at its key lines, not at the claim sign-off after your own key lines', () => {
+    const c4c = admitted(copy(c4), c4);
+    expect(explained(c4c, 'voice')).toBe(E.voiceKeyLinesAiRest);
+    expect(explained(c4c, 'claim-sign-off')).toBe(E.voiceClaims);
+    // Every other claim the catalog's recipes make about the steps around them holds, so they keep it.
+    expect(explained(admitted(copy(c5), c5), 'vo-script')).toBe(E.voiceScriptLocked);
+    expect(explained(admitted(copy(c6), c6), 'cut-marks')).toBe(E.cutNothingDeleted);
+    expect(explained(admitted(copy(c6a), c6a), 'tells-flags')).toBe(E.tellsFlagsOnly);
+    for (const [r, id] of [[c2, 'sharpen'], [c4, 'framings'], [c6, 'angles'], [c6a, 'sharpen'], [c7, 'interview']] as const) {
+      expect(explained(admitted(copy(r), r), id), `${r.id} ${id}`).toBe(E.visionAiToReact);
+    }
+  });
+
+  it('a C4 whose draft you write yourself: neither VOICE says the AI wrote the rest', () => {
+    const own = admitted(
+      edited(c4, 'draft', (n) => {
+        const { tier: _t, prompt: _p, ...rest } = n;
+        return { ...rest, actor: 'human', consumes: ['brief'] };
+      }),
+      c4,
+    );
+    expect(explained(own, 'draft')).toBe(E.buildYours);
+    expect(explained(own, 'voice')).toBe(E.voiceKeyLines);
+    expect(explained(own, 'claim-sign-off')).toBe(E.voiceClaims);
+    const text = presentComposed(own, COPY).stages.flatMap((s) => s.steps.map((x) => x.explainer)).join('\n');
+    expect(text).not.toMatch(/the AI wrote the rest/);
+  });
+
+  it('a script you may write again later is not called locked', () => {
+    const again = admitted(edited(c5, 'voice', (n) => ({ op: 'seq', steps: [{ ...n, id: 'script-again', variant: 'VOICE-early' }, n] })), c5);
+    expect(explained(again, 'vo-script')).not.toMatch(/locked/);
+    expect(explained(again, 'vo-script')).toBe(E.voiceScript);
+    expect(explained(again, 'voice')).toBe(E.voiceOnScreen);
+  });
+
+  it('a trim whose marks an AI writer takes in, beside it or a step later, never says nothing is deleted', () => {
+    // The fix reads the critique when there is one (ADR-0089): it applies the marks, as one that consumes them does.
+    const reads = admitted(edited(c7, 'apply-scope-cut', (n) => ({ ...n, consumes: ['artifact'], reads: ['critique'] })), c7);
+    expect(explained(reads, 'scope-cut')).toBe(E.cutApplies);
+    const render = { op: 'step', id: 'extra-render', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] };
+    const later = admitted(edited(c7, 'apply-scope-cut', (n) => ({ op: 'seq', steps: [render, n] })), c7);
+    expect(explained(later, 'scope-cut')).toBe(E.cut);
+  });
+
+  it('a cliché sweep whose finds an AI writer reads swaps every one, never "flags only"', () => {
+    const reads = admitted(edited(c7, 'apply-swaps', (n) => ({ ...n, consumes: ['artifact'], reads: ['critique'] })), c7);
+    expect(explained(reads, 'tells-sweep')).toBe(E.tellsAppliesAll);
+  });
+
+  it('a step you take is your turn, never the AI’s or a reviewer’s', () => {
+    const human = (n: N): N => {
+      const { tier: _t, prompt: _p, isolated: _i, frozenPrompt: _f, ...rest } = n;
+      return { ...rest, actor: 'human' };
+    };
+    const fix = admitted(edited(c7, 'fix-defects', human), c7);
+    expect(explained(fix, 'fix-defects')).toBe(E.buildYours);
+    expect(explained(admitted(edited(c1, 'asset', human), c1), 'asset')).toBe(E.otherYours);
+    expect(explained(admitted(edited(c2, 'dedupe', human), c2), 'dedupe')).toBe(E.otherYours);
+    expect(explained(admitted(edited(c7, 'tells-sweep', (n) => ({ ...human(n), consumes: ['view'] })), c7), 'tells-sweep')).toBe(E.otherYours);
+    // Nothing a person does is said to be done by the AI or a reviewer.
+    for (const r of [fix, admitted(edited(c1, 'asset', human), c1)]) {
+      for (const s of presentComposed(r, COPY).stages.flatMap((x) => x.steps).filter((x) => x.who === 'you')) {
+        expect(s.explainer, s.label).not.toMatch(/^(The AI|A fresh reviewer|A separate reviewer)/);
+      }
+    }
+  });
+
+  it('the plain sentences make none of those claims', () => {
+    for (const text of [E.voiceKeyLines, E.voiceClaims, E.voiceScript, E.cut, E.tells, E.visionAi]) expect(text).toMatch(/\.$/);
+    expect(E.voiceKeyLines).not.toMatch(/the rest/);
+    expect(E.voiceClaims).not.toMatch(/the rest/);
+    expect(E.voiceScript).not.toMatch(/locked/);
+    expect(E.cut).not.toMatch(/deleted/);
+    expect(E.tells).not.toMatch(/only/);
+    expect(E.visionAi).not.toMatch(/react/);
   });
 });

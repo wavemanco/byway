@@ -1,6 +1,6 @@
 import type { RecipePresentation } from '@byway/contracts';
 import { BLOCK_NAMES, STAGE_NAMES } from '@byway/catalog';
-import { asksSwaps, BLOCK_OF_ROLE, blockAgrees, machineWrites, voiceScope, voiceWrite, walk, walkNode, type Node, type Pick, type Recipe, type Stage, type Step } from '@byway/recipe';
+import { asksSwaps, authorWrite, BLOCK_OF_ROLE, blockAgrees, inputsOf, machineWrites, personWrite, voiceScope, voiceWrite, walk, walkNode, type Node, type Pick, type Recipe, type Stage, type Step } from '@byway/recipe';
 
 /**
  * The plain-language presentation of a composed recipe (spec §5 vocabulary). The catalog's presentations are written
@@ -59,6 +59,10 @@ export function stepLabel(n: Unit): string {
  * a step does, never what it achieves (CR11, CRED-1), and the web app's claims guard scans this list. The swapping
  * cliché sweep says the person chooses which finds are swapped (convention C2) only where the interpreter asks them
  * (asksSwaps); otherwise the swap step applies every find, and the sentence says so.
+ *
+ * A sentence that says what other steps do (who wrote the rest, that nothing changes the script later, that nothing is
+ * deleted, that you react to the directions) is used only where the recipe's order establishes it (`Around`); the
+ * sentence without that claim is used everywhere else.
  */
 export const COMPOSED_EXPLAINERS = {
   pickYours: 'Your turn: choose what to keep.',
@@ -66,7 +70,8 @@ export const COMPOSED_EXPLAINERS = {
   pickRandom: 'Chosen at random; no one compares them.',
   seed: 'Separate sessions, each told to take its direction from its own random string.',
   visionYours: 'Your turn: say what you want, what pulls you and what to avoid.',
-  visionAi: 'The AI offers directions for you to react to.',
+  visionAi: 'The AI offers directions.',
+  visionAiToReact: 'The AI offers directions for you to react to.',
   criticCheck: 'A look for defects only. It makes no taste calls.',
   criticApplies: 'A separate reviewer looks at the work as it will be shown and names the biggest gaps; the AI fixes them.',
   critic: 'A separate reviewer looks at the work as it will be shown and names the biggest gaps.',
@@ -75,15 +80,20 @@ export const COMPOSED_EXPLAINERS = {
   cutYoursApplies: 'Your turn: list what the work could lose, and the AI removes it.',
   cutYours: 'Your turn: mark what the work could lose.',
   cutApplies: 'A fresh reviewer lists what the work could lose, and the AI removes it.',
-  cut: 'A fresh reviewer marks what could go. Nothing is deleted for you.',
+  cut: 'A fresh reviewer marks what could go.',
+  cutNothingDeleted: 'A fresh reviewer marks what could go. Nothing is deleted for you.',
   tellsCompare: 'Your turn: compare the version before the swaps with the one after, and keep whichever you prefer.',
   tellsApplies: 'A fresh reviewer lists the stock patterns it finds, each with an alternative; you choose which ones, if any, the AI swaps.',
   tellsAppliesAll: 'A fresh reviewer lists the stock patterns it finds, each with an alternative; the AI swaps every one.',
-  tells: 'A fresh reviewer flags stock patterns. It flags only.',
+  tells: 'A fresh reviewer flags stock patterns.',
+  tellsFlagsOnly: 'A fresh reviewer flags stock patterns. It flags only.',
   voice: 'Your turn: write the words readers will take as yours.',
-  voiceKeyLines: 'Your turn: rewrite the key lines readers act on; the AI wrote the rest.',
-  voiceClaims: 'Your turn: sign off every number, date, name and claim; the AI wrote the rest of the words.',
-  voiceScript: 'Your turn: write the voice-over script. It is locked after this.',
+  voiceKeyLines: 'Your turn: rewrite the key lines readers act on.',
+  voiceKeyLinesAiRest: 'Your turn: rewrite the key lines readers act on; the AI wrote the rest.',
+  voiceClaims: 'Your turn: sign off every number, date, name and claim.',
+  voiceClaimsAiRest: 'Your turn: sign off every number, date, name and claim; the AI wrote the rest of the words.',
+  voiceScript: 'Your turn: write the voice-over script.',
+  voiceScriptLocked: 'Your turn: write the voice-over script. It is locked after this.',
   voiceOnScreen: 'Your turn: write the on-screen words: headline, tagline and captions.',
   buildYours: 'Your turn: write or revise the work yourself.',
   build: 'The AI drafts the work.',
@@ -96,29 +106,119 @@ export const COMPOSED_EXPLAINERS = {
   other: 'The AI does this step.',
 } as const;
 
-/** Your words, by what the VOICE covers in this medium. */
-function voiceExplainer(n: Step, medium: Recipe['medium']): string {
+/** A step in run order: its place in the walk, the loops and relays that run it again, and whether its output is kept. */
+interface Ordered {
+  step: Step;
+  index: number;
+  /** The loops and relays around it: each runs its body again (a next round, a next link). */
+  repeats: readonly Node[];
+  /** In an audit lens, a one-shot gate's body or a pick's judge: what it makes never reaches the work. */
+  contained: boolean;
+}
+
+function ordered(recipe: Recipe): Ordered[] {
+  const out: Ordered[] = [];
+  const visit = (n: Node, repeats: readonly Node[], contained: boolean): void => {
+    switch (n.op) {
+      case 'step':
+        out.push({ step: n, index: out.length, repeats, contained });
+        return;
+      case 'seq':
+        n.steps.forEach((c) => visit(c, repeats, contained));
+        return;
+      case 'loop':
+      case 'relay':
+        visit(n.body, [...repeats, n], contained);
+        return;
+      case 'replicate':
+      case 'each':
+      case 'optional':
+        visit(n.body, repeats, contained);
+        return;
+      case 'route':
+        n.branches.forEach((b) => visit(b.body, repeats, contained));
+        return;
+      case 'audit':
+        n.lenses.forEach((l) => visit(l.body, repeats, true));
+        return;
+      case 'gate':
+        visit(n.body, repeats, true);
+        return;
+      case 'pick':
+        if (n.judge) visit(n.judge, repeats, true);
+        return;
+    }
+  };
+  for (const s of recipe.stages) visit(s.body, [], false);
+  return out;
+}
+
+/**
+ * Whether `a` can run before `b` on some run: earlier in the walk (run order for a seq; a gate's retry starts its stage
+ * again from that stage's entry ports, so nothing made after them carries over), or both in the body of one loop or
+ * relay, whose next round or link runs `a` after `b` (a step there comes before itself). Conservative: a step in another
+ * branch of a route counts as before, which can only take a claim away.
+ */
+const canPrecede = (a: Ordered, b: Ordered): boolean => a.index < b.index || a.repeats.some((r) => b.repeats.includes(r));
+
+/** What the recipe's order establishes about the steps around a step, for the sentences that say so. */
+interface Around {
+  /** A VOICE that no person's write (a VOICE or your own draft) can come before: the AI wrote the rest of the work. */
+  aiWroteRest: Set<Step>;
+  /**
+   * A script VOICE that nothing you write later can change: no draft of your own and no script VOICE after it, itself
+   * included in a loop. A later on-screen or claims VOICE cannot touch the voice-over (copy.ts applyOnScreen).
+   */
+  scriptLocked: Set<Step>;
+  /** A model CUT or cliché sweep whose notes no AI writer can take in after it: nothing is deleted or swapped. */
+  notesOnly: Set<Step>;
+  /** A model VISION that a step of yours that reacts (a person's VISION) can follow. */
+  reactedTo: Set<Step>;
+}
+
+function around(recipe: Recipe): Around {
+  const steps = ordered(recipe);
+  const reaching = steps.filter((o) => !o.contained);
+  const out: Around = { aiWroteRest: new Set(), scriptLocked: new Set(), notesOnly: new Set(), reactedTo: new Set() };
+  for (const o of steps) {
+    const s = o.step;
+    const before = (f: (t: Step) => boolean) => reaching.some((x) => f(x.step) && canPrecede(x, o));
+    const after = (f: (t: Step) => boolean) => reaching.some((y) => f(y.step) && canPrecede(o, y));
+    if (voiceWrite(s)) {
+      if (!before(personWrite)) out.aiWroteRest.add(s);
+      if (!after((t) => authorWrite(t) || (voiceWrite(t) && voiceScope(t, recipe.medium).base === 'script'))) out.scriptLocked.add(s);
+    }
+    if (s.actor === 'model' && (s.role === 'cut' || s.role === 'tells-sweep') && !after((t) => machineWrites(t) && inputsOf(t).includes('critique'))) out.notesOnly.add(s);
+    if (s.actor === 'model' && s.role === 'vision' && after((t) => t.actor === 'human' && t.role === 'vision')) out.reactedTo.add(s);
+  }
+  return out;
+}
+
+/** Your words, by what the VOICE covers in this medium, and what the order around it establishes. */
+function voiceExplainer(n: Step, medium: Recipe['medium'], near: Around): string {
   const E = COMPOSED_EXPLAINERS;
   const scope = voiceScope(n, medium);
-  if (scope.base === 'claims') return E.voiceClaims;
-  if (scope.base === 'script') return E.voiceScript;
+  const aiRest = near.aiWroteRest.has(n);
+  if (scope.base === 'claims') return aiRest ? E.voiceClaimsAiRest : E.voiceClaims;
+  if (scope.base === 'script') return near.scriptLocked.has(n) ? E.voiceScriptLocked : E.voiceScript;
   if (scope.base === 'on-screen') return E.voiceOnScreen;
-  return scope.keyLines ? E.voiceKeyLines : E.voice;
+  if (!scope.keyLines) return E.voice;
+  return aiRest ? E.voiceKeyLinesAiRest : E.voiceKeyLines;
 }
 
 /**
  * One plain sentence on what a shown step does, from its lead node; `applies` when it also applies its own findings,
  * `asks` when the person chooses which of a cliché sweep's finds are applied.
  */
-function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['medium']): string {
+function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['medium'], near: Around): string {
   const E = COMPOSED_EXPLAINERS;
   if (n.op === 'pick') return n.mode === 'H' ? E.pickYours : n.mode === 'R' ? E.pickRandom : E.pickAi;
-  const yours = n.actor === 'human';
+  if (n.actor === 'human') return yoursExplainer(n, applies, medium, near);
   switch (blockOf(n)) {
     case 'SEED':
       return E.seed;
     case 'VISION':
-      return yours ? E.visionYours : E.visionAi;
+      return near.reactedTo.has(n) ? E.visionAiToReact : E.visionAi;
     case 'CRITIC':
       if (n.role === 'check') return E.criticCheck;
       return applies ? E.criticApplies : E.critic;
@@ -127,18 +227,17 @@ function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['med
     case 'RELAY':
       return E.relay;
     case 'CUT':
-      if (yours) return applies ? E.cutYoursApplies : E.cutYours;
-      return applies ? E.cutApplies : E.cut;
+      if (applies) return E.cutApplies;
+      return near.notesOnly.has(n) ? E.cutNothingDeleted : E.cut;
     case 'TELLS':
-      if (n.role === 'tells-compare') return E.tellsCompare;
-      if (!applies) return E.tells;
+      // A machine keep-or-revert is not your turn (PR7.2 refuses one in a composed recipe).
+      if (n.role === 'tells-compare') return E.other;
+      if (!applies) return near.notesOnly.has(n) ? E.tellsFlagsOnly : E.tells;
       return asks ? E.tellsApplies : E.tellsAppliesAll;
-    case 'VOICE':
-      if (voiceWrite(n)) return voiceExplainer(n, medium);
   }
   switch (n.role) {
     case 'build':
-      return yours ? E.buildYours : E.build;
+      return E.build;
     case 'check':
       return applies ? E.checkApplies : E.criticCheck;
     case 'dedupe':
@@ -150,8 +249,31 @@ function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['med
     case 'render':
       return E.render;
     default:
-      return yours ? E.otherYours : E.other;
+      return E.other;
   }
+}
+
+/**
+ * A step a person takes: said as their turn, never as the AI's or a reviewer's. A person's fix is their own draft, as a
+ * person's build is (authorWrite); a step of theirs with no sentence of its own (an image step, a merge, a sweep) is
+ * "Your turn."
+ */
+function yoursExplainer(n: Step, applies: boolean, medium: Recipe['medium'], near: Around): string {
+  const E = COMPOSED_EXPLAINERS;
+  switch (blockOf(n)) {
+    case 'VISION':
+      return E.visionYours;
+    case 'CUT':
+      return applies ? E.cutYoursApplies : E.cutYours;
+    case 'TELLS':
+      if (n.role === 'tells-compare') return E.tellsCompare;
+      break;
+    case 'VOICE':
+      if (voiceWrite(n)) return voiceExplainer(n, medium, near);
+      break;
+  }
+  if (n.role === 'check') return applies ? E.checkApplies : E.criticCheck;
+  return authorWrite(n) ? E.buildYours : E.otherYours;
 }
 
 function whoDoes(units: Unit[]): Who {
@@ -163,8 +285,11 @@ function whoDoes(units: Unit[]): Who {
 
 /** Roles whose output is a critique a following writer applies. */
 const FINDS = new Set(['critic', 'check', 'cut', 'tells-sweep']);
-/** A machine writer that reads a critique: it applies the findings, by what it runs (not by its `writes` flag). */
-const appliesFindings = (u: Unit) => u.op === 'step' && machineWrites(u) && u.consumes.includes('critique');
+/**
+ * A machine writer that takes in a critique, consumed or read when it is there (ADR-0089: a read fills the same slot):
+ * it applies the findings, by what it runs (not by its `writes` flag).
+ */
+const appliesFindings = (u: Unit) => u.op === 'step' && machineWrites(u) && inputsOf(u).includes('critique');
 const isRender = (u: Unit) => u.op === 'step' && u.role === 'render';
 /** The node a group is named after: the first that is not a render. */
 const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group[0]!;
@@ -255,10 +380,11 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
     });
   });
 
+  const near = around(recipe);
   const shown = groups.map(({ stage, units }) => {
     const lead = leadOf(units);
     const applies = units.some((u) => u !== lead && appliesFindings(u));
-    return { stage: STAGE_NAMES[stage], label: stepLabel(lead), explainer: explainer(lead, applies, asking.has(lead), recipe.medium), who: whoDoes(units), stepIds: [] as string[] };
+    return { stage: STAGE_NAMES[stage], label: stepLabel(lead), explainer: explainer(lead, applies, asking.has(lead), recipe.medium, near), who: whoDoes(units), stepIds: [] as string[] };
   });
   for (const [id, i] of [...owner].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0))) shown[i]!.stepIds.push(id);
 
