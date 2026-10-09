@@ -1417,7 +1417,8 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
   const nw = wordsOf(nc);
   const pairs = wordPairs(ow.map((x) => x.w), nw.map((x) => x.w));
   const ns: (number | undefined)[] = new Array(nc.length).fill(undefined);
-  for (const [a, b] of pairs) for (let t = 0; t < nw[b]!.w.length; t++) ns[nw[b]!.from + t] = oc[ow[a]!.from + t]!.s;
+  // Positions count characters (code points), as `oc` and `nc` do; a word's string length counts UTF-16 units.
+  for (const [a, b] of pairs) for (let t = 0; t < nw[b]!.to - nw[b]!.from; t++) ns[nw[b]!.from + t] = oc[ow[a]!.from + t]!.s;
   let oa = 0;
   let na = 0;
   for (const [a, b] of [...pairs, [ow.length, nw.length] as [number, number]]) {

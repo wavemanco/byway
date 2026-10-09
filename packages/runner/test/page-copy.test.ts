@@ -702,6 +702,17 @@ describe('an svg or math <title> keeps the block reading for the rest of the pag
   });
 });
 
+describe('characters outside the Basic Multilingual Plane are one character each (F07, r6)', () => {
+  it('a line of several slots whose kept word is an emoji or an astral letter is placed', () => {
+    expect(run('<p><strong>Free shipping</strong> on all orders 🎉</p>', set(1, 'Free shipping on every order 🎉'))).toMatchObject(clean('<p><strong>Free shipping</strong> on every order 🎉</p>'));
+    expect(run('<p>Ready? <a href="/o"><b>Order now</b> 🚀</a></p>', set(1, 'Ready? [Order today 🚀]'))).toMatchObject(clean('<p>Ready? <a href="/o"><b>Order today</b> 🚀</a></p>'));
+    expect(run('<p>Hello <b>world</b> 🎉🎉</p>', set(1, 'Hi world 🎉🎉'))).toMatchObject(clean('<p>Hi <b>world</b> 🎉🎉</p>'));
+    expect(run('<p>Party 🎉 <b>now</b> today</p>', set(1, 'Party 🎉 now tomorrow'))).toMatchObject(clean('<p>Party 🎉 <b>now</b> tomorrow</p>'));
+    expect(run('<p>Big <em>𝒳 value</em> here</p>', set(1, 'Small 𝒳 value here'))).toMatchObject(clean('<p>Small <em>𝒳 value</em> here</p>'));
+    expect(run('<p>Join <a href="/j">us 🎉</a> now</p>', set(1, 'Please join [us 🎉] now'))).toMatchObject(clean('<p>Please join <a href="/j">us 🎉</a> now</p>'));
+  });
+});
+
 describe('questions in flight across the upgrade (F07)', () => {
   const pg = '<p>Intro</p><p>Please <a href="/terms">read terms</a> today.</p>';
   const oldOffered = 'T\nIntro\nPlease read terms today.';

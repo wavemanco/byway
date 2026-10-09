@@ -429,6 +429,17 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('a line whose kept last word is an emoji is stored, in a link and outside one (r6)', async () => {
+    for (const [html, answer, written] of [
+      ['<p><strong>Free shipping</strong> on all orders 🎉</p>', 'T\nFree shipping on every order 🎉', '<p><strong>Free shipping</strong> on every order 🎉</p>'],
+      ['<p>Ready? <a href="/o"><b>Order now</b> 🚀</a></p>', 'T\nReady? [Order today 🚀]', '<p>Ready? <a href="/o"><b>Order today</b> 🚀</a></p>'],
+    ] as const) {
+      const out = await (await open(page(html))).answer(answer);
+      expect(await stored(out.artifactId!)).toBe(written);
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
+
   it('a name-only anchor the page leaves open is not a link: the next paragraph is edited as the person sees it (r5)', async () => {
     const q = await open(page('<h2><a name="top"/>Welcome</h2><p>Our <a href="/menu">menu</a> changes daily.</p>'));
     expect(q.offered).toBe('T\nWelcome\nOur [menu] changes daily.');
