@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**91 records:** 84 accepted (15 of them by continuation, awaiting ratification; 29 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**92 records:** 85 accepted (15 of them by continuation, awaiting ratification; 30 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -95,6 +95,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0083](0083-hashed-text-is-well-formed-unicode.md) | Hashed text is well-formed Unicode | Accepted | Delegated | 2026-10-08 16:30 |
 | [ADR-0094](0094-backup-unit-is-the-data-directory.md) | The backup unit is the whole data directory | Accepted | Delegated | 2026-10-08 16:30 |
 | [ADR-0096](0096-partial-restores-reported-at-start.md) | Partial restores are reported at start and orphan runs are stopped; the renderer's allowlist holds on every redirect hop | Accepted | Delegated | 2026-10-08 18:20 |
+| [ADR-0092](0092-recipe-semantics-derived-from-execution.md) | Recipe semantics are derived from execution and checked at every entry | Accepted | Delegated | 2026-10-08 23:10 |
 
 ## Product & program
 
