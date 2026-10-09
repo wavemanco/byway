@@ -290,6 +290,13 @@ describe('C7 Lean Diff', () => {
     expect(stepById(c7, 'reviewer').knobs).toMatchObject({ refs: 4, family: 'other' });
   });
 
+  it('implements from the spec when the optional interview wrote one, and only implement reads it (ADR-0089)', () => {
+    expect(stepById(c7, 'implement')).toMatchObject({ consumes: ['intent'], reads: ['brief'] });
+    // The blind passes after it never see the spec (C7-DR7): only the change and its "Why:".
+    const readers = steps(c7).filter(({ step }) => step.actor === 'model' && [...step.consumes, ...(step.reads ?? [])].includes('brief'));
+    expect(readers.map(({ step }) => step.id)).toEqual(['implement']);
+  });
+
   it('runs the objective-defect checks before CUT, and ends with your TELLS triage and the PR why', () => {
     expect(stepById(c7, 'defect-check')).toMatchObject({ role: 'check', actor: 'model' });
     const d3 = steps(c7).filter(({ stage }) => stage === 'D3').map(({ step }) => step.block ?? step.role);

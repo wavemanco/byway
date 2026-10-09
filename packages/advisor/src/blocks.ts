@@ -29,13 +29,17 @@ export function describeKnob(name: string, def: KnobDef): string {
 
 const knobLines = (knobs: Record<string, KnobDef>) => Object.entries(knobs).map(([n, d]) => `  - ${describeKnob(n, d)}`);
 
-/** How each block is wired in the canonical recipes: "<actor> (<role>): consumes → produces", distinct, in catalog order. */
+/**
+ * How each block is wired in the canonical recipes: "<actor> (<role>): consumes → produces", distinct, in catalog order,
+ * with any ports the step reads only when they are there (ADR-0089) said as such.
+ */
 export function portSignatures(recipes: readonly Recipe[]): Map<BlockCode, string[]> {
   const out = new Map<BlockCode, string[]>(BLOCK_CODES.map((b) => [b, []]));
   for (const r of recipes) {
     for (const { step } of steps(r)) {
       if (!step.block) continue;
-      const sig = `${step.actor} (${step.role}): ${step.consumes.join(', ') || 'nothing'} → ${step.produces.join(', ') || 'nothing'}`;
+      const reads = step.reads?.length ? ` (and ${step.reads.join(', ')} when there)` : '';
+      const sig = `${step.actor} (${step.role}): ${step.consumes.join(', ') || 'nothing'}${reads} → ${step.produces.join(', ') || 'nothing'}`;
       const list = out.get(step.block)!;
       if (!list.includes(sig)) list.push(sig);
     }

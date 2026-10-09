@@ -13,6 +13,7 @@
  * step's `renders` knob picks which surfaces it is shown.
  */
 import type { ChatMessage, ContentPart, MediaType, Medium, ProblemBrief, PromptSlot } from '@byway/contracts';
+import { inputsOf } from '@byway/recipe';
 import { labelled, labelOf, problemSlot, vanillaLabelled } from '@byway/prompts/pure';
 import { textView, viewKindOf } from '../formats.ts';
 import { rendersKnob, SURFACE_CAPTIONS } from '../surfaces.ts';
@@ -126,8 +127,9 @@ export interface SlotContext {
 }
 
 /**
- * The slots a step's consumed ports fill, and the images it sees. A consumed port with no value yet fills its slot
- * with an empty string, so a template's optional sections can test for it.
+ * The slots a step's ports fill, and the images it sees: the ports it consumes, then those it reads when they are
+ * there (ADR-0089). A port with no value yet, consumed or read, fills its slot with an empty string, so a template's
+ * optional sections ({{#if}}) leave it out.
  */
 export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Promise<BuiltPrompt> {
   const { step, ports, medium } = ctx;
@@ -136,7 +138,7 @@ export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Pro
   const judging = JUDGING_ROLES.has(step.role);
   // A judge's prompt is the same every time (01 CRITIC: frozen, fresh context): it never learns which round it is.
   if (ctx.round !== undefined && !judging && !step.frozenPrompt) slots.round = String(ctx.round);
-  for (const port of step.consumes) {
+  for (const port of inputsOf(step)) {
     switch (port) {
       case 'intent':
         slots.problem = problemSlot(ctx.problem);
