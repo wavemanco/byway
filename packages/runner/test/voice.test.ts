@@ -429,6 +429,20 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('two lines a browser shows on one screen line stay apart: a deleted line leaves its space, and new words at a line\'s edge keep one (r6)', async () => {
+    for (const [html, answer, written, deck] of [
+      ['<p><label>First</label><b> and </b><label>second</label></p>', 'T\nFirst\n\nsecond', '<p><label>First</label>  <label>second</label></p>', ['T', 'First', 'second']],
+      ['<p>Price: <del>$20</del><span> now </span><ins>$15</ins></p>', 'T\nPrice:\n$20\n\n$15', '<p>Price: <del>$20</del>  <ins>$15</ins></p>', ['T', 'Price:', '$20', '$15']],
+      ['<p><del>Was <b>$20 </b></del>Now $15</p>', 'T\nWas $20 only\nNow $15', '<p><del>Was <b>$20 </b> only </del>Now $15</p>', ['T', 'Was $20 only', 'Now $15']],
+      ['<p><label>Email</label><a href="/help"> help</a> is here</p>', 'T\nEmail\nGet [help] is here', '<p><label>Email</label> Get <a href="/help"> help</a> is here</p>', ['T', 'Email', 'Get [help] is here']],
+    ] as const) {
+      const out = await (await open(page(html))).answer(answer);
+      expect(await stored(out.artifactId!)).toBe(written);
+      expect(JSON.parse(pageLockView(await b.store.artifacts.getText(out.artifactId!))).deck).toEqual(deck);
+    }
+    expect(b.gateway.requests).toEqual([]);
+  });
+
   it('a line whose kept last word is an emoji is stored, in a link and outside one (r6)', async () => {
     for (const [html, answer, written] of [
       ['<p><strong>Free shipping</strong> on all orders 🎉</p>', 'T\nFree shipping on every order 🎉', '<p><strong>Free shipping</strong> on every order 🎉</p>'],

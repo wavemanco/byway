@@ -1175,6 +1175,52 @@ function lineOfSlots(p: PageDeck): Int32Array {
 }
 
 /**
+ * For each slot, the nearest slot at or before it (`prev`) and at or after it (`next`) that holds text browsers show, as
+ * the page was (-1: none). Vregions only grow along the slots, so text beside a slot in its own block is one lookup.
+ */
+interface ShownText {
+  prev: Int32Array;
+  next: Int32Array;
+}
+const shownOf = new WeakMap<PageDeck, ShownText>();
+function shownText(p: PageDeck): ShownText {
+  const have = shownOf.get(p);
+  if (have) return have;
+  const n = p.slots.length;
+  const x: ShownText = { prev: new Int32Array(n), next: new Int32Array(n) };
+  const shown = (s: number) => p.slots[s]!.rendered && noHtmlSpace(slotText(p, s)) !== '';
+  for (let s = 0, last = -1; s < n; s++) x.prev[s] = last = shown(s) ? s : last;
+  for (let s = n - 1, last = -1; s >= 0; s--) x.next[s] = last = shown(s) ? s : last;
+  shownOf.set(p, x);
+  return x;
+}
+/** Text browsers show stands before slot `s` (in a slot before it), in the same block as browsers show it. */
+function shownBefore(p: PageDeck, s: number): boolean {
+  const t = s > 0 ? shownText(p).prev[s - 1]! : -1;
+  return t >= 0 && p.slots[t]!.vregion === p.slots[s]!.vregion;
+}
+/** Text browsers show stands after slot `s` (in a slot after it), in the same block as browsers show it. */
+function shownAfter(p: PageDeck, s: number): boolean {
+  const t = s + 1 < p.slots.length ? shownText(p).next[s + 1]! : -1;
+  return t >= 0 && p.slots[t]!.vregion === p.slots[s]!.vregion;
+}
+/**
+ * The shared rule for the whitespace a deleted line held inside an element the edit removes: it is written where the
+ * element was when text browsers show stands on both sides of the element in one block, as the page was, so the lines
+ * on either side stay apart ("Price: <del>$20</del><span> now </span><ins>$15</ins>" with "now" deleted). Elsewhere it
+ * would sit at a block's edge, where it shows nothing, and it goes with the element.
+ */
+function gapKept(p: PageDeck, el: El): boolean {
+  const before = p.slotEndingAt[el.start]!;
+  const after = p.slotEndingAt[spanEnd(el)!]! + 1;
+  if (p.slots[before]!.vregion !== p.slots[after]!.vregion) return false;
+  const { prev, next } = shownText(p);
+  const t = prev[before]!;
+  const u = next[after]!;
+  return t >= 0 && u >= 0 && p.slots[t]!.vregion === p.slots[before]!.vregion && p.slots[u]!.vregion === p.slots[after]!.vregion;
+}
+
+/**
  * The removals an edit makes, given which slots hold text afterwards (placement's own result). No removal may join two
  * runs of text: neither two deck runs (two lines, or a line and text it was apart from), nor two blocks of text as
  * browsers show them (BLOCK; so a block between two runs of text that only inline elements, such as font, label or an
@@ -1577,6 +1623,16 @@ function place(before: string, edit: PageEdit): Placed {
     const stranded = strandedEdges(u, texts);
     for (const [s, ws] of u.lead) if (!stranded.lead.has(s)) texts.set(s, `${ws}${texts.get(s)}`);
     for (const [s, ws] of u.trail) if (!stranded.trail.has(s)) texts.set(s, `${texts.get(s)}${ws}`);
+    // The line's edge whitespace also parts it from text beside it on the same screen line. Where new words went past the
+    // slot that held it (into a shallower slot beyond formatting, or beyond a dropped piece), the line's new edge would
+    // touch that text: a space goes at the new edge, beside the words ("<b>$20 </b> only " before "Now $15").
+    if (line.text) {
+      const words = u.slots.filter((s) => noHtmlSpace(texts.get(s)!) !== '');
+      const joined = u.slots.map((s) => texts.get(s)!).join('');
+      const had = (m: Map<number, string>) => [...m.values()].some((ws) => ws !== '');
+      if (words.length && had(u.lead) && !isHtmlSpace(joined[0]) && shownBefore(p, u.slots[0]!)) texts.set(words[0]!, ` ${texts.get(words[0]!)}`);
+      if (words.length && had(u.trail) && !isHtmlSpace(joined.at(-1)) && shownAfter(p, u.slots.at(-1)!)) texts.set(words.at(-1)!, `${texts.get(words.at(-1)!)} `);
+    }
     for (const [s, t] of texts) newText.set(s, t);
   });
   for (const [s, t] of newText) {
@@ -1599,12 +1655,13 @@ function place(before: string, edit: PageEdit): Placed {
     if (g) {
       // An element the edit emptied goes, and what placement put in it (whitespace: a line's edge space, or a space
       // between two words) is written where it was, so the gap beside an icon stays and no two words run together. A
-      // deleted line's whitespace goes with it.
+      // deleted line's edge whitespace in it is written there too where text stands on both sides (gapKept).
       const [a, b] = slotSpan(p, g.start, spanEnd(g)!);
+      const gap = gapKept(p, g);
       let kept = '';
       for (let s = a; s <= b; s++) {
         const line = lineOf[s]! >= 0 ? edit.lines[lineOf[s]!]! : undefined;
-        if (line?.changed && line.text) kept += newText.get(s) ?? '';
+        if (line?.changed && (line.text || gap)) kept += newText.get(s) ?? '';
       }
       out.push((inserts.get(i) ?? '') + escapeText(kept));
       skip = spanEnd(g)!;
@@ -1717,25 +1774,60 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   const alone = new Set<number>(); // kept slots no removal merged with another: their written text is exactly theirs
   for (const ss of chains.values()) if (ss.length === 1) alone.add(ss[0]!);
   const problems: string[] = [];
+  // Between two slots of a chain lies one removal: a <br>, which leaves nothing, or an element, which leaves what the
+  // shared rule says (gapKept): the edge whitespace of a deleted line it held, where text stands on both sides, else
+  // nothing. Whitespace a changed line's run held in it is that line's (unknown, like the line's own slots).
+  const removedAt = new Map<number, El>([...removed].map((el) => [el.start, el]));
+  const isDeleted = (i: number) => i >= 0 && edit.lines[i]!.changed && !(edit.lines[i] as { text: string }).text;
+  type Item = { text?: string; line: number; slot?: number; gapOf?: number[] };
+  const gapItem = (el: El | undefined): Item => {
+    if (!el) return { text: '', line: -1 };
+    const [s0, s1] = slotSpan(p, el.start, spanEnd(el)!);
+    const keep = gapKept(p, el);
+    let text = '';
+    const gapOf: number[] = [];
+    for (let s = s0; s <= s1; s++) {
+      const i = lineOfSlot[s]!;
+      if (i >= 0 && edit.lines[i]!.changed && (edit.lines[i] as { text: string }).text) return { line: i };
+      if (keep && isDeleted(i)) {
+        text += known(s)!;
+        if (!gapOf.includes(i)) gapOf.push(i);
+      }
+    }
+    return { text, line: -1, gapOf };
+  };
   for (const [tok, ss] of chains) {
     const got = afterTextAt(tok);
-    const unknown = ss.filter((s) => known(s) === undefined);
-    const lines = new Set(unknown.map((s) => lineOfSlot[s]));
-    const first = unknown.length ? ss.indexOf(unknown[0]!) : ss.length;
-    const last = unknown.length ? ss.indexOf(unknown.at(-1)!) : ss.length - 1;
-    if (lines.size > 1 || (unknown.length && last - first + 1 !== unknown.length)) {
+    const items: Item[] = [];
+    ss.forEach((s, k) => {
+      if (k > 0) items.push(gapItem(removedAt.get(p.slots[ss[k - 1]!]!.end)));
+      const t = known(s);
+      items.push(t === undefined ? { line: lineOfSlot[s]!, slot: s } : { text: t, line: -1, slot: s });
+    });
+    const unknown = items.flatMap((x, k) => (x.text === undefined ? [k] : []));
+    const lines = new Set(unknown.map((k) => items[k]!.line));
+    const first = unknown.length ? unknown[0]! : items.length;
+    const last = unknown.length ? unknown.at(-1)! : items.length - 1;
+    const lastSlot = unknown.length ? unknown.filter((k) => items[k]!.slot !== undefined).at(-1) : undefined;
+    // A removal that leaves nothing, inside the changed line's run, is part of it.
+    const inRun = (x: Item) => x.text === undefined || (x.slot === undefined && x.text === '');
+    if (lines.size > 1 || (unknown.length && (!items.slice(first, last + 1).every(inRun) || lastSlot === undefined))) {
       problems.push('Two changed lines ended up in one run of text.');
       continue;
     }
-    const pre = ss.slice(0, first).map((s) => known(s)!).join('');
-    const post = ss.slice(last + 1).map((s) => known(s)!).join('');
+    const pre = items.slice(0, first).map((x) => x.text!).join('');
+    const post = items.slice(last + 1).map((x) => x.text!).join('');
     if (!got.startsWith(pre) || !got.endsWith(post) || got.length < pre.length + post.length || (!unknown.length && got !== pre + post)) {
-      const del = [...new Set(ss.map((s) => lineOfSlot[s]!).filter((i) => i >= 0 && edit.lines[i]!.changed && !(edit.lines[i] as { text: string }).text))];
-      problems.push(del.length ? `${del.map((i) => `Line ${i + 1}`).join(' and ')} must be empty.` : `Text outside your changed lines changed ("${(pre + post).slice(0, 40)}").`);
+      const gaps = [...new Set(items.flatMap((x) => (x.text ? (x.gapOf ?? []) : [])))];
+      const del = [...new Set(ss.map((s) => lineOfSlot[s]!).filter(isDeleted))];
+      if (gaps.length && !unknown.length && noHtmlSpace(got) === noHtmlSpace(pre + post)) problems.push(`${linesNamed(gaps.map((i) => i + 1))} ${gaps.length > 1 ? 'are' : 'is'} emptied, but the space ${gaps.length > 1 ? 'they' : 'it'} left between the lines beside ${gaps.length > 1 ? 'them' : 'it'} is not where the element that held it was.`);
+      else problems.push(del.length ? `${del.map((i) => `Line ${i + 1}`).join(' and ')} must be empty.` : `Text outside your changed lines changed ("${(pre + post).slice(0, 40)}").`);
       continue;
     }
-    ss.forEach((s, k) => slotAfter.set(s, k < first || k > last ? known(s)! : ''));
-    if (unknown.length) slotAfter.set(ss[last]!, got.slice(pre.length, got.length - post.length));
+    items.forEach((x, k) => {
+      if (x.slot !== undefined) slotAfter.set(x.slot, k < first || k > last ? x.text! : '');
+    });
+    if (lastSlot !== undefined) slotAfter.set(items[lastSlot]!.slot!, got.slice(pre.length, got.length - post.length));
   }
   // 4. Each changed line reads exactly as written, and each link part exactly its bracketed words.
   p.units.forEach((u, i) => {
@@ -1857,32 +1949,49 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     got.forEach((g, k) => {
       if (g.links !== want[k]!.form.links) problems.push(`Line ${want[k]!.line}, read again, does not have its link words where you put them (it reads "${g.shown}").`);
     });
-    // And read as browsers show blocks (BLOCK; end tags browsers ignore break nothing): the same words in each block of
-    // text, so no two runs of text that showed apart now run together, whatever ran them together.
+    // And read as browsers show blocks (BLOCK; end tags browsers ignore break nothing), with HTML whitespace collapsed:
+    // each block of text is the page before with the person's lines in place, each changed or deleted line keeping the
+    // edge whitespace it had (so the separators between lines are the page's own). So no two runs of text that showed
+    // apart now run together, on separate lines or as words on one line, and no space shows that did not, whatever
+    // wrote it.
+    const anchor = new Map(p.units.map((u, i) => [i, [...u.lead.keys()].at(-1)!]));
     const shownWant = new Map<number, string>();
-    let last = -1;
     p.slots.forEach((s, k) => {
       if (!s.rendered) return;
-      const w = wantRegion.get(s.region);
-      if (w && s.region === last) return;
-      last = s.region;
-      shownWant.set(s.vregion, `${shownWant.get(s.vregion) ?? ''}${w ? formOf(w.parts).text : noHtmlSpace(slotText(p, k))}`);
+      const i = lineOfSlot[k]!;
+      const line = i >= 0 ? edit.lines[i]! : undefined;
+      let t = slotText(p, k);
+      if (line?.changed) {
+        const u = p.units[i]!;
+        t = `${u.lead.get(k) ?? ''}${anchor.get(i) === k ? line.text : ''}${u.trail.get(k) ?? ''}`;
+      }
+      shownWant.set(s.vregion, `${shownWant.get(s.vregion) ?? ''}${t}`);
     });
     const shownGot = new Map<number, string>();
     q.slots.forEach((s, k) => {
       if (s.rendered) shownGot.set(s.vregion, `${shownGot.get(s.vregion) ?? ''}${slotText(q, k)}`);
     });
-    const wantBlocks = [...shownWant.entries()].sort((x, y) => x[0] - y[0]).map(([, t]) => t).filter((t) => t);
-    const gotBlocks = [...shownGot.entries()].sort((x, y) => x[0] - y[0]).map(([, t]) => t).filter((t) => noHtmlSpace(t));
-    let k = gotBlocks.findIndex((t, j) => noHtmlSpace(t) !== wantBlocks[j]);
+    const blocksOf = (m: Map<number, string>) => [...m.entries()].sort((x, y) => x[0] - y[0]).map(([, t]) => squashHtml(t)).filter((t) => t);
+    const wantBlocks = blocksOf(shownWant);
+    const gotBlocks = blocksOf(shownGot);
+    let k = gotBlocks.findIndex((t, j) => t !== wantBlocks[j]);
     if (k < 0 && gotBlocks.length !== wantBlocks.length) k = gotBlocks.length - 1;
     if (k >= 0) {
-      const at = squashHtml(gotBlocks[k] ?? '').slice(0, 80);
-      problems.push(
-        noHtmlSpace(gotBlocks[k] ?? '').length > (wantBlocks[k] ?? '').length
-          ? `The page, read again, runs lines together that a browser showed apart: it shows "${at}" as one line.`
-          : `The page, read again, breaks a line a browser showed whole: it shows "${at}" on a line of its own.`,
-      );
+      const g = gotBlocks[k] ?? '';
+      const w = wantBlocks[k] ?? '';
+      const at = g.slice(0, 80);
+      if (noHtmlSpace(g) === noHtmlSpace(w)) {
+        // The same characters, spaced otherwise: where they first differ, the browser showed a space, or did not.
+        let j = 0;
+        while (j < g.length && g[j] === w[j]) j++;
+        problems.push(w[j] === ' ' ? `The page, read again, runs words together that a browser showed apart: it shows "${at}".` : `The page, read again, shows a space a browser did not: it shows "${at}".`);
+      } else {
+        problems.push(
+          noHtmlSpace(g).length > noHtmlSpace(w).length
+            ? `The page, read again, runs lines together that a browser showed apart: it shows "${at}" as one line.`
+            : `The page, read again, breaks a line a browser showed whole: it shows "${at}" on a line of its own.`,
+        );
+      }
     }
   }
   return [...new Set(problems)];

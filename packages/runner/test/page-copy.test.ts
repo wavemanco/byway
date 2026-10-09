@@ -172,9 +172,15 @@ describe('the deck and exact placement (F07)', () => {
   it('the verifier reads a line with its edge space: a space shown where the person wrote none is refused, and edge space dropped where none would show (r4)', () => {
     // Round 3's write: the link's edge space left between its words and the "." the person glued to it.
     const SHOP = pageOf('<p>Visit\n  <a href="/shop">\n    our shop\n  </a>\n</p>');
-    expect(verifyBad(SHOP, pageOf('<p>Visit <a href="/shop">our shop\n  </a>.\n</p>'), 'T\nVisit [our shop].')).toEqual(['Line 2 must read exactly "Visit our shop." (it reads "Visit our shop .").']);
+    expect(verifyBad(SHOP, pageOf('<p>Visit <a href="/shop">our shop\n  </a>.\n</p>'), 'T\nVisit [our shop].')).toEqual([
+      'Line 2 must read exactly "Visit our shop." (it reads "Visit our shop .").',
+      'The page, read again, shows a space a browser did not: it shows "Visit our shop .".',
+    ]);
     const READ = pageOf('<p><a href="/x"> Read</a> more</p>');
-    expect(verifyBad(READ, pageOf('<p>(<a href="/x"> Read</a>) more</p>'), 'T\n([Read]) more')).toEqual(['Line 2 must read exactly "(Read) more" (it reads "( Read) more").']);
+    expect(verifyBad(READ, pageOf('<p>(<a href="/x"> Read</a>) more</p>'), 'T\n([Read]) more')).toEqual([
+      'Line 2 must read exactly "(Read) more" (it reads "( Read) more").',
+      'The page, read again, shows a space a browser did not: it shows "( Read) more".',
+    ]);
     // Edge space dropped where it would have shown nothing: the gap before the arrow, with a space typed after the link.
     const ARROW = pageOf('<p>Order online: <a href="/order">Order now <i class="arrow"></i></a></p>');
     expect(verifyBad(ARROW, pageOf('<p>Order online: <a href="/order">Order now<i class="arrow"></i></a> today</p>'), 'T\nOrder online: [Order now] today')).toEqual(['Line 2: the space before or after its words moved.']);
@@ -699,6 +705,72 @@ describe('an svg or math <title> keeps the block reading for the rest of the pag
     // Inside an open svg <title>, the text is not shown (a tooltip), and the html <title> is not either.
     const p = readPageCopy(pageOf('<p><svg width="9" height="9"><title>Logo</title></svg></p>'));
     for (const word of ['Logo', 'T']) expect(p.slots.find((s) => s.toks.some((t) => p.tokens[t]!.raw === word))!.rendered, word).toBe(false);
+  });
+});
+
+describe('two lines a browser shows on one screen line stay apart, or together, as they were (F07, r6)', () => {
+  const fresh = (placed: string) => deckLines(readPageCopy(pageOf(placed)));
+  const answer = (lines: readonly string[]) => () => ['T', ...lines].join('\n');
+
+  it('a deleted line whose edge space sat in an element the edit removes leaves that space where the element was', () => {
+    for (const [page, lines, written] of [
+      ['<p><label>First</label><b> and </b><label>second</label></p>', ['First', '', 'second'], '<p><label>First</label>  <label>second</label></p>'],
+      ['<p>Price: <del>$20</del><span> now </span><ins>$15</ins></p>', ['Price:', '$20', '', '$15'], '<p>Price: <del>$20</del>  <ins>$15</ins></p>'],
+      ['<p><font>Hello</font><span> big </span><font>world</font></p>', ['Hello', '', 'world'], '<p><font>Hello</font>  <font>world</font></p>'],
+      ['<p><font>Hello</font><a href="/x"> big </a><font>world</font></p>', ['Hello', '[]', 'world'], '<p><font>Hello</font>  <font>world</font></p>'],
+      ['<p>Pick <button type="button">Yes</button><em> or </em><button type="button">No</button></p>', ['Pick', 'Yes', '', 'No'], '<p>Pick <button type="button">Yes</button>  <button type="button">No</button></p>'],
+      // A space on one side only is that side's, written as it was.
+      ['<p><font>Hello</font><span> big</span><font>world</font></p>', ['Hello', '', 'world'], '<p><font>Hello</font> <font>world</font></p>'],
+      // At a block's edge, or across a line break, nothing stands on the other side: nothing is written.
+      ['<p><span> big </span><font>world</font></p>', ['', 'world'], '<p><font>world</font></p>'],
+      ['<p><font>Hello</font><span> big </span><br><font>world</font></p>', ['Hello', '', 'world'], '<p><font>Hello</font><br><font>world</font></p>'],
+      // No space between them before: none after.
+      ['<p><label>First</label><b>and</b><label>second</label></p>', ['First', '', 'second'], '<p><label>First</label><label>second</label></p>'],
+    ] as const) {
+      const r = run(page, answer(lines));
+      expect(r, page).toMatchObject(clean(written));
+      expect(fresh(r.placed!), page).toEqual(['T', ...lines.filter((l) => l && l !== '[]')]);
+    }
+  });
+
+  it('words added past the slot that holds a line\'s edge space leave a space at the line\'s new edge, where a line beside it needs one', () => {
+    for (const [page, lines, written] of [
+      ['<p><del>Was <b>$20 </b></del>Now $15</p>', ['Was $20 only', 'Now $15'], '<p><del>Was <b>$20 </b> only </del>Now $15</p>'],
+      ['<p><del>Was $20</del><ins><b> Now</b> $15</ins></p>', ['Was $20', 'Only Now $15'], '<p><del>Was $20</del><ins> Only <b> Now</b> $15</ins></p>'],
+      ['<p><label>Email <em>address </em></label>is required</p>', ['Email address here', 'is required'], '<p><label>Email <em>address </em> here </label>is required</p>'],
+      ['<p><label>Email</label><a href="/help"> help</a> is here</p>', ['Email', 'Get [help] is here'], '<p><label>Email</label> Get <a href="/help"> help</a> is here</p>'],
+      ['<p><nobr>Call <i>us </i></nobr>today please</p>', ['Call us now', 'today please'], '<p><nobr>Call <i>us </i> now </nobr>today please</p>'],
+      ['<p><font color="red">Sale <b>ends </b></font>tonight at nine</p>', ['Sale ends soon', 'tonight at nine'], '<p><font color="red">Sale <b>ends </b> soon </font>tonight at nine</p>'],
+      ['<p>Sale ends<font color="red"><b> tonight</b> at nine</font></p>', ['Sale ends', 'really tonight at nine'], '<p>Sale ends<font color="red"> really <b> tonight</b> at nine</font></p>'],
+      // One slot holds the line's words: the new ones join them there, before its edge space.
+      ['<p><button type="button"><span>Buy </span></button>now or later</p>', ['Buy it', 'now or later'], '<p><button type="button"><span>Buy it </span></button>now or later</p>'],
+      // Text glued to a link whose edge space sat inside it: the space goes, and the line keeps one at its new edge.
+      ['<p><label>Go</label><a href="/x"> Read</a> more</p>', ['Go', '([Read]) more'], '<p><label>Go</label> (<a href="/x">Read</a>) more</p>'],
+      ['<p>Read <a href="/x">more </a><label>Next</label></p>', ['Read [more].', 'Next'], '<p>Read <a href="/x">more</a>. <label>Next</label></p>'],
+      // Nothing beside the line on its screen line: nothing is added (as round 4 wrote these).
+      ['<p>Read <a href="/x">more </a></p>', ['Read [more].'], '<p>Read <a href="/x">more</a>.</p>'],
+      ['<p><del>Was <b>$20 </b></del></p><p>Now $15</p>', ['Was $20 only', 'Now $15'], '<p><del>Was <b>$20 </b> only</del></p><p>Now $15</p>'],
+    ] as const) {
+      const r = run(page, answer(lines));
+      expect(r, page).toMatchObject(clean(written));
+      expect(fresh(r.placed!), page).toEqual(['T', ...lines]);
+    }
+  });
+
+  it('the verifier reads each block with its spaces: lines run together, or a space where none was, are refused, whatever wrote them', () => {
+    const cases = [
+      ['<p><del>Was <b>$20 </b></del>Now $15</p>', 'T\nWas $20 only\nNow $15', '<p><del>Was <b>$20 </b> only</del>Now $15</p>', 'The page, read again, runs words together that a browser showed apart: it shows "Was $20 onlyNow $15".'],
+      ['<p><label>Email</label><a href="/help"> help</a> is here</p>', 'T\nEmail\nGet [help] is here', '<p><label>Email</label>Get <a href="/help"> help</a> is here</p>', 'The page, read again, runs words together that a browser showed apart: it shows "EmailGet help is here".'],
+      ['<p><label>First</label><b>and</b><label>second</label></p>', 'T\nFirst\nand!\nsecond', '<p><label>First</label><b> and!</b><label>second</label></p>', 'The page, read again, shows a space a browser did not: it shows "First and!second".'],
+    ] as const;
+    for (const [page, ans, bad, msg] of cases) expect(verifyBad(pageOf(page), pageOf(bad), ans), page).toEqual([msg]);
+    // A deleted line's space dropped with the element that held it.
+    const L = pageOf('<p><label>First</label><b> and </b><label>second</label></p>');
+    const b = [...readPageCopy(L).els.values()].find((x) => x.name === 'b')!;
+    expect(pageEditProblems(L, pageOf('<p><label>First</label><label>second</label></p>'), edit(L, 'T\nFirst\n\nsecond'), { removed: [b.start], brs: [] })).toEqual([
+      'Line 3 is emptied, but the space it left between the lines beside it is not where the element that held it was.',
+      'The page, read again, runs words together that a browser showed apart: it shows "Firstsecond".',
+    ]);
   });
 });
 
