@@ -55,7 +55,7 @@ The verification's recommendation (cluster A, option C, stage 4) drafted this re
 
 **Negative**
 
-- **The workflow bundle changes**, together with ADR-0092's stage 4 and ADR-0098: one change, from main's `ec88dae8…` (after [ADR-0089](0089-recipe-ir-optional-reads.md) and [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md)) to `fcadfee4…`. Before main's media-contract work was merged under it, the same change was `bfdda860…` to `9f872bb4…` on its branch; that hash never reached main. Runs open at the upgrade end plainly ([ADR-0078](0078-runs-from-older-engine-versions-end-plainly.md)). It is the second retirement of the ADR-0092 work. `packages/runner/test/build.test.ts` pins the hash.
+- **The workflow bundle changes**, together with ADR-0092's stage 4 and ADR-0098: one change, from main's `ec88dae8…` (after [ADR-0089](0089-recipe-ir-optional-reads.md) and [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md)) to `38afef53…`. On its branch it passed through `bfdda860…` to `9f872bb4…` (before main's media-contract work was merged under it) and then `fcadfee4…` (before ADR-0098's run-time wording and swap-choice rules); neither reached main. Runs open at the upgrade end plainly ([ADR-0078](0078-runs-from-older-engine-versions-end-plainly.md)). It is the second retirement of the ADR-0092 work. `packages/runner/test/build.test.ts` pins the hash.
 - A person who answers No at every question of C6's author loop now sees up to 20 rounds and two more questions. The run's budget still bounds the cost.
 - A recipe stored with a critic loop that never sees its critic, or a person's loop with a policy cap, no longer passes admission. Web start refuses it with a 400, and the person builds their own again.
 
