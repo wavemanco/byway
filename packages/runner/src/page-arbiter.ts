@@ -613,11 +613,13 @@ const around = (s: Seq, d: number): string => {
   for (let k = from; k < to; k++) t += (k > from ? GAP_SHOWN[s.gaps[k]!] : '') + s.cs[k];
   return `${from > 0 ? '…' : ''}${t}${to < s.cs.length ? '…' : ''}`;
 };
-/** The expected text from character `a` to `b`, as `around` shows a read. */
-const wantText = (w: Want, a: number, b: number): string => {
+/** The expected text around character `d`, as `around` shows a read. */
+const wantText = (w: Want, d: number): string => {
+  const from = Math.max(0, d - 24);
+  const to = Math.min(w.cs.length, d + 24);
   let t = '';
-  for (let k = Math.max(0, a); k < Math.min(w.cs.length, b); k++) t += (k > a ? (w.gaps[k] === 'G' ? '' : w.gaps[k] === 'B' ? ' / ' : ' ') : '') + w.cs[k];
-  return t;
+  for (let k = from; k < to; k++) t += (k > from ? (w.gaps[k] === 'G' ? '' : w.gaps[k] === 'B' ? ' / ' : ' ') : '') + w.cs[k];
+  return `${from > 0 ? '…' : ''}${t}${to < w.cs.length ? '…' : ''}`;
 };
 
 /**
@@ -669,8 +671,8 @@ export function arbiterProblem(exp: Expected, after: ShownText): { problem: stri
       // may write it from the lines changed).
       const outside = !want.lineAt[d] && !(d > 0 && want.lineAt[d - 1]) && want.src[d]! >= 0;
       const inLine = outside ? exp.spans.find((s) => s.in === 'body' && want.src[d]! >= s.start && want.src[d]! < s.end) : undefined;
-      if (outside && inLine?.line) why = `a browser would show line ${inLine.line}, which you did not change, otherwise: ${shows}, where it showed "${wantText(want, Math.max(0, d - 12), d + 12)}"`;
-      else if (outside) why = `other text on this page, not one of your lines, would change (as when a script on the page writes it from your lines): ${shows}, where it showed "${wantText(want, Math.max(0, d - 12), d + 12)}"`;
+      if (outside && inLine?.line) why = `a browser would show line ${inLine.line}, which you did not change, otherwise: ${shows}, where it showed "${wantText(want, d)}"`;
+      else if (outside) why = `other text on this page, not one of your lines, would change (as when a script on the page writes it from your lines): ${shows}, where it showed "${wantText(want, d)}"`;
       else why = `a browser would show "${around(got, d)}" there`;
     } else if (want.hid[d] !== got.hid[d]) why = `a browser would show the text a style on this page hides from sight in another place: ${shows}`;
     else {
