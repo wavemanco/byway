@@ -75,13 +75,27 @@ describe('storeExamples', () => {
       const { text } = JSON.parse(String(init.body)) as { text: string };
       sent.push(text);
       return text === HELD
-        ? Response.json({ error: 'This text contains your ANTHROPIC_API_KEY.', code: HELD_KEY_REFUSAL, fields: ['text'] }, { status: 400 })
+        ? Response.json(
+            { error: 'This text contains your ANTHROPIC_API_KEY. Remove it and try again — byway never stores or sends its keys.', code: HELD_KEY_REFUSAL, fields: ['text'], key: 'ANTHROPIC_API_KEY' },
+            { status: 400 },
+          )
         : Response.json({ artifactId: `sha256:${'b'.repeat(64)}` }, { status: 201 });
     });
     const refused = vi.fn();
-    await expect(storeExamples(entries, refused)).rejects.toMatchObject({ name: 'ApiError', code: HELD_KEY_REFUSAL });
+    // The refusal names the example as the screen shows it ("Example 2"), not "This text": several are on screen.
+    await expect(storeExamples(entries, refused)).rejects.toMatchObject({
+      name: 'ApiError',
+      code: HELD_KEY_REFUSAL,
+      message: 'Example 2 contains your ANTHROPIC_API_KEY. Remove it and try again — byway never stores or sends its keys.',
+    });
     expect(refused).toHaveBeenCalledExactlyOnceWith(HELD);
     expect(sent).toEqual([CLEAN, HELD]);
+  });
+
+  it('counts examples as the screen numbers them, images included; without the key’s name it still says which', async () => {
+    const withImage: ExampleEntry[] = [{ key: 1, kind: 'image', name: 'hero.png', artifactId: `sha256:${'c'.repeat(64)}` }, ...entries.slice(1)];
+    vi.stubGlobal('fetch', async () => Response.json({ error: 'This text contains your ANTHROPIC_API_KEY.', code: HELD_KEY_REFUSAL, fields: ['text'] }, { status: 400 }));
+    await expect(storeExamples(withImage)).rejects.toThrow(/^Example 2: This text contains your ANTHROPIC_API_KEY\.$/);
   });
 
   it('names no example for any other refusal', async () => {

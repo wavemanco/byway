@@ -79,7 +79,8 @@ export function Timeline({ stages, artifacts, selected, onSelect }: TimelineProp
                   <StatusIcon status={step.status} announce={step.status !== 'skipped' && !partlySkipped(step)} partial={partlySkipped(step)} />
                   <div className="tl-main">
                     <div className="tl-line">
-                      <button type="button" className="tl-title" aria-pressed={selected === step.key} onClick={() => onSelect(step.key)}>
+                      {/* data-step-key: the Run screen returns focus to the row that opened a step when it closes. */}
+                      <button type="button" className="tl-title" aria-pressed={selected === step.key} data-step-key={step.key} onClick={() => onSelect(step.key)}>
                         {title}
                       </button>
                       {step.costUsd > 0 ? <span className="tl-cost">{formatUsd(step.costUsd)}</span> : null}

@@ -10,6 +10,7 @@ import { diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
 import { composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
+import { ActionButton } from './ActionButton.tsx';
 import { post } from './api.ts';
 import { EvidenceLabel } from './EvidenceLabel.tsx';
 import { Route, RouteDetails, RouteLegend } from './Route.tsx';
@@ -18,6 +19,7 @@ import { examplesSlot, keepExamples } from './examplesDraft.ts';
 import { clearStartDraft } from './startDraft.ts';
 import { Switch } from './Switch.tsx';
 import { useTechnicalNames } from './TechNames.tsx';
+import { useAction } from './useAction.ts';
 
 export interface RecipeOption {
   presentation: RecipePresentation;
@@ -67,9 +69,6 @@ export function RecommendationView(props: Props) {
   );
   const { rec, composed, selection } = state;
   const recipes = useMemo(() => new Set(Object.keys(options)), [options]);
-  const [routing, setRouting] = useState(false);
-  const [composing, setComposing] = useState(false);
-  const [retrying, setRetrying] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Kept here, not in the proposal, so your examples survive switching to another recipe that takes them; and kept for
@@ -114,10 +113,11 @@ export function RecommendationView(props: Props) {
   const isRecommended = rec !== null && selection?.kind === 'recipe' && selection.recipeId === rec.recipeId;
   const shown = screen(state, chosenRecipeId, recipes);
 
+  // Try again, a flipped answer and Build my own are each one action in flight (R5): a second press while one is on
+  // its way does nothing, and the control keeps focus meanwhile.
+
   /** "Try again": the stored recommendation, or a new one, applied with what is left in the workspace. */
-  async function retry() {
-    if (retrying) return;
-    setRetrying(true);
+  const retrying = useAction(async () => {
     setError(null);
     try {
       const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { ensure: true });
@@ -126,16 +126,14 @@ export function RecommendationView(props: Props) {
       setFocusProposal((n) => n + 1);
     } catch (err) {
       setState((s) => retryFailed(s, err instanceof Error ? err.message : 'byway could not recommend a recipe. Try again.'));
-    } finally {
-      setRetrying(false);
     }
-  }
+  });
+  const retry = () => void retrying.run();
 
-  async function flip(questionId: string, answer: boolean) {
+  const routing = useAction(async (questionId: string, answer: boolean) => {
     if (!rec) return;
     const answers = rec.answers.map((a): ChooserAnswer => (a.questionId === questionId ? { ...a, answer, confidence: 1, setBy: 'user' } : a));
     setState((s) => ({ ...s, rec: { ...rec, answers } }));
-    setRouting(true);
     setError(null);
     try {
       const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { answers });
@@ -146,14 +144,11 @@ export function RecommendationView(props: Props) {
     } catch (err) {
       setState((s) => ({ ...s, rec }));
       setError(err instanceof Error ? err.message : 'Routing failed. Try again.');
-    } finally {
-      setRouting(false);
     }
-  }
+  });
+  const flip = (questionId: string, answer: boolean) => void routing.run(questionId, answer);
 
-  async function compose() {
-    if (composing) return;
-    setComposing(true);
+  const composing = useAction(async () => {
     setError(null);
     try {
       const result = await post<ComposeResultView>(`/api/intakes/${intakeId}/compose`, {});
@@ -162,10 +157,9 @@ export function RecommendationView(props: Props) {
       setNotice(result.composed.ok ? 'Your recipe is ready. It is shown above.' : 'byway built a recipe, but it did not pass the protocol checks. It is shown above.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Composing failed. Try again.');
-    } finally {
-      setComposing(false);
     }
-  }
+  });
+  const compose = () => void composing.run();
 
   // "Your choice" only for a recipe the person picked from the alternatives: never for a default nobody chose.
   const tag = selection?.kind !== 'recipe' ? null : isRecommended && rec ? fitText(rec.fit) : chosenRecipeId === selection.recipeId ? 'From the library' : 'Your choice';
@@ -185,9 +179,9 @@ export function RecommendationView(props: Props) {
             <h1>byway could not recommend a recipe</h1>
             <p>{state.problem}</p>
             <div className="empty-actions">
-              <button type="button" className="button button-primary" onClick={() => void retry()} aria-disabled={retrying} aria-busy={retrying}>
-                {retrying ? 'Trying again…' : 'Try again'}
-              </button>
+              <ActionButton className="button button-primary" onClick={retry} busy={retrying.busy}>
+                {retrying.busy ? 'Trying again…' : 'Try again'}
+              </ActionButton>
               <Link className="button" href="/library">
                 Choose from the Library
               </Link>
@@ -236,9 +230,9 @@ export function RecommendationView(props: Props) {
             <section className="aside-section" aria-labelledby="retry-title">
               <h2 id="retry-title">byway could not recommend a recipe</h2>
               <p className="muted">{state.problem}</p>
-              <button type="button" className="button" onClick={() => void retry()} aria-disabled={retrying} aria-busy={retrying}>
-                {retrying ? 'Trying again…' : 'Try again'}
-              </button>
+              <ActionButton className="button" onClick={retry} busy={retrying.busy}>
+                {retrying.busy ? 'Trying again…' : 'Try again'}
+              </ActionButton>
             </section>
           ) : null}
 
@@ -249,7 +243,7 @@ export function RecommendationView(props: Props) {
                 <p>{rec.why}</p>
               </section>
 
-              <Chooser questions={questions} answers={rec.answers} busy={routing} onFlip={flip} />
+              <Chooser questions={questions} answers={rec.answers} busy={routing.busy} onFlip={flip} />
 
               <section className="aside-section" aria-labelledby="alt-title">
                   <h2 id="alt-title">Other recipes</h2>
@@ -300,9 +294,9 @@ export function RecommendationView(props: Props) {
               ) : null}
               {/* UX-3: composing is not deterministic, so a recipe that failed the checks can be built again. */}
               {!composed || !composed.ok ? (
-                <button type="button" className="button" onClick={compose} aria-disabled={composing} aria-busy={composing}>
-                  {composing ? 'Composing…' : composed ? 'Try building again' : 'Build my own'}
-                </button>
+                <ActionButton className="button" onClick={compose} busy={composing.busy}>
+                  {composing.busy ? 'Composing…' : composed ? 'Try building again' : 'Build my own'}
+                </ActionButton>
               ) : null}
             </div>
           </section>
@@ -377,19 +371,22 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
   const budgetId = useId();
   const { presentation, label, estimate } = option;
   const [budgetText, setBudgetText] = useState(() => suggestBudget(estimate).toFixed(2));
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const budget = parseBudgetInput(budgetText);
   const blocked = composed !== null && !composed.ok;
 
   useEffect(() => setError(null), [budgetText]);
 
-  async function start() {
+  // Starting a run is one action in flight (R5). Run start has no server-side idempotency, so this guard is what stops
+  // a double press (or Enter twice) from starting two paid runs: a second start while one is on its way does nothing,
+  // and on success it holds until the Run screen replaces this one. A recipe that failed its checks cannot start, so
+  // nothing (not even an example) is sent for it.
+  const starting = useAction(async () => {
+    if (blocked) return;
     if (budget === null) {
       setError('Enter a budget in dollars, more than $0 and at most $1,000.');
       return;
     }
-    setBusy(true);
     setError(null);
     try {
       // Examples go only to a recipe that takes them; they stay on this screen if you switch to one that does not.
@@ -402,11 +399,12 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
         ...(refs.length > 0 ? { refs } : {}),
       });
       onStarted(runId);
+      return 'hold';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The run did not start. Try again.');
-      setBusy(false);
     }
-  }
+  });
+  const busy = starting.busy;
 
   return (
     <section className="proposal" aria-labelledby="proposal-title">
@@ -477,7 +475,7 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
         className="start-bar"
         onSubmit={(e) => {
           e.preventDefault();
-          void start();
+          void starting.run();
         }}
       >
         <div className="field">
@@ -498,9 +496,10 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
           The run asks before starting a call whose estimated cost would take it over this budget. Estimates can be low, and a single call can cost twice its estimate or more, so a run can end over this budget. {formatUsd(remainingUsd)} left in your workspace.
           {demo ? ' Demo mode: costs are sample figures and nothing is charged.' : null}
         </p>
-        <button type="submit" className="button button-primary button-large" disabled={busy || blocked}>
+        {/* Busy or blocked, it keeps focus and a press (Enter in the budget field included) submits nothing (R5). */}
+        <ActionButton type="submit" className="button button-primary button-large" busy={busy} unavailable={blocked}>
           {busy ? 'Starting…' : budget === null ? 'Start' : `Start with ${formatUsd(budget)}`}
-        </button>
+        </ActionButton>
         <p className="error-text start-bar-error" role="alert">
           {error}
         </p>

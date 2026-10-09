@@ -36,12 +36,18 @@ async function attach(page: Page, name: string, text: string): Promise<void> {
   await page.getByLabel('Text of attachment 1').fill(text);
 }
 
-/** Asks for a recommendation and expects the held-key refusal, naming the key and never showing it. */
-async function refuse(page: Page): Promise<void> {
+/** The refusal when the key was in Start's text. */
+const IN_TEXT = 'This text contains your ANTHROPIC_API_KEY. Remove it and try again';
+
+/**
+ * Asks for a recommendation and expects the held-key refusal, naming the key and never showing it, and saying where it
+ * was (`says`): the text or an attachment.
+ */
+async function refuse(page: Page, says = IN_TEXT): Promise<void> {
   const answered = page.waitForResponse((res) => new URL(res.url()).pathname === '/api/intakes' && res.request().method() === 'POST');
   await page.getByRole('button', { name: /Get a recommendation/ }).click();
   expect((await answered).status()).toBe(400);
-  await expect(page.getByText('This text contains your ANTHROPIC_API_KEY. Remove it and try again')).toBeVisible();
+  await expect(page.getByText(says)).toBeVisible();
 }
 
 test('a provider key pasted on Start is refused before anything is stored, naming the key but never showing it', async ({ page }) => {
@@ -93,7 +99,8 @@ test('a refused key in an attachment leaves the text kept; once the attachment i
   await page.goto('/');
   await page.getByLabel('What are you working on?').fill(PROBLEM);
   await attach(page, 'Class notes', `${NOTES}\nconfig: ${key}`);
-  await refuse(page);
+  // The refusal says the key was in an attachment, not "this text" (the field the person is looking at).
+  await refuse(page, 'An attachment contains your ANTHROPIC_API_KEY. Remove it and try again');
   expect(await keptInTab(page)).not.toContain(key);
   expect(await keptInTab(page)).toContain(PROBLEM);
 
@@ -113,10 +120,10 @@ const MEMO = 'Tighten my quarterly status memo for the leadership team before Fr
 const keptUnder = (page: Page, prefix: string) =>
   page.evaluate((p) => Object.entries(window.sessionStorage).filter(([k]) => k.startsWith(p)).map(([, v]) => v).join('\n'), prefix);
 
-/** Expects the held-key refusal for `response`, naming the key and never showing it. */
-async function refused(page: Page, response: Promise<Response>): Promise<void> {
+/** Expects the held-key refusal for `response`, naming the key and never showing it, and saying where it was (`says`). */
+async function refused(page: Page, response: Promise<Response>, says = IN_TEXT): Promise<void> {
   expect((await response).status()).toBe(400);
-  await expect(page.getByRole('alert').filter({ hasText: 'This text contains your ANTHROPIC_API_KEY. Remove it and try again' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: says })).toBeVisible();
 }
 
 // The Recommendation screen kept a refused example in the tab, key and all: only Start stopped keeping a refused paste.
@@ -136,7 +143,8 @@ test('a refused key in an example you admire stops that example being kept; the 
 
   const answered = page.waitForResponse((res) => new URL(res.url()).pathname === '/api/refs' && res.request().method() === 'POST');
   await page.getByRole('button', { name: /^Start/ }).click();
-  await refused(page, answered);
+  // Several examples are on screen: the refusal says which one held the key.
+  await refused(page, answered, 'Example 1 contains your ANTHROPIC_API_KEY. Remove it and try again');
   // No run started; the example is still on screen to be edited, but the tab no longer keeps it. The other one stays kept.
   expect(new URL(page.url()).pathname).toMatch(/^\/recommend\//);
   await expect(page.getByLabel('Example 1')).toHaveValue(held);

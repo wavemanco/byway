@@ -8,8 +8,9 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
 import { focusAfterRemoval } from '../view/focus.ts';
 import { MAX_REF_IMAGE_BYTES, MAX_REF_TEXT, MAX_REFS, REF_IMAGE_TYPES, REFS_NOTE, refsStatus, type RefImageType } from '../view/refs.ts';
-import { HELD_KEY_REFUSAL } from '../view/refusals.ts';
+import { exampleHeldKeyRefusal, HELD_KEY_REFUSAL } from '../view/refusals.ts';
 import { ApiError, artifactUrl, post } from './api.ts';
+import { actionAttributes, blockActivation, useAction } from './useAction.ts';
 
 export type ExampleEntry = { key: number; kind: 'text'; text: string } | { key: number; kind: 'image'; name: string; artifactId: string };
 
@@ -21,18 +22,20 @@ export function exampleCount(entries: ExampleEntry[]): number {
 /**
  * Stores the pasted examples and returns every example's artifact id, in the order you added them. When byway refuses a
  * pasted example because it holds one of byway's provider keys (ADR-0088), `onHeldKey` is given that example's text, so
- * the screen stops keeping it in the tab, and the refusal is thrown on; nothing after it is sent.
+ * the screen stops keeping it in the tab, and the refusal is thrown on, naming the example as the screen numbers it
+ * ("Example 2 contains your …"); nothing after it is sent.
  */
 export async function storeExamples(entries: ExampleEntry[], onHeldKey?: (text: string) => void): Promise<string[]> {
   const ids: string[] = [];
-  for (const e of entries) {
+  for (const [i, e] of entries.entries()) {
     if (e.kind === 'image') ids.push(e.artifactId);
     else if (e.text.trim()) {
       try {
         ids.push((await post<{ artifactId: string }>('/api/refs', { text: e.text })).artifactId);
       } catch (err) {
-        if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) onHeldKey?.(e.text);
-        throw err;
+        if (!(err instanceof ApiError) || err.code !== HELD_KEY_REFUSAL) throw err;
+        onHeldKey?.(e.text);
+        throw new ApiError(exampleHeldKeyRefusal(i + 1, err.heldKey, err.message), err.code, err.fields, err.heldKey);
       }
     }
   }
@@ -60,7 +63,6 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
   // A new entry's key comes after every key in use, kept ones restored from this tab included (ADR-0082), and after any
   // handed out earlier in a loop that has not re-rendered yet.
   const newKey = () => (lastKey.current = Math.max(lastKey.current, ...entries.map((e) => e.key)) + 1);
-  const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusKey, setFocusKey] = useState<number | null>(null);
   const fields = useRef(new Map<number, HTMLTextAreaElement>());
@@ -94,7 +96,8 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
     setFocusKey(key);
   }
 
-  async function addImages(event: ChangeEvent<HTMLInputElement>) {
+  // Adding images is one action in flight (R5): while it runs, the file input keeps focus but opens no picker.
+  const adding = useAction(async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     const files = [...(input.files ?? [])];
     input.value = '';
@@ -102,7 +105,6 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
     setError(null);
     const room = MAX_REFS - entries.length;
     if (files.length > room) setError(`You can add ${room} more ${room === 1 ? 'example' : 'examples'}; the rest were left out.`);
-    setAdding(true);
     try {
       for (const file of files.slice(0, Math.max(0, room))) {
         if (!isRefImage(file.type)) {
@@ -119,10 +121,10 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That image was not added. Try again.');
-    } finally {
-      setAdding(false);
     }
-  }
+  });
+  // Full or adding: the input says so and opens no picker, but keeps focus (a native disabled input would drop it).
+  const fileState = { busy: adding.busy, unavailable: full };
 
   return (
     <fieldset className="ref-examples" aria-describedby={`${id}-note`} disabled={disabled}>
@@ -181,9 +183,17 @@ export function Examples({ entries, onChange, disabled = false }: Props) {
         <button type="button" className="button" onClick={addText} disabled={full} ref={addButton}>
           Paste an example
         </button>
-        <label className="button file-button" data-disabled={full || adding ? 'true' : undefined}>
-          {adding ? 'Adding…' : 'Add images'}
-          <input type="file" className="sr-only" accept={REF_IMAGE_TYPES.join(',')} multiple disabled={full || adding} onChange={(ev) => void addImages(ev)} />
+        <label className="button file-button" data-disabled={full || adding.busy ? 'true' : undefined}>
+          {adding.busy ? 'Adding…' : 'Add images'}
+          <input
+            type="file"
+            className="sr-only"
+            accept={REF_IMAGE_TYPES.join(',')}
+            multiple
+            {...actionAttributes(fileState)}
+            onClick={(ev) => blockActivation(ev, fileState)}
+            onChange={(ev) => void adding.run(ev)}
+          />
         </label>
       </div>
       <p className="ref-examples-status" role="status">

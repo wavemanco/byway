@@ -17,6 +17,7 @@ import { Storyboard } from '../src/components/results.tsx';
 import { ScaledPage } from '../src/components/ScaledPage.tsx';
 import { PageResult } from '../src/components/result/PageResult.tsx';
 import { ResultView } from '../src/components/result/ResultView.tsx';
+import { ComparePanel } from '../src/components/run/panels/ComparePanel.tsx';
 import { PickPanel } from '../src/components/run/panels/PickPanel.tsx';
 import { References } from '../src/components/run/panels/References.tsx';
 import { StepDetail } from '../src/components/run/StepDetail.tsx';
@@ -117,6 +118,29 @@ describe('one rule for opening an artifact (F05)', () => {
       const info = Object.fromEntries(ids.map((id) => [id, artifacts[ids[0] === PAGE ? PAGE : MEMO] as ArtifactInfo]));
       const out = html(createElement(PickPanel, { cp, artifacts: info, busy: false, onSubmit: () => undefined, promptId: 'q', draft: startingDraft(cp), onDraft: () => undefined, sent: false }));
       expect(hrefs(out)).toEqual(ids.map(VIEW));
+    }
+  });
+
+  it('ComparePanel: every version, page or text, has Open to the viewer, named for its version (F13)', () => {
+    for (const ids of [
+      [PAGE, PAGE.replace(/a$/, 'd')],
+      [MEMO, MEMO.replace(/b$/, 'e')],
+    ]) {
+      const cp: CheckpointRecord = {
+        id: 'cp1',
+        runId: 'r1',
+        stepId: 's1',
+        kind: 'compare',
+        prompt: 'Which?',
+        status: 'open',
+        openedAt: '2026-10-08T10:00:00.000Z',
+        options: ids.map((artifactId, i) => ({ id: i === 0 ? 'A' : 'B', label: `Version ${i + 1}`, artifactId })),
+      };
+      const info = Object.fromEntries(ids.map((id) => [id, artifacts[ids[0] === PAGE ? PAGE : MEMO] as ArtifactInfo]));
+      const out = html(createElement(ComparePanel, { cp, artifacts: info, busy: false, onSubmit: () => undefined, promptId: 'q', draft: startingDraft(cp), onDraft: () => undefined, sent: false }));
+      expect(hrefs(out)).toEqual(ids.map(VIEW));
+      const what = ids[0] === PAGE ? 'Open the whole page' : 'Open the whole text';
+      for (const label of ['Version 1', 'Version 2']) expect(out).toContain(`${what}<span class="sr-only">: ${label}, in a new tab</span>`);
     }
   });
 

@@ -10,6 +10,7 @@ import type { CheckpointKind, CheckpointRecord } from '@byway/contracts';
 import { Examples } from '../src/components/Examples.tsx';
 import { ChoosePanel } from '../src/components/run/panels/ChoosePanel.tsx';
 import { ComparePanel } from '../src/components/run/panels/ComparePanel.tsx';
+import { ConfirmPanel } from '../src/components/run/panels/ConfirmPanel.tsx';
 import { SelectPanel } from '../src/components/run/panels/SelectPanel.tsx';
 import { DirectivePanel } from '../src/components/run/panels/DirectivePanel.tsx';
 import { ReactPanel, WritePanel } from '../src/components/run/panels/TextPanels.tsx';
@@ -147,7 +148,31 @@ describe('a panel opens with the draft the Run screen kept for its question (F06
     const record = cp('write', { initialText: 'Start.' });
     const html = renderWith(WritePanel, record, { draft: { ...startingDraft(record), text: 'Mine.' }, sent: true, busy: true });
     expect(html).toContain('Mine.');
-    expect(html).toMatch(/disabled=""[^>]*>Sent</);
+    // Locked with aria-disabled, not `disabled`, so the button keeps focus (R5); a press does nothing (ActionButton).
+    expect(/<button[^>]*>Sent</.exec(html)?.[0]).toMatch(/aria-disabled="true"/);
+    expect(/<button[^>]*>Sent</.exec(html)?.[0]).not.toMatch(/\sdisabled=|aria-busy/);
+  });
+
+  it('while an answer is on its way, the buttons that send it are busy or unavailable, never natively disabled (R5)', () => {
+    const record = cp('react');
+    const footer = /<button[^>]*>Sending…</.exec(renderWith(ReactPanel, record, { draft: { ...startingDraft(record), text: 'Warmer.' }, busy: true }))?.[0];
+    expect(footer).toMatch(/aria-disabled="true"/);
+    expect(footer).toMatch(/aria-busy="true"/);
+    const confirm = renderWith(ConfirmPanel, cp('confirm'), { busy: true });
+    expect(confirm.match(/<button[^>]*aria-disabled="true"[^>]*>(Yes|No)</g)).toHaveLength(2);
+    const compare = cp('compare', { options: [{ id: 'A', label: 'Before' }, { id: 'B', label: 'After' }] });
+    expect(renderWith(ComparePanel, compare, { busy: true }).match(/<button[^>]*aria-disabled="true"[^>]*>Keep this/g)).toHaveLength(2);
+    for (const html of [confirm, renderWith(ComparePanel, compare, { busy: true })]) expect(html).not.toMatch(/<button[^>]*\sdisabled=/);
+  });
+
+  it('“Choose all” and “Clear” say when there is nothing for them to do, and stay focusable (R5)', () => {
+    const hits = cp('select', { options: [{ id: 'a', label: 'One' }, { id: 'b', label: 'Two' }] });
+    const none = renderWith(SelectPanel, hits, {});
+    expect(/<button[^>]*>Choose all</.exec(none)?.[0]).not.toMatch(/aria-disabled/);
+    expect(/<button[^>]*>Clear</.exec(none)?.[0]).toMatch(/aria-disabled="true"/);
+    const all = renderWith(SelectPanel, hits, { draft: { ...startingDraft(hits), choice: ['a', 'b'] } });
+    expect(/<button[^>]*>Choose all</.exec(all)?.[0]).toMatch(/aria-disabled="true"/);
+    for (const html of [none, all]) expect(html).not.toMatch(/<button[^>]*\sdisabled=/);
   });
 
   it('while sent, the fields are read-only and offer no edits: what is shown is what was sent', () => {
@@ -163,7 +188,7 @@ describe('a panel opens with the draft the Run screen kept for its question (F06
     const list = cp('directive');
     const items = renderWith(DirectivePanel, list, { draft: { ...startingDraft(list), items: ['the intro', 'the outro'] }, sent: true, busy: true });
     expect(items.match(/<input[^>]*readOnly=""[^>]*>/g)).toHaveLength(2);
-    expect(/<button[^>]*>Add an item/.exec(items)?.[0]).toContain('disabled=""');
+    expect(/<button[^>]*>Add an item/.exec(items)?.[0]).toContain('aria-disabled="true"');
     // Before sending, the same panels are editable.
     expect(/<textarea[^>]*>/.exec(renderWith(WritePanel, write, {}))?.[0]).not.toContain('readOnly');
   });
