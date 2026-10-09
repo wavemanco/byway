@@ -17,7 +17,12 @@
  *
  * Keys: provider keys come from `.env.agents` at the repo root (never committed) or the shell; their values are never
  * printed. `next build` gets none of them, and Turbopack's dev cache is off (next.config.ts), so no key is written
- * under the repo (SEC-3). The web process gets them: it recommends and composes with real models.
+ * under the repo (SEC-3). The web process gets them: it recommends and composes with real models. The page renderer's
+ * Chromium, which the engine starts, gets none of them and nothing else from the secrets file (F18; ADR-0084).
+ *
+ * Renderer: while the engine starts, byway launches the page renderer's Chromium once and closes it again, and prints a
+ * "renderer" line saying whether it can start. byway keeps running either way: prose, options and code-diff runs need
+ * no renderer unless a lineup forms cards, and a web-page run whose renderer cannot start is refused before it spends.
  *
  * Environment: BYWAY_DATA_DIR (data directory), PORT (web, default 3000), BYWAY_TEMPORAL_PORT (default 7233),
  * BYWAY_DEMO=1 (same as `--demo`), BYWAY_NEXT_DIST_DIR (the web build's folder inside apps/web, default .next; the e2e
@@ -32,14 +37,16 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engine-watch.ts';
-import { parseServeArgs, withoutSecrets } from '../apps/web/src/server/serving.ts';
-import { createGateway, KEY_VARS, loadEnvFile } from '../packages/gateway/src/index.ts';
+import { parseServeArgs } from '../apps/web/src/server/serving.ts';
+import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { startDevEngine, storeCaps, type DevEngine } from '../packages/runner/src/index.ts';
+import { checkRenderer, RENDERER_OS_SANDBOX, startDevEngine, storeCaps, type DevEngine, type RendererCheck } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
+/** How long the page renderer's start-up check may take before byway says so and carries on (a launch takes ~100 ms). */
+const RENDERER_CHECK_MS = 30_000;
 /** Longer than the worker's forced shutdown (30 s), so a normal stop always finishes first. */
 const ENGINE_STOP_DEADLINE_MS = 40_000;
 
@@ -115,7 +122,7 @@ function nextBin(): string {
 /** Runs `next build` without any secret in its environment, so none can reach the build's caches (SEC-3). */
 async function build(env: Record<string, string>): Promise<void> {
   console.log('  web        building the app (next build)…');
-  const child = spawn(process.execPath, [nextBin(), 'build'], { cwd: WEB, stdio: ['ignore', 'pipe', 'pipe'], env: withoutSecrets(env, Object.values(KEY_VARS)) });
+  const child = spawn(process.execPath, [nextBin(), 'build'], { cwd: WEB, stdio: ['ignore', 'pipe', 'pipe'], env: withoutSecrets(env) });
   const output: string[] = [];
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', (chunk: Buffer) => output.push(chunk.toString()));
   const code = await exitCode(child);
@@ -151,6 +158,11 @@ async function main(): Promise<void> {
   console.log('  engine     starting Temporal and the runner worker…');
   const engineStarting = startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort });
   engineStarting.catch(() => undefined);
+  // The renderer is checked meanwhile; the check never throws.
+  const rendererChecking = Promise.race([
+    checkRenderer(),
+    new Promise<RendererCheck>((resolve) => setTimeout(() => resolve({ ready: false, message: `Playwright's Chromium did not start within ${RENDERER_CHECK_MS / 1000} s.` }), RENDERER_CHECK_MS).unref()),
+  ]);
   const env: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
   try {
     if (mode === 'start') await build(env);
@@ -167,6 +179,8 @@ async function main(): Promise<void> {
     throw err;
   }
   console.log(`  engine     ${engine.address}`);
+  const renderer = await rendererChecking;
+  console.log(`  renderer   ${renderer.ready ? `Playwright's Chromium, ready (${RENDERER_OS_SANDBOX ? 'inside its OS sandbox' : 'its OS sandbox is off; see Renderer in the README'})` : `not available: ${renderer.message}`}`);
 
   const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
   let web: ChildProcess;

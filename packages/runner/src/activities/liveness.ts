@@ -91,6 +91,7 @@ export function guardPages(inner: PageRenderer, signal: AbortSignal | undefined)
   return {
     screenshots: (html, resolve, opts) => inner.screenshots(html, resolve, { ...opts, signal: opts?.signal ?? signal }),
     render: (html, resolve, surfaces, opts) => inner.render(html, resolve, surfaces, { ...opts, signal: opts?.signal ?? signal }),
+    ready: () => inner.ready(),
     close: () => inner.close(),
   };
 }

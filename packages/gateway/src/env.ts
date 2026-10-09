@@ -88,6 +88,14 @@ export interface EnvLoadReport {
 }
 
 /**
+ * The names each secrets file listed, per environment object it was loaded into (set or kept). Held here, beside the
+ * loader, so a caller that hands an environment to a child (the page renderer) can leave out everything the secrets
+ * file holds without threading the load report through the engine. Keyed weakly: a copy of the environment is a
+ * different object and carries no names.
+ */
+const listedByFile = new WeakMap<Env, Set<string>>();
+
+/**
  * Load `.env.agents` (ADR-0009: gitignored, never committed) into the environment, setting only variables that are
  * missing or empty, so a key exported in the shell always wins. Returns names only: values never leave this function.
  */
@@ -100,7 +108,10 @@ export function loadEnvFile(path: string, env: Env = process.env): EnvLoadReport
     throw new Error(`could not read env file ${path}: ${(e as NodeJS.ErrnoException).code ?? 'unknown error'}`);
   }
   const report: EnvLoadReport = { found: true, loaded: [], kept: [] };
+  const listed = listedByFile.get(env) ?? new Set<string>();
+  listedByFile.set(env, listed);
   for (const [key, value] of Object.entries(parseEnv(text))) {
+    listed.add(key);
     if (env[key] === undefined || env[key] === '') {
       env[key] = value;
       report.loaded.push(key);
@@ -109,4 +120,31 @@ export function loadEnvFile(path: string, env: Env = process.env): EnvLoadReport
     }
   }
   return report;
+}
+
+/** Every name a secrets file listed into this environment object (loadEnvFile), whether it set it or kept the shell's. */
+export function namesFromEnvFile(env: Env): string[] {
+  return [...(listedByFile.get(env) ?? [])];
+}
+
+/** Names that look like secrets, as a second line behind the exact provider key names. */
+const SECRET_NAME = /(?:API_KEY|_KEY|_TOKEN|_SECRET|PASSWORD)$/i;
+
+/**
+ * The environment for a child process that must hold no key (SEC-3), as one rule for every such child: `next build`
+ * (Turbopack's persistent cache would otherwise keep a snapshot of the environment under the repo) and the page
+ * renderer's Chromium, which runs model-written pages and decodes uploaded and provider images (F18; ADR-0084).
+ *
+ * Dropped: unset variables, every provider key name (KEY_VARS, in any case), the `extraNames` given, and anything that
+ * looks secret. A caller that needs nothing from the secrets file passes `namesFromEnvFile(env)` as `extraNames`; the
+ * build does not, because the file may also carry settings the web app reads at build and start alike.
+ */
+export function withoutSecrets(env: Readonly<Env>, extraNames: readonly string[] = []): Record<string, string> {
+  const named = new Set([...Object.values(KEY_VARS), ...extraNames].map((k) => k.toUpperCase()));
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined || named.has(name.toUpperCase()) || SECRET_NAME.test(name)) continue;
+    out[name] = value;
+  }
+  return out;
 }

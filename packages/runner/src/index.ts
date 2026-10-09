@@ -10,7 +10,7 @@ export { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, WORKFLOW_ENTRY, workflowBundl
 export { LOST_RUN_MESSAGE, reconcileLostRuns, settleLostRun } from './lost-runs.ts';
 export { OLDER_VERSION_MESSAGE, retireStaleRuns } from './versioning.ts';
 export { createActivities, type RunnerDeps } from './activities/index.ts';
-export { launchChromium, playwrightPages, RENDER_ALLOWLIST, type ArtifactResolver, type PageRenderer, type PlaywrightPagesOptions, type RenderOptions, type SurfaceShots } from './pages.ts';
+export { checkRenderer, chromiumLaunchOptions, launchChromium, launchFailure, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX, type ArtifactResolver, type PageRenderer, type PlaywrightPagesOptions, type RenderOptions, type RendererCheck, type SurfaceShots } from './pages.ts';
 export { isSurface, rendersKnob, SURFACE_CAPTIONS, SURFACE_NAMES, SURFACES } from './surfaces.ts';
 export { storeCaps } from './caps.ts';
 export { NO_AUDIO_NOTE, NO_IMAGES_NOTE } from './activities/asset.ts';

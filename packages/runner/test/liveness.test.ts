@@ -10,7 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CancelledFailure } from '@temporalio/activity';
 import { ApplicationFailure } from '@temporalio/common';
 import type { CompletionRequest, CompletionResult, Gateway } from '@byway/contracts';
-import { CANCELLED_CALL, ENDED_CALL, guardGateway, settleLateCost } from '../src/activities/liveness.ts';
+import { CANCELLED_CALL, ENDED_CALL, guardGateway, guardPages, settleLateCost } from '../src/activities/liveness.ts';
+import { fakePages } from './helpers/fake-pages.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
 import { createTestStore } from './helpers/memo.ts';
 import { threePages, tiny } from './helpers/recipes.ts';
@@ -91,6 +92,17 @@ describe('the gateway one activity invocation sees', () => {
     expect((await store.getRun(going.runId))?.costUsd).toBe(0);
     await settleLateCost(counting({ [ended.runId]: 0.2 }), store, new Map([[ended.runId, ended.workspaceId]]));
     expect((await store.getRun(ended.runId))?.costUsd).toBe(0.3);
+  });
+});
+
+describe('the page renderer one activity invocation sees', () => {
+  it('asks the renderer itself whether it can start, so a run is refused in the renderer’s own words (F18)', async () => {
+    const inner = fakePages();
+    const pages = guardPages(inner, new AbortController().signal);
+    await pages.ready();
+    expect(inner.readyCalls).toBe(1);
+    inner.failReady(new Error('Chromium could not start'));
+    await expect(pages.ready()).rejects.toThrow('Chromium could not start');
   });
 });
 

@@ -14,7 +14,7 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { withoutSecrets } from '../src/server/serving.ts';
+import { withoutSecrets } from '@byway/gateway';
 import { request, upgrade } from './fixtures/http.ts';
 import { REPO } from './guards/scan.ts';
 
@@ -81,7 +81,7 @@ beforeAll(async () => {
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     env: {
       // No key or other secret from this shell reaches it, and nothing it does here would use one.
-      ...withoutSecrets(process.env, []),
+      ...withoutSecrets(process.env),
       NODE_ENV: 'development',
       PORT: String(port),
       BYWAY_DATA_DIR: dataDir,

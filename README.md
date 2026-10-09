@@ -90,6 +90,16 @@ Product data lives in `BYWAY_DATA_DIR`, by default `%LOCALAPPDATA%\byway` on Win
 | `ledger.jsonl` | One hash-chained entry per model, image or video call: purpose, model, usage, cost (bodies by hash) |
 | `temporal.sqlite` | The local Temporal server's state, so runs survive a restart |
 
+## Renderer
+
+byway draws pages with Playwright's Chromium, inside the run engine: the pages a model writes (scripts included), web-page examples given as HTML, and the cards a reviewing model sees when the examples and the work take different forms. Cards show images people upload and images providers return. All of this is treated as untrusted ([ADR-0084](docs/adr/0084-renderer-launch-without-secrets.md)):
+
+- Chromium is started in one place (`chromiumLaunchOptions()` in `packages/runner/src/pages.ts`), the same way every time; nothing can add a flag to it.
+- Its environment holds no provider key, nothing that looks secret and no other name from `.env.agents`.
+- Pages may load only Google Fonts, jsDelivr, unpkg, cdnjs and byway's own artifacts. WebSockets and direct WebRTC are blocked, and a page that never settles is stopped.
+- At start-up byway prints a `renderer` line saying whether Chromium can start. If it cannot, web-page runs are refused before they spend anything, and any other step that needs a page or a card fails with a plain message. If Chromium is missing: `pnpm --filter ./apps/web exec playwright install chromium`.
+- Chromium's own OS sandbox is **off**, as it always has been (Playwright's default). Turning it on (`RENDERER_OS_SANDBOX`) would better contain a page or image that exploits a Chromium bug, but byway would then stop rendering wherever the sandbox cannot start: Linux with unprivileged user namespaces restricted (the default on Ubuntu 23.10 and later), or byway running as root or in a container. That choice is open.
+
 ## Tests
 
 ```bash

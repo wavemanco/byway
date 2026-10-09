@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { KEY_VARS, configuredProviders, loadEnvFile, parseEnv } from '../src/env.ts';
+import { KEY_VARS, configuredProviders, loadEnvFile, namesFromEnvFile, parseEnv, withoutSecrets } from '../src/env.ts';
 
 describe('parseEnv', () => {
   it('reads KEY=VALUE lines, skipping comments and blanks', () => {
@@ -88,5 +88,46 @@ describe('configuredProviders', () => {
       openrouter: 'OPENROUTER_API_KEY',
       fal: 'FAL_KEY',
     });
+  });
+});
+
+describe('withoutSecrets: the one rule for a child process that must hold no key (SEC-3)', () => {
+  it('gives no provider key or other secret-looking variable, so none can be cached under the repo or reach the renderer', () => {
+    const env = {
+      PATH: '/bin',
+      ANTHROPIC_API_KEY: 'sk-ant-SENTINEL',
+      FAL_KEY: 'fal-SENTINEL',
+      GITHUB_TOKEN: 'ghp-SENTINEL',
+      MY_SECRET: 'x',
+      BYWAY_DATA_DIR: '/data',
+      UNSET: undefined,
+    };
+    expect(withoutSecrets(env)).toEqual({ PATH: '/bin', BYWAY_DATA_DIR: '/data' });
+  });
+
+  it('always drops every provider key name, in any case, and the extra names it is given', () => {
+    const env: Record<string, string> = { HOME: '/home/me', ODD_CREDENTIAL: 'x', keep_me: 'y' };
+    for (const name of Object.values(KEY_VARS)) env[name.toLowerCase()] = 'v';
+    expect(withoutSecrets(env, ['odd_credential'])).toEqual({ HOME: '/home/me', keep_me: 'y' });
+  });
+});
+
+describe('namesFromEnvFile: what the secrets file listed into an environment', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'byway-env-names-'));
+
+  it('names every variable the file listed into that environment, set or kept, and nothing for another environment', () => {
+    const file = join(dir, '.env.agents');
+    writeFileSync(file, 'ANTHROPIC_API_KEY=sk-ant-file\nODD_CREDENTIAL=hunter2\nOPENAI_API_KEY=sk-file\n');
+    const env: Record<string, string | undefined> = { OPENAI_API_KEY: 'sk-shell', PATH: '/bin' };
+    loadEnvFile(file, env);
+    expect(namesFromEnvFile(env).sort()).toEqual(['ANTHROPIC_API_KEY', 'ODD_CREDENTIAL', 'OPENAI_API_KEY']);
+    expect(namesFromEnvFile({ ...env })).toEqual([]);
+    expect(withoutSecrets(env, namesFromEnvFile(env))).toEqual({ PATH: '/bin' });
+  });
+
+  it('names nothing when the file does not exist', () => {
+    const env: Record<string, string | undefined> = {};
+    loadEnvFile(join(dir, 'absent.env'), env);
+    expect(namesFromEnvFile(env)).toEqual([]);
   });
 });
