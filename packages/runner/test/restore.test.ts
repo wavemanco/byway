@@ -12,7 +12,7 @@
  * Since the spend book in byway.sqlite became the caps' authority (F03, ADR-0095), that lost ledger no longer lets the
  * caps admit the same spend again: a call the original spend puts over a cap is refused after either restore.
  */
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -138,8 +138,55 @@ describe('the start-up report after a restore (R4)', () => {
     expect(await readExposure(path.join(dir, EXPOSURE_FILENAME))).toEqual(await readExposure(path.join(base.dir, EXPOSURE_FILENAME)));
     expect(await readExposure(path.join(dir, EXPOSURE_FILENAME))).toHaveLength(1);
     const found = await report(base.workspaceId);
-    expect(found).toEqual({ store: { database: [], artifacts: 2, missing: [] }, ledgerBrokenAt: null, unledgered: [], auditGaps: [], setAside: [] });
-    expect(reportLines(found)).toEqual({ ok: true, lines: ["the database and its 2 artifact files are complete; the spend ledger's chain is intact and holds every call the spend book counts"] });
+    expect(found).toEqual({ store: { database: [], artifacts: 2, missing: [] }, ledgerBrokenAt: null, unledgered: [], auditGaps: [], setAside: [], pending: 0, openFaults: 0 });
+    expect(reportLines(found)).toEqual({
+      ok: true,
+      lines: ["the database and its 2 artifact files are complete; the spend ledger's chain is intact, and it holds every call the spend book records as written to it, at the same cost"],
+    });
+  });
+
+  it('notes settled calls the spend book has not written to ledger.jsonl yet, without calling them a problem', async () => {
+    const base = await original();
+    const { store, report } = reopen(restored(base));
+    // A call that settled just before byway stopped, while another process held the ledger's lock: the book has it.
+    const call = { opId: 'op-late', owner: 'old-worker', leaseMs: 60_000, workspaceId: base.workspaceId, purpose: 'build:prose', kind: 'completion' as const, provider: 'mock' as const, model: 'mock-big', reserveUsd: 0, paid: false, caps: { workspaceUsd: 5 } };
+    expect(await store.spendBook.admit(call)).toEqual({ admitted: true });
+    await store.spendBook.settle('op-late', { at: '2026-10-08T12:00:00.000Z', entry: { ...draft(base.workspaceId, base.doneId, 0) } });
+    const found = await report(base.workspaceId);
+    expect(found.pending).toBe(1);
+    const { ok, lines } = reportLines(found);
+    expect(ok).toBe(true);
+    expect(lines[0]).toMatch(/holds every call the spend book records as written to it, at the same cost$/);
+    expect(lines[1]).toBe('Note: 1 settled call is counted in the spend book but not yet written to ledger.jsonl; byway writes it shortly.');
+  });
+
+  it('names a line of the ledger the spend book could not read, which pauses paid calls until it is acknowledged in Settings', async () => {
+    const base = await original();
+    const dir = restored(base);
+    appendFileSync(path.join(dir, LEDGER), 'not an entry\n');
+    const { store, gateway, report } = reopen(dir);
+    const found = await report(base.workspaceId);
+    expect(found).toMatchObject({ ledgerBrokenAt: 'line:3', ledgerBrokenLine: { line: 3, book: 'fault' }, openFaults: 1 });
+    const { ok, lines } = reportLines(found);
+    expect(ok).toBe(false);
+    expect(lines.slice(1)).toEqual([
+      'Line 3 of the spend ledger cannot be read as an entry.',
+      '1 line of the spend ledger that byway could not read is listed under Spending records in Settings; byway makes no paid call until you acknowledge it there.',
+    ]);
+    const [fault] = (await gateway.spendRecords(base.workspaceId)).faults;
+    await store.spendBook.acknowledgeFault(fault!.id);
+    expect(reportLines(await report(base.workspaceId)).lines.slice(1)).toEqual(['Line 3 of the spend ledger cannot be read as an entry; it was acknowledged in Settings, so the budgets do not count it.']);
+  });
+
+  it('says a line damaged after byway read it changes nothing the spend book counts, and pauses nothing', async () => {
+    const base = await original();
+    const dir = restored(base);
+    const text = readFileSync(path.join(dir, LEDGER), 'utf8');
+    writeFileSync(path.join(dir, LEDGER), `#${text.slice(1)}`);
+    const found = await reopen(dir).report(base.workspaceId);
+    expect(found).toMatchObject({ ledgerBrokenAt: 'line:1', ledgerBrokenLine: { line: 1, book: 'read-before' }, openFaults: 0 });
+    expect(reportLines(found).lines[1]).toBe('Line 1 of the spend ledger cannot be read as an entry; it changed after byway read it, and the spend book keeps what it read there then.');
+    expect(reportLines(found).lines.join('\n')).not.toMatch(/no paid call|acknowledge/);
   });
 
   it('names an artifact file that did not come back, with the runs that show it', async () => {

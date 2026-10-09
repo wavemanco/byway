@@ -21,8 +21,9 @@
  * Chromium, which the engine starts, gets none of them and nothing else from the secrets file (F18; ADR-0084).
  *
  * Data check (R4; ADR-0096): before the engine starts, byway reads the data directory and prints a "checked" line: the
- * database file, every recorded artifact file, the spend ledger, and runs whose recorded cost the ledger lacks (a partial
- * restore). It only reads, and byway starts either way. The engine then ends what the store and it disagree on, and
+ * database file, every recorded artifact file, the spend ledger against the spend book, and runs whose recorded cost the
+ * spend book lacks (a partial restore). It changes no run record or file (the spend book reads in ledger lines it has not
+ * seen, as the first model call would), and byway starts either way. The engine then ends what the store and it disagree on, and
  * says so under "engine".
  *
  * Renderer: while the engine starts, byway launches the page renderer's Chromium once and closes it again, and prints a
@@ -159,7 +160,7 @@ async function main(): Promise<void> {
   if (keys.found) console.log(`  keys       .env.agents (${keys.loaded.length} loaded; values are never shown)`);
   const withKeys = gateway.providers().filter((p) => p.provider !== 'mock' && p.configured).map((p) => p.provider);
   console.log(`  providers  ${withKeys.length > 0 ? withKeys.join(', ') : 'none (every run uses sample outputs)'}`);
-  // R4: what a partial restore left behind is said before anything runs. The check only reads and never stops byway.
+  // R4: what a partial restore left behind is said before anything runs. The check changes no run record or file and never stops byway.
   try {
     const checked = reportLines(await dataDirReport({ dataDir, store, gateway, workspaceIds: [(await store.ensureDefaultWorkspace()).id] }));
     console.log(`  checked    ${checked.lines[0]}`);

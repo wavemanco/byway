@@ -82,7 +82,7 @@ export function auditText(audit: Pick<LedgerAudit, 'brokenAt' | 'brokenLine' | '
     const n = audit.missing.length;
     const usd = audit.missing.reduce((sum, c) => sum + c.costUsd, 0);
     parts.push(
-      `${n} ${n === 1 ? 'call' : 'calls'} (${formatUsd(usd)}) that byway's spending records hold ${n === 1 ? 'is' : 'are'} missing from ledger.jsonl or recorded there at another cost: an older or missing ledger.jsonl was restored, or a crash lost lines. The budgets still count ${n === 1 ? 'it' : 'them'}.`,
+      `${n} ${n === 1 ? 'call' : 'calls'} (${formatUsd(usd)}) that byway's spending records hold ${n === 1 ? 'is' : 'are'} missing from ledger.jsonl or recorded there at another cost: an older or missing ledger.jsonl was restored, a crash lost lines, or a line was damaged. The budgets still count ${n === 1 ? 'it' : 'them'}.`,
     );
   } else if (audit.brokenAt === null) {
     parts.push('Every call byway’s spending records hold as written there is in it, at the same cost.');
