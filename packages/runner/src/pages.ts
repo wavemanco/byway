@@ -49,8 +49,8 @@ export interface RenderOptions {
 export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Array; contentType: string } | undefined>;
 
 /**
- * The text Chromium shows of a page, with JavaScript off (VOICE's arbiter, ADR-0081), as it settles (animations and
- * transitions taken to their end, an endless one stopped).
+ * The text Chromium shows of a page, with JavaScript off (VOICE's arbiter, ADR-0081), as it settles (web fonts loaded,
+ * animations and transitions taken to their end, an endless one stopped).
  * - `text` is what a sighted visitor sees: the body's innerText (the text as laid out, after display, visibility, the
  *   hidden attribute, whitespace collapsing and block breaks), with CSS text-transform undone first so letters read as
  *   written, and with every text node a style hides from sight taken out first ('' with no body). A text node is hidden
@@ -359,22 +359,25 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
 
 /**
  * Read in the page (a string: this package compiles without the DOM library), in this order:
- * 1. Animations and transitions are taken to their end (an endless one, which cannot end, is stopped), so the page is
- *    read as it settles, not at a frame of a fade-in.
- * 2. The text nodes a style hides from sight (ShownText) are found, on the page as laid out. The noncharacters the
- *    arbiter marks a copy of the page with (U+FDD0 to U+FDEF) are taken out of the text while this is measured, and put
- *    back, so a marked copy is measured as the page itself is.
+ * 1. The page's web fonts are waited for, and animations and transitions are taken to their end (an endless one, which
+ *    cannot end, is stopped), so the page is read as it settles, not at a frame of a fade-in or in a fallback font.
+ * 2. The text nodes a style hides from sight (ShownText) are found, on the page as laid out, and so are the absolutely
+ *    or fixed positioned elements that then show no text. The noncharacters the arbiter marks a copy of the page with
+ *    (U+FDD0 to U+FDEF) are taken out of the text while this is measured, and put back, so a marked copy is measured
+ *    as the page itself is.
  * 3. Text-transform is undone on every element (inline and important, so no page rule wins) and on first letters and
- *    lines, and each text node hidden from sight is emptied; the body's innerText is read.
+ *    lines, each text node hidden from sight is emptied, and each such positioned element is not displayed; the body's
+ *    innerText is read.
  * 4. In each text node inside a link, the characters between its first and last that are not whitespace are wrapped in
  *    the ShownText markers, and the text is read again. A marker stands beside a character, never beside whitespace
  *    alone, so it changes no whitespace a browser collapses or drops (as at a button's edge).
  * Text a page does not show as text (a script, a style, a textarea's value, a title, a template) is left alone.
  */
-const SHOWN_TEXT = `(() => {
+const SHOWN_TEXT = `(async () => {
   const title = document.title;
   const body = document.body;
   if (!body) return JSON.stringify({ title, text: '', linked: '', hrefs: [], hidden: [] });
+  if (document.fonts) await document.fonts.ready;
   for (const a of document.getAnimations()) {
     try { a.finish(); } catch { a.cancel(); }
   }
