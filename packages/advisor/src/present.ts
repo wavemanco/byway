@@ -7,6 +7,7 @@ import {
   BLOCK_OF_ROLE,
   blockAgrees,
   canPrecede,
+  critiqueSources,
   directionsReactedTo,
   hasNoExecutor,
   inputsOf,
@@ -30,8 +31,8 @@ import {
  * The plain-language presentation of a composed recipe (spec §5 vocabulary). The catalog's presentations are written
  * by hand for the eight configurations and its builder takes only those, so a composed recipe's steps are labelled
  * from block names (`BLOCK_NAMES`) and roles instead, and grouped the way the catalog groups them: a render belongs to
- * the step that reads it, and a writer that applies a critique belongs to the step that made the critique ("Outside
- * critique" is render, critic and fix). Every step, pick and operator id lands in exactly one shown step's `stepIds`,
+ * the step that reads it, and a writer that applies a critique belongs to the step whose critique reaches it on every
+ * path ("Outside critique" is render, critic and fix; @byway/recipe critiqueSources). Every step, pick and operator id lands in exactly one shown step's `stepIds`,
  * so any run event can be labelled.
  *
  * Labels and explainers read what runs (F08, ADR-0092): a step's block is its role's (a label is a declaration), only
@@ -95,8 +96,9 @@ export function stepLabel(n: Unit, near?: Pick_<Around, 'reactedTo'>): string {
  *
  * A sentence that says what other steps do (who wrote the rest, that nothing changes the script later, that nothing is
  * deleted, that you react to the directions) is used only where the recipe establishes it (`Around`): by its order,
- * or, for the directions, by what reaches your next VISION. The sentence without that claim is used everywhere else. So is a sentence about how a step runs where it sits: separate
- * sessions only for a seed that fans out, a chain of clips only inside a relay chain.
+ * or, for the directions, by what reaches your next VISION. The sentence without that claim is used everywhere else.
+ * So is a sentence about how a step runs where it sits: separate sessions only for a seed that fans out, a chain of
+ * clips only inside a relay chain. A step's findings are said to be applied only by a writer they reach on every path.
  *
  * A step is described by what this version runs (ADR-0069): one with no executor yet (@byway/recipe hasNoExecutor: a
  * tool relay's compositing, voice-over audio, any other tool or policy step that is not a render) finishes skipped and
@@ -316,9 +318,12 @@ const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group
 
 /**
  * The shown steps of one stage, from its steps and picks in order: renders wait for the next node (the one that reads
- * them), and a writer that applies a critique joins the group that made it, once.
+ * them), and a writer that applies a critique joins the group of the step whose critique reaches it on every path
+ * (`from`: @byway/recipe critiqueSources), once, with the renders before it. Not the group before it: a writer that
+ * comes next may apply another step's critique (one that a replicate hands on, say), and one a render or a step of
+ * yours sits before may still apply this one's.
  */
-function groupStage(units: Unit[], near: Around): Unit[][] {
+function groupStage(units: Unit[], near: Around, from: ReadonlyMap<Step, Step>): Unit[][] {
   const groups: Unit[][] = [];
   let renders: Unit[] = [];
   for (const u of units) {
@@ -326,13 +331,11 @@ function groupStage(units: Unit[], near: Around): Unit[][] {
       renders.push(u);
       continue;
     }
-    const last = groups.at(-1);
-    const lead = last && leadOf(last);
-    if (!renders.length && last && lead?.op === 'step' && FINDS.has(lead.role) && replacesCritique(lead) && appliesFindings(u, near) && !last.some((x) => appliesFindings(x, near))) {
-      last.push(u);
-      continue;
-    }
-    groups.push([...renders, u]);
+    const source = u.op === 'step' && appliesFindings(u, near) ? from.get(u) : undefined;
+    const into =
+      source && FINDS.has(source.role) && replacesCritique(source) ? groups.find((g) => leadOf(g) === source && !g.some((x) => appliesFindings(x, near))) : undefined;
+    if (into) into.push(...renders, u);
+    else groups.push([...renders, u]);
     renders = [];
   }
   // Renders at the end of a stage belong to the step before them (or stand alone).
@@ -354,6 +357,7 @@ export interface ComposedCopy {
 
 export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePresentation {
   const near = around(recipe);
+  const from = critiqueSources(recipe);
   const order = new Map<string, number>();
   walk(recipe, (n) => {
     if ('id' in n && n.id !== undefined && !order.has(n.id)) order.set(n.id, order.size);
@@ -370,7 +374,7 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
         if (n.judge) judges.add(n.judge);
       } else if (n.op === 'step' && !judges.has(n)) units.push(n);
     });
-    for (const g of groupStage(units, near)) groups.push({ stage: s.stage, units: g });
+    for (const g of groupStage(units, near, from)) groups.push({ stage: s.stage, units: g });
   }
 
   /** Index of the shown step each id belongs to. */

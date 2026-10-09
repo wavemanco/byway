@@ -328,7 +328,8 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(explained(reads, 'scope-cut')).toBe(E.cutApplies);
     const render = { op: 'step', id: 'extra-render', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] };
     const later = admitted(edited(c7, 'apply-scope-cut', (n) => ({ op: 'seq', steps: [render, n] })), c7);
-    expect(explained(later, 'scope-cut')).toBe(E.cut);
+    // A render between them does not stop the marks reaching the fix, so the trim says the AI removes them.
+    expect(explained(later, 'scope-cut')).toBe(E.cutApplies);
   });
 
   it('a model VISION with no step of yours after it is labelled and explained without "to react to", and the diff names only what changed', () => {
@@ -377,6 +378,31 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(refusals(edited(c4, 'cut', (n) => ({ op: 'audit', id: 'aud', lenses: [{ name: 'trim', body: n }] })), c4)).toEqual(['ST9:human-critique']);
     // As the catalog has it, your CUT is admitted and explained as the list the AI removes.
     expect(explained(admitted(copy(c3), c3), 'cut')).toBe(E.cutYoursApplies);
+  });
+
+  it('findings are said to be applied only by a writer they reach on every path, not by the writer that comes next', () => {
+    // C3 and C4 with the cliché sweep in a replicate of two: the replicate hands on the critique it started with, so the
+    // swap step applies your trim list again, not the sweep's finds.
+    for (const r of [c3, c4]) {
+      const wrapped = admitted(edited(r, 'tells-sweep', (n) => ({ op: 'replicate', id: 'rep', n: 2, body: n })), r);
+      const steps = presentComposed(wrapped, COPY).stages.flatMap((s) => s.steps);
+      const sweep = steps.find((s) => s.stepIds.includes('tells-sweep'))!;
+      expect(sweep.explainer, r.id).toBe(E.tells);
+      expect(sweep.stepIds).not.toContain('apply-swaps');
+      expect(steps.find((s) => s.stepIds.includes('apply-swaps'))!.explainer).toBe(E.fix);
+    }
+  });
+
+  it('where the run asks which finds to swap, the sweep says so: a render or a direction of yours may sit between it and its swap step', () => {
+    const render = { op: 'step', id: 'extra-render', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] };
+    const taste = { op: 'step', id: 'between', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['taste'] };
+    for (const [r, between] of [[c1, render], [c7, render], [c7, taste]] as const) {
+      const x = admitted(edited(r, 'tells-sweep', (n) => n, between), r);
+      const steps = presentComposed(x, COPY).stages.flatMap((s) => s.steps);
+      const sweep = steps.find((s) => s.stepIds.includes('tells-sweep'))!;
+      expect(sweep.explainer, `${r.id} ${between.id}`).toBe(E.tellsApplies);
+      expect(sweep.stepIds).toContain('apply-swaps');
+    }
   });
 
   it('the diff names an added step as the composed recipe has it where it sits', () => {

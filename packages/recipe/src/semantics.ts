@@ -626,6 +626,12 @@ export interface FlowOps<S> {
    * the operator hands on of it. May record findings, as `step` may.
    */
   after?(node: Replicate | Each | PickNode | Audit | OneShotGate, entry: S, inner: S): S;
+  /**
+   * The state the loop's exit gets right after an exit point, from the states before and after the step; `after` when
+   * left out. A judge in a relay link with nothing to see is skipped and ends the round 'unchecked' with the ports from
+   * before it (ADR-0090), so an analysis of a port that judge sets says so here.
+   */
+  exit?(step: Step, path: string, before: S, after: S): S;
 }
 
 /** The exit points of the loop being walked, and the states right after each of them. */
@@ -712,7 +718,7 @@ function flowOnce<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stag
   switch (node.op) {
     case 'step': {
       const out = ops.step(node, path, stage, state, contained);
-      if (loop && feedsGate(node, loop.metric)) loop.states.push(out);
+      if (loop && feedsGate(node, loop.metric)) loop.states.push(ops.exit ? ops.exit(node, path, state, out) : out);
       return out;
     }
     case 'seq':
@@ -750,6 +756,111 @@ function flowOnce<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stag
 }
 
 // ---- What reaches a step ----------------------------------------------------------------------------------------
+
+/** A step that takes in a critique: it consumes one, or reads it when it is there (ADR-0089). */
+const takesCritique = (s: Step): boolean => s.consumes.includes('critique') || (s.reads?.includes('critique') ?? false);
+
+/**
+ * The judges that may be skipped where they sit: a model critic or check inside a relay link, whose view has nothing
+ * to judge when the link made no clip (the interpreter's unobservable(), ADR-0090). By path: true when it reports to the
+ * loop around it, whose round then ends 'unchecked' with the ports from before it; false when the run goes on past it
+ * with those ports.
+ */
+function skippableJudges(recipe: Recipe): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  const visit = (n: Node, path: string, inRelay: boolean, metric: string | undefined): void => {
+    switch (n.op) {
+      case 'step':
+        if (inRelay && n.actor === 'model' && (n.role === 'critic' || n.role === 'check')) out.set(path, metric !== undefined && feedsGate(n, metric));
+        return;
+      case 'seq':
+        n.steps.forEach((c, i) => visit(c, `${path}.steps[${i}]`, inRelay, metric));
+        return;
+      case 'loop':
+        visit(n.body, `${path}.body`, inRelay, n.gate.metric);
+        return;
+      case 'relay':
+        visit(n.body, `${path}.body`, true, metric);
+        return;
+      case 'optional':
+        visit(n.body, `${path}.body`, inRelay, metric);
+        return;
+      case 'route':
+        n.branches.forEach((b, i) => visit(b.body, `${path}.branches[${i}].body`, inRelay, metric));
+        return;
+      case 'replicate':
+      case 'each':
+      case 'gate':
+        visit(n.body, `${path}.body`, inRelay, undefined);
+        return;
+      case 'audit':
+        n.lenses.forEach((l, i) => visit(l.body, `${path}.lenses[${i}].body`, inRelay, undefined));
+        return;
+      case 'pick':
+        if (n.judge) visit(n.judge, `${path}.judge`, inRelay, undefined);
+        return;
+    }
+  };
+  recipe.stages.forEach((st, i) => visit(st.body, `stages[${i}].body`, false, undefined));
+  return out;
+}
+
+/**
+ * Whose critique a step applies: for each step that takes in a critique, the one step whose critique reaches it on
+ * every path, at every place it sits. None when another step's critique can reach it instead on some path, or none
+ * at all. Read on the exit-aware flow walk, with the operators handing the critique on as the interpreter does:
+ *
+ * - A step that puts another critique in place (`replacesCritique`) is the latest one's source from then on; a write, a
+ *   render or a person's taste leaves it as it was. A cliché sweep stays the source when the person chooses which of
+ *   its finds are swapped (the interpreter's chooseSwaps narrows the sweep's own finds).
+ * - replicate, each and a pick hand on the critique they started with; an audit its lenses' (joined under their names);
+ *   a one-shot gate its body's.
+ * - A judge in a relay link may be skipped, with nothing to see, and the run goes on with the critique from before it,
+ *   unless it reports to the loop around it, whose round then ends there (ADR-0090). A person's answer in a lens or a
+ *   gate body may be empty, which is dropped (admission refuses one there, ST9 and ST10 'human-critique').
+ *
+ * The presentation says a step's findings are applied only by the writer they reach (present.ts), as the run applies
+ * them: a writer that comes next in the recipe may apply another step's critique.
+ */
+export function critiqueSources(recipe: Recipe): Map<Step, Step> {
+  // A state: the numbers of the steps whose critique may be the latest, sorted; -1 is none yet.
+  const numbers = new Map<Step, number>();
+  const byNumber: Step[] = [];
+  const num = (s: Step): number => {
+    let n = numbers.get(s);
+    if (n === undefined) {
+      n = byNumber.length;
+      numbers.set(s, n);
+      byNumber.push(s);
+    }
+    return n;
+  };
+  const union = (a: readonly number[], b: readonly number[]): number[] => [...new Set([...a, ...b])].sort((x, y) => x - y);
+  const skippable = skippableJudges(recipe);
+  const seen = new Map<Step, Set<number>>();
+  flowRecipe<number[]>(recipe, [-1], {
+    step(s, path, _stage, st, contained) {
+      if (takesCritique(s)) {
+        const acc = seen.get(s) ?? seen.set(s, new Set()).get(s)!;
+        for (const x of st) acc.add(x);
+      }
+      if (!replacesCritique(s)) return st;
+      // A judge skipped where the run goes on past it, or a person's empty answer that a lens or a gate drops.
+      if (skippable.get(path) === false || (s.actor === 'human' && contained)) return union(st, [num(s)]);
+      return [num(s)];
+    },
+    join: (states) => states.reduce<number[]>((a, b) => union(a, b), []),
+    key: (st) => st.join(','),
+    after: (node, entry, inner) => (node.op === 'audit' || node.op === 'gate' ? inner : entry),
+    exit: (_s, path, before, after) => (skippable.get(path) ? union(before, after) : after),
+  });
+  const out = new Map<Step, Step>();
+  for (const [s, from] of seen) {
+    const only = [...from];
+    if (only.length === 1 && only[0]! >= 0) out.set(s, byNumber[only[0]!]!);
+  }
+  return out;
+}
 
 /**
  * The AI directions (model VISION steps) that a person reacts to: on every path, the next VISION of theirs that runs

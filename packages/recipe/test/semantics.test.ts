@@ -15,6 +15,7 @@ import {
   changesWork,
   checkpoints,
   covers,
+  critiqueSources,
   directionsReactedTo,
   declaresVoice,
   each,
@@ -423,6 +424,50 @@ describe('the flow walk (flowRecipe)', () => {
     expect(paths(recipeOf(seq(critic('a'), audit('au', [{ name: 'p', body: critic('p') }]), critic('c'))), entry)).toEqual(['a c']);
     // Loops, optionals and routes hand on what ran in them, whatever `after` says.
     expect(paths(recipeOf(seq(critic('a'), optional('o', 'needed', critic('b')), critic('c'))), entry)).toEqual(['a b c', 'a c']);
+  });
+});
+
+describe('whose critique a writer applies (critiqueSources)', () => {
+  const sources = (r: Recipe) => Object.fromEntries([...critiqueSources(r)].map(([w, s]) => [w.id, s.id]));
+  const personCut = (id: string): Step => step({ id, role: 'cut', block: 'CUT', actor: 'human', consumes: ['view'], produces: ['critique'] });
+  const finalCheck = (id: string, body: Node) => oneShotGate(id, body, { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' });
+
+  it('the step whose critique is the latest on every path to the writer, whatever runs between that notes nothing', () => {
+    expect(sources(recipeOf(seq(critic('c'), fix('f'))))).toEqual({ f: 'c' });
+    expect(sources(recipeOf(seq(critic('c'), render('r'), authorDraft('own'), fix('f'))))).toEqual({ f: 'c' });
+    expect(sources(recipeOf(seq(fix('f'))))).toEqual({});
+    // One that may put another critique in its place on some path leaves the writer no one source.
+    expect(sources(recipeOf(seq(critic('c'), optional('o', 'needed', check('k')), fix('f'))))).toEqual({});
+    expect(sources(recipeOf(seq(route('rt', 'mode', [{ name: 'a', body: critic('a') }, { name: 'b', body: check('b') }]), fix('f'))))).toEqual({});
+    // A writer that only reads a critique when there is one (ADR-0089) applies it the same way.
+    const { consumes: _c, ...rest } = fix('reads');
+    expect(sources(recipeOf(seq(check('k'), step({ ...rest, consumes: ['artifact'], reads: ['critique'] })))).reads).toBe('k');
+  });
+
+  it('as the operators hand the critique on: candidates and a pick the one they started with; an audit its lenses’, a final check its body’s', () => {
+    expect(sources(recipeOf(seq(critic('c'), replicate('x', 2, check('k')), fix('f'))))).toEqual({ f: 'c' });
+    expect(sources(recipeOf(seq(critic('c'), each('e', check('k')), fix('f'))))).toEqual({ f: 'c' });
+    expect(sources(recipeOf(seq(replicate('x', 2, check('k')), fix('f'))))).toEqual({});
+    expect(sources(recipeOf(seq(critic('c'), audit('au', [{ name: 'k', body: check('k') }]), fix('f'))))).toEqual({ f: 'k' });
+    expect(sources(recipeOf(seq(critic('c'), audit('au', [{ name: 'k', body: check('k') }, { name: 'r', body: render('r') }]), fix('f'))))).toEqual({});
+    expect(sources(recipeOf(seq(critic('c'), finalCheck('g', critic('g1')), fix('f'))))).toEqual({ f: 'g1' });
+    // A person's answer there may be empty, which a lens or a gate drops (admission refuses it there: ST9, ST10).
+    expect(sources(recipeOf(seq(critic('c'), audit('au', [{ name: 'p', body: personCut('p') }]), fix('f'))))).toEqual({});
+  });
+
+  it('round after round in a loop, and a judge in a relay link only where a skip ends its round (ADR-0090)', () => {
+    expect(sources(recipeOf(loop('l', seq(render('r'), critic('c'), fix('f')), gate('critic-score'))))).toEqual({ f: 'c' });
+    // A check with nothing to see in a link is skipped: reporting to its loop, the round ends there; else the fix
+    // after it applies the critique from before it.
+    expect(sources(recipeOf(relay('chain', 2, loop('repair', seq(render('r'), check('k'), fix('f')), gate('check-clean')))))).toEqual({ f: 'k' });
+    expect(sources(recipeOf(relay('chain', 2, seq(render('r'), check('k'), fix('f')))))).toEqual({});
+    expect(sources(recipeOf(seq(critic('c'), relay('chain', 2, loop('repair', seq(render('r'), check('k')), gate('check-clean'))), fix('f'))))).toEqual({});
+  });
+
+  it('a step object used twice has a source only where both places have the same one', () => {
+    const f = fix('f');
+    expect(sources(recipeOf(seq(critic('c'), f, check('k'), f)))).toEqual({});
+    expect(sources(recipeOf(seq(critic('c'), f, render('r'), f)))).toEqual({ f: 'c' });
   });
 });
 
