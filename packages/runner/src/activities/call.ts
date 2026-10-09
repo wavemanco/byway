@@ -1,10 +1,12 @@
 /**
  * One model turn with the spec's parse discipline (§3.3): the answer is parsed by its contract; when it misses (or was
  * cut off at the output limit, stopReason 'max-tokens'), the runner asks once more with the problem appended (and,
- * for a cut-off answer, a larger output allowance). A second miss fails the step with a plain message.
+ * for a cut-off answer, a larger output allowance). A second miss fails the step with a plain message, unless an
+ * answer was well formed but short and its parser said what of it is usable (formats.ts Usable): then that is returned
+ * with the problem as its shortfall, for the step to say plainly what is missing (ADR-0090).
  */
-import type { ChatMessage, CompletionRequest, ModelRef, PromptSlot, Tier } from '@byway/contracts';
-import type { Parsed } from '../formats.ts';
+import type { ChatMessage, CompletionRequest, ModelRef, PromptSlot, RenderedPrompt, Tier } from '@byway/contracts';
+import type { Usable } from '../formats.ts';
 import type { RunRef, StepCall } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { ContractMissed, StepError } from './failures.ts';
@@ -23,7 +25,8 @@ export interface ModelCall<T> {
   model?: ModelRef;
   /** What the step is called in a failure message. */
   what: string;
-  parse: (text: string) => Parsed<T> | Promise<Parsed<T>>;
+  /** Reads an answer. It gets the rendered prompt too, for what the template declares (an ASSET prompt's image count). */
+  parse: (text: string, rendered: RenderedPrompt) => Usable<T> | Promise<Usable<T>>;
   maxOutputTokens?: number;
 }
 
@@ -35,6 +38,8 @@ const QUOTE_LIMIT = 24_000;
 export interface ModelAnswer<T> {
   value: T;
   costUsd: number;
+  /** Set when the answer fell short even after the retry: the problem; `value` is the usable part of it. */
+  shortfall?: string;
 }
 
 export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req: ModelCall<T>): Promise<ModelAnswer<T>> {
@@ -62,6 +67,8 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
   let messages: ChatMessage[] = [first];
   let costUsd = 0;
   let problem = '';
+  /** The latest answer that fell short but could be used, with its problem. */
+  let usable: { value: T; problem: string } | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     const out = await deps.gateway.complete({ ...base, messages, maxOutputTokens });
     costUsd += out.costUsd;
@@ -72,14 +79,16 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
       messages = [first];
       continue;
     }
-    const parsed = await req.parse(out.text);
+    const parsed = await req.parse(out.text, rendered);
     if (parsed.ok) return { value: parsed.value, costUsd };
     problem = parsed.problem;
+    if ('usable' in parsed) usable = { value: parsed.usable, problem };
     messages = [
       first,
       { role: 'assistant', content: [{ type: 'text', text: out.text.slice(0, QUOTE_LIMIT) || '(empty)' }] },
       { role: 'user', content: [{ type: 'text', text: `That answer could not be used: ${problem}\nAnswer again, following the answer format exactly.` }] },
     ];
   }
+  if (usable) return { value: usable.value, costUsd, shortfall: usable.problem };
   throw new ContractMissed(`The ${req.what} step's answer could not be used after a retry: ${problem}`, problem);
 }

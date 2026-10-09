@@ -99,6 +99,13 @@ export function locate(text: string, langs: readonly string[], opts: { bare?: bo
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; problem: string };
+/**
+ * A parsed answer, or why it misses its contract, where a miss may still be usable: an answer that is well formed but
+ * short of what was asked (an ASSET answer with fewer images than its prompt asks for) carries what it did give.
+ * askModel asks once more with the problem, and if the second answer falls short too it returns the usable part
+ * instead of failing the step (ADR-0090). A malformed answer is a plain miss and still fails it.
+ */
+export type Usable<T> = Parsed<T> | { ok: false; problem: string; usable: T };
 const fail = (problem: string): Parsed<never> => ({ ok: false, problem });
 
 // ---- Structured artifacts ----------------------------------------------------------------------------------------

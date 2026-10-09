@@ -69,7 +69,7 @@ export function createPromptRenderer(opts: PromptRendererOptions = {}): PromptLi
       const where = `Prompt "${id}"${t.medium ? ` (${t.medium})` : ''}`;
       const user = evaluate(t.user, slots, where).trim();
       const system = t.system ? evaluate(t.system, slots, where).trim() : undefined;
-      return { id: t.id, version: t.version, hash: t.hash, fidelity: t.fidelity, ...(system ? { system } : {}), user };
+      return { id: t.id, version: t.version, hash: t.hash, fidelity: t.fidelity, ...(system ? { system } : {}), user, ...(t.images !== undefined ? { images: t.images } : {}) };
     },
     ids: () => [...entries.keys()].sort(),
     variants: (id) => [...(entries.get(id)?.byMedium.keys() ?? [])].sort(),

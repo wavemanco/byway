@@ -3,27 +3,40 @@
  * - web-page and prose: image briefs (`asset.briefs:<medium>`), one image per brief through the gateway, then the model
  *   places them (`asset.integrate:<medium>`, images served from `/api/artifacts/<id>`).
  * - options and media: briefs, then images; the runner attaches `imageArtifactId` to each option or storyboard shot
- *   itself (no integrate call). On media the first shot's frame becomes the relay `anchor`.
+ *   itself (no integrate call). On media shot 1's frame becomes the relay `anchor`.
  * A step that does not write the work (C2's rough mood boards) keeps its images beside it, in the `asset` port.
  * With no image model the step finishes as skipped and says so; an audio ASSET (C5's voice-over) has no v1 executor
  * and is skipped likewise (ADR-0069). Nothing is faked.
+ *
+ * The brief contract (F11, F12; ADR-0090). How many images a step may ask for is what its prompt declares (`images:`),
+ * and every use of a brief's slot goes by one identity (slot-plan.ts). Coverage is checked before anything is bought.
+ * A short answer gets the one feedback retry, then the step makes what it can and says what is missing, never a failed
+ * run; only a malformed answer fails it. A prompt that may answer with no image (its minimum is 0) is taken at its
+ * word. The relay anchor is exactly shot 1's frame, or none: a later shot's still never stands in for it.
  */
 import { GatewayError, type Medium } from '@byway/contracts';
 import { isHeldKeyError } from '@byway/gateway';
 import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson, textView, type Parsed } from '../formats.ts';
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
-import { parseBriefs, type ImageBrief } from '../parse.ts';
+import { parseBriefs } from '../parse.ts';
 import type { AssetInput, AssetResult } from '../types.ts';
 import { askModel } from './call.ts';
 import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
+import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { announce, storeText, writeProblems } from './writes.ts';
 
 export const NO_IMAGES_NOTE = 'No image provider key is configured, so no images were made; the work passes through unchanged.';
 export const NO_AUDIO_NOTE = 'No voice-over audio provider is configured';
+/** Every brief was bought and every image failed. */
+export const NO_IMAGE_MADE_NOTE = 'No image could be generated for this step; the work passes through unchanged.';
+/** The prompt asks for at least one image, and the AI wrote no usable brief even when asked again (F11). */
+export const NO_BRIEF_NOTE = 'The AI wrote no usable image brief, even when asked again, so no image was made; the work passes through unchanged.';
+/** The prompt lets the AI answer with no image (its minimum is 0), and it did: a choice, not a failure (F11, D3). */
+export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, which its instructions allow, so no image was made; the work is unchanged.';
 
 /** An ASSET step that turns the script into audio rather than images (03 C5 "VO audio from the locked script"). */
 export const isAudioAsset = (step: AssetInput['step']): boolean => step.consumes.includes('voice');
@@ -53,15 +66,17 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const reader = new ArtifactReader(deps);
   const current = await reader.text(ports.artifact);
   const knobs = step.knobs ?? {};
-  const slotsKnob = typeof knobs.slots === 'number' ? knobs.slots : 3;
+  const slotsKnob = typeof knobs.slots === 'number' ? knobs.slots : undefined;
   const tries = typeof knobs.triesPerSlot === 'number' ? Math.max(1, knobs.triesPerSlot) : 1;
+  // On media and options the work decides the slots, read before anything is asked or bought.
+  const each = eachPlan(medium, current, what);
 
-  // 1. Briefs.
+  // 1. Briefs, held to the plan: on prose and web pages, to the count the prompt declares.
   const built = await buildPrompt(reader, { medium, problem: run.problem, step, ports });
   built.slots.artifact = current;
-  const expected = expectedSlots(medium, current);
   if (medium === 'options') built.slots.options = optionLabels(current);
   const promptId = step.prompt && deps.prompts.has(step.prompt) ? step.prompt : 'helper.asset.briefs';
+  let plan: SlotPlan | undefined = each;
   const briefs = await askModel(deps, reader, {
     run,
     call,
@@ -72,36 +87,36 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     tier: step.tier ?? 'mid',
     what,
     maxOutputTokens: 4_000,
-    parse: (text) => checkBriefs(parseBriefs(text), medium, expected, slotsKnob),
+    parse: (text, rendered) => {
+      plan = each ?? freePlan(rendered.images, slotsKnob);
+      return checkBriefs(parseBriefs(text), plan);
+    },
   });
+  const slots = plan!;
   let costUsd = briefs.costUsd;
+  if (!briefs.value.briefs.length) {
+    // Nothing to make: by the prompt's own choice (its minimum is 0), or because no usable brief came even when asked again.
+    const chosen = briefs.shortfall === undefined;
+    await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note: chosen ? NO_IMAGE_CHOSEN_NOTE : NO_BRIEF_NOTE }, true);
+    return chosen ? { costUsd } : { costUsd, skipped: true };
+  }
 
-  // 2. Images, at most `triesPerSlot` attempts each.
+  // 2. Images, at most `triesPerSlot` attempts each; shot 1's frame, which starts the relay chain, at least two.
   const made: MadeImage[] = [];
+  const failed: string[] = [];
   const outputs: string[] = [];
-  for (const brief of briefs.value) {
-    for (let attempt = 1; attempt <= tries; attempt++) {
-      try {
-        const img = await deps.gateway.image({ workspaceId: run.workspaceId, runId: run.runId, stepId: step.id, purpose: `asset:${medium}`, profileId: run.profileId, prompt: brief.prompt, size: brief.size });
-        costUsd += img.costUsd;
-        const alt = brief.alt || `Image for ${brief.slot}`;
-        made.push({ slot: brief.slot, alt, artifactId: img.artifactId });
-        await announce(deps, run.runId, call, img.artifactId, img.mediaType, { label: `Image: ${oneLine(alt).slice(0, 80)}`, name: `image/${brief.slot}`, ...(medium === 'media' ? { shot: Number(brief.slot) } : {}) });
-        outputs.push(img.artifactId);
-        break;
-      } catch (e) {
-        // A refused or failed image is tried again up to triesPerSlot; budget, key and accounting problems stop the step (a
-        // prompt holding a provider key is one, ADR-0088: trying it again would be refused again; an accounting fault
-        // refuses every paid call until the person acknowledges it, ADR-0095).
-        if (!(e instanceof GatewayError) || e.code === 'budget-exceeded' || e.code === 'accounting-fault' || e.code === 'no-credentials' || e.code === 'unknown-profile' || isHeldKeyError(e)) throw e;
-        // An image the provider made and billed that byway then could not keep: another try would buy it again, so the
-        // step stops, with the gateway's message saying it was billed and not bought again.
-        if (e.billed) throw e;
-      }
+  for (const brief of briefs.value.briefs) {
+    const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries);
+    if (!image) {
+      failed.push(brief.slot);
+      continue;
     }
+    costUsd += image.costUsd;
+    made.push(image.made);
+    outputs.push(image.made.artifactId);
   }
   if (!made.length) {
-    await stepFinished(deps, run, call, { costUsd, skipped: true, note: 'No image could be generated for this step; the work passes through unchanged.' }, true);
+    await stepFinished(deps, run, call, { costUsd, skipped: true, note: NO_IMAGE_MADE_NOTE }, true);
     return { costUsd, skipped: true };
   }
 
@@ -143,26 +158,56 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     outputs.push(id);
     if (writes) result.artifactId = id;
     else result.asset = made.map((m) => m.artifactId);
-    if (medium === 'media' && step.produces.includes('anchor')) {
-      const first = [...made].sort((a, b) => Number(a.slot) - Number(b.slot))[0];
-      if (first) result.anchor = first.artifactId;
-    }
   }
-  await stepFinished(deps, run, call, { costUsd: result.costUsd, outputArtifactIds: outputs }, true);
+  // The relay chain starts from shot 1's frame, or from none: never from a later shot's still.
+  const anchorWanted = medium === 'media' && step.produces.includes('anchor') && slots.kind === 'each' && slots.first !== undefined;
+  const anchor = anchorWanted ? made.find((m) => m.slot === (slots as Extract<SlotPlan, { kind: 'each' }>).first)?.artifactId : undefined;
+  if (anchor) result.anchor = anchor;
+  const note = partialNote(slots, briefs.value.missing, briefs.value.unknown, failed, anchorWanted && !anchor);
+  await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
 
-/** The slots briefs must name on options (option labels) and media (shot numbers); undefined elsewhere. */
-function expectedSlots(medium: Medium, artifact: string): string[] | undefined {
-  if (medium === 'options') {
-    const r = parseOptions(artifact);
-    return r.ok ? r.value.options.map((_, i) => labelOf(i)) : undefined;
-  }
-  if (medium === 'media') {
-    const r = parseStoryboard(artifact);
-    return r.ok ? r.value.storyboard.map((s) => String(s.shot)) : undefined;
+/**
+ * One brief's image, tried up to `tries` times. A refused or failed image is tried again; budget, key and accounting
+ * problems stop the step (a prompt holding a provider key is one, ADR-0088: trying it again would be refused again; an
+ * accounting fault refuses every paid call until the person acknowledges it, ADR-0095). Undefined when every try failed.
+ */
+async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | undefined> {
+  const { run, call, step } = input;
+  const medium = run.medium;
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      const img = await deps.gateway.image({ workspaceId: run.workspaceId, runId: run.runId, stepId: step.id, purpose: `asset:${medium}`, profileId: run.profileId, prompt: brief.prompt, size: brief.size });
+      const alt = brief.alt || `Image for ${brief.slot}`;
+      await announce(deps, run.runId, call, img.artifactId, img.mediaType, { label: `Image: ${oneLine(alt).slice(0, 80)}`, name: `image/${brief.slot}`, ...(medium === 'media' ? { shot: Number(brief.slot) } : {}) });
+      return { made: { slot: brief.slot, alt, artifactId: img.artifactId }, costUsd: img.costUsd };
+    } catch (e) {
+      if (!(e instanceof GatewayError) || e.code === 'budget-exceeded' || e.code === 'accounting-fault' || e.code === 'no-credentials' || e.code === 'unknown-profile' || isHeldKeyError(e)) throw e;
+      // An image the provider made and billed that byway then could not keep: another try would buy it again, so the
+      // step stops, with the gateway's message saying it was billed and not bought again.
+      if (e.billed) throw e;
+    }
   }
   return undefined;
+}
+
+/**
+ * The step's note when it made only part of what its plan asked for: the slots no brief covered, the slots named that
+ * the work does not have, the images that could not be made, and, on a storyboard, that the video chain has no start
+ * frame. Undefined when everything was made.
+ */
+function partialNote(plan: SlotPlan, missing: string[], unknown: string[], failed: string[], noAnchor: boolean): string | undefined {
+  const list = (items: string[]) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? ''));
+  const name = (id: string) => slotName(plan, id);
+  const parts = [
+    ...(missing.length ? [`no image brief was written for ${list(missing.map(name))}`] : []),
+    ...(unknown.length ? [`briefs for ${list(unknown.map((u) => `“${u}”`))}, which ${plan.kind === 'each' && plan.medium === 'media' ? 'the storyboard has no shot for' : 'are not among the options'}, were left out`] : []),
+    ...(failed.length ? [`the image for ${list(failed.map(name))} could not be made`] : []),
+  ];
+  const first = plan.kind === 'each' ? plan.first : undefined;
+  const sentences = [...(parts.length ? [`Not every image was made: ${parts.join('; ')}.`] : []), ...(noAnchor && first ? [`No frame was made for shot ${first}, so the video chain has no start frame.`] : [])];
+  return sentences.length ? sentences.join(' ') : undefined;
 }
 
 /** The options slot of an options brief: each option's label and title, as "### A" headings. */
@@ -171,32 +216,15 @@ function optionLabels(artifact: string): string {
   return r.ok ? labelled(r.value.options.map((o) => `${o.title}: ${o.pitch}`)) : textView('options', artifact);
 }
 
-function checkBriefs(r: Parsed<ImageBrief[]>, medium: Medium, expected: string[] | undefined, cap: number): Parsed<ImageBrief[]> {
-  if (!r.ok) return r;
-  let briefs = r.value;
-  if (expected) {
-    const wanted = new Set(expected);
-    briefs = briefs.filter((b) => wanted.has(b.slot.trim().toUpperCase()) || wanted.has(b.slot.trim()));
-    briefs = [...new Map(briefs.map((b) => [b.slot, b])).values()];
-    if (!briefs.length) return { ok: false, problem: `Write one brief per ${medium === 'media' ? 'storyboard shot (slot = the shot number)' : 'option (slot = its label)'}: ${expected.join(', ')}.` };
-  } else {
-    briefs = briefs.slice(0, Math.max(1, cap));
-    if (!briefs.length) return { ok: false, problem: 'Write at least one image brief.' };
-  }
-  return { ok: true, value: briefs };
-}
-
-/** Attach each image to its option (by label) or shot (by number), without touching anything else. */
+/** Attach each image to its option (by label) or shot (by number), by the slot's one identity; nothing else changes. */
 function attach(medium: Medium, artifact: string, made: MadeImage[]): string {
+  const bySlot = new Map(made.map((m) => [m.slot, m.artifactId]));
   if (medium === 'options') {
     const r = parseOptions(artifact);
     if (!r.ok) throw new StepError(`The options could not be read: ${r.problem}`);
-    const bySlot = new Map(made.map((m) => [m.slot.toUpperCase(), m.artifactId]));
     return serializeJson({ options: r.value.options.map((o, i) => (bySlot.has(labelOf(i)) ? { ...o, imageArtifactId: bySlot.get(labelOf(i)) } : o)) });
   }
   const r = parseStoryboard(artifact);
   if (!r.ok) throw new StepError(`The storyboard could not be read: ${r.problem}`);
-  const bySlot = new Map(made.map((m) => [m.slot, m.artifactId]));
   return serializeJson({ ...r.value, storyboard: r.value.storyboard.map((s) => (bySlot.has(String(s.shot)) ? { ...s, imageArtifactId: bySlot.get(String(s.shot)) } : s)) });
 }
-

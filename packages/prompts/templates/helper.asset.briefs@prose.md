@@ -1,9 +1,10 @@
 ---
 id: helper.asset.briefs
-version: 1
+version: 2
 fidelity: project
 slots: artifact
 output: image-briefs
+images: 0-3
 source: protocol/01-blocks.md ASSET (fit: education and explainers; never present generated imagery as evidence ⟨A⟩; charts only from executed code on real data ⟨A⟩); spec §3.3 asset.briefs on prose ("illustrations only where the text asks for them").
 ---
 ## system
