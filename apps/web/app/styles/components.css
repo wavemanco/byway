@@ -95,6 +95,15 @@ code {
   color: var(--ink);
 }
 
+/* Locked once the list is sent: it keeps focus, so it only looks unavailable (R5). */
+.icon-button[aria-disabled='true'],
+.icon-button[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--ink-2);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* --- Route strip: who does what, in what order --------------------------------------------------------- */
 
 .route {

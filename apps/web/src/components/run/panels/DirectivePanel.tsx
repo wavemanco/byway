@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { canSubmit, toResolution } from '../../../view/checkpoints.ts';
+import { ActionButton } from '../../ActionButton.tsx';
 import { useShortcuts } from '../../useShortcuts.ts';
 import { References } from './References.tsx';
 import { TurnFooter } from './TurnFooter.tsx';
@@ -108,17 +109,18 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId, draft:
                   }}
                   onKeyDown={(e) => onKeyDown(e, i)}
                 />
-                <button type="button" className="icon-button" onClick={() => remove(i)} disabled={sent} aria-label={`Remove item ${i + 1}`}>
+                {/* Sent locks the list; a control that had focus when it was sent (Ctrl+Enter) keeps it (R5). */}
+                <ActionButton className="icon-button" onClick={() => remove(i)} unavailable={sent} aria-label={`Remove item ${i + 1}`}>
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                   </svg>
-                </button>
+                </ActionButton>
               </li>
             ))}
           </ol>
-          <button type="button" className="button button-quiet" onClick={() => insertAfter(items.length - 1)} disabled={sent}>
+          <ActionButton className="button button-quiet" onClick={() => insertAfter(items.length - 1)} unavailable={sent}>
             Add an item
-          </button>
+          </ActionButton>
           <p className="muted small">Enter adds an item. Only what you list is removed.</p>
         </div>
         <References ids={refs} artifacts={artifacts} />

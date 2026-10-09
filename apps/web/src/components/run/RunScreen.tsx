@@ -12,10 +12,12 @@ import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
 import type { StepIndex } from '../../view/steps.ts';
 import { buildTimeline, currentStep } from '../../view/timeline.ts';
 import { recipeTitle } from '../../view/vocabulary.ts';
+import { ActionButton } from '../ActionButton.tsx';
 import { ApiError, get, post } from '../api.ts';
 import { EvidenceLabel } from '../EvidenceLabel.tsx';
 import { Route } from '../Route.tsx';
 import { useTechnicalNames } from '../TechNames.tsx';
+import { useAction } from '../useAction.ts';
 import { usePolling, useRefresher } from '../useRefresher.ts';
 import { createDraftStore } from './draftStore.ts';
 import { RunStatusPanel } from './RunStatusPanel.tsx';
@@ -49,7 +51,6 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   const [served, setServed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [connection, setConnection] = useState<Connection>('ok');
-  const [busy, setBusy] = useState(false);
   // An answer's error belongs to its question: a refusal of one is not shown above the next ('control': Pause etc.).
   const [error, setError] = useState<{ checkpointId: string; message: string } | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -121,10 +122,11 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   }, [drafts, draftsReady, served, checkpoints, run.status]);
   const unsent = draftsReady ? drafts.unsent(checkpoints, run.status) : [];
 
-  async function resolve(resolution: CheckpointResolution) {
+  // Sending an answer is one action in flight (R5): a second send while one is on its way (a double press, Enter on a
+  // focused Send, a shortcut) is refused at once, before the panel re-renders as busy.
+  const resolving = useAction(async (resolution: CheckpointResolution) => {
     const { checkpointId, ...answer } = resolution;
     const cp = checkpoints.find((c) => c.id === checkpointId);
-    setBusy(true);
     setError(null);
     try {
       await post(`/api/runs/${encodeURIComponent(runId)}/checkpoints/${encodeURIComponent(checkpointId)}`, answer);
@@ -133,17 +135,16 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
       // byway's provider keys (ADR-0088), the panel keeps it to be edited, but the tab stops keeping it until it is.
       if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL && cp) drafts.withhold(cp, resolution);
       setError({ checkpointId, message: err instanceof Error ? err.message : 'That answer was not sent. Try again.' });
-      setBusy(false);
       return;
     }
     // Accepted: the turn stays locked with the person's own answer until a snapshot shows the question closed.
     if (cp) drafts.markSent(cp);
     await refresher.now();
-    setBusy(false);
-  }
+  });
+  const busy = resolving.busy;
 
-  async function control(action: ControlAction) {
-    if (pending) return;
+  // Pause, Resume and Cancel: one at a time, each refused while another is on its way (R5).
+  const controlling = useAction(async (action: ControlAction) => {
     setPending(action);
     setError(null);
     try {
@@ -157,7 +158,26 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
     } finally {
       setPending(null);
     }
+  });
+  const control = (action: ControlAction) => void controlling.run(action);
+
+  /**
+   * Closes the step opened from the timeline. With no question open, focus goes back to the timeline row that opened it
+   * (or the run's status, if that row is gone), not to the page; with one open, the Your turn panel takes focus as it
+   * opens again, as it always has (R5).
+   */
+  function closeStep() {
+    const key = selected;
+    setSelected(null);
+    if (key !== null && !turn) setRefocus({ key });
   }
+  const [refocus, setRefocus] = useState<{ key: string } | null>(null);
+  useEffect(() => {
+    if (!refocus) return;
+    const row = [...(rootRef.current?.querySelectorAll<HTMLElement>('.tl-title') ?? [])].find((el) => el.dataset.stepKey === refocus.key);
+    (row ?? statusRef.current)?.focus();
+    setRefocus(null);
+  }, [refocus]);
 
   const shownError = error && (error.checkpointId === 'control' || error.checkpointId === turn?.id) ? error.message : null;
   const status = runStatusLabel(run.status);
@@ -199,9 +219,9 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
           {ended ? null : confirmCancel ? (
             <div className="confirm-inline" role="group" aria-label="Cancel this run?">
               <span>Cancel this run? What it made so far is kept.</span>
-              <button type="button" className="button button-danger" onClick={() => void control('cancel')} aria-disabled={pending !== null} aria-busy={pending === 'cancel'}>
+              <ActionButton className="button button-danger" onClick={() => control('cancel')} busy={pending === 'cancel'} unavailable={controlling.busy}>
                 {pending === 'cancel' ? controlPendingLabel('cancel') : 'Cancel run'}
-              </button>
+              </ActionButton>
               <button type="button" className="button button-quiet" onClick={() => setConfirmCancel(false)} autoFocus>
                 Keep going
               </button>
@@ -209,17 +229,17 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
           ) : (
             <div className="run-controls">
               {paused ? (
-                <button type="button" className="button" onClick={() => void control('resume')} aria-disabled={pending !== null} aria-busy={pending === 'resume'}>
+                <ActionButton className="button" onClick={() => control('resume')} busy={pending === 'resume'} unavailable={controlling.busy}>
                   {pending === 'resume' ? controlPendingLabel('resume') : 'Resume'}
-                </button>
+                </ActionButton>
               ) : (
-                <button type="button" className="button" onClick={() => void control('pause')} aria-disabled={pending !== null} aria-busy={pending === 'pause'}>
+                <ActionButton className="button" onClick={() => control('pause')} busy={pending === 'pause'} unavailable={controlling.busy}>
                   {pending === 'pause' ? controlPendingLabel('pause') : 'Pause'}
-                </button>
+                </ActionButton>
               )}
-              <button type="button" className="button" onClick={() => setConfirmCancel(true)} aria-disabled={pending !== null}>
+              <ActionButton className="button" onClick={() => setConfirmCancel(true)} unavailable={controlling.busy}>
                 Cancel
-              </button>
+              </ActionButton>
             </div>
           )}
         </div>
@@ -251,7 +271,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
           {unsent.length > 0 ? <UnsentWords items={unsent} onDiscard={(id) => drafts.discard(id)} /> : null}
           {/* Opening a step replaces the turn on screen; the turn's draft lives in the store, so nothing is lost. */}
           {selectedStep ? (
-            <StepDetail step={selectedStep} artifacts={data.artifacts} onClose={() => setSelected(null)} closeLabel={turn ? 'Back to your turn' : 'Back'} />
+            <StepDetail step={selectedStep} artifacts={data.artifacts} onClose={closeStep} closeLabel={turn ? 'Back to your turn' : 'Back'} />
           ) : turn ? (
             // Until the kept drafts are loaded (one tick after hydration) the slot stays empty, so the panel opens with
             // the person's draft rather than the starting text, and the status panel never flashes in between.
@@ -263,7 +283,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
                 artifacts={data.artifacts}
                 busy={busy}
                 paused={paused}
-                onSubmit={resolve}
+                onSubmit={(resolution) => void resolving.run(resolution)}
                 draft={drafts.get(turn)}
                 onDraft={(draft) => drafts.put(turn, draft)}
                 sent={drafts.isSent(turn.id)}
@@ -274,7 +294,8 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
           )}
         </div>
         <aside className="run-timeline" aria-label="Steps">
-          <Timeline stages={stages} artifacts={data.artifacts} selected={selected} onSelect={(key) => setSelected((cur) => (cur === key ? null : key))} />
+          {/* A row opens its step, and pressed again closes it. */}
+          <Timeline stages={stages} artifacts={data.artifacts} selected={selected} onSelect={(key) => (selected === key ? closeStep() : setSelected(key))} />
         </aside>
       </div>
     </div>

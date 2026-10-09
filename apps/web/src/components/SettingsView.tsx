@@ -6,8 +6,10 @@ import { useId, useState } from 'react';
 import { formatUsd, parseBudgetInput } from '../view/format.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
 import { profileNeeds, videoAvailability } from '../view/labels.ts';
+import { ActionButton } from './ActionButton.tsx';
 import { get, patch } from './api.ts';
 import { Switch } from './Switch.tsx';
+import { useAction } from './useAction.ts';
 import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
 
 const PROVIDERS: Record<ProviderId, { name: string; does: string; env?: string }> = {
@@ -74,6 +76,8 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
       setLedgerCheck({ checking: false, message: err instanceof Error ? err.message : 'The check did not run. Try again.' });
     }
   }
+  // One check at a time; its button keeps focus while it runs (R5).
+  const checking = useAction(checkLedger);
 
   async function saveBudget() {
     const value = parseBudgetInput(budgetText);
@@ -205,9 +209,9 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
         </form>
         {pricingNote ? <p className="section-note">{pricingNote}</p> : null}
         <div className="inline-form">
-          <button type="button" className="button" onClick={() => void checkLedger()} disabled={ledgerCheck.checking}>
-            {ledgerCheck.checking ? 'Checking…' : 'Check the spend ledger'}
-          </button>
+          <ActionButton className="button" onClick={() => void checking.run()} busy={checking.busy}>
+            {checking.busy ? 'Checking…' : 'Check the spend ledger'}
+          </ActionButton>
         </div>
         <p className="section-note" role="status" aria-live="polite">
           {ledgerCheck.message}

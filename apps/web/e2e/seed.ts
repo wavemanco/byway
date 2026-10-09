@@ -1,6 +1,7 @@
 /**
- * Test-side seeding for the artifact-view specs (F05, F13): runs written straight into the suite's own store
- * (BYWAY_E2E_DATA_DIR) through @byway/store, after the demo server is up. No product route writes them.
+ * Test-side seeding for the artifact-view specs (F05, F13), and the helpers the keyboard spec's seeding builds on
+ * (keyboard-seed.ts, R5): runs written straight into the suite's own store (BYWAY_E2E_DATA_DIR) through @byway/store,
+ * after the demo server is up. No product route writes them.
  *
  * Why this is sound: the Run screen reads runs from the store only (the runner's view), and lost runs are reconciled only
  * when the engine starts, so a run written here shows as it was written. A seeded question has no workflow behind it, so
@@ -46,7 +47,7 @@ export function seedDataDir(): string | undefined {
   return process.env.BYWAY_E2E_DATA_DIR;
 }
 
-function openStore(): SqliteStore {
+export function openStore(): SqliteStore {
   const dataDir = seedDataDir();
   if (!dataDir) throw new Error('BYWAY_E2E_DATA_DIR is not set: run the suite with pnpm e2e or the Playwright config.');
   return createStore({ dataDir });
@@ -76,14 +77,14 @@ function diffText(): string {
   return `${files.join('\n')}\n\nWhy: Every setting now defaults to 1, which the review asked for.`;
 }
 
-async function stepWithArtifact(store: SqliteStore, runId: string, stepId: string, label: string, artifactId: string, mediaType: string): Promise<void> {
+export async function stepWithArtifact(store: SqliteStore, runId: string, stepId: string, label: string, artifactId: string, mediaType: string): Promise<void> {
   const event = (type: RunEvent['type'], data: Record<string, unknown>) => store.appendEvent({ runId, type, stepId, data });
   await event('step-started', { label, stage: 'D2', actor: 'model' });
   await event('artifact', { artifactId, mediaType, label });
   await event('step-finished', { costUsd: 0 });
 }
 
-async function newRun(store: SqliteStore, title: string, recipeId: string, medium: Medium): Promise<string> {
+export async function newRun(store: SqliteStore, title: string, recipeId: string, medium: Medium): Promise<string> {
   const workspace = await store.ensureDefaultWorkspace();
   const runId = randomUUID();
   await store.createRun({ id: runId, workspaceId: workspace.id, recipeId, recipeHash: 'e2e-seeded', profileId: 'demo', title, problem: title, medium, budgetUsd: 2, status: 'running' });
@@ -91,8 +92,25 @@ async function newRun(store: SqliteStore, title: string, recipeId: string, mediu
   return runId;
 }
 
-async function question(store: SqliteStore, title: string, recipeId: string, medium: Medium, kind: CheckpointKind, more: { options?: CheckpointOption[]; artifactIds?: string[]; k?: number }): Promise<SeededRun> {
+/** A finished step shown before a seeded question, so its timeline has a step to open while the question is open. */
+export interface EarlierStep {
+  stepId: string;
+  label: string;
+  artifactId: string;
+  mediaType: string;
+}
+
+export async function question(
+  store: SqliteStore,
+  title: string,
+  recipeId: string,
+  medium: Medium,
+  kind: CheckpointKind,
+  more: { options?: CheckpointOption[]; artifactIds?: string[]; k?: number },
+  earlier: readonly EarlierStep[] = [],
+): Promise<SeededRun> {
   const runId = await newRun(store, title, recipeId, medium);
+  for (const s of earlier) await stepWithArtifact(store, runId, s.stepId, s.label, s.artifactId, s.mediaType);
   const stepId = `e2e-${kind}`;
   const checkpointId = randomUUID();
   await store.appendEvent({ runId, type: 'step-started', stepId, data: { label: 'Your choice', stage: 'D2', actor: 'human' } });

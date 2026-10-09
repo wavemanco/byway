@@ -23,6 +23,18 @@ export function frameSandbox(scripts: boolean): string {
  */
 export const DOWNLOADED_PAGE = 'A downloaded page runs its scripts when you open it from your computer.';
 
+/**
+ * Said under a large page preview (a compare, a reference, a step's detail, a finished run). The preview is a picture of
+ * the page's first screen, at desktop width, that cannot be scrolled, so a view people decide in says it is not the
+ * whole page (F13, ADR-0086's rule for text, kept for pages). The whole page is in the viewer, one Open away (ADR-0085).
+ */
+export const FIRST_SCREEN_ONLY = 'Only the first screen of the page shows here, at desktop width.';
+
+/** What a large page preview's picture is called for assistive technology (its frame is hidden from it). */
+export function firstScreenName(title: string): string {
+  return `${title}: the first screen of the page`;
+}
+
 const OWN_ARTIFACT = /^\/(?:api\/)?artifacts\/sha256(?::|%3A)[0-9a-f]{64}$/i;
 
 /** True for a same-origin address of one stored artifact (`/artifacts/<id>` or `/api/artifacts/<id>`), nothing else. */

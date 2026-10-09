@@ -557,6 +557,14 @@
   overflow: auto;
 }
 
+/* Under each version: the whole of it, in the viewer (F13). */
+.compare-open {
+  display: inline-block;
+  margin-top: var(--s-2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
 .compare-flip {
   margin-top: var(--s-4);
 }

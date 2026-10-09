@@ -60,6 +60,32 @@ describe('parseBody refuses a body holding a held provider key', () => {
     expect(JSON.stringify(answer)).not.toContain(FAL_SECRET);
   });
 
+  // The refusal used to say "This text contains your …" wherever the key was, an attachment included, though it names
+  // the fields: it now says where, in the words Start uses for those parts.
+  it.each([
+    ['the problem text', { text: `Use my key ${ANTHROPIC} for this` }, 'This text contains your ANTHROPIC_API_KEY. Remove it and try again'],
+    ['an attachment', { text: 'A memo', attachments: [{ name: 'notes', text: `config: ${ANTHROPIC}` }] }, 'An attachment contains your ANTHROPIC_API_KEY. Remove it and try again'],
+    ['both, the same key', { text: `Use ${ANTHROPIC}`, attachments: [{ name: 'notes', text: ANTHROPIC }] }, 'This text and an attachment contain your ANTHROPIC_API_KEY. Remove it and try again'],
+    [
+      'both, two keys',
+      { text: `Use ${ANTHROPIC}`, attachments: [{ name: 'notes', text: `config: ${FAL_SECRET}` }] },
+      'This text contains your ANTHROPIC_API_KEY, and an attachment contains your FAL_KEY. Remove them and try again',
+    ],
+  ] as const)('says where the key was: %s', async (_where, body, start) => {
+    const { error } = await refused(await parseBody(post(body), ProblemInput, heldKeyIn));
+    expect(error.startsWith(start), error).toBe(true);
+    expect(error).toMatch(/byway never stores or sends its keys\.$/);
+  });
+
+  it('names a part it has no word for as the request, and says which key, so a screen can word it itself', async () => {
+    const result = await parseBody(post({ ...START, routes: { [ANTHROPIC]: 'yes' } }), StartInput, heldKeyIn);
+    if (result.ok) throw new Error('expected a refusal');
+    const answer = (await result.response.json()) as { error: string; key?: unknown };
+    expect(answer.error.startsWith('This request contains your ANTHROPIC_API_KEY. Remove it and try again')).toBe(true);
+    // The variable's name, as the message already says it; never its value.
+    expect(answer.key).toBe('ANTHROPIC_API_KEY');
+  });
+
   it('accepts text that only looks like a key, and returns the parsed body', async () => {
     const body = { text: 'The fixture uses sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX as a placeholder.' };
     expect(await parseBody(post(body), ProblemInput, heldKeyIn)).toEqual({ ok: true, data: body });
