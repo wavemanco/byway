@@ -18,8 +18,9 @@
  *
  * The same renderer reads the text a page shows, for VOICE's arbiter (ADR-0081): the page is loaded with JavaScript off,
  * under the same allowlist, request filter and deadline as a render, and only its first document is read: a later
- * navigation the request filter sees (a meta refresh to an address) gets No Content, and a page that navigates away
- * where no route sees it (a meta refresh to about:blank) is a plain StepError. It changes no sandbox setting.
+ * navigation the request filter sees (a meta refresh to an address) gets No Content, a move to a fragment of the page
+ * keeps it, and a page that navigates away where no route sees it (a meta refresh to about:blank) is a plain StepError.
+ * It reads what a sighted visitor sees, as the page settles (ShownText). It changes no sandbox setting.
  */
 import type { Browser, BrowserContext, Page, Route } from 'playwright';
 import { StepError } from './activities/failures.ts';
@@ -48,11 +49,26 @@ export interface RenderOptions {
 export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Array; contentType: string } | undefined>;
 
 /**
- * The text Chromium shows of a page, with JavaScript off (VOICE's arbiter, ADR-0081).
- * - `text` is the body's innerText: the text as laid out, after display, visibility, the hidden attribute, whitespace
- *   collapsing and block breaks, with CSS text-transform undone first so letters read as written ('' with no body);
+ * The text Chromium shows of a page, with JavaScript off (VOICE's arbiter, ADR-0081), as it settles (animations and
+ * transitions taken to their end, an endless one stopped).
+ * - `text` is what a sighted visitor sees: the body's innerText (the text as laid out, after display, visibility, the
+ *   hidden attribute, whitespace collapsing and block breaks), with CSS text-transform undone first so letters read as
+ *   written, and with every text node a style hides from sight taken out first ('' with no body). A text node is hidden
+ *   from sight when Chromium lays it out but: it or an ancestor has opacity 0; its colour and fill are fully
+ *   transparent, with no stroke, no shadow and no background clipped to the text; or none of its boxes, once clipped
+ *   by every ancestor whose overflow is hidden or clip (an absolutely or fixed positioned element escapes those below
+ *   its containing block), by an absolutely or fixed positioned ancestor's `clip` rect and by an ancestor's
+ *   `clip-path: inset(…)`, keeps more than a pixel in each direction short of the page's top or start edge, beyond
+ *   which no scrolling reaches (so a screen-reader-only class, font size 0 and text moved off the page are hidden).
+ *   With JavaScript off, text a script would bring into sight (a section that waits at opacity 0 for a scroll
+ *   animation's script) reads as hidden. An absolutely or fixed positioned element that then shows no text and holds
+ *   no image or control is left out too: it stands outside the text's flow, so it breaks no line (innerText would put
+ *   its box on a line of its own). Not detected: text covered by another element or coloured as its background, other
+ *   clip-path shapes, masks and filters, and text clipped in part (an ellipsis);
  * - `linked` is the same text read again after each link's (`a[href]`) content is wrapped in markers: LINK_OPEN, the
  *   link's index in `hrefs` in the digits from LINK_DIGIT_0, LINK_INDEX_END, the content, LINK_CLOSE;
+ * - `hidden` is each text node hidden from sight, in document order: its text (whitespace collapsed, ends trimmed) and
+ *   its link's href, or null;
  * - `title` is document.title.
  */
 export interface ShownText {
@@ -61,6 +77,7 @@ export interface ShownText {
   linked: string;
   /** Each link's href attribute, by index. */
   hrefs: string[];
+  hidden: [text: string, href: string | null][];
 }
 
 /** The markers in ShownText.linked: noncharacters, which a page does not show. */
@@ -75,7 +92,7 @@ export interface PageRenderer {
   screenshots(html: string, resolve: ArtifactResolver, opts?: RenderOptions): Promise<Uint8Array[]>;
   /** The page as each surface shows it, in the order asked. */
   render(html: string, resolve: ArtifactResolver, surfaces: readonly Surface[], opts?: RenderOptions): Promise<SurfaceShots[]>;
-  /** The text the page shows, with JavaScript off (VOICE's arbiter). */
+  /** The text the page shows a sighted visitor, with JavaScript off (VOICE's arbiter). */
   shownText(html: string, resolve: ArtifactResolver, opts?: RenderOptions): Promise<ShownText>;
   close(): Promise<void>;
 }
@@ -309,21 +326,23 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         renderOpts.signal,
         async (page) => {
           // Only the first document is read. A navigation no route sees (to about:blank or about:srcdoc) replaces it, or
-          // destroys the context the read runs in: either way the page's own text cannot be read.
+          // destroys the context the read runs in: either way the page's own text cannot be read. A move to a fragment
+          // of the page (#top) keeps the document, so it is not one.
+          const first = (url: string) => url.replace(/#.*$/s, '') === PAGE_URL;
           let away = false;
           page.on('framenavigated', (frame) => {
-            if (frame === page.mainFrame() && frame.url() !== PAGE_URL) away = true;
+            if (frame === page.mainFrame() && !first(frame.url())) away = true;
           });
           const gone = () => new StepError('The page navigates away as it loads (a meta refresh, for example), so the text it shows could not be read.');
-          if (page.url() !== PAGE_URL) throw gone();
+          if (!first(page.url())) throw gone();
           let read: unknown;
           try {
             read = await page.evaluate(SHOWN_TEXT);
           } catch (e) {
-            if (away || page.url() !== PAGE_URL || /Execution context was destroyed/.test((e as Error).message)) throw gone();
+            if (away || !first(page.url()) || /Execution context was destroyed/.test((e as Error).message)) throw gone();
             throw e;
           }
-          if (away || page.url() !== PAGE_URL) throw gone();
+          if (away || !first(page.url())) throw gone();
           return JSON.parse(String(read)) as ShownText;
         },
         renderOpts.deadline,
@@ -339,31 +358,161 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
 }
 
 /**
- * Read in the page (a string: this package compiles without the DOM library). Text-transform is undone on every
- * element (inline and important, so no page rule wins) and on first letters and lines; the body's innerText is read;
- * then, in each text node inside a link, the characters between its first and last that are not whitespace are
- * wrapped in the ShownText markers, and the text is read again. A marker stands beside a character, never beside
- * whitespace alone, so it changes no whitespace a browser collapses or drops (as at a button's edge). Text a page does
- * not show as text (a script, a style, a textarea's value, a title) is left alone.
+ * Read in the page (a string: this package compiles without the DOM library), in this order:
+ * 1. Animations and transitions are taken to their end (an endless one, which cannot end, is stopped), so the page is
+ *    read as it settles, not at a frame of a fade-in.
+ * 2. The text nodes a style hides from sight (ShownText) are found, on the page as laid out. The noncharacters the
+ *    arbiter marks a copy of the page with (U+FDD0 to U+FDEF) are taken out of the text while this is measured, and put
+ *    back, so a marked copy is measured as the page itself is.
+ * 3. Text-transform is undone on every element (inline and important, so no page rule wins) and on first letters and
+ *    lines, and each text node hidden from sight is emptied; the body's innerText is read.
+ * 4. In each text node inside a link, the characters between its first and last that are not whitespace are wrapped in
+ *    the ShownText markers, and the text is read again. A marker stands beside a character, never beside whitespace
+ *    alone, so it changes no whitespace a browser collapses or drops (as at a button's edge).
+ * Text a page does not show as text (a script, a style, a textarea's value, a title, a template) is left alone.
  */
 const SHOWN_TEXT = `(() => {
   const title = document.title;
   const body = document.body;
-  if (!body) return JSON.stringify({ title, text: '', linked: '', hrefs: [] });
+  if (!body) return JSON.stringify({ title, text: '', linked: '', hrefs: [], hidden: [] });
+  for (const a of document.getAnimations()) {
+    try { a.finish(); } catch { a.cancel(); }
+  }
+  const nodes = [];
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const parent = n.parentElement;
+    if (parent && !parent.closest('script, style, textarea, title, template')) nodes.push(n);
+  }
+  const MARK = /[\\ufdd0-\\ufdef]/;
+  const MARKS = /[\\ufdd0-\\ufdef]/g;
+  const SPACE = /^[ \\t\\n\\f\\r]*$/;
+  const marked = new Map();
+  for (const n of nodes) if (MARK.test(n.data)) { marked.set(n, n.data); n.data = n.data.replace(MARKS, ''); }
+  // Hidden from sight (see ShownText), measured on the page as laid out.
+  const styles = new Map();
+  const style = (e) => { let s = styles.get(e); if (!s) { s = getComputedStyle(e); styles.set(e, s); } return s; };
+  const memo = (f) => { const m = new Map(); return (e) => { let v = m.get(e); if (v === undefined) { v = f(e); m.set(e, v); } return v; }; };
+  const faded = memo((e) => style(e).opacity === '0' || (!!e.parentElement && faded(e.parentElement)));
+  const clipsText = memo((e) => /\\btext\\b/.test(style(e).backgroundClip + ' ' + (style(e).webkitBackgroundClip || '')) || (!!e.parentElement && clipsText(e.parentElement)));
+  const alpha = (c) => {
+    if (!c || c === 'transparent') return 0;
+    const slash = /\\/\\s*([0-9.]+)(%?)\\s*\\)$/.exec(c);
+    if (slash) return parseFloat(slash[1]) / (slash[2] ? 100 : 1);
+    const rgba = /^rgba\\(([^)]*)\\)$/.exec(c);
+    if (rgba) { const v = rgba[1].split(/[\\s,]+/).filter(Boolean); return v.length >= 4 ? parseFloat(v[3]) : 1; }
+    return 1;
+  };
+  const clear = memo((e) => {
+    const s = style(e);
+    const stroke = parseFloat(s.webkitTextStrokeWidth || '0') > 0 && alpha(s.webkitTextStrokeColor) > 0;
+    return alpha(s.color) === 0 && alpha(s.webkitTextFillColor || s.color) === 0 && !stroke && (s.textShadow || 'none') === 'none' && !clipsText(e);
+  });
+  const NO_OVERFLOW = new Set(['inline', 'contents', 'none', 'table', 'inline-table', 'table-row', 'table-row-group', 'table-header-group', 'table-footer-group', 'table-column', 'table-column-group', 'ruby', 'ruby-text']);
+  const len = (v, whole, auto) => v === 'auto' ? auto : v.endsWith('%') ? (parseFloat(v) / 100) * whole : parseFloat(v) || 0;
+  // The rects one element clips its content to: its overflow (unless escaped), its clip rect, its clip-path inset.
+  const owned = [new Map(), new Map()];
+  const own = (e, overflow) => {
+    const m = owned[overflow ? 1 : 0];
+    let v = m.get(e);
+    if (!v) { v = clipsOf(e, overflow); m.set(e, v); }
+    return v;
+  };
+  const clipsOf = (e, overflow) => {
+    const s = style(e);
+    const out = [];
+    const r = e.getBoundingClientRect();
+    if (overflow) {
+      const ox = /hidden|clip/.test(s.overflowX);
+      const oy = /hidden|clip/.test(s.overflowY);
+      const svg = e instanceof SVGSVGElement;
+      if ((ox || oy) && (svg || !NO_OVERFLOW.has(s.display.split(' ')[0]) && !/math/.test(s.display))) {
+        const l = r.left + (svg ? 0 : e.clientLeft);
+        const t = r.top + (svg ? 0 : e.clientTop);
+        const w = svg ? r.width : e.clientWidth;
+        const h = svg ? r.height : e.clientHeight;
+        out.push({ l: ox ? l : -Infinity, t: oy ? t : -Infinity, r: ox ? l + w : Infinity, b: oy ? t + h : Infinity });
+      }
+    }
+    const rect = /^rect\\((.*)\\)$/.exec(s.clip || '');
+    if (rect && (s.position === 'absolute' || s.position === 'fixed')) {
+      const v = rect[1].split(/\\s*,\\s*|\\s+/).filter(Boolean);
+      if (v.length === 4) out.push({ t: r.top + len(v[0], 0, 0), r: r.left + len(v[1], 0, r.width), b: r.top + len(v[2], 0, r.height), l: r.left + len(v[3], 0, 0) });
+    }
+    const inset = /^inset\\(([^)]*)\\)/.exec(s.clipPath || '');
+    if (inset) {
+      const v = inset[1].split(/\\s+round\\s+/)[0].trim().split(/\\s+/);
+      const [t, rr, b, l] = v.length === 1 ? [v[0], v[0], v[0], v[0]] : v.length === 2 ? [v[0], v[1], v[0], v[1]] : v.length === 3 ? [v[0], v[1], v[2], v[1]] : v;
+      out.push({ t: r.top + len(t, r.height, 0), r: r.right - len(rr, r.width, 0), b: r.bottom - len(b, r.height, 0), l: r.left + len(l, r.width, 0) });
+    }
+    return out;
+  };
+  const positioned = (s) => s.position !== 'static' || s.transform !== 'none';
+  const contains = (s) => s.transform !== 'none' || s.filter !== 'none' || /paint|layout|strict|content/.test(s.contain || '');
+  // Every rect that clips a text node whose parent is e: walking up, an absolutely positioned element escapes the overflow
+  // of ancestors below its containing block (the nearest positioned one), and a fixed one that of every ancestor below
+  // one with a transform, a filter or containment.
+  const clips = memo((start) => {
+    const out = [];
+    let escape = '';
+    for (let e = start; e && e !== body && e !== document.documentElement; e = e.parentElement) {
+      const s = style(e);
+      if ((escape === 'abs' && positioned(s)) || (escape === 'fixed' && contains(s))) escape = '';
+      out.push(...own(e, !escape));
+      if (escape !== 'fixed' && s.position === 'absolute') escape = 'abs';
+      if (s.position === 'fixed') escape = 'fixed';
+    }
+    return out;
+  });
+  const rtl = style(document.documentElement).direction === 'rtl';
+  const pageWidth = document.documentElement.clientWidth;
+  const unseen = (n) => {
+    const parent = n.parentElement;
+    if (faded(parent) || clear(parent)) return true;
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    const boxes = [...range.getClientRects()];
+    if (!boxes.length) return false;
+    const cs = clips(parent);
+    return !boxes.some((q) => {
+      let l = q.left, t = q.top, r = q.right, b = q.bottom;
+      for (const c of cs) { l = Math.max(l, c.l); t = Math.max(t, c.t); r = Math.min(r, c.r); b = Math.min(b, c.b); }
+      const off = b + scrollY <= 0 || (rtl ? l + scrollX >= pageWidth : r + scrollX <= 0);
+      return r - l > 1 && b - t > 1 && !off;
+    });
+  };
+  const hiddenNodes = nodes.filter((n) => !SPACE.test(n.data) && unseen(n));
+  // An absolutely or fixed positioned element that shows no text and holds no image or control stands outside the
+  // text's flow and shows nothing in it: it is left out of the read, so it breaks no line (innerText would put its box
+  // on a line of its own, as for a screen-reader-only span between two words).
+  const hiddenSet = new Set(hiddenNodes);
+  const textSet = new Set(nodes);
+  const REPLACED = 'img, svg, video, audio, canvas, iframe, object, embed, input, select, textarea, button, meter, progress, picture';
+  const aside = [];
+  for (const el of body.querySelectorAll('*')) {
+    const s = style(el);
+    if (s.position !== 'absolute' && s.position !== 'fixed') continue;
+    if (el.matches(REPLACED) || el.querySelector(REPLACED)) continue;
+    const inner = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let shows = false;
+    for (let n = inner.nextNode(); n && !shows; n = inner.nextNode()) shows = textSet.has(n) && !SPACE.test(n.data) && !hiddenSet.has(n);
+    if (!shows) aside.push(el);
+  }
+  for (const [n, data] of marked) n.data = data;
+  const squash = (t) => t.replace(MARKS, '').replace(/[ \\t\\n\\f\\r]+/g, ' ').trim();
+  const hidden = hiddenNodes.map((n) => { const a = n.parentElement.closest('a[href]'); return [squash(n.data), a ? a.getAttribute('href') : null]; });
   for (const el of document.querySelectorAll('*')) if (el.style) el.style.setProperty('text-transform', 'none', 'important');
   const sheet = document.createElement('style');
   sheet.textContent = '*::first-letter, *::first-line { text-transform: none !important; }';
   (document.head || document.documentElement).appendChild(sheet);
+  for (const n of hiddenNodes) n.data = '';
+  for (const el of aside) el.style.setProperty('display', 'none', 'important');
   const text = body.innerText;
   const hrefs = [];
   const index = new Map();
-  const nodes = [];
-  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
   for (const n of nodes) {
-    const parent = n.parentElement;
-    const a = parent && parent.closest('a[href]');
-    if (!a || parent.closest('script, style, textarea, title, template')) continue;
+    const a = n.parentElement.closest('a[href]');
+    if (!a) continue;
     const m = /^([ \\t\\n\\f\\r]*)([\\s\\S]*?)([ \\t\\n\\f\\r]*)$/.exec(n.data);
     if (!m || !m[2]) continue;
     let i = index.get(a);
@@ -375,7 +524,7 @@ const SHOWN_TEXT = `(() => {
     const digits = String(i).replace(/[0-9]/g, (d) => String.fromCharCode(${LINK_DIGIT_0} + Number(d)));
     n.data = m[1] + ${JSON.stringify(LINK_OPEN)} + digits + ${JSON.stringify(LINK_INDEX_END)} + m[2] + ${JSON.stringify(LINK_CLOSE)} + m[3];
   }
-  return JSON.stringify({ title, text, linked: body.innerText, hrefs });
+  return JSON.stringify({ title, text, linked: body.innerText, hrefs, hidden });
 })()`;
 
 /** Headless Chromium with the flags above. */

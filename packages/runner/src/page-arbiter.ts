@@ -2,16 +2,18 @@
  * VOICE's browser arbiter for a web page (F07, ADR-0081). The page reader (page-copy.ts and html-tokens.ts) is a model of
  * how browsers build and show a page, and placement and the in-code verifier both depend on it, so a misread there is a
  * write the verifier cannot see. The arbiter asks the browser: the runner's own Chromium, with JavaScript off
- * (PageRenderer.shownText). It is the last word on every page write, and it fails closed.
+ * (PageRenderer.shownText). It is the last word on every page write, and it fails closed. It reads what a sighted
+ * visitor sees: text a style hides from sight, though a browser lays it out (a screen-reader-only class, opacity 0, text
+ * clipped away or moved off the page), is not in the text it compares, and is listed apart (ShownText.hidden).
  *
  * - Where each line shows (`locate`). A copy of the page is marked at each deck line's first and last character (a pair
  *   of noncharacters with the line's number, put into the text, so no element changes), and Chromium reads the page
  *   and the copy. A line is shown where its two marks each appear once, the start before the end, with exactly the
  *   line's words between them (each run of whitespace read as one space, a line break included). The copy must read
  *   as the page does once the marks are taken out; if it does not, no line is placed.
- * - What is offered (`notShown`): a line a browser does not show so (hidden, a tooltip, read where it is not shown, or
- *   laid out otherwise than in one piece with exactly its words) is not offered, and stays byte for byte. Text a
- *   stylesheet hides from sight but lays out is read as shown (innerText lays it out).
+ * - What is offered (`notShown`): a line a browser does not show so (hidden, out of sight, a tooltip, read where it is
+ *   not shown, or laid out otherwise than in one piece with exactly its words) is not offered, and stays byte for byte.
+ *   So a line holding any text a style hides from sight is not offered: its words are not all seen.
  * - What the written page must show (`expectedShown`): the page before as Chromium showed it, with each changed or
  *   deleted line's words replaced by the person's (brackets taken out, and a space at an edge where the person typed
  *   one), and everything else, the separators between lines included, as the page had it. A gap between two of the
@@ -21,8 +23,10 @@
  *   checked).
  * - The check (`arbiterProblem`): Chromium's reading of the written page, with each run of whitespace read as one gap
  *   (that many table-cell boundaries when it holds tabs, else a line break when it holds one, else a space) and its ends
- *   trimmed, must equal the expected text exactly, and every shown character must be in the expected link. Any
- *   difference refuses the write, naming the line.
+ *   trimmed, must equal the expected text exactly, and every shown character must be in the expected link; and the text
+ *   a style hides from sight must be the page's own, node by node, in the same links. Any difference refuses the write,
+ *   naming the line; one in what is hidden from sight says so (the person's words put out of sight, or the page's text
+ *   pushed out of sight or brought into it).
  *
  * Pure but for the reads (`locateLines`, `arbitrate`), which go to the renderer. Activity code only.
  */
@@ -159,6 +163,8 @@ export interface Location {
   body: string;
   hrefs: (string | null)[];
   title: string;
+  /** The page's text a style hides from sight, node by node, with its link (ShownText.hidden). */
+  hidden: ShownText['hidden'];
   spans: Map<number, Span>;
   /** The marked copy reads as the page does: else no line is placed, and none can be changed. */
   agrees: boolean;
@@ -224,7 +230,7 @@ export async function locateLines(pages: PageRenderer, resolve: ArtifactResolver
 
 /** Place each deck line of `html` in Chromium's reading of its marked copy (see the module comment). */
 export function locate(html: string, plain: ShownText, marked: ShownText | undefined): Location {
-  const none: Location = { body: plain.text, hrefs: unmark(plain.linked, plain.hrefs).hrefs, title: plain.title, spans: new Map(), agrees: false };
+  const none: Location = { body: plain.text, hrefs: unmark(plain.linked, plain.hrefs).hrefs, title: plain.title, hidden: plain.hidden, spans: new Map(), agrees: false };
   if (!marked) return none;
   const body = unmark(marked.linked, marked.hrefs);
   const lines = unmark(marked.text);
@@ -241,7 +247,7 @@ export function locate(html: string, plain: ShownText, marked: ShownText | undef
       if (s.length === 1 && e.length === 1 && s[0]! <= e[0]! && squashHtml(read.text.slice(s[0], e[0])) === u.text) spans.set(k, { in: where, start: s[0]!, end: e[0]! });
     }
   });
-  return { body: body.text, hrefs: body.hrefs, title: title.text, spans, agrees: true };
+  return { body: body.text, hrefs: body.hrefs, title: title.text, hidden: plain.hidden, spans, agrees: true };
 }
 
 /** The deck lines (by number in the whole deck) a browser does not show as the deck reads them: they are not offered. */
@@ -256,6 +262,8 @@ interface Expected {
   body: string;
   hrefs: (string | null)[];
   title: string;
+  /** The text a style hides from sight, as the page before had it: no changed line holds any (the offer rule). */
+  hidden: ShownText['hidden'];
   /** For each character of `body`, the offered line (1-based) whose words it is, or 0. */
   lineAt: number[];
   /** Each changed line's place in `body` (a deleted line: where it was). */
@@ -359,7 +367,27 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
   };
   const b = build('body');
   const t = build('title');
-  return { body: b.text, hrefs: b.hrefs, title: t.text, lineAt: b.lineAt, places: [...b.places, ...t.places] };
+  return { body: b.text, hrefs: b.hrefs, title: t.text, hidden: loc.hidden, lineAt: b.lineAt, places: [...b.places, ...t.places] };
+}
+
+/**
+ * How the text hidden from sight differs between two pages, node by node (text and link): the first text the written
+ * page hides that the page before did not, else the first the page before hid that it does not; undefined when the
+ * same text is hidden, in the same links, in the same order.
+ */
+function hiddenChange(before: ShownText['hidden'], after: ShownText['hidden']): string | undefined {
+  const key = ([t, h]: ShownText['hidden'][number]) => `${h ?? ''}\u0000${t}`;
+  const count = (xs: ShownText['hidden']) => xs.reduce((m, x) => m.set(key(x), (m.get(key(x)) ?? 0) + 1), new Map<string, number>());
+  const was = count(before);
+  const now = count(after);
+  const more = (xs: ShownText['hidden'], than: Map<string, number>, own: Map<string, number>) => xs.find((x) => (own.get(key(x)) ?? 0) > (than.get(key(x)) ?? 0));
+  const hid = more(after, was, now);
+  const shown = more(before, now, was);
+  if (hid && shown && hid[0] === shown[0]) return `a browser would show the words "${hid[0]}", which a style on this page hides from sight, ${hid[1] === null ? `outside the link (to ${shown[1]}) they were in` : shown[1] === null ? `as words of a link (to ${hid[1]})` : `in the link to ${hid[1]}, not ${shown[1]}`}`;
+  if (hid) return `a style on this page would hide "${hid[0]}" from sight there (a browser lays that text out, as for a screen reader, but does not show it)`;
+  if (shown) return `a browser would show "${shown[0]}", which a style on this page hid from sight before`;
+  if (before.length !== after.length || before.some((x, i) => key(x) !== key(after[i]!))) return 'a browser would hide from sight, in another order, the text a style on this page hides';
+  return undefined;
 }
 
 /** A snippet of a shape around index `d`, line breaks shown as " / ". */
@@ -407,6 +435,10 @@ export function arbiterProblem(exp: Expected, after: ShownText): { problem: stri
   }
   let d = 0;
   while (d < want.cs.length && d < plain.cs.length && same(want.cs[d]!, plain.cs[d]!)) d++;
+  // Text a style hides from sight is not in the text compared: the person's words put there would be missing from it,
+  // and text the edit pushes out of sight (or brings into it) would differ. Said as such, naming the line nearest.
+  const sight = hiddenChange(exp.hidden, after.hidden);
+  if (sight) return say(d < want.cs.length || d < plain.cs.length ? nearest(want.src[d] ?? exp.body.length) : (exp.places[0]?.line ?? 1), sight);
   if (d < want.cs.length || d < plain.cs.length) {
     const w = want.cs[d];
     const g = plain.cs[d];

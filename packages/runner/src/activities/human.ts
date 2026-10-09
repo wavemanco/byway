@@ -176,7 +176,7 @@ function withPageRules(page: PageQuestion | undefined, prompt: string): string {
   } catch (e) {
     throw new StepError(`byway could not read the copy of this work (${(e as Error).message}).`);
   }
-  if (page.notOffered.size) rules += ' Text a browser does not show as one line here (hidden, a tooltip, or laid out differently) is not offered, and stays as it is.';
+  if (page.notOffered.size) rules += ' Text a browser does not show as one line here (hidden, out of sight, a tooltip, or laid out differently) is not offered, and stays as it is.';
   if (!page.checked) rules += " byway could not match this page's lines to what a browser shows, so none of them can be changed in this step.";
   return `${prompt} ${rules}`;
 }

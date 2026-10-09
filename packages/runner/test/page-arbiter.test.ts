@@ -14,6 +14,8 @@ afterAll(() => chromium.close(), 60_000);
 const none = async () => undefined;
 
 const pageOf = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>`;
+/** Bootstrap 5's screen-reader-only class. */
+const VISUALLY_HIDDEN = '.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}';
 const edit = (html: string, answer: string, notOffered = new Set<number>()): PageEdit => {
   const e = readPageEdit(readPageCopy(html, notOffered), answer);
   if (!e.ok) throw new Error(e.problem);
@@ -62,6 +64,25 @@ describe('where Chromium shows each line', () => {
     const open = pageOf('<p>X<svg width="9" height="9"><title>Tip</p><p>Hello</p>');
     expect(deckLines(readPageCopy(open))).toEqual(['T', 'X', 'Tip', 'Hello']);
     expect(deckLines(readPageCopy(open, notShown(open, await locateLines(chromium, none, open))))).toEqual(['T', 'X']);
+  }, 60_000);
+
+  it('a line holding text a style hides from sight, though a browser lays it out, is not placed, so it is not offered (r9)', async () => {
+    const html = pageOf(
+      [
+        `<style>${VISUALLY_HIDDEN}</style>`,
+        '<p>Rated 4.5<span class="visually-hidden"> out of 5</span> stars</p>',
+        '<p><button type="submit" class="btn">Send message <span class="visually-hidden">to Saltbox</span></button></p>',
+        '<h2 class="visually-hidden">Our menu</h2>',
+        '<p>Sale <i style="opacity:0">ends</i> today</p>',
+        '<p><a href="/blog/defaults">Read more<span class="visually-hidden"> about defaults</span></a></p>',
+        '<p><span style="font-size:0">Zero</span>Big</p>',
+        '<p>Fresh bread daily</p>',
+      ].join(''),
+    );
+    const loc = await locateLines(chromium, none, html);
+    expect(loc.agrees).toBe(true);
+    expect(loc.hidden).toEqual([['out of 5', null], ['to Saltbox', null], ['Our menu', null], ['ends', null], ['about defaults', '/blog/defaults'], ['Zero', null]]);
+    expect(deckLines(readPageCopy(html, notShown(html, loc)))).toEqual(['T', 'Fresh bread daily']);
   }, 60_000);
 
   it('a page holding the marks\' own characters cannot be placed: nothing is hidden from the offer, and no change can be checked', async () => {
@@ -143,6 +164,28 @@ describe('the check of a written page: Chromium against the person\'s edit, what
     expect((await check(html, 'T\nCall\nNew bread\nEnd', pageOf('<p>Call</p><math><title><a href="/c"><dd>New bread</a></title></math><p>End</p>')))?.problem).toBe(
       'byway could not put line 3 on this page exactly as you wrote it, because a browser shows its link words differently from how they were offered ("Now bread" is not a link\'s words there). Leave line 3 as it was offered.',
     );
+  }, 60_000);
+
+  it('refuses a write that would show the person\'s words hidden from sight, hide text the page showed, or show text it hid (r9)', async () => {
+    // A simulated placement fault: the new word put into an empty screen-reader-only span.
+    const sr = pageOf(`<style>${VISUALLY_HIDDEN}</style><p>Sale <span class="visually-hidden"></span>today</p>`);
+    expect(await check(sr, 'T\nSale starts today', sr.replace('"></span>', '">starts </span>'))).toEqual({
+      line: 2,
+      problem: 'byway could not put line 2 on this page exactly as you wrote it, because a style on this page would hide "starts" from sight there (a browser lays that text out, as for a screen reader, but does not show it). Change line 2 again, or leave it as it was offered.',
+    });
+    // A longer first line pushes the second out of a box that clips what overflows it.
+    const box = (lines: string) => pageOf(`<div style="width:120px;height:40px;line-height:20px;overflow:hidden">${lines}</div>`);
+    expect(await check(box('<div>One</div><div>Two</div>'), 'T\nOne two three four five six\nTwo', box('<div>One two three four five six</div><div>Two</div>'))).toEqual({
+      line: 2,
+      problem: 'byway could not put line 2 on this page exactly as you wrote it, because a style on this page would hide "Two" from sight there (a browser lays that text out, as for a screen reader, but does not show it). Change line 2 again, or leave it as it was offered.',
+    });
+    // Deleting the first line brings the clipped third into the box.
+    const three = box('<div>One</div><div>Two</div><div>Three</div>');
+    expect((await locateLines(chromium, none, three)).hidden).toEqual([['Three', null]]);
+    expect(await check(three, 'T\n\nTwo', box('<div>Two</div><div>Three</div>'))).toEqual({
+      line: 2,
+      problem: 'byway could not put line 2 on this page exactly as you wrote it, because a browser would show "Three", which a style on this page hid from sight before. Change line 2 again, or leave it as it was offered.',
+    });
   }, 60_000);
 
   it('a control left with only hidden words shows the same text, so the in-code check, not the arbiter, refuses it', async () => {

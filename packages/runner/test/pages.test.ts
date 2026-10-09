@@ -193,6 +193,58 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
     expect(shown.hrefs).toEqual([]);
   }, 60_000);
 
+  it('leaves out text a stylesheet hides from sight though a browser lays it out, and lists it with its link (r9)', async () => {
+    const sr = '.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}';
+    const css = `${sr}.cp{clip-path:inset(50%)}.old{position:absolute;clip:rect(1px,1px,1px,1px)}.grad{color:transparent;background:linear-gradient(red,blue);-webkit-background-clip:text;background-clip:text}`;
+    const html = `<!doctype html><html><head><style>${css}</style></head><body>
+      <p>Rated 4.5<span class="sr"> out of 5</span> stars</p>
+      <p>Sale <i style="opacity:0">ends</i> today</p>
+      <div style="opacity:0"><p>Faded <b>out</b></p></div>
+      <p><span style="font-size:0">Zero</span>Big</p>
+      <p><span style="color:transparent">Clear</span> Seen</p>
+      <p style="text-indent:-9999px">Replaced</p>
+      <p><a href="/r">Read more<span class="sr"> about bread</span></a></p>
+      <div style="height:0;overflow:hidden">Folded</div>
+      <p><span class="cp">Clipped</span> path</p>
+      <p><span class="old">Old clip</span> rect</p>
+      <h2 class="grad">Gradient</h2>
+      <div style="height:20px;overflow:auto">Scroll<br>down</div>
+      <div style="height:0">Spills</div>
+    </body></html>`;
+    const shown = await pages.shownText(html, none);
+    const words = shown.text.split(/\s+/).filter(Boolean);
+    // What a sighted visitor sees, scrolling included: overflow that only scrolls, or spills, still shows.
+    expect(words).toEqual(['Rated', '4.5', 'stars', 'Sale', 'today', 'Big', 'Seen', 'Read', 'more', 'path', 'rect', 'Gradient', 'Scroll', 'down', 'Spills']);
+    expect(shown.linked.replace(/[﷐-﷯]/g, '')).toBe(shown.text);
+    expect(shown.linked).toContain(`${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}Read more${LINK_CLOSE}`);
+    expect(shown.hrefs).toEqual(['/r']);
+    expect(shown.hidden).toEqual([
+      ['out of 5', null],
+      ['ends', null],
+      ['Faded', null],
+      ['out', null],
+      ['Zero', null],
+      ['Clear', null],
+      ['Replaced', null],
+      ['about bread', '/r'],
+      ['Folded', null],
+      ['Clipped', null],
+      ['Old clip', null],
+    ]);
+    // An absolutely positioned element that shows no text stands outside the text's flow: it breaks no line, where
+    // innerText would put its box on a line of its own. One that shows text is read as innerText reads it.
+    const flow = await pages.shownText(`<style>${sr}</style><p>Sale<span class="sr"> </span>today</p><p>Rated 4.5<span class="sr"> out of 5</span> stars</p><p>Call<span style="position:absolute;top:0;right:0">Badge</span>now</p>`, none);
+    expect(flow.text).toBe('Saletoday\n\nRated 4.5 stars\n\nCall\nBadge\nnow');
+    expect(flow.hidden).toEqual([['out of 5', null]]);
+  }, 60_000);
+
+  it('reads a page as it settles: animations and transitions are taken to their end, an endless one is stopped (r9)', async () => {
+    const css = '@keyframes in{from{opacity:0}to{opacity:1}}@keyframes blink{50%{opacity:0}}.in{animation:in 2s both}.late{animation:in 1s 20s both}.blink{animation:blink 1s infinite}';
+    const shown = await pages.shownText(`<style>${css}</style><h1 class="in">Welcome</h1><p class="late">Later</p><p class="blink">Live</p>`, none);
+    expect(shown.text.split(/\s+/)).toEqual(['Welcome', 'Later', 'Live']);
+    expect(shown.hidden).toEqual([]);
+  }, 60_000);
+
   it('marks each link\'s words with its index, and lists each address', async () => {
     const shown = await pages.shownText('<p>Read <a href="/terms">the terms</a> and <a href="/faq">FAQ</a>.</p>', none);
     expect(shown.text).toBe('Read the terms and FAQ.');
@@ -231,6 +283,9 @@ describe('the text a page shows, for VOICE\'s arbiter (ADR-0081): Chromium, Java
     // A refresh later than the read, or to the page's own address, reads the page.
     expect((await pages.shownText('<meta http-equiv="refresh" content="5;url=about:blank"><p>Stay</p>', none)).text).toBe('Stay');
     expect((await pages.shownText('<meta http-equiv="refresh" content="0"><p>Stay</p>', none)).text).toBe('Stay');
+    // So does one to a fragment of the page: the document stays the same (r9; round 8 called it navigating away).
+    expect((await pages.shownText('<meta http-equiv="refresh" content="0;url=#m"><p id="m">Stay</p>', none)).text).toBe('Stay');
+    expect((await pages.shownText('<meta http-equiv="refresh" content="0;url=/page#top"><p>Stay</p>', none)).text).toBe('Stay');
   }, 60_000);
 
   it('reads that share a deadline stop at it, whatever time each read has left (r8)', async () => {

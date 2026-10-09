@@ -103,7 +103,8 @@ export function modelShownText(html: string): ShownText {
     linked += t;
   }
   close();
-  return { title, text, linked, hrefs };
+  // The reader reads no stylesheet, so nothing is hidden from sight but what it already leaves out.
+  return { title, text, linked, hrefs, hidden: [] };
 }
 
 export function fakePages(): FakePages {

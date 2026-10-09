@@ -677,14 +677,14 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     const q = await open(html);
     // An svg <title> left open over the paragraph's end hides "Tip" and everything after it in a browser.
     expect(q.offered).toBe('T\nX');
-    expect(q.prompt).toMatch(/ Text a browser does not show as one line here \(hidden, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
+    expect(q.prompt).toMatch(/ Text a browser does not show as one line here \(hidden, out of sight, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
     const out = await q.answer('T\nX marks');
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<p>X<svg', '<p>X marks<svg'));
     // A line a browser shows, but not in one piece with exactly its words, is not offered either: the prompt does not call
     // it hidden (r8).
     const flex = await open(page('<div style="display:flex"><span>Second</span><span>First</span></div><p>Shown</p>'));
     expect(flex.offered).toBe('T\nShown');
-    expect(flex.prompt).toMatch(/ \(hidden, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
+    expect(flex.prompt).toMatch(/ \(hidden, out of sight, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
     const hidden = page('<div hidden>Menu</div><details><summary>More</summary><p>Inside</p></details><dialog>Closed</dialog><p class="x" style="display:none">Styled away</p><p>After</p>');
     const h = await open(hidden);
     expect(h.offered).toBe('T\nMore\nAfter');
@@ -692,18 +692,40 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await b.store.artifacts.getText(out2.artifactId!)).toBe(hidden.replace('<p>After</p>', '<p>After all</p>'));
   });
 
-  it('text a stylesheet hides from sight but a browser lays out (a screen-reader-only class) is offered and read as shown (r8, as ADR-0081 states)', async () => {
-    const sr = '<style>.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style>';
-    const html = page(`${sr}<p>Rated 4.5<span class="sr"> out of 5</span> stars</p>`);
+  it('text a style hides from sight, though a browser lays it out, never takes the person\'s words: its line is not offered, and stays byte for byte (r9)', async () => {
+    // The round-8 verifier's cases: Bootstrap's screen-reader-only class in a rating, a button and a card link; opacity 0;
+    // font size 0; and a gap that is only a screen-reader-only space, which shows as none. Round 8 offered these lines and
+    // wrote "Rated 5 by every single baker" as "Rated <span class="sr">5</span> by every single baker", whose "5" no
+    // sighted visitor sees.
+    const vh = '<style>.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}</style>';
+    const html = page(
+      [
+        vh,
+        '<p>Rated 4.5<span class="visually-hidden"> out of 5</span> stars</p>',
+        '<form><button type="submit" class="btn btn-primary">Send message <span class="visually-hidden">to Saltbox</span></button></form>',
+        '<div class="card"><h3>Quiet interfaces</h3><a href="/essays/quiet" class="stretched-link">Read more<span class="visually-hidden"> about quiet interfaces</span></a></div>',
+        '<p>Sale<span style="opacity:0"> ends</span> today</p>',
+        '<p><span style="font-size:0">Hidden</span>Shown</p>',
+        '<p>Sale<span class="visually-hidden"> </span>today</p>',
+        '<p>Fresh bread daily</p>',
+      ].join('\n'),
+    );
     const q = await open(html);
-    expect(q.offered).toBe('T\nRated 4.5 out of 5 stars');
-    const out = await q.answer('T\nRated 4.8 out of 5 stars');
-    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('4.5', '4.8'));
-    // A word placed where a hidden word was stays hidden from sight: "5" lines up with the hidden "5", so a sighted visitor
-    // sees "Rated by every single baker" while a screen reader reads the line as written. The arbiter reads innerText,
-    // which lays such text out, so it cannot see this.
-    const out2 = await (await open(html)).answer('T\nRated 5 by every single baker');
-    expect(await b.store.artifacts.getText(out2.artifactId!)).toBe(html.replace('<p>Rated 4.5<span class="sr"> out of 5</span> stars</p>', '<p>Rated <span class="sr">5</span> by every single baker</p>'));
+    expect(q.offered).toBe('T\nQuiet interfaces\nFresh bread daily');
+    expect(q.prompt).toMatch(/ Text a browser does not show as one line here \(hidden, out of sight, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
+    const out = await q.answer('T\nQuiet interfaces, in practice\nWarm bread daily');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<h3>Quiet interfaces</h3>', '<h3>Quiet interfaces, in practice</h3>').replace('Fresh bread', 'Warm bread'));
+  });
+
+  it('a write that would put the person\'s words where a style hides them from sight is asked again, naming the line (r9)', async () => {
+    // A box that clips what overflows it: a longer first line pushes the second line out of sight.
+    const html = page('<div style="width:120px;height:40px;line-height:20px;overflow:hidden"><div>One</div><div>Two</div></div>');
+    const q = await open(html);
+    expect(q.offered).toBe('T\nOne\nTwo');
+    expect(await rejected(q.answer('T\nOne two three four five six\nTwo'))).toBe(
+      'byway could not put line 2 on this page exactly as you wrote it, because a style on this page would hide "Two" from sight there (a browser lays that text out, as for a screen reader, but does not show it). Change line 2 again, or leave it as it was offered. As first offered, line 2 read "One".',
+    );
+    expect(await b.store.events(q.run.runId)).not.toContainEqual(expect.objectContaining({ type: 'artifact' }));
   });
 
   it('a line a style breaks over two screen lines is written, its break kept where the words around it were kept', async () => {
