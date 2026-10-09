@@ -2268,13 +2268,14 @@ function partsOf(p: PageDeck, slots: number[]): Part[] {
  */
 /**
  * Whether every gap of `written` (a line's text) that is not one space stands, with the same bytes, between the same
- * two words in `before` (the line's text before), each gap of the line before used once.
+ * two characters in `before` (the line's text before), each gap of the line before used once. (Placement keeps a gap's
+ * bytes between two words it kept, word by word within each part of the line, so the characters beside it are the same.)
  */
 function ownGaps(before: string, written: string): boolean {
   const triples = (t: string) => {
     const parts = t.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '').split(/([ \t\n\f\r]+)/);
     const out: string[] = [];
-    for (let k = 1; k + 1 < parts.length; k += 2) out.push(`${parts[k - 1]}\u0000${parts[k]}\u0000${parts[k + 1]}`);
+    for (let k = 1; k + 1 < parts.length; k += 2) out.push(`${[...parts[k - 1]!].at(-1)}\u0000${parts[k]}\u0000${[...parts[k + 1]!][0]}`);
     return out;
   };
   const had = new Map<string, number>();

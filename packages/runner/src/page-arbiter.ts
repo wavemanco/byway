@@ -530,7 +530,10 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
       out.lineAt.push(line);
       out.src.push(from);
     };
-    const gapBefore = (own: Gap): Allowed => (typed ? 'SB' : (pending ?? own));
+    // A space the person typed at a line's edge: apart, in the flow or across boxes, or as the page had them apart
+    // (in the other order, as beside a float).
+    const apart = (old: Gap | undefined): Allowed => (old === 'R' ? 'SBR' : 'SB');
+    const gapBefore = (own: Gap): Allowed => (typed ? apart(pending ?? own) : (pending ?? own));
     let k = 0;
     for (const r of rs) {
       for (; k < r.span.start; k++) {
@@ -544,7 +547,7 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
       if (edgeIn) pending = pending ? stronger(pending, edgeIn) : edgeIn;
       const start = out.cs.length;
       if (r.cs.length) {
-        push(r.cs[0]!, r.lead || typed ? 'SB' : (pending ?? 'G'), r.hrefs[0]!, r.line, -1);
+        push(r.cs[0]!, r.lead || typed ? apart(pending) : (pending ?? 'G'), r.hrefs[0]!, r.line, -1);
         for (let q = 1; q < r.cs.length; q++) push(r.cs[q]!, r.gaps[q]!, r.hrefs[q]!, r.line, -1);
         pending = undefined;
         typed = r.trail;

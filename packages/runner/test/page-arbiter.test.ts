@@ -260,6 +260,14 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await offer(moved)).toMatchObject({ offered: ['T', 'Plain'], why: { 'Alpha Beta Gamma': 'layout', 'Hello brave world': 'layout', 'Warm bread every morning': 'layout', 'One Two': 'layout', 'Hello world after': 'layout' } });
   }, 60_000);
 
+  it('a space the person types at a line\'s edge is kept apart from its neighbour however the page sets them apart, in the other order included (r10)', async () => {
+    // The float shows "fl" at the right of the paragraph's row: a visitor reads the paragraph's words before it.
+    const html = pageOf('<div style="float:right">fl</div><p>Order now</p><p>End</p>');
+    expect((await offer(html)).offered).toEqual(['T', 'fl', 'Order now', 'End']);
+    expect(await check(html, 'T\nfl\n Big order now\nEnd', html.replace('<p>Order now', '<p>Big order now'))).toBeUndefined();
+    expect(await check(html, 'T\nflag \nOrder now\nEnd', html.replace('>fl<', '>flag<'))).toBeUndefined();
+  }, 60_000);
+
   it('a block break where the line has no space (a display:block cite) is the page\'s own: the line is offered, and an edit keeps the break', async () => {
     const quote = pageOf('<blockquote><p>“Worth every penny.”<cite style="display:block">— Maya R., Hackney</cite></p></blockquote>');
     expect((await offer(quote)).offered).toEqual(['T', '“Worth every penny.”— Maya R., Hackney']);

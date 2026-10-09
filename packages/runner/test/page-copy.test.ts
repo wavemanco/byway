@@ -1013,6 +1013,12 @@ describe('a gap between two characters the person kept keeps the page\'s own whi
     );
   });
 
+  it('a gap is kept word by word within each part of the line: a changed link beside a kept gap leaves the gap the page\'s own', () => {
+    // The verifier compares the characters beside each kept gap (placement keeps "Spring?  menu" while the link's words
+    // change, and "Spring?" after the link is one word with them in the line as a whole).
+    expect(run('<p><a href="/a"> menu!</a>Spring?  menu</p>', set(1, '[x]Spring? menu'))).toMatchObject(clean('<p><a href="/a"> x</a>Spring?  menu</p>'));
+  });
+
   it('pretty-printed source keeps its own whitespace between kept words, which shows as one space', () => {
     const p = '<p>\n  Fresh bread,\n  baked every\n  morning.\n</p>';
     expect(run(p, set(1, 'Fresh bread, baked every evening.'))).toMatchObject(clean('<p>\n  Fresh bread,\n  baked every evening.\n</p>'));
