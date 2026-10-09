@@ -113,14 +113,16 @@ The backup unit is the whole data directory, copied while byway is stopped ([ADR
 2. Move the current data directory aside (or delete it), then copy the whole backup into its place. Do not copy a backup over a live directory or merge the two.
 3. Start byway.
 
-**Mixing files from different backups is not supported.** byway does not detect most mixes, and each one fails differently:
+**Mixing files from different backups is not supported.** Each mix fails differently. byway reports some of them when it starts (below) and does not detect the others:
 
-- An older or missing `ledger.jsonl` (or `ledger.jsonl.head`): spend recorded after the backup is gone, so the run and workspace caps count from the older total, or from zero when the file is missing.
-- A `byway.sqlite` older than `temporal.sqlite`: runs the engine has and the store does not are left in the engine, and byway does not notice them.
+- An older or missing `ledger.jsonl` (or `ledger.jsonl.head`): spend recorded after the backup is gone, so the run and workspace caps count from the older total, or from zero when the file is missing. At start byway names the runs whose recorded cost the ledger no longer holds.
+- A `byway.sqlite` older than `temporal.sqlite`: runs the engine has and the store does not are stopped at the next start, before any of their steps runs, and byway says how many.
 - A `temporal.sqlite` older than `byway.sqlite`, or missing: runs the store shows as going that the engine does not have end at the next start, with a plain message.
 - An engine ahead of the store on the same run: the run waits on a question the store does not have, and nothing reports it.
-- Missing files under `artifacts/`: a missing page, document or image is found only when something opens it.
+- Missing files under `artifacts/`: named at start, with the runs that use them. A missing page, document or image cannot be shown.
 - An older `exposure.jsonl`: the register forgets which outside model families judged work after the backup, so the research side cannot rely on it for that period (CR12).
+
+**At start** byway checks the data directory before its engine starts and prints a `checked` line ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)): whether SQLite finds the database file sound, whether every recorded artifact file is there at its recorded size, whether the spend ledger's hash chain and head agree, and which runs have a recorded cost the ledger lacks. The check only reads, and byway starts either way.
 
 **Spend after a restore.** byway counts spend from `ledger.jsonl`. After restoring an older backup, calls made since that backup are not counted against the run and workspace caps, so byway can spend that amount again before a cap stops it. Check your providers' own dashboards for what was actually spent. This caveat stays until the fix for review finding F03 (durable spend accounting) lands.
 
@@ -130,7 +132,7 @@ byway draws pages with Playwright's Chromium, inside the run engine: the pages a
 
 - Chromium is started in one place (`chromiumLaunchOptions()` in `packages/runner/src/pages.ts`), the same way every time; nothing can add a flag to it.
 - Its environment holds no provider key, nothing that looks secret and no other name from `.env.agents`.
-- Pages may load only Google Fonts, jsDelivr, unpkg, cdnjs and byway's own artifacts. WebSockets and direct WebRTC are blocked, and a page that never settles is stopped.
+- Pages may load only Google Fonts, jsDelivr, unpkg, cdnjs and byway's own artifacts, and a redirect is followed only to another of them: the engine fetches those files itself, one hop at a time, and hands Chromium the result ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)). WebSockets and direct WebRTC are blocked, and a page that never settles is stopped.
 - At start-up byway prints a `renderer` line saying whether Chromium can start. If it cannot, web-page runs are refused before they spend anything, and any other step that needs a page or a card fails with a plain message. If Chromium is missing: `pnpm --filter ./apps/web exec playwright install chromium`.
 - Chromium's own OS sandbox is **off**, as it always has been (Playwright's default). Turning it on (`RENDERER_OS_SANDBOX`) would better contain a page or image that exploits a Chromium bug, but byway would then stop rendering wherever the sandbox cannot start: Linux with unprivileged user namespaces restricted (the default on Ubuntu 23.10 and later), or byway running as root or in a container. That choice is open.
 
