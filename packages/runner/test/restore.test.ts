@@ -171,7 +171,7 @@ describe('the start-up report after a restore (R4)', () => {
     expect(ok).toBe(false);
     expect(lines.slice(1)).toEqual([
       'Line 3 of the spend ledger cannot be read as an entry.',
-      '1 line of the spend ledger that byway could not read is listed under Spending records in Settings; byway makes no paid call until you acknowledge it there.',
+      '1 line of the spend ledger that byway could not count is listed under Spending records in Settings; byway makes no paid call until you acknowledge it there.',
     ]);
     const [fault] = (await gateway.spendRecords(base.workspaceId)).faults;
     await store.spendBook.acknowledgeFault(fault!.id);

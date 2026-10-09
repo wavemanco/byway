@@ -101,10 +101,10 @@ describe('a ledger line the spend book cannot record is an accounting fault (ADR
     // The line is not counted (that is what acknowledging accepts); the line before it is.
     expect(await paid.spend('ws')).toMatchObject({ spentUsd: 0.01, byRun: { 'run-old': 0.01 }, inFlightUsd: 0, uncertainUsd: 0 });
     const { faults } = await paid.spendRecords('ws');
-    expect(faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`Line at byte ${offset} of ledger.jsonl cannot be read as a spend entry`) })]);
+    expect(faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`Line at byte ${offset} of ledger.jsonl cannot be counted as a spend entry`) })]);
     const report = reportLines(await dataDirReport({ dataDir, store, gateway: paid, workspaceIds: ['ws'] }));
     expect(report.ok).toBe(false);
-    expect(report.lines).toContain('1 line of the spend ledger that byway could not read is listed under Spending records in Settings; byway makes no paid call until you acknowledge it there.');
+    expect(report.lines).toContain('1 line of the spend ledger that byway could not count is listed under Spending records in Settings; byway makes no paid call until you acknowledge it there.');
 
     expect(await store.spendBook.acknowledgeFault(faults[0]!.id)).toBe(true);
     await expect(paid.complete(ask())).resolves.toMatchObject({ provider: 'anthropic' });

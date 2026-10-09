@@ -403,7 +403,7 @@ function heldCall(r: Row): HeldCall {
 
 /** The same words as the store's book (faultMessage in @byway/store), which this package cannot import. */
 function memoryFaultMessage(offset: number): string {
-  return `byway found a line in its spend ledger (ledger.jsonl, at byte ${offset}) that it cannot read, so it cannot be sure what has been spent. Paid calls wait until you look at it in Settings and acknowledge it.`;
+  return `byway found a line in its spend ledger (ledger.jsonl, at byte ${offset}) that it cannot read or reconcile with what it has counted, so it cannot be sure what has been spent. Paid calls wait until you look at it in Settings and acknowledge it.`;
 }
 
 function details(scope: 'workspace' | 'run', capUsd: number, spentUsd: number, reservedUsd: number, estimateUsd: number, total: number, uncertainUsd?: number): BudgetDetails {

@@ -421,7 +421,7 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         const listed = await b.faults();
         expect(listed).toEqual([
           { id: expect.any(Number), offset: 0, sha256: 'sha256:first', detail: expect.stringContaining('byte 0'), createdAt: expect.any(String), acknowledged: false },
-          { id: expect.any(Number), offset: 300, sha256: 'sha256:second', detail: expect.stringContaining('byte 300 of ledger.jsonl cannot be read as a spend entry (it is not JSON)'), createdAt: expect.any(String), acknowledged: false },
+          { id: expect.any(Number), offset: 300, sha256: 'sha256:second', detail: expect.stringContaining('byte 300 of ledger.jsonl cannot be counted as a spend entry (it is not JSON)'), createdAt: expect.any(String), acknowledged: false },
         ]);
         await b.acknowledgeFault(listed[0]!.id);
         expect((await a.faults()).map((f) => [f.offset, f.acknowledged])).toEqual([
@@ -451,7 +451,7 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         expect(await b.absorb(batch(entries))).toEqual({ faults: 0 });
         expect(await b.spend('ws')).toEqual({ spentUsd: 0.07, byRun: { run: 0.07 }, inFlightUsd: 0, uncertainUsd: 0 });
         const { faults } = await b.records('ws');
-        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300, 400, 500, 600, 700].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be read as a spend entry`)));
+        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300, 400, 500, 600, 700].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be counted as a spend entry`)));
         expect(await a.admit(admitRequest())).toEqual({ fault: expect.stringMatching(/byte 100\b/) });
         expect(await a.admit(admitRequest({ paid: false, reserveUsd: 0 }))).toEqual({ admitted: true });
         for (const f of faults) expect(await b.acknowledgeFault(f.id)).toBe(true);
@@ -472,7 +472,7 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         const clash = ledgerEntry(0.03, { id: ledgerEntryId, operationId: named.opId });
         expect(await a.absorb(batch([ledgerEntry(0.01), clash]))).toEqual({ faults: 1 });
         expect(await a.spend('ws')).toEqual({ spentUsd: 0.03, byRun: { run: 0.03 }, inFlightUsd: 0.1, uncertainUsd: 0 });
-        expect((await a.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`Line at byte 100 of ledger.jsonl cannot be read as a spend entry (${OTHER_CALLS_ID})`) })]);
+        expect((await a.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`Line at byte 100 of ledger.jsonl cannot be counted as a spend entry (${OTHER_CALLS_ID})`) })]);
       }),
     );
 
@@ -497,13 +497,45 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           // The rest of the batch is counted and the cursor moves on; the line is neither counted nor dropped unseen.
           expect(await b.spend('ws')).toEqual({ spentUsd: 0.06, byRun: { run: 0.06 }, inFlightUsd: 0, uncertainUsd: 0 });
           expect(await b.cursor()).toEqual({ offset: 300, tailStart: 0, tailSha256: null });
-          expect((await b.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`Line at byte 100 of ledger.jsonl cannot be read as a spend entry (${reason})`) })]);
+          expect((await b.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`Line at byte 100 of ledger.jsonl cannot be counted as a spend entry (${reason})`) })]);
           expect(await a.admit(admitRequest())).toEqual({ fault: expect.stringMatching(/byte 100\b/) });
           // The call the book settled is still waiting to be written to the audit file under its own entry.
           expect((await a.unledgered(10)).map((u) => [u.opId, u.entryId])).toEqual([[held.opId, ledgerEntryId]]);
         }),
       );
     }
+
+    // A line naming a call the book holds but has not settled settles that call from the line (an older byway.sqlite
+    // restored beside a newer ledger), but only where the book admitted it: the round-3 verifier found a line written
+    // for another workspace or run counted to the call's own, without a fault.
+    const strays: [string, Partial<LedgerEntry>, string][] = [
+      ['another workspace', { workspaceId: 'ws2' }, 'its "workspaceId" differs from the call the spend book holds under its operation id'],
+      ['another run', { runId: 'run-9' }, 'its "runId" differs from the call the spend book holds under its operation id'],
+    ];
+    for (const [what, change, reason] of strays) {
+      it(
+        `records a line naming a call the book holds unsettled, but in ${what}, as a fault, never counting it to the call's own`,
+        withBook(async ({ a, b }) => {
+          const held = admitRequest({ reserveUsd: 0.1 });
+          await a.admit(held);
+          await a.markSent(held.opId, 'owner-a');
+          expect(await a.absorb(batch([ledgerEntry(0.5, { operationId: held.opId, ...change })]))).toEqual({ faults: 1 });
+          expect(await b.spend('ws')).toEqual({ spentUsd: 0, byRun: {}, inFlightUsd: 0.1, uncertainUsd: 0 });
+          expect((await b.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`(${reason})`) })]);
+        }),
+      );
+    }
+
+    it(
+      'settles a call the book holds unsettled from a line naming it in its own workspace and run, without a fault',
+      withBook(async ({ a, b }) => {
+        const held = admitRequest({ reserveUsd: 0.1 });
+        await a.admit(held);
+        await a.markSent(held.opId, 'owner-a');
+        expect(await a.absorb(batch([ledgerEntry(0.05, { operationId: held.opId })]))).toEqual({ faults: 0 });
+        expect(await b.spend('ws')).toEqual({ spentUsd: 0.05, byRun: { run: 0.05 }, inFlightUsd: 0, uncertainUsd: 0 });
+      }),
+    );
 
     it(
       'reads the same entry again without a fault: the outbox’s own line read back marks its call written, and reading it again changes nothing',
@@ -532,7 +564,7 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         expect(await a.absorb(batch(entries))).toEqual({ faults: 3 });
         expect(await b.spend('ws')).toEqual({ spentUsd: 0.07, byRun: { run: 0.07 }, inFlightUsd: 0, uncertainUsd: 0 });
         const { faults } = await b.records('ws');
-        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be read as a spend entry (its "costUsd" is not`)));
+        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be counted as a spend entry (its "costUsd" is not`)));
         expect(await a.admit(admitRequest())).toEqual({ fault: expect.stringMatching(/byte 100\b/) });
         for (const f of faults) expect(await b.acknowledgeFault(f.id)).toBe(true);
         expect(await a.admit(admitRequest())).toEqual({ admitted: true });

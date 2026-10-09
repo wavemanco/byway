@@ -340,8 +340,9 @@ describe('gateway: malformed provider labels still reach the ledger', () => {
 });
 
 /**
- * An answer that names no served model (the field missing, null or empty) was still billed. It used to fail after
- * billing with a raw TypeError (the label was scrubbed as if it were text) and was counted as "may have been billed".
+ * An answer that names no served model (the field missing, null or empty) was still billed. A missing field used to fail
+ * after billing with a raw TypeError (the label was scrubbed as if it were text) and was counted as "may have been
+ * billed"; a null or empty one was recorded as the served model "null" or "".
  * It is settled as the requested model, at its rates, flagged `priceBasis: 'assumed'` (ADR-0095 decision 7).
  */
 describe('gateway: an answer that names no served model is settled as the requested model, assumed', () => {

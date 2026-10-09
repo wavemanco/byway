@@ -64,7 +64,7 @@ function textOf(what: string, value: unknown): string {
 
 /** The fault message admission gives while a fault is open: what was found, where, and what to do. */
 export function faultMessage(offset: number): string {
-  return `byway found a line in its spend ledger (ledger.jsonl, at byte ${offset}) that it cannot read, so it cannot be sure what has been spent. Paid calls wait until you look at it in Settings and acknowledge it.`;
+  return `byway found a line in its spend ledger (ledger.jsonl, at byte ${offset}) that it cannot read or reconcile with what it has counted, so it cannot be sure what has been spent. Paid calls wait until you look at it in Settings and acknowledge it.`;
 }
 
 type Row = Record<string, unknown>;

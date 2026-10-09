@@ -141,7 +141,7 @@ const FAULT_EXCERPT_CHARS = 120;
 
 /** The words a fault is recorded with (SpendFault.detail): where the line is, why it cannot be counted when known, and its start. */
 export function spendFaultDetail(line: LedgerLine, problem?: string): string {
-  return `Line at byte ${line.offset} of ledger.jsonl cannot be read as a spend entry${problem ? ` (${problem})` : ''}: "${line.excerpt.slice(0, FAULT_EXCERPT_CHARS)}"`;
+  return `Line at byte ${line.offset} of ledger.jsonl cannot be counted as a spend entry${problem ? ` (${problem})` : ''}: "${line.excerpt.slice(0, FAULT_EXCERPT_CHARS)}"`;
 }
 
 /**
@@ -199,11 +199,18 @@ const COUNTED_BY = ['workspaceId', 'runId', 'costUsd', 'priceBasis'] as const;
  * own line read back, or a line read again after a restart or a restore) only when it names the call that holds its id
  * and records it as the book counts it: in the same workspace and run, at the same cost and price basis; absorbing it
  * then adds nothing. Any other line whose id or settled call the book already holds is a fault at its line: counting it
- * could count a call twice, and skipping it would drop what it says unseen (N1).
+ * could count a call twice, and skipping it would drop what it says unseen (N1). A line naming a call the book holds but
+ * has not settled settles it, but only in the workspace and run the book admitted it to; elsewhere it is a fault too.
  */
 export function ledgerEntryConflict(e: LedgerEntry, named: HeldCall | undefined, owner: HeldCall | undefined): string | undefined {
   if (owner !== undefined && owner.opId !== ledgerOperationId(e)) return 'its "id" is the entry id of another call the spend book holds';
-  if (named?.entryId === undefined) return undefined;
+  if (named === undefined) return undefined;
+  // A call the book holds but has not settled is settled from the line, so only where the book admitted it: a line for
+  // another workspace or run would count its cost to this call's own.
+  if (named.entryId === undefined) {
+    for (const field of ['workspaceId', 'runId'] as const) if (named[field] !== e[field]) return `its "${field}" differs from the call the spend book holds under its operation id`;
+    return undefined;
+  }
   if (named.entryId !== e.id) return 'it names a call the spend book holds as settled under another entry id';
   for (const field of COUNTED_BY) if (named[field] !== e[field]) return `its "${field}" differs from the entry the spend book holds under this id`;
   return undefined;

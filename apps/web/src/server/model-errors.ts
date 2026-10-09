@@ -33,7 +33,7 @@ export function modelProblem(err: unknown): ModelProblem | undefined {
       case 'provider-error':
         return { status: 503, message: 'The model provider did not answer. Try again in a minute.' };
       case 'accounting-fault':
-        return { status: 409, message: 'byway found a line in its spend ledger that it cannot read, so it makes no paid calls until you look at it. Open Settings, Spending records, and acknowledge it there, then try again.' };
+        return { status: 409, message: 'byway found a line in its spend ledger that it cannot read or reconcile with what it has counted, so it makes no paid calls until you look at it. Open Settings, Spending records, and acknowledge it there, then try again.' };
       case 'refused':
         return { status: 502, message: 'The model declined to answer this request. Rephrase the problem, or choose a recipe from the Library.' };
       default:

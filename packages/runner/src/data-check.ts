@@ -151,7 +151,7 @@ export function reportLines(report: DataDirReport): { ok: boolean; lines: string
   if (report.openFaults > 0) {
     const one = report.openFaults === 1;
     problems.push(
-      `${one ? '1 line of the spend ledger that byway could not read is' : `${report.openFaults} lines of the spend ledger that byway could not read are`} listed under Spending records in Settings; byway makes no paid call until you acknowledge ${one ? 'it' : 'them'} there.`,
+      `${one ? '1 line of the spend ledger that byway could not count is' : `${report.openFaults} lines of the spend ledger that byway could not count are`} listed under Spending records in Settings; byway makes no paid call until you acknowledge ${one ? 'it' : 'them'} there.`,
     );
   }
   if (report.auditGaps.length > 0) {
