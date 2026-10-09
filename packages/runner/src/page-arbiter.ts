@@ -161,13 +161,26 @@ export interface Location {
   agrees: boolean;
 }
 
-/** A shown text as compared: each run of whitespace one gap (a line break when it holds one), ends trimmed. */
+/**
+ * A shown text as compared: each run of whitespace one gap, ends trimmed. A gap is a cell boundary when the run holds a
+ * tab (innerText's mark of a table cell's end; a run of n tabs is n boundaries, as an empty cell between gives two), a
+ * line break when it holds one, else a space. The line breaks beside a cell boundary are not compared: they are a
+ * block's edge (or a <br>) at the end or start of a cell's content, which parts nothing from the cell beside it, or a
+ * row's end after an empty last cell (placement never moves a cell).
+ */
 interface Shape {
-  /** Characters and gaps: ' ', '\n', or ANY_GAP (either). */
+  /** Characters and gaps: ' ', '\n', ANY_GAP (either of those), or one '\t' per cell boundary. */
   cs: string[];
   hrefs: (string | null)[];
   /** For each, the index in the text it was read from. */
   src: number[];
+}
+
+/** A run of whitespace as one gap (see Shape). */
+function gapOf(run: string): string {
+  const tabs = run.split('\t').length - 1;
+  if (tabs) return '\t'.repeat(tabs);
+  return /[\n\r]/.test(run) ? '\n' : run.includes(ANY_GAP) ? ANY_GAP : ' ';
 }
 
 function shape(text: string, hrefs?: readonly (string | null)[]): Shape {
@@ -177,13 +190,12 @@ function shape(text: string, hrefs?: readonly (string | null)[]): Shape {
   for (let i = 0; i < text.length; i++) {
     const c = text[i]!;
     if (isHtmlSpace(c) || c === ANY_GAP) {
-      const kind = c === '\n' || c === '\r' ? '\n' : c === ANY_GAP ? ANY_GAP : ' ';
       if (!gap) gapAt = i;
-      gap = gap === '\n' || kind === '\n' ? '\n' : gap === ANY_GAP || kind === ANY_GAP ? ANY_GAP : ' ';
+      gap += c;
       continue;
     }
     if (gap && out.cs.length) {
-      out.cs.push(gap);
+      out.cs.push(gapOf(gap));
       out.hrefs.push(null);
       out.src.push(gapAt);
     }
@@ -341,7 +353,10 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
 const around = (s: Shape, d: number): string => {
   const from = Math.max(0, d - 24);
   const to = Math.min(s.cs.length, d + 24);
-  const t = s.cs.slice(from, to).map((c) => (c === '\n' ? ' / ' : c === ANY_GAP ? ' ' : c)).join('');
+  const t = s.cs
+    .slice(from, to)
+    .map((c) => (c === '\n' ? ' / ' : c === ANY_GAP ? ' ' : isCell(c) ? ` ${'| '.repeat(c.length)}` : c))
+    .join('');
   return `${from > 0 ? '…' : ''}${t}${to < s.cs.length ? '…' : ''}`;
 };
 
@@ -383,12 +398,15 @@ export function arbiterProblem(exp: Expected, after: ShownText): { problem: stri
     const w = want.cs[d];
     const g = plain.cs[d];
     const line = nearest(want.src[d] ?? exp.body.length);
-    const gap = (c: string | undefined) => c === ' ' || c === '\n' || c === ANY_GAP;
+    const gap = (c: string | undefined) => c === ' ' || c === '\n' || c === ANY_GAP || (c !== undefined && isCell(c));
     let why: string;
     if (w === undefined) why = `a browser would show text your lines do not have: it would show "${around(plain, d)}"`;
     else if (g === undefined) why = `a browser would not show all of your lines: it would end with "${around(plain, d)}"`;
     else if (gap(w) && !gap(g)) why = `a browser would run words together that your lines keep apart: it would show "${around(plain, d)}"`;
-    else if (!gap(w) && gap(g)) why = `a browser would show ${g === '\n' ? 'a line break' : 'a space'} that your lines do not have: it would show "${around(plain, d)}"`;
+    else if (!gap(w) && gap(g)) why = `a browser would show ${g === '\n' ? 'a line break' : isCell(g) ? 'a table cell\'s edge' : 'a space'} that your lines do not have: it would show "${around(plain, d)}"`;
+    else if (isCell(w) && !isCell(g)) why = `a browser would show in one table cell what it showed in separate cells: it would show "${around(plain, d)}"`;
+    else if (!isCell(w) && isCell(g)) why = `a browser would show in separate table cells what it showed in one: it would show "${around(plain, d)}"`;
+    else if (isCell(w)) why = `a browser would show another number of table cells here: it would show "${around(plain, d)}"`;
     else if (w === ' ' && g === '\n') why = `a browser would break a line where your lines have a space: it would show "${around(plain, d)}"`;
     else if (w === '\n' && g === ' ') why = `a browser would show on one line what it showed on separate lines: it would show "${around(plain, d)}"`;
     else why = `a browser would show "${around(plain, d)}" there`;
@@ -407,6 +425,8 @@ export function arbiterProblem(exp: Expected, after: ShownText): { problem: stri
   return undefined;
 }
 
+/** A gap that is one or more table cells' boundaries. */
+const isCell = (c: string): boolean => c[0] === '\t';
 /** Characters equal, or an either-gap against a space or a line break. */
 const same = (w: string, g: string): boolean => w === g || (w === ANY_GAP && (g === ' ' || g === '\n'));
 const sameWithGaps = (a: Shape, b: Shape): boolean => a.cs.length === b.cs.length && a.cs.every((c, i) => same(c, b.cs[i]!));

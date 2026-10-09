@@ -588,6 +588,35 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('a menu table: deleting either line of a two-line cell is written, as Chromium shows the person\'s lines (r8)', async () => {
+    const menu = page(
+      [
+        '<table><thead><tr><th>Loaf</th><th>Price</th></tr></thead><tbody>',
+        '<tr><td><strong>Country sourdough</strong><br><small>Crackling crust, open crumb</small></td><td>$9</td></tr>',
+        '<tr>\n  <td>\n    <strong>Milk bread</strong>\n    <p class="note">Soft and sweet.</p>\n  </td>\n  <td>$8</td>\n</tr>',
+        '<tr><td>Almond croissant</td><td>Twice-baked<br>Contains nuts</td><td>$5</td></tr>',
+        '<tr><td>$4</td><td><h3>Morning bun</h3>Orange zest</td></tr>',
+        '</tbody></table><p>Prices include delivery.</p>',
+      ].join('\n'),
+    );
+    const before = (await chromium.shownText(menu, none)).text;
+    for (const [line, row] of [
+      ['Crackling crust, open crumb', 'Country sourdough\t$9'],
+      ['Soft and sweet.', 'Milk bread\t$8'],
+      ['Twice-baked', 'Almond croissant\tContains nuts\t$5'],
+      ['Contains nuts', 'Almond croissant\tTwice-baked\t$5'],
+      ['Morning bun', '$4\tOrange zest'],
+    ] as const) {
+      const q = await open(menu);
+      const out = await q.answer(q.offered!.split('\n').map((l) => (l === line ? '' : l)).join('\n'));
+      expect(out.artifactId, line).toBeDefined();
+      const shown = await shows(out.artifactId!);
+      // A line break beside a cell boundary is a block's edge inside the cell (a <br> left at a cell's end shows one).
+      expect(shown.replace(/[ \n]*\t[ \n]*/g, '\t').split('\n'), line).toContain(row);
+      expect(shown.replace(/\s+/g, ''), line).toBe(before.replace(line, '').replace(/\s+/g, ''));
+    }
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // A button's content is an inline block: a browser shows no space at its edge, so "now" took the gap with it.

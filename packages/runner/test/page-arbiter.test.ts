@@ -112,6 +112,29 @@ describe('the check of a written page: Chromium against the person\'s edit, what
     expect((await check(html, answer, pageOf('<p>See <a href="/f">the docs</a> and <a href="/f">FAQ</a> now</p>')))?.problem).toMatch(/in the link to \/f, not \/d/);
   }, 60_000);
 
+  it('a table cell\'s boundary is its own kind of gap: line breaks beside it are a block\'s edge inside the cell (r8)', async () => {
+    // Chromium shows "Name\nNote\t$9": deleting "Note" leaves "Name\n\t$9" expected, and the cell boundary is what parts
+    // "Name" from "$9" in both (round 7 read the tab as a space and refused this write).
+    const html = pageOf('<table><tr><td>Name<br>Note</td><td>$9</td></tr></table>');
+    expect(await check(html, 'T\nName\n\n$9', pageOf('<table><tr><td>Name</td><td>$9</td></tr></table>'))).toBeUndefined();
+    const desc = pageOf('<table><tr><td><strong>Sourdough</strong><p>Our classic loaf</p></td><td>$9</td></tr></table>');
+    expect(await check(desc, 'T\nSourdough\n\n$9', pageOf('<table><tr><td><strong>Sourdough</strong></td><td>$9</td></tr></table>'))).toBeUndefined();
+    const first = pageOf('<table><tr><td>$9</td><td><h3>Plan</h3>For teams</td></tr></table>');
+    expect(await check(first, 'T\n$9\n\nFor teams', pageOf('<table><tr><td>$9</td><td>For teams</td></tr></table>'))).toBeUndefined();
+    // But a cell boundary is never a space or a line break: words moved into one cell, or split over two, are refused.
+    expect(await check(html, 'T\nName\n\n$9', pageOf('<table><tr><td>Name $9</td><td></td></tr></table>'))).toEqual({
+      line: 3,
+      problem: 'byway could not put line 3 on this page exactly as you wrote it, because a browser would show in one table cell what it showed in separate cells: it would show "Name $9". Change line 3 again, or leave it as it was offered.',
+    });
+    const one = pageOf('<table><tr><td>Sourdough loaf</td><td>$9</td></tr></table>');
+    expect((await check(one, 'T\nSourdough loaf\n$10', pageOf('<table><tr><td>Sourdough</td><td>loaf</td><td>$10</td></tr></table>')))?.problem).toBe(
+      'byway could not put line 3 on this page exactly as you wrote it, because a browser would show in separate table cells what it showed in one: it would show "Sourdough | loaf | $10". Change line 3 again, or leave it as it was offered.',
+    );
+    expect((await check(one, 'T\nSourdough loaf\n$10', pageOf('<table><tr><td>Sourdough loaf</td><td></td><td>$10</td></tr></table>')))?.problem).toBe(
+      'byway could not put line 3 on this page exactly as you wrote it, because a browser would show another number of table cells here: it would show "Sourdough loaf | | $10". Change line 3 again, or leave it as it was offered.',
+    );
+  }, 60_000);
+
   it('a control left with only hidden words shows the same text, so the in-code check, not the arbiter, refuses it', async () => {
     const html = pageOf('<form><p>Ready? <button type="submit"><span>Send</span><span hidden>Sending…</span></button> We reply fast.</p></form>');
     expect(await check(html, 'T\nReady?\n\nWe reply fast.', html.replace('<span>Send</span>', ''))).toBeUndefined();
