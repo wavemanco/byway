@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { demoPage } from './helpers/demo-page.ts';
 import { deckLines, pageEditProblems, pageLockView, pageVoiceSuffix, placePageEdit, readPageCopy, readPageEdit, samePageCopy, type PageEdit } from '../src/copy.ts';
+import { editPairs, tablePairs } from '../src/page-copy.ts';
 
 const pageOf = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>`;
 const body = (html: string) => html.replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, '');
@@ -412,8 +413,14 @@ describe('the VOICE prompt for a page, and the page lock (F07)', () => {
   });
 });
 
-describe('size: reading, placing and verifying are linear (F07)', () => {
-  it('a 4,000-item list (24,010 tags) opens, places and verifies in under a second; a bad markup is still found', () => {
+/**
+ * A guard against a search or a quadratic pass over the page, not a benchmark: these pages take a few hundred
+ * milliseconds alone, and a full parallel suite on a loaded machine has taken 2.6 s, so the bound leaves room for load.
+ */
+const BOUND_MS = 5000;
+
+describe('size: reading, placing and verifying are linear in the page (F07)', () => {
+  it('a 4,000-item list (24,010 tags) opens, places and verifies well inside five seconds; a bad markup is still found', () => {
     const items = Array.from({ length: 4000 }, (_, i) => `<li><span class="n">${i}</span> Item ${i} <a href="/i/${i}">go</a></li>`).join('');
     const before = pageOf(`<ul>${items}</ul>`);
     const t0 = performance.now();
@@ -423,10 +430,38 @@ describe('size: reading, placing and verifying are linear (F07)', () => {
     if (!e.ok) throw new Error(e.problem);
     const placed = placePageEdit(before, e);
     const v = pageEditProblems(before, placed.page, e, placed);
-    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
     expect(p.tokens.filter((t) => t.kind === 'tag')).toHaveLength(24010);
     expect([placed.problems, v]).toEqual([[], []]);
     expect(pageEditProblems(before, placed.page.replace('<li>', '<li class="x">'), e, placed)).toHaveLength(1);
+  });
+
+  it('one block of 12,000 words with emphasis: a word changed near each end is placed with every <em> kept, within the bound (r2)', () => {
+    const words = Array.from({ length: 12000 }, (_, i) => `w${i}`);
+    const before = pageOf(`<p>${words.map((w, i) => (i % 50 === 0 ? `<em>${w}</em>` : w)).join(' ')}</p>`);
+    const t0 = performance.now();
+    const r = run(before, set(1, words.map((w) => (w === 'w10' ? 'changed' : w === 'w11995' ? 'tail' : w)).join(' ')), { full: true });
+    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
+    expect(r).toMatchObject(clean(before.replace(' w10 ', ' changed ').replace(' w11995 ', ' tail ')));
+    // Rewritten throughout (past the edit script's cap): still placed exactly, in bounded time; formatting is not kept.
+    const t1 = performance.now();
+    const heavy = run(before, set(1, words.map((w, i) => (i % 3 ? w : `x${i}`)).join(' ')), { full: true });
+    expect(performance.now() - t1).toBeLessThan(BOUND_MS);
+    expect(heavy).toMatchObject({ placeProblems: [], verifier: [] });
+  });
+
+  it('the edit script matches as many words as the table, in order, on 2,000 random pairs of word lists', () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const list = () => Array.from({ length: Math.floor(rnd() * 30) }, () => 'abcde'[Math.floor(rnd() * 5)]!);
+    for (let i = 0; i < 2000; i++) {
+      const a = list();
+      const b = list();
+      const pairs = editPairs(a, b, Infinity)!;
+      expect(pairs.length, JSON.stringify([a, b])).toBe(tablePairs(a, b).length);
+      expect(pairs.every(([x, y], k) => a[x] === b[y] && (k === 0 || (x > pairs[k - 1]![0] && y > pairs[k - 1]![1])))).toBe(true);
+    }
+    expect(editPairs(['a', 'b', 'c'], ['x', 'y', 'z'], 2)).toBeUndefined();
   });
 
   it('a 20,000-path svg page and 1,000 identical items, every other one deleted', () => {
@@ -436,7 +471,7 @@ describe('size: reading, placing and verifying are linear (F07)', () => {
     const e = edit(svgPage, 'T\nFresh loaves\nOrder by nine\n');
     const placed = placePageEdit(svgPage, e);
     expect(pageEditProblems(svgPage, placed.page, e, placed)).toEqual([]);
-    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
     expect(body(placed.page).slice(-60)).toBe('M19999 0 L20000 1" stroke="#e1f"/></svg><p>Order by nine</p>');
     const same3 = pageOf(`<ul>${Array.from({ length: 1000 }, () => '<li>Same</li>').join('')}</ul>`);
     const p = readPageCopy(same3);
@@ -444,7 +479,7 @@ describe('size: reading, placing and verifying are linear (F07)', () => {
     const e2 = edit(same3, ['T', ...p.units.slice(1).map((_, i) => (i % 2 ? '' : 'Same'))].join('\n'));
     const placed2 = placePageEdit(same3, e2);
     expect(pageEditProblems(same3, placed2.page, e2, placed2)).toEqual([]);
-    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(performance.now() - t0).toBeLessThan(BOUND_MS);
     expect(placed2.page.match(/<li>/g)).toHaveLength(500);
   });
 });

@@ -20,7 +20,9 @@
  *   words, that no link or button whose words were in a changed line is left nameless (an image's alt or a label
  *   names one that keeps an image or icon), and reads the written page fresh. It is
  *   independent of placement's alignment and removal choices, not of the reader (which is tested on its own).
- * Reading, placing and verifying are linear in the page; none of them throws.
+ * Reading, placing and verifying are linear in the page, except that placement matches a changed block's old and new
+ * words: by a table quadratic in the words of that block (a line of up to about a thousand words), and past that by
+ * an edit script whose cost grows with the words changed (capped; see wordPairs). None of them throws.
  */
 import { attributesOf, decodeText, escapeText, isHtmlSpace, noHtmlSpace, squashHtml, tokenize, type Token } from './html-tokens.ts';
 
@@ -666,6 +668,99 @@ function removalsFor(p: PageDeck, edit: PageEdit, hasText: (s: number) => boolea
 
 // ---- deterministic placement --------------------------------------------------------------------------------------
 
+/** At most this many cells in the word table (4 MB): a line of up to about a thousand words. */
+const TABLE_CELLS = 1 << 20;
+/** At most this many words added or removed in one changed block for its edit script (about 16 MB of trace). */
+const EDIT_MAX = 2000;
+
+type Pairs = [number, number][];
+
+/** A longest common subsequence of two word lists, by the table: ties drop an old word first. */
+export function tablePairs(ow: readonly string[], nw: readonly string[]): Pairs {
+  const w = nw.length + 1;
+  const L = new Int32Array((ow.length + 1) * w);
+  for (let a = ow.length - 1; a >= 0; a--) for (let b = nw.length - 1; b >= 0; b--) L[a * w + b] = ow[a] === nw[b] ? 1 + L[(a + 1) * w + b + 1]! : Math.max(L[(a + 1) * w + b]!, L[a * w + b + 1]!);
+  const pairs: Pairs = [];
+  for (let a = 0, b = 0; a < ow.length && b < nw.length; ) {
+    if (ow[a] === nw[b]) {
+      pairs.push([a, b]);
+      a++;
+      b++;
+    } else if (L[(a + 1) * w + b]! >= L[a * w + b + 1]!) a++;
+    else b++;
+  }
+  return pairs;
+}
+
+/**
+ * The matched words of a shortest edit script (Myers, 1986), for a block too long for the table: O((N+M)·D) time and
+ * O(D²) memory for D words added or removed. Undefined when more than `maxD` differ.
+ */
+export function editPairs(a: readonly string[], b: readonly string[], maxD: number): Pairs | undefined {
+  const n = a.length;
+  const m = b.length;
+  // trace[d][k + d] is the furthest x on diagonal k (y = x - k) after d edits.
+  const trace: Int32Array[] = [];
+  const goesDown = (prev: Int32Array, d: number, k: number) => k === -d || (k !== d && prev[k - 1 + d - 1]! < prev[k + 1 + d - 1]!);
+  for (let d = 0; d <= Math.min(maxD, n + m); d++) {
+    const v = new Int32Array(2 * d + 1);
+    const prev = trace[d - 1];
+    for (let k = -d; k <= d; k += 2) {
+      let x = d === 0 ? 0 : goesDown(prev!, d, k) ? prev![k + 1 + d - 1]! : prev![k - 1 + d - 1]! + 1;
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) {
+        x++;
+        y++;
+      }
+      v[k + d] = x;
+      if (x >= n && y >= m) {
+        trace.push(v);
+        // Walk back: each step is one edit, then the run of matched words that followed it.
+        const pairs: Pairs = [];
+        let cx = n;
+        let cy = m;
+        for (let e = d; e > 0; e--) {
+          const before = trace[e - 1]!;
+          const ck = cx - cy;
+          const down = goesDown(before, e, ck);
+          const pk = down ? ck + 1 : ck - 1;
+          const px = before[pk + e - 1]!;
+          const sx = down ? px : px + 1;
+          while (cx > sx) pairs.push([--cx, --cy]);
+          cx = px;
+          cy = px - pk;
+        }
+        while (cx > 0) pairs.push([--cx, --cy]);
+        return pairs.reverse();
+      }
+    }
+    trace.push(v);
+  }
+  return undefined;
+}
+
+/**
+ * Old and new words matched, in order. A line of up to about a thousand words uses the table as it always has. A
+ * longer block keeps its common first and last words and matches the rest by its edit script, so a few changed words
+ * in a very long block stay cheap; past EDIT_MAX changes, the middle is one changed span (its formatting is not kept,
+ * as when the person rewrites a whole line).
+ */
+function wordPairs(ow: readonly string[], nw: readonly string[]): Pairs {
+  if ((ow.length + 1) * (nw.length + 1) <= TABLE_CELLS) return tablePairs(ow, nw);
+  let pre = 0;
+  while (pre < ow.length && pre < nw.length && ow[pre] === nw[pre]) pre++;
+  let suf = 0;
+  while (suf < ow.length - pre && suf < nw.length - pre && ow[ow.length - 1 - suf] === nw[nw.length - 1 - suf]) suf++;
+  const a = ow.slice(pre, ow.length - suf);
+  const b = nw.slice(pre, nw.length - suf);
+  const mid = (a.length + 1) * (b.length + 1) <= TABLE_CELLS ? tablePairs(a, b) : (editPairs(a, b, EDIT_MAX) ?? []);
+  const pairs: Pairs = [];
+  for (let i = 0; i < pre; i++) pairs.push([i, i]);
+  for (const [x, y] of mid) pairs.push([x + pre, y + pre]);
+  for (let i = suf; i > 0; i--) pairs.push([ow.length - i, nw.length - i]);
+  return pairs;
+}
+
 /**
  * Spread a changed run of text over its slots: words kept from before stay in the slots they were in, so formatting
  * follows whole words or pieces of words; new words go to the shallowest slot around them.
@@ -684,8 +779,16 @@ function alignInto(p: PageDeck, group: number[], next: string): Map<number, stri
   while (oc.length && oc.at(-1)!.c === ' ') oc.pop();
   const holding = group.filter((s) => noHtmlSpace(slotText(p, s)));
   const depth = (s: number) => p.slots[s]!.stack.length;
-  /** The shallowest slot in [lo, hi]; of equally shallow ones the first, or the last when `nearHi`. */
-  const shallowest = (lo: number, hi: number, nearHi = false) => group.filter((s) => s >= lo && s <= hi).reduce((x, y) => (depth(y) < depth(x) || (nearHi && depth(y) === depth(x)) ? y : x));
+  const indexIn = new Map(group.map((s, i) => [s, i]));
+  /** The shallowest slot of the group in [lo, hi] (both in it); of equally shallow ones the first, or the last when `nearHi`. */
+  const shallowest = (lo: number, hi: number, nearHi = false) => {
+    let best = lo;
+    for (let i = indexIn.get(lo)! + 1; i <= indexIn.get(hi)!; i++) {
+      const y = group[i]!;
+      if (depth(y) < depth(best) || (nearHi && depth(y) === depth(best))) best = y;
+    }
+    return best;
+  };
   if (holding.length <= 1) {
     out.set(holding[0] ?? shallowest(group[0]!, group.at(-1)!), next);
     return out;
@@ -708,18 +811,7 @@ function alignInto(p: PageDeck, group: number[], next: string): Map<number, stri
   };
   const ow = wordsOf(oc.map((x) => x.c));
   const nw = wordsOf(nc);
-  // Longest common subsequence of words (a line's words, so small).
-  const L = Array.from({ length: ow.length + 1 }, () => new Array<number>(nw.length + 1).fill(0));
-  for (let a = ow.length - 1; a >= 0; a--) for (let b = nw.length - 1; b >= 0; b--) L[a]![b] = ow[a]!.w === nw[b]!.w ? 1 + L[a + 1]![b + 1]! : Math.max(L[a + 1]![b]!, L[a]![b + 1]!);
-  const pairs: [number, number][] = [];
-  for (let a = 0, b = 0; a < ow.length && b < nw.length; ) {
-    if (ow[a]!.w === nw[b]!.w) {
-      pairs.push([a, b]);
-      a++;
-      b++;
-    } else if (L[a + 1]![b]! >= L[a]![b + 1]!) a++;
-    else b++;
-  }
+  const pairs = wordPairs(ow.map((x) => x.w), nw.map((x) => x.w));
   const ns: (number | undefined)[] = new Array(nc.length).fill(undefined);
   for (const [a, b] of pairs) for (let t = 0; t < nw[b]!.w.length; t++) ns[nw[b]!.from + t] = oc[ow[a]!.from + t]!.s;
   let oa = 0;
@@ -746,10 +838,12 @@ function alignInto(p: PageDeck, group: number[], next: string): Map<number, stri
     for (let k = 0; k < q; k++) ns[n1 - 1 - k] = oc[o1 - 1 - k]!.s;
     const om = oc.slice(oa + pp, o1 - q).filter((x) => x.c !== ' ').map((x) => x.s);
     let target: number;
-    if (om.length) target = shallowest(Math.min(...om), Math.max(...om));
+    // om is in slot order. Every new character before na + pp is placed by now, and the one at n1 - q is placed (a
+    // kept suffix or the next kept word) unless the span runs to the end: so each neighbour is one lookup.
+    if (om.length) target = shallowest(om[0]!, om.at(-1)!);
     else {
-      const left = ns.slice(0, na + pp).filter((x) => x !== undefined).at(-1);
-      const right = ns.slice(n1 - q).find((x) => x !== undefined) ?? group.at(-1)!;
+      const left = na + pp > 0 ? ns[na + pp - 1] : undefined;
+      const right = (n1 - q < nc.length ? ns[n1 - q] : undefined) ?? group.at(-1)!;
       // Words added before the line's first kept word go beside it: of equally shallow slots, the nearest, so an empty
       // icon at the line's start stays before the words.
       if (left === undefined) target = shallowest(group[0]!, right, true);
