@@ -573,7 +573,7 @@ export class ModelGateway implements Gateway {
         const budget: BudgetDetails = { scope, capUsd, spentUsd: spent, reservedUsd: reserved, estimateUsd: roundUsd(estimateUsd), shortfallUsd: roundUsd(Math.max(0, total - capUsd)) };
         const err = new GatewayError(
           'budget-exceeded',
-          `the ${scope} budget of $${capUsd.toFixed(2)} would be exceeded: $${spent.toFixed(4)} spent, $${reserved.toFixed(4)} in flight, and this call is estimated at ${budget.estimateUsd.toFixed(4)}`,
+          `the ${scope} budget of $${capUsd.toFixed(2)} would be exceeded: $${spent.toFixed(4)} spent, $${reserved.toFixed(4)} in flight, and this call is estimated at $${budget.estimateUsd.toFixed(4)}`,
         );
         err.budget = budget;
         throw err;

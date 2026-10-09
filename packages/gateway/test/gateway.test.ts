@@ -450,6 +450,8 @@ describe('gateway: budgets', () => {
     const err = await g.complete(req()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(GatewayError);
     expect(err).toMatchObject({ code: 'budget-exceeded', retryable: false });
+    // An estimate, said as one (ADR-0091): not "may cost up to".
+    expect((err as Error).message).toMatch(/and this call is estimated at \$0\.0\d{3}$/);
     // The contract's GatewayError carries the details: no cast to a gateway-local type needed.
     const budget: BudgetDetails | undefined = (err as GatewayError).budget;
     expect(budget).toMatchObject({ scope: 'workspace', capUsd: 0.01, spentUsd: 0, reservedUsd: 0 });
