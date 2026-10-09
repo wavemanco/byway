@@ -191,6 +191,21 @@ describe('the audit file is written from the book (the outbox)', () => {
     expect(await g.auditLedger()).toEqual({ brokenAt: null, missing: [], pending: 0, setAside: [] });
   });
 
+  it('many calls settling while the lock is held each wait for at most two drains, not for every other call’s', async () => {
+    caps.workspace = 10;
+    const { client } = fakeAnthropic();
+    const g = gateway({ clients: { anthropic: client }, drainWaitMs: 150 });
+    writeFileSync(`${ledgerPath}.lock`, '');
+    const started = Date.now();
+    const results = await Promise.all(Array.from({ length: 8 }, () => g.complete(ask())));
+    // Eight drains one after another would take at least 8 × 150 ms.
+    expect(Date.now() - started).toBeLessThan(900);
+    expect(new Set(results.map((r) => r.ledgerEntryId)).size).toBe(8);
+    await import('node:fs').then((fs) => fs.rmSync(`${ledgerPath}.lock`));
+    await g.close();
+    expect(lines().map((l) => l.id).sort()).toEqual(results.map((r) => r.ledgerEntryId).sort());
+  });
+
   it('an entry appended before a crash could mark it is found again, not written twice', async () => {
     caps.workspace = 10;
     const { client } = fakeAnthropic();

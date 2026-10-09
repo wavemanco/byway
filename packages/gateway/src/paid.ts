@@ -74,7 +74,8 @@ export class PaidCalls {
   private readonly held = new Set<string>();
   private readonly timer: ReturnType<typeof setInterval>;
   private absorbing: Promise<void> | undefined;
-  private drains: Promise<unknown> = Promise.resolve();
+  private running: Promise<void> | undefined;
+  private waiting: Promise<void> | undefined;
   private closed = false;
 
   constructor(opts: PaidCallsOptions) {
@@ -125,13 +126,26 @@ export class PaidCalls {
   }
 
   /**
-   * Writes settled calls the audit file does not have yet. Drains run one after another in this process, so a call's
-   * own drain always starts after its settlement; each holds the ledger's lock for at most DRAIN_BATCH entries.
+   * Writes settled calls the audit file does not have yet. In this process at most one drain runs and one waits to run:
+   * a caller shares the waiting one, which has not read the outbox yet and so will write the caller's settled call too.
+   * A caller therefore waits for at most two drains, each of which waits at most `waitMs` for the ledger's lock, however
+   * many calls settle at once. Each holds the lock for at most DRAIN_BATCH entries.
    */
   drain(waitMs = this.drainWaitMs): Promise<void> {
-    const run = this.drains.then(() => this.drainOnce(waitMs));
-    this.drains = run.catch(() => undefined);
-    return run;
+    if (this.waiting) return this.waiting;
+    const before = this.running ?? Promise.resolve();
+    const next: Promise<void> = before
+      .catch(() => undefined)
+      .then(() => {
+        this.waiting = undefined;
+        this.running = next;
+        return this.drainOnce(waitMs);
+      })
+      .finally(() => {
+        if (this.running === next) this.running = undefined;
+      });
+    this.waiting = next;
+    return next;
   }
 
   private async drainOnce(waitMs: number): Promise<void> {
@@ -162,7 +176,7 @@ export class PaidCalls {
     }
     if (this.closed) return;
     try {
-      await this.drain(this.drainWaitMs * 5);
+      await this.drain();
     } catch (e) {
       this.warn(`byway could not write settled calls to ledger.jsonl yet (${(e as Error)?.message ?? String(e)}); they are counted, and it tries again in a moment.`);
     }
