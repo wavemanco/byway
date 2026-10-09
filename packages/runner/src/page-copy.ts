@@ -12,13 +12,16 @@
  * - readPageEdit: the person's answer as an exact positional edit (one line per unit; an empty line deletes its text);
  * - placePageEdit: deterministic placement. Changed text goes into the line's text slots, words aligned to the old
  *   words so formatting follows whole words or pieces (a documented rule, not verified); link words go where the
- *   person put their brackets. Elements left empty are removed when the shared rule allows (never one that carries a
+ *   person put their brackets, and no word crosses a link's edge (words outside brackets never go into an image or
+ *   icon link, and a whole-link line's words all stay in its link). A line's edge whitespace stays in the slot that
+ *   held it. Elements left empty are removed when the shared rule allows (never one that carries a
  *   hook such as id, data-* or aria-*, never one whose removal would join two runs of text), and the <br> run a
  *   deleted line leaves goes with it. It returns its removals as a witness;
  * - pageEditProblems: the verifier. It checks the witness against the shared rule, compares the markup token for token
- *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each link part's
- *   words, that no link or button whose words were in a changed line is left nameless (an image's alt or a label
- *   names one that keeps an image or icon), and reads the written page fresh. It is
+ *   (the page before, less exactly the witnessed removals), accounts for every run of text, checks each line's words
+ *   and edge whitespace and each link part's words, that no link or button whose words were in a changed line is left
+ *   nameless (an image's alt or a label names one that keeps an image or icon), and reads the written page fresh:
+ *   each block's words, and which of them are in which link (with its address). It is
  *   independent of placement's alignment and removal choices, not of the reader (which is tested on its own).
  * Reading, placing and verifying are linear in the page, except that placement matches a changed block's old and new
  * words: by a table quadratic in the words of that block (a line of up to about a thousand words), and past that by
@@ -90,7 +93,8 @@ interface Unit {
   display: string;
   /**
    * The whitespace before the line's first word, per slot that held it (slot order), and after its last word (last
-   * slot first). Placement keeps each piece in its own slot, so the gap beside an empty icon stays where it was.
+   * slot first). Placement keeps each piece in its own slot, at the same end, wherever the new words go, so the gap
+   * beside an empty icon stays where it was.
    */
   lead: Map<number, string>;
   trail: Map<number, string>;
@@ -611,6 +615,21 @@ class Regions {
   }
 }
 
+/**
+ * Tokens that show nothing between two slots of a line, read from the slot on their right going left (an inline
+ * element opening, or a comment) or from the slot on their left going right (an inline element closing, or a comment).
+ * Words placed across only these from a kept word stay beside it; across anything else (an empty icon's closing tag, a
+ * link's end) they would land on the far side of something a person sees. Placement only.
+ */
+function opensFormatting(p: PageDeck, tok: number): boolean {
+  const t = p.tokens[tok];
+  return !!t && (t.kind === 'other' || (t.kind === 'tag' && !t.closing && INLINE.has(t.name) && p.els.has(tok)));
+}
+function closesFormatting(p: PageDeck, tok: number): boolean {
+  const t = p.tokens[tok];
+  return !!t && (t.kind === 'other' || (t.kind === 'tag' && t.closing && INLINE.has(t.name)));
+}
+
 const deletedUnitsOf = (p: PageDeck, edit: PageEdit): Set<number> =>
   new Set(p.units.map((_, i) => i).filter((i) => {
     const l = edit.lines[i]!;
@@ -762,12 +781,22 @@ function wordPairs(ow: readonly string[], nw: readonly string[]): Pairs {
 }
 
 /**
- * Spread a changed run of text over its slots: words kept from before stay in the slots they were in, so formatting
- * follows whole words or pieces of words; new words go to the shallowest slot around them.
+ * Where a segment sits in its line, for words that have no kept word beside them in it: the first segment's words
+ * come before the line's first kept word (in the link after it), the last segment's after its last kept word.
  */
-function alignInto(p: PageDeck, group: number[], next: string): Map<number, string> {
+type Side = 'start' | 'end' | 'between';
+
+/**
+ * Spread a changed run of text over its slots: words kept from before stay in the slots they were in, so formatting
+ * follows whole words or pieces of words; new words go to the shallowest slot around them. Words never cross a link's
+ * edge: a segment's words go only into slots of its own link (`own`; undefined for words outside links), so a slot
+ * inside an image or icon link that held no words never takes any. Words added at a line's edge go beside its first or
+ * last kept word: into the shallowest slot reachable from it across only opening (or, after it, closing) formatting,
+ * so an empty icon between keeps its place and its gap.
+ */
+function alignInto(p: PageDeck, group: number[], next: string, own: number | undefined, side: Side): Map<number, string> {
   const out = new Map<number, string>(group.map((s) => [s, '']));
-  if (!group.length) return out;
+  if (!group.length || !next) return out;
   const oc: { c: string; s: number }[] = [];
   for (const s of group) {
     for (const c of slotText(p, s)) {
@@ -779,18 +808,35 @@ function alignInto(p: PageDeck, group: number[], next: string): Map<number, stri
   while (oc.length && oc.at(-1)!.c === ' ') oc.pop();
   const holding = group.filter((s) => noHtmlSpace(slotText(p, s)));
   const depth = (s: number) => p.slots[s]!.stack.length;
+  const allowed = (s: number) => p.slots[s]!.link === own;
   const indexIn = new Map(group.map((s, i) => [s, i]));
-  /** The shallowest slot of the group in [lo, hi] (both in it); of equally shallow ones the first, or the last when `nearHi`. */
-  const shallowest = (lo: number, hi: number, nearHi = false) => {
-    let best = lo;
-    for (let i = indexIn.get(lo)! + 1; i <= indexIn.get(hi)!; i++) {
-      const y = group[i]!;
-      if (depth(y) < depth(best) || (nearHi && depth(y) === depth(best))) best = y;
-    }
-    return best;
+  /** Of `xs` (slot order), the allowed slot of least depth; of equally shallow ones the first, or the last when `nearHi`. */
+  const best = (xs: number[], nearHi: boolean): number | undefined => {
+    let b: number | undefined;
+    for (const y of xs) if (allowed(y) && (b === undefined || depth(y) < depth(b) || (nearHi && depth(y) === depth(b)))) b = y;
+    return b;
+  };
+  const range = (lo: number, hi: number) => group.slice(indexIn.get(lo)!, indexIn.get(hi)! + 1);
+  const none = (): never => {
+    throw new Error('no slot for these words outside the links beside them');
+  };
+  /** The shallowest allowed slot of the group in [lo, hi]. */
+  const shallowest = (lo: number, hi: number, nearHi = false) => best(range(lo, hi), nearHi) ?? none();
+  /** Beside slot `r`, before it: the slots reachable leftwards across only opening formatting. */
+  const nearLeft = (r: number) => {
+    let i = indexIn.get(r)!;
+    while (i > 0 && group[i - 1] === group[i]! - 1 && opensFormatting(p, p.slots[group[i - 1]!]!.end)) i--;
+    return best(group.slice(i, indexIn.get(r)! + 1), true) ?? shallowest(group[0]!, r, true);
+  };
+  /** Beside slot `l`, after it: the slots reachable rightwards across only closing formatting. */
+  const nearRight = (l: number) => {
+    let i = indexIn.get(l)!;
+    while (i + 1 < group.length && group[i + 1] === group[i]! + 1 && closesFormatting(p, p.slots[group[i]!]!.end)) i++;
+    return best(group.slice(indexIn.get(l)!, i + 1), false) ?? shallowest(l, group.at(-1)!);
   };
   if (holding.length <= 1) {
-    out.set(holding[0] ?? shallowest(group[0]!, group.at(-1)!), next);
+    const at = holding[0] ?? (side === 'start' ? nearLeft(group.at(-1)!) : side === 'end' ? nearRight(group[0]!) : shallowest(group[0]!, group.at(-1)!));
+    out.set(at, next);
     return out;
   }
   const nc = [...next];
@@ -837,19 +883,21 @@ function alignInto(p: PageDeck, group: number[], next: string): Map<number, stri
     for (let k = 0; k < pp; k++) ns[na + k] = oc[oa + k]!.s;
     for (let k = 0; k < q; k++) ns[n1 - 1 - k] = oc[o1 - 1 - k]!.s;
     const om = oc.slice(oa + pp, o1 - q).filter((x) => x.c !== ' ').map((x) => x.s);
-    let target: number;
     // om is in slot order. Every new character before na + pp is placed by now, and the one at n1 - q is placed (a
     // kept suffix or the next kept word) unless the span runs to the end: so each neighbour is one lookup.
-    if (om.length) target = shallowest(om[0]!, om.at(-1)!);
-    else {
-      const left = na + pp > 0 ? ns[na + pp - 1] : undefined;
-      const right = (n1 - q < nc.length ? ns[n1 - q] : undefined) ?? group.at(-1)!;
-      // Words added before the line's first kept word go beside it: of equally shallow slots, the nearest, so an empty
-      // icon at the line's start stays before the words.
-      if (left === undefined) target = shallowest(group[0]!, right, true);
-      else target = left === right ? left : shallowest(Math.min(left, right), Math.max(left, right));
+    if (na + pp < n1 - q) {
+      let target: number;
+      if (om.length) target = shallowest(om[0]!, om.at(-1)!);
+      else {
+        const left = na + pp > 0 ? ns[na + pp - 1] : undefined;
+        const right = n1 - q < nc.length ? ns[n1 - q] : undefined;
+        // Words added before the line's first kept word go beside it, and after its last beside that one.
+        if (left === undefined) target = right === undefined ? shallowest(group[0]!, group.at(-1)!) : nearLeft(right);
+        else if (right === undefined) target = nearRight(left);
+        else target = left === right && allowed(left) ? left : shallowest(Math.min(left, right), Math.max(left, right));
+      }
+      for (let k = na + pp; k < n1 - q; k++) ns[k] = target;
     }
-    for (let k = na + pp; k < n1 - q; k++) ns[k] = target;
     if (a < ow.length) {
       oa = ow[a]!.to;
       na = nw[b]!.to;
@@ -906,26 +954,19 @@ function place(before: string, edit: PageEdit): Placed {
           texts.set(slot, `${texts.get(slot) ?? ''}${t}`);
           return;
         }
-        for (const [s, x] of alignInto(p, seg.slots, t)) texts.set(s, `${texts.get(s) ?? ''}${x}`);
+        // A link part's words stay in its link; words outside links stay outside every link, and on a whole-link line
+        // every word is the link's.
+        const own = u.marked ? seg.link : u.wholeLink;
+        const side: Side = k === 0 ? 'start' : k === u.segs.length - 1 ? 'end' : 'between';
+        for (const [s, x] of alignInto(p, seg.slots, t, own, u.marked ? side : 'between')) texts.set(s, `${texts.get(s) ?? ''}${x}`);
       });
     }
-    // Edge whitespace goes back into the slots that held it. Where the new words start after such a slot (or end
-    // before one), its whitespace joins the new words' edge instead, so it never lands between two words.
-    const placedIn = u.slots.filter((s) => texts.get(s) !== '');
-    const firstNew = placedIn[0];
-    const lastNew = placedIn.at(-1);
-    let lead = '';
-    for (const [s, ws] of u.lead) {
-      if (firstNew === undefined || s < firstNew) texts.set(s, `${ws}${texts.get(s)}`);
-      else lead += ws;
-    }
-    if (firstNew !== undefined) texts.set(firstNew, `${lead}${texts.get(firstNew)}`);
-    let trail = '';
-    for (const [s, ws] of u.trail) {
-      if (lastNew === undefined || s > lastNew) texts.set(s, `${texts.get(s)}${ws}`);
-      else trail = `${ws}${trail}`;
-    }
-    if (lastNew !== undefined) texts.set(lastNew, `${texts.get(lastNew)}${trail}`);
+    // Edge whitespace goes back into the slot that held it, at the same end: before the line's words at its start,
+    // after them at its end, wherever the new words went. The new words carry their own spaces, so a gap beside an
+    // empty icon or an arrow inside a link stays on its side of it (a space beside another one, with only formatting
+    // between, shows as one).
+    for (const [s, ws] of u.lead) texts.set(s, `${ws}${texts.get(s)}`);
+    for (const [s, ws] of u.trail) texts.set(s, `${texts.get(s)}${ws}`);
     for (const [s, t] of texts) newText.set(s, t);
   });
   for (const [s, t] of newText) {
@@ -1059,17 +1100,32 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
   p.units.forEach((u, i) => {
     const line = edit.lines[i]!;
     if (!line.changed) return;
-    const text = decodeText(u.slots.map((s) => slotAfter.get(s) ?? '').join('')).replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '');
-    if (text !== line.text) problems.push(`Line ${i + 1} must read exactly "${line.text}" (it reads "${text}").`);
-    // Edge whitespace stays in its slot: each slot before the first that holds words keeps exactly the whitespace it
-    // held, and that first slot still starts with its own (the same at the end). Slots a removal merged are skipped.
     const at = (s: number) => slotAfter.get(s) ?? '';
+    // The line's words: each slot's text less the edge whitespace it held (checked on its own below), so the space
+    // before an arrow at a link's end, kept where it was while words were added after the link, is not read as a
+    // doubled space, and a doubled space anywhere else is.
+    const lead = new Map(u.lead);
+    const trail = new Map(u.trail);
+    const wordsOf = (s: number) => {
+      let t = at(s);
+      const lw = lead.get(s);
+      const tw = trail.get(s);
+      if (lw && t.startsWith(lw)) t = t.slice(lw.length);
+      if (tw && t.endsWith(tw)) t = t.slice(0, t.length - tw.length);
+      return t;
+    };
+    const text = decodeText(u.slots.map(wordsOf).join('')).replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '');
+    if (text !== line.text) problems.push(`Line ${i + 1} must read exactly "${line.text}" (it reads "${text}").`);
+    // Edge whitespace stays in its slot, at the same end, across every segment of the line: each slot before the
+    // first that holds words keeps exactly the whitespace it held, and every other one still starts with it (so a gap
+    // beside an empty icon or an image link never moves past it); the same at the end. Slots a removal merged are
+    // skipped.
     const words = line.text ? u.slots.filter((s) => noHtmlSpace(at(s))) : [];
     if (words.length) {
       const f = words[0]!;
       const l = words.at(-1)!;
-      const leadMoved = [...u.lead].some(([s, ws]) => alone.has(s) && (s < f ? at(s) !== ws : s === f && !at(s).startsWith(ws)));
-      const trailMoved = [...u.trail].some(([s, ws]) => alone.has(s) && (s > l ? at(s) !== ws : s === l && !at(s).endsWith(ws)));
+      const leadMoved = [...u.lead].some(([s, ws]) => alone.has(s) && (s < f ? at(s) !== ws : !at(s).startsWith(ws)));
+      const trailMoved = [...u.trail].some(([s, ws]) => alone.has(s) && (s > l ? at(s) !== ws : !at(s).endsWith(ws)));
       if (leadMoved || trailMoved) problems.push(`Line ${i + 1}: the space before or after its words moved.`);
     }
     const unitSlots = new Set(u.slots);
@@ -1096,20 +1152,82 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     if (noHtmlSpace(decodeText(ss.map((s) => slotAfter.get(s) ?? '').join('')))) continue;
     if (!showsWithoutText(p, el) || !namedWithoutText(p, el)) problems.push(`A ${el.name === 'a' ? 'link' : 'button'} in your changed lines is left without a name.`);
   }
-  // 6. Read fresh: the written page's blocks hold exactly the expected text, block by block, in order.
-  const wantRegion = new Map<number, string>();
+  // 6. Read fresh: the written page's blocks hold exactly the expected text, block by block, in order; and each block's
+  // words sit in the same links as the person put them, each link with its address (so words that crossed a link's
+  // edge are refused, whichever way they got there).
+  const wantRegion = new Map<number, { parts: Part[]; line: number }>();
+  const linkPart = (el: number | undefined, raw: string): Part => (el === undefined ? { raw } : { el, href: hrefOf(p.tokens[el]!.raw), raw });
   p.units.forEach((u, i) => {
     const line = edit.lines[i]!;
     const r = p.slots[u.slots[0]!]!.region;
-    wantRegion.set(r, (wantRegion.get(r) ?? '') + noHtmlSpace(line.changed ? line.text : u.text));
+    let parts: Part[];
+    if (!line.changed) parts = partsOf(p, u.slots);
+    else if (!line.text) parts = [];
+    else if (u.marked) parts = u.segs.map((seg, k) => linkPart(seg.kind === 'link' ? seg.link : undefined, line.segs[k]!.text));
+    else parts = [linkPart(u.wholeLink, line.text)];
+    const w = wantRegion.get(r);
+    if (w) w.parts.push({ raw: ' ' }, ...parts);
+    else wantRegion.set(r, { parts, line: i + 1 });
   });
-  const want = [...wantRegion.entries()].sort((x, y) => x[0] - y[0]).map(([, t]) => t).filter(Boolean);
+  const want = [...wantRegion.entries()].sort((x, y) => x[0] - y[0]).map(([, w]) => ({ ...w, form: formOf(w.parts) })).filter((w) => w.form.text);
   const q = readPageCopy(after);
-  const gotRegion = new Map<number, string>();
+  const gotRegion = new Map<number, number[]>();
   q.slots.forEach((s, k) => {
-    if (s.visible) gotRegion.set(s.region, (gotRegion.get(s.region) ?? '') + noHtmlSpace(slotText(q, k)));
+    if (!s.visible) return;
+    const g = gotRegion.get(s.region);
+    if (g) g.push(k);
+    else gotRegion.set(s.region, [k]);
   });
-  const got = [...gotRegion.entries()].sort((x, y) => x[0] - y[0]).map(([, t]) => t).filter(Boolean);
-  if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`The page, read again, does not have your lines block by block (expected ${want.length} blocks of text, found ${got.length}).`);
+  const got = [...gotRegion.entries()].sort((x, y) => x[0] - y[0]).map(([, ss]) => formOf(partsOf(q, ss))).filter((g) => g.text);
+  if (got.length !== want.length || got.some((g, k) => g.text !== want[k]!.form.text)) problems.push(`The page, read again, does not have your lines block by block (expected ${want.length} blocks of text, found ${got.length}).`);
+  else got.forEach((g, k) => {
+    if (g.links !== want[k]!.form.links) problems.push(`Line ${want[k]!.line}, read again, does not have its link words where you put them (it reads "${g.shown}").`);
+  });
   return [...new Set(problems)];
+}
+
+/** A run of a block's text: outside links (no link), or one link's words (`el`, its start token) with its address. */
+interface Part {
+  el?: number;
+  href?: string;
+  raw: string;
+}
+
+/** A block's slots as runs: consecutive slots of the same link (by element) are one part; text decoded. */
+function partsOf(p: PageDeck, slots: number[]): Part[] {
+  const parts: Part[] = [];
+  for (const s of slots) {
+    const el = p.slots[s]!.link;
+    const last = parts.at(-1);
+    const text = slotText(p, s);
+    if (last && last.el === el) last.raw += text;
+    else parts.push(el === undefined ? { raw: text } : { el, href: hrefOf(p.tokens[el]!.raw), raw: text });
+  }
+  return parts;
+}
+
+/**
+ * A block's text and link membership for comparing two readings: `text` is its words without HTML whitespace, `links`
+ * the same with each link's words marked with its address (a link without words drops out, as the deck drops it), and
+ * `shown` how the block reads with link words in brackets, for the message. Runs of one link separated only by
+ * whitespace are one run: the deck may show one link as two lines (side by side, when the reader nests links), and the
+ * written page reads it as one.
+ */
+function formOf(parts: Part[]): { text: string; links: string; shown: string } {
+  const runs: Part[] = [];
+  for (const part of parts) {
+    // A link without words reads as text outside links.
+    const x: Part = part.el !== undefined && noHtmlSpace(part.raw) ? { ...part } : { raw: part.raw };
+    const last = runs.at(-1);
+    const gap = last && last.el === undefined && !noHtmlSpace(last.raw) ? runs.at(-2) : undefined;
+    if (x.el !== undefined && gap && gap.el === x.el) {
+      gap.raw += last!.raw + x.raw;
+      runs.pop();
+    } else if (last && last.el === x.el) last.raw += x.raw;
+    else runs.push(x);
+  }
+  const edge = (re: RegExp, raw: string) => (re.test(raw) ? ' ' : '');
+  const shown = runs.map((x) => (x.el === undefined ? escMarks(x.raw) : `${edge(/^[ \t\n\f\r]/, x.raw)}[${escMarks(squashHtml(x.raw), true)}]${edge(/[ \t\n\f\r]$/, x.raw)}`)).join('');
+  const links = JSON.stringify(runs.filter((x) => noHtmlSpace(x.raw)).map((x) => (x.el === undefined ? noHtmlSpace(x.raw) : [x.href, noHtmlSpace(x.raw)])));
+  return { text: parts.map((x) => noHtmlSpace(x.raw)).join(''), links, shown: squashHtml(shown) };
 }

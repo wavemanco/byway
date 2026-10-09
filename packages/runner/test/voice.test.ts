@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AnswerRejected, StepError } from '../src/activities/failures.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { relayLink } from '../src/activities/relay.ts';
-import { pageCopy } from '../src/copy.ts';
+import { pageCopy, pageLockView } from '../src/copy.ts';
 import { joinCodeDiff, serializeJson, splitCodeDiff } from '../src/formats.ts';
 import type { StepSpec } from '../src/types.ts';
 import { benchRun, putWork, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
@@ -351,6 +351,18 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(pageCopy(await b.store.artifacts.getText(out.artifactId!))).toEqual(['T', 'Warm Bakery', 'Follow me']);
     // The space beside each image stays outside its link.
     expect(await stored(out.artifactId!)).toBe('<h1><a href="/"><img src="logo.png" alt="Bakery"></a> Warm Bakery</h1><p>Follow me <a href="https://x.com/b"><svg width="10" height="10"></svg></a></p>');
+    expect(b.gateway.requests).toEqual([]);
+  });
+
+  it('words added beside a share icon stay outside its link, and the stored page locks the person\'s deck (r3)', async () => {
+    const html = page('<p><a href="https://x.com/bakery"><svg width="10" height="10"></svg></a> <a href="/contact">Contact us</a> today</p>');
+    const q = await open(html);
+    expect(q.offered).toBe('T\n[Contact us] today');
+    const out = await q.answer('T\nPlease [Contact us] today');
+    const written = await b.store.artifacts.getText(out.artifactId!);
+    expect(await stored(out.artifactId!)).toBe('<p><a href="https://x.com/bakery"><svg width="10" height="10"></svg></a> Please <a href="/contact">Contact us</a> today</p>');
+    // The lock a later write is held to is the person's deck and the one link they wrote words for.
+    expect(JSON.parse(pageLockView(written))).toEqual({ deck: ['T', 'Please [Contact us] today'], links: ['/contact'] });
     expect(b.gateway.requests).toEqual([]);
   });
 

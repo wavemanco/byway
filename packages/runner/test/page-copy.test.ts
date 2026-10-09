@@ -123,6 +123,28 @@ describe('the deck and exact placement (F07)', () => {
     expect(verifyBad(icon, pageOf('<ul><li> <i class="icon"></i>Faster delivery</li></ul>'), 'T\nFaster delivery')).toEqual(['Line 2: the space before or after its words moved.']);
   });
 
+  it('words added at a line\'s edge go beside its first or last word, never across an icon, also on a line with links (r3)', () => {
+    // Before the first link part: the icon and its gap stay at the line's start.
+    expect(run('<p><i class="icon"></i> <a href="/d">Fast delivery</a> today</p>', set(1, 'Now [Fast delivery] today'))).toMatchObject(clean('<p><i class="icon"></i> Now <a href="/d">Fast delivery</a> today</p>'));
+    expect(run('<div><a href="/l" aria-label="Lab"><i class="fa"></i></a> <a href="/t0"><em>today Fresh</em></a> now</div>', set(1, 'New [today Fresh] now'))).toMatchObject(clean('<div><a href="/l" aria-label="Lab"><i class="fa"></i></a> New <a href="/t0"><em>today Fresh</em></a> now</div>'));
+    // An icon inside the formatting that holds the first word: the new word joins that word, after the icon.
+    expect(run('<p> <em><i class="icon"></i> Go</em> now</p>', set(1, 'New Go now'))).toMatchObject(clean('<p> <em><i class="icon"></i> New Go</em> now</p>'));
+    // After the last link part: the words go before the icon, which keeps its gap.
+    expect(run('<p>Fresh <em><a href="/g">Go</a> <i class="icon"></i></em></p>', set(1, 'Fresh [Go] now'))).toMatchObject(clean('<p>Fresh <em><a href="/g">Go</a> now <i class="icon"></i></em></p>'));
+    // An arrow at the end of a link, words added after the link: the space before the arrow stays where it was.
+    expect(run('<p>Order online: <a href="/order">Order now <i class="arrow"></i></a></p>', set(1, 'Order online: [Order now] today'))).toMatchObject(clean('<p>Order online: <a href="/order">Order now <i class="arrow"></i></a> today</p>'));
+    // Space at the edge stays in its slot even when the new words come before it, across formatting only.
+    expect(run('<p><b> Hello</b> world</p>', set(1, 'Big Hello world'))).toMatchObject(clean('<p>Big <b> Hello</b> world</p>'));
+    // The verifier: a page that moved the gap across the icon on a line with a link is refused.
+    const P = pageOf('<p><i class="icon"></i> <a href="/d">Fast delivery</a> today</p>');
+    expect(verifyBad(P, pageOf('<p> Now <i class="icon"></i><a href="/d">Fast delivery</a> today</p>'), 'T\nNow [Fast delivery] today')).toEqual(['Line 2: the space before or after its words moved.']);
+    // The arrow glued to the link's words (round 2's write), and a doubled space beside kept edge space, are refused.
+    const ARROW = pageOf('<p>Order online: <a href="/order">Order now <i class="arrow"></i></a></p>');
+    expect(verifyBad(ARROW, pageOf('<p>Order online: <a href="/order">Order now<i class="arrow"></i></a> today </p>'), 'T\nOrder online: [Order now] today')).toEqual(['Line 2: the space before or after its words moved.']);
+    const BOLD = pageOf('<p><b> Hello</b> world</p>');
+    expect(verifyBad(BOLD, pageOf('<p>Big  <b> Hello</b> world</p>'), 'T\nBig Hello world')).toEqual(['Line 2 must read exactly "Big Hello world" (it reads "Big  Hello world").']);
+  });
+
   it('one bracket grammar on every line', () => {
     const NAV = '<nav><a href="#how">How it works</a><a href="#start">Contact</a></nav>';
     expect(run(NAV, set(2, '[Contact us]'))).toMatchObject(clean('<nav><a href="#how">How it works</a><a href="#start">Contact us</a></nav>'));
@@ -250,6 +272,25 @@ describe('removals: conservative, and named when refused (F07)', () => {
     }
   });
 
+  it('words never cross a link\'s edge: words beside an image or icon link stay outside it, words added to a whole-link line stay inside it (r3)', () => {
+    const fresh = (placed: string) => deckLines(readPageCopy(pageOf(placed)));
+    for (const [page, answer, written] of [
+      // A share icon, then a link: "Please" must not link to the share address.
+      ['<p><a href="https://x.com/bakery"><svg width="10" height="10"></svg></a> <a href="/contact">Contact us</a> today</p>', 'Please [Contact us] today', '<p><a href="https://x.com/bakery"><svg width="10" height="10"></svg></a> Please <a href="/contact">Contact us</a> today</p>'],
+      // A logo, then a heading link.
+      ['<h2><a href="/"><img src="logo.png" alt="Bakery"></a><a href="/menu">Our menu</a> changes daily</h2>', 'See [Our menu] changes daily', '<h2><a href="/"><img src="logo.png" alt="Bakery"></a>See <a href="/menu">Our menu</a> changes daily</h2>'],
+      // A decorative image link (empty alt), then a link.
+      ['<h2><a href="/e"><img src="e.png" alt=""></a><a href="/t4">bread</a> Order</h2>', 'New [bread] Order', '<h2><a href="/e"><img src="e.png" alt=""></a>New <a href="/t4">bread</a> Order</h2>'],
+      // A whole-link line whose words span formatting: every word stays the link's.
+      ['<p><a href="/b">caf&eacute;<em> and more</em></a></p>', 'café and more new', '<p><a href="/b">café<em> and more</em> new</a></p>'],
+      ['<p>Intro</p><label for="f"> <a href="/b" id="k">caf&eacute;<em>&amp; more</em></a></label>', 'café& more new', '<p>Intro</p><label for="f"> <a href="/b" id="k">café<em>&amp; more</em> new</a></label>'],
+    ] as const) {
+      const r = run(page, (d) => set(d.length - 1, answer)(d));
+      expect(r, page).toMatchObject(clean(written));
+      expect(fresh(r.placed!).at(-1), page).toBe(answer);
+    }
+  });
+
   it('an image with a non-empty alt names its link: the link\'s words can be deleted and the link kept (r2)', () => {
     expect(run('<p>Intro</p><a href="/cart"><img src="c.png" alt="Cart"> Cart</a>', set(2, ''))).toMatchObject(clean('<p>Intro</p><a href="/cart"><img src="c.png" alt="Cart"> </a>'));
     expect(run('<p>Intro</p><a href="/cart"><img src="c.png" alt=""> Cart</a>', set(2, ''))).toMatchObject({
@@ -295,14 +336,39 @@ describe('the verifier refuses a page placement did not make (F07)', () => {
     expect(verifyBad(AB, pageOf('<p>Same</p><p>Other</p>'), 'T\nSame\nSame')).toEqual(['Line 3 must read exactly "Same" (it reads "Other").', 'The page, read again, does not have your lines block by block (expected 3 blocks of text, found 3).']);
     const S = pageOf('<h1>Head</h1><p>Sub</p>');
     expect(verifyBad(S, pageOf('<h1>New head</h1>Now 50% off, guaranteed!<p>Sub</p>'), 'T\nNew head\nSub')).toEqual(['Text outside your changed lines changed ("").', 'The page, read again, does not have your lines block by block (expected 3 blocks of text, found 4).']);
-    expect(verifyBad(LK, pageOf('<p><a href="/terms">Please read the terms</a> today.</p>'), 'T\nPlease [read the terms] today.')).toEqual(['Line 2: the link must read exactly "read the terms" (it reads "Please read the terms").']);
+    expect(verifyBad(LK, pageOf('<p><a href="/terms">Please read the terms</a> today.</p>'), 'T\nPlease [read the terms] today.')).toEqual([
+      'Line 2: the link must read exactly "read the terms" (it reads "Please read the terms").',
+      'Line 2, read again, does not have its link words where you put them (it reads "[Please read the terms] today.").',
+    ]);
     expect(verifyBad(LK, pageOf('<p>Please  <a href="/terms">read the terms</a>  today.</p>'), 'T\nPlease [read the terms] today.')).toEqual(['Line 2 must read exactly "Please read the terms today." (it reads "Please  read the terms  today.").']);
     expect(verifyBad(LK, pageOf('<p>Please <a href="/conditions">read the terms</a> today.</p>'), 'T\nPlease [read the terms] today.')).toEqual(['The page changed beyond its text: its markup is not the page before the edit, less the elements the edit emptied.']);
-    expect(verifyBad(LK, pageOf('<p>Please read the terms today.<a href="/terms"></a></p>'), 'T\nPlease [read the terms] today.')).toEqual(['Line 2: the link must read exactly "read the terms" (it reads "").', 'A link in your changed lines is left without a name.']);
+    expect(verifyBad(LK, pageOf('<p>Please read the terms today.<a href="/terms"></a></p>'), 'T\nPlease [read the terms] today.')).toEqual([
+      'Line 2: the link must read exactly "read the terms" (it reads "").',
+      'A link in your changed lines is left without a name.',
+      'Line 2, read again, does not have its link words where you put them (it reads "Please read the terms today.").',
+    ]);
     const D = pageOf('<div>Alpha<p>Middle</p>Omega</div>');
     expect(verifyBad(D, pageOf('<div>AlphaOmega</div>'), 'T\nAlpha\n\nOmega')).toEqual(['The page changed beyond its text: its markup is not the page before the edit, less the elements the edit emptied.']);
     const TB = pageOf('<table><tr><td>Basic</td><td>Slow</td><td>$9</td></tr></table>');
     expect(verifyBad(TB, pageOf('<table><tr><td>Basic</td><td>$9</td></tr></table>'), 'T\nBasic\n\n$9')).toEqual(['The page changed beyond its text: its markup is not the page before the edit, less the elements the edit emptied.']);
+  });
+
+  it('words moved across a link\'s edge are refused, read fresh with each link part\'s words and address (r3)', () => {
+    const SHARE = pageOf('<p><a href="https://x.com/bakery"><svg width="10" height="10"></svg></a> <a href="/contact">Contact us</a> today</p>');
+    expect(verifyBad(SHARE, pageOf('<p><a href="https://x.com/bakery"><svg width="10" height="10"></svg> Please </a><a href="/contact">Contact us</a> today</p>'), 'T\nPlease [Contact us] today')).toContain(
+      'Line 2, read again, does not have its link words where you put them (it reads "[Please] [Contact us] today").',
+    );
+    const LOGO = pageOf('<h2><a href="/"><img src="logo.png" alt="Bakery"></a><a href="/menu">Our menu</a> changes daily</h2>');
+    expect(verifyBad(LOGO, pageOf('<h2><a href="/"><img src="logo.png" alt="Bakery">See </a><a href="/menu">Our menu</a> changes daily</h2>'), 'T\nSee [Our menu] changes daily')).toContain(
+      'Line 2, read again, does not have its link words where you put them (it reads "[See] [Our menu] changes daily").',
+    );
+    const WHOLE = pageOf('<p><a href="/b">caf&eacute;<em> and more</em></a></p>');
+    expect(verifyBad(WHOLE, pageOf('<p><a href="/b">café<em> and more</em></a> new</p>'), 'T\ncafé and more new')).toEqual(['Line 2, read again, does not have its link words where you put them (it reads "[café and more] new").']);
+    // Words moved from one link into its neighbour: the words read the same, the link parts do not.
+    const TWO = pageOf('<p>See <a href="/a">menu</a> <a href="/b">hours</a> now</p>');
+    expect(verifyBad(TWO, pageOf('<p>See <a href="/a">menu hours</a> <a href="/b"></a> now</p>'), 'T\nSee [menu] [hours] now')).toContain(
+      'Line 2, read again, does not have its link words where you put them (it reads "See [menu hours] now").',
+    );
   });
 
   it('checks the witness, never trusts it', () => {
