@@ -374,7 +374,7 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     // The counter's line reads otherwise than its source (a script wrote it), so it is not offered; the rest can be written.
     const { offered, why } = await offer(live);
     expect(offered).toEqual(['T', 'Now:', 'Plain']);
-    expect(why).toEqual({ 'Served 0+ loaves': 'layout' });
+    expect(why).toEqual({ 'Served 0+ loaves': 'changed' });
     expect(await check(live, 'T\nNow:\nPlain text', live.replace('<p>Plain</p>', '<p>Plain text</p>'))).toBeUndefined();
   }, 60_000);
 });

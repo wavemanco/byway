@@ -235,7 +235,7 @@ export interface Span {
 }
 
 /** Why a line is not offered (see notShownWhy). */
-export type NotShownWhy = 'unlaid' | 'hidden' | 'part-hidden' | 'layout' | 'script' | 'copied';
+export type NotShownWhy = 'unlaid' | 'hidden' | 'part-hidden' | 'layout' | 'changed' | 'script' | 'copied';
 
 /** The page before as Chromium shows it, and where each of its deck lines (by number in the whole deck) shows. */
 export interface Location {
@@ -338,7 +338,8 @@ export function locate(html: string, plain: ShownText, marked: ShownText | undef
       const s = (body.starts.get(k) ?? title.starts.get(k))![0]!;
       const e = (body.ends.get(k) ?? title.ends.get(k))![0]!;
       const read = body.starts.has(k) ? body : title;
-      r = s <= e && read.text.slice(s, e).includes(HIDDEN_HERE) ? 'part-hidden' : 'layout';
+      const slice = s <= e ? seqOf(read.text.slice(s, e)) : undefined;
+      r = !slice ? 'layout' : slice.hid.some((h, x) => h && x < slice.cs.length - 1) ? 'part-hidden' : slice.cs.join('') !== deckChars(u.text).cs.join('') ? 'changed' : 'layout';
     }
     why.set(k, r);
   });
@@ -357,7 +358,8 @@ export const WHY_NOT_SHOWN: Record<NotShownWhy, string> = {
   unlaid: 'not shown on this page at all (hidden, closed, or shown only on another screen size)',
   hidden: 'hidden from sight (for screen readers, or until a visitor opens it)',
   'part-hidden': 'part of it is hidden from sight (for screen readers) or cut off',
-  layout: 'a browser does not show it as one piece with exactly these words (run together, in another order, or with other words inside it)',
+  layout: 'a browser shows its words run together or in another order',
+  changed: 'a browser shows other words there (a script on the page changes it, or other text shows inside it)',
   script: 'a script on the page changes or removes it',
   copied: 'a script on the page shows it more than once',
 };

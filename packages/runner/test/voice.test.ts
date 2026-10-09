@@ -693,7 +693,7 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     // that, not that it is hidden (r8). Flex items a visitor sees glued, as the line has them, are one piece (r10).
     const flex = await open(page('<div style="display:flex;flex-direction:row-reverse;justify-content:flex-end"><span>Second</span> <span>First</span></div><div style="display:flex"><span>Glued</span><span>Here</span></div><p>Shown</p>'));
     expect(flex.offered).toBe('T\nGluedHere\nShown');
-    expect(flex.prompt).toMatch(/: a browser does not show it as one piece with exactly these words \(run together, in another order, or with other words inside it\): "Second First"\.$/);
+    expect(flex.prompt).toMatch(/: a browser shows its words run together or in another order: "Second First"\.$/);
     const hidden = page('<div hidden>Menu</div><details><summary>More</summary><p>Inside</p></details><dialog>Closed</dialog><p class="x" style="display:none">Styled away</p><p>After</p>');
     const h = await open(hidden);
     expect(h.offered).toBe('T\nMore\nAfter');
@@ -722,7 +722,7 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     const q = await open(html);
     expect(q.offered).toBe('T\nQuiet interfaces\nFresh bread daily');
     expect(q.prompt).toMatch(
-      / These lines of the page are not offered, because a browser does not show them as one line here, and stay as they are: part of it is hidden from sight \(for screen readers\) or cut off: "Rated 4\.5 out of 5 stars", "Send message to Saltbox", "Read more about quiet interfaces", "Sale ends today", "HiddenShown"; a browser does not show it as one piece with exactly these words \(run together, in another order, or with other words inside it\): "Sale today"\.$/,
+      / These lines of the page are not offered, because a browser does not show them as one line here, and stay as they are: part of it is hidden from sight \(for screen readers\) or cut off: "Rated 4\.5 out of 5 stars", "Send message to Saltbox", "Read more about quiet interfaces", "Sale ends today", "HiddenShown"; a browser shows its words run together or in another order: "Sale today"\.$/,
     );
     const out = await q.answer('T\nQuiet interfaces, in practice\nWarm bread daily');
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<h3>Quiet interfaces</h3>', '<h3>Quiet interfaces, in practice</h3>').replace('Fresh bread', 'Warm bread'));
