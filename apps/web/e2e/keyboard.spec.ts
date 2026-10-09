@@ -58,7 +58,15 @@ async function refuseSlowly(page: Page, path: (pathname: string) => boolean, mes
 
 /** `control` has keyboard focus; fails with what has it instead (BODY when focus fell to the page). */
 async function expectFocus(page: Page, control: Locator): Promise<void> {
-  await expect.poll(async () => ((await control.evaluate((el) => el === document.activeElement)) ? 'focused' : `not focused; focus is on ${await focusedDescription(page)}`)).toBe('focused');
+  await expect
+    .poll(async () => ((await control.evaluate((el) => el === document.activeElement)) ? 'focused' : `not focused; focus is on ${await focusedDescription(page)}`), { timeout: 5000 })
+    .toBe('focused');
+}
+
+/** Waits until `sends` has seen `n` requests and the screen has re-rendered for them (the refusal comes SLOW_MS later). */
+async function whileOnItsWay(page: Page, sends: { count(): number }, n = 1): Promise<void> {
+  await expect.poll(() => sends.count()).toBe(n);
+  await page.waitForTimeout(250);
 }
 
 /**
@@ -68,8 +76,9 @@ async function expectFocus(page: Page, control: Locator): Promise<void> {
 async function pressTwiceWhileRefused(page: Page, control: Locator, sends: { count(): number }, refusal: string): Promise<void> {
   await control.focus();
   await page.keyboard.press('Enter');
-  await expect(control).toHaveAttribute('aria-busy', 'true');
+  await whileOnItsWay(page, sends);
   await expectFocus(page, control);
+  await expect(control).toHaveAttribute('aria-busy', 'true');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('alert').filter({ hasText: refusal })).toBeVisible();
   await expectFocus(page, control);
@@ -109,15 +118,15 @@ test.describe('a control that starts something keeps focus, and a second press s
     await all.focus();
     await page.keyboard.press('Enter');
     for (const box of await boxes.all()) await expect(box).toBeChecked();
-    await expect(all).toHaveAttribute('aria-disabled', 'true');
     await expectFocus(page, all);
+    await expect(all).toHaveAttribute('aria-disabled', 'true');
     // Still in the Tab order: the next stop is Clear.
     await page.keyboard.press('Tab');
     await expectFocus(page, clear);
     await page.keyboard.press('Enter');
     for (const box of await boxes.all()) await expect(box).not.toBeChecked();
-    await expect(clear).toHaveAttribute('aria-disabled', 'true');
     await expectFocus(page, clear);
+    await expect(clear).toHaveAttribute('aria-disabled', 'true');
     // Pressed again while there is nothing to clear: nothing happens, and focus stays.
     await page.keyboard.press('Enter');
     await expectFocus(page, clear);
@@ -153,8 +162,9 @@ test.describe('a control that starts something keeps focus, and a second press s
     const chooser = page.waitForEvent('filechooser');
     await page.keyboard.press('Space');
     await (await chooser).setFiles({ name: 'dot.png', mimeType: 'image/png', buffer: Buffer.from(PNG, 'base64') });
-    await expect(input).toHaveAttribute('aria-busy', 'true');
+    await whileOnItsWay(page, refs);
     await expectFocus(page, input);
+    await expect(input).toHaveAttribute('aria-busy', 'true');
     const second = page.waitForEvent('filechooser', { timeout: 1000 }).then(
       () => true,
       () => false,
