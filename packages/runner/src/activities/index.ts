@@ -8,6 +8,9 @@
  *
  * A step call's provider calls are memoized under its key (memo.ts; ENG-3, ENG-12, convention C5): Temporal's retry
  * of a step whose local work failed, or the same step run again after a budget raise, reuses what it already bought.
+ * Each call also carries its operation key and this invocation's signals to the gateway (Temporal's cancel, and the
+ * invocation's end): an attempt that overlaps another of the same step waits for that one's result, and a timed-out or
+ * dead one's call is taken over, its accepted clips resumed (stage 3; ADR-0099).
  */
 import type { RunnerActivities } from '../types.ts';
 import { assetStep } from './asset.ts';
@@ -32,7 +35,7 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
       const memo = memoScopeOf(input);
       const scoped: RunnerDeps = {
         ...deps,
-        gateway: memo ? memoGateway(gateway, deps.store, memo) : gateway,
+        gateway: memo ? memoGateway(gateway, deps.store, memo, { operation: { until: invocation.done, ...(invocation.signal ? { cancel: invocation.signal } : {}) } }) : gateway,
         ...(deps.pages ? { pages: guardPages(deps.pages, invocation.signal) } : {}),
         ...(invocation.signal ? { signal: invocation.signal } : {}),
       };

@@ -35,12 +35,20 @@ let book: MemorySpendBook;
 let artifacts: MemoryArtifacts;
 let dir: string;
 const open: ModelGateway[] = [];
+/** Renewals that reached the book, so a test that moves the clock waits for the holder to renew after the move. */
+let renewals = 0;
 
 beforeEach(async () => {
   for (const g of open.splice(0)) await g.close();
   dir = mkdtempSync(join(tmpdir(), 'byway-gw-keys-'));
   clock = { t: Date.parse('2026-10-09T12:00:00.000Z') };
   book = new MemorySpendBook({ now: () => new Date(clock.t) });
+  renewals = 0;
+  const renew = book.renew.bind(book);
+  book.renew = async (...args) => {
+    await renew(...args);
+    renewals += 1;
+  };
   artifacts = new MemoryArtifacts();
 });
 
@@ -152,7 +160,9 @@ describe('one call across a step’s attempts (F03 stage 3, ADR-0099)', () => {
     await until(() => held.calls() === 1);
     for (let i = 0; i < 4; i++) {
       clock.t += LEASE / 2;
-      await sleep(60);
+      // Two renewals after the move: the second certainly started after it.
+      const seen = renewals;
+      await until(() => renewals >= seen + 2);
     }
     await expect(g.complete(ask(attempt().operation))).rejects.toMatchObject({ code: 'in-flight' });
     expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0.1, uncertainUsd: 0 });

@@ -14,9 +14,17 @@
  * fails after the provider answered, a Temporal retry would find no memo and buy the call again. So the save is
  * retried here, a few times with growing pauses, and if it still fails the step fails for good with a plain message:
  * the call was paid for and is in the spending ledger.
+ *
+ * Overlapping attempts (stage 3; ADR-0099). Temporal starts a second attempt of a step while the first may still run:
+ * after a timeout, or a worker it lost touch with. The memo cannot tell them apart, because the first records its
+ * answer only after the call. So each call carries an operation key (the run and its memo key, added after hashing, so
+ * memo keys are unchanged) and the invocation's signals, and the spend book holds the call for its first attempt: a
+ * second attempt's call is refused 'in-flight', and it waits, looking for the first one's memo every couple of seconds
+ * and asking the gateway again now and then (the holder may be gone, and then the call is taken over or resumed). It
+ * honours its own cancel, and after five minutes stops with a plain message rather than pay again.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import type { CompletionResult, Gateway, Store } from '@byway/contracts';
+import type { CompletionResult, Gateway, SpendContext, Store } from '@byway/contracts';
 import { StepError } from './failures.ts';
 
 /** Where an activity invocation's memos live: its run, and its step call's key (StepCall.key). */
@@ -53,7 +61,28 @@ export interface MemoOptions {
   saveAttempts?: number;
   /** The pause before the second try; it doubles before each try after that. */
   saveDelayMs?: number;
+  /**
+   * This invocation's signals (Invocation.done, Temporal's cancel), passed with each call's operation key so the spend
+   * book holds the call for this attempt (SpendContext.operation). Absent: calls carry no key (unit tests of the memo).
+   */
+  operation?: Omit<NonNullable<SpendContext['operation']>, 'key'>;
+  /** While another attempt holds a call: how often its memo is looked for (default 2 s)… */
+  waitPollMs?: number;
+  /** …how often the gateway is asked again (default 10 s; its holder may be gone)… */
+  recallEveryMs?: number;
+  /** …and how long the wait may last before the step stops (default 5 minutes). */
+  waitLimitMs?: number;
 }
+
+const WAIT_POLL_MS = 2_000;
+const RECALL_EVERY_MS = 10_000;
+const WAIT_LIMIT_MS = 5 * 60_000;
+
+/** The gateway's refusal of a call another attempt holds (GatewayError 'in-flight'), by name and code. */
+const inFlight = (e: unknown): boolean => {
+  const err = e as { name?: unknown; code?: unknown } | null;
+  return err?.name === 'GatewayError' && err.code === 'in-flight';
+};
 
 /**
  * Four tries with pauses of 0.5, 1 and 2 s: with SQLite's own 10 s busy wait in each, a locked database is waited out
@@ -71,6 +100,9 @@ const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, opts: MemoOptions = {}): Gateway {
   const attempts = Math.max(1, opts.saveAttempts ?? SAVE_ATTEMPTS);
   const delay = opts.saveDelayMs ?? SAVE_DELAY_MS;
+  const pollMs = opts.waitPollMs ?? WAIT_POLL_MS;
+  const recallMs = opts.recallEveryMs ?? RECALL_EVERY_MS;
+  const limitMs = opts.waitLimitMs ?? WAIT_LIMIT_MS;
   const repeats = new Map<string, number>();
   const keyOf = (kind: string, request: unknown): string => {
     const at = `${kind}/${hashOf(request)}`;
@@ -78,11 +110,42 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
     repeats.set(at, n);
     return `${scope.key}/${at}/${n}`;
   };
-  async function once<T>(kind: string, request: unknown, call: () => Promise<T>, save: (r: T) => Promise<string>, load: (v: string) => Promise<T>): Promise<T> {
+  /**
+   * The call, or, while another attempt holds it (in-flight), that attempt's answer once it is kept: the memo is looked
+   * for every pollMs and the gateway asked again every recallMs, for at most limitMs. A cancel of this attempt ends the
+   * wait at the next ask, which the invocation's gateway refuses as stopped.
+   */
+  async function callOrWait<T>(kind: string, key: string, call: () => Promise<T>, load: (v: string) => Promise<T>): Promise<{ made: T } | { kept: T }> {
+    const started = Date.now();
+    for (;;) {
+      try {
+        return { made: await call() };
+      } catch (e) {
+        if (!inFlight(e)) throw e;
+      }
+      const recall = Date.now() + recallMs;
+      while (Date.now() < recall && !opts.operation?.cancel?.aborted) {
+        if (Date.now() - started >= limitMs) {
+          throw new StepError(
+            `Another attempt of this step’s ${PAID[kind] ?? 'AI call'} is still under way, so this attempt stopped after waiting rather than pay for it a second time. Try the step again in a few minutes.`,
+          );
+        }
+        await pause(Math.min(pollMs, Math.max(1, recall - Date.now())));
+        const hit = await store.getMemo(scope.runId, key);
+        if (hit !== undefined) return { kept: await load(hit) };
+      }
+    }
+  }
+
+  async function once<T>(kind: string, request: object, call: (req: never) => Promise<T>, save: (r: T) => Promise<string>, load: (v: string) => Promise<T>): Promise<T> {
     const key = keyOf(kind, request);
     const hit = await store.getMemo(scope.runId, key);
     if (hit !== undefined) return load(hit);
-    const result = await call();
+    // The operation joins the request after the memo key was made from it, so memo keys are unchanged.
+    const sent = opts.operation ? { ...request, operation: { key: `${scope.runId}/${key}`, ...opts.operation } } : request;
+    const outcome = await callOrWait(kind, key, () => call(sent as never), load);
+    if ('kept' in outcome) return outcome.kept;
+    const result = outcome.made;
     // From here on the call is paid for: keep its answer, retrying here (see the header), never by Temporal.
     let saved = '';
     let kept = '';
@@ -114,12 +177,12 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
       once(
         'complete',
         req,
-        () => inner.complete(req),
+        (sent: typeof req) => inner.complete(sent),
         (r) => saveCompletion(store, r),
         (v) => loadCompletion(store, v),
       ),
-    image: (req) => once('image', req, () => inner.image(req), asJson, fromJson),
-    video: (req) => once('video', req, () => inner.video(req), asJson, fromJson),
+    image: (req) => once('image', req, (sent: typeof req) => inner.image(sent), asJson, fromJson),
+    video: (req) => once('video', req, (sent: typeof req) => inner.video(sent), asJson, fromJson),
     spend: (id) => inner.spend(id),
     providers: () => inner.providers(),
     profiles: () => inner.profiles(),
