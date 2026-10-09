@@ -433,6 +433,8 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     for (const [html, answer, written, deck] of [
       ['<p><label>First</label><b> and </b><label>second</label></p>', 'T\nFirst\n\nsecond', '<p><label>First</label>  <label>second</label></p>', ['T', 'First', 'second']],
       ['<p>Price: <del>$20</del><span> now </span><ins>$15</ins></p>', 'T\nPrice:\n$20\n\n$15', '<p>Price: <del>$20</del>  <ins>$15</ins></p>', ['T', 'Price:', '$20', '$15']],
+      ['<p><font>Hello</font><span> big </span><font>world</font></p>', 'T\nHello\n\nworld', '<p><font>Hello</font>  <font>world</font></p>', ['T', 'Hello', 'world']],
+      ['<p>Pick <button type="button">Yes</button><em> or </em><button type="button">No</button></p>', 'T\nPick\nYes\n\nNo', '<p>Pick <button type="button">Yes</button>  <button type="button">No</button></p>', ['T', 'Pick', 'Yes', 'No']],
       ['<p><del>Was <b>$20 </b></del>Now $15</p>', 'T\nWas $20 only\nNow $15', '<p><del>Was <b>$20 </b> only </del>Now $15</p>', ['T', 'Was $20 only', 'Now $15']],
       ['<p><label>Email</label><a href="/help"> help</a> is here</p>', 'T\nEmail\nGet [help] is here', '<p><label>Email</label> Get <a href="/help"> help</a> is here</p>', ['T', 'Email', 'Get [help] is here']],
     ] as const) {
