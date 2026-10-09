@@ -324,6 +324,22 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     expect(unapplied(held)).toEqual([]);
   });
 
+  it('a seed leaves its direction as a note only when it writes one: a note made from your critique may still be beside your draft', () => {
+    // The round-9 verification's s119 on this fixture: your critique, an AI direction that reads it, a seed from the
+    // intent alone, then your own draft. Main admits it, and the note reached the draft on the runs whose seed wrote no
+    // direction (the product's seed prompts ask for the block alone).
+    const shape = (between: Node) => {
+      const r = studio();
+      const carrier = step({ id: 'carrier', role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'project.vision', consumes: ['intent'], reads: ['critique'], produces: ['taste'] });
+      (r.stages[1]!.body as Seq).steps.push(render('crit-render'), yourCritique('your-critique'), carrier, between, humanDraft('own-draft'));
+      return r;
+    };
+    const seed = step({ id: 'late-seed', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'article.SEED', consumes: ['intent'], produces: ['artifact'], writes: true, knobs: { source: 'shell-string' } });
+    expect(unapplied(shape(seed))).toEqual([]);
+    // A critic in its place always notes, and its note, not the direction, is beside your draft.
+    expect(unapplied(shape(seq(render('late-render'), critic('late-critic')))).map((x) => x.path)).toEqual(['stages[1].body.steps[3]']);
+  });
+
   it('a person’s own draft is not a writer that applies it: the run shows a person no critique', () => {
     const own = studio();
     const i = indexOf(d3(own), 'apply-cut');

@@ -15,7 +15,7 @@ import { hasNoExecutor, HUMAN_WRITE_ROLES, leavesNote, personWrite, restoresWork
 import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
-import { modelStep, NOTE_LABELS, parserFor } from '../src/activities/model-step.ts';
+import { directionOf, modelStep, NOTE_LABELS, parserFor } from '../src/activities/model-step.ts';
 import { ArtifactReader, buildPrompt } from '../src/activities/prompting.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import { toStepSpec, type RunRef, type StepCall, type StepSpec } from '../src/types.ts';
@@ -231,16 +231,50 @@ describe('the slots the composed profile renders a template with are slots the r
 });
 
 describe('the notes a model step leaves beside the work (leavesNote)', () => {
-  it('are the answers the runner stores as notes, and a seed build’s direction: what a person is shown beside the work', () => {
-    const leaving = ROLES.filter((role) => leavesNote({ actor: 'model', role, produces: [] }));
-    expect(new Set(leaving)).toEqual(new Set([...Object.keys(NOTE_LABELS), 'seed']));
-    // A seed's build keeps the direction it wrote as a note; another builder's preamble is not one.
-    const answer = 'Colour: dusk blues.\nLayout: one tall column.\n\n```markdown\n# Spark\n```';
-    const parsed = (role: Role) => parserFor(role, 'prose', {}, () => [])(answer);
-    expect(parsed('seed')).toMatchObject({ ok: true, value: { kind: 'artifact', direction: expect.stringContaining('dusk') } });
-    expect(parsed('build')).toMatchObject({ ok: true, value: { kind: 'artifact' } });
-    expect((parsed('build') as { value: { direction?: string } }).value.direction).toBeUndefined();
+  const leaving = (when: 'always' | 'sometimes' | 'never', actor: StepSpec['actor'] = 'model') => new Set(ROLES.filter((role) => leavesNote({ actor, role, produces: [] }) === when));
+  const CARD = '```markdown\n# Spark\n\nA lamp left on.\n```';
+  const DIRECTED = `Colour: dusk blues.\nLayout: one tall column.\n\n${CARD}`;
+
+  it('on every run: each role whose answer the runner stores as a note (NOTE_LABELS); on some: a seed build, only when it writes a direction (directionOf)', () => {
+    expect(leaving('always')).toEqual(new Set(Object.keys(NOTE_LABELS)));
+    expect(leaving('sometimes')).toEqual(new Set(['seed']));
+    expect(leaving('never')).toEqual(new Set(ROLES.filter((r) => !(r in NOTE_LABELS) && r !== 'seed')));
+    // A seed's build keeps what it wrote before its block as a note only when that is a direction: two lines or more.
+    // The product's seed prompts ask for the fenced block alone, so most seeds leave none. Another builder's preamble is
+    // never one.
+    expect(directionOf(CARD)).toBeUndefined();
+    expect(directionOf(`Here is the card.\n\n${CARD}`)).toBeUndefined();
+    expect(directionOf(DIRECTED)).toContain('dusk');
+    const parsed = (role: Role, answer: string) => parserFor(role, 'prose', {}, () => [])(answer) as { ok: true; value: { kind: string; direction?: string } };
+    expect(parsed('seed', DIRECTED).value).toMatchObject({ kind: 'artifact', direction: expect.stringContaining('dusk') });
+    expect(parsed('seed', CARD).value).toMatchObject({ kind: 'artifact' });
+    expect(parsed('seed', CARD).value.direction).toBeUndefined();
+    expect(parsed('build', DIRECTED).value.direction).toBeUndefined();
     // No person's step and no tool leaves one.
-    expect(ROLES.some((role) => leavesNote({ actor: 'human', role, produces: [] }) || leavesNote({ actor: 'tool', role, produces: [] }))).toBe(false);
+    expect(leaving('never', 'human')).toEqual(new Set(ROLES));
+    expect(leaving('never', 'tool')).toEqual(new Set(ROLES));
+  });
+
+  it('as modelStep runs: a noting role leaves a note with every answer, nothing found included; a seed only with a direction', async () => {
+    const run = await newRun();
+    const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
+    const noted = async (role: Role, answer: string, extra: Partial<StepSpec> = {}) => {
+      const deps: RunnerDeps = { gateway: scripted([answer]), store, prompts: fakePrompts() };
+      const res = await modelStep(deps, { run, call: call(run, `${role}-${Math.random().toString(36).slice(2)}`), step: spec(role, 'model', ['critique'], extra), ports: { artifact: doc }, refs: [] });
+      return res.noteArtifactId !== undefined;
+    };
+    const answers: Record<string, string[]> = {
+      critic: ['- The ask is buried.\nScore: 6/10'],
+      check: ['- The date is wrong.', 'No defects.'],
+      cut: ['- Remove the second line.', 'Nothing to remove.'],
+      'tells-sweep': ['{"hits":[{"pattern":"in today’s world","where":"line 1","alternative":"now"}]}', '{"hits":[]}'],
+      overlap: ['{"flags":[]}'],
+      vision: ['Go darker, and closer.'],
+    };
+    expect(Object.keys(answers).sort()).toEqual(Object.keys(NOTE_LABELS).sort());
+    for (const [role, texts] of Object.entries(answers)) for (const text of texts) expect(await noted(role as Role, text, role === 'critic' ? { knobs: { mode: 'OK' } } : {}), `${role}: ${text}`).toBe(true);
+    expect(await noted('seed', DIRECTED, { produces: ['artifact'] })).toBe(true);
+    expect(await noted('seed', CARD, { produces: ['artifact'] })).toBe(false);
+    expect(await noted('build', DIRECTED, { produces: ['artifact'] })).toBe(false);
   });
 });

@@ -124,15 +124,29 @@ export const hasNoExecutor = (s: StepFacts & Pick<Step, 'consumes'>): boolean =>
 const CRITIQUE_ROLES: ReadonlySet<Role> = new Set<Role>(['critic', 'check', 'cut', 'tells-sweep', 'overlap']);
 
 /**
- * Model roles whose step leaves a note beside the work when it runs: the runner stores a judging answer as a note
- * (model-step.ts NOTE_LABELS: a critique, defects, removals, cliché hits, overlap flags, a direction), and a seed's
- * build the direction it took. The interpreter puts that note in `ports.notes` in place of the notes before it
+ * Model roles whose step leaves a note beside the work when it runs, and whether it does on every run or on some. The
+ * interpreter puts the note in `ports.notes` in place of the notes before it, and only when the step made one
  * (applyModel), and a person's question shows the latest notes beside the work (beside()).
+ * - `always`: the runner stores every answer of a judging role as a note (model-step.ts NOTE_LABELS: a critique,
+ *   defects, removals, cliché hits, overlap flags, a direction), what it found nothing in included ("No defects.",
+ *   "Nothing to remove.");
+ * - `sometimes`: a seed's build keeps what it wrote before its block as a note, and only when that is a direction
+ *   (model-step.ts directionOf: two lines or more). The product's seed prompts ask for the fenced block alone, so most
+ *   runs leave none, and the notes before it stay.
+ * Every other role, and every person's, tool's or policy's step, leaves none.
  */
-export const NOTE_ROLES: ReadonlySet<Role> = new Set<Role>(['critic', 'check', 'cut', 'tells-sweep', 'overlap', 'vision', 'seed']);
+export const NOTE_ROLES: ReadonlyMap<Role, 'always' | 'sometimes'> = new Map<Role, 'always' | 'sometimes'>([
+  ['critic', 'always'],
+  ['check', 'always'],
+  ['cut', 'always'],
+  ['tells-sweep', 'always'],
+  ['overlap', 'always'],
+  ['vision', 'always'],
+  ['seed', 'sometimes'],
+]);
 
-/** A model step that leaves its own note in place of the notes before it when it runs. */
-export const leavesNote = (s: StepFacts): boolean => s.actor === 'model' && NOTE_ROLES.has(s.role);
+/** Whether a step leaves its own note in place of the notes before it when it runs: on every run, on some, or never (`NOTE_ROLES`). */
+export const leavesNote = (s: StepFacts): 'always' | 'sometimes' | 'never' => (s.actor === 'model' ? (NOTE_ROLES.get(s.role) ?? 'never') : 'never');
 
 /**
  * Whether running a node can put another critique in place of the one before it (the interpreter's applyModel,
@@ -1050,7 +1064,9 @@ const without = (xs: readonly string[], x: string): string[] => xs.filter((y) =>
 /**
  * What an audit hands on of the critique or the notes, from what each lens ended with (the interpreter's audit()): what
  * the lenses made, joined; and what the audit was handed, where every lens may end with nothing new (what it was handed,
- * or a person's empty answer). Lenses run apart, so they may all do so on one run.
+ * or a person's empty answer). Lenses run apart, so they may all do so on one run. A lens whose only note is a seed's
+ * direction, which a seed leaves only when it writes one (`leavesNote` 'sometimes'), may end with the notes it was
+ * handed: the step keeps them beside its own (`answersReachingWork`), so the lens counts as possibly making nothing new.
  */
 function lensesHandOn(entry: readonly string[], lenses: readonly (readonly string[])[]): string[] {
   const made = unionAll(lenses.map((v) => v.filter((x) => x !== EMPTY_ANSWER && !x.startsWith(HANDED))));
@@ -1061,9 +1077,10 @@ function lensesHandOn(entry: readonly string[], lenses: readonly (readonly strin
 /**
  * An AI step that makes text of its own from what it takes in, without writing the work: a critic, a check, a CUT's
  * list, a cliché sweep, an overlap flag or a direction (the runner's note roles, which put their text in a port and
- * leave it as their note). What it takes in by a text port is in its prompt, so what it makes carries it on.
+ * leave it as their note). What it takes in by a text port is in its prompt, so what it makes carries it on. A seed
+ * writes the work, and only its direction, when it writes one, is a note: `answersReachingWork` follows that note alone.
  */
-const carriesOn = (s: Step): boolean => s.actor === 'model' && stepEffect(s) === 'annotates' && leavesNote(s);
+const carriesOn = (s: Step): boolean => s.actor === 'model' && stepEffect(s) === 'annotates' && leavesNote(s) !== 'never';
 
 /**
  * A person's step that is shown the latest notes beside what it shows (the interpreter's human(), beside()): a draft of
@@ -1126,7 +1143,9 @@ function decidesWork(recipe: Recipe): Set<string> {
  * The places of a person's lists and critiques (`personCritique`) whose answer reaches the work on some path: something
  * that writes the work or picks which version it is takes it in (an AI writer, a draft of the person's own shown it, an
  * AI step that decides which version or option is the work: `decidesWork`), directly or as it is carried on, and what
- * it makes or decides is the work the run delivers, not a candidate that nothing takes up. Read on the exit-aware flow
+ * it makes or decides is the work where it runs, not a candidate that nothing takes up. (A later writer that drafts from
+ * scratch, or a later pick of candidates made before it, may still put another version in its place: ADR-0098 names
+ * these as residuals.) Read on the exit-aware flow
  * walk, `exactLoops` and `untilStable`, with a state that says, for each text port, the notes beside the work, the work
  * of a candidate and the options, which of those answers what is there may carry:
  *
@@ -1135,7 +1154,8 @@ function decidesWork(recipe: Recipe): Set<string> {
  *   only: it may go on as it was). Any other step that fills a port (`fillsPort`) puts there what it carries: an AI
  *   step that makes text of its own (`carriesOn`) carries what it took in by the text ports it takes in, into the ports
  *   it fills and its note; any other carries nothing. A step that leaves a note of its own (`leavesNote`) puts it in
- *   place of the notes before it.
+ *   place of the notes before it, made from what its prompt holds: on every run, or, for a seed, whose note is the
+ *   direction it wrote before its block, only on runs where it writes one, so the notes before it may stay.
  * - An AI writer that applies a port (`appliesPort`) applies what that port carries, and one that takes the options in
  *   (`appliesOptions`) drafts from what they carry. A draft of the person's own (an author write, not in a lens or a gate
  *   body) is shown the latest notes, and so takes in what they carry. An AI step that decides which version or option is
@@ -1149,7 +1169,7 @@ function decidesWork(recipe: Recipe): Set<string> {
  *   new, joined, and where none did on some run, what it was handed. A lens that ended with what it was handed, or with
  *   a person's empty answer, made nothing new: the interpreter drops an empty answer with its lens. So a lens in which a
  *   step always notes something new (a critic's, a check's, a CUT's, a sweep's, an overlap flag's or a direction's note)
- *   always replaces what the audit was handed. A one-shot gate hands on its body's critique, or the critique it was handed
+ *   always replaces what the audit was handed, and one whose only note is a seed's may not. A one-shot gate hands on its body's critique, or the critique it was handed
  *   where the body ends with a person's empty answer. Both hand on the brief and the taste they started with.
  * - A judge in a relay link may be skipped (`skippableJudges`): on those runs the port keeps what it had.
  */
@@ -1183,7 +1203,8 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
       }
       // What the step puts in a port it fills: what it carries on, and a person's answer its own place too.
       const inPlace = revisedInPlace(s);
-      const carried = answersIn(carriesOn(s) ? unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q)).map((q) => st[q])) : shownNotes(s) ? union(st.notes, inPlace ? st[inPlace] : []) : []);
+      const inPrompt = answersIn(unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q)).map((q) => st[q])));
+      const carried = carriesOn(s) ? inPrompt : shownNotes(s) ? answersIn(union(st.notes, inPlace ? st[inPlace] : [])) : [];
       const out: Record<Carrier, readonly string[]> & { cand: boolean } = { ...next };
       for (const q of ANSWER_PORTS) {
         const fills = fillsPort(s, q);
@@ -1199,7 +1220,10 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
         const sometimes = fills === 'sometimes' || skippable.get(path) === false;
         out[q] = sometimes ? union(st[q], value) : value;
       }
-      if (leavesNote(s)) out.notes = skippable.get(path) === false ? union(st.notes, carried) : carriesOn(s) ? carried : [];
+      // Its note, made from what its prompt holds (a seed's direction too), in place of the notes before it, but not on
+      // every run: a seed that writes no direction, or a judge skipped where the run goes on past it, leaves them.
+      const note = leavesNote(s);
+      if (note !== 'never') out.notes = note === 'sometimes' || skippable.get(path) === false ? union(st.notes, inPrompt) : inPrompt;
       return out;
     },
     join: (states) => each((c) => unionAll(states.map((x) => x[c])), states.some((x) => x.cand)),
@@ -1283,7 +1307,10 @@ export function unappliedCritiques(recipe: Recipe): Placement[] {
  *   the options, and the latest `ports.notes`). Every model VISION leaves one.
  * - A step that leaves a note of its own puts it in their place (`leavesNote`: a critic, check, CUT, sweep, overlap
  *   flag, another VISION or a seed's direction), and so does an audit one of whose lenses does. That step's note, not
- *   the directions, is then what the person reacts to. So do the directions themselves, made again at their own place
+ *   the directions, is then what the person reacts to. A seed leaves its direction only when it writes one, so on some
+ *   runs only; as with a note under an optional, a note that may be left is enough to take the claim away, so it is
+ *   read here as one that is (the same table as `answersReachingWork`, which keeps the notes before such a step: there
+ *   an answer is refused, here a claim withheld). So do the directions themselves, made again at their own place
  *   (a loop's next round, a relay's next link) before a VISION of the person's: the later directions are shown, never
  *   the earlier.
  * - replicate, each, a pick and a one-shot gate hand on the notes they started with, so a note made inside them stays
@@ -1317,7 +1344,8 @@ export function directionsReactedTo(recipe: Recipe): Set<Step> {
           }
           // Made again while the earlier directions still wait (or were already replaced): those are lost.
           if (s === v && path === p.path) return st & (LIVE | LOST) ? LIVE | LOST : LIVE;
-          return leavesNote(s) && st & LIVE ? (st & ~LIVE) | LOST : st;
+          // A note that may be left (on every run, or a seed's on some) takes the claim away.
+          return leavesNote(s) !== 'never' && st & LIVE ? (st & ~LIVE) | LOST : st;
         },
         join: (states) => states.reduce((a, b) => a | b, 0),
         key: String,

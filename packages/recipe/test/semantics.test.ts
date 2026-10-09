@@ -668,6 +668,33 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(react, sharpen, render('r'), audit('au', [{ name: 'yours', body: step({ ...yourCritique('o'), produces: ['taste'] }) }]), own))).toEqual([]);
   });
 
+  it('a seed leaves its direction as a note only when it writes one: a note made from your answer may still be beside your draft after it', () => {
+    // C3 with your critique, an AI direction that reads it, a seed angle from the intent alone, then your own draft or
+    // a reaction of yours whose brief an AI draft takes in (the round-9 verification's s119 and s120: reached on 32 of 64
+    // runs where the seed wrote a direction half the time).
+    const react = yourCritique('react');
+    const carrier = step({ id: 'carrier', role: 'vision', block: 'VISION', actor: 'model', tier: 'mid', prompt: 'p.v', consumes: ['intent'], reads: ['critique'], produces: ['taste'] });
+    const seed = step({ id: 'angle', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'p.s', consumes: ['intent'], produces: ['artifact'] });
+    const own = authorDraft('own');
+    const reaction = step({ id: 'reaction', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['brief'] });
+    const draft = step({ id: 'draft', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['intent', 'brief'], produces: ['artifact'], writes: true });
+    expect(leavesNote(seed)).toBe('sometimes');
+    expect(unapplied(seq(render('r'), react, carrier, seed, own))).toEqual([]);
+    expect(unapplied(seq(render('r'), react, carrier, seed, render('r2'), reaction, draft))).toEqual([]);
+    // A step that always notes in its place still replaces the note, after the seed or before it.
+    expect(unapplied(seq(render('r'), react, carrier, seed, render('r2'), critic('c'), own))).toEqual(['react']);
+    expect(unapplied(seq(render('r'), react, carrier, render('r2'), critic('c'), seed, own))).toEqual(['react']);
+    // In an audit: a lens whose only note is a seed's may make nothing new, so the audit may hand on the note from
+    // before it; beside a lens that always notes, the audit hands on the lenses' notes alone.
+    expect(unapplied(seq(render('r'), react, carrier, audit('au', [{ name: 'angle', body: seed }]), own))).toEqual([]);
+    expect(unapplied(seq(render('r'), react, carrier, audit('au', [{ name: 'angle', body: seed }, { name: 'critic', body: seq(render('lr'), critic('c')) }]), own))).toEqual(['react']);
+    // A seed's direction is made from what its prompt holds: in a lens, where what it writes is dropped, the direction
+    // carries your answer on to your draft. One that takes in nothing of yours carries nothing.
+    const takes = step({ ...seed, consumes: ['intent', 'critique'] });
+    expect(unapplied(seq(render('r'), react, audit('au', [{ name: 'angle', body: takes }, { name: 'critic', body: seq(render('lr'), critic('c')) }]), own))).toEqual([]);
+    expect(unapplied(seq(render('r'), react, audit('au', [{ name: 'angle', body: seed }, { name: 'critic', body: seq(render('lr'), critic('c')) }]), own))).toEqual(['react']);
+  });
+
   it('at every place a step object sits, by its place', () => {
     const cut = personCut('cut');
     const f = fix('f');
@@ -810,14 +837,21 @@ describe('whose directions your next VISION is shown (directionsReactedTo)', () 
   const finalCheck = (id: string, retry?: 'D2' | 'D3') => oneShotGate(id, critic(`${id}-critic`), { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' }, retry ? { stage: retry, times: 1 } : undefined);
 
   it('the AI directions a VISION of yours follows, with nothing that leaves a note of its own between them', () => {
-    expect(leavesNote(ai('v'))).toBe(true);
+    expect(leavesNote(ai('v'))).toBe('always');
     expect(reacted(recipeOf(seq(ai('v'), yours('p'))))).toEqual(['v']);
     expect(reacted(recipeOf(seq(ai('v'), render('r'), yours('p'))))).toEqual(['v']);
     expect(reacted(recipeOf(seq(ai('v'))))).toEqual([]);
     expect(reacted(recipeOf(seq(yours('p'), ai('v'))))).toEqual([]);
     expect(reacted(recipeOf(seq(ai('v'), critic('c'), yours('p'))))).toEqual([]);
-    // On every path: a note that may be left between them is enough to take the claim away.
+    // On every path: a note that may be left between them is enough to take the claim away, a seed's direction among
+    // them, which it leaves only when it writes one.
     expect(reacted(recipeOf(seq(ai('v'), optional('o', 'needed', check('k')), yours('p'))))).toEqual([]);
+    const seed = step({ id: 'angle', role: 'seed', block: 'SEED', actor: 'model', tier: 'mid', prompt: 'p.s', consumes: ['intent'], produces: ['artifact'] });
+    expect(leavesNote(seed)).toBe('sometimes');
+    expect(reacted(recipeOf(seq(ai('v'), seed, yours('p'))))).toEqual([]);
+    const build = step({ id: 'b', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['intent'], produces: ['artifact'] });
+    expect(leavesNote(build)).toBe('never');
+    expect(reacted(recipeOf(seq(ai('v'), build, yours('p'))))).toEqual(['v']);
     // Only the next VISION of yours is about these directions: a later one may be shown other notes.
     expect(reacted(recipeOf(seq(ai('v'), yours('p'), critic('c'), yours('q'))))).toEqual(['v']);
   });
