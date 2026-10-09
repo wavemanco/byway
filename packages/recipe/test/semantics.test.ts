@@ -668,7 +668,7 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(react, sharpen, render('r'), audit('au', [{ name: 'yours', body: step({ ...yourCritique('o'), produces: ['taste'] }) }]), own))).toEqual([]);
   });
 
-  it('a seed leaves its direction as a note on every run where its prompt asks for it first, on some where it asks for the block alone; the direction carries nothing of yours', () => {
+  it('a seed is read as leaving its direction as a note on every run that answers as asked where its prompt asks for it first, on some where it asks for the block alone; the direction carries nothing of yours', () => {
     // C3 with your critique, an AI direction that reads it, a seed angle from the intent alone, then your own draft or
     // a reaction of yours whose brief an AI draft takes in (the round-9 verification's s119 and s120). C3's seed prompt
     // asks for the angle card alone, so a run whose seed writes no direction before it leaves the AI direction beside

@@ -255,7 +255,7 @@ describe('the notes a model step leaves beside the work (leavesNote)', () => {
     expect(leaving('never', 'tool')).toEqual(new Set(ROLES));
   });
 
-  it('a seed: on every run where its prompt asks for the direction first, on some where it asks for the block alone; its prompt renders only the problem and the string', () => {
+  it('a seed: read as directing on every run that answers as asked where its prompt asks for the direction first, on some where it asks for the block alone; its prompt renders only the problem and the string', () => {
     // The seed prompts a recipe can name: a composed recipe may reuse only a catalog step's prompt in that step's role
     // (the advisor's profile).
     const prompts = createPromptRenderer();
