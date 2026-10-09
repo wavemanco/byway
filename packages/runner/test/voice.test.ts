@@ -638,9 +638,14 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     const q = await open(html);
     // An svg <title> left open over the paragraph's end hides "Tip" and everything after it in a browser.
     expect(q.offered).toBe('T\nX');
-    expect(q.prompt).toMatch(/ Text a browser does not show \(hidden, or shown only as a tooltip\) is not offered, and stays as it is\.$/);
+    expect(q.prompt).toMatch(/ Text a browser does not show as one line here \(hidden, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
     const out = await q.answer('T\nX marks');
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<p>X<svg', '<p>X marks<svg'));
+    // A line a browser shows, but not in one piece with exactly its words, is not offered either: the prompt does not call
+    // it hidden (r8).
+    const flex = await open(page('<div style="display:flex"><span>Second</span><span>First</span></div><p>Shown</p>'));
+    expect(flex.offered).toBe('T\nShown');
+    expect(flex.prompt).toMatch(/ \(hidden, a tooltip, or laid out differently\) is not offered, and stays as it is\.$/);
     const hidden = page('<div hidden>Menu</div><details><summary>More</summary><p>Inside</p></details><dialog>Closed</dialog><p class="x" style="display:none">Styled away</p><p>After</p>');
     const h = await open(hidden);
     expect(h.offered).toBe('T\nMore\nAfter');

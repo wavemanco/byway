@@ -163,7 +163,7 @@ async function pageQuestion(deps: RunnerDeps, input: OpenCheckpointInput): Promi
 
 /**
  * A page's VOICE question says how its copy is written (ADR-0081): one line per run of text, the bracket rule when a line
- * has link words in brackets, and where each link goes; that text a browser does not show is not offered; and, when the
+ * has link words in brackets, and where each link goes; that text a browser does not show as one line is not offered; and, when the
  * browser could not place the page's lines, that none of them can be changed. It is read from the work, never from the
  * starting text, and appended to the prompt the workflow sent, which never carries it, so a re-ask gets it once too.
  */
@@ -175,7 +175,7 @@ function withPageRules(page: PageQuestion | undefined, prompt: string): string {
   } catch (e) {
     throw new StepError(`byway could not read the copy of this work (${(e as Error).message}).`);
   }
-  if (page.notOffered.size) rules += ' Text a browser does not show (hidden, or shown only as a tooltip) is not offered, and stays as it is.';
+  if (page.notOffered.size) rules += ' Text a browser does not show as one line here (hidden, a tooltip, or laid out differently) is not offered, and stays as it is.';
   if (!page.checked) rules += " byway could not match this page's lines to what a browser shows, so none of them can be changed in this step.";
   return `${prompt} ${rules}`;
 }
