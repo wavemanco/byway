@@ -28,8 +28,8 @@ Next sees it and is the only port listening.
 | `src/view/` | Pure view models: the step index and timeline, the cost meter, checkpoint panels, labels, formatting, the claims rule. Unit-tested in `test/` |
 | `src/components/` | Client and shared components; `run/panels/` holds one "Your turn" panel per checkpoint kind |
 | `app/styles/` | Tokens (light and dark), base, components, screens, run |
-| `test/` | Unit tests (vitest), the guard tests (`guard-claims`, `guard-boundaries`) and fixtures: the real services on a temp folder with a fake Runner |
-| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode |
+| `test/` | Unit tests (vitest), the guard tests (`guard-claims`, `guard-boundaries`, `guard-disabled`) and fixtures: the real services on a temp folder with a fake Runner |
+| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode, and the keyboard and focus checks (`keyboard.spec.ts`) |
 
 ## How the app gets its services
 
@@ -110,6 +110,18 @@ Logic on top of the contracts sits in view code:
   ADR-0086). Step rows and cards show it as a snippet, with counts (a diff's size, an option map's titles) taken from
   the whole artifact on the server; views you decide in (compare, references, a step's detail) load the whole text and
   say so while they show only the opening.
+- **A control that acts never disables itself** (R5). A focused control given the native `disabled` state drops
+  keyboard focus to the page, and on Start and the paid Start button `disabled` was also the only guard against a
+  second press (run start has no server-side idempotency). So an action runs through `useAction`
+  (`src/components/useAction.ts`), whose synchronous in-flight guard refuses a second start before React re-renders,
+  and its control is an `ActionButton`: busy or unavailable, it says so with `aria-disabled` (and `aria-busy`), keeps
+  focus and its Tab stop, and a press does nothing (a submit is prevented, so Enter in a field cannot submit either).
+  An action that leaves the screen on success holds the guard until the next screen replaces it.
+  `test/guard-disabled.test.ts` fails on any `disabled` attribute of an element in `src/` or `app/` that is not
+  reviewed there with a reason (today: the examples' fieldset while a run starts, "Paste an example" once five are
+  listed, and the Switch's configured-unavailable state). Closing a step opened from the timeline returns focus to its
+  row. `e2e/keyboard.spec.ts` drives these with the keyboard in a real browser; it reads the focused element and the
+  browser's accessibility tree, never an audit library, and never audits a generated page as a product check (CR12).
 - Evidence labels are computed by the advisor; `test/guard-claims.test.ts` fails if any app string, recipe
   presentation, prompt template or README claims efficacy.
 - Provider keys are never read into the browser, shown or sent: the services module is server-only, Settings shows
