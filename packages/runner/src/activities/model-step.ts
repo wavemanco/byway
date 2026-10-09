@@ -192,7 +192,11 @@ type Answer =
   | { kind: 'keep'; keep: 'A' | 'B' }
   | { kind: 'dedupe'; keep: string[] };
 
-function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports: ModelStepInput['ports'], checks: (text: string) => string[]): (text: string) => Parsed<Answer> {
+/**
+ * How a model step's answer is read, by role. Exported so @byway/recipe's effects table (ADR-0092) is held to it: a role
+ * this switch does not name is parsed as the work, and the table fails closed the same way.
+ */
+export function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports: ModelStepInput['ports'], checks: (text: string) => string[]): (text: string) => Parsed<Answer> {
   const map = <T>(r: Parsed<T>, f: (v: T) => Answer): Parsed<Answer> => (r.ok ? { ok: true, value: f(r.value) } : r);
   const candidates = labels(ports.options?.length ?? 0);
   switch (role) {
