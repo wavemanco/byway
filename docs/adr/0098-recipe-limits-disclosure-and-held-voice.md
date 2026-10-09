@@ -48,12 +48,15 @@ The findings they close, from the verification (cluster A, option C):
 5. **A diff says "The same steps" only when the recipes run the same.** `projection.ts` projects a recipe from FIELD_ROLES: names dropped, sets sorted, a sit-out by its block. It compares only the fields that say how it runs (medium, inputs, stages, sit-outs, exceptions, bank). The fields the composer forces are left out: kind, channel, family, schema, parent. A test holds FIELD_ROLES to the zod schema object by object.
    - **The projection may tell apart two recipes that run the same, never equate two that do not.** So it keeps what the runner reads in order or by position:
      - **A seq keeps its nesting**, a seq of one included. The interpreter reads a step's siblings in its own seq: a model cliché sweep asks the person which finds to swap only when its swap step follows it there (`asksSwaps`, now in `@byway/recipe/semantics` and shared by the interpreter, the diff, the explainers and the estimate). Flattening, as first built, let a composed C1 or C7 with the rest of Finish wrapped in a seq of its own drop that choice and read "The same steps" (the adversarial verification of this branch).
-     - **A step's consumed ports keep their order.** `buildPrompt` lays out the images a step sees port by port.
+     - **A step's consumed ports keep their order.** `buildPrompt` lays out the images a step sees port by port: a view's screenshots and an option set's, in `consumes` order.
+       - **This departs from the design's acceptance test, on purpose.** The verification's design (its step 8 and acceptance list) says "an id-only rename or a consumes reorder still does" read "The same steps". Here a consumes reorder reads "Other technical changes that affect how it runs." The reason: for a step that takes in both a view and an option set, a reorder changes the order of the images the model sees. A set would let the diff call two recipes that run differently the same, which the projection never does. The price is named under Consequences. An id-only rename still reads "The same steps".
+     - **What a step reads when it is there keeps its order too** (`reads`, [ADR-0089](0089-recipe-ir-optional-reads.md), merged after this record was first written). `FIELD_ROLES` classifies it `semantic`, where ADR-0089's decision 1 says a semantic set. The reason is the one for `consumes`: `buildPrompt` walks `inputsOf` (the consumed ports, then the read ones) and lays out a read view's or option set's images in that order. This record amends that one clause of ADR-0089. A read is semantic either way: it changes what the step's prompt receives.
      - **A route's question is semantic**, as an optional's trigger is. A composed recipe's route asks its own `on` at run time: the catalog's plain question stands in only for a catalog recipe.
    - **Every node type is paired.** The diff describes:
      - who picks ("chosen at random, no one compares them") and how many;
      - a quality bar moved, never quoted, and how a repeat stops early;
      - what your words cover, whether you choose a cliché sweep's swaps, and an optional's or a route's question;
+     - a read gained or dropped: "now also reads the brief when there is one", "no longer reads the brief" (a reorder of reads, or a port moved between consumed and read, is another technical change);
      - a final check's re-runs;
      - moves into or out of a review, a final check or a draft, behind a check that can end the round, and past your words.
    - **Anything else** reads "Other technical changes that affect how it runs." A re-nesting that changes nothing reads so too.
@@ -62,8 +65,14 @@ The findings they close, from the verification (cluster A, option C):
    - A step's label follows its role's block.
    - Only a VOICE write is "your words", explained by its scope: every line, key lines, the claims, the script or the on-screen words.
    - A random pick says it is random.
-   - A writer applies a critique by what it runs.
-   - A cliché sweep says "you choose which ones" only where `asksSwaps` holds; elsewhere it says the AI swaps every one. The estimator counts your choosing time at the same places.
+   - A writer applies a critique by what it runs: a machine writer that consumes the critique, or reads it when it is there (ADR-0089).
+   - A cliché sweep says "you choose which ones" only where `asksSwaps` holds; elsewhere it says the AI swaps every one. The estimator counts your choosing time at the same places. `asksSwaps` looks for the next step in the sweep's seq that consumes a critique; a fix that only reads it is handed every find, and no one is asked.
+   - **A sentence about the steps around a step is used only where the recipe's order establishes it** (present.ts `around`: walk order, a loop's or relay's body running again, and nothing a lens, a gate body or a judge makes). Elsewhere the sentence without that claim is used.
+     - "the AI wrote the rest" only on a VOICE that no person's write (a VOICE or their own draft) can come before. The round-2 verification found it on an admitted C4 whose draft the person writes; it was false on the catalog's C4 too, whose claim sign-off follows the person's key lines.
+     - "It is locked after this" only on a script that no later draft of yours or script VOICE can change. A later on-screen or claims VOICE cannot touch the voice-over.
+     - "Nothing is deleted for you" and "It flags only" only where no AI writer can take the notes in after them.
+     - "for you to react to" only where a person's VISION can follow the AI's directions.
+   - **A step a person takes is their turn.** A person's fix is their own draft, as a person's build is; a person's image step, merge or sweep is "Your turn." None is said to be done by the AI or a reviewer.
 7. **The operators as the interpreter runs them.**
    - **`gateFeed`** names the steps a gate's verdict is read from on every run of its body. ST2 `feed` and ST10 `feed` refuse a gate with none. ST10 `metric` refuses a one-shot check-clean or human gate.
    - **What an audit hands on:** its lenses' joined critique, not a score.
@@ -103,8 +112,8 @@ The findings they close, from the verification (cluster A, option C):
 **Negative, and residuals named**
 
 - **The workflow bundle changes once**, with ADR-0093's cap policy: from main's `ec88dae8…` (after [ADR-0089](0089-recipe-ir-optional-reads.md) and [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md)) to `fcadfee4…`, pinned in `packages/runner/test/build.test.ts`. Before main's media-contract work was merged under it, the same change was `bfdda860…` to `9f872bb4…` on its branch; that hash never reached main. The one change carries every stage's workflow code: stage 2's engine check at workflow start, stage 4's held voice, guard and C pick, and ADR-0093's cap turn; stage 3 changed no workflow code, and moving `asksSwaps` into the shared semantics changed only where its code lives. Runs open at the upgrade end plainly ([ADR-0078](0078-runs-from-older-engine-versions-end-plainly.md)).
-- **A re-nesting that changes nothing reads "Other technical changes that affect how it runs."** That overstates it, and is the price of a projection that never equates two recipes that run differently.
-- **A stored composed intake is checked again at start.** One whose explanations changed (VOICE scope wording, a random pick) gets a 409 once and starts on the second Start. One that a new rule refuses (ST2 or ST10 `feed`, LS1, the composed limits) gets a 400.
+- **A re-nesting that changes nothing reads "Other technical changes that affect how it runs."** That overstates it, and is the price of a projection that never equates two recipes that run differently. So does a reorder of a step's consumed or read ports when the step takes in at most one port with images (a view or an option set): it runs the same.
+- **A stored composed intake is checked again at start.** One whose explanations changed (VOICE scope wording, a random pick, a sentence about the steps around a step that the recipe does not establish, a person's step said to be the AI's) gets a 409 once and starts on the second Start. One that a new rule refuses (ST2 or ST10 `feed`, LS1, the composed limits) gets a 400.
 - **Run inputs are still carried by value** in every activity input: the brief with its attachments, the fixed voice deck, and now `ports.held` and `ports.voice`. Large inputs can still pass Temporal's batch or payload limits. That is the backlog item on run inputs by reference, widened to the held voice.
 - **The bound is an over-approximation.** It counts every seed, every view at a web page's size, and a raised cap on every loop a person holds. A recipe near the limits may be refused although it would run.
 
@@ -120,4 +129,4 @@ The findings they close, from the verification (cluster A, option C):
   - advisor: `packages/advisor/test/limits-admission.test.ts`, `diff-semantics.test.ts` and `present.test.ts`;
   - runner: `packages/runner/test/limits-batch.test.ts`, `start-refusal.test.ts`, `held-voice.test.ts`, `swap-choice.test.ts` and `e2e/loop-cap.ts`;
   - web: `apps/web/test/start-admission.test.ts` and `recommendation.test.ts`, and `apps/web/e2e/composed-start.spec.ts`.
-- It carries out the later stages ADR-0092 named, and supersedes no ADR.
+- It carries out the later stages ADR-0092 named. It amends one clause of [ADR-0089](0089-recipe-ir-optional-reads.md) (decision 1: `reads` is ordered, decision 5 above) and supersedes no ADR.

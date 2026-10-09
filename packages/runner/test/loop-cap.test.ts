@@ -11,7 +11,7 @@
  * failed).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { audit, loop, seq, step, type Gate, type Loop, type Recipe, type Step } from '@byway/recipe';
+import { audit, loop, relay, seq, step, type Gate, type Node, type Recipe, type Step } from '@byway/recipe';
 import type { RunInput } from '../src/types.ts';
 import { BEST_SO_FAR_PROMPT, FINAL_CHOICE_OPTIONS, humanCapPrompt, READY_PROMPT } from '../src/workflow/wording.ts';
 
@@ -31,7 +31,11 @@ vi.mock('../src/workflow/acts.ts', () => {
         return { costUsd: 0, text: 'my words', artifactId: `${id}-${++state.n}` };
       case 'renderView':
         state.ran.push(id);
+        // A link whose clip was not made: its shot check has nothing to see (ADR-0090).
+        if (id === 'no-clip-render') return { costUsd: 0, view: { pool: false, items: [{ imageArtifactIds: [], unobservable: 'No clip was made for shot 1, so there is nothing to check.' }] } };
         return { costUsd: 0, view: { pool: false, items: [{ imageArtifactIds: [] }] } };
+      case 'storyboardShots':
+        return [1];
       case 'rerank':
         return { costUsd: 0, index: 0 };
       default:
@@ -59,8 +63,8 @@ interface Asked {
   artifactIds?: string[];
 }
 
-/** Run one loop after a draft; `answer` gives each question's answer (confirm: a boolean; choose: an option id). */
-async function run(l: Loop, answer: (q: Asked, i: number) => boolean | string): Promise<{ asked: Asked[]; ran: string[]; error?: unknown }> {
+/** Run one loop (or a relay holding one) after a draft; `answer` gives each question's answer (confirm: a boolean; choose: an option id). */
+async function run(l: Node, answer: (q: Asked, i: number) => boolean | string): Promise<{ asked: Asked[]; ran: string[]; error?: unknown }> {
   state.ran = [];
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'cap', title: 'Cap', kind: 'experimental', family: 'test', channel: 'workspace', medium: 'prose', inputs: ['intent'], stages: [{ stage: 'D2', body: seq(draft, l) }], sitsOut: [], exceptions: [], bank: false };
   const input: RunInput = { runId: 'run-cap', workspaceId: 'ws', recipe, problem: { text: 'A story' }, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
@@ -129,6 +133,21 @@ describe('a critic loop at its cap', () => {
     expect(prompts(r.asked)).toEqual(['BEST']);
     // Two rounds, the raise, two more, then its best version without asking again.
     expect(r.ran.filter((id) => id === 'fix')).toHaveLength(4);
+  });
+
+  it('in a relay link with nothing to check ends that round unchecked: not a way out at the cap, so nothing is asked (ADR-0090, ADR-0093)', async () => {
+    const checkGate: Gate = { metric: 'check-clean', hidden: false, holder: 'harness', probe: 1, max: 1, onCap: 'human', onNoConverge: 'recalibrate-human' };
+    const check = step({ id: 'shot-check', role: 'check', actor: 'model', tier: 'mid', isolated: true, prompt: 'p.check', consumes: ['view'], produces: ['critique'] });
+    const repair = (renderId: string) => relay('chain', 1, loop('repair', seq(render(renderId), check, fix), checkGate));
+    // The control: a check that sees the clip and finds defects at the cap asks "Use the best version so far?".
+    const seen = await run(repair('r'), () => true);
+    expect(prompts(seen.asked)).toEqual(['BEST']);
+    // At its only round, the cap, a check with nothing to see is skipped and the loop ends there, unrepaired.
+    const blind = await run(repair('no-clip-render'), () => true);
+    expect(blind.asked).toEqual([]);
+    expect(blind.ran).not.toContain('shot-check');
+    expect(blind.ran).not.toContain('fix');
+    expect(blind.error).toBeUndefined();
   });
 
   it('whose gate sees its critic keeps ADR-0073: asked once at the cap, the raise, then the best version', async () => {

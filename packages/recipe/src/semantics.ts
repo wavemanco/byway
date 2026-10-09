@@ -385,10 +385,10 @@ export function matchCheckpoints(want: readonly Checkpoint[], have: readonly Che
 /**
  * Every executed VOICE write, wherever it sits (optional ones included): what the held voice is made of. The held
  * voice is every VOICE write on the path, in order, and a machine write declared `keepsVoice` must keep every line of
- * each of them that was in the work before it. The runner checks such a write against the latest VOICE answer only
- * (`ports.voice`), so admission holds the line: after each of these, a composed recipe may have no more machine
- * writers of a role than its nearest recipe has after the counterpart VOICE (the advisor's writer allowance).
- * Checking the whole held voice at run time is a later stage of ADR-0092.
+ * each of them that was in the work before it. The runner checks such a write against the whole held voice and the
+ * latest words (`ports.held`, `keptVoice`; ADR-0092 stage 4, ADR-0098), and admission holds the line first: after each
+ * of these, a composed recipe may have no more machine writers of a role than its nearest recipe has after the
+ * counterpart VOICE (the advisor's writer allowance).
  */
 export const voiceWrites = (recipe: Recipe): Placement[] => placements(recipe).filter((p) => voiceWrite(p.step));
 

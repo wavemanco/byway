@@ -31,6 +31,12 @@ The verification's recommendation (cluster A, option C, stage 4) drafted this re
    - The interpreter still asks at the cap of such a loop if one runs; admission makes it unreachable for a composed recipe.
 4. **The estimate reads the planned rounds** (`loopRounds(gate).planned`). A person's loop costs one question a round: "Is this ready?", and at the last round the cap's question. The rounds a person may allow at the cap are their choice, made when asked, so they are not counted. The work bound (ADR-0092 stage 2) counts them: `loopRounds(gate).withRaise`.
 5. **What people are told.** C2's and C6a's direction steps and the C6/C6a author loop say that at the last round you can allow more, once. C6's comment, spec §3.2 and this record say the same.
+6. **Not a way out at the cap: a round with nothing to check.** [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md), merged under this record, added the loop exit `unchecked`: inside a relay link that made no clip, a critic or check whose view has nothing to judge is skipped with its reason, and the loop it reports to ends that round as it is. That exit is not a cap exit, and it takes no cap turn:
+   - It ends the loop at whatever round the judge had nothing to see, the first included, not because the rounds ran out. The interpreter returns on it before any cap check, as on a passed threshold or a clean check.
+   - Nothing was checked, so there is no verdict for a person to overrule and no best version to choose: asking "Use the best version so far?" would ask about a check that did not happen. C5's shot repair (`check-clean`, `onCap: human`) is the catalog's one such loop.
+   - It never ends a loop a person holds. Only a model critic or check reports to a gate (`feedsGate`), and a `human` gate has none, so a person's loop still ends only on their answer.
+
+   So "every way out at the cap takes one turn" holds: `unchecked` is a way out before the cap, like a passed threshold.
 
 ## Alternatives considered
 
@@ -43,7 +49,7 @@ The verification's recommendation (cluster A, option C, stage 4) drafted this re
 
 **Positive**
 
-- No loop ends at its cap on anyone's behalf. A person's last round is a question with the work and its notes beside it, and they can allow more rounds once.
+- No loop ends at its cap on anyone's behalf. A person's last round is a question with the work and its notes beside it, and they can allow more rounds once. A round with nothing to check ends its loop before the cap, unchecked and saying so (decision 6).
 - One cap policy, read by the interpreter, LS1, the estimator, the work bound and the copy.
 - Tests drive a person's loop to its cap at max 1 and max N, with repeated No, the raise, both last choices, a feedless critic loop, and Cancel while the cap question is open. The last two are end to end through the real workflow, on C6a's author loop capped at two rounds.
 
@@ -59,7 +65,7 @@ The verification's recommendation (cluster A, option C, stage 4) drafted this re
 - The original review: `C:/Users/arvik/code/byway_review/byway-review.md` (outside the repository).
 - The verifiers' probes, outside the repository: `C:/Users/arvik/AppData/Local/Temp/byway-review-verify/verify-F20-reproduce/f20-probe.mts` and `verify-F20-refute/probe.mts`.
 - Tests:
-  - runner: `packages/runner/test/loop-cap.test.ts`, and `test/e2e/loop-cap.ts` (in `configurations.test.ts`);
+  - runner: `packages/runner/test/loop-cap.test.ts` (an `unchecked` round at the cap asks nothing; the same loop that sees its clip asks "Use the best version so far?"), `test/e2e/loop-cap.ts` (in `configurations.test.ts`), and ADR-0090's C5 run without video in `test/e2e/c2-c5.ts` (no shot check, no cap question);
   - validator: `packages/validator/test/operator-semantics.test.ts`;
   - advisor: `packages/advisor/test/estimate.test.ts`.
 - It extends ADR-0073 (the raise-once rule now holds for every loop exit at the cap) and supersedes no ADR.
