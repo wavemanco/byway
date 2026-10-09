@@ -1012,8 +1012,57 @@ const carriesOn = (s: Step): boolean => s.actor === 'model' && stepEffect(s) ===
 const shownNotes = (s: Step): boolean => s.actor === 'human' && s.role !== 'voice' && s.role !== 'tells-compare';
 
 /**
+ * The places of the AI steps whose answer decides which version or option is the work: a pick's model judge (which
+ * candidate becomes the work), a dedupe (which options are kept) and a keep-or-revert (which version is kept), outside a
+ * lens or a gate body, and a critic or check whose verdict a gate reads (one that reports to its loop's gate, which ends
+ * the loop or goes on, and a critic in a one-shot gate's body, whose score passes the gate or not). What such a step
+ * takes in by a text port is in its prompt, so an answer it takes in reaches the work through its choice.
+ */
+function decidesWork(recipe: Recipe): Set<string> {
+  const out = new Set<string>();
+  const visit = (n: Node, path: string, metric: string | undefined, inGate: boolean, contained: boolean): void => {
+    switch (n.op) {
+      case 'step':
+        if (n.actor !== 'model') return;
+        if ((!contained && (n.role === 'dedupe' || n.role === 'tells-compare')) || (metric !== undefined && feedsGate(n, metric)) || (inGate && n.role === 'critic')) out.add(path);
+        return;
+      case 'seq':
+        n.steps.forEach((c, i) => visit(c, `${path}.steps[${i}]`, metric, inGate, contained));
+        return;
+      case 'loop':
+        visit(n.body, `${path}.body`, n.gate.metric, inGate, contained);
+        return;
+      case 'relay':
+      case 'optional':
+        visit(n.body, `${path}.body`, metric, inGate, contained);
+        return;
+      case 'route':
+        n.branches.forEach((b, i) => visit(b.body, `${path}.branches[${i}].body`, metric, inGate, contained));
+        return;
+      // Candidates, lenses and a gate's body run without the loop's context; a gate reads its own body's score.
+      case 'replicate':
+      case 'each':
+        visit(n.body, `${path}.body`, undefined, false, contained);
+        return;
+      case 'gate':
+        visit(n.body, `${path}.body`, undefined, true, true);
+        return;
+      case 'audit':
+        n.lenses.forEach((l, i) => visit(l.body, `${path}.lenses[${i}].body`, undefined, false, true));
+        return;
+      case 'pick':
+        if (n.judge?.actor === 'model') out.add(`${path}.judge`);
+        return;
+    }
+  };
+  recipe.stages.forEach((st, i) => visit(st.body, `stages[${i}].body`, undefined, false, false));
+  return out;
+}
+
+/**
  * The places of a person's lists and critiques (`personCritique`) whose answer reaches the work on some path: an AI
- * writer takes it in, or a draft of the person's own is shown it, directly or as it is carried on. Read on the exit-aware
+ * writer takes it in, a draft of the person's own is shown it, or an AI step that decides which version or option is
+ * the work takes it in (`decidesWork`), directly or as it is carried on. Read on the exit-aware
  * flow walk, `exactLoops` and `untilStable`, with a state that says, for each text port and for the notes beside the
  * work, which of those answers what is there may carry:
  *
@@ -1024,7 +1073,8 @@ const shownNotes = (s: Step): boolean => s.actor === 'human' && s.role !== 'voic
  *   it fills and its note; any other carries nothing. A step that leaves a note of its own (`leavesNote`) puts it in
  *   place of the notes before it.
  * - An AI writer that applies a port (`appliesPort`) applies what that port carries. A draft of the person's own (an
- *   author write, not in a lens or a gate body) is shown the latest notes, and so takes in what they carry.
+ *   author write, not in a lens or a gate body) is shown the latest notes, and so takes in what they carry. An AI step
+ *   that decides which version or option is the work decides by what the ports it takes in carry.
  * - replicate, each and a pick hand on what they started with. An audit hands on its lenses' critique and notes, and the
  *   brief and taste it started with; a one-shot gate hands on its body's critique, and the rest it started with.
  * - A judge in a relay link may be skipped (`skippableJudges`), and a person's answer in a lens or a gate body may be
@@ -1033,6 +1083,7 @@ const shownNotes = (s: Step): boolean => s.actor === 'human' && s.role !== 'voic
 function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<string> {
   const askedAt = new Set(asked.map((p) => p.path));
   const skippable = skippableJudges(recipe);
+  const decides = decidesWork(recipe);
   const reached = new Set<string>();
   type State = Readonly<Record<Carrier, readonly string[]>>;
   const EMPTY: State = { critique: [], brief: [], taste: [], notes: [] };
@@ -1043,6 +1094,7 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
     step(s, path, _stage, st, contained) {
       for (const q of ANSWER_PORTS) if (appliesPort(s, q, contained)) for (const x of st[q]) reached.add(x);
       if (authorWrite(s) && !contained) for (const x of st.notes) reached.add(x);
+      if (decides.has(path)) for (const q of ANSWER_PORTS) if (takesIn(s, q)) for (const x of st[q]) reached.add(x);
       // What the step puts in a port it fills: what it carries on, and a person's answer its own place too.
       const inPlace = revisedInPlace(s);
       const carried = carriesOn(s) ? unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q)).map((q) => st[q])) : shownNotes(s) ? union(st.notes, inPlace ? st[inPlace] : []) : [];
@@ -1075,20 +1127,21 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
 
 /**
  * A person's lists and critiques (`personCritique`) whose answer reaches the work on no path: the places where one is
- * asked whose answer no AI writer takes in and no draft of the person's own is shown, through any text port it fills
- * (`answerPorts`: a CUT's list is the critique alone; a reaction of theirs is also the brief or the taste it produces),
- * directly or carried on by an AI step that takes it in (a critic, a check, a CUT's list, a sweep, an overlap flag or a
- * direction, whose text and note are followed onward). Read on `answersReachingWork`. The run asks "What should go? List
- * what to remove", or what the next version should avoid, and nothing the run does with the work ever has the answer
- * before it: before an AI writer or the person's own draft has it, another value takes its place, or none comes after
- * it at all. For the critique, most often the cliché sweep's finds, and also a later CUT of the person's, a critic, a
- * check, a direction of theirs given as a critique, or an audit or a final check that notes anything; for the brief or
- * the taste, an AI direction made from nothing of theirs, or a later answer of theirs that does not revise it in place.
- * Admission refuses one (ST12 'critique-unapplied'; 'critique-per-candidate' where it is asked in a candidate, whose
- * answer only the candidate's own steps can take in; ST9 and ST10 'human-critique' where it is asked in a lens or a
- * gate body; ADR-0098). The walk holds every run, so no run hands an answer this
- * names to the work; it leaves a loop only where a run can, so a critic loop's next round, which puts its own critique
- * in place of an answer given at the end of a round, is not taken for a way out with that answer.
+ * asked whose answer nothing that writes the work or picks which version it is takes in (an AI writer, a draft of the
+ * person's own that is shown it, an AI step that decides which version or option is the work). That holds through any
+ * text port the answer fills (`answerPorts`: a CUT's list is the critique alone; a reaction of theirs is also the brief
+ * or the taste it produces), and through what an AI step that takes it in makes from it (a critic's critique, an AI
+ * CUT's list, a sweep's finds, an overlap flag, a direction, and the note each leaves). Read on `answersReachingWork`.
+ * The run asks "What should go? List what to remove", or what the next version should avoid, and nothing the run does
+ * with the work ever has the answer: before anything does, another value takes its place, or none comes after it at
+ * all. For the critique, most often the cliché sweep's finds, and also a later CUT of the person's, a critic, a check, a
+ * direction of theirs given as a critique, or an audit or a final check that notes anything; for the brief or the taste,
+ * an AI direction made from nothing of theirs, or a later answer of theirs that does not revise it in place. Admission
+ * refuses one (ST12 'critique-unapplied'; 'critique-per-candidate' where it is asked in a candidate, whose answer only
+ * the candidate's own steps can take in; ST9 and ST10 'human-critique' where it is asked in a lens or a gate body;
+ * ADR-0098). The walk holds every run, so no run hands an answer this names to the work; it leaves a loop only where a
+ * run can, so a critic loop's next round, which puts its own critique in place of an answer given at the end of a
+ * round, is not taken for a way out with that answer.
  *
  * Some path, not every path: an answer that some run hands on to the work is admitted. Which path a run takes is
  * decided as it runs, by the person's answers and by everything else it reads as it goes (what its AI, media and tool

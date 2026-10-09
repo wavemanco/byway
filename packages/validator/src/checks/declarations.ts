@@ -48,8 +48,9 @@ export function checkDeclarations(recipe: Recipe, findings: Findings): void {
       findings.add('ST12', path, `VOICE "${step.id}" runs once per candidate; the person's words go into the one work, after the pick`, 'voice-per-candidate');
     }
   }
-  // A person's list or critique whose answer reaches the work on no path: no AI writer takes it in and no draft of their
-  // own is shown it, by any port it fills, directly or in what an AI step makes from it (ADR-0098). Asked in a candidate,
+  // A person's list or critique whose answer reaches the work on no path: nothing that writes the work (an AI writer, or
+  // a draft of their own shown it) or picks which version it is takes it in, by any port it fills, directly or in what
+  // an AI step makes from it (ADR-0098). Asked in a candidate,
   // only that candidate's own steps can take it in: replicate and each hand on only the candidates' work. Asked in a lens
   // or a gate body, it is refused as such (ST9 and ST10 'human-critique'), once.
   for (const { step, path, contained, perCandidate } of unappliedCritiques(recipe)) {
@@ -57,7 +58,7 @@ export function checkDeclarations(recipe: Recipe, findings: Findings): void {
     if (perCandidate) {
       findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique once per candidate, and nothing in that candidate takes their answer to the work; replicate and each hand on only the candidates' work, so their answer never reaches the steps after them`, 'critique-per-candidate');
     } else {
-      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique, and their answer reaches the work on no path: no AI writer takes it in and no draft of their own is shown it, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it`, 'critique-unapplied');
+      findings.add('ST12', path, `step "${step.id}" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it`, 'critique-unapplied');
     }
   }
   walk(recipe, (node, path) => {

@@ -687,6 +687,28 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     expect(unapplied(seq(yours('d', ['brief', 'critique']), step({ ...spec, consumes: ['view'] }), fix('f')))).toEqual(['d']);
   });
 
+  it('taken in by an AI step that decides which version or option is the work: a judge, a dedupe, a keep-or-revert, a critic a gate reads', () => {
+    const yours = (id: string, produces: Step['produces']): Step => step({ id, role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces });
+    const build = step({ id: 'b', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['intent'], produces: ['artifact'], writes: true });
+    const judge = step({ id: 'judge', role: 'judge', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'p.j', consumes: ['option_set<artifact>', 'critique'], produces: [] });
+    // Your list, read by the judge that picks which candidate becomes the work.
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, build), pick('p', 'C', 1, 'model', judge)))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, build), pick('p', 'C', 1, 'model', step({ ...judge, consumes: ['option_set<artifact>'] }))))).toEqual(['cut']);
+    // A dedupe that keeps the options it reads your list for, or an AI keep-or-revert that keeps a version by it.
+    const dedupe = step({ id: 'dedupe', role: 'dedupe', actor: 'model', tier: 'mid', prompt: 'p.d', consumes: ['option_set<artifact>', 'critique'], produces: ['option_set<artifact>'] });
+    expect(unapplied(seq(personCut('cut'), replicate('x', 2, build), dedupe))).toEqual([]);
+    const keep = step({ id: 'keep', role: 'tells-compare', block: 'TELLS', actor: 'model', tier: 'mid', prompt: 'p.k', consumes: ['view', 'critique'], produces: ['taste'] });
+    expect(unapplied(seq(fix('f0'), render('r'), personCut('cut'), keep))).toEqual([]);
+    // Your brief, read by the critic whose score ends the loop: when it ends decides which version leaves it. A critic
+    // that reports to no gate decides nothing.
+    const d = yours('d', ['brief', 'critique']);
+    const briefCritic = step({ ...critic('c'), consumes: ['view', 'brief'] });
+    expect(unapplied(seq(d, loop('l', seq(build, render('r'), briefCritic), gate('critic-score'))))).toEqual([]);
+    expect(unapplied(seq(d, loop('l', seq(build, render('r'), critic('c')), gate('critic-score'))))).toEqual(['d']);
+    expect(unapplied(seq(d, loop('l', seq(build, render('r'), briefCritic), gate('human'))))).toEqual(['d']);
+    expect(unapplied(seq(d, render('r'), oneShotGate('g', briefCritic, { metric: 'critic-score', threshold: 7, hidden: true, holder: 'harness' })))).toEqual([]);
+  });
+
   it('followed through as many rounds as it takes: a list carried on in the next round reaches your draft in the round after', () => {
     // Your check at the end of each round you hold; the next round's AI sweep takes it in, and its flags are shown beside
     // your draft the round after that (the differential's C6a variant). Two walks of the body never see the third round.

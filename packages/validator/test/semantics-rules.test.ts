@@ -202,22 +202,22 @@ describe("ST9/ST10 'human-critique' and ST12 'critique-per-candidate': no person
       'gate "final" step "cut" asks a person for a list or a critique, and nothing after it in the gate notes one: a gate drops an empty answer and keeps what came before it, which the step after it then acts on',
     ]);
     expect(messages(cutIn((cut) => oneShotGate('final', seq(cut, critic('gate-critic')), pass)))).toEqual([
-      'gate "final" step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: before an AI writer or a draft of their own takes it in, another takes its place, or none comes after it',
+      'gate "final" step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: before anything that writes the work or picks which version it is takes it in, another takes its place, or none comes after it',
     ]);
     // A lens whose answer the cliché sweep's finds replace before any fix takes it in: refused as reaching nothing.
     const late = studio();
     insertAfter(d3(late), 'apply-cut', audit('late', [{ name: 'yours', body: personCritique('late-critique') }, { name: 'critic', body: critic('late-critic') }]));
     expect(messages(late)).toEqual([
-      'lens "yours" step "late-critique" asks a person for a list or a critique, and their answer reaches the work on no path: the audit hands it on as its critique, and before an AI writer or a draft of their own takes that in, another takes its place, or none comes after it',
+      'lens "yours" step "late-critique" asks a person for a list or a critique, and their answer reaches the work on no path: the audit hands it on as its critique, and before anything that writes the work or picks which version it is takes that in, another takes its place, or none comes after it',
     ]);
   });
 });
 
 /**
  * A person's list of what to remove ("What should go? List what to remove") or a reaction of theirs given as a critique
- * says it will be acted on. Where the answer reaches the work on no path (no AI writer takes it in and no draft of their
- * own is shown it, by any port it fills, directly or in what an AI step makes from it), it is refused where it is asked
- * (ADR-0098). Some path is enough: which path a run takes is decided as it runs, by the person's answers (an optional, a
+ * says it will be acted on. Where the answer reaches the work on no path (nothing that writes the work or picks which
+ * version it is takes it in, by any port it fills, directly or in what an AI step makes from it), it is refused where it
+ * is asked (ADR-0098). Some path is enough: which path a run takes is decided as it runs, by the person's answers (an optional, a
  * route, the end of their loop) and by what everything else in the run returns (for example an AI list or sweep that
  * finds nothing, so the fix after it asks no model; a gate that ends the round at its critic or check before the writer;
  * a judge in a relay link with no clip to see; a storyboard of one shot), and an admitted answer may go unapplied on a
@@ -234,7 +234,7 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     d3(r).steps.splice(indexOf(d3(r), 'apply-cut'), 1);
     const v = unapplied(r);
     expect(v.map((x) => `${x.ruleId} ${x.path}`)).toEqual(['ST12 stages[2].body.steps[1]']);
-    expect(v[0]!.message).toBe('step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: no AI writer takes it in and no draft of their own is shown it, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it');
+    expect(v[0]!.message).toBe('step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it');
   });
 
   it("a direction of the person's given as a critique between the CUT and its fix: the later answer replaces the list", () => {
@@ -305,7 +305,7 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     insertAfter(d3(alone), 'cut-render', reaction(['critique']));
     insertAfter(d3(alone), 'apply-cut', render('redraft-render'), redraft);
     expect(unapplied(alone).map((x) => x.message)).toEqual([
-      'step "direction" asks a person for a list or a critique, and their answer reaches the work on no path: no AI writer takes it in and no draft of their own is shown it, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it',
+      'step "direction" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it',
     ]);
   });
 });

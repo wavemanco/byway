@@ -469,7 +469,7 @@ describe('explainers claim only what the recipe establishes about the steps arou
   it('a CUT of yours that no AI writer applies on any path is refused (C4: no fix after it, or a direction of yours before the fix)', () => {
     const refused = (raw: N, nearest: Recipe) =>
       checkAnswer(fencedJson(raw), nearest, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, `composed-${nearest.id}`).violations.filter((v) => v.clause === 'critique-unapplied').map((v) => `${v.ruleId} ${v.message}`);
-    const message = 'ST12 step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: no AI writer takes it in and no draft of their own is shown it, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it';
+    const message = 'ST12 step "cut" asks a person for a list or a critique, and their answer reaches the work on no path: nothing that writes the work or picks which version it is takes it in, directly or in what an AI step makes from it; before one does, another takes its place, or none comes after it';
     expect(refused(removed(c4, 'apply-cut'), c4)).toEqual([message]);
     const direction = { op: 'step', id: 'your-direction', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] };
     expect(refused(edited(c4, 'cut', (n) => n, direction), c4)).toEqual([message]);

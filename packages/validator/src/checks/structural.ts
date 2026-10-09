@@ -130,7 +130,7 @@ function checkAudit(node: Extract<Node, { op: 'audit' }>, path: string, lost: ()
       if (personWrite(s) || declaresVoice(s)) findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" is a person's write or a VOICE; a lens's output never reaches the work`, 'human-write');
       if (!personCritique(s)) continue;
       if (reachesNothing(lost(), s, where)) {
-        findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" asks a person for a list or a critique, and their answer reaches the work on no path: the audit hands it on as its critique, and before an AI writer or a draft of their own takes that in, another takes its place, or none comes after it`, 'human-critique');
+        findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" asks a person for a list or a critique, and their answer reaches the work on no path: the audit hands it on as its critique, and before anything that writes the work or picks which version it is takes that in, another takes its place, or none comes after it`, 'human-critique');
       } else if (endsWith(lens.body, s) && node.lenses.every((l, j) => j === i || !replacesCritique(l.body))) {
         findings.add('ST9', where, `lens "${lens.name}" step "${s.id}" asks a person for a list or a critique, and no other lens notes one: a lens drops an empty answer, so the step after the audit acts on what came before it instead`, 'human-critique');
       }
@@ -153,7 +153,7 @@ function checkGate(recipe: Recipe, node: Extract<Node, { op: 'gate' }>, path: st
     if (personWrite(s) || declaresVoice(s)) findings.add('ST10', path, `gate "${node.id}" step "${s.id}" is a person's write or a VOICE; a gate keeps only its body's critique`, 'human-write');
     if (!personCritique(s)) continue;
     if (reachesNothing(lost(), s, `${path}.body`)) {
-      findings.add('ST10', path, `gate "${node.id}" step "${s.id}" asks a person for a list or a critique, and their answer reaches the work on no path: before an AI writer or a draft of their own takes it in, another takes its place, or none comes after it`, 'human-critique');
+      findings.add('ST10', path, `gate "${node.id}" step "${s.id}" asks a person for a list or a critique, and their answer reaches the work on no path: before anything that writes the work or picks which version it is takes it in, another takes its place, or none comes after it`, 'human-critique');
     } else if (endsWith(node.body, s)) {
       findings.add('ST10', path, `gate "${node.id}" step "${s.id}" asks a person for a list or a critique, and nothing after it in the gate notes one: a gate drops an empty answer and keeps what came before it, which the step after it then acts on`, 'human-critique');
     }
