@@ -1,0 +1,21 @@
+// Used only by the real next dev test (BYWAY_NEXT_DIST_DIR=.next-dev-test, see next.config.ts), so that dev server never
+// edits tsconfig.json. It lists exactly the type folders Next.js expects for that build folder.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "plugins": [{ "name": "next" }]
+  },
+  "include": [
+    "next-env.d.ts",
+    "next.config.ts",
+    "proxy.ts",
+    "instrumentation.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    ".next-dev-test/types/**/*.ts",
+    ".next-dev-test/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", ".next"]
+}

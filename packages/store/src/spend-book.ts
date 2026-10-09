@@ -90,6 +90,7 @@ export class SqliteSpendBook implements SpendBook {
     const wsCap = usdOf('the workspace cap', req.caps.workspaceUsd);
     const runCap = req.caps.runUsd === undefined ? undefined : usdOf('the run cap', req.caps.runUsd);
     if (!Number.isSafeInteger(req.leaseMs) || req.leaseMs <= 0) throw new StoreError('invalid', `leaseMs must be a positive integer, got ${String(req.leaseMs)}`);
+    const key = req.operationKey === undefined ? undefined : textOf('operationKey', req.operationKey);
     return this.#durable<AdmitOutcome>(() => {
       const q = this.#queries();
       const now = this.#ms();
@@ -98,6 +99,11 @@ export class SqliteSpendBook implements SpendBook {
         if (fault) return { fault: faultMessage(Number(fault.ledger_offset)) };
       }
       const at = this.#stamp();
+      // Before the sweep, which would change what a key's row says about its holder.
+      if (key !== undefined) {
+        const held = this.#resolveKey(key, owner, now, req.leaseMs, at, req.rebuy === true);
+        if (held) return held;
+      }
       q.sweepOpen.run({ now, at });
       q.sweepSent.run({ now, at });
       const ws = this.#workspaceExposure(workspaceId, now);
@@ -125,6 +131,7 @@ export class SqliteSpendBook implements SpendBook {
         reserved: reserve,
         owner,
         lease: now + req.leaseMs,
+        key: key ?? null,
         at,
       });
       return { admitted: true };
@@ -170,6 +177,8 @@ export class SqliteSpendBook implements SpendBook {
     const entry = settlement.entry;
     const cost = usdOf('the settled cost', entry.costUsd);
     const at = textOf('the settlement time', settlement.at);
+    const hold = settlement.holdMs ?? null;
+    if (hold !== null && (!Number.isSafeInteger(hold) || hold < 0)) throw new StoreError('invalid', `holdMs must be a whole number of milliseconds, got ${String(hold)}`);
     return this.#durable(() => {
       const q = this.#queries();
       const row = q.get.get(opId) as Row | undefined;
@@ -185,6 +194,8 @@ export class SqliteSpendBook implements SpendBook {
         entry: JSON.stringify(entry),
         entryId: ledgerEntryId,
         at: this.#stamp(),
+        now: this.#ms(),
+        hold,
       });
       return { ledgerEntryId };
     });
@@ -205,6 +216,16 @@ export class SqliteSpendBook implements SpendBook {
       const at = this.#stamp();
       q.endOpen.run({ owner, at });
       q.endSent.run({ owner, at });
+      q.endHolds.run({ owner, now: this.#ms() });
+    });
+  }
+
+  async letGo(opIds: readonly string[], owner: string): Promise<void> {
+    if (opIds.length === 0) return;
+    this.#tx(() => {
+      const q = this.#queries();
+      const now = this.#ms();
+      for (const id of opIds) q.letGo.run({ id, owner, now });
     });
   }
 
@@ -373,6 +394,33 @@ export class SqliteSpendBook implements SpendBook {
     return undefined;
   }
 
+  /**
+   * Inside admit's transaction: what holds an operation key (see AdmitRequest.operationKey). A live row holds it, in any
+   * state but released and uncertain: the call is in flight, or its caller is keeping its result. A row whose provider
+   * accepted queue jobs and whose holder is gone (accepted and no longer live, or handed back as uncertain and not
+   * cleared) is resumed by this caller. A settled row whose holder has ended answers settledEarlier, unless the caller
+   * looked for its kept result and found none (rebuy). Any other row gives the key up (an open one no longer live was
+   * never sent; a sent one may have been billed), and undefined lets admission insert a new row holding it.
+   */
+  #resolveKey(key: string, owner: string, now: number, leaseMs: number, at: string, rebuy: boolean): AdmitOutcome | undefined {
+    const q = this.#queries();
+    const row = q.byKey.get(key) as Row | undefined;
+    if (!row) return undefined;
+    const id = String(row.id);
+    const state = String(row.state);
+    if (Number(row.lease_until) > now && HOLDING.has(state)) return { inFlight: true };
+    if (state === 'settled' && !rebuy) return { settledEarlier: true };
+    const jobs = acceptedJobs(row.provider_jobs);
+    if (jobs.generation !== undefined && row.cleared_at === null && (state === 'accepted' || state === 'uncertain')) {
+      q.resume.run({ id, owner, lease: now + leaseMs, at });
+      return { resume: { opId: id, jobs } };
+    }
+    q.giveUpOpen.run({ id, at });
+    q.giveUpSent.run({ id, at });
+    q.freeKey.run({ id, at });
+    return undefined;
+  }
+
   #workspaceExposure(workspaceId: string, now: number): { settled: number; inFlight: number; uncertain: number } {
     const r = this.#queries().workspaceExposure.get({ ws: workspaceId, now }) as Row;
     return { settled: roundUsd(Number(r.settled)), inFlight: roundUsd(Number(r.in_flight)), uncertain: roundUsd(Number(r.uncertain)) };
@@ -419,6 +467,21 @@ function heldCall(r: Row): HeldCall {
     ...(r.settled_usd === null ? {} : { costUsd: Number(r.settled_usd) }),
     ...(r.price_basis === null ? {} : { priceBasis: String(r.price_basis) }),
   };
+}
+
+/** The states in which a live row holds its operation key: the call is in flight, or its caller is keeping its result. */
+const HOLDING: ReadonlySet<string> = new Set(['open', 'sent', 'accepted', 'settled']);
+
+/** The queue jobs a row records, by role (provider_jobs). */
+function acceptedJobs(value: unknown): Partial<Record<ProviderJobRole, string>> {
+  if (value === null || value === undefined) return {};
+  const parsed = JSON.parse(String(value)) as Record<string, unknown>;
+  const jobs: Partial<Record<ProviderJobRole, string>> = {};
+  for (const role of ROLES) {
+    const id = parsed[role];
+    if (typeof id === 'string') jobs[role] = id;
+  }
+  return jobs;
 }
 
 /** SQLite's SQLITE_CONSTRAINT (19), in any of its extended forms (a UNIQUE, CHECK or NOT NULL constraint failed). */
@@ -469,8 +532,15 @@ function prepare(db: DatabaseSync) {
       COALESCE(SUM(CASE WHEN ${IN_FLIGHT} THEN reserved_usd END), 0) AS in_flight
       FROM paid_operations WHERE run_id = :run`),
     insertOpen: p(`INSERT INTO paid_operations (id, workspace_id, run_id, step_id, purpose, kind, provider, model, paid, reserved_usd, state, owner,
-      lease_until, created_at, updated_at) VALUES (:id, :workspace, :run, :step, :purpose, :kind, :provider, :model, :paid, :reserved, 'open', :owner,
-      :lease, :at, :at)`),
+      lease_until, op_key, created_at, updated_at) VALUES (:id, :workspace, :run, :step, :purpose, :kind, :provider, :model, :paid, :reserved, 'open', :owner,
+      :lease, :key, :at, :at)`),
+    byKey: p('SELECT * FROM paid_operations WHERE op_key = ?'),
+    resume: p(`UPDATE paid_operations SET state = 'accepted', uncertain_reason = NULL, owner = :owner, lease_until = :lease, updated_at = :at WHERE id = :id`),
+    giveUpOpen: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE id = :id AND state = 'open'`),
+    giveUpSent: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'interrupted', updated_at = :at WHERE id = :id AND state IN ('sent', 'accepted')`),
+    freeKey: p('UPDATE paid_operations SET released_key = op_key, op_key = NULL, updated_at = :at WHERE id = :id'),
+    letGo: p('UPDATE paid_operations SET lease_until = MIN(lease_until, :now) WHERE id = :id AND owner = :owner'),
+    endHolds: p(`UPDATE paid_operations SET lease_until = MIN(lease_until, :now) WHERE owner = :owner AND state = 'settled' AND op_key IS NOT NULL`),
     markSent: p(`UPDATE paid_operations SET state = 'sent', sent_at = :at, updated_at = :at WHERE id = :id AND owner = :owner AND state = 'open' AND ${LIVE}`),
     accept: p(`UPDATE paid_operations SET state = CASE WHEN state IN ('open', 'sent') THEN 'accepted' ELSE state END,
       provider_jobs = json_set(COALESCE(provider_jobs, '{}'), :path, :job), updated_at = :at WHERE id = :id`),
@@ -478,14 +548,16 @@ function prepare(db: DatabaseSync) {
     release: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE id = :id AND state <> 'settled'`),
     abandon: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'failed', updated_at = :at WHERE id = :id AND state IN ('open', 'sent', 'accepted')`),
     settle: p(`UPDATE paid_operations SET state = 'settled', settled_usd = :cost, settled_at = :settledAt, served_model = :served, price_basis = :basis,
-      entry = :entry, ledger_entry_id = :entryId, settle_seq = (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), updated_at = :at WHERE id = :id`),
+      entry = :entry, ledger_entry_id = :entryId, settle_seq = (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), updated_at = :at,
+      lease_until = CASE WHEN :hold IS NULL OR op_key IS NULL THEN lease_until ELSE MAX(lease_until, :now + :hold) END WHERE id = :id`),
     settleFromEntry: p(`UPDATE paid_operations SET state = 'settled', settled_usd = :cost, settled_at = :settledAt, served_model = :served, price_basis = :basis,
       ledger_entry_id = :entryId, ledgered_seq = :seq, settle_seq = (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), updated_at = :at WHERE id = :id`),
     insertSettled: p(`INSERT INTO paid_operations (id, workspace_id, run_id, step_id, purpose, kind, provider, model, paid, reserved_usd, state,
       lease_until, settled_at, settle_seq, settled_usd, served_model, price_basis, ledger_entry_id, ledgered_seq, created_at, updated_at)
       VALUES (:id, :workspace, :run, :step, :purpose, :kind, :provider, :model, :paid, 0, 'settled', 0, :settledAt,
       (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), :cost, :served, :basis, :entryId, :seq, :at, :at)`),
-    renew: p(`UPDATE paid_operations SET lease_until = :lease WHERE id = :id AND owner = :owner AND state IN ('open', 'sent', 'accepted')`),
+    renew: p(`UPDATE paid_operations SET lease_until = :lease WHERE id = :id AND owner = :owner
+      AND (state IN ('open', 'sent', 'accepted') OR (state = 'settled' AND op_key IS NOT NULL))`),
     endOpen: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE owner = :owner AND state = 'open'`),
     endSent: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'interrupted', updated_at = :at WHERE owner = :owner AND state IN ('sent', 'accepted')`),
     cursor: p('SELECT ledger_offset, ledger_tail_start, ledger_tail_sha256 FROM spend_book_meta WHERE id = 1'),

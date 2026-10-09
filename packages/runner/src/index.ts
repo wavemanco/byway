@@ -2,7 +2,7 @@
  * @byway/runner (WP-D, product spec §2–§3): the recipe interpreter as a Temporal workflow, its activities, the worker,
  * the Runner client and the local dev engine.
  */
-export { createRunnerClient, ResolutionRejectedError, titleOf, type RunnerClientOptions } from './client.ts';
+export { createRunnerClient, ResolutionRejectedError, RunStartConflictError, RunStartInvalidError, titleOf, type RunnerClientOptions } from './client.ts';
 export { createWorker, type CreateWorkerOptions, type RunnerWorker } from './worker.ts';
 export { assertPortFree, cachedTemporalExecutable, connectRunner, engineStartLines, portInUseMessage, settleBeforePolling, startDevEngine, TEMPORAL_BIN_DIR, TEMPORAL_DB_FILENAME, type DevEngine, type DevEngineOptions, type EngineStartReport } from './dev-engine.ts';
 export { devServerArgs, HTTP_API_OFF, temporalExecutable, trustedBinary } from './temporal-cli.ts';

@@ -53,6 +53,19 @@ export interface SpendContext {
    * `advisor.intake`, `advisor.compose`, `advisor.compose.repair`). The mock provider answers by purpose.
    */
   purpose: string;
+  /**
+   * The call's identity across Temporal's attempts of its step, and its caller's liveness (stage 3, ADR-0099). The
+   * runner's memo layer sets it on a step's calls, after hashing the request, so memo keys are unchanged. Never sent to a
+   * provider or recorded.
+   * - `key`: the run and memo key of the call (AdmitRequest.operationKey). While one attempt holds it, another waits for
+   *   its result (GatewayError 'in-flight') instead of paying again; a dead or timed-out holder's call is taken over.
+   * - `cancel`: aborts when Temporal cancels the attempt (a cancel, a timeout, a lost worker): an unsettled call is held
+   *   no longer, so a later attempt can take it over within one lease.
+   * - `until`: aborts when the attempt's invocation ends: a settled call is held until then, while its result is kept.
+   * - `rebuy`: the caller was told an earlier attempt settled the call (GatewayError.settledEarlier), looked for its kept
+   *   result and found none: buy it again (counted).
+   */
+  operation?: { key: string; until: AbortSignal; cancel?: AbortSignal; rebuy?: boolean };
 }
 
 /** Which prompt template produced a call (from RenderedPrompt), recorded in the ledger for provenance (CR14). */
@@ -223,7 +236,19 @@ export type GatewayErrorCode =
   | 'invalid-request'
   | 'unknown-profile'
   /** The spend book found a line in the audit file it cannot read: paid calls wait until it is acknowledged (ADR-0095). */
-  | 'accounting-fault';
+  | 'accounting-fault'
+  /**
+   * byway's own failure around a call, not the provider's (ADR-0099): it could not keep or record a call the provider
+   * answered (`billed` is then true: trying again pays again), or it did not start the call at all (it is stopping, or
+   * could not record the call as sent; `billed` false). These used to be 'provider-error', which read as the provider
+   * not answering.
+   */
+  | 'byway-failure'
+  /**
+   * Another attempt of the same call (the same operation key: a step Temporal runs again while its first attempt still
+   * holds the call) is under way. The runner waits for that attempt's result instead of paying again (ADR-0099).
+   */
+  | 'in-flight';
 
 /** What a 'budget-exceeded' refusal carries, so the runner can offer "Raise the budget by $X?" (spec §3.4). */
 export interface BudgetDetails {
@@ -245,10 +270,23 @@ export class GatewayError extends Error {
   readonly retryable: boolean;
   /** Set on 'budget-exceeded'. */
   budget?: BudgetDetails;
-  constructor(code: GatewayErrorCode, message: string, retryable = false) {
+  /**
+   * Whether the provider was paid for this call before it failed (ADR-0099). True when the provider answered and billed
+   * it but byway could not use, keep or record the answer: trying the call again pays for it again, so callers say so
+   * and do not retry. False when byway knows nothing was sent. Absent when it is not known (a provider's own failure).
+   */
+  billed?: boolean;
+  /**
+   * Set on 'in-flight' when an earlier attempt settled the call and has ended (ADR-0099): its result may be kept (the
+   * runner's memo), so the caller looks for it before asking again with SpendContext.operation.rebuy.
+   */
+  settledEarlier?: boolean;
+  constructor(code: GatewayErrorCode, message: string, retryable = false, opts: { billed?: boolean; settledEarlier?: boolean } = {}) {
     super(message);
     this.code = code;
     this.retryable = retryable;
+    if (opts.billed !== undefined) this.billed = opts.billed;
+    if (opts.settledEarlier) this.settledEarlier = true;
   }
 }
 

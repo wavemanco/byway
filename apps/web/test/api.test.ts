@@ -132,6 +132,21 @@ describe('route handler logic', PRODUCT_PATH, () => {
     await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500 })).rejects.toThrow(/workspace budget/);
   });
 
+  it('starts one run for a Start sent twice with the same run id; the id for another problem or recipe is a conflict (F03 P3)', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const runId = '5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e';
+    const first = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, runId });
+    expect(first).toEqual({ runId });
+    // The answer was lost and the browser sends the same Start again.
+    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2, runId })).toEqual({ runId });
+    expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
+    const { intakeId: other } = await createIntake(d, { text: 'Another memo', recipeId: 'c4' });
+    await expect(startRun(d, { intakeId: other, recipeId: 'c4', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem/) });
+    // The same Start id asking for another recipe is another start, whatever its id says (the screen mints a new id then).
+    await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
+  });
+
   it('resolves a question only within its own run, and passes validation messages through', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
@@ -306,6 +321,9 @@ describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, ()
       [gatewayError('provider-error'), 503, /did not answer/],
       // ADR-0095: a line of the ledger the spend book cannot read pauses paid calls until the person acknowledges it.
       [gatewayError('accounting-fault'), 409, /cannot read.*Settings, Spending records/],
+      // byway's own failures (follow-up (e)): a billed call it could not keep says it was paid for; a call it did not start says so.
+      [new GatewayError('byway-failure', 'anthropic answered and billed this call (advisor.intake), but byway could not record its cost', false, { billed: true }), 500, /paid for.*Spending records.*pays for, a new call/],
+      [new GatewayError('byway-failure', 'byway is stopping, so it did not start this call. Try again once it has started again.', true, { billed: false }), 503, /^byway is stopping, so it did not start this call/],
       [new AdvisorError('intake-unreadable', 'unreadable'), 502, /could not read/],
       // A held key (ADR-0088): the gateway's own message, which names the variable and says what to do.
       [heldKeyError('invalid-request', 'This request contains your ANTHROPIC_API_KEY. byway never sends a key to a model; remove it from the material and try again.', 'ANTHROPIC_API_KEY'), 400, /^This request contains your ANTHROPIC_API_KEY\. .*remove it/],

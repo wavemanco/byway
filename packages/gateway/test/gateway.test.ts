@@ -140,6 +140,9 @@ describe('gateway: complete', () => {
     ['bad tier', () => req({ tier: 'huge' as 'big' }), 'invalid-request'],
     ['bad output cap', () => req({ maxOutputTokens: 0 }), 'invalid-request'],
     ['missing purpose', () => req({ purpose: '' }), 'invalid-request'],
+    // The ledger line would name run or step "", which the spend book refuses to count (ledgerEntryProblem).
+    ['empty run id', () => req({ runId: '' }), 'invalid-request'],
+    ['empty step id', () => req({ stepId: '' }), 'invalid-request'],
     ['unpriced model', () => req({ model: { provider: 'anthropic', model: 'claude-unknown-9' } }), 'invalid-request'],
     ['missing image', () => req({ messages: [{ role: 'user', content: [{ type: 'image', artifactId: 'sha256:missing', mediaType: 'image/png' }] }] }), 'invalid-request'],
   ])('rejects %s', async (_name, make, code) => {

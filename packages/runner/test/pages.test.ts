@@ -156,7 +156,8 @@ describe('web-page RENDER with Playwright Chromium', () => {
       const { code, stdout, stderr } = await runNode(fileURLToPath(new URL('./helpers/dialog-page.ts', import.meta.url)), [variant, '3000']);
       expect(stderr).not.toMatch(/ProtocolError|unhandled|Unhandled/);
       expect(code).toBe(0);
-      expect(stdout).toMatch(/^(rendered|rejected: The page did not finish rendering within 3 s)/m);
+      // Under load Chromium can refuse a screenshot while a dialog is open: a plain step failure too, never a raw error.
+      expect(stdout).toMatch(/^(rendered|rejected: The page did not finish rendering within 3 s|rejected: The page could not be drawn: )/m);
       expect(stdout).toMatch(/^survived$/m);
     },
     60_000,
@@ -256,6 +257,49 @@ describe('web-page RENDER with Playwright Chromium', () => {
     }
   }, 60_000);
 
+  it('holds at most a capped number of bytes of one allowlisted response: a larger one, or one that never ends, is cut off and the render goes on', async () => {
+    // An allowlisted CDN serves whatever a package holds, and a model-written page names the files. Each response used
+    // to be held in memory whole, bounded only by the render's deadline.
+    const CAP = 64 * 1024;
+    const hits: string[] = [];
+    const endless = new Set<import('node:http').ServerResponse>();
+    const cdn = createServer((req, res) => {
+      hits.push(req.url ?? '');
+      const ran = (name: string) => `const img = document.createElement('img'); img.src = 'http://${cdnHost}/${name}.png'; document.documentElement.appendChild(img);`;
+      // A script that runs only if it arrives whole: its last line asks for an image.
+      if (req.url === '/big.js') return void res.writeHead(200, { 'content-type': 'text/javascript' }).end(`/*${'x'.repeat(CAP + 1024)}*/\n${ran('big-ran')}`);
+      if (req.url === '/small.js') return void res.writeHead(200, { 'content-type': 'text/javascript' }).end(`/*${'x'.repeat(CAP - 1024)}*/\n${ran('small-ran')}`);
+      if (req.url === '/endless.js') {
+        endless.add(res);
+        res.writeHead(200, { 'content-type': 'text/javascript' });
+        const more = () => {
+          if (res.destroyed || !endless.has(res)) return;
+          res.write(`/*${'y'.repeat(16 * 1024)}*/\n`, () => setTimeout(more, 1));
+        };
+        res.on('close', () => endless.delete(res));
+        return void more();
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => cdn.listen(0, '127.0.0.1', () => r()));
+    const cdnHost = `127.0.0.1:${(cdn.address() as AddressInfo).port}`;
+    const capped = playwrightPages({ timeoutMs: 20_000, maxFetchBytes: CAP, admit: (u) => u.protocol === 'http:' && u.host === cdnHost, launch: () => launchWith(LOCAL_NETWORK_CHECKS_OFF) });
+    opened.push(capped);
+    try {
+      const html = `<!doctype html><html><head><script src="http://${cdnHost}/small.js"></script><script src="http://${cdnHost}/big.js"></script><script src="http://${cdnHost}/endless.js"></script></head><body><div style="height:50px">x</div></body></html>`;
+      const started = Date.now();
+      expect((await capped.screenshots(html, none)).length).toBe(1);
+      // The endless one was cut at the cap, not waited out to the deadline.
+      expect(Date.now() - started).toBeLessThan(15_000);
+      expect(hits).toContain('/small-ran.png');
+      expect(hits).not.toContain('/big-ran.png');
+    } finally {
+      for (const res of endless) res.destroy();
+      endless.clear();
+      await new Promise((r) => cdn.close(r));
+    }
+  }, 60_000);
+
   it('launches the browser again after a crash or a failed launch (ENG-14)', async () => {
     const launched: Browser[] = [];
     let failNext = true;
@@ -277,6 +321,48 @@ describe('web-page RENDER with Playwright Chromium', () => {
     await launched[0]!.close();
     expect((await flaky.screenshots(SIMPLE, none)).length).toBe(1);
     expect(launched.length).toBe(2);
+  }, 60_000);
+
+  it('turns a renderer failure while drawing (a Playwright protocol error) into one plain step failure, not the raw error', async () => {
+    // Seen under load in the dialog-interval test: Chromium refused the screenshot, and Playwright's own message reached
+    // the step as it was, an error the workflow does not know (so Temporal retried it as if it were transient).
+    const RAW = 'page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot';
+    const refusing = (b: Browser): Browser =>
+      new Proxy(b, {
+        get(target, prop, receiver) {
+          if (prop !== 'newContext') return Reflect.get(target, prop, receiver);
+          return async (...args: Parameters<Browser['newContext']>) => {
+            const context = await target.newContext(...args);
+            return new Proxy(context, {
+              get(c, p, r) {
+                if (p !== 'newPage') return Reflect.get(c, p, r);
+                return async () => {
+                  const page = await c.newPage();
+                  return new Proxy(page, {
+                    get(pg, name, rr) {
+                      if (name === 'screenshot') return async () => Promise.reject(new Error(`${RAW}\nCall log:\n  - taking page screenshot`));
+                      const v = Reflect.get(pg, name, rr) as unknown;
+                      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
+                    },
+                  });
+                };
+              },
+            });
+          };
+        },
+      });
+    const failing = playwrightPages({ launch: async () => refusing(await launchChromium()) });
+    opened.push(failing);
+    const err = await failing.render(SIMPLE, none, ['desktop', 'fold']).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe('The page could not be drawn: the page renderer could not take its screenshot (Unable to capture screenshot).');
+    expect((err as Error).message).not.toMatch(/Protocol error|page\.screenshot|Call log/);
+    expect((err as Error).cause).toBeInstanceOf(Error);
+    // A cancelled render still ends with the cancel's own reason, not a step failure.
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled by the run');
+    ctrl.abort(reason);
+    await expect(failing.screenshots(SIMPLE, none, { signal: ctrl.signal })).rejects.toBe(reason);
   }, 60_000);
 
   it('starts Chromium from the one stated launch: its sandbox policy and WebRTC flags are what the command line shows (F18)', async () => {

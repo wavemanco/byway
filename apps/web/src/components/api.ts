@@ -10,12 +10,18 @@ export class ApiError extends Error {
   readonly heldKey: string | undefined;
   /** The whole refusal as the server sent it, for a refusal that carries more for the screen (view/refusals.ts). */
   readonly body: Readonly<Record<string, unknown>> | undefined;
-  constructor(message: string, code?: string, fields?: readonly string[], heldKey?: string, body?: Readonly<Record<string, unknown>>) {
+  /**
+   * The HTTP status byway answered with; none when no answer came back (the request failed on its way, or byway was not
+   * there). A Start tells the two apart: only a Start that got no answer is sent again under its id (startIdentity.ts).
+   */
+  readonly status: number | undefined;
+  constructor(message: string, code?: string, fields?: readonly string[], heldKey?: string, body?: Readonly<Record<string, unknown>>, status?: number) {
     super(message);
     this.code = code;
     this.fields = fields;
     this.heldKey = heldKey;
     this.body = body;
+    this.status = status;
   }
 }
 
@@ -34,12 +40,12 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
   } catch {
     // A successful status whose body cannot be read is a failure, never an empty object standing in for the result:
     // the Recommendation commands apply what comes back directly (ADR-0082).
-    if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
+    if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.', undefined, undefined, undefined, undefined, res.status);
     data = {};
   }
   if (!res.ok) {
     const code = typeof data.code === 'string' ? data.code : undefined;
-    throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, code, stringList(data.fields), typeof data.key === 'string' ? data.key : undefined, data);
+    throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, code, stringList(data.fields), typeof data.key === 'string' ? data.key : undefined, data, res.status);
   }
   return data as T;
 }

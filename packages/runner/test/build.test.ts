@@ -7,6 +7,12 @@ import type { Plugin } from 'esbuild';
 import { describe, expect, it } from 'vitest';
 import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '../src/build.ts';
 
+/**
+ * The workflow bundle's hash at main a768d4d (after ADR-0092's admission work, which changed it from e572716a… at 17eae76),
+ * before F03's stage 3, and after it: stage 3 changes no workflow code.
+ */
+const PINNED_WORKFLOW_HASH = 'bfdda860bb6aff469c48f48389af1795bd1c25f0dd1689b6b45e9b2080bee074';
+
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
     const out = await buildWorkflows({ outfile: DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `check-${process.pid}.js`) });
@@ -19,6 +25,18 @@ describe('the workflow bundle', () => {
       // Contract constants are inlined, not imported.
       expect(code).toContain('"resolveCheckpoint"');
       expect(code).toContain('"cancelRun"');
+    } finally {
+      rmSync(out, { force: true });
+    }
+  }, 60_000);
+
+  it('is the bundle runs in flight were started under: the spend book’s stage 3 changed no workflow code (ADR-0078, ADR-0099)', async () => {
+    // A run records the hash of the bundle it started under, and a worker running another bundle ends it plainly
+    // (ADR-0078). Pinned, so that a change to workflow code is a decision made with it, never a side effect of activity
+    // work: update it in the same change that alters workflow code on purpose.
+    const out = await buildWorkflows({ outfile: DEFAULT_WORKFLOWS_BUNDLE.replace(/workflows\.js$/, `pinned-${process.pid}.js`) });
+    try {
+      expect(workflowBundleHash(out)).toBe(PINNED_WORKFLOW_HASH);
     } finally {
       rmSync(out, { force: true });
     }

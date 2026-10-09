@@ -26,6 +26,7 @@ coverage/
 .byway-data/
 .next/
 .next-e2e/
+.next-dev-test/
 
 # Playwright output (pnpm e2e)
 apps/web/test-results/
