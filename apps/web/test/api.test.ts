@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GatewayError, type CheckpointRecord, type GatewayErrorCode } from '@byway/contracts';
 import { AdvisorError } from '@byway/advisor';
@@ -6,6 +8,7 @@ import type { Services } from '../src/services/index.ts';
 import {
   HttpError,
   addRef,
+  checkLedger,
   artifactResponse,
   composeIntake,
   controlRun,
@@ -383,5 +386,17 @@ describe('exports carry their images (EXP-1)', PRODUCT_PATH, () => {
     const md = await d.services.store.artifacts.putText(`![gone](/api/artifacts/${missing}) [note](/artifacts/${note.id})`, 'text/markdown');
     const body = await (await artifactResponse(d.services, md.id, new URL(`http://127.0.0.1:3000/artifacts/${md.id}?download=1`))).text();
     expect(body).toBe(`![gone](/api/artifacts/${missing}) [note](/artifacts/${note.id})`);
+  });
+});
+
+describe('Settings: checking the spend ledger on demand (ADR-0091)', PRODUCT_PATH, () => {
+  it('says the ledger checks out, then names the damage once a line is broken', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    await currentRecommendation(d, intakeId);
+    expect(await checkLedger(d)).toEqual({ intact: true, message: expect.stringMatching(/checks out/) });
+    const file = path.join(current!.dataDir, 'ledger.jsonl');
+    writeFileSync(file, `{not an entry\n${readFileSync(file, 'utf8')}`);
+    expect(await checkLedger(d)).toEqual({ intact: false, message: expect.stringMatching(/^Line 1 of the spend ledger cannot be read/) });
   });
 });

@@ -6,7 +6,7 @@ import { useId, useState } from 'react';
 import { formatUsd, parseBudgetInput } from '../view/format.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
 import { profileNeeds, videoAvailability } from '../view/labels.ts';
-import { patch } from './api.ts';
+import { get, patch } from './api.ts';
 import { Switch } from './Switch.tsx';
 import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
 
@@ -45,6 +45,7 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
   const [cap, setCap] = useState(spend.capUsd);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ledgerCheck, setLedgerCheck] = useState<{ checking: boolean; message: string | null }>({ checking: false, message: null });
   const realConfigured = providers.some((p) => p.provider !== 'mock' && p.configured);
   const [singleKeys, setSingleKeys] = useViewerFlag(SINGLE_KEY_SHORTCUTS);
 
@@ -60,6 +61,17 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That was not saved. Try again.');
       return false;
+    }
+  }
+
+  /** Checks the spend ledger's chain on demand (GET /api/ledger; ADR-0091). */
+  async function checkLedger() {
+    setLedgerCheck({ checking: true, message: null });
+    try {
+      const { message } = await get<{ intact: boolean; message: string }>('/api/ledger');
+      setLedgerCheck({ checking: false, message });
+    } catch (err) {
+      setLedgerCheck({ checking: false, message: err instanceof Error ? err.message : 'The check did not run. Try again.' });
     }
   }
 
@@ -192,6 +204,14 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
           </button>
         </form>
         {pricingNote ? <p className="section-note">{pricingNote}</p> : null}
+        <div className="inline-form">
+          <button type="button" className="button" onClick={() => void checkLedger()} disabled={ledgerCheck.checking}>
+            {ledgerCheck.checking ? 'Checking…' : 'Check the spend ledger'}
+          </button>
+        </div>
+        <p className="section-note" role="status" aria-live="polite">
+          {ledgerCheck.message}
+        </p>
       </section>
 
       <section className="settings-section" aria-labelledby={`${ids}-names`}>

@@ -70,3 +70,16 @@ export function assumedPricingNote(assumed: { calls: number; usd: number } | und
   const one = assumed.calls === 1;
   return `${assumed.calls} ${one ? 'call was' : 'calls were'} answered by a model byway has no price for, so ${one ? 'it was' : 'they were'} counted at the price of the model byway asked for (${formatUsd(assumed.usd)}${one ? '' : ' in all'}). Your provider’s bill may differ.`;
 }
+
+/**
+ * What Settings' "Check the spend ledger" says (Gateway.verifyLedger; ADR-0091): null is an intact chain, `head` a head
+ * record that cannot be read, `line:<n>` a line that is not an entry, anything else the id of the first entry that
+ * breaks the chain.
+ */
+export function ledgerCheckText(brokenAt: string | null): string {
+  if (brokenAt === null) return 'The spend ledger checks out: every entry is intact and chained to the one before it.';
+  if (brokenAt === 'head') return "The spend ledger's head record cannot be read, so whether entries were cut off the end cannot be checked. The next model call rewrites it.";
+  const line = /^line:(\d+)$/.exec(brokenAt);
+  if (line) return `Line ${line[1]} of the spend ledger cannot be read, so the spending on it is not counted. Restore ledger.jsonl from a backup if you have one.`;
+  return `The spend ledger fails its check at entry ${brokenAt}: an entry was changed, lost or cut off, so its totals may be short.`;
+}

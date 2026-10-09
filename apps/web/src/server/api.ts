@@ -12,7 +12,7 @@ import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
 import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
-import { budgetProblem, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
+import { budgetProblem, ledgerCheckText, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
 import { takesRefs } from '../view/refs.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
@@ -133,6 +133,16 @@ export async function composeIntake(deps: Deps, intakeId: string): Promise<Compo
 export async function workspaceRemaining(deps: Deps): Promise<WorkspaceSpend & { workspaceId: string }> {
   const workspace = await deps.services.store.ensureDefaultWorkspace();
   return { ...workspaceSpend(workspace.budgetUsd, (await deps.services.gateway.spend(workspace.id)).spentUsd), workspaceId: workspace.id };
+}
+
+/**
+ * Settings' "Check the spend ledger" (GET /api/ledger; ADR-0091): the ledger's hash chain and head, checked when the
+ * person asks rather than on every page. The gateway keeps the result until the ledger or its head changes, so asking
+ * again is cheap.
+ */
+export async function checkLedger(deps: Deps): Promise<{ intact: boolean; message: string }> {
+  const brokenAt = await deps.services.gateway.verifyLedger();
+  return { intact: brokenAt === null, message: ledgerCheckText(brokenAt) };
 }
 
 /**

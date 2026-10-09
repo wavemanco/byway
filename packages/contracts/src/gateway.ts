@@ -256,6 +256,9 @@ export interface Gateway {
   profiles(): ModelProfile[];
   /** Every profile with what it is missing, for Settings. */
   profileStatus(): ProfileStatus[];
-  /** Verify the ledger hash chain; returns the first broken entry id, or null if intact. */
+  /**
+   * Verify the ledger hash chain; returns the first broken entry id (`line:<n>` for a line that is not an entry, `head`
+   * for a head record that cannot be read), or null if intact. Reports damage rather than throwing on it.
+   */
   verifyLedger(): Promise<string | null>;
 }
