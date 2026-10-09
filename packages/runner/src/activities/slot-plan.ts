@@ -68,7 +68,7 @@ export interface SlotBriefs {
   briefs: SlotBrief[];
   /** Shots or options no brief covers. */
   missing: string[];
-  /** Slots the answer named that are not shots or options of the work, as written. */
+  /** Slots the answers named (both, after a retry) that are not shots or options of the work, as written: one per brief. */
   unknown: string[];
 }
 
