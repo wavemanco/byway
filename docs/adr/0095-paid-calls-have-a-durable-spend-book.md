@@ -1,0 +1,89 @@
+# ADR-0095: Paid calls have a durable spend book: the book in byway.sqlite is the cap authority, ledger.jsonl its hash-chained audit record
+
+| | |
+|---|---|
+| **Status** | Accepted |
+| **Decided by** | Delegated: Claude implemented the verified recommendation from the 2026-10-08 external-review verification under the user's goal "complete implementation of all fixes that can be implemented independent of the four decisions"; not explicitly approved; reversible. |
+| **Date (local, UTC−7)** | 2026-10-08 21:45 |
+| **Track** | Product |
+| **Related** | [ADR-0091](0091-provider-edge-billing-fixes.md), [ADR-0079](0079-phase-4-runner-records.md), [ADR-0094](0094-backup-unit-is-the-data-directory.md), [ADR-0096](0096-partial-restores-reported-at-start.md), [ADR-0083](0083-hashed-text-is-well-formed-unicode.md), [ADR-0066](0066-product-persistence-sqlite-cas.md) |
+
+## Context
+
+The external review's findings F03 and F04 were both accepted in part (P2). The verification's recommendation for their cluster (B, option C) is a durable spend book that becomes the cap authority, in three stages. [ADR-0091](0091-provider-edge-billing-fixes.md) recorded stage 1, the fixes at the provider edge. This ADR records stage 2, the book itself. Stage 3, operation identity across Temporal retries, is a later work package.
+
+What the verifiers reproduced that stage 2 is for:
+
+- **Another process's call in flight was invisible.** The gateway kept reservations in a `Set` held by one process, and read settled spend back from `ledger.jsonl`. The web process (recommending, composing) and the worker each run a gateway on one ledger. Two gateways under a $0.15 workspace cap both admitted a $0.10 call: two provider calls, $0.20 ledgered. Two OS processes reproduced it.
+- **Calls interrupted by a stop or a crash were counted as nothing.** A call whose caller died after sending it, or whose fal job was accepted and then lost, never reached the ledger, so the caps did not count it at all.
+- **Damaged accounting failed open.** The ledger's reader skipped any line it could not parse, so a damaged line's spending dropped out of the caps silently. A billed call whose ledger append failed (a busy lock, a full disk) was billed and uncounted. A provider-reported usage figure that was not a finite number (a JSON `1e400`) made the append throw after billing (ADR-0083's hand-off).
+- **A restore that lost the ledger reset spend.** After a restore without `ledger.jsonl`, or with an older one, the caps admitted the lost spend again ([ADR-0094](0094-backup-unit-is-the-data-directory.md), [ADR-0096](0096-partial-restores-reported-at-start.md); probes P1 and P5).
+
+Decision D1 is still with the owner: Anthropic's server-side refusal fallbacks stay on, as today.
+
+## Decision
+
+1. **The spend book in `byway.sqlite` is the authority for spend and the caps** (supersedes, by addition, the spec §3.3 "Spend authority" sentence "The gateway's ledger is the source of truth for spend", and [ADR-0079](0079-phase-4-runner-records.md)'s "Workspace spend comes from the ledger (ENG-4)"; `Gateway.spend` still serves the app, now from the book).
+   - The port is `SpendBook` in `@byway/contracts` (contracts v6, `spend.ts`). `Store.spendBook` is the store's implementation over migration 6 (`paid_operations`, `spend_faults`, `spend_book_meta`). Every method is one short `BEGIN IMMEDIATE` transaction; none spans a network call. The transactions that move money (admit, mark sent, accept, settle) commit with `synchronous=FULL`.
+   - `GatewayOptions.spendBook` is required, and the gateway refuses to start without one, so no composition root can fall back to reservations one process cannot see beyond itself. `scripts/serve.ts` and the web service host pass `store.spendBook`. Tests may pass `memorySpendBook()` (`@byway/gateway`).
+   - One contract suite (`@byway/contracts/spend-book-suite`) runs against the store's book on two connections to one file, against it in memory, and against the gateway's in-memory book. Two child processes admitting against one remaining budget admit exactly what it holds.
+2. **A paid call's life.** Admission absorbs new ledger lines (below), then inserts the call as `open` at its planning estimate if both caps hold it. Just before its first provider request it is marked `sent` (a compare-and-set: a row swept while its process slept is admitted once more). A fal job's request id is recorded (`accepted`) before it is polled. The provider's answer `settle`s it at its true cost; settlement is idempotent from every state, and the true cost wins. A call that ends without an answer is `released` when nothing was billed (never sent, or its last attempt failed before the provider did paid work) and `abandoned` (state `uncertain`) when it may have been. A start frame that cannot be uploaded releases the link.
+3. **The exposure rule.** A row is live while its lease (60 s, renewed every 15 s while its call is in progress) has not run out.
+   - Run cap: the run's settled cost, plus the estimates of its live open, sent and accepted calls.
+   - Workspace cap: all settled cost, plus the estimates of live calls, plus the estimates of calls that may have been billed (`uncertain`, or sent or accepted and no longer live) and every retained amount, until the person clears them.
+   - An open call that is no longer live counts nothing: it was never sent.
+   - Amounts that may have been billed are deliberately not charged to run caps. A stop and restart then raises no budget question, and the workspace cap still counts them.
+   - `SpendSummary.spentUsd` and `byRun` stay settled-only, so a run's recorded cost never includes a guess. `inFlightUsd` and `uncertainUsd` are reported beside them, and what is left of the workspace budget (Settings, the Recommendation screen, the run-budget check) is the cap less all three.
+4. **A completion or image sent again after an attempt that may have been billed** (ADR-0091's one re-send) is sent only once that attempt's estimate is retained against the workspace cap. When it does not fit, the call stops with `budget-exceeded` at workspace scope instead of risking a second charge.
+5. **`ledger.jsonl` stays the hash-chained audit record, written from the book.**
+   - One idempotent step, absorb, reads every ledger line after the book's cursor into the book: an entry that names its operation (`LedgerEntry.operationId`, covered by the hash) marks its row written, settling it from the entry if needed, or inserts a missing one; an entry from before the book is inserted once, keyed by its entry id. The cursor remembers the line it ended on; when that line is no longer there (a restore, a torn tail set aside), reading starts again from the beginning, which is safe because absorbing is idempotent. It runs before every admission and every spend read, so the ledger from before the upgrade is counted before any new call, and an older worker's appends are picked up.
+   - The outbox drain runs under the ledger's lock: it absorbs what is new, then appends each settled call the book has not marked written, with the entry id chosen at settlement (the `ledgerEntryId` the caller already has), then marks it, at most 50 per hold of the lock. A crash between an append and its mark, two drainers, or a read before the next drain never write an entry twice.
+   - On the call path the drain waits at most 2 s for the lock (`GatewayOptions.drainWaitMs`, which replaces `billedLedgerWaitMs`); what it could not write, the gateway's 15 s timer writes. A busy or failed ledger delays the entry, never the call or the caps. `Gateway.close()` stops the timer after one last bounded drain, and the roots close their gateways before the store.
+   - Settlement is tried four times; if it still fails, the call fails non-retryably saying it was billed, and it stays counted at its estimate as may have been billed.
+6. **Accounting faults fail closed for paid calls.** A complete ledger line that is not an entry (absorb is stricter than the old reader: an id, a workspace, a sequence number, a purpose, a kind, a provider and a finite, non-negative cost) becomes a fault, recorded once by its offset and hash. While a fault is unacknowledged, every paid call is refused with the new code `accounting-fault`; free demo calls go on. The runner surfaces it as `StepFailed`, and an asset step stops on it instead of skipping its images.
+7. **Provider-reported usage and cost must be finite** (ADR-0083's hand-off). A count or cost that is not a finite, non-negative number is replaced by the call's planning figure (the estimated input, the whole output allowance, the requested seconds) and the entry is flagged `priceBasis: 'assumed'`, so the billed call is recorded instead of failing after billing.
+8. **Settings shows the book** ("Spending records"): calls that may have been billed, with why and the provider's job ids to look up, each with Clear; lines the book could not read, which pause paid calls, with what to check and Acknowledge; and notes that need nothing (calls under way, settled calls not yet written to `ledger.jsonl`, torn tails set aside after a crash, calls priced on an assumption). "Check the spend ledger" checks the chain and every call the book holds as written there (`Gateway.auditLedger`). `GET`/`POST /api/spend` read and act; both actions are idempotent.
+9. **Restores.** A restore of an older or missing `ledger.jsonl` loses only the audit record of later calls: the caps still count them. ADR-0096's two `[F03]` restore cases are plain tests now (the call over the cap is refused). The start-up report names calls the book holds that the ledger lacks (by run), runs whose recorded cost the book lacks (only a ledger lost before byway first read it in can leave one), and torn ledger tails set aside, as a note. The README's "Spend after a restore" caveat is gone with the fail-open it described; this corrects [ADR-0094](0094-backup-unit-is-the-data-directory.md)'s "The README states the spend caveat until F03 lands" without editing it. The README keeps one sentence that is not about F03: a backup holds the spending up to the moment it was taken, so after restoring an older one, calls made since are in neither the book nor the ledger.
+10. **Anthropic's server-side refusal fallbacks are unchanged** (on by default), pending the owner's decision D1. Admission still reserves one attempt on the requested model, so F04's fallback overrun remains: a refusal Anthropic routes to another model, or a sticky-routed call, can settle at up to about 2× its reservation on Sonnet 5.5, 2.25× on Opus 5.5 and 1.5× on Fable 5.1. The book records the true cost and later calls are refused against it.
+
+## Alternatives considered
+
+- **Reservations in a SQLite table, with settled spend still read from the ledger (option B).** Rejected: keeping the two in step needs a handshake, calls interrupted by a crash stay uncounted, and any ledger damage must then block all paid work.
+- **The ledger as the only authority, with reservation records in the hash chain (option D).** Rejected: a transactional lifecycle on an append-only file, every admission contending on a lock broken after 30 s, and audit damage stopping all paid work.
+- **Moving paid-call results from the runner memo into the book (option A).** Not needed for a local, single-user product; stage 3 closes the memo window with operation keys instead.
+- **Repairing the ledger from the book after a restore** (re-appending what it lacks). Not done: entries from before the book are not kept whole in it, and a repaired file would carry re-numbered copies. The gap is reported at start and by "Check the spend ledger".
+- **Recording the in-flight operation key and the `in-flight` error code now.** Left to stage 3, which uses them; migration 7 adds the columns.
+
+## Consequences
+
+**Positive**
+
+- The web process and the worker see each other's calls in flight; one cap holds for both.
+- A dead or stopped worker's calls count at their estimate, against the workspace only, until the person clears them; calls never sent count nothing.
+- A billed call is counted even when its ledger line is delayed, lost by a crash or torn, and is never written twice.
+- A damaged ledger line stops paid calls until a person looks, instead of silently dropping its spending.
+- A restore that loses the ledger no longer lets the caps spend that money again.
+
+**Negative, and residuals named**
+
+- **Stage 3 is still open.** Operation keys tied to the runner's invocations: an overlapping Temporal attempt is admitted as a separate call (both are counted), a dead owner's settled call whose memo was not saved is bought again (counted), and an accepted fal job is not resumed from its stored request ids. ADR-0079's "Retries never buy the same thing twice" holds only at the provider edge (ADR-0091) until then.
+- **The book's lists need the person.** Calls that may have been billed count until cleared; nothing reconciles them against the providers.
+- **An OS crash can lose a ledger line the book marked written** (`markLedgered` is not committed at `synchronous=FULL`, and JSONL appends are not synced). The book, and so the caps, stay right; the gap shows at start and in "Check the spend ledger", and is not repaired.
+- **Assumptions carried from ADR-0091.** A provider-bodied 5xx and a mid-stream error event are treated as unbilled, which is not backed by provider billing documentation. An attempt classified `maybe` that the provider did not bill is still counted until cleared.
+- **The run cap ignores uncertain amounts by design;** only the workspace cap protects against a run whose calls keep failing after their requests went out.
+- **Estimates stay estimates** (ADR-0091): settlement can exceed a cap by the estimate error of the calls in flight. Non-Latin briefs reserve about three times more input.
+- **An accounting fault surfaces as `StepFailed`.** A run in flight at upgrade over a damaged legacy ledger ends plainly when it next makes a paid call; the workflow bundle is unchanged.
+- **Schema and contract.** Migration 6 is new; older builds refuse the newer database, as for every migration. `Store.spendBook`, `Gateway.spendRecords`, `Gateway.auditLedger` and `Gateway.close` are new required members; `GatewayOptions.billedLedgerWaitMs` is gone.
+
+## Evidence
+
+- [External-review verification](../reviews/2026-10-08-external-review-verification.md), cluster B (F03 and F04: "accept, partly", P2), recommendation C, stage 2 (steps 7–12), and §4 decision 1 (D1).
+- The original review: `C:/Users/arvik/code/byway_review/byway-review.md` (outside the repository).
+- Reproductions, red on the code before this change: two gateways under a $0.15 cap made two $0.10 provider calls; a ledger line that is not an entry did not stop a paid call; a completion re-sent after a reset counted nothing for its first attempt; an output count of `Infinity` failed the append after billing (`$.costUsd: Infinity is not representable in JSON`); ADR-0096's two `[F03]` restore cases admitted the call over the cap.
+- Tests:
+  - contracts: `packages/contracts/test/spend-book-suite.ts`;
+  - store: `packages/store/test/spend-book.test.ts` (two connections, in memory, two child processes) and `migrations.test.ts`;
+  - gateway: `packages/gateway/test/spend-book.test.ts`, `memory-book.test.ts`, `billed.test.ts`, `estimate.test.ts`;
+  - runner: `packages/runner/test/restore.test.ts`, `activities.test.ts`;
+  - web: `apps/web/test/api.test.ts`, `spending.test.ts`, `history.test.ts`, `services.test.ts`;
+  - repository: `scripts/test/composition.test.ts`, `backup.test.ts`.

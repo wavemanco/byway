@@ -9,8 +9,9 @@
  * copy taken after the store closes comes back intact, and that the README names every file byway writes there and
  * says how to back up and restore.
  *
- * What a partial restore does to spend is F03's to fix: the ledger treats a missing file as no spend. Until it does, the
- * README states that caveat, and this test requires it; remove both in the change that makes spend fail closed.
+ * What a partial restore does to spend changed with F03 (ADR-0095): the spend book in byway.sqlite is the budgets'
+ * authority, so a restore of an older or missing ledger.jsonl loses only the audit record of later calls, and the README
+ * says so. The caveat that the caps counted from the ledger went with the fail-open it described.
  */
 import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -134,10 +135,14 @@ describe('README: data and backup (R4)', () => {
     for (const mix of [/older or missing `ledger\.jsonl`/, /`byway\.sqlite` older than `temporal\.sqlite`/, /`temporal\.sqlite` older than `byway\.sqlite`/, /`artifacts\/`/, /`exposure\.jsonl`/]) expect(backup).toMatch(mix);
   });
 
-  it('states the ledger caveat until spend fails closed after a restore (F03)', () => {
-    const caveat = (section(readme, '## Back up and restore') ?? '').split('\n').find((l) => l.startsWith('**Spend after a restore')) ?? '';
-    expect(caveat).toMatch(/caps?/);
-    expect(caveat).toMatch(/provider/i);
+  it('says the budgets still count calls an older or missing ledger.jsonl lost, and what an older backup does to spend (F03, ADR-0095)', () => {
+    const backup = section(readme, '## Back up and restore') ?? '';
+    expect(backup).not.toMatch(/\*\*Spend after a restore/);
+    const ledgerMix = backup.split('\n').find((l) => l.startsWith('- An older or missing `ledger.jsonl`')) ?? '';
+    expect(ledgerMix).toMatch(/spend book in `byway\.sqlite` is their authority/);
+    expect(ledgerMix).toMatch(/docs\/adr\/0095-/);
+    expect(backup).toMatch(/calls made since are in neither the spend book nor the ledger/);
+    expect(backup).toMatch(/providers' own dashboards/);
   });
 
   it('points to ADR-0094, which corrects ADR-0066', () => {
