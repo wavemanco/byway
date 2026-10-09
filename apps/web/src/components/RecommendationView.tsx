@@ -17,6 +17,7 @@ import { Route, RouteDetails, RouteLegend } from './Route.tsx';
 import { Examples, exampleCount, storeExamples, type ExampleEntry } from './Examples.tsx';
 import { examplesSlot, keepExamples } from './examplesDraft.ts';
 import { clearStartDraft } from './startDraft.ts';
+import { createStartIdentity } from './startIdentity.ts';
 import { Switch } from './Switch.tsx';
 import { useTechnicalNames } from './TechNames.tsx';
 import { useAction } from './useAction.ts';
@@ -382,9 +383,10 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
 
   // Starting a run is one action in flight (R5): a second start while one is on its way does nothing, and on success it
   // holds until the Run screen replaces this one. A recipe that failed its checks cannot start, so nothing (not even an
-  // example) is sent for it. The start names its run (F03 P3): the id is minted once here and sent again with a retry
-  // after a failure, so a start whose answer was lost, sent again, gives the run it started instead of a second one.
-  const startId = useRef<string | null>(null);
+  // example) is sent for it. The start names its run (F03 P3, startIdentity.ts): a Start whose answer never came back,
+  // pressed again with the same inputs, sends the same id and gets the run it may have started instead of a second one;
+  // after byway refused it, or with other inputs, it is a new Start.
+  const [startIdentity] = useState(createStartIdentity);
   const starting = useAction(async () => {
     if (blocked) return;
     if (budget === null) {
@@ -395,15 +397,14 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
     try {
       // Examples go only to a recipe that takes them; they stay on this screen if you switch to one that does not.
       const refs = option.takesRefs && exampleCount(examples) > 0 ? await storeExamples(examples, onExampleRefused) : [];
-      startId.current ??= crypto.randomUUID();
-      const { runId } = await post<{ runId: string }>('/api/runs', {
+      const body = {
         intakeId,
-        runId: startId.current,
         budgetUsd: budget,
         ...(recipeId ? { recipeId } : {}),
         ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),
         ...(refs.length > 0 ? { refs } : {}),
-      });
+      };
+      const { runId } = await startIdentity.send({ body, composed }, (id) => post<{ runId: string }>('/api/runs', { ...body, runId: id }));
       onStarted(runId);
       return 'hold';
     } catch (err) {
