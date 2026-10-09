@@ -1,6 +1,6 @@
 import type { CostEstimate, Medium, ModelProfile, Tier } from '@byway/contracts';
 import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, falVideoSeconds, priceFor, tokenCost, type PriceRow } from '@byway/gateway';
-import { loopRounds, machineWrites, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
+import { asksSwaps, loopRounds, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
 /**
@@ -294,8 +294,9 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
         const r = walkNode(w, c, cur);
         spans.push(r.span);
         cur = r.set;
-        // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2).
-        if (feedsSwaps(c, n.steps[i + 1])) spans.push(minutes('select'));
+        // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2), exactly
+        // where the interpreter asks (asksSwaps reads the steps after it in this seq).
+        if (asksSwaps(c, n.steps.slice(i + 1))) spans.push(minutes('select'));
       });
       return { span: add(...spans), set: cur };
     }
@@ -350,14 +351,6 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       return { span: times(walkNode(w, n.body, set).span, links), set };
     }
   }
-}
-
-/**
- * A model TELLS sweep immediately followed by the model step that applies its finds: a writer by what it runs (the
- * effects table, ADR-0092), not by its `writes` flag.
- */
-function feedsSwaps(n: Node, next: Node | undefined): boolean {
-  return n.op === 'step' && n.role === 'tells-sweep' && n.actor === 'model' && next?.op === 'step' && next.actor === 'model' && machineWrites(next) && next.consumes.includes('critique');
 }
 
 function walkStages(w: Walk, recipe: Recipe): { total: Span; byStage: Map<Stage['stage'], Span> } {

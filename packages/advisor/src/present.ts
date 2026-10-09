@@ -1,6 +1,6 @@
 import type { RecipePresentation } from '@byway/contracts';
 import { BLOCK_NAMES, STAGE_NAMES } from '@byway/catalog';
-import { BLOCK_OF_ROLE, blockAgrees, machineWrites, voiceScope, voiceWrite, walk, walkNode, type Node, type Pick, type Recipe, type Stage, type Step } from '@byway/recipe';
+import { asksSwaps, BLOCK_OF_ROLE, blockAgrees, machineWrites, voiceScope, voiceWrite, walk, walkNode, type Node, type Pick, type Recipe, type Stage, type Step } from '@byway/recipe';
 
 /**
  * The plain-language presentation of a composed recipe (spec §5 vocabulary). The catalog's presentations are written
@@ -57,7 +57,8 @@ export function stepLabel(n: Unit): string {
 /**
  * Every sentence a composed step can be explained with, in one place: product copy like the catalog's, so it says what
  * a step does, never what it achieves (CR11, CRED-1), and the web app's claims guard scans this list. The swapping
- * cliché sweep says the person chooses which finds are swapped (convention C2).
+ * cliché sweep says the person chooses which finds are swapped (convention C2) only where the interpreter asks them
+ * (asksSwaps); otherwise the swap step applies every find, and the sentence says so.
  */
 export const COMPOSED_EXPLAINERS = {
   pickYours: 'Your turn: choose what to keep.',
@@ -77,6 +78,7 @@ export const COMPOSED_EXPLAINERS = {
   cut: 'A fresh reviewer marks what could go. Nothing is deleted for you.',
   tellsCompare: 'Your turn: compare the version before the swaps with the one after, and keep whichever you prefer.',
   tellsApplies: 'A fresh reviewer lists the stock patterns it finds, each with an alternative; you choose which ones, if any, the AI swaps.',
+  tellsAppliesAll: 'A fresh reviewer lists the stock patterns it finds, each with an alternative; the AI swaps every one.',
   tells: 'A fresh reviewer flags stock patterns. It flags only.',
   voice: 'Your turn: write the words readers will take as yours.',
   voiceKeyLines: 'Your turn: rewrite the key lines readers act on; the AI wrote the rest.',
@@ -104,8 +106,11 @@ function voiceExplainer(n: Step, medium: Recipe['medium']): string {
   return scope.keyLines ? E.voiceKeyLines : E.voice;
 }
 
-/** One plain sentence on what a shown step does, from its lead node; `applies` when it also applies its own findings. */
-function explainer(n: Unit, applies: boolean, medium: Recipe['medium']): string {
+/**
+ * One plain sentence on what a shown step does, from its lead node; `applies` when it also applies its own findings,
+ * `asks` when the person chooses which of a cliché sweep's finds are applied.
+ */
+function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['medium']): string {
   const E = COMPOSED_EXPLAINERS;
   if (n.op === 'pick') return n.mode === 'H' ? E.pickYours : n.mode === 'R' ? E.pickRandom : E.pickAi;
   const yours = n.actor === 'human';
@@ -126,7 +131,8 @@ function explainer(n: Unit, applies: boolean, medium: Recipe['medium']): string 
       return applies ? E.cutApplies : E.cut;
     case 'TELLS':
       if (n.role === 'tells-compare') return E.tellsCompare;
-      return applies ? E.tellsApplies : E.tells;
+      if (!applies) return E.tells;
+      return asks ? E.tellsApplies : E.tellsAppliesAll;
     case 'VOICE':
       if (voiceWrite(n)) return voiceExplainer(n, medium);
   }
@@ -240,10 +246,19 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
     if (first !== undefined) owner.set(n.id, first);
   });
 
+  // The cliché sweeps that ask you which finds to swap: the interpreter reads the steps after each in its own seq.
+  const asking = new Set<Node>();
+  walk(recipe, (n) => {
+    if (n.op !== 'seq') return;
+    n.steps.forEach((c, i) => {
+      if (asksSwaps(c, n.steps.slice(i + 1))) asking.add(c);
+    });
+  });
+
   const shown = groups.map(({ stage, units }) => {
     const lead = leadOf(units);
     const applies = units.some((u) => u !== lead && appliesFindings(u));
-    return { stage: STAGE_NAMES[stage], label: stepLabel(lead), explainer: explainer(lead, applies, recipe.medium), who: whoDoes(units), stepIds: [] as string[] };
+    return { stage: STAGE_NAMES[stage], label: stepLabel(lead), explainer: explainer(lead, applies, asking.has(lead), recipe.medium), who: whoDoes(units), stepIds: [] as string[] };
   });
   for (const [id, i] of [...owner].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0))) shown[i]!.stepIds.push(id);
 

@@ -143,6 +143,20 @@ describe('composed explainers: what steps do, not what they achieve (CRED-1)', (
     const steps = presentComposed(asComposed(c1), COPY).stages.flatMap((s) => s.steps);
     expect(steps.find((s) => s.stepIds.includes('tells-sweep'))?.explainer).toMatch(/you choose which/);
   });
+
+  it('says you choose only where the interpreter asks (asksSwaps): not with its swap step in a seq of its own, nor behind a machine keep-or-revert', () => {
+    const tellsOf = (r: Recipe) => presentComposed(asComposed(r), COPY).stages.flatMap((s) => s.steps).find((s) => s.stepIds.includes('tells-sweep'))?.explainer;
+    const nested = structuredClone(c1) as Recipe;
+    const d3 = nested.stages.find((s) => s.stage === 'D3')!.body as Extract<Node, { op: 'seq' }>;
+    const i = d3.steps.findIndex((s) => s.op === 'step' && s.role === 'tells-sweep');
+    d3.steps = [...d3.steps.slice(0, i + 1), { op: 'seq', steps: d3.steps.slice(i + 1) }];
+    expect(tellsOf(nested)).toBe(COMPOSED_EXPLAINERS.tellsAppliesAll);
+    const headless = structuredClone(c1) as Recipe;
+    walk(headless, (n) => {
+      if (n.op === 'step' && n.role === 'tells-compare') Object.assign(n, { actor: 'model', tier: 'mid', prompt: 'study1.A13' });
+    });
+    expect(tellsOf(headless)).toBe(COMPOSED_EXPLAINERS.tellsAppliesAll);
+  });
 });
 
 /**

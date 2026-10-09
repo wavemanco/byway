@@ -148,6 +148,14 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     expect(advisor.estimate(undeclared, 'balanced')).toEqual(advisor.estimate(c4, 'balanced'));
   });
 
+  it('counts the swap choice only where the interpreter asks it (asksSwaps): not behind a machine keep-or-revert', () => {
+    const headless = edit(c4, 'tells-compare', (n) => ({ ...n, actor: 'model', tier: 'mid', prompt: 'study1.A13' }) as Node);
+    const asRender: Node = { op: 'step', id: 'apply-swaps', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] };
+    const noSwapsHeadless = edit(headless, 'apply-swaps', () => asRender);
+    // The headless arm's model keep-or-revert costs a model call either way; what is left is your choosing time, none.
+    expect(advisor.estimate(headless, 'balanced').humanMinutes.low - advisor.estimate(noSwapsHeadless, 'balanced').humanMinutes.low).toBe(0);
+  });
+
   it('counts your time by checkpoint: authorship takes longer than polishing a memo', () => {
     const memo = advisor.estimate(c4, 'balanced').humanMinutes;
     const fiction = advisor.estimate(c6a, 'balanced').humanMinutes;
