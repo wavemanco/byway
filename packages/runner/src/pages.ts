@@ -670,6 +670,9 @@ const VISITOR_BEGIN = `(() => {
     // the body of a closed details), where boxes may still be reported.
     const renderedMemo = new Map();
     const rendered = (e) => { let v = renderedMemo.get(e); if (v === undefined) { v = !e.checkVisibility || e.checkVisibility(); renderedMemo.set(e, v); } return v; };
+    // Whether the text directly in e is rendered: e is, and does not skip its own content (a closed details shows only
+    // its summary; content-visibility: hidden keeps the box and skips what is in it).
+    const textRendered = (e) => rendered(e) && !(tag(e) === 'DETAILS' && !e.open) && style(e).contentVisibility !== 'hidden';
     /** Whether a style keeps the text in e from sight as a whole: almost transparent, invisible, or coloured clear. */
     const faded = (e) => opacity(e) < 0.05 || /hidden|collapse/.test(style(e).visibility) || clear(e);
     const NO_OVERFLOW = new Set(['inline', 'contents', 'none', 'table', 'inline-table', 'table-row', 'table-row-group', 'table-header-group', 'table-footer-group', 'table-column', 'table-column-group', 'ruby', 'ruby-text']);
@@ -835,7 +838,7 @@ const VISITOR_BEGIN = `(() => {
       }
       return { data, chars, marquee };
     };
-    return { body, style, rendered, faded, skipped, linkOf, measure, rtlPage };
+    return { body, style, rendered, textRendered, faded, skipped, linkOf, measure, rtlPage };
   };
 
   const loadAll = async () => {
@@ -865,7 +868,7 @@ const VISITOR_BEGIN = `(() => {
       const p = t.parentElement;
       if (!p || P.skipped(p)) continue;
       const had = measured.get(t);
-      if ((had && had.data === t.data) || !/[^ \\t\\n\\f\\r]/.test(t.data) || !P.rendered(p) || P.faded(p)) continue;
+      if ((had && had.data === t.data) || !/[^ \\t\\n\\f\\r]/.test(t.data) || !P.textRendered(p) || P.faded(p)) continue;
       measured.set(t, P.measure(t));
       n++;
     }
@@ -914,7 +917,7 @@ const VISITOR_BEGIN = `(() => {
       let rec = measured.get(t);
       if (rec && rec.data !== t.data) rec = undefined;
       range.selectNodeContents(t);
-      const laid = range.getClientRects().length > 0 && P.rendered(p);
+      const laid = range.getClientRects().length > 0 && P.textRendered(p);
       if (!rec && laid && !P.faded(p)) rec = P.measure(t);
       if (!laid && /[^ \\t\\n\\f\\r]/.test(t.data)) gone();
       const a = P.linkOf(p);

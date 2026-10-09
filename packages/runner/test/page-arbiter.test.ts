@@ -53,6 +53,8 @@ describe('where Chromium shows each line', () => {
       [
         '<div hidden>Menu</div>',
         '<details><summary>More</summary><p>Inside</p></details>',
+        '<details><summary>Less</summary>Bare text</details>',
+        '<div style="content-visibility:hidden">Skipped</div>',
         '<dialog>Closed</dialog>',
         '<p style="display:none">Styled away</p>',
         '<p>X<svg width="9" height="9"><title>Tip</title></svg> shown</p>',
@@ -65,6 +67,9 @@ describe('where Chromium shows each line', () => {
       ['Menu', 'not shown'],
       ['More', 'body'],
       ['Inside', 'not shown'],
+      ['Less', 'body'],
+      ['Bare text', 'not shown'],
+      ['Skipped', 'not shown'],
       ['Closed', 'not shown'],
       ['Styled away', 'not shown'],
       ['X', 'body'],
@@ -72,7 +77,7 @@ describe('where Chromium shows each line', () => {
       ['shown', 'body'],
       ['After', 'body'],
     ]);
-    expect(deckLines(readPageCopy(html, notShown(html, loc)))).toEqual(['T', 'More', 'X', 'shown', 'After']);
+    expect(deckLines(readPageCopy(html, notShown(html, loc)))).toEqual(['T', 'More', 'Less', 'X', 'shown', 'After']);
     // An svg <title> left open over the end of a paragraph keeps everything after it hidden in a browser.
     const open = pageOf('<p>X<svg width="9" height="9"><title>Tip</p><p>Hello</p>');
     expect(deckLines(readPageCopy(open))).toEqual(['T', 'X', 'Tip', 'Hello']);
