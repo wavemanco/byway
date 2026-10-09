@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACTORS,
   asksSwaps,
+  audioAsset,
   audit,
   BLOCK_OF_ROLE,
   blockAgrees,
@@ -18,6 +19,8 @@ import {
   each,
   exitPoints,
   FIELD_ROLES,
+  hasNoExecutor,
+  lockedScripts,
   loop,
   matchCheckpoints,
   oneShotGate,
@@ -26,9 +29,11 @@ import {
   pick,
   placements,
   relay,
+  replacesCritique,
   replicate,
   ROLES,
   route,
+  runOrder,
   runsEveryTime,
   seq,
   step,
@@ -300,6 +305,96 @@ describe("a TELLS sweep's swap choice (asksSwaps, the interpreter's seq)", () =>
     const reading = step({ ...rest, consumes: ['artifact'], reads: ['critique'] });
     expect(asksSwaps(sweep, [reading, compare('human')])).toBe(false);
     expect(asksSwaps(sweep, [reading, swaps, compare('human')])).toBe(true);
+  });
+
+  it('never asks when something before the swap step can put another critique in place of the finds: the choice would decide nothing', () => {
+    const r = render('r');
+    const human = (role: Step['role'], produces: Step['produces']) => step({ id: `h-${role}`, role, actor: 'human', consumes: ['view'], produces });
+    for (const between of [
+      critic('c'),
+      check('k'),
+      human('cut', ['critique']),
+      human('vision', ['critique']),
+      audit('au', [{ name: 'c', body: critic('lens') }]),
+      optional('o', 'a person wants a review', critic('oc')),
+      oneShotGate('g', critic('gc'), { metric: 'critic-score', threshold: 8, hidden: true, holder: 'harness' }),
+      loop('l', seq(r, check('lk')), gate('check-clean')),
+    ] as Node[]) {
+      expect(replacesCritique(between), JSON.stringify(between).slice(0, 60)).toBe(true);
+      expect(asksSwaps(sweep, [between, swaps, compare('human')])).toBe(false);
+    }
+    // A render, a person's taste, a write, or a critic inside a candidate or a pick's judge leave the finds in place.
+    for (const between of [r, human('vision', ['taste']), authorDraft('own'), replicate('x', 2, critic('xc'))] as Node[]) {
+      expect(replacesCritique(between)).toBe(false);
+      expect(asksSwaps(sweep, [between, swaps, compare('human')])).toBe(true);
+    }
+    // After the swap step, a critique changes nothing about the choice.
+    expect(asksSwaps(sweep, [swaps, critic('after'), compare('human')])).toBe(true);
+  });
+});
+
+describe('steps with no executor yet (ADR-0069)', () => {
+  it('a policy step, a tool other than a render, and a model ASSET that makes voice-over audio finish skipped', () => {
+    const facts = (actor: Step['actor'], role: Step['role'], consumes: Step['consumes'] = ['artifact']) => ({ actor, role, consumes, produces: ['artifact'] as Step['produces'] });
+    expect(hasNoExecutor(facts('tool', 'relay'))).toBe(true);
+    expect(hasNoExecutor(facts('tool', 'cut'))).toBe(true);
+    expect(hasNoExecutor(facts('policy', 'build'))).toBe(true);
+    expect(hasNoExecutor(facts('model', 'asset', ['voice', 'artifact']))).toBe(true);
+    expect(audioAsset({ role: 'asset', consumes: ['voice', 'artifact'] })).toBe(true);
+    expect(hasNoExecutor(facts('tool', 'render'))).toBe(false);
+    expect(hasNoExecutor(facts('model', 'asset'))).toBe(false);
+    expect(hasNoExecutor(facts('model', 'relay', ['anchor', 'artifact']))).toBe(false);
+    // A person's step is asked, whatever its role.
+    expect(hasNoExecutor(facts('human', 'asset', ['voice', 'artifact']))).toBe(false);
+    // The audio ASSET keeps its effect: admission holds it to what it writes once it has an executor.
+    expect(stepEffect(facts('model', 'asset', ['voice', 'artifact']))).toBe('writes');
+  });
+});
+
+describe('run order: what can run after a step', () => {
+  const script = (id: string) => voice(id, { variant: 'VOICE-early' });
+  const onScreen = (id: string) => voice(id);
+  const claims = (id: string) => voice(id, { variant: 'claim-log' });
+  const locked = (r: Recipe) => [...lockedScripts(r)].map((s) => s.id);
+
+  it('a script is locked when nothing you write later can reach the voice-over; the on-screen words cannot', () => {
+    expect(locked(recipeOf(seq(script('vo'), onScreen('words')), 'media'))).toEqual(['vo']);
+    expect(locked(recipeOf(seq(script('vo'), script('again'), onScreen('words')), 'media'))).toEqual(['again']);
+    expect(locked(recipeOf(seq(script('vo'), claims('facts')), 'media'))).toEqual([]);
+    expect(locked(recipeOf(seq(script('vo'), authorDraft('own', 'fix')), 'media'))).toEqual([]);
+  });
+
+  it('nor when it runs again: a loop round, a relay link, a stage a final check re-runs', () => {
+    expect(locked(recipeOf(loop('l', seq(script('vo'), onScreen('words')), gate('human')), 'media'))).toEqual([]);
+    expect(locked(recipeOf(relay('chain', 2, script('vo')), 'media'))).toEqual([]);
+    const staged = (retryStage: 'D1' | 'D2'): Recipe => {
+      const r = recipeOf(seq(script('vo')), 'media');
+      const check = oneShotGate('final', critic('fc'), { metric: 'critic-rank', threshold: 3, hidden: true, holder: 'harness' }, { stage: retryStage, times: 1 });
+      r.stages = [
+        { stage: 'D1', body: seq(script('vo')) },
+        { stage: 'D2', body: seq(step({ id: 'b', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.b', consumes: ['artifact'], produces: ['artifact'], writes: true, keepsVoice: true })) },
+        { stage: 'D3', body: seq(onScreen('words'), render('fr'), check) },
+      ];
+      return r;
+    };
+    expect(locked(staged('D2'))).toEqual(['vo']);
+    expect(locked(staged('D1'))).toEqual([]);
+  });
+
+  it('only a storyboard has a script; a step object used twice is locked only where both places are', () => {
+    expect(locked(recipeOf(seq(script('vo'), onScreen('words')), 'prose'))).toEqual([]);
+    const vo = script('vo');
+    expect(locked(recipeOf(seq(vo, onScreen('words'), vo), 'media'))).toEqual([]);
+  });
+
+  it('fans out in separate sessions only inside each or a replicate of more than one, and knows a relay link', () => {
+    const order = runOrder(recipeOf(seq(replicate('one', 1, critic('a')), replicate('four', 4, critic('b')), each('e', critic('c')), relay('chain', 2, critic('d')))));
+    expect(order.steps.map((o) => [o.step.id, o.fanOut, o.inRelay])).toEqual([
+      ['a', false, false],
+      ['b', true, false],
+      ['c', true, false],
+      ['d', false, true],
+    ]);
   });
 });
 

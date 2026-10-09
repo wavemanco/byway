@@ -101,4 +101,40 @@ describe("a TELLS sweep's swap choice reads its own seq", () => {
     expect(state.swapped[0]).toContain('tapestry');
     expect(predicted(deep)).toBe(false);
   });
+
+  /**
+   * A step between the sweep and its swap step that puts another critique in place of the finds (here a critic): the
+   * swap step applies that critique, so a choice among the sweep's finds would decide nothing. The run does not ask,
+   * and asksSwaps (the explainers, the estimate and the diff) says the same (F08 round 4).
+   */
+  it.each([
+    ['C1', c1],
+    ['C7', c7],
+  ] as const)('%s: a critic between the sweep and its swap step replaces the finds, so no one is asked to choose among them', async (_id, recipe) => {
+    const flat = sweepStage(recipe);
+    const body = flat.stages[0]!.body as Seq;
+    const i = body.steps.findIndex((s) => s.op === 'step' && s.role === 'tells-sweep');
+    const critic: Step = { op: 'step', id: 'between', role: 'critic', block: 'CRITIC', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'p.c', consumes: ['view'], produces: ['critique', 'score'] };
+    body.steps.splice(i + 1, 0, critic);
+    await run(flat);
+    expect(state.asked).not.toContain('select:tells-sweep');
+    expect(state.swapped).toEqual(['- a gap']);
+    expect(predicted(flat)).toBe(false);
+  });
+
+  /** The admitted form of the same (the advisor's present.test admits it): a direction of yours, given as a critique. */
+  it.each([
+    ['C1', c1],
+    ['C7', c7],
+  ] as const)('%s: your direction between the sweep and its swap step replaces the finds, so you are asked for it, not for swaps', async (_id, recipe) => {
+    const flat = sweepStage(recipe);
+    const body = flat.stages[0]!.body as Seq;
+    const i = body.steps.findIndex((s) => s.op === 'step' && s.role === 'tells-sweep');
+    body.steps.splice(i + 1, 0, { op: 'step', id: 'between', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] });
+    await run(flat);
+    expect(state.asked).not.toContain('select:tells-sweep');
+    expect(state.asked).toContain('react:between');
+    expect(state.swapped).toEqual(['words']);
+    expect(predicted(flat)).toBe(false);
+  });
 });

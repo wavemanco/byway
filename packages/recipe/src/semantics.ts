@@ -7,7 +7,10 @@
  * - what a VOICE covers, from `variant`, the knobs and the run's medium;
  * - which protocol block a step is, from its role (the runner reads `block` only for labels);
  * - whether a step's output is kept, from the operator it sits in;
- * - where a loop's gate can end the loop's body, from the operators between the loop and its critic or check.
+ * - where a loop's gate can end the loop's body, from the operators between the loop and its critic or check;
+ * - which steps have no executor yet and finish skipped, and which can put another critique in place of the last;
+ * - what can run after a step, from walk order, the loops and relays around it and the final checks that re-run a
+ *   stage: a script VOICE is locked after it only where nothing the person writes later can change it.
  *
  * Admission (the validator, the composed profile, web start) reads these facts from here. A step's own declarations
  * (`writes`, `produces: ['voice']`, `block`, `keepsVoice`) may only add arming or refusals, never grant a protection,
@@ -102,6 +105,52 @@ export const restoresWork = (s: StepFacts): boolean => stepEffect(s) === 'restor
  */
 export const refreshesPrevious = (s: StepFacts): boolean => s.actor === 'model' && stepEffect(s) === 'writes' && s.role !== 'asset' && s.role !== 'relay';
 
+/** An ASSET that turns the script into voice-over audio rather than images (03 C5 "VO audio from the locked script"): one that consumes the voice port (asset.ts). */
+export const audioAsset = (s: Pick<Step, 'role' | 'consumes'>): boolean => s.role === 'asset' && s.consumes.includes('voice');
+
+/**
+ * A step with no executor in byway yet: whatever the run is set up with, it finishes skipped with a plain note and
+ * the work passes through unchanged (ADR-0069). Every step that `passes` (a policy step, and a tool step other than a
+ * render: a tool RELAY is compositing), and a model audio ASSET: no provider makes voice-over audio in v1 (asset.ts).
+ * An audio ASSET keeps its effect (a writer when it produces the artifact): admission holds it to what it will do once
+ * it has an executor, which can only add a refusal.
+ */
+export const hasNoExecutor = (s: StepFacts & Pick<Step, 'consumes'>): boolean => stepEffect(s) === 'passes' || (s.actor === 'model' && audioAsset(s));
+
+/** Model roles whose answer the interpreter keeps as the new critique (applyModel: a note that is text, not a label, a choice or a keep). */
+const CRITIQUE_ROLES: ReadonlySet<Role> = new Set<Role>(['critic', 'check', 'cut', 'tells-sweep', 'overlap']);
+
+/**
+ * Whether running a node can put another critique in place of the one before it (the interpreter's applyModel,
+ * human(), audit() and gate()): a model critic, check, CUT, cliché sweep or overlap flag, a model or person's VISION
+ * that produces a critique, a person's CUT directive or other reaction that produces one, an audit whose lenses do, and
+ * a final check whose body does. replicate, each and a pick hand on the ports they started with, so what runs inside
+ * them never does; a write (a person's or a machine's) leaves the critique as it was.
+ */
+export function replacesCritique(n: Node): boolean {
+  switch (n.op) {
+    case 'step':
+      if (n.actor === 'model') return CRITIQUE_ROLES.has(n.role) || (n.role === 'vision' && n.produces.includes('critique'));
+      if (n.actor !== 'human' || HUMAN_WRITE_ROLES.has(n.role) || n.role === 'tells-compare') return false;
+      return n.role === 'cut' || n.produces.includes('critique');
+    case 'seq':
+      return n.steps.some(replacesCritique);
+    case 'route':
+      return n.branches.some((b) => replacesCritique(b.body));
+    case 'audit':
+      return n.lenses.some((l) => replacesCritique(l.body));
+    case 'loop':
+    case 'optional':
+    case 'relay':
+    case 'gate':
+      return replacesCritique(n.body);
+    case 'replicate':
+    case 'each':
+    case 'pick':
+      return false;
+  }
+}
+
 // ---- Declarations about the person's words ----------------------------------------------------------------------
 
 /** A step that declares itself VOICE: the VOICE block label or the 'voice' port. A declaration, never a protection. */
@@ -170,17 +219,20 @@ export const PICK_JUDGE_ROLES: ReadonlySet<Role> = new Set<Role>(['judge', 'sele
 /**
  * Whether a TELLS sweep's finds go to the person first, who chooses which are swapped (TELLS-1, convention C2; the
  * interpreter's seq calls this after each step). It reads only the nodes after the sweep in its own seq: the next step
- * there that consumes a critique is a model fix, and no keep-or-revert there is a machine's. A step that only reads a
- * critique when there is one (`reads`, ADR-0089) is not that step: no one is asked, and it takes in every find. A
- * headless arm (C1-H, its keep-or-revert by a proxy) and a sweep that only flags (C6, C6a) are left as they are, and so
- * is a sweep whose swap step sits in a seq of its own: the same steps nested differently run differently, so the
- * semantic projection keeps a seq's nesting (projection.ts).
+ * there that consumes a critique is a model fix, nothing before that fix can put another critique in place of the
+ * finds (replacesCritique: the fix would apply that one, and the person's choice would decide nothing), and no
+ * keep-or-revert there is a machine's. A step that only reads a critique when there is one (`reads`, ADR-0089) is not
+ * that step: no one is asked, and it takes in every find. A headless arm (C1-H, its keep-or-revert by a proxy) and a
+ * sweep that only flags (C6, C6a) are left as they are, and so is a sweep whose swap step sits in a seq of its own: the
+ * same steps nested differently run differently, so the semantic projection keeps a seq's nesting (projection.ts).
  */
 export function asksSwaps(sweep: Node, rest: readonly Node[]): boolean {
   if (sweep.op !== 'step' || sweep.actor !== 'model' || sweep.role !== 'tells-sweep') return false;
   const steps = rest.filter((n): n is Step => n.op === 'step');
   const fix = steps.find((s) => s.consumes.includes('critique'));
-  return fix?.role === 'fix' && fix.actor === 'model' && !steps.some((s) => s.role === 'tells-compare' && s.actor !== 'human');
+  if (fix?.role !== 'fix' || fix.actor !== 'model') return false;
+  if (rest.slice(0, rest.indexOf(fix)).some(replacesCritique)) return false;
+  return !steps.some((s) => s.role === 'tells-compare' && s.actor !== 'human');
 }
 
 /**
@@ -391,6 +443,141 @@ export function matchCheckpoints(want: readonly Checkpoint[], have: readonly Che
  * counterpart VOICE (the advisor's writer allowance).
  */
 export const voiceWrites = (recipe: Recipe): Placement[] => placements(recipe).filter((p) => voiceWrite(p.step));
+
+// ---- Run order --------------------------------------------------------------------------------------------------
+
+/**
+ * A step at one place in the run, for what can run before or after it: the claims a step's explainer makes about the
+ * steps around it (the advisor's present.ts), and the run's own "It is locked after this" (the interpreter).
+ */
+export interface Ordered {
+  step: Step;
+  /** Its place in the walk: a seq in order, a route's branches one after another, a pick's judge where the pick is. */
+  index: number;
+  /** Its stage's place in the recipe (ST4: each stage at most once, in order). */
+  stage: number;
+  /** The loops and relays around it: each runs its body again (a next round, a next link). */
+  repeats: readonly Node[];
+  /** In an audit lens, a one-shot gate's body or a pick's judge: what it makes never reaches the work. */
+  contained: boolean;
+  /** Inside a relay chain: it runs once per storyboard shot, each link from its own start frame (interpreter relay()). */
+  inRelay: boolean;
+  /** In separate sessions, one per candidate: inside each, or inside a replicate of more than one. */
+  fanOut: boolean;
+}
+
+/** A final check that can send the run back to a stage: where it sits, and the stage the run starts again from. */
+export interface Rerun {
+  /** Its place in the walk: the steps before it have a lower index. */
+  index: number;
+  repeats: readonly Node[];
+  /** The place of the stage the run starts again from; that stage and every later one run again. */
+  from: number;
+}
+
+export interface RunOrder {
+  steps: Ordered[];
+  reruns: Rerun[];
+}
+
+/** Every step at every place it sits, in walk order, with the final checks that can re-run a stage. */
+export function runOrder(recipe: Recipe): RunOrder {
+  const steps: Ordered[] = [];
+  const reruns: Rerun[] = [];
+  type At = Omit<Ordered, 'step' | 'index'>;
+  const visit = (n: Node, at: At): void => {
+    switch (n.op) {
+      case 'step':
+        steps.push({ step: n, index: steps.length, ...at });
+        return;
+      case 'seq':
+        n.steps.forEach((c) => visit(c, at));
+        return;
+      case 'loop':
+        visit(n.body, { ...at, repeats: [...at.repeats, n] });
+        return;
+      case 'relay':
+        visit(n.body, { ...at, repeats: [...at.repeats, n], inRelay: true });
+        return;
+      case 'replicate':
+        visit(n.body, { ...at, fanOut: at.fanOut || n.n > 1 });
+        return;
+      case 'each':
+        visit(n.body, { ...at, fanOut: true });
+        return;
+      case 'optional':
+        visit(n.body, at);
+        return;
+      case 'route':
+        n.branches.forEach((b) => visit(b.body, at));
+        return;
+      case 'audit':
+        n.lenses.forEach((l) => visit(l.body, { ...at, contained: true }));
+        return;
+      case 'gate': {
+        // A fail with retries left starts the run again at the first stage of the retry's name, never a later one
+        // (interpreter runStages: a later one fails the run).
+        const from = n.retry && n.retry.times > 0 ? recipe.stages.findIndex((s) => s.stage === n.retry!.stage) : -1;
+        if (from >= 0 && from <= at.stage) reruns.push({ index: steps.length, repeats: at.repeats, from });
+        visit(n.body, { ...at, contained: true });
+        return;
+      }
+      case 'pick':
+        if (n.judge) visit(n.judge, { ...at, contained: true });
+        return;
+    }
+  };
+  recipe.stages.forEach((s, i) => visit(s.body, { stage: i, repeats: [], contained: false, inRelay: false, fanOut: false }));
+  return { steps, reruns };
+}
+
+/**
+ * Whether `a` can run before `b` on some run, with what `a` made still in the ports `b` starts from: earlier in the
+ * walk, or both in the body of one loop or relay, whose next round or link runs `a` after `b` (a step there comes
+ * before itself). A final check's re-run does not count: it starts its stage again from that stage's entry ports, so
+ * nothing made after them carries over. Conservative: a step in another branch of a route counts as before, which can
+ * only take a claim away.
+ */
+export const canPrecede = (a: Ordered, b: Ordered): boolean => a.index < b.index || a.repeats.some((r) => b.repeats.includes(r));
+
+/**
+ * Whether `b` can run after `a` on some run, whatever became of what `a` made: canPrecede, or a final check after `a`
+ * sends the run back to `a`'s stage or an earlier one, so every step from that stage on runs again, `a` itself among
+ * them.
+ */
+export const canRunAfter = (order: RunOrder, a: Ordered, b: Ordered): boolean =>
+  canPrecede(a, b) || order.reruns.some((g) => (a.index < g.index || a.repeats.some((r) => g.repeats.includes(r))) && a.stage >= g.from && b.stage >= g.from);
+
+/**
+ * A person's write that can change a storyboard's voice-over: their own draft (the whole work), a script VOICE, or a
+ * claim log (its corrections replace the claims wherever they stand in the work, claims.ts). The on-screen VOICE is
+ * refused any voice-over line (copy.ts applyOnScreen, human.ts lockedVoiceover).
+ */
+export const changesScript = (s: Step, medium: Medium | undefined): boolean => authorWrite(s) || (voiceWrite(s) && voiceScope(s, medium).base !== 'on-screen');
+
+/**
+ * The script VOICEs (on a storyboard, variant VOICE-early) whose script nothing the person writes later can change: no
+ * write of theirs that reaches the voice-over (changesScript) can run after it, the VOICE itself again included (a
+ * loop's next round, a relay's next link, a stage a final check re-runs). A machine write after it keeps the person's
+ * lines (keepsVoice) or stops the run before it (the interpreter's guard). Read at every place a step object sits. The
+ * run says "It is locked after this" exactly at these (wording.ts), and so does a composed recipe's explainer.
+ */
+export function lockedScripts(recipe: Recipe): Set<Step> {
+  const order = runOrder(recipe);
+  const reaching = order.steps.filter((o) => !o.contained);
+  const locked = new Set<Step>();
+  const not = new Set<Step>();
+  for (const o of order.steps) {
+    const s = o.step;
+    if (!voiceWrite(s) || voiceScope(s, recipe.medium).base !== 'script') continue;
+    const holds = !o.contained && !reaching.some((y) => changesScript(y.step, recipe.medium) && canRunAfter(order, o, y));
+    if (!holds) {
+      not.add(s);
+      locked.delete(s);
+    } else if (!not.has(s)) locked.add(s);
+  }
+  return locked;
+}
 
 // ---- Field roles ------------------------------------------------------------------------------------------------
 

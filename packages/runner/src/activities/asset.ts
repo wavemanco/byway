@@ -16,6 +16,7 @@
  */
 import { GatewayError, type Medium } from '@byway/contracts';
 import { isHeldKeyError } from '@byway/gateway';
+import { audioAsset } from '@byway/recipe/semantics';
 import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson, textView, type Parsed } from '../formats.ts';
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
 import { parseBriefs } from '../parse.ts';
@@ -42,8 +43,8 @@ export const NO_BRIEF_NOTE = 'The AI wrote no usable image brief, even when aske
 /** The prompt lets the AI answer with no image (its minimum is 0), and it did: a choice, not a failure (F11, D3). */
 export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, which its instructions allow, so no image was made; the work is unchanged.';
 
-/** An ASSET step that turns the script into audio rather than images (03 C5 "VO audio from the locked script"). */
-export const isAudioAsset = (step: AssetInput['step']): boolean => step.consumes.includes('voice');
+/** An ASSET step that turns the script into audio rather than images: @byway/recipe/semantics' audioAsset, which the explainers and the estimate read too. */
+export const isAudioAsset = (step: AssetInput['step']): boolean => audioAsset(step);
 
 const imageRoute = (id: string): string => `/api/artifacts/${id}`;
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();

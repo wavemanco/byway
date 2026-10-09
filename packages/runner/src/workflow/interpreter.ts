@@ -15,7 +15,7 @@ import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '
 import type { CheckpointResolution } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
-import { asksSwaps, feedsGate, machineWrites, voiceWrite } from '@byway/recipe/semantics';
+import { asksSwaps, feedsGate, lockedScripts, machineWrites, voiceWrite } from '@byway/recipe/semantics';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
@@ -130,6 +130,8 @@ export class Interpreter {
   private checkpointCount = 0;
   private budgetQuestion: Promise<boolean> | undefined;
   private budgetCount = 0;
+  /** The script VOICEs locked after they run (lockedScripts), read from the recipe the first time a VOICE asks. */
+  private locked: ReadonlySet<Step> | undefined;
 
   constructor(input: RunInput, control: RunControl) {
     this.input = input;
@@ -398,7 +400,9 @@ export class Interpreter {
     // A reaction that revises a text port in place opens with that port's text, and its answer replaces it (ADR-0090).
     const revised = revisesInPlace(s);
     const inPlace = revised ? ports[revised]?.trim() : undefined;
-    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
+    // A VOICE is asked by what it covers; a script says it is locked only where nothing the person writes later can change it.
+    const voice = s.role === 'voice' ? { medium: this.input.medium, locked: (this.locked ??= lockedScripts(this.input.recipe)).has(s) } : {};
+    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace, voice), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
     let initial: OpenCheckpointInput['initial'];
     if (kind === 'compare') {
       checkpoint = {

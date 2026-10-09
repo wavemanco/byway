@@ -15,9 +15,14 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
  * onto it, change it again on purpose, to fcadfee4…: the cap turn every loop exit at the cap takes, the held voice and
  * the run-time guard over the person's words, a C pick whose judge names no draft fails, the engine's limits checked at
  * workflow start, and `asksSwaps` shared from @byway/recipe/semantics. Alone on its branch that work was bfdda860… to
- * 9f872bb4…, a hash that never reached main. Runs waiting under an older bundle end plainly (ADR-0078).
+ * 9f872bb4…, a hash that never reached main. F08's fourth round changes it once more on the same branch, from fcadfee4…
+ * to 38afef53…, so that what the run says is true of every admitted recipe: a script VOICE says "It is locked after
+ * this" only where nothing the person writes later can change it (`lockedScripts`, read from the recipe at the step),
+ * a VOICE is asked by what it covers in the run's medium, and a cliché sweep asks which finds to swap only where nothing
+ * puts another critique in their place before the swap step (`asksSwaps` with `replacesCritique`). fcadfee4… never
+ * reached main either. Runs waiting under an older bundle end plainly (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = 'fcadfee469e2366c86566d1947dccf9cbaadfd32b603d927eb6eb90032f914f5';
+const PINNED_WORKFLOW_HASH = '38afef53ed613c48e1065255bdbac69c9016af95a156b0559634e67625e0b637';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {

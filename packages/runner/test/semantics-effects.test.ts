@@ -11,7 +11,7 @@ import type { CompletionRequest, CompletionResult, Gateway, ProfileStatus } from
 import { PROFILES } from '@byway/gateway';
 import { PROTOCOL_CONFIGS } from '@byway/catalog';
 import { outputForStep, slotsForStep } from '@byway/prompts';
-import { HUMAN_WRITE_ROLES, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
+import { hasNoExecutor, HUMAN_WRITE_ROLES, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
@@ -143,6 +143,17 @@ describe('ASSET and RELAY steps', () => {
     const res = await assetStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'art'), step: spec('asset', 'model', produces, { block: 'ASSET', knobs: { slots: 1 } }), ports: { artifact: doc } });
     expect(res.artifactId !== undefined).toBe(writes);
     expect(stepEffect({ actor: 'model', role: 'asset', produces })).toBe(writes ? 'writes' : 'annotates');
+  });
+
+  it('an ASSET that turns the script into audio has no executor: it finishes skipped and writes nothing, as hasNoExecutor says (ADR-0069)', async () => {
+    const run = await newRun('media');
+    const board = (await store.artifacts.putText('{"storyboard":[{"shot":1,"description":"d","imagePrompt":"p","durationSec":3}],"voiceover":"v"}', 'application/json')).id;
+    const step = spec('asset', 'model', ['artifact'], { block: 'ASSET', consumes: ['voice', 'artifact'] });
+    const res = await assetStep({ gateway: scripted([]), store, prompts: fakePrompts() }, { run, call: call(run, 'vo-audio'), step, ports: { artifact: board, voice: 'v' } });
+    expect(res).toEqual({ costUsd: 0, skipped: true });
+    expect(hasNoExecutor(step)).toBe(true);
+    // An image ASSET has one.
+    expect(hasNoExecutor(spec('asset', 'model', ['artifact']))).toBe(false);
   });
 
   it.each([[['artifact', 'anchor'] as StepSpec['produces']], [['anchor'] as StepSpec['produces']]])('a RELAY link writes the storyboard whatever it declares (%j)', async (produces) => {
