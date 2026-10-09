@@ -16,6 +16,7 @@ import type {
   LedgerBatch,
   LedgerCursor,
   LedgerEntry,
+  LedgerLine,
   LedgeredCall,
   PaidOperationState,
   ProviderJobRole,
@@ -25,6 +26,7 @@ import type {
   UncertainCall,
   UnledgeredCall,
 } from '@byway/contracts';
+import { ledgerEntryProblem, spendFaultDetail } from '@byway/contracts';
 import { roundUsd } from './prices.ts';
 
 interface Row {
@@ -208,11 +210,16 @@ export class MemorySpendBook implements SpendBook {
 
   async absorb(batch: LedgerBatch): Promise<{ faults: number }> {
     const at = this.stamp();
-    for (const e of batch.entries) this.absorbEntry(e, at);
+    // As the store's book: a line it cannot record is a fault at that line, never an error.
+    const refused: { line: LedgerLine; problem?: string }[] = batch.unreadable.map((u) => ({ line: u, ...(u.problem !== undefined ? { problem: u.problem } : {}) }));
+    for (const line of batch.entries) {
+      const problem = ledgerEntryProblem(line.entry) ?? this.absorbEntry(line.entry, at);
+      if (problem !== undefined) refused.push({ line, problem });
+    }
     let faults = 0;
-    for (const u of batch.unreadable) {
-      if (this.faults.some((f) => f.offset === u.offset && f.sha256 === u.sha256)) continue;
-      this.faults.push({ id: this.faults.length + 1, offset: u.offset, sha256: u.sha256, detail: `Line at byte ${u.offset} of ledger.jsonl cannot be read as a spend entry: "${u.excerpt.slice(0, 120)}"`, createdAt: at });
+    for (const { line, problem } of refused.sort((x, y) => x.line.offset - y.line.offset)) {
+      if (this.faults.some((f) => f.offset === line.offset && f.sha256 === line.sha256)) continue;
+      this.faults.push({ id: this.faults.length + 1, offset: line.offset, sha256: line.sha256, detail: spendFaultDetail(line, problem), createdAt: at });
       faults += 1;
     }
     this.position = { ...batch.cursor };
@@ -305,19 +312,21 @@ export class MemorySpendBook implements SpendBook {
     return true;
   }
 
-  private absorbEntry(e: LedgerEntry, at: string): void {
+  /** One entry into the book; returns why it cannot be recorded (as the store's UNIQUE entry id refuses it), changing nothing. */
+  private absorbEntry(e: LedgerEntry, at: string): string | undefined {
     const row = e.operationId !== undefined ? this.rows.get(e.operationId) : undefined;
     if (row) {
       if (row.state !== 'settled') {
+        if ([...this.rows.values()].some((r) => r !== row && r.ledgerEntryId === e.id)) return 'it conflicts with a call the spend book already holds';
         Object.assign(row, { state: 'settled', settledUsd: e.costUsd, settledAt: e.at, settleSeq: ++this.settleSeq, ledgerEntryId: e.id, ledgeredSeq: e.seq, updatedAt: at });
         if (e.priceBasis !== undefined) row.priceBasis = e.priceBasis;
       } else if (row.ledgeredSeq === undefined) {
         Object.assign(row, { ledgeredSeq: e.seq, updatedAt: at });
       }
-      return;
+      return undefined;
     }
     const id = e.operationId ?? `ledger:${e.id}`;
-    if (this.rows.has(id) || [...this.rows.values()].some((r) => r.ledgerEntryId === e.id)) return;
+    if (this.rows.has(id) || [...this.rows.values()].some((r) => r.ledgerEntryId === e.id)) return undefined;
     this.rows.set(id, {
       id,
       workspaceId: e.workspaceId,
@@ -341,6 +350,7 @@ export class MemorySpendBook implements SpendBook {
       createdAt: at,
       updatedAt: at,
     });
+    return undefined;
   }
 
   private workspaceExposure(workspaceId: string, now: number): { settled: number; inFlight: number; uncertain: number } {

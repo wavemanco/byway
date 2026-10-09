@@ -22,6 +22,7 @@ import type {
   LedgerBatch,
   LedgerCursor,
   LedgerEntry,
+  LedgerLine,
   LedgeredCall,
   PaidCallSummary,
   ProviderId,
@@ -33,6 +34,7 @@ import type {
   UncertainCall,
   UnledgeredCall,
 } from '@byway/contracts';
+import { ledgerEntryProblem, spendFaultDetail } from '@byway/contracts';
 import { migrate } from './migrations.ts';
 import { openDatabase, writeTransaction } from './db.ts';
 import { StoreError } from './errors.ts';
@@ -41,8 +43,6 @@ const roundUsd = (n: number) => Math.round(n * 1e6) / 1e6;
 const ROLES: ReadonlySet<ProviderJobRole> = new Set(['generation', 'extract']);
 /** A book-side comparison tolerance: amounts are rounded to the micro-dollar. */
 const EPSILON = 1e-9;
-/** How many characters of an unreadable line a fault keeps, for the person to recognise it. */
-const EXCERPT_CHARS = 120;
 
 /** In SQL: the row's caller is still renewing it (`:now` bound to the book's clock). */
 const LIVE = `lease_until > :now`;
@@ -215,11 +215,16 @@ export class SqliteSpendBook implements SpendBook {
     return this.#tx(() => {
       const q = this.#queries();
       const at = this.#stamp();
-      for (const e of batch.entries) this.#absorbEntry(e, at);
+      // A line the book cannot record is a fault at that line, never an error: one damaged line must not stop the rest
+      // of the file, demo calls or Settings from being read (ADR-0095 decision 6).
+      const refused: { line: LedgerLine; problem?: string }[] = batch.unreadable.map((u) => ({ line: u, ...(u.problem !== undefined ? { problem: u.problem } : {}) }));
+      for (const line of batch.entries) {
+        const problem = ledgerEntryProblem(line.entry) ?? this.#absorbEntry(line.entry, at);
+        if (problem !== undefined) refused.push({ line, problem });
+      }
       let faults = 0;
-      for (const u of batch.unreadable) {
-        const detail = `Line at byte ${u.offset} of ledger.jsonl cannot be read as a spend entry: "${u.excerpt.slice(0, EXCERPT_CHARS)}"`;
-        faults += Number(q.insertFault.run({ offset: u.offset, sha: u.sha256, detail, at }).changes);
+      for (const { line, problem } of refused.sort((x, y) => x.line.offset - y.line.offset)) {
+        faults += Number(q.insertFault.run({ offset: line.offset, sha: line.sha256, detail: spendFaultDetail(line, problem), at }).changes);
       }
       const c = batch.cursor;
       q.setCursor.run({ offset: c.offset, tailStart: c.tailStart, tailSha: c.tailSha256 });
@@ -297,8 +302,26 @@ export class SqliteSpendBook implements SpendBook {
     return this.#tx(() => Number(this.#queries().acknowledge.run({ id, at: this.#stamp() }).changes) > 0);
   }
 
-  /** One audit-file entry into the book (see SpendBook.absorb), inside absorb's transaction. */
-  #absorbEntry(e: LedgerEntry, at: string): void {
+  /**
+   * One audit-file entry into the book (see SpendBook.absorb), inside absorb's transaction and in a savepoint of its
+   * own. An entry the database refuses (it would give one call another call's entry id) changes nothing and is returned
+   * as a problem, which absorb records as a fault; any other error is the database's, not the line's, and is thrown.
+   */
+  #absorbEntry(e: LedgerEntry, at: string): string | undefined {
+    this.#db.exec('SAVEPOINT absorb_entry');
+    try {
+      this.#recordEntry(e, at);
+      this.#db.exec('RELEASE absorb_entry');
+      return undefined;
+    } catch (err) {
+      this.#db.exec('ROLLBACK TO absorb_entry');
+      this.#db.exec('RELEASE absorb_entry');
+      if (!isConstraintError(err)) throw err;
+      return 'it conflicts with a call the spend book already holds';
+    }
+  }
+
+  #recordEntry(e: LedgerEntry, at: string): void {
     const q = this.#queries();
     const values = {
       entryId: e.id,
@@ -365,6 +388,12 @@ export class SqliteSpendBook implements SpendBook {
   #stamp(): string {
     return this.#now().toISOString();
   }
+}
+
+/** SQLite's SQLITE_CONSTRAINT (19), in any of its extended forms (a UNIQUE, CHECK or NOT NULL constraint failed). */
+function isConstraintError(err: unknown): boolean {
+  const code = (err as { errcode?: unknown } | null)?.errcode;
+  return typeof code === 'number' && (code & 0xff) === 19;
 }
 
 function summary(r: Row): Omit<PaidCallSummary, 'usd' | 'since'> {

@@ -84,19 +84,71 @@ export interface LedgerCursor {
   tailSha256: string | null;
 }
 
-/** A complete line of the audit file that is not an entry: recorded once, by its byte offset and its hash. */
-export interface UnreadableLine {
+/** Where a complete line of the audit file is: its byte offset and its hash, and its start for the person to recognise it. */
+export interface LedgerLine {
   offset: number;
   sha256: string;
   /** The line's start, for the person to recognise it. */
   excerpt: string;
 }
 
+/** A complete line of the audit file that is not an entry: recorded once, by its byte offset and its hash. */
+export interface UnreadableLine extends LedgerLine {
+  /** Why it is not an entry the book can count, in words (ledgerEntryProblem), when the reader knows. */
+  problem?: string;
+}
+
+/**
+ * A line read as an entry, and where it is. The book checks it again (ledgerEntryProblem) and records it in a step of its
+ * own: one it still cannot record becomes a fault at this line, like an unreadable one, never an error that stops the
+ * rest of the batch (or demo calls, or Settings) from being read.
+ */
+export interface EntryLine extends LedgerLine {
+  entry: LedgerEntry;
+}
+
 /** What one read of the audit file found after the cursor. */
 export interface LedgerBatch {
-  entries: LedgerEntry[];
+  entries: EntryLine[];
   unreadable: UnreadableLine[];
   cursor: LedgerCursor;
+}
+
+const KINDS: Record<LedgerEntry['kind'], true> = { completion: true, image: true, video: true };
+const PROVIDERS: Record<ProviderId, true> = { anthropic: true, openai: true, google: true, openrouter: true, fal: true, mock: true };
+const PRICE_BASES: Record<NonNullable<LedgerEntry['priceBasis']>, true> = { assumed: true };
+const own = <T extends object>(table: T, key: unknown): boolean => typeof key === 'string' && Object.hasOwn(table, key);
+
+/** How many characters of a line a fault keeps, for the person to recognise it. */
+const FAULT_EXCERPT_CHARS = 120;
+
+/** The words a fault is recorded with (SpendFault.detail): where the line is, why it cannot be counted when known, and its start. */
+export function spendFaultDetail(line: LedgerLine, problem?: string): string {
+  return `Line at byte ${line.offset} of ledger.jsonl cannot be read as a spend entry${problem ? ` (${problem})` : ''}: "${line.excerpt.slice(0, FAULT_EXCERPT_CHARS)}"`;
+}
+
+/**
+ * Why a value read from the audit file is not a LedgerEntry the spend book can record, in words, or undefined when it
+ * is one (ADR-0095 decision 6). Every field the book records is checked, by the contract's types: an id, a workspace,
+ * a purpose and a time that are non-empty text; a sequence number that is a whole number from 1; a kind and a provider
+ * the contract names; the requested and served models as text; a cost that is a finite, non-negative number; and, when
+ * present, a run, a step and an operation as text and a price basis the contract names. Fields the book does not record
+ * (the hashes, usage, latency) are left to the chain check. What fails here is a fault, not something counted as nothing.
+ */
+export function ledgerEntryProblem(value: unknown): string | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'it is not a JSON object';
+  const e = value as Record<string, unknown>;
+  const text = (v: unknown) => typeof v === 'string' && v !== '';
+  for (const field of ['id', 'workspaceId', 'purpose', 'at'] as const) if (!text(e[field])) return `its "${field}" is missing or not text`;
+  if (!Number.isSafeInteger(e.seq) || (e.seq as number) < 1) return 'its "seq" is not a whole number from 1';
+  if (!own(KINDS, e.kind)) return 'its "kind" is not completion, image or video';
+  if (!own(PROVIDERS, e.provider)) return 'its "provider" is not one byway knows';
+  for (const field of ['requestedModel', 'servedModel'] as const) if (typeof e[field] !== 'string') return `its "${field}" is missing or not text`;
+  if (typeof e.costUsd !== 'number' || !Number.isFinite(e.costUsd) || e.costUsd < 0) return 'its "costUsd" is not a finite, non-negative number';
+  for (const field of ['runId', 'stepId'] as const) if (e[field] !== undefined && typeof e[field] !== 'string') return `its "${field}" is not text`;
+  if (e.operationId !== undefined && !text(e.operationId)) return 'its "operationId" is not text';
+  if (e.priceBasis !== undefined && !own(PRICE_BASES, e.priceBasis)) return 'its "priceBasis" is not "assumed"';
+  return undefined;
 }
 
 /** A settled call the outbox has not yet written to the audit file. */
@@ -225,7 +277,8 @@ export interface SpendBook {
   /**
    * Reconciles audit-file lines into the book, idempotently: an entry with an operationId marks its row written (and
    * settles it from the entry when it is not settled yet; a missing row is inserted); a legacy entry is inserted once,
-   * keyed by its entry id; a line that is not an entry becomes a fault, once per offset. Then the cursor advances.
+   * keyed by its entry id; a line that is not an entry, or an entry it cannot record (ledgerEntryProblem, or one the
+   * database refuses), becomes a fault, once per offset and hash. No single line makes it throw. Then the cursor advances.
    */
   absorb(batch: LedgerBatch): Promise<{ faults: number }>;
   /** Settled calls not yet in the audit file, oldest first. */

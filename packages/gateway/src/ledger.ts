@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as nodeFs } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { CanonicalizationError, canonicalize, contentHash } from '@byway/canonical';
-import type { LedgerBatch, LedgerCursor, LedgerEntry, UnreadableLine } from '@byway/contracts';
+import { ledgerEntryProblem, type EntryLine, type LedgerBatch, type LedgerCursor, type LedgerEntry, type UnreadableLine } from '@byway/contracts';
 
 /**
  * The gateway's entry is the contract's LedgerEntry, upstream host (OpenRouter) included; the name is kept for existing
@@ -105,27 +105,26 @@ const lineHash = (bytes: Uint8Array) => `sha256:${createHash('sha256').update(by
 const EXCERPT_CHARS = 120;
 
 /**
- * A stored line as the spend book absorbs it (ADR-0095), or undefined when it is not an entry the book can count: not
- * JSON, not an object, or missing an id, a workspace, a sequence number, a purpose, a kind, a provider, or a cost that is
- * a finite, non-negative number. Stricter than entries(), which sums any JSON line: what the book cannot count, it must
- * not count as nothing, so it becomes a fault that blocks paid calls until the person looks.
+ * A stored line as the spend book absorbs it (ADR-0095): the entry, or why it is not one the book can count (not JSON,
+ * or a field the book records missing or of the wrong type: ledgerEntryProblem in @byway/contracts). Stricter than
+ * entries(), which sums any JSON line: what the book cannot count, it must not count as nothing, so it becomes a fault
+ * that blocks paid calls until the person looks.
  */
-export function absorbable(line: string): GatewayLedgerEntry | undefined {
+export function readLedgerLine(line: string): { entry: GatewayLedgerEntry } | { problem: string } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
   } catch {
-    return undefined;
+    return { problem: 'it is not JSON' };
   }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
-  const e = parsed as Partial<GatewayLedgerEntry>;
-  const text = (v: unknown) => typeof v === 'string' && v !== '';
-  if (!text(e.id) || !text(e.workspaceId) || !text(e.purpose) || !text(e.kind) || !text(e.provider)) return undefined;
-  if (!Number.isSafeInteger(e.seq) || (e.seq as number) < 1) return undefined;
-  if (typeof e.costUsd !== 'number' || !Number.isFinite(e.costUsd) || e.costUsd < 0) return undefined;
-  if (e.operationId !== undefined && !text(e.operationId)) return undefined;
-  if (e.runId !== undefined && typeof e.runId !== 'string') return undefined;
-  return parsed as GatewayLedgerEntry;
+  const problem = ledgerEntryProblem(parsed);
+  return problem === undefined ? { entry: parsed as GatewayLedgerEntry } : { problem };
+}
+
+/** A stored line as an entry the spend book can count, or undefined (see readLedgerLine for why not). */
+export function absorbable(line: string): GatewayLedgerEntry | undefined {
+  const read = readLedgerLine(line);
+  return 'entry' in read ? read.entry : undefined;
 }
 
 /** What the drain may do while it holds the ledger's lock (Ledger.exclusive). */
@@ -391,7 +390,7 @@ export class Ledger {
       }
       const buf = Buffer.alloc(size - start);
       if (buf.length > 0) await handle.read(buf, 0, buf.length, start);
-      const entries: GatewayLedgerEntry[] = [];
+      const entries: EntryLine[] = [];
       const unreadable: UnreadableLine[] = [];
       let next: LedgerCursor = start === 0 ? { ...LEDGER_START } : { offset: start, tailStart: cursor.tailStart, tailSha256: cursor.tailSha256 };
       for (let pos = 0; ; ) {
@@ -400,9 +399,10 @@ export class Ledger {
         const bytes = buf.subarray(pos, nl);
         const text = bytes.toString('utf8');
         if (text.trim()) {
-          const entry = absorbable(text);
-          if (entry) entries.push(entry);
-          else unreadable.push({ offset: start + pos, sha256: lineHash(bytes), excerpt: text.slice(0, EXCERPT_CHARS) });
+          const at = { offset: start + pos, sha256: lineHash(bytes), excerpt: text.slice(0, EXCERPT_CHARS) };
+          const read = readLedgerLine(text);
+          if ('entry' in read) entries.push({ ...at, entry: read.entry });
+          else unreadable.push({ ...at, problem: read.problem });
         }
         next = { offset: start + nl + 1, tailStart: start + pos, tailSha256: lineHash(bytes) };
         pos = nl + 1;

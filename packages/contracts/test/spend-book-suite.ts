@@ -7,7 +7,7 @@
  * Imported by the implementations' own tests as `@byway/contracts/spend-book-suite` (a test file, not shipped code).
  */
 import { describe, expect, it } from 'vitest';
-import type { AdmitRequest, LedgerBatch, LedgerEntry, Settlement, SpendBook } from '../src/index.ts';
+import type { AdmitRequest, EntryLine, LedgerBatch, LedgerEntry, Settlement, SpendBook } from '../src/index.ts';
 
 export interface SpendBookFixture {
   /** Two handles on the same book: two connections for a database, the same object twice in memory. */
@@ -84,7 +84,15 @@ export const ledgerEntry = (costUsd: number, over: Partial<LedgerEntry> = {}): L
   };
 };
 
-const batch = (entries: LedgerEntry[], over: Partial<LedgerBatch> = {}): LedgerBatch => ({ entries, unreadable: [], cursor: { offset: 100 * entries.length, tailStart: 0, tailSha256: null }, ...over });
+/** Entries as lines of the audit file, 100 bytes apart from the start, each hashed by its entry id. */
+const lines = (entries: LedgerEntry[]): EntryLine[] => entries.map((entry, i) => ({ offset: 100 * i, sha256: `sha256:line-${String(entry.id)}`, excerpt: JSON.stringify(entry).slice(0, 120), entry }));
+const batch = (entries: LedgerEntry[], over: Partial<LedgerBatch> = {}): LedgerBatch => ({ entries: lines(entries), unreadable: [], cursor: { offset: 100 * entries.length, tailStart: 0, tailSha256: null }, ...over });
+/** An entry with a field changed to something the contract does not allow, as a hand edit or a flipped bit leaves it. */
+const odd = (costUsd: number, change: Record<string, unknown>): LedgerEntry => {
+  const e: Record<string, unknown> = { ...ledgerEntry(costUsd), ...change };
+  for (const k of Object.keys(e)) if (e[k] === undefined) delete e[k];
+  return e as unknown as LedgerEntry;
+};
 
 const cents = (n: number) => Math.round(n * 1e6) / 1e6;
 
@@ -397,6 +405,50 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         // The same line read again is the same fault, already acknowledged: it does not block again.
         expect(await a.absorb(batch([], { unreadable: [bad] }))).toEqual({ faults: 0 });
         expect(await a.admit(admitRequest())).toEqual({ admitted: true });
+      }),
+    );
+
+    it(
+      'records an entry line it cannot record (a field missing or of the wrong type) as a fault at that line, never an error; the rest of the batch is counted',
+      withBook(async ({ a, b }) => {
+        const entries = [
+          ledgerEntry(0.05),
+          odd(0.07, { at: undefined }),
+          odd(0.07, { servedModel: { x: 1 } }),
+          odd(0.07, { stepId: { x: 1 } }),
+          odd(0.07, { priceBasis: 7 }),
+          odd(0.07, { requestedModel: ['m'] }),
+          odd(0.07, { runId: 5 }),
+          odd(0.07, { kind: 'telegram' }),
+          ledgerEntry(0.02),
+        ];
+        expect(await a.absorb(batch(entries))).toEqual({ faults: 7 });
+        // Read again (a restart, another process): the same lines are the same faults.
+        expect(await b.absorb(batch(entries))).toEqual({ faults: 0 });
+        expect(await b.spend('ws')).toEqual({ spentUsd: 0.07, byRun: { run: 0.07 }, inFlightUsd: 0, uncertainUsd: 0 });
+        const { faults } = await b.records('ws');
+        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300, 400, 500, 600, 700].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be read as a spend entry`)));
+        expect(await a.admit(admitRequest())).toEqual({ fault: expect.stringMatching(/byte 100\b/) });
+        expect(await a.admit(admitRequest({ paid: false, reserveUsd: 0 }))).toEqual({ admitted: true });
+        for (const f of faults) expect(await b.acknowledgeFault(f.id)).toBe(true);
+        expect(await a.admit(admitRequest())).toEqual({ admitted: true });
+        expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.07 });
+      }),
+    );
+
+    it(
+      'records an entry that would give one call the entry id of another as a fault, not an error; the call it names stays counted at its estimate',
+      withBook(async ({ a }) => {
+        const named = admitRequest({ reserveUsd: 0.1 });
+        const other = admitRequest({ reserveUsd: 0.1 });
+        await a.admit(named);
+        await a.admit(other);
+        await a.markSent(named.opId, 'owner-a');
+        const { ledgerEntryId } = await a.settle(other.opId, settlement(0.02));
+        const clash = ledgerEntry(0.03, { id: ledgerEntryId, operationId: named.opId });
+        expect(await a.absorb(batch([ledgerEntry(0.01), clash]))).toEqual({ faults: 1 });
+        expect(await a.spend('ws')).toEqual({ spentUsd: 0.03, byRun: { run: 0.03 }, inFlightUsd: 0.1, uncertainUsd: 0 });
+        expect((await a.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining('Line at byte 100 ') })]);
       }),
     );
 
