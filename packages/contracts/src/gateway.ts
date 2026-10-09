@@ -245,6 +245,12 @@ export class GatewayError extends Error {
   readonly retryable: boolean;
   /** Set on 'budget-exceeded'. */
   budget?: BudgetDetails;
+  /**
+   * Set when the provider was paid for this call and byway then could not keep or record what it bought (its media
+   * could not be stored, its cost or its request and response could not be written). Never retryable: whoever called
+   * must not ask for the same thing again, here or by trying again, because that would pay again.
+   */
+  billed?: true;
   constructor(code: GatewayErrorCode, message: string, retryable = false) {
     super(message);
     this.code = code;

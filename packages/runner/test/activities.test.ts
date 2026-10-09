@@ -269,6 +269,14 @@ describe('an image refused because its prompt holds a provider key (ADR-0088)', 
     expect(tries).toBe(1);
   });
 
+  it('an image the provider made and billed but byway could not keep is not bought again: the step stops and says so', async () => {
+    // The gateway's billed failure (gateway.ts billedFailure): the provider was paid, and a second try would pay again.
+    const billed = Object.assign(new GatewayError('provider-error', 'mock made the image and billed it, but it could not be stored: disk full. It is not retried, because a retry would pay again.'), { billed: true as const });
+    const { outcome, tries } = await attempt(billed);
+    expect(outcome).toBe(billed);
+    expect(tries).toBe(1);
+  });
+
   it('still tries any other refused image again, then finishes skipped, as before', async () => {
     const { outcome, tries } = await attempt(new GatewayError('invalid-request', 'content policy'));
     expect(outcome).toMatchObject({ skipped: true });

@@ -815,7 +815,10 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
  */
 function billedFailure(redact: Redactor, what: string, cause: unknown): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);
-  return new GatewayError('provider-error', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false);
+  const err = new GatewayError('provider-error', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false);
+  // Marked, so a caller with its own tries (an ASSET step's tries per image) stops too.
+  err.billed = true;
+  return err;
 }
 
 /**

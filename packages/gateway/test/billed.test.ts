@@ -125,6 +125,7 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(err).toMatchObject({ code: 'provider-error', retryable: false });
     expect(err.message).toMatch(/billed/);
     expect(err.message).toMatch(/spending records/);
+    expect(err.billed).toBe(true);
     expect(calls).toHaveLength(1);
     // It stays counted at its estimate, as may have been billed, until the person checks it.
     expect((await g.spend('ws-1')).uncertainUsd).toBeGreaterThan(0);
@@ -159,6 +160,8 @@ describe('a billed image is ledgered before anything else can fail (ENG-3)', () 
     expect(err.message).toMatch(/billed/);
     expect(calls).toHaveLength(1);
     expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'image', provider: 'openai' })]);
+    // Marked billed, so a caller with tries of its own (an ASSET step) does not buy it again.
+    expect(err.billed).toBe(true);
   });
 });
 
@@ -176,6 +179,7 @@ describe('a billed clip is ledgered even when keeping it fails (ENG-3, as video(
     expect(err.message).toMatch(/billed/);
     expect(fal.calls.filter((c) => !c.endpoint.includes('extract-frame'))).toHaveLength(1);
     expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'video', provider: 'fal' })]);
+    expect(err.billed).toBe(true);
   });
 });
 

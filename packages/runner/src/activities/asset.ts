@@ -94,6 +94,9 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
         // prompt holding a provider key is one, ADR-0088: trying it again would be refused again; an accounting fault
         // refuses every paid call until the person acknowledges it, ADR-0095).
         if (!(e instanceof GatewayError) || e.code === 'budget-exceeded' || e.code === 'accounting-fault' || e.code === 'no-credentials' || e.code === 'unknown-profile' || isHeldKeyError(e)) throw e;
+        // An image the provider made and billed that byway then could not keep: another try would buy it again, so the
+        // step stops, with the gateway's message saying it was billed and not bought again.
+        if (e.billed) throw e;
       }
     }
   }
