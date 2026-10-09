@@ -86,8 +86,12 @@ interface Unit {
   marked: boolean;
   text: string;
   display: string;
-  lead: string;
-  trail: string;
+  /**
+   * The whitespace before the line's first word, per slot that held it (slot order), and after its last word (last
+   * slot first). Placement keeps each piece in its own slot, so the gap beside an empty icon stays where it was.
+   */
+  lead: Map<number, string>;
+  trail: Map<number, string>;
   wholeLink?: number;
   block: number;
 }
@@ -241,7 +245,18 @@ function makeUnit(p: PageDeck, g: number[]): Unit {
   const links = alt.filter((s) => s.kind === 'link');
   const marked = links.length > 1 || (links.length === 1 && squashHtml(outText) !== '');
   const texts = normSegs(alt.map((s) => ({ kind: s.kind, text: s.slots.map((x) => slotText(p, x)).join('') })));
-  const all = g.map((s) => slotRaw(p, s)).join('');
+  // Edge whitespace per slot, up to the first (and back to the last) slot with anything else in it. A unit always
+  // has such a slot (its text is not empty), so no slot is counted in both.
+  const edge = (order: number[], re: RegExp) => {
+    const m = new Map<number, string>();
+    for (const s of order) {
+      const raw = slotRaw(p, s);
+      const ws = re.exec(raw)![0];
+      m.set(s, ws);
+      if (ws.length < raw.length) break;
+    }
+    return m;
+  };
   const region = p.slots[g[0]!]!.region;
   return {
     slots: g,
@@ -249,8 +264,8 @@ function makeUnit(p: PageDeck, g: number[]): Unit {
     marked,
     text: texts.map((t) => t.text).join(''),
     display: marked ? displayOf(texts) : escMarks(texts.map((t) => t.text).join('')),
-    lead: /^[ \t\n\f\r]*/.exec(all)![0],
-    trail: noHtmlSpace(all) ? /[ \t\n\f\r]*$/.exec(all)![0] : '',
+    lead: edge(g, /^[ \t\n\f\r]*/),
+    trail: edge([...g].reverse(), /[ \t\n\f\r]*$/),
     ...(!marked && links.length === 1 ? { wholeLink: links[0]!.link! } : {}),
     block: p.blockOfRegion.get(region) ?? -1,
   };
@@ -666,7 +681,8 @@ function alignInto(p: PageDeck, group: number[], next: string): Map<number, stri
   while (oc.length && oc.at(-1)!.c === ' ') oc.pop();
   const holding = group.filter((s) => noHtmlSpace(slotText(p, s)));
   const depth = (s: number) => p.slots[s]!.stack.length;
-  const shallowest = (lo: number, hi: number) => group.filter((s) => s >= lo && s <= hi).reduce((x, y) => (depth(y) < depth(x) ? y : x));
+  /** The shallowest slot in [lo, hi]; of equally shallow ones the first, or the last when `nearHi`. */
+  const shallowest = (lo: number, hi: number, nearHi = false) => group.filter((s) => s >= lo && s <= hi).reduce((x, y) => (depth(y) < depth(x) || (nearHi && depth(y) === depth(x)) ? y : x));
   if (holding.length <= 1) {
     out.set(holding[0] ?? shallowest(group[0]!, group.at(-1)!), next);
     return out;
@@ -729,9 +745,12 @@ function alignInto(p: PageDeck, group: number[], next: string): Map<number, stri
     let target: number;
     if (om.length) target = shallowest(Math.min(...om), Math.max(...om));
     else {
-      const left = ns.slice(0, na + pp).filter((x) => x !== undefined).at(-1) ?? group[0]!;
+      const left = ns.slice(0, na + pp).filter((x) => x !== undefined).at(-1);
       const right = ns.slice(n1 - q).find((x) => x !== undefined) ?? group.at(-1)!;
-      target = left === right ? left : shallowest(Math.min(left, right), Math.max(left, right));
+      // Words added before the line's first kept word go beside it: of equally shallow slots, the nearest, so an empty
+      // icon at the line's start stays before the words.
+      if (left === undefined) target = shallowest(group[0]!, right, true);
+      else target = left === right ? left : shallowest(Math.min(left, right), Math.max(left, right));
     }
     for (let k = na + pp; k < n1 - q; k++) ns[k] = target;
     if (a < ow.length) {
@@ -793,10 +812,23 @@ function place(before: string, edit: PageEdit): Placed {
         for (const [s, x] of alignInto(p, seg.slots, t)) texts.set(s, `${texts.get(s) ?? ''}${x}`);
       });
     }
-    const first = u.slots[0]!;
-    const last = u.slots.at(-1)!;
-    texts.set(first, `${u.lead}${texts.get(first)}`);
-    texts.set(last, `${texts.get(last)}${u.trail}`);
+    // Edge whitespace goes back into the slots that held it. Where the new words start after such a slot (or end
+    // before one), its whitespace joins the new words' edge instead, so it never lands between two words.
+    const placedIn = u.slots.filter((s) => texts.get(s) !== '');
+    const firstNew = placedIn[0];
+    const lastNew = placedIn.at(-1);
+    let lead = '';
+    for (const [s, ws] of u.lead) {
+      if (firstNew === undefined || s < firstNew) texts.set(s, `${ws}${texts.get(s)}`);
+      else lead += ws;
+    }
+    if (firstNew !== undefined) texts.set(firstNew, `${lead}${texts.get(firstNew)}`);
+    let trail = '';
+    for (const [s, ws] of u.trail) {
+      if (lastNew === undefined || s > lastNew) texts.set(s, `${texts.get(s)}${ws}`);
+      else trail = `${ws}${trail}`;
+    }
+    if (lastNew !== undefined) texts.set(lastNew, `${texts.get(lastNew)}${trail}`);
     for (const [s, t] of texts) newText.set(s, t);
   });
   for (const [s, t] of newText) {
@@ -881,7 +913,7 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     if (!line || !line.changed) return slotRaw(p, s);
     if (line.text) return undefined;
     const u = p.units[i]!;
-    return `${s === u.slots[0] ? u.lead : ''}${s === u.slots.at(-1) ? u.trail : ''}`;
+    return `${u.lead.get(s) ?? ''}${u.trail.get(s) ?? ''}`;
   };
   const afterTextAt = (beforeTok: number): string => {
     const end = beforeTok === p.tokens.length ? a.length : map.get(beforeTok)!;
@@ -903,6 +935,8 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     else chains.set(t, [s]);
   });
   const slotAfter = new Map<number, string>(); // each kept before slot's text in the written page
+  const alone = new Set<number>(); // kept slots no removal merged with another: their written text is exactly theirs
+  for (const ss of chains.values()) if (ss.length === 1) alone.add(ss[0]!);
   const problems: string[] = [];
   for (const [tok, ss] of chains) {
     const got = afterTextAt(tok);
@@ -930,6 +964,17 @@ function verify(before: string, after: string, edit: PageEdit, witness: Witness)
     if (!line.changed) return;
     const text = decodeText(u.slots.map((s) => slotAfter.get(s) ?? '').join('')).replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '');
     if (text !== line.text) problems.push(`Line ${i + 1} must read exactly "${line.text}" (it reads "${text}").`);
+    // Edge whitespace stays in its slot: each slot before the first that holds words keeps exactly the whitespace it
+    // held, and that first slot still starts with its own (the same at the end). Slots a removal merged are skipped.
+    const at = (s: number) => slotAfter.get(s) ?? '';
+    const words = line.text ? u.slots.filter((s) => noHtmlSpace(at(s))) : [];
+    if (words.length) {
+      const f = words[0]!;
+      const l = words.at(-1)!;
+      const leadMoved = [...u.lead].some(([s, ws]) => alone.has(s) && (s < f ? at(s) !== ws : s === f && !at(s).startsWith(ws)));
+      const trailMoved = [...u.trail].some(([s, ws]) => alone.has(s) && (s > l ? at(s) !== ws : s === l && !at(s).endsWith(ws)));
+      if (leadMoved || trailMoved) problems.push(`Line ${i + 1}: the space before or after its words moved.`);
+    }
     const unitSlots = new Set(u.slots);
     u.segs.forEach((seg, k) => {
       if (seg.kind !== 'link') return;

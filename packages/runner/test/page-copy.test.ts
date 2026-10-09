@@ -105,6 +105,23 @@ describe('the deck and exact placement (F07)', () => {
     expect(run(NAV, set(2, 'How it works'))).toMatchObject(clean('<nav><a href="#how">How it works</a><a href="#start">How it works</a></nav>'));
   });
 
+  it('space at a line\'s edges stays in the slot that held it, so an icon keeps its gap (r2)', () => {
+    expect(run('<ul><li><i class="icon"></i> Fast delivery</li></ul>', set(1, 'Faster delivery'))).toMatchObject(clean('<ul><li><i class="icon"></i> Faster delivery</li></ul>'));
+    expect(run('<p>Fast delivery <i class="icon"></i></p>', set(1, 'Faster delivery'))).toMatchObject(clean('<p>Faster delivery <i class="icon"></i></p>'));
+    expect(run('<p><span class="badge"></span> New arrivals</p>', set(1, 'Old arrivals'))).toMatchObject(clean('<p><span class="badge"></span> Old arrivals</p>'));
+    expect(run('<p><a href="/shop" aria-label="Shop"><img src="a.png"></a> Shop now</p>', set(1, 'Shop later'))).toMatchObject(clean('<p><a href="/shop" aria-label="Shop"><img src="a.png"></a> Shop later</p>'));
+    expect(run('<p><a href="/shop"><img src="a.png" alt="Shop"></a> Shop now</p>', set(1, 'Shop later'))).toMatchObject(clean('<p><a href="/shop"><img src="a.png" alt="Shop"></a> Shop later</p>'));
+    expect(run('<p>Follow us <a href="https://x.com/b"><svg width="10" height="10"></svg></a></p>', set(1, 'Follow me'))).toMatchObject(clean('<p>Follow me <a href="https://x.com/b"><svg width="10" height="10"></svg></a></p>'));
+    expect(run('<p> <i class="icon"></i>\n  Fast delivery\n</p>', set(1, 'Faster delivery'))).toMatchObject(clean('<p> <i class="icon"></i>\n  Faster delivery\n</p>'));
+    // Words added before the first words go beside them, after the icon; formatting still takes the shallowest slot.
+    expect(run('<ul><li><i class="icon"></i> Fast delivery</li></ul>', set(1, 'Free Fast delivery'))).toMatchObject(clean('<ul><li><i class="icon"></i> Free Fast delivery</li></ul>'));
+    expect(run('<ul><li><i class="icon"></i> Fast <b>delivery</b></li></ul>', set(1, 'Free Fast delivery'))).toMatchObject(clean('<ul><li><i class="icon"></i> Free Fast <b>delivery</b></li></ul>'));
+    expect(run('<p><b>Bold</b> plain</p>', set(1, 'Very Bold plain'))).toMatchObject(clean('<p>Very <b>Bold</b> plain</p>'));
+    // The verifier holds edge space to its slot too: a page that moved it across the icon is refused.
+    const icon = pageOf('<ul><li><i class="icon"></i> Fast delivery</li></ul>');
+    expect(verifyBad(icon, pageOf('<ul><li> <i class="icon"></i>Faster delivery</li></ul>'), 'T\nFaster delivery')).toEqual(['Line 2: the space before or after its words moved.']);
+  });
+
   it('one bracket grammar on every line', () => {
     const NAV = '<nav><a href="#how">How it works</a><a href="#start">Contact</a></nav>';
     expect(run(NAV, set(2, '[Contact us]'))).toMatchObject(clean('<nav><a href="#how">How it works</a><a href="#start">Contact us</a></nav>'));

@@ -349,6 +349,8 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(q.offered).toBe('T\nFresh Bakery\nFollow us');
     const out = await q.answer('T\nWarm Bakery\nFollow me');
     expect(pageCopy(await b.store.artifacts.getText(out.artifactId!))).toEqual(['T', 'Warm Bakery', 'Follow me']);
+    // The space beside each image stays outside its link.
+    expect(await stored(out.artifactId!)).toBe('<h1><a href="/"><img src="logo.png" alt="Bakery"></a> Warm Bakery</h1><p>Follow me <a href="https://x.com/b"><svg width="10" height="10"></svg></a></p>');
     expect(b.gateway.requests).toEqual([]);
   });
 
