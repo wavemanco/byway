@@ -857,6 +857,20 @@ describe('a link or button keeps words a browser shows (F07, r7)', () => {
   });
 });
 
+describe('markup that is not copy stays byte for byte (F07, r7)', () => {
+  it('an emptied element holding a script, style, noscript, template or comment is kept, with those bytes', () => {
+    for (const inner of ['<script>window.x=1</script>', '<noscript>Enable JS</noscript>', '<template><p>T</p></template>', '<!-- keep -->', '<style>p{}</style>']) {
+      expect(run(`<p>Hello <span>world${inner}</span></p>`, set(1, 'Hello'))).toMatchObject(clean(`<p>Hello<span>${inner}</span></p>`));
+    }
+    // A comment does not end a line; raw text does.
+    expect(run('<p>Hello <b>world<!-- keep --></b> again</p>', set(1, 'Hello again'))).toMatchObject(clean('<p>Hello <b><!-- keep --></b>again</p>'));
+    expect(run('<p>Hello <b>world<script>x()</script></b> again</p>', set(1, 'Hello'))).toMatchObject(clean('<p>Hello<b><script>x()</script></b> again</p>'));
+    expect(run('<div><p>Gone<!-- c --></p><p>Stay</p></div>', set(1, ''))).toMatchObject(clean('<div><p><!-- c --></p><p>Stay</p></div>'));
+    // Without one, an emptied element goes as before.
+    expect(run('<p>Hello <span>world</span></p>', set(1, 'Hello'))).toMatchObject(clean('<p>Hello</p>'));
+  });
+});
+
 describe('questions in flight across the upgrade (F07)', () => {
   const pg = '<p>Intro</p><p>Please <a href="/terms">read terms</a> today.</p>';
   const oldOffered = 'T\nIntro\nPlease read terms today.';

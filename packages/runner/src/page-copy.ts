@@ -103,6 +103,11 @@ const HEAD_CONTENT = new Set(['base', 'basefont', 'bgsound', 'link', 'meta', 'no
 const AAA_DEPTH = 8;
 /** Elements a person sees without text: a link or button holding one keeps a visible face. */
 const EMBEDDED = new Set(['img', 'svg', 'picture', 'video', 'audio', 'iframe', 'canvas', 'object', 'embed', 'input', 'select', 'textarea', 'button']);
+/**
+ * Raw text that is markup, not copy (page behaviour, or text the deck does not offer): an element holding one is kept, so
+ * its bytes stay. Textarea and iframe are EMBEDDED.
+ */
+const RAW_KEPT = new Set(['script', 'style', 'noscript', 'template', 'xmp', 'noembed', 'noframes', 'plaintext']);
 /** Blocks whose removal (when emptied) leaves no hole: everything else (a cell, a <dd>, a wrapper) is kept empty. */
 const TEXT_BLOCKS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'figcaption']);
 /**
@@ -1037,8 +1042,9 @@ interface Marks {
   /** Start tags of elements a person sees without text (EMBEDDED). */
   embedded: Int32Array;
   /**
-   * Start tags that are embedded, carry a hook, or that browsers move out of a table (PageDeck.fostered): an element
-   * holding one is never removed.
+   * Start tags that are embedded, carry a hook, or that browsers move out of a table (PageDeck.fostered), and markup that
+   * is not the person's copy (a script, style, noscript, template or other raw text, a comment): an element holding one
+   * is never removed, so those bytes stay.
    */
   kept: Int32Array;
   /** Start tags whose own aria-label or aria-labelledby, or (an image's) alt, is filled: they name what holds them. */
@@ -1055,10 +1061,11 @@ function markOf(p: PageDeck): Marks {
     let e = 0;
     let k = 0;
     let nm = 0;
-    if (t.kind === 'tag' && !t.closing) {
+    if (t.kind === 'other') k = 1;
+    else if (t.kind === 'tag' && !t.closing) {
       const attrs = attributesOf(t.raw);
       e = EMBEDDED.has(t.name) ? 1 : 0;
-      k = e || attrs.some((a) => isHook(a.name)) || p.fostered[i] ? 1 : 0;
+      k = e || RAW_KEPT.has(t.name) || attrs.some((a) => isHook(a.name)) || p.fostered[i] ? 1 : 0;
       nm = filled(attrs, (x) => x === 'aria-label' || x === 'aria-labelledby' || (x === 'alt' && ALT_NAMED.has(t.name))) ? 1 : 0;
     }
     m.embedded[i + 1] = m.embedded[i]! + e;

@@ -487,6 +487,13 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(b.gateway.requests).toEqual([]);
   });
 
+  it('a script, noscript or comment inside an element the edit empties stays, byte for byte (r7)', async () => {
+    for (const inner of ['<script>window.x=1</script>', '<noscript>Enable JS</noscript>', '<!-- keep -->']) {
+      const out = await (await open(page(`<p>Hello <span>world${inner}</span></p>`))).answer('T\nHello');
+      expect(await stored(out.artifactId!)).toBe(`<p>Hello<span>${inner}</span></p>`);
+    }
+  });
+
   it('an answer equal to the offer writes nothing, whatever its whitespace', async () => {
     const q = await open(page('<h1>Head</h1><p>Sub</p>'));
     expect((await q.answer('T\n  Head \nSub\n\n')).artifactId).toBeUndefined();
