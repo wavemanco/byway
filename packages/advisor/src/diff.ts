@@ -27,7 +27,7 @@ import {
   type Step,
   type VoiceScope,
 } from '@byway/recipe';
-import { stepLabel } from './present.ts';
+import { labelsIn } from './present.ts';
 
 /**
  * A composed recipe described as a diff from its nearest canonical recipe, in plain words (ADR-0058: "shown as a diff
@@ -223,11 +223,19 @@ const MEDIUM_WORDS: Readonly<Record<Medium, string>> = {
 };
 const mediumWords = (m: Medium | undefined) => (m ? MEDIUM_WORDS[m] : 'an unspecified kind of work');
 
-/** Labels by node id, from the nearest recipe's presentation (what the person saw in the Library). */
-type Labels = (id: string) => string | undefined;
+/**
+ * How the person knows one recipe's steps: by node id, the label the nearest recipe's presentation showed (what the
+ * person saw in the Library); else the step's plain label where it sits in that recipe (present.ts labelsIn), so a
+ * label that says something about the steps around a step is true of the recipe it names. Labels only name what the
+ * comparison found: a label that differs between the two recipes is never by itself a change.
+ */
+interface Labels {
+  shown: (id: string) => string | undefined;
+  plain: (n: Step | Pick) => string;
+}
 
 /** A step or pick as the person knows it: its shown label, and the stage it runs in. */
-const named = (p: Placed<Step | Pick>, labels: Labels) => `${labels(p.node.id) ?? stepLabel(p.node)} (${STAGE_NAMES[p.stage]})`;
+const named = (p: Placed<Step | Pick>, labels: Labels) => `${labels.shown(p.node.id) ?? labels.plain(p.node)} (${STAGE_NAMES[p.stage]})`;
 
 /** What a loop or a replicate repeats: the first step in its body that is not a render, as the person knows it. */
 function bodyLabel(n: Node, labels: Labels): string {
@@ -236,7 +244,7 @@ function bodyLabel(n: Node, labels: Labels): string {
     if (!lead && (c.op === 'pick' || (c.op === 'step' && c.role !== 'render'))) lead = c;
   });
   if (!lead) return 'the work';
-  return labels(n.op === 'loop' || n.op === 'replicate' ? n.id : lead.id) ?? labels(lead.id) ?? stepLabel(lead);
+  return labels.shown(n.op === 'loop' || n.op === 'replicate' ? n.id : lead.id) ?? labels.shown(lead.id) ?? labels.plain(lead);
 }
 
 function loopWords(l: Loop): string {
@@ -416,7 +424,7 @@ function firstLabel(n: Node, labels: Labels): string {
   walkNode(n, '', 'D1', (c) => {
     if (!lead && (c.op === 'pick' || (c.op === 'step' && c.role !== 'render'))) lead = c;
   });
-  return (lead && (labels(lead.id) ?? stepLabel(lead))) ?? 'the work';
+  return (lead && (labels.shown(lead.id) ?? labels.plain(lead))) ?? 'the work';
 }
 
 /**
@@ -429,9 +437,9 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
   const b = collect(composed);
   const lines: string[] = [];
   let other = false;
-  const shown: Labels = (id) => (nearestPresentation ? presentedStepFor(nearestPresentation, id)?.label : undefined);
+  const shown: Labels = { shown: (id) => (nearestPresentation ? presentedStepFor(nearestPresentation, id)?.label : undefined), plain: labelsIn(nearest) };
   // The composed recipe's own steps are named from its blocks and roles: a nearest label could name something else there.
-  const own_: Labels = () => undefined;
+  const own_: Labels = { shown: () => undefined, plain: labelsIn(composed) };
   const media: [Medium | undefined, Medium | undefined] = [nearest.medium, composed.medium];
 
   if (composed.medium !== nearest.medium) lines.push(`Makes ${mediumWords(composed.medium)} instead of ${mediumWords(nearest.medium)}.`);
@@ -509,7 +517,7 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
   for (const [x, y] of audits.pairs) if (differs(own(x.node) as Json, own(y.node) as Json)) other = true;
 
   const gates = pair(a.gates, b.gates, () => 'gate');
-  const gateName = (p: Placed<OneShotGate>, labels: Labels) => `${labels(p.node.id) ?? 'Final check'} (${STAGE_NAMES[p.stage]})`;
+  const gateName = (p: Placed<OneShotGate>, labels: Labels) => `${labels.shown(p.node.id) ?? 'Final check'} (${STAGE_NAMES[p.stage]})`;
   for (const r of gates.removed) lines.push(`Removed: ${gateName(r, shown)}`);
   for (const x of gates.added) lines.push(`Added: a final check (${STAGE_NAMES[x.stage]})${x.node.retry ? `, which re-runs ${STAGE_NAMES[x.node.retry.stage]} on a fail` : ''}`);
   for (const [x, y] of gates.pairs) {

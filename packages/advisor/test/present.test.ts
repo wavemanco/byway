@@ -1,5 +1,5 @@
 import { c1, c2, c4, c5, c6, c6a, c7, PROTOCOL_CONFIGS, presentationOf, presentedStepFor } from '@byway/catalog';
-import { walk, withHash, type Node, type Recipe } from '@byway/recipe';
+import { lockedScripts, walk, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
 import { checkAnswer, COMPOSED_EXPLAINERS, diffFromNearest, nodeIds, presentComposed, stepLabel } from '../src/index.ts';
 import { fencedJson, PROMPTS } from './helpers.ts';
@@ -237,9 +237,16 @@ describe('explainers claim only what the recipe establishes about the steps arou
     if (c.lenses) c.lenses = c.lenses.map((l: N) => ({ ...l, body: mapNodes(l.body, f) }));
     return f(c);
   };
-  const edited = (r: Recipe, id: string, f: (s: N) => N): N => {
+  /** The recipe with the node of this id replaced by f(it), and `next` placed right after it in its seq. */
+  const edited = (r: Recipe | N, id: string, f: (s: N) => N, next?: N): N => {
     const { hash: _h, ...rest } = structuredClone(r) as N;
-    return { ...rest, stages: rest.stages.map((st: N) => ({ ...st, body: mapNodes(st.body, (n) => (n.id === id ? f(n) : n)) })) };
+    const place = (n: N): N => (next && n.steps ? { ...n, steps: n.steps.flatMap((x: N) => (x.id === id ? [x, next] : [x])) } : n);
+    return { ...rest, stages: rest.stages.map((st: N) => ({ ...st, body: mapNodes(st.body, (n) => place(n.id === id ? f(n) : n)) })) };
+  };
+  /** The recipe without the node of this id. */
+  const removed = (r: Recipe, id: string): N => {
+    const { hash: _h, ...rest } = structuredClone(r) as N;
+    return { ...rest, stages: rest.stages.map((st: N) => ({ ...st, body: mapNodes(st.body, (n) => (n.steps ? { ...n, steps: n.steps.filter((x: N) => x.id !== id) } : n)) })) };
   };
   /** The composed recipe as admission keeps it; fails the test when admission refuses it. */
   const admitted = (raw: N, nearest: Recipe): Recipe => {
@@ -285,6 +292,34 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(explained(again, 'vo-script')).not.toMatch(/locked/);
     expect(explained(again, 'vo-script')).toBe(E.voiceScript);
     expect(explained(again, 'voice')).toBe(E.voiceOnScreen);
+    // Nor the second: C5's launch check re-runs Refine and Finish on a fail, and the person is asked for it again.
+    expect(explained(again, 'script-again')).toBe(E.voiceScript);
+  });
+
+  it('a script is locked exactly where the run says so (lockedScripts): the last word on it, which nothing asks for again', () => {
+    const script = (n: N) => ({ ...n, id: 'script-again', variant: 'VOICE-early' });
+    const noRetry = (n: N) => {
+      const { retry: _r, ...rest } = n;
+      return rest;
+    };
+    const again = admitted(edited(c5, 'voice', (n) => ({ op: 'seq', steps: [script(n), n] })), c5);
+    const last = admitted(edited(edited(c5, 'voice', (n) => ({ op: 'seq', steps: [script(n), n] })), 'launch-gate', noRetry), c5);
+    expect(explained(last, 'vo-script')).toBe(E.voiceScript);
+    expect(explained(last, 'script-again')).toBe(E.voiceScriptLocked);
+    // A launch check that re-runs Explore asks for C5's own script again.
+    const rerun = admitted(edited(c5, 'launch-gate', (n) => ({ ...n, retry: { stage: 'D1', times: 1 } })), c5);
+    expect(explained(rerun, 'vo-script')).toBe(E.voiceScript);
+    // A claim log's corrections replace claims wherever they stand, the voice-over included.
+    const claims = admitted(edited(c5, 'voice', (n) => ({ op: 'seq', steps: [n, { ...n, id: 'claims', variant: 'claim-log' }] })), c5);
+    expect(explained(claims, 'vo-script')).toBe(E.voiceScript);
+    // The explainer and the run read one rule.
+    for (const r of [asComposed(c5), again, last, rerun, claims]) {
+      for (const id of ['vo-script', 'script-again']) {
+        if (!nodeIds(r).includes(id)) continue;
+        const locked = [...lockedScripts(r)].some((x) => x.id === id);
+        expect(explained(r, id) === E.voiceScriptLocked, `${r.id} ${id}`).toBe(locked);
+      }
+    }
   });
 
   it('a trim whose marks an AI writer takes in, beside it or a step later, never says nothing is deleted', () => {
@@ -294,6 +329,64 @@ describe('explainers claim only what the recipe establishes about the steps arou
     const render = { op: 'step', id: 'extra-render', role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] };
     const later = admitted(edited(c7, 'apply-scope-cut', (n) => ({ op: 'seq', steps: [render, n] })), c7);
     expect(explained(later, 'scope-cut')).toBe(E.cut);
+  });
+
+  it('a model VISION with no step of yours after it is labelled and explained without "to react to", and the diff names only what changed', () => {
+    for (const [r, drop, id] of [[c7, 'spec', 'interview'], [c6, 'react', 'angles']] as const) {
+      const without = admitted(removed(r, drop), r);
+      const step = presentComposed(without, COPY).stages.flatMap((s) => s.steps).find((s) => s.stepIds.includes(id))!;
+      expect(step).toMatchObject({ label: 'Directions', explainer: E.visionAi });
+      // The label moved with the context, which is never by itself a change: only the removed step is reported.
+      expect(diffFromNearest(without, r, 'x', presentationOf(r.id))).toEqual(['Removed: Your direction (Explore)']);
+      expect(presentComposed(asComposed(r), COPY).stages.flatMap((s) => s.steps).find((s) => s.stepIds.includes(id))!.label).toBe('Directions to react to');
+    }
+    // Without the recipe around it, the label claims nothing about the steps after it.
+    const vision: Step = { op: 'step', id: 'v', role: 'vision', block: 'VISION', actor: 'model', consumes: [], produces: ['taste'] };
+    expect(stepLabel(vision)).toBe('Directions');
+  });
+
+  it('the diff names an added step as the composed recipe has it where it sits', () => {
+    /** C7's AI spec interview, under another id. */
+    const extra = (id: string): N => {
+      let found: N | undefined;
+      walk(c7, (n) => {
+        if (n.op === 'step' && n.id === 'interview') found = { ...structuredClone(n), id };
+      });
+      return found!;
+    };
+    const before = asComposed(edited(c7, 'spec', (n) => ({ op: 'seq', steps: [extra('second-interview'), n] })) as Recipe);
+    expect(diffFromNearest(before, c7, 'x', presentationOf('c7'))).toContain('Added: Directions to react to (Explore), when it applies');
+    const late = asComposed(edited(c7, 'voice', (n) => ({ op: 'seq', steps: [n, extra('late-interview')] })) as Recipe);
+    expect(diffFromNearest(late, c7, 'x', presentationOf('c7'))).toContain('Added: Directions (Finish)');
+  });
+
+  it('a step with no executor in this version says it is skipped, and a writer after it is not said to apply its findings', () => {
+    const tool = (n: N): N => {
+      const { tier: _t, prompt: _p, isolated: _i, frozenPrompt: _f, ...rest } = n;
+      return { ...rest, actor: 'tool' };
+    };
+    const r = admitted(edited(c7, 'defect-check', tool), c7);
+    const steps = presentComposed(r, COPY).stages.flatMap((s) => s.steps);
+    expect(steps.find((s) => s.stepIds.includes('defect-check'))).toMatchObject({ label: 'Defect check', who: 'tool', explainer: E.skipped, stepIds: ['defect-render', 'defect-check'] });
+    expect(steps.find((s) => s.stepIds.includes('fix-defects'))).toMatchObject({ label: 'Revise', who: 'ai', explainer: E.fix });
+  });
+
+  it('a seed outside a fan-out is one session, not separate ones', () => {
+    const one = admitted(edited(c1, 'seeded-x4', (n) => ({ ...n, n: 1 })), c1);
+    expect(explained(one, 'seed-build')).toBe(E.seedOne);
+    expect(E.seedOne).not.toMatch(/[Ss]eparate|sessions/);
+    expect(explained(admitted(copy(c1), c1), 'seed-build')).toBe(E.seed);
+  });
+
+  it('a step of yours that puts another critique in place of the sweep’s finds: no one is asked which to swap, and nothing says so', () => {
+    const between = { op: 'step', id: 'between', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['critique'] };
+    for (const r of [c1, c7]) {
+      const replaced = admitted(edited(r, 'tells-sweep', (n) => n, between), r);
+      const steps = presentComposed(replaced, COPY).stages.flatMap((s) => s.steps);
+      expect(steps.find((s) => s.stepIds.includes('tells-sweep'))!.explainer).toBe(E.tells);
+      expect(steps.find((s) => s.stepIds.includes('apply-swaps'))!.explainer).toBe(E.fix);
+      expect(diffFromNearest(replaced, r, 'x', presentationOf(r.id))).toContain('Changed: Cliché sweep (Finish): no longer asks you which of its finds to swap');
+    }
   });
 
   it('a cliché sweep whose finds an AI writer reads swaps every one, never "flags only"', () => {
@@ -335,5 +428,132 @@ describe('explainers claim only what the recipe establishes about the steps arou
     expect(E.cut).not.toMatch(/deleted/);
     expect(E.tells).not.toMatch(/only/);
     expect(E.visionAi).not.toMatch(/react/);
+  });
+});
+
+/**
+ * F08 round 4: every catalog recipe as composed, step by step, with what it is said to do. Each line was checked
+ * against what the runner runs: the obvious-answer check's plain drafts never become the work; C5's motion outside the
+ * chain is one clip from the latest start frame; its compositing and voice-over audio have no executor in this version
+ * and finish skipped (ADR-0069); a seed in a fan-out is separate sessions; a script is locked only where nothing asks
+ * for it again. A change to any of them is a change to what a person is told, made here on purpose.
+ */
+describe('every catalog recipe as composed, as it is presented (F08 round 4)', () => {
+  type Key = keyof typeof COMPOSED_EXPLAINERS;
+  const PRESENTED: Record<string, [string, string, string, string, Key][]> = {
+    c1: [
+      ['Explore', 'Random spark', 'ai', 'seeded-x4,seed-build', 'seed'],
+      ['Refine', 'Outside critique', 'ai', 'each-candidate,critic-loop,render,critic,critic-fix', 'criticApplies'],
+      ['Refine', 'Custom imagery', 'ai', 'asset-if-plain,asset', 'asset'],
+      ['Refine', 'Pick one', 'you', 'asset-verify,pick-one', 'pickYours'],
+      ['Finish', 'Trim', 'you', 'cut-render,cut,apply-cut', 'cutYoursApplies'],
+      ['Finish', 'Cliché sweep', 'ai', 'tells-render,tells-sweep,apply-swaps', 'tellsApplies'],
+      ['Finish', 'Keep or revert', 'you', 'compare-render,tells-compare', 'tellsCompare'],
+      ['Finish', 'Your words', 'you', 'voice', 'voice'],
+      ['Finish', 'Defect check', 'ai', 'final-render,critic-check', 'criticCheck'],
+    ],
+    c2: [
+      ['Explore', 'Random spark', 'ai', 'seeded-options,seed-option', 'seed'],
+      ['Explore', 'Merge near-duplicates', 'ai', 'dedupe', 'dedupe'],
+      ['Explore', 'Draft', 'ai', 'pool-render,annotate,vanilla-x3,vanilla-build', 'aside'],
+      ['Explore', 'Obvious-answer check', 'ai', 'vanilla-flag', 'overlap'],
+      ['Explore', 'Outside critique', 'ai', 'critic', 'critic'],
+      ['Explore', 'Your direction', 'you', 'vision,react', 'visionYours'],
+      ['Explore', 'Directions to react to', 'ai', 'sharpen', 'visionAiToReact'],
+      ['Explore', 'Draft', 'ai', 'option-map', 'build'],
+      ['Explore', 'Your words', 'you', 'voice', 'voice'],
+      ['Explore', 'Custom imagery', 'ai', 'mood-boards-if-wanted,mood-boards', 'asset'],
+    ],
+    c3: [
+      ['Explore', 'Random spark', 'ai', 'seeded-angles,seed-angle', 'seed'],
+      ['Explore', 'Draft', 'ai', 'cards-render,vanilla-check,vanilla-x3,vanilla-build', 'aside'],
+      ['Explore', 'Obvious-answer check', 'ai', 'vanilla-flag', 'overlap'],
+      ['Explore', 'Pick one', 'you', 'pick-angle', 'pickYours'],
+      ['Explore', 'Your direction', 'you', 'thesis', 'visionYours'],
+      ['Refine', 'Draft', 'ai', 'draft,ai-draft', 'build'],
+      ['Refine', 'Your draft', 'you', 'own-draft', 'buildYours'],
+      ['Refine', 'Outside critique', 'ai', 'critic-loop,render,critic,revise', 'criticApplies'],
+      ['Refine', 'Custom imagery', 'ai', 'asset-if-wanted,asset', 'asset'],
+      ['Finish', 'Trim', 'you', 'cut-render,cut,apply-cut', 'cutYoursApplies'],
+      ['Finish', 'Cliché sweep', 'ai', 'tells-render,tells-sweep,apply-swaps', 'tellsApplies'],
+      ['Finish', 'Keep or revert', 'you', 'compare-render,tells-compare', 'tellsCompare'],
+      ['Finish', 'Your words', 'you', 'voice', 'voice'],
+    ],
+    c4: [
+      ['Explore', 'Directions to react to', 'ai', 'framings-if-wanted,framings', 'visionAiToReact'],
+      ['Explore', 'Your direction', 'you', 'vision-lite', 'visionYours'],
+      ['Refine', 'Draft', 'ai', 'draft', 'build'],
+      ['Refine', 'Outside critique', 'ai', 'recipient-critic,critic-loop,render,recipient,revise', 'criticApplies'],
+      ['Finish', 'Trim', 'you', 'cut-render,cut,apply-cut', 'cutYoursApplies'],
+      ['Finish', 'Cliché sweep', 'ai', 'tells-render,tells-sweep,apply-swaps', 'tellsApplies'],
+      ['Finish', 'Keep or revert', 'you', 'compare-render,tells-compare', 'tellsCompare'],
+      ['Finish', 'Your words', 'you', 'voice', 'voiceKeyLinesAiRest'],
+      ['Finish', 'Your words', 'you', 'claim-log,claim-sign-off', 'voiceClaims'],
+    ],
+    c5: [
+      ['Explore', 'Random spark', 'ai', 'seeded-territories,seed-territory', 'seed'],
+      ['Explore', 'Merge near-duplicates', 'ai', 'dedupe', 'dedupe'],
+      ['Explore', 'Draft', 'ai', 'territories-render,vanilla-check,vanilla-x3,vanilla-build', 'aside'],
+      ['Explore', 'Obvious-answer check', 'ai', 'vanilla-flag', 'overlap'],
+      ['Explore', 'Pick 3', 'you', 'shortlist', 'pickYours'],
+      ['Explore', 'Your direction', 'you', 'direction', 'visionYours'],
+      ['Explore', 'Draft', 'ai', 'concepts,concept', 'build'],
+      ['Explore', 'Pick one', 'you', 'pick-concept', 'pickYours'],
+      ['Explore', 'Your words', 'you', 'vo-script', 'voiceScriptLocked'],
+      ['Refine', 'Custom imagery', 'ai', 'anchor-frames', 'asset'],
+      ['Refine', 'Motion', 'ai', 'shot-chain,clip', 'relay'],
+      ['Refine', 'Defect check', 'ai', 'shot-repair,shot-render,shot-check,regenerate', 'checkApplies'],
+      ['Refine', 'Motion', 'ai', 'render-in-scene', 'relayOne'],
+      ['Refine', 'Composite', 'tool', 'matte', 'compositingSkipped'],
+      ['Refine', 'Voice-over audio', 'ai', 'vo-audio', 'audioSkipped'],
+      ['Finish', 'Trim', 'you', 'cut-render,cut,apply-cut', 'cutYoursApplies'],
+      ['Finish', 'Cliché sweep', 'ai', 'tells-render,tells-sweep,apply-swaps', 'tellsApplies'],
+      ['Finish', 'Keep or revert', 'you', 'compare-render,tells-compare', 'tellsCompare'],
+      ['Finish', 'Your words', 'you', 'voice', 'voiceOnScreen'],
+      ['Finish', 'Outside critique', 'ai', 'feed-render,launch-gate,gate-critic', 'critic'],
+    ],
+    c6: [
+      ['Explore', 'Directions to react to', 'ai', 'angles-if-wanted,angles', 'visionAiToReact'],
+      ['Explore', 'Your direction', 'you', 'react', 'visionYours'],
+      ['Refine', 'Your draft', 'you', 'author-loop,write', 'buildYours'],
+      ['Refine', 'Trim marks', 'ai', 'render,audit,cut-marks', 'cutNothingDeleted'],
+      ['Refine', 'Cliché sweep', 'ai', 'tells-flags', 'tellsFlagsOnly'],
+      ['Refine', 'Outside critique', 'ai', 'critic', 'critic'],
+      ['Finish', 'Your words', 'you', 'voice', 'voice'],
+    ],
+    c6a: [
+      ['Explore', 'Random spark', 'ai', 'seeded-cards,seed-card', 'seed'],
+      ['Explore', 'Draft', 'ai', 'cards-render,vanilla-check,vanilla-x3,vanilla-build', 'aside'],
+      ['Explore', 'Obvious-answer check', 'ai', 'vanilla-flag', 'overlap'],
+      ['Explore', 'Pick one', 'you', 'pick-card', 'pickYours'],
+      ['Explore', 'Your direction', 'you', 'vision,react', 'visionYours'],
+      ['Explore', 'Directions to react to', 'ai', 'sharpen', 'visionAiToReact'],
+      ['Refine', 'Your draft', 'you', 'author-loop,write', 'buildYours'],
+      ['Refine', 'Trim marks', 'ai', 'render,audit,cut-marks', 'cutNothingDeleted'],
+      ['Refine', 'Cliché sweep', 'ai', 'tells-flags', 'tellsFlagsOnly'],
+      ['Refine', 'Outside critique', 'ai', 'critic', 'critic'],
+      ['Finish', 'Your words', 'you', 'voice', 'voice'],
+      ['Finish', 'Cliché sweep', 'ai', 'final-tells-read,final-read,final-render,final-tells-flags', 'tellsFlagsOnly'],
+    ],
+    c7: [
+      ['Explore', 'Directions to react to', 'ai', 'spec-interview,interview', 'visionAiToReact'],
+      ['Explore', 'Your direction', 'you', 'spec', 'visionYours'],
+      ['Refine', 'Draft', 'ai', 'implement', 'build'],
+      ['Refine', 'Defect check', 'ai', 'defect-render,defect-check,fix-defects', 'checkApplies'],
+      ['Refine', 'Trim marks', 'ai', 'scope-render,scope-cut,apply-scope-cut', 'cutApplies'],
+      ['Refine', 'Outside critique', 'ai', 'review-loop,review-render,reviewer,review-fix', 'criticApplies'],
+      ['Refine', 'Trim marks', 'ai', 'bloat-render,bloat-cut,apply-bloat-cut', 'cutApplies'],
+      ['Finish', 'Cliché sweep', 'ai', 'tells-render,tells-sweep,apply-swaps', 'tellsApplies'],
+      ['Finish', 'Keep or revert', 'you', 'compare-render,tells-compare', 'tellsCompare'],
+      ['Finish', 'Your words', 'you', 'voice', 'voice'],
+    ],
+  };
+
+  it('C1 to C7, every shown step: its label, who does it, what it covers and what it is said to do', () => {
+    expect(Object.keys(PRESENTED)).toEqual(PROTOCOL_CONFIGS.map((r) => r.id));
+    for (const recipe of PROTOCOL_CONFIGS) {
+      const shown = presentComposed(asComposed(recipe), COPY).stages.flatMap((s) => s.steps.map((x) => [s.stage, x.label, x.who, x.stepIds.join(','), x.explainer]));
+      expect(shown, recipe.id).toEqual(PRESENTED[recipe.id]!.map(([stage, label, who, ids, key]) => [stage, label, who, ids, COMPOSED_EXPLAINERS[key]]));
+    }
   });
 });

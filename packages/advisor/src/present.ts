@@ -1,6 +1,29 @@
 import type { RecipePresentation } from '@byway/contracts';
 import { BLOCK_NAMES, STAGE_NAMES } from '@byway/catalog';
-import { asksSwaps, authorWrite, BLOCK_OF_ROLE, blockAgrees, inputsOf, machineWrites, personWrite, voiceScope, voiceWrite, walk, walkNode, type Node, type Pick, type Recipe, type Stage, type Step } from '@byway/recipe';
+import {
+  asksSwaps,
+  audioAsset,
+  authorWrite,
+  BLOCK_OF_ROLE,
+  blockAgrees,
+  canPrecede,
+  hasNoExecutor,
+  inputsOf,
+  lockedScripts,
+  machineWrites,
+  personWrite,
+  replacesCritique,
+  runOrder,
+  voiceScope,
+  voiceWrite,
+  walk,
+  walkNode,
+  type Node,
+  type Pick,
+  type Recipe,
+  type Stage,
+  type Step,
+} from '@byway/recipe';
 
 /**
  * The plain-language presentation of a composed recipe (spec §5 vocabulary). The catalog's presentations are written
@@ -11,8 +34,9 @@ import { asksSwaps, authorWrite, BLOCK_OF_ROLE, blockAgrees, inputsOf, machineWr
  * so any run event can be labelled.
  *
  * Labels and explainers read what runs (F08, ADR-0092): a step's block is its role's (a label is a declaration), only
- * a step that writes your words into the work is "your words", worded by what it covers, a random pick says so, and a
- * writer applies a critique by what it is, not by its `writes` flag.
+ * a step that writes your words into the work is "your words", worded by what it covers, a random pick says so, a
+ * writer applies a critique by what it is, not by its `writes` flag, and a step with no executor yet says it is
+ * skipped (ADR-0069).
  */
 
 type Who = RecipePresentation['stages'][number]['steps'][number]['who'];
@@ -21,16 +45,24 @@ type Unit = Step | Pick;
 /** The block a step is by what it runs: its role's, whatever its label says (a check's CRITIC label stays). */
 const blockOf = (n: Step) => (blockAgrees(n) ? n.block : BLOCK_OF_ROLE[n.role]);
 
-/** The plain label of one step or pick, from its block or role. */
-export function stepLabel(n: Unit): string {
+/**
+ * The plain label of one step or pick, from its block or role. A label that says something about the steps around it
+ * ("Directions to react to") is used only where the recipe's order establishes it (`near`: the recipe's `Around`);
+ * without that context the label claims nothing about them. Labels only name steps: the diff never compares them, so a
+ * label that differs between two recipes is never by itself a change.
+ */
+export function stepLabel(n: Unit, near?: Pick_<Around, 'reactedTo'>): string {
   if (n.op === 'pick') {
     if (n.mode === 'H') return n.k === 1 ? 'Pick one' : `Pick ${n.k}`;
     return n.mode === 'C' ? 'AI picks' : 'Random pick';
   }
   if (n.role === 'check') return 'Defect check';
   if (n.role === 'tells-compare') return 'Keep or revert';
+  // An ASSET that makes voice-over audio makes no imagery, and a tool RELAY composites (the catalog's C5 names them so).
+  if (n.actor !== 'human' && audioAsset(n)) return 'Voice-over audio';
+  if (n.actor === 'tool' && n.role === 'relay') return 'Composite';
   const block = blockOf(n);
-  if (block === 'VISION' && n.actor !== 'human') return 'Directions to react to';
+  if (block === 'VISION' && n.actor !== 'human') return near?.reactedTo.has(n) ? 'Directions to react to' : 'Directions';
   if (block === 'CUT' && n.actor !== 'human') return 'Trim marks';
   // Your words only where your words are written into the work (a model VOICE step is labelled by its role).
   if (block === 'VOICE' && !voiceWrite(n)) return n.actor === 'human' ? 'Your turn' : 'Revise';
@@ -62,13 +94,21 @@ export function stepLabel(n: Unit): string {
  *
  * A sentence that says what other steps do (who wrote the rest, that nothing changes the script later, that nothing is
  * deleted, that you react to the directions) is used only where the recipe's order establishes it (`Around`); the
- * sentence without that claim is used everywhere else.
+ * sentence without that claim is used everywhere else. So is a sentence about how a step runs where it sits: separate
+ * sessions only for a seed that fans out, a chain of clips only inside a relay chain.
+ *
+ * A step is described by what this version runs (ADR-0069): one with no executor yet (@byway/recipe hasNoExecutor: a
+ * tool relay's compositing, voice-over audio, any other tool or policy step that is not a render) finishes skipped and
+ * passes the work through, and its sentence says so. A machine writer inside an audit lens or a final check's body
+ * drafts a version that never reaches the work (the plain sessions of an obvious-answer check), and never applies a
+ * critique to it.
  */
 export const COMPOSED_EXPLAINERS = {
   pickYours: 'Your turn: choose what to keep.',
   pickAi: 'The AI chooses what to keep.',
   pickRandom: 'Chosen at random; no one compares them.',
   seed: 'Separate sessions, each told to take its direction from its own random string.',
+  seedOne: 'One session, told to take its direction from its own random string.',
   visionYours: 'Your turn: say what you want, what pulls you and what to avoid.',
   visionAi: 'The AI offers directions.',
   visionAiToReact: 'The AI offers directions for you to react to.',
@@ -77,6 +117,10 @@ export const COMPOSED_EXPLAINERS = {
   critic: 'A separate reviewer looks at the work as it will be shown and names the biggest gaps.',
   asset: 'The AI makes images for the work.',
   relay: 'Specialist models make the motion, each part starting where the last one ended.',
+  relayOne: 'Specialist models make one clip of the last shot, starting from the latest start frame: where the last clip ended, or the first shot’s frame.',
+  compositingSkipped: 'Not available in this version: compositing is skipped, and the work passes through unchanged.',
+  audioSkipped: 'Not available in this version: no voice-over audio is made, and the work passes through unchanged.',
+  skipped: 'Not available in this version: this step is skipped, and the work passes through unchanged.',
   cutYoursApplies: 'Your turn: list what the work could lose, and the AI removes it.',
   cutYours: 'Your turn: mark what the work could lose.',
   cutApplies: 'A fresh reviewer lists what the work could lose, and the AI removes it.',
@@ -97,6 +141,7 @@ export const COMPOSED_EXPLAINERS = {
   voiceOnScreen: 'Your turn: write the on-screen words: headline, tagline and captions.',
   buildYours: 'Your turn: write or revise the work yourself.',
   build: 'The AI drafts the work.',
+  aside: 'The AI drafts a version that never becomes the work: only the check it sits in reads it.',
   checkApplies: 'A look for defects only, which the AI then fixes.',
   dedupe: 'The AI merges options that say the same thing into one.',
   overlap: 'Plain sessions with no spark show what anyone would get; options that match them are flagged.',
@@ -106,80 +151,38 @@ export const COMPOSED_EXPLAINERS = {
   other: 'The AI does this step.',
 } as const;
 
-/** A step in run order: its place in the walk, the loops and relays that run it again, and whether its output is kept. */
-interface Ordered {
-  step: Step;
-  index: number;
-  /** The loops and relays around it: each runs its body again (a next round, a next link). */
-  repeats: readonly Node[];
-  /** In an audit lens, a one-shot gate's body or a pick's judge: what it makes never reaches the work. */
-  contained: boolean;
-}
-
-function ordered(recipe: Recipe): Ordered[] {
-  const out: Ordered[] = [];
-  const visit = (n: Node, repeats: readonly Node[], contained: boolean): void => {
-    switch (n.op) {
-      case 'step':
-        out.push({ step: n, index: out.length, repeats, contained });
-        return;
-      case 'seq':
-        n.steps.forEach((c) => visit(c, repeats, contained));
-        return;
-      case 'loop':
-      case 'relay':
-        visit(n.body, [...repeats, n], contained);
-        return;
-      case 'replicate':
-      case 'each':
-      case 'optional':
-        visit(n.body, repeats, contained);
-        return;
-      case 'route':
-        n.branches.forEach((b) => visit(b.body, repeats, contained));
-        return;
-      case 'audit':
-        n.lenses.forEach((l) => visit(l.body, repeats, true));
-        return;
-      case 'gate':
-        visit(n.body, repeats, true);
-        return;
-      case 'pick':
-        if (n.judge) visit(n.judge, repeats, true);
-        return;
-    }
-  };
-  for (const s of recipe.stages) visit(s.body, [], false);
-  return out;
-}
-
-/**
- * Whether `a` can run before `b` on some run: earlier in the walk (run order for a seq; a gate's retry starts its stage
- * again from that stage's entry ports, so nothing made after them carries over), or both in the body of one loop or
- * relay, whose next round or link runs `a` after `b` (a step there comes before itself). Conservative: a step in another
- * branch of a route counts as before, which can only take a claim away.
- */
-const canPrecede = (a: Ordered, b: Ordered): boolean => a.index < b.index || a.repeats.some((r) => b.repeats.includes(r));
-
 /** What the recipe's order establishes about the steps around a step, for the sentences that say so. */
 interface Around {
   /** A VOICE that no person's write (a VOICE or your own draft) can come before: the AI wrote the rest of the work. */
   aiWroteRest: Set<Step>;
   /**
-   * A script VOICE that nothing you write later can change: no draft of your own and no script VOICE after it, itself
-   * included in a loop. A later on-screen or claims VOICE cannot touch the voice-over (copy.ts applyOnScreen).
+   * A script VOICE that nothing you write later can change (@byway/recipe lockedScripts): no draft of your own, no
+   * script or claims VOICE after it, and no loop round, relay link or final check's re-run that asks for it again. The
+   * on-screen VOICE cannot touch the voice-over (copy.ts applyOnScreen).
    */
   scriptLocked: Set<Step>;
   /** A model CUT or cliché sweep whose notes no AI writer can take in after it: nothing is deleted or swapped. */
   notesOnly: Set<Step>;
   /** A model VISION that a step of yours that reacts (a person's VISION) can follow. */
   reactedTo: Set<Step>;
+  /** A seed that runs in separate sessions, one per candidate (inside each, or a replicate of more than one). */
+  fanOut: Set<Step>;
+  /** A model RELAY inside a relay chain: one clip per shot, each link from where the last one ended. */
+  inChain: Set<Step>;
+  /** In an audit lens, a final check's body or a pick's judge at every place it sits: what it makes never reaches the work. */
+  aside: Set<Step>;
+  /** In one of those at some place: a writer there cannot be said to apply a critique to the work. */
+  containedSomewhere: Set<Step>;
 }
 
+/** TypeScript's `Pick`, which the recipe's `Pick` node type shadows here. */
+type Pick_<T, K extends keyof T> = { [P in K]: T[P] };
+
 function around(recipe: Recipe): Around {
-  const steps = ordered(recipe);
+  const steps = runOrder(recipe).steps;
   const reaching = steps.filter((o) => !o.contained);
-  const out: Around = { aiWroteRest: new Set(), scriptLocked: new Set(), notesOnly: new Set(), reactedTo: new Set() };
+  // A script is locked by the shared rule the run itself asks by (lockedScripts): the explainer and the run agree.
+  const out: Around = { aiWroteRest: new Set(), scriptLocked: lockedScripts(recipe), notesOnly: new Set(), reactedTo: new Set(), fanOut: new Set(), inChain: new Set(), aside: new Set(), containedSomewhere: new Set() };
   // A claim holds for a step only if it holds at every place the step object sits (a built recipe may reuse one).
   const failed = new Map<Set<Step>, Set<Step>>();
   const claim = (set: Set<Step>, s: Step, holds: boolean): void => {
@@ -193,10 +196,11 @@ function around(recipe: Recipe): Around {
     const s = o.step;
     const before = (f: (t: Step) => boolean) => reaching.some((x) => f(x.step) && canPrecede(x, o));
     const after = (f: (t: Step) => boolean) => reaching.some((y) => f(y.step) && canPrecede(o, y));
-    if (voiceWrite(s)) {
-      claim(out.aiWroteRest, s, !before(personWrite));
-      claim(out.scriptLocked, s, !after((t) => authorWrite(t) || (voiceWrite(t) && voiceScope(t, recipe.medium).base === 'script')));
-    }
+    claim(out.aside, s, o.contained);
+    if (o.contained) out.containedSomewhere.add(s);
+    if (voiceWrite(s)) claim(out.aiWroteRest, s, !before(personWrite));
+    if (s.role === 'seed') claim(out.fanOut, s, o.fanOut);
+    if (s.role === 'relay') claim(out.inChain, s, o.inRelay);
     if (s.actor === 'model' && (s.role === 'cut' || s.role === 'tells-sweep')) claim(out.notesOnly, s, !after((t) => machineWrites(t) && inputsOf(t).includes('critique')));
     if (s.actor === 'model' && s.role === 'vision') claim(out.reactedTo, s, after((t) => t.actor === 'human' && t.role === 'vision'));
   }
@@ -223,9 +227,11 @@ function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['med
   const E = COMPOSED_EXPLAINERS;
   if (n.op === 'pick') return n.mode === 'H' ? E.pickYours : n.mode === 'R' ? E.pickRandom : E.pickAi;
   if (n.actor === 'human') return yoursExplainer(n, applies, medium, near);
+  if (hasNoExecutor(n)) return audioAsset(n) ? E.audioSkipped : n.role === 'relay' ? E.compositingSkipped : E.skipped;
+  if (near.aside.has(n) && machineWrites(n)) return E.aside;
   switch (blockOf(n)) {
     case 'SEED':
-      return E.seed;
+      return near.fanOut.has(n) ? E.seed : E.seedOne;
     case 'VISION':
       return near.reactedTo.has(n) ? E.visionAiToReact : E.visionAi;
     case 'CRITIC':
@@ -234,7 +240,7 @@ function explainer(n: Unit, applies: boolean, asks: boolean, medium: Recipe['med
     case 'ASSET':
       return E.asset;
     case 'RELAY':
-      return E.relay;
+      return near.inChain.has(n) ? E.relay : E.relayOne;
     case 'CUT':
       if (applies) return E.cutApplies;
       return near.notesOnly.has(n) ? E.cutNothingDeleted : E.cut;
@@ -292,13 +298,14 @@ function whoDoes(units: Unit[]): Who {
   return 'tool';
 }
 
-/** Roles whose output is a critique a following writer applies. */
+/** Roles whose output is a critique a following writer applies, when the step makes one (a tool's is skipped: replacesCritique). */
 const FINDS = new Set(['critic', 'check', 'cut', 'tells-sweep']);
 /**
  * A machine writer that takes in a critique, consumed or read when it is there (ADR-0089: a read fills the same slot):
- * it applies the findings, by what it runs (not by its `writes` flag).
+ * it applies the findings, by what it runs (not by its `writes` flag), unless what it writes never reaches the work
+ * (inside an audit lens or a final check's body).
  */
-const appliesFindings = (u: Unit) => u.op === 'step' && machineWrites(u) && inputsOf(u).includes('critique');
+const appliesFindings = (u: Unit, near: Around) => u.op === 'step' && machineWrites(u) && inputsOf(u).includes('critique') && !near.containedSomewhere.has(u);
 const isRender = (u: Unit) => u.op === 'step' && u.role === 'render';
 /** The node a group is named after: the first that is not a render. */
 const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group[0]!;
@@ -307,7 +314,7 @@ const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group
  * The shown steps of one stage, from its steps and picks in order: renders wait for the next node (the one that reads
  * them), and a writer that applies a critique joins the group that made it, once.
  */
-function groupStage(units: Unit[]): Unit[][] {
+function groupStage(units: Unit[], near: Around): Unit[][] {
   const groups: Unit[][] = [];
   let renders: Unit[] = [];
   for (const u of units) {
@@ -317,7 +324,7 @@ function groupStage(units: Unit[]): Unit[][] {
     }
     const last = groups.at(-1);
     const lead = last && leadOf(last);
-    if (!renders.length && last && lead?.op === 'step' && FINDS.has(lead.role) && appliesFindings(u) && !last.some(appliesFindings)) {
+    if (!renders.length && last && lead?.op === 'step' && FINDS.has(lead.role) && replacesCritique(lead) && appliesFindings(u, near) && !last.some((x) => appliesFindings(x, near))) {
       last.push(u);
       continue;
     }
@@ -342,6 +349,7 @@ export interface ComposedCopy {
 }
 
 export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePresentation {
+  const near = around(recipe);
   const order = new Map<string, number>();
   walk(recipe, (n) => {
     if ('id' in n && n.id !== undefined && !order.has(n.id)) order.set(n.id, order.size);
@@ -358,7 +366,7 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
         if (n.judge) judges.add(n.judge);
       } else if (n.op === 'step' && !judges.has(n)) units.push(n);
     });
-    for (const g of groupStage(units)) groups.push({ stage: s.stage, units: g });
+    for (const g of groupStage(units, near)) groups.push({ stage: s.stage, units: g });
   }
 
   /** Index of the shown step each id belongs to. */
@@ -389,11 +397,10 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
     });
   });
 
-  const near = around(recipe);
   const shown = groups.map(({ stage, units }) => {
     const lead = leadOf(units);
-    const applies = units.some((u) => u !== lead && appliesFindings(u));
-    return { stage: STAGE_NAMES[stage], label: stepLabel(lead), explainer: explainer(lead, applies, asking.has(lead), recipe.medium, near), who: whoDoes(units), stepIds: [] as string[] };
+    const applies = units.some((u) => u !== lead && appliesFindings(u, near));
+    return { stage: STAGE_NAMES[stage], label: stepLabel(lead, near), explainer: explainer(lead, applies, asking.has(lead), recipe.medium, near), who: whoDoes(units), stepIds: [] as string[] };
   });
   for (const [id, i] of [...owner].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0))) shown[i]!.stepIds.push(id);
 
@@ -403,6 +410,15 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
     stages.at(-1)!.steps.push(step);
   }
   return { recipeId: recipe.id, code: copy.code, name: copy.name, promise: copy.promise, medium: recipe.medium ?? 'prose', bestFor: copy.bestFor, stages };
+}
+
+/**
+ * The plain label of each step or pick of a recipe where it sits (stepLabel with the recipe's `Around`), for naming a
+ * recipe's steps elsewhere (the diff) as its presentation names them.
+ */
+export function labelsIn(recipe: Recipe): (n: Unit) => string {
+  const near = around(recipe);
+  return (n) => stepLabel(n, near);
 }
 
 /** Nodes with ids, for checks that every one is shown. */

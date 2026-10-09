@@ -1,6 +1,6 @@
 import type { CostEstimate, Medium, ModelProfile, Tier } from '@byway/contracts';
 import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, falVideoSeconds, priceFor, tokenCost, type PriceRow } from '@byway/gateway';
-import { asksSwaps, loopRounds, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
+import { asksSwaps, audioAsset, loopRounds, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
 /**
@@ -233,7 +233,7 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         return add(completion(w, 'relay', tierOf(s), count(1, 1)), clip(w));
       case 'asset': {
         // A step that turns the locked script into audio has no v1 executor (ADR-0069): it finishes skipped.
-        if (s.consumes.includes('voice')) return NONE;
+        if (audioAsset(s)) return NONE;
         const slots = knobNumber(s, 'slots') ?? DEFAULT_SLOTS;
         const n = medium === 'media' ? count(STORYBOARD_SHOTS.low, STORYBOARD_SHOTS.high) : count(1, slots);
         const integrate = medium === 'web-page' || medium === 'prose' ? completion(w, 'asset.integrate', 'mid', count(1, 1)) : NONE;
