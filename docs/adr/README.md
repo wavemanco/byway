@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**90 records:** 83 accepted (15 of them by continuation, awaiting ratification; 28 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**91 records:** 84 accepted (15 of them by continuation, awaiting ratification; 29 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -125,6 +125,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0091](0091-provider-edge-billing-fixes.md) | Provider-edge billing fixes: one billing classification, fal jobs submitted once, served-model pricing, the estimate contract, torn-tail quarantine, one first-recommendation call per intake | Accepted | Delegated | 2026-10-08 20:05 |
 | [ADR-0085](0085-generated-pages-inert-unless-a-frame-asks-with-consent.md) | Generated-page responses are inert unless a same-origin frame asks with consent; every in-app "Open" goes to the whole-artifact viewer; frames navigate only within byway | Accepted | Delegated | 2026-10-08 20:30 |
 | [ADR-0086](0086-run-screen-excerpts-say-so-and-decision-views-show-whole-text.md) | Run-screen artifact info is an excerpt with its completeness stated; decision views show whole text; row facts come from whole bytes | Accepted | Delegated | 2026-10-08 20:30 |
+| [ADR-0095](0095-paid-calls-have-a-durable-spend-book.md) | Paid calls have a durable spend book: the book in byway.sqlite is the cap authority, ledger.jsonl its hash-chained audit record | Accepted | Delegated | 2026-10-08 21:45 |
 
 ## Open decisions (not yet ADRs)
 

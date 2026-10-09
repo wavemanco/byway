@@ -49,7 +49,6 @@ All figures are estimates from the Study 1 design pass ([protocol v1.1 §13](stu
 | Temporal metrics port has no Host check | Read-only metrics; not probed for DNS-rebinding reads (Phase 4 re-check, low) | runner |
 | Reconcile lost runs while the engine runs, not only at start | A workflow terminated from outside (now only via local gRPC) stays "waiting" until the next start (Phase 4 re-check, low) | runner |
 | Advisor diff as structured data | The web strips step ids from "How it differs" lines; the advisor could return structured differences (UX-13 remainder) | advisor, apps/web |
-| Provider-reported usage and cost must be finite before the ledger draft | A JSON `1e400` token count or cost makes the ledger append throw after billing, so the call is billed but not counted (ENG-3). Handed to the F03 spend-book work; drop when it lands (ADR-0083) | gateway |
 | Renderer egress: narrow the CDN allowlist | It admits any npm package through unpkg and jsDelivr (host-only). Decide whether to pin paths or require SRI (ADR-0084) | runner |
 | Playwright bump policy | Playwright is pinned at 1.63.0, so its Chromium accumulates known n-day bugs. Set a bump cadence and re-check the launch-failure texts on each bump (ADR-0084) | runner, release |
 | Windows: Chromium's network service runs at Medium integrity | Even with the OS sandbox on, the broker and network-service utility stay at Medium. Investigate whether the network service can be sandboxed; add no untested flag (ADR-0084) | runner |
@@ -65,6 +64,8 @@ All figures are estimates from the Study 1 design pass ([protocol v1.1 §13](stu
 | guard-disabled's blind spots | The guard scans intrinsic JSX `disabled` attributes and DOM writes (`.disabled =`, set/toggleAttribute) in src/ and app/. It does not see spread props, createElement, a component's own `disabled` prop, or a focused control that takes itself off the screen by conditional rendering (as "Attach another" did at five). Extend the scan if a shared component starts spreading native button props (apps/web README, Guardrails) | apps/web |
 | "Paste an example" at nine: an unavailable ActionButton | It is the one allowlisted native `disabled` (at MAX_REFS = 9). Its handler moves focus to the new field first and the fieldset is disabled while a run starts, so focus is not lost today. Make it an ActionButton marked unavailable if either flow changes | apps/web |
 | Start says why "Attach another" went | At five attachments the button disappears with no visible reason; focus is safe (it is in the new name field), but the limit is not stated | apps/web |
+| Repair ledger.jsonl from the spend book | After an OS crash, or a restore of an older or missing ledger.jsonl, the book holds calls the audit file lacks. They are reported at start and by "Check the spend ledger", but not re-appended, because entries from before the book are not kept whole in the book (ADR-0095) | gateway, store |
+| Reconcile "may have been billed" calls with the providers | They count at their estimate against the workspace cap until the person clears them in Settings. fal's request status for the stored job ids could settle or release them automatically (ADR-0095) | gateway |
 
 ## Owner decisions from the external-review verification (2026-10-08)
 
