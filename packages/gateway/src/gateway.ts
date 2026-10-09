@@ -1,6 +1,7 @@
 import { canonicalize, sha256Hex } from '@byway/canonical';
 import {
   GatewayError,
+  MAX_PLAUSIBLE_CALL_USD,
   type ArtifactRecord,
   type ArtifactStore,
   type BrokenLine,
@@ -291,7 +292,7 @@ export class ModelGateway implements Gateway {
         servedModel: entry.servedModel,
         provider: ref.provider,
         usage: { inputTokens: out.usage.inputTokens, outputTokens: out.usage.outputTokens },
-        costUsd,
+        costUsd: entry.costUsd,
         ledgerEntryId: entry.id,
       };
     } finally {
@@ -361,7 +362,7 @@ export class ModelGateway implements Gateway {
       );
       if (kept?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the image and billed it, but it could not be stored`, kept.error);
       if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`));
-      return { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
+      return { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
     } finally {
       await op.end();
     }
@@ -499,7 +500,7 @@ export class ModelGateway implements Gateway {
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {
         throw new GatewayError('provider-error', `${ref.provider} returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`);
       }
-      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd, ledgerEntryId: entry.id };
+      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
     } finally {
       await op.end();
     }
@@ -678,8 +679,13 @@ export class ModelGateway implements Gateway {
    * holds every process's calls in flight, so the web process and the worker see each other's (ADR-0095). The caps are
    * read on every call, so a raised budget applies at once.
    */
-  private admit(req: SpendContext, kind: SettledCall['kind'], ref: ModelRef, estimateUsd: number): Promise<PaidCall> {
+  private async admit(req: SpendContext, kind: SettledCall['kind'], ref: ModelRef, estimateUsd: number): Promise<PaidCall> {
     const reserveUsd = roundUsd(estimateUsd);
+    // No call can cost more than MAX_PLAUSIBLE_CALL_USD (ADR-0095), so a call estimated above it is a mistake, refused
+    // before anything is reserved. It also means a call settled at its estimate (record) is always one the book can read.
+    if (!(reserveUsd <= MAX_PLAUSIBLE_CALL_USD)) {
+      throw invalid(`this call is estimated at $${reserveUsd.toFixed(2)}, more than byway allows for one call ($${MAX_PLAUSIBLE_CALL_USD.toFixed(2)})`);
+    }
     return this.paid.admit(
       { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, kind, provider: ref.provider, model: ref.model, reserveUsd, paid: reserveUsd > 0 },
       async () => {
@@ -737,7 +743,11 @@ export class ModelGateway implements Gateway {
    * a provider answered must not lose the spend, and a plain error would make Temporal retry the activity and pay a
    * second time. So any failure from here on is a GatewayError that is not retryable and says the call was billed.
    */
-  private async record(op: PaidCall, draft: Omit<LedgerDraft, 'requestSha256' | 'responseSha256' | 'operationId'>, request: unknown, response: unknown, redact: Redactor): Promise<{ id: string; servedModel: string }> {
+  private async record(op: PaidCall, draft: Omit<LedgerDraft, 'requestSha256' | 'responseSha256' | 'operationId'>, request: unknown, response: unknown, redact: Redactor): Promise<{ id: string; servedModel: string; costUsd: number }> {
+    // No call can cost more than MAX_PLAUSIBLE_CALL_USD (ADR-0095 decision 7): reported figures that price one above it
+    // cannot be believed, so the call is settled at its planning estimate (which admission held to the ceiling), flagged
+    // assumed, as when a figure is not a number at all. The usage the provider reported stays in the entry as reported.
+    if (!(draft.costUsd >= 0 && draft.costUsd <= MAX_PLAUSIBLE_CALL_USD)) draft = { ...draft, costUsd: op.reserveUsd, priceBasis: 'assumed' };
     // Labels are first made hashable (providerLabel, F19), then scrubbed of held keys (scrubLabels, ADR-0088): the
     // redactor works on well-formed strings, and one value then flows to both the ledger and the caller.
     draft = scrubLabels(
@@ -765,7 +775,7 @@ export class ModelGateway implements Gateway {
     } catch (e) {
       throw billedFailure(redact, `${billed} and its cost is recorded (entry ${id}), but its request and response could not be stored`, e);
     }
-    return { id, servedModel: entry.servedModel };
+    return { id, servedModel: entry.servedModel, costUsd: entry.costUsd };
   }
 }
 

@@ -13,7 +13,7 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { GatewayError, type CompletionRequest, type SpendBook } from '@byway/contracts';
+import { GatewayError, ledgerEntryProblem, type CompletionRequest, type SpendBook } from '@byway/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { Ledger, type LedgerDraft } from '../src/ledger.ts';
@@ -409,6 +409,33 @@ describe('provider-reported usage that is not a finite number (ADR-0083’s hand
     expect(lines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, priceBasis: 'assumed', usage: { inputTokens: 10, outputTokens: 1000 } })]);
     expect((await g.spend('ws')).spentUsd).toBeCloseTo(0.1, 9);
     expect(await g.verifyLedger()).toBeNull();
+  });
+});
+
+describe('no call is recorded above what one call can cost (MAX_PLAUSIBLE_CALL_USD, ADR-0095 decisions 6 and 7)', () => {
+  it('usage that would price one call above it is settled at the call’s estimate, flagged assumed, so its ledger line is an entry the book can read', async () => {
+    caps.workspace = 10;
+    // A trillion output tokens at $100 per million is $100,000,000: no call can cost that.
+    const { client } = fakeAnthropic([anthropicMessage({ usage: { input_tokens: 10, output_tokens: 1e12 } })]);
+    const g = gateway({ clients: { anthropic: client } });
+    const res = await g.complete(ask());
+    // The estimate: 1,000 output tokens at $100 per million.
+    expect(res.costUsd).toBeCloseTo(0.1, 9);
+    const [line] = lines();
+    expect(line).toMatchObject({ id: res.ledgerEntryId, priceBasis: 'assumed', costUsd: 0.1 });
+    expect(ledgerEntryProblem(line)).toBeUndefined();
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0.1, assumedPricing: { calls: 1, usd: 0.1 } });
+    expect((await g.spendRecords('ws')).faults).toEqual([]);
+  });
+
+  it('a call estimated above it is refused before anything is reserved or sent', async () => {
+    caps.workspace = 1_000_000;
+    const { client, calls } = fakeAnthropic();
+    // $2 an output token: the 1,000-token allowance is estimated at $2,000.
+    const g = gateway({ clients: { anthropic: client }, prices: [{ provider: 'anthropic', model: 'claude-opus-5-5', inputPerMTok: 0, outputPerMTok: 2_000_000, source: 'spend-book tests' }] });
+    await expect(g.complete(ask())).rejects.toMatchObject({ code: 'invalid-request', message: expect.stringContaining('$2000.00') });
+    expect(calls).toHaveLength(0);
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
   });
 });
 

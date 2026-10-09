@@ -1,7 +1,8 @@
 /**
  * A ledger line that is JSON, and has a workspace, a sequence number and a cost, but a field the spend book records is
- * missing or of the wrong type (ADR-0095 decision 6), with the real store and its spend book in byway.sqlite. A flipped
- * bit can do it: `"at"` becomes `"au"`. It is an ordinary accounting fault, like any line the book cannot read: paid
+ * missing or of the wrong type, or a cost no single call can have (ADR-0095 decision 6), with the real store and its
+ * spend book in byway.sqlite. A flipped bit or a hand edit can do it: `"at"` becomes `"au"`, a cost gains digits. It is
+ * an ordinary accounting fault, like any line the book cannot read: paid
  * calls wait until the person acknowledges it, free demo calls go on, and Settings and the start-up report still answer.
  * The provider is a stand-in; nothing leaves this computer.
  */
@@ -59,6 +60,10 @@ const ODD: [string, Record<string, unknown>][] = [
   ['a served model that is an object', { servedModel: { x: 1 } }],
   ['a step id that is an object', { stepId: { x: 1 } }],
   ['a price basis that is a number', { priceBasis: 7 }],
+  // N4: a cost no call can have. Before, 1e303 summed to Infinity and $5,000 to far over any cap, so every paid call was
+  // refused as over budget, with nothing to acknowledge.
+  ['a cost of 1e303, which rounds to Infinity', { costUsd: 1e303 }],
+  ['a cost of $5,000, more than one call can cost', { costUsd: 5000 }],
 ];
 
 describe('a ledger line the spend book cannot record is an accounting fault (ADR-0095)', () => {

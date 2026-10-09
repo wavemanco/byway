@@ -7,7 +7,7 @@
  * Imported by the implementations' own tests as `@byway/contracts/spend-book-suite` (a test file, not shipped code).
  */
 import { describe, expect, it } from 'vitest';
-import type { AdmitRequest, EntryLine, LedgerBatch, LedgerEntry, Settlement, SpendBook } from '../src/index.ts';
+import { MAX_PLAUSIBLE_CALL_USD, type AdmitRequest, type EntryLine, type LedgerBatch, type LedgerEntry, type Settlement, type SpendBook } from '../src/index.ts';
 
 export interface SpendBookFixture {
   /** Two handles on the same book: two connections for a database, the same object twice in memory. */
@@ -522,6 +522,23 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         expect((await a.ledgeredCalls()).filter((c) => c.opId === r.opId)).toEqual([expect.objectContaining({ entryId: ledgerEntryId, costUsd: 0.07 })]);
         expect(await a.faults()).toEqual([]);
         expect(await a.admit(admitRequest())).toEqual({ admitted: true });
+      }),
+    );
+
+    it(
+      'records an entry whose cost is more than one call can cost, or less than nothing, as a fault that can be acknowledged; it never puts every paid call over budget',
+      withBook(async ({ a, b }) => {
+        const entries = [ledgerEntry(0.05), ledgerEntry(1e303), ledgerEntry(MAX_PLAUSIBLE_CALL_USD + 0.01), ledgerEntry(-0.5), ledgerEntry(0.02)];
+        expect(await a.absorb(batch(entries))).toEqual({ faults: 3 });
+        expect(await b.spend('ws')).toEqual({ spentUsd: 0.07, byRun: { run: 0.07 }, inFlightUsd: 0, uncertainUsd: 0 });
+        const { faults } = await b.records('ws');
+        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be read as a spend entry (its "costUsd" is not`)));
+        expect(await a.admit(admitRequest())).toEqual({ fault: expect.stringMatching(/byte 100\b/) });
+        for (const f of faults) expect(await b.acknowledgeFault(f.id)).toBe(true);
+        expect(await a.admit(admitRequest())).toEqual({ admitted: true });
+        // The ceiling itself is a cost one call can have.
+        expect(await a.absorb(batch([ledgerEntry(MAX_PLAUSIBLE_CALL_USD, { workspaceId: 'ws-big' })], { cursor: { offset: 600, tailStart: 500, tailSha256: null } }))).toEqual({ faults: 0 });
+        expect(await b.spend('ws-big')).toMatchObject({ spentUsd: MAX_PLAUSIBLE_CALL_USD });
       }),
     );
 

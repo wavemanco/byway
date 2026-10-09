@@ -229,6 +229,11 @@ export class PaidCall {
     return this.opId;
   }
 
+  /** The call's planning estimate, as admitted: what it counts while in flight, and what it settles at when its reported figures cannot be believed. */
+  get reserveUsd(): number {
+    return this.req.reserveUsd;
+  }
+
   /**
    * Just before a provider request goes out. The first time, the row moves from open to sent. If its lease ran out
    * meanwhile (the process slept) another process may have released it, so the call is admitted once more.

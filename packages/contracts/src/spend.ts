@@ -119,6 +119,23 @@ const PROVIDERS: Record<ProviderId, true> = { anthropic: true, openai: true, goo
 const PRICE_BASES: Record<NonNullable<LedgerEntry['priceBasis']>, true> = { assumed: true };
 const own = <T extends object>(table: T, key: unknown): boolean => typeof key === 'string' && Object.hasOwn(table, key);
 
+/**
+ * byway's ceiling on what one call can cost, in USD (ADR-0095 decisions 6 and 7). A ledger line that records more is
+ * not an entry the book can count (ledgerEntryProblem), and the gateway never writes one: it refuses a call whose
+ * planning estimate is above it, and settles a call whose reported figures would price it above it at its estimate,
+ * flagged `priceBasis: 'assumed'`. So one hand-edited or damaged line can only pause paid calls until it is
+ * acknowledged, never put every later call over budget for good (N4: a cost of 1e303 summed to Infinity).
+ *
+ * It is far above what v1 calls cost (prices.ts, as read 2026-10-07). A completion's output is at most 128,000 tokens
+ * (the gateway's limit): $6.40 at the dearest output rate ($50 per million: Fable 5.1, GPT-6 Astra). With a million
+ * input tokens at the dearest input rate ($12.50 per million, Fable 5.1's cache writes) it is $18.90, and an Anthropic
+ * refusal fallback bills at most about 2.25 times one attempt (ADR-0095 decision 10): about $43, a twenty-third of the
+ * ceiling. The longest clip (60 s) at the dearest rate ($0.112 a second, Kling v3) is $6.72, with $0.002 for its last
+ * frame; one image is about $0.25. Input has no fixed limit, but a call estimated above the ceiling is refused, so it
+ * holds whatever a model accepts.
+ */
+export const MAX_PLAUSIBLE_CALL_USD = 1000;
+
 /** How many characters of a line a fault keeps, for the person to recognise it. */
 const FAULT_EXCERPT_CHARS = 120;
 
@@ -131,9 +148,10 @@ export function spendFaultDetail(line: LedgerLine, problem?: string): string {
  * Why a value read from the audit file is not a LedgerEntry the spend book can record, in words, or undefined when it
  * is one (ADR-0095 decision 6). Every field the book records is checked, by the contract's types: an id, a workspace,
  * a purpose and a time that are non-empty text; a sequence number that is a whole number from 1; a kind and a provider
- * the contract names; the requested and served models as text; a cost that is a finite, non-negative number; and, when
- * present, a run, a step and an operation as text and a price basis the contract names. Fields the book does not record
- * (the hashes, usage, latency) are left to the chain check. What fails here is a fault, not something counted as nothing.
+ * the contract names; the requested and served models as text; a cost from 0 to MAX_PLAUSIBLE_CALL_USD, byway's ceiling
+ * for one call; and, when present, a run, a step and an operation as text and a price basis the contract names. Fields
+ * the book does not record (the hashes, usage, latency) are left to the chain check: usage counts feed no sum the caps
+ * use. What fails here is a fault, not something counted as nothing.
  */
 export function ledgerEntryProblem(value: unknown): string | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'it is not a JSON object';
@@ -144,7 +162,9 @@ export function ledgerEntryProblem(value: unknown): string | undefined {
   if (!own(KINDS, e.kind)) return 'its "kind" is not completion, image or video';
   if (!own(PROVIDERS, e.provider)) return 'its "provider" is not one byway knows';
   for (const field of ['requestedModel', 'servedModel'] as const) if (typeof e[field] !== 'string') return `its "${field}" is missing or not text`;
-  if (typeof e.costUsd !== 'number' || !Number.isFinite(e.costUsd) || e.costUsd < 0) return 'its "costUsd" is not a finite, non-negative number';
+  if (typeof e.costUsd !== 'number' || !(e.costUsd >= 0 && e.costUsd <= MAX_PLAUSIBLE_CALL_USD)) {
+    return `its "costUsd" is not a number from 0 to ${MAX_PLAUSIBLE_CALL_USD}, the most byway counts for one call (in USD)`;
+  }
   for (const field of ['runId', 'stepId'] as const) if (e[field] !== undefined && typeof e[field] !== 'string') return `its "${field}" is not text`;
   if (e.operationId !== undefined && !text(e.operationId)) return 'its "operationId" is not text';
   if (e.priceBasis !== undefined && !own(PRICE_BASES, e.priceBasis)) return 'its "priceBasis" is not "assumed"';
