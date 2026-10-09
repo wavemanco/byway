@@ -9,14 +9,16 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CompletionRequest, CompletionResult, Gateway, ProfileStatus } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
-import { outputForStep } from '@byway/prompts';
-import { HUMAN_WRITE_ROLES, personWrite, restoresWork, ROLES, stepEffect, voiceWrite, type Role } from '@byway/recipe';
+import { PROTOCOL_CONFIGS } from '@byway/catalog';
+import { outputForStep, slotsForStep } from '@byway/prompts';
+import { HUMAN_WRITE_ROLES, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
 import { modelStep, parserFor } from '../src/activities/model-step.ts';
+import { ArtifactReader, buildPrompt } from '../src/activities/prompting.ts';
 import { relayLink } from '../src/activities/relay.ts';
-import type { RunRef, StepCall, StepSpec } from '../src/types.ts';
+import { toStepSpec, type RunRef, type StepCall, type StepSpec } from '../src/types.ts';
 import { humanKind } from '../src/workflow/wording.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -189,5 +191,24 @@ describe("a person's answer is written into the work exactly for a person write"
     }
     expect(texts[0]).toBe(texts[1]);
     expect(voiceWrite(spec('voice', 'human', ['artifact']))).toBe(true);
+  });
+});
+
+describe('the slots the composed profile renders a template with are slots the runner always fills', () => {
+  /** What an activity adds after buildPrompt: a judge's candidates (model-step.ts), a relay link's storyboard and shot, an ASSET step's work. */
+  const activityAdds = (role: string, medium: string): string[] =>
+    role === 'judge' || role === 'select' ? ['options'] : role === 'relay' ? ['artifact', 'brief'] : role === 'asset' ? ['artifact', ...(medium === 'options' ? ['options'] : [])] : [];
+  const modelSteps = PROTOCOL_CONFIGS.flatMap((r) => steps(r).filter(({ step }) => step.actor === 'model' && step.prompt).map(({ step }) => [`${r.id} ${step.id}`, r.medium!, step] as const));
+  it.each(modelSteps)('%s', async (_name, medium, step) => {
+    const built = await buildPrompt(new ArtifactReader({ store }), {
+      medium,
+      problem: { text: 'A memo' },
+      step: toStepSpec(step),
+      ports: {},
+      ...(step.role === 'seed' || step.consumes.includes('seed') ? { seed: 'a-seed' } : {}),
+      ...(step.consumes.includes('tells') ? { tells: 'a catalog' } : {}),
+    });
+    const filled = new Set([...Object.keys(built.slots), ...activityAdds(step.role, medium)]);
+    expect([...slotsForStep(step, medium)].filter((s) => !filled.has(s))).toEqual([]);
   });
 });

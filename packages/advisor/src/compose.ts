@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import type { Gateway, ProblemBrief, PromptRenderer } from '@byway/contracts';
+import type { Gateway, ProblemBrief } from '@byway/contracts';
+import type { PromptLibrary } from '@byway/prompts';
 import { problemSlot } from '@byway/prompts/pure';
 import { parseRecipe, RECIPE_SCHEMA_ID, withHash, type Recipe } from '@byway/recipe';
 import { validate } from '@byway/validator';
@@ -26,6 +27,8 @@ export const COMPOSE_MAX_OUTPUT_TOKENS = 16000;
 
 export interface Violation {
   ruleId: string;
+  /** Which clause of the rule, when the validator names one (e.g. ST12 'writer-undeclared'). */
+  clause?: string;
   /** Where in the recipe, when known. */
   path?: string;
   message: string;
@@ -44,7 +47,8 @@ export interface Candidate {
 
 export interface ComposeDeps {
   gateway: Gateway;
-  prompts: PromptRenderer;
+  /** The templates: rendered for the composer, and read by the composed profile (a reused prompt's contract and slots). */
+  prompts: PromptLibrary;
   /** The canonical recipes: their blocks' wiring goes into the prompt, and their step prompts may be reused. */
   catalog: readonly Recipe[];
   newId?: () => string;
@@ -85,8 +89,20 @@ function merge(validator: Violation[], profile: Violation[]): Violation[] {
   return [...validator.filter((v) => !(v.ruleId === 'ST7' && v.path !== undefined && knobPaths.has(v.path))), ...profile];
 }
 
-/** Parse, force, schema-check, validate and profile-check one composer answer. */
+/**
+ * Parse, force, schema-check, validate and profile-check one composer answer. Never throws for what the answer holds:
+ * anything the checks themselves cannot handle (a pathological shape, say) is reported as COMPOSED-INTERNAL, so the
+ * answer is refused rather than the compose call failing.
+ */
 export function checkAnswer(text: string, nearest: Recipe, deps: Pick<ComposeDeps, 'prompts' | 'catalog'>, id: string): Candidate {
+  try {
+    return checkAnswerUnguarded(text, nearest, deps, id);
+  } catch (e) {
+    return { violations: [{ ruleId: COMPOSED_RULES.internal, message: `the recipe could not be checked, so it cannot be offered: ${e instanceof Error ? e.message : String(e)}` }] };
+  }
+}
+
+function checkAnswerUnguarded(text: string, nearest: Recipe, deps: Pick<ComposeDeps, 'prompts' | 'catalog'>, id: string): Candidate {
   let raw: unknown;
   try {
     raw = answerJson(text);
@@ -108,14 +124,14 @@ export function checkAnswer(text: string, nearest: Recipe, deps: Pick<ComposeDep
     };
   }
   const verdict = validate(recipe);
-  const fromValidator: Violation[] = verdict.violations.map((v) => ({ ruleId: v.ruleId, path: v.path, message: v.message }));
+  const fromValidator: Violation[] = verdict.violations.map((v) => ({ ruleId: v.ruleId, ...(v.clause ? { clause: v.clause } : {}), path: v.path, message: v.message }));
   const fromProfile: Violation[] = checkComposedProfile(recipe, { nearest, catalog: deps.catalog, prompts: deps.prompts });
   return { recipe, draft, violations: merge(fromValidator, fromProfile) };
 }
 
 /** The `violations` slot: one line per violation, with its rule and place. */
 export function violationsSlot(violations: readonly Violation[]): string {
-  return violations.map((v) => `- ${v.ruleId}${v.path ? ` at ${v.path}` : ''}: ${v.message}`).join('\n');
+  return violations.map((v) => `- ${v.ruleId}${v.clause ? ` (${v.clause})` : ''}${v.path ? ` at ${v.path}` : ''}: ${v.message}`).join('\n');
 }
 
 export interface ComposeOutcome {

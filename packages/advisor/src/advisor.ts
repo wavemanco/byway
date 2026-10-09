@@ -8,11 +8,11 @@ import type {
   EvidenceLabel,
   Gateway,
   ProblemBrief,
-  PromptRenderer,
   Recommendation,
   RecipePresentation,
 } from '@byway/contracts';
 import { DEMO_PROFILE_ID, type PriceRow } from '@byway/gateway';
+import type { PromptLibrary } from '@byway/prompts';
 import { recipeHash, type Recipe } from '@byway/recipe';
 import { mergeAnswers, needsIntake } from './answers.ts';
 import { composeRecipe } from './compose.ts';
@@ -42,7 +42,8 @@ export interface AdvisorCatalog {
 
 export interface AdvisorOptions {
   gateway: Gateway;
-  prompts: PromptRenderer;
+  /** The templates (@byway/prompts' library): rendered for the advisor's own calls, and read by the composed profile. */
+  prompts: PromptLibrary;
   /** Defaults to @byway/catalog. */
   catalog?: AdvisorCatalog;
   /** The study registry labels are computed from (empty in v1). */
