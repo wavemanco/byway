@@ -19,6 +19,7 @@ import type {
   BookRecords,
   BookSpend,
   BudgetDetails,
+  HeldCall,
   LedgerBatch,
   LedgerCursor,
   LedgerEntry,
@@ -35,7 +36,7 @@ import type {
   UncertainCall,
   UnledgeredCall,
 } from '@byway/contracts';
-import { ledgerEntryProblem, spendFaultDetail } from '@byway/contracts';
+import { ledgerEntryConflict, ledgerEntryProblem, ledgerOperationId, spendFaultDetail } from '@byway/contracts';
 import { migrate } from './migrations.ts';
 import { openDatabase, writeTransaction } from './db.ts';
 import { StoreError } from './errors.ts';
@@ -316,15 +317,16 @@ export class SqliteSpendBook implements SpendBook {
 
   /**
    * One audit-file entry into the book (see SpendBook.absorb), inside absorb's transaction and in a savepoint of its
-   * own. An entry the database refuses (it would give one call another call's entry id) changes nothing and is returned
-   * as a problem, which absorb records as a fault; any other error is the database's, not the line's, and is thrown.
+   * own. An entry that conflicts with what the book holds (ledgerEntryConflict), or that the database still refuses (a
+   * constraint), changes nothing and is returned as a problem, which absorb records as a fault; any other error is the
+   * database's, not the line's, and is thrown.
    */
   #absorbEntry(e: LedgerEntry, at: string): string | undefined {
     this.#db.exec('SAVEPOINT absorb_entry');
     try {
-      this.#recordEntry(e, at);
+      const problem = this.#recordEntry(e, at);
       this.#db.exec('RELEASE absorb_entry');
-      return undefined;
+      return problem;
     } catch (err) {
       this.#db.exec('ROLLBACK TO absorb_entry');
       this.#db.exec('RELEASE absorb_entry');
@@ -333,8 +335,14 @@ export class SqliteSpendBook implements SpendBook {
     }
   }
 
-  #recordEntry(e: LedgerEntry, at: string): void {
+  /** Records one entry, or returns why it conflicts with what the book holds, writing nothing. */
+  #recordEntry(e: LedgerEntry, at: string): string | undefined {
     const q = this.#queries();
+    const opId = ledgerOperationId(e);
+    const named = q.get.get(opId) as Row | undefined;
+    const owner = q.byEntryId.get(e.id) as Row | undefined;
+    const conflict = ledgerEntryConflict(e, named && heldCall(named), owner && heldCall(owner));
+    if (conflict !== undefined) return conflict;
     const values = {
       entryId: e.id,
       seq: e.seq,
@@ -344,16 +352,14 @@ export class SqliteSpendBook implements SpendBook {
       basis: e.priceBasis ?? null,
       at,
     };
-    if (e.operationId) {
-      const row = q.get.get(e.operationId) as Row | undefined;
-      if (row) {
-        if (row.state !== 'settled') q.settleFromEntry.run({ id: e.operationId, ...values });
-        else q.markLedgered.run({ id: e.operationId, seq: e.seq, at });
-        return;
-      }
+    if (named) {
+      // The same entry read again marks nothing new (markLedgered keeps the first mark); an unsettled call settles from it.
+      if (named.state !== 'settled') q.settleFromEntry.run({ id: opId, ...values });
+      else q.markLedgered.run({ id: opId, seq: e.seq, at });
+      return undefined;
     }
     q.insertSettled.run({
-      id: e.operationId ?? `ledger:${e.id}`,
+      id: opId,
       workspace: e.workspaceId,
       run: e.runId ?? null,
       step: e.stepId ?? null,
@@ -364,6 +370,7 @@ export class SqliteSpendBook implements SpendBook {
       paid: e.costUsd > 0 ? 1 : 0,
       ...values,
     });
+    return undefined;
   }
 
   #workspaceExposure(workspaceId: string, now: number): { settled: number; inFlight: number; uncertain: number } {
@@ -402,6 +409,18 @@ export class SqliteSpendBook implements SpendBook {
   }
 }
 
+/** A row as ledgerEntryConflict compares it with a ledger line. */
+function heldCall(r: Row): HeldCall {
+  return {
+    opId: String(r.id),
+    ...(r.ledger_entry_id === null ? {} : { entryId: String(r.ledger_entry_id) }),
+    workspaceId: String(r.workspace_id),
+    ...(r.run_id === null ? {} : { runId: String(r.run_id) }),
+    ...(r.settled_usd === null ? {} : { costUsd: Number(r.settled_usd) }),
+    ...(r.price_basis === null ? {} : { priceBasis: String(r.price_basis) }),
+  };
+}
+
 /** SQLite's SQLITE_CONSTRAINT (19), in any of its extended forms (a UNIQUE, CHECK or NOT NULL constraint failed). */
 function isConstraintError(err: unknown): boolean {
   const code = (err as { errcode?: unknown } | null)?.errcode;
@@ -434,6 +453,7 @@ function prepare(db: DatabaseSync) {
   const p = (sql: string): StatementSync => db.prepare(sql);
   return {
     get: p('SELECT * FROM paid_operations WHERE id = ?'),
+    byEntryId: p('SELECT * FROM paid_operations WHERE ledger_entry_id = ?'),
     openFault: p('SELECT ledger_offset FROM spend_faults WHERE acknowledged_at IS NULL ORDER BY id LIMIT 1'),
     openFaults: p('SELECT id, detail, created_at FROM spend_faults WHERE acknowledged_at IS NULL ORDER BY id'),
     allFaults: p('SELECT id, ledger_offset, line_sha256, detail, created_at, acknowledged_at FROM spend_faults ORDER BY id'),
@@ -461,7 +481,7 @@ function prepare(db: DatabaseSync) {
       entry = :entry, ledger_entry_id = :entryId, settle_seq = (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), updated_at = :at WHERE id = :id`),
     settleFromEntry: p(`UPDATE paid_operations SET state = 'settled', settled_usd = :cost, settled_at = :settledAt, served_model = :served, price_basis = :basis,
       ledger_entry_id = :entryId, ledgered_seq = :seq, settle_seq = (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), updated_at = :at WHERE id = :id`),
-    insertSettled: p(`INSERT OR IGNORE INTO paid_operations (id, workspace_id, run_id, step_id, purpose, kind, provider, model, paid, reserved_usd, state,
+    insertSettled: p(`INSERT INTO paid_operations (id, workspace_id, run_id, step_id, purpose, kind, provider, model, paid, reserved_usd, state,
       lease_until, settled_at, settle_seq, settled_usd, served_model, price_basis, ledger_entry_id, ledgered_seq, created_at, updated_at)
       VALUES (:id, :workspace, :run, :step, :purpose, :kind, :provider, :model, :paid, 0, 'settled', 0, :settledAt,
       (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), :cost, :served, :basis, :entryId, :seq, :at, :at)`),

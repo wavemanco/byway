@@ -13,6 +13,7 @@ import type {
   BookRecords,
   BookSpend,
   BudgetDetails,
+  HeldCall,
   LedgerBatch,
   LedgerCursor,
   LedgerEntry,
@@ -27,7 +28,7 @@ import type {
   UncertainCall,
   UnledgeredCall,
 } from '@byway/contracts';
-import { ledgerEntryProblem, spendFaultDetail } from '@byway/contracts';
+import { ledgerEntryConflict, ledgerEntryProblem, ledgerOperationId, spendFaultDetail } from '@byway/contracts';
 import { roundUsd } from './prices.ts';
 
 interface Row {
@@ -317,12 +318,15 @@ export class MemorySpendBook implements SpendBook {
     return this.faultList.map((f) => ({ id: f.id, offset: f.offset, sha256: f.sha256, detail: f.detail, createdAt: f.createdAt, acknowledged: f.acknowledgedAt !== undefined }));
   }
 
-  /** One entry into the book; returns why it cannot be recorded (as the store's UNIQUE entry id refuses it), changing nothing. */
+  /** One entry into the book, as the store's book records it; returns why it conflicts with what the book holds, changing nothing. */
   private absorbEntry(e: LedgerEntry, at: string): string | undefined {
-    const row = e.operationId !== undefined ? this.rows.get(e.operationId) : undefined;
+    const id = ledgerOperationId(e);
+    const row = this.rows.get(id);
+    const owner = [...this.rows.values()].find((r) => r.ledgerEntryId === e.id);
+    const conflict = ledgerEntryConflict(e, row && heldCall(row), owner && heldCall(owner));
+    if (conflict !== undefined) return conflict;
     if (row) {
       if (row.state !== 'settled') {
-        if ([...this.rows.values()].some((r) => r !== row && r.ledgerEntryId === e.id)) return 'it conflicts with a call the spend book already holds';
         Object.assign(row, { state: 'settled', settledUsd: e.costUsd, settledAt: e.at, settleSeq: ++this.settleSeq, ledgerEntryId: e.id, ledgeredSeq: e.seq, updatedAt: at });
         if (e.priceBasis !== undefined) row.priceBasis = e.priceBasis;
       } else if (row.ledgeredSeq === undefined) {
@@ -330,8 +334,6 @@ export class MemorySpendBook implements SpendBook {
       }
       return undefined;
     }
-    const id = e.operationId ?? `ledger:${e.id}`;
-    if (this.rows.has(id) || [...this.rows.values()].some((r) => r.ledgerEntryId === e.id)) return undefined;
     this.rows.set(id, {
       id,
       workspaceId: e.workspaceId,
@@ -385,6 +387,18 @@ export class MemorySpendBook implements SpendBook {
   private stamp(): string {
     return this.now().toISOString();
   }
+}
+
+/** A row as ledgerEntryConflict compares it with a ledger line. */
+function heldCall(r: Row): HeldCall {
+  return {
+    opId: r.id,
+    ...(r.ledgerEntryId !== undefined ? { entryId: r.ledgerEntryId } : {}),
+    workspaceId: r.workspaceId,
+    ...(r.runId !== undefined ? { runId: r.runId } : {}),
+    ...(r.settledUsd !== undefined ? { costUsd: r.settledUsd } : {}),
+    ...(r.priceBasis !== undefined ? { priceBasis: r.priceBasis } : {}),
+  };
 }
 
 /** The same words as the store's book (faultMessage in @byway/store), which this package cannot import. */

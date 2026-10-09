@@ -99,9 +99,9 @@ export interface UnreadableLine extends LedgerLine {
 }
 
 /**
- * A line read as an entry, and where it is. The book checks it again (ledgerEntryProblem) and records it in a step of its
- * own: one it still cannot record becomes a fault at this line, like an unreadable one, never an error that stops the
- * rest of the batch (or demo calls, or Settings) from being read.
+ * A line read as an entry, and where it is. The book checks it again (ledgerEntryProblem), compares it with what it holds
+ * (ledgerEntryConflict) and records it in a step of its own: one it still cannot record becomes a fault at this line,
+ * like an unreadable one, never an error that stops the rest of the batch (or demo calls, or Settings) from being read.
  */
 export interface EntryLine extends LedgerLine {
   entry: LedgerEntry;
@@ -148,6 +148,44 @@ export function ledgerEntryProblem(value: unknown): string | undefined {
   for (const field of ['runId', 'stepId'] as const) if (e[field] !== undefined && typeof e[field] !== 'string') return `its "${field}" is not text`;
   if (e.operationId !== undefined && !text(e.operationId)) return 'its "operationId" is not text';
   if (e.priceBasis !== undefined && !own(PRICE_BASES, e.priceBasis)) return 'its "priceBasis" is not "assumed"';
+  return undefined;
+}
+
+/** The book's row for an entry: the operation it names, or, for an entry from before the book, one keyed by its id. */
+export function ledgerOperationId(e: Pick<LedgerEntry, 'id' | 'operationId'>): string {
+  return e.operationId ?? `ledger:${e.id}`;
+}
+
+/**
+ * A call as the spend book holds it, as far as absorbing a ledger line compares the two: its operation, the entry id it
+ * was settled under (absent while it is not settled), and what the book counts it by.
+ */
+export interface HeldCall {
+  opId: string;
+  entryId?: string;
+  workspaceId: string;
+  runId?: string;
+  costUsd?: number;
+  priceBasis?: string;
+}
+
+/** What the book counts a settled call by, so a line recording it otherwise is not the same entry. */
+const COUNTED_BY = ['workspaceId', 'runId', 'costUsd', 'priceBasis'] as const;
+
+/**
+ * Why an entry read from the audit file conflicts with what the spend book already holds, in words, or undefined when it
+ * does not (ADR-0095 decision 6). `named` is the call the line names (ledgerOperationId) and `owner` the call that
+ * already holds the line's entry id, each when the book has one. The line is the same entry as the book's (the outbox's
+ * own line read back, or a line read again after a restart or a restore) only when it names the call that holds its id
+ * and records it as the book counts it: in the same workspace and run, at the same cost and price basis; absorbing it
+ * then adds nothing. Any other line whose id or settled call the book already holds is a fault at its line: counting it
+ * could count a call twice, and skipping it would drop what it says unseen (N1).
+ */
+export function ledgerEntryConflict(e: LedgerEntry, named: HeldCall | undefined, owner: HeldCall | undefined): string | undefined {
+  if (owner !== undefined && owner.opId !== ledgerOperationId(e)) return 'its "id" is the entry id of another call the spend book holds';
+  if (named?.entryId === undefined) return undefined;
+  if (named.entryId !== e.id) return 'it names a call the spend book holds as settled under another entry id';
+  for (const field of COUNTED_BY) if (named[field] !== e[field]) return `its "${field}" differs from the entry the spend book holds under this id`;
   return undefined;
 }
 
@@ -306,8 +344,11 @@ export interface SpendBook {
   /**
    * Reconciles audit-file lines into the book, idempotently: an entry with an operationId marks its row written (and
    * settles it from the entry when it is not settled yet; a missing row is inserted); a legacy entry is inserted once,
-   * keyed by its entry id; a line that is not an entry, or an entry it cannot record (ledgerEntryProblem, or one the
-   * database refuses), becomes a fault, once per offset and hash. No single line makes it throw. Then the cursor advances.
+   * keyed by its entry id. The same entry read again (ledgerEntryConflict: the outbox's own line read back, a line read
+   * once more after a restart or a restore) adds nothing. A line that is not an entry, an entry it cannot record
+   * (ledgerEntryProblem), one that conflicts with what the book holds (another call's entry id, or a settled call
+   * recorded otherwise: ledgerEntryConflict), or one the database still refuses becomes a fault with why in words, once
+   * per offset and hash. No single line makes it throw. Then the cursor advances.
    */
   absorb(batch: LedgerBatch): Promise<{ faults: number }>;
   /** Settled calls not yet in the audit file, oldest first. */

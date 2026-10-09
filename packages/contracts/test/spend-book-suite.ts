@@ -96,6 +96,9 @@ const odd = (costUsd: number, change: Record<string, unknown>): LedgerEntry => {
 
 const cents = (n: number) => Math.round(n * 1e6) / 1e6;
 
+/** Why a line whose entry id another call holds is a fault, as the fault records it. */
+const OTHER_CALLS_ID = 'its "id" is the entry id of another call the spend book holds';
+
 export function spendBookContract(name: string, open: () => SpendBookFixture): void {
   describe(`SpendBook contract: ${name}`, () => {
     const withBook = (fn: (f: SpendBookFixture) => Promise<void>) => async () => {
@@ -469,7 +472,56 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         const clash = ledgerEntry(0.03, { id: ledgerEntryId, operationId: named.opId });
         expect(await a.absorb(batch([ledgerEntry(0.01), clash]))).toEqual({ faults: 1 });
         expect(await a.spend('ws')).toEqual({ spentUsd: 0.03, byRun: { run: 0.03 }, inFlightUsd: 0.1, uncertainUsd: 0 });
-        expect((await a.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining('Line at byte 100 ') })]);
+        expect((await a.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`Line at byte 100 of ledger.jsonl cannot be read as a spend entry (${OTHER_CALLS_ID})`) })]);
+      }),
+    );
+
+    // A line whose entry id the book already holds, for a call the line does not record as the book does: N1 found the
+    // first two skipped silently, so whatever they cost was never counted and nothing paused.
+    const collisions: [string, (held: { opId: string; entryId: string }) => LedgerEntry, string][] = [
+      ['a new operation', ({ entryId }) => ledgerEntry(5, { id: entryId, operationId: 'op-never-admitted' }), OTHER_CALLS_ID],
+      ['no operation (an entry from before the book)', ({ entryId }) => ledgerEntry(5, { id: entryId }), OTHER_CALLS_ID],
+      ['its own operation, at another cost', ({ opId, entryId }) => ledgerEntry(5, { id: entryId, operationId: opId }), 'its "costUsd" differs from the entry the spend book holds under this id'],
+      ['its own operation, in another run', ({ opId, entryId }) => ledgerEntry(0.02, { id: entryId, operationId: opId, runId: 'run-9' }), 'its "runId" differs from the entry the spend book holds under this id'],
+      ['its own operation, settled under another entry id', ({ opId }) => ledgerEntry(0.02, { operationId: opId }), 'it names a call the spend book holds as settled under another entry id'],
+    ];
+    for (const [what, make, reason] of collisions) {
+      it(
+        `records a line with a settled call’s entry id, naming ${what}, as a fault at its line, never skipping it`,
+        withBook(async ({ a, b }) => {
+          const held = admitRequest({ reserveUsd: 0.1 });
+          await a.admit(held);
+          await a.markSent(held.opId, 'owner-a');
+          const { ledgerEntryId } = await a.settle(held.opId, settlement(0.02));
+          expect(await a.absorb(batch([ledgerEntry(0.01), make({ opId: held.opId, entryId: ledgerEntryId }), ledgerEntry(0.03)]))).toEqual({ faults: 1 });
+          // The rest of the batch is counted and the cursor moves on; the line is neither counted nor dropped unseen.
+          expect(await b.spend('ws')).toEqual({ spentUsd: 0.06, byRun: { run: 0.06 }, inFlightUsd: 0, uncertainUsd: 0 });
+          expect(await b.cursor()).toEqual({ offset: 300, tailStart: 0, tailSha256: null });
+          expect((await b.records('ws')).faults).toEqual([expect.objectContaining({ detail: expect.stringContaining(`Line at byte 100 of ledger.jsonl cannot be read as a spend entry (${reason})`) })]);
+          expect(await a.admit(admitRequest())).toEqual({ fault: expect.stringMatching(/byte 100\b/) });
+          // The call the book settled is still waiting to be written to the audit file under its own entry.
+          expect((await a.unledgered(10)).map((u) => [u.opId, u.entryId])).toEqual([[held.opId, ledgerEntryId]]);
+        }),
+      );
+    }
+
+    it(
+      'reads the same entry again without a fault: the outbox’s own line read back marks its call written, and reading it again changes nothing',
+      withBook(async ({ a, b }) => {
+        const r = admitRequest({ reserveUsd: 0.1 });
+        await a.admit(r);
+        await a.markSent(r.opId, 'owner-a');
+        const { ledgerEntryId } = await a.settle(r.opId, settlement(0.07, { priceBasis: 'assumed' }));
+        const own = ledgerEntry(0.07, { id: ledgerEntryId, operationId: r.opId, priceBasis: 'assumed' });
+        expect(await a.absorb(batch([own]))).toEqual({ faults: 0 });
+        expect(await a.unledgered(10)).toEqual([]);
+        // Another process, a restart, a restored ledger read from its start, and the line copied further down.
+        expect(await b.absorb(batch([own]))).toEqual({ faults: 0 });
+        expect(await a.absorb(batch([ledgerEntry(0.01), own], { cursor: { offset: 200, tailStart: 100, tailSha256: null } }))).toEqual({ faults: 0 });
+        expect(await b.spend('ws')).toEqual({ spentUsd: 0.08, byRun: { run: 0.08 }, inFlightUsd: 0, uncertainUsd: 0, assumedPricing: { calls: 1, usd: 0.07 } });
+        expect((await a.ledgeredCalls()).filter((c) => c.opId === r.opId)).toEqual([expect.objectContaining({ entryId: ledgerEntryId, costUsd: 0.07 })]);
+        expect(await a.faults()).toEqual([]);
+        expect(await a.admit(admitRequest())).toEqual({ admitted: true });
       }),
     );
 
