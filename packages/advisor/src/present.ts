@@ -180,16 +180,25 @@ function around(recipe: Recipe): Around {
   const steps = ordered(recipe);
   const reaching = steps.filter((o) => !o.contained);
   const out: Around = { aiWroteRest: new Set(), scriptLocked: new Set(), notesOnly: new Set(), reactedTo: new Set() };
+  // A claim holds for a step only if it holds at every place the step object sits (a built recipe may reuse one).
+  const failed = new Map<Set<Step>, Set<Step>>();
+  const claim = (set: Set<Step>, s: Step, holds: boolean): void => {
+    const no = failed.get(set) ?? failed.set(set, new Set()).get(set)!;
+    if (!holds) {
+      no.add(s);
+      set.delete(s);
+    } else if (!no.has(s)) set.add(s);
+  };
   for (const o of steps) {
     const s = o.step;
     const before = (f: (t: Step) => boolean) => reaching.some((x) => f(x.step) && canPrecede(x, o));
     const after = (f: (t: Step) => boolean) => reaching.some((y) => f(y.step) && canPrecede(o, y));
     if (voiceWrite(s)) {
-      if (!before(personWrite)) out.aiWroteRest.add(s);
-      if (!after((t) => authorWrite(t) || (voiceWrite(t) && voiceScope(t, recipe.medium).base === 'script'))) out.scriptLocked.add(s);
+      claim(out.aiWroteRest, s, !before(personWrite));
+      claim(out.scriptLocked, s, !after((t) => authorWrite(t) || (voiceWrite(t) && voiceScope(t, recipe.medium).base === 'script')));
     }
-    if (s.actor === 'model' && (s.role === 'cut' || s.role === 'tells-sweep') && !after((t) => machineWrites(t) && inputsOf(t).includes('critique'))) out.notesOnly.add(s);
-    if (s.actor === 'model' && s.role === 'vision' && after((t) => t.actor === 'human' && t.role === 'vision')) out.reactedTo.add(s);
+    if (s.actor === 'model' && (s.role === 'cut' || s.role === 'tells-sweep')) claim(out.notesOnly, s, !after((t) => machineWrites(t) && inputsOf(t).includes('critique')));
+    if (s.actor === 'model' && s.role === 'vision') claim(out.reactedTo, s, after((t) => t.actor === 'human' && t.role === 'vision'));
   }
   return out;
 }
