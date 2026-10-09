@@ -444,14 +444,18 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           odd(0.07, { requestedModel: ['m'] }),
           odd(0.07, { runId: 5 }),
           odd(0.07, { kind: 'telegram' }),
+          // An empty run or step would record spend under a run "" (a hand edit): no call has one.
+          odd(0.07, { runId: '' }),
+          odd(0.07, { stepId: '' }),
           ledgerEntry(0.02),
         ];
-        expect(await a.absorb(batch(entries))).toEqual({ faults: 7 });
+        expect(await a.absorb(batch(entries))).toEqual({ faults: 9 });
         // Read again (a restart, another process): the same lines are the same faults.
         expect(await b.absorb(batch(entries))).toEqual({ faults: 0 });
         expect(await b.spend('ws')).toEqual({ spentUsd: 0.07, byRun: { run: 0.07 }, inFlightUsd: 0, uncertainUsd: 0 });
         const { faults } = await b.records('ws');
-        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300, 400, 500, 600, 700].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be counted as a spend entry`)));
+        expect(faults.map((f) => f.detail)).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900].map((at) => expect.stringContaining(`Line at byte ${at} of ledger.jsonl cannot be counted as a spend entry`)));
+        expect(faults.slice(7).map((f) => f.detail)).toEqual([expect.stringContaining('its "runId" is empty or not text'), expect.stringContaining('its "stepId" is empty or not text')]);
         expect(await a.admit(admitRequest())).toEqual({ fault: expect.stringMatching(/byte 100\b/) });
         expect(await a.admit(admitRequest({ paid: false, reserveUsd: 0 }))).toEqual({ admitted: true });
         for (const f of faults) expect(await b.acknowledgeFault(f.id)).toBe(true);

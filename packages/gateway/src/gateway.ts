@@ -834,8 +834,13 @@ function* requestTexts(req: CompletionRequest): Generator<string> {
   }
 }
 
-function validateSpend(req: { workspaceId?: unknown; purpose?: unknown; profileId?: unknown }): void {
+function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: unknown; purpose?: unknown; profileId?: unknown }): void {
   if (typeof req.workspaceId !== 'string' || !req.workspaceId) throw invalid('workspaceId is required');
+  // A ledger line naming run or step "" is one the spend book refuses to count (ledgerEntryProblem), so such a call is
+  // refused before anything is reserved or sent, never billed and then left out of the caps.
+  for (const field of ['runId', 'stepId'] as const) {
+    if (req[field] !== undefined && (typeof req[field] !== 'string' || !req[field])) throw invalid(`${field}, when given, must be a non-empty string`);
+  }
   if (typeof req.purpose !== 'string' || !req.purpose) throw invalid('purpose is required (spec §3.3)');
   if (typeof req.profileId !== 'string' || !req.profileId) throw invalid('profileId is required');
 }

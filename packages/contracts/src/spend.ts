@@ -149,7 +149,7 @@ export function spendFaultDetail(line: LedgerLine, problem?: string): string {
  * is one (ADR-0095 decision 6). Every field the book records is checked, by the contract's types: an id, a workspace,
  * a purpose and a time that are non-empty text; a sequence number that is a whole number from 1; a kind and a provider
  * the contract names; the requested and served models as text; a cost from 0 to MAX_PLAUSIBLE_CALL_USD, byway's ceiling
- * for one call; and, when present, a run, a step and an operation as text and a price basis the contract names. Fields
+ * for one call; and, when present, a run, a step and an operation as non-empty text and a price basis the contract names. Fields
  * the book does not record (the hashes, usage, latency) are left to the chain check: usage counts feed no sum the caps
  * use. What fails here is a fault, not something counted as nothing.
  */
@@ -165,7 +165,9 @@ export function ledgerEntryProblem(value: unknown): string | undefined {
   if (typeof e.costUsd !== 'number' || !(e.costUsd >= 0 && e.costUsd <= MAX_PLAUSIBLE_CALL_USD)) {
     return `its "costUsd" is not a number from 0 to ${MAX_PLAUSIBLE_CALL_USD}, the most byway counts for one call (in USD)`;
   }
-  for (const field of ['runId', 'stepId'] as const) if (e[field] !== undefined && typeof e[field] !== 'string') return `its "${field}" is not text`;
+  // Absent for a call outside a run (the advisor's); present, a run or step id is never empty: a hand-edited line with
+  // one would record spend under run "" (no run has that id), so it is a fault like any other value the book cannot use.
+  for (const field of ['runId', 'stepId'] as const) if (e[field] !== undefined && !text(e[field])) return `its "${field}" is empty or not text`;
   if (e.operationId !== undefined && !text(e.operationId)) return 'its "operationId" is not text';
   if (e.priceBasis !== undefined && !own(PRICE_BASES, e.priceBasis)) return 'its "priceBasis" is not "assumed"';
   return undefined;
