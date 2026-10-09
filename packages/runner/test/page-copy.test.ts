@@ -1095,8 +1095,11 @@ describe('the VOICE prompt for a page, and the page lock (F07)', () => {
 /**
  * A guard against a search or a quadratic pass over the page, not a benchmark: these pages take a few hundred
  * milliseconds alone, and a full parallel suite on a loaded machine has taken 2.6 s, so the bound leaves room for load.
+ * Each page is held to BOUND_MS; a test may run up to three such pages, so each test has SIZE_TEST_MS, well above three
+ * bounds, in place of vitest's five seconds (r10: the round-9 verifier saw the three-page test time out at 5.3 s under load).
  */
 const BOUND_MS = 5000;
+const SIZE_TEST_MS = 60_000;
 
 describe('size: reading, placing and verifying are linear in the page (F07)', () => {
   it('a 4,000-item list (24,010 tags) opens, places and verifies well inside five seconds; a bad markup is still found', () => {
@@ -1113,7 +1116,7 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
     expect(p.tokens.filter((t) => t.kind === 'tag')).toHaveLength(24010);
     expect([placed.problems, v]).toEqual([[], []]);
     expect(pageEditProblems(before, placed.page.replace('<li>', '<li class="x">'), e, placed)).toHaveLength(1);
-  });
+  }, SIZE_TEST_MS);
 
   it('one block of 12,000 words with emphasis: a word changed near each end is placed with every <em> kept, within the bound (r2)', () => {
     const words = Array.from({ length: 12000 }, (_, i) => `w${i}`);
@@ -1127,7 +1130,7 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
     const heavy = run(before, set(1, words.map((w, i) => (i % 3 ? w : `x${i}`)).join(' ')), { full: true });
     expect(performance.now() - t1).toBeLessThan(BOUND_MS);
     expect(heavy).toMatchObject({ placeProblems: [], verifier: [] });
-  });
+  }, SIZE_TEST_MS);
 
   it('the edit script matches as many words as the table, in order, on 2,000 random pairs of word lists', () => {
     let seed = 7;
@@ -1141,7 +1144,7 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
       expect(pairs.every(([x, y], k) => a[x] === b[y] && (k === 0 || (x > pairs[k - 1]![0] && y > pairs[k - 1]![1])))).toBe(true);
     }
     expect(editPairs(['a', 'b', 'c'], ['x', 'y', 'z'], 2)).toBeUndefined();
-  });
+  }, SIZE_TEST_MS);
 
   it('20,000 inline elements a block leaves open: read, placed and verified within the bound, without copying the open elements per run of text (r5)', () => {
     for (const open of ['<span>', '<a href="/x">', '<b>']) {
@@ -1151,7 +1154,7 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
       expect(performance.now() - t0, open).toBeLessThan(BOUND_MS);
       expect(r, open).toMatchObject(clean(before.replace('<p>Tail</p>', '<p>Tail!</p>')));
     }
-  });
+  }, SIZE_TEST_MS);
 
   it('20,000 nested elements, emptied: the removal rule is linear too (r5)', () => {
     const before = pageOf(`<p>Keep</p><p>${'<span>'.repeat(20000)}Gone${'</span>'.repeat(20000)}</p>`);
@@ -1159,7 +1162,7 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
     const r = run(before, () => 'T\nKeep\n', { full: true });
     expect(performance.now() - t0).toBeLessThan(BOUND_MS);
     expect(r).toMatchObject(clean(pageOf('<p>Keep</p>')));
-  });
+  }, SIZE_TEST_MS);
 
   it('a 20,000-path svg page and 1,000 identical items, every other one deleted', () => {
     const paths = Array.from({ length: 20000 }, (_, i) => `<path d="M${i} 0 L${i + 1} 1" stroke="#${(i % 4096).toString(16).padStart(3, '0')}"/>`).join('');
@@ -1178,5 +1181,5 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
     expect(pageEditProblems(same3, placed2.page, e2, placed2)).toEqual([]);
     expect(performance.now() - t0).toBeLessThan(BOUND_MS);
     expect(placed2.page.match(/<li>/g)).toHaveLength(500);
-  });
+  }, SIZE_TEST_MS);
 });
