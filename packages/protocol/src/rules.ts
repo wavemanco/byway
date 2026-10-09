@@ -22,14 +22,14 @@ const r = (id: RuleId, cls: RuleClass, title: string, source: string): RuleDef =
 export const RULES: Record<RuleId, RuleDef> = {
   ST1: r('ST1', 'invariant', 'Node ids are unique', 'engine'),
   ST2: r('ST2', 'invariant', 'Every loop has 1 ≤ probe ≤ max', '02 §2 loop-until semantics'),
-  ST3: r('ST3', 'invariant', 'Counts are positive integers and every value is plain JSON', '02 §2 operators; canonical hashing'),
+  ST3: r('ST3', 'invariant', "Counts are positive integers within the engine's limits, and every value is plain JSON", '02 §2 operators; canonical hashing; ADR-0092'),
   ST4: r('ST4', 'invariant', 'Stages appear at most once, in order D1, D2, D3', '02 §1 chassis'),
   ST5: r('ST5', 'invariant', 'Every consumed port is in scope', '02 §3 ports'),
   ST6: r('ST6', 'invariant', 'Sit-outs have reasons and sat-out blocks are not used', '02 §5'),
   ST7: r('ST7', 'invariant', 'Knobs are registered and within range', '01 blocks (knobs)'),
   ST8: r('ST8', 'invariant', 'Cited exceptions and derivations exist, are allowed here, are needed and are cited once', '03 declared exceptions; ADR-0059'),
   ST9: r('ST9', 'invariant', 'Audit lenses only annotate: no lens step writes, no person writes in one, and every lens returns an annotation', '02 §2 parallel audit; ADR-0092'),
-  ST10: r('ST10', 'invariant', "One-shot gates have no fix step and no person's write, and a retry is bounded and re-runs this or an earlier stage", '02 §2 gate and retry; ADR-0092'),
+  ST10: r('ST10', 'invariant', "One-shot gates have no fix step and no person's write, and a retry is bounded, re-runs this or an earlier stage, and sits at stage level (not in replicate, each or an audit lens)", '02 §2 gate and retry; ADR-0092'),
   ST11: r('ST11', 'invariant', "Each relay link starts from the previous link's exact end state (anchor) and hands one on", '02 §2 relay; 01 RELAY'),
   ST12: r(
     'ST12',

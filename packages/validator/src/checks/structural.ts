@@ -1,6 +1,6 @@
 import { BLOCKS, ROLE_KNOBS, type KnobDef } from '@byway/protocol';
-import { declaresVoice, personWrite, steps, walk, walkNode, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
-import { ANNOTATION_PORTS, CRITIC_METRICS, DETECTOR_PATTERN, KNOWN_GATE_METRICS, MAX_GATE_RETRIES, type Findings } from '../context.ts';
+import { declaresVoice, engineProblems, MAX_GATE_RETRIES, personWrite, steps, walk, walkNode, type Json, type Node, type Recipe, type Step } from '@byway/recipe';
+import { ANNOTATION_PORTS, CRITIC_METRICS, DETECTOR_PATTERN, KNOWN_GATE_METRICS, type Findings } from '../context.ts';
 
 const STAGE_ORDER = { D1: 1, D2: 2, D3: 3 } as const;
 
@@ -67,6 +67,12 @@ export function checkStructural(recipe: Recipe, findings: Findings): void {
 
   // ST7: knobs.
   for (const { step, path } of steps(recipe)) checkKnobs(step, path, findings);
+
+  // ST3 'limit' and ST10 'retry-scope' (F02): what the engine itself refuses to run (@byway/recipe limits.ts), on every
+  // kind. The counts' lower bounds and the retry count are reported above, in this rule's own words.
+  for (const p of engineProblems(recipe)) {
+    if ((p.ruleId === 'ST3' && p.clause === 'limit') || (p.ruleId === 'ST10' && p.clause === 'retry-scope')) findings.add(p.ruleId, p.path, p.message, p.clause);
+  }
 }
 
 /**

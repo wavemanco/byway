@@ -250,7 +250,7 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
   const spend = await workspaceRemaining(deps);
   const problem = budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
-  const run = await services.runner.start({
+  const run = await refusedAsHttp(!input.recipeId, () => services.runner.start({
     workspaceId: spend.workspaceId,
     recipe,
     problem: intake.problem,
@@ -259,8 +259,24 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     intakeId: intake.id,
     ...(input.routes ? { routes: input.routes } : {}),
     ...(refs.length > 0 ? { inputs: { refs: [...new Set(refs)] } } : {}),
-  });
+  }));
   return { runId: run.id };
+}
+
+/**
+ * The engine's own refusal at start (RecipeRefused, F02, ADR-0092): a recipe past its limits, with a C pick nobody can
+ * decide or a retrying gate inside a fan-out. Admission refuses all of these first, so only a recipe admitted under
+ * older rules meets it. Matched by name, as in model-errors.ts: the runner may come from another server bundle.
+ */
+async function refusedAsHttp<T>(composed: boolean, start: () => Promise<T>): Promise<T> {
+  try {
+    return await start();
+  } catch (err) {
+    if (!(err instanceof Error && err.name === 'RecipeRefused')) throw err;
+    const problems = (err as { problems?: unknown }).problems;
+    const why = Array.isArray(problems) && problems.length ? problems.join('; ') : err.message;
+    throw new HttpError(400, `byway cannot run this recipe: ${why}.${composed ? ' Build your own again.' : ''}`);
+  }
 }
 
 /** The violation a stored composed recipe gets when the recipe it was built from is no longer in the catalog. */

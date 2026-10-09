@@ -7,7 +7,7 @@
  * estimate refreshed.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ComposeResult } from '@byway/contracts';
+import { RecipeRefusedError, type ComposeResult } from '@byway/contracts';
 import { c4 } from '@byway/catalog';
 import { steps, withHash, type Recipe, type Seq } from '@byway/recipe';
 import type { Services } from '../src/services/index.ts';
@@ -100,5 +100,29 @@ describe('starting a composed recipe admits it again', PRODUCT_PATH, () => {
     expect((await d.services.store.getIntake(intakeId))!.composed!.diff).toEqual(stored.diff);
     const { runId } = await startRun(d, { intakeId, budgetUsd: 2 });
     expect((await d.services.store.getRun(runId))?.recipeHash).toBe(stored.recipe.hash);
+  });
+});
+
+describe("the engine's own refusal at start (F02, ADR-0092 stage 2)", PRODUCT_PATH, () => {
+  it('a recipe the runner refuses (RecipeRefused) is a 400 that says why, and no run exists', async () => {
+    const d = await deps();
+    const { intakeId } = await composed(d);
+    const refusing: Deps = {
+      ...d,
+      services: {
+        ...d.services,
+        runner: {
+          ...d.services.runner,
+          start: async () => {
+            throw new RecipeRefusedError('composed-x', ['up to 600 steps can run at once; the engine allows 500']);
+          },
+        },
+      },
+    };
+    const refused = await startRun(refusing, { intakeId, budgetUsd: 2 }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(HttpError);
+    expect(refused).toMatchObject({ status: 400 });
+    expect((refused as Error).message).toBe('byway cannot run this recipe: up to 600 steps can run at once; the engine allows 500. Build your own again.');
+    expect(await d.services.store.listRuns(d.workspaceId)).toEqual([]);
   });
 });

@@ -6,8 +6,8 @@
 import { randomUUID } from 'node:crypto';
 import { WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
-import { CANCEL_SIGNAL, PAUSE_SIGNAL, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
-import { parseRecipe, recipeHash } from '@byway/recipe';
+import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
+import { engineProblems, parseRecipe, recipeHash } from '@byway/recipe';
 import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
 import { startFailureMessage } from './start-failure.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
@@ -64,6 +64,10 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       const recipe = parseRecipe(input.recipe);
       const medium = recipe.medium;
       if (!medium) throw new Error(`Recipe "${recipe.id}" names no medium, so it cannot run.`);
+      // What the engine cannot run, whoever admitted it (F02): past its limits, a C pick nobody decides, a retrying gate
+      // in a fan-out. No product policy here (VOICE, composed limits): that is the advisor's and web start's.
+      const problems = engineProblems(recipe);
+      if (problems.length) throw new RecipeRefusedError(recipe.id, problems.map((p) => p.message));
       const id = randomUUID();
       const record = await store.createRun({
         id,

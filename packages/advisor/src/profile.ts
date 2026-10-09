@@ -4,6 +4,7 @@ import {
   authorWrite,
   changesWork,
   checkpoints,
+  composedLimitProblems,
   declaresVoice,
   matchCheckpoints,
   placements,
@@ -28,6 +29,9 @@ import { flowRecipe } from '@byway/validator';
  *
  * Every protection here is read from what the recipe runs (@byway/recipe semantics, ADR-0092), never from what a step
  * declares: a checkpoint counts only where a person's write runs every time; writers are writers by role and actor.
+ *
+ * A model chose its counts, so it is held to COMPOSED_LIMITS (COMPOSED-LIMIT, F02): far inside the engine's own, which
+ * the validator applies to every recipe (ST3 'limit').
  */
 
 export interface ProfileViolation {
@@ -45,6 +49,7 @@ export const COMPOSED_RULES = {
   author: 'COMPOSED-AUTHOR',
   prompt: 'COMPOSED-PROMPT',
   internal: 'COMPOSED-INTERNAL',
+  limit: 'COMPOSED-LIMIT',
 } as const;
 
 function knobDefs(step: Step): Record<string, KnobDef> {
@@ -183,6 +188,8 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
   const out: ProfileViolation[] = [];
   const add = (rule: keyof typeof COMPOSED_RULES, path: string, message: string) => out.push({ ruleId: COMPOSED_RULES[rule], path, message });
   const promptRoles = catalogPrompts(ctx.catalog);
+
+  for (const { path, message } of composedLimitProblems(recipe)) add('limit', path, message);
 
   for (const { step, path } of steps(recipe)) {
     if (step.block && !Object.hasOwn(BLOCKS, step.block)) add('block', path, `step "${step.id}" uses "${step.block}", which is not a registered block`);
