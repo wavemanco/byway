@@ -7,7 +7,7 @@ import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../src/server/api.ts';
 import { composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState } from '../src/view/recommendation.ts';
 import { COMPOSED_CHANGED, COMPOSED_REFUSED, HELD_KEY_REFUSAL } from '../src/view/refusals.ts';
-import { composedRefusalLead } from '../src/view/composed.ts';
+import { composedRefusalGroups, composeNotice } from '../src/view/composed.ts';
 
 const rec = (recipeId: string): Recommendation =>
   ({
@@ -103,10 +103,30 @@ describe('a composed recipe admitted again at start (ADR-0092)', () => {
   });
 });
 
-describe('the line above a composed recipe’s refusals', () => {
-  it('names the protocol checks only when every refusal is one; a check at Start that is not (ADMIT-HASH, ADMIT-NEAREST) gets a plain lead', () => {
-    expect(composedRefusalLead([{ ruleId: 'ST12' }, { ruleId: 'COMP-1' }])).toBe('It did not pass the protocol checks, so it cannot run:');
-    expect(composedRefusalLead([{ ruleId: 'ADMIT-NEAREST' }])).toBe('It cannot run:');
-    expect(composedRefusalLead([{ ruleId: 'ADMIT-HASH' }, { ruleId: 'ST12' }])).toBe('It cannot run:');
+describe('a composed recipe’s refusals, each worded by what it is', () => {
+  const v = (ruleId: string, message = `${ruleId} says no`) => ({ ruleId, message });
+  const leads = (violations: { ruleId: string; message: string }[]) => composedRefusalGroups(violations).map((g) => [g.lead, g.items.map((i) => i.ruleId)]);
+
+  it('protocol checks under the protocol checks; the composed profile’s are protocol checks too', () => {
+    expect(leads([v('ST12'), v('COMPOSED-VOICE'), v('COMPOSED-LIMIT')])).toEqual([['It did not pass the protocol checks, so it cannot run:', ['ST12', 'COMPOSED-VOICE', 'COMPOSED-LIMIT']]]);
+  });
+
+  it('a check at Start that is not a protocol check is never listed under one (ADMIT-HASH, ADMIT-NEAREST)', () => {
+    expect(leads([v('ADMIT-HASH'), v('ST12')])).toEqual([
+      ['It did not pass the protocol checks, so it cannot run:', ['ST12']],
+      ['It is no longer the recipe byway offered you, so it cannot run:', ['ADMIT-HASH']],
+    ]);
+    expect(leads([v('ADMIT-NEAREST')])).toEqual([["The recipe it was built from is no longer one of byway's, so it cannot be checked or run:", ['ADMIT-NEAREST']]]);
+  });
+
+  it('an answer byway could not read or could not check is said to be that, not a failed check', () => {
+    expect(leads([v('SCHEMA'), v('FORMAT')])).toEqual([['byway could not read it as a recipe, so it cannot run:', ['SCHEMA', 'FORMAT']]]);
+    expect(leads([v('COMPOSED-INTERNAL')])).toEqual([['byway could not check it, so it cannot run:', ['COMPOSED-INTERNAL']]]);
+  });
+
+  it('the notice after Build my own says the same', () => {
+    expect(composeNotice({ ok: true, violations: [] })).toBe('Your recipe is ready. It is shown above.');
+    expect(composeNotice({ ok: false, violations: [v('ST12')] })).toBe('byway built a recipe, but it did not pass the protocol checks. It is shown above.');
+    expect(composeNotice({ ok: false, violations: [v('SCHEMA')] })).toBe('byway built a recipe, but it cannot run. It is shown above, with why.');
   });
 });
