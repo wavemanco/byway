@@ -437,6 +437,8 @@ export class ModelGateway implements Gateway {
             }
           },
           accepted: (role, requestId) => op.accepted(role, requestId),
+          // An earlier attempt's jobs the provider accepted (stage 3): polled by their ids, never submitted again.
+          ...(op.resumed ? { resume: op.resumed } : {}),
         });
       } catch (e) {
         // A job fal may have accepted (a lost answer, a status that could not be read) may be billed: the call ends
@@ -686,13 +688,27 @@ export class ModelGateway implements Gateway {
     if (!(reserveUsd <= MAX_PLAUSIBLE_CALL_USD)) {
       throw invalid(`this call is estimated at $${reserveUsd.toFixed(2)}, more than byway allows for one call ($${MAX_PLAUSIBLE_CALL_USD.toFixed(2)})`);
     }
+    // A step's call carries its key and its caller's signals (stage 3, ADR-0099): another attempt holding the key is
+    // waited for, and a gone holder's call is taken over (PaidCalls).
+    const op = req.operation;
     return this.paid.admit(
-      { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, kind, provider: ref.provider, model: ref.model, reserveUsd, paid: reserveUsd > 0 },
+      {
+        workspaceId: req.workspaceId,
+        ...ctxIds(req),
+        purpose: req.purpose,
+        kind,
+        provider: ref.provider,
+        model: ref.model,
+        reserveUsd,
+        paid: reserveUsd > 0,
+        ...(op ? { operationKey: op.key } : {}),
+      },
       async () => {
         const workspaceUsd = await this.caps.workspaceCapUsd(req.workspaceId);
         const runUsd = req.runId !== undefined && this.caps.runCapUsd ? await this.caps.runCapUsd(req.runId) : undefined;
         return { workspaceUsd, ...(runUsd !== undefined ? { runUsd } : {}) };
       },
+      op ? { until: op.until, ...(op.cancel ? { cancel: op.cancel } : {}) } : undefined,
     );
   }
 
@@ -835,7 +851,7 @@ function* requestTexts(req: CompletionRequest): Generator<string> {
   }
 }
 
-function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: unknown; purpose?: unknown; profileId?: unknown }): void {
+function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: unknown; purpose?: unknown; profileId?: unknown; operation?: unknown }): void {
   if (typeof req.workspaceId !== 'string' || !req.workspaceId) throw invalid('workspaceId is required');
   // A ledger line naming run or step "" is one the spend book refuses to count (ledgerEntryProblem), so such a call is
   // refused before anything is reserved or sent, never billed and then left out of the caps.
@@ -844,6 +860,16 @@ function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: u
   }
   if (typeof req.purpose !== 'string' || !req.purpose) throw invalid('purpose is required (spec §3.3)');
   if (typeof req.profileId !== 'string' || !req.profileId) throw invalid('profileId is required');
+  if (req.operation !== undefined) validateOperation(req.operation);
+}
+
+/** SpendContext.operation, checked before anything is reserved: a key, and signals that can say when the caller ends. */
+function validateOperation(value: unknown): void {
+  const op = value as { key?: unknown; until?: unknown; cancel?: unknown } | null;
+  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel? }');
+  if (typeof op.key !== 'string' || !op.key) throw invalid('operation.key must be a non-empty string');
+  if (!(op.until instanceof AbortSignal)) throw invalid('operation.until must be an AbortSignal');
+  if (op.cancel !== undefined && !(op.cancel instanceof AbortSignal)) throw invalid('operation.cancel, when given, must be an AbortSignal');
 }
 
 /**
