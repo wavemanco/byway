@@ -2,7 +2,7 @@
 import { isEngineUnavailable } from '../services/engine-runner.ts';
 import { getContext } from '../services/index.ts';
 import { HttpError, type Deps } from './api.ts';
-import { fail } from './http.ts';
+import { fail, json } from './http.ts';
 
 export async function getDeps(): Promise<Deps> {
   const { services, workspaceId, profileId, heldKeyIn } = await getContext();
@@ -17,7 +17,7 @@ export async function handle(body: () => Promise<Response>): Promise<Response> {
   try {
     return await body();
   } catch (err) {
-    if (err instanceof HttpError) return fail(err.status, err.message);
+    if (err instanceof HttpError) return err.body ? json({ error: err.message, ...(err.code ? { code: err.code } : {}), ...err.body }, err.status) : fail(err.status, err.message, err.code);
     if (isEngineUnavailable(err)) return fail(503, (err as Error).message);
     console.error(err);
     return fail(500, 'Something went wrong inside byway. Try again.');

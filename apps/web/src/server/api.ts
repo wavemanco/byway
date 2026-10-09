@@ -14,6 +14,7 @@ import { isEngineUnavailable } from '../services/engine-runner.ts';
 import type { Services } from '../services/index.ts';
 import { budgetProblem, ledgerCheckText, workspaceSpend, type WorkspaceSpend } from '../view/history.ts';
 import { takesRefs } from '../view/refs.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED } from '../view/refusals.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
 import { artifactHeaders, isArtifactId, mediaServing, pageScriptsGranted } from './artifacts.ts';
@@ -27,9 +28,15 @@ import type { ControlInput, ProblemInput, RecommendInput, RefInput, ResolutionIn
 export class HttpError extends Error {
   override name = 'HttpError';
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** A refusal code a screen acts on (view/refusals.ts), sent beside the message. */
+  readonly code: string | undefined;
+  /** More for the screen to act on, sent beside the message (a refusal's new content, say). */
+  readonly body: Record<string, unknown> | undefined;
+  constructor(status: number, message: string, code?: string, body?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.code = code;
+    this.body = body;
   }
 }
 
@@ -204,7 +211,7 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     if (!intake.composed) throw new HttpError(400, 'Choose a recipe, or build your own first.');
     // Only a recipe that validates is ever offered (spec §4).
     if (!intake.composed.ok) throw new HttpError(400, 'The composed recipe did not pass the protocol checks, so it cannot run.');
-    recipe = intake.composed.recipe;
+    recipe = await admitComposed(deps, intake.id, intake.composed, intake.problem);
   }
   const refs = input.refs ?? [];
   if (refs.length > 0) {
@@ -227,6 +234,25 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     ...(refs.length > 0 ? { inputs: { refs: [...new Set(refs)] } } : {}),
   });
   return { runId: run.id };
+}
+
+/**
+ * A composed recipe is admitted again before it runs (F01, ADR-0092): the `ok` stored when it was composed is not taken
+ * on trust, because the checks may have changed since. The advisor re-runs them on the stored recipe under its own id
+ * and recomputes what the screen said about it; the intake keeps the result either way (the estimate is refreshed
+ * silently). A recipe that no longer passes, or no longer hashes the same, is refused; one whose explanation changed
+ * does not start until the person has seen the new one, which the refusal carries.
+ */
+async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult, problem: IntakeRecord['problem']): Promise<Recipe> {
+  const again = deps.services.advisor.admit(stored, { problem, profileId: deps.profileId });
+  await deps.services.store.updateIntake(intakeId, { composed: again });
+  if (!again.ok) {
+    throw new HttpError(400, "This recipe no longer passes byway's checks, so it cannot run. Build your own again for one that does.", COMPOSED_REFUSED, { composed: composeView(again) });
+  }
+  if (JSON.stringify(again.diff) !== JSON.stringify(stored.diff) || JSON.stringify(again.presentation) !== JSON.stringify(stored.presentation)) {
+    throw new HttpError(409, 'byway checked this recipe again and now explains it differently, so it did not start. Read what it does, then start it.', COMPOSED_CHANGED, { composed: composeView(again) });
+  }
+  return again.recipe;
 }
 
 export interface RunRecipe {

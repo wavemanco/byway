@@ -5,7 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../src/server/api.ts';
-import { composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState } from '../src/view/recommendation.ts';
+import { composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState } from '../src/view/recommendation.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED, HELD_KEY_REFUSAL } from '../src/view/refusals.ts';
 
 const rec = (recipeId: string): Recommendation =>
   ({
@@ -77,5 +78,26 @@ describe('the Recommendation screen’s state (F14)', () => {
   it('a selection that is not one of the recipes is said to be unavailable, not swapped for another', () => {
     const next = selected(recovered(failed(), { recommendation: rec('c1'), remainingUsd: 19 }), { kind: 'recipe', recipeId: 'c99' });
     expect(screen(next, null, OPTIONS)).toBe('unavailable');
+  });
+});
+
+describe('a composed recipe admitted again at start (ADR-0092)', () => {
+  const built = () => composedReady(failed(), { composed, remainingUsd: 18.5 });
+  const now = { ...composed, diff: ['Added: Defect check'], ok: false };
+
+  it('shows what the refusal carries when the recipe now reads differently, or no longer passes', () => {
+    for (const code of [COMPOSED_CHANGED, COMPOSED_REFUSED]) {
+      const next = composedAfterStart(built(), { code, body: { error: 'x', code, composed: now } });
+      expect(next.composed).toEqual(now);
+      expect(next.selection).toEqual({ kind: 'composed' });
+      expect(next.remainingUsd).toBe(18.5);
+    }
+  });
+
+  it('leaves the screen as it was for any other refusal, or one without a usable view', () => {
+    const before = built();
+    expect(composedAfterStart(before, { code: HELD_KEY_REFUSAL, body: { composed: now } })).toBe(before);
+    expect(composedAfterStart(before, { code: COMPOSED_CHANGED, body: { composed: 'no' } })).toBe(before);
+    expect(composedAfterStart(before, {})).toBe(before);
   });
 });

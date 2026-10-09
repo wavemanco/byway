@@ -6,10 +6,13 @@ export class ApiError extends Error {
   readonly code: string | undefined;
   /** The request's top-level fields the refusal names (for a held key: those that held one), when it names any. */
   readonly fields: readonly string[] | undefined;
-  constructor(message: string, code?: string, fields?: readonly string[]) {
+  /** The whole refusal as the server sent it, for a refusal that carries more for the screen (view/refusals.ts). */
+  readonly body: Readonly<Record<string, unknown>> | undefined;
+  constructor(message: string, code?: string, fields?: readonly string[], body?: Readonly<Record<string, unknown>>) {
     super(message);
     this.code = code;
     this.fields = fields;
+    this.body = body;
   }
 }
 
@@ -31,7 +34,7 @@ async function send<T>(method: 'POST' | 'PATCH', url: string, body: unknown): Pr
     if (res.ok) throw new ApiError('byway sent an answer that could not be read. Try again.');
     data = {};
   }
-  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, typeof data.code === 'string' ? data.code : undefined, stringList(data.fields));
+  if (!res.ok) throw new ApiError(data.error ?? `The request failed (${res.status}). Try again.`, typeof data.code === 'string' ? data.code : undefined, stringList(data.fields), data);
   return data as T;
 }
 

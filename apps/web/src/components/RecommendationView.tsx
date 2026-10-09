@@ -8,9 +8,9 @@ import type { ComposeResultView, ComposeView, RecommendResult } from '../server/
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
 import { diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
-import { composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
+import { composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
-import { post } from './api.ts';
+import { ApiError, post } from './api.ts';
 import { EvidenceLabel } from './EvidenceLabel.tsx';
 import { Route, RouteDetails, RouteLegend } from './Route.tsx';
 import { Examples, exampleCount, storeExamples, type ExampleEntry } from './Examples.tsx';
@@ -208,6 +208,7 @@ export function RecommendationView(props: Props) {
             examples={examples}
             onExamples={onExamples}
             onExampleRefused={onExampleRefused}
+            onStartRefused={(refusal) => setState((s) => composedAfterStart(s, refusal))}
             onStarted={(runId) => {
               // The problem, its attachments and these examples went into the run: nothing is left to keep.
               clearStartDraft();
@@ -370,9 +371,11 @@ interface ProposalProps {
   /** byway refused this pasted example for holding one of its provider keys (ADR-0088). */
   onExampleRefused: (text: string) => void;
   onStarted: (runId: string) => void;
+  /** Start was refused: the screen applies what the refusal carries (a composed recipe admitted again, ADR-0092). */
+  onStartRefused: (refusal: ApiError) => void;
 }
 
-function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, remainingUsd, demo, examples, onExamples, onExampleRefused, onStarted }: ProposalProps) {
+function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, remainingUsd, demo, examples, onExamples, onExampleRefused, onStarted, onStartRefused }: ProposalProps) {
   const technical = useTechnicalNames();
   const budgetId = useId();
   const { presentation, label, estimate } = option;
@@ -403,6 +406,9 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
       });
       onStarted(runId);
     } catch (err) {
+      // Start admits a composed recipe again (ADR-0092): when it now fails or reads differently, the refusal carries what
+      // the screen should show instead, and the message says why the run did not start.
+      if (err instanceof ApiError) onStartRefused(err);
       setError(err instanceof Error ? err.message : 'The run did not start. Try again.');
       setBusy(false);
     }
