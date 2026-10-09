@@ -131,28 +131,49 @@ describe('two gateways on one spend book (the web process and the worker)', () =
 });
 
 describe('calls whose caller stopped', () => {
-  it('a call admitted but never sent counts nothing once its owner is gone', async () => {
+  it('a call admitted but never sent counts nothing once its owner is gone: at once after a clean stop', async () => {
     caps.workspace = 0.15;
-    const dead = new PaidCalls({ book, ledger: new Ledger({ path: ledgerPath }), warn: () => undefined });
+    const stopped = new PaidCalls({ book, ledger: new Ledger({ path: ledgerPath }), warn: () => undefined });
+    await stopped.admit({ workspaceId: 'ws', runId: 'run-1', purpose: 'build:prose', kind: 'completion', provider: 'anthropic', model: 'claude-opus-5-5', reserveUsd: 0.1, paid: true }, async () => ({ workspaceUsd: 0.15 }));
+    await stopped.close();
+    const { client } = fakeAnthropic([anthropicMessage({ usage: { input_tokens: 0, output_tokens: 1000 } })]);
+    const g = gateway({ clients: { anthropic: client } });
+    await expect(g.complete(ask())).resolves.toMatchObject({ costUsd: 0.1 });
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0.1, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('a call admitted but never sent counts nothing once its owner is gone: after its lease runs out when the owner died', async () => {
+    caps.workspace = 0.15;
+    // A process that dies never closes: nothing renews its call, and nothing hands it back.
+    const dead = new PaidCalls({ book, ledger: new Ledger({ path: ledgerPath }), warn: () => undefined, renewEveryMs: 3_600_000 });
     await dead.admit({ workspaceId: 'ws', runId: 'run-1', purpose: 'build:prose', kind: 'completion', provider: 'anthropic', model: 'claude-opus-5-5', reserveUsd: 0.1, paid: true }, async () => ({ workspaceUsd: 0.15 }));
-    await dead.close();
     const { client } = fakeAnthropic([anthropicMessage({ usage: { input_tokens: 0, output_tokens: 1000 } })]);
     const g = gateway({ clients: { anthropic: client } });
     await expect(g.complete(ask())).rejects.toMatchObject({ code: 'budget-exceeded' });
     clock.t += 61_000;
     await expect(g.complete(ask())).resolves.toMatchObject({ costUsd: 0.1 });
     expect(await g.spend('ws')).toMatchObject({ spentUsd: 0.1, inFlightUsd: 0, uncertainUsd: 0 });
+    await dead.close();
+  });
+
+  it('a closed gateway starts no paid call: nothing would renew it or hand it back', async () => {
+    caps.workspace = 1;
+    const { client, calls } = fakeAnthropic();
+    const g = gateway({ clients: { anthropic: client } });
+    await g.close();
+    await expect(g.complete(ask())).rejects.toMatchObject({ code: 'provider-error', retryable: true });
+    expect(calls).toHaveLength(0);
+    expect(await book.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
   });
 
   it('a sent call whose owner died may have been billed: it counts against the workspace, not the run, until cleared', async () => {
     caps.workspace = 0.25;
     caps.runs['run-1'] = 0.1;
     const held = heldAdapter();
-    const dying = gateway({ adapters: { anthropic: held.adapter } });
+    // The worker dies: nothing renews its call any more, and it never closes.
+    const dying = gateway({ adapters: { anthropic: held.adapter }, renewEveryMs: 3_600_000 });
     void dying.complete(ask()).catch(() => undefined);
     await until(() => held.waiting() === 1);
-    // The worker dies: nothing renews its call any more.
-    await dying.close();
     clock.t += 61_000;
     const { client } = fakeAnthropic([anthropicMessage({ usage: { input_tokens: 0, output_tokens: 1000 } })]);
     const restarted = gateway({ clients: { anthropic: client } });

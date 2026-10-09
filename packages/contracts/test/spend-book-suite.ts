@@ -146,6 +146,45 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
     );
 
     it(
+      'ends one owner’s leases at once (a clean stop): its sent and accepted calls may have been billed, against the workspace only; its open ones count nothing',
+      withBook(async ({ a, b }) => {
+        const roomy = { workspaceUsd: 10, runUsd: 10 };
+        const open = admitRequest({ reserveUsd: 0.3, caps: roomy });
+        const sent = admitRequest({ reserveUsd: 0.4, caps: roomy });
+        const accepted = admitRequest({ reserveUsd: 0.2, kind: 'video', provider: 'fal', model: 'fal-ai/kling', caps: roomy });
+        const settled = admitRequest({ reserveUsd: 0.1, caps: roomy });
+        const theirs = admitRequest({ reserveUsd: 0.05, owner: 'owner-b', caps: roomy });
+        for (const r of [open, sent, accepted, settled, theirs]) expect(await a.admit(r)).toEqual({ admitted: true });
+        for (const r of [sent, accepted, settled]) await a.markSent(r.opId, 'owner-a');
+        await a.markSent(theirs.opId, 'owner-b');
+        await a.accept(accepted.opId, 'generation', 'req-gen');
+        await a.settle(settled.opId, settlement(0.08));
+        await b.endLeases('owner-a');
+        // No time has passed: nothing waits for a lease to run out.
+        expect(await a.spend('ws')).toEqual({ spentUsd: 0.08, byRun: { run: 0.08 }, inFlightUsd: 0.05, uncertainUsd: 0.6 });
+        // The run cap counts its settled cost and the other owner's call in flight only: 0.08 + 0.05 + 0.37 fits under 0.5.
+        expect(await a.admit(admitRequest({ reserveUsd: 0.37, caps: { workspaceUsd: 10, runUsd: 0.5 } }))).toEqual({ admitted: true });
+        const records = await a.records('ws');
+        expect(records.uncertain.map((u) => [u.opId, u.usd, u.reason]).sort()).toEqual(
+          [
+            [sent.opId, 0.4, 'interrupted'],
+            [accepted.opId, 0.2, 'interrupted'],
+          ].sort(),
+        );
+        expect(records.uncertain.find((u) => u.opId === accepted.opId)?.providerJobs).toEqual({ generation: 'req-gen' });
+        // The released call cannot be sent any more; the stopped calls are not renewed; a late answer still settles.
+        expect(await a.markSent(open.opId, 'owner-a')).toBe(false);
+        await a.renew([sent.opId], 'owner-a', LEASE);
+        expect(await a.spend('ws')).toMatchObject({ uncertainUsd: 0.6 });
+        await a.settle(sent.opId, settlement(0.1));
+        expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.18, uncertainUsd: 0.2 });
+        await b.endLeases('owner-a');
+        await b.endLeases('nobody');
+        expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.18, uncertainUsd: 0.2 });
+      }),
+    );
+
+    it(
       'marks sent once, only for the owner of a live open row',
       withBook(async ({ a, b, advance }) => {
         const r = admitRequest();

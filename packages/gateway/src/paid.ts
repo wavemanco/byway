@@ -6,8 +6,9 @@
  * an accounting fault is open); mark the call sent just before its first provider request; after an attempt that may
  * have been billed, retain that attempt's bound against the workspace before sending again; settle the true cost when
  * the provider answers, or release (certainly not billed) or abandon (may have been) when it does not. While the call is
- * in progress its lease is renewed every 15 s for 60 s, so a process that dies leaves rows that expire: never-sent ones
- * count nothing, sent ones count their estimate against the workspace as "may have been billed".
+ * in progress its lease is renewed every 15 s for 60 s. A gateway that closes cleanly gives its calls in progress up at
+ * once; a process that dies leaves rows that expire with their leases. Either way never-sent ones count nothing, and
+ * sent ones count their estimate against the workspace only, as "may have been billed".
  *
  * The audit file: one idempotent step, absorb, reconciles every ledger line into the book (entries from before the book,
  * entries an older worker appended, entries the outbox wrote whose mark a crash lost). The outbox drain runs under the
@@ -112,6 +113,8 @@ export class PaidCalls {
 
   /** @internal Admission itself, also used for the one re-admission of a call swept while its process slept. */
   async admitOnce(req: PaidCallRequest, caps: AdmitRequest['caps']): Promise<string> {
+    // Nothing would renew its lease or hand it back: a closed gateway starts no paid call.
+    if (this.closed) throw new GatewayError('provider-error', 'byway is stopping, so it did not start this call. Try again once it has started again.', true);
     const opId = randomUUID();
     const outcome = await this.book.admit({ ...req, opId, owner: this.owner, leaseMs: this.leaseMs, caps });
     if ('budget' in outcome) throw budgetError(outcome.budget);
@@ -182,11 +185,22 @@ export class PaidCalls {
     }
   }
 
-  /** Stops the timer after one last bounded drain. Idempotent; never throws. Call before the store closes. */
+  /**
+   * A clean stop: stops the timer, gives up this gateway's calls still in progress at once (endLeases: a call it had
+   * sent counts as "may have been billed", against the workspace only; one it had not sent counts nothing), then makes
+   * one last bounded drain. So a step retried on a restarted worker straight away finds its run's budget as it was
+   * before the stopped call. Calls admitted afterwards are refused. Idempotent; never throws. Call before the store
+   * closes: a process that dies without it leaves its calls to run out their leases (up to `leaseMs`).
+   */
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     clearInterval(this.timer);
+    try {
+      await this.book.endLeases(this.owner);
+    } catch (e) {
+      this.warn(`byway could not hand back its calls in progress in the spend book as it stopped (${(e as Error)?.message ?? String(e)}); they count as under way until their leases run out.`);
+    }
     await this.drain().catch(() => undefined);
   }
 }

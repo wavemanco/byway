@@ -19,13 +19,15 @@
  *   written, or its caller stopped or died while waiting).
  *
  * Exposure (what the caps count). A row is live while its lease has not run out; its caller renews the lease while
- * the call is in progress.
+ * the call is in progress, and gives it up at once when it stops cleanly (endLeases). A caller that crashes cannot: its
+ * rows stay live until their leases run out.
  * - Run cap: the run's settled cost, plus the reservation of its live open, sent and accepted rows.
  * - Workspace cap: all settled cost, plus the reservation of live open, sent and accepted rows, plus the reservation of
  *   uncertain rows (state uncertain, or sent or accepted and no longer live) and every retained amount, until the person
  *   clears them in Settings. An open row that is no longer live counts nothing: it was never sent.
- * - Amounts that may have been billed are deliberately not charged to run caps: a stop and restart must not raise a
- *   budget question, and the workspace cap still counts them.
+ * - Amounts that may have been billed are deliberately not charged to run caps: a clean stop and restart must not raise a
+ *   budget question, and the workspace cap still counts them. After a crash, the dead caller's live rows count against
+ *   the run cap as in flight until their leases run out.
  */
 import type { BudgetDetails, LedgerEntry, ProviderId } from './gateway.ts';
 
@@ -211,6 +213,14 @@ export interface SpendBook {
   settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }>;
   /** Extends the lease of this owner's unsettled operations. */
   renew(opIds: readonly string[], owner: string, leaseMs: number): Promise<void>;
+  /**
+   * This owner is stopping cleanly (its gateway is closing), so its operations are given up at once rather than when
+   * their leases run out: in one transaction its open rows are released (never sent, they count nothing) and its sent
+   * and accepted rows become uncertain, as interrupted (they may have been billed, and count against the workspace cap
+   * only until cleared). Other owners' rows and settled rows are untouched; a later settlement still records the true
+   * cost. Idempotent. An owner that crashes never gets here: its rows wait for their leases to run out.
+   */
+  endLeases(owner: string): Promise<void>;
   cursor(): Promise<LedgerCursor>;
   /**
    * Reconciles audit-file lines into the book, idempotently: an entry with an operationId marks its row written (and

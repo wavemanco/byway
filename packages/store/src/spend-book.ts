@@ -197,6 +197,15 @@ export class SqliteSpendBook implements SpendBook {
     });
   }
 
+  async endLeases(owner: string): Promise<void> {
+    this.#tx(() => {
+      const q = this.#queries();
+      const at = this.#stamp();
+      q.endOpen.run({ owner, at });
+      q.endSent.run({ owner, at });
+    });
+  }
+
   async cursor(): Promise<LedgerCursor> {
     const row = this.#queries().cursor.get() as Row;
     return { offset: Number(row.ledger_offset), tailStart: Number(row.ledger_tail_start), tailSha256: row.ledger_tail_sha256 === null ? null : String(row.ledger_tail_sha256) };
@@ -415,6 +424,8 @@ function prepare(db: DatabaseSync) {
       VALUES (:id, :workspace, :run, :step, :purpose, :kind, :provider, :model, :paid, 0, 'settled', 0, :settledAt,
       (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), :cost, :served, :basis, :entryId, :seq, :at, :at)`),
     renew: p(`UPDATE paid_operations SET lease_until = :lease WHERE id = :id AND owner = :owner AND state IN ('open', 'sent', 'accepted')`),
+    endOpen: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE owner = :owner AND state = 'open'`),
+    endSent: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'interrupted', updated_at = :at WHERE owner = :owner AND state IN ('sent', 'accepted')`),
     cursor: p('SELECT ledger_offset, ledger_tail_start, ledger_tail_sha256 FROM spend_book_meta WHERE id = 1'),
     setCursor: p('UPDATE spend_book_meta SET ledger_offset = :offset, ledger_tail_start = :tailStart, ledger_tail_sha256 = :tailSha WHERE id = 1'),
     insertFault: p('INSERT OR IGNORE INTO spend_faults (ledger_offset, line_sha256, detail, created_at) VALUES (:offset, :sha, :detail, :at)'),

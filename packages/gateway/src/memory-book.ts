@@ -193,6 +193,15 @@ export class MemorySpendBook implements SpendBook {
     }
   }
 
+  async endLeases(owner: string): Promise<void> {
+    const at = this.stamp();
+    for (const r of this.rows.values()) {
+      if (r.owner !== owner) continue;
+      if (r.state === 'open') Object.assign(r, { state: 'released', updatedAt: at });
+      else if (r.state === 'sent' || r.state === 'accepted') Object.assign(r, { state: 'uncertain', uncertainReason: 'interrupted', updatedAt: at });
+    }
+  }
+
   async cursor(): Promise<LedgerCursor> {
     return { ...this.position };
   }
