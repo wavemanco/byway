@@ -1,6 +1,7 @@
 import { CanonicalizationError } from '@byway/canonical';
 import { BLOCKS, BLOCK_CODES, EXCEPTIONS, RULES, type BlockCode, type ExceptionDef, type RuleClass, type RuleId } from '@byway/protocol';
 import { recipeHash, type Recipe } from '@byway/recipe';
+import { checkDeclarations } from './checks/declarations.ts';
 import { checkDefaults } from './checks/defaults.ts';
 import { checkPorts } from './checks/ports.ts';
 import { checkStructural } from './checks/structural.ts';
@@ -68,6 +69,7 @@ export function validate(recipe: Recipe): Verdict {
   checkStructural(recipe, findings);
   checkPorts(recipe, typing, findings);
   checkVoiceLock(recipe, findings);
+  checkDeclarations(recipe, findings);
   if (DEFAULT_KINDS.has(recipe.kind)) checkDefaults(recipe, typing, findings);
   const suspended = derivationSuspends(recipe, findings);
 
@@ -136,3 +138,4 @@ export function validate(recipe: Recipe): Verdict {
 }
 
 export type { Finding } from './context.ts';
+export { flowRecipe, type FlowOps } from './flow.ts';

@@ -26,3 +26,17 @@ export function diffLine(line: string, technical: boolean): string {
   if (makes) return `Makes ${words(makes[1] ?? '')} instead of ${words(makes[2] ?? '')}.`;
   return line.replace(ID_SUFFIX, '');
 }
+
+/**
+ * The line above a composed recipe's refusals. The protocol checks (checkAnswer) and the checks web start adds that are
+ * not protocol checks (ADMIT-HASH: it no longer reads as the recipe offered; ADMIT-NEAREST: the recipe it was built from
+ * is gone) all stop it running, but only the first are "the protocol checks" (ADR-0092).
+ */
+export function composedRefusalLead(violations: readonly { ruleId: string }[]): string {
+  return onlyProtocolChecks(violations) ? 'It did not pass the protocol checks, so it cannot run:' : 'It cannot run:';
+}
+
+/** True when every refusal is a protocol check, none a check web start adds (ADMIT-*). */
+export function onlyProtocolChecks(violations: readonly { ruleId: string }[]): boolean {
+  return violations.every((v) => !v.ruleId.startsWith('ADMIT-'));
+}

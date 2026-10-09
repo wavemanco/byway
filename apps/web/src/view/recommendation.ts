@@ -12,6 +12,7 @@
  */
 import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../server/api.ts';
+import { COMPOSED_CHANGED, COMPOSED_REFUSED } from './refusals.ts';
 
 export type Selection = { kind: 'recipe'; recipeId: string } | { kind: 'composed' };
 
@@ -82,4 +83,16 @@ export function screen(state: RecState, chosenRecipeId: string | null, recipes: 
   if (selection?.kind === 'composed') return state.composed ? 'proposal' : 'unavailable';
   if (selection?.kind === 'recipe' && recipes.has(selection.recipeId)) return 'proposal';
   return 'unavailable';
+}
+
+/**
+ * Start was refused because it admitted the composed recipe again and it now fails, or reads differently (ADR-0092):
+ * the refusal carries the screen's view of the recipe as it is now, which replaces the one shown. Anything else, or a
+ * refusal without a usable view, leaves the screen as it was.
+ */
+export function composedAfterStart(state: RecState, refusal: { code?: string | undefined; body?: Readonly<Record<string, unknown>> | undefined }): RecState {
+  if (refusal.code !== COMPOSED_CHANGED && refusal.code !== COMPOSED_REFUSED) return state;
+  const next = refusal.body?.composed;
+  const usable = typeof next === 'object' && next !== null && Array.isArray((next as ComposeView).diff) && typeof (next as ComposeView).ok === 'boolean';
+  return usable ? { ...state, composed: next as ComposeView } : state;
 }

@@ -1,5 +1,5 @@
 import { OPTION_SET, type BlockCode } from '@byway/protocol';
-import { nodesInside, steps, walk, walkNode, type Node, type PassCondition, type Recipe } from '@byway/recipe';
+import { nodesInside, steps, voiceScope, voiceWrite, walk, walkNode, type Node, type PassCondition, type Recipe } from '@byway/recipe';
 import { CRITIC_METRICS, EXECUTION_ROLES, JUDGE_ROLES, TASTE_JUDGE_ROLES, type Findings } from '../context.ts';
 import { flowRecipe } from '../flow.ts';
 import type { Typing } from '../scope.ts';
@@ -150,18 +150,22 @@ export function checkDefaults(recipe: Recipe, typing: Typing, findings: Findings
     },
   });
 
-  // DR9: humans own the words readers attribute to them.
-  const voices = steps(recipe).filter(({ step }) => step.block === 'VOICE');
-  if (voices.length) {
-    for (const { step, path } of voices) {
-      if (step.actor !== 'human') findings.add('DR9', path, `VOICE "${step.id}" is written by a ${step.actor}`, 'model-voice');
-      // VOICE-lite: the owner reads every line but rewrites only the key ones, so other reader-facing words stay AI-written.
-      if (step.knobs?.scope === 'key-lines') findings.add('DR9', path, `VOICE "${step.id}" rewrites only the key lines`, 'key-lines');
-    }
-  } else if (recipe.inputs.includes('voice')) {
-    findings.add('DR9', 'inputs', 'reader-facing words come from a fixed input, not a human VOICE step', 'fixed-input');
-  } else if (!recipe.sitsOut.some((s) => s.block === 'VOICE')) {
-    findings.add('DR9', 'stages', 'no VOICE step, and VOICE does not sit out', 'missing');
+  // DR9: humans own the words readers attribute to them. What counts is a VOICE write that runs (ADR-0092): a human
+  // voice step that writes the person's words into the work. A step that only declares VOICE is checked per step (and
+  // refused by ST12), but it is not a VOICE.
+  const all = steps(recipe);
+  for (const { step, path } of all.filter(({ step }) => step.block === 'VOICE' || voiceWrite(step))) {
+    if (step.actor !== 'human') findings.add('DR9', path, `VOICE "${step.id}" is written by a ${step.actor}`, 'model-voice');
+    // VOICE-lite: the owner reads every line but rewrites only the key ones, so other reader-facing words stay AI-written.
+    if (step.knobs?.scope === 'key-lines') findings.add('DR9', path, `VOICE "${step.id}" rewrites only the key lines`, 'key-lines');
+  }
+  const writes = all.filter(({ step }) => voiceWrite(step));
+  if (!writes.length) {
+    if (recipe.inputs.includes('voice')) findings.add('DR9', 'inputs', 'reader-facing words come from a fixed input, not a human VOICE step', 'fixed-input');
+    else if (!recipe.sitsOut.some((s) => s.block === 'VOICE')) findings.add('DR9', 'stages', 'no VOICE step writes your words, and VOICE does not sit out', 'missing');
+  } else if (writes.every(({ step }) => voiceScope(step, recipe.medium).base === 'claims')) {
+    // A claim log signs off the numbers, names and claims only; the rest of the reader-facing copy stays the AI's.
+    findings.add('DR9', writes[0]!.path, 'your words cover only the claims (a claim log); no VOICE step writes the rest of the reader-facing copy', 'claims-only');
   }
 
   // DR10 (advisory): bank what failed.

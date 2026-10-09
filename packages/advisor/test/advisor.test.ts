@@ -9,7 +9,7 @@ describe('the Advisor contract', () => {
 
   it('is implemented by createAdvisor', () => {
     const typed: Advisor = advisor;
-    expect(Object.keys(typed).sort()).toEqual(['catalog', 'compose', 'estimate', 'label', 'questions', 'recipe', 'recommend']);
+    expect(Object.keys(typed).sort()).toEqual(['admit', 'catalog', 'compose', 'estimate', 'label', 'questions', 'recipe', 'recommend']);
   });
 
   it('asks the chooser questions from the catalog, in order, as copies', () => {

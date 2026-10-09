@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -30,6 +30,11 @@ const HASH_LITERAL = /"bywaywf:([0-9a-f]{64})"/;
 export interface BuildWorkflowsOptions {
   /** Output file; defaults to {@link DEFAULT_WORKFLOWS_BUNDLE}. */
   outfile?: string;
+  /**
+   * esbuild plugins, for tests that change a source as it is read, to show what the bundle does and does not depend on
+   * (an edit to @byway/protocol's rule table must leave the hash alone, ADR-0092). The worker passes none.
+   */
+  plugins?: Plugin[];
 }
 
 /** Compile the workflow entry into one ESM file and return its path. Fast (esbuild), so the worker rebuilds on start. */
@@ -54,6 +59,7 @@ export async function buildWorkflows(opts: BuildWorkflowsOptions = {}): Promise<
     sourcemap: 'external',
     write: false,
     logLevel: 'silent',
+    ...(opts.plugins?.length ? { plugins: opts.plugins } : {}),
   });
   const js = result.outputFiles.find((f) => f.path.endsWith('.js'));
   const map = result.outputFiles.find((f) => f.path.endsWith('.js.map'));

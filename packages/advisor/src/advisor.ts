@@ -8,14 +8,14 @@ import type {
   EvidenceLabel,
   Gateway,
   ProblemBrief,
-  PromptRenderer,
   Recommendation,
   RecipePresentation,
 } from '@byway/contracts';
 import { DEMO_PROFILE_ID, type PriceRow } from '@byway/gateway';
+import type { PromptLibrary } from '@byway/prompts';
 import { recipeHash, type Recipe } from '@byway/recipe';
 import { mergeAnswers, needsIntake } from './answers.ts';
-import { composeRecipe } from './compose.ts';
+import { checkAnswer, composeRecipe, type Violation } from './compose.ts';
 import { diffFromNearest } from './diff.ts';
 import { AdvisorError } from './errors.ts';
 import { estimateRecipe } from './estimate.ts';
@@ -42,7 +42,8 @@ export interface AdvisorCatalog {
 
 export interface AdvisorOptions {
   gateway: Gateway;
-  prompts: PromptRenderer;
+  /** The templates (@byway/prompts' library): rendered for the advisor's own calls, and read by the composed profile. */
+  prompts: PromptLibrary;
   /** Defaults to @byway/catalog. */
   catalog?: AdvisorCatalog;
   /** The study registry labels are computed from (empty in v1). */
@@ -104,6 +105,29 @@ export function createAdvisor(opts: AdvisorOptions): Advisor {
    * intake's when it ran; otherwise the caller's from an earlier recommendation are kept (contract: re-routing after
    * the user flips an answer makes no model call and keeps what was chosen).
    */
+  /**
+   * What the screen is told about a composed recipe and what it costs, around the checks' outcome: shared by compose
+   * and by admit, so a recipe admitted again at start is explained exactly as compose would explain it now.
+   */
+  function composedResult(composed: Recipe, nearest: { recipe: Recipe; presentation: RecipePresentation }, problem: ProblemBrief, profileId: string, ok: boolean, violations: readonly Violation[]): ComposeResult {
+    const presentation = presentComposed(composed, {
+      code: `${composed.family} (composed)`,
+      name: `Your recipe, built from ${nearest.presentation.name}`,
+      promise: `Built for your problem from the protocol's blocks, starting from ${nearest.presentation.name}. Not tested.`,
+      bestFor: [clip(oneLine(problem.text), 80)],
+    });
+    return {
+      recipe: composed,
+      ok,
+      violations: violations.map((v) => ({ ruleId: v.ruleId, message: v.path ? `${v.path}: ${v.message}` : v.message })),
+      nearestRecipeId: nearest.recipe.id,
+      diff: diffFromNearest(composed, nearest.recipe, nearest.presentation.name, nearest.presentation),
+      label: label(composed),
+      presentation,
+      estimate: estimate(composed, profileId),
+    };
+  }
+
   async function decide(problem: ProblemBrief, o: DecideOptions): Promise<Decided> {
     const intake = needsIntake(questions, o.answers) ? await runIntake({ gateway: opts.gateway, prompts: opts.prompts, questions }, problem, o) : undefined;
     const answers = mergeAnswers(questions, intake?.answers, o.answers);
@@ -153,23 +177,20 @@ export function createAdvisor(opts: AdvisorOptions): Advisor {
         const why = outcome.violations.map((v) => v.message).join('; ');
         throw new AdvisorError('compose-unreadable', `The composer did not return a recipe that could be read: ${why}.`);
       }
-      const composed = outcome.recipe;
-      const presentation = presentComposed(composed, {
-        code: `${composed.family} (composed)`,
-        name: `Your recipe, built from ${nearest.presentation.name}`,
-        promise: `Built for your problem from the protocol's blocks, starting from ${nearest.presentation.name}. Not tested.`,
-        bestFor: [clip(oneLine(problem.text), 80)],
-      });
-      return {
-        recipe: composed,
-        ok: outcome.ok,
-        violations: outcome.violations.map((v) => ({ ruleId: v.ruleId, message: v.path ? `${v.path}: ${v.message}` : v.message })),
-        nearestRecipeId: nearest.recipe.id,
-        diff: diffFromNearest(composed, nearest.recipe, nearest.presentation.name, nearest.presentation),
-        label: label(composed),
-        presentation,
-        estimate: estimate(composed, o.profileId),
-      };
+      return composedResult(outcome.recipe, nearest, problem, o.profileId, outcome.ok, outcome.violations);
+    },
+
+    admit(stored, o): ComposeResult {
+      const nearest = canonical(stored.nearestRecipeId);
+      // The same checks compose ran, under the stored id, so an unchanged recipe hashes exactly as it did when offered.
+      const { hash: _hash, ...raw } = stored.recipe;
+      const candidate = checkAnswer(JSON.stringify(raw), nearest.recipe, { prompts: opts.prompts, catalog: catalog.PROTOCOL_CONFIGS }, stored.recipe.id);
+      const recipe = candidate.recipe ?? stored.recipe;
+      const violations: Violation[] = [...candidate.violations];
+      if (candidate.recipe && candidate.recipe.hash !== stored.recipe.hash) {
+        violations.push({ ruleId: 'ADMIT-HASH', message: 'the recipe no longer reads as the one byway offered (its content hash changed), so it is not the recipe you were shown' });
+      }
+      return composedResult(recipe, nearest, o.problem, o.profileId, violations.length === 0, violations);
     },
   };
 }

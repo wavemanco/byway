@@ -1,8 +1,8 @@
 import { c1, c3, c4, c5, c6, c6a, PROTOCOL_CONFIGS } from '@byway/catalog';
-import { steps, withHash, type Recipe } from '@byway/recipe';
+import { runsEveryTime, steps, withHash, type Recipe } from '@byway/recipe';
 import { validate } from '@byway/validator';
 import { describe, expect, it } from 'vitest';
-import { alwaysRunSteps, catalogPrompts, checkAnswer, checkComposedProfile } from '../src/index.ts';
+import { catalogPrompts, checkAnswer, checkComposedProfile } from '../src/index.ts';
 import { fencedJson, recordingPrompts } from './helpers.ts';
 
 const prompts = recordingPrompts().renderer;
@@ -23,7 +23,7 @@ describe('the composed profile on the canonical recipes themselves', () => {
 });
 
 describe('protected checkpoints', () => {
-  const ids = (r: Recipe) => alwaysRunSteps(r).map((s) => s.id);
+  const ids = (r: Recipe) => runsEveryTime(r).map((p) => p.step.id);
 
   it('counts only steps every run passes through', () => {
     expect(ids(c4)).toContain('voice');
