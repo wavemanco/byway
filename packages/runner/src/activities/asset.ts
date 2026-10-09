@@ -22,8 +22,8 @@ import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { announce, storeText, writeProblems } from './writes.ts';
 
-/** Image failures that stop the asset step instead of trying the image again. */
-const STOPS_THE_STEP: ReadonlySet<GatewayError['code']> = new Set(['budget-exceeded', 'accounting-fault', 'no-credentials', 'unknown-profile', 'byway-failure', 'in-flight']);
+/** Image failures that stop the asset step instead of trying the image again (a billed failure does too: see below). */
+const STOPS_THE_STEP: ReadonlySet<GatewayError['code']> = new Set(['budget-exceeded', 'accounting-fault', 'no-credentials', 'unknown-profile', 'in-flight']);
 
 export const NO_IMAGES_NOTE = 'No image provider key is configured, so no images were made; the work passes through unchanged.';
 export const NO_AUDIO_NOTE = 'No voice-over audio provider is configured';
@@ -95,9 +95,10 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
       } catch (e) {
         // A refused or failed image is tried again up to triesPerSlot; budget, key and accounting problems stop the step (a
         // prompt holding a provider key is one, ADR-0088: trying it again would be refused again; an accounting fault
-        // refuses every paid call until the person acknowledges it, ADR-0095). So do byway's own failures and billed ones
-        // (ADR-0099): an image the provider made and billed that byway could not keep would be bought again by another
-        // try, and a call byway did not start (it is stopping) is Temporal's to try again, with the whole step.
+        // refuses every paid call until the person acknowledges it, ADR-0095). So does a billed failure (ADR-0099): an image
+        // the provider made and billed that byway could not keep would be bought again by another try. A call byway did
+        // not start (it is stopping, or could not record the call as sent) billed nothing and is tried again like any other
+        // unbilled failure: the step's failure would end the run, as every GatewayError fails the step for good.
         if (!(e instanceof GatewayError) || STOPS_THE_STEP.has(e.code) || e.billed === true || isHeldKeyError(e)) throw e;
       }
     }

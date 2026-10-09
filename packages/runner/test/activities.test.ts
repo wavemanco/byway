@@ -276,11 +276,14 @@ describe('an image refused because its prompt holds a provider key (ADR-0088)', 
     expect(tries).toBe(1);
   });
 
-  it('stops the step when byway did not start the image call (it is stopping): Temporal tries the step again once byway is back', async () => {
-    const stopping = new GatewayError('byway-failure', 'byway is stopping, so it did not start this call. Try again once it has started again.', true, { billed: false });
-    const { outcome, tries } = await attempt(stopping);
-    expect(outcome).toBe(stopping);
-    expect(tries).toBe(1);
+  it('tries the image again when byway did not start the call (nothing was billed), as before byway-side failures had their own code', async () => {
+    // A GatewayError fails the step for good (FAILURE.step is not retried), so a call byway did not send is tried as any
+    // other unbilled failure is: up to triesPerSlot, then the step finishes skipped.
+    for (const message of ['byway is stopping, so it did not start this call. Try again once it has started again.', 'byway could not record this call as sent in its spending records, so it did not send it. Try again.']) {
+      const { outcome, tries } = await attempt(new GatewayError('byway-failure', message, true, { billed: false }));
+      expect(outcome).toMatchObject({ skipped: true });
+      expect(tries).toBe(2);
+    }
   });
 
   it('still tries any other refused image again, then finishes skipped, as before', async () => {

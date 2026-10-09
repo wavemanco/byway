@@ -249,9 +249,10 @@ describe('two attempts of one step’s paid call (F03 stage 3, ADR-0099)', () =>
     const err = await memoGateway(worker, store, scope(), { ...QUICK, waitLimitMs: 150, operation: second.operation })
       .complete(ask())
       .catch((e: unknown) => e);
+    // A step failure ends the run (there is no retry of one step), so the copy says what the person can do: start again.
     expect(err).toBeInstanceOf(StepError);
     expect((err as Error).message).toBe(
-      'Another attempt of this step’s AI model’s answer is still under way, so this attempt stopped after waiting rather than pay for it a second time. Try the step again in a few minutes.',
+      'Another attempt of this step’s AI model’s answer is still under way, so this attempt stopped after waiting rather than pay for it a second time. Start the run again.',
     );
     expect(hung.calls()).toBe(1);
     hung.release();

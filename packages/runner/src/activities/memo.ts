@@ -144,7 +144,7 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
       while (Date.now() < recall && !opts.operation?.cancel?.aborted) {
         if (Date.now() - started >= limitMs) {
           throw new StepError(
-            `Another attempt of this step’s ${PAID[kind] ?? 'AI call'} is still under way, so this attempt stopped after waiting rather than pay for it a second time. Try the step again in a few minutes.`,
+            `Another attempt of this step’s ${PAID[kind] ?? 'AI call'} is still under way, so this attempt stopped after waiting rather than pay for it a second time. Start the run again.`,
           );
         }
         await pause(Math.min(pollMs, Math.max(1, recall - Date.now())));
