@@ -46,7 +46,11 @@ export interface EvidenceLabel {
   summary: string;
   /** Registry ids of the studies behind the label (empty when untested). */
   studies: string[];
-  /** ISO date after which the label degrades to "Historical", if any. */
+  /**
+   * ISO date the study's evidence expires, carried from its registry entry, if any. Nothing acts on it yet: labelFor
+   * passes it through, and `verdict` has no outcome for expired evidence. Enforcing it is a prerequisite for the
+   * registry's first entry (docs/backlog.md, "Before the study registry's first entry"); the registry is empty in v1.
+   */
   expires?: string;
 }
 

@@ -16,6 +16,7 @@ This is the research behind the choice of configurations in [03-configurations.m
    - A skeptic spot-checked about 20 load-bearing figures and found no fabrications, though several interpretations were overstated.
    - A second review checked 55 more claims against their primary sources: 37 were accurate, 17 had minor inaccuracies and 1 was wrong. All are corrected below and logged in [Corrections](#corrections).
 4. Of the 310 sources in [SOURCES.md](SOURCES.md), those without a ✓ have not been re-opened. Market figures are mostly vendor or aggregator estimates.
+5. A later external review of byway (2026-10-08) found the summaries' seed-string wording broader than its source. The narrowed wording is logged as Round 3 in [Corrections](#corrections).
 
 ## Scoring rubric
 
@@ -197,7 +198,7 @@ The rubric uses seven criteria, each scored 1–5. A single rater (the protocol 
 ## Cross-cutting findings that shaped the protocol
 
 1. **AI raises individual quality but shrinks collective diversity** (BCG; Doshi & Hauser). Quality loops (CRITIC) and divergence (SEED/VISION) act on different axes, so both are needed. The diversity loss is invisible to the individual.
-2. **Sameness doesn't respond to temperature or model swapping** (Artificial Hivemind). In SSoT's tests, a seed string the model wrote itself beat simply asking for diversity. **The article's external shell-RNG variant is untested.** Chain-of-thought idea prompting and verbalized sampling also raise diversity from *inside* the model, so "variety must come from outside the model" is the article's prescription, not a proven law.
+2. **Sameness doesn't respond to temperature or model swapping** (Artificial Hivemind). In SSoT's tests, a seed string the model wrote itself beat simply asking for diversity, and generally beat external randomness injected into the prompt or fetched with a tool (DeepSeek-R1, on a probabilistic-instruction test and on NoveltyBench; [01 · SEED](01-blocks.md#seed--external-seeding)). **The article's own setup, a shell-generated string driving a design workflow, is untested.** Chain-of-thought idea prompting and verbalized sampling also raise diversity from *inside* the model, so "variety must come from outside the model" is the article's prescription, not a proven law.
 3. **Bans move the mode rather than removing it.** Anthropic's skill now lists second-order defaults. Audit-after vs. ban-before has *never been tested head to head*.
 4. **CRITIC design rules:**
    - Use a different, ideally stronger model in a fresh context. *Evidence-backed.* Show it only the render. *The article's prescription, supported by inference (Design Theater).*
@@ -218,7 +219,7 @@ The rubric uses seven criteria, each scored 1–5. A single rater (the protocol 
 
 - No end-to-end test of any configuration. Evid-fix is low everywhere.
 - No head-to-head test of up-front bans vs. post-hoc audits.
-- No test of external seed strings.
+- No test of the article's own SEED setup, a shell-generated string driving a design workflow. SSoT compared external and model-written strings only on a probabilistic-instruction test and on NoveltyBench, with DeepSeek-R1 ([01 · SEED](01-blocks.md#seed--external-seeding)).
 - No conversion A/B test of distinctive vs. generic AI pages.
 - The hidden-threshold design is untested, and critic reliability for current frontier models is unmeasured.
 - RELAY evidence is thin outside ads. VOICE's time cost and outcome lift are unmeasured.
@@ -266,3 +267,14 @@ The rubric uses seven criteria, each scored 1–5. A single rater (the protocol 
 | Success judged by the loop's own critic | Replaced with held-out evaluators |
 | Rubric had no anchors and mixed evidence types | Anchors added; evidence split into Evid-pain and Evid-fix; workslop Pull 3 → 2; provisional rows excluded; rejected rows scored with vetoes |
 | Counter-evidence missing from cards | Aldous, Meguellati, Purcell and Girotra added |
+
+**Round 3: post-release review (2026-10-08)** (an external review of byway, checked against the source by the [review verification](../docs/reviews/2026-10-08-external-review-verification.md), finding RS; source: [String Seed of Thought v3](https://arxiv.org/html/2510.21150v3) §5.1.2 and App. D.6, as read by that verification)
+
+| Original | Correction |
+|---|---|
+| Map gaps: "External seed strings untested; SSoT tested model-written strings" | Only the article's shell-seeded design workflow is untested. SSoT compares external and model-written strings on two other tasks (§5.1.2; App. D.6) |
+| Map SEED evidence: "the external-RNG variant is untested" | Model-written strings generally beat injected and tool-call external strings (§5.1.2, probabilistic instruction following; App. D.6, NoveltyBench Curated, DeepSeek-R1-0528). The article's shell-seeded design workflow is untested |
+| Finding 2: "The article's external shell-RNG variant is untested." | The article's own setup, a shell-generated string driving a design workflow, is untested. SSoT's model-written strings generally beat injected or tool-fetched external randomness (§5.1.2; App. D.6) |
+| Evidence gaps: "No test of external seed strings." | No test of the article's own SEED setup. SSoT's comparisons with external strings used a probabilistic-instruction test (§5.1.2) and NoveltyBench (App. D.6), with DeepSeek-R1 |
+| README article prescriptions: "The external shell-RNG seed. SSoT tested a seed string the model writes itself." | A shell-generated seed string driving a design workflow. SSoT's comparisons with external randomness used other tasks (§5.1.2; App. D.6) |
+| 01 · SEED evidence cited only the probabilistic-instruction test | Adds App. D.6: on DeepSeek-R1-0528 and NoveltyBench Curated, model-written strings beat Seed Injection and Tool Call on distinctness and utility in every category except product recommendations; both external forms still scored above no seed on overall utility. Names each test's model and task, and that neither is design work |
