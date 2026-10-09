@@ -136,6 +136,11 @@ describe('request schemas', () => {
   it('checks starts, answers and settings', () => {
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2 }).success).toBe(true);
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', budgetUsd: 0 }).success).toBe(false);
+    // The run id a Start names (F03 P3): a lowercase UUID, as crypto.randomUUID() makes; anything else is a 400.
+    expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, runId: '5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e' }).success).toBe(true);
+    for (const runId of ['run-1', '', '5D6E7F80-91A2-4B3C-8D4E-5F6A7B8C9D0E', '../5d6e7f80-91a2-4b3c-8d4e-5f6a7b8c9d0e', 7]) {
+      expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, runId }).success, String(runId)).toBe(false);
+    }
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, refs: [ID] }).success).toBe(true);
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, refs: ['../x'] }).success).toBe(false);
     expect(StartInput.safeParse({ intakeId: '0b7f2f5e-3c1a-4d2e-9f00-5a3c2b1d4e6f', recipeId: 'c4', budgetUsd: 2, refs: Array(10).fill(ID) }).success).toBe(false);

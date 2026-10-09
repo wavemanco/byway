@@ -377,10 +377,11 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
 
   useEffect(() => setError(null), [budgetText]);
 
-  // Starting a run is one action in flight (R5). Run start has no server-side idempotency, so this guard is what stops
-  // a double press (or Enter twice) from starting two paid runs: a second start while one is on its way does nothing,
-  // and on success it holds until the Run screen replaces this one. A recipe that failed its checks cannot start, so
-  // nothing (not even an example) is sent for it.
+  // Starting a run is one action in flight (R5): a second start while one is on its way does nothing, and on success it
+  // holds until the Run screen replaces this one. A recipe that failed its checks cannot start, so nothing (not even an
+  // example) is sent for it. The start names its run (F03 P3): the id is minted once here and sent again with a retry
+  // after a failure, so a start whose answer was lost, sent again, gives the run it started instead of a second one.
+  const startId = useRef<string | null>(null);
   const starting = useAction(async () => {
     if (blocked) return;
     if (budget === null) {
@@ -391,8 +392,10 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
     try {
       // Examples go only to a recipe that takes them; they stay on this screen if you switch to one that does not.
       const refs = option.takesRefs && exampleCount(examples) > 0 ? await storeExamples(examples, onExampleRefused) : [];
+      startId.current ??= crypto.randomUUID();
       const { runId } = await post<{ runId: string }>('/api/runs', {
         intakeId,
+        runId: startId.current,
         budgetUsd: budget,
         ...(recipeId ? { recipeId } : {}),
         ...(routes && Object.keys(routes).length > 0 ? { routes } : {}),

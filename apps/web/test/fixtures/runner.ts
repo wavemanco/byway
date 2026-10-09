@@ -2,7 +2,9 @@
  * A Runner fake over the real store, for route-handler tests: the real runner needs a Temporal server, and these tests
  * check what the app does with the contract, not how a recipe executes (packages/runner tests that, and the Playwright
  * suite runs the real one end to end). It writes the RunRecord as the Runner client does, opens one route question,
- * validates answers through the store, and applies pause, resume and cancel to the record.
+ * validates answers through the store, and applies pause, resume and cancel to the record. A start that names its run
+ * (StartRunInput.runId) is kept once, as the Runner client keeps it: the same run back for the same problem, a
+ * RunStartConflictError for another.
  */
 import { randomUUID } from 'node:crypto';
 import type { CheckpointResolution, Runner, RunRecord, RunStatus, RunView, StartRunInput, Store } from '@byway/contracts';
@@ -30,11 +32,16 @@ export function fakeRunner(store: Store): FakeRunner {
   return {
     started,
     async start(input: StartRunInput): Promise<RunRecord> {
-      started.push(input);
       const medium = input.recipe.medium;
       if (!medium) throw new Error('The recipe names no medium.');
+      const before = input.runId === undefined ? undefined : await store.getRun(input.runId);
+      if (before) {
+        if (before.workspaceId !== input.workspaceId || before.intakeId !== input.intakeId) throw Object.assign(new Error('another problem'), { name: 'RunStartConflictError' });
+        return before;
+      }
+      started.push(input);
       const run = await store.createRun({
-        id: randomUUID(),
+        id: input.runId ?? randomUUID(),
         workspaceId: input.workspaceId,
         recipeId: input.recipe.id,
         recipeHash: recipeHash(input.recipe),
