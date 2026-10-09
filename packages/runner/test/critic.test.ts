@@ -411,13 +411,8 @@ describe('a card lineup shows every word or says what it left out (F13)', () => 
       expect(out.score).toMatchObject({ kind: 'rank', of: 4 });
     });
 
-    // PENDING INTEGRATION (ADR-0087). verdictOf gives the sentence as the verdict's note, but the model step, in
-    // model-step.ts, which another work package owned while this one was written, does not yet append it to the step's
-    // note. The integration adds one line after the verdictOf call in modelStep's critic branch:
-    //   if (verdict.note) notes.push(verdict.note);
-    // and then this test passes, which `it.fails` reports as a failure: take `.fails` off then. The test above runs the
-    // same step and must pass, so this one cannot be "failing as expected" because the step itself broke.
-    it.fails('says in the step’s note whose words the critic was not shown (pending: model-step.ts appends verdict.note)', async () => {
+    // ADR-0087: verdictOf gives the sentence as the verdict's note, and the model step appends it to the step's note.
+    it('says in the step’s note whose words the critic was not shown', async () => {
       const { out, notes } = await criticStepWithACut();
       expect(out.note).toMatch(/^The outside critic was not shown all the text: it saw the first [\d,]+ of 5,941 words of the example that begins “Every spring the river takes a…”\.$/);
       expect(notes).toEqual([out.note]);

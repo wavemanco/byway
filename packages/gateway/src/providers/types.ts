@@ -98,6 +98,11 @@ export interface ProviderVideoRequest {
    * is polled, so a call interrupted from here on is listed with the ids to look up in the provider's dashboard.
    */
   accepted?(role: 'generation' | 'extract', requestId: string): Promise<void>;
+  /**
+   * Queue jobs an earlier attempt of this call submitted and the provider accepted (stage 3, ADR-0099): the adapter polls
+   * them by these ids and submits only the jobs not listed here, so a retried relay link never buys its clip twice.
+   */
+  resume?: Partial<Record<'generation' | 'extract', string>>;
 }
 
 export interface ProviderVideo {

@@ -202,7 +202,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Custom imagery',
-        explainer: 'If you want one, the AI makes a header image for the piece. Charts computed from your data are not made in this version.',
+        explainer: 'If you want one, the AI makes a header image for the piece, unless it judges the piece better without one. Charts computed from your data are not made in this version.',
         covers: ['asset'],
       },
       trimByYou('Your turn: list what the piece could lose, and the AI removes it.'),
@@ -291,7 +291,7 @@ const COPY: readonly Copy[] = [
       {
         label: 'Motion',
         explainer:
-          'Shot by shot, each clip starts from the last frame of the one before. Every shot is checked for visible defects and remade when needed. Without a video provider set up, the run stops at the storyboard and images.',
+          'Shot by shot, each clip starts from the last frame of the one before. Each clip’s last frame is checked for visible defects against the frame it started from, and the clip is remade when needed; the motion between them is not checked. Without a video provider set up, the run stops at the storyboard and images, and nothing is checked.',
         covers: ['clip', 'shot-render', 'shot-check', 'regenerate'],
       },
       {
@@ -423,7 +423,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Your direction',
-        explainer: 'Your turn: answer them in a short spec.',
+        explainer: 'Your turn: answer the questions or change their defaults; that becomes the spec.',
         covers: ['spec'],
       },
       { label: 'Implement', explainer: 'The AI writes the change.', covers: ['implement'] },
@@ -434,7 +434,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Trim the scope',
-        explainer: 'A fresh reviewer lists what the task did not ask for, and the AI removes what it lists.',
+        explainer: 'A fresh reviewer, who sees only the change and its "why", lists what the change does not need, and the AI removes what it lists.',
         covers: ['scope-render', 'scope-cut', 'apply-scope-cut'],
       },
       {

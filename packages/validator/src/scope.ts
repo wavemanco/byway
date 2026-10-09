@@ -175,6 +175,7 @@ class ScopeWalk {
           if (port === OPTION_SET) missingOptions(st, path, `step "${node.id}" consumes`, findings);
           else findings.add('ST5', path, `step "${node.id}" consumes ${port}, which is not in scope on every path`);
         }
+        checkReads(node, st, path, findings);
         for (const port of node.produces) {
           st.must.set(port, [{ kind: 'step', role: node.role, actor: node.actor }]);
           st.may.add(port);
@@ -341,6 +342,26 @@ export function typeRecipe(recipe: Recipe, findings: Findings, stats?: TypingSta
   for (const [path, message] of walk.later) if (!first.has(path)) findings.add('ST12', path, message, 'set-aside');
   if (stats) stats.visits += walk.visits;
   return walk.typing;
+}
+
+/**
+ * ST5 for a step's optional reads (ADR-0089). Only a model step reads optionally: its prompt fills an absent port's slot
+ * with nothing, and no other step has a slot to leave empty. A port is consumed or read, never both. Each read is of a
+ * port some path makes before the step (`may`), and a read never makes a port required (`must` is untouched). Loops and
+ * relays are typed on their first round, so a read of a port first made later in the same body is refused: a
+ * documented limit, which no recipe needs.
+ */
+function checkReads(step: Step, st: ScopeState, path: string, findings: Sink): void {
+  const reads = step.reads ?? [];
+  if (!reads.length) return;
+  if (step.actor !== 'model') {
+    findings.add('ST5', path, `step "${step.id}" reads ${reads.join(', ')}, but only a model step reads optionally`, 'reads-actor');
+    return;
+  }
+  for (const port of reads) {
+    if (step.consumes.includes(port)) findings.add('ST5', path, `step "${step.id}" both consumes and reads ${port}`, 'reads-twice');
+    else if (!st.may.has(port)) findings.add('ST5', path, `step "${step.id}" reads ${port}, which no path makes before it`, 'reads-unmade');
+  }
 }
 
 /** A finished person's write sets the option set aside (it stays in `may`: the runner still holds it). */

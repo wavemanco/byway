@@ -250,7 +250,7 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
   const spend = await workspaceRemaining(deps);
   const problem = budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
-  const run = await refusedAsHttp(!input.recipeId, () => services.runner.start({
+  const run = await refusedAsHttp(!input.recipeId, () => startOnce(services, {
     workspaceId: spend.workspaceId,
     recipe,
     problem: intake.problem,
@@ -259,6 +259,7 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     intakeId: intake.id,
     ...(input.routes ? { routes: input.routes } : {}),
     ...(refs.length > 0 ? { inputs: { refs: [...new Set(refs)] } } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
   }));
   return { runId: run.id };
 }
@@ -316,6 +317,20 @@ async function admitComposed(deps: Deps, intakeId: string, stored: ComposeResult
     throw new HttpError(409, 'byway checked this recipe again and now explains it differently, so it did not start. Read what it does, then start it.', COMPOSED_CHANGED, { composed: composeView(again) });
   }
   return again.recipe;
+}
+
+/**
+ * Runner.start, with the run id the screen minted (F03 P3): a Start sent twice gives the first run back. The id of a run
+ * started for another problem or recipe is a conflict (409), matched by name as the services may come from another bundle.
+ */
+async function startOnce(services: Services, input: Parameters<Services['runner']['start']>[0]): Promise<RunRecord> {
+  try {
+    return await services.runner.start(input);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'RunStartConflictError') throw new HttpError(409, 'This start was already used for another problem or recipe, so nothing was started. Start the run again.');
+    if (err instanceof Error && err.name === 'RunStartInvalidError') throw new HttpError(400, 'That start did not arrive intact. Start the run again.');
+    throw err;
+  }
 }
 
 export interface RunRecipe {

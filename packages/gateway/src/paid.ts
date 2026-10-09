@@ -10,6 +10,14 @@
  * once; a process that dies leaves rows that expire with their leases. Either way never-sent ones count nothing, and
  * sent ones count their estimate against the workspace only, as "may have been billed".
  *
+ * A step's call carries an operation key and its caller's two signals (SpendContext.operation; stage 3, ADR-0099).
+ * Admission resolves the key in the book: another attempt still holding it gets 'in-flight' (the runner waits for its
+ * result), and a key whose holder is gone is taken over, its accepted queue jobs resumed. Such a call is held, that is
+ * renewed, while it is unsettled and its caller neither ended nor was cancelled (Temporal's cancel, a timeout included,
+ * stops the renewal, so another attempt takes the call over within one lease), and once settled until its invocation
+ * ends, cancel or not (the result is still being kept); then it is let go at once. A call without a key is held while
+ * it runs, as before.
+ *
  * The audit file: one idempotent step, absorb, reconciles every ledger line into the book (entries from before the book,
  * entries an older worker appended, entries the outbox wrote whose mark a crash lost). The outbox drain runs under the
  * ledger's lock: it absorbs what is new, then appends each settled call the book has not marked written, with the entry
@@ -38,6 +46,23 @@ export interface PaidCallsOptions {
 /** What admission needs besides what PaidCalls supplies (the id, the owner and the lease). */
 export type PaidCallRequest = Omit<AdmitRequest, 'opId' | 'owner' | 'leaseMs' | 'caps'>;
 
+/** A keyed call's caller, as SpendContext.operation gives it: its invocation's end, and Temporal's cancel of it. */
+export interface CallerSignals {
+  until: AbortSignal;
+  cancel?: AbortSignal;
+}
+
+/** Queue jobs a resumed call's provider already accepted, by role. */
+export type ResumedJobs = Partial<Record<ProviderJobRole, string>>;
+
+/** One operation this gateway holds in the book. */
+interface Held {
+  /** A keyed call's caller; absent for a call without a key, which is held while it runs. */
+  caller?: CallerSignals;
+  /** The call has ended (settled, released or abandoned); a settled keyed one stays held until its caller ends. */
+  ended: boolean;
+}
+
 const DEFAULT_LEASE_MS = 60_000;
 const DEFAULT_RENEW_EVERY_MS = 15_000;
 const DEFAULT_DRAIN_WAIT_MS = 2_000;
@@ -61,8 +86,28 @@ export function budgetError(budget: BudgetDetails): GatewayError & { budget: Bud
   return err as GatewayError & { budget: BudgetDetails };
 }
 
-/** The refusal a closed gateway gives a paid call: retryable, so a step is tried again once byway has started again. */
-const stopping = () => new GatewayError('provider-error', 'byway is stopping, so it did not start this call. Try again once it has started again.', true);
+/**
+ * Another attempt of the same call holds its key (stage 3): nothing was sent. The runner's memo layer waits for that
+ * attempt's result; retryable, so a caller without one tries again later.
+ */
+const inFlight = () =>
+  new GatewayError('in-flight', 'Another attempt of this call is still under way, so byway did not make it again: this attempt waits for that one’s result.', true, { billed: false });
+
+/**
+ * An earlier attempt settled this call and has ended (stage 3): nothing was sent. Its result may have been kept, so the
+ * caller looks for it, and asks again with operation.rebuy only if it is not there.
+ */
+const settledEarlier = () =>
+  new GatewayError('in-flight', 'An earlier attempt of this call already made it, so byway did not make it again: this attempt looks for that one’s result first.', true, {
+    billed: false,
+    settledEarlier: true,
+  });
+
+/**
+ * The refusal a closed gateway gives a paid call: retryable, so a step is tried again once byway has started again. It
+ * is byway's own refusal, and nothing was sent or billed (ADR-0099).
+ */
+const stopping = () => new GatewayError('byway-failure', 'byway is stopping, so it did not start this call. Try again once it has started again.', true, { billed: false });
 
 const changed = (batch: LedgerBatch, cursor: LedgerCursor) =>
   batch.entries.length > 0 || batch.unreadable.length > 0 || batch.cursor.offset !== cursor.offset || batch.cursor.tailSha256 !== cursor.tailSha256;
@@ -75,7 +120,7 @@ export class PaidCalls {
   /** @internal Where background failures are reported. */
   readonly warn: (message: string) => void;
   private readonly ledger: Ledger;
-  private readonly held = new Set<string>();
+  private readonly held = new Map<string, Held>();
   private readonly timer: ReturnType<typeof setInterval>;
   private absorbing: Promise<void> | undefined;
   private running: Promise<void> | undefined;
@@ -107,36 +152,80 @@ export class PaidCalls {
     return this.absorbing;
   }
 
-  /** Admits one paid call (absorbing first), or throws 'budget-exceeded' or 'accounting-fault'. */
-  async admit(req: PaidCallRequest, caps: () => Promise<AdmitRequest['caps']>): Promise<PaidCall> {
+  /**
+   * Admits one paid call (absorbing first), or throws 'budget-exceeded', 'accounting-fault' or, for a keyed call another
+   * attempt still holds, 'in-flight'. A keyed call whose holder is gone may come back resumed (PaidCall.resumed).
+   */
+  async admit(req: PaidCallRequest, caps: () => Promise<AdmitRequest['caps']>, caller?: CallerSignals): Promise<PaidCall> {
     await this.absorb();
-    const opId = await this.admitOnce(req, await caps());
-    return new PaidCall(this, opId, req, caps);
+    const admitted = await this.admitOnce(req, await caps(), caller);
+    return new PaidCall(this, admitted, req, caps, caller);
   }
 
   /** @internal Admission itself, also used for the one re-admission of a call swept while its process slept. */
-  async admitOnce(req: PaidCallRequest, caps: AdmitRequest['caps']): Promise<string> {
+  async admitOnce(req: PaidCallRequest, caps: AdmitRequest['caps'], caller?: CallerSignals): Promise<{ opId: string; resumed?: ResumedJobs }> {
     // Nothing would renew its lease or hand it back: a closed gateway starts no paid call.
     if (this.closed) throw stopping();
-    const opId = randomUUID();
-    const outcome = await this.book.admit({ ...req, opId, owner: this.owner, leaseMs: this.leaseMs, caps });
+    const fresh = randomUUID();
+    const outcome = await this.book.admit({ ...req, opId: fresh, owner: this.owner, leaseMs: this.leaseMs, caps });
     if ('budget' in outcome) throw budgetError(outcome.budget);
     if ('fault' in outcome) throw new GatewayError('accounting-fault', outcome.fault);
+    if ('inFlight' in outcome) throw inFlight();
+    if ('settledEarlier' in outcome) throw settledEarlier();
+    const resumed = 'resume' in outcome ? outcome.resume : undefined;
+    const opId = resumed?.opId ?? fresh;
     if (this.closed) {
       // close() ran while the book was admitting the call, and its endLeases may have come before the row existed: the
-      // row is handed back here (it was never sent, so it counts nothing), and the call is refused as for a closed gateway.
-      await this.book.release(opId).catch((e: unknown) => {
+      // row is handed back here (a new one was never sent, so it counts nothing; a resumed one is interrupted again), and
+      // the call is refused as for a closed gateway.
+      await (resumed ? this.book.endLeases(this.owner) : this.book.release(opId)).catch((e: unknown) => {
         this.warn(`byway could not hand back a call it did not start as it stopped (${(e as Error)?.message ?? String(e)}); it counts as under way until its lease runs out.`);
       });
       throw stopping();
     }
-    this.held.add(opId);
-    return opId;
+    this.held.set(opId, { ...(caller ? { caller } : {}), ended: false });
+    // The invocation ended: a settled call it was keeping is let go now, not when its lease runs out.
+    caller?.until.addEventListener('abort', () => this.callerEnded(opId), { once: true });
+    return { opId, ...(resumed ? { resumed: resumed.jobs } : {}) };
   }
 
-  /** @internal */
-  letGo(opId: string): void {
+  /**
+   * @internal A call is over. A settled keyed call stays held until its caller's invocation ends (its result is being
+   * kept); anything else is held no longer. A settled keyed call whose caller has already ended is let go at once.
+   */
+  ended(opId: string, settled: boolean): void {
+    const held = this.held.get(opId);
+    if (!held) return;
+    if (settled && held.caller) {
+      if (!held.caller.until.aborted) {
+        held.ended = true;
+        return;
+      }
+      void this.release([opId]);
+    }
     this.held.delete(opId);
+  }
+
+  /** @internal A re-admitted call stops holding the row it replaced (the book swept it). */
+  forget(opId: string): void {
+    this.held.delete(opId);
+  }
+
+  /** A keyed call's invocation ended: if the call is over, let it go now (else end() does, when it is). */
+  private callerEnded(opId: string): void {
+    const held = this.held.get(opId);
+    if (!held?.ended) return;
+    this.held.delete(opId);
+    void this.release([opId]);
+  }
+
+  /** Ends the book's hold on these operations now (SpendBook.letGo). A failure is reported: their leases run out instead. */
+  private async release(opIds: string[]): Promise<void> {
+    try {
+      await this.book.letGo(opIds, this.owner);
+    } catch (e) {
+      this.warn(`byway could not let go of a finished call in its spending records (${(e as Error)?.message ?? String(e)}); a later attempt of it waits until its lease runs out.`);
+    }
   }
 
   /**
@@ -184,7 +273,15 @@ export class PaidCalls {
   private async tick(): Promise<void> {
     if (this.closed) return;
     try {
-      if (this.held.size > 0) await this.book.renew([...this.held], this.owner, this.leaseMs);
+      const renew: string[] = [];
+      for (const [opId, held] of this.held) {
+        // A cancelled caller's unsettled call is not renewed: another attempt takes it over once its lease runs out.
+        if (!held.ended && held.caller?.cancel?.aborted) continue;
+        // A caller that has ended keeps nothing held (callerEnded lets it go).
+        if (held.caller?.until.aborted) continue;
+        renew.push(opId);
+      }
+      if (renew.length > 0) await this.book.renew(renew, this.owner, this.leaseMs);
     } catch (e) {
       this.warn(`byway could not renew its calls in progress in the spend book (${(e as Error)?.message ?? String(e)}); it tries again in a moment.`);
     }
@@ -207,6 +304,7 @@ export class PaidCalls {
     if (this.closed) return;
     this.closed = true;
     clearInterval(this.timer);
+    this.held.clear();
     try {
       await this.book.endLeases(this.owner);
     } catch (e) {
@@ -219,6 +317,8 @@ export class PaidCalls {
 /** One paid call's life in the book. The gateway calls these in order; end() is safe to call more than once. */
 export class PaidCall {
   private opId: string;
+  /** Queue jobs the provider already accepted, when this call resumes one its earlier attempt made (stage 3). */
+  private resumedJobs: ResumedJobs | undefined;
   private sent = false;
   private answered = false;
   private settled = false;
@@ -228,16 +328,26 @@ export class PaidCall {
   private readonly calls: PaidCalls;
   private readonly req: PaidCallRequest;
   private readonly caps: () => Promise<AdmitRequest['caps']>;
+  private readonly caller: CallerSignals | undefined;
 
-  constructor(calls: PaidCalls, opId: string, req: PaidCallRequest, caps: () => Promise<AdmitRequest['caps']>) {
+  constructor(calls: PaidCalls, admitted: { opId: string; resumed?: ResumedJobs }, req: PaidCallRequest, caps: () => Promise<AdmitRequest['caps']>, caller?: CallerSignals) {
     this.calls = calls;
-    this.opId = opId;
+    this.opId = admitted.opId;
+    this.resumedJobs = admitted.resumed;
+    // A resumed call was sent (and accepted) by its earlier attempt.
+    this.sent = admitted.resumed !== undefined;
     this.req = req;
     this.caps = caps;
+    this.caller = caller;
   }
 
   get id(): string {
     return this.opId;
+  }
+
+  /** The provider's job ids when this call resumes one an earlier attempt made: poll them, never submit again. */
+  get resumed(): ResumedJobs | undefined {
+    return this.resumedJobs;
   }
 
   /** The call's planning estimate, as admitted: what it counts while in flight, and what it settles at when its reported figures cannot be believed. */
@@ -252,10 +362,17 @@ export class PaidCall {
   async markSent(): Promise<void> {
     if (this.sent) return;
     if (!(await this.calls.book.markSent(this.opId, this.calls.owner))) {
-      this.calls.letGo(this.opId);
-      this.opId = await this.calls.admitOnce(this.req, await this.caps());
+      this.calls.forget(this.opId);
+      const again = await this.calls.admitOnce(this.req, await this.caps(), this.caller);
+      this.opId = again.opId;
+      if (again.resumed) {
+        // Another attempt's accepted jobs, taken over meanwhile: polled, not sent again.
+        this.resumedJobs = again.resumed;
+        this.sent = true;
+        return;
+      }
       if (!(await this.calls.book.markSent(this.opId, this.calls.owner))) {
-        throw new GatewayError('provider-error', 'byway could not record this call as sent in its spending records, so it did not send it. Try again.', true);
+        throw new GatewayError('byway-failure', 'byway could not record this call as sent in its spending records, so it did not send it. Try again.', true, { billed: false });
       }
     }
     this.sent = true;
@@ -289,7 +406,8 @@ export class PaidCall {
     this.answered = true;
     for (let n = 1; ; n++) {
       try {
-        const { ledgerEntryId } = await this.calls.book.settle(this.opId, settlement);
+        // A keyed call stays held from its settlement while its caller keeps the result (stage 3, ADR-0099).
+        const { ledgerEntryId } = await this.calls.book.settle(this.opId, this.caller ? { ...settlement, holdMs: this.calls.leaseMs } : settlement);
         this.settled = true;
         return ledgerEntryId;
       } catch (e) {
@@ -307,7 +425,7 @@ export class PaidCall {
   async end(): Promise<void> {
     if (this.ended) return;
     this.ended = true;
-    this.calls.letGo(this.opId);
+    this.calls.ended(this.opId, this.settled);
     try {
       if (this.settled) await this.calls.drain();
       else if (this.answered || (this.sent && this.lastFailure !== 'none')) await this.calls.book.abandon(this.opId);

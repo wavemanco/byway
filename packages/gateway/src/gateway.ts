@@ -283,7 +283,7 @@ export class ModelGateway implements Gateway {
       // ledgered with its evidence redacted, and it is not retried, because a retry would pay again.
       const echoed = findHeldKey(this.env, [out.text]);
       if (echoed) {
-        throw heldKeyError('provider-error', redact(`${ref.provider} answered and billed this call (${req.purpose}), but its answer contained your ${echoed}, so byway did not use it. It is not retried, because a retry would pay again.`), echoed);
+        throw Object.assign(heldKeyError('provider-error', redact(`${ref.provider} answered and billed this call (${req.purpose}), but its answer contained your ${echoed}, so byway did not use it. It is not retried, because a retry would pay again.`), echoed), { billed: true });
       }
       return {
         text: out.text,
@@ -437,6 +437,8 @@ export class ModelGateway implements Gateway {
             }
           },
           accepted: (role, requestId) => op.accepted(role, requestId),
+          // An earlier attempt's jobs the provider accepted (stage 3): polled by their ids, never submitted again.
+          ...(op.resumed ? { resume: op.resumed } : {}),
         });
       } catch (e) {
         // A job fal may have accepted (a lost answer, a status that could not be read) may be billed: the call ends
@@ -488,17 +490,17 @@ export class ModelGateway implements Gateway {
       if (failure || !clip || !lastFrame) {
         const what = !clip ? 'no usable clip could be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
-        throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`));
+        throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`), false, { billed: true });
       }
       // The contract names two clip types (MP4, and the demo's SVG placeholder) and three frame types. Anything else is
       // kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
       const mediaType = clip.mediaType as VideoResult['mediaType'];
       if (!CLIP_TYPES.has(mediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`);
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`, false, { billed: true });
       }
       const lastFrameMediaType = lastFrame.mediaType as MediaType;
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`);
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`, false, { billed: true });
       }
       return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
     } finally {
@@ -686,13 +688,27 @@ export class ModelGateway implements Gateway {
     if (!(reserveUsd <= MAX_PLAUSIBLE_CALL_USD)) {
       throw invalid(`this call is estimated at $${reserveUsd.toFixed(2)}, more than byway allows for one call ($${MAX_PLAUSIBLE_CALL_USD.toFixed(2)})`);
     }
+    // A step's call carries its key and its caller's signals (stage 3, ADR-0099): another attempt holding the key is
+    // waited for, and a gone holder's call is taken over (PaidCalls).
+    const op = req.operation;
     return this.paid.admit(
-      { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, kind, provider: ref.provider, model: ref.model, reserveUsd, paid: reserveUsd > 0 },
+      {
+        workspaceId: req.workspaceId,
+        ...ctxIds(req),
+        purpose: req.purpose,
+        kind,
+        provider: ref.provider,
+        model: ref.model,
+        reserveUsd,
+        paid: reserveUsd > 0,
+        ...(op ? { operationKey: op.key, ...(op.rebuy === true ? { rebuy: true } : {}) } : {}),
+      },
       async () => {
         const workspaceUsd = await this.caps.workspaceCapUsd(req.workspaceId);
         const runUsd = req.runId !== undefined && this.caps.runCapUsd ? await this.caps.runCapUsd(req.runId) : undefined;
         return { workspaceUsd, ...(runUsd !== undefined ? { runUsd } : {}) };
       },
+      op ? { until: op.until, ...(op.cancel ? { cancel: op.cancel } : {}) } : undefined,
     );
   }
 
@@ -811,11 +827,13 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
 
 /**
  * A failure after a provider was paid: never retryable, because retrying the call (here, or by Temporal re-running the
- * activity) would pay again for what was already bought.
+ * activity) would pay again for what was already bought. It is byway's own failure, not the provider's (the provider
+ * answered), and says it was billed (ADR-0099), so no caller presents it as the provider not answering, and a caller with
+ * tries of its own (an ASSET step's tries per image, ADR-0090) stops too.
  */
 function billedFailure(redact: Redactor, what: string, cause: unknown): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);
-  return new GatewayError('provider-error', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false);
+  return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true });
 }
 
 /**
@@ -834,10 +852,26 @@ function* requestTexts(req: CompletionRequest): Generator<string> {
   }
 }
 
-function validateSpend(req: { workspaceId?: unknown; purpose?: unknown; profileId?: unknown }): void {
+function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: unknown; purpose?: unknown; profileId?: unknown; operation?: unknown }): void {
   if (typeof req.workspaceId !== 'string' || !req.workspaceId) throw invalid('workspaceId is required');
+  // A ledger line naming run or step "" is one the spend book refuses to count (ledgerEntryProblem), so such a call is
+  // refused before anything is reserved or sent, never billed and then left out of the caps.
+  for (const field of ['runId', 'stepId'] as const) {
+    if (req[field] !== undefined && (typeof req[field] !== 'string' || !req[field])) throw invalid(`${field}, when given, must be a non-empty string`);
+  }
   if (typeof req.purpose !== 'string' || !req.purpose) throw invalid('purpose is required (spec §3.3)');
   if (typeof req.profileId !== 'string' || !req.profileId) throw invalid('profileId is required');
+  if (req.operation !== undefined) validateOperation(req.operation);
+}
+
+/** SpendContext.operation, checked before anything is reserved: a key, and signals that can say when the caller ends. */
+function validateOperation(value: unknown): void {
+  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; rebuy?: unknown } | null;
+  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, rebuy? }');
+  if (op.rebuy !== undefined && typeof op.rebuy !== 'boolean') throw invalid('operation.rebuy, when given, must be true or false');
+  if (typeof op.key !== 'string' || !op.key) throw invalid('operation.key must be a non-empty string');
+  if (!(op.until instanceof AbortSignal)) throw invalid('operation.until must be an AbortSignal');
+  if (op.cancel !== undefined && !(op.cancel instanceof AbortSignal)) throw invalid('operation.cancel, when given, must be an AbortSignal');
 }
 
 /**

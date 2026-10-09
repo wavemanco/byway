@@ -72,7 +72,10 @@
             "produces": [
               "artifact"
             ],
-            "writes": true
+            "writes": true,
+            "reads": [
+              "brief"
+            ]
           },
           {
             "op": "step",
@@ -417,5 +420,5 @@
     "C7-DR7"
   ],
   "bank": true,
-  "hash": "sha256:3b54f11b518ec500ec15342219ff2428e940f2e2d6d92f592df6336d7ba0f96d"
+  "hash": "sha256:cefc7ab596d50dbc755049b9fed50096fa97b540150b849a9b590813196d3f52"
 }

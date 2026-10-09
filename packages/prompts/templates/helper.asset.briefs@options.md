@@ -1,9 +1,10 @@
 ---
 id: helper.asset.briefs
-version: 1
+version: 2
 fidelity: project
 slots: artifact, options
 output: image-briefs
+images: each
 source: protocol/03-configurations.md C2 "ASSET?(rough mood boards)", kept rough so they don't anchor anyone; 01-blocks.md ASSET guards. Spec §3.3: asset.briefs on options, one mood image per option, the brief's slot is the option label (the options slot lists the labels).
 ---
 ## system

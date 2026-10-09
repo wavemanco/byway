@@ -155,7 +155,71 @@ function typesetting(em: number) {
   return { calls, render };
 }
 
+/**
+ * A stand-in renderer that sets words in a proportional face: each character as wide as `widths` says (in em of the
+ * size the page asks for; 0.55 for any other), words wrapped greedily at the card's width, 1.4 lines tall; tiled at
+ * CARD_MAX_HEIGHT. `heightOf` is the height it gives a page, to find the true answer by trying every prefix.
+ */
+function proportional(widths: Record<string, number>) {
+  const calls: number[] = [];
+  const em = (c: string) => widths[c] ?? 0.55;
+  const heightOf = (html: string): number => {
+    let height = 64;
+    for (const m of html.matchAll(/<p class="(?:text|cut)" style="font-size:(\d+)px">([^<]*)<\/p>/g)) {
+      const px = Number(m[1]);
+      let lines = 0;
+      for (const para of m[2]!.replace(/&[a-z#0-9]+;/g, '_').split('\n')) {
+        let x = 0;
+        lines++;
+        for (const word of para.split(' ')) {
+          const w = [...word].reduce((s, c) => s + em(c) * px, 0);
+          const gap = em(' ') * px;
+          if (x > 0 && x + gap + w > CARD_WIDTH - 64) {
+            lines++;
+            x = w;
+          } else x += (x > 0 ? gap : 0) + w;
+        }
+      }
+      height += Math.ceil(lines * px * 1.4) + 24;
+    }
+    return Math.max(900, height);
+  };
+  const render = async (html: string): Promise<Uint8Array[]> => {
+    const height = heightOf(html);
+    calls.push(height);
+    const tiles: Uint8Array[] = [];
+    for (let y = 0; y < height; y += CARD_MAX_HEIGHT) tiles.push(png(8, Math.min(CARD_MAX_HEIGHT, height - y), [y % 256, 5, 6]));
+    return tiles;
+  };
+  return { calls, render, heightOf };
+}
+
 describe('fitting a card into one image (F13)', () => {
+  it('keeps nearly the most words that fit when the opening words are set wider than the estimate, never none', async () => {
+    // Wide capitals first, then narrow words: one scale for the whole text keeps landing just over the line. Before the
+    // search halved what was left, five tries came out too tall and the card dropped every word, though more than
+    // five thousand fit.
+    const r = proportional({ W: 1, i: 0.2, ' ': 0.2 });
+    const words = [...Array<string>(2_400).fill('WWWWWW'), ...Array<string>(10_000).fill('ii')];
+    const card: CardContent = { images: [], layout: 'grid', text: words.join(' ') };
+    const fitted = await fitCard(card, r.render);
+    expect(fitted).toMatchObject({ ok: true, cut: { unit: 'words', total: words.length } });
+    if (!fitted.ok) return;
+    // The true answer: the most words whose card is one tile on this renderer.
+    let lo = 0;
+    let hi = words.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (r.heightOf(cardHtml({ ...card, text: words.slice(0, mid).join(' '), omitted: words.length - mid, unit: 'words' })) <= CARD_MAX_HEIGHT) lo = mid;
+      else hi = mid - 1;
+    }
+    expect(lo).toBeGreaterThan(4_000);
+    expect(fitted.cut!.shown).toBeLessThanOrEqual(lo);
+    expect(fitted.cut!.shown).toBeGreaterThanOrEqual(0.9 * lo);
+    expect(fitted.html).not.toContain('[all ');
+    expect(r.calls.length).toBeLessThanOrEqual(MAX_CARD_RENDERS);
+  });
+
   it('keeps every word when they fit, with no closing line', async () => {
     const r = measuring();
     const fitted = await fitCard({ images: [], layout: 'grid', text: essay(5_000, 'THE-END') }, r.render);

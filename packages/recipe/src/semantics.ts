@@ -170,10 +170,11 @@ export const PICK_JUDGE_ROLES: ReadonlySet<Role> = new Set<Role>(['judge', 'sele
 /**
  * Whether a TELLS sweep's finds go to the person first, who chooses which are swapped (TELLS-1, convention C2; the
  * interpreter's seq calls this after each step). It reads only the nodes after the sweep in its own seq: the next step
- * there that reads a critique is a model fix, and no keep-or-revert there is a machine's. A headless arm (C1-H, its
- * keep-or-revert by a proxy) and a sweep that only flags (C6, C6a) are left as they are, and so is a sweep whose swap
- * step sits in a seq of its own: the same steps nested differently run differently, so the semantic projection keeps a
- * seq's nesting (projection.ts).
+ * there that consumes a critique is a model fix, and no keep-or-revert there is a machine's. A step that only reads a
+ * critique when there is one (`reads`, ADR-0089) is not that step: no one is asked, and it takes in every find. A
+ * headless arm (C1-H, its keep-or-revert by a proxy) and a sweep that only flags (C6, C6a) are left as they are, and so
+ * is a sweep whose swap step sits in a seq of its own: the same steps nested differently run differently, so the
+ * semantic projection keeps a seq's nesting (projection.ts).
  */
 export function asksSwaps(sweep: Node, rest: readonly Node[]): boolean {
   if (sweep.op !== 'step' || sweep.actor !== 'model' || sweep.role !== 'tells-sweep') return false;
@@ -460,6 +461,9 @@ export const FIELD_ROLES: {
     prompt: 'semantic',
     // Read in order: the runner lays out the images a step sees port by port (buildPrompt), so a reordering is a change.
     consumes: 'semantic',
+    // What a step's prompt receives when it is there (ADR-0089): a read port fills its slot, or an empty one, and
+    // buildPrompt walks the reads after the consumed ports, in order, laying out their images as it goes.
+    reads: 'semantic',
     produces: 'semantic-set',
     writes: 'semantic',
     keepsVoice: 'semantic',

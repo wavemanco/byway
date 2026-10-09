@@ -13,7 +13,7 @@ import type { Gateway, Medium } from '@byway/contracts';
 import { createActivities } from '../src/activities/index.ts';
 import { launchFailure } from '../src/pages.ts';
 import { FAILURE } from '../src/types.ts';
-import { fakePages, type FakePages } from './helpers/fake-pages.ts';
+import { fakePages, png, type FakePages } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -85,5 +85,40 @@ describe('beginning a run', () => {
     expect(pages.readyCalls).toBe(1);
     expect((await store.getRun(input.runId))?.status).toBe('running');
     expect(called).toEqual([]);
+  });
+});
+
+/**
+ * Runs of other media meet the renderer only when a GREAT lineup forms cards: at least three references, one of them
+ * an image (BLIND-1). Their references are workflow input, so the model step asks the renderer before its first
+ * provider call, and such a run whose renderer cannot start stops before it spends (ADR-0084's logged option).
+ */
+describe('a model step whose run has image references', () => {
+  const step = { id: 'concept', role: 'build' as const, actor: 'model' as const, tier: 'mid' as const, prompt: 'product.test.concept', consumes: ['intent' as const], produces: ['artifact' as const], writes: true };
+
+  async function attempt(medium: Medium, refs: string[]) {
+    const { runId } = await queued(medium);
+    await store.updateRun(runId, { status: 'running' });
+    const acts = createActivities({ gateway: recording(), store, prompts: fakePrompts(), pages });
+    const run = { runId, workspaceId, recipeId: 'r', profileId: 'demo', medium, problem: { text: 'An ad' }, seeds: [] };
+    return acts.modelStep({ run, call: { key: `${runId}/concept/-/1`, stepId: 'concept', stage: 'D1' }, step, ports: {}, refs }).catch((e: unknown) => e);
+  }
+  const image = async (c: number) => (await store.artifacts.put(png(4, 3, [c, c, c]), 'image/png')).id;
+  const words = async (t: string) => (await store.artifacts.putText(t, 'text/markdown')).id;
+
+  it('stops before any provider call when its renderer cannot start, plainly, not retried', async () => {
+    pages.failReady(unavailable);
+    const err = await attempt('media', [await image(1), await words('An example.'), await image(2)]);
+    expect(err).toBeInstanceOf(ApplicationFailure);
+    expect(err).toMatchObject({ type: FAILURE.step, nonRetryable: true, message: unavailable.message });
+    expect(pages.readyCalls).toBe(1);
+    expect(called).toEqual([]);
+  });
+
+  it('does not ask the renderer when the run has fewer than three references, or none of them is an image', async () => {
+    pages.failReady(unavailable);
+    await attempt('prose', [await image(1), await image(2)]);
+    await attempt('prose', [await words('One.'), await words('Two.'), await words('Three.')]);
+    expect(pages.readyCalls).toBe(0);
   });
 });

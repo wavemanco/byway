@@ -119,7 +119,7 @@ function promptProblem(step: Step, prompt: string, medium: Medium | undefined, p
     prompts.render(prompt, slots);
   } catch (e) {
     if (e instanceof PromptTemplateError && e.code === 'missing-slot') {
-      return `prompt "${prompt}" needs "${e.slot}", which step "${step.id}" does not provide (it reads ${step.consumes.join(', ') || 'nothing'})`;
+      return `prompt "${prompt}" needs "${e.slot}", which step "${step.id}" does not provide (it takes in ${[...step.consumes, ...(step.reads ?? [])].join(', ') || 'nothing'})`;
     }
     return `prompt "${prompt}" does not render for step "${step.id}": ${e instanceof Error ? e.message : String(e)}`;
   }

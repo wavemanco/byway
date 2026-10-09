@@ -204,7 +204,8 @@ describe('gateway: video through fal.ai', () => {
     const fal = fakeFal({ [FAL_EXTRACT_FRAME]: [falQueueError(502)] });
     const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
     const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError;
-    expect(err).toMatchObject({ code: 'provider-error', retryable: false });
+    // The clip was made and billed: a failure after it says so (billed), so no caller tries the link again for free.
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false, billed: true });
     expect(err.message).toMatch(/may have accepted the last-frame job/);
     expect(fal.calls.map((c) => c.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
     expect(ledgerLines()).toEqual([expect.objectContaining({ kind: 'video', costUsd: 0.352 })]);

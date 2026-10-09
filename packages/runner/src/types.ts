@@ -42,6 +42,16 @@ export interface ViewRef {
   imageArtifactIds: string[];
   /** A web page's images by surface, so prompts can attach them under their names and a step's `renders` knob can pick. */
   surfaces?: { surface: Surface; imageArtifactIds: string[] }[];
+  /**
+   * Images under captions saying what each is (RENDER-1): inside a relay link, the frame the clip started from and the
+   * clip's last frame (F10, ADR-0090). `imageArtifactIds` stays every image, in the same order.
+   */
+  groups?: { caption: string; imageArtifactIds: string[] }[];
+  /**
+   * Set when the view shows nothing a judge could judge (inside a relay link, a shot whose clip was not made), with why.
+   * The interpreter does not ask a judge about such a view: the step is skipped with this reason.
+   */
+  unobservable?: string;
 }
 
 /** The `view` port: one artifact's view, or a pool of candidates' views shown side by side under labels A, B, C… */
@@ -132,7 +142,7 @@ export interface RunRef {
 }
 
 /** The parts of a recipe step the activities read. */
-export type StepSpec = Pick<Step, 'id' | 'role' | 'block' | 'glue' | 'actor' | 'tier' | 'isolated' | 'frozenPrompt' | 'prompt' | 'consumes' | 'produces' | 'writes' | 'keepsVoice' | 'knobs' | 'variant'>;
+export type StepSpec = Pick<Step, 'id' | 'role' | 'block' | 'glue' | 'actor' | 'tier' | 'isolated' | 'frozenPrompt' | 'prompt' | 'consumes' | 'reads' | 'produces' | 'writes' | 'keepsVoice' | 'knobs' | 'variant'>;
 
 export const toStepSpec = (s: Step): StepSpec => ({
   id: s.id,
@@ -145,6 +155,7 @@ export const toStepSpec = (s: Step): StepSpec => ({
   ...(s.frozenPrompt !== undefined ? { frozenPrompt: s.frozenPrompt } : {}),
   ...(s.prompt ? { prompt: s.prompt } : {}),
   consumes: s.consumes,
+  ...(s.reads?.length ? { reads: s.reads } : {}),
   produces: s.produces,
   ...(s.writes !== undefined ? { writes: s.writes } : {}),
   ...(s.keepsVoice !== undefined ? { keepsVoice: s.keepsVoice } : {}),
@@ -216,6 +227,11 @@ export interface RenderInput {
   /** The artifacts to view: one, or a pool of candidates. */
   artifactIds: string[];
   pool: boolean;
+  /**
+   * Inside a relay link: the shot the link makes and the frame its clip started from. The view is then that shot's
+   * line, its start frame and its clip's last frame (F10, ADR-0090). Absent outside a link.
+   */
+  link?: { shot: number; startFrame?: string };
   meta?: StepMeta;
 }
 

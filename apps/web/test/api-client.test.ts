@@ -76,6 +76,17 @@ describe('post() and patch()', () => {
     }
   });
 
+  it('carry the status byway answered with, and none when no answer came back (a Start tells the two apart, F03 P3)', async () => {
+    vi.stubGlobal('fetch', async () => response(503, async () => ({ error: "byway's run engine is not running." })));
+    await expect(post('/api/runs', {})).rejects.toMatchObject({ status: 503 });
+    vi.stubGlobal('fetch', async () => response(409, () => Promise.reject(new SyntaxError('empty'))));
+    await expect(post('/api/runs', {})).rejects.toMatchObject({ status: 409 });
+    vi.stubGlobal('fetch', async () => response(200, () => Promise.reject(new SyntaxError('cut off'))));
+    await expect(post('/api/runs', {})).rejects.toMatchObject({ status: 200 });
+    vi.stubGlobal('fetch', async () => Promise.reject(new TypeError('Failed to fetch')));
+    await expect(post('/api/runs', {})).rejects.toMatchObject({ name: 'ApiError', status: undefined });
+  });
+
   it('carry the fields a refusal names, and only a list of strings', async () => {
     vi.stubGlobal('fetch', async () => response(400, async () => ({ error: 'This text contains your ANTHROPIC_API_KEY.', code: 'held-key', fields: ['attachments'] })));
     await expect(post('/api/intakes', {})).rejects.toMatchObject({ code: 'held-key', fields: ['attachments'] });

@@ -1,9 +1,10 @@
 ---
 id: article.ASSET
-version: 1
+version: 2
 fidelity: paraphrase
 slots: artifact
 output: image-briefs
+images: 1-3
 source: Article T4 "image generation", as paraphrased in protocol/06-runbook.md C1 §5 (ASSET) and 01-blocks.md ASSET procedure 1–6 (1–3 slots, copy kept out of images, never as evidence: ⟨A⟩). Product (spec §3.2): the model writes image briefs; the runner generates them through the gateway and integrates them with helper.asset.integrate, then renders to verify.
 ---
 ## system
