@@ -3,8 +3,8 @@ import {
   GatewayError,
   type ArtifactRecord,
   type ArtifactStore,
-  type BudgetDetails,
   type BrokenLine,
+  type BudgetDetails,
   type LedgerAudit,
   type RecordedFault,
   type CompletionRequest,
@@ -577,7 +577,11 @@ export class ModelGateway implements Gateway {
     return { line, book: at.offset < (await this.book.cursor()).offset ? 'read-before' : 'unread' };
   }
 
-  /** Stops lease renewal and the outbox timer after one last bounded write of the outbox. Call before closing the store. */
+  /**
+   * A clean stop (PaidCalls.close): stops lease renewal and the outbox timer, hands this gateway's calls in progress back
+   * to the spend book at once, and makes one last bounded write of the outbox; no paid call starts afterwards. Call
+   * before closing the store.
+   */
   close(): Promise<void> {
     return this.paid.close();
   }
