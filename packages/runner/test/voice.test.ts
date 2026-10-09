@@ -632,6 +632,15 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     }
   });
 
+  it('an inline block\'s last block line, deleted beside the next inline block, is refused though the write is right (r8, as ADR-0081 states)', async () => {
+    // innerText shows the deleted block's line breaks inside the inline block, and the written page shows "Pro" beside "$29":
+    // the arbiter cannot tell an inline block's edge from a space, so it refuses rather than guess.
+    const q = await open(page('<div style="display:inline-block"><b>Pro</b><p>For teams</p></div> <div style="display:inline-block">$29</div>'));
+    expect(await rejected(q.answer('T\nPro\n\n$29'))).toBe(
+      'byway could not put line 3 on this page exactly as you wrote it, because a browser would show on one line what it showed on separate lines: it would show "Pro $29". Change line 3 again, or leave it as it was offered. As first offered, line 3 read "For teams".',
+    );
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // A button's content is an inline block: a browser shows no space at its edge, so "now" took the gap with it.

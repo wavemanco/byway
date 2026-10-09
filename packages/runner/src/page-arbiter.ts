@@ -9,17 +9,20 @@
  *   and the copy. A line is shown where its two marks each appear once, the start before the end, with exactly the
  *   line's words between them (each run of whitespace read as one space, a line break included). The copy must read
  *   as the page does once the marks are taken out; if it does not, no line is placed.
- * - What is offered (`notShown`): a line a browser does not show so (hidden, a tooltip, or read where it is not shown)
- *   is not offered, and stays byte for byte.
+ * - What is offered (`notShown`): a line a browser does not show so (hidden, a tooltip, read where it is not shown, or
+ *   laid out otherwise than in one piece with exactly its words) is not offered, and stays byte for byte. Text a
+ *   stylesheet hides from sight but lays out is read as shown (innerText lays it out).
  * - What the written page must show (`expectedShown`): the page before as Chromium showed it, with each changed or
- *   deleted line's words replaced by the person's (brackets taken out), and everything else, the separators between
- *   lines included, as the page had it. A gap between two of the person's words is one space, except inside a line
- *   Chromium showed broken over screen lines (by a style the deck does not read), where it may be a space or a line
- *   break. Each shown character's link (by address) is as the page had it, and the person's link words are in the link
- *   they bracketed.
- * - The check (`arbiterProblem`): Chromium's reading of the written page, with each run of whitespace read as one space
- *   or, when it holds a line break, one line break, and its ends trimmed, must equal the expected text exactly, and
- *   every shown character must be in the expected link. Any difference refuses the write, naming the line.
+ *   deleted line's words replaced by the person's (brackets taken out, and a space at an edge where the person typed
+ *   one), and everything else, the separators between lines included, as the page had it. A gap between two of the
+ *   person's words is one space, except inside a line Chromium showed broken over screen lines (by a style the deck does
+ *   not read), where it may be a space or a line break. Each shown character's link (by address) is as the page had it,
+ *   and the person's link words are in the link they bracketed (a deleted line has none, so its link words are not
+ *   checked).
+ * - The check (`arbiterProblem`): Chromium's reading of the written page, with each run of whitespace read as one gap
+ *   (that many table-cell boundaries when it holds tabs, else a line break when it holds one, else a space) and its ends
+ *   trimmed, must equal the expected text exactly, and every shown character must be in the expected link. Any
+ *   difference refuses the write, naming the line.
  *
  * Pure but for the reads (`locateLines`, `arbitrate`), which go to the renderer. Activity code only.
  */
