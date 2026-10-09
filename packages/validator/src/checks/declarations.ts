@@ -96,6 +96,8 @@ function checkSetAside(recipe: Recipe, findings: Findings): void {
       return refreshesPrevious(step) ? undefined : stale;
     },
     join: (states) => states.find((s) => s !== undefined),
+    // No step: the empty key. A step id: never empty, so its key never meets that one.
+    key: (stale) => (stale === undefined ? '' : `id:${stale}`),
   });
   walk(recipe, (node, path) => {
     if (node.op !== 'loop' || !SNAPSHOT_METRICS.has(node.gate.metric)) return;

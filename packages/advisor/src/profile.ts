@@ -147,6 +147,7 @@ export function writersAfter(recipe: Recipe, mark: (s: Step) => boolean): { step
       return armed || (!contained && mark(step));
     },
     join: (states) => states.some(Boolean),
+    key: (armed) => (armed ? '1' : '0'),
   });
   return [...found.values()];
 }
