@@ -55,7 +55,7 @@ The task, with slots, and last of all:
 The exact output contract.
 ```
 
-- **Front matter** is checked strictly: `id` matches the file name; `version` is a positive integer; `fidelity` is `verbatim`, `paraphrase` or `project`; `slots` lists exactly the slots the body uses (no more, no fewer); `output` names a contract from `OUTPUT_CONTRACTS` (spec §3.3); `source` says where the wording comes from.
+- **Front matter** is checked strictly: `id` matches the file name; `version` is a positive integer; `fidelity` is `verbatim`, `paraphrase` or `project`; `slots` lists exactly the slots the body uses (no more, no fewer); `output` names a contract from `OUTPUT_CONTRACTS` (spec §3.3); `source` says where the wording comes from. An image-briefs template (an ASSET step's prompt) also declares `images`: `each` (one per storyboard shot or option) or a range such as `1-3`; the renderer returns it as `RenderedPrompt.images`, and the runner holds the answer to it (ADR-0090). No other template may declare it.
 - **Slots** are `{{name}}`, with names from `PROMPT_SLOTS`. **Blocks** are `{{#if name}}…{{else}}…{{/if}}`, taken when the slot has a non-blank value; they nest, and a tag alone on its line leaves no blank line. There is nothing else: no loops, helpers or escapes.
 - **Rendering is strict.** A slot inserted on the path taken must be provided (an empty string counts); a slot used only inside an `#if` branch that is not taken is optional. Slot values are inserted as they are and never re-read, so a user's `{{seed}}` stays text.
 - **The hash** is `sha256:<hex>` of the file with line endings normalized to LF. It changes with any byte of the file, front matter included.
