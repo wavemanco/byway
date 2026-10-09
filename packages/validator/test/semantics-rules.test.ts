@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { OPTION_SET } from '@byway/protocol';
-import { audit, loop, oneShotGate, pick, replicate, seq, step, type Gate, type Node, type Recipe, type Seq, type Step } from '@byway/recipe';
+import { audit, loop, oneShotGate, pick, relay, replicate, seq, step, type Gate, type Node, type Recipe, type Seq, type Step } from '@byway/recipe';
 import { flowRecipe, validate } from '../src/index.ts';
 import { okGate, stepById, studio } from './fixtures.ts';
 
@@ -163,6 +163,34 @@ describe('set-aside: nothing put back undoes a person’s write', () => {
     d2.steps.splice(1, 1, loop('rounds', seq(step({ id: 'react', role: 'vision', block: 'VISION', actor: 'human', consumes: [OPTION_SET], produces: ['taste'] }), humanDraft('own-draft', ['intent'])), { ...okGate(), metric: 'human', threshold: undefined, hidden: false, holder: 'human', plateau: undefined }));
     expect(only(r, 'ST12')).toEqual(['ST12:set-aside']);
     expect(validate(r).violations.filter((v) => v.ruleId === 'ST5')).toEqual([]);
+  });
+
+  // A pick of one leaves the options held: the runner keeps ports.options = [the chosen one], and a pick or an option
+  // consumer reached again takes that option back, made before the person's write in between.
+  const personsRounds: Gate = { ...okGate(), metric: 'human', threshold: undefined, hidden: false, holder: 'human', plateau: undefined };
+  it('ST12: a pick of one, then your write, in a loop: the next round picks the option from before your write (A1)', () => {
+    const r = studio();
+    const d2 = r.stages[1]!.body as Seq;
+    d2.steps[indexOf(d2, 'pick-final')] = loop('final-rounds', seq(pick('pick-final', 'H', 1, 'human'), humanDraft('own-draft')), personsRounds);
+    expect(only(r, 'ST12')).toEqual(['ST12:set-aside']);
+    expect(validate(r).violations.find((v) => v.clause === 'set-aside')!.message).toMatch(/own-draft.*later round of loop "final-rounds"/);
+  });
+
+  it('ST12: the same through a relay’s next link', () => {
+    const r = studio();
+    const d2 = r.stages[1]!.body as Seq;
+    const frame = step({ id: 'first-frame', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', consumes: ['intent'], produces: ['anchor'], writes: true, knobs: { slots: 1 } });
+    const ownLink = step({ id: 'own-link', role: 'build', actor: 'human', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true });
+    d2.steps[indexOf(d2, 'pick-final')] = seq(frame, relay('links', 2, seq(pick('pick-final', 'R', 1, 'policy'), ownLink)));
+    expect(clauses(r)).toContain('ST12:set-aside');
+    expect(validate(r).violations.find((v) => v.clause === 'set-aside')!.message).toMatch(/own-link.*later round of relay "links"/);
+  });
+
+  it('a pick of one with no write of yours after it, round after round, is not a set-aside', () => {
+    const r = studio();
+    const d2 = r.stages[1]!.body as Seq;
+    d2.steps[indexOf(d2, 'pick-final')] = loop('final-rounds', seq(pick('pick-final', 'H', 1, 'human'), render('final-render'), step({ id: 'react', role: 'vision', block: 'VISION', actor: 'human', consumes: ['view'], produces: ['taste'] })), personsRounds);
+    expect(clauses(r).filter((c) => c.endsWith('set-aside'))).toEqual([]);
   });
 });
 

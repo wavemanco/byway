@@ -63,6 +63,9 @@ const c3fix = findStep(c3, 'revise');
 const c4fix = { ...findStep(c4, 'revise'), id: 'ai-polish' };
 const fixAfterC3 = { op: 'step', id: 'ai-polish', role: 'fix', actor: 'model', tier: 'mid', prompt: c3fix.prompt, consumes: ['artifact', 'critique'], produces: ['artifact'], writes: true };
 const pickR = { op: 'pick', id: 'final-pick', mode: 'R', k: 1, actor: 'policy' };
+const pickH = { op: 'pick', id: 'final-pick', mode: 'H', k: 1, actor: 'human' };
+/** C2's own person's-rounds gate (its vision loop's), with a different cap. */
+const c2Rounds = (max: number): N => ({ ...(stageOf(c2 as N, 'D1').body.steps.find((n: N) => n.op === 'loop').gate as N), max });
 
 /** A protected step wrapped in a check-clean loop after a defect check: the check can end the round before it (K1). */
 function afterCheck(nearest: Recipe, stage: string, id: string, check: N, max: number, onCap: string): N {
@@ -216,6 +219,35 @@ describe('nothing put back after your words undoes them (set-aside)', () => {
   it('QF: new variants made from your words, then your pick, is not a set-aside', () => {
     const map = findStep(c2, 'option-map');
     const r = insertAfter(clone(c2), 'D1', 'voice', { op: 'replicate', id: 'variants', n: 2, body: { ...map, id: 'map-variant', consumes: ['artifact'], keepsVoice: true } }, { op: 'pick', id: 'final-pick', mode: 'H', k: 1, actor: 'human' });
+    expect(admission(c2, r).filter((v) => v.endsWith('set-aside'))).toEqual([]);
+  });
+  it('Q2: your own pick after C2’s VOICE', () => refusedWith(c2, insertAfter(clone(c2), 'D1', 'voice', pickH), 'ST5:set-aside'));
+  it('Q3: a random pick at the very end of C2', () => refusedWith(c2, insertAfter(clone(c2), 'D1', 'mood-boards-if-wanted', pickR), 'ST5:set-aside'));
+  it('Q4: an each over the options after C2’s VOICE', () => {
+    const map = findStep(c2, 'option-map');
+    refusedWith(c2, insertAfter(clone(c2), 'D1', 'voice', { op: 'each', id: 'per-option', body: { ...map, id: 'per-option-map', consumes: ['artifact'], keepsVoice: true } }), 'ST5:set-aside');
+  });
+
+  // A pick of one leaves the options held (ports.options = [the chosen one]): on the next round it takes that option back,
+  // made before the person's words on the round before, and puts it in place of the work.
+  it('A1: C2’s VOICE in a sign-off loop after your pick of one: round 2 picks the option from before your words', () => {
+    const r = clone(c2);
+    const d1 = stageOf(r, 'D1').body;
+    const i = at(d1, 'voice');
+    d1.steps[i] = { op: 'loop', id: 'sign-off', body: { op: 'seq', steps: [pickH, d1.steps[i]] }, gate: c2Rounds(2) };
+    refusedWith(c2, r, 'ST12:set-aside');
+  });
+  it('A3: your own map in a loop after a random pick of one, before VOICE', () => {
+    const own = { op: 'step', id: 'own-map', role: 'build', actor: 'human', consumes: ['artifact'], produces: ['artifact'], writes: true };
+    refusedWith(c2, insertAfter(clone(c2), 'D1', 'option-map', { op: 'loop', id: 'own', body: { op: 'seq', steps: [pickR, own] }, gate: c2Rounds(2) }), 'ST12:set-aside');
+  });
+  it('a sign-off loop that makes new variants from your words each round before you pick is not a set-aside', () => {
+    const map = findStep(c2, 'option-map');
+    const r = clone(c2);
+    const d1 = stageOf(r, 'D1').body;
+    const i = at(d1, 'voice');
+    const variants = { op: 'replicate', id: 'variants', n: 2, body: { ...map, id: 'map-variant', consumes: ['artifact'], keepsVoice: true } };
+    d1.steps[i] = { op: 'loop', id: 'sign-off', body: { op: 'seq', steps: [variants, pickH, d1.steps[i]] }, gate: c2Rounds(2) };
     expect(admission(c2, r).filter((v) => v.endsWith('set-aside'))).toEqual([]);
   });
   it('R1: C3’s keep-or-revert moved right after the human cut (a passing critic can leave the AI angle as the previous version)', () => {

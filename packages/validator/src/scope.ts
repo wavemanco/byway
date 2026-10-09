@@ -17,11 +17,15 @@ export interface Producer {
  * - `aside`: ports a person's write set aside on some path, with that write's step id (ADR-0092). A finished person's
  *   write sets the option set aside: picking from it, or working on it, would bring back what was made before their
  *   words. It stays in `may` (the runner still holds it), but no longer in `must`.
+ * - `held`: on some path the runner still holds an option list though no option set is open: a pick of one leaves
+ *   ports.options as the one it chose (the interpreter's pick), and a later pick or each takes that list. A person's
+ *   write sets it aside like an open set.
  */
 export interface ScopeState {
   must: ReadonlyMap<PortType, readonly Producer[]>;
   may: ReadonlySet<PortType>;
   aside: ReadonlyMap<PortType, string>;
+  held: boolean;
 }
 
 export interface Typing {
@@ -33,12 +37,14 @@ interface MutableState {
   must: Map<PortType, Producer[]>;
   may: Set<PortType>;
   aside: Map<PortType, string>;
+  held: boolean;
 }
 
 const clone = (s: ScopeState): MutableState => ({
   must: new Map([...s.must].map(([k, v]) => [k, [...v]])),
   may: new Set(s.may),
   aside: new Map(s.aside),
+  held: s.held,
 });
 
 /** ST5 for a consumed option set that is not in scope: 'set-aside' when a person's write set it aside. */
@@ -62,7 +68,7 @@ function mergeAlternatives(states: ScopeState[]): MutableState {
   const must = new Map<PortType, Producer[]>();
   const may = new Set<PortType>();
   const aside = new Map<PortType, string>();
-  if (!first) return { must, may, aside };
+  if (!first) return { must, may, aside, held: false };
   for (const [port, producers] of first.must) {
     if (rest.every((s) => s.must.has(port))) {
       must.set(port, rest.reduce((acc, s) => addProducers(acc, s.must.get(port) ?? []), [...producers]));
@@ -70,7 +76,7 @@ function mergeAlternatives(states: ScopeState[]): MutableState {
   }
   for (const s of states) for (const p of s.may) may.add(p);
   for (const s of states) for (const [p, by] of s.aside) if (!aside.has(p)) aside.set(p, by);
-  return { must, may, aside };
+  return { must, may, aside, held: states.some((s) => s.held) };
 }
 
 /** Type the recipe's port flow (spec: "Scope typing"). Emits ST5 for consumed ports that are not guaranteed in scope. */
@@ -80,6 +86,7 @@ export function typeRecipe(recipe: Recipe, findings: Findings): Typing {
     must: new Map(recipe.inputs.map((p) => [p, [{ kind: 'input' } as Producer]])),
     may: new Set(recipe.inputs),
     aside: new Map(),
+    held: false,
   };
   recipe.stages.forEach((s, i) => {
     typing.stageEntry.set(s.stage, clone(state));
@@ -139,9 +146,11 @@ function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, f
         typeNode(node.judge, judgeScope, `${path}.judge`, typing, findings);
       }
       if (node.k === 1) {
+        // The choice is made: no option set is open. The runner still holds the one chosen as its option list.
         st.must.delete(OPTION_SET);
         st.may.delete(OPTION_SET);
         st.aside.delete(OPTION_SET);
+        st.held = true;
         st.must.set('artifact', [{ kind: 'operator', op: 'pick' }]);
         st.may.add('artifact');
       }
@@ -177,7 +186,7 @@ function typeNode(node: Node, input: ScopeState, path: string, typing: Typing, f
 
 /** A finished person's write sets the option set aside (it stays in `may`: the runner still holds it). */
 function setAside(step: Step, st: MutableState): void {
-  if (!personWrite(step) || !st.may.has(OPTION_SET)) return;
+  if (!personWrite(step) || !(st.may.has(OPTION_SET) || st.held)) return;
   st.must.delete(OPTION_SET);
   st.aside.set(OPTION_SET, step.id);
 }
