@@ -17,6 +17,8 @@ export function SelectPanel({ cp, artifacts, busy, onSubmit, promptId, draft: se
   const options = cp.options ?? [];
   const [draft, setDraftState] = useState(seed);
   const setDraft = (next: CheckpointDraft) => {
+    // Sent: the selection stays as sent until byway settles the question (ADR-0082).
+    if (sent) return;
     setDraftState(next);
     onDraft(next);
   };

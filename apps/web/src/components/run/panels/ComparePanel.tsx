@@ -28,6 +28,8 @@ export function ComparePanel({ cp, artifacts, busy, onSubmit, promptId, draft, o
   const [shown, setShown] = useState(Math.max(0, kept));
   const [chosen, setChosenState] = useState<number | null>(kept >= 0 ? kept : null);
   const setChosen = (index: number) => {
+    // Sent: the highlight stays on the version sent until byway settles the question; flipping still shows the other.
+    if (sent) return;
     setChosenState(index);
     const option = options[index];
     if (option) onDraft({ ...draft, choice: [option.id] });

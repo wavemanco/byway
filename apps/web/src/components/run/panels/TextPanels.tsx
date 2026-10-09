@@ -16,10 +16,11 @@ function wordCount(text: string): number {
 /**
  * Shared by write and react: one text field, sent with the primary button or Ctrl+Enter. It starts from the draft the
  * Run screen kept for this question (the model's starting text only when the person has not typed), and every change
- * is written through to it (F06, ADR-0082).
+ * is written through to it (F06, ADR-0082). Once the answer is sent the field is read-only, so what it shows stays what
+ * was sent, until byway settles the question.
  */
 function useTextDraft(props: PanelProps) {
-  const { cp, busy, onSubmit, onDraft } = props;
+  const { cp, busy, onSubmit, onDraft, sent } = props;
   const [draft, setDraftState] = useState(props.draft);
   const [hint, setHint] = useState<string | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -28,6 +29,7 @@ function useTextDraft(props: PanelProps) {
   useEffect(() => field.current?.focus(), []);
 
   function setDraft(next: CheckpointDraft) {
+    if (sent) return;
     setDraftState(next);
     onDraft(next);
   }
@@ -67,6 +69,7 @@ function OnScreenCopyPanel(props: PanelProps & { initial: CopyField[] }) {
   useEffect(() => first.current?.focus(), []);
 
   function setFields(next: CopyField[]) {
+    if (sent) return;
     setFieldsState(next);
     onDraft({ ...props.draft, items: next.map((f) => f.value), text: serializeOnScreenCopy(next) });
   }
@@ -90,6 +93,7 @@ function OnScreenCopyPanel(props: PanelProps & { initial: CopyField[] }) {
                 id={`${id}-${i}`}
                 className="input"
                 value={f.value}
+                readOnly={sent}
                 spellCheck
                 onChange={(e) => {
                   const value = e.target.value;
@@ -98,7 +102,7 @@ function OnScreenCopyPanel(props: PanelProps & { initial: CopyField[] }) {
               />
             </div>
           ))}
-          {changed ? (
+          {changed && !sent ? (
             <p className="write-meta">
               <button type="button" className="link-button" onClick={() => setFields(initial)}>
                 Go back to the starting text
@@ -138,6 +142,7 @@ function TextWritePanel(props: PanelProps) {
             id={id}
             className="editor"
             value={draft.text}
+            readOnly={sent}
             onChange={(e) => {
               setDraft({ ...draft, text: e.target.value });
               setHint(null);
@@ -148,7 +153,7 @@ function TextWritePanel(props: PanelProps) {
           />
           <p className="write-meta">
             <span>{wordCount(draft.text)} words</span>
-            {changed && cp.initialText ? (
+            {changed && cp.initialText && !sent ? (
               <button type="button" className="link-button" onClick={() => setDraft({ ...draft, text: cp.initialText ?? '' })}>
                 Go back to the starting text
               </button>
@@ -184,6 +189,7 @@ export function ReactPanel(props: PanelProps) {
             id={id}
             className="textarea react-field"
             value={draft.text}
+            readOnly={sent}
             onChange={(e) => {
               setDraft({ ...draft, text: e.target.value });
               setHint(null);

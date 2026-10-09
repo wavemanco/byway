@@ -223,6 +223,40 @@ describe('the draft store', () => {
     expect(store.unsent(closed, 'cancelled')).toEqual([]);
   });
 
+  it('keeps a draft, and its stored copy, through a snapshot that predates its question (Back restores such a page)', () => {
+    const store = make();
+    const a = cp(1, 'react');
+    store.put(a, draft({ text: 'typed before going to History' }));
+    store.flush();
+    store.settle([], 'queued');
+    vi.advanceTimersByTime(400);
+    expect(storage.map.has(key(a))).toBe(true);
+    expect(store.get(a).text).toBe('typed before going to History');
+    // Once the run has ended, a question it never listed cannot come: the draft goes.
+    store.settle([], 'cancelled');
+    expect(storage.map.has(key(a))).toBe(false);
+  });
+
+  it('while an answer is sent, changes to it are ignored: it stays sent, as sent, and is never listed as unsent', () => {
+    const store = make();
+    const a = cp(1, 'react', { initialText: '' });
+    store.put(a, draft({ text: 'My answer as sent' }));
+    store.markSent(a);
+    store.put(a, draft({ text: 'My answer as sent, plus a line typed while waiting' }));
+    expect(store.isSent(a.id)).toBe(true);
+    expect(store.get(a).text).toBe('My answer as sent');
+    // Going back to the starting text does not remove (and so unlock) the sent answer either.
+    store.put(a, draft({ text: '' }));
+    expect(store.isSent(a.id)).toBe(true);
+    vi.advanceTimersByTime(400);
+    expect(storage.map.get(key(a))).toContain('My answer as sent');
+    const confirmed = [{ ...a, status: 'resolved' as const, resolution: { checkpointId: a.id, text: 'My answer as sent' } }];
+    expect(store.unsent(confirmed, 'running')).toEqual([]);
+    store.settle(confirmed, 'running');
+    expect(store.isSent(a.id)).toBe(false);
+    expect(storage.map.has(key(a))).toBe(false);
+  });
+
   it('unlocks a sent draft when the server still shows its question open', () => {
     const store = make();
     const a = cp(1, 'write');

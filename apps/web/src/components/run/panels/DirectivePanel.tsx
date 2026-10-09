@@ -16,11 +16,13 @@ interface Item {
  * directive: a list editor for what to remove (CUT). Enter adds an item below, Backspace in an empty item
  * removes it, and Ctrl+Enter sends the list. The list starts as the Run screen kept it for this question (the starting
  * list until the person edits it), its row keys made once from that, and every change is written through (ADR-0082).
+ * Once the list is sent it is read-only, so what it shows stays what was sent, until byway settles the question.
  */
 export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId, draft: seed, onDraft, sent }: PanelProps) {
   const [items, setItemsState] = useState<Item[]>(() => (seed.items.length > 0 ? seed.items : ['']).map((text, key) => ({ key, text })));
   const [nextKey, setNextKey] = useState(items.length);
   const setItems = (next: Item[]) => {
+    if (sent) return;
     setItemsState(next);
     onDraft({ ...seed, items: next.map((i) => i.text) });
   };
@@ -37,6 +39,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId, draft:
   }, [focusRequest]);
 
   function insertAfter(index: number) {
+    if (sent) return;
     const item = { key: nextKey, text: '' };
     setNextKey((k) => k + 1);
     setItems([...items.slice(0, index + 1), item, ...items.slice(index + 1)]);
@@ -44,6 +47,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId, draft:
   }
 
   function remove(index: number) {
+    if (sent) return;
     const next = items.filter((_, i) => i !== index);
     if (next.length === 0) {
       const fresh = { key: nextKey, text: '' };
@@ -95,6 +99,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId, draft:
                   className="input"
                   aria-label={`Item ${i + 1}`}
                   value={item.text}
+                  readOnly={sent}
                   placeholder={i === 0 ? 'Something to remove' : undefined}
                   onChange={(e) => {
                     const text = e.target.value;
@@ -103,7 +108,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId, draft:
                   }}
                   onKeyDown={(e) => onKeyDown(e, i)}
                 />
-                <button type="button" className="icon-button" onClick={() => remove(i)} aria-label={`Remove item ${i + 1}`}>
+                <button type="button" className="icon-button" onClick={() => remove(i)} disabled={sent} aria-label={`Remove item ${i + 1}`}>
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                     <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                   </svg>
@@ -111,7 +116,7 @@ export function DirectivePanel({ cp, artifacts, busy, onSubmit, promptId, draft:
               </li>
             ))}
           </ol>
-          <button type="button" className="button button-quiet" onClick={() => insertAfter(items.length - 1)}>
+          <button type="button" className="button button-quiet" onClick={() => insertAfter(items.length - 1)} disabled={sent}>
             Add an item
           </button>
           <p className="muted small">Enter adds an item. Only what you list is removed.</p>

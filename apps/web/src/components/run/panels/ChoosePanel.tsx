@@ -27,6 +27,8 @@ export function ChoosePanel({ cp, busy, onSubmit, promptId, draft, onDraft, sent
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
 
   function choose(index: number) {
+    // Sent: the choice stays as sent until byway settles the question (ADR-0082).
+    if (sent) return;
     setChosen(index);
     setHint(null);
     const option = options[index];

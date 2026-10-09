@@ -37,11 +37,15 @@ export interface DraftStore {
   flush(): void;
   /** The draft to open this question's panel with: the kept one, or the untouched starting state. */
   get(cp: CheckpointRecord): CheckpointDraft;
+  /** Keeps a change to an unsent draft; ignored while the draft is sent. */
   put(cp: CheckpointRecord, draft: CheckpointDraft): void;
   /** The answer was accepted: lock the turn until a snapshot shows its question closed. Any kind, confirm included. */
   markSent(cp: CheckpointRecord): void;
   isSent(id: string): boolean;
-  /** Applies the latest snapshot: drops what is settled, unlocks what the server still shows open. */
+  /**
+   * Applies a snapshot byway has just served: drops what is settled, unlocks what the server still shows open. The
+   * caller passes only snapshots its refresher applied, never a server-rendered or Back-cached one, which can be older.
+   */
   settle(checkpoints: CheckpointRecord[], runStatus: RunStatus): void;
   /** Words left on questions that closed unsent, oldest question first. */
   unsent(checkpoints: CheckpointRecord[], runStatus: RunStatus): Unsent[];
@@ -113,6 +117,9 @@ export function createDraftStore(runId: string, opts: DraftStoreOptions = {}): D
       return (entry && sanitize(cp, entry)) ?? startingDraft(cp);
     },
     put(cp, draft) {
+      // A sent answer is what byway accepted: it stays as sent (and locked) until server state settles it. Otherwise an
+      // edit would clear the lock, and once byway confirmed the original the edit would be listed as never sent.
+      if (memory.get(cp.id)?.sent) return;
       if (!isDirty(cp, draft)) {
         if (memory.has(cp.id)) remove(cp.id);
         return;

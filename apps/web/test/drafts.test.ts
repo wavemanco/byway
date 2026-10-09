@@ -103,10 +103,21 @@ describe('settling a draft against the server’s state', () => {
     expect(settle(stored(write, mine, true), write, 'waiting')).toBe('unlock');
   });
 
-  it('drops a sent draft once its question has closed, and a draft whose question is not in the run', () => {
+  it('drops a sent draft once its question has closed', () => {
     expect(settle(stored(write, mine, true), { ...write, status: 'resolved', resolution: { checkpointId: write.id, text: 'My words.' } }, 'running')).toBe('drop');
     expect(settle(stored(write, mine, true), { ...write, status: 'withdrawn' }, 'cancelled')).toBe('drop');
-    expect(settle(stored(write, mine), undefined, 'running')).toBe('drop');
+  });
+
+  it('keeps a draft whose question a snapshot does not list while the run goes on: the snapshot may predate it (Back)', () => {
+    // The browser's cached copy of the page, restored by Back, was rendered before the question opened.
+    for (const status of ['queued', 'running', 'waiting', 'paused'] as const) {
+      expect(settle(stored(write, mine), undefined, status), status).toBe('keep');
+      expect(settle(stored(write, mine, true), undefined, status), status).toBe('keep');
+    }
+  });
+
+  it('drops a draft whose question is not listed once the run has ended: it can no longer appear', () => {
+    for (const status of ['done', 'failed', 'cancelled'] as const) expect(settle(stored(write, mine), undefined, status), status).toBe('drop');
   });
 
   it('drops a draft whose answer landed although the response was lost (the stored resolution is the draft)', () => {

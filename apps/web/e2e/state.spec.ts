@@ -85,12 +85,24 @@ async function currentRowTwice(page: Page): Promise<void> {
   await expect(page.locator('section.detail')).toHaveCount(0);
 }
 
-/** Leave for History through the main navigation, then come back with the browser's Back. */
-async function historyAndBack(page: Page): Promise<void> {
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /History/ }).click();
-  await expect(page).toHaveURL(/\/history$/);
+/**
+ * Leave for another screen through the main navigation, then come back with the browser's Back. Back shows the
+ * browser's cached copy of the Run page first: the one from when the page was last loaded or reached, which can predate
+ * the question (reached from Start) or show it still open after it was answered (reloaded while it was open).
+ */
+async function awayAndBack(page: Page, to: 'History' | 'Settings'): Promise<void> {
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: new RegExp(to) }).click();
+  await expect(page).toHaveURL(new RegExp(`/${to.toLowerCase()}$`));
   await page.goBack();
   await expect(page).toHaveURL(/\/runs\/[0-9a-f-]+$/);
+}
+const historyAndBack = (page: Page) => awayAndBack(page, 'History');
+
+/** Cancels the run on screen, so it does not keep the demo engine busy for the tests after this one. */
+async function cancelRun(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel run' }).click();
+  await expect(page.locator('.run-status')).toHaveText('Cancelled');
 }
 
 test.describe('the Run screen applies only the newest snapshot (F15)', () => {
@@ -197,6 +209,28 @@ test.describe('your unsent answer belongs to its question, not to the panel show
     await expect.poll(() => draftKeys(page)).not.toContain(`byway.draft.${t.id}`);
   });
 
+  test('reached from Start with no reload, what you type survives History then Back and Settings then Back', async ({ page }) => {
+    // The cached copy Back shows was rendered as the run started, before this question existed: it must not settle
+    // (and so delete) the draft for a question it does not list.
+    await startMemo(page);
+    const words = 'F06 sentinel: typed, then away to History and Settings, and back with the browser.';
+    const t = await untilTurn(page, ['react', 'write', 'directive']);
+    await field(t).fill(words);
+
+    await awayAndBack(page, 'History');
+    await expect(field(t)).toHaveValue(words);
+    expect(await draftKeys(page)).toContain(`byway.draft.${t.id}`);
+    await awayAndBack(page, 'Settings');
+    await expect(field(t)).toHaveValue(words);
+    expect(await draftKeys(page)).toContain(`byway.draft.${t.id}`);
+
+    const posted = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes(`/checkpoints/`));
+    await t.turn.locator('.turn-foot button.button-primary').click();
+    expect((await posted).postDataJSON()).toMatchObject({ text: words });
+    await expect(t.turn).toHaveCount(0, { timeout: 30_000 });
+    await cancelRun(page);
+  });
+
   test('lists, ticks and highlights survive inspection; lists and ticks survive a reload, a compare highlight does not (UX-1)', async ({ page }) => {
     // Memo Polish asks for a list of cuts; in the demo its sweep finds no clichés, so Landing Page Studio supplies the
     // contact sheet (pick), the cliché checklist (select) and the before/after (compare).
@@ -288,6 +322,9 @@ test.describe('your unsent answer belongs to its question (F06), continued', () 
     // Polling while you type changes nothing (a regression check: this already held).
     await page.waitForTimeout(4000);
     await expect(field(t)).toHaveValue(words);
+    // A reload while the question is open: from now on, the cached copy Back shows lists it open.
+    await page.reload();
+    await expect(field(t)).toHaveValue(words);
 
     // The first send is refused: the words stay, with the reason.
     let refuse = true;
@@ -316,14 +353,30 @@ test.describe('your unsent answer belongs to its question (F06), continued', () 
     // The second send is accepted but byway cannot be reached afterwards: the turn shows your words, locked as Sent.
     await t.turn.locator('.turn-foot button.button-primary').click();
     await expect(page.getByText(NOT_ANSWERING)).toBeVisible();
-    await expect(t.turn.locator('.turn-foot button.button-primary')).toHaveText('Sent');
-    await expect(t.turn.locator('.turn-foot button.button-primary')).toBeDisabled();
+    const primary = t.turn.locator('.turn-foot button.button-primary');
+    await expect(primary).toHaveText('Sent');
+    await expect(primary).toBeDisabled();
     await expect(field(t)).toHaveValue(words);
 
-    // Once byway answers again, the question settles and its draft is gone.
+    // Sent is a lock: the field takes no more typing, so what is shown stays what was sent.
+    await expect(field(t)).not.toBeEditable();
+    await field(t).focus();
+    await page.keyboard.type(' And a line typed while waiting.');
+    await expect(field(t)).toHaveValue(words);
+
+    // Back shows the cached copy from the reload, with the question still open, while byway is still unreachable: it
+    // must not unlock the sent answer (only a snapshot byway has just served settles a draft).
+    await historyAndBack(page);
+    await expect(t.turn).toBeVisible();
+    await staysTrue(page, 2500, async () => ((await primary.textContent()) ?? '').trim() === 'Sent', 'Back unlocked the sent answer');
+    await expect(primary).toBeDisabled();
+    await expect(field(t)).toHaveValue(words);
+
+    // Once byway answers again, the question settles and its draft is gone; nothing is shown as unsent.
     failRefreshes = false;
     await expect(t.turn).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByText(NOT_ANSWERING)).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Your unsent words' })).toHaveCount(0);
     await expect.poll(() => draftKeys(page)).not.toContain(`byway.draft.${t.id}`);
   });
 

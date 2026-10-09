@@ -37,12 +37,15 @@ interface Props {
 /**
  * Run (spec §5, screen 3). This component owns the screen's state (ADR-0082): the latest applied server snapshot, which
  * only the latest-issued request may replace (useRefresher, F15), and the person's unsent answers, kept per question
- * above the working area's conditional render (the draft store, F06). It is mounted once per run (the page keys it by
- * the run's id).
+ * above the working area's conditional render and settled only by snapshots the refresher applied (the draft store,
+ * F06). It is mounted once per run (the page keys it by the run's id).
  */
 export function RunScreen({ initial, presentation, label, steps }: Props) {
   const technical = useTechnicalNames();
   const [data, setData] = useState(initial);
+  // Whether `data` includes a snapshot byway served to this screen's refresher. Until then it is only `initial`: the
+  // server render, or on Back the browser's cached copy of it, which can be older than the person's own drafts.
+  const [served, setServed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [connection, setConnection] = useState<Connection>('ok');
   const [busy, setBusy] = useState(false);
@@ -85,7 +88,10 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   const refresher = useRefresher(
     runId,
     (signal) => get<RunData>(`/api/runs/${encodeURIComponent(runId)}?after=${lastSeq(latest.current)}`, signal),
-    (next) => setData((prev) => mergeRunData(prev, next)),
+    (next) => {
+      setData((prev) => mergeRunData(prev, next));
+      setServed(true);
+    },
     setConnection,
   );
   // Poll while the run can still change: briskly while the AI works, lazily while it waits for you. While byway is not
@@ -106,10 +112,12 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
       detach();
     };
   }, [drafts]);
-  // Drafts are settled only by server state: after every applied snapshot, and once they are loaded.
+  // Drafts are settled only by server state byway has just served: after every snapshot the refresher applied, once
+  // they are loaded. Never by `initial`: on Back it is the cached page, which can show an answered question still open
+  // (unlocking a sent answer) or predate a question altogether.
   useEffect(() => {
-    if (draftsReady) drafts.settle(checkpoints, run.status);
-  }, [drafts, draftsReady, checkpoints, run.status]);
+    if (draftsReady && served) drafts.settle(checkpoints, run.status);
+  }, [drafts, draftsReady, served, checkpoints, run.status]);
   const unsent = draftsReady ? drafts.unsent(checkpoints, run.status) : [];
 
   async function resolve(resolution: CheckpointResolution) {

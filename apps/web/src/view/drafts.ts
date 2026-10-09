@@ -11,7 +11,8 @@
  *   by moving or flipping; restored after a reload they would let a stray Enter keep a version the person only looked
  *   at (UX-1), so they live only in memory.
  * - A stored draft restores only into the same question and kind, and only with options that question offers.
- * - A draft is settled only by server state (settle): never by a component unmounting.
+ * - A draft is settled only by server state (settle): never by a component unmounting, and never ended by a snapshot
+ *   that merely does not list its question.
  * - Whether a question can be answered is read from the whole snapshot (answerable): the server can return a run
  *   whose terminal status was written before its open questions were withdrawn.
  */
@@ -90,17 +91,21 @@ export function sanitize(cp: CheckpointRecord, stored: StoredDraft): CheckpointD
 
 /**
  * What server state means for a draft:
- * - 'keep': its question can still be answered, and it has not been sent;
+ * - 'keep': its question can still be answered, and it has not been sent; or the snapshot does not list its question
+ *   while the run goes on, because a snapshot can predate the question (Back shows the browser's cached copy of the
+ *   page, rendered before the question opened), and only a listed, closed question may end a draft;
  * - 'unlock': it was sent, but the server still shows the question open (server state wins: answer again);
  * - 'drop': it was sent and its question closed, its answer landed (the stored resolution is the draft, after a lost
- *   response or a reload mid-send), it is not the person's work, or its question is not in this run;
+ *   response or a reload mid-send), it is not the person's work, or the run has ended without listing its question
+ *   (a question cannot open after its run ended);
  * - 'unsent': text left on a question that closed unanswered (withdrawn, answered elsewhere, or its run ended); it is
  *   shown read-only so it can be copied, and it can never be sent.
  */
 export type Settlement = 'keep' | 'unlock' | 'drop' | 'unsent';
 
 export function settle(entry: StoredDraft, cp: CheckpointRecord | undefined, runStatus: RunStatus): Settlement {
-  if (!cp || cp.kind !== entry.kind) return 'drop';
+  if (!cp) return isEnded(runStatus) ? 'drop' : 'keep';
+  if (cp.kind !== entry.kind) return 'drop';
   if (answerable(cp, runStatus)) return entry.sent ? 'unlock' : 'keep';
   if (entry.sent) return 'drop';
   if (cp.status === 'resolved' && cp.resolution && sameResolution(cp.resolution, toResolution(cp, entry.draft))) return 'drop';

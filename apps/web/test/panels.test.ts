@@ -11,7 +11,8 @@ import { Examples } from '../src/components/Examples.tsx';
 import { ChoosePanel } from '../src/components/run/panels/ChoosePanel.tsx';
 import { ComparePanel } from '../src/components/run/panels/ComparePanel.tsx';
 import { SelectPanel } from '../src/components/run/panels/SelectPanel.tsx';
-import { WritePanel } from '../src/components/run/panels/TextPanels.tsx';
+import { DirectivePanel } from '../src/components/run/panels/DirectivePanel.tsx';
+import { ReactPanel, WritePanel } from '../src/components/run/panels/TextPanels.tsx';
 import type { PanelProps } from '../src/components/run/panels/types.ts';
 import { startingDraft } from '../src/view/drafts.ts';
 import { fieldName, parseOnScreenCopy, serializeOnScreenCopy } from '../src/view/onscreen.ts';
@@ -147,5 +148,23 @@ describe('a panel opens with the draft the Run screen kept for its question (F06
     const html = renderWith(WritePanel, record, { draft: { ...startingDraft(record), text: 'Mine.' }, sent: true, busy: true });
     expect(html).toContain('Mine.');
     expect(html).toMatch(/disabled=""[^>]*>Sent</);
+  });
+
+  it('while sent, the fields are read-only and offer no edits: what is shown is what was sent', () => {
+    const write = cp('write', { initialText: 'Start.' });
+    const editor = renderWith(WritePanel, write, { draft: { ...startingDraft(write), text: 'Mine.' }, sent: true, busy: true });
+    expect(/<textarea[^>]*>/.exec(editor)?.[0]).toContain('readOnly=""');
+    expect(editor).not.toContain('Go back to the starting text');
+    const reaction = renderWith(ReactPanel, cp('react'), { draft: { ...startingDraft(cp('react')), text: 'Warmer.' }, sent: true, busy: true });
+    expect(/<textarea[^>]*>/.exec(reaction)?.[0]).toContain('readOnly=""');
+    const copy = cp('write', { initialText: 'Headline: Bread, the slow way\nTagline: Open at seven' });
+    const fields = renderWith(WritePanel, copy, { draft: { ...startingDraft(copy), items: ['Bread, slowly', 'Open at seven'] }, sent: true, busy: true });
+    for (const input of fields.match(/<input[^>]*>/g) ?? []) expect(input).toContain('readOnly=""');
+    const list = cp('directive');
+    const items = renderWith(DirectivePanel, list, { draft: { ...startingDraft(list), items: ['the intro', 'the outro'] }, sent: true, busy: true });
+    expect(items.match(/<input[^>]*readOnly=""[^>]*>/g)).toHaveLength(2);
+    expect(/<button[^>]*>Add an item/.exec(items)?.[0]).toContain('disabled=""');
+    // Before sending, the same panels are editable.
+    expect(/<textarea[^>]*>/.exec(renderWith(WritePanel, write, {}))?.[0]).not.toContain('readOnly');
   });
 });
