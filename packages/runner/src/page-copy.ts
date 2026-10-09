@@ -1336,6 +1336,28 @@ const isTag = (p: PageDeck, tok: number, name: string, closing: boolean): boolea
 };
 
 /**
+ * The `<button>` start tag before slot `s` (or the `</button>` end tag after it) with nothing a browser shows between:
+ * only tags, whitespace and hidden text. Its token, or -1. Whitespace there is at the edge of the button's content.
+ */
+function buttonEdge(p: PageDeck, s: number, side: 'start' | 'end'): number {
+  const shows = (k: number) => p.slots[k]!.rendered && noHtmlSpace(slotText(p, k)) !== '';
+  if (side === 'start') {
+    for (let k = s - 1; k >= 0; k--) {
+      const tok = p.slots[k]!.end;
+      if (isTag(p, tok, 'button', false)) return tok;
+      if (shows(k)) return -1;
+    }
+    return -1;
+  }
+  for (let k = s; k < p.slots.length; k++) {
+    const tok = p.slots[k]!.end;
+    if (isTag(p, tok, 'button', true)) return tok;
+    if (k + 1 < p.slots.length && shows(k + 1)) return -1;
+  }
+  return -1;
+}
+
+/**
  * Whitespace a browser shows parts the text it shows nearest slot `s` on that side (in a slot at or before `s`, or at or
  * after it) from what follows it, or precedes it: that slot's text ends (or starts) with whitespace, or a rendered slot
  * between holds some.
@@ -1802,12 +1824,14 @@ function place(before: string, edit: PageEdit, notOffered?: ReadonlySet<number>)
       // button, with no whitespace a browser shows between, it is refused, so it is never dropped unsaid.
       let lead = line.lead;
       let trail = line.trail;
-      if (lead && first > 0 && isTag(p, p.slots[first - 1]!.end, 'button', false)) {
-        if (shownBefore(p, first) && !spaceBeside(p, first - 1, 'before')) problems.push(`Line ${i + 1}: a space at the start of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text before the button; leave the space out.`);
+      const opens = lead ? buttonEdge(p, first, 'start') : -1;
+      if (opens >= 0) {
+        if (shownBefore(p, first) && !spaceBeside(p, p.slotEndingAt[opens]!, 'before')) problems.push(`Line ${i + 1}: a space at the start of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text before the button; leave the space out.`);
         lead = undefined;
       }
-      if (trail && isTag(p, p.slots[last]!.end, 'button', true)) {
-        if (shownAfter(p, last) && !spaceBeside(p, last + 1, 'after')) problems.push(`Line ${i + 1}: a space at the end of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text after the button; leave the space out.`);
+      const closes = trail ? buttonEdge(p, last, 'end') : -1;
+      if (closes >= 0) {
+        if (shownAfter(p, last) && !spaceBeside(p, p.slotEndingAt[closes]! + 1, 'after')) problems.push(`Line ${i + 1}: a space at the end of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text after the button; leave the space out.`);
         trail = undefined;
       }
       if (words.length && !isHtmlSpace(joined[0]) && shownBefore(p, first) && (had(u.lead) || lead)) texts.set(words[0]!, ` ${texts.get(words[0]!)}`);

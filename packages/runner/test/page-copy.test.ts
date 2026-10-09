@@ -959,6 +959,13 @@ describe('a space the person types at a changed line\'s edge parts it from text 
     expect(run('<p>late!<button type="button"> caf&eacute;.</button></p>', () => 'T\nlate!\n (café.')).toMatchObject({
       placeProblems: ['Line 3: a space at the start of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text before the button; leave the space out.'],
     });
+    // Tags and whitespace between the line and the button's edge (formatting, a stray end tag) show nothing either.
+    expect(run('<p><button type="button">today:</li></button>caf&eacute;!</p>', () => 'T\ntoday:) \ncafé!')).toMatchObject({
+      placeProblems: ['Line 2: a space at the end of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text after the button; leave the space out.'],
+    });
+    expect(run('<p>sale.<button type="button">\n  <tt>Intro.</tt></button></p>', () => 'T\nsale.\n Intro. now')).toMatchObject({
+      placeProblems: ['Line 3: a space at the start of this line would be inside a button, where browsers do not show it, so it cannot part the line from the text before the button; leave the space out.'],
+    });
     // Where whitespace outside the button already parts them, the typed space is satisfied: nothing is added, nothing refused.
     expect(run('<p>Pay <button type="button">Now</button></p>', () => 'T\nPay\n Later')).toMatchObject(clean('<p>Pay <button type="button">Later</button></p>'));
     // Inside a button, between two of its lines, a space shows as anywhere else.
