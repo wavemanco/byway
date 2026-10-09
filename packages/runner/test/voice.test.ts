@@ -717,6 +717,14 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('<h3>Quiet interfaces</h3>', '<h3>Quiet interfaces, in practice</h3>').replace('Fresh bread', 'Warm bread'));
   });
 
+  it('a canvas\'s fallback, which Chromium shows with JavaScript off but a visitor does not see, is not offered and stays byte for byte (r9)', async () => {
+    const html = page('<p>Sales by month: <canvas width="300" height="150">No chart: sales rose <b>12%</b>.</canvas> Updated daily</p>');
+    const q = await open(html);
+    expect(q.offered).toBe('T\nSales by month:\nUpdated daily');
+    const out = await q.answer('T\nSales by week:\nUpdated daily');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('month', 'week'));
+  });
+
   it('a write that would put the person\'s words where a style hides them from sight is asked again, naming the line (r9)', async () => {
     // A box that clips what overflows it: a longer first line pushes the second line out of sight.
     const html = page('<div style="width:120px;height:40px;line-height:20px;overflow:hidden"><div>One</div><div>Two</div></div>');

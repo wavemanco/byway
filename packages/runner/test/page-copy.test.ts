@@ -791,6 +791,14 @@ describe('what browsers move out of a table is never removed (F07, r6)', () => {
 });
 
 describe('what a page hides, and what its head shows (F07, r6)', () => {
+  it('a canvas\'s fallback, which only a browser without scripting shows, is not offered: its words stay as they are (r9)', () => {
+    const C = '<p>Sales by month: <canvas width="300" height="150">No chart: sales rose <b>12%</b>.</canvas> Updated daily</p>';
+    expect(run(C, same).deck).toEqual(['T', 'Sales by month:', 'Updated daily']);
+    expect(run(C, set(2, 'Updated hourly'))).toMatchObject(clean(C.replace('daily', 'hourly')));
+    // A block inside it breaks no line, since a browser shows none of it.
+    expect(run('<div>Chart<canvas><p>Fallback</p></canvas>Below</div>', same).deck).toEqual(['T', 'Chart', 'Below']);
+  });
+
   it('a hidden element browsers show inline is not offered: its words stay as they are, and the person\'s go beside it', () => {
     const S = '<p>Sale<span hidden> ends</span> today</p>';
     expect(run(S, same).deck).toEqual(['T', 'Sale today']);

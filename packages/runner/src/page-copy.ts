@@ -7,8 +7,8 @@
  * line unless a <br>, a nested block or any other tag splits it, including the tags of elements browsers show inline
  * (font, label, ins, del, button, an image, an svg, a control). Head content is not offered except the <title> (text
  * that is not whitespace ends the head, as browsers end it, and continues the body's first line); <pre>, raw text,
- * CDATA, attribute copy and the content of a hidden element browsers show inline are not offered (a hidden block is
- * read as its own lines; VOICE then leaves out every line Chromium does not show: see readPageCopy's notOffered, and
+ * CDATA, attribute copy and the content of a hidden element browsers show inline (a canvas's fallback among them) are
+ * not offered (a hidden block is read as its own lines; VOICE then leaves out every line Chromium does not show: see readPageCopy's notOffered, and
  * page-arbiter.ts). A block that holds only links side by side (a nav) gives one line per link. One notation holds on every line: a link's words inside a line are shown in [brackets]; a literal
  * "[", "]", or a backslash before one of them or before a bracket of the notation, is shown escaped with a backslash.
  * A line that is exactly one link's words is shown plain (a "whole-link" line). A link is an <a> with an href; one
@@ -190,7 +190,7 @@ interface El {
   foreign?: true;
   /** A block as browsers show it (its start tag was a line break, see BLOCK). */
   block?: true;
-  /** A hidden element (the hidden attribute, a closed dialog, a datalist): nothing inside it shows. */
+  /** A hidden element (the hidden attribute, a closed dialog, a datalist, a canvas): nothing inside it shows. */
   hidden?: true;
   /**
    * A hidden element browsers show inline (outside BLOCK): its text would sit inside a line a person sees, so it is not
@@ -270,9 +270,12 @@ function isControl(p: PageDeck, el: El): boolean {
 
 type TagToken = Extract<Token, { kind: 'tag' }>;
 const lastOf = (xs: readonly number[]): number => (xs.length ? xs[xs.length - 1]! : -1);
-/** A hidden element: the hidden attribute, a dialog that is not open, or a datalist. */
+/**
+ * A hidden element: the hidden attribute, a dialog that is not open, a datalist, or a canvas, whose content is the
+ * fallback only a browser without scripting shows (a visitor sees the canvas itself, like noscript content).
+ */
 function hiddenTag(t: TagToken): boolean {
-  if (t.name === 'datalist') return true;
+  if (t.name === 'datalist' || t.name === 'canvas') return true;
   if (t.name !== 'dialog' && !/hidden/i.test(t.raw)) return false;
   const names = attributesOf(t.raw).map((a) => a.name);
   return names.includes('hidden') || (t.name === 'dialog' && !names.includes('open'));
