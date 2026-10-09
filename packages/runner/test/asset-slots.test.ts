@@ -189,6 +189,72 @@ describe('one slot identity on media (C5 anchor frames)', () => {
   });
 });
 
+describe('a brief answer that covers every slot and names some the work does not have (round 2)', () => {
+  it('on media: no retry, every shot bought and attached, and the note names only what was left out', async () => {
+    const g = fake([briefsOf('1', '2', '3', '4')]);
+    const { result, notes, skipped } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    expect(g.completions.filter((c) => c.purpose === 'asset.briefs:media')).toHaveLength(1);
+    expect(g.images).toHaveLength(3);
+    const sb = await json((result as AssetResult).artifactId!);
+    expect(sb.storyboard!.every((s) => typeof s.imageArtifactId === 'string')).toBe(true);
+    expect((result as AssetResult).anchor).toBe(sb.storyboard![0]!.imageArtifactId);
+    expect(skipped).toEqual([undefined]);
+    expect(notes).toEqual(['The brief for “4”, which the storyboard has no shot for, was left out.']);
+  });
+
+  it('on options: no retry, and several left out are named together', async () => {
+    const g = fake([briefsOf('A', 'B', 'C', 'Z', 'Option Y')]);
+    const { notes } = await runAsset('options', spec('c2', 'mood-boards'), optionsDoc(), g);
+    expect(g.completions.filter((c) => c.purpose === 'asset.briefs:options')).toHaveLength(1);
+    expect(g.images).toHaveLength(3);
+    expect(notes).toEqual(['Briefs for “Z” and “Option Y”, which are not among the options, were left out.']);
+  });
+
+  it('“Not every image was made” only when an image is missing: a missing shot and a left-out one are said apart', async () => {
+    const g = fake([briefsOf('1', '2', '4'), briefsOf('1', '2', '4')]);
+    const { notes } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    expect(g.images).toHaveLength(2);
+    expect(notes).toEqual(['Not every image was made: no image brief was written for shot 3. Briefs for “4”, which the storyboard has no shot for, were left out.']);
+  });
+});
+
+describe('a short answer keeps every usable brief across the two tries (round 2)', () => {
+  const frames = () => spec('c5', 'anchor-frames');
+
+  it('short, then empty: the first answer’s briefs are bought, and the note says exactly what is missing', async () => {
+    const g = fake([briefsOf('2', '3'), EMPTY]);
+    const { result, notes, skipped } = await runAsset('media', frames(), storyboard(), g);
+    expect(g.completions).toHaveLength(2);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for 2', 'An image for 3']);
+    expect(skipped).toEqual([undefined]);
+    expect((result as AssetResult).anchor).toBeUndefined();
+    expect(notes).toEqual(['Not every image was made: no image brief was written for shot 1. No frame was made for shot 1, so the video chain has no start frame.']);
+  });
+
+  it('short, then only what was missing: together they cover every shot, so all are bought and nothing is said missing', async () => {
+    const g = fake([briefsOf('2', '3'), briefsOf('1')]);
+    const { result, notes } = await runAsset('media', frames(), storyboard(), g);
+    expect(g.images.map((r) => r.prompt).sort()).toEqual(['An image for 1', 'An image for 2', 'An image for 3']);
+    const sb = await json((result as AssetResult).artifactId!);
+    expect((result as AssetResult).anchor).toBe(sb.storyboard![0]!.imageArtifactId);
+    expect(notes).toEqual([undefined]);
+  });
+
+  it('short, then malformed: the first answer’s briefs are kept', async () => {
+    const g = fake([briefsOf('1', '2'), 'no json here']);
+    const { notes } = await runAsset('media', frames(), storyboard(), g);
+    expect(g.images).toHaveLength(2);
+    expect(notes).toEqual(['Not every image was made: no image brief was written for shot 3.']);
+  });
+
+  it('a slot both answers name is made from the later brief', async () => {
+    const later = '```json\n' + JSON.stringify({ images: [{ slot: '1', prompt: 'Shot 1, as asked again', alt: 'a', size: '1536x1024' }] }) + '\n```';
+    const g = fake([briefsOf('1', '2'), later]);
+    await runAsset('media', frames(), storyboard(), g);
+    expect(g.images.map((r) => r.prompt).sort()).toEqual(['An image for 2', 'Shot 1, as asked again']);
+  });
+});
+
 describe('one slot identity on options (C2 mood boards)', () => {
   const moods = () => spec('c2', 'mood-boards');
 

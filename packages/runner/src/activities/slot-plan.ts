@@ -3,11 +3,13 @@
  * of a brief's slot goes by: checking the answer, dropping duplicates, buying, attaching, announcing and the anchor.
  * - `each`: on media and options, one image per storyboard shot or per option, as the work lists them (the prompts that
  *   declare `images: each` say so). A slot is a shot number ("1", " 1 ", "Shot 1") or an option label ("a", "Option A").
- *   Coverage is checked before anything is bought: a missing or unknown slot is a miss naming both.
+ *   Coverage is checked before anything is bought: a missing slot is a miss, naming any unknown ones too; an answer that
+ *   covers every slot is used, and briefs for slots the work does not have are left out (the step's note says so).
  * - `free`: on prose and web pages, between the counts the step's prompt declares (`images: min-max`), at most the
  *   step's `slots` knob. A slot is a name (trimmed); duplicates collapse, the last one kept.
- * A miss that still names some usable briefs carries them (formats.ts Usable): askModel asks once more, then the step
- * makes what it can and says what is missing, instead of failing the run.
+ * A miss that still names some usable briefs carries them (formats.ts Usable): askModel asks once more, the second
+ * answer is added to them (checkBriefs' `earlier`), and the step makes what the two cover and says what is missing,
+ * instead of failing the run.
  */
 import type { ImageCount, Medium } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
@@ -70,11 +72,18 @@ export interface SlotBriefs {
   unknown: string[];
 }
 
-/** Holds a parsed brief answer to its plan (see the module comment). A malformed answer stays a plain miss. */
-export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan): Usable<SlotBriefs> {
+/**
+ * Holds a parsed brief answer to its plan (see the module comment). A malformed answer stays a plain miss.
+ * - `earlier` is the usable part of the step's earlier, short answer (askModel): its briefs stay for the slots this answer
+ *   does not cover, and what it left out stays left out, so no usable brief is dropped and coverage is judged on both
+ *   answers together. A slot both name is made from this, the later, answer.
+ * - An `each` answer that covers every slot is used as it is, without asking again, even when it also names slots the
+ *   work does not have: those are left out, and listed in `unknown` for the step's note.
+ */
+export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan, earlier?: SlotBriefs): Usable<SlotBriefs> {
   if (!parsed.ok) return parsed;
   const byId = new Map<string, SlotBrief>();
-  const unknown: string[] = [];
+  const unknown: string[] = [...(earlier?.unknown ?? [])];
   for (const b of parsed.value) {
     const id = slotId(plan, b.slot);
     if (id === undefined) unknown.push(b.slot.trim());
@@ -84,6 +93,7 @@ export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan): Usabl
       byId.set(id, { ...b, slot: id });
     }
   }
+  for (const b of earlier?.briefs ?? []) if (!byId.has(b.slot)) byId.set(b.slot, b);
   if (plan.kind === 'free') {
     const briefs = [...byId.values()].slice(0, plan.max);
     const value: SlotBriefs = { briefs, missing: [], unknown: [] };
@@ -91,7 +101,7 @@ export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan): Usabl
     return { ok: false, problem: plan.min === 1 ? 'Write at least one image brief.' : `Write at least ${plan.min} image briefs.`, usable: value };
   }
   const value: SlotBriefs = { briefs: plan.expected.flatMap((id) => byId.get(id) ?? []), missing: plan.expected.filter((id) => !byId.has(id)), unknown };
-  if (!value.missing.length && !unknown.length) return { ok: true, value };
+  if (!value.missing.length) return { ok: true, value };
   const what = plan.medium === 'media' ? 'storyboard shot (slot = the shot number)' : 'option (slot = its label)';
   const wrong = [
     ...(value.missing.length ? [`There is none for ${value.missing.map((id) => slotName(plan, id)).join(', ')}.`] : []),

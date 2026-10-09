@@ -3,7 +3,8 @@
  * cut off at the output limit, stopReason 'max-tokens'), the runner asks once more with the problem appended (and,
  * for a cut-off answer, a larger output allowance). A second miss fails the step with a plain message, unless an
  * answer was well formed but short and its parser said what of it is usable (formats.ts Usable): then that is returned
- * with the problem as its shortfall, for the step to say plainly what is missing (ADR-0090).
+ * with the problem as its shortfall, for the step to say plainly what is missing (ADR-0090). The parser sees the earlier
+ * usable part on the retry, so what is returned can hold the usable pieces of both answers.
  */
 import type { ChatMessage, CompletionRequest, ModelRef, PromptSlot, RenderedPrompt, Tier } from '@byway/contracts';
 import type { Usable } from '../formats.ts';
@@ -25,8 +26,12 @@ export interface ModelCall<T> {
   model?: ModelRef;
   /** What the step is called in a failure message. */
   what: string;
-  /** Reads an answer. It gets the rendered prompt too, for what the template declares (an ASSET prompt's image count). */
-  parse: (text: string, rendered: RenderedPrompt) => Usable<T> | Promise<Usable<T>>;
+  /**
+   * Reads an answer. It gets the rendered prompt too, for what the template declares (an ASSET prompt's image count),
+   * and, on the retry, the usable part of the earlier short answer, to add this answer to: what it returns as usable
+   * replaces it, so a parser that keeps the earlier part never drops a usable piece (an ASSET step's briefs, ADR-0090).
+   */
+  parse: (text: string, rendered: RenderedPrompt, earlier?: T) => Usable<T> | Promise<Usable<T>>;
   maxOutputTokens?: number;
 }
 
@@ -67,7 +72,7 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
   let messages: ChatMessage[] = [first];
   let costUsd = 0;
   let problem = '';
-  /** The latest answer that fell short but could be used, with its problem. */
+  /** What could be used of the answers that fell short (the parser adds a later one to an earlier), with its problem. */
   let usable: { value: T; problem: string } | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     const out = await deps.gateway.complete({ ...base, messages, maxOutputTokens });
@@ -79,9 +84,10 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
       messages = [first];
       continue;
     }
-    const parsed = await req.parse(out.text, rendered);
+    const parsed = await req.parse(out.text, rendered, usable?.value);
     if (parsed.ok) return { value: parsed.value, costUsd };
     problem = parsed.problem;
+    // A malformed answer leaves the earlier usable part as it was.
     if ('usable' in parsed) usable = { value: parsed.usable, problem };
     messages = [
       first,

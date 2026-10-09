@@ -25,7 +25,7 @@ import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
-import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotPlan } from './slot-plan.ts';
+import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { announce, storeText, writeProblems } from './writes.ts';
 
@@ -80,7 +80,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   if (medium === 'options') built.slots.options = optionLabels(current);
   const promptId = step.prompt && deps.prompts.has(step.prompt) ? step.prompt : 'helper.asset.briefs';
   let plan: SlotPlan | undefined = each;
-  const briefs = await askModel(deps, reader, {
+  const briefs = await askModel<SlotBriefs>(deps, reader, {
     run,
     call,
     promptId,
@@ -90,9 +90,9 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     tier: step.tier ?? 'mid',
     what,
     maxOutputTokens: 4_000,
-    parse: (text, rendered) => {
+    parse: (text, rendered, earlier) => {
       plan = each ?? freePlan(rendered.images, slotsKnob);
-      return checkBriefs(parseBriefs(text), plan);
+      return checkBriefs(parseBriefs(text), plan, earlier);
     },
   });
   const slots = plan!;
@@ -196,22 +196,41 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
   return undefined;
 }
 
+/** "a", "a and b", "a, b and c". */
+const list = (items: string[]): string => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? ''));
+
 /**
- * The step's note when it made only part of what its plan asked for: the slots no brief covered, the slots named that
- * the work does not have, the images that could not be made, and, on a storyboard, that the video chain has no start
- * frame. Undefined when everything was made.
+ * The step's note when it made only part of what its plan asked for, or left a brief out. "Not every image was made"
+ * only when one was not: the slots no brief covered, and the images that could not be made. Then, apart, the briefs
+ * left out because they name slots the work does not have (every planned image may still have been made), and, on a
+ * storyboard, that the video chain has no start frame. Undefined when everything was made and nothing left out.
  */
 function partialNote(plan: SlotPlan, missing: string[], unknown: string[], failed: string[], noAnchor: boolean): string | undefined {
-  const list = (items: string[]) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? ''));
   const name = (id: string) => slotName(plan, id);
   const parts = [
     ...(missing.length ? [`no image brief was written for ${list(missing.map(name))}`] : []),
-    ...(unknown.length ? [`briefs for ${list(unknown.map((u) => `“${u}”`))}, which ${plan.kind === 'each' && plan.medium === 'media' ? 'the storyboard has no shot for' : 'are not among the options'}, were left out`] : []),
     ...(failed.length ? [`the image for ${list(failed.map(name))} could not be made`] : []),
   ];
   const first = plan.kind === 'each' ? plan.first : undefined;
-  const sentences = [...(parts.length ? [`Not every image was made: ${parts.join('; ')}.`] : []), ...(noAnchor && first ? [`No frame was made for shot ${first}, so the video chain has no start frame.`] : [])];
+  const sentences = [
+    ...(parts.length ? [`Not every image was made: ${parts.join('; ')}.`] : []),
+    ...(unknown.length && plan.kind === 'each' ? [leftOutSentence(plan, unknown)] : []),
+    ...(noAnchor && first ? [`No frame was made for shot ${first}, so the video chain has no start frame.`] : []),
+  ];
   return sentences.length ? sentences.join(' ') : undefined;
+}
+
+/**
+ * The briefs left out for naming slots the work does not have, as written: "The brief for “4”, which the storyboard has
+ * no shot for, was left out." One sentence for all of them; "Briefs" when there was more than one brief (both answers
+ * may have named the same one).
+ */
+function leftOutSentence(plan: Extract<SlotPlan, { kind: 'each' }>, unknown: string[]): string {
+  const names = [...new Set(unknown)];
+  const quoted = list(names.map((u) => `“${u}”`));
+  const several = names.length > 1;
+  const which = plan.medium === 'media' ? `the storyboard has no ${several ? 'shots' : 'shot'} for` : several ? 'are not among the options' : 'is not one of the options';
+  return unknown.length > 1 ? `Briefs for ${quoted}, which ${which}, were left out.` : `The brief for ${quoted}, which ${which}, was left out.`;
 }
 
 /** The options slot of an options brief: each option's label and title, as "### A" headings. */
