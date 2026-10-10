@@ -1056,6 +1056,9 @@ const VISITOR_BEGIN = `(() => {
       const fresh = !had || had.data !== t.data;
       const at = P.where(t);
       if (!fresh && had.at === at) continue;
+      // The first sample that saw the node elsewhere than where its measurement was taken: until then the measurement
+      // held, so it can be set beside another node's taken while both stood where they were measured.
+      if (!fresh && at !== had.at0 && had.left === undefined) had.left = samples;
       // A node is measured again when it moved or its clip did (a section a script slides or turns into view, a
       // carousel's track). It keeps the measurement where it shows most: the more characters seen, then on the screen,
       // then the later.
@@ -1172,7 +1175,7 @@ const VISITOR_BEGIN = `(() => {
             flush();
             const f = finByIndex.get(i);
             const now = seenAt(f) ? f : null;
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, breaks, ws, link, marquee: rec.marquee, when: rec.when, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, breaks, ws, link, marquee: rec.marquee, when: rec.when, left: rec.left === undefined ? Infinity : rec.left, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
           } else {
             run = (run || '') + starts + c + ends;
             unseen();
@@ -1249,10 +1252,11 @@ const VISITOR_BEGIN = `(() => {
       // Both shown at the read's last instant: judged there, one instant for both, so an item that keeps moving (an
       // endless pulse, a tween that settled at a later sample) is judged beside its neighbour where both stand.
       const now = !!(a.fin && b.fin);
-      // Else, seen at different moments of the read (a carousel's slides, sections revealed in turn): where they stood
-      // at those moments says nothing of how they sit, so a box's edge between them is apart across boxes, and in one
-      // flow of text they are as the text runs them.
-      if (!now && a.when !== b.when) return structural ? '\\n' : flow ? ' ' : '';
+      // Else where they were measured, if both stood there at one sample (each from its measurement until the read saw
+      // it elsewhere). Else, seen at different moments (a carousel's slides, a section hidden again): where they stood
+      // then says nothing of how they sit, so a box's edge between them is apart across boxes, and in one flow of text
+      // they are as the text runs them.
+      if (!now && !(Math.max(a.when, b.when) < Math.min(a.left, b.left))) return structural ? '\\n' : flow ? ' ' : '';
       if (a.marquee && a.marquee === b.marquee) return structural ? '\\n' : flow ? ' ' : '';
       const A = now ? a.fin : a, B = now ? b.fin : b;
       const row = Math.min(A.box.b, B.box.b) - Math.max(A.box.t, B.box.t) >= 0.5 * Math.min(A.box.b - A.box.t, B.box.b - B.box.t);

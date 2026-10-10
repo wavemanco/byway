@@ -508,7 +508,7 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await check(live, 'T\nNow:\nPlain text', live.replace('<p>Plain</p>', '<p>Plain text</p>'))).toBeUndefined();
   }, 60_000);
 
-  it('an item that keeps moving (an endless pulse, a tween that settles later than its neighbour) is judged where it stands at the read\'s last instant (r11 verifier)', async () => {
+  it('an item that keeps moving (an endless pulse, a tween that settles later than its neighbour) is judged beside its neighbour where both stand: at the read\'s last instant, or at one sample (r11 verifier)', async () => {
     const PULSE = '<style>@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}.pulse{display:inline-block;animation:pulse 2s ease-in-out infinite}</style>';
     // Round 9's reproduction with a pulsing link: round 11 read the link and its static neighbour as apart across boxes,
     // measured at different samples, and stored "Sign intoday".
@@ -530,6 +530,15 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect((await check(month, 'T\n$29/month billed yearly', month.replace('/month</span></p>', '/month</span> billed yearly</p>')))?.problem).toMatch(/because a browser would run words together that your lines keep apart: it would show ".*\/monthbilled yearly"/);
     // The tweened page reads the same every time: written back unchanged, it is let through.
     expect(await check(month, 'T\n$29/month', month)).toBeUndefined();
+    // Words a scroll script shows one after another and hides again as the visitor scrolls back up are not shown at
+    // the read's last instant: they are set beside their neighbour where both stood at one sample.
+    const mirror = pageOf(
+      `<div style="height:1600px"></div><p class="row" style="display:flex;align-items:baseline;font-size:24px"><span class="w" style="opacity:0">$29</span><span class="w" style="opacity:0">/month</span></p><div style="height:1600px"></div><script>const row=document.querySelector('.row');const ws=[...row.querySelectorAll('.w')];let shown=false;addEventListener('scroll',()=>{const r=row.getBoundingClientRect();const inView=r.top<innerHeight&&r.bottom>0;if(inView&&!shown){shown=true;ws.forEach((w,i)=>setTimeout(()=>{w.style.opacity='1';},i*600));}if(!inView&&shown){shown=false;ws.forEach((w)=>{w.style.opacity='0';});}});</script>`,
+    );
+    expect((await offer(mirror)).offered).toEqual(['T', '$29/month']);
+    // Round 11 read "$29" and "/month", shown 0.6 s apart, as apart across boxes, so it let through a space typed
+    // between them, which the flex item's edge drops.
+    expect((await check(mirror, 'T\n$29 /month', mirror.replace('>$29<', '>$29 <')))?.problem).toMatch(/because a browser would run words together that your lines keep apart: it would show "\$29\/month"/);
   }, 60_000);
 
   it('right-to-left pages: native digits, numbers, Latin names and left-to-right boxes read in the order a visitor reads them (r11 verifier)', async () => {
