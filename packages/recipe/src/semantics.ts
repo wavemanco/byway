@@ -1317,7 +1317,8 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
  * or the taste it produces), and through what an AI step that takes it in makes from it (a critic's critique, an AI
  * CUT's list, a sweep's finds, an overlap flag, a direction, and the note each leaves). An AI step takes it in only
  * where its prompt shows it (ADR-0097): a fix on a prompt that renders no critique, an image step whose prompt renders the
- * work alone, a seed, or a relay link, whose brief slot holds its shot, never has it. Read on `answersReachingWork`.
+ * work alone, or a seed never has it, and a relay link never has a brief of the person's (its brief slot holds its shot;
+ * a regenerating relay does show a critique). Read on `answersReachingWork`.
  * The run asks "What should go? List what to remove", or what the next version should avoid, and nothing the run does
  * with the work ever has the answer: before anything does, another value takes its place, or none comes after it at
  * all, or what does works on candidates that nothing takes up. For the critique, most often the cliché sweep's finds,
