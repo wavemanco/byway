@@ -252,6 +252,8 @@ export interface Location {
   title: string;
   /** The page's text a style hides from sight, run by run, with its link (ShownText.hidden). */
   hidden: ShownText['hidden'];
+  /** The text a stylesheet adds on elements that show none of the page's own (ShownText.generated). */
+  generated: string[];
   spans: Map<number, Span>;
   /** Why each line that is not placed is not (when the copy agrees). */
   why: Map<number, NotShownWhy>;
@@ -307,7 +309,7 @@ const stripMarks = (hidden: ShownText['hidden']): ShownText['hidden'] => hidden.
 
 /** Place each deck line of `html` in Chromium's reading of its marked copy (see the module comment). */
 export function locate(html: string, plain: ShownText, marked: ShownText | undefined): Location {
-  const none: Location = { body: plain.text, hrefs: unmark(plain.linked, plain.hrefs).hrefs, title: plain.title, hidden: plain.hidden, spans: new Map(), why: new Map(), agrees: false };
+  const none: Location = { body: plain.text, hrefs: unmark(plain.linked, plain.hrefs).hrefs, title: plain.title, hidden: plain.hidden, generated: plain.generated ?? [], spans: new Map(), why: new Map(), agrees: false };
   if (!marked) return none;
   const body = unmark(marked.linked, marked.hrefs);
   const lines = unmark(marked.text);
@@ -353,7 +355,7 @@ export function locate(html: string, plain: ShownText, marked: ShownText | undef
     }
     why.set(k, r);
   });
-  return { body: body.text, hrefs: body.hrefs, title: title.text, hidden: plain.hidden, spans, why, agrees: true };
+  return { body: body.text, hrefs: body.hrefs, title: title.text, hidden: plain.hidden, generated: plain.generated ?? [], spans, why, agrees: true };
 }
 
 /** The deck lines (by number in the whole deck) a browser does not show as the deck reads them: they are not offered. */
@@ -366,7 +368,7 @@ export function notShown(html: string, loc: Location): Set<number> {
 /** Why a line is not offered, as the VOICE prompt says it. */
 export const WHY_NOT_SHOWN: Record<NotShownWhy, string> = {
   unlaid: 'not shown on this page at all (hidden, closed, or shown only on another screen size)',
-  hidden: 'hidden from sight (for screen readers, or until a visitor opens it)',
+  hidden: 'hidden from sight (for screen readers, moved out of view, or until a visitor opens it)',
   'part-hidden': 'part of it is hidden (from sight, for screen readers, or not shown at all) or cut off',
   layout: 'a browser shows its words run together or in another order',
   changed: 'a browser shows other words there (a script on the page changes it, or other text shows inside it)',
@@ -400,6 +402,8 @@ interface Expected {
   title: Want;
   /** The text a style hides from sight, as the page before had it: no changed line holds any (the offer rule). */
   hidden: ShownText['hidden'];
+  /** The text a stylesheet adds on elements showing none of the page's own, as the page before had it. */
+  generated: string[];
   /** Each changed line's place in `body` (a deleted line: where it was), by character. */
   places: { line: number; start: number; end: number; in: 'body' | 'title' }[];
   /** Every placed deck line's span in the text read before, with its offered number (0 when not offered). */
@@ -421,7 +425,10 @@ interface Replacement {
  * The gap allowed before each of the person's characters (see the module comment): a typed space, apart (in the flow
  * or across boxes); none, glued; except where the pair stood side by side in the line before, with the same spacing in
  * the deck, which keeps the gap it had (matched by a shortest edit script of the line's characters, at most 2,000
- * apart; past that, by the common start and end).
+ * apart; past that, by the common start and end). And where the page itself parted the line where the deck has no
+ * space (a box's edge, a margin), right before a character the person kept or right after one, the person's
+ * characters may meet there glued or parted as the page parted them: a menu's dish and its price, flex items with
+ * nothing between in the source, keep the price's own box whatever the dish now says.
  */
 function gapsFor(oldCs: readonly string[], oldGaps: readonly Gap[], oldSpace: readonly boolean[], cs: readonly string[], space: readonly boolean[]): Allowed[] {
   let pairs = editPairs(oldCs, cs, 2000);
@@ -438,11 +445,20 @@ function gapsFor(oldCs: readonly string[], oldGaps: readonly Gap[], oldSpace: re
   }
   const from = new Int32Array(cs.length).fill(-1);
   for (const [o, n] of pairs) from[n] = o;
+  // The page's own parting where the deck has none, before old character o (o > 0), or undefined.
+  const ownBefore = (o: number): Gap | undefined => (o > 0 && o < oldCs.length && !oldSpace[o] && (oldGaps[o] === 'S' || oldGaps[o] === 'B') ? oldGaps[o] : undefined);
   return cs.map((_, n) => {
     if (n === 0) return 'G';
     const o = from[n]!;
-    if (o > 0 && from[n - 1] === o - 1 && oldSpace[o] === space[n]) return oldGaps[o]!;
-    return space[n] ? 'SB' : 'G';
+    const op = from[n - 1]!;
+    if (o > 0 && op === o - 1 && oldSpace[o] === space[n]) return oldGaps[o]!;
+    if (space[n]) return 'SB';
+    const own = new Set<Gap>();
+    const before = o >= 0 ? ownBefore(o) : undefined;
+    const after = op >= 0 ? ownBefore(op + 1) : undefined;
+    if (before) own.add(before);
+    if (after) own.add(after);
+    return `G${[...own].join('')}`;
   });
 }
 
@@ -581,7 +597,7 @@ export function expectedShown(html: string, loc: Location, notOffered: ReadonlyS
   const b = build('body');
   const t = build('title');
   const spans: Expected['spans'] = [...loc.spans].map(([k, s]) => ({ line: offeredLine.get(k) ?? 0, start: s.start, end: s.end, in: s.in }));
-  return { body: b.want, title: t.want, hidden: loc.hidden, places: [...b.places, ...t.places], spans };
+  return { body: b.want, title: t.want, hidden: loc.hidden, generated: loc.generated, places: [...b.places, ...t.places], spans };
 }
 
 /**
@@ -696,6 +712,14 @@ export function arbiterProblem(exp: Expected, after: ShownText): { problem: stri
     const e = want.hrefs[x];
     return say(line, h === null ? `a browser would show the words at "${word}" outside the link (to ${e}) they belong to` : e === null ? `a browser would show the words at "${word}" as words of a link (to ${h})` : `a browser would show the words at "${word}" in the link to ${h}, not ${e}`);
   }
+  // Text a stylesheet adds that would now stand on its own, where the page showed it beside its own text or not at all
+  // (an element a line's deletion leaves empty, kept for its id or data-* hook, whose ::before says "Coming soon" or
+  // draws a checkmark): words or symbols the person did not write.
+  const count = (xs: readonly string[]) => xs.reduce((m, x) => m.set(x, (m.get(x) ?? 0) + 1), new Map<string, number>());
+  const was = count(exp.generated);
+  const now = count(after.generated ?? []);
+  const alone = [...now].find(([x, n]) => n > (was.get(x) ?? 0));
+  if (alone) return say(exp.places.find((pl) => pl.end === pl.start)?.line ?? exp.places[0]?.line ?? nearest(0), `a style on this page would show "${alone[0]}" on its own where your lines leave an element empty (text a stylesheet adds, which is not one of your lines)`);
   return undefined;
 }
 

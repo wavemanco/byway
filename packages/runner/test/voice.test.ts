@@ -701,6 +701,30 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await b.store.artifacts.getText(out2.artifactId!)).toBe(hidden.replace('<p>After</p>', '<p>After all</p>'));
   });
 
+  it('a heading a script splits into letters and a section a script slides into view are offered and written; a slide never shown is named as moved out of view (r10 verifier)', async () => {
+    // Round 10 left the split heading's marks in the letters' own elements, so it placed no line of such a page; it read
+    // the sliding section where it waited, off the page, and said it was hidden "for screen readers, or until a visitor
+    // opens it".
+    const tall = '<div style="height:1500px"></div>';
+    const html = page(
+      [
+        '<style>body{overflow-x:hidden}.s{transition:transform .6s;transform:translate3d(100%,0,0)}.s.in{transform:none}</style>',
+        '<h1 class="split">Fresh bread</h1>',
+        tall,
+        '<div class="s"><h3>Websites</h3></div>',
+        tall,
+        '<div style="width:300px;overflow:hidden"><div style="display:flex"><p style="flex:0 0 300px;margin:0">Slide one</p><p style="flex:0 0 300px;margin:0">Slide two</p></div></div>',
+        '<p>Seeded rye</p>',
+        '<script>document.querySelectorAll(".split").forEach((el) => { const t = el.textContent; el.textContent = ""; [...t].forEach((c) => { const s = document.createElement("span"); s.className = "ch"; s.textContent = c; el.appendChild(s); }); }); const go = () => document.querySelectorAll(".s").forEach((e) => { if (e.getBoundingClientRect().top < innerHeight - 50) e.classList.add("in"); }); addEventListener("scroll", go); go();</script>',
+      ].join(''),
+    );
+    const q = await open(html);
+    expect(q.offered).toBe('T\nFresh bread\nWebsites\nSlide one\nSeeded rye');
+    expect(q.prompt).toMatch(/: hidden from sight \(for screen readers, moved out of view, or until a visitor opens it\): "Slide two"\.$/);
+    const out = await q.answer('T\nFresh bread daily\nWebsites\nSlide one\nSeeded spelt');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(html.replace('>Fresh bread<', '>Fresh bread daily<').replace('Seeded rye', 'Seeded spelt'));
+  });
+
   it('text a style hides from sight, though a browser lays it out, never takes the person\'s words: its line is not offered, and stays byte for byte (r9)', async () => {
     // The round-8 verifier's cases: Bootstrap's screen-reader-only class in a rating, a button and a card link; opacity 0;
     // font size 0; and a gap that is only a screen-reader-only space, which shows as none. Round 8 offered these lines and

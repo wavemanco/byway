@@ -339,6 +339,80 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     }
   }, 60_000);
 
+  it('a box that cuts a row partway hides that row from sight: the person\'s words, or the page\'s, pushed into it are refused (r10 verifier)', async () => {
+    // Round 9's reproduction, at the default line height: the 20 px box keeps the top 2 px of a second row.
+    const r9 = pageOf('<div style="height:20px;overflow:hidden;width:200px"><p style="margin:0">Fresh bread</p></div><p>Next</p>');
+    expect((await offer(r9)).offered).toEqual(['T', 'Fresh bread', 'Next']);
+    const long = 'Fresh bread baked every single morning by hand in the oven';
+    expect((await check(r9, `T\n${long}\nNext`, r9.replace('Fresh bread', long)))?.problem).toMatch(/^byway could not put line 2 on this page exactly as you wrote it, because a style on this page would hide "[^"]*morning by hand in the oven" from sight there/);
+    // Tailwind's h-20 overflow-hidden card: rows of 24 px in 80 px, so a fourth row shows only its top 5 px.
+    const card = pageOf('<p style="height:80px;overflow:hidden;width:180px;font:16px/24px Arial;margin:0">Our classic loaf, slow proved for a deep flavour.</p><p>Next</p>');
+    expect((await offer(card)).offered).toEqual(['T', 'Our classic loaf, slow proved for a deep flavour.', 'Next']);
+    expect((await check(card, 'T\nOur classic loaf, slow proved for a deep flavour. Slice it thin and toast it.\nNext', card.replace('flavour.', 'flavour. Slice it thin and toast it.')))?.problem).toMatch(/would hide "toast it\." from sight there/);
+    // The page's own line pushed into the cut row by a longer line before it.
+    const rows = (first: string) => pageOf(`<div style="height:80px;overflow:hidden;width:300px;font:16px/24px Arial"><p style="margin:0">${first}</p><p style="margin:0">Two</p><p style="margin:0">Three</p></div>`);
+    expect((await offer(rows('One'))).offered).toEqual(['T', 'One', 'Two', 'Three']);
+    const longer = 'One two three four five six seven eight nine ten eleven twelve thirteen fourteen';
+    expect(await check(rows('One'), `T\n${longer}\nTwo\nThree`, rows(longer))).toEqual({
+      line: 2,
+      problem: 'byway could not put line 2 on this page exactly as you wrote it, because a style on this page would hide "Three" from sight there (a browser lays that text out, as for a screen reader, but does not show it). Change line 2 again, or leave it as it was offered.',
+    });
+  }, 60_000);
+
+  it('a word whose text fill leaves it clear is hidden from sight, so its line is not offered (r10 verifier)', async () => {
+    const html = pageOf('<p>Rated <span style="-webkit-text-fill-color:transparent">5</span> stars</p><p>Sale <span style="color:rgba(0,0,0,0.02)">ends</span> today</p><p>Plain</p>');
+    expect(await offer(html)).toMatchObject({ offered: ['T', 'Plain'], why: { 'Rated 5 stars': 'part-hidden', 'Sale ends today': 'part-hidden' } });
+  }, 60_000);
+
+  it('a heading a script splits into letters keeps its marks: the page\'s lines are placed and can be changed (r10 verifier)', async () => {
+    const split = (display: string, space: string) =>
+      pageOf(
+        `<h1 class="split">Sourdough, still warm.</h1><h3>Seeded rye</h3><p>Dense and dark.</p><script>document.querySelectorAll(".split").forEach((el) => { const t = el.textContent; el.textContent = ""; [...t].forEach((c, i) => { const s = document.createElement("span"); s.style.display = "${display}"; s.style.animation = "none"; s.textContent = c === " " ? "${space}" : c; el.appendChild(s); }); });</script>`,
+      );
+    // Letters in inline blocks, a no-break space between words: the heading shows other characters than its line (a
+    // no-break space is not a space), so it alone is not offered.
+    const blocks = split('inline-block', '\\u00a0');
+    const a = await offer(blocks);
+    expect(a.loc.agrees).toBe(true);
+    expect(a).toMatchObject({ offered: ['T', 'Seeded rye', 'Dense and dark.'], why: { 'Sourdough, still warm.': 'changed' } });
+    expect(await check(blocks, 'T\nSeeded spelt\nDense and dark.', blocks.replace('Seeded rye', 'Seeded spelt'))).toBeUndefined();
+    // Letters in inline spans, spaces as they were: the heading shows as its line does, and a change to it is written.
+    const inline = split('inline', ' ');
+    expect((await offer(inline)).offered).toEqual(['T', 'Sourdough, still warm.', 'Seeded rye', 'Dense and dark.']);
+    expect(await check(inline, 'T\nSourdough, still warm at eight.\nSeeded rye\nDense and dark.', inline.replace('still warm.', 'still warm at eight.'))).toBeUndefined();
+  }, 60_000);
+
+  it('a box edge the page shows where a line has no space stays the page\'s own beside the text kept: a menu\'s dish and price, a drop cap (r10 verifier)', async () => {
+    const item = (dish: string, price: string) => `<li style="display:flex;justify-content:space-between"><span>${dish}</span><span>${price}</span></li>`;
+    const menu = pageOf(`<ul style="width:400px">${item('Cacio e pepe', '£13')}${item('Ravioli di zucca', '£15')}</ul>`);
+    expect((await offer(menu)).offered).toEqual(['T', 'Cacio e pepe£13', 'Ravioli di zucca£15']);
+    // The last word before the price changed (round 10 refused this, saying a browser would show a line break the line
+    // does not have), the price changed, the dish rewritten.
+    expect(await check(menu, 'T\nCacio e Brightest£13\nRavioli di zucca£15', menu.replace('Cacio e pepe', 'Cacio e Brightest'))).toBeUndefined();
+    expect(await check(menu, 'T\nCacio e pepe£13\nRavioli di zucca£16', menu.replace('£15', '£16'))).toBeUndefined();
+    expect(await check(menu, 'T\nGnocchi£13\nRavioli di zucca£15', menu.replace('Cacio e pepe', 'Gnocchi'))).toBeUndefined();
+    // A break where the person's new characters meet away from that edge is still refused.
+    expect((await check(menu, 'T\nCacio e Brightest£13\nRavioli di zucca£15', menu.replace('<span>Cacio e pepe</span>', '<span>Cacio e Bright</span><span>est</span>')))?.problem).toMatch(/would show a line break that your lines do not have/);
+    // A drop cap: its first letter floats beside the rest of the word, which a visitor reads as one word.
+    const cap = pageOf('<style>.d::first-letter{float:left;font-size:3em;line-height:1;margin-right:8px}</style><p class="d">Once upon a time there was bread.</p><p>End</p>');
+    expect((await offer(cap)).offered).toEqual(['T', 'Once upon a time there was bread.', 'End']);
+    expect(await check(cap, 'T\nTwice upon a time there was bread.\nEnd', cap.replace('Once', 'Twice'))).toBeUndefined();
+    expect(await check(cap, 'T\nA time there was bread.\nEnd', cap.replace('Once upon a', 'A'))).toBeUndefined();
+  }, 60_000);
+
+  it('refuses a deletion that leaves text a stylesheet adds standing on its own, in an emptied element kept for its hook (r10 verifier)', async () => {
+    const soon = pageOf('<style>p:empty::before{content:"Coming soon"}</style><p id="soon">Our summer menu</p><p>Visit us</p>');
+    expect(await check(soon, 'T\n\nVisit us', soon.replace('Our summer menu', ''))).toEqual({
+      line: 2,
+      problem: 'byway could not put line 2 on this page exactly as you wrote it, because a style on this page would show "Coming soon" on its own where your lines leave an element empty (text a stylesheet adds, which is not one of your lines). Change line 2 again, or leave it as it was offered.',
+    });
+    const ticks = pageOf('<style>li{list-style:none}li::before{content:"\\2713  "}</style><ul><li data-aos="fade-up">Fast delivery</li><li data-aos="fade-up">Fresh bread</li></ul>');
+    expect((await check(ticks, 'T\n\nFresh bread', ticks.replace('Fast delivery', '')))?.problem).toMatch(/would show "✓" on its own/);
+    // Beside the element's own words it stays as it was; an element the deletion removes takes it along.
+    const sale = pageOf('<style>.n::before{content:"New: "}</style><p class="n">Spring sale</p><p class="n">Summer menu</p>');
+    expect(await check(sale, 'T\nAutumn sale\n', sale.replace('Spring', 'Autumn').replace('<p class="n">Summer menu</p>', ''))).toBeUndefined();
+  }, 60_000);
+
   it('filter: opacity(0), opacity just above 0 and clip-path shapes with no area hide text from sight (r10)', async () => {
     const html = pageOf(
       [
