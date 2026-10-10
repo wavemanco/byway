@@ -759,11 +759,16 @@ const VISITOR_BEGIN = `(() => {
       if (rgba) { const v = rgba[1].split(/[\\s,]+/).filter(Boolean); return v.length >= 4 ? parseFloat(v[3]) : 1; }
       return 1;
     };
+    // An svg paint's alpha: none leaves no ink, a gradient or pattern (url()) is taken as full.
+    const paint = (v) => (!v || v === 'none' ? 0 : /^url\\(/.test(v) ? 1 : alpha(v));
+    const share = (v) => { const x = parseFloat(v); return isNaN(x) ? 1 : x; };
     // How much ink the text in e has: its fill's alpha (Chromium paints text with -webkit-text-fill-color, which is
-    // the colour unless set), or a stroke's, or full where a shadow or a background clipped to the text paints it.
+    // the colour unless set; svg text with its fill and fill-opacity), or a stroke's, or full where a shadow or a
+    // background clipped to the text paints it.
     const ink = (e) => {
       const s = style(e);
       if (clipsText(e) || (s.textShadow || 'none') !== 'none') return 1;
+      if (e instanceof SVGElement) return Math.max(paint(s.fill) * share(s.fillOpacity), parseFloat(s.strokeWidth || '0') > 0 ? paint(s.stroke) * share(s.strokeOpacity) : 0);
       const stroke = parseFloat(s.webkitTextStrokeWidth || '0') > 0 ? alpha(s.webkitTextStrokeColor) : 0;
       return Math.max(alpha(s.webkitTextFillColor || s.color), stroke);
     };
@@ -978,6 +983,14 @@ const VISITOR_BEGIN = `(() => {
           if (shown) count++;
         }
         i += w;
+      }
+      // Characters with no box of their own before the node's first one with a box (a zero-width space opening it) go
+      // with that one.
+      let next = null;
+      for (let k = chars.length - 1; k >= 0; k--) {
+        const ch = chars[k];
+        if (ch.box) next = ch;
+        else if (next) { ch.box = next.box; ch.vis = next.vis; ch.shown = next.shown; if (ch.shown) count++; }
       }
       // Punctuation and symbols take a direction from the letters around them, as the bidi algorithm resolves them: the
       // letters' on both sides when they agree, else the paragraph's.
@@ -1267,6 +1280,20 @@ const VISITOR_BEGIN = `(() => {
       if (structural) return '\\n';
       return flow ? ' ' : '';
     };
+    // The separator before each character, and whether it is a line break on one row.
+    const seps = [''], onRow = [false];
+    for (let k = 1; k < all.length; k++) { seps.push(sep(all[k - 1], all[k])); onRow.push(sepRow); }
+    // A character with no glyph (a no-break or other space that is not HTML whitespace, a zero-width or format
+    // character) shows nothing of its own: where the visible characters on either side of a run of them stand glued, a
+    // visitor sees them glued, whatever the run's own boxes say.
+    const GLYPHLESS = /^[\\p{Zs}\\p{Cf}]$/u;
+    for (let k = 1; k < all.length; ) {
+      if (!GLYPHLESS.test(all[k].c)) { k++; continue; }
+      let j = k;
+      while (j < all.length && GLYPHLESS.test(all[j].c)) j++;
+      if (j < all.length && sep(all[k - 1], all[j]) === '') for (let x = k; x <= j; x++) { seps[x] = ''; onRow[x] = false; }
+      k = j;
+    }
     const HID = ${JSON.stringify(HIDDEN_HERE)};
     const GONE = ${JSON.stringify(GONE_HERE)};
     let text = (hidFirst ? HID : '') + (goneFirst ? GONE : '');
@@ -1275,9 +1302,9 @@ const VISITOR_BEGIN = `(() => {
     const rowBreaks = [];
     for (let k = 0; k < all.length; k++) {
       const x = all[k];
-      const s = k > 0 ? sep(all[k - 1], x) : '';
+      const s = seps[k];
       if (x.link !== open && open >= 0) { linked += ${JSON.stringify(LINK_CLOSE)}; open = -1; }
-      if (sepRow && s) rowBreaks.push(text.length);
+      if (onRow[k] && s) rowBreaks.push(text.length);
       text += s;
       linked += s;
       if (x.link !== open) {

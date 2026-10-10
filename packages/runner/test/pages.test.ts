@@ -567,6 +567,28 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     expect(shown.hidden).toEqual([['5', null], ['ends', null], ['late', null]]);
   }, 60_000);
 
+  it('svg text is inked by its fill and stroke; a character with no glyph neither hides its line nor stands between neighbours a visitor sees glued (r11 verifier)', async () => {
+    const shown = await pages.shownText(
+      body(
+        [
+          // svg text paints with its fill, not its colour: none, clear or a fill-opacity of 0 leaves it no ink.
+          '<p>Badge: <svg width="200" height="30"><text x="0" y="20" fill="none">Secret label</text></svg></p>',
+          '<svg width="300" height="30"><text x="0" y="20" fill-opacity="0">Faint label</text></svg>',
+          '<svg width="300" height="30"><text x="0" y="20" style="fill:transparent">Clear label</text></svg>',
+          '<svg width="300" height="30"><text x="0" y="20" fill="none" stroke="black">Stroked label</text></svg>',
+          '<svg width="300" height="30"><text x="0" y="20">Visible label</text></svg>',
+          // A zero-width space opening a text node goes with the character after it (round 11 read it as hidden).
+          '<p>Hello <b>&#8203;world</b> today</p>',
+          // A no-break space standing elsewhere than between its neighbours: they are glued as a visitor sees them.
+          '<p>dc<span style="display:inline-block;width:0"><span style="position:absolute;top:400px">&nbsp;</span></span>Call</p>',
+        ].join(''),
+      ),
+      none,
+    );
+    expect(shown.text).toBe('Badge:﷭\nStroked label\nVisible label\nHello \u200bworld today\ndc\u00a0Call');
+    expect(shown.hidden).toEqual([['Secret label', null], ['Faint label', null], ['Clear label', null]]);
+  }, 60_000);
+
   it('lists the text a stylesheet adds on an element that shows none of the page\'s own text (r10 verifier: generated content)', async () => {
     const css = '<style>p:empty::before{content:"Coming soon"}li::before{content:"\\2713  "}.ic::before{content:"\\2605"}.n::before{content:"New: "}</style>';
     const shown = await pages.shownText(body(`${css}<p id="s"></p><p class="n">Spring sale</p><ul><li></li><li>Fresh</li></ul><i class="ic"></i><span class="ic" style="opacity:0"></span><p>End</p>`), none);

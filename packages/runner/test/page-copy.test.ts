@@ -1050,6 +1050,14 @@ describe('text glued to a line\'s first or last kept word goes into that word\'s
     // Never into a link the brackets keep them out of.
     expect(run('<p>Read <a href="/x">more</a></p>', set(1, 'Read [more].'))).toMatchObject(clean('<p>Read <a href="/x">more</a>.</p>'));
   });
+
+  it('a no-break space at a line\'s edge, taken out, is read as a space typed there: the line stays apart from its neighbour (r11 verifier)', () => {
+    // In the editor a no-break space looks like any space; round 11 wrote "here:now!" and "NameIntro".
+    expect(run('<p><font>here:&nbsp;</font><label>now!</label></p>', set(1, 'here:'))).toMatchObject(clean('<p><font>here: </font><label>now!</label></p>'));
+    expect(run('<p><label>Name</label><font>&nbsp;Intro</font></p>', set(2, 'Intro'))).toMatchObject(clean('<p><label>Name</label><font> Intro</font></p>'));
+    // Kept, it is the line's own character, and nothing is added.
+    expect(run('<p><font>here:&nbsp;</font><label>now!</label></p>', set(1, 'there:\u00a0'))).toMatchObject(clean('<p><font>there:\u00a0</font><label>now!</label></p>'));
+  });
 });
 
 describe('markup that is not copy stays byte for byte (F07, r7)', () => {

@@ -1022,7 +1022,15 @@ export function readPageEdit(p: PageDeck, answer: string, offered?: string, firs
     }
     const flat = segs.map((t) => t.text).join('');
     const text = ns.map((t) => t.text).join('');
-    changed({ changed: true, text, segs: ns, ...(text && isHtmlSpace(flat[0]) ? { lead: true as const } : {}), ...(text && isHtmlSpace(flat.at(-1)) ? { trail: true as const } : {}) });
+    // A no-break space (or another space that is not HTML whitespace) looks like any space in an editor: one the line
+    // had at an edge and the person took out is read as a space typed there, so the line stays apart from the text
+    // beside it, as it showed (the person cannot see that it was a character of the line).
+    const had = [...squashHtml(u.text)];
+    const now = [...text];
+    const nbsp = (c: string | undefined) => c !== undefined && /^\p{Zs}$/u.test(c) && !isHtmlSpace(c);
+    const lead = isHtmlSpace(flat[0]) || (nbsp(had[0]) && !nbsp(now[0]));
+    const trail = isHtmlSpace(flat.at(-1)) || (nbsp(had.at(-1)) && !nbsp(now.at(-1)));
+    changed({ changed: true, text, segs: ns, ...(text && lead ? { lead: true as const } : {}), ...(text && trail ? { trail: true as const } : {}) });
   });
   if (problems.length) return { ok: false, problem: problems.join(' '), lines: named };
   return { ok: true, lines: out };
