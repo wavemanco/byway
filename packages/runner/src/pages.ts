@@ -1038,7 +1038,10 @@ const VISITOR_BEGIN = `(() => {
       // carousel's track). It keeps the measurement where it shows most: the more characters seen, then on the screen,
       // then the later.
       const m = P.measure(t);
+      // at: where the node was last seen (a node is measured again only when it moves); at0: where this measurement
+      // was taken, so the end of the read can tell whether the node still stands there.
       m.at = at;
+      m.at0 = at;
       m.when = samples;
       if (fresh || m.count > had.count || (m.count === had.count && (m.onScreen || !had.onScreen))) measured.set(t, m);
       else had.at = at;
@@ -1111,8 +1114,15 @@ const VISITOR_BEGIN = `(() => {
       if (rec && rec.data !== t.data) rec = undefined;
       range.selectNodeContents(t);
       const laid = range.getClientRects().length > 0 && P.textRendered(p);
-      if (!rec && laid && !P.faded(p)) { rec = P.measure(t); rec.when = samples + 1; }
+      const faded = P.faded(p);
+      if (!rec && laid && !faded) { rec = P.measure(t); rec.when = samples + 1; rec.at0 = null; }
       if (!laid && /[^ \\t\\n\\f\\r]/.test(t.data)) gone();
+      // The node at the read's last instant: where its measurement was taken, if it still stands there; measured again
+      // if it moved since (an endless pulse, a tween that settled later, a slide moved on); none if it is not shown now.
+      let fin = null;
+      if (rec && laid && !faded) fin = rec.at0 === null || P.where(t) === rec.at0 ? rec : P.measure(t);
+      const finByIndex = new Map(fin ? fin.chars.map((c) => [c.i, c]) : []);
+      const seenAt = (c) => !!c && c.shown && !(clipX && (rtlPage ? c.box.l + c.box.r <= 0 : c.box.l + c.box.r >= 2 * vw)) && !(clipY && c.box.t + c.box.b >= 2 * vh);
       const a = P.linkOf(p);
       let link = -1;
       if (a) { link = linkIndex.get(a); if (link === undefined) { link = hrefs.length; linkIndex.set(a, link); hrefs.push(a.getAttribute('href')); } }
@@ -1136,9 +1146,11 @@ const VISITOR_BEGIN = `(() => {
           let ends = '';
           while (m < ms.length && ms[m][0] <= i + w && !ms[m][2]) ends += ms[m++][1];
           if (!laid) unlaid += starts + ends;
-          else if (ch && ch.shown && !(clipX && (rtlPage ? ch.box.l + ch.box.r <= 0 : ch.box.l + ch.box.r >= 2 * vw)) && !(clipY && ch.box.t + ch.box.b >= 2 * vh)) {
+          else if (seenAt(ch)) {
             flush();
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, breaks, ws, link, marquee: rec.marquee, when: rec.when, hid: false, cap: capOf(p, c) });
+            const f = finByIndex.get(i);
+            const now = seenAt(f) ? f : null;
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, breaks, ws, link, marquee: rec.marquee, when: rec.when, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
           } else {
             run = (run || '') + starts + c + ends;
             unseen();
@@ -1209,15 +1221,20 @@ const VISITOR_BEGIN = `(() => {
       const structural = b.breaks > a.breaks;
       const flow = b.ws > a.ws;
       if (a.cap && !b.cap && !structural && !flow) return '';
-      // Seen at different moments of the read (a carousel's slides, sections revealed in turn), with a box's edge between
-      // them: apart across boxes, whatever order they stood in on the screen at those moments.
-      if (structural && a.when !== b.when) return '\\n';
+      // Both shown at the read's last instant: judged there, one instant for both, so an item that keeps moving (an
+      // endless pulse, a tween that settled at a later sample) is judged beside its neighbour where both stand.
+      const now = !!(a.fin && b.fin);
+      // Else, seen at different moments of the read (a carousel's slides, sections revealed in turn): where they stood
+      // at those moments says nothing of how they sit, so a box's edge between them is apart across boxes, and in one
+      // flow of text they are as the text runs them.
+      if (!now && a.when !== b.when) return structural ? '\\n' : flow ? ' ' : '';
       if (a.marquee && a.marquee === b.marquee) return structural ? '\\n' : flow ? ' ' : '';
-      const row = Math.min(a.box.b, b.box.b) - Math.max(a.box.t, b.box.t) >= 0.5 * Math.min(a.box.b - a.box.t, b.box.b - b.box.t);
+      const A = now ? a.fin : a, B = now ? b.fin : b;
+      const row = Math.min(A.box.b, B.box.b) - Math.max(A.box.t, B.box.t) >= 0.5 * Math.min(A.box.b - A.box.t, B.box.b - B.box.t);
       if (row) {
         const tol = Math.max(0.5, 0.1 * Math.min(a.fs, b.fs));
-        const ca = (a.box.l + a.box.r) / 2, cb = (b.box.l + b.box.r) / 2;
-        const va = a.vis || a.box, vb = b.vis || b.box;
+        const ca = (A.box.l + A.box.r) / 2, cb = (B.box.l + B.box.r) / 2;
+        const va = A.vis || A.box, vb = B.vis || B.box;
         let gap;
         if (a.d === 'L' && b.d === 'L') { if (cb < ca - tol) return ${JSON.stringify(REVERSED)}; gap = vb.l - va.r; }
         else if (a.d === 'R' && b.d === 'R') { if (cb > ca + tol) return ${JSON.stringify(REVERSED)}; gap = va.l - vb.r; }

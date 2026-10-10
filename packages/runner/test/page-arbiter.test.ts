@@ -502,6 +502,30 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(why).toEqual({ 'Served 0+ loaves': 'changed' });
     expect(await check(live, 'T\nNow:\nPlain text', live.replace('<p>Plain</p>', '<p>Plain text</p>'))).toBeUndefined();
   }, 60_000);
+
+  it('an item that keeps moving (an endless pulse, a tween that settles later than its neighbour) is judged where it stands at the read\'s last instant (r11 verifier)', async () => {
+    const PULSE = '<style>@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}.pulse{display:inline-block;animation:pulse 2s ease-in-out infinite}</style>';
+    // Round 9's reproduction with a pulsing link: round 11 read the link and its static neighbour as apart across boxes,
+    // measured at different samples, and stored "Sign intoday".
+    const signin = pageOf(`${PULSE}<p style="${FLEX};justify-content:center">Already have an account? <a class="pulse" href="/login" style="margin-left:4px">Sign in</a></p>`);
+    expect((await offer(signin)).offered).toEqual(['T', 'Already have an account? [Sign in]']);
+    expect((await check(signin, 'T\nAlready have an account? [Sign in] today', signin.replace('</a></p>', '</a> today</p>')))?.problem).toMatch(/because a browser would run words together that your lines keep apart: it would show ".*Sign intoday"/);
+    // A price that pulses beside words the row shows glued to it: the line is not offered (round 11 offered it).
+    const price = pageOf(`${PULSE}<p style="display:flex;align-items:baseline;font-size:24px">From <strong class="pulse">$29</strong></p><p>Plain</p>`);
+    expect(await offer(price)).toMatchObject({ offered: ['T', 'Plain'], why: { 'From $29': 'layout' } });
+    // Words a script tweens into place one after another, as GSAP's stagger does, each settling at another sample.
+    const stagger = (row: string) =>
+      pageOf(
+        `${row}<script>const els=[...document.querySelectorAll('.w')];const t0=performance.now();const tick=()=>{const t=performance.now()-t0;let done=true;els.forEach((e,i)=>{const p=Math.min(1,Math.max(0,(t-i*800)/1200));if(p<1)done=false;e.style.opacity=String(p);e.style.transform='translateY('+40*(1-p)+'px)';});if(!done)requestAnimationFrame(tick);};tick();</script>`,
+      );
+    const order = stagger('<h2 style="display:flex;font-size:40px"><span class="w">Order</span><span class="w">now</span></h2>');
+    expect((await offer(order)).offered).toEqual(['T', 'Ordernow']);
+    expect((await check(order, 'T\nOrder now', order.replace('>Order<', '>Order <')))?.problem).toMatch(/because a browser would run words together that your lines keep apart: it would show "Ordernow"/);
+    const month = stagger('<p style="display:flex;align-items:baseline;font-size:24px"><strong class="w">$29</strong><span class="w">/month</span></p>');
+    expect((await check(month, 'T\n$29/month billed yearly', month.replace('/month</span></p>', '/month</span> billed yearly</p>')))?.problem).toMatch(/because a browser would run words together that your lines keep apart: it would show ".*\/monthbilled yearly"/);
+    // The tweened page reads the same every time: written back unchanged, it is let through.
+    expect(await check(month, 'T\n$29/month', month)).toBeUndefined();
+  }, 60_000);
 });
 
 describe('the reader\'s model of a browser (the fake renderer the e2e scenarios use)', () => {
