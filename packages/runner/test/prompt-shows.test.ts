@@ -15,10 +15,11 @@ import { PROFILES } from '@byway/gateway';
 import { CATALOG } from '@byway/catalog';
 import { MEDIA, type PortType } from '@byway/protocol';
 import { createPromptRenderer } from '@byway/prompts';
-import { audioAsset, promptShows, steps, type Role } from '@byway/recipe';
+import { audioAsset, JUDGING_ROLES as SHOWN_NO_WORK, promptShows, ROLES, steps, type Role } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { modelStep } from '../src/activities/model-step.ts';
+import { JUDGING_ROLES } from '../src/activities/prompting.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import type { Ports, RunRef, StepSpec, ViewRef } from '../src/types.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -169,6 +170,10 @@ const cases: (readonly [string, string, Role, Medium])[] = [...rolesByPrompt].fl
 cases.push(...MEDIA.filter((m) => hasTemplate('helper.asset.briefs', m)).map((m) => [`an ASSET step with no library prompt on ${m}`, 'no.such.prompt', 'asset' as Role, m] as const));
 
 describe('what a model step’s prompt shows, as the activities render it (promptShows)', () => {
+  it('never gives the work to the roles buildPrompt never gives it to (port rule 1), including those no catalog prompt is written for', () => {
+    expect(new Set(ROLES.filter((r) => SHOWN_NO_WORK.has(r)))).toEqual(new Set(ROLES.filter((r) => JUDGING_ROLES.has(r))));
+  });
+
   it('covers every catalog prompt the library holds', () => {
     expect(rolesByPrompt.size).toBeGreaterThanOrEqual(70);
     expect(cases.length).toBeGreaterThan(rolesByPrompt.size);
