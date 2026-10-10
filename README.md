@@ -50,6 +50,7 @@ Keys are read from the process environment (a key exported in your shell wins ov
 | `pnpm --filter ./apps/web run build` | Production build of the web app |
 | `pnpm byway validate recipes/c1h.json` | Check one recipe against the grammar (exit 0 ok, 1 violations, 2 unreadable) |
 | `pnpm recipes:emit` | Regenerate `recipes/*.json` after changing the catalog |
+| `pnpm prompts:slots` | Regenerate the table of what each prompt template shows (`packages/recipe/src/template-slots.ts`, ADR-0097) after changing a template's slots |
 
 `pnpm start`, `pnpm demo` and `pnpm dev` take `PORT` (web, default 3000), `BYWAY_TEMPORAL_PORT` (default 7233) and `BYWAY_DATA_DIR`. If the run engine stops while byway is running, byway says so and stops; start it again. The first start downloads the Temporal dev server once; later starts reuse it. Web-page recipes render pages with Playwright's Chromium (`pnpm --filter ./apps/web exec playwright install chromium` if it is missing).
 

@@ -17,6 +17,7 @@
     "e2e": "tsx scripts/e2e.ts",
     "verify": "pnpm -s typecheck && pnpm test && pnpm e2e",
     "recipes:emit": "tsx packages/catalog/src/emit.ts",
+    "prompts:slots": "tsx packages/prompts/src/emit-template-slots.ts",
     "byway": "tsx packages/cli/src/main.ts"
   },
   "devDependencies": {

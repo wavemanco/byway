@@ -1,13 +1,15 @@
 import { outputForStep, PromptTemplateError, slotsForStep, type PromptLibrary } from '@byway/prompts';
-import { BLOCKS, EXCEPTIONS, ROLE_KNOBS, type KnobDef, type Medium } from '@byway/protocol';
+import { BLOCKS, EXCEPTIONS, ROLE_KNOBS, type KnobDef, type Medium, type PortType } from '@byway/protocol';
 import {
   authorWrite,
   changesWork,
   checkpoints,
   composedLimitProblems,
   declaresVoice,
+  inputsOf,
   matchCheckpoints,
   placements,
+  promptShows,
   steps,
   voiceScope,
   voiceWrite,
@@ -23,9 +25,9 @@ import { flowRecipe } from '@byway/validator';
 /**
  * The composed validator profile of ADR-0058, enforced in code on top of the validator: a composed recipe may use only
  * registered blocks with knobs in range, reuse only the catalog's step prompts in the role and medium they are written
- * for (frozen prompts stay untouched), cite no study manipulation and no exception its nearest canonical recipe does not
- * declare, and must keep the protected human checkpoints (VOICE, and the author's own writing in C6/C6a) in substance
- * as well as in name (COMP-1).
+ * for (frozen prompts stay untouched), take in only what a reused prompt shows the model (ADR-0097), cite no study
+ * manipulation and no exception its nearest canonical recipe does not declare, and must keep the protected human
+ * checkpoints (VOICE, and the author's own writing in C6/C6a) in substance as well as in name (COMP-1).
  *
  * Every protection here is read from what the recipe runs (@byway/recipe semantics, ADR-0092), never from what a step
  * declares: a checkpoint counts only where a person's write runs every time; writers are writers by role and actor.
@@ -126,6 +128,16 @@ function promptProblem(step: Step, prompt: string, medium: Medium | undefined, p
   return undefined;
 }
 
+/**
+ * The ports a step takes in that its prompt never shows the model (@byway/recipe promptShows, ADR-0097): the runner fills
+ * a slot for each, and the template never renders it. A step that says it takes in what its prompt never shows would be
+ * read, explained and admitted as acting on it (a fix that "removes" a list it never sees), so a composed recipe may not
+ * have one. Every catalog step shows every port it takes in.
+ */
+function unshownPorts(step: Step, medium: Medium): PortType[] {
+  return inputsOf(step).filter((p) => !promptShows(step, p, medium));
+}
+
 const STAGE_WORDS: Record<string, string> = { D1: 'Explore', D2: 'Refine', D3: 'Finish' };
 
 /** What a VOICE covers, in plain words. */
@@ -212,6 +224,11 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
     else {
       const problem = promptProblem(step, step.prompt, recipe.medium, ctx.prompts);
       if (problem) add('prompt', `${path}.prompt`, problem);
+      else if (recipe.medium) {
+        for (const port of unshownPorts(step, recipe.medium)) {
+          add('prompt', `${path}.prompt`, `step "${step.id}" takes in the ${port} port, but its prompt "${step.prompt}" never shows it to the model on ${recipe.medium}: use a prompt that shows it, or leave the port out`);
+        }
+      }
     }
   }
 

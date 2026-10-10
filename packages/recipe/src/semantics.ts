@@ -13,17 +13,21 @@
  *   stage: a script VOICE is locked after it only where nothing the person writes later can change it;
  * - where a run's paths go (the one flow walk, `flowRecipe`, that every path rule reads), and what reaches a step along
  *   them: whose critique a writer applies, which of a person's lists and critiques reach the work the run delivers on no
- *   path, and whose directions the person's next VISION is shown.
+ *   path, and whose directions the person's next VISION is shown;
+ * - what a model step takes in: only what its prompt shows of the ports it declares (`promptShows`, ADR-0097).
  *
  * Admission (the validator, the composed profile, web start) reads these facts from here. A step's own declarations
  * (`writes`, `produces: ['voice']`, `block`, `keepsVoice`) may only add arming or refusals, never grant a protection,
  * and ST12 refuses a declaration that says less than execution does (and, for VOICE and block labels, one that says
  * anything else).
  *
- * Pure: type-only imports and no Node built-ins, so workflow code can import it through `@byway/recipe/semantics`.
+ * Pure: no Node built-ins, and only type imports besides `promptShows` (prompt-shows.ts, pure data and functions), so
+ * workflow code can import it through `@byway/recipe/semantics`. The workflow imports none of what reads `promptShows`,
+ * so its bundle holds neither it nor the template table (the runner's build test pins that).
  */
 import type { BlockCode, Medium, PortType } from '@byway/protocol';
 import type { Actor, Audit, Each, Gate, Loop, Node, OneShotGate, Optional, PassCondition, Pick as PickNode, Recipe, RelayChain, Replicate, Role, Route, Seq, Stage, Step } from './schema.ts';
+import { promptShows } from './prompt-shows.ts';
 
 /** The facts about a step that decide what it does to the work. */
 export type StepFacts = Pick<Step, 'actor' | 'role' | 'produces'>;
@@ -862,8 +866,13 @@ function flowOnce<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stag
 
 // ---- What reaches a step ----------------------------------------------------------------------------------------
 
-/** A step that takes a port in: it consumes it, or reads it when it is there (ADR-0089). */
-const takesIn = (s: Step, port: PortType): boolean => s.consumes.includes(port) || (s.reads?.includes(port) ?? false);
+/**
+ * A step that takes a port in: it consumes it, or reads it when it is there (ADR-0089), and, for a model step, its
+ * prompt shows it (`promptShows`, ADR-0097). The runner fills a slot for every port a step declares, but the model sees
+ * only the slots its template uses: a fix on a prompt that renders no critique never sees the critique it consumes, so
+ * it applies none, and an AI step that reads a critique its prompt never renders makes nothing from it.
+ */
+const takesIn = (s: Step, port: PortType, medium: Medium | undefined): boolean => promptShows(s, port, medium);
 
 /** The text ports a person's answer can fill, and an AI writer can take it in by (the interpreter's human()). */
 export type AnswerPort = 'critique' | 'brief' | 'taste';
@@ -954,20 +963,23 @@ function skippableJudges(recipe: Recipe): Map<string, boolean> {
 }
 
 /**
- * A writer that applies the critique it takes in, where it sits: a machine writer (by what it runs, never by its
- * `writes` flag) that consumes the critique or reads it when it is there (ADR-0089: a read fills the same slot of its
- * prompt), and that runs in this version (`hasNoExecutor`: an ASSET that makes voice-over audio finishes skipped, ADR-0069).
- * Not where what it writes never reaches the work (`contained`: an audit lens, a one-shot gate's body or a pick's judge).
- * A person's own write is never one: the run puts a critique only in a model's prompt (the interpreter shows a person
- * the work and the latest notes, never the critique).
+ * A writer that applies the critique it takes in, where it sits, in a recipe of this medium: a machine writer (by what
+ * it runs, never by its `writes` flag) that consumes the critique or reads it when it is there (ADR-0089: a read fills
+ * the same slot of its prompt), whose prompt shows it (`promptShows`, ADR-0097: a draft prompt that renders no critique
+ * applies none), and that runs in this version (`hasNoExecutor`: an ASSET that makes voice-over audio finishes skipped,
+ * ADR-0069). Not where what it writes never reaches the work (`contained`: an audit lens, a one-shot gate's body or a
+ * pick's judge). A person's own write is never one: the run puts a critique only in a model's prompt (the interpreter
+ * shows a person the work and the latest notes, never the critique).
  */
-export const appliesCritique = (s: Step, contained: boolean): boolean => appliesPort(s, 'critique', contained);
+export const appliesCritique = (s: Step, contained: boolean, medium: Medium | undefined): boolean => appliesPort(s, 'critique', contained, medium);
 
 /**
  * A writer that applies what it takes in by a port, where it sits, as `appliesCritique` decides it for the critique: a
- * brief or a taste an AI draft takes in is in its prompt, as a critique a fix takes in is (buildPrompt).
+ * brief or a taste an AI draft takes in is in its prompt where its template shows it, as a critique a fix takes in is
+ * (buildPrompt).
  */
-const appliesPort = (s: Step, port: AnswerPort, contained: boolean): boolean => !contained && machineWrites(s) && takesIn(s, port) && !hasNoExecutor(s);
+const appliesPort = (s: Step, port: AnswerPort, contained: boolean, medium: Medium | undefined): boolean =>
+  !contained && machineWrites(s) && takesIn(s, port, medium) && !hasNoExecutor(s);
 
 /** A place a step that takes the critique in sits, with the places whose critique may be the latest there when it runs. */
 interface CritiqueTaker {
@@ -1000,7 +1012,7 @@ function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<stri
   const skippable = skippableJudges(recipe);
   flowRecipe<string[]>(recipe, [''], {
     step(s, path, _stage, st, contained) {
-      if (takesIn(s, 'critique')) {
+      if (takesIn(s, 'critique', recipe.medium)) {
         const t = takers.get(path) ?? takers.set(path, { step: s, from: new Set() }).get(path)!;
         for (const x of st) t.from.add(x);
       }
@@ -1062,7 +1074,7 @@ const OPTIONS: PortType = 'option_set<artifact>';
  * An AI writer that drafts the work from the options it takes in (C2's option map): what the options carry reaches what
  * it writes, as `appliesPort` decides for a text port.
  */
-const appliesOptions = (s: Step, contained: boolean): boolean => !contained && machineWrites(s) && takesIn(s, OPTIONS) && !hasNoExecutor(s);
+const appliesOptions = (s: Step, contained: boolean, medium: Medium | undefined): boolean => !contained && machineWrites(s) && takesIn(s, OPTIONS, medium) && !hasNoExecutor(s);
 
 /**
  * Marks in what `answersReachingWork` follows through a lens or a gate body, never an answer's place (a walk path):
@@ -1097,10 +1109,11 @@ function lensesHandOn(entry: readonly string[], lenses: readonly (readonly strin
 /**
  * An AI step that makes text of its own from what it takes in, without writing the work: a critic, a check, a CUT's
  * list, a cliché sweep, an overlap flag or a direction (the runner's note roles, which put their text in a port and
- * leave it as their note). What it takes in by a text port is in its prompt, so what it makes carries it on. A seed
- * writes the work, and its note, the direction it writes before its block, is the string's decision on each axis, made
- * from the problem and the string: every seed prompt renders only those (`DIRECTION_FIRST_SEED_PROMPTS`), so it carries
- * nothing a person answered, whatever the seed takes in.
+ * leave it as their note). What it takes in by a text port that its prompt shows (`takesIn`, ADR-0097) is what it
+ * makes its text from, so what it makes carries it on; a port its prompt never shows carries nothing. A seed writes the
+ * work, and its note, the direction it writes before its block, is the string's decision on each axis, made from the
+ * problem and the string: every seed prompt renders only those (`DIRECTION_FIRST_SEED_PROMPTS`; the template table says
+ * the same), so it carries nothing a person answered, whatever the seed takes in.
  */
 const carriesOn = (s: Step): boolean => s.actor === 'model' && stepEffect(s) === 'annotates' && leavesNote(s) !== 'never';
 
@@ -1167,9 +1180,11 @@ function decidesWork(recipe: Recipe): Set<string> {
  * AI step that decides which version or option is the work: `decidesWork`), directly or as it is carried on, and what
  * it makes or decides is the work where it runs, not a candidate that nothing takes up. (A later writer that drafts from
  * scratch, or a later pick of candidates made before it, may still put another version in its place: ADR-0098 names
- * these as residuals.) Read on the exit-aware flow
- * walk, `exactLoops` and `untilStable`, with a state that says, for each text port, the notes beside the work, the work
- * of a candidate and the options, which of those answers what is there may carry:
+ * these as residuals.) An AI step takes a port in only where its prompt shows it (`takesIn`, `promptShows`, ADR-0097):
+ * a writer, a decider or a step that makes text of its own whose template never renders the port is shown nothing of
+ * what it holds. Read on the exit-aware flow walk, `exactLoops` and `untilStable`, with a state that says, for each text
+ * port, the notes beside the work, the work of a candidate and the options, which of those answers what is there may
+ * carry:
  *
  * - A person's answer fills the ports it fills (`answerPorts`): its own place, with whatever they were shown beside it
  *   (the latest notes) or in place (the port a reaction revises in place, `revisedInPlace`, which it fills on some runs
@@ -1199,6 +1214,7 @@ function decidesWork(recipe: Recipe): Set<string> {
  */
 function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<string> {
   const askedAt = new Set(asked.map((p) => p.path));
+  const medium = recipe.medium;
   const skippable = skippableJudges(recipe);
   const decides = decidesWork(recipe);
   const reached = new Set<string>();
@@ -1218,16 +1234,16 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
   flowRecipe<State>(recipe, START, {
     step(s, path, _stage, st, contained) {
       let next = st;
-      for (const q of ANSWER_PORTS) if (appliesPort(s, q, contained)) next = land(next, st[q]);
-      if (appliesOptions(s, contained)) next = land(next, st.options);
+      for (const q of ANSWER_PORTS) if (appliesPort(s, q, contained, medium)) next = land(next, st[q]);
+      if (appliesOptions(s, contained, medium)) next = land(next, st.options);
       if (authorWrite(s) && !contained) next = land(next, st.notes);
       if (decides.has(path)) {
-        const taken = unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q)).map((q) => st[q]));
+        const taken = unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q, medium)).map((q) => st[q]));
         next = s.role === 'dedupe' ? { ...next, options: union(next.options, answersIn(taken)) } : land(next, taken);
       }
       // What the step puts in a port it fills: what it carries on, and a person's answer its own place too.
       const inPlace = revisedInPlace(s);
-      const inPrompt = answersIn(unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q)).map((q) => st[q])));
+      const inPrompt = answersIn(unionAll(ANSWER_PORTS.filter((q) => takesIn(s, q, medium)).map((q) => st[q])));
       const carried = carriesOn(s) ? inPrompt : shownNotes(s) ? answersIn(union(st.notes, inPlace ? st[inPlace] : [])) : [];
       const out: Record<Carrier, readonly string[]> & { cand: boolean } = { ...next };
       for (const q of ANSWER_PORTS) {
@@ -1299,7 +1315,10 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
  * person's own that is shown it, an AI step that decides which version or option is the work). That holds through any
  * text port the answer fills (`answerPorts`: a CUT's list is the critique alone; a reaction of theirs is also the brief
  * or the taste it produces), and through what an AI step that takes it in makes from it (a critic's critique, an AI
- * CUT's list, a sweep's finds, an overlap flag, a direction, and the note each leaves). Read on `answersReachingWork`.
+ * CUT's list, a sweep's finds, an overlap flag, a direction, and the note each leaves). An AI step takes it in only
+ * where its prompt shows it (ADR-0097): a fix on a prompt that renders no critique, an image step whose prompt renders the
+ * work alone, or a seed never has it, and a relay link never has a brief of the person's (its brief slot holds its shot;
+ * a regenerating relay does show a critique). Read on `answersReachingWork`.
  * The run asks "What should go? List what to remove", or what the next version should avoid, and nothing the run does
  * with the work ever has the answer: before anything does, another value takes its place, or none comes after it at
  * all, or what does works on candidates that nothing takes up. For the critique, most often the cliché sweep's finds,
