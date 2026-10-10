@@ -600,6 +600,11 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       none,
     );
     expect(carousel.text).toBe('First slide\nSecond slide');
+    // A ticker an endless animation carries across the screen from beyond its edge: read where its cycle shows it (an
+    // endless animation is taken through its cycle across the samples; round 10 stopped it, off the screen).
+    const ticker = await pages.shownText(body('<style>@keyframes run{to{transform:translateX(-100%)}}</style><div style="overflow:hidden;white-space:nowrap"><div style="display:inline-block;padding-left:100%;animation:run 20s linear infinite">Now open for Sunday lunch</div></div><p>After</p>'), none);
+    expect(ticker.text).toBe('Now open for Sunday lunch\nAfter');
+    expect(ticker.hidden).toEqual([]);
   }, 60_000);
 
   it('runs a page\'s scripts the same way each time: a stopped clock, a seeded Math.random, however long the page is (r10)', async () => {

@@ -630,8 +630,9 @@ const VISITOR_INIT = `(() => {
  * it would be without them, and it installs the read's functions (see ShownText):
  * - loadAll(): the page's fonts and images loaded, lazy ones too;
  * - scroll(y): the page scrolled there at once, and told so; returns the page's height;
- * - sample(): every animation and transition taken to its end (an endless one stopped), then each text node a style now
- *   shows, and not measured with its present text yet, measured;
+ * - sample(): every animation and transition taken to its end (an endless one held at the next point of its cycle), then
+ *   each text node a style now shows measured, unless it was measured with its present text where it is now (its box
+ *   and what clips it), keeping the measurement where it shows most;
  * - final(): ShownText, from those measurements and the page's structure as it is now.
  */
 const VISITOR_BEGIN = `(() => {
@@ -697,6 +698,8 @@ const VISITOR_BEGIN = `(() => {
   const measured = new Map();
   // Which sample of the read each measurement was taken at.
   let samples = 0;
+  // How many points of an endless animation's cycle the samples hold it at, in turn.
+  const CYCLE = 8;
 
   /** Helpers for one pass over the page as it is now: each style and box is read once a pass. */
   const pass = () => {
@@ -987,7 +990,15 @@ const VISITOR_BEGIN = `(() => {
 
   const sample = () => {
     samples++;
-    for (const a of document.getAnimations()) { try { a.finish(); } catch { a.cancel(); } }
+    // Every animation and transition is taken to its end; an endless one is held at a point of its cycle, a later point
+    // at each sample (CYCLE points, the same on every page), so a ticker is seen where its cycle carries it.
+    for (const a of document.getAnimations()) {
+      let timing = null;
+      try { timing = a.effect && a.effect.getComputedTiming(); } catch {}
+      if (timing && timing.iterations === Infinity && typeof timing.duration === 'number' && timing.duration > 0) {
+        try { a.pause(); a.currentTime = (timing.delay || 0) + timing.duration * (((samples - 1) % CYCLE) / CYCLE); } catch { a.cancel(); }
+      } else { try { a.finish(); } catch { a.cancel(); } }
+    }
     const P = pass();
     if (!P.body) return 0;
     const w = document.createTreeWalker(P.body, NodeFilter.SHOW_TEXT);
