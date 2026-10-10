@@ -69,15 +69,21 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * at 1440 × 900, the screen the critic's wide renders use.
  *
  * How the page is read (the visitor read). The page's scripts run under a stopped clock set to one instant (READ_CLOCK)
- * that moves only as the read moves it, the same way each time, and with Math.random seeded; every IntersectionObserver
- * is told at once that each element it watches is in view (a visitor scrolls to every part of the page). Once the page
- * has loaded, its web fonts and images are loaded too (lazy ones now), the clock runs 1.5 s, and the page is scrolled
- * from top to bottom in steps of at most 720 px (at most 30 steps), then to the end and back to the top; at each step
- * the clock runs 0.2 s and every animation and transition is taken to its end (an endless one is stopped). Each text
- * node is measured the first time a style shows it (opacity of at least 0.05 counting filter: opacity(), visibility,
- * a colour that is not clear), so a section a script reveals as the visitor scrolls is measured revealed, even when the
- * script hides it again on the way back; a node whose text a script changes since is measured again at the end. After
- * the last step the clock is run on to the same total for every page, so a clock a page shows reads the same.
+ * that moves only as the read moves it, the same way each time, with Math.random seeded and animation frames run on that
+ * clock twenty times a second; every IntersectionObserver is told at once that each element it watches is in view (a
+ * visitor scrolls to every part of the page). Once the page has loaded, the line marks of a marked copy are taken out of
+ * its text (a mark may stand in several text nodes, as where a script puts each letter of a heading in an element of its
+ * own), its web fonts and images are loaded (lazy ones now), and the clock runs 1.5 s. The page is then scrolled from the
+ * top in steps of 720 px (longer on a page taller than 21,600 px, so there are at most 30), then to its end, then back to
+ * the top, where the clock runs on in the same steps; at each step a scroll event is dispatched, the clock runs 0.2 s and
+ * the page is sampled, so every page is sampled at the same 33 instants, 1.5 s to 7.9 s after it loaded. A sample takes
+ * every animation and transition to its end, holds an endless one at the next of eight points of its cycle, and measures
+ * each text node a style shows (visible, with an ink of at least 0.05: the alpha of its fill colour, or of a stroke, times
+ * its opacity counting filter: opacity()), unless it was measured with its present text where it is now (its box and
+ * what clips it). A node keeps the measurement where most of its characters are seen, then one taken while it was on the
+ * screen, then the later one. So a section a script reveals as the visitor scrolls, by its opacity or by moving it into
+ * view (a slide, a flip), a carousel's slides and a ticker are read where they show, even when the script hides them
+ * again on the way back. A node whose text a script changed after its last measurement is measured at the end.
  *
  * What a character is. Each character (code point) that is not HTML whitespace, in the body's text nodes (not in a
  * script, a style, a textarea, a title, a template or a noscript), in document order:
@@ -85,41 +91,47 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   content of a box with content-visibility: hidden, which skips its content only where layout containment applies,
  *   not on an inline box or a table row; text in a display: contents element is laid out where its parent is): not
  *   in the text, and not listed;
- * - shown: its box, when it was measured, keeps more than a pixel in each direction once clipped by every ancestor
- *   whose overflow is hidden or clip or that has paint containment (an absolutely or fixed positioned element escapes
- *   those below its containing block), by an absolutely or fixed positioned ancestor's `clip` rect, and by the
- *   bounding box of an ancestor's clip-path inset(), circle(), ellipse() or polygon() (one with no area keeps nothing);
- *   it is not short of the page's top or start edge (where no scrolling reaches), nor, when the page's overflow is
- *   hidden, beyond the screen's width or (down the page) its height; and it is not in the band an ellipsis takes at the
- *   end of a line a box cuts short (text-overflow: ellipsis on a box whose content overflows it, or the last line of a
- *   line-clamp box). Text in a marquee is measured by the marquee's own box, through which it scrolls;
- * - hidden from sight: laid out, but not shown (a screen-reader-only class, opacity 0, a clear colour, font size 0,
- *   clipped away, cut off by an ellipsis or a box, moved off the page).
- * Not detected: text covered by another element or coloured as its background, a clip-path given by url() or path(),
- * masks; text inside a shadow root is not read.
+ * - shown: where it was measured, every clip keeps the middle of its box: every ancestor whose overflow is hidden or clip
+ *   or that has paint containment (an absolutely or fixed positioned element escapes those below its containing block),
+ *   an absolutely or fixed positioned ancestor's `clip` rect, and the bounding box of an ancestor's clip-path inset(),
+ *   circle(), ellipse() or polygon() (one with no area keeps nothing); its middle is not short of the page's top or start
+ *   edge (where no scrolling reaches), nor, when the page's overflow is hidden, beyond the screen's width or (down the
+ *   page) its height; and it is not in the band an ellipsis takes at the end of a line a box cuts short (text-overflow:
+ *   ellipsis on a box whose content overflows it, or the last line of a line-clamp box). Text in a marquee is measured
+ *   by the marquee's own box, through which it scrolls;
+ * - hidden from sight: laid out, but not shown (a screen-reader-only class; opacity, a clear text fill or a colour almost
+ *   clear that leave it less than 0.05 of ink; font size 0; a character whose middle a box or a clip cuts off, such as a
+ *   sliver of a row a box of fixed height cuts; cut off by an ellipsis; moved off the page).
+ * Not detected: text covered by another element, painted behind an ancestor's background or coloured as it, turned
+ * away from the screen, clipped by a clip-path given by url() or path() or by a mask, or faint or small but over those
+ * thresholds (opacity 0.06, a 3 px font); text inside a shadow root is not read.
  *
  * The fields:
  * - `text`: the shown characters in document order, each pair of neighbours with one separator between them, from
- *   where their boxes are and what lies between them in the document: REVERSED when a visitor sees the second before
- *   the first on one row (two characters of a left-to-right script, or two of a right-to-left one: a letter or digit by
- *   its script, punctuation or a symbol by the letters around it in its text node when those on both sides agree, else
- *   by its block's direction); none when a visitor sees them glued (on one row, no more than a tenth of the smaller
- *   font size apart, whatever lies between them, as for flex items with no gap; or on two rows a word is broken over,
- *   with nothing between; the gap is measured between the parts of the two boxes a visitor sees, so a character its
- *   box cuts off part of ends at the cut); a line break when
- *   they are apart and the edge of a box of its own lies between them (a block, a flex or grid item, a table cell, a
- *   floated or positioned box, an inline block, a button, an image or a control) or a forced break does (a `<br>`, a
- *   newline a white-space style keeps); else a space (apart within one flow of text: on one row, or on rows the text
- *   wraps over with whitespace between). A row is a vertical overlap of at least half the shorter box. HIDDEN_HERE
- *   follows the shown character after which text a visitor does not see stands, hidden from sight or in an element
- *   that is not laid out (or begins the text). In a marked copy (page-arbiter.ts), the line marks stand beside the
- *   characters they mark;
+ *   where their boxes are and what lies between them in the document. None between a drop cap (the first letter of a
+ *   block, with any punctuation before it, that the block or one it begins styles with a floated ::first-letter or an
+ *   initial letter) and the rest of its word; a line break between two characters measured at different samples with
+ *   the edge of a box between them (a carousel's slides, sections revealed in turn: where they stood at those moments
+ *   says nothing of their order). Else REVERSED when a visitor sees the second before the first on one row (two
+ *   characters of a left-to-right script, or two of a right-to-left one: a letter or digit by its script, punctuation or
+ *   a symbol by the letters around it in its text node when those on both sides agree, else by its block's direction);
+ *   none when a visitor sees them glued (on one row, no more than a tenth of the smaller font size apart, whatever lies
+ *   between them, as for flex items with no gap; or on two rows a word is broken over, with nothing between; the gap is
+ *   measured between the parts of the two boxes a visitor sees, so a character its box cuts off part of ends at the
+ *   cut); a line break when they are apart and the edge of a box of its own lies between them (a block, a flex or grid
+ *   item, a table cell, a floated or positioned box, an inline block, a button, an image or a control) or a forced break
+ *   does (a `<br>`, a newline a white-space style keeps); else a space (apart within one flow of text: on one row, or on
+ *   rows the text wraps over with whitespace between). A row is a vertical overlap of at least half the shorter box.
+ *   HIDDEN_HERE follows the shown character after which text a visitor does not see stands, hidden from sight or in an
+ *   element that is not laid out (or begins the text). In a marked copy (page-arbiter.ts), the line marks stand beside
+ *   the characters they mark;
  * - `linked`: the same with each link's (`a[href]`) characters wrapped in markers: LINK_OPEN, the link's index in
  *   `hrefs` in the digits from LINK_DIGIT_0, LINK_INDEX_END, the characters, LINK_CLOSE;
  * - `hidden`: each run of characters hidden from sight within one text node, in document order: its text (whitespace
  *   collapsed, ends trimmed, line marks kept) and its link's href, or null;
  * - `unlaid`: the line marks found in text that is not laid out;
- * - `title`: document.title.
+ * - `title`: document.title;
+ * - `generated`: see below.
  */
 export interface ShownText {
   title: string;
@@ -700,6 +712,11 @@ const VISITOR_BEGIN = `(() => {
   let samples = 0;
   // How many points of an endless animation's cycle the samples hold it at, in turn.
   const CYCLE = 8;
+  // Whether the page may have changed since the last sample: a change to the document (a script's), noted here, or a
+  // running animation. Where neither happened, nothing on the page has moved and a sample measures nothing again.
+  let changed = true;
+  const watch = new MutationObserver(() => { changed = true; });
+  watch.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
 
   /** Helpers for one pass over the page as it is now: each style and box is read once a pass. */
   const pass = () => {
@@ -992,13 +1009,16 @@ const VISITOR_BEGIN = `(() => {
     samples++;
     // Every animation and transition is taken to its end; an endless one is held at a point of its cycle, a later point
     // at each sample (CYCLE points, the same on every page), so a ticker is seen where its cycle carries it.
-    for (const a of document.getAnimations()) {
+    const animations = document.getAnimations();
+    for (const a of animations) {
       let timing = null;
       try { timing = a.effect && a.effect.getComputedTiming(); } catch {}
       if (timing && timing.iterations === Infinity && typeof timing.duration === 'number' && timing.duration > 0) {
         try { a.pause(); a.currentTime = (timing.delay || 0) + timing.duration * (((samples - 1) % CYCLE) / CYCLE); } catch { a.cancel(); }
       } else { try { a.finish(); } catch { a.cancel(); } }
     }
+    if (!changed && !animations.length) return 0;
+    changed = false;
     const P = pass();
     if (!P.body) return 0;
     const w = document.createTreeWalker(P.body, NodeFilter.SHOW_TEXT);
@@ -1020,6 +1040,8 @@ const VISITOR_BEGIN = `(() => {
       else had.at = at;
       n++;
     }
+    // The read's own changes (an ellipsis's probe) are not the page's.
+    watch.takeRecords();
     return n;
   };
 

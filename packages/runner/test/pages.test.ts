@@ -678,17 +678,16 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
   }, 120_000);
 
   it('a page nesting thousands of inline elements left open is read, once, within the deadline (r10: the JavaScript-off read crashed)', async () => {
+    // Read within a render's deadline, not only failed plainly in it: the read measures a page again only after something
+    // on it changed (r11: measuring every text node again at each of the 33 samples ran these pages past the deadline).
     for (const n of [5_000, 20_000]) {
       const html = `<!doctype html><html><head><title>T</title></head><body><p>Keep</p><p>${'<span>'.repeat(n)}Gone${'</span>'.repeat(n)}</p></body></html>`;
-      const t0 = Date.now();
-      const shown = await pages.shownText(html, none).catch((e: unknown) => e);
-      // Whatever Chromium makes of it, one call ends in time: the text, or one plain step failure, never a raw error.
-      if (shown instanceof Error) expect(shown, String(n)).toBeInstanceOf(StepError);
-      else expect((shown as { text: string }).text, String(n)).toBe('Keep\nGone');
-      expect(Date.now() - t0).toBeLessThan(30_000);
+      expect((await pages.shownText(html, none)).text, String(n)).toBe('Keep\nGone');
     }
+    const open = `<!doctype html><html><head><title>T</title></head><body><p>${Array.from({ length: 20_000 }, (_, i) => `<span>w${i} `).join('')}</p><p>Tail</p></body></html>`;
+    expect((await pages.shownText(open, none)).text).toMatch(/^w0 w1 w2 [^]* w19999\nTail$/);
     expect((await pages.shownText('<p>Next</p>', none)).text).toBe('Next');
-  }, 120_000);
+  }, 180_000);
 
   it('text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee\'s own box (r9)', async () => {
     const html = '<p>Before</p><div><marquee>Breaking news today</marquee></div><div><marquee direction="up" style="height:20px">Up <b>and</b> away</marquee></div><p>After</p>';

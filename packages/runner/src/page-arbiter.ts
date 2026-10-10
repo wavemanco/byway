@@ -23,17 +23,20 @@
  *   separators; each changed line showing exactly the person's characters, where the person typed a space apart (in
  *   the flow or across boxes), and where the person typed none glued, except that two characters that stood side by
  *   side in the line before, with the same spacing in the deck (a space or none), keep the separator they had (matched
- *   by a shortest edit script of the line's characters); the separators between a changed line and its
- *   neighbours as before (apart where the person typed a space at that edge, also in the other order where the page
- *   had them so); a deleted line's neighbours parted by the stronger of the two separators it had (glued < in the
- *   flow < in the other order < across boxes), or, where it was glued at one edge and apart at the other, apart in the
- *   flow or across boxes (a glued neighbour can hide a box's edge the deletion brings out). The person's
- *   link words are in the link they bracketed (a deleted line has none, so its link words are not checked).
+ *   by a shortest edit script of the line's characters), and that where the page itself parted the line where its deck
+ *   has no space (a box's edge, a margin), right before a character the person kept or right after one, the person's
+ *   characters may meet there glued or parted as the page parted them (a menu's dish and its price); the separators
+ *   between a changed line and its neighbours as before (apart where the person typed a space at that edge, also in the
+ *   other order where the page had them so); a deleted line's neighbours parted by the stronger of the two separators
+ *   it had (glued < in the flow < in the other order < across boxes), or, where it was glued at one edge and apart at
+ *   the other, apart in the flow or across boxes (a glued neighbour can hide a box's edge the deletion brings out). The
+ *   person's link words are in the link they bracketed (a deleted line has none, so its link words are not checked).
  * - The check (`arbiterProblem`): Chromium's visitor read of the written page must be exactly that, separator for
  *   separator, and the text it hides from sight must be the page's own, run by run, in the same links. Any difference
  *   refuses the write, naming the line; one in what is hidden from sight says so (the person's words put out of sight,
  *   or the page's text pushed out of sight or brought into it), and one outside the changed lines says that other text
- *   would change.
+ *   would change. Text a stylesheet adds (a ::before's or ::after's content) must not stand on its own anywhere it did
+ *   not before, as in an element a deletion empties and keeps for its hook.
  *
  * Pure but for the reads (`locateLines`, `arbitrate`), which go to the renderer. Activity code only.
  */
