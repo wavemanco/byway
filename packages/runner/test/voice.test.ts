@@ -679,6 +679,16 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await shows(out.artifactId!)).toBe('Mon–Fri 7am–7pm\nSaturday 8am–5pm\nSun closed');
   });
 
+  it('punctuation glued to a line\'s last word in a box of its own is written into that box (r11 verifier)', async () => {
+    // Round 11 wrote the "!" outside the price, a new flex item a visitor sees apart, and refused every such answer.
+    const menu = page('<ul style="width:400px"><li style="display:flex;justify-content:space-between"><span>Cacio e pepe</span><span>£13</span></li></ul>');
+    const out = await (await open(menu)).answer('T\nCacio e pepe£13!');
+    expect(await b.store.artifacts.getText(out.artifactId!)).toBe(menu.replace('£13</span>', '£13!</span>'));
+    const chips = page('<style>.chip{display:inline-block;padding:2px 8px;margin-right:4px}</style><p>Tags: <span class="chip">New</span><span class="chip">Data</span></p>');
+    const chip = await (await open(chips)).answer('T\nTags: NewData!');
+    expect(await shows(chip.artifactId!)).toBe('Tags:\nNew\nData!');
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // Browsers move the font out of the table, right after "Middle".

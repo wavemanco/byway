@@ -207,11 +207,16 @@ interface Seq {
   hrefs: (string | null)[];
   /** Where cs[k] is in the text it was read from. */
   src: number[];
+  /** gaps[k] is apart across a box's edge on one row (a flex item's, a chip's), not between rows (ShownText.rowBreaks). */
+  row: boolean[];
 }
 
-function seqOf(text: string, hrefs?: readonly (string | null)[]): Seq {
-  const out: Seq = { cs: [], gaps: [], hid: [], hidFirst: false, gone: [], hrefs: [], src: [] };
+function seqOf(text: string, hrefs?: readonly (string | null)[], rowBreaks?: readonly number[]): Seq {
+  const out: Seq = { cs: [], gaps: [], hid: [], hidFirst: false, gone: [], hrefs: [], src: [], row: [] };
+  const rows = new Set(rowBreaks ?? []);
   let gap: Gap | undefined;
+  // Every line break of the gap so far stands between characters on one row.
+  let row = true;
   for (let i = 0; i < text.length; ) {
     const cp = text.codePointAt(i)!;
     const w = cp > 0xffff ? 2 : 1;
@@ -223,9 +228,12 @@ function seqOf(text: string, hrefs?: readonly (string | null)[]): Seq {
       if (out.cs.length) out.gone[out.cs.length - 1] = true;
     } else if (isHtmlSpace(c) || c === REVERSED) {
       const g: Gap = c === REVERSED ? 'R' : c === '\n' || c === '\r' ? 'B' : 'S';
+      if (g === 'B' && !rows.has(i)) row = false;
       gap = gap ? stronger(gap, g) : g;
     } else {
       out.gaps.push(out.cs.length ? (gap ?? 'G') : 'G');
+      out.row.push(gap === 'B' && row);
+      row = true;
       out.cs.push(c);
       out.hid.push(false);
       out.gone.push(false);
@@ -647,7 +655,7 @@ const wantText = (w: Want, d: number): string => {
  */
 export function arbiterProblem(exp: Expected, after: ShownText): { problem: string; line: number } | undefined {
   const linkRead = unmark(after.linked, after.hrefs);
-  const got = seqOf(after.text, linkRead.text === after.text ? linkRead.hrefs : undefined);
+  const got = seqOf(after.text, linkRead.text === after.text ? linkRead.hrefs : undefined, after.rowBreaks);
   const want = exp.body;
   const nearest = (k: number): number => {
     const at = want.lineAt[k];
@@ -699,8 +707,11 @@ export function arbiterProblem(exp: Expected, after: ShownText): { problem: stri
       const g = got.gaps[d]!;
       if (g === 'G') why = `a browser would run words together that your lines keep apart: ${shows}`;
       else if (g === 'R' || w === 'R') why = `a browser would show words in another order than your lines have them: ${shows}`;
+      // Apart across a box's edge on the same row (a flex item's, a chip's) is a gap there, not a line break.
+      else if (w === 'G' && g === 'B' && got.row[d]) why = `a browser would part words that your lines run together, at the edge of a box on the same row (shown as " / "): ${shows}`;
       else if (w === 'G') why = `a browser would show ${g === 'B' ? 'a line break' : 'a space'} that your lines do not have: ${shows}`;
       else if (w === 'B') why = `a browser would show on one line what it showed on separate lines: ${shows}`;
+      else if (got.row[d]) why = `a browser would part, at the edge of a box on the same row (shown as " / "), words it showed in one run of text: ${shows}`;
       else why = `a browser would show on separate lines what it showed on one line: ${shows}`;
     }
     return say(line, why);

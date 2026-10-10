@@ -169,7 +169,8 @@ describe('the check of a written page: Chromium against the person\'s edit, what
     });
     const one = pageOf('<table><tr><td>Sourdough loaf</td><td>$9</td></tr></table>');
     expect((await check(one, 'T\nSourdough loaf\n$10', pageOf('<table><tr><td>Sourdough</td><td>loaf</td><td>$10</td></tr></table>')))?.problem).toBe(
-      'byway could not put line 3 on this page exactly as you wrote it, because a browser would show on separate lines what it showed on one line: it would show "Sourdough / loaf / $10". Change line 3 again, or leave it as it was offered.',
+      // Cells side by side are boxes on one row: the refusal says so, not that the line breaks (r11 verifier).
+      'byway could not put line 3 on this page exactly as you wrote it, because a browser would part, at the edge of a box on the same row (shown as " / "), words it showed in one run of text: it would show "Sourdough / loaf / $10". Change line 3 again, or leave it as it was offered.',
     );
     // An empty cell between shows nothing a visitor reads: the words are apart across boxes, as before.
     expect(await check(one, 'T\nSourdough loaf\n$10', pageOf('<table><tr><td>Sourdough loaf</td><td></td><td>$10</td></tr></table>'))).toBeUndefined();
@@ -392,7 +393,11 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await check(menu, 'T\nCacio e pepe£13\nRavioli di zucca£16', menu.replace('£15', '£16'))).toBeUndefined();
     expect(await check(menu, 'T\nGnocchi£13\nRavioli di zucca£15', menu.replace('Cacio e pepe', 'Gnocchi'))).toBeUndefined();
     // A break where the person's new characters meet away from that edge is still refused.
-    expect((await check(menu, 'T\nCacio e Brightest£13\nRavioli di zucca£15', menu.replace('<span>Cacio e pepe</span>', '<span>Cacio e Bright</span><span>est</span>')))?.problem).toMatch(/would show a line break that your lines do not have/);
+    expect((await check(menu, 'T\nCacio e Brightest£13\nRavioli di zucca£15', menu.replace('<span>Cacio e pepe</span>', '<span>Cacio e Bright</span><span>est</span>')))?.problem).toMatch(/would part words that your lines run together, at the edge of a box on the same row \(shown as " \/ "\): it would show "Cacio e Bright \/ est \/ £13/);
+    // Text glued to the price, which round 11 put outside the price's box, now goes into it (page-copy.test.ts); put
+    // outside, it shows apart on the same row, and the refusal says so, not that a line breaks (r11 verifier).
+    expect(await check(menu, 'T\nCacio e pepe£13!\nRavioli di zucca£15', menu.replace('£13</span>', '£13!</span>'))).toBeUndefined();
+    expect((await check(menu, 'T\nCacio e pepe£13!\nRavioli di zucca£15', menu.replace('£13</span>', '£13</span>!')))?.problem).toMatch(/would part words that your lines run together, at the edge of a box on the same row \(shown as " \/ "\): it would show "Cacio e pepe \/ £13 \/ !/);
     // A drop cap: its first letter floats beside the rest of the word, which a visitor reads as one word.
     const cap = pageOf('<style>.d::first-letter{float:left;font-size:3em;line-height:1;margin-right:8px}</style><p class="d">Once upon a time there was bread.</p><p>End</p>');
     expect((await offer(cap)).offered).toEqual(['T', 'Once upon a time there was bread.', 'End']);

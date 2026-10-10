@@ -1033,6 +1033,25 @@ describe('a gap between two characters the person kept keeps the page\'s own whi
   });
 });
 
+describe('text glued to a line\'s first or last kept word goes into that word\'s slot (F07, r11 verifier)', () => {
+  it('punctuation or a suffix glued to the last word stays in its box: a menu\'s price, a tag chip, a price per loaf', () => {
+    // Round 11 put the "!" in the shallowest slot, outside the price's own element, where a flex row or an inline
+    // block shows it apart: a write no answer could make.
+    const menu = '<li style="display:flex;justify-content:space-between"><span>Cacio e pepe</span><span>£13</span></li>';
+    expect(run(menu, set(1, 'Cacio e pepe£13!'))).toMatchObject(clean('<li style="display:flex;justify-content:space-between"><span>Cacio e pepe</span><span>£13!</span></li>'));
+    const chips = '<p>Tags: <span class="chip">New</span><span class="chip">Data</span></p>';
+    expect(run(chips, set(1, 'Tags: NewData!'))).toMatchObject(clean('<p>Tags: <span class="chip">New</span><span class="chip">Data!</span></p>'));
+    const price = '<p class="row"><span class="name">Rye</span> <strong class="price">$9</strong></p>';
+    expect(run(price, set(1, 'Rye $9/loaf'))).toMatchObject(clean('<p class="row"><span class="name">Rye</span> <strong class="price">$9/loaf</strong></p>'));
+    // At the line's start, glued to its first word.
+    expect(run('<p><span class="chip">Sale</span> today</p>', set(1, '¡Sale today'))).toMatchObject(clean('<p><span class="chip">¡Sale</span> today</p>'));
+    // With a space between, new words go beside the word as before: into the shallowest slot reachable from it.
+    expect(run(chips, set(1, 'Tags: NewData too'))).toMatchObject(clean('<p>Tags: <span class="chip">New</span><span class="chip">Data</span> too</p>'));
+    // Never into a link the brackets keep them out of.
+    expect(run('<p>Read <a href="/x">more</a></p>', set(1, 'Read [more].'))).toMatchObject(clean('<p>Read <a href="/x">more</a>.</p>'));
+  });
+});
+
 describe('markup that is not copy stays byte for byte (F07, r7)', () => {
   it('an emptied element holding a script, style, noscript, template or comment is kept, with those bytes', () => {
     for (const inner of ['<script>window.x=1</script>', '<noscript>Enable JS</noscript>', '<template><p>T</p></template>', '<!-- keep -->', '<style>p{}</style>']) {

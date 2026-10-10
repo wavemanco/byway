@@ -1727,9 +1727,11 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
       else {
         const left = na + pp > 0 ? ns[na + pp - 1] : undefined;
         const right = n1 - q < nc.length ? ns[n1 - q] : undefined;
-        // Words added before the line's first kept word go beside it, and after its last beside that one.
-        if (left === undefined) target = right === undefined ? shallowest(group[0]!, group.at(-1)!) : nearLeft(right);
-        else if (right === undefined) target = nearRight(left);
+        // Words added before the line's first kept word go beside it, and after its last beside that one; text glued to
+        // that word (no space between) goes into its slot, so it stays in the word's own box (a menu's price that a flex
+        // row shows apart, a tag chip), where a slot outside it would show a gap the person did not type.
+        if (left === undefined) target = right === undefined ? shallowest(group[0]!, group.at(-1)!) : nc[n1 - q - 1] !== ' ' && nc[n1 - q] !== ' ' && allowed(right) ? right : nearLeft(right);
+        else if (right === undefined) target = nc[na + pp] !== ' ' && nc[na + pp - 1] !== ' ' && allowed(left) ? left : nearRight(left);
         else target = left === right && allowed(left) ? left : shallowest(Math.min(left, right), Math.max(left, right));
       }
       for (let k = na + pp; k < n1 - q; k++) ns[k] = target;

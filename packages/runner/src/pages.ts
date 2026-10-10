@@ -151,6 +151,11 @@ export interface ShownText {
    * read without it (the e2e scenarios' model) has none.
    */
   generated?: string[];
+  /**
+   * Where in `text` a line break stands between two characters on one row, apart across a box's edge (a flex item's, a
+   * chip's), not on rows of their own: only to say so when a write is refused. A read without it has none.
+   */
+  rowBreaks?: number[];
 }
 
 /** The markers in ShownText.linked: noncharacters, which a page does not show. */
@@ -1220,8 +1225,11 @@ const VISITOR_BEGIN = `(() => {
       if (box) breaks++;
       todo.push({ child: c.firstChild, box, el: c, n0: all.length });
     }
-    // Between two neighbouring shown characters (see ShownText).
+    // Between two neighbouring shown characters (see ShownText). sepRow: the line break returned stands between two
+    // characters on one row (a box's edge parts them there), not between rows.
+    let sepRow = false;
     const sep = (a, b) => {
+      sepRow = false;
       const structural = b.breaks > a.breaks;
       const flow = b.ws > a.ws;
       if (a.cap && !b.cap && !structural && !flow) return '';
@@ -1253,6 +1261,7 @@ const VISITOR_BEGIN = `(() => {
           gap = cb > ca + tol ? apart : va.l - vb.r;
         } else gap = apart;
         if (gap <= tol) return '';
+        sepRow = structural;
         return structural ? '\\n' : ' ';
       }
       if (structural) return '\\n';
@@ -1263,10 +1272,12 @@ const VISITOR_BEGIN = `(() => {
     let text = (hidFirst ? HID : '') + (goneFirst ? GONE : '');
     let linked = text;
     let open = -1;
+    const rowBreaks = [];
     for (let k = 0; k < all.length; k++) {
       const x = all[k];
       const s = k > 0 ? sep(all[k - 1], x) : '';
       if (x.link !== open && open >= 0) { linked += ${JSON.stringify(LINK_CLOSE)}; open = -1; }
+      if (sepRow && s) rowBreaks.push(text.length);
       text += s;
       linked += s;
       if (x.link !== open) {
@@ -1278,7 +1289,7 @@ const VISITOR_BEGIN = `(() => {
       linked += x.starts + x.c + x.ends + after;
     }
     if (open >= 0) linked += ${JSON.stringify(LINK_CLOSE)};
-    return { title: pageTitle, text, linked, hrefs, hidden, unlaid, generated };
+    return { title: pageTitle, text, linked, hrefs, hidden, unlaid, generated, rowBreaks };
   };
   Object.defineProperty(window, ${JSON.stringify(READ_KEY)}, { value: { loadAll, scroll, sample, final }, configurable: true });
   return true;
