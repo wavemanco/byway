@@ -77,11 +77,13 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * top in steps of 720 px (longer on a page taller than 21,600 px, so there are at most 30), then to its end, then back to
  * the top, where the clock runs on in the same steps; at each step a scroll event is dispatched, the clock runs 0.2 s and
  * the page is sampled, so every page is sampled at the same 33 instants, 1.5 s to 7.9 s after it loaded. A sample takes
- * every animation and transition to its end, holds an endless one at the next of eight points of its cycle, and measures
- * each text node a style shows (visible, with an ink of at least 0.05: the alpha of its fill colour, or of a stroke, times
- * its opacity counting filter: opacity()), unless it was measured with its present text where it is now (its box and
- * what clips it). A node keeps the measurement where most of its characters are seen, then one taken while it was on the
- * screen, then the later one. So a section a script reveals as the visitor scrolls, by its opacity or by moving it into
+ * every animation and transition to its end and holds an endless one at the next of eight points of its cycle. Then, if
+ * the document changed since the last sample (a script's change, seen by a mutation observer) or an animation runs, it
+ * measures each text node a style shows (visible, with an ink of at least 0.05: the alpha of its fill colour, or of a
+ * stroke, times its opacity counting filter: opacity()), unless it was measured with its present text where it is now
+ * (its box and what clips it); else it measures nothing, so text a fixed header holds keeps the place it was measured at.
+ * A node keeps the measurement where most of its characters are seen, then one taken while it was on the screen, then
+ * the later one. So a section a script reveals as the visitor scrolls, by its opacity or by moving it into
  * view (a slide, a flip), a carousel's slides and a ticker are read where they show, even when the script hides them
  * again on the way back. A node whose text a script changed after its last measurement is measured at the end.
  *
