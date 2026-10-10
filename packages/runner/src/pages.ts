@@ -84,15 +84,17 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * (its box and what clips it); else it measures nothing, so text a fixed header holds keeps the place it was measured at.
  * A node keeps the measurement where most of its characters are seen, then one taken while it was on the screen, then
  * the later one. So a section a script reveals as the visitor scrolls, by its opacity or by moving it into
- * view (a slide, a flip), a carousel's slides and a ticker are read where they show, even when the script hides them
- * again on the way back. A node whose text a script changed after its last measurement is measured at the end.
+ * view (a slide, a flip), a carousel's slides that move or fade and a ticker are read where they show, even when the
+ * script hides them again on the way back. Whether a node is laid out at all is read at the end: a slide a script hides
+ * by switching its display is read as not laid out unless it shows at the read's last instant. A node whose text a
+ * script changed after its last measurement is measured at the end.
  *
  * What a character is. Each character (code point) that is not HTML whitespace, in the body's text nodes (not in a
  * script, a style, a textarea, a title, a template or a noscript), in document order:
- * - not laid out (its node has no box: display none, a closed details, an option, a canvas's or video's fallback, the
- *   content of a box with content-visibility: hidden, which skips its content only where layout containment applies,
- *   not on an inline box or a table row; text in a display: contents element is laid out where its parent is): not
- *   in the text, and not listed;
+ * - not laid out (its node has no box at the end of the read: display none, a closed details, an option, a canvas's
+ *   or video's fallback, the content of a box with content-visibility: hidden, which skips its content only where
+ *   layout containment applies, not on an inline box or a table row; text in a display: contents element is laid out
+ *   where its parent is): not in the text, and not listed;
  * - shown: where it was measured, every clip keeps the middle of its box: every ancestor whose overflow is hidden or clip
  *   or that has paint containment (an absolutely or fixed positioned element escapes those below its containing block),
  *   an absolutely or fixed positioned ancestor's `clip` rect, and the bounding box of an ancestor's clip-path inset(),
