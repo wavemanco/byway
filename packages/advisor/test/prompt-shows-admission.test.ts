@@ -64,25 +64,25 @@ describe("a step takes in only what its prompt shows: a person's answer whose on
 describe('COMPOSED-PROMPT: a composed step may take in only what its reused prompt shows', () => {
   it('names the step, the port and the prompt', () => {
     expect(promptMessages(draftFix, c3)).toEqual([
-      'step "apply-cut" takes in the critique, but its prompt "product.c3.ai-draft" never shows it to the model on prose: use a prompt that shows it, or leave the port out',
-      'step "apply-cut" takes in the work, but its prompt "product.c3.ai-draft" never shows it to the model on prose: use a prompt that shows it, or leave the port out',
+      'step "apply-cut" takes in the critique port, but its prompt "product.c3.ai-draft" never shows it to the model on prose: use a prompt that shows it, or leave the port out',
+      'step "apply-cut" takes in the artifact port, but its prompt "product.c3.ai-draft" never shows it to the model on prose: use a prompt that shows it, or leave the port out',
     ]);
     expect(promptMessages(imageFix, c3)).toEqual([
-      'step "apply-cut" takes in the critique, but its prompt "product.c3.asset" never shows it to the model on prose: use a prompt that shows it, or leave the port out',
+      'step "apply-cut" takes in the critique port, but its prompt "product.c3.asset" never shows it to the model on prose: use a prompt that shows it, or leave the port out',
     ]);
   });
 
   it("a seed that takes in a critique, a brief or a taste: no seed prompt renders them", () => {
     const seedTakes = edited(c3, 'seed-angle', (n) => ({ ...n, consumes: ['intent', 'taste'] }));
     expect(promptMessages(seedTakes, c3)).toEqual([
-      'step "seed-angle" takes in the taste, but its prompt "product.c3.seed-angle" never shows it to the model on prose: use a prompt that shows it, or leave the port out',
+      'step "seed-angle" takes in the taste port, but its prompt "product.c3.seed-angle" never shows it to the model on prose: use a prompt that shows it, or leave the port out',
     ]);
   });
 
   it("a relay link that reads the brief: its prompt's brief slot holds the shot it makes (\"Shot N\"), never the brief", () => {
     const clipReads = edited(c5, 'clip', (n) => ({ ...n, reads: ['brief'] }));
     expect(promptMessages(clipReads, c5)).toEqual([
-      'step "clip" takes in the brief, but its prompt "product.c5.clip" never shows it to the model on media: use a prompt that shows it, or leave the port out',
+      'step "clip" takes in the brief port, but its prompt "product.c5.clip" never shows it to the model on media: use a prompt that shows it, or leave the port out',
     ]);
   });
 

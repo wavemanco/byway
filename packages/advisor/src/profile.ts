@@ -128,26 +128,6 @@ function promptProblem(step: Step, prompt: string, medium: Medium | undefined, p
   return undefined;
 }
 
-/** A port in plain words, for a refusal that names it. */
-const PORT_WORDS: Readonly<Record<PortType, string>> = {
-  intent: 'the problem',
-  seed: 'the random string',
-  'option_set<artifact>': 'the options',
-  taste: 'the taste',
-  brief: 'the brief',
-  artifact: 'the work',
-  view: 'the view of the work',
-  refs: 'the references',
-  critique: 'the critique',
-  score: 'a score',
-  asset: 'the images beside the work',
-  anchor: 'the start frame',
-  tells: 'the tell catalog',
-  voice: 'your words',
-  cred: 'a credential',
-  failed: 'the failed prompts',
-};
-
 /**
  * The ports a step takes in that its prompt never shows the model (@byway/recipe promptShows, ADR-0097): the runner fills
  * a slot for each, and the template never renders it. A step that says it takes in what its prompt never shows would be
@@ -246,7 +226,7 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
       if (problem) add('prompt', `${path}.prompt`, problem);
       else if (recipe.medium) {
         for (const port of unshownPorts(step, recipe.medium)) {
-          add('prompt', `${path}.prompt`, `step "${step.id}" takes in ${PORT_WORDS[port]}, but its prompt "${step.prompt}" never shows it to the model on ${recipe.medium}: use a prompt that shows it, or leave the port out`);
+          add('prompt', `${path}.prompt`, `step "${step.id}" takes in the ${port} port, but its prompt "${step.prompt}" never shows it to the model on ${recipe.medium}: use a prompt that shows it, or leave the port out`);
         }
       }
     }
