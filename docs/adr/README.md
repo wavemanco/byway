@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**97 records:** 90 accepted (15 of them by continuation, awaiting ratification; 35 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**98 records:** 91 accepted (15 of them by continuation, awaiting ratification; 36 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -99,6 +99,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0089](0089-recipe-ir-optional-reads.md) | Recipe IR: model steps may read a port when an optional branch made it | Accepted | Delegated | 2026-10-09 02:00 |
 | [ADR-0093](0093-every-loop-exit-at-the-cap-follows-one-policy.md) | Every loop exit at the cap follows one policy; a loop a person holds ends only on their answer | Accepted | Delegated | 2026-10-09 05:30 |
 | [ADR-0098](0098-recipe-limits-disclosure-and-held-voice.md) | Recipe limits, a diff that means "runs the same", and the held voice at run time | Accepted | Delegated | 2026-10-09 05:30 |
+| [ADR-0097](0097-a-step-takes-in-only-what-its-prompt-shows.md) | A step takes in only what its prompt shows | Accepted | Delegated | 2026-10-09 17:15 |
 
 ## Product & program
 
