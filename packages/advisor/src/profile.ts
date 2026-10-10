@@ -25,9 +25,9 @@ import { flowRecipe } from '@byway/validator';
 /**
  * The composed validator profile of ADR-0058, enforced in code on top of the validator: a composed recipe may use only
  * registered blocks with knobs in range, reuse only the catalog's step prompts in the role and medium they are written
- * for (frozen prompts stay untouched), take in only what a reused prompt shows the model (ADR-0097), cite no study manipulation and no exception its nearest canonical recipe does not
- * declare, and must keep the protected human checkpoints (VOICE, and the author's own writing in C6/C6a) in substance
- * as well as in name (COMP-1).
+ * for (frozen prompts stay untouched), take in only what a reused prompt shows the model (ADR-0097), cite no study
+ * manipulation and no exception its nearest canonical recipe does not declare, and must keep the protected human
+ * checkpoints (VOICE, and the author's own writing in C6/C6a) in substance as well as in name (COMP-1).
  *
  * Every protection here is read from what the recipe runs (@byway/recipe semantics, ADR-0092), never from what a step
  * declares: a checkpoint counts only where a person's write runs every time; writers are writers by role and actor.
