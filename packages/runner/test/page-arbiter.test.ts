@@ -526,6 +526,34 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     // The tweened page reads the same every time: written back unchanged, it is let through.
     expect(await check(month, 'T\n$29/month', month)).toBeUndefined();
   }, 60_000);
+
+  it('right-to-left pages: native digits, numbers, Latin names and left-to-right boxes read in the order a visitor reads them (r11 verifier)', async () => {
+    const html = pageOf(
+      [
+        '<main dir="rtl" lang="ar">',
+        '<h1>مخبز النور</h1>',
+        '<p>افتتحنا المخبز عام ١٩٩٨ في القاهرة</p>',
+        '<p>اتصل بنا: ٠١٢٣٤٥ أو ٢٫٥ كيلو</p>',
+        '<p>اتصل بنا على 0123 456 789</p>',
+        '<p>قهوة Blue Bottle المختصة</p>',
+        '<div style="display:flex;justify-content:space-between;width:400px"><span>Cold brew</span><span>3.5 JOD</span></div>',
+        '</main>',
+        '<div dir="rtl" lang="he"><p>פתוח: א׳–ו׳, 7:00–14:00</p></div>',
+      ].join(''),
+    );
+    const { offered, why } = await offer(html);
+    // Round 11 read Arabic-Indic digits as right-to-left letters, and two left-to-right runs or boxes of a right-to-left
+    // paragraph in the visual order, so it offered none of these but the heading.
+    expect(why).toEqual({});
+    expect(offered).toEqual(['T', 'مخبز النور', 'افتتحنا المخبز عام ١٩٩٨ في القاهرة', 'اتصل بنا: ٠١٢٣٤٥ أو ٢٫٥ كيلو', 'اتصل بنا على 0123 456 789', 'قهوة Blue Bottle المختصة', 'Cold brew3.5 JOD', 'פתוח: א׳–ו׳, 7:00–14:00']);
+    const answer = (k: number, line: string) => offered.map((x, i) => (i === k ? line : x)).join('\n');
+    expect(await check(html, answer(2, 'افتتحنا المخبز عام ١٩٩٨ في الإسكندرية'), html.replace('القاهرة', 'الإسكندرية'))).toBeUndefined();
+    expect(await check(html, answer(6, 'Iced brew3.5 JOD'), html.replace('Cold', 'Iced'))).toBeUndefined();
+    expect(await check(html, answer(4, 'اتصل بنا على 0123 456 790'), html.replace('789', '790'))).toBeUndefined();
+    // A left-to-right word a script reverses in a left-to-right page is still in another order.
+    const ltr = pageOf('<p><bdo dir="rtl">Hello world</bdo> after</p><p>Plain</p>');
+    expect(await offer(ltr)).toMatchObject({ offered: ['T', 'Plain'], why: { 'Hello world after': 'layout' } });
+  }, 60_000);
 });
 
 describe('the reader\'s model of a browser (the fake renderer the e2e scenarios use)', () => {

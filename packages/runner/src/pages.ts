@@ -906,7 +906,10 @@ const VISITOR_BEGIN = `(() => {
     };
     const RTL = /[\\u0590-\\u08ff\\ufb1d-\\ufdcf\\ufdf0-\\ufdff\\ufe70-\\ufeff]|\\ud802[\\udc00-\\udfff]|\\ud803[\\udc00-\\ude7f]|\\ud83a/;
     const LTR = /^[\\p{L}\\p{N}]/u;
-    const dirOf = (c) => RTL.test(c) ? 'R' : LTR.test(c) ? 'L' : 'N';
+    // Arabic-Indic and Extended Arabic-Indic digits and the Arabic decimal and thousands separators (bidi class AN) run
+    // left to right, as every number does, though they sit in the Arabic block.
+    const NUMBER = /[\\u0660-\\u066c\\u06f0-\\u06f9]/;
+    const dirOf = (c) => NUMBER.test(c) ? 'L' : RTL.test(c) ? 'R' : LTR.test(c) ? 'L' : 'N';
     /** Where a text node is now, and what clips it, on the page: a node measured again only when this changes. */
     const where = (n) => {
       const parent = n.parentElement;
@@ -974,6 +977,7 @@ const VISITOR_BEGIN = `(() => {
       // Punctuation and symbols take a direction from the letters around them, as the bidi algorithm resolves them: the
       // letters' on both sides when they agree, else the paragraph's.
       const base = style(block || parent).direction === 'rtl' ? 'R' : 'L';
+      for (const ch of chars) ch.bd = base;
       for (let k = 0; k < chars.length; k++) {
         if (chars[k].d !== 'N') continue;
         let a = k - 1, b = k + 1;
@@ -1150,7 +1154,7 @@ const VISITOR_BEGIN = `(() => {
             flush();
             const f = finByIndex.get(i);
             const now = seenAt(f) ? f : null;
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, breaks, ws, link, marquee: rec.marquee, when: rec.when, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, breaks, ws, link, marquee: rec.marquee, when: rec.when, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
           } else {
             run = (run || '') + starts + c + ends;
             unseen();
@@ -1235,10 +1239,19 @@ const VISITOR_BEGIN = `(() => {
         const tol = Math.max(0.5, 0.1 * Math.min(a.fs, b.fs));
         const ca = (A.box.l + A.box.r) / 2, cb = (B.box.l + B.box.r) / 2;
         const va = A.vis || A.box, vb = B.vis || B.box;
+        // Two characters of one direction stand in its order, else a visitor reads them in the other order: except two
+        // apart, in a paragraph or box of the other direction, which a visitor reads in that direction's order (left-to-
+        // right runs a right-to-left paragraph parts, such as a phone number's groups, or left-to-right boxes in a
+        // right-to-left flex row, read right to left; and the other way round).
+        const apart = Math.max(vb.l - va.r, va.l - vb.r);
         let gap;
-        if (a.d === 'L' && b.d === 'L') { if (cb < ca - tol) return ${JSON.stringify(REVERSED)}; gap = vb.l - va.r; }
-        else if (a.d === 'R' && b.d === 'R') { if (cb > ca + tol) return ${JSON.stringify(REVERSED)}; gap = va.l - vb.r; }
-        else gap = Math.max(vb.l - va.r, va.l - vb.r);
+        if (a.d === 'L' && b.d === 'L') {
+          if (cb < ca - tol && !(a.bd === 'R' && b.bd === 'R' && apart > tol)) return ${JSON.stringify(REVERSED)};
+          gap = cb < ca - tol ? apart : vb.l - va.r;
+        } else if (a.d === 'R' && b.d === 'R') {
+          if (cb > ca + tol && !(a.bd === 'L' && b.bd === 'L' && apart > tol)) return ${JSON.stringify(REVERSED)};
+          gap = cb > ca + tol ? apart : va.l - vb.r;
+        } else gap = apart;
         if (gap <= tol) return '';
         return structural ? '\\n' : ' ';
       }
