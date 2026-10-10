@@ -478,9 +478,10 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       ['<p><bdo dir="rtl">Hi</bdo></p>', 'H﷮i'],
       // Punctuation takes the direction of the letters around it, so "New!" is as reversed as "New" (r10 generator).
       ['<p><span style="float:right">New!</span>Annual</p>', 'New!﷮Annual'],
-      // A gap beside a character its box cuts off is measured from the part that shows (r10 generator).
-      ['<p><span style="display:inline-block;width:.15em;overflow:hidden;vertical-align:bottom">MW</span> Menu</p>', 'M﷭\nMenu'],
-      ['<p><span style="display:inline-block;width:.15em;overflow:hidden;vertical-align:bottom">MW</span>Menu</p>', 'M﷭Menu'],
+      // A gap beside a character its box cuts off is measured from the part that shows (r10 generator); a character whose
+      // middle the box cuts off is not seen (r10 verifier).
+      ['<p><span style="display:inline-block;width:.5em;overflow:hidden;vertical-align:bottom">MW</span> Menu</p>', 'M﷭\nMenu'],
+      ['<p><span style="display:inline-block;width:.5em;overflow:hidden;vertical-align:bottom">MW</span>Menu</p>', 'M﷭Menu'],
       // content-visibility: hidden skips content only where it applies (not on an inline box or a table row); text in
       // a display: contents element shows (r10 hand cases).
       ['<p>Sale<span hidden="until-found"> ends</span> today</p>', 'Sale ends today'],
@@ -535,6 +536,72 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     ]);
   }, 60_000);
 
+  it('a character a box cuts off is shown only where the box keeps its middle: a sliver of a row is hidden from sight (r10 verifier)', async () => {
+    // Round 9's reproduction, at the default line height: the 20 px box keeps the top 2 px of the second row.
+    const fixed = await pages.shownText(body('<div style="height:20px;overflow:hidden;width:200px"><p style="margin:0">Fresh bread baked every single morning by hand in the oven</p></div>'), none);
+    expect(fixed.text).toBe('Fresh bread baked every﷭');
+    expect(fixed.hidden).toEqual([['single morning by hand in the oven', null]]);
+    // Tailwind's h-20 overflow-hidden card: 80 px with rows of 24 px, so the fourth row shows only its top 5 px.
+    const card = await pages.shownText(body('<p style="height:80px;overflow:hidden;width:180px;line-height:24px;margin:0">Our classic loaf, slow proved for a deep flavour. Slice it thin and toast it. Best with salted butter and honey.</p>'), none);
+    expect(card.text).toBe('Our classic loaf, slow proved for a deep flavour. Slice it thin and﷭');
+    expect(card.hidden).toEqual([['toast it. Best with salted butter and honey.', null]]);
+    // Cut along its width to a sliver: hidden (a box that keeps a letter's middle shows it, as the separators test has it).
+    expect((await pages.shownText(body('<p><span style="display:inline-block;width:.15em;overflow:hidden;vertical-align:bottom">MW</span> Menu</p>'), none)).text).toBe('﷭Menu');
+  }, 60_000);
+
+  it('a colour that leaves the text no ink hides it: a clear text fill, as Chromium paints with, or a colour almost clear (r10 verifier)', async () => {
+    const shown = await pages.shownText(
+      body(
+        [
+          '<p>Rated <span style="-webkit-text-fill-color:transparent">5</span> stars</p>',
+          '<p>Sale <span style="color:rgba(0,0,0,0.02)">ends</span> today</p>',
+          '<p>Open <span style="color:rgba(0,0,0,0.2);opacity:0.2">late</span> daily</p>',
+          // Gradient text: a clear fill over a background clipped to the text shows; a stroke shows too.
+          '<h2 style="-webkit-text-fill-color:transparent;background:linear-gradient(red,blue);-webkit-background-clip:text;background-clip:text">Gradient</h2>',
+          '<h2 style="-webkit-text-fill-color:transparent;-webkit-text-stroke:1px black">Outline</h2>',
+        ].join(''),
+      ),
+      none,
+    );
+    expect(shown.text).toBe('Rated﷭ stars\nSale﷭ today\nOpen﷭ daily\nGradient\nOutline');
+    expect(shown.hidden).toEqual([['5', null], ['ends', null], ['late', null]]);
+  }, 60_000);
+
+  it('lists the text a stylesheet adds on an element that shows none of the page\'s own text (r10 verifier: generated content)', async () => {
+    const css = '<style>p:empty::before{content:"Coming soon"}li::before{content:"\\2713  "}.ic::before{content:"\\2605"}.n::before{content:"New: "}</style>';
+    const shown = await pages.shownText(body(`${css}<p id="s"></p><p class="n">Spring sale</p><ul><li></li><li>Fresh</li></ul><i class="ic"></i><span class="ic" style="opacity:0"></span><p>End</p>`), none);
+    // Beside the page's own text ("New: Spring sale", "✓ Fresh") it is decoration, not listed; faded, it is not seen.
+    expect(shown.generated).toEqual(['Coming soon', '✓', '★']);
+    expect(shown.text).toBe('Spring sale\nFresh\nEnd');
+  }, 60_000);
+
+  it('a drop cap (a floated first letter) is read as part of its word, as a visitor reads it (r10 verifier)', async () => {
+    const css = '<style>.d::first-letter{float:left;font-size:3em;line-height:1;margin-right:8px}.i::first-letter{initial-letter:3;margin-right:6px}</style>';
+    for (const [b, want] of [
+      ['<p class="d">Once upon a time</p>', 'Once upon a time'],
+      ['<div class="d"><p>“Twice upon a time</p></div>', '“Twice upon a time'],
+      ['<p class="i">Thrice upon a time</p>', 'Thrice upon a time'],
+      // A letter on its own before a space stays apart from the next word.
+      ['<p class="d">A time</p>', 'A time'],
+    ]) expect((await pages.shownText(body(`${css}${b}`), none)).text, b).toBe(want);
+  }, 60_000);
+
+  it('a section that waits out of view (moved aside by a transform) for a scroll script is read where it shows once revealed (r10 verifier)', async () => {
+    const css = '<style>body{overflow-x:hidden}.s{transition:transform .6s}.s.l{transform:translate3d(100%,0,0)}.s.r{transform:translate3d(-100%,0,0)}.s.f{transform:perspective(2500px) rotateY(-100deg);backface-visibility:hidden}.s.in{transform:none}</style>';
+    const tall = '<div style="height:1500px"></div>';
+    // As AOS 2 does it: a scroll listener adds the class once the section's top is on the screen.
+    const script = '<script>const go = () => document.querySelectorAll(".s").forEach((e) => { if (e.getBoundingClientRect().top < innerHeight - 50) e.classList.add("in"); }); addEventListener("scroll", go); go();</script>';
+    const shown = await pages.shownText(body(`${css}<p>Top</p>${tall}<div class="s l"><h3>Websites</h3><p>Fast sites you can update.</p></div>${tall}<div class="s r"><h3>Brand strategy</h3></div>${tall}<div class="s f"><h3>Tidewater Coffee</h3></div>${tall}${script}`), none);
+    expect(shown.text).toBe('Top\nWebsites\nFast sites you can update.\nBrand strategy\nTidewater Coffee');
+    expect(shown.hidden).toEqual([]);
+    // A carousel that moves its track by a transform: each slide is read where it shows.
+    const carousel = await pages.shownText(
+      body('<div style="width:400px;overflow:hidden"><div id="t" style="display:flex;transition:transform .5s"><p style="flex:0 0 400px;margin:0">First slide</p><p style="flex:0 0 400px;margin:0">Second slide</p></div></div><script>let i = 0; setInterval(() => { i = (i + 1) % 2; document.getElementById("t").style.transform = "translateX(" + (-400 * i) + "px)"; }, 3000);</script>'),
+      none,
+    );
+    expect(carousel.text).toBe('First slide\nSecond slide');
+  }, 60_000);
+
   it('runs a page\'s scripts the same way each time: a stopped clock, a seeded Math.random, however long the page is (r10)', async () => {
     const live = (tail: string) =>
       body(
@@ -548,6 +615,13 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     // A script that moves within the document (history.pushState) or tries to leave it (location) does not stop the read.
     const moving = body('<p>Stay</p><script>history.pushState(null, "", "/elsewhere"); setTimeout(() => { location.href = "/other"; }, 100);</script>');
     expect((await pages.shownText(moving, none)).text).toBe('Stay');
+  }, 60_000);
+
+  it('runs animation frames on the read\'s clock, twenty a second, so an animation that draws every frame ends where its time says (r10 verifier: GSAP)', async () => {
+    // A count-up drawn every frame for two seconds, as GSAP or a counter script draws it: it ends at its last value, and
+    // the frames are counted at the read's rate (Playwright's own frames made a GSAP page's read take 8 to 12 s).
+    const html = body('<p id="n">0</p><p id="f"></p><script>let t0 = null, frames = 0; const tick = (now) => { if (t0 === null) t0 = now; frames++; const k = Math.min(1, (now - t0) / 2000); document.getElementById("n").textContent = Math.round(k * 2500); if (k < 1) requestAnimationFrame(tick); else document.getElementById("f").textContent = "frames " + frames; }; requestAnimationFrame(tick); const id = requestAnimationFrame(() => { document.body.append("never"); }); cancelAnimationFrame(id);</script>');
+    expect((await pages.shownText(html, none)).text).toBe('2500\nframes 41');
   }, 60_000);
 
   it('reads a page whose sections a script reveals as the visitor scrolls, revealed, whatever the script does on the way back (r10)', async () => {

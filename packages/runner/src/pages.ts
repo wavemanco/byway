@@ -129,6 +129,12 @@ export interface ShownText {
   hrefs: string[];
   hidden: [text: string, href: string | null][];
   unlaid: string;
+  /**
+   * The text a stylesheet adds (CSS generated content, the strings of a ::before's or ::after's `content`) on each
+   * element that shows it with no text of the page's own beside it (an empty element, an icon), in document order. A
+   * read without it (the e2e scenarios' model) has none.
+   */
+  generated?: string[];
 }
 
 /** The markers in ShownText.linked: noncharacters, which a page does not show. */
@@ -524,10 +530,13 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
           await call('r.scroll(1e9)');
           await page.clock.runFor(STEP_MS);
           await call('r.sample()');
-          // Back at the top, the clock runs on to the same total on every page.
+          // Back at the top, the clock runs on to the same total on every page, in the same steps, so the page is
+          // sampled at the same instants however long it is (a slide a carousel shows only late is seen on every page).
           await call('r.scroll(0)');
-          await page.clock.runFor(STEP_MS * (1 + MAX_STEPS - steps));
-          await call('r.sample()');
+          for (let k = steps; k <= MAX_STEPS; k++) {
+            await page.clock.runFor(STEP_MS);
+            await call('r.sample()');
+          }
           return (await call('r.final()')) as ShownText;
         },
         renderOpts.deadline,
@@ -549,9 +558,14 @@ const READ_CLOCK = Date.UTC(2026, 0, 1, 12);
 /** How far the read runs the clock once the page has loaded, and at each step of the scroll. */
 const SETTLE_MS = 1_500;
 const STEP_MS = 200;
-/** The scroll's steps: at most a screen's 0.8 apart, and at most this many (a longer page takes longer steps). */
+/**
+ * The scroll's steps: 720 px apart (a screen's 0.8), and at most this many, so a page taller than 21,600 px takes
+ * longer steps.
+ */
 const STEP_PX = 720;
 const MAX_STEPS = 30;
+/** How often the read's clock runs a page's animation frames: twenty a second. */
+const FRAME_MS = 50;
 /** Where the read's functions live in the page, and the first document's own mark (names a page will not use). */
 const READ_KEY = `__byway_read_${Math.random().toString(36).slice(2)}`;
 const DOC_KEY = `__byway_doc_${Math.random().toString(36).slice(2)}`;
@@ -565,6 +579,19 @@ const VISITOR_INIT = `(() => {
   if (location.href.replace(/#[\\s\\S]*$/, '') === ${JSON.stringify(PAGE_URL)}) Object.defineProperty(window, ${JSON.stringify(DOC_KEY)}, { value: true });
   let s = 0x2545f491;
   Math.random = function random() { s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  // Animation frames on the read's clock, ${1000 / FRAME_MS} a second: the callbacks asked for run together, given the
+  // clock's time. (Playwright's own frames on its clock made a GSAP page's read take 8 to 12 s.)
+  const frames = new Map();
+  let lastFrame = 0, due = false;
+  const flush = () => {
+    due = false;
+    const now = performance.now();
+    const cbs = [...frames.values()];
+    frames.clear();
+    for (const cb of cbs) { try { cb(now); } catch (e) { setTimeout(() => { throw e; }, 0); } }
+  };
+  window.requestAnimationFrame = function requestAnimationFrame(cb) { const id = ++lastFrame; frames.set(id, cb); if (!due) { due = true; setTimeout(flush, ${FRAME_MS}); } return id; };
+  window.cancelAnimationFrame = function cancelAnimationFrame(id) { frames.delete(id); };
   if (typeof window.IntersectionObserver !== 'function') return;
   const view = () => ({ x: 0, y: 0, top: 0, left: 0, width: innerWidth, height: innerHeight, right: innerWidth, bottom: innerHeight });
   class InView {
@@ -614,25 +641,62 @@ const VISITOR_BEGIN = `(() => {
   const SKIP = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'TITLE', 'TEMPLATE', 'NOSCRIPT']);
   const MARK = /[\\ufdd0-\\ufdef]/;
   const title = document.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'title')[0];
+  // The line marks come out of the text before anything is measured, and each is noted where it stood: a line's start
+  // before the character after it, its end after the character before it, whatever text node holds that character. A
+  // mark's own characters may stand in several text nodes (a script that puts each letter of a heading in an element of
+  // its own), so they are read across nodes, in document order.
+  const LS = ${JSON.stringify(LINE_START)}, LE = ${JSON.stringify(LINE_END)}, NE = ${JSON.stringify(NUMBER_END)};
   const marks = new Map();
+  const note = (n, at, mark, start) => {
+    let m = marks.get(n);
+    if (!m) { m = { data: n.data, at: [] }; marks.set(n, m); }
+    m.at.push([at, mark, start]);
+  };
+  // The mark being read (its characters so far, whether it starts a line, and where an end goes); the line starts read
+  // and waiting for the next character; and the place just after the last character kept.
+  let building = null;
+  let waiting = [];
+  let last = null;
   const walker = document.createTreeWalker(html, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    if (!MARK.test(n.data) || (title && title.contains(n))) continue;
-    let out = '';
-    const at = [];
-    for (let i = 0; i < n.data.length; ) {
-      const c = n.data[i];
-      if (c === ${JSON.stringify(LINE_START)} || c === ${JSON.stringify(LINE_END)}) {
-        let j = i + 1;
-        while (j < n.data.length && n.data[j] !== ${JSON.stringify(NUMBER_END)}) j++;
-        at.push([out.length, n.data.slice(i, j + 1), c === ${JSON.stringify(LINE_START)}]);
-        i = j + 1;
-      } else { out += c; i++; }
+    if (title && title.contains(n)) continue;
+    const d = n.data;
+    if (!building && !waiting.length && !MARK.test(d)) {
+      for (let i = d.length - 1; i >= 0; i--) if (!SPACE.test(d[i])) { last = [n, i + 1]; break; }
+      continue;
     }
-    n.data = out;
-    marks.set(n, { data: out, at });
+    let out = '';
+    for (let i = 0; i < d.length; i++) {
+      const c = d[i];
+      if (MARK.test(c)) {
+        // A line's start or end begins a mark (one left unfinished is dropped); its number's end finishes it.
+        if (c === LS || c === LE) building = { s: c, start: c === LS, end: last };
+        else if (building) {
+          building.s += c;
+          if (c === NE) {
+            if (building.start) waiting.push(building.s);
+            else if (building.end) note(building.end[0], building.end[1], building.s, false);
+            building = null;
+          }
+        }
+        continue;
+      }
+      if (!SPACE.test(c) && waiting.length) {
+        for (const w of waiting) note(n, out.length, w, true);
+        waiting = [];
+      }
+      out += c;
+      if (!SPACE.test(c)) last = [n, out.length];
+    }
+    if (out !== d) n.data = out;
+    const m = marks.get(n);
+    if (m) m.data = out;
   }
+  // In each node, by place, an end before a start at the same place (the end follows the character before it).
+  for (const m of marks.values()) m.at.sort((a, b) => a[0] - b[0] || Number(a[2]) - Number(b[2]));
   const measured = new Map();
+  // Which sample of the read each measurement was taken at.
+  let samples = 0;
 
   /** Helpers for one pass over the page as it is now: each style and box is read once a pass. */
   const pass = () => {
@@ -666,10 +730,13 @@ const VISITOR_BEGIN = `(() => {
       if (rgba) { const v = rgba[1].split(/[\\s,]+/).filter(Boolean); return v.length >= 4 ? parseFloat(v[3]) : 1; }
       return 1;
     };
-    const clear = (e) => {
+    // How much ink the text in e has: its fill's alpha (Chromium paints text with -webkit-text-fill-color, which is
+    // the colour unless set), or a stroke's, or full where a shadow or a background clipped to the text paints it.
+    const ink = (e) => {
       const s = style(e);
-      const stroke = parseFloat(s.webkitTextStrokeWidth || '0') > 0 && alpha(s.webkitTextStrokeColor) > 0;
-      return alpha(s.color) === 0 && alpha(s.webkitTextFillColor || s.color) === 0 && !stroke && (s.textShadow || 'none') === 'none' && !clipsText(e);
+      if (clipsText(e) || (s.textShadow || 'none') !== 'none') return 1;
+      const stroke = parseFloat(s.webkitTextStrokeWidth || '0') > 0 ? alpha(s.webkitTextStrokeColor) : 0;
+      return Math.max(alpha(s.webkitTextFillColor || s.color), stroke);
     };
     // Whether e is rendered at all: not under display none, nor in content a browser skips (content-visibility: hidden,
     // the body of a closed details), where boxes may still be reported. An element with display: contents has no box of
@@ -692,8 +759,11 @@ const VISITOR_BEGIN = `(() => {
     // Whether the text directly in e is rendered: e is, and does not skip its own content (a closed details shows only
     // its summary; content-visibility: hidden keeps the box and skips what is in it).
     const textRendered = (e) => rendered(e) && !(tag(e) === 'DETAILS' && !e.open) && !(style(e).contentVisibility === 'hidden' && !UNCONTAINED.has(style(e).display));
-    /** Whether a style keeps the text in e from sight as a whole: almost transparent, invisible, or coloured clear. */
-    const faded = (e) => opacity(e) < 0.05 || /hidden|collapse/.test(style(e).visibility) || clear(e);
+    /**
+     * Whether a style keeps the text in e from sight as a whole: invisible, or its ink faded below 0.05 by its opacity
+     * (filter: opacity() included) and its colour's alpha together.
+     */
+    const faded = (e) => /hidden|collapse/.test(style(e).visibility) || opacity(e) * ink(e) < 0.05;
     const NO_OVERFLOW = new Set(['inline', 'contents', 'none', 'table', 'inline-table', 'table-row', 'table-row-group', 'table-header-group', 'table-footer-group', 'table-column', 'table-column-group', 'ruby', 'ruby-text']);
     const len = (v, whole, auto) => v === 'auto' ? auto : v.endsWith('%') ? (parseFloat(v) / 100) * whole : parseFloat(v) || 0;
     const ALL = { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity };
@@ -813,7 +883,21 @@ const VISITOR_BEGIN = `(() => {
     const RTL = /[\\u0590-\\u08ff\\ufb1d-\\ufdcf\\ufdf0-\\ufdff\\ufe70-\\ufeff]|\\ud802[\\udc00-\\udfff]|\\ud803[\\udc00-\\ude7f]|\\ud83a/;
     const LTR = /^[\\p{L}\\p{N}]/u;
     const dirOf = (c) => RTL.test(c) ? 'R' : LTR.test(c) ? 'L' : 'N';
-    /** Each character of a text node, measured now: its box on the page, and whether a visitor sees it there. */
+    /** Where a text node is now, and what clips it, on the page: a node measured again only when this changes. */
+    const where = (n) => {
+      const parent = n.parentElement;
+      const marquee = marqueeOf(parent);
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      const r = marquee ? marquee.getBoundingClientRect() : range.getBoundingClientRect();
+      const c = marquee ? clipOf(marquee, false) : clipOf(parent, true);
+      const k = (v, s) => (isFinite(v) ? Math.round((v + s) * 2) / 2 : v);
+      return [k(r.left, scrollX), k(r.top, scrollY), k(r.right, scrollX), k(r.bottom, scrollY), k(c.l, scrollX), k(c.t, scrollY), k(c.r, scrollX), k(c.b, scrollY)].join(',');
+    };
+    /**
+     * Each character of a text node, measured now: its box on the page, and whether a visitor sees it there; with how
+     * many are seen, and whether the node is on the screen.
+     */
     const measure = (n) => {
       const parent = n.parentElement;
       const marquee = marqueeOf(parent);
@@ -826,6 +910,7 @@ const VISITOR_BEGIN = `(() => {
       const chars = [];
       const data = n.data;
       let last = null;
+      let count = 0;
       for (let i = 0; i < data.length; ) {
         const w = data.codePointAt(i) > 0xffff ? 2 : 1;
         const c = data.slice(i, i + w);
@@ -842,8 +927,11 @@ const VISITOR_BEGIN = `(() => {
           if (q) {
             box = { l: q.left + scrollX, t: q.top + scrollY, r: q.right + scrollX, b: q.bottom + scrollY };
             const l = Math.max(q.left, clip.l), t = Math.max(q.top, clip.t), r = Math.min(q.right, clip.r), b = Math.min(q.bottom, clip.b);
-            const off = b + scrollY <= 0 || (rtlPage ? l + scrollX >= pageWidth : r + scrollX <= 0);
-            shown = r - l > 1 && b - t > 1 && !off;
+            // A visitor sees a character where every clip keeps its middle: a sliver of a row a box cuts off, or of a
+            // letter, shows no letter. Short of the page's top or start edge, where no scrolling reaches, it is not seen.
+            const cx = (q.left + q.right) / 2, cy = (q.top + q.bottom) / 2;
+            const off = cy + scrollY < 0 || (rtlPage ? cx + scrollX > pageWidth : cx + scrollX < 0);
+            shown = r > l && b > t && cx >= l && cx <= r && cy >= t && cy <= b && !off;
             // The part a visitor sees: a gap beside a character its box cuts off is measured from the cut.
             if (shown) vis = { l: l + scrollX, t: t + scrollY, r: r + scrollX, b: b + scrollY };
             if (shown && ell && (!ell.clamp || q.bottom > ell.bottom - ell.lh) && (ell.rtl ? q.left < ell.at - 0.5 : q.right > ell.at + 0.5)) shown = false;
@@ -855,6 +943,7 @@ const VISITOR_BEGIN = `(() => {
           }
           last = { i, box, vis, shown, fs, d: dirOf(c) };
           chars.push(last);
+          if (shown) count++;
         }
         i += w;
       }
@@ -871,9 +960,12 @@ const VISITOR_BEGIN = `(() => {
         for (let j = k; j < b; j++) chars[j].d = d;
         k = b - 1;
       }
-      return { data, chars, marquee };
+      range.selectNodeContents(n);
+      const nr = marquee ? marquee.getBoundingClientRect() : range.getBoundingClientRect();
+      const onScreen = nr.bottom > 0 && nr.top < innerHeight && nr.right > 0 && nr.left < innerWidth;
+      return { data, chars, marquee, count, onScreen };
     };
-    return { body, style, rendered, textRendered, faded, skipped, linkOf, measure, rtlPage };
+    return { body, style, rendered, textRendered, faded, skipped, linkOf, blockOf, measure, where, rtlPage, letter: (c) => LTR.test(c) };
   };
 
   const loadAll = async () => {
@@ -894,6 +986,7 @@ const VISITOR_BEGIN = `(() => {
   };
 
   const sample = () => {
+    samples++;
     for (const a of document.getAnimations()) { try { a.finish(); } catch { a.cancel(); } }
     const P = pass();
     if (!P.body) return 0;
@@ -901,10 +994,19 @@ const VISITOR_BEGIN = `(() => {
     let n = 0;
     for (let t = w.nextNode(); t; t = w.nextNode()) {
       const p = t.parentElement;
-      if (!p || P.skipped(p)) continue;
+      if (!p || P.skipped(p) || !/[^ \\t\\n\\f\\r]/.test(t.data) || !P.textRendered(p) || P.faded(p)) continue;
       const had = measured.get(t);
-      if ((had && had.data === t.data) || !/[^ \\t\\n\\f\\r]/.test(t.data) || !P.textRendered(p) || P.faded(p)) continue;
-      measured.set(t, P.measure(t));
+      const fresh = !had || had.data !== t.data;
+      const at = P.where(t);
+      if (!fresh && had.at === at) continue;
+      // A node is measured again when it moved or its clip did (a section a script slides or turns into view, a
+      // carousel's track). It keeps the measurement where it shows most: the more characters seen, then on the screen,
+      // then the later.
+      const m = P.measure(t);
+      m.at = at;
+      m.when = samples;
+      if (fresh || m.count > had.count || (m.count === had.count && (m.onScreen || !had.onScreen))) measured.set(t, m);
+      else had.at = at;
       n++;
     }
     return n;
@@ -914,7 +1016,7 @@ const VISITOR_BEGIN = `(() => {
     const pageTitle = document.title;
     const P = pass();
     const body = P.body;
-    if (!body) return { title: pageTitle, text: '', linked: '', hrefs: [], hidden: [], unlaid: '' };
+    if (!body) return { title: pageTitle, text: '', linked: '', hrefs: [], hidden: [], unlaid: '', generated: [] };
     const { style, rtlPage } = P;
     const hv = style(html), bv = style(body);
     // The screen clips the page where the page's overflow is hidden, unless the body scrolls in its place.
@@ -934,6 +1036,25 @@ const VISITOR_BEGIN = `(() => {
     const linkIndex = new Map();
     const hrefs = [];
     const range = document.createRange();
+    // A drop cap: the first letter of a block (with any punctuation before it) that the block, or one it begins, styles
+    // with a floated ::first-letter or an initial letter. A visitor reads it as part of its word, however far it stands.
+    const capSeen = new Set();
+    let capOpen = null;
+    const capOf = (p, c) => {
+      const block = P.blockOf(p);
+      if (capOpen) {
+        if (capOpen === block) { if (P.letter(c)) capOpen = null; return true; }
+        capOpen = null;
+      }
+      let cap = false;
+      for (let e = block; e && !capSeen.has(e); e = e.parentElement ? P.blockOf(e.parentElement) : null) {
+        capSeen.add(e);
+        const f = getComputedStyle(e, '::first-letter');
+        if ((f.float && f.float !== 'none') || (f.initialLetter && f.initialLetter !== 'normal')) cap = true;
+      }
+      if (cap && !P.letter(c)) capOpen = block;
+      return cap;
+    };
     // Text hidden from sight stands here (unseen), or text that is not laid out (gone): after the last shown character,
     // or before the first.
     const unseen = () => {
@@ -953,7 +1074,7 @@ const VISITOR_BEGIN = `(() => {
       if (rec && rec.data !== t.data) rec = undefined;
       range.selectNodeContents(t);
       const laid = range.getClientRects().length > 0 && P.textRendered(p);
-      if (!rec && laid && !P.faded(p)) rec = P.measure(t);
+      if (!rec && laid && !P.faded(p)) { rec = P.measure(t); rec.when = samples + 1; }
       if (!laid && /[^ \\t\\n\\f\\r]/.test(t.data)) gone();
       const a = P.linkOf(p);
       let link = -1;
@@ -978,9 +1099,9 @@ const VISITOR_BEGIN = `(() => {
           let ends = '';
           while (m < ms.length && ms[m][0] <= i + w && !ms[m][2]) ends += ms[m++][1];
           if (!laid) unlaid += starts + ends;
-          else if (ch && ch.shown && !(clipX && (rtlPage ? ch.box.r <= 0 : ch.box.l >= vw)) && !(clipY && ch.box.t >= vh)) {
+          else if (ch && ch.shown && !(clipX && (rtlPage ? ch.box.l + ch.box.r <= 0 : ch.box.l + ch.box.r >= 2 * vw)) && !(clipY && ch.box.t + ch.box.b >= 2 * vh)) {
             flush();
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, breaks, ws, link, marquee: rec.marquee, hid: false });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, breaks, ws, link, marquee: rec.marquee, when: rec.when, hid: false, cap: capOf(p, c) });
           } else {
             run = (run || '') + starts + c + ends;
             unseen();
@@ -995,13 +1116,27 @@ const VISITOR_BEGIN = `(() => {
     // way: the edges of every box that is not part of a line's own flow of text (a block, a flex or grid item, a table
     // cell, a floated or positioned box, and an inline block, a button, an image or a control, laid out as one piece)
     // and forced breaks (breaks); and whitespace (ws).
-    const todo = [{ child: body.firstChild, box: false }];
+    // The text a stylesheet adds on an element that shows none of the page's own (see ShownText.generated): the
+    // strings of its ::before's and ::after's content, where a style lets them show.
+    const generated = [];
+    const added = (e) => {
+      if (e instanceof SVGElement || e instanceof MathMLElement || P.faded(e)) return;
+      let t = '';
+      for (const which of ['::before', '::after']) {
+        const v = getComputedStyle(e, which).content;
+        if (v && v !== 'none' && v !== 'normal') for (const m of v.matchAll(/"((?:[^"\\\\]|\\\\.)*)"/g)) t += m[1].replace(/\\\\(.)/g, '$1');
+      }
+      t = t.replace(/[ \\t\\n\\f\\r]+/g, ' ').trim();
+      if (t) generated.push(t);
+    };
+    const todo = [{ child: body.firstChild, box: false, el: null, n0: 0 }];
     while (todo.length) {
       const top = todo[todo.length - 1];
       const c = top.child;
       if (!c) {
         todo.pop();
         if (top.box) breaks++;
+        if (top.el && all.length === top.n0) added(top.el);
         continue;
       }
       top.child = c.nextSibling;
@@ -1025,17 +1160,21 @@ const VISITOR_BEGIN = `(() => {
         if (text) gone();
         continue;
       }
-      if (d === 'contents') { todo.push({ child: c.firstChild, box: false }); continue; }
+      if (d === 'contents') { todo.push({ child: c.firstChild, box: false, el: c, n0: all.length }); continue; }
       const boxed = c.getClientRects().length > 0;
       if (name === 'BR') { if (boxed) breaks++; continue; }
       const box = boxed && (!INLINE_FLOW.has(d) || REPLACED.has(name));
       if (box) breaks++;
-      todo.push({ child: c.firstChild, box });
+      todo.push({ child: c.firstChild, box, el: c, n0: all.length });
     }
     // Between two neighbouring shown characters (see ShownText).
     const sep = (a, b) => {
       const structural = b.breaks > a.breaks;
       const flow = b.ws > a.ws;
+      if (a.cap && !b.cap && !structural && !flow) return '';
+      // Seen at different moments of the read (a carousel's slides, sections revealed in turn), with a box's edge between
+      // them: apart across boxes, whatever order they stood in on the screen at those moments.
+      if (structural && a.when !== b.when) return '\\n';
       if (a.marquee && a.marquee === b.marquee) return structural ? '\\n' : flow ? ' ' : '';
       const row = Math.min(a.box.b, b.box.b) - Math.max(a.box.t, b.box.t) >= 0.5 * Math.min(a.box.b - a.box.t, b.box.b - b.box.t);
       if (row) {
@@ -1072,7 +1211,7 @@ const VISITOR_BEGIN = `(() => {
       linked += x.starts + x.c + x.ends + after;
     }
     if (open >= 0) linked += ${JSON.stringify(LINK_CLOSE)};
-    return { title: pageTitle, text, linked, hrefs, hidden, unlaid };
+    return { title: pageTitle, text, linked, hrefs, hidden, unlaid, generated };
   };
   Object.defineProperty(window, ${JSON.stringify(READ_KEY)}, { value: { loadAll, scroll, sample, final }, configurable: true });
   return true;
