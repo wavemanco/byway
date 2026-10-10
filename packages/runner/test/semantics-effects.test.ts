@@ -9,13 +9,13 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CompletionRequest, CompletionResult, Gateway, ProfileStatus } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
-import { PROTOCOL_CONFIGS } from '@byway/catalog';
-import { outputForStep, slotsForStep } from '@byway/prompts';
-import { HUMAN_WRITE_ROLES, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
+import { CATALOG, PROTOCOL_CONFIGS } from '@byway/catalog';
+import { createPromptRenderer, outputForStep, slotsForStep } from '@byway/prompts';
+import { DIRECTION_FIRST_SEED_PROMPTS, hasNoExecutor, HUMAN_WRITE_ROLES, leavesNote, personWrite, restoresWork, ROLES, stepEffect, steps, voiceWrite, type Role } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
-import { modelStep, parserFor } from '../src/activities/model-step.ts';
+import { directionOf, modelStep, NOTE_LABELS, parserFor } from '../src/activities/model-step.ts';
 import { ArtifactReader, buildPrompt } from '../src/activities/prompting.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import { toStepSpec, type RunRef, type StepCall, type StepSpec } from '../src/types.ts';
@@ -103,8 +103,9 @@ describe('model steps: the answer becomes the work exactly where the table says 
     expect(stepEffect({ actor: 'model', role: 'critic', produces: ['critique', 'score', 'artifact'] })).toBe('annotates');
   });
 
-  it('the prompt contracts agree for the writer roles they cover (known differences pinned until the runtime stage)', () => {
-    const pinned = new Set<Role>(['voice', 'render', 'relay', 'asset']);
+  it('the prompt contracts agree with the effects table for every role a model step answers as the work', () => {
+    // RELAY and ASSET write the work through their own executors: their model call answers a clip prompt or image briefs.
+    const pinned = new Set<Role>(['relay', 'asset']);
     for (const role of ROLES.filter((r) => !pinned.has(r))) {
       let output: string;
       try {
@@ -114,10 +115,10 @@ describe('model steps: the answer becomes the work exactly where the table says 
       }
       expect(output.startsWith('artifact:'), role).toBe(stepEffect({ actor: 'model', role, produces: ['artifact'] }) === 'writes');
     }
-    // outputs.ts (in the workflow bundle) names no artifact contract for a model VOICE or render, which the runner's
-    // parser writes as the work; aligning it is left to the stage that changes the bundle again (ADR-0092).
-    expect(outputForStep({ role: 'voice', consumes: ['artifact'] }, 'prose')).toBe('none');
-    expect(outputForStep({ role: 'render', consumes: ['artifact'] }, 'prose')).toBe('none');
+    // A model VOICE or render is parsed as the work, and its prompt contract now says so (ADR-0092 stage 4).
+    expect(outputForStep({ role: 'voice', consumes: ['artifact'] }, 'prose')).toBe('artifact:prose');
+    expect(outputForStep({ role: 'render', consumes: ['artifact'] }, 'prose')).toBe('artifact:prose');
+    expect(outputForStep({ role: 'asset', consumes: ['voice', 'artifact'] }, 'media')).toBe('none');
   });
 });
 
@@ -144,6 +145,17 @@ describe('ASSET and RELAY steps', () => {
     const res = await assetStep({ gateway, store, prompts: fakePrompts() }, { run, call: call(run, 'art'), step: spec('asset', 'model', produces, { block: 'ASSET', knobs: { slots: 1 } }), ports: { artifact: doc } });
     expect(res.artifactId !== undefined).toBe(writes);
     expect(stepEffect({ actor: 'model', role: 'asset', produces })).toBe(writes ? 'writes' : 'annotates');
+  });
+
+  it('an ASSET that turns the script into audio has no executor: it finishes skipped and writes nothing, as hasNoExecutor says (ADR-0069)', async () => {
+    const run = await newRun('media');
+    const board = (await store.artifacts.putText('{"storyboard":[{"shot":1,"description":"d","imagePrompt":"p","durationSec":3}],"voiceover":"v"}', 'application/json')).id;
+    const step = spec('asset', 'model', ['artifact'], { block: 'ASSET', consumes: ['voice', 'artifact'] });
+    const res = await assetStep({ gateway: scripted([]), store, prompts: fakePrompts() }, { run, call: call(run, 'vo-audio'), step, ports: { artifact: board, voice: 'v' } });
+    expect(res).toEqual({ costUsd: 0, skipped: true });
+    expect(hasNoExecutor(step)).toBe(true);
+    // An image ASSET has one.
+    expect(hasNoExecutor(spec('asset', 'model', ['artifact']))).toBe(false);
   });
 
   it.each([[['artifact', 'anchor'] as StepSpec['produces']], [['anchor'] as StepSpec['produces']]])('a RELAY link writes the storyboard whatever it declares (%j)', async (produces) => {
@@ -217,5 +229,81 @@ describe('the slots the composed profile renders a template with are slots the r
     });
     const filled = new Set([...Object.keys(built.slots), ...activityAdds(step.role, medium)]);
     expect([...slotsForStep(step, medium)].filter((s) => !filled.has(s))).toEqual([]);
+  });
+});
+
+describe('the notes a model step leaves beside the work (leavesNote)', () => {
+  const leaving = (when: 'always' | 'sometimes' | 'never', actor: StepSpec['actor'] = 'model') => new Set(ROLES.filter((role) => leavesNote({ actor, role, produces: [] }) === when));
+  const CARD = '```markdown\n# Spark\n\nA lamp left on.\n```';
+  const DIRECTED = `Colour: dusk blues.\nLayout: one tall column.\n\n${CARD}`;
+
+  it('on every run: each role whose answer the runner stores as a note (NOTE_LABELS); on some: a seed build, only when it writes a direction (directionOf)', () => {
+    expect(leaving('always')).toEqual(new Set(Object.keys(NOTE_LABELS)));
+    expect(leaving('sometimes')).toEqual(new Set(['seed']));
+    expect(leaving('never')).toEqual(new Set(ROLES.filter((r) => !(r in NOTE_LABELS) && r !== 'seed')));
+    // A seed's build keeps what it wrote before its block as a note only when that is a direction: two lines or more.
+    // Whether its prompt asks for one first decides whether that is every run (below). Another builder's preamble is
+    // never one.
+    expect(directionOf(CARD)).toBeUndefined();
+    expect(directionOf(`Here is the card.\n\n${CARD}`)).toBeUndefined();
+    expect(directionOf(DIRECTED)).toContain('dusk');
+    const parsed = (role: Role, answer: string) => parserFor(role, 'prose', {}, asIs)(answer) as { ok: true; value: { kind: string; direction?: string } };
+    expect(parsed('seed', DIRECTED).value).toMatchObject({ kind: 'artifact', direction: expect.stringContaining('dusk') });
+    expect(parsed('seed', CARD).value).toMatchObject({ kind: 'artifact' });
+    expect(parsed('seed', CARD).value.direction).toBeUndefined();
+    expect(parsed('build', DIRECTED).value.direction).toBeUndefined();
+    // No person's step and no tool leaves one.
+    expect(leaving('never', 'human')).toEqual(new Set(ROLES));
+    expect(leaving('never', 'tool')).toEqual(new Set(ROLES));
+  });
+
+  it('a seed: read as directing on every run that answers as asked where its prompt asks for the direction first, on some where it asks for the block alone; its prompt renders only the problem and the string', () => {
+    // The seed prompts a recipe can name: a composed recipe may reuse only a catalog step's prompt in that step's role
+    // (the advisor's profile).
+    const prompts = createPromptRenderer();
+    const seedPrompts = [...new Set(CATALOG.flatMap((r) => steps(r).map(({ step }) => step)).filter((s) => s.actor === 'model' && s.role === 'seed').map((s) => s.prompt!))].sort();
+    expect(seedPrompts).toEqual(['article.SEED', 'product.c2.seed-option', 'product.c3.seed-angle', 'product.c5.seed-territory', 'product.c6a.seed-card']);
+    for (const id of seedPrompts) {
+      // The direction is the string's decision on each axis, made from the problem and the string: no seed prompt
+      // renders the critique, the brief or the taste, whatever the step takes in (buildPrompt fills those slots; the
+      // template never reads them). So @byway/recipe reads a seed's note as carrying nothing a person answered.
+      expect(prompts.info(id).slots.sort(), id).toEqual(['problem', 'seed']);
+      expect(prompts.variants(id), id).toEqual([]);
+      // Its answer format asks for the direction before the block exactly where the table says so.
+      const user = prompts.render(id, { problem: 'A problem.', seed: 'a-random-string' }).user;
+      const format = user.slice(user.indexOf('## Answer format'));
+      expect(format.startsWith('## Answer format'), id).toBe(true);
+      const directionFirst = /^First the direction, one line per axis\./m.test(format);
+      expect(directionFirst, id).toBe(DIRECTION_FIRST_SEED_PROMPTS.has(id));
+      if (!directionFirst) expect(/\bdirection\b/i.test(format), id).toBe(false);
+      expect(leavesNote({ actor: 'model', role: 'seed', produces: ['artifact'], prompt: id }), id).toBe(directionFirst ? 'always' : 'sometimes');
+    }
+    expect([...DIRECTION_FIRST_SEED_PROMPTS].every((id) => seedPrompts.includes(id))).toBe(true);
+    // C1's direction is a line per axis, five of them, so a run that answers as asked leaves it (two lines or more).
+    const c1Answer = 'Colour: ink on bone.\nLayout: one long scroll.\nTypography: a slab serif.\nImagery: drawn diagrams.\nStructure: a question, then three answers.\n\n```html\n<!doctype html><title>x</title>\n```';
+    expect(directionOf(c1Answer)?.split('\n')).toHaveLength(5);
+  });
+
+  it('as modelStep runs: a noting role leaves a note with every answer, nothing found included; a seed only with a direction', async () => {
+    const run = await newRun();
+    const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
+    const noted = async (role: Role, answer: string, extra: Partial<StepSpec> = {}) => {
+      const deps: RunnerDeps = { gateway: scripted([answer]), store, prompts: fakePrompts() };
+      const res = await modelStep(deps, { run, call: call(run, `${role}-${Math.random().toString(36).slice(2)}`), step: spec(role, 'model', ['critique'], extra), ports: { artifact: doc }, refs: [] });
+      return res.noteArtifactId !== undefined;
+    };
+    const answers: Record<string, string[]> = {
+      critic: ['- The ask is buried.\nScore: 6/10'],
+      check: ['- The date is wrong.', 'No defects.'],
+      cut: ['- Remove the second line.', 'Nothing to remove.'],
+      'tells-sweep': ['{"hits":[{"pattern":"in today’s world","where":"line 1","alternative":"now"}]}', '{"hits":[]}'],
+      overlap: ['{"flags":[]}'],
+      vision: ['Go darker, and closer.'],
+    };
+    expect(Object.keys(answers).sort()).toEqual(Object.keys(NOTE_LABELS).sort());
+    for (const [role, texts] of Object.entries(answers)) for (const text of texts) expect(await noted(role as Role, text, role === 'critic' ? { knobs: { mode: 'OK' } } : {}), `${role}: ${text}`).toBe(true);
+    expect(await noted('seed', DIRECTED, { produces: ['artifact'] })).toBe(true);
+    expect(await noted('seed', CARD, { produces: ['artifact'] })).toBe(false);
+    expect(await noted('build', DIRECTED, { produces: ['artifact'] })).toBe(false);
   });
 });

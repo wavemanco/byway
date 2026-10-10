@@ -148,6 +148,7 @@ export function checkDefaults(recipe: Recipe, typing: Typing, findings: Findings
     join(states) {
       return { last: Math.max(...states.map((s) => s.last)), started: states.some((s) => s.started) };
     },
+    key: (s) => `${s.last}|${s.started ? 1 : 0}`,
   });
 
   // DR9: humans own the words readers attribute to them. What counts is a VOICE write that runs (ADR-0092): a human

@@ -53,6 +53,23 @@ export interface Runner {
   view(runId: string, afterSeq?: number): Promise<RunView>;
 }
 
+/**
+ * Runner.start's refusal of a recipe the engine cannot run (F02, ADR-0092): counts past the engine's limits, a C pick
+ * nobody can decide, a retrying gate inside a fan-out (@byway/recipe engineProblems). It is thrown before any run record
+ * or workflow exists. Callers in another bundle match it by name, as its class may be another object there.
+ */
+export class RecipeRefusedError extends Error {
+  override name = 'RecipeRefused';
+  readonly recipeId: string;
+  /** Each problem in plain words. */
+  readonly problems: readonly string[];
+  constructor(recipeId: string, problems: readonly string[]) {
+    super(`Recipe "${recipeId}" cannot run: ${problems.join('; ')}.`);
+    this.recipeId = recipeId;
+    this.problems = problems;
+  }
+}
+
 /** Temporal coordinates shared by the worker and clients. */
 export const TASK_QUEUE = 'byway-runs';
 export const RESOLVE_UPDATE = 'resolveCheckpoint';

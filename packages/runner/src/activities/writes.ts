@@ -27,11 +27,12 @@ export const restoredNote = (restored: readonly string[]): string | undefined =>
 export type CheckedWrite = LockedWrite;
 
 /**
- * The checks for a machine write that starts from `before` (keepsVoice passes the person's words as `voice`; other
- * writers pass none). The locked deck is computed now, before any model call, so a fault in the runner's own copy code
- * never repeats a paid call: it is a plain, non-retryable step failure, here or when the returned check runs.
+ * The checks for a machine write that starts from `before` (keepsVoice passes the person's words as `voice`: the held
+ * VOICE answers and the latest words, held-voice.ts keptVoice; other writers pass none). The locked deck is computed
+ * now, before any model call, so a fault in the runner's own copy code never repeats a paid call: it is a plain,
+ * non-retryable step failure, here or when the returned check runs.
  */
-export function checkedWriter(run: Pick<RunRef, 'seeds' | 'medium'>, voice: string | undefined, before: string | undefined): (text: string) => CheckedWrite {
+export function checkedWriter(run: Pick<RunRef, 'seeds' | 'medium'>, voice: string | readonly string[] | undefined, before: string | undefined): (text: string) => CheckedWrite {
   let check: (after: string) => LockedWrite;
   try {
     check = lockCopy(run.medium, voice, before);
@@ -50,7 +51,7 @@ export function checkedWriter(run: Pick<RunRef, 'seeds' | 'medium'>, voice: stri
 }
 
 /** One checked write with nothing paid for in between (a relay link's clip, attached images). */
-export const checkedWrite = (run: Pick<RunRef, 'seeds' | 'medium'>, text: string, voice: string | undefined, before: string | undefined): CheckedWrite => checkedWriter(run, voice, before)(text);
+export const checkedWrite = (run: Pick<RunRef, 'seeds' | 'medium'>, text: string, voice: string | readonly string[] | undefined, before: string | undefined): CheckedWrite => checkedWriter(run, voice, before)(text);
 
 const copyFault = (e: unknown): StepError => new StepError(`byway could not check this write against your words (${e instanceof Error ? e.message : String(e)}).`);
 

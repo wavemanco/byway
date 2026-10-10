@@ -349,23 +349,26 @@ export interface LockedWrite {
 const ON_SCREEN_LOCKED = "The on-screen copy is the person's (headline, tagline and every shot's caption, which names every shot): keep it exactly as it is, with the same shots.";
 
 /**
- * The keepsVoice lock (port rule 6) for a machine write that starts from `before` with the person's words `voice`.
+ * The keepsVoice lock (port rule 6) for a machine write that starts from `before` with the person's words `voice`: one
+ * answer, or each of the held VOICE answers and the latest words (held-voice.ts keptVoice, ADR-0098), the latest last.
  * Computed before the write (so a fault here costs no model call); the returned check takes the written text.
  *
  * - No voice: nothing is locked (no VOICE has run).
  * - A storyboard: its voice-over is written back from `before` (canonical C5 runs every keepsVoice writer with the VO
- *   script as its voice). Its on-screen copy is locked exactly when the late VOICE's own reader reads the voice as this
- *   storyboard's complete on-screen deck (whatever the values) and the voice is not the voice-over itself; then any
- *   change to it is refused.
+ *   script as its voice). Its on-screen copy is locked exactly when the late VOICE's own reader reads one of the answers
+ *   as this storyboard's complete on-screen deck (whatever the values) and that answer is not the voice-over itself;
+ *   then any change to it is refused.
  * - Options, prose and code diffs: the deck must be unchanged. Pages: the deck as shown, line for line.
- * - With no `before`, the written artifact must hold exactly the voice, as a VOICE write would.
+ * - With no `before`, the written artifact must hold exactly the latest answer, as a VOICE write would.
  */
-export function lockCopy(medium: Medium, voice: string | undefined, before: string | undefined): (after: string) => LockedWrite {
-  if (voice === undefined) return (after) => ({ text: after, problems: [], restored: [] });
+export function lockCopy(medium: Medium, voice: string | readonly string[] | undefined, before: string | undefined): (after: string) => LockedWrite {
+  const voices = typeof voice === 'string' ? [voice] : (voice ?? []);
+  if (!voices.length) return (after) => ({ text: after, problems: [], restored: [] });
   if (before === undefined) {
-    return (after) => ({ text: after, problems: holdsVoice(medium, voice, after) ? [] : [`The person's own words must stay exactly as written: the work must hold them as they are.`], restored: [] });
+    const latest = voices.at(-1)!;
+    return (after) => ({ text: after, problems: holdsVoice(medium, latest, after) ? [] : [`The person's own words must stay exactly as written: the work must hold them as they are.`], restored: [] });
   }
-  if (medium === 'media') return lockStoryboard(voice, before);
+  if (medium === 'media') return lockStoryboard(voices, before);
   const deck = lockedDeck(medium, before);
   return (after) => ({ text: after, problems: lockedDeck(medium, after) === deck ? [] : [LOCKED[medium]], restored: [] });
 }
@@ -391,11 +394,12 @@ function holdsVoice(medium: Medium, voice: string, after: string): boolean {
   return roundTripProblem(medium, 'script', after, voice) === undefined;
 }
 
-function lockStoryboard(voice: string, beforeText: string): (after: string) => LockedWrite {
+function lockStoryboard(voices: readonly string[], beforeText: string): (after: string) => LockedWrite {
   const before = parseStoryboard(beforeText);
   if (!before.ok) throw new Error(`the storyboard before this step could not be read (${before.problem})`);
   // The late VOICE's own reader decides the scope: a VO script has no Headline: or Tagline: line, so it stays unlocked.
-  const onScreenLocked = layoutOf('script', voice) !== layoutOf('script', before.value.voiceover) && readLabelled('on-screen', voice, onScreenFields(before.value)).ok;
+  // Each held answer is read on its own, so the voice-over script held beside the on-screen answer leaves it locked.
+  const onScreenLocked = voices.some((voice) => layoutOf('script', voice) !== layoutOf('script', before.value.voiceover) && readLabelled('on-screen', voice, onScreenFields(before.value)).ok);
   const onScreen = extractCopy('media', beforeText, 'on-screen');
   const script = extractCopy('media', beforeText, 'script');
   return (afterText) => {

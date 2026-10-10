@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ComposeResultView, ComposeView, RecommendResult } from '../server/api.ts';
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
-import { composedRefusalLead, diffLine } from '../view/composed.ts';
+import { composedRefusalGroups, composeNotice, diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
 import { composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
@@ -155,7 +155,7 @@ export function RecommendationView(props: Props) {
       const result = await post<ComposeResultView>(`/api/intakes/${intakeId}/compose`, {});
       setState((s) => composedReady(s, result));
       setFocusProposal((n) => n + 1);
-      setNotice(result.composed.ok ? 'Your recipe is ready. It is shown above.' : 'byway built a recipe, but it did not pass the protocol checks. It is shown above.');
+      setNotice(composeNotice(result.composed));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Composing failed. Try again.');
     }
@@ -462,15 +462,19 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
           </ul>
           {composed.violations.length > 0 ? (
             <div className="notice notice-danger">
-              <p>{composedRefusalLead(composed.violations)}</p>
-              <ul>
-                {composed.violations.map((v) => (
-                  <li key={`${v.ruleId}-${v.message}`}>
-                    {v.message}
-                    {technical ? <span className="muted"> ({v.ruleId})</span> : null}
-                  </li>
-                ))}
-              </ul>
+              {composedRefusalGroups(composed.violations).map((group) => (
+                <div key={group.lead}>
+                  <p>{group.lead}</p>
+                  <ul>
+                    {group.items.map((v) => (
+                      <li key={`${v.ruleId}-${v.message}`}>
+                        {v.message}
+                        {technical ? <span className="muted"> ({v.ruleId})</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>

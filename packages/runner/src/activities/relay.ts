@@ -17,6 +17,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
+import { keptVoice } from './held-voice.ts';
 import { announce, checkedWriter, restoredNote, storeText } from './writes.ts';
 
 export const NO_VIDEO_NOTE = 'No video provider key is configured';
@@ -48,7 +49,7 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   if (!sb.ok) throw new StepError(`The ${what} step could not read the storyboard: ${sb.problem}`);
   if (!sb.value.storyboard.some((s) => s.shot === shot)) throw new StepError(`The storyboard has no shot ${shot}.`);
   // keepsVoice: locked before the paid calls, so a fault in the check never repeats them.
-  const write = checkedWriter(run, step.keepsVoice ? ports.voice : undefined, storyboardText);
+  const write = checkedWriter(run, step.keepsVoice ? keptVoice(ports) : undefined, storyboardText);
 
   const built = await buildPrompt(reader, {
     medium: run.medium,

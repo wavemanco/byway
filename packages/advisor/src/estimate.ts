@@ -1,6 +1,6 @@
 import type { CostEstimate, Medium, ModelProfile, Tier } from '@byway/contracts';
 import { EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, PRICES, falVideoSeconds, priceFor, tokenCost, type PriceRow } from '@byway/gateway';
-import type { Gate, Node, Recipe, Stage, Step } from '@byway/recipe';
+import { asksSwaps, audioAsset, loopRounds, type Gate, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { AdvisorError } from './errors.ts';
 
 /**
@@ -233,7 +233,7 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         return add(completion(w, 'relay', tierOf(s), count(1, 1)), clip(w));
       case 'asset': {
         // A step that turns the locked script into audio has no v1 executor (ADR-0069): it finishes skipped.
-        if (s.consumes.includes('voice')) return NONE;
+        if (audioAsset(s)) return NONE;
         const slots = knobNumber(s, 'slots') ?? DEFAULT_SLOTS;
         const n = medium === 'media' ? count(STORYBOARD_SHOTS.low, STORYBOARD_SHOTS.high) : count(1, slots);
         const integrate = medium === 'web-page' || medium === 'prose' ? completion(w, 'asset.integrate', 'mid', count(1, 1)) : NONE;
@@ -267,7 +267,10 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
   return NONE;
 }
 
-/** The loop's extra work at its cap: "Use the best version so far?", and a fresh re-rank of the best snapshots. */
+/**
+ * The loop's extra work at its cap: "Use the best version so far?" and a fresh re-rank of the best snapshots for a critic
+ * loop. A person's loop asks its cap question in place of the last "Is this ready?", so it adds nothing here.
+ */
 function atCap(w: Walk, gate: Gate): Span {
   const parts: Span[] = [];
   if (gate.metric !== 'human' && gate.onCap === 'human') parts.push(minutes('confirm'));
@@ -291,8 +294,9 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
         const r = walkNode(w, c, cur);
         spans.push(r.span);
         cur = r.set;
-        // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2).
-        if (feedsSwaps(c, n.steps[i + 1])) spans.push(minutes('select'));
+        // A cliché sweep whose finds feed a swap step: you choose which to swap before it runs (convention C2), exactly
+        // where the interpreter asks (asksSwaps reads the steps after it in this seq).
+        if (asksSwaps(c, n.steps.slice(i + 1))) spans.push(minutes('select'));
       });
       return { span: add(...spans), set: cur };
     }
@@ -310,8 +314,11 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
     }
     case 'loop': {
       const body = walkNode(w, n.body, set);
-      const rounds = count(Math.min(n.gate.probe, n.gate.max), n.gate.max);
-      // A loop a person ends asks "Is this ready?" after every round (spec §3.2).
+      // The planned rounds. At the cap a person may allow as many again, once (ADR-0073, ADR-0093): their choice, made
+      // when they are asked, so the estimate does not count it.
+      const planned = loopRounds(n.gate).planned;
+      const rounds = count(Math.min(n.gate.probe, planned), planned);
+      // A loop a person ends asks one question a round: "Is this ready?", and at the last round the cap's question.
       const perRound = n.gate.metric === 'human' ? add(body.span, minutes('confirm')) : body.span;
       return { span: add(times(perRound, rounds), atCap(w, n.gate)), set: body.set };
     }
@@ -344,11 +351,6 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       return { span: times(walkNode(w, n.body, set).span, links), set };
     }
   }
-}
-
-/** A model TELLS sweep immediately followed by the model step that applies its finds. */
-function feedsSwaps(n: Node, next: Node | undefined): boolean {
-  return n.op === 'step' && n.role === 'tells-sweep' && n.actor === 'model' && next?.op === 'step' && next.actor === 'model' && next.writes === true && next.consumes.includes('critique');
 }
 
 function walkStages(w: Walk, recipe: Recipe): { total: Span; byStage: Map<Stage['stage'], Span> } {

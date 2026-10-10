@@ -65,6 +65,8 @@ describe('output contracts (spec §3.3)', () => {
     expect(outputForStep({ role: 'asset', consumes: ['artifact'] }, 'web-page')).toBe('image-briefs');
     expect(outputForStep({ role: 'asset', consumes: ['voice', 'artifact'] }, 'media')).toBe('none');
     expect(outputForStep({ role: 'relay', consumes: ['anchor', 'artifact'] }, 'media')).toBe('relay');
-    expect(outputForStep({ role: 'voice', consumes: ['artifact'] }, 'prose')).toBe('none');
+    // A model VOICE or render is parsed as the work by the runner (ADR-0092 stage 4); admission refuses a model VOICE.
+    expect(outputForStep({ role: 'voice', consumes: ['artifact'] }, 'prose')).toBe('artifact:prose');
+    expect(outputForStep({ role: 'render', consumes: ['artifact'] }, 'web-page')).toBe('artifact:web-page');
   });
 });

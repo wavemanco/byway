@@ -310,16 +310,35 @@ describe('a reused prompt must fit its step: its contract in this medium, and th
 });
 
 describe('checking an answer never throws for what the answer holds', () => {
-  it('a pathologically deep recipe is refused as COMPOSED-INTERNAL, not a crash (2,000 nested sequences)', () => {
+  const deepAnswer = (depth: number): string => {
     const r = clone(c4);
     const inner = JSON.stringify(stageOf(r, 'D3').body);
     stageOf(r, 'D3').body = '__BODY__';
-    const depth = 2_000;
-    const text = fencedJson(r).replace('"__BODY__"', '{"op":"seq","steps":['.repeat(depth) + inner + ']}'.repeat(depth));
-    let out: { ruleId: string }[] = [];
+    return fencedJson(r).replace('"__BODY__"', '{"op":"seq","steps":['.repeat(depth) + inner + ']}'.repeat(depth));
+  };
+  const check = (text: string) => checkAnswer(text, c4, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, 'composed-deep').violations;
+
+  it('a pathologically deep recipe is a schema finding with a path, not a crash (2,000 nested sequences; F02 shape bound)', () => {
+    let out: { ruleId: string; path?: string; message: string }[] = [];
     expect(() => {
-      out = checkAnswer(text, c4, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, 'composed-deep').violations;
+      out = check(deepAnswer(2_000));
     }).not.toThrow();
+    expect(out.map((v) => v.ruleId)).toEqual(['SCHEMA']);
+    expect(out[0]!.message).toMatch(/nests deeper than 64 levels/);
+    expect(out[0]!.path).toMatch(/^stages.2.body.steps.0/);
+  });
+
+  it('a 2 MiB answer is a schema finding (F02 shape bound)', () => {
+    const r = clone(c4);
+    r.title = 'x'.repeat(2 * 1024 * 1024);
+    const out = check(fencedJson(r));
+    expect(out.map((v) => v.ruleId)).toEqual(['SCHEMA']);
+    expect(out[0]!.message).toMatch(/larger than 1 MiB/);
+  });
+
+  it('anything the checks themselves cannot handle is COMPOSED-INTERNAL, not a crash', () => {
+    const broken = { ...PROMPTS, has: () => { throw new Error('the template store is unreadable'); } } as typeof PROMPTS;
+    const out = checkAnswer(fencedJson(clone(c4)), c4, { prompts: broken, catalog: PROTOCOL_CONFIGS }, 'composed-broken').violations;
     expect(out.map((v) => v.ruleId)).toEqual(['COMPOSED-INTERNAL']);
   });
 });

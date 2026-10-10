@@ -1,0 +1,96 @@
+# ADR-0097: A step takes in only what its prompt shows
+
+| | |
+|---|---|
+| **Status** | Accepted |
+| **Decided by** | Delegated: Claude implemented the verified recommendation from the 2026-10-08 external-review verification under the user's goal "complete implementation of all fixes that can be implemented independent of the four decisions"; not explicitly approved; reversible. |
+| **Date (local, UTC−7)** | 2026-10-09 17:15 |
+| **Track** | System |
+
+## Context
+
+[ADR-0092](0092-recipe-semantics-derived-from-execution.md) wrote down once what a recipe does when it runs, and [ADR-0098](0098-recipe-limits-disclosure-and-held-voice.md) decided from it which of a person's answers reach the work. Both read a step as taking a port in when the step consumes it or reads it. That is what the runner fills: `buildPrompt` puts a value in a slot for every port a step declares. It is not what the model is shown. The renderer ignores a slot the step's template does not use, and the activities fill some slots with something else: a relay link's brief slot holds the shot it makes ("Shot N"), never the brief.
+
+So a composed step could be counted as applying, deciding by or carrying on a port its reused prompt never renders. ADR-0098 named this under its Consequences ("A writer counts as taking an answer in by its ports, not its prompt") and in its decision 6 ("It is read from the step's ports, not its prompt"). Its final verifications (rounds 9 and 11, evidence below) found it the dominant way an admitted person's answer is silently lost:
+
+- Of the 16,626 answers main admits in the round-11 verification's fresh corpus, 2,702 reach nothing once each AI step sees only the slots its template declares (C1 2,354, C3 198, C6a 43, C7 31, C4 26, C2 23, C5 20, C6 7). Most are carried by an AI direction whose prompt reads the critique without rendering it (product.c7.interview, product.c6.angles, product.c4.framings).
+- C3 with the trim's fix replaced by an AI draft on product.c3.ai-draft, or by an image step on product.c3.asset: admitted, and explained "and the AI removes it", though the model never sees the list.
+- A seed that takes in the critique, the brief or the taste is counted as a writer that applies it, though no seed prompt renders those slots.
+- A model relay that takes in the brief is counted as applying it, though its brief slot holds the shot.
+
+## Decision
+
+1. **One fact of what a prompt shows** (`promptShows(step, port, medium)` in `@byway/recipe`'s prompt-shows.ts). A model step takes in a port, consumed or read, only where its prompt shows it:
+   - The template the runner renders for the step's prompt in the run's medium (that medium's variant, else the base template) uses the slot that holds the port's value (`PORT_SLOT`).
+   - Images ride along whatever the template says: a view's screenshots, and the options' screenshots for every role but an overlap flag, on the media judged by screenshots; a relay link's start frame (`anchor`). The references a critic takes in travel in its GREAT lineup.
+   - Slots the runner fills with something else do not show the port: a relay link's brief slot ("Shot N"); an ASSET step's options slot on the options medium (the work's own option labels); the options slot on a web page ("(The screenshots under this label show it.)"); the work, for a judging step (port rule 1). A score, the images beside the work, a credential and the failed prompts never reach a prompt.
+   - An ASSET step's prompt is its own where the library holds it, else the image-briefs helper, as asset.ts asks.
+   - Where byway's library holds no template for the step's prompt in that medium (a research recipe's harness prompt, a helper written for other media, or no prompt), byway cannot see the text, and the step is read by the ports it declares, as before. A person's, a tool's or a policy's step has no prompt and is read by what it declares.
+   It means "on some run": a slot inside an `{{#if}}` on another slot counts.
+2. **The template facts reach the semantics as data.** `template-slots.ts` in `@byway/recipe` is generated from `@byway/prompts` (`pnpm prompts:slots`, packages/prompts/src/emit-template-slots.ts) and held to the library by a test, which also holds that every slot a template declares is one whose value it inserts. The recipe package never loads the library. Workflow code imports none of what reads the table, so the workflow bundle holds neither it nor `promptShows`: its hash stays `38afef53…`, and a build test pins that an edit to the table or to the rule leaves the hash alone.
+3. **It is held to the runner.** A runner test drives `modelStep`, `assetStep` and `relayLink` on every library prompt a catalog model step names, in each role the catalog uses it for, on every medium the library has a template for (352 cases). Every port holds a value of its own, and the request the gateway receives shows exactly the ports `promptShows` says, as text or as an image.
+4. **The semantics read it.** `takesIn` is `promptShows`, so:
+   - `appliesCritique` (now given the recipe's medium) and the writers that apply a brief, a taste or the options;
+   - the inputs of an AI step that decides which version or option is the work;
+   - what an AI step that makes text of its own carries on (a critic's critique, an AI CUT's list, a sweep's finds, a direction, and the note each leaves);
+   - and so `critiqueSources`, `unappliedCritiques`, ST12 `critique-unapplied` and `critique-per-candidate`, and the first case of ST9 and ST10 `human-critique`.
+   What the interpreter does with ports is unchanged and still read from the declared ports: `replacesCritique`, `asksSwaps`, `leavesNote`, and a seed's direction carrying nothing. ADR-0092's and ADR-0098's decisions stand; this adds the prompt to "takes in".
+5. **COMPOSED-PROMPT refuses a composed model step that takes in a port its reused prompt never shows:** "step "apply-cut" takes in the critique port, but its prompt "product.c3.ai-draft" never shows it to the model on prose: use a prompt that shows it, or leave the port out". This holds the declaration to what runs, as ADR-0092 holds `writes` and VOICE. With it, every step of an admitted composed recipe shows every port it takes in, so its explainers, its diff ("now also reads the brief") and the run's own swap question (`asksSwaps`, which reads the declared ports as the interpreter does) all agree with what the model is shown. Every model step of the eight protocol configurations shows every port it takes in; catalog recipes are not subject to the composed profile.
+6. **The explainers read it.** `present.ts` asks `appliesCritique` with the recipe's medium, so "and the AI removes it", "the AI fixes them" and "the AI swaps" are said only of a writer whose prompt shows the critique. C3 with the trim's fix replaced by an AI draft on C3's draft prompt reads "Your turn: mark what the work could lose."
+7. **The catalog keeps everything.** All 18 CATALOG recipes keep their hash, verdict, findings and cited exceptions. The eight protocol configurations still admit themselves when recomposed, with the same presentation and critique sources. One finding is reported, not changed: C1-H's seed build (in c1h, c1h-no-critic, c1h-no-asset, c1h-no-d3 and c1h-critic-self) consumes the fixed `voice` deck, and article.SEED renders only the problem and the string. Their other steps name harness prompts (study1.*, article.B1, article.B2) that byway's library does not hold, read by their ports. A test holds the catalog to exactly this.
+
+## Measurement
+
+Main is 00a8a4c. The branch's verdict is checkAnswer (the validator and the composed profile). The execution oracle is the round-11 verification's (a real Interpreter, stubbed activities, each answer a marker followed through everything the run does with it), copied with only its paths changed. RENDERED=1 is its strict mode: an AI step sees a text port only where its template declares the slot, read from the library independently of `promptShows`. C1's seed directs on every run, any other seed on half, and a seed's direction carries nothing (ADR-0098).
+
+- **Fresh corpus.** The round-11 verification's generator, copied, made 1,040,000 mutations of the eight protocol configurations: 28,653 unique variants that main admits (c1 10,761, c3 4,950, c7 3,459, c4 3,342, c5 2,699, c6a 1,514, c2 1,321, c6 607). Every variant main refuses was checked by the branch too (817,461 checks): it admits none.
+- **The branch refuses 7,958 of the 28,653**, every one by COMPOSED-PROMPT. The ports a prompt never shows are the critique 7,983 times, the brief 1,413, the taste 1,118 and the view 74. By role: a model VISION that takes the critique in 5,681; a seed 2,909 (critique 1,651, taste 694, brief 564); a fix 692; an image step 333; a build 329; a sweep 252; a relay 33; a defect check whose prompt has no view slot, on a medium judged by text, 74; and a VISION that takes the brief or the taste in 207, a CUT 54, an overlap flag 19 and a dedupe 5.
+- **5,735 of them also refuse a person's answer**: 6,084 answers (ST12 `critique-unapplied` 5,171, `critique-per-candidate` 895, ST9 `human-critique` 18). Every one reaches nothing with templates rendered, on any of 421,296 runs: given, left empty, and mixed. That counts the delivered work, an AI writer, a draft of the person's own, a decider, a candidate's work and influence. Read by ports, as main reads them, 5,988 of them reach the work, a writer, a draft or a decider, 95 only candidates, and 1 nothing even so.
+- **2,223 are refused by COMPOSED-PROMPT alone**, for a step whose declared port its prompt never shows, with no person's answer refused. Their 3,025 answers mostly reach the work on some run (2,700 the delivered work, 314 a writer, draft or decider only, 10 only candidates). One reached nothing in the 48 sampled runs. At 600 runs it reaches the delivered work on 8, those where the person leaves every lens answer of the audit after it empty, which is the "some path" ADR-0098 admits.
+- **Admitted:** the 20,695 admitted variants hold 20,515 answers. With templates rendered, 20,229 reach the delivered work, 283 only a writer, a draft or a decider (ADR-0098's from-scratch residual), 3 only candidates, and 0 reach nothing (963,936 runs with the prompt-only set). No answer the branch admits is lost, and it admits nothing main refuses.
+- **The claims oracle** (the round-11 verification's `claims12h`, copied) gained a RENDERED check: a writer said to apply a step's findings is shown the critique by its prompt's template. On the 20,695 admitted variants (248,340 runs) every check is 0, the new one included. Its info counts are lower than round 11's on 13,779 variants: an answer given and never applied 143 against 1,997. The control is main's explainers on the 7,958 refused variants (95,496 runs): the new check fires 5,853 times. Those are "the AI then fixes" (2,742), "and the AI removes it" (2,600), "the AI fixes them" (307) and "the AI swaps every one" (204), with an applier such as a C1 seed or an image step. The FORCE, FORCE_REACT and FORCE_J controls fire as before (15,384 D, 1,810 C, 156 run-lock; 247; 1,754).
+- **The round-11 verification's own corpus** (its 13,779 variants that main admits; main's verdict is re-checked here and admits all of them). The branch refuses 3,648. Of its 16,626 admitted answers, the branch refuses by an answer clause exactly the 2,702 its oracle found reaching nothing with templates rendered, and no answer that reaches anything. Another 4,157 answers that reach something (3,298 the delivered work) sit in variants COMPOSED-PROMPT refuses for another step.
+- **Bundle:** `38afef53ed613c48e1065255bdbac69c9016af95a156b0559634e67625e0b637`, unchanged.
+
+## Consequences
+
+**Positive**
+
+- A person's answer is admitted only where something that is shown it can take it to the work. The explainers say "the AI removes it" only where the writer's prompt has the list.
+- A composed step declares only what its prompt shows, so every reading of the declared ports (admission, explainers, the diff, the run's swap question) is true of the model's prompt.
+- The fact is written once and held both to the library (generated, tested) and to the activities (rendered, tested).
+
+**Negative, and residuals named**
+
+- **More composed recipes are refused than lose an answer.** COMPOSED-PROMPT refuses a step that declares a port its prompt never shows even where no person's answer depends on it: 2,223 of 28,653 fresh variants (7.8%) are refused for that alone, and their answers mostly reach the work. The composer is told which step, port and prompt, and repairs it by leaving the port out or reusing a prompt that shows it.
+- **A prompt byway's library does not hold is read by its declared ports.** That is a research recipe's harness prompt, judged by the CLI's validation, and no composed recipe can have one. Its verdict is as before ADR-0097.
+- **"Shows" means on some run.** A slot inside an `{{#if}}` on another slot counts, as does a fix that asks no model when the critique is empty, or a model keep-or-revert whose view slot holds the two versions once there is a previous one. This is the may-reading the reach analyses already use.
+- **Images count as shown whatever the template's text says about them.** A view's screenshots, the options' screenshots and a relay's start frame are attached to the request whether or not the template mentions them. On a web page or a storyboard, the options and a view also count as shown whenever they are declared, even where those candidates were never rendered or the screenshot attached predates the step that applied the answer: an over-approximation no corpus has produced a shape for. It can err only toward admitting an answer, and toward an explainer claiming it is applied, never toward refusing one.
+- **The model is shown a port; whether it acts on it is not decided here.** A template that renders the critique as context but asks for something else still counts as applying it.
+- **The "nothing is deleted for you" and "it flags only" sentences still read the declared ports.** That can only withhold them: a writer that takes the critique in without showing it would apply nothing. No admitted composed recipe has such a writer (decision 5).
+- **The catalog's C1-H seed takes in a voice deck its prompt never shows** (decision 7). It is reported, not changed. Changing it changes the research recipes' hashes, which is the research track's call.
+- **This closes** ADR-0098's residual "A writer counts as taking an answer in by its ports, not its prompt": the C3 draft and image steps, the seed as a writer, an AI step carrying an answer by its ports, and a relay link's brief. It also closes its decision 6 sentence "It is read from the step's ports, not its prompt", for every prompt byway's library holds. ADR-0098's text is unchanged.
+- **This does not close** ADR-0098's other residuals:
+  - a later from-scratch writer or a pick of earlier candidates (the 283 answers above);
+  - the paths the person does not choose;
+  - C1's seed read as directing on every run;
+  - the owner's question on the second case of `human-critique`.
+
+## Evidence
+
+- [External-review verification](../reviews/2026-10-08-external-review-verification.md), cluster A (F01), recommendation C, and its final check's residuals. The original review: `C:/Users/arvik/code/byway_review/byway-review.md` (outside the repository).
+- The final verifications of ADR-0098, outside the repository:
+  - reports: `C:/Users/arvik/AppData/Local/Temp/byway-fixes/designs/semantics-2-final-r9.json` and `semantics-2-final-r11.json`;
+  - probes: `C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/verify-semantics-2-r9/` and `verify-semantics-2-r11/`. The latter holds the oracle's RENDERED mode and the 2,702 answers.
+- This decision's measurement, outside the repository, in `C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/ports-rendered/`:
+  - corpus: `gen-pr.mts` (the round-11 generator, `patch-gen.cjs` says what changed), `run-gen*.sh`, `gp-*.json`, `gen-totals.log`; `merge-pr.cjs` writes `gp-all.json`, `gp-refused.json`, `gp-admitted.json` and `gp-promptonly.json`, summarized in `merge-pr.log`;
+  - execution oracle: `vpr.oracle.test.mts` and `run-oracle.sh`, with reports `o-refR-*`, `o-refP-*`, `o-admR-*` and `o-proR-*`; `cls-ref.log` (from `classify-pr.cjs`), `sum-admR.log` and `sum-proR.log`; the single variant rerun at 600 runs is `o-one-22851.json`;
+  - claims oracle: `claims-pr.oracle.test.mts` and `run-claims.sh`, with reports `cl-*.json`, summed in `sum-cl-*.log`; `mainpres.mts` attaches main's explainers for the control;
+  - the round-11 corpus: `reverdict-pr.mts` (`rv11-*.json`) and `xtab-r11.cjs` (`xtab-r11.log`);
+  - catalog and bundle: `catalog-cmp.mts` (`catalog-cmp.log`) and `bundle.mts` (`bundle.log`).
+- Tests:
+  - recipe: `packages/recipe/test/prompt-shows.test.ts`, and `semantics.test.ts`, whose purity test now admits prompt-shows.ts;
+  - prompts: `packages/prompts/test/template-slots.test.ts`;
+  - advisor: `packages/advisor/test/prompt-shows-admission.test.ts`;
+  - runner: `packages/runner/test/prompt-shows.test.ts` and `build.test.ts`.
+- It extends ADR-0092 and ADR-0098 by addition: what "takes in" means for a model step. It edits neither and supersedes no ADR.

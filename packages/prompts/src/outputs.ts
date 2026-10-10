@@ -80,10 +80,12 @@ export function outputForPurpose(purpose: string): OutputId {
 
 /**
  * The contract for a recipe step's own prompt. Human and tool steps have none. An ASSET step that consumes the
- * `voice` port turns a locked script into audio (C5 `vo-audio`), which has no v1 executor (ADR-0069).
+ * `voice` port turns a locked script into audio (C5 `vo-audio`), which has no v1 executor (ADR-0069). A model VOICE or
+ * render step is parsed as the work by the runner, as any model role its parser does not name (ADR-0092 stage 4), so
+ * its prompt answers with the artifact; admission refuses a model VOICE (DR9, ST12) all the same.
  */
 export function outputForStep(step: { role: string; consumes: readonly string[] }, medium: Medium): OutputId {
-  if (step.role === 'voice' || step.role === 'render') return 'none';
+  if (step.role === 'voice' || step.role === 'render') return `artifact:${medium}`;
   if (step.role === 'asset' && step.consumes.includes('voice')) return 'none';
   return outputForPurpose(`${step.role}:${medium}`);
 }

@@ -77,12 +77,14 @@ describe('parallel audit', () => {
     expect(ruleClauses(r)).toEqual(['ST5']);
   });
 
-  it('annotations from every lens are in scope after the audit', () => {
+  it('the lenses’ joined critique is in scope after the audit; a score is not (ADR-0092 stage 4: several lenses cannot make one score)', () => {
     const r = secondReader();
     const body = find(r, 'loop', 'author-loop').body as Seq;
-    body.steps.push(step({ id: 'read-notes', role: 'vision', block: 'VISION', actor: 'human', consumes: ['critique', 'score'], produces: ['taste'] }));
+    body.steps.push(step({ id: 'read-notes', role: 'vision', block: 'VISION', actor: 'human', consumes: ['critique'], produces: ['taste'] }));
     r.sitsOut = r.sitsOut.filter((s) => s.block !== 'VISION');
     expect(ruleClauses(r)).toEqual([]);
+    (body.steps.at(-1) as { consumes: string[] }).consumes = ['critique', 'score'];
+    expect(ruleClauses(r)).toEqual(['ST5']);
   });
 
   it('DR1 does not count the vanilla control runs inside a lens as candidates, but does outside one', () => {
@@ -124,7 +126,8 @@ describe('human-stopped loops', () => {
     Object.assign(find(r, 'loop', 'author-loop').gate, { metric: 'critic-score', threshold: 9, holder: 'worker', hidden: false });
     // C6-DR4 relaxes only the human stop, so it is now unused (ST8) and the visible threshold stays a violation. A scored
     // loop around the author's own writing could also end on an earlier scored draft, undoing theirs (ST12, ADR-0092).
-    expect(ruleClauses(r)).toEqual(['DR4:metric', 'PR2:not-hidden', 'ST8', 'ST12:set-aside']);
+    // Its critic sits in a lens, where it never reports to the loop's gate, so the loop has no verdict to stop on (ST2).
+    expect(ruleClauses(r)).toEqual(['DR4:metric', 'PR2:not-hidden', 'ST2:feed', 'ST8', 'ST12:set-aside']);
   });
 
   it('ST2: a critic metric needs a threshold', () => {

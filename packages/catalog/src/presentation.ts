@@ -69,7 +69,7 @@ interface Copy {
 /** Steps shared word for word by several configurations. */
 const yourDraft = (covers: string[] = ['write', 'render']): StepCopy => ({
   label: 'Your draft',
-  explainer: 'Your turn: write or revise the whole draft yourself. Each round, three AI readers go over it, and you decide when it is done.',
+  explainer: 'Your turn: write or revise the whole draft yourself. Each round, three AI readers go over it, and you decide when it is done; after ten rounds you are asked, and can allow more, once.',
   covers,
   operators: ['author-loop'],
 });
@@ -156,7 +156,7 @@ const COPY: readonly Copy[] = [
       },
       {
         label: 'Your direction',
-        explainer: 'Your turn: say what pulls you and what to avoid. The AI sharpens your favourites into one to three briefs, over up to three rounds.',
+        explainer: 'Your turn: say what pulls you and what to avoid. The AI sharpens your favourites into one to three briefs, over up to three rounds; at the last you can allow more, once.',
         covers: ['react', 'sharpen'],
       },
       {
@@ -377,7 +377,7 @@ const COPY: readonly Copy[] = [
       { label: 'Pick a premise', explainer: 'Your turn: choose the premise to write.', covers: ['pick-card'] },
       {
         label: 'Your direction',
-        explainer: 'Your turn: say what pulls you, what feels tacky and what to avoid. The AI sharpens a story brief for you, over up to two rounds.',
+        explainer: 'Your turn: say what pulls you, what feels tacky and what to avoid. The AI sharpens a story brief for you, over up to two rounds; at the last you can allow more, once.',
         covers: ['react', 'sharpen'],
       },
       yourDraft(),

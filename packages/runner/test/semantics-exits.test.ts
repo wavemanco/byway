@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { audit, exitPoints, loop, oneShotGate, optional, relay, replicate, route, seq, step, type Gate, type Loop, type Node, type Recipe, type Step } from '@byway/recipe';
 import type { RunInput } from '../src/types.ts';
+import { READY_PROMPT } from '../src/workflow/wording.ts';
 
 const state = vi.hoisted(() => ({
   ran: [] as string[],
@@ -69,8 +70,8 @@ interface Scenario {
   loop: Loop;
   scores?: number[];
   checks?: string[];
-  /** The person's answer to every confirm question (Run this step? Keep going? Use the best so far? Is this ready?). */
-  approve?: boolean;
+  /** The person's answer to every confirm question (Run this step? Keep going? Use the best so far? Is this ready?), or to each by its prompt. */
+  approve?: boolean | ((prompt: string) => boolean);
   routes?: Record<string, string>;
 }
 
@@ -82,7 +83,8 @@ async function run(s: Scenario): Promise<string[]> {
   const input: RunInput = { runId: 'run-exits', workspaceId: 'ws', recipe, problem: { text: 'A memo' }, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: s.routes ?? {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
-  Object.assign(engine, { ask: async (_call: unknown, spec: { kind: string }) => (spec.kind === 'confirm' ? { checkpointId: 'cp', approved: s.approve ?? true } : { checkpointId: 'cp', choice: [] }) });
+  const approve = (prompt: string) => (typeof s.approve === 'function' ? s.approve(prompt) : (s.approve ?? true));
+  Object.assign(engine, { ask: async (_call: unknown, spec: { kind: string; prompt: string }) => (spec.kind === 'confirm' ? { checkpointId: 'cp', approved: approve(spec.prompt) } : { checkpointId: 'cp', choice: [] }) });
   await engine.runStages();
   return state.ran.slice(1);
 }
@@ -118,7 +120,8 @@ describe('a loop whose gate cannot see its critic runs its body to the end', () 
     ['inside an inner loop', loop('l', body(loop('inner', seq(render('r'), critic('c'), fix('f')), gateOf('critic-score')), fix('outer-fix')), gateOf('critic-score', { max: 2 })), ['r', 'c', 'outer-fix', 'r', 'c', 'outer-fix']],
     ["a person's loop", loop('l', body(render('r'), critic('c'), fix('f')), gateOf('human', { max: 2 })), ['r', 'c', 'f', 'r', 'c', 'f']],
   ] as [string, Loop, string[]][])('%s', async (_name, l, expected) => {
-    const ran = await run({ loop: l, scores: Array(8).fill(10), approve: false });
+    // Every round goes on ("Is this ready?" No), and the cap is taken when it is reached (ADR-0093: every loop asks there).
+    const ran = await run({ loop: l, scores: Array(8).fill(10), approve: (prompt) => prompt !== READY_PROMPT });
     expect(ran).toEqual(expected);
     expect(exits(l)).toEqual([]);
   });

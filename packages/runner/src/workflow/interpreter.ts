@@ -15,7 +15,7 @@ import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '
 import type { CheckpointResolution } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
-import { feedsGate } from '@byway/recipe/semantics';
+import { asksSwaps, feedsGate, lockedScripts, machineWrites, voiceWrite } from '@byway/recipe/semantics';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
@@ -26,8 +26,11 @@ import {
   BEST_SO_FAR_PROMPT,
   budgetPrompt,
   DECLINED_NOTE,
+  FINAL_CHOICE_OPTIONS,
+  FINAL_CHOICE_PROMPT,
   GATE_FAILED_PROMPT,
   GATE_RETRY_NOTE,
+  humanCapPrompt,
   humanKind,
   humanPrompt,
   NOT_CONVERGING_PROMPT,
@@ -39,12 +42,21 @@ import {
   READY_PROMPT,
   revisesInPlace,
   routePrompt,
+  STOPPED_AT_CAP,
   SWAPS_PROMPT,
 } from './wording.ts';
 
 /** A plain failure that ends the run with this message. */
 export class RunFailure extends Error {
   override name = 'RunFailure';
+}
+
+/**
+ * The person stopped the run at a loop's last choice ("Stop the run", ADR-0093). Nothing failed, so the run ends
+ * cancelled, as Cancel ends it; a failed check the person declines to use stays a failure (RunFailure).
+ */
+export class RunStopped extends Error {
+  override name = 'RunStopped';
 }
 
 /** A one-shot gate failed with retries left: re-enter `stage` from its own entry state. */
@@ -96,7 +108,15 @@ interface Ctx {
   path: number[];
   /** The innermost loop whose gate a critic or check here reports to. */
   loop?: LoopFrame;
+  /**
+   * Inside an audit lens or a one-shot gate's body: what is made here never reaches the work (a lens keeps only its
+   * critique, a gate only its body's), so a writer here writes nothing over the person's words.
+   */
+  contained?: boolean;
 }
+
+/** A context for the branches of a fan-out: a fresh path, no loop, and the containment it sits in. */
+const branch = (ctx: Ctx, path: number[]): Ctx => ({ stage: ctx.stage, path, ...(ctx.contained ? { contained: true } : {}) });
 
 const SKIP_COMPOSITING = 'Compositing is not available in byway yet';
 const SKIP_NO_EXECUTOR = 'This step has no executor in byway yet; the work passes through unchanged.';
@@ -110,6 +130,8 @@ export class Interpreter {
   private checkpointCount = 0;
   private budgetQuestion: Promise<boolean> | undefined;
   private budgetCount = 0;
+  /** The script VOICEs locked after they run (lockedScripts), read from the recipe the first time a VOICE asks. */
+  private locked: ReadonlySet<Step> | undefined;
 
   constructor(input: RunInput, control: RunControl) {
     this.input = input;
@@ -165,7 +187,7 @@ export class Interpreter {
         for (const [i, child] of n.steps.entries()) {
           p = await this.node(child, p, ctx);
           // A sweep whose hits a swap step will act on: the person decides each hit first (TELLS-1, convention C2).
-          if (child.op === 'step' && child.actor === 'model' && child.role === 'tells-sweep' && swapsFollow(n.steps.slice(i + 1))) p = await this.chooseSwaps(child, p, ctx);
+          if (child.op === 'step' && asksSwaps(child, n.steps.slice(i + 1))) p = await this.chooseSwaps(child, p, ctx);
         }
         return p;
       }
@@ -264,6 +286,11 @@ export class Interpreter {
   // ---- Steps ------------------------------------------------------------------------------------------------------
 
   private async step(s: Step, ports: Ports, ctx: Ctx): Promise<Ports> {
+    // Port rule 6 at run time (ADR-0092): once the person's words are in the work, no machine write that is not held to
+    // keep them runs, wherever its recipe was admitted. Admission refuses such a recipe; this is the engine's own guard.
+    if (ports.held?.length && !ctx.contained && s.actor !== 'human' && !s.keepsVoice && machineWrites(s)) {
+      throw new RunFailure(`Step "${s.id}" would change the work after your own words, and it is not held to keep them, so the run stopped before it. Nothing was written over your words.`);
+    }
     const call = this.call(s.id, ctx);
     if (s.actor === 'human') return this.human(s, ports, ctx, call);
     const unseen = unobservable(s, ports);
@@ -373,7 +400,9 @@ export class Interpreter {
     // A reaction that revises a text port in place opens with that port's text, and its answer replaces it (ADR-0090).
     const revised = revisesInPlace(s);
     const inPlace = revised ? ports[revised]?.trim() : undefined;
-    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
+    // A VOICE is asked by what it covers; a script says it is locked only where nothing the person writes later can change it.
+    const voice = s.role === 'voice' ? { medium: this.input.medium, locked: (this.locked ??= lockedScripts(this.input.recipe)).has(s) } : {};
+    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace, voice), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
     let initial: OpenCheckpointInput['initial'];
     if (kind === 'compare') {
       checkpoint = {
@@ -424,7 +453,9 @@ export class Interpreter {
         break;
       case 'write':
         if (fin.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: fin.artifactId, ...(s.role !== 'voice' ? { authored: fin.artifactId } : {}) });
-        if (s.produces.includes('voice')) out.voice = text;
+        // The person's words are what a VOICE write executes, not what a step declares (ADR-0092): the latest answer is
+        // what a 'voice' reader gets, and every answer is held for the keepsVoice writers after it.
+        if (voiceWrite(s)) Object.assign(out, { voice: text, held: [...(ports.held ?? []), text] });
         break;
       case 'directive':
         // A person who lists nothing to remove gives an empty directive, as a model's "Nothing to remove." does.
@@ -442,7 +473,7 @@ export class Interpreter {
 
   private async replicate(r: Replicate, ports: Ports, ctx: Ctx): Promise<Ports> {
     const n = Math.max(1, r.n);
-    const outs = await Promise.all(Array.from({ length: n }, (_, i) => this.node(r.body, ports, { stage: ctx.stage, path: [...ctx.path, i] })));
+    const outs = await Promise.all(Array.from({ length: n }, (_, i) => this.node(r.body, ports, branch(ctx, [...ctx.path, i]))));
     const kept = outs.filter((o) => o.artifact);
     return { ...ports, options: kept.map((o) => o.artifact!), optionViews: kept.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
   }
@@ -453,7 +484,7 @@ export class Interpreter {
       ids.map((id, i) => {
         const view = ports.optionViews?.[i];
         const start: Ports = { ...ports, artifact: id, previousArtifact: undefined, view: view ? { pool: false, items: [view] } : undefined, options: undefined, optionViews: undefined };
-        return this.node(e.body, start, { stage: ctx.stage, path: [...ctx.path, i] });
+        return this.node(e.body, start, branch(ctx, [...ctx.path, i]));
       }),
     );
     return { ...ports, options: outs.map((o, i) => o.artifact ?? ids[i]!), optionViews: outs.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
@@ -487,7 +518,9 @@ export class Interpreter {
         const res = await this.control.machine(() =>
           this.act(call, () => model.modelStep({ run: this.run, call: this.call(p.judge!.id, ctx), step: toStepSpec(p.judge!), ports, refs: [], candidates })),
         );
-        const at = indexOfLabel(res.label ?? 'A');
+        // A judge that names no draft decides nothing: the run fails rather than take the first one after a paid call.
+        const at = res.label === undefined ? -1 : indexOfLabel(res.label);
+        if (at < 0 || at >= left.length) throw new RunFailure(`The choice at "${p.id}" named no draft among its ${left.length}, so nothing was chosen.`);
         chosen.push(left[at]!);
         left = left.filter((_, j) => j !== at);
       }
@@ -514,8 +547,12 @@ export class Interpreter {
   /**
    * A loop until its hidden gate (02 §2). Critic and check gates are decided right after the critic or check inside the
    * body (afterGateStep), so a version that passes is not "fixed" again; a person's gate (`human`) asks "Is this
-   * ready?" after each round. Every way out but the threshold ends with the best version: by a fresh re-rank of the
-   * top snapshots (plateau, a stopped probe, the cap by policy), or by the person at the cap.
+   * ready?" after each round but the last. Every way out but the threshold ends with the best version: by a fresh
+   * re-rank of the top snapshots (plateau, a stopped probe, the cap by policy), or by the person at the cap.
+   *
+   * Every way out at the cap takes one turn (capTurn, ADR-0093): right after a critic or check, at the last round of a
+   * person's loop, and after a round that ran to its end with no verdict. Running out of rounds is never taken as the
+   * person's yes.
    */
   private async loop(l: Loop, ports: Ports, ctx: Ctx): Promise<Ports> {
     const g = l.gate;
@@ -540,14 +577,22 @@ export class Interpreter {
       if (g.metric === 'human') {
         const call = this.call(l.id, ctx);
         await this.iteration(frame, call);
-        if (frame.round >= frame.max) return current;
+        // The last round asks the cap's question instead: the person's answer, not the cap, ends their loop.
+        if (frame.round >= frame.max) {
+          if ((await this.capTurn(frame, current, ctx, call)) === 'use') return current;
+          continue;
+        }
         // What "ready" is about: the work (or each option) and the round's notes, a sharpened brief among them (ENG-8).
         const res = await this.ask(call, { kind: 'confirm', prompt: READY_PROMPT, artifactIds: beside(current) });
         if (res.approved) return current;
         continue;
       }
-      // A body that ran to its end without its gate deciding (no critic or check reported): the cap bounds it.
-      if (frame.round >= frame.max) return scored ? this.bestOf(frame, current, ctx) : current;
+      // A body that ran to its end without its gate deciding (no critic or check reported): the cap bounds it, and it
+      // takes the same turn as any other cap (admission refuses such a loop: ST2 'feed').
+      if (frame.round >= frame.max) {
+        if ((await this.capTurn(frame, current, ctx, this.call(l.id, ctx))) === 'raise') continue;
+        return scored ? this.bestOf(frame, current, ctx) : current;
+      }
     }
   }
 
@@ -616,14 +661,38 @@ export class Interpreter {
     if (frame.round >= frame.max) await this.atCap(frame, ports, ctx, await this.bestVersion(frame, ctx));
   }
 
-  /** The cap (02 §2): by policy, the best snapshot; with a person, their call, and a "no" raises the cap once. */
+  /** The cap reached right after a critic or check: leave the body with the chosen version, unless the cap was raised. */
   private async atCap(frame: LoopFrame, ports: Ports, ctx: Ctx, best: string | undefined): Promise<void> {
     const id = frame.loop.id;
-    if (frame.loop.gate.onCap !== 'human' || frame.raised) throw new LoopExit(id, 'accepted', ports, best);
-    const res = await this.ask(this.call(id, ctx), { kind: 'confirm', prompt: BEST_SO_FAR_PROMPT, ...(best ? { artifactIds: [best] } : {}) });
-    if (res.approved) throw new LoopExit(id, 'accepted', ports, best);
-    frame.raised = true;
-    frame.max += Math.max(1, frame.loop.gate.max);
+    if ((await this.capTurn(frame, ports, ctx, this.call(id, ctx), best)) === 'use') throw new LoopExit(id, 'accepted', ports, best);
+  }
+
+  /**
+   * The turn at a loop's cap, one policy for every way a loop reaches it (02 §2, ADR-0073, ADR-0093):
+   * - by policy (onCap not human): the loop ends there (a critic loop on its best version);
+   * - with a person, the first time: a critic or check loop asks "Use the best version so far?", a person's loop asks
+   *   whether to use this version, with the work and the round's notes beside it; No raises the cap once, by the
+   *   planned number of rounds;
+   * - at the raised cap: a critic or check loop takes its best version, and a person's loop asks a last choice, this
+   *   version or stopping the run (RunStopped: the run ends cancelled, since nothing failed).
+   */
+  private async capTurn(frame: LoopFrame, ports: Ports, ctx: Ctx, call: StepCall, best?: string): Promise<'use' | 'raise'> {
+    const g = frame.loop.gate;
+    if (g.onCap !== 'human') return 'use';
+    const human = g.metric === 'human';
+    if (!frame.raised) {
+      const res = human
+        ? await this.ask(call, { kind: 'confirm', prompt: humanCapPrompt(Math.max(1, g.max)), artifactIds: beside(ports) })
+        : await this.ask(call, { kind: 'confirm', prompt: BEST_SO_FAR_PROMPT, ...(best ? { artifactIds: [best] } : {}) });
+      if (res.approved) return 'use';
+      frame.raised = true;
+      frame.max += Math.max(1, g.max);
+      return 'raise';
+    }
+    if (!human) return 'use';
+    const res = await this.ask(call, { kind: 'choose', prompt: FINAL_CHOICE_PROMPT, options: FINAL_CHOICE_OPTIONS.map((o) => ({ ...o })), artifactIds: beside(ports) });
+    if (res.choice?.[0] === 'stop') throw new RunStopped(STOPPED_AT_CAP);
+    return 'use';
   }
 
   // ---- Choices ----------------------------------------------------------------------------------------------------
@@ -674,7 +743,7 @@ export class Interpreter {
 
   /** Lenses read the same input concurrently; their critiques are joined under their names and nothing else changes. */
   private async audit(a: Audit, ports: Ports, ctx: Ctx): Promise<Ports> {
-    const outs = await Promise.all(a.lenses.map((lens) => this.node(lens.body, ports, { stage: ctx.stage, path: ctx.path })));
+    const outs = await Promise.all(a.lenses.map((lens) => this.node(lens.body, ports, { stage: ctx.stage, path: ctx.path, contained: true })));
     const joined = outs.flatMap((o, i) => (o.critique && o.critique !== ports.critique ? [`## ${a.lenses[i]!.name}\n${o.critique.trim()}`] : []));
     const notes = outs.flatMap((o) => (o.notes && o.notes !== ports.notes ? o.notes : []));
     const annotated = joined.length ? withCritique(ports, joined.join('\n\n')) : ports;
@@ -682,7 +751,7 @@ export class Interpreter {
   }
 
   private async gate(g: OneShotGate, ports: Ports, ctx: Ctx): Promise<Ports> {
-    const out = await this.node(g.body, ports, { stage: ctx.stage, path: ctx.path });
+    const out = await this.node(g.body, ports, { stage: ctx.stage, path: ctx.path, contained: true });
     const verdict = out.score && passes(out.score, g.pass.metric, g.pass.threshold);
     const kept: Ports = { ...ports, ...(out.critique ? { critique: out.critique } : {}) };
     if (verdict) return kept;
@@ -755,17 +824,6 @@ function beside(ports: Ports, work?: string[]): string[] {
 function withCritique(ports: Ports, critique: string | undefined, empty?: string): Ports {
   const { emptyCritique: _was, critique: _old, hits: _hits, ...rest } = ports;
   return { ...rest, ...(critique !== undefined ? { critique } : {}), ...(empty ? { emptyCritique: empty } : {}) };
-}
-
-/**
- * Whether a TELLS sweep's hits feed a swap step a person stands behind: the next step that reads a critique is a model
- * fix, and the keep-or-revert after it is a person's. A headless arm (C1-H, its keep-or-revert by a proxy) and a sweep
- * that only flags (C6, C6a) are left as they are.
- */
-function swapsFollow(rest: readonly Node[]): boolean {
-  const steps = rest.filter((n): n is Step => n.op === 'step');
-  const fix = steps.find((s) => s.consumes.includes('critique'));
-  return fix?.role === 'fix' && fix.actor === 'model' && !steps.some((s) => s.role === 'tells-compare' && s.actor !== 'human');
 }
 
 /** The problem with a person's answer that an activity could not use as it is (ENG-6), or undefined. */
