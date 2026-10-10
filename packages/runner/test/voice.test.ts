@@ -666,6 +666,19 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await shows(button.artifactId!)).toBe('Pay\n$20\nTotal');
   });
 
+  it('an address and opening hours a white-space style breaks over lines keep their breaks beside a word changed in place of another (r11 verifier)', async () => {
+    // Round 11 refused "12" to "14", "London" to "Leeds" and "6pm" to "7pm" (a browser would show on one line what it
+    // showed on separate lines), and stored "Street" to "Road" with the address on one row.
+    const address = page('<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street\nLondon NW1 6XE</address>');
+    for (const [from, to] of [['12', '14'], ['London', 'Leeds'], ['Street', 'Road']] as const) {
+      const out = await (await open(address)).answer(`T\n${'Crumb & Co. 12 Baker Street London NW1 6XE'.replace(from, to)}`);
+      expect(await shows(out.artifactId!), to).toBe('Crumb & Co.\n12 Baker Street\nLondon NW1 6XE'.replace(from, to));
+    }
+    const hours = page('<p style="white-space:pre-line">Mon–Fri 7am–6pm\nSat 8am–4pm\nSun closed</p>');
+    const out = await (await open(hours)).answer('T\nMon–Fri 7am–7pm Saturday 8am–5pm Sun closed');
+    expect(await shows(out.artifactId!)).toBe('Mon–Fri 7am–7pm\nSaturday 8am–5pm\nSun closed');
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // Browsers move the font out of the table, right after "Middle".

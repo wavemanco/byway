@@ -999,9 +999,16 @@ describe('a gap between two characters the person kept keeps the page\'s own whi
     expect(run(hours, set(1, 'Mon–Fri 7am–6pm Sat 8am–4pm Sun 9am–1pm'))).toMatchObject(clean(hours.replace('closed', '9am–1pm')));
     const poem = '<p style="white-space:pre">Roses are red,\n  violets are blue</p>';
     expect(run(poem, set(1, 'Roses are red, violets are new'))).toMatchObject(clean(poem.replace('blue', 'new')));
-    // A gap beside a word the person changed or added, or where they deleted one, is the person's single space: only a
-    // gap whose two neighbours stood side by side, unchanged, keeps the page's bytes.
-    expect(run(address, set(1, 'Crumb & Co. 12 Baker Street, London NW1 6XE'))).toMatchObject(clean('<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street, London NW1 6XE</address>'));
+    // A gap beside a word the person changed in place of another keeps the page's bytes too (r11 verifier: round 11
+    // wrote it as one space, so "12" changed to "14", or "Street" to "Road", put the address on fewer lines): the words
+    // on both sides stand, one for one, where two words of the line before stood.
+    expect(run(address, set(1, 'Crumb & Co. 14 Baker Street London NW1 6XE'))).toMatchObject(clean(address.replace('12', '14')));
+    expect(run(address, set(1, 'Crumb & Co. 12 Baker Road London NW1 6XE'))).toMatchObject(clean(address.replace('Street', 'Road')));
+    expect(run(address, set(1, 'Crumb & Co. 12 Baker Road Leeds NW1 6XE'))).toMatchObject(clean(address.replace('Street', 'Road').replace('London', 'Leeds')));
+    expect(run(address, set(1, 'Crumb & Co. 12 Baker Street, London NW1 6XE'))).toMatchObject(clean(address.replace('Street', 'Street,')));
+    expect(run(hours, set(1, 'Mon–Fri 7am–7pm Saturday 8am–5pm Sun closed'))).toMatchObject(clean(hours.replace('6pm', '7pm').replace('Sat', 'Saturday').replace('4pm', '5pm')));
+    // Beside a word the person added, or where they deleted one, a gap has no counterpart in the line before: it is the
+    // person's single space.
     expect(run(address, set(1, 'Crumb & Co. Bakery 12 Baker Street London NW1 6XE'))).toMatchObject(clean('<address style="white-space:pre-line">Crumb &amp; Co. Bakery 12 Baker Street\nLondon NW1 6XE</address>'));
     expect(run(address, set(1, 'Crumb & Co. 12 Baker Street NW1 6XE'))).toMatchObject(clean('<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street NW1 6XE</address>'));
     // A gap that spans formatting (whitespace in two runs of text) is the person's single space too.
@@ -1019,9 +1026,10 @@ describe('a gap between two characters the person kept keeps the page\'s own whi
     expect(run('<p><a href="/a"> menu!</a>Spring?  menu</p>', set(1, '[x]Spring? menu'))).toMatchObject(clean('<p><a href="/a"> x</a>Spring?  menu</p>'));
   });
 
-  it('pretty-printed source keeps its own whitespace between kept words, which shows as one space', () => {
+  it('pretty-printed source keeps its own whitespace between words that stand where words stood, which shows as one space', () => {
     const p = '<p>\n  Fresh bread,\n  baked every\n  morning.\n</p>';
-    expect(run(p, set(1, 'Fresh bread, baked every evening.'))).toMatchObject(clean('<p>\n  Fresh bread,\n  baked every evening.\n</p>'));
+    expect(run(p, set(1, 'Fresh bread, baked every evening.'))).toMatchObject(clean('<p>\n  Fresh bread,\n  baked every\n  evening.\n</p>'));
+    expect(run(p, set(1, 'Fresh bread, baked every single morning.'))).toMatchObject(clean('<p>\n  Fresh bread,\n  baked every single morning.\n</p>'));
   });
 });
 

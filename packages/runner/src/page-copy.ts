@@ -1582,6 +1582,24 @@ function wordPairs(ow: readonly string[], nw: readonly string[]): Pairs {
 }
 
 /**
+ * Which old word each new word stands for (-1: none): the matched words, and, between two matched words (or the line's
+ * edge), a run of changed words as long as the run it replaced, one for one in order. So "12 Baker" written "14 Baker"
+ * has "14" stand for "12", and the gap between "Co." and "14" stands for the gap between "Co." and "12".
+ */
+export function oneForOne(pairs: Pairs, oldLength: number, newLength: number): Int32Array {
+  const from = new Int32Array(newLength).fill(-1);
+  let a0 = -1;
+  let b0 = -1;
+  for (const [a, b] of [...pairs, [oldLength, newLength] as [number, number]]) {
+    if (a - a0 === b - b0) for (let k = 1; k < b - b0; k++) from[b0 + k] = a0 + k;
+    if (b < newLength) from[b] = a;
+    a0 = a;
+    b0 = b;
+  }
+  return from;
+}
+
+/**
  * Where a segment sits in its line, for words that have no kept word beside them in it: the first segment's words
  * come before the line's first kept word (in the link after it), the last segment's after its last kept word.
  */
@@ -1658,15 +1676,16 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
   const ow = wordsOf(oc.map((x) => x.c));
   const nw = wordsOf(nc);
   const pairs = wordPairs(ow.map((x) => x.w), nw.map((x) => x.w));
-  // A gap between two words the person kept, which stood side by side with that gap between them, keeps the page's own
-  // whitespace (its line breaks, where a white-space style keeps them) when it lay in one run of text; every other gap
-  // is the person's single space (by its place in the new text).
+  // A gap between two words that stand, one for one, where two words stood side by side in the line before (both kept,
+  // or either changed in place of the old one: oneForOne) keeps the page's own whitespace there (its line breaks, where
+  // a white-space style keeps them) when it lay in one run of text; every other gap is the person's single space (by its
+  // place in the new text). So an address keeps its breaks when a word beside one changes.
   const kept = new Map<number, string>();
-  for (let i = 1; i < pairs.length; i++) {
-    const [a0, b0] = pairs[i - 1]!;
-    const [a1, b1] = pairs[i]!;
-    const ws = oc[ow[a0]!.to]?.ws;
-    if (a1 === a0 + 1 && b1 === b0 + 1 && ws !== undefined && nc[nw[b0]!.to] === ' ') kept.set(nw[b0]!.to, ws);
+  const stands = oneForOne(pairs, ow.length, nw.length);
+  for (let b = 0; b + 1 < nw.length; b++) {
+    const a = stands[b]!;
+    const ws = a >= 0 ? oc[ow[a]!.to]?.ws : undefined;
+    if (a >= 0 && stands[b + 1] === a + 1 && ws !== undefined && nc[nw[b]!.to] === ' ') kept.set(nw[b]!.to, ws);
   }
   const spaced = (c: string, k: number): string => (c === ' ' ? (kept.get(k) ?? ' ') : c);
   if (holding.length <= 1) {
@@ -2267,26 +2286,44 @@ function partsOf(p: PageDeck, slots: number[]): Part[] {
  * written page reads it as one.
  */
 /**
- * Whether every gap of `written` (a line's text) that is not one space stands, with the same bytes, between the same
- * two characters in `before` (the line's text before), each gap of the line before used once. (Placement keeps a gap's
- * bytes between two words it kept, word by word within each part of the line, so the characters beside it are the same.)
+ * Whether every gap of `written` (a line's text) that is not one space is a gap of `before` (the line's text before),
+ * with the same bytes, where it stood: between the same two characters (each such gap of the line before used once),
+ * or between two words that stand, one for one, where the two words around that gap stood. The words are matched by
+ * the verifier's own edit script (Myers, not placement's table), past 2,000 changes by the common first and last words,
+ * and a run of changed words as long as the run it replaced stands for it one for one (oneForOne). (Placement keeps a
+ * gap's bytes between two words that stand where two words stood side by side, word by word within each part of the
+ * line, so where it kept one, one of these holds.)
  */
 function ownGaps(before: string, written: string): boolean {
-  const triples = (t: string) => {
+  const split = (t: string) => {
     const parts = t.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '').split(/([ \t\n\f\r]+)/);
-    const out: string[] = [];
-    for (let k = 1; k + 1 < parts.length; k += 2) out.push(`${[...parts[k - 1]!].at(-1)}\u0000${parts[k]}\u0000${[...parts[k + 1]!][0]}`);
-    return out;
+    return { words: parts.filter((_, k) => k % 2 === 0), gaps: parts.filter((_, k) => k % 2 === 1) };
   };
+  const o = split(before);
+  const n = split(written);
+  const triple = (w: { words: string[]; gaps: string[] }, k: number) => `${[...w.words[k]!].at(-1)}\u0000${w.gaps[k]}\u0000${[...w.words[k + 1]!][0]}`;
   const had = new Map<string, number>();
-  for (const x of triples(before)) had.set(x, (had.get(x) ?? 0) + 1);
-  for (const x of triples(written)) {
-    if (x.split('\u0000')[1] === ' ') continue;
-    const n = had.get(x) ?? 0;
-    if (!n) return false;
-    had.set(x, n - 1);
+  o.gaps.forEach((_, k) => had.set(triple(o, k), (had.get(triple(o, k)) ?? 0) + 1));
+  let pairs = editPairs(o.words, n.words, EDIT_MAX);
+  if (!pairs) {
+    pairs = [];
+    let pre = 0;
+    while (pre < o.words.length && pre < n.words.length && o.words[pre] === n.words[pre]) pairs.push([pre, pre++]);
+    const tail: Pairs = [];
+    for (let s = 1; s <= o.words.length - pre && s <= n.words.length - pre && o.words[o.words.length - s] === n.words[n.words.length - s]; s++) tail.push([o.words.length - s, n.words.length - s]);
+    pairs.push(...tail.reverse());
   }
-  return true;
+  const stands = oneForOne(pairs, o.words.length, n.words.length);
+  return n.gaps.every((g, k) => {
+    if (g === ' ') return true;
+    const a = stands[k]!;
+    if (a >= 0 && stands[k + 1] === a + 1 && o.gaps[a] === g) return true;
+    const x = triple(n, k);
+    const left = had.get(x) ?? 0;
+    if (!left) return false;
+    had.set(x, left - 1);
+    return true;
+  });
 }
 
 function formOf(parts: Part[]): { text: string; links: string; shown: string } {
