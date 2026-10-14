@@ -1026,6 +1026,16 @@ describe('a gap between two characters the person kept keeps the page\'s own whi
     expect(run('<p><a href="/a"> menu!</a>Spring?  menu</p>', set(1, '[x]Spring? menu'))).toMatchObject(clean('<p><a href="/a"> x</a>Spring?  menu</p>'));
   });
 
+  it('where the verifier matches a repeated word otherwise than placement, every gap of the line is the person\'s single space (round 12 evidence)', () => {
+    // Placement's table has "today!" stand for the first "open" and keeps the break after it; the verifier's own edit
+    // script matches the kept "open" with the first one, so it read that break as a gap the page never had there and
+    // refused the write as "Line 2 must read exactly …".
+    const poem = '<p style="white-space:pre-line">open\nopen Sign today</p>';
+    expect(run(poem, set(1, 'today! open Sign today'))).toMatchObject(clean('<p style="white-space:pre-line">today! open Sign today</p>'));
+    // Where the two read the words alike, the break stays.
+    expect(run(poem, set(1, 'open open Sign tomorrow'))).toMatchObject(clean(poem.replace('today', 'tomorrow')));
+  });
+
   it('pretty-printed source keeps its own whitespace between words that stand where words stood, which shows as one space', () => {
     const p = '<p>\n  Fresh bread,\n  baked every\n  morning.\n</p>';
     expect(run(p, set(1, 'Fresh bread, baked every evening.'))).toMatchObject(clean('<p>\n  Fresh bread,\n  baked every\n  evening.\n</p>'));

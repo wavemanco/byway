@@ -1621,7 +1621,7 @@ type Side = 'start' | 'end' | 'between';
  * last kept word: into the shallowest slot reachable from it across only opening (or, after it, closing) formatting,
  * so an empty icon between keeps its place and its gap.
  */
-function alignInto(p: PageDeck, group: number[], next: string, own: number | undefined, side: Side): Map<number, string> {
+function alignInto(p: PageDeck, group: number[], next: string, own: number | undefined, side: Side, keepGaps = true): Map<number, string> {
   const out = new Map<number, string>(group.map((s) => [s, '']));
   if (!group.length || !next) return out;
   // The old characters, each run of whitespace one ' ' with the page's own bytes (`ws`; undefined once the run spans
@@ -1687,10 +1687,11 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
   // A gap between two words that stand, one for one, where two words stood side by side in the line before (both kept,
   // or either changed in place of the old one: oneForOne) keeps the page's own whitespace there (its line breaks, where
   // a white-space style keeps them) when it lay in one run of text; every other gap is the person's single space (by its
-  // place in the new text). So an address keeps its breaks when a word beside one changes.
+  // place in the new text). So an address keeps its breaks when a word beside one changes. (`keepGaps` false: every gap
+  // is the person's single space; see place.)
   const kept = new Map<number, string>();
   const stands = oneForOne(pairs, ow.length, nw.length);
-  for (let b = 0; b + 1 < nw.length; b++) {
+  for (let b = 0; keepGaps && b + 1 < nw.length; b++) {
     const a = stands[b]!;
     const ws = a >= 0 ? oc[ow[a]!.to]?.ws : undefined;
     if (a >= 0 && stands[b + 1] === a + 1 && ws !== undefined && nc[nw[b]!.to] === ' ') kept.set(nw[b]!.to, ws);
@@ -1816,49 +1817,66 @@ function place(before: string, edit: PageEdit, notOffered?: ReadonlySet<number>)
   p.units.forEach((u, i) => {
     const line = edit.lines[i]!;
     if (!line.changed) return;
-    const texts = new Map<number, string>(u.slots.map((s) => [s, '']));
-    if (line.text) {
-      u.segs.forEach((seg, k) => {
-        const t = line.segs[k]!.text;
-        if (!t) return;
-        // A part outside links with no slot outside links: none at all, or only the empty reach of a wordless link the
-        // page leaves open (it ends where the next <a> starts).
-        if (seg.kind === 'out' && u.marked && !seg.slots.some((s) => p.slots[s]!.link === undefined)) {
-          // Words beside a link where the line had none: right after the link before, or right before the link after.
-          const prevLink = u.segs[k - 1];
-          const nextLink = u.segs[k + 1];
-          const prev = prevLink ? p.els.get(prevLink.link!)! : undefined;
-          if (prev && (prev.end! >= p.tokens.length || !(p.tokens[prev.end!]! as { closing?: boolean }).closing)) {
-            // The link before is left open and ends where the next <a> starts: there is no place between them outside
-            // both. A space can go at the end of the first (it shows the same); words cannot.
-            if (noHtmlSpace(t)) {
-              problems.push(
-                nextLink
-                  ? `Line ${i + 1}: words cannot be added between these two links here: the page leaves the first one open, so a browser starts the second right where the first ends.`
-                  : `Line ${i + 1}: words cannot be added after the link "${squashHtml(line.segs[k - 1]!.text)}" on this line: the page leaves that link open, so a browser makes the words after it, up to the next link, part of it.`,
-              );
+    const placeWords = (keepGaps: boolean, problems: string[]): Map<number, string> => {
+      const texts = new Map<number, string>(u.slots.map((s) => [s, '']));
+      if (line.text) {
+        u.segs.forEach((seg, k) => {
+          const t = line.segs[k]!.text;
+          if (!t) return;
+          // A part outside links with no slot outside links: none at all, or only the empty reach of a wordless link the
+          // page leaves open (it ends where the next <a> starts).
+          if (seg.kind === 'out' && u.marked && !seg.slots.some((s) => p.slots[s]!.link === undefined)) {
+            // Words beside a link where the line had none: right after the link before, or right before the link after.
+            const prevLink = u.segs[k - 1];
+            const nextLink = u.segs[k + 1];
+            const prev = prevLink ? p.els.get(prevLink.link!)! : undefined;
+            if (prev && (prev.end! >= p.tokens.length || !(p.tokens[prev.end!]! as { closing?: boolean }).closing)) {
+              // The link before is left open and ends where the next <a> starts: there is no place between them outside
+              // both. A space can go at the end of the first (it shows the same); words cannot.
+              if (noHtmlSpace(t)) {
+                problems.push(
+                  nextLink
+                    ? `Line ${i + 1}: words cannot be added between these two links here: the page leaves the first one open, so a browser starts the second right where the first ends.`
+                    : `Line ${i + 1}: words cannot be added after the link "${squashHtml(line.segs[k - 1]!.text)}" on this line: the page leaves that link open, so a browser makes the words after it, up to the next link, part of it.`,
+                );
+                return;
+              }
+              const last = prevLink!.slots.at(-1)!;
+              texts.set(last, `${texts.get(last) ?? ''}${t}`);
               return;
             }
-            const last = prevLink!.slots.at(-1)!;
-            texts.set(last, `${texts.get(last) ?? ''}${t}`);
+            const at = prev ? prev.end! + 1 : p.els.get(nextLink!.link!)!.start;
+            const slot = p.slotEndingAt[at]!;
+            if (slot < 0 || !u.slots.includes(slot) || p.slots[slot]!.link !== undefined) {
+              problems.push(`Line ${i + 1}: words cannot be added on this side of the link here, because the link continues on the next or previous line.`);
+              return;
+            }
+            texts.set(slot, `${texts.get(slot) ?? ''}${t}`);
             return;
           }
-          const at = prev ? prev.end! + 1 : p.els.get(nextLink!.link!)!.start;
-          const slot = p.slotEndingAt[at]!;
-          if (slot < 0 || !u.slots.includes(slot) || p.slots[slot]!.link !== undefined) {
-            problems.push(`Line ${i + 1}: words cannot be added on this side of the link here, because the link continues on the next or previous line.`);
-            return;
-          }
-          texts.set(slot, `${texts.get(slot) ?? ''}${t}`);
-          return;
-        }
-        // A link part's words stay in its link; words outside links stay outside every link, and on a whole-link line
-        // every word is the link's.
-        const own = u.marked ? seg.link : u.wholeLink;
-        const side: Side = k === 0 ? 'start' : k === u.segs.length - 1 ? 'end' : 'between';
-        for (const [s, x] of alignInto(p, seg.slots, t, own, u.marked ? side : 'between')) texts.set(s, `${texts.get(s) ?? ''}${x}`);
-      });
+          // A link part's words stay in its link; words outside links stay outside every link, and on a whole-link line
+          // every word is the link's.
+          const own = u.marked ? seg.link : u.wholeLink;
+          const side: Side = k === 0 ? 'start' : k === u.segs.length - 1 ? 'end' : 'between';
+          for (const [s, x] of alignInto(p, seg.slots, t, own, u.marked ? side : 'between', keepGaps)) texts.set(s, `${texts.get(s) ?? ''}${x}`);
+        });
+      }
+      return texts;
+    };
+    // A gap placement keeps as the page's own bytes must be one the in-code verifier sees standing where the line before
+    // had it (ownGaps, by its own alignment of the line's words). Where it matches the words otherwise (a word repeated
+    // beside a changed one, as "open" in "open\nopen Sign today" written "today! open Sign today"), every gap of the line
+    // is the person's single space instead, which it always reads as written.
+    let found: string[] = [];
+    let texts = placeWords(true, found);
+    if (line.text) {
+      const t = u.slots.map((s) => texts.get(s)!).join('').replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '');
+      if (t !== squashHtml(t) && !ownGaps(decodeText(u.slots.map((s) => slotRaw(p, s)).join('')), t)) {
+        found = [];
+        texts = placeWords(false, found);
+      }
     }
+    problems.push(...found);
     // Edge whitespace goes back into the slot that held it, at the same end: before the line's words at its start,
     // after them at its end, wherever the new words went. The new words carry their own spaces, so a gap beside an
     // empty icon or an arrow inside a link stays on its side of it (a space beside another one, with only formatting
