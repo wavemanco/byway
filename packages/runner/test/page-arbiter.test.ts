@@ -539,6 +539,15 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     // Round 11 read "$29" and "/month", shown 0.6 s apart, as apart across boxes, so it let through a space typed
     // between them, which the flex item's edge drops.
     expect((await check(mirror, 'T\n$29 /month', mirror.replace('>$29<', '>$29 <')))?.problem).toMatch(/because a browser would run words together that your lines keep apart: it would show "\$29\/month"/);
+    // Testimonials a script fades in turn, stacked in one place, never stand on the screen together: a slide made
+    // shorter is written (round 12's first fix read them from where each stood, the next slide's first letter before
+    // the last one's end, and refused "I" as words run together with the next slide).
+    const fade = pageOf(
+      '<style>.car{position:relative;height:60px;width:600px}.s{position:absolute;left:0;top:0;margin:0;opacity:0;transition:opacity .5s}.s.on{opacity:1}</style><h2>What people say</h2><div class="car"><p class="s on">Great bread every day</p><p class="s">Best coffee in town</p><p class="s">Friendly staff</p></div><p>After</p><script>const ss=[...document.querySelectorAll(".s")];let k=0;setInterval(()=>{ss[k].classList.remove("on");k=(k+1)%ss.length;ss[k].classList.add("on");},2000);</script>',
+    );
+    expect((await offer(fade)).offered).toEqual(['T', 'What people say', 'Great bread every day', 'Best coffee in town', 'Friendly staff', 'After']);
+    expect(await check(fade, 'T\nWhat people say\nI\nBest coffee in town\nFriendly staff\nAfter', fade.replace('Great bread every day', 'I'))).toBeUndefined();
+    expect(await check(fade, 'T\nWhat people say\nGreat bread every day\nB\nFriendly staff\nAfter', fade.replace('Best coffee in town', 'B'))).toBeUndefined();
   }, 60_000);
 
   it('right-to-left pages: native digits, numbers, Latin names and left-to-right boxes read in the order a visitor reads them (r11 verifier)', async () => {

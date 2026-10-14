@@ -87,7 +87,11 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * view (a slide, a flip), a carousel's slides that move or fade and a ticker are read where they show, even when the
  * script hides them again on the way back. Whether a node is laid out at all is read at the end: a slide a script hides
  * by switching its display is read as not laid out unless it shows at the read's last instant. A node whose text a
- * script changed after its last measurement is measured at the end.
+ * script changed after its last measurement is measured at the end, and so is a node shown at the end that moved since
+ * its measurement (an endless pulse, a tween that settled later, a slide moved on), so that how its characters sit
+ * beside their neighbours is judged where it stands then. Each measurement notes until when it held: the first sample
+ * at which its node was not shown where it was measured (hidden by a style, or elsewhere), and the first at which the
+ * node no longer stood there (not laid out, or elsewhere).
  *
  * What a character is. Each character (code point) that is not HTML whitespace, in the body's text nodes (not in a
  * script, a style, a textarea, a title, a template or a noscript), in document order:
@@ -104,8 +108,11 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   ellipsis on a box whose content overflows it, or the last line of a line-clamp box). Text in a marquee is measured
  *   by the marquee's own box, through which it scrolls;
  * - hidden from sight: laid out, but not shown (a screen-reader-only class; opacity, a clear text fill or a colour almost
- *   clear that leave it less than 0.05 of ink; font size 0; a character whose middle a box or a clip cuts off, such as a
- *   sliver of a row a box of fixed height cuts; cut off by an ellipsis; moved off the page).
+ *   clear that leave it less than 0.05 of ink, and svg text by its fill and fill-opacity, or its stroke; font size 0; a
+ *   character whose middle a box or a clip cuts off, such as a sliver of a row a box of fixed height cuts; cut off by an
+ *   ellipsis; moved off the page).
+ * A character with no box of its own (a zero-width or combining one) goes with the character before it in its text
+ * node, or, opening the node, with the first after it that has one.
  * Not detected: text covered by another element, painted behind an ancestor's background or coloured as it, turned
  * away from the screen, clipped by a clip-path given by url() or path() or by a mask, or faint or small but over those
  * thresholds (opacity 0.06, a 3 px font); text inside a shadow root is not read.
@@ -114,19 +121,27 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * - `text`: the shown characters in document order, each pair of neighbours with one separator between them, from
  *   where their boxes are and what lies between them in the document. None between a drop cap (the first letter of a
  *   block, with any punctuation before it, that the block or one it begins styles with a floated ::first-letter or an
- *   initial letter) and the rest of its word; a line break between two characters measured at different samples with
- *   the edge of a box between them (a carousel's slides, sections revealed in turn: where they stood at those moments
- *   says nothing of their order). Else REVERSED when a visitor sees the second before the first on one row (two
- *   characters of a left-to-right script, or two of a right-to-left one: a letter or digit by its script, punctuation or
- *   a symbol by the letters around it in its text node when those on both sides agree, else by its block's direction);
- *   none when a visitor sees them glued (on one row, no more than a tenth of the smaller font size apart, whatever lies
- *   between them, as for flex items with no gap; or on two rows a word is broken over, with nothing between; the gap is
- *   measured between the parts of the two boxes a visitor sees, so a character its box cuts off part of ends at the
- *   cut); a line break when they are apart and the edge of a box of its own lies between them (a block, a flex or grid
- *   item, a table cell, a floated or positioned box, an inline block, a button, an image or a control) or a forced break
- *   does (a `<br>`, a newline a white-space style keeps); else a space (apart within one flow of text: on one row, or on
- *   rows the text wraps over with whitespace between). A row is a vertical overlap of at least half the shorter box.
- *   HIDDEN_HERE follows the shown character after which text a visitor does not see stands, hidden from sight or in an
+ *   initial letter) and the rest of its word. The rest is judged from their boxes: at the read's last instant, where
+ *   both are shown then (so an item that keeps moving is judged beside its neighbour where both stand); else where they
+ *   were measured, if both were shown there at one sample, or, never shown together, if both stood there side by side
+ *   at one sample, laid out, one of them hidden by a style (a word a script reveals after its neighbour and hides again
+ *   before the read comes back), not in one place (two nodes whose boxes overlap by more than half, as slides stacked
+ *   and shown in turn). Else they were never side by side (a carousel's slides, stacked or on a track that moved on):
+ *   a line break where the edge of a box lies between them, else as the text runs them (a space where whitespace lies
+ *   between, else none). From the boxes: REVERSED when a visitor sees the second before the first on one row (two
+ *   characters of one direction: a letter by its script, a digit left to right, Arabic-Indic digits and the Arabic
+ *   decimal and thousands separators included, punctuation or a symbol by the letters around it in its text node when
+ *   those on both sides agree, else by its block's direction), except two apart in a paragraph or box of the other
+ *   direction, which a visitor reads in that direction's order; none when a visitor sees them glued (on one row, no
+ *   more than a tenth of the smaller font size apart, whatever lies between them, as for flex items with no gap; or on
+ *   two rows a word is broken over, with nothing between; the gap is measured between the parts of the two boxes a
+ *   visitor sees, so a character its box cuts off part of ends at the cut); a line break when they are apart and the
+ *   edge of a box of its own lies between them (a block, a flex or grid item, a table cell, a floated or positioned box,
+ *   an inline block, a button, an image or a control) or a forced break does (a `<br>`, a newline a white-space style
+ *   keeps); else a space (apart within one flow of text: on one row, or on rows the text wraps over with whitespace
+ *   between). A row is a vertical overlap of at least half the shorter box. A run of characters with no glyph (a
+ *   no-break or other space that is not HTML whitespace, a zero-width or format character) takes the separator of the
+ *   visible characters on either side of it wherever those stand glued. HIDDEN_HERE follows the shown character after which text a visitor does not see stands, hidden from sight or in an
  *   element that is not laid out (or begins the text). In a marked copy (page-arbiter.ts), the line marks stand beside
  *   the characters they mark;
  * - `linked`: the same with each link's (`a[href]`) characters wrapped in markers: LINK_OPEN, the link's index in
@@ -1009,7 +1024,9 @@ const VISITOR_BEGIN = `(() => {
       range.selectNodeContents(n);
       const nr = marquee ? marquee.getBoundingClientRect() : range.getBoundingClientRect();
       const onScreen = nr.bottom > 0 && nr.top < innerHeight && nr.right > 0 && nr.left < innerWidth;
-      return { data, chars, marquee, count, onScreen };
+      // The node's box on the page: two nodes in one place (slides stacked and shown in turn) are never side by side.
+      const rect = { l: nr.left + scrollX, t: nr.top + scrollY, r: nr.right + scrollX, b: nr.bottom + scrollY };
+      return { data, chars, marquee, count, onScreen, rect };
     };
     return { body, style, rendered, textRendered, faded, skipped, linkOf, blockOf, measure, where, rtlPage, letter: (c) => LTR.test(c) };
   };
@@ -1051,14 +1068,24 @@ const VISITOR_BEGIN = `(() => {
     let n = 0;
     for (let t = w.nextNode(); t; t = w.nextNode()) {
       const p = t.parentElement;
-      if (!p || P.skipped(p) || !/[^ \\t\\n\\f\\r]/.test(t.data) || !P.textRendered(p) || P.faded(p)) continue;
+      if (!p || P.skipped(p) || !/[^ \\t\\n\\f\\r]/.test(t.data)) continue;
       const had = measured.get(t);
+      // Until when a measurement held, so that it can be set beside another node's (see final's sep): unseen, the
+      // first sample at which the node was not shown where it was measured (a style hid it, as a script fades out a
+      // slide, or it stood elsewhere); left, the first at which it no longer stood there (not laid out, or elsewhere).
+      const laid = P.textRendered(p);
+      if (!laid || P.faded(p)) {
+        if (had && had.unseen === undefined) had.unseen = samples;
+        if (had && !laid && had.left === undefined) had.left = samples;
+        continue;
+      }
       const fresh = !had || had.data !== t.data;
       const at = P.where(t);
       if (!fresh && had.at === at) continue;
-      // The first sample that saw the node elsewhere than where its measurement was taken: until then the measurement
-      // held, so it can be set beside another node's taken while both stood where they were measured.
-      if (!fresh && at !== had.at0 && had.left === undefined) had.left = samples;
+      if (!fresh && at !== had.at0) {
+        if (had.unseen === undefined) had.unseen = samples;
+        if (had.left === undefined) had.left = samples;
+      }
       // A node is measured again when it moved or its clip did (a section a script slides or turns into view, a
       // carousel's track). It keeps the measurement where it shows most: the more characters seen, then on the screen,
       // then the later.
@@ -1175,7 +1202,7 @@ const VISITOR_BEGIN = `(() => {
             flush();
             const f = finByIndex.get(i);
             const now = seenAt(f) ? f : null;
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, breaks, ws, link, marquee: rec.marquee, when: rec.when, left: rec.left === undefined ? Infinity : rec.left, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
           } else {
             run = (run || '') + starts + c + ends;
             unseen();
@@ -1244,6 +1271,8 @@ const VISITOR_BEGIN = `(() => {
     // Between two neighbouring shown characters (see ShownText). sepRow: the line break returned stands between two
     // characters on one row (a box's edge parts them there), not between rows.
     let sepRow = false;
+    // Two nodes' boxes in one place: each overlaps the other by more than half of the smaller one's width and height.
+    const onePlace = (p, q) => p !== q && !!p && !!q && Math.min(p.r, q.r) - Math.max(p.l, q.l) > 0.5 * Math.min(p.r - p.l, q.r - q.l) && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 0.5 * Math.min(p.b - p.t, q.b - q.t);
     const sep = (a, b) => {
       sepRow = false;
       const structural = b.breaks > a.breaks;
@@ -1252,11 +1281,16 @@ const VISITOR_BEGIN = `(() => {
       // Both shown at the read's last instant: judged there, one instant for both, so an item that keeps moving (an
       // endless pulse, a tween that settled at a later sample) is judged beside its neighbour where both stand.
       const now = !!(a.fin && b.fin);
-      // Else where they were measured, if both stood there at one sample (each from its measurement until the read saw
-      // it elsewhere). Else, seen at different moments (a carousel's slides, a section hidden again): where they stood
-      // then says nothing of how they sit, so a box's edge between them is apart across boxes, and in one flow of text
-      // they are as the text runs them.
-      if (!now && !(Math.max(a.when, b.when) < Math.min(a.left, b.left))) return structural ? '\\n' : flow ? ' ' : '';
+      // Else where they were measured: if both were shown there at one sample; or, never shown together, if both stood
+      // there side by side at one sample, laid out, one of them hidden by a style (a word a script reveals after its
+      // neighbour and hides again before the read comes back to it, which a visitor who lingers sees beside it). Else
+      // they were never side by side: seen at different moments where they did not stand together (a carousel's track
+      // moved on), or in one place (slides stacked and shown in turn), where they stood says nothing of how they sit,
+      // so a box's edge between them is apart across boxes, and in one flow of text they are as the text runs them.
+      const from = Math.max(a.when, b.when);
+      const together = from < Math.min(a.unseen, b.unseen);
+      const beside = from < Math.min(a.left, b.left) && !onePlace(a.rect, b.rect);
+      if (!now && !together && !beside) return structural ? '\\n' : flow ? ' ' : '';
       if (a.marquee && a.marquee === b.marquee) return structural ? '\\n' : flow ? ' ' : '';
       const A = now ? a.fin : a, B = now ? b.fin : b;
       const row = Math.min(A.box.b, B.box.b) - Math.max(A.box.t, B.box.t) >= 0.5 * Math.min(A.box.b - A.box.t, B.box.b - B.box.t);

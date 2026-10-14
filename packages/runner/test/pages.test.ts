@@ -629,6 +629,16 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     expect(ticker.hidden).toEqual([]);
   }, 60_000);
 
+  it('slides a script fades in and out in turn, stacked in one place, are never seen together: apart across boxes, not in another order', async () => {
+    // Each slide is shown at samples the others are hidden at, where it stands. Read from those boxes, the slides
+    // overlap and the next one's first letter stands before the last one's end, which a visitor never sees: the
+    // slides are apart across boxes (round 12's first fix read them from where each stood, as in another order).
+    const fade = body(
+      '<style>.car{position:relative;height:60px;width:600px}.s{position:absolute;left:0;top:0;margin:0;opacity:0;transition:opacity .5s}.s.on{opacity:1}</style><div class="car"><p class="s on">Great bread every day</p><p class="s">Best coffee in town</p><p class="s">Friendly staff</p></div><p>After</p><script>const ss = [...document.querySelectorAll(".s")]; let k = 0; setInterval(() => { ss[k].classList.remove("on"); k = (k + 1) % ss.length; ss[k].classList.add("on"); }, 2000);</script>',
+    );
+    expect((await pages.shownText(fade, none)).text).toBe('Great bread every day\nBest coffee in town\nFriendly staff\nAfter');
+  }, 60_000);
+
   it('runs a page\'s scripts the same way each time: a stopped clock, a seeded Math.random, however long the page is (r10)', async () => {
     const live = (tail: string) =>
       body(
