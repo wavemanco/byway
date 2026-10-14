@@ -1011,6 +1011,23 @@ const VISITOR_BEGIN = `(() => {
       // letters' on both sides when they agree, else the paragraph's.
       const base = style(block || parent).direction === 'rtl' ? 'R' : 'L';
       for (const ch of chars) ch.bd = base;
+      // First, as the bidi algorithm's weak rules do, a number's own signs run with it: a currency, percent or degree
+      // sign beside its digits ("$20", "20%"), and a decimal point, comma, colon, slash, plus or minus between two digits.
+      const DIGIT = /^\\p{Nd}$/u, TERMINATOR = /^[#%°‰±\\p{Sc}]$/u, SEPARATOR = /^[.,:\\/+\\-\\u066b\\u066c\\u060c]$/;
+      const cpAt = (i) => (i >= 0 && i < data.length ? String.fromCodePoint(data.codePointAt(i)) : '');
+      const before = (i) => (i > 0 && data.charCodeAt(i - 1) >= 0xdc00 && data.charCodeAt(i - 1) <= 0xdfff ? cpAt(i - 2) : cpAt(i - 1));
+      for (const ch of chars) {
+        if (ch.d !== 'N') continue;
+        const c = cpAt(ch.i);
+        const w = c.length;
+        if (SEPARATOR.test(c) && DIGIT.test(before(ch.i)) && DIGIT.test(cpAt(ch.i + w))) ch.d = 'L';
+        else if (TERMINATOR.test(c)) {
+          let l = ch.i, r = ch.i + w;
+          while (TERMINATOR.test(before(l))) l -= before(l).length;
+          while (TERMINATOR.test(cpAt(r))) r += cpAt(r).length;
+          if (DIGIT.test(before(l)) || DIGIT.test(cpAt(r))) ch.d = 'L';
+        }
+      }
       for (let k = 0; k < chars.length; k++) {
         if (chars[k].d !== 'N') continue;
         let a = k - 1, b = k + 1;
@@ -1273,7 +1290,27 @@ const VISITOR_BEGIN = `(() => {
     let sepRow = false;
     // Two nodes' boxes in one place: each overlaps the other by more than half of the smaller one's width and height.
     const onePlace = (p, q) => p !== q && !!p && !!q && Math.min(p.r, q.r) - Math.max(p.l, q.l) > 0.5 * Math.min(p.r - p.l, q.r - q.l) && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 0.5 * Math.min(p.b - p.t, q.b - q.t);
-    const sep = (a, b) => {
+    // The extent on its row of the piece of text character k stands in, walking from it by step (-1 back, 1 on): its run
+    // of one direction (whitespace inside a run is the run's), or, across a box's edge (box), the box's text on that
+    // row; with each character's box where it is judged (now: at the read's last instant), at most 400 of them.
+    const PIECE = 400;
+    const pieceOf = (k, step, box, now) => {
+      const e = all[k];
+      const at = (x) => (now ? (x.fin ? x.fin.vis || x.fin.box : null) : x.when === e.when ? x.vis || x.box : null);
+      const q0 = at(e);
+      let l = q0.l, r = q0.r;
+      for (let x = k + step, n = 0; x >= 0 && x < all.length && n < PIECE; x += step, n++) {
+        const y = all[x];
+        if (y.breaks !== e.breaks || (!box && y.d !== e.d)) break;
+        const q = at(y);
+        if (!q || Math.min(q.b, q0.b) - Math.max(q.t, q0.t) < 0.5 * Math.min(q.b - q.t, q0.b - q0.t)) break;
+        l = Math.min(l, q.l);
+        r = Math.max(r, q.r);
+      }
+      return { l, r };
+    };
+    const sep = (i, j) => {
+      const a = all[i], b = all[j];
       sepRow = false;
       const structural = b.breaks > a.breaks;
       const flow = b.ws > a.ws;
@@ -1311,6 +1348,14 @@ const VISITOR_BEGIN = `(() => {
           if (cb > ca + tol && !(a.bd === 'L' && b.bd === 'L' && apart > tol)) return ${JSON.stringify(REVERSED)};
           gap = cb > ca + tol ? apart : va.l - vb.r;
         } else gap = apart;
+        // Where the two differ in direction, or either runs against its paragraph's or box's direction (a number or a
+        // Latin name in a right-to-left paragraph, a Hebrew word in a left-to-right one, left-to-right boxes in a
+        // right-to-left row), the two characters side by side in the text stand at the far ends of their runs or boxes,
+        // which a visitor sees glued or apart by where the runs or boxes meet.
+        if (a.d !== b.d || a.d !== a.bd || b.d !== b.bd) {
+          const pa = pieceOf(i, -1, structural, now), pb = pieceOf(j, 1, structural, now);
+          gap = Math.max(pb.l - pa.r, pa.l - pb.r);
+        }
         if (gap <= tol) return '';
         sepRow = structural;
         return structural ? '\\n' : ' ';
@@ -1320,7 +1365,7 @@ const VISITOR_BEGIN = `(() => {
     };
     // The separator before each character, and whether it is a line break on one row.
     const seps = [''], onRow = [false];
-    for (let k = 1; k < all.length; k++) { seps.push(sep(all[k - 1], all[k])); onRow.push(sepRow); }
+    for (let k = 1; k < all.length; k++) { seps.push(sep(k - 1, k)); onRow.push(sepRow); }
     // A character with no glyph (a no-break or other space that is not HTML whitespace, a zero-width or format
     // character) shows nothing of its own: where the visible characters on either side of a run of them stand glued, a
     // visitor sees them glued, whatever the run's own boxes say.
@@ -1329,7 +1374,7 @@ const VISITOR_BEGIN = `(() => {
       if (!GLYPHLESS.test(all[k].c)) { k++; continue; }
       let j = k;
       while (j < all.length && GLYPHLESS.test(all[j].c)) j++;
-      if (j < all.length && sep(all[k - 1], all[j]) === '') for (let x = k; x <= j; x++) { seps[x] = ''; onRow[x] = false; }
+      if (j < all.length && sep(k - 1, j) === '') for (let x = k; x <= j; x++) { seps[x] = ''; onRow[x] = false; }
       k = j;
     }
     const HID = ${JSON.stringify(HIDDEN_HERE)};

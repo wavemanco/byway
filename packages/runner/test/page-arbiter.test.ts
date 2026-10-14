@@ -573,6 +573,18 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await check(html, answer(2, 'افتتحنا المخبز عام ١٩٩٨ في الإسكندرية'), html.replace('القاهرة', 'الإسكندرية'))).toBeUndefined();
     expect(await check(html, answer(6, 'Iced brew3.5 JOD'), html.replace('Cold', 'Iced'))).toBeUndefined();
     expect(await check(html, answer(4, 'اتصل بنا على 0123 456 790'), html.replace('789', '790'))).toBeUndefined();
+    // Where a run of one direction meets a run of the other, the two characters side by side in the text stand at the
+    // runs' far ends: a visitor sees the runs glued or apart by where the runs meet (round 12's evidence: the arbiter
+    // measured the two characters, a number's width apart, so it refused "الآن١٩٩٨" glued as a space not typed, and let
+    // a typed space a flex item's edge drops stand as apart).
+    const date = pageOf('<p dir="rtl" lang="ar">مفتوح الآن ١٩٩٨ دائما</p><p>Plain</p>');
+    expect(await check(date, 'T\nمفتوح الآن١٩٩٨ دائما\nPlain', date.replace('الآن ١٩٩٨', 'الآن١٩٩٨'))).toBeUndefined();
+    const price = pageOf('<p dir="rtl" lang="ar" style="display:flex;justify-content:flex-start;font-size:24px"><span>السعر</span><span>$20</span></p><p>Plain</p>');
+    expect((await offer(price)).offered).toEqual(['T', 'السعر$20', 'Plain']);
+    expect((await check(price, 'T\nالسعر $20\nPlain', price.replace('السعر</span>', 'السعر </span>')))?.problem).toMatch(/because a browser would run words together that your lines keep apart/);
+    const latin = pageOf('<p>Order <bdi>שלום</bdi> today</p><p>Plain</p>');
+    expect(await check(latin, 'T\nOrder שלום tomorrow\nPlain', latin.replace('today', 'tomorrow'))).toBeUndefined();
+    expect((await check(latin, 'T\nOrderשלום today\nPlain', latin.replace('Order <bdi>', 'Order<bdi>')))).toBeUndefined();
     // A left-to-right word a script reverses in a left-to-right page is still in another order.
     const ltr = pageOf('<p><bdo dir="rtl">Hello world</bdo> after</p><p>Plain</p>');
     expect(await offer(ltr)).toMatchObject({ offered: ['T', 'Plain'], why: { 'Hello world after': 'layout' } });
