@@ -1356,7 +1356,8 @@ const VISITOR_BEGIN = `(() => {
         // Latin name in a right-to-left paragraph, a Hebrew word in a left-to-right one, left-to-right boxes in a
         // right-to-left row), the two characters side by side in the text stand at the far ends of their runs or boxes,
         // which a visitor sees glued or apart by where the runs or boxes meet.
-        if (a.d !== b.d || a.d !== a.bd || b.d !== b.bd) {
+        // (Within one word of one direction, with nothing between, the two stand side by side as in the text.)
+        if (a.d !== b.d || ((a.d !== a.bd || b.d !== b.bd) && (structural || flow))) {
           const pa = pieceOf(i, -1, structural, now), pb = pieceOf(j, 1, structural, now);
           gap = Math.max(pb.l - pa.r, pa.l - pb.r);
         }

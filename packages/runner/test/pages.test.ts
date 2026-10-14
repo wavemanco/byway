@@ -629,6 +629,16 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     expect(ticker.hidden).toEqual([]);
   }, 60_000);
 
+  it('a long left-to-right text in a right-to-left page is read within the deadline, its words apart as a visitor sees them', async () => {
+    // Every word boundary there is where runs of two directions meet, judged where the runs meet (round 12).
+    const words = Array.from({ length: 12000 }, (_, i) => `word${i}`).join(' ');
+    const t0 = performance.now();
+    const shown = await pages.shownText(`<!doctype html><html dir="rtl"><head><title>T</title></head><body><p>${words}</p><p>مرحبا بكم ١٩٩٨</p></body></html>`, none);
+    expect(performance.now() - t0).toBeLessThan(20_000);
+    expect(shown.text.startsWith('word0 word1 word2 ')).toBe(true);
+    expect(shown.text.endsWith('word11999\nمرحبا بكم ١٩٩٨')).toBe(true);
+  }, 60_000);
+
   it('slides a script fades in and out in turn, stacked in one place, are never seen together: apart across boxes, not in another order', async () => {
     // Each slide is shown at samples the others are hidden at, where it stands. Read from those boxes, the slides
     // overlap and the next one's first letter stands before the last one's end, which a visitor never sees: the
