@@ -677,6 +677,10 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     const hours = page('<p style="white-space:pre-line">Mon–Fri 7am–6pm\nSat 8am–4pm\nSun closed</p>');
     const out = await (await open(hours)).answer('T\nMon–Fri 7am–7pm Saturday 8am–5pm Sun closed');
     expect(await shows(out.artifactId!)).toBe('Mon–Fri 7am–7pm\nSaturday 8am–5pm\nSun closed');
+    // Two words glued beside a kept break keep it: the characters on both sides of the break are the person's own,
+    // side by side as before (round 12's first fix wrote one space there, and the arbiter refused it).
+    const glued = await (await open(address)).answer('T\nCrumb & Co. 12 BakerStreet London NW1 6XE');
+    expect(await shows(glued.artifactId!)).toBe('Crumb & Co.\n12 BakerStreet\nLondon NW1 6XE');
   });
 
   it('punctuation glued to a line\'s last word in a box of its own is written into that box (r11 verifier)', async () => {

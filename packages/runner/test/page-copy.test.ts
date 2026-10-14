@@ -1026,6 +1026,18 @@ describe('a gap between two characters the person kept keeps the page\'s own whi
     expect(run('<p><a href="/a"> menu!</a>Spring?  menu</p>', set(1, '[x]Spring? menu'))).toMatchObject(clean('<p><a href="/a"> x</a>Spring?  menu</p>'));
   });
 
+  it('a gap between two characters the person kept side by side keeps the page\'s bytes, also where the words around it changed (round 12 evidence)', () => {
+    // The arbiter holds such a pair to the separator it had, so a single space there was refused as "on one line what it
+    // showed on separate lines": two words glued beside a kept break, or a word split beside one.
+    const prices = '<p style="white-space:pre-wrap">$29\nFrom\nCall late</p>';
+    expect(run(prices, set(1, '$29From Call late'))).toMatchObject(clean('<p style="white-space:pre-wrap">$29From\nCall late</p>'));
+    const months = '<address style="white-space:pre-line">/month\n/month /month</address>';
+    expect(run(months, set(1, '/month /month/month'))).toMatchObject(clean('<address style="white-space:pre-line">/month\n/month/month</address>'));
+    const address = '<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street\nLondon NW1 6XE</address>';
+    expect(run(address, set(1, 'Crumb & Co. 12 BakerStreet London NW1 6XE'))).toMatchObject(clean(address.replace('Baker Street', 'BakerStreet')));
+    expect(run(address, set(1, 'Crumb & Co. 12 Baker Street Lon don NW1 6XE'))).toMatchObject(clean(address.replace('London', 'Lon don')));
+  });
+
   it('where the verifier matches a repeated word otherwise than placement, every gap of the line is the person\'s single space (round 12 evidence)', () => {
     // Placement's table has "today!" stand for the first "open" and keeps the break after it; the verifier's own edit
     // script matches the kept "open" with the first one, so it read that break as a gap the page never had there and

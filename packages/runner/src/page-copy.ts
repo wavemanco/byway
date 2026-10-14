@@ -1696,6 +1696,35 @@ function alignInto(p: PageDeck, group: number[], next: string, own: number | und
     const ws = a >= 0 ? oc[ow[a]!.to]?.ws : undefined;
     if (a >= 0 && stands[b + 1] === a + 1 && ws !== undefined && nc[nw[b]!.to] === ' ') kept.set(nw[b]!.to, ws);
   }
+  // So does a gap between two characters the person kept side by side, with whitespace between them before as now,
+  // matched by an edit script of the characters, as the arbiter matches them and holds such a pair to the separator it
+  // had: two words glued beside a kept break ("$29 From\nCall" written "$29From Call") or a word split beside one.
+  if (keepGaps) {
+    const oi: number[] = [];
+    const ni: number[] = [];
+    oc.forEach((x, k) => x.c !== ' ' && oi.push(k));
+    nc.forEach((c, k) => c !== ' ' && ni.push(k));
+    const ocs = oi.map((k) => oc[k]!.c);
+    const ncs = ni.map((k) => nc[k]!);
+    let cp = editPairs(ocs, ncs, EDIT_MAX);
+    if (!cp) {
+      cp = [];
+      let pre = 0;
+      while (pre < ocs.length && pre < ncs.length && ocs[pre] === ncs[pre]) cp.push([pre, pre++]);
+      const tail: Pairs = [];
+      for (let s = 1; s <= ocs.length - pre && s <= ncs.length - pre && ocs[ocs.length - s] === ncs[ncs.length - s]; s++) tail.push([ocs.length - s, ncs.length - s]);
+      cp.push(...tail.reverse());
+    }
+    const fromChar = new Int32Array(ncs.length).fill(-1);
+    for (const [a, b] of cp) fromChar[b] = a;
+    for (let y = 1; y < ncs.length; y++) {
+      const ox = fromChar[y - 1]!;
+      const at = ni[y - 1]! + 1;
+      if (ox < 0 || fromChar[y] !== ox + 1 || ni[y]! - ni[y - 1]! !== 2 || nc[at] !== ' ' || oi[ox + 1]! - oi[ox]! !== 2 || kept.has(at)) continue;
+      const ws = oc[oi[ox]! + 1]!.ws;
+      if (ws !== undefined) kept.set(at, ws);
+    }
+  }
   const spaced = (c: string, k: number): string => (c === ' ' ? (kept.get(k) ?? ' ') : c);
   if (holding.length <= 1) {
     const at = holding[0] ?? (side === 'start' ? nearLeft(group.at(-1)!) : side === 'end' ? nearRight(group[0]!) : shallowest(group[0]!, group.at(-1)!));
