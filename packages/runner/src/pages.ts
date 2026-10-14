@@ -130,18 +130,22 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   a line break where the edge of a box lies between them, else as the text runs them (a space where whitespace lies
  *   between, else none). From the boxes: REVERSED when a visitor sees the second before the first on one row (two
  *   characters of one direction: a letter by its script, a digit left to right, Arabic-Indic digits and the Arabic
- *   decimal and thousands separators included, punctuation or a symbol by the letters around it in its text node when
- *   those on both sides agree, else by its block's direction), except two apart in a paragraph or box of the other
- *   direction, which a visitor reads in that direction's order; none when a visitor sees them glued (on one row, no
- *   more than a tenth of the smaller font size apart, whatever lies between them, as for flex items with no gap; or on
- *   two rows a word is broken over, with nothing between; the gap is measured between the parts of the two boxes a
- *   visitor sees, so a character its box cuts off part of ends at the cut); a line break when they are apart and the
- *   edge of a box of its own lies between them (a block, a flex or grid item, a table cell, a floated or positioned box,
- *   an inline block, a button, an image or a control) or a forced break does (a `<br>`, a newline a white-space style
- *   keeps); else a space (apart within one flow of text: on one row, or on rows the text wraps over with whitespace
- *   between). A row is a vertical overlap of at least half the shorter box. A run of characters with no glyph (a
- *   no-break or other space that is not HTML whitespace, a zero-width or format character) takes the separator of the
- *   visible characters on either side of it wherever those stand glued. HIDDEN_HERE follows the shown character after which text a visitor does not see stands, hidden from sight or in an
+ *   decimal and thousands separators included, with a number's own signs, a currency or percent sign beside its digits
+ *   or a point, comma, colon, slash, plus or minus between two; punctuation or a symbol by the letters around it in its
+ *   text node when those on both sides agree, else by its block's direction), except two apart in a paragraph or box of
+ *   the other direction, which a visitor reads in that direction's order. Where the two differ in direction, or either
+ *   runs against its paragraph's or box's, they stand at the far ends of their runs, so their gap is measured between
+ *   their runs of one direction, or, across a box's edge, between the boxes' text on that row. None when a visitor sees
+ *   them glued (on one row, no more than a tenth of the smaller font size apart, whatever lies between them, as for
+ *   flex items with no gap; or on two rows a word is broken over, with nothing between; the gap is measured between
+ *   the parts of the two boxes a visitor sees, so a character its box cuts off part of ends at the cut); a line break
+ *   when they are apart and the edge of a box of its own lies between them (a block, a flex or grid item, a table cell,
+ *   a floated or positioned box, an inline block, a button, an image or a control) or a forced break does (a `<br>`, a
+ *   newline a white-space style keeps); else a space (apart within one flow of text: on one row, or on rows the text
+ *   wraps over with whitespace between). A row is a vertical overlap of at least half the shorter box. A run of
+ *   characters with no glyph (a no-break or other space that is not HTML whitespace, a zero-width or format character)
+ *   takes the separator of the visible characters on either side of it wherever those stand glued. HIDDEN_HERE follows
+ *   the shown character after which text a visitor does not see stands, hidden from sight or in an
  *   element that is not laid out (or begins the text). In a marked copy (page-arbiter.ts), the line marks stand beside
  *   the characters they mark;
  * - `linked`: the same with each link's (`a[href]`) characters wrapped in markers: LINK_OPEN, the link's index in
