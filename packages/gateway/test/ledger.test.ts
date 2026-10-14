@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, promises as fsp, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, promises as fsp, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalize, contentHash } from '@byway/canonical';
@@ -30,7 +30,14 @@ beforeEach(() => {
 });
 
 const lines = () => readFileSync(path, 'utf8').split('\n').filter(Boolean);
-const rewrite = (ls: string[]) => writeFileSync(path, ls.map((l) => `${l}\n`).join(''));
+/**
+ * Rewrite the ledger as a tamperer would. The mtime is moved on past any filesystem's resolution, so that verify()'s
+ * cache (ADR-0091) sees a same-size edit made in the mtime tick of the last append (Windows).
+ */
+const rewrite = (ls: string[]) => {
+  writeFileSync(path, ls.map((l) => `${l}\n`).join(''));
+  utimesSync(path, new Date(), new Date(Date.now() + 2000));
+};
 
 async function seed(n: number): Promise<Ledger> {
   const ledger = new Ledger({ path });
