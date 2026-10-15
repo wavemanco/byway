@@ -869,6 +869,18 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     }
   }, 60_000);
 
+  it('an endless animation is judged at each of the points of its cycle the read holds it at: two neighbours glued at any of them are glued (r12 verifier: a nudge judged at its first keyframe)', async () => {
+    const css = '<style>@keyframes nudge{0%{transform:translateX(-14px)}8%,100%{transform:none}}.n{display:inline-block;margin-left:24px;animation:nudge 3s infinite}@keyframes peek{0%{transform:translateY(-120%)}10%,100%{transform:none}}.peek{display:inline-block;animation:peek 4s infinite}</style>';
+    // The link rests glued to the words after it (a flex item whose leading space a browser drops) for all of its cycle
+    // but its start, where round 12 judged it and stored "Sign intoday".
+    expect((await pages.shownText(body(`${css}<p style="display:flex">Already have an account?<a class="n" href="/l">Sign in</a> today</p>`), none)).text).toBe('Already have an account?\nSign intoday');
+    // A badge that rests glued to its heading and peeks in from above at the start of its cycle.
+    expect((await pages.shownText(body(`${css}<h2 style="display:flex"><span>Pricing</span><b class="peek">New</b></h2>`), none)).text).toBe('PricingNew');
+    // A pulse that only fades, and one that never brings its item beside its neighbour, change nothing.
+    const fade = '<style>@keyframes fade{50%{opacity:.4}}.f{animation:fade 2s infinite}</style>';
+    expect((await pages.shownText(body(`${fade}<p style="display:flex;gap:6px"><span>Fresh</span><b class="f">bread</b></p>`), none)).text).toBe('Fresh\nbread');
+  }, 60_000);
+
   it('a button is a box of its own: its content stands apart from the text beside it, as a visitor sees it (innerText read them glued)', async () => {
     const html = '<p>Pay <button type="button"><a href="/b"><i>now</i> today  </a></button>Total <a href="/c"> here </a></p>';
     const shown = await pages.shownText(html, none);

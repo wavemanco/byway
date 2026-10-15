@@ -1465,6 +1465,9 @@ const VISITOR_BEGIN = `(() => {
     // Whether a visitor sees a character as measured: shown where it stands, and not beyond the screen where the page's
     // overflow is hidden.
     const seenAt = (c) => !!c && c.shown && !(clipX && (rtlPage ? c.box.l + c.box.r <= 0 : c.box.l + c.box.r >= 2 * vw)) && !(clipY && c.box.t + c.box.b >= 2 * vh);
+    // The nodes shown at the read's last instant (each with where it stood then, and its characters' places in all), so
+    // that each can be measured again at the other points of an endless animation's cycle.
+    const lastNodes = [];
     // Displays whose content is part of the line's own flow of text (not a box of its own).
     const INLINE_FLOW = new Set(['inline', 'ruby', 'ruby-text', 'math', 'inline math']);
     const preserves = (s) => /^(preserve|preserve-breaks|break-spaces)$/.test(s.whiteSpaceCollapse || '') || /^(pre|pre-wrap|pre-line|break-spaces)$/.test(s.whiteSpace);
@@ -1523,7 +1526,8 @@ const VISITOR_BEGIN = `(() => {
       // The node at the read's last instant: where its measurement was taken, if it still stands there; measured again
       // if it moved since (an endless pulse, a tween that settled later, a slide moved on); none if it is not shown now.
       let fin = null;
-      if (rec && laid && !faded) fin = rec.at0 === null || P.where(t) === rec.at0 ? rec : P.measure(t);
+      const last = rec && laid && !faded ? { t, at: P.where(t), idx: [] } : null;
+      if (last) fin = rec.at0 === null || last.at === rec.at0 ? rec : P.measure(t);
       const finByIndex = new Map(fin ? fin.chars.map((c) => [c.i, c]) : []);
       const a = P.linkOf(p);
       let link = -1;
@@ -1553,7 +1557,8 @@ const VISITOR_BEGIN = `(() => {
             flush();
             const f = finByIndex.get(i);
             const now = seenAt(f) ? f : null;
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fr: ch.fr, fs: ch.fs, d: ch.d, bd: ch.bd, id: ch.id, spaces, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis, fr: now.fr } : null });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fr: ch.fr, fs: ch.fs, d: ch.d, bd: ch.bd, id: ch.id, spaces, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis, fr: now.fr } : null, alt: null });
+            if (now) last.idx.push([i, all.length - 1]);
             spaces = [];
           } else {
             run = (run || '') + starts + c + ends;
@@ -1564,6 +1569,7 @@ const VISITOR_BEGIN = `(() => {
       }
       while (m < ms.length) { const x = ms[m++][1]; if (!laid) unlaid += x; else run = (run || '') + x; }
       flush();
+      if (last && last.idx.length) lastNodes.push(last);
     };
     // The tree in document order, with an explicit stack (a page may nest elements thousands deep). Counted on the
     // way: the edges of every box that is not part of a line's own flow of text (a block, a flex or grid item, a table
@@ -1626,6 +1632,63 @@ const VISITOR_BEGIN = `(() => {
     let sepRow = false, sepTurned = false;
     // Two nodes' boxes in one place: each overlaps the other by more than half of the smaller one's width and height.
     const onePlace = (p, q) => p !== q && !!p && !!q && Math.min(p.r, q.r) - Math.max(p.l, q.l) > 0.5 * Math.min(p.r - p.l, q.r - q.l) && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 0.5 * Math.min(p.b - p.t, q.b - q.t);
+    // The other points of an endless animation's cycle. Each sample holds every endless animation at one of CYCLE points
+    // of its cycle, the last sample at base; here each is held at every other point in turn, and each node shown at the
+    // read's last instant that such an animation can move (one inside an element it animates, or every node where one
+    // animates a property that moves other boxes, as a width) is measured again there if it stands elsewhere, so two
+    // neighbours shown at the last instant are judged at every point of the cycle (sep). A motion a script draws itself
+    // (a GSAP timeline that repeats) is not such an animation: it is judged at the read's last instant only.
+    const OWN_PAINT = /^(transform|translate|rotate|scale|opacity|filter|backdropFilter|clipPath|color|backgroundColor|backgroundPosition|backgroundSize|backgroundImage|boxShadow|textShadow|outlineColor|borderColor|border(Top|Right|Bottom|Left)Color|fill|fillOpacity|stroke|strokeOpacity|strokeDashoffset|visibility|top|left|right|bottom|zIndex)$/;
+    const KEYFRAME_KEYS = new Set(['offset', 'computedOffset', 'easing', 'composite']);
+    let points = 0;
+    {
+      const base = (samples - 1 + CYCLE) % CYCLE;
+      const endless = [];
+      for (const an of document.getAnimations()) {
+        let timing = null;
+        try { timing = an.effect && an.effect.getComputedTiming(); } catch {}
+        if (timing && timing.iterations === Infinity && typeof timing.duration === 'number' && timing.duration > 0) endless.push([an, timing]);
+      }
+      let everything = false;
+      const targets = [];
+      for (const [an] of endless) {
+        const ef = an.effect;
+        if (ef && ef.target) targets.push(ef.target);
+        else everything = true;
+        let keys = [];
+        try { keys = ef.getKeyframes().flatMap((kf) => Object.keys(kf)); } catch { everything = true; }
+        if (keys.some((k) => !KEYFRAME_KEYS.has(k) && !OWN_PAINT.test(k))) everything = true;
+      }
+      const moved = endless.length ? lastNodes.filter((f) => everything || targets.some((tg) => tg.contains(f.t))) : [];
+      if (moved.length) {
+        points = CYCLE - 1;
+        const hold = (k) => {
+          for (const [an, timing] of endless) {
+            try { an.currentTime = (timing.delay || 0) + timing.duration * (((base + k) % CYCLE) / CYCLE); } catch {}
+          }
+        };
+        for (let k = 1; k < CYCLE; k++) {
+          hold(k);
+          const Q = pass();
+          for (const f of moved) {
+            const p = f.t.parentElement;
+            const shown = !!p && Q.textRendered(p) && !Q.faded(p);
+            const m = shown && Q.where(f.t) !== f.at ? Q.measure(f.t) : null;
+            const byI = m ? new Map(m.chars.map((c) => [c.i, c])) : null;
+            for (const [i, x] of f.idx) {
+              const rec = all[x];
+              if (!rec.alt) rec.alt = new Array(CYCLE - 1).fill(rec.fin);
+              if (!shown) rec.alt[k - 1] = null;
+              else if (byI) {
+                const c = byI.get(i);
+                rec.alt[k - 1] = seenAt(c) ? { box: c.box, vis: c.vis, fr: c.fr } : null;
+              }
+            }
+          }
+        }
+        hold(0);
+      }
+    }
     // Two frames' common axes: u along the line both run along (the mean of theirs), n across it, on the side their
     // blocks run to; null where either is not read, or they run more than 10 degrees apart (text turned against the text
     // beside it) or are mirrored against each other.
@@ -1820,7 +1883,22 @@ const VISITOR_BEGIN = `(() => {
       if (!now && !together && !beside) return structural ? '\\n' : flow ? ' ' : '';
       if (a.marquee && a.marquee === b.marquee) return structural ? '\\n' : flow ? ' ' : '';
       if (!now) return geom(i, j, a, b, (x, k0) => (all[x].when === all[k0].when ? all[x] : null));
-      return geom(i, j, a.fin, b.fin, (x) => all[x].fin);
+      const s = geom(i, j, a.fin, b.fin, (x) => all[x].fin);
+      // At the other points of an endless animation's cycle, where both are shown: glued at any of them, they are glued
+      // (round 12 judged a link nudged apart only at the start of its cycle there, and stored a typed space its edge drops
+      // for the rest of it).
+      if (s === '' || !points || (!a.alt && !b.alt)) return s;
+      const row = sepRow, turned = sepTurned;
+      for (let p = 0; p < points; p++) {
+        const A = a.alt ? a.alt[p] : a.fin, B = b.alt ? b.alt[p] : b.fin;
+        if (!A || !B || (A === a.fin && B === b.fin)) continue;
+        sepRow = false;
+        sepTurned = false;
+        if (geom(i, j, A, B, (x) => (all[x].alt ? all[x].alt[p] : all[x].fin)) === '') return '';
+      }
+      sepRow = row;
+      sepTurned = turned;
+      return s;
     };
     // The separator before each character, whether it is a line break on one row, and whether glued is unmeasured.
     const seps = [''], onRow = [false], turnedAt = [false];

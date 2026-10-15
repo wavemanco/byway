@@ -718,6 +718,13 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await shows((await (await open(label)).answer('T\nScroll down now\nBody')).artifactId!)).toBe('Scroll down now\nBody');
   });
 
+  it('a link that rests glued to the words after it and is nudged apart only at the start of its cycle is judged where it rests: a typed space it drops is asked again (r12 verifier)', async () => {
+    const nudge = page('<style>@keyframes nudge{0%{transform:translateX(-14px)}8%,100%{transform:none}}.n{display:inline-block;margin-left:24px;animation:nudge 3s infinite}</style><p style="display:flex">Already have an account?<a class="n" href="/l">Sign in</a></p>');
+    const msg = await rejected((await open(nudge)).answer('T\nAlready have an account?[Sign in] today'));
+    expect(msg).toContain('because a browser would run words together that your lines keep apart');
+    expect(msg).toContain('Sign intoday');
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // Browsers move the font out of the table, right after "Middle".
