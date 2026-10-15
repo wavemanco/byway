@@ -133,9 +133,12 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   decimal and thousands separators included, with a number's own signs, a currency or percent sign beside its digits
  *   or a point, comma, colon, slash, plus or minus between two; punctuation or a symbol by the letters around it in its
  *   text node when those on both sides agree, else by its block's direction), except two apart in a paragraph or box of
- *   the other direction, which a visitor reads in that direction's order. Where the two differ in direction, or either
- *   runs against its paragraph's or box's, they stand at the far ends of their runs, so their gap is measured between
- *   their runs of one direction, or, across a box's edge, between the boxes' text on that row. None when a visitor sees
+ *   the other direction, which a visitor reads in that direction's order (punctuation beside a number resolves as the
+ *   bidi algorithm resolves it, the number counting as right to left there). In one flow of text where right-to-left
+ *   text is involved (either character, or the direction either is laid out in), a space where whitespace between them
+ *   is laid out wider than the tolerance, else none, wherever the runs' order puts them. Where the two differ in
+ *   direction, or either runs against the direction it is laid out in (its block's, or an isolating element's, as a
+ *   dir attribute's), across a box's edge, between the boxes' text on that row. None when a visitor sees
  *   them glued (on one row, no more than a tenth of the smaller font size apart, whatever lies between them, as for
  *   flex items with no gap; or on two rows a word is broken over, with nothing between; the gap is measured between
  *   the parts of the two boxes a visitor sees, so a character its box cuts off part of ends at the cut); a line break
@@ -1317,19 +1320,17 @@ const VISITOR_BEGIN = `(() => {
     let sepRow = false;
     // Two nodes' boxes in one place: each overlaps the other by more than half of the smaller one's width and height.
     const onePlace = (p, q) => p !== q && !!p && !!q && Math.min(p.r, q.r) - Math.max(p.l, q.l) > 0.5 * Math.min(p.r - p.l, q.r - q.l) && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 0.5 * Math.min(p.b - p.t, q.b - q.t);
-    // The extent on its row of the piece of text character k stands in, walking from it by step (-1 back, 1 on): its run
-    // of one direction laid out in one direction (whitespace inside a run is the run's; a dir attribute or a bdi starts
-    // another), or, across a box's edge (box), the box's text on that row; with each character's box where it is judged
-    // (now: at the read's last instant), at most 400 of them.
+    // The extent on its row of the text of the box character k stands in, walking from it by step (-1 back, 1 on) to the
+    // box's edge, with each character's box where it is judged (now: at the read's last instant), at most 400 of them.
     const PIECE = 400;
-    const pieceOf = (k, step, box, now) => {
+    const pieceOf = (k, step, now) => {
       const e = all[k];
       const at = (x) => (now ? (x.fin ? x.fin.vis || x.fin.box : null) : x.when === e.when ? x.vis || x.box : null);
       const q0 = at(e);
       let l = q0.l, r = q0.r;
       for (let x = k + step, n = 0; x >= 0 && x < all.length && n < PIECE; x += step, n++) {
         const y = all[x];
-        if (y.breaks !== e.breaks || (!box && (y.d !== e.d || y.id !== e.id))) break;
+        if (y.breaks !== e.breaks) break;
         const q = at(y);
         if (!q || Math.min(q.b, q0.b) - Math.max(q.t, q0.t) < 0.5 * Math.min(q.b - q.t, q0.b - q0.t)) break;
         l = Math.min(l, q.l);
@@ -1389,17 +1390,15 @@ const VISITOR_BEGIN = `(() => {
           if (cb > ca + tol && !(a.bd === 'L' && b.bd === 'L' && apart > tol)) return ${JSON.stringify(REVERSED)};
           gap = cb > ca + tol ? apart : va.l - vb.r;
         } else gap = apart;
-        // Where the two differ in direction, or either runs against its paragraph's or box's direction (a number or a
-        // Latin name in a right-to-left paragraph, a Hebrew word in a left-to-right one, left-to-right boxes in a
-        // right-to-left row), the two characters side by side in the text stand at the far ends of their runs or boxes,
-        // which a visitor sees glued or apart by where the runs or boxes meet.
-        // (Within one word of one direction, with nothing between, the two stand side by side as in the text.) In one
-        // flow of text where right-to-left text is involved, a visitor sees a space exactly where whitespace between the
-        // two shows (is laid out wider than the tolerance), wherever the runs' order puts it; else the runs meet glued.
-        // Across a box's edge, the boxes' text is measured where the boxes meet.
+        // Where right-to-left text is involved (either character, or the direction either is laid out in: a number or a
+        // Latin name in a right-to-left paragraph, a Hebrew word in a left-to-right one), the two characters side by side
+        // in the text can stand at the far ends of runs the bidi algorithm reorders. In one flow of text a visitor then
+        // sees a space exactly where whitespace between the two is laid out wider than the tolerance, wherever the runs'
+        // order puts it, and the runs meet glued where none is; across a box's edge (left-to-right boxes in a
+        // right-to-left row), the boxes' text is measured where the boxes meet.
         if (!structural && (a.d === 'R' || b.d === 'R' || a.id === 'R' || b.id === 'R')) gap = flow && spaceShows(i, j, tol) ? Infinity : 0;
-        else if (a.d !== b.d || ((a.d !== a.id || b.d !== b.id) && (structural || flow))) {
-          const pa = pieceOf(i, -1, structural, now), pb = pieceOf(j, 1, structural, now);
+        else if (structural && (a.d !== b.d || a.d !== a.id || b.d !== b.id)) {
+          const pa = pieceOf(i, -1, now), pb = pieceOf(j, 1, now);
           gap = Math.max(pb.l - pa.r, pa.l - pb.r);
         }
         if (gap <= tol) return '';
