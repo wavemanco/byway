@@ -1013,8 +1013,16 @@ const VISITOR_BEGIN = `(() => {
       }
       // Punctuation and symbols take a direction from the letters around them, as the bidi algorithm resolves them: the
       // letters' on both sides when they agree, else the paragraph's.
-      const base = style(block || parent).direction === 'rtl' ? 'R' : 'L';
-      for (const ch of chars) ch.bd = base;
+      // The direction the text is laid out in: its block's, or that of an element inside it that isolates or embeds its
+      // text (a link or span with a dir attribute, a bdi, a bdo), as a phone number in a right-to-left paragraph runs in
+      // a link marked dir="ltr".
+      // (bd, the block's direction, orders two runs a paragraph or box holds; id, the innermost such element's, is the
+      // direction a character's own run is laid out in.)
+      let iso = parent;
+      while (iso && iso !== block && (style(iso).unicodeBidi || 'normal') === 'normal') iso = iso.parentElement;
+      const base = style(iso || block || parent).direction === 'rtl' ? 'R' : 'L';
+      const blockDir = style(block || parent).direction === 'rtl' ? 'R' : 'L';
+      for (const ch of chars) { ch.bd = blockDir; ch.id = base; }
       // First, as the bidi algorithm's weak rules do, a number's own signs run with it: a currency, percent or degree
       // sign beside its digits ("$20", "20%"), and a decimal point, comma, colon, slash, plus or minus between two digits.
       const DIGIT = /^\\p{Nd}$/u, TERMINATOR = /^[#%°‰±\\p{Sc}]$/u, SEPARATOR = /^[.,:\\/+\\-\\u066b\\u066c\\u060c]$/;
@@ -1223,7 +1231,7 @@ const VISITOR_BEGIN = `(() => {
             flush();
             const f = finByIndex.get(i);
             const now = seenAt(f) ? f : null;
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, id: ch.id, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
           } else {
             run = (run || '') + starts + c + ends;
             unseen();
@@ -1295,8 +1303,9 @@ const VISITOR_BEGIN = `(() => {
     // Two nodes' boxes in one place: each overlaps the other by more than half of the smaller one's width and height.
     const onePlace = (p, q) => p !== q && !!p && !!q && Math.min(p.r, q.r) - Math.max(p.l, q.l) > 0.5 * Math.min(p.r - p.l, q.r - q.l) && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 0.5 * Math.min(p.b - p.t, q.b - q.t);
     // The extent on its row of the piece of text character k stands in, walking from it by step (-1 back, 1 on): its run
-    // of one direction (whitespace inside a run is the run's), or, across a box's edge (box), the box's text on that
-    // row; with each character's box where it is judged (now: at the read's last instant), at most 400 of them.
+    // of one direction laid out in one direction (whitespace inside a run is the run's; a dir attribute or a bdi starts
+    // another), or, across a box's edge (box), the box's text on that row; with each character's box where it is judged
+    // (now: at the read's last instant), at most 400 of them.
     const PIECE = 400;
     const pieceOf = (k, step, box, now) => {
       const e = all[k];
@@ -1305,7 +1314,7 @@ const VISITOR_BEGIN = `(() => {
       let l = q0.l, r = q0.r;
       for (let x = k + step, n = 0; x >= 0 && x < all.length && n < PIECE; x += step, n++) {
         const y = all[x];
-        if (y.breaks !== e.breaks || (!box && y.d !== e.d)) break;
+        if (y.breaks !== e.breaks || (!box && (y.d !== e.d || y.id !== e.id))) break;
         const q = at(y);
         if (!q || Math.min(q.b, q0.b) - Math.max(q.t, q0.t) < 0.5 * Math.min(q.b - q.t, q0.b - q0.t)) break;
         l = Math.min(l, q.l);
@@ -1357,7 +1366,7 @@ const VISITOR_BEGIN = `(() => {
         // right-to-left row), the two characters side by side in the text stand at the far ends of their runs or boxes,
         // which a visitor sees glued or apart by where the runs or boxes meet.
         // (Within one word of one direction, with nothing between, the two stand side by side as in the text.)
-        if (a.d !== b.d || ((a.d !== a.bd || b.d !== b.bd) && (structural || flow))) {
+        if (a.d !== b.d || ((a.d !== a.id || b.d !== b.id) && (structural || flow))) {
           const pa = pieceOf(i, -1, structural, now), pb = pieceOf(j, 1, structural, now);
           gap = Math.max(pb.l - pa.r, pa.l - pb.r);
         }

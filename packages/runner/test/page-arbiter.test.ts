@@ -585,6 +585,15 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     const latin = pageOf('<p>Order <bdi>שלום</bdi> today</p><p>Plain</p>');
     expect(await check(latin, 'T\nOrder שלום tomorrow\nPlain', latin.replace('today', 'tomorrow'))).toBeUndefined();
     expect((await check(latin, 'T\nOrderשלום today\nPlain', latin.replace('Order <bdi>', 'Order<bdi>')))).toBeUndefined();
+    // A link marked dir="ltr" (an isolate) in a right-to-left paragraph runs in its own direction: its phone number's
+    // groups and its plus sign are one left-to-right run, apart from the words around it (round 12's evidence, the
+    // round-11 verifier's Arabic café page: "!" or " too" after the number, or new words before it, were refused).
+    const phone = pageOf('<main dir="rtl" lang="ar"><p>هاتف: <a href="tel:+96265000000" dir="ltr">+962 6 500 0000</a></p><p>شكرا</p></main>');
+    expect((await offer(phone)).offered).toEqual(['T', 'هاتف: [+962 6 500 0000]', 'شكرا']);
+    expect(await check(phone, 'T\nهاتف: [+962 6 500 0000] too\nشكرا', phone.replace('</a></p>', '</a> too</p>'))).toBeUndefined();
+    expect(await check(phone, 'T\nهاتف: [+962 6 500 0000]!\nشكرا', phone.replace('</a></p>', '</a>!</p>'))).toBeUndefined();
+    expect(await check(phone, 'T\nfresh words [Go now]\nشكرا', phone.replace('هاتف: ', 'fresh words ').replace('+962 6 500 0000', 'Go now'))).toBeUndefined();
+    expect((await check(phone, 'T\nهاتف: [+962 6 500 0000]too\nشكرا', phone.replace('</a></p>', '</a> too</p>')))?.problem).toMatch(/a space that your lines do not have/);
     // A left-to-right word a script reverses in a left-to-right page is still in another order.
     const ltr = pageOf('<p><bdo dir="rtl">Hello world</bdo> after</p><p>Plain</p>');
     expect(await offer(ltr)).toMatchObject({ offered: ['T', 'Plain'], why: { 'Hello world after': 'layout' } });
