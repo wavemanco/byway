@@ -220,6 +220,12 @@ export const GONE_HERE = '﷬';
  * turned text it does not read: a turn in 3D, two frames far apart, a turn near an eighth of a turn; see ShownText).
  */
 export const TURNED = '﷫';
+/**
+ * In ShownText.text: two neighbours across a box's edge, offset across their line (one raised or lowered beside the
+ * next, as a flex item with a margin, padding or relative offset), that meet along it: read as glued only because the
+ * read cannot tell whether a visitor sees them apart (see ShownText).
+ */
+export const OFFSET = '﷪';
 
 export interface PageRenderer {
   /** PNG tiles of the whole page on a wide screen, top to bottom. */
@@ -1341,6 +1347,8 @@ const VISITOR_BEGIN = `(() => {
       const block = blockOf(parent);
       const ell = block && !marquee ? ellipsisOf(block) : null;
       const fs = parseFloat(style(parent).fontSize) || 16;
+      // Its line height, as its element sets it (NaN for normal): two rows of text stand at least that far apart.
+      const lh = parseFloat(style(parent).lineHeight);
       // The frame its text is laid out in (vertical or turned text: see sep in final).
       const fr = textFrame(parent);
       const mq = marquee ? [...marquee.getClientRects()].find((x) => x.width > 0 || x.height > 0) : null;
@@ -1381,7 +1389,7 @@ const VISITOR_BEGIN = `(() => {
             shown = last.shown;
             up = last.up;
           }
-          last = { i, box, vis, shown, up, fs, d: dirOf(c), fr };
+          last = { i, box, vis, shown, up, fs, lh, d: dirOf(c), fr };
           chars.push(last);
           if (shown) count++;
         }
@@ -1637,7 +1645,7 @@ const VISITOR_BEGIN = `(() => {
             flush();
             const f = finByIndex.get(i);
             const now = seenAt(f) ? f : null;
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fr: ch.fr, fs: ch.fs, d: ch.d, bd: ch.bd, id: ch.id, spaces, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis, fr: now.fr } : null, alt: null });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fr: ch.fr, fs: ch.fs, lh: ch.lh, el: p, d: ch.d, bd: ch.bd, id: ch.id, spaces, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis, fr: now.fr } : null, alt: null });
             if (now) last.idx.push([i, all.length - 1]);
             spaces = [];
           } else {
@@ -1708,9 +1716,11 @@ const VISITOR_BEGIN = `(() => {
       todo.push({ child: c.firstChild, box, el: c, n0: all.length });
     }
     // Between two neighbouring shown characters (see ShownText). sepRow: the line break returned stands between two
-    // characters on one row (a box's edge parts them there), not between rows. sepTurned: the two are read as glued only
-    // because the read cannot measure how they sit (see geom).
-    let sepRow = false, sepTurned = false;
+    // characters on one row (a box's edge parts them there), not between rows. sepMark: the two are read as glued only
+    // because the read cannot measure how they sit, and why: TURNED (turned text it cannot measure, see unaligned) or
+    // OFFSET (offset across their line, see geom); else ''.
+    const TURNED_MARK = ${JSON.stringify(TURNED)}, OFFSET_MARK = ${JSON.stringify(OFFSET)};
+    let sepRow = false, sepMark = '';
     // Two nodes' boxes in one place: each overlaps the other by more than half of the smaller one's width and height.
     const onePlace = (p, q) => p !== q && !!p && !!q && Math.min(p.r, q.r) - Math.max(p.l, q.l) > 0.5 * Math.min(p.r - p.l, q.r - q.l) && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 0.5 * Math.min(p.b - p.t, q.b - q.t);
     // The other points of an endless animation's cycle. Each sample holds every endless animation at one of CYCLE points
@@ -1872,7 +1882,7 @@ const VISITOR_BEGIN = `(() => {
     // quarter turn beside straight text, or a frame it cannot solve): apart where their shapes on the screen stand
     // further apart than the tolerance (their corners where those can be told, else their bounding boxes, which hold
     // them), glued where they meet. Where only the bounding boxes are known and those meet, how the two sit cannot be
-    // told: a box's edge between them is never read as parting them (glued, marked so: sepTurned), and in one flow of
+    // told: a box's edge between them is never read as parting them (glued, marked so: sepMark TURNED), and in one flow of
     // text they are as the text runs them.
     const unaligned = (A, B, structural, flow, tol) => {
       const qa = A.fr ? P.quadOf(A.box, A.fr) : null, qb = B.fr ? P.quadOf(B.box, B.fr) : null;
@@ -1880,11 +1890,14 @@ const VISITOR_BEGIN = `(() => {
       const va = A.vis || A.box, vb = B.vis || B.box;
       if (Math.max(vb.l - va.r, va.l - vb.r, vb.t - va.b, va.t - vb.b) > tol) return structural ? '\\n' : ' ';
       if (structural) {
-        sepTurned = true;
+        sepMark = TURNED_MARK;
         return '';
       }
       return flow ? ' ' : '';
     };
+    // A character's line height across its line, on the screen: its element's line height, scaled as its frame R scales
+    // its block direction, or, where that is normal, its glyph's own extent across the line (K: its box as judged).
+    const lineHeight = (x, R, K) => (isFinite(x.lh) && R.fr && R.fr.ok ? x.lh * Math.hypot(R.fr.v[0], R.fr.v[1]) : K.box.b - K.box.t);
     // How characters i and j sit, from their boxes A and B ({ box, vis, fr }, at one instant), pick giving the other
     // characters' boxes at that instant (see pieceOf). Text whose frame is not plain (vertical text, or text a transform
     // turns) is judged along the line both run along (axesOf): a row is an overlap across it, a gap a distance along it,
@@ -1896,6 +1909,7 @@ const VISITOR_BEGIN = `(() => {
       const structural = b.breaks > a.breaks;
       const flow = b.ws > a.ws;
       const tol = Math.max(0.5, 0.1 * Math.min(a.fs, b.fs));
+      const RA = A, RB = B;
       let ax = null;
       if (!(A.fr && A.fr.plain && B.fr && B.fr.plain)) {
         ax = axesOf(A.fr, B.fr);
@@ -1908,8 +1922,26 @@ const VISITOR_BEGIN = `(() => {
         // apart across boxes, never in the other order.
         if (structural && Math.max(B.box.l - A.box.r, A.box.l - B.box.r) > 4 * Math.max(a.fs, b.fs)) return '\\n';
       }
-      const row = Math.min(A.box.b, B.box.b) - Math.max(A.box.t, B.box.t) >= 0.5 * Math.min(A.box.b - A.box.t, B.box.b - B.box.t);
-      if (row) {
+      const across = Math.min(A.box.b, B.box.b) - Math.max(A.box.t, B.box.t);
+      const row = across >= 0.5 * Math.min(A.box.b - A.box.t, B.box.b - B.box.t);
+      // Across a box's edge, offset across the line on one row (an item raised or lowered beside the next: a margin,
+      // padding or a relative offset beside align-items: flex-start): not a row by the half overlap, but their boxes
+      // overlap across the line, and the text of each one's box on its row stands beside the other's along the line, not
+      // over it (blocks one under the next, a line pulled up over the one before by a negative margin, overlap along it).
+      // Rows of their own never overlap where their lines are set at their normal height; where a line height is set
+      // smaller than the letters (lines set solid, whose letters' boxes overlap the next row's, as flex items wrapped onto
+      // the next row), the two must also stand nearer than half their line heights together, which two rows of their own
+      // never do (each row is at least its line height tall). Round 12 and 13 read such a pair as on rows of their own,
+      // apart across boxes however near they stood, and never in the other order.
+      let near = false;
+      if (!row && structural && across > 0.5) {
+        const solid = isFinite(a.lh) || isFinite(b.lh);
+        if (!solid || Math.abs(A.box.t + A.box.b - B.box.t - B.box.b) / 2 < (lineHeight(a, RA, A) + lineHeight(b, RB, B)) / 2 - tol) {
+          const pa = pieceOf(i, -1, pick, ax), pb = pieceOf(j, 1, pick, ax);
+          near = !!pa && !!pb && Math.min(pa.r, pb.r) - Math.max(pa.l, pb.l) <= tol;
+        }
+      }
+      if (row || near) {
         const ca = (A.box.l + A.box.r) / 2, cb = (B.box.l + B.box.r) / 2;
         const va = A.vis || A.box, vb = B.vis || B.box;
         // Two characters of one direction stand in its order, else a visitor reads them in the other order: except two
@@ -1936,7 +1968,12 @@ const VISITOR_BEGIN = `(() => {
           const pa = pieceOf(i, -1, pick, ax), pb = pieceOf(j, 1, pick, ax);
           if (pa && pb) gap = Math.max(pb.l - pa.r, pa.l - pb.r);
         }
-        if (gap <= tol) return '';
+        if (gap <= tol) {
+          // Offset across the line and meeting along it: whether a visitor sees the two apart cannot be told, so a box's
+          // edge between them is never read as parting them (glued, marked so: OFFSET).
+          if (near) sepMark = OFFSET_MARK;
+          return '';
+        }
         sepRow = structural;
         return structural ? '\\n' : ' ';
       }
@@ -1946,7 +1983,7 @@ const VISITOR_BEGIN = `(() => {
     const sep = (i, j) => {
       const a = all[i], b = all[j];
       sepRow = false;
-      sepTurned = false;
+      sepMark = '';
       const structural = b.breaks > a.breaks;
       const flow = b.ws > a.ws;
       if (a.cap && !b.cap && !structural && !flow) return '';
@@ -1970,21 +2007,22 @@ const VISITOR_BEGIN = `(() => {
       // (round 12 judged a link nudged apart only at the start of its cycle there, and stored a typed space its edge drops
       // for the rest of it).
       if (s === '' || !points || (!a.alt && !b.alt)) return s;
-      const row = sepRow, turned = sepTurned;
+      const row = sepRow, mark = sepMark;
       for (let p = 0; p < points; p++) {
         const A = a.alt ? a.alt[p] : a.fin, B = b.alt ? b.alt[p] : b.fin;
         if (!A || !B || (A === a.fin && B === b.fin)) continue;
         sepRow = false;
-        sepTurned = false;
+        sepMark = '';
         if (geom(i, j, A, B, (x) => (all[x].alt ? all[x].alt[p] : all[x].fin)) === '') return '';
       }
       sepRow = row;
-      sepTurned = turned;
+      sepMark = mark;
       return s;
     };
-    // The separator before each character, whether it is a line break on one row, and whether glued is unmeasured.
-    const seps = [''], onRow = [false], turnedAt = [false];
-    for (let k = 1; k < all.length; k++) { seps.push(sep(k - 1, k)); onRow.push(sepRow); turnedAt.push(sepTurned); }
+    // The separator before each character, whether it is a line break on one row, and whether glued is unmeasured (its
+    // mark).
+    const seps = [''], onRow = [false], markAt = [''];
+    for (let k = 1; k < all.length; k++) { seps.push(sep(k - 1, k)); onRow.push(sepRow); markAt.push(sepMark); }
     // A character with no glyph (a no-break or other space that is not HTML whitespace, a zero-width or format
     // character) shows nothing of its own: where the visible characters on either side of a run of them stand glued, a
     // visitor sees them glued, whatever the run's own boxes say.
@@ -1993,7 +2031,7 @@ const VISITOR_BEGIN = `(() => {
       if (!GLYPHLESS.test(all[k].c)) { k++; continue; }
       let j = k;
       while (j < all.length && GLYPHLESS.test(all[j].c)) j++;
-      if (j < all.length && sep(k - 1, j) === '') for (let x = k; x <= j; x++) { seps[x] = ''; onRow[x] = false; turnedAt[x] = sepTurned; }
+      if (j < all.length && sep(k - 1, j) === '') for (let x = k; x <= j; x++) { seps[x] = ''; onRow[x] = false; markAt[x] = sepMark; }
       k = j;
     }
     const HID = ${JSON.stringify(HIDDEN_HERE)};
@@ -2007,7 +2045,7 @@ const VISITOR_BEGIN = `(() => {
       const s = seps[k];
       if (x.link !== open && open >= 0) { linked += ${JSON.stringify(LINK_CLOSE)}; open = -1; }
       if (onRow[k] && s) rowBreaks.push(text.length);
-      const between = s || (turnedAt[k] ? ${JSON.stringify(TURNED)} : '');
+      const between = s || markAt[k];
       text += between;
       linked += between;
       if (x.link !== open) {

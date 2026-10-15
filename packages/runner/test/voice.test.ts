@@ -725,6 +725,24 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(msg).toContain('Sign intoday');
   });
 
+  it('neighbours across a box\'s edge offset across their line: a typed space the edge drops is asked again saying why, and a row a visitor reads in the other order is not offered (r13 verifier)', async () => {
+    // Round 12 and 13 read such a pair as on rows of their own, apart across boxes, and stored these spaces, which a
+    // visitor never sees ("Sign intoday", "Freshbread"), and "Fresh rye", which a visitor reads "rye Fresh".
+    for (const [html, answer] of [
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Already have an account?</span><a href="/l" style="position:relative;top:14px">Sign in</a></p>', 'T\nAlready have an account?[Sign in] today'],
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:14px">bread</span></p>', 'T\nFresh bread'],
+      ['<div style="writing-mode:vertical-rl;display:flex;align-items:flex-start;height:300px;font:20px Arial"><span>Fresh</span><span style="margin-block-start:14px">bread</span></div>', 'T\nFresh bread'],
+    ] as const) {
+      expect(await rejected((await open(page(html))).answer(answer)), html).toContain('because a browser shows the words there offset from each other across their line (one raised or lowered beside the next, at the edge of a box), so it cannot tell whether they would stand apart as your lines have them');
+    }
+    const reversed = await open(page('<p style="display:flex;flex-direction:row-reverse;justify-content:flex-end;align-items:flex-start;gap:6px;font:20px Arial"><span>Fresh</span> <span style="margin-top:14px">bread</span></p>'));
+    expect(reversed.offered).toBe('T');
+    expect(reversed.prompt).toMatch(/: a browser shows its words run together or in another order: "Fresh bread"\.$/);
+    const staggered = await open(page('<h1 style="display:flex;align-items:flex-start;font:40px Arial"><span>Bake</span> <span style="margin-top:24px">better</span> <span>bread</span></h1><p>We bake every morning.</p>'));
+    expect(staggered.offered).toBe('T\nWe bake every morning.');
+    expect(staggered.prompt).toMatch(/: a browser shows its words offset from each other across the line \(one raised or lowered beside the next, at the edge of a box\), so byway cannot tell whether they stand apart: "Bake better bread"\.$/);
+  });
+
   it('a card a 3D transform leaves flat (AOS\'s flip at rest) is offered and written; one truly turned in 3D that hides its overflow is named as turned in a way byway cannot measure (r13 verifier)', async () => {
     // Round 13 read perspective(2500px) rotateY(0) as a turn in 3D: such a card that hides its overflow kept nothing, so
     // its lines were not offered, and the prompt said they were hidden from sight.

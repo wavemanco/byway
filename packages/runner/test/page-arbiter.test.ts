@@ -570,6 +570,20 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect((await check(eighth, 'T\nHotcoffee now', eighth.replace('coffee</b></div>', 'coffee</b> now</div>')))?.problem).toMatch(/because a browser shows the words there turned in a way byway cannot measure \(near an eighth of a turn, or in 3D\), so it cannot tell whether they would stand apart as your lines have them: it would show ".* \/ Hotcoffeenow"/);
   }, 60_000);
 
+  it('neighbours across a box\'s edge offset across their line: a line with a space between two that meet is not offered, a space typed there is refused saying why, and a line a visitor reads in the other order is not offered (r13 verifier)', async () => {
+    const stagger = pageOf('<h1 style="display:flex;align-items:flex-start;font:40px Arial"><span>Bake</span> <span style="margin-top:24px">better</span> <span>bread</span></h1><p>We bake every morning.</p>');
+    expect(await offer(stagger)).toMatchObject({ offered: ['T', 'We bake every morning.'], why: { 'Bake better bread': 'offset' } });
+    // A link lowered beside the words before it: round 12 and 13 stored " today" after it, which a visitor sees as
+    // "Sign intoday" (placement puts it in a new flex item, whose leading space a browser drops).
+    const lowered = pageOf('<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Already have an account?</span><a href="/l" style="position:relative;top:14px">Sign in</a></p>');
+    expect((await offer(lowered)).offered).toEqual(['T', 'Already have an account?[Sign in]']);
+    expect((await check(lowered, 'T\nAlready have an account?[Sign in] today', lowered.replace('</a></p>', '</a> today</p>')))?.problem).toMatch(/because a browser shows the words there offset from each other across their line \(one raised or lowered beside the next, at the edge of a box\), so it cannot tell whether they would stand apart as your lines have them: it would show ".*Sign intoday"/);
+    expect(await check(lowered, 'T\nAlready have an account?[Sign in]today', lowered.replace('</a></p>', '</a>today</p>'))).toBeUndefined();
+    // The second before the first along the line (round 12 and 13 stored "Fresh rye", which a visitor reads "rye Fresh").
+    const reversed = pageOf('<p style="display:flex;flex-direction:row-reverse;justify-content:flex-end;align-items:flex-start;gap:6px;font:20px Arial"><span>Fresh</span> <span style="margin-top:14px">bread</span></p>');
+    expect(await offer(reversed)).toMatchObject({ offered: ['T'], why: { 'Fresh bread': 'layout' } });
+  }, 60_000);
+
   it('a card a 3D transform leaves flat (AOS\'s flip at rest) is offered and written; a box turned in 3D that hides its overflow is named as turned in a way byway cannot measure, not as hidden from sight (r13 verifier)', async () => {
     const card = (tf: string) => pageOf(`<div style="transform:${tf};overflow:hidden;width:400px;padding:16px"><h3>Fresh bread</h3><p>Baked every morning.</p></div><p>Outside line.</p>`);
     const flat = card('perspective(2500px) rotateY(0)');

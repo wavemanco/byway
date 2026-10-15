@@ -17,7 +17,7 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Browser, LaunchOptions } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX, TURNED } from '../src/pages.ts';
+import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX, REVERSED, TURNED } from '../src/pages.ts';
 
 const pages = playwrightPages({ maxTileHeight: 1200 });
 const opened: { close(): Promise<void> }[] = [pages];
@@ -850,6 +850,34 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       // they are as the text runs them.
       ['<div style="transform:rotate(-45deg);display:flex;width:400px;margin:150px"><span>Already here</span><b>Sign in</b></div>', `Already here${TURNED}Sign in`],
       ['<div style="transform:perspective(400px) rotateY(40deg);display:flex;width:400px;margin:100px"><span>Tilted card</span><b>Go</b></div>', `Tilted card${TURNED}Go`],
+    ];
+    for (const [b, want] of cases) expect((await pages.shownText(body(b), none)).text, b).toBe(want);
+  }, 120_000);
+
+  it('neighbours across a box\'s edge offset across their line (an item raised or lowered beside the next) stand on one row: where they meet along it the read cannot tell whether they stand apart, and the second before the first is in the other order (r13 verifier)', async () => {
+    const cases: [string, string][] = [
+      // Round 12 and 13 read a pair across a box's edge overlapping across the line by less than half the smaller box as
+      // on rows of their own, apart across boxes however close they stood, and never checked their order: they stored
+      // "Sign in today" a visitor sees as "Sign intoday" beside a lowered link, and "Fresh rye" a visitor reads "rye Fresh".
+      // Lowered by a relative offset, a margin or padding, as beside align-items:flex-start; in straight and vertical text.
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Already have an account?</span><a href="/l" style="position:relative;top:14px">Sign in</a> today</p>', `Already have an account?${OFFSET}Sign in${OFFSET}today`],
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:14px">bread</span></p>', `Fresh${OFFSET}bread`],
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:12px">bread</span></p>', `Fresh${OFFSET}bread`],
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:20px">bread</span></p>', `Fresh${OFFSET}bread`],
+      ['<p style="display:flex;align-items:flex-start;font:18px/28px Arial">Already have an account?<a href="/l" style="padding-top:16px">Sign in</a></p>', `Already have an account?${OFFSET}Sign in`],
+      ['<div style="writing-mode:vertical-rl;display:flex;align-items:flex-start;height:300px;font:20px Arial"><span>Fresh</span><span style="margin-block-start:14px">bread</span></div>', `Fresh${OFFSET}bread`],
+      // Offset by less than half the box: one row, glued; a gap along the line parts them.
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:8px">bread</span></p>', 'Freshbread'],
+      ['<p style="display:flex;align-items:flex-start;gap:8px;font:20px Arial"><span>Fresh</span><span style="margin-top:14px">bread</span></p>', 'Fresh\nbread'],
+      // The second before the first along the line: in the other order.
+      ['<p style="display:flex;flex-direction:row-reverse;justify-content:flex-end;align-items:flex-start;gap:6px;font:20px Arial"><span>Fresh</span> <span style="margin-top:14px">bread</span></p>', `Fresh${REVERSED}bread`],
+      // Rows of their own stay apart across boxes, though their letters' boxes overlap where lines are set solid: a block
+      // that starts where the one above ends, flex items wrapped onto the next row, words in inline blocks wrapped.
+      ['<div style="font:20px/1 \'Courier New\',monospace"><div>Fresh</div><div style="margin-left:60px">bread</div></div>', 'Fresh\nbread'],
+      ['<p style="display:flex;flex-wrap:wrap;width:120px;font:48px/.85 Arial"><span>Big</span><span>bold</span></p>', 'Big\nbold'],
+      ['<h1 style="font:64px/.9 Arial;width:300px"><span style="display:inline-block">Fresh</span> <span style="display:inline-block">bread</span></h1>', 'Fresh\nbread'],
+      // A line pulled up over the one before by a negative margin overlaps it along the line, so it is not beside it.
+      ['<h2 style="font:36px Arial;margin:0">Fresh bread daily</h2><p style="margin:-8px 0 0;font:16px Arial">Baked every morning</p>', 'Fresh bread daily\nBaked every morning'],
     ];
     for (const [b, want] of cases) expect((await pages.shownText(body(b), none)).text, b).toBe(want);
   }, 120_000);
