@@ -883,6 +883,26 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     }
   }, 60_000);
 
+  it('a 3D transform that keeps the element\'s own plane flat (AOS\'s flip at rest, vanilla-tilt at rest, translateZ(0)) is read as flat: its box clips where it stands and its flex rows are measured (r13 verifier)', async () => {
+    // Round 13 read any transform holding perspective() as a turn in 3D: a card that hides its overflow kept nothing, so
+    // its lines were not offered, said to be hidden from sight, and its flex rows were read as not measured.
+    const card = (tf: string) => body(`<div style="transform:${tf};overflow:hidden;width:400px;padding:16px"><h3>Fresh bread</h3><p style="display:flex">Already a member? <a href="/in">Sign in</a></p></div><div style="transform:${tf};width:400px;padding:16px"><p style="display:flex">Price: <b>$20</b></p></div>`);
+    for (const tf of ['perspective(2500px) rotateY(0)', 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1,1,1)', 'perspective(1000px)', 'translateZ(0)', 'matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)']) {
+      const r = await pages.shownText(card(tf), none);
+      expect(r.text, tf).toBe('Fresh bread\nAlready a member?Sign in\nPrice:$20');
+      expect(r.hidden, tf).toEqual([]);
+    }
+    // As AOS 2.3.4 runs a flip (its stylesheet's flip-left and flip-up, the class its script adds) and vanilla-tilt 1.8.1
+    // rests (the transform its reset sets), on cards that hide their overflow.
+    const aos = '<style>[data-aos^=flip]{backface-visibility:hidden;transition-property:transform;transition-duration:.4s}[data-aos=flip-left]{transform:perspective(2500px) rotateY(-100deg)}[data-aos=flip-left].aos-animate{transform:perspective(2500px) rotateY(0)}[data-aos=flip-up]{transform:perspective(2500px) rotateX(-100deg)}[data-aos=flip-up].aos-animate{transform:perspective(2500px) rotateX(0)}.c{overflow:hidden;padding:24px;width:320px;display:inline-block;vertical-align:top}</style>';
+    const flips = await pages.shownText(body(`${aos}<div class="c" data-aos="flip-left"><h3>Brand identity</h3><p>Logos, type and colour.</p></div><div class="c" data-aos="flip-up"><h3>Web design</h3><p>Fast sites.</p></div><script>addEventListener('load', () => document.querySelectorAll('[data-aos]').forEach((e) => e.classList.add('aos-animate')));</script>`), none);
+    expect(flips.text).toBe('Brand identity\nLogos, type and colour.\nWeb design\nFast sites.');
+    const tilt = await pages.shownText(body('<div class="t" style="overflow:hidden;padding:24px;width:320px;will-change:transform"><h3>Harbour Coffee</h3><p style="display:flex"><span>A brand</span><b>for a café</b></p></div><script>document.querySelectorAll(".t").forEach((e) => { e.style.transform = "perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)"; });</script>'), none);
+    expect(tilt.text).toBe('Harbour Coffee\nA brandfor a café');
+    // A 3D matrix that tilts the plane, or a box its parent sets in 3D and moves out of the plane, is still not read.
+    expect((await pages.shownText(body('<div style="transform:perspective(1000px) rotateX(0deg);transform-style:preserve-3d;width:400px"><p style="display:flex;transform:translateZ(50px)"><span>Fresh</span><b>bread</b></p></div>'), none)).text).toBe(`Fresh${TURNED}bread`);
+  }, 60_000);
+
   it('an endless animation is judged at each of the points of its cycle the read holds it at: two neighbours glued at any of them are glued (r12 verifier: a nudge judged at its first keyframe)', async () => {
     const css = '<style>@keyframes nudge{0%{transform:translateX(-14px)}8%,100%{transform:none}}.n{display:inline-block;margin-left:24px;animation:nudge 3s infinite}@keyframes peek{0%{transform:translateY(-120%)}10%,100%{transform:none}}.peek{display:inline-block;animation:peek 4s infinite}</style>';
     // The link rests glued to the words after it (a flex item whose leading space a browser drops) for all of its cycle

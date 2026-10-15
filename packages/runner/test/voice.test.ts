@@ -725,6 +725,19 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(msg).toContain('Sign intoday');
   });
 
+  it('a card a 3D transform leaves flat (AOS\'s flip at rest) is offered and written; one truly turned in 3D that hides its overflow is named as turned in a way byway cannot measure (r13 verifier)', async () => {
+    // Round 13 read perspective(2500px) rotateY(0) as a turn in 3D: such a card that hides its overflow kept nothing, so
+    // its lines were not offered, and the prompt said they were hidden from sight.
+    const aos = '<style>[data-aos=flip-left]{transform:perspective(2500px) rotateY(-100deg);transition:transform .4s}[data-aos=flip-left].aos-animate{transform:perspective(2500px) rotateY(0)}.c{overflow:hidden;padding:24px;width:320px}</style>';
+    const q = await open(page(`${aos}<div class="c" data-aos="flip-left"><h3>Brand identity</h3><p>Logos, type and colour.</p></div><script>addEventListener('load', () => document.querySelectorAll('[data-aos]').forEach((e) => e.classList.add('aos-animate')));</script>`));
+    expect(q.offered).toBe('T\nBrand identity\nLogos, type and colour.');
+    const out = await q.answer('T\nBrand identity\nLogos, type and colour that last.');
+    expect(await shows(out.artifactId!)).toBe('Brand identity\nLogos, type and colour that last.');
+    const turned = await open(page('<div style="transform:perspective(400px) rotateY(30deg);overflow:hidden;width:400px"><h3>Fresh bread</h3></div><p>After</p>'));
+    expect(turned.offered).toBe('T\nAfter');
+    expect(turned.prompt).toMatch(/: a browser shows it in a box turned in a way byway cannot measure \(in 3D\), so byway cannot tell what of it that box cuts off: "Fresh bread"\.$/);
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // Browsers move the font out of the table, right after "Middle".

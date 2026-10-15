@@ -183,6 +183,11 @@ export interface ShownText {
   hidden: [text: string, href: string | null][];
   unlaid: string;
   /**
+   * The line marks found in text hidden from sight where a box clips it whose place on the screen the read cannot tell
+   * (a box turned in 3D that hides its overflow): only to say why a line is not offered. A read without it has none.
+   */
+  unplaced?: string;
+  /**
    * The text a stylesheet adds (CSS generated content, the strings of a ::before's or ::after's `content`) on each
    * element that shows it with no text of the page's own beside it (an empty element, an icon), in document order. A
    * read without it (the e2e scenarios' model) has none.
@@ -923,8 +928,12 @@ const VISITOR_BEGIN = `(() => {
      * How a box stands on the screen (vertical and turned text). A plane map m = [a, b, c, d] takes a vector (x, y) of
      * a box, before its transforms, to (a x + b y, c x + d y) on the screen: the linear part of every transform from
      * the box up to the page (an element's rotate, scale and transform, in that order; a translate only moves it; an
-     * inline box, an element with no box and a table column have none). null where a transform turns the box out of
-     * the screen's plane (a 3D turn, perspective) or byway does not read it (a motion path).
+     * inline box, an element with no box and a table column have none). A 3D matrix is read by what it does to the
+     * element's own plane (z = 0): flat where nothing there changes its w (m14 and m24: no perspective tilts the plane)
+     * and the plane stays at z = 0 (m13 and m23: not turned out of the screen; and m43 too where its parent sets it in
+     * 3D, by preserve-3d or a perspective, which would scale it), as AOS's flip at rest, perspective(2500px) rotateY(0),
+     * and vanilla-tilt's reset are (round 13 read any perspective() as a turn). null where a transform turns the box out
+     * of the screen's plane (a 3D turn, a perspective that tilts it) or byway does not read it (a motion path).
      */
     const I2 = [1, 0, 0, 1];
     const mul = (p, q) => [p[0] * q[0] + p[1] * q[2], p[0] * q[1] + p[1] * q[3], p[2] * q[0] + p[3] * q[2], p[2] * q[1] + p[3] * q[3]];
@@ -935,6 +944,13 @@ const VISITOR_BEGIN = `(() => {
       return m[2] === 'rad' ? x : m[2] === 'grad' ? (x * Math.PI) / 200 : m[2] === 'turn' ? x * 2 * Math.PI : (x * Math.PI) / 180;
     };
     const UNTRANSFORMED = new Set(['inline', 'contents', 'none', 'table-column', 'table-column-group']);
+    // Whether e's parent sets it in 3D (preserve-3d, or a perspective), so that moving it out of its plane scales it.
+    const in3d = (e) => {
+      const p = e.parentElement;
+      if (!p) return false;
+      const s = style(p);
+      return s.transformStyle === 'preserve-3d' || (!!s.perspective && s.perspective !== 'none');
+    };
     const ownMap = (e) => {
       const s = style(e);
       const d = (s.display || '').split(' ')[0];
@@ -967,9 +983,12 @@ const VISITOR_BEGIN = `(() => {
         const v = mm[2].split(',').map(Number);
         if (v.some((x) => !isFinite(x))) return null;
         if (!mm[1]) m = mul(m, [v[0], v[2], v[1], v[3]]);
-        else if ([2, 3, 6, 7, 8, 9, 11].every((k) => Math.abs(v[k]) < 1e-6) && Math.abs(v[15]) > 1e-9) m = mul(m, [v[0] / v[15], v[4] / v[15], v[1] / v[15], v[5] / v[15]]);
+        else if ([2, 3, 6, 7].every((k) => Math.abs(v[k]) < 1e-6) && Math.abs(v[15]) > 1e-9 && (Math.abs(v[14]) < 1e-6 || !in3d(e))) m = mul(m, [v[0] / v[15], v[4] / v[15], v[1] / v[15], v[5] / v[15]]);
         else return null;
       }
+      // A translate out of the plane its parent sets in 3D scales it too.
+      const tr = (s.translate || 'none').trim().split(/\\s+/);
+      if (tr.length === 3 && parseFloat(tr[2]) !== 0 && in3d(e)) return null;
       return m;
     };
     const lin = chain(ownMap, (own, acc) => (own === null || acc === null ? null : mul(acc, own)), I2);
@@ -1085,12 +1104,17 @@ const VISITOR_BEGIN = `(() => {
     const len = (v, whole, auto) => v === 'auto' ? auto : v.endsWith('%') ? (parseFloat(v) / 100) * whole : parseFloat(v) || 0;
     // A clip: a rect on the screen, and the tests of boxes a transform turns or scales, each a rect in the box's own
     // points (x0 to x1, y0 to y1 from its top left corner) that a point on the screen must fall in.
+    // UNPLACED keeps nothing too, as a box whose place on the screen the read cannot tell (turned in 3D): its text is
+    // hidden from sight, and the read says why (ShownText.unplaced).
     const NO_TESTS = [];
     const ALL = { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity, tests: NO_TESTS };
     const NONE = { l: 0, t: 0, r: 0, b: 0, tests: NO_TESTS };
+    const UNPLACED = { l: 0, t: 0, r: 0, b: 0, tests: NO_TESTS, unplaced: true };
     const meet = (a, b) => {
       const at = a.tests || NO_TESTS, bt = b.tests || NO_TESTS;
-      return { l: Math.max(a.l, b.l), t: Math.max(a.t, b.t), r: Math.min(a.r, b.r), b: Math.min(a.b, b.b), tests: !at.length ? bt : !bt.length ? at : at.concat(bt) };
+      const out = { l: Math.max(a.l, b.l), t: Math.max(a.t, b.t), r: Math.min(a.r, b.r), b: Math.min(a.b, b.b), tests: !at.length ? bt : !bt.length ? at : at.concat(bt) };
+      if (a.unplaced || b.unplaced) out.unplaced = true;
+      return out;
     };
     const inside = (tests, x, y) => {
       for (const T of tests) {
@@ -1134,7 +1158,7 @@ const VISITOR_BEGIN = `(() => {
      * What e clips its content to: its overflow (unless escaped) or paint containment, its clip rect, its clip-path. On
      * a box a transform turns, scales or skews, in its own points (a test; round 12 set its unturned size on its
      * bounding box, so a hero's slow zoom or a card turned 2 degrees cut its own text); where its place cannot be told
-     * (a 3D turn), it keeps nothing.
+     * (a 3D turn), it keeps nothing, as UNPLACED.
      */
     const own = (e, overflow) => {
       const s = style(e);
@@ -1171,7 +1195,7 @@ const VISITOR_BEGIN = `(() => {
       const clips = ((ox || oy) && (svg || (!NO_OVERFLOW.has(s.display.split(' ')[0]) && !/math/.test(s.display)))) || (/^rect\\(/.test(s.clip || '') && (s.position === 'absolute' || s.position === 'fixed')) || (s.clipPath && s.clipPath !== 'none');
       if (!clips) return ALL;
       const bm = boxMap(e, e.getBoundingClientRect());
-      if (!bm) return NONE;
+      if (!bm) return lin(e) ? NONE : UNPLACED;
       const T = { o: bm.o, inv: bm.inv, x0: -Infinity, x1: Infinity, y0: -Infinity, y1: Infinity };
       const cut = (c) => { T.x0 = Math.max(T.x0, c.l); T.y0 = Math.max(T.y0, c.t); T.x1 = Math.min(T.x1, c.r); T.y1 = Math.min(T.y1, c.b); };
       if ((ox || oy) && (svg || (!NO_OVERFLOW.has(s.display.split(' ')[0]) && !/math/.test(s.display)))) {
@@ -1327,7 +1351,7 @@ const VISITOR_BEGIN = `(() => {
             const rs = range.getClientRects();
             for (let k = 0; k < rs.length && !q; k++) if (rs[k].width > 0 && rs[k].height > 0) q = rs[k];
           }
-          let shown = false, box = null, vis = null;
+          let shown = false, box = null, vis = null, up = false;
           if (q) {
             box = { l: q.left + scrollX, t: q.top + scrollY, r: q.right + scrollX, b: q.bottom + scrollY };
             const l = Math.max(q.left, clip.l), t = Math.max(q.top, clip.t), r = Math.min(q.right, clip.r), b = Math.min(q.bottom, clip.b);
@@ -1336,6 +1360,8 @@ const VISITOR_BEGIN = `(() => {
             const cx = (q.left + q.right) / 2, cy = (q.top + q.bottom) / 2;
             const off = cy + scrollY < 0 || (rtlPage ? cx + scrollX > pageWidth : cx + scrollX < 0);
             shown = r > l && b > t && cx >= l && cx <= r && cy >= t && cy <= b && !off && inside(clip.tests, cx, cy);
+            // Not seen where a clip stands whose place the read cannot tell (up: the read says so, ShownText.unplaced).
+            up = !shown && !!clip.unplaced;
             // The part a visitor sees: a gap beside a character its box cuts off is measured from the cut.
             if (shown) vis = { l: l + scrollX, t: t + scrollY, r: r + scrollX, b: b + scrollY };
             if (shown && ell && cutOff(ell, q, fr)) shown = false;
@@ -1344,8 +1370,9 @@ const VISITOR_BEGIN = `(() => {
             box = last.box;
             vis = last.vis;
             shown = last.shown;
+            up = last.up;
           }
-          last = { i, box, vis, shown, fs, d: dirOf(c), fr };
+          last = { i, box, vis, shown, up, fs, d: dirOf(c), fr };
           chars.push(last);
           if (shown) count++;
         }
@@ -1357,7 +1384,7 @@ const VISITOR_BEGIN = `(() => {
       for (let k = chars.length - 1; k >= 0; k--) {
         const ch = chars[k];
         if (ch.box) next = ch;
-        else if (next) { ch.box = next.box; ch.vis = next.vis; ch.shown = next.shown; if (ch.shown) count++; }
+        else if (next) { ch.box = next.box; ch.vis = next.vis; ch.shown = next.shown; ch.up = next.up; if (ch.shown) count++; }
       }
       // The direction the text is laid out in: its block's, or that of an element inside it that isolates or embeds its
       // text (a link or span with a dir attribute, a bdi, a bdo), as a phone number in a right-to-left paragraph runs in
@@ -1496,7 +1523,7 @@ const VISITOR_BEGIN = `(() => {
     const pageTitle = document.title;
     const P = pass();
     const body = P.body;
-    if (!body) return { title: pageTitle, text: '', linked: '', hrefs: [], hidden: [], unlaid: '', generated: [] };
+    if (!body) return { title: pageTitle, text: '', linked: '', hrefs: [], hidden: [], unlaid: '', unplaced: '', generated: [] };
     const { style, rtlPage } = P;
     const hv = style(html), bv = style(body);
     // The screen clips the page where the page's overflow is hidden, unless the body scrolls in its place.
@@ -1519,6 +1546,8 @@ const VISITOR_BEGIN = `(() => {
     const all = [];
     const hidden = [];
     let unlaid = '';
+    // The line marks in text hidden from sight where a clip stands whose place the read cannot tell (ShownText.unplaced).
+    let unplaced = '';
     let hidFirst = false;
     let goneFirst = false;
     const linkIndex = new Map();
@@ -1604,6 +1633,7 @@ const VISITOR_BEGIN = `(() => {
             spaces = [];
           } else {
             run = (run || '') + starts + c + ends;
+            if (ch && ch.up) unplaced += starts + ends;
             unseen();
           }
         }
@@ -1980,7 +2010,7 @@ const VISITOR_BEGIN = `(() => {
       linked += x.starts + x.c + x.ends + after;
     }
     if (open >= 0) linked += ${JSON.stringify(LINK_CLOSE)};
-    return { title: pageTitle, text, linked, hrefs, hidden, unlaid, generated, rowBreaks };
+    return { title: pageTitle, text, linked, hrefs, hidden, unlaid, unplaced, generated, rowBreaks };
   };
   Object.defineProperty(window, ${JSON.stringify(READ_KEY)}, { value: { loadAll, scroll, sample, final }, configurable: true });
   return true;

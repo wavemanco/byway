@@ -570,6 +570,16 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect((await check(eighth, 'T\nHotcoffee now', eighth.replace('coffee</b></div>', 'coffee</b> now</div>')))?.problem).toMatch(/because a browser shows the words there turned in a way byway cannot measure \(near an eighth of a turn, or in 3D\), so it cannot tell whether they would stand apart as your lines have them: it would show ".* \/ Hotcoffeenow"/);
   }, 60_000);
 
+  it('a card a 3D transform leaves flat (AOS\'s flip at rest) is offered and written; a box turned in 3D that hides its overflow is named as turned in a way byway cannot measure, not as hidden from sight (r13 verifier)', async () => {
+    const card = (tf: string) => pageOf(`<div style="transform:${tf};overflow:hidden;width:400px;padding:16px"><h3>Fresh bread</h3><p>Baked every morning.</p></div><p>Outside line.</p>`);
+    const flat = card('perspective(2500px) rotateY(0)');
+    expect((await offer(flat)).offered).toEqual(['T', 'Fresh bread', 'Baked every morning.', 'Outside line.']);
+    expect(await check(flat, 'T\nFresh bread\nBaked every single morning.\nOutside line.', flat.replace('Baked every morning.', 'Baked every single morning.'))).toBeUndefined();
+    // Round 13 named the flat card's lines "hidden from sight (for screen readers, moved out of view, or until a visitor
+    // opens it)"; where the box is truly turned in 3D, where it cuts cannot be told, and the prompt says so.
+    expect(await offer(card('perspective(400px) rotateY(30deg)'))).toMatchObject({ offered: ['T', 'Outside line.'], why: { 'Fresh bread': 'turned-cut', 'Baked every morning.': 'turned-cut' } });
+  }, 60_000);
+
   it('right-to-left pages: native digits, numbers, Latin names and left-to-right boxes read in the order a visitor reads them (r11 verifier)', async () => {
     const html = pageOf(
       [

@@ -17,7 +17,8 @@
  *   once the marks are taken out (the same text, separators, links and hidden text); if it does not, no line is placed.
  * - What is offered (`notShown`, `notShownWhy`): a line that is not placed is not offered, stays byte for byte, and the
  *   prompt names it with the reason (not laid out, hidden from sight, partly hidden, not shown as one piece, a space in
- *   turned text the read cannot measure, changed or copied by a script).
+ *   turned text the read cannot measure, in a box turned in 3D whose cut the read cannot tell, changed or copied by a
+ *   script).
  * - What the written page must show (`expectedShown`): the page before as the visitor read showed it, every character
  *   outside the changed lines the same, shown or hidden from sight in the same place, in the same link, with the same
  *   separators; each changed line showing exactly the person's characters, where the person typed a space apart (in
@@ -262,7 +263,7 @@ export interface Span {
 }
 
 /** Why a line is not offered (see notShownWhy). */
-export type NotShownWhy = 'unlaid' | 'hidden' | 'part-hidden' | 'layout' | 'turned' | 'changed' | 'script' | 'copied';
+export type NotShownWhy = 'unlaid' | 'hidden' | 'part-hidden' | 'layout' | 'turned' | 'turned-cut' | 'changed' | 'script' | 'copied';
 
 /** The page before as Chromium shows it, and where each of its deck lines (by number in the whole deck) shows. */
 export interface Location {
@@ -342,6 +343,8 @@ export function locate(html: string, plain: ShownText, marked: ShownText | undef
   const why = new Map<number, NotShownWhy>();
   const hiddenMarks = markCounts(marked.hidden.map(([t]) => t).join(' '));
   const unlaidMarks = markCounts(marked.unlaid);
+  // Marks hidden only where a box the read cannot place clips them (turned in 3D): said as such, not as hidden from sight.
+  const unplacedMarks = markCounts(marked.unplaced ?? '');
   p.units.forEach((u, k) => {
     for (const [where, read] of [['body', body], ['title', title]] as const) {
       const s = read.starts.get(k);
@@ -357,10 +360,12 @@ export function locate(html: string, plain: ShownText, marked: ShownText | undef
     const un = unlaidMarks.get(k) ?? { starts: 0, ends: 0 };
     const starts = shownS + hid.starts + un.starts;
     const ends = shownE + hid.ends + un.ends;
+    const up = unplacedMarks.get(k);
     let r: NotShownWhy;
     if (starts > 1 || ends > 1) r = 'copied';
     else if (starts === 0 || ends === 0) r = 'script';
     else if (un.starts && un.ends) r = 'unlaid';
+    else if ((!shownS || !shownE) && up && (up.starts || up.ends)) r = 'turned-cut';
     else if (!shownS && !shownE) r = 'hidden';
     else if (!shownS || !shownE) r = 'part-hidden';
     else {
@@ -394,6 +399,7 @@ export const WHY_NOT_SHOWN: Record<NotShownWhy, string> = {
   'part-hidden': 'part of it is hidden (from sight, for screen readers, or not shown at all) or cut off',
   layout: 'a browser shows its words run together or in another order',
   turned: 'a browser shows it turned in a way byway cannot measure (near an eighth of a turn, or in 3D), so byway cannot tell whether its words stand apart',
+  'turned-cut': 'a browser shows it in a box turned in a way byway cannot measure (in 3D), so byway cannot tell what of it that box cuts off',
   changed: 'a browser shows other words there (a script on the page changes it, or other text shows inside it)',
   script: 'a script on the page changes or removes it',
   copied: 'a script on the page shows it more than once',
