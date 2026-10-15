@@ -364,7 +364,15 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     const signal = AbortSignal.timeout(timeout);
     let url = first;
     for (let hops = 0; ; hops++) {
-      const hop = await fetchHop({ url: url.href, method, headers, ...(body ? { body } : {}), signal, maxBytes: maxFetchBytes });
+      let hop: Awaited<ReturnType<typeof fetchHop>>;
+      try {
+        hop = await fetchHop({ url: url.href, method, headers, ...(body ? { body } : {}), signal, maxBytes: maxFetchBytes });
+      } catch (e) {
+        // The fetch itself failed (not the page's side of the request, as a request the page cancelled): a 404 to the
+        // page, as before, and the reason to the caller.
+        await r.fulfill({ status: 404, body: '' }).catch(() => undefined);
+        return `could not be fetched (${e instanceof Error && /^(TimeoutError|AbortError)$/.test(e.name) ? 'it took too long' : 'the connection failed'})`;
+      }
       if (REDIRECTS.has(hop.status)) {
         const next = hop.location ? new URL(hop.location, url) : undefined;
         if (!next || !followable || hops >= MAX_REDIRECTS || !admit(next)) {
@@ -419,10 +427,6 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
             const why = await fetchAdmitted(r, url);
             if (why) fetches.failed ??= `it loads ${said}, which ${why}`;
             return;
-          } catch (e) {
-            const late = e instanceof Error && /^(TimeoutError|AbortError)$/.test(e.name);
-            fetches.failed ??= `it loads ${said}, which could not be fetched (${late ? 'it took too long' : 'the connection failed'})`;
-            throw e;
           } finally {
             if (--fetches.pending === 0) for (const done of fetches.idle.splice(0)) done();
           }
@@ -984,23 +988,48 @@ const VISITOR_BEGIN = `(() => {
       return f;
     };
     /**
-     * The corners on the screen of a box laid out in frame fr, from its bounding box q ({ l, t, r, b }): exact where fr
-     * runs along the screen's axes; else from the box's own extent along u and v, solved from its bounding box, or null
-     * where fr is turned too near an eighth of a turn to solve (or is not read).
+     * A box laid out in frame fr, from its bounding box q ({ l, t, r, b }) on the screen: its middle c, and hu and hv, half
+     * its own extent along the frame's line and along its block, as vectors on the screen. Exact where fr runs along the
+     * screen's axes; else its own width and height are solved from its bounding box, which cannot be done where fr is
+     * turned too near an eighth of a turn (null; also for a frame that is not read).
      */
-    const quadOf = (q, fr) => {
+    const glyphOf = (q, fr) => {
       if (!fr.ok) return null;
-      if (fr.axis) return [[q.l, q.t], [q.r, q.t], [q.r, q.b], [q.l, q.b]];
       const W = q.r - q.l, H = q.b - q.t;
       const a = Math.abs(fr.u[0]), b = Math.abs(fr.v[0]), c = Math.abs(fr.u[1]), d = Math.abs(fr.v[1]);
-      const D = a * d - b * c;
-      if (Math.abs(D) < 0.3 * (a * d + b * c)) return null;
-      const w = (W * d - H * b) / D, h = (H * a - W * c) / D;
-      if (!(w > -0.5 && h > -0.5)) return null;
+      let w, h;
+      if (fr.axis) {
+        if (a >= c) { w = W / a; h = H / d; }
+        else { w = H / c; h = W / b; }
+      } else {
+        const D = a * d - b * c;
+        if (Math.abs(D) < 0.3 * (a * d + b * c)) return null;
+        w = (W * d - H * b) / D;
+        h = (H * a - W * c) / D;
+        if (!(w > -0.5 && h > -0.5)) return null;
+      }
       const hw = Math.max(0, w) / 2, hh = Math.max(0, h) / 2;
-      const cx = (q.l + q.r) / 2, cy = (q.t + q.b) / 2;
-      const ux = fr.u[0] * hw, uy = fr.u[1] * hw, vx = fr.v[0] * hh, vy = fr.v[1] * hh;
+      return { c: [(q.l + q.r) / 2, (q.t + q.b) / 2], hu: [fr.u[0] * hw, fr.u[1] * hw], hv: [fr.v[0] * hh, fr.v[1] * hh] };
+    };
+    /** The corners on the screen of a box laid out in frame fr (see glyphOf), or null. */
+    const quadOf = (q, fr) => {
+      const g = glyphOf(q, fr);
+      if (!g) return null;
+      const [cx, cy] = g.c, [ux, uy] = g.hu, [vx, vy] = g.hv;
       return [[cx - ux - vx, cy - uy - vy], [cx + ux - vx, cy + uy - vy], [cx + ux + vx, cy + uy + vy], [cx - ux + vx, cy - uy + vy]];
+    };
+    /**
+     * A box laid out in frame fr as a box along the unit axes u (its l and r) and n (its t and b): along u its own advance
+     * only (in skewed text, not its slanted outline, which reaches over the next character's), across it all of it; null
+     * where glyphOf is.
+     */
+    const lineBox = (q, fr, u, n) => {
+      const g = glyphOf(q, fr);
+      if (!g) return null;
+      const cu = g.c[0] * u[0] + g.c[1] * u[1], cn = g.c[0] * n[0] + g.c[1] * n[1];
+      const eu = Math.abs(g.hu[0] * u[0] + g.hu[1] * u[1]);
+      const en = Math.abs(g.hu[0] * n[0] + g.hu[1] * n[1]) + Math.abs(g.hv[0] * n[0] + g.hv[1] * n[1]);
+      return { l: cu - eu, r: cu + eu, t: cn - en, b: cn + en };
     };
     /** Points on the screen as a box along the axes u (its l and r) and n (its t and b), both unit vectors. */
     const along = (pts, u, n) => {
@@ -1208,15 +1237,14 @@ const VISITOR_BEGIN = `(() => {
           v = { rtl, at: rtl ? left + w : right - w, clamp, bottom: r.top + e.clientTop + e.clientHeight - parseFloat(s.paddingBottom), lh };
         } else {
           const bm = boxMap(e, r);
-          const pq = quadOf({ l: pr.left, t: pr.top, r: pr.right, b: pr.bottom }, fr);
-          if (!bm || !pq) v = { all: true };
+          const p = fr.ok ? lineBox({ l: pr.left, t: pr.top, r: pr.right, b: pr.bottom }, fr, fr.uh, fr.vh) : null;
+          if (!bm || !p) v = { all: true };
           else {
             // The content box, in the box's own points, then on the screen, then along the line's own axes.
             const x0 = e.clientLeft + parseFloat(s.paddingLeft), x1 = e.clientLeft + e.clientWidth - parseFloat(s.paddingRight);
             const y0 = e.clientTop + parseFloat(s.paddingTop), y1 = e.clientTop + e.clientHeight - parseFloat(s.paddingBottom);
             const pt = (x, y) => [bm.o[0] + bm.m[0] * x + bm.m[1] * y, bm.o[1] + bm.m[2] * x + bm.m[3] * y];
             const k = along([pt(x0, y0), pt(x1, y0), pt(x1, y1), pt(x0, y1)], fr.uh, fr.vh);
-            const p = along(pq, fr.uh, fr.vh);
             const w = p.r - p.l;
             v = { turned: fr, rtl, at: rtl ? k.l + w : k.r - w, clamp, bottom: k.b, lh };
           }
@@ -1231,9 +1259,8 @@ const VISITOR_BEGIN = `(() => {
       if (!ell.turned) return (!ell.clamp || q.bottom > ell.bottom - ell.lh) && (ell.rtl ? q.left < ell.at - 0.5 : q.right > ell.at + 0.5);
       const t = ell.turned;
       if (!fr.ok || fr.uh[0] * t.uh[0] + fr.uh[1] * t.uh[1] < 0.98) return true;
-      const qd = quadOf({ l: q.left, t: q.top, r: q.right, b: q.bottom }, fr);
-      if (!qd) return true;
-      const k = along(qd, t.uh, t.vh);
+      const k = lineBox({ l: q.left, t: q.top, r: q.right, b: q.bottom }, fr, t.uh, t.vh);
+      if (!k) return true;
       return (!ell.clamp || k.b > ell.bottom - ell.lh) && (ell.rtl ? k.l < ell.at - 0.5 : k.r > ell.at + 0.5);
     };
     const RTL = /[\\u0590-\\u08ff\\ufb1d-\\ufdcf\\ufdf0-\\ufdff\\ufe70-\\ufeff]|\\ud802[\\udc00-\\udfff]|\\ud803[\\udc00-\\ude7f]|\\ud83a/;
@@ -1374,7 +1401,7 @@ const VISITOR_BEGIN = `(() => {
       const rect = { l: nr.left + scrollX, t: nr.top + scrollY, r: nr.right + scrollX, b: nr.bottom + scrollY };
       return { data, chars, marquee, count, onScreen, rect };
     };
-    return { body, style, rendered, textRendered, faded, skipped, linkOf, blockOf, measure, where, rtlPage, letter: (c) => LTR.test(c), textFrame, quadOf, along, REPLACED };
+    return { body, style, rendered, textRendered, faded, skipped, linkOf, blockOf, measure, where, rtlPage, letter: (c) => LTR.test(c), textFrame, quadOf, lineBox, along, REPLACED };
   };
 
   const loadAll = async () => {
@@ -1703,9 +1730,8 @@ const VISITOR_BEGIN = `(() => {
     // A character's box, and the part of it a visitor sees, along the axes ax: from its bounding box on the screen and
     // the frame it was measured in; null where its corners cannot be told.
     const kbox = (R, ax) => {
-      const qd = R.fr ? P.quadOf(R.box, R.fr) : null;
-      if (!qd) return null;
-      const box = P.along(qd, ax.u, ax.n);
+      const box = R.fr ? P.lineBox(R.box, R.fr, ax.u, ax.n) : null;
+      if (!box) return null;
       const v = R.vis;
       if (!v || (v.l <= R.box.l + 0.01 && v.r >= R.box.r - 0.01 && v.t <= R.box.t + 0.01 && v.b >= R.box.b - 0.01)) return { box, vis: box };
       const c = P.along([[v.l, v.t], [v.r, v.t], [v.r, v.b], [v.l, v.b]], ax.u, ax.n);
@@ -1752,10 +1778,8 @@ const VISITOR_BEGIN = `(() => {
               if (r.width > tol) return true;
               continue;
             }
-            const qd = fr ? P.quadOf({ l: r.left, t: r.top, r: r.right, b: r.bottom }, fr) : null;
-            if (!qd) continue;
-            const c = P.along(qd, ax.u, ax.n);
-            if (c.r - c.l > tol) return true;
+            const c = fr ? P.lineBox({ l: r.left, t: r.top, r: r.right, b: r.bottom }, fr, ax.u, ax.n) : null;
+            if (c && c.r - c.l > tol) return true;
           }
         }
       }

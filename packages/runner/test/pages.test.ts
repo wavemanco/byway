@@ -757,6 +757,10 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       // A file that is not there is what a visitor's browser gets too: the page is read without it, once.
       expect((await reader.shownText(page('missing.css'), none)).text).toBe('Shown\nGone');
       expect(hits['/missing.css']).toBe(1);
+      // A file the page itself stops asking for (an image whose source a script changes while it is on its way) is not a
+      // file that failed: only the fetch failing counts.
+      const dropped = `<!doctype html><html><head><title>T</title></head><body><p>Shown</p><img id="i" src="http://${host}/slow.css"><script>setTimeout(() => { document.getElementById('i').remove(); }, 0); document.getElementById('i').src = 'data:,';</script></body></html>`;
+      expect((await reader.shownText(dropped, none)).text).toBe('Shown');
       // A stylesheet a script asks for once the page has loaded, slow to come, is waited for before the page is sampled.
       const late = `<!doctype html><html><head><title>T</title></head><body><p>Shown</p><p class="x">Gone</p><script>addEventListener('load', () => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'http://${host}/slow.css'; document.head.append(l); });</script></body></html>`;
       expect((await reader.shownText(late, none)).text).toBe('Shown\ufdec');
@@ -825,6 +829,12 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       ['<div style="transform:rotate(-30deg);display:flex;width:400px;margin:150px"><span>Already</span><a href="/l">Sign in</a></div>', 'AlreadySign in'],
       ['<div style="transform:rotate(-30deg);display:flex;width:400px;margin:150px"><span>Already</span><a href="/l" style="margin-left:6px">Sign in</a></div>', 'Already\nSign in'],
       ['<svg width="200" height="200"><text x="50" y="50" transform="rotate(90 50 50)">Hello world</text></svg>', 'Hello world'],
+      // Skewed text (a slanted heading, a skewed badge): the gap along the line is measured between the characters'
+      // advances, not their slanted outlines, which overlap the next character's (round 13's first fix read
+      // "Bigsummersaletoday").
+      ['<h2 style="transform:skewX(-12deg)">Big summer sale today</h2>', 'Big summer sale today'],
+      ['<h2 style="transform:skewX(-20deg);font-size:32px;display:flex"><span>Big</span><b>summer</b> sale</h2>', 'Bigsummersale'],
+      ['<p><span style="display:inline-block;transform:skewX(-12deg);padding:2px 8px">Hot deal</span> now</p>', 'Hot deal\nnow'],
       // A slight tilt beside straight text is measured along their common line.
       ['<p>Sale <span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Sale\nnow'],
       ['<p>Sale<span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Salenow'],
