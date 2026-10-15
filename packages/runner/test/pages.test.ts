@@ -719,6 +719,52 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     }
   }, 120_000);
 
+  it('a file the page loads from an admitted host that fails, comes back cut off or with a server error is fetched again in a second read, then the read fails plainly; one slow to come is waited for (r12 verifier: Tailwind under load)', async () => {
+    // A read that went on without a stylesheet or a script the page loads (Tailwind's browser build, under load) judged
+    // an unstyled page as the one a visitor sees: its screen-reader-only text shown, its lines counted otherwise.
+    const CAP = 64 * 1024;
+    const hits: Record<string, number> = {};
+    const cdn = createServer((req, res) => {
+      const u = req.url ?? '';
+      hits[u] = (hits[u] ?? 0) + 1;
+      const css = (text: string) => void res.writeHead(200, { 'content-type': 'text/css' }).end(text);
+      if (u === '/once.css') return hits[u] === 1 ? void req.socket.destroy() : css('.x{display:none}');
+      if (u === '/never.css') return void req.socket.destroy();
+      if (u === '/big.css') return css(`/*${'x'.repeat(CAP + 1024)}*/.x{display:none}`);
+      if (u === '/busy.css') return void res.writeHead(503).end();
+      if (u === '/slow.css') return void setTimeout(() => css('.x{display:none}'), 1_500);
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => cdn.listen(0, '127.0.0.1', () => r()));
+    const host = `127.0.0.1:${(cdn.address() as AddressInfo).port}`;
+    const reader = playwrightPages({ maxFetchBytes: CAP, admit: (u) => u.protocol === 'http:' && u.host === host, launch: () => launchWith(LOCAL_NETWORK_CHECKS_OFF) });
+    opened.push(reader);
+    const page = (file: string) => `<!doctype html><html><head><title>T</title><link rel="stylesheet" href="http://${host}/${file}"></head><body><p>Shown</p><p class="x">Gone</p></body></html>`;
+    try {
+      // A connection that fails once: the second read gets the stylesheet, and the page is read styled.
+      expect((await reader.shownText(page('once.css'), none)).text).toBe('Shown\ufdec');
+      expect(hits['/once.css']).toBe(2);
+      for (const [file, what] of [
+        ['never.css', 'could not be fetched'],
+        ['big.css', 'came back cut off, larger than the 64 KiB byway takes from one file'],
+        ['busy.css', 'came back with a server error (503)'],
+      ] as const) {
+        const err = await reader.shownText(page(file), none).catch((e: unknown) => e);
+        expect(err, file).toBeInstanceOf(StepError);
+        expect((err as Error).message, file).toMatch(new RegExp(`^The page's text could not be read as a visitor sees it: it loads http://${host.replace(/\./g, '\\.')}/${file.replace('.', '\\.')}, which ${what.replace(/[()]/g, '\\$&')}`));
+        expect(hits[`/${file}`], file).toBe(2);
+      }
+      // A file that is not there is what a visitor's browser gets too: the page is read without it, once.
+      expect((await reader.shownText(page('missing.css'), none)).text).toBe('Shown\nGone');
+      expect(hits['/missing.css']).toBe(1);
+      // A stylesheet a script asks for once the page has loaded, slow to come, is waited for before the page is sampled.
+      const late = `<!doctype html><html><head><title>T</title></head><body><p>Shown</p><p class="x">Gone</p><script>addEventListener('load', () => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'http://${host}/slow.css'; document.head.append(l); });</script></body></html>`;
+      expect((await reader.shownText(late, none)).text).toBe('Shown\ufdec');
+    } finally {
+      await new Promise((r) => cdn.close(r));
+    }
+  }, 120_000);
+
   it('a page nesting thousands of inline elements left open is read, once, within the deadline (r10: the JavaScript-off read crashed)', async () => {
     // Read within a render's deadline, not only failed plainly in it: the read measures a page again only after something
     // on it changed (r11: measuring every text node again at each of the 33 samples ran these pages past the deadline).

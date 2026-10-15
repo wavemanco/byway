@@ -350,7 +350,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
    * maxFetchBytes is cut off and blocked too: it is never held whole. The page gets the final response under the URL it
    * asked for, so relative URLs inside it resolve against an admitted URL too.
    */
-  const fetchAdmitted = async (r: Route, first: URL): Promise<void> => {
+  const fetchAdmitted = async (r: Route, first: URL): Promise<string | undefined> => {
     const request = r.request();
     const method = request.method();
     const followable = method === 'GET' || method === 'HEAD';
@@ -362,12 +362,22 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       const hop = await fetchHop({ url: url.href, method, headers, ...(body ? { body } : {}), signal, maxBytes: maxFetchBytes });
       if (REDIRECTS.has(hop.status)) {
         const next = hop.location ? new URL(hop.location, url) : undefined;
-        if (!next || !followable || hops >= MAX_REDIRECTS || !admit(next)) return await r.abort('blockedbyclient');
+        if (!next || !followable || hops >= MAX_REDIRECTS || !admit(next)) {
+          await r.abort('blockedbyclient');
+          return hops >= MAX_REDIRECTS ? 'redirects more times than byway follows' : 'redirects where byway does not load from';
+        }
         url = next;
         continue;
       }
-      if (!hop.body) return await r.abort('blockedbyclient');
-      return await r.fulfill({ status: hop.status, headers: hop.headers, body: hop.body });
+      if (!hop.body) {
+        await r.abort('blockedbyclient');
+        return `came back cut off, larger than the ${bytesSaid(maxFetchBytes)} byway takes from one file`;
+      }
+      await r.fulfill({ status: hop.status, headers: hop.headers, body: hop.body });
+      // A server's error that need not come again: a visitor who loads the page later gets the file.
+      if (hop.status >= 500) return `came back with a server error (${hop.status})`;
+      if (hop.status === 408 || hop.status === 429) return `came back refused for now (${hop.status})`;
+      return undefined;
     }
   };
 
@@ -375,9 +385,10 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
    * The request filter: the page and the artifact route are served, admitted hosts are fetched hop by hop (above),
    * everything else is blocked.
    * With `oneDocument`, a second navigation (a meta refresh, a link followed) is answered with No Content, so the
-   * browser stays on the first document, the one read.
+   * browser stays on the first document, the one read. With `fetches` (a text read), every file fetched from an admitted
+   * host is counted while it is on its way, and the first that does not arrive whole is noted (see Fetches).
    */
-  const route = (html: string, resolve: ArtifactResolver, oneDocument = false) => {
+  const route = (html: string, resolve: ArtifactResolver, oneDocument = false, fetches?: Fetches) => {
     let navigated = false;
     return async (r: Route) => {
       try {
@@ -395,7 +406,22 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
           const found = m ? await resolve(decodeURIComponent(m[1] as string)) : undefined;
           return await (found ? r.fulfill({ status: 200, contentType: found.contentType, body: Buffer.from(found.body) }) : r.fulfill({ status: 404, body: '' }));
         }
-        if (admit(url)) return await fetchAdmitted(r, url);
+        if (admit(url)) {
+          if (!fetches) return void (await fetchAdmitted(r, url));
+          fetches.pending++;
+          const said = url.href.length > 120 ? `${url.href.slice(0, 117)}...` : url.href;
+          try {
+            const why = await fetchAdmitted(r, url);
+            if (why) fetches.failed ??= `it loads ${said}, which ${why}`;
+            return;
+          } catch (e) {
+            const late = e instanceof Error && /^(TimeoutError|AbortError)$/.test(e.name);
+            fetches.failed ??= `it loads ${said}, which could not be fetched (${late ? 'it took too long' : 'the connection failed'})`;
+            throw e;
+          } finally {
+            if (--fetches.pending === 0) for (const done of fetches.idle.splice(0)) done();
+          }
+        }
         return await r.abort('blockedbyclient');
       } catch {
         // A resolver that failed (a missing or corrupt artifact) is a 404; a page already closed needs no answer.
@@ -429,7 +455,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
    * (ShownText): on the wide screen, its scripts under a stopped clock, Math.random seeded and every element an
    * IntersectionObserver watches in view, and it reads the first document only.
    */
-  const loaded = async <T>(html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone' | 'text', signal: AbortSignal | undefined, use: (page: Page) => Promise<T>, deadline?: number): Promise<T> => {
+  const loaded = async <T>(html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone' | 'text', signal: AbortSignal | undefined, use: (page: Page) => Promise<T>, deadline?: number, fetches?: Fetches): Promise<T> => {
     if (signal?.aborted) throw stopped(signal);
     const text = screen === 'text';
     const late = (cut: boolean) => {
@@ -465,7 +491,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
           await context.addInitScript({ content: VISITOR_INIT });
         }
         await context.routeWebSocket(/.*/, (ws) => ws.close());
-        await context.route('**/*', route(html, resolve, text));
+        await context.route('**/*', route(html, resolve, text, fetches));
         const page = await context.newPage();
         page.setDefaultTimeout(timeout);
         await page.goto(PAGE_URL, { waitUntil: 'load', timeout });
@@ -532,60 +558,20 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       return (await render(html, resolve, ['desktop'], renderOpts))[0]!.tiles;
     },
     async shownText(html, resolve, renderOpts = {}) {
-      // A failure is the read's plain step failure, as a render's is drawFailure's.
-      return loaded(
-        html,
-        resolve,
-        'text',
-        renderOpts.signal,
-        async (page) => {
-          // Only the first document is read. A navigation no route sees (to about:blank or about:srcdoc) replaces it, or
-          // destroys the context the read runs in: either way the page's own text cannot be read. The read's functions
-          // live in the first document (installed only where the init script found the page's own address), so each
-          // call finds them gone once another document took its place. A move within the document (a fragment,
-          // history.pushState) keeps it, so it is not one.
-          const gone = () => new StepError('The page navigates away as it loads (a meta refresh, for example), so the text it shows could not be read.');
-          const evaluate = async (code: string): Promise<unknown> => {
-            try {
-              return await page.evaluate(code);
-            } catch (e) {
-              if (/Execution context was destroyed|navigat/i.test((e as Error).message)) throw gone();
-              throw e;
-            }
-          };
-          const call = async (what: string): Promise<unknown> => {
-            const v = JSON.parse(String(await evaluate(`(async () => { const r = window[${JSON.stringify(READ_KEY)}]; return r ? JSON.stringify(await (${what})) : 'null'; })()`))) as unknown;
-            if (v === null) throw gone();
-            return v;
-          };
-          if (!(await evaluate(VISITOR_BEGIN))) throw gone();
-          await call('r.loadAll()');
-          await page.clock.runFor(SETTLE_MS);
-          await call('r.sample()');
-          const height = Number(await call('r.scroll(0)'));
-          const step = Math.max(STEP_PX, Math.ceil(height / MAX_STEPS));
-          let steps = 0;
-          for (let y = 0; y < height && steps < MAX_STEPS; y += step, steps++) {
-            await call(`r.scroll(${y})`);
-            await page.clock.runFor(STEP_MS);
-            await call('r.sample()');
-          }
-          await call('r.scroll(1e9)');
-          await page.clock.runFor(STEP_MS);
-          await call('r.sample()');
-          // Back at the top, the clock runs on to the same total on every page, in the same steps, so the page is
-          // sampled at the same instants however long it is (a slide a carousel shows only late is seen on every page).
-          await call('r.scroll(0)');
-          for (let k = steps; k <= MAX_STEPS; k++) {
-            await page.clock.runFor(STEP_MS);
-            await call('r.sample()');
-          }
-          return (await call('r.final()')) as ShownText;
-        },
-        renderOpts.deadline,
-      ).catch((e: unknown) => {
-        throw readFailure(e, renderOpts.signal);
-      });
+      // A read in which a file the page loads from an admitted host did not arrive whole (a stylesheet, a script such as
+      // Tailwind's browser build, a font) is not the page a visitor sees: the page is read once more, in a fresh context,
+      // and if that file fails again the read fails plainly, saying which (fail closed: an unstyled read never decides
+      // what a visitor sees). A failure is the read's plain step failure, as a render's is drawFailure's.
+      for (let attempt = 1; ; attempt++) {
+        const fetches: Fetches = { pending: 0, idle: [] };
+        try {
+          return await readOnce(html, resolve, renderOpts, fetches);
+        } catch (e) {
+          if (!(e instanceof Unloaded)) throw readFailure(e, renderOpts.signal);
+          if (attempt === 1 && !renderOpts.signal?.aborted) continue;
+          throw new StepError(`The page's text could not be read as a visitor sees it: ${e.message}, also when byway read the page again, and a page read without a file it loads is not the page a visitor sees.`);
+        }
+      }
     },
     async close() {
       const current = browser;
@@ -594,7 +580,95 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       await b?.close();
     },
   };
+
+  /**
+   * One visitor read (ShownText), in a fresh context. Before each step that looks at the page (once it has loaded, before
+   * each sample and before the end), every file on its way from an admitted host is waited for, and the read stops
+   * (Unloaded) as soon as one did not arrive whole.
+   */
+  function readOnce(html: string, resolve: ArtifactResolver, renderOpts: RenderOptions, fetches: Fetches): Promise<ShownText> {
+    const settled = async () => {
+      if (fetches.pending) await new Promise<void>((done) => fetches.idle.push(done));
+      if (fetches.failed) throw new Unloaded(fetches.failed);
+    };
+    return loaded(
+      html,
+      resolve,
+      'text',
+      renderOpts.signal,
+      async (page) => {
+        // Only the first document is read. A navigation no route sees (to about:blank or about:srcdoc) replaces it, or
+        // destroys the context the read runs in: either way the page's own text cannot be read. The read's functions
+        // live in the first document (installed only where the init script found the page's own address), so each
+        // call finds them gone once another document took its place. A move within the document (a fragment,
+        // history.pushState) keeps it, so it is not one.
+        const gone = () => new StepError('The page navigates away as it loads (a meta refresh, for example), so the text it shows could not be read.');
+        const evaluate = async (code: string): Promise<unknown> => {
+          try {
+            return await page.evaluate(code);
+          } catch (e) {
+            if (/Execution context was destroyed|navigat/i.test((e as Error).message)) throw gone();
+            throw e;
+          }
+        };
+        const call = async (what: string): Promise<unknown> => {
+          const v = JSON.parse(String(await evaluate(`(async () => { const r = window[${JSON.stringify(READ_KEY)}]; return r ? JSON.stringify(await (${what})) : 'null'; })()`))) as unknown;
+          if (v === null) throw gone();
+          return v;
+        };
+        await settled();
+        if (!(await evaluate(VISITOR_BEGIN))) throw gone();
+        await call('r.loadAll()');
+        await page.clock.runFor(SETTLE_MS);
+        const sample = async () => {
+          await settled();
+          await call('r.sample()');
+        };
+        await sample();
+        const height = Number(await call('r.scroll(0)'));
+        const step = Math.max(STEP_PX, Math.ceil(height / MAX_STEPS));
+        let steps = 0;
+        for (let y = 0; y < height && steps < MAX_STEPS; y += step, steps++) {
+          await call(`r.scroll(${y})`);
+          await page.clock.runFor(STEP_MS);
+          await sample();
+        }
+        await call('r.scroll(1e9)');
+        await page.clock.runFor(STEP_MS);
+        await sample();
+        // Back at the top, the clock runs on to the same total on every page, in the same steps, so the page is
+        // sampled at the same instants however long it is (a slide a carousel shows only late is seen on every page).
+        await call('r.scroll(0)');
+        for (let k = steps; k <= MAX_STEPS; k++) {
+          await page.clock.runFor(STEP_MS);
+          await sample();
+        }
+        await settled();
+        return (await call('r.final()')) as ShownText;
+      },
+      renderOpts.deadline,
+      fetches,
+    );
+  }
 }
+
+/** A text read stopped because a file its page loads from an admitted host did not arrive whole: its message says which. */
+class Unloaded extends Error {}
+
+/**
+ * A text read's record of the files its page fetches from admitted hosts (pages.ts route): how many are on their way, who
+ * waits for none to be, and the first that did not arrive whole (a failed connection, a body cut off at the byte cap, a
+ * server error, a redirect byway does not follow). A file that is not there (a 404) is what a visitor's browser gets
+ * too, so it is not one.
+ */
+interface Fetches {
+  pending: number;
+  idle: (() => void)[];
+  failed?: string;
+}
+
+/** A byte count as the read's refusal says it: 64 KiB, 20 MiB. */
+const bytesSaid = (n: number): string => (n % (1024 * 1024) === 0 ? `${n / (1024 * 1024)} MiB` : `${Math.round(n / 1024)} KiB`);
 
 /** The instant every visitor read takes place at (its stopped clock; see ShownText): any fixed instant serves. */
 const READ_CLOCK = Date.UTC(2026, 0, 1, 12);
