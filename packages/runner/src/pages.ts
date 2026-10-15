@@ -1864,6 +1864,10 @@ const VISITOR_BEGIN = `(() => {
         if (!ka || !kb) return unaligned(A, B, structural, flow, tol);
         A = ka;
         B = kb;
+        // Two pieces of turned or vertical text across a box's edge, more than four times the font size apart along their
+        // line (two side labels turned a quarter turn in one column, sections apart), are not one line a visitor reads:
+        // apart across boxes, never in the other order.
+        if (structural && Math.max(B.box.l - A.box.r, A.box.l - B.box.r) > 4 * Math.max(a.fs, b.fs)) return '\\n';
       }
       const row = Math.min(A.box.b, B.box.b) - Math.max(A.box.t, B.box.t) >= 0.5 * Math.min(A.box.b - A.box.t, B.box.b - B.box.t);
       if (row) {

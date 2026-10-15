@@ -835,6 +835,10 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       ['<h2 style="transform:skewX(-12deg)">Big summer sale today</h2>', 'Big summer sale today'],
       ['<h2 style="transform:skewX(-20deg);font-size:32px;display:flex"><span>Big</span><b>summer</b> sale</h2>', 'Bigsummersale'],
       ['<p><span style="display:inline-block;transform:skewX(-12deg);padding:2px 8px">Hot deal</span> now</p>', 'Hot deal\nnow'],
+      // Two labels turned a quarter turn in one column, sections apart, are not one line: apart across boxes, not in the
+      // other order (round 13's first form of this rule read them as reversed, so deleting a ticker between two such
+      // side labels was refused as words in another order).
+      ['<div style="position:absolute;left:20px;top:300px;transform:rotate(-90deg);transform-origin:left top">Since 2011</div><div style="position:absolute;left:20px;top:900px;transform:rotate(-90deg);transform-origin:left top">01 Menu</div>', 'Since 2011\n01 Menu'],
       // A slight tilt beside straight text is measured along their common line.
       ['<p>Sale <span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Sale\nnow'],
       ['<p>Sale<span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Salenow'],

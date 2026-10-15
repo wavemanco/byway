@@ -557,6 +557,11 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect((await offer(side)).offered).toEqual(['T', 'Scroll[down]', 'Body']);
     expect((await check(side, 'T\nScroll[down] now\nBody', side.replace('</a></div>', '</a> now</div>')))?.problem).toMatch(/because a browser would run words together that your lines keep apart: it would show "Scrolldownnow/);
     expect(await check(side, 'T\nScroll[down]now\nBody', side.replace('</a></div>', '</a>now</div>'))).toBeUndefined();
+    // Deleting the line between two side labels turned a quarter turn in one column, sections apart, is let through: the
+    // two are not one line, so not read in another order (round 13's first form refused deleting a ticker so).
+    const labels = pageOf('<div style="position:absolute;left:20px;top:300px;transform:rotate(-90deg);transform-origin:left top">Since 2011</div><p style="margin:400px 0 0 80px">Oysters are back</p><div style="position:absolute;left:20px;top:900px;transform:rotate(-90deg);transform-origin:left top">01 Menu</div>');
+    expect((await offer(labels)).offered).toEqual(['T', 'Since 2011', 'Oysters are back', '01 Menu']);
+    expect(await check(labels, 'T\nSince 2011\n\n01 Menu', labels.replace('Oysters are back', ''))).toBeUndefined();
     // Turned near an eighth of a turn, the read cannot solve a character's own box: two flex items there are read glued,
     // marked as not measured, so a line with a space between them is not offered, and a space typed at such an edge is
     // refused with that reason.
