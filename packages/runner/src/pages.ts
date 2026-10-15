@@ -108,12 +108,11 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   an absolutely or fixed positioned ancestor's `clip` rect, and the bounding box of an ancestor's clip-path inset(),
  *   circle(), ellipse() or polygon() (one with no area keeps nothing), each in the box's own points where a transform
  *   turns, scales or skews it (a box whose place cannot be told, under a turn in 3D, keeps nothing); its middle is not
- *   short of the page's top or start
- *   edge (where no scrolling reaches), nor, when the page's overflow is hidden, beyond the screen's width or (down the
- *   page) its height; and it is not in the band an ellipsis takes at the end of a line a box cuts short (text-overflow:
- *   ellipsis on a box whose content overflows it, or the last line of a line-clamp box; in vertical or turned text along
- *   the line's own axes, else the whole box). Text in a marquee is measured
- *   by the marquee's own box, through which it scrolls;
+ *   short of the page's top or start edge (where no scrolling reaches), nor, when the page's overflow is hidden, beyond
+ *   the screen's width or (down the page) its height; and it is not in the band an ellipsis takes at the end of a line a
+ *   box cuts short (text-overflow: ellipsis on a box whose content overflows it, or the last line of a line-clamp box;
+ *   in vertical or turned text along the line's own axes, else the whole box). Text in a marquee is measured by the
+ *   marquee's own box, through which it scrolls;
  * - hidden from sight: laid out, but not shown (a screen-reader-only class; opacity, a clear text fill or a colour almost
  *   clear that leave it less than 0.05 of ink, and svg text by its fill and fill-opacity, or its stroke; font size 0; a
  *   character whose middle a box or a clip cuts off, such as a sliver of a row a box of fixed height cuts; cut off by an
@@ -131,23 +130,23 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   initial letter) and the rest of its word. The rest is judged from their boxes: at the read's last instant, where
  *   both are shown then (so an item that keeps moving is judged beside its neighbour where both stand), and, where an
  *   endless animation can move either, at every other point of its cycle where both are shown, glued if glued at any;
- *   else where they
- *   were measured, if both were shown there at one sample, or, never shown together, if both stood there side by side
- *   at one sample, laid out, one of them hidden by a style (a word a script reveals after its neighbour and hides again
- *   before the read comes back), not in one place (two nodes whose boxes overlap by more than half, as slides stacked
- *   and shown in turn). Else they were never side by side (a carousel's slides, stacked or on a track that moved on):
- *   a line break where the edge of a box lies between them, else as the text runs them (a space where whitespace lies
- *   between, else none). From the boxes, along the line their text runs along: each text node's frame (its line's
- *   direction and its block's) comes from its element's writing mode and the plane map of every transform up to the
- *   page; two neighbours whose frames run within 10 degrees are judged along their common line from their corners (each
- *   character along the line its own advance, across it all of its outline), so flex items set top to bottom, or
- *   turned, with no gap show glued; neighbours whose frames run further apart, or whose corners cannot be told, are
- *   apart where their shapes stand further apart than the tolerance and glued where they meet, and where only their
- *   bounding boxes are known (a turn in 3D, a turn near an eighth of a turn) and those meet, a box's edge between them
- *   is never read as parting them: none, marked TURNED (in one flow of text, as the text runs them). Then: REVERSED when a visitor sees the second before the first on one row (two
- *   characters of one direction: a letter by its script, a digit left to right, Arabic-Indic digits and the Arabic
- *   decimal and thousands separators included, with a number's own signs, a currency or percent sign beside its digits
- *   or a point, comma, colon, slash, plus or minus between two; punctuation or a symbol by the letters around it in its
+ *   else where they were measured, if both were shown there at one sample, or, never shown together, if both stood
+ *   there side by side at one sample, laid out, one of them hidden by a style (a word a script reveals after its
+ *   neighbour and hides again before the read comes back), not in one place (two nodes whose boxes overlap by more than
+ *   half, as slides stacked and shown in turn). Else they were never side by side (a carousel's slides, stacked or on a
+ *   track that moved on): a line break where the edge of a box lies between them, else as the text runs them (a space
+ *   where whitespace lies between, else none). From the boxes, along the line their text runs along: each text node's
+ *   frame (its line's direction and its block's) comes from its element's writing mode and the plane map of every
+ *   transform up to the page; two neighbours whose frames run within 10 degrees are judged along their common line from
+ *   their corners (each character along the line its own advance, across it all of its outline), so flex items set top
+ *   to bottom, or turned, with no gap show glued; neighbours whose frames run further apart, or whose corners cannot be
+ *   told, are apart where their shapes stand further apart than the tolerance and glued where they meet, and where only
+ *   their bounding boxes are known (a turn in 3D, a turn near an eighth of a turn) and those meet, a box's edge between
+ *   them is never read as parting them: none, marked TURNED (in one flow of text, as the text runs them). Then:
+ *   REVERSED when a visitor sees the second before the first on one row (two characters of one direction: a letter by
+ *   its script, a digit left to right, Arabic-Indic digits and the Arabic decimal and thousands separators included,
+ *   with a number's own signs, a currency or percent sign beside its digits or a point, comma, colon, slash, plus or
+ *   minus between two; punctuation or a symbol by the letters around it in its
  *   text node when those on both sides agree, else by its block's direction), except two apart in a paragraph or box of
  *   the other direction, which a visitor reads in that direction's order (punctuation beside a number resolves as the
  *   bidi algorithm resolves it, the number counting as right to left there). In one flow of text where right-to-left
