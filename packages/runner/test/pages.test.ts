@@ -17,7 +17,7 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Browser, LaunchOptions } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX } from '../src/pages.ts';
+import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX, TURNED } from '../src/pages.ts';
 
 const pages = playwrightPages({ maxTileHeight: 1200 });
 const opened: { close(): Promise<void> }[] = [pages];
@@ -800,6 +800,73 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     expect(shown.text).toBe('Read the terms and FAQ.');
     expect(shown.hrefs).toEqual(['/terms', '/faq']);
     expect(shown.linked).toBe(`Read ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}the terms${LINK_CLOSE} and ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0 + 1)}${LINK_INDEX_END}FAQ${LINK_CLOSE}.`);
+  }, 60_000);
+
+  it('vertical and turned text: whether two neighbours stand glued is judged along the text\'s own line, from its writing mode and its transforms (r12 verifier)', async () => {
+    const cases: [string, string][] = [
+      // Flex items set top to bottom in a vertical writing mode, with no gap, show glued (round 12 read a line break, so
+      // it stored a typed space the item's edge drops, and refused words glued as the line has them).
+      ['<div style="writing-mode:vertical-rl;display:flex;height:400px">Already registered?<a href="/l">Sign in</a> today</div>', 'Already registered?Sign intoday'],
+      ['<div style="writing-mode:vertical-lr;display:flex;height:400px"><span>Fresh</span><a href="/b">bread</a></div>', 'Freshbread'],
+      ['<div style="writing-mode:sideways-rl;display:flex;height:400px"><span>Fresh</span><a href="/b">bread</a></div>', 'Freshbread'],
+      ['<div style="writing-mode:sideways-lr;display:flex;height:400px"><span>Fresh</span><a href="/b">bread</a></div>', 'Freshbread'],
+      // With a gap they stand apart; words in one flow of text keep their spaces; a <br> and an inline block's edge part.
+      ['<div style="writing-mode:vertical-rl;display:flex;gap:8px;height:400px"><span>Fresh</span><b>bread</b></div>', 'Fresh\nbread'],
+      ['<div style="writing-mode:vertical-rl;height:400px">Already registered? <a href="/l">Sign in</a><br>Today</div>', 'Already registered? Sign in\nToday'],
+      ['<div style="writing-mode:vertical-rl;text-orientation:upright;height:400px">Tags <span style="display:inline-block">NEW</span><span style="display:inline-block">HOT</span></div>', 'Tags\nNEWHOT'],
+      // A label turned a quarter turn either way, or upside down, by transform or by rotate: its flex items glued, in order.
+      ['<div style="position:absolute;left:0;top:300px;transform:rotate(-90deg);transform-origin:left top;display:flex"><span>Scroll</span><a href="/more">down</a> now</div>', 'Scrolldownnow'],
+      ['<div style="position:absolute;left:40px;top:120px;transform:rotate(90deg);transform-origin:left top;display:flex">Find<a href="/m">menu</a></div>', 'Findmenu'],
+      ['<div style="transform:rotate(180deg);display:flex;width:300px"><span>Upside</span><b>down</b></div>', 'Upsidedown'],
+      ['<div style="rotate:90deg;display:flex;width:200px;margin:120px"><span>Turn</span><b>ed</b> by rotate</div>', 'Turnedby rotate'],
+      // Turned at an angle: words in one flow of text keep their spaces (round 12 read "AlreadyhereSignin"), flex items
+      // with no gap are glued and a margin parts them.
+      ['<div style="transform:rotate(-30deg);width:400px;margin:150px">Already here <b>Sign in</b></div>', 'Already here Sign in'],
+      ['<div style="transform:rotate(-30deg);display:flex;width:400px;margin:150px"><span>Already</span><a href="/l">Sign in</a></div>', 'AlreadySign in'],
+      ['<div style="transform:rotate(-30deg);display:flex;width:400px;margin:150px"><span>Already</span><a href="/l" style="margin-left:6px">Sign in</a></div>', 'Already\nSign in'],
+      ['<svg width="200" height="200"><text x="50" y="50" transform="rotate(90 50 50)">Hello world</text></svg>', 'Hello world'],
+      // A slight tilt beside straight text is measured along their common line.
+      ['<p>Sale <span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Sale\nnow'],
+      ['<p>Sale<span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Salenow'],
+      // A word turned against the text beside it is judged by their shapes on the screen: apart where those stand apart.
+      ['<p>Menu <span style="display:inline-block;transform:rotate(90deg)">Today</span></p>', 'Menu\nToday'],
+      ['<div style="position:absolute;left:300px;top:40px;transform:rotate(90deg);transform-origin:left top">Side</div><p style="margin-top:200px">Body</p>', 'Side\nBody'],
+      // Where the read cannot measure (a turn near an eighth of a turn, a turn in 3D) and the two stand near, a box's edge
+      // between them is never read as parting them: they are glued, marked as not measured (TURNED); in one flow of text
+      // they are as the text runs them.
+      ['<div style="transform:rotate(-45deg);display:flex;width:400px;margin:150px"><span>Already here</span><b>Sign in</b></div>', `Already here${TURNED}Sign in`],
+      ['<div style="transform:perspective(400px) rotateY(40deg);display:flex;width:400px;margin:100px"><span>Tilted card</span><b>Go</b></div>', `Tilted card${TURNED}Go`],
+    ];
+    for (const [b, want] of cases) expect((await pages.shownText(body(b), none)).text, b).toBe(want);
+  }, 120_000);
+
+  it('a box a transform turns or scales clips its text where it stands on the screen, and an ellipsis cuts vertical or turned text where it cuts a line (r12 measured the clip unturned)', async () => {
+    const shown = await pages.shownText(
+      body(
+        [
+          // Turned a quarter turn: the box keeps "Shown" and cuts "Cut", 100 px along its own line.
+          '<div style="position:absolute;left:300px;top:40px;transform:rotate(90deg);transform-origin:left top;width:80px;height:20px;line-height:20px;overflow:hidden;white-space:nowrap">Shown<span style="margin-left:100px">Cut</span></div>',
+          // Scaled up, as a hero's slow zoom or a card's scale-105: the text by its right edge shows.
+          '<div style="margin:160px 0 0 40px;width:300px;transform:scale(1.1);overflow:hidden"><p style="margin:0;text-align:right">Right edge</p></div>',
+          // Tilted a little, as a card turned 2 degrees.
+          '<div style="margin:40px;width:300px;transform:rotate(2deg);overflow:hidden"><p style="margin:0;text-align:right">Tilted edge</p></div>',
+        ].join(''),
+      ),
+      none,
+    );
+    expect(shown.text).toBe('Shown﷭\nRight edge\nTilted edge');
+    expect(shown.hidden).toEqual([['Cut', null]]);
+    // An ellipsis cuts the same characters from a line set top to bottom, or turned a quarter turn, as from the line laid
+    // out across the page.
+    const line = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0;font:16px Arial';
+    const across = await pages.shownText(body(`<p style="width:120px;${line}">Fresh bread baked every day</p>`), none);
+    expect(across.text).toMatch(/^Fresh [^﷭]+﷭$/);
+    const down = await pages.shownText(body(`<p style="writing-mode:vertical-rl;height:120px;${line}">Fresh bread baked every day</p>`), none);
+    const turned = await pages.shownText(body(`<p style="position:absolute;left:300px;top:40px;transform:rotate(90deg);transform-origin:left top;width:120px;${line}">Fresh bread baked every day</p>`), none);
+    for (const r of [down, turned]) {
+      expect(r.text).toBe(across.text);
+      expect(r.hidden).toEqual(across.hidden);
+    }
   }, 60_000);
 
   it('a button is a box of its own: its content stands apart from the text beside it, as a visitor sees it (innerText read them glued)', async () => {

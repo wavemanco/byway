@@ -54,6 +54,7 @@ import {
   LINK_OPEN,
   NUMBER_END,
   REVERSED,
+  TURNED,
   type ArtifactResolver,
   type PageRenderer,
   type RenderOptions,
@@ -209,12 +210,15 @@ interface Seq {
   src: number[];
   /** gaps[k] is apart across a box's edge on one row (a flex item's, a chip's), not between rows (ShownText.rowBreaks). */
   row: boolean[];
+  /** gaps[k] is glued only because the read could not measure how the two sit (ShownText's TURNED). */
+  turned: boolean[];
 }
 
 function seqOf(text: string, hrefs?: readonly (string | null)[], rowBreaks?: readonly number[]): Seq {
-  const out: Seq = { cs: [], gaps: [], hid: [], hidFirst: false, gone: [], hrefs: [], src: [], row: [] };
+  const out: Seq = { cs: [], gaps: [], hid: [], hidFirst: false, gone: [], hrefs: [], src: [], row: [], turned: [] };
   const rows = new Set(rowBreaks ?? []);
   let gap: Gap | undefined;
+  let turned = false;
   // Every line break of the gap so far stands between characters on one row.
   let row = true;
   for (let i = 0; i < text.length; ) {
@@ -226,6 +230,8 @@ function seqOf(text: string, hrefs?: readonly (string | null)[], rowBreaks?: rea
       else out.hidFirst = true;
     } else if (c === GONE_HERE) {
       if (out.cs.length) out.gone[out.cs.length - 1] = true;
+    } else if (c === TURNED) {
+      turned = true;
     } else if (isHtmlSpace(c) || c === REVERSED) {
       const g: Gap = c === REVERSED ? 'R' : c === '\n' || c === '\r' ? 'B' : 'S';
       if (g === 'B' && !rows.has(i)) row = false;
@@ -233,7 +239,9 @@ function seqOf(text: string, hrefs?: readonly (string | null)[], rowBreaks?: rea
     } else {
       out.gaps.push(out.cs.length ? (gap ?? 'G') : 'G');
       out.row.push(gap === 'B' && row);
+      out.turned.push(turned && gap === undefined);
       row = true;
+      turned = false;
       out.cs.push(c);
       out.hid.push(false);
       out.gone.push(false);
@@ -254,7 +262,7 @@ export interface Span {
 }
 
 /** Why a line is not offered (see notShownWhy). */
-export type NotShownWhy = 'unlaid' | 'hidden' | 'part-hidden' | 'layout' | 'changed' | 'script' | 'copied';
+export type NotShownWhy = 'unlaid' | 'hidden' | 'part-hidden' | 'layout' | 'turned' | 'changed' | 'script' | 'copied';
 
 /** The page before as Chromium shows it, and where each of its deck lines (by number in the whole deck) shows. */
 export interface Location {
@@ -361,8 +369,11 @@ export function locate(html: string, plain: ShownText, marked: ShownText | undef
       const read = body.starts.has(k) ? body : title;
       const slice = s <= e ? seqOf(read.text.slice(s, e)) : undefined;
       const inside = (flags: boolean[]) => !!slice && flags.some((h, x) => h && x < slice.cs.length - 1);
-      const changed = !!slice && slice.cs.join('') !== deckChars(u.text).cs.join('');
-      r = !slice ? 'layout' : inside(slice.hid) || (changed && inside(slice.gone)) ? 'part-hidden' : changed ? 'changed' : 'layout';
+      const deck = deckChars(u.text);
+      const changed = !!slice && slice.cs.join('') !== deck.cs.join('');
+      // A space the line has where the read could not measure how its words sit (vertical or turned text it cannot solve).
+      const turned = !!slice && !changed && slice.cs.some((_, x) => x > 0 && deck.space[x] && slice.gaps[x] === 'G' && slice.turned[x]);
+      r = !slice ? 'layout' : inside(slice.hid) || (changed && inside(slice.gone)) ? 'part-hidden' : changed ? 'changed' : turned ? 'turned' : 'layout';
     }
     why.set(k, r);
   });
@@ -382,6 +393,7 @@ export const WHY_NOT_SHOWN: Record<NotShownWhy, string> = {
   hidden: 'hidden from sight (for screen readers, moved out of view, or until a visitor opens it)',
   'part-hidden': 'part of it is hidden (from sight, for screen readers, or not shown at all) or cut off',
   layout: 'a browser shows its words run together or in another order',
+  turned: 'a browser shows it turned in a way byway cannot measure (near an eighth of a turn, or in 3D), so byway cannot tell whether its words stand apart',
   changed: 'a browser shows other words there (a script on the page changes it, or other text shows inside it)',
   script: 'a script on the page changes or removes it',
   copied: 'a script on the page shows it more than once',
@@ -705,7 +717,8 @@ export function arbiterProblem(exp: Expected, after: ShownText): { problem: stri
     else {
       const w = want.gaps[d]!;
       const g = got.gaps[d]!;
-      if (g === 'G') why = `a browser would run words together that your lines keep apart: ${shows}`;
+      if (g === 'G' && got.turned[d]) why = `a browser shows the words there turned in a way byway cannot measure (near an eighth of a turn, or in 3D), so it cannot tell whether they would stand apart as your lines have them: ${shows}`;
+      else if (g === 'G') why = `a browser would run words together that your lines keep apart: ${shows}`;
       else if (g === 'R' || w === 'R') why = `a browser would show words in another order than your lines have them: ${shows}`;
       // Apart across a box's edge on the same row (a flex item's, a chip's) is a gap there, not a line break.
       else if (w === 'G' && g === 'B' && got.row[d]) why = `a browser would part words that your lines run together, at the edge of a box on the same row (shown as " / "): ${shows}`;

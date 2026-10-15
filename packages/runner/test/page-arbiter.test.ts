@@ -550,6 +550,21 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await check(fade, 'T\nWhat people say\nGreat bread every day\nB\nFriendly staff\nAfter', fade.replace('Best coffee in town', 'B'))).toBeUndefined();
   }, 60_000);
 
+  it('vertical and turned text is judged along its own line; where the read cannot measure it, a box\'s edge never stands for a space: such a line is not offered, and a space typed there is refused, saying why (r12 verifier)', async () => {
+    // A side label turned a quarter turn: its flex items glued, so a typed space a new item's edge drops is refused, and
+    // the label written back as it was is let through.
+    const side = pageOf('<div style="position:absolute;left:0;top:200px;transform:rotate(-90deg);transform-origin:left top;display:flex"><span>Scroll</span><a href="/more">down</a></div><p style="margin-left:80px">Body</p>');
+    expect((await offer(side)).offered).toEqual(['T', 'Scroll[down]', 'Body']);
+    expect((await check(side, 'T\nScroll[down] now\nBody', side.replace('</a></div>', '</a> now</div>')))?.problem).toMatch(/because a browser would run words together that your lines keep apart: it would show "Scrolldownnow/);
+    expect(await check(side, 'T\nScroll[down]now\nBody', side.replace('</a></div>', '</a>now</div>'))).toBeUndefined();
+    // Turned near an eighth of a turn, the read cannot solve a character's own box: two flex items there are read glued,
+    // marked as not measured, so a line with a space between them is not offered, and a space typed at such an edge is
+    // refused with that reason.
+    const eighth = pageOf('<div style="transform:rotate(-45deg);display:flex;gap:6px;width:400px;margin:150px"><span>Fresh bread</span> <b>daily</b></div><div style="transform:rotate(-45deg);display:flex;width:400px;margin:150px"><span>Hot</span><b>coffee</b></div>');
+    expect(await offer(eighth)).toMatchObject({ offered: ['T', 'Hotcoffee'], why: { 'Fresh bread daily': 'turned' } });
+    expect((await check(eighth, 'T\nHotcoffee now', eighth.replace('coffee</b></div>', 'coffee</b> now</div>')))?.problem).toMatch(/because a browser shows the words there turned in a way byway cannot measure \(near an eighth of a turn, or in 3D\), so it cannot tell whether they would stand apart as your lines have them: it would show ".* \/ Hotcoffeenow"/);
+  }, 60_000);
+
   it('right-to-left pages: native digits, numbers, Latin names and left-to-right boxes read in the order a visitor reads them (r11 verifier)', async () => {
     const html = pageOf(
       [

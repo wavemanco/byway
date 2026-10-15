@@ -195,6 +195,11 @@ export const HIDDEN_HERE = '﷭';
 export const REVERSED = '﷮';
 /** In ShownText.text: text that is not laid out stands here (it tells why a line is not offered; it is not compared). */
 export const GONE_HERE = '﷬';
+/**
+ * In ShownText.text: two neighbours read as glued only because the read cannot measure how they sit (vertical or
+ * turned text it does not read: a turn in 3D, two frames far apart, a turn near an eighth of a turn; see ShownText).
+ */
+export const TURNED = '﷫';
 
 export interface PageRenderer {
   /** PNG tiles of the whole page on a wide screen, top to bottom. */
@@ -894,11 +899,163 @@ const VISITOR_BEGIN = `(() => {
      * (filter: opacity() included) and its colour's alpha together.
      */
     const faded = (e) => /hidden|collapse/.test(style(e).visibility) || opacity(e) * ink(e) < 0.05;
+    const REPLACED = new Set(['IMG', 'SVG', 'VIDEO', 'AUDIO', 'CANVAS', 'IFRAME', 'OBJECT', 'EMBED', 'INPUT', 'SELECT', 'TEXTAREA', 'METER', 'PROGRESS', 'PICTURE']);
+    /*
+     * How a box stands on the screen (vertical and turned text). A plane map m = [a, b, c, d] takes a vector (x, y) of
+     * a box, before its transforms, to (a x + b y, c x + d y) on the screen: the linear part of every transform from
+     * the box up to the page (an element's rotate, scale and transform, in that order; a translate only moves it; an
+     * inline box, an element with no box and a table column have none). null where a transform turns the box out of
+     * the screen's plane (a 3D turn, perspective) or byway does not read it (a motion path).
+     */
+    const I2 = [1, 0, 0, 1];
+    const mul = (p, q) => [p[0] * q[0] + p[1] * q[2], p[0] * q[1] + p[1] * q[3], p[2] * q[0] + p[3] * q[2], p[2] * q[1] + p[3] * q[3]];
+    const angle = (v) => {
+      const m = /^(-?[0-9.]+(?:e-?[0-9]+)?)(deg|rad|grad|turn)?$/.exec(v || '');
+      if (!m) return NaN;
+      const x = parseFloat(m[1]);
+      return m[2] === 'rad' ? x : m[2] === 'grad' ? (x * Math.PI) / 200 : m[2] === 'turn' ? x * 2 * Math.PI : (x * Math.PI) / 180;
+    };
+    const UNTRANSFORMED = new Set(['inline', 'contents', 'none', 'table-column', 'table-column-group']);
+    const ownMap = (e) => {
+      const s = style(e);
+      const d = (s.display || '').split(' ')[0];
+      if (!(e instanceof SVGElement) && !REPLACED.has(tag(e)) && (UNTRANSFORMED.has(d) || d.startsWith('ruby'))) return I2;
+      if (s.offsetPath && s.offsetPath !== 'none') return null;
+      let m = I2;
+      const rot = (s.rotate || 'none').trim();
+      if (rot !== 'none') {
+        const parts = rot.split(/\\s+/);
+        let t = angle(parts[parts.length - 1]);
+        if (parts.length === 2 && parts[0] !== 'z') return null;
+        if (parts.length === 4) {
+          const [x, y, z] = parts.slice(0, 3).map(Number);
+          if (Math.abs(x) > 1e-9 || Math.abs(y) > 1e-9 || !z) return null;
+          if (z < 0) t = -t;
+        }
+        if (!isFinite(t)) return null;
+        m = mul(m, [Math.cos(t), -Math.sin(t), Math.sin(t), Math.cos(t)]);
+      }
+      const sc = (s.scale || 'none').trim();
+      if (sc !== 'none') {
+        const v = sc.split(/\\s+/).map(Number);
+        if (!isFinite(v[0]) || (v.length > 1 && !isFinite(v[1]))) return null;
+        m = mul(m, [v[0], 0, 0, v.length > 1 ? v[1] : v[0]]);
+      }
+      const tf = (s.transform || 'none').trim();
+      if (tf !== 'none') {
+        const mm = /^matrix(3d)?\\(([^)]*)\\)$/.exec(tf);
+        if (!mm) return null;
+        const v = mm[2].split(',').map(Number);
+        if (v.some((x) => !isFinite(x))) return null;
+        if (!mm[1]) m = mul(m, [v[0], v[2], v[1], v[3]]);
+        else if ([2, 3, 6, 7, 8, 9, 11].every((k) => Math.abs(v[k]) < 1e-6) && Math.abs(v[15]) > 1e-9) m = mul(m, [v[0] / v[15], v[4] / v[15], v[1] / v[15], v[5] / v[15]]);
+        else return null;
+      }
+      return m;
+    };
+    const lin = chain(ownMap, (own, acc) => (own === null || acc === null ? null : mul(acc, own)), I2);
+    /**
+     * The frame text whose parent is e is laid out in, on the screen: u, the direction its line runs (line-left to
+     * line-right), and v, the direction its block runs (where the next line goes), from e's writing mode and its plane
+     * map. plain: as on a page with no transform (u across the page, v down it, scaled at most); axis: u along one of the
+     * screen's axes, as in vertical text or text turned by a quarter turn; ok: a plane map byway reads.
+     */
+    const frames = new Map();
+    const textFrame = (e) => {
+      let f = frames.get(e);
+      if (f) return f;
+      const m = lin(e);
+      f = { ok: false, plain: false, axis: false };
+      if (m) {
+        const wm = style(e).writingMode || '';
+        const [X, Y] = /^(vertical-rl|sideways-rl|tb)/.test(wm) ? [[0, 1], [-1, 0]] : /^vertical-lr/.test(wm) ? [[0, 1], [1, 0]] : /^sideways-lr/.test(wm) ? [[0, -1], [1, 0]] : [[1, 0], [0, 1]];
+        const u = [m[0] * X[0] + m[1] * X[1], m[2] * X[0] + m[3] * X[1]];
+        const v = [m[0] * Y[0] + m[1] * Y[1], m[2] * Y[0] + m[3] * Y[1]];
+        const nu = Math.hypot(u[0], u[1]), nv = Math.hypot(v[0], v[1]);
+        const det = u[0] * v[1] - u[1] * v[0];
+        if (nu > 1e-9 && nv > 1e-9 && Math.abs(det) > 1e-6 * nu * nv) {
+          const E = 1e-4;
+          const plain = u[0] > 0 && v[1] > 0 && Math.abs(u[1]) <= E * nu && Math.abs(v[0]) <= E * nv;
+          const axis = plain || (Math.abs(u[1]) <= E * nu && Math.abs(v[0]) <= E * nv) || (Math.abs(u[0]) <= E * nu && Math.abs(v[1]) <= E * nv);
+          f = { ok: true, plain, axis, u, v, uh: [u[0] / nu, u[1] / nu], vh: [v[0] / nv, v[1] / nv] };
+        }
+      }
+      frames.set(e, f);
+      return f;
+    };
+    /**
+     * The corners on the screen of a box laid out in frame fr, from its bounding box q ({ l, t, r, b }): exact where fr
+     * runs along the screen's axes; else from the box's own extent along u and v, solved from its bounding box, or null
+     * where fr is turned too near an eighth of a turn to solve (or is not read).
+     */
+    const quadOf = (q, fr) => {
+      if (!fr.ok) return null;
+      if (fr.axis) return [[q.l, q.t], [q.r, q.t], [q.r, q.b], [q.l, q.b]];
+      const W = q.r - q.l, H = q.b - q.t;
+      const a = Math.abs(fr.u[0]), b = Math.abs(fr.v[0]), c = Math.abs(fr.u[1]), d = Math.abs(fr.v[1]);
+      const D = a * d - b * c;
+      if (Math.abs(D) < 0.3 * (a * d + b * c)) return null;
+      const w = (W * d - H * b) / D, h = (H * a - W * c) / D;
+      if (!(w > -0.5 && h > -0.5)) return null;
+      const hw = Math.max(0, w) / 2, hh = Math.max(0, h) / 2;
+      const cx = (q.l + q.r) / 2, cy = (q.t + q.b) / 2;
+      const ux = fr.u[0] * hw, uy = fr.u[1] * hw, vx = fr.v[0] * hh, vy = fr.v[1] * hh;
+      return [[cx - ux - vx, cy - uy - vy], [cx + ux - vx, cy + uy - vy], [cx + ux + vx, cy + uy + vy], [cx - ux + vx, cy - uy + vy]];
+    };
+    /** Points on the screen as a box along the axes u (its l and r) and n (its t and b), both unit vectors. */
+    const along = (pts, u, n) => {
+      let l = Infinity, r = -Infinity, t = Infinity, b = -Infinity;
+      for (const [x, y] of pts) {
+        const p = x * u[0] + y * u[1], s = x * n[0] + y * n[1];
+        if (p < l) l = p;
+        if (p > r) r = p;
+        if (s < t) t = s;
+        if (s > b) b = s;
+      }
+      return { l, r, t, b };
+    };
+    /**
+     * Where e's border box stands on the screen: o, the screen point of its top left corner (before its transforms),
+     * its plane map m and its inverse, and its own width and height (solved from its bounding box, or its offset size
+     * where the map is turned too near an eighth of a turn), so each of its own points has its place on the screen; null
+     * where that cannot be told.
+     */
+    const boxMap = (e, r) => {
+      const m = lin(e);
+      if (!m) return null;
+      const det = m[0] * m[3] - m[1] * m[2];
+      if (!(Math.abs(det) > 1e-9)) return null;
+      const a = Math.abs(m[0]), b = Math.abs(m[1]), c = Math.abs(m[2]), d = Math.abs(m[3]);
+      const D = a * d - b * c;
+      let w, h;
+      if (Math.abs(D) >= 0.3 * (a * d + b * c)) { w = (r.width * d - r.height * b) / D; h = (r.height * a - r.width * c) / D; }
+      else if (e instanceof HTMLElement) { w = e.offsetWidth; h = e.offsetHeight; }
+      else return null;
+      if (!(w > -0.5 && h > -0.5)) return null;
+      w = Math.max(0, w);
+      h = Math.max(0, h);
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      return { m, w, h, o: [cx - (m[0] * w + m[1] * h) / 2, cy - (m[2] * w + m[3] * h) / 2], inv: [m[3] / det, -m[1] / det, -m[2] / det, m[0] / det] };
+    };
     const NO_OVERFLOW = new Set(['inline', 'contents', 'none', 'table', 'inline-table', 'table-row', 'table-row-group', 'table-header-group', 'table-footer-group', 'table-column', 'table-column-group', 'ruby', 'ruby-text']);
     const len = (v, whole, auto) => v === 'auto' ? auto : v.endsWith('%') ? (parseFloat(v) / 100) * whole : parseFloat(v) || 0;
-    const ALL = { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity };
-    const NONE = { l: 0, t: 0, r: 0, b: 0 };
-    const meet = (a, b) => ({ l: Math.max(a.l, b.l), t: Math.max(a.t, b.t), r: Math.min(a.r, b.r), b: Math.min(a.b, b.b) });
+    // A clip: a rect on the screen, and the tests of boxes a transform turns or scales, each a rect in the box's own
+    // points (x0 to x1, y0 to y1 from its top left corner) that a point on the screen must fall in.
+    const NO_TESTS = [];
+    const ALL = { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity, tests: NO_TESTS };
+    const NONE = { l: 0, t: 0, r: 0, b: 0, tests: NO_TESTS };
+    const meet = (a, b) => {
+      const at = a.tests || NO_TESTS, bt = b.tests || NO_TESTS;
+      return { l: Math.max(a.l, b.l), t: Math.max(a.t, b.t), r: Math.min(a.r, b.r), b: Math.min(a.b, b.b), tests: !at.length ? bt : !bt.length ? at : at.concat(bt) };
+    };
+    const inside = (tests, x, y) => {
+      for (const T of tests) {
+        const dx = x - T.o[0], dy = y - T.o[1];
+        const lx = T.inv[0] * dx + T.inv[1] * dy, ly = T.inv[2] * dx + T.inv[3] * dy;
+        if (!(lx >= T.x0 - 0.01 && lx <= T.x1 + 0.01 && ly >= T.y0 - 0.01 && ly <= T.y1 + 0.01)) return false;
+      }
+      return true;
+    };
     const at = (v, whole) => v === 'left' || v === 'top' ? 0 : v === 'right' || v === 'bottom' ? whole : v === 'center' ? whole / 2 : len(v, whole, whole / 2);
     /** The box a clip-path basic shape keeps: its bounding box (one with no area keeps nothing), or undefined. */
     const shape = (cp, r) => {
@@ -929,9 +1086,16 @@ const VISITOR_BEGIN = `(() => {
       if (!(rx > 0) || !(ry > 0)) return NONE;
       return { l: cx - rx, r: cx + rx, t: cy - ry, b: cy + ry };
     };
-    /** What e clips its content to: its overflow (unless escaped) or paint containment, its clip rect, its clip-path. */
+    /**
+     * What e clips its content to: its overflow (unless escaped) or paint containment, its clip rect, its clip-path. On
+     * a box a transform turns, scales or skews, in its own points (a test; round 12 set its unturned size on its
+     * bounding box, so a hero's slow zoom or a card turned 2 degrees cut its own text); where its place cannot be told
+     * (a 3D turn), it keeps nothing.
+     */
     const own = (e, overflow) => {
       const s = style(e);
+      const m = lin(e);
+      if (!m || Math.abs(m[0] - 1) > 1e-6 || Math.abs(m[3] - 1) > 1e-6 || Math.abs(m[1]) > 1e-6 || Math.abs(m[2]) > 1e-6) return ownTurned(e, s, overflow);
       let out = ALL;
       const r = e.getBoundingClientRect();
       if (overflow) {
@@ -954,6 +1118,31 @@ const VISITOR_BEGIN = `(() => {
       }
       if (s.clipPath && s.clipPath !== 'none') { const c = shape(s.clipPath, r); if (c) out = meet(out, c); }
       return out;
+    };
+    const ownTurned = (e, s, overflow) => {
+      const paint = overflow && /paint|strict|content/.test(s.contain || '');
+      const ox = paint || (overflow && /hidden|clip/.test(s.overflowX));
+      const oy = paint || (overflow && /hidden|clip/.test(s.overflowY));
+      const svg = e instanceof SVGSVGElement;
+      const clips = ((ox || oy) && (svg || (!NO_OVERFLOW.has(s.display.split(' ')[0]) && !/math/.test(s.display)))) || (/^rect\\(/.test(s.clip || '') && (s.position === 'absolute' || s.position === 'fixed')) || (s.clipPath && s.clipPath !== 'none');
+      if (!clips) return ALL;
+      const bm = boxMap(e, e.getBoundingClientRect());
+      if (!bm) return NONE;
+      const T = { o: bm.o, inv: bm.inv, x0: -Infinity, x1: Infinity, y0: -Infinity, y1: Infinity };
+      const cut = (c) => { T.x0 = Math.max(T.x0, c.l); T.y0 = Math.max(T.y0, c.t); T.x1 = Math.min(T.x1, c.r); T.y1 = Math.min(T.y1, c.b); };
+      if ((ox || oy) && (svg || (!NO_OVERFLOW.has(s.display.split(' ')[0]) && !/math/.test(s.display)))) {
+        const l = svg ? 0 : e.clientLeft, t = svg ? 0 : e.clientTop;
+        const w = svg ? bm.w : e.clientWidth, h = svg ? bm.h : e.clientHeight;
+        cut({ l: ox ? l : -Infinity, t: oy ? t : -Infinity, r: ox ? l + w : Infinity, b: oy ? t + h : Infinity });
+      }
+      const own = { left: 0, top: 0, right: bm.w, bottom: bm.h, width: bm.w, height: bm.h };
+      const rect = /^rect\\((.*)\\)$/.exec(s.clip || '');
+      if (rect && (s.position === 'absolute' || s.position === 'fixed')) {
+        const v = rect[1].split(/\\s*,\\s*|\\s+/).filter(Boolean);
+        if (v.length === 4) cut({ t: len(v[0], 0, 0), r: len(v[1], 0, bm.w), b: len(v[2], 0, bm.h), l: len(v[3], 0, 0) });
+      }
+      if (s.clipPath && s.clipPath !== 'none') { const c = shape(s.clipPath, own); if (c) cut(c); }
+      return { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity, tests: [T] };
     };
     const positioned = (s) => s.position !== 'static' || s.transform !== 'none';
     const contains = (s) => s.transform !== 'none' || s.filter !== 'none' || /paint|layout|strict|content/.test(s.contain || '');
@@ -989,26 +1178,63 @@ const VISITOR_BEGIN = `(() => {
     const rtlPage = style(html).direction === 'rtl';
     const pageWidth = html.clientWidth;
     const ellipses = new Map();
-    /** The band at the end of a box's line where an ellipsis shows in place of its text, or null. */
+    /**
+     * The band at the end of a box's line where an ellipsis shows in place of its text, or null. In vertical or turned
+     * text (a frame that is not plain), along the line's own axes (turned: l and r along its u, t and b along its v);
+     * where those cannot be told, every character in the box is taken as cut off (all).
+     */
     const ellipsisOf = (e) => {
       if (ellipses.has(e)) return ellipses.get(e);
       const s = style(e);
+      const fr = textFrame(e);
       const clamp = !!s.webkitLineClamp && s.webkitLineClamp !== 'none';
+      // In vertical text a line runs down the box, so it overflows the box's height.
+      const vertical = /^(vertical|sideways|tb)/.test(s.writingMode || '');
+      const over = vertical ? e.scrollHeight > e.clientHeight + 1 : e.scrollWidth > e.clientWidth + 1;
       let v = null;
-      if ((clamp && /hidden|clip/.test(s.overflowY)) || (s.textOverflow === 'ellipsis' && /hidden|clip/.test(s.overflowX) && e.scrollWidth > e.clientWidth + 1)) {
+      if ((clamp && /hidden|clip/.test(fr.plain ? s.overflowY : s.overflowX + s.overflowY)) || (s.textOverflow === 'ellipsis' && /hidden|clip/.test(vertical ? s.overflowY : s.overflowX) && over)) {
         const probe = document.createElement('span');
         probe.textContent = '\\u2026';
-        probe.style.cssText = 'all:initial;font:inherit;letter-spacing:inherit;white-space:pre;';
+        probe.style.cssText = 'all:initial;font:inherit;letter-spacing:inherit;white-space:pre;writing-mode:inherit;';
         e.appendChild(probe);
-        const w = probe.getBoundingClientRect().width;
+        const pr = probe.getBoundingClientRect();
         probe.remove();
-        const r = e.getBoundingClientRect();
         const rtl = s.direction === 'rtl';
-        const left = r.left + e.clientLeft + parseFloat(s.paddingLeft), right = r.left + e.clientLeft + e.clientWidth - parseFloat(s.paddingRight);
-        v = { rtl, at: rtl ? left + w : right - w, clamp, bottom: r.top + e.clientTop + e.clientHeight - parseFloat(s.paddingBottom), lh: parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.2 };
+        const lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.2;
+        const r = e.getBoundingClientRect();
+        if (fr.plain) {
+          const w = pr.width;
+          const left = r.left + e.clientLeft + parseFloat(s.paddingLeft), right = r.left + e.clientLeft + e.clientWidth - parseFloat(s.paddingRight);
+          v = { rtl, at: rtl ? left + w : right - w, clamp, bottom: r.top + e.clientTop + e.clientHeight - parseFloat(s.paddingBottom), lh };
+        } else {
+          const bm = boxMap(e, r);
+          const pq = quadOf({ l: pr.left, t: pr.top, r: pr.right, b: pr.bottom }, fr);
+          if (!bm || !pq) v = { all: true };
+          else {
+            // The content box, in the box's own points, then on the screen, then along the line's own axes.
+            const x0 = e.clientLeft + parseFloat(s.paddingLeft), x1 = e.clientLeft + e.clientWidth - parseFloat(s.paddingRight);
+            const y0 = e.clientTop + parseFloat(s.paddingTop), y1 = e.clientTop + e.clientHeight - parseFloat(s.paddingBottom);
+            const pt = (x, y) => [bm.o[0] + bm.m[0] * x + bm.m[1] * y, bm.o[1] + bm.m[2] * x + bm.m[3] * y];
+            const k = along([pt(x0, y0), pt(x1, y0), pt(x1, y1), pt(x0, y1)], fr.uh, fr.vh);
+            const p = along(pq, fr.uh, fr.vh);
+            const w = p.r - p.l;
+            v = { turned: fr, rtl, at: rtl ? k.l + w : k.r - w, clamp, bottom: k.b, lh };
+          }
+        }
       }
       ellipses.set(e, v);
       return v;
+    };
+    /** Whether an ellipsis band cuts off a character whose bounding box (on the screen) is q, laid out in frame fr. */
+    const cutOff = (ell, q, fr) => {
+      if (ell.all) return true;
+      if (!ell.turned) return (!ell.clamp || q.bottom > ell.bottom - ell.lh) && (ell.rtl ? q.left < ell.at - 0.5 : q.right > ell.at + 0.5);
+      const t = ell.turned;
+      if (!fr.ok || fr.uh[0] * t.uh[0] + fr.uh[1] * t.uh[1] < 0.98) return true;
+      const qd = quadOf({ l: q.left, t: q.top, r: q.right, b: q.bottom }, fr);
+      if (!qd) return true;
+      const k = along(qd, t.uh, t.vh);
+      return (!ell.clamp || k.b > ell.bottom - ell.lh) && (ell.rtl ? k.l < ell.at - 0.5 : k.r > ell.at + 0.5);
     };
     const RTL = /[\\u0590-\\u08ff\\ufb1d-\\ufdcf\\ufdf0-\\ufdff\\ufe70-\\ufeff]|\\ud802[\\udc00-\\udfff]|\\ud803[\\udc00-\\ude7f]|\\ud83a/;
     const LTR = /^[\\p{L}\\p{N}]/u;
@@ -1025,7 +1251,8 @@ const VISITOR_BEGIN = `(() => {
       const r = marquee ? marquee.getBoundingClientRect() : range.getBoundingClientRect();
       const c = marquee ? clipOf(marquee, false) : clipOf(parent, true);
       const k = (v, s) => (isFinite(v) ? Math.round((v + s) * 2) / 2 : v);
-      return [k(r.left, scrollX), k(r.top, scrollY), k(r.right, scrollX), k(r.bottom, scrollY), k(c.l, scrollX), k(c.t, scrollY), k(c.r, scrollX), k(c.b, scrollY)].join(',');
+      const tests = c.tests.map((T) => [k(T.o[0], scrollX), k(T.o[1], scrollY), ...T.inv.map((x) => Math.round(x * 1e4) / 1e4), k(T.x0, 0), k(T.x1, 0), k(T.y0, 0), k(T.y1, 0)].join(':'));
+      return [k(r.left, scrollX), k(r.top, scrollY), k(r.right, scrollX), k(r.bottom, scrollY), k(c.l, scrollX), k(c.t, scrollY), k(c.r, scrollX), k(c.b, scrollY), ...tests].join(',');
     };
     /**
      * Each character of a text node, measured now: its box on the page, and whether a visitor sees it there; with how
@@ -1039,6 +1266,8 @@ const VISITOR_BEGIN = `(() => {
       const block = blockOf(parent);
       const ell = block && !marquee ? ellipsisOf(block) : null;
       const fs = parseFloat(style(parent).fontSize) || 16;
+      // The frame its text is laid out in (vertical or turned text: see sep in final).
+      const fr = textFrame(parent);
       const mq = marquee ? [...marquee.getClientRects()].find((x) => x.width > 0 || x.height > 0) : null;
       const chars = [];
       const data = n.data;
@@ -1064,17 +1293,17 @@ const VISITOR_BEGIN = `(() => {
             // letter, shows no letter. Short of the page's top or start edge, where no scrolling reaches, it is not seen.
             const cx = (q.left + q.right) / 2, cy = (q.top + q.bottom) / 2;
             const off = cy + scrollY < 0 || (rtlPage ? cx + scrollX > pageWidth : cx + scrollX < 0);
-            shown = r > l && b > t && cx >= l && cx <= r && cy >= t && cy <= b && !off;
+            shown = r > l && b > t && cx >= l && cx <= r && cy >= t && cy <= b && !off && inside(clip.tests, cx, cy);
             // The part a visitor sees: a gap beside a character its box cuts off is measured from the cut.
             if (shown) vis = { l: l + scrollX, t: t + scrollY, r: r + scrollX, b: b + scrollY };
-            if (shown && ell && (!ell.clamp || q.bottom > ell.bottom - ell.lh) && (ell.rtl ? q.left < ell.at - 0.5 : q.right > ell.at + 0.5)) shown = false;
+            if (shown && ell && cutOff(ell, q, fr)) shown = false;
           } else if (last && last.box) {
             // A character with no box of its own (a zero-width or combining one) goes with the one before it.
             box = last.box;
             vis = last.vis;
             shown = last.shown;
           }
-          last = { i, box, vis, shown, fs, d: dirOf(c) };
+          last = { i, box, vis, shown, fs, d: dirOf(c), fr };
           chars.push(last);
           if (shown) count++;
         }
@@ -1145,7 +1374,7 @@ const VISITOR_BEGIN = `(() => {
       const rect = { l: nr.left + scrollX, t: nr.top + scrollY, r: nr.right + scrollX, b: nr.bottom + scrollY };
       return { data, chars, marquee, count, onScreen, rect };
     };
-    return { body, style, rendered, textRendered, faded, skipped, linkOf, blockOf, measure, where, rtlPage, letter: (c) => LTR.test(c) };
+    return { body, style, rendered, textRendered, faded, skipped, linkOf, blockOf, measure, where, rtlPage, letter: (c) => LTR.test(c), textFrame, quadOf, along, REPLACED };
   };
 
   const loadAll = async () => {
@@ -1232,7 +1461,10 @@ const VISITOR_BEGIN = `(() => {
     const clips = (h, b) => (/visible/.test(h) ? /hidden|clip/.test(b) : /hidden|clip/.test(h) && !/auto|scroll/.test(b));
     const clipX = clips(hv.overflowX, bv.overflowX), clipY = clips(hv.overflowY, bv.overflowY);
     const vw = html.clientWidth, vh = innerHeight;
-    const REPLACED = new Set(['IMG', 'SVG', 'VIDEO', 'AUDIO', 'CANVAS', 'IFRAME', 'OBJECT', 'EMBED', 'INPUT', 'SELECT', 'TEXTAREA', 'METER', 'PROGRESS', 'PICTURE']);
+    const REPLACED = P.REPLACED;
+    // Whether a visitor sees a character as measured: shown where it stands, and not beyond the screen where the page's
+    // overflow is hidden.
+    const seenAt = (c) => !!c && c.shown && !(clipX && (rtlPage ? c.box.l + c.box.r <= 0 : c.box.l + c.box.r >= 2 * vw)) && !(clipY && c.box.t + c.box.b >= 2 * vh);
     // Displays whose content is part of the line's own flow of text (not a box of its own).
     const INLINE_FLOW = new Set(['inline', 'ruby', 'ruby-text', 'math', 'inline math']);
     const preserves = (s) => /^(preserve|preserve-breaks|break-spaces)$/.test(s.whiteSpaceCollapse || '') || /^(pre|pre-wrap|pre-line|break-spaces)$/.test(s.whiteSpace);
@@ -1293,7 +1525,6 @@ const VISITOR_BEGIN = `(() => {
       let fin = null;
       if (rec && laid && !faded) fin = rec.at0 === null || P.where(t) === rec.at0 ? rec : P.measure(t);
       const finByIndex = new Map(fin ? fin.chars.map((c) => [c.i, c]) : []);
-      const seenAt = (c) => !!c && c.shown && !(clipX && (rtlPage ? c.box.l + c.box.r <= 0 : c.box.l + c.box.r >= 2 * vw)) && !(clipY && c.box.t + c.box.b >= 2 * vh);
       const a = P.linkOf(p);
       let link = -1;
       if (a) { link = linkIndex.get(a); if (link === undefined) { link = hrefs.length; linkIndex.set(a, link); hrefs.push(a.getAttribute('href')); } }
@@ -1322,7 +1553,7 @@ const VISITOR_BEGIN = `(() => {
             flush();
             const f = finByIndex.get(i);
             const now = seenAt(f) ? f : null;
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, id: ch.id, spaces, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fr: ch.fr, fs: ch.fs, d: ch.d, bd: ch.bd, id: ch.id, spaces, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis, fr: now.fr } : null });
             spaces = [];
           } else {
             run = (run || '') + starts + c + ends;
@@ -1390,65 +1621,150 @@ const VISITOR_BEGIN = `(() => {
       todo.push({ child: c.firstChild, box, el: c, n0: all.length });
     }
     // Between two neighbouring shown characters (see ShownText). sepRow: the line break returned stands between two
-    // characters on one row (a box's edge parts them there), not between rows.
-    let sepRow = false;
+    // characters on one row (a box's edge parts them there), not between rows. sepTurned: the two are read as glued only
+    // because the read cannot measure how they sit (see geom).
+    let sepRow = false, sepTurned = false;
     // Two nodes' boxes in one place: each overlaps the other by more than half of the smaller one's width and height.
     const onePlace = (p, q) => p !== q && !!p && !!q && Math.min(p.r, q.r) - Math.max(p.l, q.l) > 0.5 * Math.min(p.r - p.l, q.r - q.l) && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 0.5 * Math.min(p.b - p.t, q.b - q.t);
+    // Two frames' common axes: u along the line both run along (the mean of theirs), n across it, on the side their
+    // blocks run to; null where either is not read, or they run more than 10 degrees apart (text turned against the text
+    // beside it) or are mirrored against each other.
+    const COS10 = Math.cos(Math.PI / 18);
+    const axesOf = (fa, fb) => {
+      if (!fa || !fb || !fa.ok || !fb.ok) return null;
+      if (fa.uh[0] * fb.uh[0] + fa.uh[1] * fb.uh[1] < COS10 || fa.vh[0] * fb.vh[0] + fa.vh[1] * fb.vh[1] < COS10) return null;
+      const ux = fa.uh[0] + fb.uh[0], uy = fa.uh[1] + fb.uh[1], nu = Math.hypot(ux, uy);
+      const u = [ux / nu, uy / nu];
+      return { u, n: u[0] * fa.vh[1] - u[1] * fa.vh[0] >= 0 ? [-u[1], u[0]] : [u[1], -u[0]] };
+    };
+    // A character's box, and the part of it a visitor sees, along the axes ax: from its bounding box on the screen and
+    // the frame it was measured in; null where its corners cannot be told.
+    const kbox = (R, ax) => {
+      const qd = R.fr ? P.quadOf(R.box, R.fr) : null;
+      if (!qd) return null;
+      const box = P.along(qd, ax.u, ax.n);
+      const v = R.vis;
+      if (!v || (v.l <= R.box.l + 0.01 && v.r >= R.box.r - 0.01 && v.t <= R.box.t + 0.01 && v.b >= R.box.b - 0.01)) return { box, vis: box };
+      const c = P.along([[v.l, v.t], [v.r, v.t], [v.r, v.b], [v.l, v.b]], ax.u, ax.n);
+      return { box, vis: { l: Math.max(box.l, c.l), r: Math.min(box.r, c.r), t: Math.max(box.t, c.t), b: Math.min(box.b, c.b) } };
+    };
     // The extent on its row of the text of the box character k stands in, walking from it by step (-1 back, 1 on) to the
-    // box's edge, with each character's box where it is judged (now: at the read's last instant), at most 400 of them.
+    // box's edge, with each character's boxes at the instant the pair is judged at (pick: null where it is not shown
+    // then), along the axes ax (null: the screen's own), at most 400 of them.
     const PIECE = 400;
-    const pieceOf = (k, step, now) => {
+    const pieceOf = (k, step, pick, ax) => {
       const e = all[k];
-      const at = (x) => (now ? (x.fin ? x.fin.vis || x.fin.box : null) : x.when === e.when ? x.vis || x.box : null);
-      const q0 = at(e);
+      const at = (x) => {
+        const R = pick(x, k);
+        if (!R) return null;
+        if (!ax) return R.vis || R.box;
+        const c = kbox(R, ax);
+        return c ? c.vis : null;
+      };
+      const q0 = at(k);
+      if (!q0) return null;
       let l = q0.l, r = q0.r;
       for (let x = k + step, n = 0; x >= 0 && x < all.length && n < PIECE; x += step, n++) {
         const y = all[x];
         if (y.breaks !== e.breaks) break;
-        const q = at(y);
+        const q = at(x);
         if (!q || Math.min(q.b, q0.b) - Math.max(q.t, q0.t) < 0.5 * Math.min(q.b - q.t, q0.b - q0.t)) break;
         l = Math.min(l, q.l);
         r = Math.max(r, q.r);
       }
       return { l, r };
     };
-    // Whether whitespace between characters i and j is laid out wider than tol (a space a visitor sees), as it stands now.
+    // Whether whitespace between characters i and j is laid out wider than tol (a space a visitor sees), as it stands
+    // now: across the page, or along the axes ax.
     const wsRange = document.createRange();
-    const spaceShows = (i, j, tol) => {
+    const spaceShows = (i, j, tol, ax) => {
       for (let x = i + 1; x <= j; x++) {
         for (const [t, k] of all[x].spaces) {
           if (k >= t.data.length) continue;
           wsRange.setStart(t, k);
           wsRange.setEnd(t, k + 1);
-          for (const r of wsRange.getClientRects()) if (r.width > tol) return true;
+          const fr = ax && t.parentElement ? P.textFrame(t.parentElement) : null;
+          for (const r of wsRange.getClientRects()) {
+            if (!ax) {
+              if (r.width > tol) return true;
+              continue;
+            }
+            const qd = fr ? P.quadOf({ l: r.left, t: r.top, r: r.right, b: r.bottom }, fr) : null;
+            if (!qd) continue;
+            const c = P.along(qd, ax.u, ax.n);
+            if (c.r - c.l > tol) return true;
+          }
         }
       }
       return false;
     };
-    const sep = (i, j) => {
+    // The distance between two convex shapes on the screen (lists of corners): 0 where they meet.
+    const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+    const within = (pt, poly) => {
+      let sign = 0;
+      for (let k = 0; k < poly.length; k++) {
+        const c = cross(poly[k], poly[(k + 1) % poly.length], pt);
+        if (Math.abs(c) < 1e-9) continue;
+        if (!sign) sign = Math.sign(c);
+        else if (Math.sign(c) !== sign) return false;
+      }
+      return true;
+    };
+    const toSegment = (pt, s0, s1) => {
+      const dx = s1[0] - s0[0], dy = s1[1] - s0[1], L = dx * dx + dy * dy;
+      const t = L ? Math.max(0, Math.min(1, ((pt[0] - s0[0]) * dx + (pt[1] - s0[1]) * dy) / L)) : 0;
+      return Math.hypot(s0[0] + t * dx - pt[0], s0[1] + t * dy - pt[1]);
+    };
+    const meets = (p0, p1, q0, q1) => cross(p0, p1, q0) * cross(p0, p1, q1) < 0 && cross(q0, q1, p0) * cross(q0, q1, p1) < 0;
+    const distance = (P1, P2) => {
+      if (P1.some((pt) => within(pt, P2)) || P2.some((pt) => within(pt, P1))) return 0;
+      let d = Infinity;
+      for (let k = 0; k < P1.length; k++) {
+        const p0 = P1[k], p1 = P1[(k + 1) % P1.length];
+        for (let x = 0; x < P2.length; x++) if (meets(p0, p1, P2[x], P2[(x + 1) % P2.length])) return 0;
+        for (const pt of P2) d = Math.min(d, toSegment(pt, p0, p1));
+      }
+      for (let x = 0; x < P2.length; x++) for (const pt of P1) d = Math.min(d, toSegment(pt, P2[x], P2[(x + 1) % P2.length]));
+      return d;
+    };
+    // Two characters the read cannot set on one line (their frames run more than 10 degrees apart, as a word turned a
+    // quarter turn beside straight text, or a frame it cannot solve): apart where their shapes on the screen stand
+    // further apart than the tolerance (their corners where those can be told, else their bounding boxes, which hold
+    // them), glued where they meet. Where only the bounding boxes are known and those meet, how the two sit cannot be
+    // told: a box's edge between them is never read as parting them (glued, marked so: sepTurned), and in one flow of
+    // text they are as the text runs them.
+    const unaligned = (A, B, structural, flow, tol) => {
+      const qa = A.fr ? P.quadOf(A.box, A.fr) : null, qb = B.fr ? P.quadOf(B.box, B.fr) : null;
+      if (qa && qb) return distance(qa, qb) > tol ? (structural ? '\\n' : ' ') : '';
+      const va = A.vis || A.box, vb = B.vis || B.box;
+      if (Math.max(vb.l - va.r, va.l - vb.r, vb.t - va.b, va.t - vb.b) > tol) return structural ? '\\n' : ' ';
+      if (structural) {
+        sepTurned = true;
+        return '';
+      }
+      return flow ? ' ' : '';
+    };
+    // How characters i and j sit, from their boxes A and B ({ box, vis, fr }, at one instant), pick giving the other
+    // characters' boxes at that instant (see pieceOf). Text whose frame is not plain (vertical text, or text a transform
+    // turns) is judged along the line both run along (axesOf): a row is an overlap across it, a gap a distance along it,
+    // so flex items set top to bottom, or turned a quarter turn, with no gap show glued (round 12 judged every pair across
+    // the page, so two such items never stood on one row and were read apart). Where the two do not run along one line,
+    // or a frame cannot be solved, see unaligned.
+    const geom = (i, j, A, B, pick) => {
       const a = all[i], b = all[j];
-      sepRow = false;
       const structural = b.breaks > a.breaks;
       const flow = b.ws > a.ws;
-      if (a.cap && !b.cap && !structural && !flow) return '';
-      // Both shown at the read's last instant: judged there, one instant for both, so an item that keeps moving (an
-      // endless pulse, a tween that settled at a later sample) is judged beside its neighbour where both stand.
-      const now = !!(a.fin && b.fin);
-      // Else where they were measured: if both were shown there at one sample; or, never shown together, if both stood
-      // there side by side at one sample, laid out, one of them hidden by a style (a word a script reveals after its
-      // neighbour and hides again before the read comes back to it, which a visitor who lingers sees beside it). Else
-      // they were never side by side: seen at different moments where they did not stand together (a carousel's track
-      // moved on), or in one place (slides stacked and shown in turn), where they stood says nothing of how they sit,
-      // so a box's edge between them is apart across boxes, and in one flow of text they are as the text runs them.
-      const from = Math.max(a.when, b.when);
-      const together = from < Math.min(a.unseen, b.unseen);
-      const beside = from < Math.min(a.left, b.left) && !onePlace(a.rect, b.rect);
-      if (!now && !together && !beside) return structural ? '\\n' : flow ? ' ' : '';
-      if (a.marquee && a.marquee === b.marquee) return structural ? '\\n' : flow ? ' ' : '';
-      const A = now ? a.fin : a, B = now ? b.fin : b;
+      const tol = Math.max(0.5, 0.1 * Math.min(a.fs, b.fs));
+      let ax = null;
+      if (!(A.fr && A.fr.plain && B.fr && B.fr.plain)) {
+        ax = axesOf(A.fr, B.fr);
+        const ka = ax && kbox(A, ax), kb = ax && kbox(B, ax);
+        if (!ka || !kb) return unaligned(A, B, structural, flow, tol);
+        A = ka;
+        B = kb;
+      }
       const row = Math.min(A.box.b, B.box.b) - Math.max(A.box.t, B.box.t) >= 0.5 * Math.min(A.box.b - A.box.t, B.box.b - B.box.t);
       if (row) {
-        const tol = Math.max(0.5, 0.1 * Math.min(a.fs, b.fs));
         const ca = (A.box.l + A.box.r) / 2, cb = (B.box.l + B.box.r) / 2;
         const va = A.vis || A.box, vb = B.vis || B.box;
         // Two characters of one direction stand in its order, else a visitor reads them in the other order: except two
@@ -1470,10 +1786,10 @@ const VISITOR_BEGIN = `(() => {
         // sees a space exactly where whitespace between the two is laid out wider than the tolerance, wherever the runs'
         // order puts it, and the runs meet glued where none is; across a box's edge (left-to-right boxes in a
         // right-to-left row), the boxes' text is measured where the boxes meet.
-        if (!structural && (a.d === 'R' || b.d === 'R' || a.id === 'R' || b.id === 'R')) gap = flow && spaceShows(i, j, tol) ? Infinity : 0;
+        if (!structural && (a.d === 'R' || b.d === 'R' || a.id === 'R' || b.id === 'R')) gap = flow && spaceShows(i, j, tol, ax) ? Infinity : 0;
         else if (structural && (a.d !== b.d || a.d !== a.id || b.d !== b.id)) {
-          const pa = pieceOf(i, -1, now), pb = pieceOf(j, 1, now);
-          gap = Math.max(pb.l - pa.r, pa.l - pb.r);
+          const pa = pieceOf(i, -1, pick, ax), pb = pieceOf(j, 1, pick, ax);
+          if (pa && pb) gap = Math.max(pb.l - pa.r, pa.l - pb.r);
         }
         if (gap <= tol) return '';
         sepRow = structural;
@@ -1482,9 +1798,33 @@ const VISITOR_BEGIN = `(() => {
       if (structural) return '\\n';
       return flow ? ' ' : '';
     };
-    // The separator before each character, and whether it is a line break on one row.
-    const seps = [''], onRow = [false];
-    for (let k = 1; k < all.length; k++) { seps.push(sep(k - 1, k)); onRow.push(sepRow); }
+    const sep = (i, j) => {
+      const a = all[i], b = all[j];
+      sepRow = false;
+      sepTurned = false;
+      const structural = b.breaks > a.breaks;
+      const flow = b.ws > a.ws;
+      if (a.cap && !b.cap && !structural && !flow) return '';
+      // Both shown at the read's last instant: judged there, one instant for both, so an item that keeps moving (an
+      // endless pulse, a tween that settled at a later sample) is judged beside its neighbour where both stand.
+      const now = !!(a.fin && b.fin);
+      // Else where they were measured: if both were shown there at one sample; or, never shown together, if both stood
+      // there side by side at one sample, laid out, one of them hidden by a style (a word a script reveals after its
+      // neighbour and hides again before the read comes back to it, which a visitor who lingers sees beside it). Else
+      // they were never side by side: seen at different moments where they did not stand together (a carousel's track
+      // moved on), or in one place (slides stacked and shown in turn), where they stood says nothing of how they sit,
+      // so a box's edge between them is apart across boxes, and in one flow of text they are as the text runs them.
+      const from = Math.max(a.when, b.when);
+      const together = from < Math.min(a.unseen, b.unseen);
+      const beside = from < Math.min(a.left, b.left) && !onePlace(a.rect, b.rect);
+      if (!now && !together && !beside) return structural ? '\\n' : flow ? ' ' : '';
+      if (a.marquee && a.marquee === b.marquee) return structural ? '\\n' : flow ? ' ' : '';
+      if (!now) return geom(i, j, a, b, (x, k0) => (all[x].when === all[k0].when ? all[x] : null));
+      return geom(i, j, a.fin, b.fin, (x) => all[x].fin);
+    };
+    // The separator before each character, whether it is a line break on one row, and whether glued is unmeasured.
+    const seps = [''], onRow = [false], turnedAt = [false];
+    for (let k = 1; k < all.length; k++) { seps.push(sep(k - 1, k)); onRow.push(sepRow); turnedAt.push(sepTurned); }
     // A character with no glyph (a no-break or other space that is not HTML whitespace, a zero-width or format
     // character) shows nothing of its own: where the visible characters on either side of a run of them stand glued, a
     // visitor sees them glued, whatever the run's own boxes say.
@@ -1493,7 +1833,7 @@ const VISITOR_BEGIN = `(() => {
       if (!GLYPHLESS.test(all[k].c)) { k++; continue; }
       let j = k;
       while (j < all.length && GLYPHLESS.test(all[j].c)) j++;
-      if (j < all.length && sep(k - 1, j) === '') for (let x = k; x <= j; x++) { seps[x] = ''; onRow[x] = false; }
+      if (j < all.length && sep(k - 1, j) === '') for (let x = k; x <= j; x++) { seps[x] = ''; onRow[x] = false; turnedAt[x] = sepTurned; }
       k = j;
     }
     const HID = ${JSON.stringify(HIDDEN_HERE)};
@@ -1507,8 +1847,9 @@ const VISITOR_BEGIN = `(() => {
       const s = seps[k];
       if (x.link !== open && open >= 0) { linked += ${JSON.stringify(LINK_CLOSE)}; open = -1; }
       if (onRow[k] && s) rowBreaks.push(text.length);
-      text += s;
-      linked += s;
+      const between = s || (turnedAt[k] ? ${JSON.stringify(TURNED)} : '');
+      text += between;
+      linked += between;
       if (x.link !== open) {
         linked += ${JSON.stringify(LINK_OPEN)} + String(x.link).replace(/[0-9]/g, (d) => String.fromCharCode(${LINK_DIGIT_0} + Number(d))) + ${JSON.stringify(LINK_INDEX_END)};
         open = x.link;

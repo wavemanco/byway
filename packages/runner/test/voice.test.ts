@@ -693,6 +693,31 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(await shows(chip.artifactId!)).toBe('Tags:\nNew\nData!');
   });
 
+  it('vertical and turned text: a typed space a flex item\'s edge drops is asked again, and words glued as the line has them are written (r12 verifier)', async () => {
+    // Round 12 judged every pair of neighbours as though their text ran across the page, so in vertical or turned text
+    // two flex items were never on one row: it stored these spaces, which a visitor never sees ("Sign intoday").
+    for (const [html, answer, glue] of [
+      ['<div style="writing-mode:vertical-rl;display:flex;height:400px">Already registered?<a href="/l">Sign in</a></div>', 'T\nAlready registered?[Sign in] today', 'Sign intoday'],
+      ['<div style="writing-mode:vertical-lr;display:flex;height:400px"><span>Fresh</span><a href="/b">bread</a></div>', 'T\nFresh[bread] daily', 'Freshbreaddaily'],
+      ['<div style="writing-mode:sideways-rl;display:flex;height:400px"><span>Fresh</span><a href="/b">bread</a></div>', 'T\nFresh[bread] daily', 'Freshbreaddaily'],
+      ['<div style="position:absolute;left:0;top:200px;transform:rotate(-90deg);transform-origin:left top;display:flex"><span>Scroll</span><a href="/more">down</a></div><p style="margin-left:80px">Body</p>', 'T\nScroll[down] now\nBody', 'Scrolldownnow'],
+      ['<div style="position:absolute;left:40px;top:120px;transform:rotate(90deg);transform-origin:left top;display:flex">Find<a href="/m">menu</a></div><p style="margin-left:80px">Body</p>', 'T\nFind our [menu]\nBody', 'Find ourmenu'],
+    ] as const) {
+      const msg = await rejected((await open(page(html))).answer(answer));
+      expect(msg, html).toContain('because a browser would run words together that your lines keep apart');
+      expect(msg, html).toContain(glue);
+    }
+    // Round 12 refused these, reading a line break between glued flex items set top to bottom.
+    const glued = await (await open(page('<div style="writing-mode:vertical-rl;display:flex;height:300px"><span>Fresh</span><a href="/n">New</a></div>'))).answer('T\nFresh[New]Fresh');
+    expect(await shows(glued.artifactId!)).toBe('FreshNewFresh');
+    const ja = page('<div lang="ja" style="writing-mode:vertical-rl;height:300px;display:flex"><span>営業時間</span><b>七時から</b></div><div lang="ja" style="writing-mode:vertical-rl;height:300px"><p>毎朝五時に焼きたてのパンをお届けします。</p></div>');
+    const jaOut = await (await open(ja)).answer('T\n営業時間八時から\n毎朝六時に焼きたてのパンをお届けします。');
+    expect(await shows(jaOut.artifactId!)).toBe('営業時間八時から\n毎朝六時に焼きたてのパンをお届けします。');
+    // A space typed where a turned label's words run in one flow of text is written.
+    const label = page('<div style="position:absolute;left:0;top:200px;transform:rotate(-90deg);transform-origin:left top">Scroll down</div><p style="margin-left:80px">Body</p>');
+    expect(await shows((await (await open(label)).answer('T\nScroll down now\nBody')).artifactId!)).toBe('Scroll down now\nBody');
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // Browsers move the font out of the table, right after "Middle".
