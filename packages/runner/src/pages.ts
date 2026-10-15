@@ -1011,8 +1011,6 @@ const VISITOR_BEGIN = `(() => {
         if (ch.box) next = ch;
         else if (next) { ch.box = next.box; ch.vis = next.vis; ch.shown = next.shown; if (ch.shown) count++; }
       }
-      // Punctuation and symbols take a direction from the letters around them, as the bidi algorithm resolves them: the
-      // letters' on both sides when they agree, else the paragraph's.
       // The direction the text is laid out in: its block's, or that of an element inside it that isolates or embeds its
       // text (a link or span with a dir attribute, a bdi, a bdo), as a phone number in a right-to-left paragraph runs in
       // a link marked dir="ltr".
@@ -1028,24 +1026,37 @@ const VISITOR_BEGIN = `(() => {
       const DIGIT = /^\\p{Nd}$/u, TERMINATOR = /^[#%°‰±\\p{Sc}]$/u, SEPARATOR = /^[.,:\\/+\\-\\u066b\\u066c\\u060c]$/;
       const cpAt = (i) => (i >= 0 && i < data.length ? String.fromCodePoint(data.codePointAt(i)) : '');
       const before = (i) => (i > 0 && data.charCodeAt(i - 1) >= 0xdc00 && data.charCodeAt(i - 1) <= 0xdfff ? cpAt(i - 2) : cpAt(i - 1));
+      const ARABIC_NUMBER = /^[\\u0660-\\u0669\\u066b\\u066c]$/;
       for (const ch of chars) {
-        if (ch.d !== 'N') continue;
         const c = cpAt(ch.i);
+        if (DIGIT.test(c)) { ch.num = ARABIC_NUMBER.test(c) ? 'AN' : 'EN'; continue; }
+        if (ch.d !== 'N') continue;
         const w = c.length;
-        if (SEPARATOR.test(c) && DIGIT.test(before(ch.i)) && DIGIT.test(cpAt(ch.i + w))) ch.d = 'L';
+        if (SEPARATOR.test(c) && DIGIT.test(before(ch.i)) && DIGIT.test(cpAt(ch.i + w))) { ch.d = 'L'; ch.num = 'EN'; }
         else if (TERMINATOR.test(c)) {
           let l = ch.i, r = ch.i + w;
           while (TERMINATOR.test(before(l))) l -= before(l).length;
           while (TERMINATOR.test(cpAt(r))) r += cpAt(r).length;
-          if (DIGIT.test(before(l)) || DIGIT.test(cpAt(r))) ch.d = 'L';
+          if (DIGIT.test(before(l)) || DIGIT.test(cpAt(r))) { ch.d = 'L'; ch.num = 'EN'; }
         }
+      }
+      // Then punctuation and symbols take a direction from the characters around them, as the bidi algorithm resolves
+      // them: those on both sides when they agree, else the direction the text is laid out in. A number counts there as
+      // the algorithm counts it: right to left, an Arabic-Indic one always, a European one unless the last letter before
+      // it in its text node (or, with none, the direction the text is laid out in) is left to right.
+      const pull = [];
+      let strong = base;
+      for (const ch of chars) {
+        if (ch.num === 'AN') pull.push('R');
+        else if (ch.num === 'EN') pull.push(strong === 'L' ? 'L' : 'R');
+        else { pull.push(ch.d); if (ch.d !== 'N') strong = ch.d; }
       }
       for (let k = 0; k < chars.length; k++) {
         if (chars[k].d !== 'N') continue;
         let a = k - 1, b = k + 1;
         while (a >= 0 && chars[a].d === 'N') a--;
         while (b < chars.length && chars[b].d === 'N') b++;
-        const da = a >= 0 ? chars[a].d : null, db = b < chars.length ? chars[b].d : null;
+        const da = a >= 0 ? pull[a] : null, db = b < chars.length ? pull[b] : null;
         const d = da && da === db ? da : base;
         for (let j = k; j < b; j++) chars[j].d = d;
         k = b - 1;
@@ -1149,6 +1160,8 @@ const VISITOR_BEGIN = `(() => {
     const INLINE_FLOW = new Set(['inline', 'ruby', 'ruby-text', 'math', 'inline math']);
     const preserves = (s) => /^(preserve|preserve-breaks|break-spaces)$/.test(s.whiteSpaceCollapse || '') || /^(pre|pre-wrap|pre-line|break-spaces)$/.test(s.whiteSpace);
     let breaks = 0, ws = 0;
+    // The whitespace characters since the last shown character (at most 64), to tell whether a space shows between two.
+    let spaces = [];
     const all = [];
     const hidden = [];
     let unlaid = '';
@@ -1219,6 +1232,7 @@ const VISITOR_BEGIN = `(() => {
         while (m < ms.length && ms[m][0] <= i && ms[m][2]) starts += ms[m++][1];
         if (SPACE.test(c)) {
           ws++;
+          if (spaces.length < 64) spaces.push([t, i]);
           if (pre && c === '\\n') breaks++;
           if (run !== null) run += c;
           if (starts) { if (!laid) unlaid += starts; else run = (run || '') + starts; }
@@ -1231,7 +1245,8 @@ const VISITOR_BEGIN = `(() => {
             flush();
             const f = finByIndex.get(i);
             const now = seenAt(f) ? f : null;
-            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, id: ch.id, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
+            all.push({ c, starts, ends, box: ch.box, vis: ch.vis, fs: ch.fs, d: ch.d, bd: ch.bd, id: ch.id, spaces, breaks, ws, link, marquee: rec.marquee, when: rec.when, unseen: rec.unseen === undefined ? Infinity : rec.unseen, left: rec.left === undefined ? Infinity : rec.left, rect: rec.rect, hid: false, cap: capOf(p, c), fin: now ? { box: now.box, vis: now.vis } : null });
+            spaces = [];
           } else {
             run = (run || '') + starts + c + ends;
             unseen();
@@ -1322,6 +1337,19 @@ const VISITOR_BEGIN = `(() => {
       }
       return { l, r };
     };
+    // Whether whitespace between characters i and j is laid out wider than tol (a space a visitor sees), as it stands now.
+    const wsRange = document.createRange();
+    const spaceShows = (i, j, tol) => {
+      for (let x = i + 1; x <= j; x++) {
+        for (const [t, k] of all[x].spaces) {
+          if (k >= t.data.length) continue;
+          wsRange.setStart(t, k);
+          wsRange.setEnd(t, k + 1);
+          for (const r of wsRange.getClientRects()) if (r.width > tol) return true;
+        }
+      }
+      return false;
+    };
     const sep = (i, j) => {
       const a = all[i], b = all[j];
       sepRow = false;
@@ -1365,8 +1393,12 @@ const VISITOR_BEGIN = `(() => {
         // Latin name in a right-to-left paragraph, a Hebrew word in a left-to-right one, left-to-right boxes in a
         // right-to-left row), the two characters side by side in the text stand at the far ends of their runs or boxes,
         // which a visitor sees glued or apart by where the runs or boxes meet.
-        // (Within one word of one direction, with nothing between, the two stand side by side as in the text.)
-        if (a.d !== b.d || ((a.d !== a.id || b.d !== b.id) && (structural || flow))) {
+        // (Within one word of one direction, with nothing between, the two stand side by side as in the text.) In one
+        // flow of text where right-to-left text is involved, a visitor sees a space exactly where whitespace between the
+        // two shows (is laid out wider than the tolerance), wherever the runs' order puts it; else the runs meet glued.
+        // Across a box's edge, the boxes' text is measured where the boxes meet.
+        if (!structural && (a.d === 'R' || b.d === 'R' || a.id === 'R' || b.id === 'R')) gap = flow && spaceShows(i, j, tol) ? Infinity : 0;
+        else if (a.d !== b.d || ((a.d !== a.id || b.d !== b.id) && (structural || flow))) {
           const pa = pieceOf(i, -1, structural, now), pb = pieceOf(j, 1, structural, now);
           gap = Math.max(pb.l - pa.r, pa.l - pb.r);
         }

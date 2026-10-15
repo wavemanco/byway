@@ -594,6 +594,15 @@ describe('the visitor read decides what shows, what is hidden, and how words sit
     expect(await check(phone, 'T\nهاتف: [+962 6 500 0000]!\nشكرا', phone.replace('</a></p>', '</a>!</p>'))).toBeUndefined();
     expect(await check(phone, 'T\nfresh words [Go now]\nشكرا', phone.replace('هاتف: ', 'fresh words ').replace('+962 6 500 0000', 'Go now'))).toBeUndefined();
     expect((await check(phone, 'T\nهاتف: [+962 6 500 0000]too\nشكرا', phone.replace('</a></p>', '</a> too</p>')))?.problem).toMatch(/a space that your lines do not have/);
+    // Brackets and punctuation beside a number in a right-to-left paragraph resolve as the bidi algorithm resolves them
+    // (a number counts as right to left there), and where a right-to-left text meets other text a visitor sees a space
+    // exactly where whitespace between the two shows (round 12's evidence: "(soon)" beside Arabic-Indic digits was
+    // read as "( soon)", and "today!" before a number as "today !", each refused as a space not typed).
+    const soon = pageOf('<p dir="rtl" lang="ar">٩ ٠١٢٣ طازج.</p><p dir="rtl" lang="ar">طازج عام ٩ ٢٠٢٥</p><p>Plain</p>');
+    expect((await offer(soon)).offered).toEqual(['T', '٩ ٠١٢٣ طازج.', 'طازج عام ٩ ٢٠٢٥', 'Plain']);
+    expect(await check(soon, 'T\n٩ (soon) طازج.\nطازج عام ٩ ٢٠٢٥\nPlain', soon.replace('٩ ٠١٢٣ طازج.', '٩ (soon) طازج.'))).toBeUndefined();
+    expect(await check(soon, 'T\n٩ ٠١٢٣ طازج.\nطازج today! ٩ ٢٠٢٥\nPlain', soon.replace('طازج عام', 'طازج today!'))).toBeUndefined();
+    expect((await check(soon, 'T\n٩ (soon) طازج.\nطازج عام ٩ ٢٠٢٥\nPlain', soon.replace('٩ ٠١٢٣ طازج.', '٩ ( soon) طازج.')))?.problem).toMatch(/a space that your lines do not have/);
     // A left-to-right word a script reverses in a left-to-right page is still in another order.
     const ltr = pageOf('<p><bdo dir="rtl">Hello world</bdo> after</p><p>Plain</p>');
     expect(await offer(ltr)).toMatchObject({ offered: ['T', 'Plain'], why: { 'Hello world after': 'layout' } });
