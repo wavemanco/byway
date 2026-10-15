@@ -107,12 +107,15 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   or that has paint containment (an absolutely or fixed positioned element escapes those below its containing block),
  *   an absolutely or fixed positioned ancestor's `clip` rect, and the bounding box of an ancestor's clip-path inset(),
  *   circle(), ellipse() or polygon() (one with no area keeps nothing), each in the box's own points where a transform
- *   turns, scales or skews it (a box whose place cannot be told, under a turn in 3D, keeps nothing); its middle is not
- *   short of the page's top or start edge (where no scrolling reaches), nor, when the page's overflow is hidden, beyond
- *   the screen's width or (down the page) its height; and it is not in the band an ellipsis takes at the end of a line a
- *   box cuts short (text-overflow: ellipsis on a box whose content overflows it, or the last line of a line-clamp box;
- *   in vertical or turned text along the line's own axes, else the whole box). Text in a marquee is measured by the
- *   marquee's own box, through which it scrolls;
+ *   turns, scales or skews it or CSS zoom scales it (a 3D matrix that keeps the box's own plane flat, as AOS's flip at
+ *   rest, perspective(2500px) rotateY(0), is read as flat; a box whose place cannot be told, under a turn in 3D, keeps
+ *   nothing, and the line marks of the text it hides are listed in `unplaced`); its middle is not short of the page's
+ *   top or start edge (where no scrolling reaches), nor, when the page's overflow is hidden, beyond the screen's width or
+ *   (down the page) its height; and it is not in the band an ellipsis takes at the end of a line a box cuts short
+ *   (text-overflow: ellipsis on a box whose content overflows it, or the last line of a line-clamp box; on a box whose
+ *   plane map is not the identity, as in vertical or turned text or a box a transform or zoom scales, from the box's own
+ *   points along the line's own axes, and where those cannot be told, the whole box). Text in a marquee is measured by
+ *   the marquee's own box, through which it scrolls;
  * - hidden from sight: laid out, but not shown (a screen-reader-only class; opacity, a clear text fill or a colour almost
  *   clear that leave it less than 0.05 of ink, and svg text by its fill and fill-opacity, or its stroke; font size 0; a
  *   character whose middle a box or a clip cuts off, such as a sliver of a row a box of fixed height cuts; cut off by an
@@ -137,12 +140,16 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   track that moved on): a line break where the edge of a box lies between them, else as the text runs them (a space
  *   where whitespace lies between, else none). From the boxes, along the line their text runs along: each text node's
  *   frame (its line's direction and its block's) comes from its element's writing mode and the plane map of every
- *   transform up to the page; two neighbours whose frames run within 10 degrees are judged along their common line from
- *   their corners (each character along the line its own advance, across it all of its outline), so flex items set top
- *   to bottom, or turned, with no gap show glued; neighbours whose frames run further apart, or whose corners cannot be
- *   told, are apart where their shapes stand further apart than the tolerance and glued where they meet, and where only
- *   their bounding boxes are known (a turn in 3D, a turn near an eighth of a turn) and those meet, a box's edge between
- *   them is never read as parting them: none, marked TURNED (in one flow of text, as the text runs them). Then:
+ *   transform and CSS zoom up to the page; two neighbours whose frames run within 10 degrees are judged along their
+ *   common line from their corners (each character along the line its own advance, across it all of its outline), so
+ *   flex items set top to bottom, or turned, with no gap show glued; neighbours whose frames run further apart, or whose
+ *   corners cannot be told, are apart where their shapes stand further apart than the tolerance and glued where they
+ *   meet, and where only their bounding boxes are known (a turn in 3D, a turn near an eighth of a turn) and those meet,
+ *   a box's edge between them is never read as parting them: none, marked TURNED (in one flow of text, as the text runs
+ *   them). Two pieces of vertical or turned text across a box's edge more than four times the font size apart along
+ *   their line are apart across boxes (a line break) where the second stands after the first (in their direction), or
+ *   where either stands in a box positioned out of the flow (absolutely or fixed) that the other is not in; else as
+ *   follows. Then:
  *   REVERSED when a visitor sees the second before the first on one row (two characters of one direction: a letter by
  *   its script, a digit left to right, Arabic-Indic digits and the Arabic decimal and thousands separators included,
  *   with a number's own signs, a currency or percent sign beside its digits or a point, comma, colon, slash, plus or
@@ -160,7 +167,12 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   when they are apart and the edge of a box of its own lies between them (a block, a flex or grid item, a table cell,
  *   a floated or positioned box, an inline block, a button, an image or a control) or a forced break does (a `<br>`, a
  *   newline a white-space style keeps); else a space (apart within one flow of text: on one row, or on rows the text
- *   wraps over with whitespace between). A row is an overlap across the line of at least half the shorter box. A run of
+ *   wraps over with whitespace between). A row is an overlap across the line of at least half the shorter box; across
+ *   a box's edge, also any overlap across it where the text of each one's box on its row stands beside the other's along
+ *   the line, not over it (an item raised or lowered beside the next: a margin, padding or relative offset beside
+ *   align-items: flex-start), and where a line height is set smaller than the letters, their middles nearer than half
+ *   their line heights together (which two rows of their own never are): there, where the two meet along the line (no
+ *   more than the tolerance apart), none, marked OFFSET, since whether a visitor sees them apart cannot be told. A run of
  *   characters with no glyph (a no-break or other space that is not HTML whitespace, a zero-width or format character)
  *   takes the separator of the visible characters on either side of it wherever those stand glued. HIDDEN_HERE follows
  *   the shown character after which text a visitor does not see stands, hidden from sight or in an
@@ -171,6 +183,7 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * - `hidden`: each run of characters hidden from sight within one text node, in document order: its text (whitespace
  *   collapsed, ends trimmed, line marks kept) and its link's href, or null;
  * - `unlaid`: the line marks found in text that is not laid out;
+ * - `unplaced`: the line marks found in text hidden from sight by a box whose place the read cannot tell;
  * - `title`: document.title;
  * - `generated`: see below.
  */
@@ -217,7 +230,8 @@ export const REVERSED = '﷮';
 export const GONE_HERE = '﷬';
 /**
  * In ShownText.text: two neighbours read as glued only because the read cannot measure how they sit (vertical or
- * turned text it does not read: a turn in 3D, two frames far apart, a turn near an eighth of a turn; see ShownText).
+ * turned text it does not read: a turn in 3D, a turn near an eighth of a turn, where only their bounding boxes are
+ * known and those meet; see ShownText).
  */
 export const TURNED = '﷫';
 /**
