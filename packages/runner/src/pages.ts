@@ -928,7 +928,8 @@ const VISITOR_BEGIN = `(() => {
      * How a box stands on the screen (vertical and turned text). A plane map m = [a, b, c, d] takes a vector (x, y) of
      * a box, before its transforms, to (a x + b y, c x + d y) on the screen: the linear part of every transform from
      * the box up to the page (an element's rotate, scale and transform, in that order; a translate only moves it; an
-     * inline box, an element with no box and a table column have none). A 3D matrix is read by what it does to the
+     * inline box, an element with no box and a table column have none), and every CSS zoom, a scale of all an element
+     * holds (inline boxes included). A 3D matrix is read by what it does to the
      * element's own plane (z = 0): flat where nothing there changes its w (m14 and m24: no perspective tilts the plane)
      * and the plane stays at z = 0 (m13 and m23: not turned out of the screen; and m43 too where its parent sets it in
      * 3D, by preserve-3d or a perspective, which would scale it), as AOS's flip at rest, perspective(2500px) rotateY(0),
@@ -953,10 +954,14 @@ const VISITOR_BEGIN = `(() => {
     };
     const ownMap = (e) => {
       const s = style(e);
+      // CSS zoom scales the element and all it holds, as a scale would: its own sizes (client and offset sizes, computed
+      // lengths) are before it, its boxes on the screen after it.
+      const zf = parseFloat(s.zoom);
+      const zm = isFinite(zf) && zf > 0 && Math.abs(zf - 1) > 1e-6 ? [zf, 0, 0, zf] : I2;
       const d = (s.display || '').split(' ')[0];
-      if (!(e instanceof SVGElement) && !REPLACED.has(tag(e)) && (UNTRANSFORMED.has(d) || d.startsWith('ruby'))) return I2;
+      if (!(e instanceof SVGElement) && !REPLACED.has(tag(e)) && (UNTRANSFORMED.has(d) || d.startsWith('ruby'))) return zm;
       if (s.offsetPath && s.offsetPath !== 'none') return null;
-      let m = I2;
+      let m = zm;
       const rot = (s.rotate || 'none').trim();
       if (rot !== 'none') {
         const parts = rot.split(/\\s+/);
@@ -1247,8 +1252,10 @@ const VISITOR_BEGIN = `(() => {
     const pageWidth = html.clientWidth;
     const ellipses = new Map();
     /**
-     * The band at the end of a box's line where an ellipsis shows in place of its text, or null. In vertical or turned
-     * text (a frame that is not plain), along the line's own axes (turned: l and r along its u, t and b along its v);
+     * The band at the end of a box's line where an ellipsis shows in place of its text, or null. On a box whose plane map
+     * is not the identity (vertical or turned text, or a box a transform or CSS zoom scales), along the line's own axes
+     * (turned: l and r along its u, t and b along its v), from the box's own points set on the screen (round 13 mixed a
+     * scaled box's place with its unscaled width, so under scale(0.9) or zoom an ellipsis's cut letters read as shown);
      * where those cannot be told, every character in the box is taken as cut off (all).
      */
     const ellipsisOf = (e) => {
@@ -1270,7 +1277,8 @@ const VISITOR_BEGIN = `(() => {
         const rtl = s.direction === 'rtl';
         const lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.2;
         const r = e.getBoundingClientRect();
-        if (fr.plain) {
+        const m = lin(e);
+        if (fr.plain && m && Math.abs(m[0] - 1) < 1e-6 && Math.abs(m[3] - 1) < 1e-6 && Math.abs(m[1]) < 1e-6 && Math.abs(m[2]) < 1e-6) {
           const w = pr.width;
           const left = r.left + e.clientLeft + parseFloat(s.paddingLeft), right = r.left + e.clientLeft + e.clientWidth - parseFloat(s.paddingRight);
           v = { rtl, at: rtl ? left + w : right - w, clamp, bottom: r.top + e.clientTop + e.clientHeight - parseFloat(s.paddingBottom), lh };
@@ -1285,7 +1293,8 @@ const VISITOR_BEGIN = `(() => {
             const pt = (x, y) => [bm.o[0] + bm.m[0] * x + bm.m[1] * y, bm.o[1] + bm.m[2] * x + bm.m[3] * y];
             const k = along([pt(x0, y0), pt(x1, y0), pt(x1, y1), pt(x0, y1)], fr.uh, fr.vh);
             const w = p.r - p.l;
-            v = { turned: fr, rtl, at: rtl ? k.l + w : k.r - w, clamp, bottom: k.b, lh };
+            // The line height on the screen: scaled as the frame scales its block direction.
+            v = { turned: fr, rtl, at: rtl ? k.l + w : k.r - w, clamp, bottom: k.b, lh: lh * Math.hypot(fr.v[0], fr.v[1]) };
           }
         }
       }

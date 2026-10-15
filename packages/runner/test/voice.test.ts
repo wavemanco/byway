@@ -738,6 +738,18 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     expect(turned.prompt).toMatch(/: a browser shows it in a box turned in a way byway cannot measure \(in 3D\), so byway cannot tell what of it that box cuts off: "Fresh bread"\.$/);
   });
 
+  it('a line an ellipsis cuts in a box scaled down or shrunk by CSS zoom is not offered, and words pushed into the row a box of fixed height cuts under zoom are asked again (r13 verifier)', async () => {
+    // Round 13 offered these truncated lines and stored "Fresh sourdough bread yliad", which a visitor sees as
+    // "Fresh sourdough bread yl…", and stored words wrapped into a row a zoomed box cuts.
+    for (const wrap of ['transform:scale(0.9);transform-origin:left top', 'zoom:0.9']) {
+      const q = await open(page(`<div style="${wrap}"><p style="width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:16px Arial;margin:0">Fresh sourdough bread daily</p><p>Second line</p></div>`));
+      expect(q.offered, wrap).toBe('T\nSecond line');
+    }
+    const zoomed = await open(page('<div style="zoom:0.8"><p style="width:220px;height:28px;overflow:hidden;font:16px/20px Arial;margin:0">Fresh bread every morning</p><p>Second line</p></div>'));
+    expect(zoomed.offered).toBe('T\nFresh bread every morning\nSecond line');
+    expect(await rejected(zoomed.answer('T\nFresh bread every morning with our sourdough starter\nSecond line'))).toMatch(/because a style on this page would hide "[^"]+" from sight there/);
+  });
+
   it('where the reader misreads the page, the edit is asked again with the browser\'s reason, never mis-written', async () => {
     for (const [html, answer, problem] of [
       // Browsers move the font out of the table, right after "Middle".

@@ -883,6 +883,25 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     }
   }, 60_000);
 
+  it('an ellipsis, a line clamp and a box of fixed height cut the same characters in a box a transform scales or CSS zoom shrinks as at full size (r13 verifier)', async () => {
+    // Round 13 set the ellipsis's band from the box's scaled place and its unscaled width, so under scale(0.9) or zoom:0.9
+    // the last letters an ellipsis cut were read as shown, and under zoom a box of fixed height kept a row it cuts.
+    const kinds: Record<string, (wrap: string) => string> = {
+      truncate: (wrap) => body(`<div style="${wrap}"><p style="width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:16px Arial;margin:0">Fresh sourdough bread daily</p><p>Second line</p></div>`),
+      clamp: (wrap) => body(`<div style="${wrap}"><p style="width:200px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font:16px/20px Arial;margin:0">Fresh bread baked every single morning by hand in the oven</p><p>Second line</p></div>`),
+      fixed: (wrap) => body(`<div style="${wrap}"><p style="width:220px;height:28px;overflow:hidden;font:16px/20px Arial;margin:0">Fresh bread every morning with our sourdough starter</p><p>Second line</p></div>`),
+    };
+    for (const [kind, page] of Object.entries(kinds)) {
+      const full = await pages.shownText(page(''), none);
+      expect(full.hidden.length, kind).toBe(1);
+      for (const wrap of ['transform:scale(0.9);transform-origin:left top', 'transform:scale(0.8);transform-origin:left top', 'transform:scale(1.1);transform-origin:left top', 'zoom:0.9', 'zoom:0.8']) {
+        const r = await pages.shownText(page(wrap), none);
+        expect(r.text, `${kind} ${wrap}`).toBe(full.text);
+        expect(r.hidden, `${kind} ${wrap}`).toEqual(full.hidden);
+      }
+    }
+  }, 120_000);
+
   it('a 3D transform that keeps the element\'s own plane flat (AOS\'s flip at rest, vanilla-tilt at rest, translateZ(0)) is read as flat: its box clips where it stands and its flex rows are measured (r13 verifier)', async () => {
     // Round 13 read any transform holding perspective() as a turn in 3D: a card that hides its overflow kept nothing, so
     // its lines were not offered, said to be hidden from sight, and its flex rows were read as not measured.
