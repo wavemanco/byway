@@ -16,8 +16,8 @@
  *   cite, tag chips that are inline blocks, a margin); never in the other order. The copy must read as the page does
  *   once the marks are taken out (the same text, separators, links and hidden text); if it does not, no line is placed.
  * - What is offered (`notShown`, `notShownWhy`): a line that is not placed is not offered, stays byte for byte, and the
- *   prompt names it with the reason (not laid out, hidden from sight, partly hidden, not shown as one piece, changed or
- *   copied by a script).
+ *   prompt names it with the reason (not laid out, hidden from sight, partly hidden, not shown as one piece, a space in
+ *   turned text the read cannot measure, changed or copied by a script).
  * - What the written page must show (`expectedShown`): the page before as the visitor read showed it, every character
  *   outside the changed lines the same, shown or hidden from sight in the same place, in the same link, with the same
  *   separators; each changed line showing exactly the person's characters, where the person typed a space apart (in

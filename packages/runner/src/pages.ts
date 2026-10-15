@@ -76,7 +76,9 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * own), its web fonts and images are loaded (lazy ones now), and the clock runs 1.5 s. The page is then scrolled from the
  * top in steps of 720 px (longer on a page taller than 21,600 px, so there are at most 30), then to its end, then back to
  * the top, where the clock runs on in the same steps; at each step a scroll event is dispatched, the clock runs 0.2 s and
- * the page is sampled, so every page is sampled at the same 33 instants, 1.5 s to 7.9 s after it loaded. A sample takes
+ * the page is sampled, so every page is sampled at the same 33 instants, 1.5 s to 7.9 s after it loaded. Before the read
+ * looks at the page (once loaded, before each sample, before the end) it waits for every file on its way from an admitted
+ * host; a file that does not arrive whole stops the read, which is made once more, then fails (shownText). A sample takes
  * every animation and transition to its end and holds an endless one at the next of eight points of its cycle. Then, if
  * the document changed since the last sample (a script's change, seen by a mutation observer) or an animation runs, it
  * measures each text node a style shows (visible, with an ink of at least 0.05: the alpha of its fill colour, or of a
@@ -91,7 +93,9 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * its measurement (an endless pulse, a tween that settled later, a slide moved on), so that how its characters sit
  * beside their neighbours is judged where it stands then. Each measurement notes until when it held: the first sample
  * at which its node was not shown where it was measured (hidden by a style, or elsewhere), and the first at which the
- * node no longer stood there (not laid out, or elsewhere).
+ * node no longer stood there (not laid out, or elsewhere). The last sample holds each endless animation at the first point
+ * of its cycle; at the end each is held at every other point in turn, and each node shown at the last instant that such
+ * an animation can move is measured again where it stands at that point (a motion a script draws is not such a one).
  *
  * What a character is. Each character (code point) that is not HTML whitespace, in the body's text nodes (not in a
  * script, a style, a textarea, a title, a template or a noscript), in document order:
@@ -102,10 +106,13 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  * - shown: where it was measured, every clip keeps the middle of its box: every ancestor whose overflow is hidden or clip
  *   or that has paint containment (an absolutely or fixed positioned element escapes those below its containing block),
  *   an absolutely or fixed positioned ancestor's `clip` rect, and the bounding box of an ancestor's clip-path inset(),
- *   circle(), ellipse() or polygon() (one with no area keeps nothing); its middle is not short of the page's top or start
+ *   circle(), ellipse() or polygon() (one with no area keeps nothing), each in the box's own points where a transform
+ *   turns, scales or skews it (a box whose place cannot be told, under a turn in 3D, keeps nothing); its middle is not
+ *   short of the page's top or start
  *   edge (where no scrolling reaches), nor, when the page's overflow is hidden, beyond the screen's width or (down the
  *   page) its height; and it is not in the band an ellipsis takes at the end of a line a box cuts short (text-overflow:
- *   ellipsis on a box whose content overflows it, or the last line of a line-clamp box). Text in a marquee is measured
+ *   ellipsis on a box whose content overflows it, or the last line of a line-clamp box; in vertical or turned text along
+ *   the line's own axes, else the whole box). Text in a marquee is measured
  *   by the marquee's own box, through which it scrolls;
  * - hidden from sight: laid out, but not shown (a screen-reader-only class; opacity, a clear text fill or a colour almost
  *   clear that leave it less than 0.05 of ink, and svg text by its fill and fill-opacity, or its stroke; font size 0; a
@@ -122,13 +129,22 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   where their boxes are and what lies between them in the document. None between a drop cap (the first letter of a
  *   block, with any punctuation before it, that the block or one it begins styles with a floated ::first-letter or an
  *   initial letter) and the rest of its word. The rest is judged from their boxes: at the read's last instant, where
- *   both are shown then (so an item that keeps moving is judged beside its neighbour where both stand); else where they
+ *   both are shown then (so an item that keeps moving is judged beside its neighbour where both stand), and, where an
+ *   endless animation can move either, at every other point of its cycle where both are shown, glued if glued at any;
+ *   else where they
  *   were measured, if both were shown there at one sample, or, never shown together, if both stood there side by side
  *   at one sample, laid out, one of them hidden by a style (a word a script reveals after its neighbour and hides again
  *   before the read comes back), not in one place (two nodes whose boxes overlap by more than half, as slides stacked
  *   and shown in turn). Else they were never side by side (a carousel's slides, stacked or on a track that moved on):
  *   a line break where the edge of a box lies between them, else as the text runs them (a space where whitespace lies
- *   between, else none). From the boxes: REVERSED when a visitor sees the second before the first on one row (two
+ *   between, else none). From the boxes, along the line their text runs along: each text node's frame (its line's
+ *   direction and its block's) comes from its element's writing mode and the plane map of every transform up to the
+ *   page; two neighbours whose frames run within 10 degrees are judged along their common line from their corners (each
+ *   character along the line its own advance, across it all of its outline), so flex items set top to bottom, or
+ *   turned, with no gap show glued; neighbours whose frames run further apart, or whose corners cannot be told, are
+ *   apart where their shapes stand further apart than the tolerance and glued where they meet, and where only their
+ *   bounding boxes are known (a turn in 3D, a turn near an eighth of a turn) and those meet, a box's edge between them
+ *   is never read as parting them: none, marked TURNED (in one flow of text, as the text runs them). Then: REVERSED when a visitor sees the second before the first on one row (two
  *   characters of one direction: a letter by its script, a digit left to right, Arabic-Indic digits and the Arabic
  *   decimal and thousands separators included, with a number's own signs, a currency or percent sign beside its digits
  *   or a point, comma, colon, slash, plus or minus between two; punctuation or a symbol by the letters around it in its
@@ -145,7 +161,7 @@ export type ArtifactResolver = (artifactId: string) => Promise<{ body: Uint8Arra
  *   when they are apart and the edge of a box of its own lies between them (a block, a flex or grid item, a table cell,
  *   a floated or positioned box, an inline block, a button, an image or a control) or a forced break does (a `<br>`, a
  *   newline a white-space style keeps); else a space (apart within one flow of text: on one row, or on rows the text
- *   wraps over with whitespace between). A row is a vertical overlap of at least half the shorter box. A run of
+ *   wraps over with whitespace between). A row is an overlap across the line of at least half the shorter box. A run of
  *   characters with no glyph (a no-break or other space that is not HTML whitespace, a zero-width or format character)
  *   takes the separator of the visible characters on either side of it wherever those stand glued. HIDDEN_HERE follows
  *   the shown character after which text a visitor does not see stands, hidden from sight or in an
