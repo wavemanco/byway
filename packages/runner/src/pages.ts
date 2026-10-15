@@ -1895,6 +1895,18 @@ const VISITOR_BEGIN = `(() => {
       }
       return flow ? ' ' : '';
     };
+    // Whether either of two elements stands in a box positioned out of the flow (absolutely or fixed) that the other is
+    // not in: below the nearest element holding both.
+    const outOfFlow = (x, top) => {
+      for (let e = x; e && e !== top; e = e.parentElement) if (/^(absolute|fixed)$/.test(style(e).position)) return true;
+      return false;
+    };
+    const positionedApart = (x, y) => {
+      if (!x || !y || x === y) return false;
+      let top = x;
+      while (top && !top.contains(y)) top = top.parentElement;
+      return outOfFlow(x, top) || outOfFlow(y, top);
+    };
     // A character's line height across its line, on the screen: its element's line height, scaled as its frame R scales
     // its block direction, or, where that is normal, its glyph's own extent across the line (K: its box as judged).
     const lineHeight = (x, R, K) => (isFinite(x.lh) && R.fr && R.fr.ok ? x.lh * Math.hypot(R.fr.v[0], R.fr.v[1]) : K.box.b - K.box.t);
@@ -1918,9 +1930,18 @@ const VISITOR_BEGIN = `(() => {
         A = ka;
         B = kb;
         // Two pieces of turned or vertical text across a box's edge, more than four times the font size apart along their
-        // line (two side labels turned a quarter turn in one column, sections apart), are not one line a visitor reads:
-        // apart across boxes, never in the other order.
-        if (structural && Math.max(B.box.l - A.box.r, A.box.l - B.box.r) > 4 * Math.max(a.fs, b.fs)) return '\\n';
+        // line, the second after the first (in its direction), are not one line a visitor reads: apart across boxes. The
+        // second before the first is so only where either stands in a box positioned out of the flow (absolutely or fixed)
+        // that the other is not in (two side labels turned a quarter turn in one column, sections apart); in one row of one
+        // box (a flex row reversed, or an item ordered first) it is judged as on a row below, in the other order where a
+        // visitor reads it so (round 13 read every such pair apart, so it stored "Fresh rye" in a vertical row a visitor
+        // reads "rye … Fresh").
+        if (structural) {
+          const far = 4 * Math.max(a.fs, b.fs);
+          const back = a.d === 'R' && b.d === 'R';
+          if ((back ? A.box.l - B.box.r : B.box.l - A.box.r) > far) return '\\n';
+          if ((back ? B.box.l - A.box.r : A.box.l - B.box.r) > far && positionedApart(a.el, b.el)) return '\\n';
+        }
       }
       const across = Math.min(A.box.b, B.box.b) - Math.max(A.box.t, B.box.t);
       const row = across >= 0.5 * Math.min(A.box.b - A.box.t, B.box.b - B.box.t);

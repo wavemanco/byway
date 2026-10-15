@@ -839,6 +839,15 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       // other order (round 13's first form of this rule read them as reversed, so deleting a ticker between two such
       // side labels was refused as words in another order).
       ['<div style="position:absolute;left:20px;top:300px;transform:rotate(-90deg);transform-origin:left top">Since 2011</div><div style="position:absolute;left:20px;top:900px;transform:rotate(-90deg);transform-origin:left top">01 Menu</div>', 'Since 2011\n01 Menu'],
+      // Far apart along their line, the second after the first: apart across boxes. The second before the first in one
+      // row of one box (row-reverse, order) is in the other order, as in straight text (round 13 read these apart, so a
+      // visitor's "rye … Fresh" was stored as "Fresh rye").
+      ['<div style="writing-mode:vertical-rl;display:flex;gap:5em;height:500px;font:20px Arial"><span>Fresh</span> <span>bread</span></div>', 'Fresh\nbread'],
+      ['<div style="writing-mode:vertical-rl;display:flex;flex-direction:row-reverse;justify-content:flex-end;gap:5em;height:500px;font:20px Arial"><span>Fresh</span> <span>bread</span></div>', `Fresh${REVERSED}bread`],
+      ['<div style="writing-mode:vertical-rl;display:flex;gap:5em;height:500px;font:20px Arial"><span>Fresh</span> <span style="order:-1">bread</span></div>', `Fresh${REVERSED}bread`],
+      ['<div style="writing-mode:vertical-rl;display:flex;flex-direction:row-reverse;justify-content:space-between;height:400px;font:20px Arial"><span>Scroll</span> <span>down</span></div>', `Scroll${REVERSED}down`],
+      ['<div style="position:absolute;left:30px;top:450px;transform:rotate(-90deg);transform-origin:left top;display:flex;flex-direction:row-reverse;justify-content:space-between;width:400px;font:20px Arial"><span>Scroll</span> <span>down</span></div>', `Scroll${REVERSED}down`],
+      ['<div style="position:absolute;left:30px;top:450px;transform:rotate(-90deg);transform-origin:left top;display:flex;gap:5em;width:400px;font:20px Arial"><span>Fresh</span> <span style="order:-1">bread</span></div>', `Fresh${REVERSED}bread`],
       // A slight tilt beside straight text is measured along their common line.
       ['<p>Sale <span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Sale\nnow'],
       ['<p>Sale<span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Salenow'],

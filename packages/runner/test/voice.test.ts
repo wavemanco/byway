@@ -716,6 +716,17 @@ describe('the browser has the last word on a page write (F07, r7)', () => {
     // A space typed where a turned label's words run in one flow of text is written.
     const label = page('<div style="position:absolute;left:0;top:200px;transform:rotate(-90deg);transform-origin:left top">Scroll down</div><p style="margin-left:80px">Body</p>');
     expect(await shows((await (await open(label)).answer('T\nScroll down now\nBody')).artifactId!)).toBe('Scroll down now\nBody');
+    // Far apart along a vertical or turned line, the second before the first in one row (row-reverse, order): not
+    // offered, as in another order (round 13 offered these and stored "Fresh rye", which a visitor reads "rye … Fresh").
+    for (const html of [
+      '<div style="writing-mode:vertical-rl;display:flex;flex-direction:row-reverse;justify-content:flex-end;gap:5em;height:500px;font:20px Arial"><span>Fresh</span> <span>bread</span></div>',
+      '<div style="writing-mode:vertical-rl;display:flex;gap:5em;height:500px;font:20px Arial"><span>Fresh</span> <span style="order:-1">bread</span></div>',
+      '<div style="position:absolute;left:30px;top:450px;transform:rotate(-90deg);transform-origin:left top;display:flex;flex-direction:row-reverse;justify-content:space-between;width:400px;font:20px Arial"><span>Fresh</span> <span>bread</span></div>',
+    ]) {
+      const q = await open(page(html));
+      expect(q.offered, html).toBe('T');
+      expect(q.prompt, html).toMatch(/: a browser shows its words run together or in another order: "Fresh bread"\.$/);
+    }
   });
 
   it('a link that rests glued to the words after it and is nudged apart only at the start of its cycle is judged where it rests: a typed space it drops is asked again (r12 verifier)', async () => {
