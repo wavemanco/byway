@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OUTPUT_CONTRACTS } from '@byway/prompts/pure';
 import { applyCopy, extractCopy, layoutOf, lockCopy, pageCopy, pageEditProblems, placePageEdit, readPageCopy, readPageEdit, roundTripProblem, sameCopy } from '../src/copy.ts';
 import { joinCodeDiff, parseArtifact, parseCodeDiff, serializeJson, splitCodeDiff, textView } from '../src/formats.ts';
-import { parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep, sectionOf } from '../src/parse.ts';
+import { ADVICE_MAX, parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep, sectionOf } from '../src/parse.ts';
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Northloaf</title><style>h1{color:red}</style></head>
@@ -95,8 +95,44 @@ describe('judging parsers (spec §3.3)', () => {
     expect(parseDedupe('```json\n{"keep":["A","B"],"merged":[{"into":"A","from":["C"]}]}\n```', ['A', 'B', 'C'])).toEqual({ ok: true, value: { keep: ['A', 'B'] } });
     expect(parseDedupe('```json\n{"keep":["A"],"merged":[]}\n```', ['A', 'B'])).toMatchObject({ ok: false });
     expect(parseOverlap('```json\n{"flags":[{"label":"B","overlapsWith":"V2","note":"Same hook."}]}\n```', ['A', 'B'], ['V1', 'V2'])).toEqual({ ok: true, value: '- Option B overlaps the plain answer V2: Same hook.' });
-    expect(parseBriefs('```json\n{"images":[{"slot":1,"prompt":"p","alt":"a","size":"1536x1024"}]}\n```')).toMatchObject({ ok: true, value: [{ slot: '1' }] });
+    expect(parseBriefs('```json\n{"images":[{"slot":1,"prompt":"p","alt":"a","size":"1536x1024"}]}\n```')).toMatchObject({ ok: true, value: { images: [{ slot: '1' }] } });
     expect(parseRelay('```json\n{"clipPrompt":"Shot 1: go","durationSec":4}\n```')).toEqual({ ok: true, value: { clipPrompt: 'Shot 1: go', durationSec: 4 } });
+  });
+
+  describe('a brief answer’s optional line of advice (D3, ADR-0101)', () => {
+    const answer = (...advice: unknown[]) =>
+      '```json\n' + JSON.stringify({ images: [{ slot: 'header', prompt: 'p', alt: 'a', size: '1536x1024' }], ...(advice.length ? { advice: advice[0] } : {}) }) + '\n```';
+    const briefsOnly = { ok: true, value: { images: [{ slot: 'header', prompt: 'p', alt: 'a', size: '1536x1024' }] } };
+
+    it('is read as one plain line', () => {
+      expect(parseBriefs(answer())).toEqual(briefsOnly);
+      expect(parseBriefs(answer('  This piece may read\nbetter   without a header.  '))).toEqual({ ok: true, value: { ...briefsOnly.value, advice: 'This piece may read better without a header.' } });
+    });
+
+    it('empty, or anything but text, is no advice, and never a miss: advice never costs a retry', () => {
+      for (const none of ['', ' \n\t ', 42, null, true, ['a'], { a: 1 }]) expect(parseBriefs(answer(none)), JSON.stringify(none)).toEqual(briefsOnly);
+    });
+
+    it('is plain text: control and direction-changing characters go, and a lone surrogate becomes U+FFFD', () => {
+      expect(parseBriefs(answer('Cut\u0007 it\u202E at\u2066 Trim\u200B\ud800.'))).toMatchObject({ value: { advice: 'Cut it at Trim\uFFFD.' } });
+      // Joiners stay: they hold emoji and some scripts together.
+      expect(parseBriefs(answer('Keep 👩\u200D🍳 out.'))).toMatchObject({ value: { advice: 'Keep 👩\u200D🍳 out.' } });
+      // Only control characters is no advice.
+      expect(parseBriefs(answer('\u0007\u202E'))).toEqual(briefsOnly);
+    });
+
+    it(`is held to ${ADVICE_MAX} characters: a longer line is cut at a word, with an ellipsis`, () => {
+      const r = parseBriefs(answer(`${'word '.repeat(80)}end`));
+      const advice = r.ok ? r.value.advice! : '';
+      expect([...advice].length).toBeLessThanOrEqual(ADVICE_MAX);
+      expect(advice).toMatch(/^word( word)+…$/);
+      const exact = 'a'.repeat(ADVICE_MAX);
+      expect(parseBriefs(answer(exact))).toMatchObject({ value: { advice: exact } });
+      // Counted in characters, so a cut never splits one.
+      const r2 = parseBriefs(answer('😀'.repeat(ADVICE_MAX + 5)));
+      expect(r2.ok && r2.value.advice!.isWellFormed()).toBe(true);
+      expect(r2.ok && [...r2.value.advice!].length).toBe(ADVICE_MAX);
+    });
   });
 });
 

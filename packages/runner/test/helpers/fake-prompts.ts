@@ -6,7 +6,8 @@
  *   fenced block in its medium's language. It names each template with a well-formed hash, as the gateway requires.
  *   For an id that is an image-briefs template in @byway/prompts' library (an ASSET step's prompt), it returns the
  *   image count that template declares (`images:`, ADR-0090), read from the real template, so the harness's ASSET
- *   steps are held to the same count as production's (C3's 0-1 included).
+ *   steps are held to the same count as production's (C3's 1-1 included), and whether it asks for a line of advice
+ *   (`advice: yes`, ADR-0101; only C3's), so the harness shows advice exactly where production does.
  * - `recordPrompts(renderer)` wraps any renderer (the real @byway/prompts one in the agreement test) the same way, and
  *   also keeps every render that threw (a missing slot, an unknown template).
  */
@@ -83,12 +84,30 @@ export function declaredImages(id: string, medium: string | undefined): ImageCou
   }
 }
 
+/** Whether the real template for `id` (and the medium's variant) asks for a line of advice (ADR-0101). */
+export function declaredAdvice(id: string, medium: string | undefined): boolean {
+  library ??= createPromptRenderer();
+  if (!library.has(id)) return false;
+  try {
+    return library.info(id, medium).advice;
+  } catch {
+    return false;
+  }
+}
+
 function fakeRenderer(): PromptRenderer {
   return {
     has: () => true,
     render(id, s): RenderedPrompt {
       const images = declaredImages(id, s.medium);
-      const meta = { id, version: 1, hash: fakeHash(id), fidelity: 'project' as const, ...(images !== undefined ? { images } : {}) };
+      const meta = {
+        id,
+        version: 1,
+        hash: fakeHash(id),
+        fidelity: 'project' as const,
+        ...(images !== undefined ? { images } : {}),
+        ...(declaredAdvice(id, s.medium) ? { advice: true as const } : {}),
+      };
       if (id.startsWith('tells.')) return { ...meta, user: `${TELLS_CATALOG}\n- (${id})` };
       const parts: string[] = [`Prompt: ${id}`];
       if (s.problem !== undefined) parts.push(`<problem>${s.problem}</problem>`);
