@@ -9,7 +9,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 
-**98 records:** 91 accepted (15 of them by continuation, awaiting ratification; 36 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**99 records:** 92 accepted (15 of them by continuation, awaiting ratification; 37 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -133,6 +133,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0095](0095-paid-calls-have-a-durable-spend-book.md) | Paid calls have a durable spend book: the book in byway.sqlite is the cap authority, ledger.jsonl its hash-chained audit record | Accepted | Delegated | 2026-10-08 21:45 |
 | [ADR-0099](0099-paid-operations-keyed-to-their-caller.md) | A step's paid call is keyed to its caller across retries; byway's own failures say so; byway's stop reaches the web process | Accepted | Delegated | 2026-10-09 01:15 |
 | [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md) | Execution contracts for revising humans and media steps: a reaction revises its port in place, an ASSET prompt declares its image count, the shot check sees its clip | Accepted | Delegated | 2026-10-09 02:10 |
+| [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md) | VOICE writes the person's copy exactly, without a model | Accepted | Delegated | 2026-10-08 17:00 |
 
 ## Open decisions (not yet ADRs)
 
