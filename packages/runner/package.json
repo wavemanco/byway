@@ -26,7 +26,11 @@
     "@temporalio/worker": "1.24.0",
     "@temporalio/workflow": "1.24.0",
     "esbuild": "0.28.2",
+    "parse-entities": "4.0.2",
     "playwright": "1.63.0",
     "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/browser": "4.1.11"
   }
 }

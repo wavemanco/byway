@@ -24,7 +24,7 @@ import { sectionOf } from '../src/parse.ts';
 import { SURFACE_CAPTIONS } from '../src/surfaces.ts';
 import type { PageRenderer } from '../src/pages.ts';
 import type { RunRef, StepSpec, View } from '../src/types.ts';
-import { fakePages, fakeShots, png, type FakePages } from './helpers/fake-pages.ts';
+import { fakePages, fakeShots, modelShownText, png, type FakePages } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -210,6 +210,10 @@ function measuringPages(tiles?: number): MeasuringPages {
     },
     // PageRenderer.ready (ADR-0084): this fake renderer is always ready.
     async ready() {},
+    // PageRenderer.shownText (ADR-0081): the page reader's own model, as the e2e scenarios' fake renderer answers.
+    async shownText(html) {
+      return modelShownText(html);
+    },
     async close() {},
   };
 }

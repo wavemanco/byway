@@ -111,6 +111,11 @@ export function c2c5Scenarios(use: () => Harness): void {
           expect(cp.initialText).toMatch(/^Headline: .*\nTagline: .*\nShot 1: /);
           expect(cp.initialText).not.toContain('Less time on the road');
         }
+        // VOICE-RETRY (parked, docs/backlog.md; ADR-0081): the gate's retry re-enters D2 from the ports it started with,
+        // so the second pass's late VOICE offers model copy again, without the headline you wrote the first time. This
+        // records today's behaviour; it is not the intended one.
+        expect(late).toHaveLength(2);
+        expect(late[1]!.initialText).not.toContain(`Headline: ${headline}`);
         const purposes = h.succeeded(run.id).map((c) => c.purpose);
         expect(purposes.filter((p) => p === 'seed:media')).toHaveLength(8);
         expect(purposes).toContain('dedupe:media');

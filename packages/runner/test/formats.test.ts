@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { OUTPUT_CONTRACTS } from '@byway/prompts/pure';
-import { applyCopy, extractCopy, lostVoiceLines, pageCopy, pageVoiceProblems, placePageCopy, skeleton } from '../src/copy.ts';
-import { joinCodeDiff, parseArtifact, parseCodeDiff, splitCodeDiff, textView } from '../src/formats.ts';
+import { applyCopy, extractCopy, layoutOf, lockCopy, pageCopy, pageEditProblems, placePageEdit, readPageCopy, readPageEdit, roundTripProblem, sameCopy } from '../src/copy.ts';
+import { joinCodeDiff, parseArtifact, parseCodeDiff, serializeJson, splitCodeDiff, textView } from '../src/formats.ts';
 import { parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep, sectionOf } from '../src/parse.ts';
 
 const PAGE = `<!doctype html>
@@ -105,22 +105,25 @@ describe('VOICE copy', () => {
     expect(pageCopy(PAGE)).toEqual(['Northloaf', 'Bread before seven', "Order by 9pm & it's at your door.", 'Get started']);
   });
 
-  it('places edited lines without touching a tag, and the diff check accepts it', () => {
+  it('places edited lines without touching a tag, and the verifier accepts it', () => {
     const edited = ['Northloaf', 'Warm bread by six', 'Order tonight & wake up to it.', 'Order now'];
-    const placed = placePageCopy(PAGE, edited);
-    expect(placed.ok).toBe(true);
-    if (!placed.ok) return;
-    expect(pageCopy(placed.value)).toEqual(edited);
-    expect(skeleton(placed.value)).toBe(skeleton(PAGE));
-    expect(pageVoiceProblems(PAGE, placed.value, edited)).toEqual([]);
-    expect(placed.value).toContain('Order tonight &amp; wake up to it.');
+    const edit = readPageEdit(readPageCopy(PAGE), edited.join('\n'));
+    if (!edit.ok) throw new Error(edit.problem);
+    const placed = placePageEdit(PAGE, edit);
+    expect(placed.problems).toEqual([]);
+    expect(pageCopy(placed.page)).toEqual(edited);
+    expect(pageEditProblems(PAGE, placed.page, edit, placed)).toEqual([]);
+    expect(placed.page).toContain('Order tonight &amp; wake up to it.');
+    // Formatting follows the words it held: a line rewritten with none of its old words keeps none of its emphasis.
+    expect(placed.page).toContain('<h1>Warm bread by six</h1>');
   });
 
-  it('refuses a write-back that changed markup or lost a line', () => {
-    const changed = PAGE.replace('class="cta"', 'class="cta big"');
-    expect(pageVoiceProblems(PAGE, changed, pageCopy(PAGE))[0]).toMatch(/beyond its text/);
-    expect(pageVoiceProblems(PAGE, PAGE, ['A line nobody placed'])[0]).toMatch(/exactly as written/);
-    expect(placePageCopy(PAGE, ['too few'])).toMatchObject({ ok: false });
+  it('refuses a write-back that changed markup or left out a line, and an answer with a line too few', () => {
+    const edit = readPageEdit(readPageCopy(PAGE), pageCopy(PAGE).join('\n'));
+    if (!edit.ok) throw new Error(edit.problem);
+    const placed = placePageEdit(PAGE, edit);
+    expect(pageEditProblems(PAGE, PAGE.replace('class="cta"', 'class="cta big"'), edit, placed)[0]).toMatch(/beyond its text/);
+    expect(readPageEdit(readPageCopy(PAGE), 'too few')).toMatchObject({ ok: false });
   });
 
   it('writes structured copy back field by field', () => {
@@ -160,18 +163,213 @@ describe('VOICE copy', () => {
     // The voice-over is locked after the script step.
     expect(applyCopy('media', sb, `${copy}\nVoice-over: Something else.`, 'on-screen')).toMatchObject({ ok: false });
     expect(applyCopy('media', sb, 'Shot 9: Nowhere.', 'on-screen')).toMatchObject({ ok: false });
-    // A machine write after it must keep the on-screen words too (keepsVoice).
-    expect(lostVoiceLines('media', back.value, 'Headline: Less waiting.\nShot 2: Yours, every day.')).toEqual([]);
-    expect(lostVoiceLines('media', sb, 'Headline: Less waiting.')).toEqual(['Headline: Less waiting.']);
+  });
+});
+
+describe('VOICE total readers and the round trip (F07)', () => {
+  const OPTIONS = serializeJson({
+    options: [
+      { title: 'Bread club', pitch: 'Fresh bread at seven.', rationale: 'Mornings matter.' },
+      { title: 'Weekend box', pitch: 'A box on Saturday.', rationale: 'Weekends are slow.' },
+    ],
+  });
+  const deck = extractCopy('options', OPTIONS);
+  const options = (answer: string) => {
+    const r = applyCopy('options', OPTIONS, answer);
+    if (!r.ok) return { rejected: r.problem };
+    return { stored: (JSON.parse(r.value) as { options: { title: string; pitch: string }[] }).options.map((o) => `${o.title} | ${o.pitch}`), roundTrip: roundTripProblem('options', 'script', r.value, answer) === undefined };
+  };
+
+  it('options: every line lands in one field, or the answer is refused with the line named', () => {
+    expect(options(deck)).toEqual({ stored: ['Bread club | Fresh bread at seven.', 'Weekend box | A box on Saturday.'], roundTrip: true });
+    expect(options(`Lead with the club; it is cheaper.\n\n${deck}`).rejected).toMatch(/^Line 1 \("Lead with the club; it is cheaper\."\) is not under a field/);
+    expect(options(deck.replace('### A\n', '### A\nAvailable in every shop from May.\n')).rejected).toMatch(/^Line 2 /);
+    expect(options(deck.replace('Pitch: Fresh bread at seven.', 'Pitch: Fresh bread at seven.\nPitch: Now with oat loaves.')).rejected).toMatch(/^Option A "Pitch:" appears twice/);
+    expect(options(deck.split('\n\n')[0]!).rejected).toMatch(/^### B is missing/);
+    expect(options(deck.replace('Pitch: A box on Saturday.', 'Pitch:')).rejected).toMatch(/^Option B needs a title, a pitch and a rationale/);
+    expect(options(deck.replace('Title: Bread club\nPitch: Fresh bread at seven.', 'Pitch: Fresh bread at seven.\nTitle: Bread club')).rejected).toBe('Keep the lines in the order shown.');
   });
 
-  it('finds the person’s lines a machine write lost', () => {
-    const sb = (vo: string) => JSON.stringify({ storyboard: [{ shot: 1, description: 'd', imagePrompt: 'p', durationSec: 4 }], voiceover: vo });
-    expect(lostVoiceLines('media', sb('Less time. More life.'), 'Less time. More life.')).toEqual([]);
-    expect(lostVoiceLines('media', sb('Something else.'), 'Less time. More life.')).toEqual(['Less time. More life.']);
-    // Measured against where the write started: words that were never placed are not required.
-    expect(lostVoiceLines('media', sb('Something else.'), 'Less time. More life.', sb('Earlier draft.'))).toEqual([]);
-    expect(lostVoiceLines('media', sb('Something else.'), 'Less time. More life.', sb('Less time. More life.'))).toEqual(['Less time. More life.']);
+  it('options: layout variants are read and pass the round trip', () => {
+    expect(options(deck.replace('Pitch: Fresh bread at seven.', 'Pitch: Fresh bread at seven.\nNow with oat loaves.'))).toEqual({ stored: ['Bread club | Fresh bread at seven.\nNow with oat loaves.', 'Weekend box | A box on Saturday.'], roundTrip: true });
+    for (const v of [deck.replace('Pitch: Fresh bread at seven.', 'Pitch:\n\nFresh bread at seven.'), deck.replace('Title: Bread club', 'title:Bread club'), deck.replace('\n\n', '\n').replace(/\n/g, '\r\n'), deck.replace('Mornings matter.', 'Mornings matter.\n\nThey always have.')]) {
+      expect(options(v)).toMatchObject({ roundTrip: true });
+    }
+    // A reader that dropped a line (the old parseOptionCopy kept only what followed "###") fails the round trip, and
+    // the refusal names the first line that would differ.
+    expect(roundTripProblem('options', 'script', OPTIONS, `Lead with the club.\n\n${deck}`)).toBe('byway could not write your words back exactly as you wrote them, from the line "Lead with the club." on. Leave that line as it was offered, or write it another way.');
+  });
+
+  it('a run of blank lines that ends at a label is layout, however long; blank lines inside a value are kept', () => {
+    for (const v of [deck.replace('\n\n### B', '\n\n\n### B'), deck.replace('\n\n### B', '\n\n\n\n### B'), deck.replace('\nPitch: Fresh', '\n\n\nPitch: Fresh'), deck.replace(/\n/g, '\r\n').replace('\r\n\r\n### B', '\r\n  \r\n\r\n### B')]) {
+      expect(layoutOf('options', v), JSON.stringify(v)).toBe(layoutOf('options', deck));
+      expect(sameCopy('options', 'script', deck, v)).toBe(true);
+      expect(options(v.replace('A box on Saturday.', 'A box on Sunday.'))).toEqual({ stored: ['Bread club | Fresh bread at seven.', 'Weekend box | A box on Sunday.'], roundTrip: true });
+    }
+    expect(layoutOf('options', 'Rationale: a\n\n\n### B')).toBe('Rationale: a\n### B');
+    expect(layoutOf('options', 'Rationale: a\n\n\nmore\n\n\n### B')).toBe('Rationale: a\n\n\nmore\n### B');
+    expect(layoutOf('on-screen', 'Headline: Go\n\n\nTagline: Shoes\n\n')).toBe('Headline: Go\nTagline: Shoes');
+  });
+
+  const SB = serializeJson({
+    concept: 'c',
+    voiceover: 'Bread before seven.',
+    headline: 'Fresh at seven',
+    tagline: 'Bread club',
+    storyboard: [
+      { shot: 1, description: 'oven', imagePrompt: 'oven', durationSec: 3, caption: 'Hot bread' },
+      { shot: 2, description: 'door', imagePrompt: 'door', durationSec: 3, caption: 'At your door' },
+    ],
+  });
+  const onScreen = extractCopy('media', SB, 'on-screen');
+  const screen = (answer: string) => {
+    const r = applyCopy('media', SB, answer, 'on-screen');
+    if (!r.ok) return { rejected: r.problem };
+    const after = JSON.parse(r.value) as { headline?: string; storyboard: { caption?: string }[] };
+    return { headline: after.headline ?? null, captions: after.storyboard.map((s) => s.caption ?? null), roundTrip: roundTripProblem('media', 'on-screen', r.value, answer) === undefined };
+  };
+
+  it('the late storyboard VOICE: Headline, Tagline and one "Shot N:" per shot, each once, in order', () => {
+    expect(screen(onScreen)).toEqual({ headline: 'Fresh at seven', captions: ['Hot bread', 'At your door'], roundTrip: true });
+    expect(screen(onScreen.replace('Shot 1: Hot bread', 'Shot 1: Hot bread\nShot 1: Still warm')).rejected).toMatch(/^"Shot 1:" appears twice/);
+    expect(screen(onScreen.replace('\nShot 2: At your door', '')).rejected).toMatch(/^"Shot 2:" is missing/);
+    expect(screen(`Make it warmer.\n${onScreen}`).rejected).toMatch(/^Line 1 \("Make it warmer\."\) is not under a field/);
+    expect(screen(`${onScreen}\nVoice-over: Bread now.`).rejected).toMatch(/voice-over was locked/);
+    expect(screen(onScreen.replace('Headline: Fresh at seven\nTagline: Bread club', 'Tagline: Bread club\nHeadline: Fresh at seven')).rejected).toBe('Keep the lines in the order shown.');
+    expect(screen(onScreen.replace('Headline: Fresh at seven', 'Headline:'))).toEqual({ headline: null, captions: ['Hot bread', 'At your door'], roundTrip: true });
+    expect(screen(onScreen.replace('Shot 1: Hot bread', 'Shot 1: Hot bread\n\n  still warm'))).toEqual({ headline: 'Fresh at seven', captions: ['Hot bread\n\n  still warm', 'At your door'], roundTrip: true });
+  });
+
+  it('prose and code diffs round-trip as text; a paragraph split is a change', () => {
+    expect(layoutOf('prose', '# A\n\nB C.\n')).not.toBe(layoutOf('prose', '# A\n\nB\n\nC.'));
+    expect(roundTripProblem('prose', 'script', '# A\n\nB\n\nC.\n', '# A\n\nB\n\nC.')).toBeUndefined();
+    const cd = joinCodeDiff({ diff: '--- a\n+++ b\n@@ -1 +1 @@\n-x\n+y', why: 'Why: old reason' });
+    const written = applyCopy('code-diff', cd, 'A new reason.');
+    expect(written.ok && roundTripProblem('code-diff', 'script', written.value, 'A new reason.')).toBeUndefined();
+  });
+
+  it('"unchanged" is layout only: a value on the next line is not a change; a doubled space inside a value is', () => {
+    const answer = 'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Hot bread\nShot 2: Oven\nShot 3: Your door';
+    expect(sameCopy('media', 'on-screen', answer, 'Headline:\n\nFresh at seven\nTagline: Bread club\nShot 1: Hot bread\nShot 2: Oven\nShot 3: Your door')).toBe(true);
+    expect(sameCopy('media', 'on-screen', answer, 'headline:\nFresh at seven\ntagline: Bread club\n\nshot 1: Hot bread\nShot 2:   Oven  \nShot 3: Your door\n')).toBe(true);
+    expect(sameCopy('media', 'on-screen', answer, answer.replace('Hot bread', 'Hot  bread'))).toBe(false);
+    expect(sameCopy('prose', 'script', 'A B.', 'A\n\nB.')).toBe(false);
+  });
+});
+
+describe('keepsVoice: the deck locked at VOICE (F07)', () => {
+  type Sb = { voiceover: string; headline?: string; tagline?: string; storyboard: { shot: number; caption?: string; description?: string; clipArtifactId?: string }[] };
+  const sb = (v: Sb) => serializeJson({ ...v, storyboard: v.storyboard.map((s) => ({ shot: s.shot, description: s.description ?? `d${s.shot}`, imagePrompt: `p${s.shot}`, durationSec: 3, ...(s.caption !== undefined ? { caption: s.caption } : {}), ...(s.clipArtifactId ? { clipArtifactId: s.clipArtifactId } : {}) })) });
+  const shots = (...caps: (string | undefined)[]) => caps.map((caption, i) => ({ shot: i + 1, ...(caption !== undefined ? { caption } : {}) }));
+  const run = (voice: string | undefined, before: string | undefined, after: string) => {
+    const r = lockCopy('media', voice, before)(after);
+    const out = JSON.parse(r.text) as Sb;
+    return { problems: r.problems, restored: r.restored, shots: out.storyboard.length, voiceover: out.voiceover, text: r.text };
+  };
+  const LOCKED = /The on-screen copy is the person's/;
+
+  describe('the script phase (canonical C5: every keepsVoice writer runs with the VO script as its voice)', () => {
+    const voice = 'Shot 1: Bread before seven.\nShot 2: Still warm.\nShot 3: At your door.';
+    const before = sb({ voiceover: voice, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: shots('Hot bread', 'Oven', 'Your door') });
+
+    it('a first-pass cut on a shot-labelled script is stored with nothing locked (s1); a caption swap is kept (s2)', () => {
+      const cut = sb({ voiceover: voice, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: [{ shot: 1, caption: 'Hot bread' }, { shot: 2, caption: 'Your door', description: 'd3' }] });
+      expect(run(voice, before, cut)).toMatchObject({ problems: [], restored: [], shots: 2 });
+      const swapped = sb({ voiceover: voice, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: shots('Warm loaves', 'Oven', 'Your door') });
+      expect(run(voice, before, swapped)).toMatchObject({ problems: [], restored: [] });
+    });
+
+    it('an appended or reordered voice-over is written back (s3, s4); the operators e2e case too (s5)', () => {
+      const appended = sb({ voiceover: `${voice} Now 50% off!`, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: shots('Hot bread', 'Oven', 'Your door') });
+      expect(run(voice, before, appended)).toMatchObject({ problems: [], restored: ['voice-over'], voiceover: voice });
+      const reordered = sb({ voiceover: 'Shot 2: Still warm.\nShot 1: Bread before seven.\nShot 3: At your door.', headline: 'Fresh at seven', tagline: 'Bread club', storyboard: shots('Hot bread', 'Oven', 'Your door') });
+      expect(run(voice, before, reordered)).toMatchObject({ problems: [], restored: ['voice-over'], voiceover: voice });
+      const script = 'Less time on the road.\nMore time on the trail.';
+      expect(run(script, sb({ voiceover: script, storyboard: shots('Trail') }), sb({ voiceover: 'Run further, faster, freer.', storyboard: shots('Trail') }))).toMatchObject({ problems: [], restored: ['voice-over'], voiceover: script });
+    });
+
+    it('an obedient write is byte-identical, with nothing restored (s6)', () => {
+      const clip = sb({ voiceover: voice, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: [{ shot: 1, caption: 'Hot bread', clipArtifactId: 'sha256:c1' }, { shot: 2, caption: 'Oven' }, { shot: 3, caption: 'Your door' }] });
+      const r = run(voice, before, clip);
+      expect(r).toMatchObject({ problems: [], restored: [] });
+      expect(r.text).toBe(clip);
+    });
+
+    it('after a gate retry D2 runs with the script as its voice again, and a cut is stored (g1)', () => {
+      const script = 'Bread before seven. Still warm at your door.';
+      const b = sb({ voiceover: script, headline: 'Model headline', tagline: 'Model tagline', storyboard: shots('Model cap 1', 'Model cap 2', 'Model cap 3') });
+      const cut = sb({ voiceover: script, headline: 'Model headline', tagline: 'Model tagline', storyboard: [{ shot: 1, caption: 'Model cap 1' }, { shot: 2, caption: 'Model cap 3', description: 'd3' }] });
+      expect(run(script, b, cut)).toMatchObject({ problems: [], restored: [], shots: 2 });
+    });
+  });
+
+  describe('the on-screen phase (composed recipes only: a writer after the late VOICE)', () => {
+    const script = 'Bread before seven. Still warm at your door.';
+    const answer = 'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Hot bread\nShot 2: Oven\nShot 3: Your door';
+    const before = sb({ voiceover: script, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: shots('Hot bread', 'Oven', 'Your door') });
+    const variant = (o: Partial<Sb>) => sb({ voiceover: script, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: shots('Hot bread', 'Oven', 'Your door'), ...o });
+    const captionChanged = variant({ storyboard: shots('Hot bread, 50% off', 'Oven', 'Your door') });
+
+    it('a changed caption or headline, a removed, added or uncaptioned shot are refused', () => {
+      for (const after of [
+        captionChanged,
+        variant({ headline: 'Fresh at seven!' }),
+        variant({ storyboard: [{ shot: 1, caption: 'Hot bread' }, { shot: 2, caption: 'Your door', description: 'd3' }] }),
+        variant({ storyboard: shots('Hot bread', 'Oven') }),
+        variant({ storyboard: shots('Hot bread', 'Oven', 'Your door', 'Now 50% off') }),
+      ]) {
+        expect(run(answer, before, after).problems).toEqual([expect.stringMatching(LOCKED)]);
+      }
+      const b2 = sb({ voiceover: script, headline: 'Fresh at seven', storyboard: shots('Hot bread', undefined) });
+      expect(run('Headline: Fresh at seven\nTagline:\nShot 1: Hot bread\nShot 2:', b2, sb({ voiceover: script, headline: 'Fresh at seven', storyboard: shots('Hot bread') })).problems).toEqual([expect.stringMatching(LOCKED)]);
+    });
+
+    it('a voice-over-only change is written back; a clip attach passes', () => {
+      expect(run(answer, before, variant({ voiceover: `${script} Guaranteed.` }))).toMatchObject({ problems: [], restored: ['voice-over'], voiceover: script });
+      expect(run(answer, before, variant({ storyboard: [{ shot: 1, caption: 'Hot bread', clipArtifactId: 'sha256:c1' }, { shot: 2, caption: 'Oven' }, { shot: 3, caption: 'Your door' }] }))).toMatchObject({ problems: [], restored: [] });
+    });
+
+    it('layout drift in the late answer does not switch the lock off (d_*)', () => {
+      for (const drift of [
+        'Headline:\n\nFresh at seven\nTagline: Bread club\nShot 1: Hot bread\nShot 2: Oven\nShot 3: Your door',
+        'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Hot bread\n   still warm\nShot 2: Oven\nShot 3: Your door',
+        'headline:\nFresh at seven\ntagline: Bread club\n\nshot 1: Hot bread\nShot 2:   Oven  \nShot 3: Your door\n',
+        answer.replace('Hot bread', 'Hot  bread'),
+      ]) {
+        expect(run(drift, before, captionChanged).problems).toEqual([expect.stringMatching(LOCKED)]);
+      }
+    });
+
+    it('an old late answer that left a field out stays unlocked (the in-flight residual)', () => {
+      expect(run('Headline: Fresh at seven\nShot 1: Hot bread\nShot 2: Oven\nShot 3: Your door', before, captionChanged).problems).toEqual([]);
+    });
+  });
+
+  it('coincidences: a VO script that is the whole labelled deck stays unlocked in the script phase; one labelled for other shots too', () => {
+    const deck = 'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Hot bread\nShot 2: Oven';
+    const before = sb({ voiceover: deck, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: shots('Hot bread', 'Oven') });
+    expect(run(deck, before, sb({ voiceover: deck, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: shots('Hot bread') })).problems).toEqual([]);
+    const vo = 'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Hot bread';
+    expect(run(vo, sb({ voiceover: vo, headline: 'x', tagline: 'y', storyboard: shots('a', 'b') }), sb({ voiceover: vo, headline: 'x', tagline: 'y', storyboard: shots('a') })).problems).toEqual([]);
+  });
+
+  it('options, prose and code diffs: any change to the deck is refused; an empty voice is a voice', () => {
+    const options = serializeJson({ options: [{ title: 'Wedge', pitch: 'Small', rationale: 'Testable' }] });
+    expect(lockCopy('options', '### A\nTitle: Wedge', options)(options.replace('Small', 'Small and sharp')).problems).toEqual([expect.stringMatching(/exactly as written/)]);
+    // A mood image attached to an option leaves its copy as it was.
+    expect(lockCopy('options', '### A\nTitle: Wedge', options)(serializeJson({ options: [{ title: 'Wedge', pitch: 'Small', rationale: 'Testable', imageArtifactId: 'sha256:x' }] })).problems).toEqual([]);
+    expect(lockCopy('prose', 'Mine.', '# Memo\n\nMine.\n')('# Memo\n\nMine. Now 50% off!\n').problems).toHaveLength(1);
+    expect(lockCopy('prose', '', '# Memo\n\nMine.\n')('# Memo\n\nMine. Guaranteed.\n').problems).toHaveLength(1);
+    const diff = joinCodeDiff({ diff: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b', why: 'Why: mine.' });
+    expect(lockCopy('code-diff', 'Why: mine.', diff)(joinCodeDiff({ diff: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+c', why: 'Why: mine.' })).problems).toEqual([]);
+    expect(lockCopy('code-diff', 'Why: mine.', diff)(joinCodeDiff({ diff: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+c', why: 'Why: mine, and faster.' })).problems).toHaveLength(1);
+    // No VOICE yet: nothing is locked.
+    expect(lockCopy('prose', undefined, '# Memo\n')('# Other\n').problems).toEqual([]);
+  });
+
+  it('with no work before the write, the written deck must be the voice exactly', () => {
+    expect(lockCopy('prose', '# Mine\n\nAll mine.', undefined)('# Mine\n\nAll mine.\n').problems).toEqual([]);
+    expect(lockCopy('prose', '# Mine\n\nAll mine.', undefined)('# Mine\n\nAll mine. And more.\n').problems).toHaveLength(1);
   });
 });
 

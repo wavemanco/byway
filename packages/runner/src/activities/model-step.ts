@@ -21,7 +21,7 @@ import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { keptVoice } from './held-voice.ts';
-import { storeText, writeProblems } from './writes.ts';
+import { checkedWriter, restoredNote, storeText, type CheckedWrite } from './writes.ts';
 
 const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);
 /** Judging answers are short; builders get the gateway's larger default. */
@@ -120,9 +120,10 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       built.slots.options = labelled(await Promise.all((ports.options ?? []).map((id) => reader.candidateText(run.medium, id))));
     }
     const seeds = seed ? [...run.seeds, seed] : run.seeds;
+    // keepsVoice: the person's deck is locked before the call (an empty voice is a voice too), and held after it.
     const voice = step.keepsVoice ? keptVoice(input.ports) : undefined;
-    const before = voice && input.ports.artifact ? await reader.text(input.ports.artifact) : undefined;
-    const parse = parserFor(step.role, run.medium, ports, (text) => writeProblems({ seeds, medium: run.medium }, text, voice, before));
+    const before = voice !== undefined && input.ports.artifact ? await reader.text(input.ports.artifact) : undefined;
+    const parse = parserFor(step.role, run.medium, ports, checkedWriter({ seeds, medium: run.medium }, voice, before));
     const answer = await askModel(deps, reader, {
       run,
       call,
@@ -139,8 +140,10 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     if (seed) result.seed = seed;
     const v = answer.value;
     switch (v.kind) {
-      case 'artifact':
+      case 'artifact': {
         result.artifactId = await storeText(deps, run, call, v.text, { label: what, name: 'work' });
+        const kept = restoredNote(v.restored);
+        if (kept) result.note = result.note ? `${result.note} ${kept}` : kept;
         outputs.push(result.artifactId);
         if (v.direction) {
           // 01 SEED step 7 ⟨A⟩: seed → direction → artifact, logged outside the artifact. Never the string itself (PR3).
@@ -149,6 +152,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
           outputs.push(result.noteArtifactId);
         }
         break;
+      }
       case 'text':
         result.text = v.text;
         if (v.clean !== undefined) result.clean = v.clean;
@@ -211,8 +215,11 @@ async function compareSlots(reader: ArtifactReader, medium: Parameters<typeof te
 }
 
 type Answer =
-  /** `direction`: what a SEED build wrote before its block (SEED-1), kept as a note beside the work. */
-  | { kind: 'artifact'; text: string; direction?: string }
+  /**
+   * `direction`: what a SEED build wrote before its block (SEED-1), kept as a note beside the work. `restored`: the
+   * person's fields this answer changed and the runner wrote back (keepsVoice), for the step's note.
+   */
+  | { kind: 'artifact'; text: string; restored: string[]; direction?: string }
   /** `empty`: a CUT answered "Nothing to remove." (its text says so, for the note beside the work). */
   | { kind: 'text'; text: string; clean?: boolean; empty?: boolean; hits?: TellsHit[] }
   | { kind: 'label'; label: string }
@@ -221,9 +228,10 @@ type Answer =
 
 /**
  * How a model step's answer is read, by role. Exported so @byway/recipe's effects table (ADR-0092) is held to it: a role
- * this switch does not name is parsed as the work, and the table fails closed the same way.
+ * this switch does not name is parsed as the work, and the table fails closed the same way. `write` checks a written
+ * work and returns what to store (keepsVoice may write the person's words back, ADR-0081).
  */
-export function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports: ModelStepInput['ports'], checks: (text: string) => string[]): (text: string) => Parsed<Answer> {
+export function parserFor(role: string, medium: ModelStepInput['run']['medium'], ports: ModelStepInput['ports'], write: (text: string) => CheckedWrite): (text: string) => Parsed<Answer> {
   const map = <T>(r: Parsed<T>, f: (v: T) => Answer): Parsed<Answer> => (r.ok ? { ok: true, value: f(r.value) } : r);
   const candidates = labels(ports.options?.length ?? 0);
   switch (role) {
@@ -252,10 +260,10 @@ export function parserFor(role: string, medium: ModelStepInput['run']['medium'],
       return (t) => {
         const r = parseArtifact(medium, t);
         if (!r.ok) return r;
-        const problems = checks(r.value);
-        if (problems.length) return { ok: false, problem: problems.join(' ') };
+        const checked = write(r.value);
+        if (checked.problems.length) return { ok: false, problem: checked.problems.join(' ') };
         const direction = role === 'seed' ? directionOf(t) : undefined;
-        return { ok: true, value: { kind: 'artifact', text: r.value, ...(direction ? { direction } : {}) } };
+        return { ok: true, value: { kind: 'artifact', text: checked.text, restored: checked.restored, ...(direction ? { direction } : {}) } };
       };
   }
 }

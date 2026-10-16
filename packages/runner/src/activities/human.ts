@@ -1,35 +1,66 @@
 /**
  * Human steps and operator questions (spec §3.2): the workflow opens a checkpoint, waits for the person's answer
  * (the RESOLVE_UPDATE Update), and then the answer becomes the step's ports. Writing steps write here: the author's
- * draft becomes the artifact, and VOICE writes the person's copy back (see copy.ts for how, per medium).
+ * draft becomes the artifact, and VOICE writes the person's copy back exactly, with no model (ADR-0081; copy.ts says
+ * how, per medium). A page's VOICE asks the browser (page-arbiter.ts): it offers only the lines Chromium shows, and a
+ * write is stored only when Chromium shows the written page as the person's edit of the page before.
  */
 import { routeChoice } from '@byway/catalog';
+import type { Medium } from '@byway/contracts';
 import { withoutMarks } from '@byway/gateway';
 import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
 import { applyClaims, claimLines } from '../claims.ts';
-import { applyCopy, extractCopy, mediaCopyOf, pageCopy, pageVoiceProblems, placePageCopy } from '../copy.ts';
-import { parseArtifact, parseHtml, parseStoryboard, type Parsed } from '../formats.ts';
-import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput } from '../types.ts';
-import { askModel } from './call.ts';
+import {
+  applyCopy,
+  deckKindOf,
+  extractCopy,
+  mediaCopyOf,
+  offeredPageCopy,
+  offeredQuotes,
+  pageEditProblems,
+  pageVoiceSuffix,
+  placePageEdit,
+  readPageCopy,
+  readPageEdit,
+  roundTripProblem,
+  sameCopy,
+  samePageCopy,
+  type MediaCopy,
+  type PageEdit,
+  type Refusal,
+} from '../copy.ts';
+import { parseArtifact, parseStoryboard } from '../formats.ts';
+import { arbiterProblem, expectedShown, locate, markedCopy, notShown, notShownWhy, WHY_NOT_SHOWN, type Location, type NotShownWhy } from '../page-arbiter.ts';
+import type { ArtifactResolver, PageRenderer, RenderOptions } from '../pages.ts';
+import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, StepSpec } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
-import { AnswerRejected, ContractMissed, StepError } from './failures.ts';
+import { AnswerRejected, StepError } from './failures.ts';
 import { ArtifactReader } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
 import { storeText, writeProblems } from './writes.ts';
 
-const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
+/** The claim log (ENG-2) reads claims out of Markdown, so it runs on prose; on any other medium the step writes the copy deck. */
+const isClaimLog = (medium: Medium, step: Pick<StepSpec, 'variant'>): boolean => step.variant === 'claim-log' && medium === 'prose';
 
 export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInput): Promise<OpenCheckpointResult> {
   const { run, call, checkpoint } = input;
   if (input.step) await stepStarted(deps, run, call, input.step, input.meta);
+  // A page's VOICE: the page and the lines a browser shows, read once for the deck and the prompt.
+  const page = await pageQuestion(deps, input);
   let initialText = checkpoint.initialText;
   if (input.initial) {
     // The demo's revision markers never reach a person (UX-6); the stored work keeps them for the demo's critic.
     const text = input.initial.artifactId ? withoutMarks(await deps.store.artifacts.getText(input.initial.artifactId)) : '';
-    switch (input.initial.from) {
+    const from = input.initial.from === 'claims' && !isClaimLog(run.medium, input.step ?? {}) ? 'copy' : input.initial.from;
+    switch (from) {
       case 'copy':
-        initialText = extractCopy(run.medium, text, input.step ? mediaCopyOf(input.step) : undefined);
+        try {
+          initialText = page ? offeredPageCopy(page.html, page.notOffered) : extractCopy(run.medium, text, input.step ? mediaCopyOf(input.step) : undefined);
+        } catch (e) {
+          // No paid call is involved and a retry reads the same bytes: a plain, final failure.
+          throw new StepError(`byway could not read the copy of this work (${(e as Error).message}).`);
+        }
         break;
       case 'artifact':
         initialText = text;
@@ -42,7 +73,8 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
         break;
     }
   }
-  const { prompt, options } = plainChoice(run.recipeId, call.stepId, checkpoint);
+  const { prompt: asked, options } = plainChoice(run.recipeId, call.stepId, checkpoint);
+  const prompt = withPageRules(page, asked);
   const stored = await deps.store.openCheckpoint({
     id: checkpoint.id,
     runId: run.runId,
@@ -57,6 +89,117 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
   });
   await emit(deps.store, run.runId, 'checkpoint-opened', { checkpointId: stored.id, kind: stored.kind }, at(call, `checkpoint/${stored.id}/opened`));
   return { checkpointId: stored.id, ...(stored.initialText !== undefined ? { initialText: stored.initialText } : {}) };
+}
+
+/** A page's VOICE question: the work (the checkpoint's artifact) and the lines it does not offer. */
+interface PageQuestion {
+  html: string;
+  notOffered: Set<number>;
+  /** The lines not offered (by number in the whole deck), each with why, in deck order. */
+  whyNot: [number, NotShownWhy][];
+  /** The browser could place the page's lines: else none of them can be changed. */
+  checked: boolean;
+}
+
+/**
+ * How long a page question's two browser reads may take in all. openCheckpoint runs under the workflow's `quick` proxy
+ * (one minute to close, no heartbeat), so the reads (launching the browser included) share one deadline well inside it,
+ * leaving the rest for the store: a page Chromium cannot read in time is a plain StepError, not a timed-out activity
+ * Temporal retries.
+ */
+const QUESTION_READS_MS = 40_000;
+
+/** The page renderer, which a page's VOICE needs: without it byway cannot check a write, so it never writes one. */
+function pageRenderer(deps: RunnerDeps): PageRenderer {
+  if (!deps.pages) throw new StepError('The words on a web page cannot be written in this step: no page renderer is configured, and byway writes a page only when a browser shows it as you wrote it.');
+  return deps.pages;
+}
+
+/** Artifact routes in a page the browser reads, served from the store. */
+const artifactRoute =
+  (deps: RunnerDeps): ArtifactResolver =>
+  async (id) => {
+    if (!(await deps.store.artifacts.has(id))) return undefined;
+    const { record, bytes } = await deps.store.artifacts.get(id);
+    return { body: bytes, contentType: record.mediaType };
+  };
+
+/**
+ * Where Chromium shows each of the page's lines (page-arbiter.ts). The reads fail as a render does, with a plain
+ * StepError that is not retried (a page that never loads, a renderer that fails while reading); a fault in byway's own
+ * code after them is `fault`'s error.
+ */
+async function pageLines(deps: RunnerDeps, html: string, fault: (e: Error) => Error, opts: RenderOptions = {}): Promise<Location> {
+  const pages = pageRenderer(deps);
+  const resolve = artifactRoute(deps);
+  const plain = await pages.shownText(html, resolve, opts);
+  let copy: string | undefined;
+  try {
+    copy = markedCopy(html);
+  } catch (e) {
+    throw fault(e as Error);
+  }
+  const marked = copy === undefined ? undefined : await pages.shownText(copy, resolve, opts);
+  try {
+    return locate(html, plain, marked);
+  } catch (e) {
+    throw fault(e as Error);
+  }
+}
+
+/** A page's VOICE question, read once (see PageQuestion); undefined for any other question. */
+async function pageQuestion(deps: RunnerDeps, input: OpenCheckpointInput): Promise<PageQuestion | undefined> {
+  const { run, checkpoint } = input;
+  if (run.medium !== 'web-page' || checkpoint.kind !== 'write' || input.step?.role !== 'voice') return undefined;
+  const artifactId = checkpoint.artifactIds?.[0] ?? input.initial?.artifactId;
+  if (!artifactId) return undefined;
+  // The demo's revision markers never reach a person (UX-6).
+  const html = withoutMarks(await deps.store.artifacts.getText(artifactId));
+  // No paid call is involved and a retry reads the same bytes: a fault is a plain, final failure.
+  const unreadable = (e: Error) => new StepError(`byway could not read the copy of this work (${e.message}).`);
+  const loc = await pageLines(deps, html, unreadable, { deadline: Date.now() + QUESTION_READS_MS });
+  try {
+    return { html, notOffered: notShown(html, loc), whyNot: notShownWhy(html, loc), checked: loc.agrees };
+  } catch (e) {
+    throw unreadable(e as Error);
+  }
+}
+
+/**
+ * A page's VOICE question says how its copy is written (ADR-0081): one line per run of text, the bracket rule when a line
+ * has link words in brackets, and where each link goes; which lines are not offered, because a browser does not show
+ * them as one line, and why; and, when the browser could not place the page's lines, that none of them can be changed.
+ * It is read from the work, never from the starting text, and appended to the prompt the workflow sent, which never
+ * carries it, so a re-ask gets it once too.
+ */
+function withPageRules(page: PageQuestion | undefined, prompt: string): string {
+  if (!page) return prompt;
+  let rules: string;
+  try {
+    rules = pageVoiceSuffix(readPageCopy(page.html, page.notOffered));
+    if (page.whyNot.length) rules += ` ${notOfferedSentence(page)}`;
+  } catch (e) {
+    throw new StepError(`byway could not read the copy of this work (${(e as Error).message}).`);
+  }
+  if (!page.checked) rules += " byway could not match this page's lines to what a browser shows, so none of them can be changed in this step.";
+  return `${prompt} ${rules}`;
+}
+
+/** At most this many lines not offered are quoted in the VOICE prompt, each cut to 60 characters. */
+const NOT_OFFERED_MAX = 30;
+
+/**
+ * The lines a page's VOICE does not offer, named by why (page-arbiter.ts), in deck order within each reason: "These
+ * lines of the page are not offered, …: hidden from sight (…): "Menu", "Close"; …".
+ */
+function notOfferedSentence(page: PageQuestion): string {
+  const units = readPageCopy(page.html).units;
+  const cut = (t: string) => (t.length > 60 ? `${t.slice(0, 57)}...` : t);
+  const groups = new Map<NotShownWhy, string[]>();
+  for (const [k, why] of page.whyNot.slice(0, NOT_OFFERED_MAX)) groups.set(why, [...(groups.get(why) ?? []), `"${cut(units[k]?.text ?? '')}"`]);
+  const more = page.whyNot.length - NOT_OFFERED_MAX;
+  const named = [...groups].map(([why, quotes]) => `${WHY_NOT_SHOWN[why]}: ${quotes.join(', ')}`).join('; ');
+  return `These lines of the page are not offered, because a browser does not show them as one line here, and stay as they are: ${named}${more > 0 ? `; and ${more} more` : ''}.`;
 }
 
 /**
@@ -90,7 +233,17 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
   const result: FinishHumanResult = { costUsd: 0 };
   const outputs: string[] = [];
   const text = resolution.text ?? '';
-  if (input.kind === 'write' && step.role === 'voice' && step.variant === 'claim-log' && step.produces.includes('artifact') && ports.artifact) {
+  if (input.kind === 'write') {
+    // Text no store can hold (half of a surrogate pair) is asked about again, before anything is stored (ENG-6): a store
+    // error would be retried, and fail the same way every time.
+    const broken = lfLines(text).findIndex((l) => !l.isWellFormed());
+    if (broken >= 0) {
+      const kind = run.medium === 'web-page' ? 'web-page' : deckKindOf(run.medium, mediaCopyOf(step));
+      const quotes = step.role === 'voice' ? offeredQuotes(kind, input.initialText, { lines: [broken + 1] }) : '';
+      throw new AnswerRejected(`Line ${broken + 1} has a broken character (half of a surrogate pair, not valid Unicode), so it cannot be stored: type that character again, or take it out.${quotes}`);
+    }
+  }
+  if (input.kind === 'write' && step.role === 'voice' && isClaimLog(run.medium, step) && step.produces.includes('artifact') && ports.artifact) {
     // The claim log (ENG-2): the owner's corrections replace the claims where they stood; nothing else changes.
     const before = await deps.store.artifacts.getText(ports.artifact);
     const applied = applyClaims(before, text);
@@ -136,86 +289,124 @@ function lockedVoiceover(medium: FinishHumanInput['run']['medium'], step: Finish
   return was.ok && now.ok && was.value.voiceover !== now.value.voiceover ? ['The voice-over was locked after the script step: keep it exactly as it was.'] : [];
 }
 
-/** A write-back whose model answer missed twice becomes a question asked again (ENG-6), with the person's problem. */
-async function orAskAgain<T>(written: Promise<T>, problem: (missed: string) => string): Promise<T> {
-  try {
-    return await written;
-  } catch (e) {
-    if (e instanceof ContractMissed) throw new AnswerRejected(problem(e.problem));
-    throw e;
-  }
-}
+/** An answer's lines, any line ending. */
+const lfLines = (t: string): string[] => t.replace(/\r\n?/g, '\n').split('\n');
+
+/** The lines of an answer that differ from what was offered, by position (1-based): what a fault message quotes. */
+const changedLines = (offered: string | undefined, answer: string): number[] => {
+  if (offered === undefined) return [];
+  const o = offered.replace(/\r\n?/g, '\n').split('\n');
+  const a = answer.replace(/\r\n?/g, '\n').split('\n');
+  return o.map((line, i) => (line.trimEnd() === (a[i] ?? '').trimEnd() ? 0 : i + 1)).filter((n) => n > 0);
+};
 
 /**
- * VOICE write-back. Unchanged copy writes nothing. Prose: the edited text is the artifact. Options, media and diffs map
- * the copy back field by field. Pages: `helper.voice.apply`, held to a diff check (only text changed, every line of
- * the person's verbatim); when the model's page fails the check but the lines map one to one onto the page's lines,
- * the runner places them itself and the same check verifies it.
- *
- * Copy that cannot be written back is never a failed run (ENG-6): the person is asked again, with their own text and
- * why. A page's copy is one line per block of text, so an answer with another number of lines cannot be placed (a new
- * line needs a new element, which the diff check refuses): that is asked again before any model call.
+ * VOICE write-back, in this order (ADR-0081):
+ * 1. An answer that differs from what was first offered only in layout writes nothing.
+ * 2. Read and apply: the medium's total reader, then a deterministic write. No model.
+ * 3. Check: the deck read back from the written artifact equals the answer (the round trip), the late VOICE left the
+ *    voice-over alone, and no SEED string got in.
+ * 4. A result equal to the work's bytes writes nothing; anything else is stored as "Your words", at no cost.
+ * Steps 2 and 3 are pure and guarded: every problem, a fault in the runner's own copy code included, goes back to the
+ * person as a question asked again (ENG-6), quoting how the lines it names were first offered. Store reads and writes
+ * stay outside the guard, so a passing store error is retried as any activity error is.
  */
 async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: string): Promise<{ costUsd: number; artifactId?: string }> {
   const { run, call, step, ports } = input;
-  if (input.initialText !== undefined && squash(input.initialText) === squash(edited)) return { costUsd: 0 };
-  const reader = new ArtifactReader(deps);
-  const before = await reader.text(ports.artifact!);
-  const store = async (text: string) => storeText(deps, run, call, text, { label: 'Your words', name: 'work' });
-  if (run.medium !== 'web-page') {
-    const direct = applyCopy(run.medium, before, edited, mediaCopyOf(step));
-    if (direct.ok) {
-      const problems = writeProblems(run, direct.value);
-      if (problems.length) throw new StepError(problems.join(' '));
-      return { costUsd: 0, artifactId: await store(direct.value) };
-    }
-    // The copy no longer maps onto the fields: let the model write it in, then hold it to the person's lines.
-    const applied = await orAskAgain(askModel(deps, reader, {
-      run,
-      call,
-      promptId: 'helper.voice.apply',
-      slots: { medium: run.medium, artifact: before, voice: edited },
-      images: [],
-      purpose: `voice.apply:${run.medium}`,
-      tier: 'mid',
-      what: 'Your words',
-      parse: (text) => {
-        const r = parseArtifact(run.medium, text);
-        if (!r.ok) return r;
-        const problems = [...writeProblems(run, r.value, edited), ...lockedVoiceover(run.medium, step, before, r.value)];
-        return problems.length ? { ok: false, problem: problems.join(' ') } : r;
-      },
-    }), () => `${direct.problem} Your words could not be placed as they are.`);
-    return { costUsd: applied.costUsd, artifactId: await store(applied.value) };
+  if (run.medium === 'web-page') return writePageVoice(deps, input, edited);
+  const medium = run.medium;
+  const scope = mediaCopyOf(step);
+  if (input.initialText !== undefined && sameCopy(medium, scope, input.initialText, edited)) return { costUsd: 0 };
+  const before = await new ArtifactReader(deps).text(ports.artifact!);
+  let written: string;
+  try {
+    written = composeVoice(run, step, medium, scope, before, edited, input.initialText);
+  } catch (e) {
+    if (e instanceof AnswerRejected) throw e;
+    const quotes = offeredQuotes(deckKindOf(medium, scope), input.initialText, { lines: changedLines(input.initialText, edited) });
+    throw new AnswerRejected(`byway could not place this edit (${(e as Error).message}). Change those lines again, or leave them as they were offered.${quotes}`);
   }
-  const lines = edited.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n');
-  const blocks = pageCopy(before).length;
-  if (lines.length !== blocks) {
-    throw new AnswerRejected(
-      `This page has one line per block of text: ${blocks} lines, and your text has ${lines.length}. Keep one line per block: merge a line you added into the line next to it, or put back a line you removed (an empty line empties its block).`,
-    );
-  }
-  const check = (page: string): Parsed<string> => {
-    const problems = [...pageVoiceProblems(before, page, lines), ...writeProblems(run, page)];
-    return problems.length ? { ok: false, problem: problems.join(' ') } : { ok: true, value: page };
+  if (written === before) return { costUsd: 0 };
+  return { costUsd: 0, artifactId: await storeText(deps, run, call, written, { label: 'Your words', name: 'work' }) };
+}
+
+/** Read, apply and check a non-web answer (pure). Throws AnswerRejected for every problem with the answer. */
+function composeVoice(run: FinishHumanInput['run'], step: StepSpec, medium: Exclude<Medium, 'web-page'>, scope: MediaCopy, before: string, edited: string, offered: string | undefined): string {
+  const refuse = (r: Refusal) => new AnswerRejected(`${r.problem}${offeredQuotes(deckKindOf(medium, scope), offered, r)}`);
+  const applied = applyCopy(medium, before, edited, scope);
+  if (!applied.ok) throw refuse(applied);
+  const problems = [roundTripProblem(medium, scope, applied.value, edited), ...lockedVoiceover(medium, step, before, applied.value), ...writeProblems(run, applied.value)].filter((p): p is string => !!p);
+  if (problems.length) throw refuse({ problem: problems.join(' ') });
+  return applied.value;
+}
+
+/**
+ * Pages (ADR-0081): the answer is read as an exact positional edit of the deck the question offered (the lines Chromium
+ * shows), placed deterministically, and checked by the verifier against placement's witness and a fresh read of the
+ * written page. No model. Then the browser has the last word: Chromium's reading of the written page must be the
+ * person's edit of its reading of the page before (page-arbiter.ts), or the answer is asked again, naming the line.
+ * Lines that were read differently since the question first opened are refused on that first offer and read against the
+ * current deck on a re-ask; the answered checkpoint says which it is.
+ */
+async function writePageVoice(deps: RunnerDeps, input: FinishHumanInput, edited: string): Promise<{ costUsd: number; artifactId?: string }> {
+  const { run, call, ports, resolution } = input;
+  const offered = input.initialText;
+  if (offered !== undefined && samePageCopy(offered, edited)) return { costUsd: 0 };
+  const pages = pageRenderer(deps);
+  const before = await new ArtifactReader(deps).text(ports.artifact!);
+  // The first offer is the checkpoint whose starting text is what the step first offered; a re-ask starts from the
+  // person's previous answer, which never equals it (an answer equal to the offer writes nothing above).
+  const answered = await deps.store.getCheckpoint(resolution.checkpointId);
+  const firstOffer = answered === undefined || answered.initialText === offered;
+  const fault = (e: Error) => {
+    const quotes = offeredQuotes('web-page', offered, { lines: changedLines(offered, edited) });
+    return new AnswerRejected(`byway could not place this edit (${e.message}). Change those lines again, or leave them as they were offered.${quotes}`);
   };
-  const applied = await orAskAgain(askModel(deps, reader, {
-    run,
-    call,
-    promptId: 'helper.voice.apply',
-    slots: { medium: run.medium, artifact: before, voice: edited },
-    images: [],
-    purpose: 'voice.apply:web-page',
-    tier: step.tier ?? 'mid',
-    what: 'Your words',
-    parse: (text) => {
-      const page = parseHtml(text);
-      const checked = page.ok ? check(page.value) : page;
-      if (checked.ok) return checked;
-      const placed = placePageCopy(before, lines);
-      const fallback = placed.ok ? check(placed.value) : placed;
-      return fallback.ok ? fallback : checked;
-    },
-  }), (missed) => `Your words could not be placed on the page as they are: ${missed}`);
-  return { costUsd: applied.costUsd, artifactId: await store(`${applied.value}\n`) };
+  const loc = await pageLines(deps, before, fault);
+  let written: string;
+  let edit: PageEdit;
+  let notOffered: Set<number>;
+  try {
+    notOffered = notShown(before, loc);
+    ({ page: written, edit } = composePage(run, before, edited, offered, firstOffer, notOffered));
+  } catch (e) {
+    if (e instanceof AnswerRejected) throw e;
+    throw fault(e as Error);
+  }
+  if (written === before) return { costUsd: 0 };
+  // The browser's word: what Chromium shows of the written page against the person's edit of what it showed before.
+  let expected: ReturnType<typeof expectedShown>;
+  try {
+    expected = expectedShown(before, loc, notOffered, edit);
+  } catch (e) {
+    throw fault(e as Error);
+  }
+  if ('problem' in expected) throw pageRefusal(offered, expected.problem, [expected.line]);
+  const after = await pages.shownText(written, artifactRoute(deps));
+  let verdict: ReturnType<typeof arbiterProblem>;
+  try {
+    verdict = arbiterProblem(expected, after);
+  } catch (e) {
+    throw fault(e as Error);
+  }
+  if (verdict) throw pageRefusal(offered, verdict.problem, [verdict.line]);
+  return { costUsd: 0, artifactId: await storeText(deps, run, call, written, { label: 'Your words', name: 'work' }) };
+}
+
+/** A refused page answer, quoting how the lines it names were first offered. */
+function pageRefusal(offered: string | undefined, problem: string, lines: number[] = []): AnswerRejected {
+  const named = new Set([...lines, ...[...problem.matchAll(/\bLine (\d+)\b/g)].map((m) => Number(m[1]))]);
+  return new AnswerRejected(`${problem}${offeredQuotes('web-page', offered, { lines: [...named] })}`);
+}
+
+/** Read, place and verify a page answer (pure). Throws AnswerRejected for every problem with it. */
+function composePage(run: FinishHumanInput['run'], before: string, edited: string, offered: string | undefined, firstOffer: boolean, notOffered: ReadonlySet<number>): { page: string; edit: PageEdit } {
+  const refuse = (problem: string, lines: number[] = []) => pageRefusal(offered, problem, lines);
+  const edit = readPageEdit(readPageCopy(before, notOffered), edited, offered, firstOffer);
+  if (!edit.ok) throw refuse(edit.problem, edit.lines);
+  const placed = placePageEdit(before, edit, notOffered);
+  if (placed.problems.length) throw refuse(placed.problems.join(' '));
+  const problems = [...pageEditProblems(before, placed.page, edit, placed, notOffered), ...writeProblems(run, placed.page)];
+  if (problems.length) throw refuse(problems.join(' '));
+  return { page: placed.page, edit };
 }

@@ -13,7 +13,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { audit, oneShotGate, pick, replicate, seq, step, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { keptVoice } from '../src/activities/held-voice.ts';
-import { writeProblems } from '../src/activities/writes.ts';
+import { checkedWrite } from '../src/activities/writes.ts';
+import { serializeJson } from '../src/formats.ts';
 import type { Ports, RunInput } from '../src/types.ts';
 
 const state = vi.hoisted(() => ({ calls: [] as { id: string; ports: Record<string, unknown> }[], scores: [] as number[], n: 0, label: 'A' as string | undefined }));
@@ -137,18 +138,33 @@ describe('the run-time guard: no machine write over the person’s words without
 });
 
 describe('keepsVoice keeps every held VOICE', () => {
-  it('keptVoice is the latest answer and every held one, each once', () => {
+  it('keptVoice is every held answer and the latest one, each once, the latest last', () => {
     expect(keptVoice({})).toBeUndefined();
-    expect(keptVoice({ voice: 'deck' })).toBe('deck');
-    expect(keptVoice({ voice: 'late', held: ['script', 'late'] })).toBe('script\nlate');
+    expect(keptVoice({ voice: 'deck' })).toEqual(['deck']);
+    expect(keptVoice({ voice: '' })).toEqual(['']);
+    expect(keptVoice({ voice: 'late', held: ['script', 'late'] })).toEqual(['script', 'late']);
   });
 
   it('a keepsVoice write that changes a line of an earlier VOICE (the locked script) is refused', () => {
     const before = 'Voice-over: We bake before dawn.\nHeadline: Fresh at seven';
     const after = 'Voice-over: We bake at noon.\nHeadline: Fresh at seven';
     const held = { voice: 'Fresh at seven', held: ['We bake before dawn.', 'Fresh at seven'] };
-    expect(writeProblems({ seeds: [], medium: 'prose' }, after, held.voice, before)).toEqual([]);
-    expect(writeProblems({ seeds: [], medium: 'prose' }, after, keptVoice(held), before)).toEqual([expect.stringMatching(/We bake before dawn/)]);
+    // ADR-0081's lock holds the whole deck exactly whenever the person's words exist, so the latest answer alone holds it too.
+    expect(checkedWrite({ seeds: [], medium: 'prose' }, after, keptVoice(held), before).problems).toEqual([expect.stringMatching(/exactly as written/)]);
+    expect(checkedWrite({ seeds: [], medium: 'prose' }, before, keptVoice(held), before).problems).toEqual([]);
+  });
+
+  it("a storyboard's on-screen answer held beside its voice-over script stays locked; the script is written back", () => {
+    const script = 'We bake before dawn.';
+    const onScreen = 'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Hot bread';
+    const sb = (voiceover: string, headline: string) => serializeJson({ voiceover, headline, tagline: 'Bread club', storyboard: [{ shot: 1, description: 'd1', imagePrompt: 'p1', durationSec: 3, caption: 'Hot bread' }] });
+    const before = sb(script, 'Fresh at seven');
+    const voices = keptVoice({ voice: onScreen, held: [script, onScreen] });
+    // Joined into one text, as the held voice was first passed, the on-screen answer would not read as one, and its words would be open.
+    expect(checkedWrite({ seeds: [], medium: 'media' }, sb(script, 'Fresh at noon'), voices, before).problems).toEqual([expect.stringMatching(/on-screen copy is the person's/)]);
+    const r = checkedWrite({ seeds: [], medium: 'media' }, sb('We bake at noon.', 'Fresh at seven'), voices, before);
+    expect(r).toMatchObject({ problems: [], restored: ['voice-over'] });
+    expect(JSON.parse(r.text).voiceover).toBe(script);
   });
 });
 

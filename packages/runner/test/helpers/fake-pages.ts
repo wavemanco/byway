@@ -5,12 +5,18 @@
  * test's critic tell rounds apart from what it sees, as a real critic would. Like the real renderer it makes the three
  * surfaces (RENDER-1): the wide screen and the phone as that many tiles each (phone tiles are narrower), the first
  * screen as one. It can be held, to test pause, cancel and shutdown; a held render stops when its step is cancelled.
- * It can also be made unable to start, as a renderer whose Chromium cannot launch: ready() and every render then
- * reject with the error given (F18).
+ * It can also be made unable to start, as a renderer whose Chromium cannot launch: ready(), every render and every text
+ * read then reject with the error given (F18).
+ *
+ * Its page text (shownText, for VOICE's arbiter) is the page reader's own model of what a browser shows: the reader's
+ * rendered text, a line break between its blocks, links by address. The arbiter's real checks against Chromium are in
+ * page-arbiter.test.ts and voice.test.ts.
  */
 import { crc32, deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import type { PageRenderer, RenderOptions, SurfaceShots } from '../../src/pages.ts';
+import { attributesOf, decodeText, isHtmlSpace, squashHtml } from '../../src/html-tokens.ts';
+import { readPageCopy } from '../../src/page-copy.ts';
+import { LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, type PageRenderer, type RenderOptions, type ShownText, type SurfaceShots } from '../../src/pages.ts';
 import type { Surface } from '../../src/types.ts';
 
 function chunk(type: string, data: Uint8Array): Buffer {
@@ -42,7 +48,7 @@ export interface FakePages extends PageRenderer {
   release(): void;
   /** Renders currently waiting on the hold. */
   waiting(): number;
-  /** From now on ready() and every render reject with this error, as a renderer that cannot start; undefined undoes it. */
+  /** From now on ready(), every render and every text read reject with this error, as a renderer that cannot start; undefined undoes it. */
   failReady(err: Error | undefined): void;
   /** How many times ready() was asked. */
   readonly readyCalls: number;
@@ -59,6 +65,62 @@ export const fakeShots = (html: string, surface: Surface): SurfaceShots => {
   const shade = surface === 'mobile' ? 64 : surface === 'fold' ? 128 : 0;
   return { surface, tiles: Array.from({ length: n }, (_, i) => png(w, surface === 'fold' ? 5 : 6, [h[0]!, (h[1]! + shade) % 256, (h[2]! + i) % 256])) };
 };
+
+/** The page reader's model of the text a browser shows (see the file comment). */
+export function modelShownText(html: string): ShownText {
+  const p = readPageCopy(html);
+  const titleAt = p.tokens.findIndex((t) => t.kind === 'tag' && t.name === 'title' && !t.closing && !t.foreign);
+  const title = titleAt >= 0 && p.tokens[titleAt + 1]?.kind === 'text' ? squashHtml(decodeText(p.tokens[titleAt + 1]!.raw)) : '';
+  const hrefs: string[] = [];
+  const index = new Map<number, number>();
+  let text = '';
+  let linked = '';
+  let block = -1;
+  let open: number | undefined;
+  // As the visitor read gives it: one separator between neighbouring characters, a space within a block (where the
+  // page has whitespace), a line break between blocks; whitespace at either end of the body nothing.
+  let gap = '';
+  const close = () => {
+    if (open !== undefined) linked += LINK_CLOSE;
+    open = undefined;
+  };
+  for (const s of p.slots) {
+    if (!s.rendered || !s.toks.length) continue;
+    const t = decodeText(s.toks.map((i) => p.tokens[i]!.raw).join(''));
+    if (s.vregion !== block) {
+      if (block >= 0) gap = '\n';
+      block = s.vregion;
+    }
+    for (const c of t) {
+      if (isHtmlSpace(c)) {
+        if (!gap) gap = ' ';
+        continue;
+      }
+      const shown = text !== '';
+      if (s.link !== open) close();
+      if (shown) {
+        text += gap;
+        linked += gap;
+      }
+      gap = '';
+      if (s.link !== open && s.link !== undefined) {
+        let k = index.get(s.link);
+        if (k === undefined) {
+          k = hrefs.length;
+          index.set(s.link, k);
+          hrefs.push(attributesOf(p.tokens[s.link]!.raw).find((a) => a.name === 'href')?.value ?? '');
+        }
+        linked += `${LINK_OPEN}${String(k).replace(/[0-9]/g, (d) => String.fromCharCode(LINK_DIGIT_0 + Number(d)))}${LINK_INDEX_END}`;
+        open = s.link;
+      }
+      text += c;
+      linked += c;
+    }
+  }
+  close();
+  // The reader reads no stylesheet, so nothing is hidden from sight but what it already leaves out.
+  return { title, text, linked, hrefs, hidden: [], unlaid: '' };
+}
 
 export function fakePages(): FakePages {
   const rendered: string[] = [];
@@ -112,6 +174,10 @@ export function fakePages(): FakePages {
     },
     render: (html, _resolve, surfaces, opts) => render(html, surfaces, opts),
     screenshots: async (html, _resolve, opts) => (await render(html, ['desktop'], opts))[0]!.tiles,
+    shownText: async (html) => {
+      if (notReady) throw notReady;
+      return modelShownText(html);
+    },
     async close() {},
   };
 }

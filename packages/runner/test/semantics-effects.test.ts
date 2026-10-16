@@ -76,16 +76,18 @@ const call = (run: RunRef, stepId: string): StepCall => ({ key: `${run.runId}/${
 const spec = (role: Role, actor: StepSpec['actor'], produces: StepSpec['produces'], extra: Partial<StepSpec> = {}): StepSpec => ({ id: `s-${role}`, role, actor, prompt: 'product.test.step', consumes: ['artifact'], produces, ...extra });
 
 const ARTIFACT_ANSWER = '```markdown\n# Memo\n\nThe whole new text.\n```';
+/** A write with nothing to check: stored as it is (keepsVoice and PR3 are not what this table is about). */
+const asIs = (text: string) => ({ text, problems: [], restored: [] });
 /** Roles the interpreter does not send through modelStep's parser: the critic's own branch, ASSET and RELAY activities. */
 const OWN_BRANCH = new Set<Role>(['critic', 'asset', 'relay']);
 
 describe('model steps: the answer becomes the work exactly where the table says it writes', () => {
   it.each(ROLES.filter((r) => !OWN_BRANCH.has(r)).map((r) => [r]))('%s', (role) => {
     const effect = stepEffect({ actor: 'model', role, produces: ['artifact'] });
-    const asWork = parserFor(role, 'prose', {}, () => [])(ARTIFACT_ANSWER);
+    const asWork = parserFor(role, 'prose', {}, asIs)(ARTIFACT_ANSWER);
     expect(asWork.ok && asWork.value.kind === 'artifact', `${role} parsed as the work`).toBe(effect === 'writes');
     if (role === 'tells-compare') {
-      const keep = parserFor(role, 'prose', {}, () => [])('Keep: A');
+      const keep = parserFor(role, 'prose', {}, asIs)('Keep: A');
       expect(keep.ok && keep.value.kind).toBe('keep');
       expect(effect).toBe('restores');
     }
@@ -245,7 +247,7 @@ describe('the notes a model step leaves beside the work (leavesNote)', () => {
     expect(directionOf(CARD)).toBeUndefined();
     expect(directionOf(`Here is the card.\n\n${CARD}`)).toBeUndefined();
     expect(directionOf(DIRECTED)).toContain('dusk');
-    const parsed = (role: Role, answer: string) => parserFor(role, 'prose', {}, () => [])(answer) as { ok: true; value: { kind: string; direction?: string } };
+    const parsed = (role: Role, answer: string) => parserFor(role, 'prose', {}, asIs)(answer) as { ok: true; value: { kind: string; direction?: string } };
     expect(parsed('seed', DIRECTED).value).toMatchObject({ kind: 'artifact', direction: expect.stringContaining('dusk') });
     expect(parsed('seed', CARD).value).toMatchObject({ kind: 'artifact' });
     expect(parsed('seed', CARD).value.direction).toBeUndefined();

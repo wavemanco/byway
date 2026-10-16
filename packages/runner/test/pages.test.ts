@@ -8,14 +8,16 @@
  * the two sandbox settings apart; and a readiness check that starts the browser the renders then share.
  */
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Browser, LaunchOptions } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { allowedUrl, chromiumLaunchOptions, launchChromium, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX } from '../src/pages.ts';
+import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX, REVERSED, TURNED } from '../src/pages.ts';
 
 const pages = playwrightPages({ maxTileHeight: 1200 });
 const opened: { close(): Promise<void> }[] = [pages];
@@ -395,5 +397,682 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect((await counted.render(SIMPLE, none, ['fold'])).length).toBe(1);
     await counted.ready();
     expect(launches).toBe(1);
+  }, 60_000);
+});
+
+describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chromium, JavaScript on', () => {
+  /** The words of a read: its characters between separators (HIDDEN_HERE and REVERSED included). */
+  const words = (t: string) => t.split(/[\s﷭﷮]+/).filter(Boolean);
+  const body = (b: string) => `<!doctype html><html><head><title>T</title></head><body style="font:16px Arial">${b}</body></html>`;
+
+  it('reads the body as a visitor sees it (hidden content out, one separator between neighbours), the title, and the text a script makes', async () => {
+    const html = `<!doctype html><html><head><title> My \n page </title><style>h1{text-transform:uppercase}.gone{display:none}</style></head>
+      <body><h1>Hello world</h1><p>A <span hidden>secret</span> <b>bold</b>   text</p><p class="gone">Gone</p>
+      <script>document.body.append('script-made')</script><p>End&nbsp;here</p></body></html>`;
+    const shown = await pages.shownText(html, none);
+    expect(shown.title).toBe('My page');
+    // Letters as written (text-transform does not change them); the script ran, as in a visitor's browser (round 9 read
+    // with JavaScript off); a no-break space is kept.
+    // GONE_HERE marks where text that is not laid out stands (the hidden span, the paragraph styled away).
+    expect(shown.text).toBe('Hello world\nA\ufdec bold text\ufdec\nscript-made\nEnd\u00a0here');
+    expect(shown.hrefs).toEqual([]);
+    expect(shown.unlaid).toBe('');
+  }, 60_000);
+
+  it('leaves out text a stylesheet hides from sight though a browser lays it out, and lists it with its link (r9)', async () => {
+    const sr = '.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}';
+    const css = `${sr}.cp{clip-path:inset(50%)}.old{position:absolute;clip:rect(1px,1px,1px,1px)}.grad{color:transparent;background:linear-gradient(red,blue);-webkit-background-clip:text;background-clip:text}`;
+    const html = `<!doctype html><html><head><style>${css}</style></head><body>
+      <p>Rated 4.5<span class="sr"> out of 5</span> stars</p>
+      <p>Sale <i style="opacity:0">ends</i> today</p>
+      <div style="opacity:0"><p>Faded <b>out</b></p></div>
+      <p><span style="font-size:0">Zero</span>Big</p>
+      <p><span style="color:transparent">Clear</span> Seen</p>
+      <p style="text-indent:-9999px">Replaced</p>
+      <p><a href="/r">Read more<span class="sr"> about bread</span></a></p>
+      <div style="height:0;overflow:hidden">Folded</div>
+      <p><span class="cp">Clipped</span> path</p>
+      <p><span class="old">Old clip</span> rect</p>
+      <h2 class="grad">Gradient</h2>
+      <div style="height:20px;overflow:auto">Scroll<br>down</div>
+      <div style="height:40px"></div>
+      <div style="height:0">Spills</div>
+    </body></html>`;
+    const shown = await pages.shownText(html, none);
+    // What a visitor sees, scrolling included: overflow that only scrolls, or spills, still shows. Where hidden text
+    // stands, the read says so (HIDDEN_HERE).
+    expect(words(shown.text)).toEqual(['Rated', '4.5', 'stars', 'Sale', 'today', 'Big', 'Seen', 'Read', 'more', 'path', 'rect', 'Gradient', 'Scroll', 'down', 'Spills']);
+    expect(shown.text).toMatch(/^Rated 4\.5﷭\nstars\nSale﷭ today﷭\nBig/);
+    expect(shown.linked.replace(/[﷐-﷒﷠-﷩]/g, '')).toBe(shown.text);
+    expect(shown.linked).toContain(`${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}Read more﷭${LINK_CLOSE}`);
+    expect(shown.hrefs).toEqual(['/r']);
+    expect(shown.hidden).toEqual([
+      ['out of 5', null],
+      ['ends', null],
+      ['Faded', null],
+      ['out', null],
+      ['Zero', null],
+      ['Clear', null],
+      ['Replaced', null],
+      ['about bread', '/r'],
+      ['Folded', null],
+      ['Clipped', null],
+      ['Old clip', null],
+    ]);
+    // A screen-reader-only space between two words leaves them glued, as a visitor sees them (innerText read a line
+    // break there); an out-of-flow box between two words is a box of its own.
+    const flow = await pages.shownText(body(`<style>${sr}</style><p>Sale<span class="sr"> </span>today</p><p>Call<span style="position:absolute;top:0;right:0">Badge</span>now</p>`), none);
+    expect(flow.text).toBe('Saletoday\nCall\nBadge\nnow');
+    expect(flow.hidden).toEqual([]);
+  }, 60_000);
+
+  it('separators come from where a visitor sees each character: glued, apart in the flow, apart across boxes, or in the other order (r10)', async () => {
+    const cases: [string, string][] = [
+      // Flex items with no gap show glued; a margin parts them (innerText put a line break between them).
+      ['<p style="display:flex">Call us <b>today</b></p>', 'Call ustoday'],
+      ['<p style="display:flex">Have? <a href="/l" style="margin-left:4px">Sign in</a> now</p>', 'Have?\nSign innow'],
+      ['<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><p>One</p><p>Two</p></div>', 'One\nTwo'],
+      // A float, a reversed row and a bdo: the next character is shown before the one before it.
+      ['<p>Alpha <span style="float:right">Beta</span> Gamma</p>', 'Alpha\nBeta﷮Gamma'],
+      ['<p style="display:flex;gap:6px;flex-direction:row-reverse"><span>Hello</span> <span>world</span></p>', 'Hello﷮world'],
+      ['<p><bdo dir="rtl">Hi</bdo></p>', 'H﷮i'],
+      // Punctuation takes the direction of the letters around it, so "New!" is as reversed as "New" (r10 generator).
+      ['<p><span style="float:right">New!</span>Annual</p>', 'New!﷮Annual'],
+      // A gap beside a character its box cuts off is measured from the part that shows (r10 generator); a character whose
+      // middle the box cuts off is not seen (r10 verifier).
+      ['<p><span style="display:inline-block;width:.5em;overflow:hidden;vertical-align:bottom">MW</span> Menu</p>', 'M﷭\nMenu'],
+      ['<p><span style="display:inline-block;width:.5em;overflow:hidden;vertical-align:bottom">MW</span>Menu</p>', 'M﷭Menu'],
+      // content-visibility: hidden skips content only where it applies (not on an inline box or a table row); text in
+      // a display: contents element shows (r10 hand cases).
+      ['<p>Sale<span hidden="until-found"> ends</span> today</p>', 'Sale ends today'],
+      ['<p>A<ruby style="content-visibility:hidden">Kan<rt>k</rt></ruby>B</p>', 'AKankB'],
+      ['<table><tbody style="content-visibility:hidden"><tr><td>Cell</td></tr></tbody></table><p style="content-visibility:hidden">Gone</p>', 'Cell﷬'],
+      ['<p>Hi <em style="display:contents">there</em> you</p>', 'Hi there you'],
+      // Inline blocks, buttons and a display:block cite are boxes of their own.
+      ['<p>Tags: <span style="display:inline-block;padding:2px 6px">New</span><span style="display:inline-block;padding:2px 6px">tech</span></p>', 'Tags:\nNew\ntech'],
+      ['<blockquote>“Worth it.”<cite style="display:block">— Maya R.</cite></blockquote>', '“Worth it.”\n— Maya R.'],
+      // A superscript, letter-spacing and a word broken over rows stay glued; words wrapped over rows are apart in the flow.
+      ['<p>x<sup>2</sup> y</p>', 'x2 y'],
+      ['<p style="letter-spacing:.3em;text-transform:uppercase">Our services</p>', 'Our services'],
+      ['<p style="width:60px;word-break:break-all">Breadbreadbread loaf</p>', 'Breadbreadbread loaf'],
+      ['<p style="width:60px">Hello world again</p>', 'Hello world again'],
+      // Table cells, a <br>, and newlines a white-space style keeps are breaks; so is a button's edge.
+      ['<table><tr><td>Name<br>Note</td><td>$9</td></tr></table>', 'Name\nNote\n$9'],
+      ['<address style="white-space:pre-line">Crumb &amp; Co.\n12 Baker Street</address>', 'Crumb & Co.\n12 Baker Street'],
+      ['<p>Pay <button type="button"><b>$20</b> now</button>Total</p>', 'Pay\n$20 now\nTotal'],
+      ['<p dir="rtl">שלום <b>עולם</b></p>', 'שלום עולם'],
+    ];
+    for (const [b, want] of cases) expect((await pages.shownText(body(b), none)).text, b).toBe(want);
+  }, 120_000);
+
+  it('hides from sight, character by character, what a visitor cannot see: faint, filtered, clipped by a shape, cut off by an ellipsis or a box (r10)', async () => {
+    const shown = await pages.shownText(
+      body(
+        [
+          '<p>A<span style="filter:opacity(0)">B</span>C</p>',
+          '<p>D<span style="opacity:0.01">E</span>F</p>',
+          '<p>G<span style="position:absolute;clip-path:circle(0)">H</span>I</p>',
+          '<p>J<span style="display:inline-block;clip-path:polygon(0 0, 0 0, 0 0)">K</span>L</p>',
+          '<p>M<span style="display:inline-block;clip-path:circle(40%)">N</span>O</p>',
+          '<p style="width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Fresh bread baked every day</p>',
+          '<p style="width:120px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Fresh bread baked every single day by hand</p>',
+          '<div style="height:20px;width:200px;overflow:hidden;line-height:20px"><p style="margin:0">Fresh bread baked every single morning by hand in the oven</p></div>',
+        ].join(''),
+      ),
+      none,
+    );
+    // A faint or filtered word leaves its gap; a clipped absolutely positioned one leaves none; a circle that keeps most
+    // of its word shows it. Per character: the ellipsis takes "aked", the clamp the end of its second row, the box all
+    // but its first row.
+    expect(shown.text).toBe('A﷭ C\nD﷭ F\nG﷭I\nJ﷭\nL\nMNO\nFresh bread b﷭\nFresh bread baked every﷭\nFresh bread baked every﷭');
+    expect(shown.hidden).toEqual([
+      ['B', null],
+      ['E', null],
+      ['H', null],
+      ['K', null],
+      ['aked every day', null],
+      ['single day by hand', null],
+      ['single morning by hand in the oven', null],
+    ]);
+  }, 60_000);
+
+  it('a character a box cuts off is shown only where the box keeps its middle: a sliver of a row is hidden from sight (r10 verifier)', async () => {
+    // Round 9's reproduction, at the default line height: the 20 px box keeps the top 2 px of the second row.
+    const fixed = await pages.shownText(body('<div style="height:20px;overflow:hidden;width:200px"><p style="margin:0">Fresh bread baked every single morning by hand in the oven</p></div>'), none);
+    expect(fixed.text).toBe('Fresh bread baked every﷭');
+    expect(fixed.hidden).toEqual([['single morning by hand in the oven', null]]);
+    // Tailwind's h-20 overflow-hidden card: 80 px with rows of 24 px, so the fourth row shows only its top 5 px.
+    const card = await pages.shownText(body('<p style="height:80px;overflow:hidden;width:180px;line-height:24px;margin:0">Our classic loaf, slow proved for a deep flavour. Slice it thin and toast it. Best with salted butter and honey.</p>'), none);
+    expect(card.text).toBe('Our classic loaf, slow proved for a deep flavour. Slice it thin and﷭');
+    expect(card.hidden).toEqual([['toast it. Best with salted butter and honey.', null]]);
+    // Cut along its width to a sliver: hidden (a box that keeps a letter's middle shows it, as the separators test has it).
+    expect((await pages.shownText(body('<p><span style="display:inline-block;width:.15em;overflow:hidden;vertical-align:bottom">MW</span> Menu</p>'), none)).text).toBe('﷭Menu');
+  }, 60_000);
+
+  it('a colour that leaves the text no ink hides it: a clear text fill, as Chromium paints with, or a colour almost clear (r10 verifier)', async () => {
+    const shown = await pages.shownText(
+      body(
+        [
+          '<p>Rated <span style="-webkit-text-fill-color:transparent">5</span> stars</p>',
+          '<p>Sale <span style="color:rgba(0,0,0,0.02)">ends</span> today</p>',
+          '<p>Open <span style="color:rgba(0,0,0,0.2);opacity:0.2">late</span> daily</p>',
+          // Gradient text: a clear fill over a background clipped to the text shows; a stroke shows too.
+          '<h2 style="-webkit-text-fill-color:transparent;background:linear-gradient(red,blue);-webkit-background-clip:text;background-clip:text">Gradient</h2>',
+          '<h2 style="-webkit-text-fill-color:transparent;-webkit-text-stroke:1px black">Outline</h2>',
+        ].join(''),
+      ),
+      none,
+    );
+    expect(shown.text).toBe('Rated﷭ stars\nSale﷭ today\nOpen﷭ daily\nGradient\nOutline');
+    expect(shown.hidden).toEqual([['5', null], ['ends', null], ['late', null]]);
+  }, 60_000);
+
+  it('svg text is inked by its fill and stroke; a character with no glyph neither hides its line nor stands between neighbours a visitor sees glued (r11 verifier)', async () => {
+    const shown = await pages.shownText(
+      body(
+        [
+          // svg text paints with its fill, not its colour: none, clear or a fill-opacity of 0 leaves it no ink.
+          '<p>Badge: <svg width="200" height="30"><text x="0" y="20" fill="none">Secret label</text></svg></p>',
+          '<svg width="300" height="30"><text x="0" y="20" fill-opacity="0">Faint label</text></svg>',
+          '<svg width="300" height="30"><text x="0" y="20" style="fill:transparent">Clear label</text></svg>',
+          '<svg width="300" height="30"><text x="0" y="20" fill="none" stroke="black">Stroked label</text></svg>',
+          '<svg width="300" height="30"><text x="0" y="20">Visible label</text></svg>',
+          // A zero-width space opening a text node goes with the character after it (round 11 read it as hidden).
+          '<p>Hello <b>&#8203;world</b> today</p>',
+          // A no-break space standing elsewhere than between its neighbours: they are glued as a visitor sees them.
+          '<p>dc<span style="display:inline-block;width:0"><span style="position:absolute;top:400px">&nbsp;</span></span>Call</p>',
+        ].join(''),
+      ),
+      none,
+    );
+    expect(shown.text).toBe('Badge:﷭\nStroked label\nVisible label\nHello \u200bworld today\ndc\u00a0Call');
+    expect(shown.hidden).toEqual([['Secret label', null], ['Faint label', null], ['Clear label', null]]);
+  }, 60_000);
+
+  it('lists the text a stylesheet adds on an element that shows none of the page\'s own text (r10 verifier: generated content)', async () => {
+    const css = '<style>p:empty::before{content:"Coming soon"}li::before{content:"\\2713  "}.ic::before{content:"\\2605"}.n::before{content:"New: "}</style>';
+    const shown = await pages.shownText(body(`${css}<p id="s"></p><p class="n">Spring sale</p><ul><li></li><li>Fresh</li></ul><i class="ic"></i><span class="ic" style="opacity:0"></span><p>End</p>`), none);
+    // Beside the page's own text ("New: Spring sale", "✓ Fresh") it is decoration, not listed; faded, it is not seen.
+    expect(shown.generated).toEqual(['Coming soon', '✓', '★']);
+    expect(shown.text).toBe('Spring sale\nFresh\nEnd');
+  }, 60_000);
+
+  it('a drop cap (a floated first letter) is read as part of its word, as a visitor reads it (r10 verifier)', async () => {
+    const css = '<style>.d::first-letter{float:left;font-size:3em;line-height:1;margin-right:8px}.i::first-letter{initial-letter:3;margin-right:6px}</style>';
+    for (const [b, want] of [
+      ['<p class="d">Once upon a time</p>', 'Once upon a time'],
+      ['<div class="d"><p>“Twice upon a time</p></div>', '“Twice upon a time'],
+      ['<p class="i">Thrice upon a time</p>', 'Thrice upon a time'],
+      // A letter on its own before a space stays apart from the next word.
+      ['<p class="d">A time</p>', 'A time'],
+    ]) expect((await pages.shownText(body(`${css}${b}`), none)).text, b).toBe(want);
+  }, 60_000);
+
+  it('a section that waits out of view (moved aside by a transform) for a scroll script is read where it shows once revealed (r10 verifier)', async () => {
+    const css = '<style>body{overflow-x:hidden}.s{transition:transform .6s}.s.l{transform:translate3d(100%,0,0)}.s.r{transform:translate3d(-100%,0,0)}.s.f{transform:perspective(2500px) rotateY(-100deg);backface-visibility:hidden}.s.in{transform:none}</style>';
+    const tall = '<div style="height:1500px"></div>';
+    // As AOS 2 does it: a scroll listener adds the class once the section's top is on the screen.
+    const script = '<script>const go = () => document.querySelectorAll(".s").forEach((e) => { if (e.getBoundingClientRect().top < innerHeight - 50) e.classList.add("in"); }); addEventListener("scroll", go); go();</script>';
+    const shown = await pages.shownText(body(`${css}<p>Top</p>${tall}<div class="s l"><h3>Websites</h3><p>Fast sites you can update.</p></div>${tall}<div class="s r"><h3>Brand strategy</h3></div>${tall}<div class="s f"><h3>Tidewater Coffee</h3></div>${tall}${script}`), none);
+    expect(shown.text).toBe('Top\nWebsites\nFast sites you can update.\nBrand strategy\nTidewater Coffee');
+    expect(shown.hidden).toEqual([]);
+    // A carousel that moves its track by a transform: each slide is read where it shows.
+    const carousel = await pages.shownText(
+      body('<div style="width:400px;overflow:hidden"><div id="t" style="display:flex;transition:transform .5s"><p style="flex:0 0 400px;margin:0">First slide</p><p style="flex:0 0 400px;margin:0">Second slide</p></div></div><script>let i = 0; setInterval(() => { i = (i + 1) % 2; document.getElementById("t").style.transform = "translateX(" + (-400 * i) + "px)"; }, 3000);</script>'),
+      none,
+    );
+    expect(carousel.text).toBe('First slide\nSecond slide');
+    // A ticker an endless animation carries across the screen from beyond its edge: read where its cycle shows it (an
+    // endless animation is taken through its cycle across the samples; round 10 stopped it, off the screen).
+    const ticker = await pages.shownText(body('<style>@keyframes run{to{transform:translateX(-100%)}}</style><div style="overflow:hidden;white-space:nowrap"><div style="display:inline-block;padding-left:100%;animation:run 20s linear infinite">Now open for Sunday lunch</div></div><p>After</p>'), none);
+    expect(ticker.text).toBe('Now open for Sunday lunch\nAfter');
+    expect(ticker.hidden).toEqual([]);
+  }, 60_000);
+
+  it('a long left-to-right text in a right-to-left page is read within the deadline, its words apart as a visitor sees them', async () => {
+    // Every word boundary there is where runs of two directions meet, judged where the runs meet (round 12).
+    const words = Array.from({ length: 12000 }, (_, i) => `word${i}`).join(' ');
+    const t0 = performance.now();
+    const shown = await pages.shownText(`<!doctype html><html dir="rtl"><head><title>T</title></head><body><p>${words}</p><p>مرحبا بكم ١٩٩٨</p></body></html>`, none);
+    expect(performance.now() - t0).toBeLessThan(20_000);
+    expect(shown.text.startsWith('word0 word1 word2 ')).toBe(true);
+    expect(shown.text.endsWith('word11999\nمرحبا بكم ١٩٩٨')).toBe(true);
+  }, 60_000);
+
+  it('slides a script fades in and out in turn, stacked in one place, are never seen together: apart across boxes, not in another order', async () => {
+    // Each slide is shown at samples the others are hidden at, where it stands. Read from those boxes, the slides
+    // overlap and the next one's first letter stands before the last one's end, which a visitor never sees: the
+    // slides are apart across boxes (round 12's first fix read them from where each stood, as in another order).
+    const fade = body(
+      '<style>.car{position:relative;height:60px;width:600px}.s{position:absolute;left:0;top:0;margin:0;opacity:0;transition:opacity .5s}.s.on{opacity:1}</style><div class="car"><p class="s on">Great bread every day</p><p class="s">Best coffee in town</p><p class="s">Friendly staff</p></div><p>After</p><script>const ss = [...document.querySelectorAll(".s")]; let k = 0; setInterval(() => { ss[k].classList.remove("on"); k = (k + 1) % ss.length; ss[k].classList.add("on"); }, 2000);</script>',
+    );
+    expect((await pages.shownText(fade, none)).text).toBe('Great bread every day\nBest coffee in town\nFriendly staff\nAfter');
+  }, 60_000);
+
+  it('runs a page\'s scripts the same way each time: a stopped clock, a seeded Math.random, however long the page is (r10)', async () => {
+    const live = (tail: string) =>
+      body(
+        `<p>Now: <span id="c"></span></p><p>Served <span id="n">0</span>+ loaves</p><p id="q"></p>${tail}<script>setInterval(() => { document.getElementById("c").textContent = new Date().toISOString(); }, 1000); let v = 0; const t = setInterval(() => { v += 100; document.getElementById("n").textContent = v; if (v >= 2500) clearInterval(t); }, 30); document.getElementById("q").textContent = ["Alpha", "Beta", "Gamma"][Math.floor(Math.random() * 3)];</script>`,
+      );
+    const a = await pages.shownText(live('<p>End</p>'), none);
+    expect(a.text).toMatch(/^Now: 2026-01-01T12:00:\d\d\.\d{3}Z\nServed 2500\+ loaves\n(Alpha|Beta|Gamma)\nEnd$/);
+    expect((await pages.shownText(live('<p>End</p>'), none)).text).toBe(a.text);
+    // A page made longer by an edit is scrolled in more steps; its clock still reads the same at the end.
+    expect((await pages.shownText(live('<p>End</p><div style="height:12000px"></div><p>More</p>'), none)).text).toBe(`${a.text}\nMore`);
+    // A script that moves within the document (history.pushState) or tries to leave it (location) does not stop the read.
+    const moving = body('<p>Stay</p><script>history.pushState(null, "", "/elsewhere"); setTimeout(() => { location.href = "/other"; }, 100);</script>');
+    expect((await pages.shownText(moving, none)).text).toBe('Stay');
+  }, 60_000);
+
+  it('runs animation frames on the read\'s clock, twenty a second, so an animation that draws every frame ends where its time says (r10 verifier: GSAP)', async () => {
+    // A count-up drawn every frame for two seconds, as GSAP or a counter script draws it: it ends at its last value, and
+    // the frames are counted at the read's rate (Playwright's own frames made a GSAP page's read take 8 to 12 s).
+    const html = body('<p id="n">0</p><p id="f"></p><script>let t0 = null, frames = 0; const tick = (now) => { if (t0 === null) t0 = now; frames++; const k = Math.min(1, (now - t0) / 2000); document.getElementById("n").textContent = Math.round(k * 2500); if (k < 1) requestAnimationFrame(tick); else document.getElementById("f").textContent = "frames " + frames; }; requestAnimationFrame(tick); const id = requestAnimationFrame(() => { document.body.append("never"); }); cancelAnimationFrame(id);</script>');
+    expect((await pages.shownText(html, none)).text).toBe('2500\nframes 41');
+  }, 60_000);
+
+  it('reads a page whose sections a script reveals as the visitor scrolls, revealed, whatever the script does on the way back (r10)', async () => {
+    const style = '<style>.r{opacity:0;transform:translate3d(0,40px,0);transition:opacity .6s,transform .6s}.r.in{opacity:1;transform:none}</style>';
+    const tall = '<div style="height:1500px"></div>';
+    const shown = await pages.shownText(
+      body(
+        [
+          style,
+          '<p>Top</p>',
+          tall,
+          // An IntersectionObserver reveal with a staggered delay.
+          '<section><p class="r io">Observed one</p><p class="r io">Observed two</p></section>',
+          tall,
+          // A scroll listener that adds the class in view and takes it away out of view.
+          '<p class="r toggle">Toggled</p>',
+          tall,
+          // A lazy image the page waits for before it shows its caption.
+          '<figure><img loading="lazy" src="/api/artifacts/sha256:img" width="10" height="10" onload="this.nextElementSibling.style.opacity=1"><figcaption style="opacity:0">Caption</figcaption></figure>',
+          '<script>const io = new IntersectionObserver((es) => es.forEach((e, i) => { if (e.isIntersecting) setTimeout(() => e.target.classList.add("in"), i * 150); }), { threshold: 0.3 }); document.querySelectorAll(".io").forEach((el) => io.observe(el)); addEventListener("scroll", () => document.querySelectorAll(".toggle").forEach((el) => { const b = el.getBoundingClientRect(); el.classList.toggle("in", b.top < innerHeight && b.bottom > 0); }));</script>',
+        ].join(''),
+      ),
+      async () => ({ body: PIXEL, contentType: 'image/png' }),
+    );
+    expect(shown.text).toBe('Top\nObserved one\nObserved two\nToggled\nCaption');
+    expect(shown.hidden).toEqual([]);
+  }, 60_000);
+
+  it('applies a stylesheet a script makes, as a visitor\'s browser does: Tailwind\'s browser build, from an admitted host (r10)', async () => {
+    const tw = readFileSync(createRequire(import.meta.url).resolve('@tailwindcss/browser'));
+    const cdn = createServer((_, res) => {
+      res.setHeader('content-type', 'text/javascript');
+      res.end(tw);
+    });
+    await new Promise<void>((r) => cdn.listen(0, '127.0.0.1', () => r()));
+    const cdnHost = `127.0.0.1:${(cdn.address() as AddressInfo).port}`;
+    const scripted = playwrightPages({ admit: (u) => u.protocol === 'http:' && u.host === cdnHost, launch: () => launchWith(LOCAL_NETWORK_CHECKS_OFF) });
+    opened.push(scripted);
+    try {
+      const html = `<!doctype html><html><head><title>T</title><script src="http://${cdnHost}/tw.js"></script></head><body class="p-8"><p>Rated 4.5<span class="sr-only"> out of 5</span> stars</p><a href="/s" class="px-4">Get started<span class="hidden md:inline"> free</span></a><p class="hidden">Gone</p><p class="flex"><span>Call us</span> <b class="ml-1">today</b></p></body></html>`;
+      const shown = await scripted.shownText(html, none);
+      // sr-only applies (round 9, with JavaScript off, read "out of 5" as shown); md:inline shows at 1440 px; hidden is
+      // not laid out; ml-1 parts two flex items.
+      expect(shown.text).toBe('Rated 4.5\ufded\nstars\nGet started free\ufdec\nCall us\ntoday');
+      expect(shown.hidden).toEqual([['out of 5', null]]);
+    } finally {
+      cdn.close();
+    }
+  }, 120_000);
+
+  it('a file the page loads from an admitted host that fails, comes back cut off or with a server error is fetched again in a second read, then the read fails plainly; one slow to come is waited for (r12 verifier: Tailwind under load)', async () => {
+    // A read that went on without a stylesheet or a script the page loads (Tailwind's browser build, under load) judged
+    // an unstyled page as the one a visitor sees: its screen-reader-only text shown, its lines counted otherwise.
+    const CAP = 64 * 1024;
+    const hits: Record<string, number> = {};
+    const cdn = createServer((req, res) => {
+      const u = req.url ?? '';
+      hits[u] = (hits[u] ?? 0) + 1;
+      const css = (text: string) => void res.writeHead(200, { 'content-type': 'text/css' }).end(text);
+      if (u === '/once.css') return hits[u] === 1 ? void req.socket.destroy() : css('.x{display:none}');
+      if (u === '/never.css') return void req.socket.destroy();
+      if (u === '/big.css') return css(`/*${'x'.repeat(CAP + 1024)}*/.x{display:none}`);
+      if (u === '/busy.css') return void res.writeHead(503).end();
+      if (u === '/slow.css') return void setTimeout(() => css('.x{display:none}'), 1_500);
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => cdn.listen(0, '127.0.0.1', () => r()));
+    const host = `127.0.0.1:${(cdn.address() as AddressInfo).port}`;
+    const reader = playwrightPages({ maxFetchBytes: CAP, admit: (u) => u.protocol === 'http:' && u.host === host, launch: () => launchWith(LOCAL_NETWORK_CHECKS_OFF) });
+    opened.push(reader);
+    const page = (file: string) => `<!doctype html><html><head><title>T</title><link rel="stylesheet" href="http://${host}/${file}"></head><body><p>Shown</p><p class="x">Gone</p></body></html>`;
+    try {
+      // A connection that fails once: the second read gets the stylesheet, and the page is read styled.
+      expect((await reader.shownText(page('once.css'), none)).text).toBe('Shown\ufdec');
+      expect(hits['/once.css']).toBe(2);
+      for (const [file, what] of [
+        ['never.css', 'could not be fetched'],
+        ['big.css', 'came back cut off, larger than the 64 KiB byway takes from one file'],
+        ['busy.css', 'came back with a server error (503)'],
+      ] as const) {
+        const err = await reader.shownText(page(file), none).catch((e: unknown) => e);
+        expect(err, file).toBeInstanceOf(StepError);
+        expect((err as Error).message, file).toMatch(new RegExp(`^The page's text could not be read as a visitor sees it: it loads http://${host.replace(/\./g, '\\.')}/${file.replace('.', '\\.')}, which ${what.replace(/[()]/g, '\\$&')}`));
+        expect(hits[`/${file}`], file).toBe(2);
+      }
+      // A file that is not there is what a visitor's browser gets too: the page is read without it, once.
+      expect((await reader.shownText(page('missing.css'), none)).text).toBe('Shown\nGone');
+      expect(hits['/missing.css']).toBe(1);
+      // A file the page itself stops asking for (an image whose source a script changes while it is on its way) is not a
+      // file that failed: only the fetch failing counts.
+      const dropped = `<!doctype html><html><head><title>T</title></head><body><p>Shown</p><img id="i" src="http://${host}/slow.css"><script>setTimeout(() => { document.getElementById('i').remove(); }, 0); document.getElementById('i').src = 'data:,';</script></body></html>`;
+      expect((await reader.shownText(dropped, none)).text).toBe('Shown');
+      // A stylesheet a script asks for once the page has loaded, slow to come, is waited for before the page is sampled.
+      const late = `<!doctype html><html><head><title>T</title></head><body><p>Shown</p><p class="x">Gone</p><script>addEventListener('load', () => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'http://${host}/slow.css'; document.head.append(l); });</script></body></html>`;
+      expect((await reader.shownText(late, none)).text).toBe('Shown\ufdec');
+    } finally {
+      await new Promise((r) => cdn.close(r));
+    }
+  }, 120_000);
+
+  it('a page nesting thousands of inline elements left open is read, once, within the deadline (r10: the JavaScript-off read crashed)', async () => {
+    // Read within a render's deadline, not only failed plainly in it: the read measures a page again only after something
+    // on it changed (r11: measuring every text node again at each of the 33 samples ran these pages past the deadline).
+    for (const n of [5_000, 20_000]) {
+      const html = `<!doctype html><html><head><title>T</title></head><body><p>Keep</p><p>${'<span>'.repeat(n)}Gone${'</span>'.repeat(n)}</p></body></html>`;
+      expect((await pages.shownText(html, none)).text, String(n)).toBe('Keep\nGone');
+    }
+    const open = `<!doctype html><html><head><title>T</title></head><body><p>${Array.from({ length: 20_000 }, (_, i) => `<span>w${i} `).join('')}</p><p>Tail</p></body></html>`;
+    expect((await pages.shownText(open, none)).text).toMatch(/^w0 w1 w2 [^]* w19999\nTail$/);
+    expect((await pages.shownText('<p>Next</p>', none)).text).toBe('Next');
+  }, 180_000);
+
+  it('text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee\'s own box (r9)', async () => {
+    const html = '<p>Before</p><div><marquee>Breaking news today</marquee></div><div><marquee direction="up" style="height:20px">Up <b>and</b> away</marquee></div><p>After</p>';
+    for (let k = 0; k < 3; k++) {
+      const shown = await pages.shownText(html, none);
+      expect(shown.text).toBe('Before\nBreaking news today\nUp and away\nAfter');
+      expect(shown.hidden).toEqual([]);
+    }
+    // A marquee a style hides is hidden with everything in it.
+    expect((await pages.shownText('<p>Before</p><div style="opacity:0"><marquee>Gone</marquee></div>', none)).hidden).toEqual([['Gone', null]]);
+  }, 60_000);
+
+  it('reads a page as it settles: animations and transitions are taken to their end, an endless one is stopped (r9)', async () => {
+    const css = '@keyframes in{from{opacity:0}to{opacity:1}}@keyframes blink{50%{opacity:0}}.in{animation:in 2s both}.late{animation:in 1s 20s both}.blink{animation:blink 1s infinite}';
+    const shown = await pages.shownText(`<style>${css}</style><h1 class="in">Welcome</h1><p class="late">Later</p><p class="blink">Live</p>`, none);
+    expect(shown.text).toBe('Welcome\nLater\nLive');
+    expect(shown.hidden).toEqual([]);
+  }, 60_000);
+
+  it('marks each link\'s words with its index, and lists each address', async () => {
+    const shown = await pages.shownText('<p>Read <a href="/terms">the terms</a> and <a href="/faq">FAQ</a>.</p>', none);
+    expect(shown.text).toBe('Read the terms and FAQ.');
+    expect(shown.hrefs).toEqual(['/terms', '/faq']);
+    expect(shown.linked).toBe(`Read ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0)}${LINK_INDEX_END}the terms${LINK_CLOSE} and ${LINK_OPEN}${String.fromCharCode(LINK_DIGIT_0 + 1)}${LINK_INDEX_END}FAQ${LINK_CLOSE}.`);
+  }, 60_000);
+
+  it('vertical and turned text: whether two neighbours stand glued is judged along the text\'s own line, from its writing mode and its transforms (r12 verifier)', async () => {
+    const cases: [string, string][] = [
+      // Flex items set top to bottom in a vertical writing mode, with no gap, show glued (round 12 read a line break, so
+      // it stored a typed space the item's edge drops, and refused words glued as the line has them).
+      ['<div style="writing-mode:vertical-rl;display:flex;height:400px">Already registered?<a href="/l">Sign in</a> today</div>', 'Already registered?Sign intoday'],
+      ['<div style="writing-mode:vertical-lr;display:flex;height:400px"><span>Fresh</span><a href="/b">bread</a></div>', 'Freshbread'],
+      ['<div style="writing-mode:sideways-rl;display:flex;height:400px"><span>Fresh</span><a href="/b">bread</a></div>', 'Freshbread'],
+      ['<div style="writing-mode:sideways-lr;display:flex;height:400px"><span>Fresh</span><a href="/b">bread</a></div>', 'Freshbread'],
+      // With a gap they stand apart; words in one flow of text keep their spaces; a <br> and an inline block's edge part.
+      ['<div style="writing-mode:vertical-rl;display:flex;gap:8px;height:400px"><span>Fresh</span><b>bread</b></div>', 'Fresh\nbread'],
+      ['<div style="writing-mode:vertical-rl;height:400px">Already registered? <a href="/l">Sign in</a><br>Today</div>', 'Already registered? Sign in\nToday'],
+      ['<div style="writing-mode:vertical-rl;text-orientation:upright;height:400px">Tags <span style="display:inline-block">NEW</span><span style="display:inline-block">HOT</span></div>', 'Tags\nNEWHOT'],
+      // A label turned a quarter turn either way, or upside down, by transform or by rotate: its flex items glued, in order.
+      ['<div style="position:absolute;left:0;top:300px;transform:rotate(-90deg);transform-origin:left top;display:flex"><span>Scroll</span><a href="/more">down</a> now</div>', 'Scrolldownnow'],
+      ['<div style="position:absolute;left:40px;top:120px;transform:rotate(90deg);transform-origin:left top;display:flex">Find<a href="/m">menu</a></div>', 'Findmenu'],
+      ['<div style="transform:rotate(180deg);display:flex;width:300px"><span>Upside</span><b>down</b></div>', 'Upsidedown'],
+      ['<div style="rotate:90deg;display:flex;width:200px;margin:120px"><span>Turn</span><b>ed</b> by rotate</div>', 'Turnedby rotate'],
+      // Turned at an angle: words in one flow of text keep their spaces (round 12 read "AlreadyhereSignin"), flex items
+      // with no gap are glued and a margin parts them.
+      ['<div style="transform:rotate(-30deg);width:400px;margin:150px">Already here <b>Sign in</b></div>', 'Already here Sign in'],
+      ['<div style="transform:rotate(-30deg);display:flex;width:400px;margin:150px"><span>Already</span><a href="/l">Sign in</a></div>', 'AlreadySign in'],
+      ['<div style="transform:rotate(-30deg);display:flex;width:400px;margin:150px"><span>Already</span><a href="/l" style="margin-left:6px">Sign in</a></div>', 'Already\nSign in'],
+      ['<svg width="200" height="200"><text x="50" y="50" transform="rotate(90 50 50)">Hello world</text></svg>', 'Hello world'],
+      // Skewed text (a slanted heading, a skewed badge): the gap along the line is measured between the characters'
+      // advances, not their slanted outlines, which overlap the next character's (round 13's first fix read
+      // "Bigsummersaletoday").
+      ['<h2 style="transform:skewX(-12deg)">Big summer sale today</h2>', 'Big summer sale today'],
+      ['<h2 style="transform:skewX(-20deg);font-size:32px;display:flex"><span>Big</span><b>summer</b> sale</h2>', 'Bigsummersale'],
+      ['<p><span style="display:inline-block;transform:skewX(-12deg);padding:2px 8px">Hot deal</span> now</p>', 'Hot deal\nnow'],
+      // Two labels turned a quarter turn in one column, sections apart, are not one line: apart across boxes, not in the
+      // other order (round 13's first form of this rule read them as reversed, so deleting a ticker between two such
+      // side labels was refused as words in another order).
+      ['<div style="position:absolute;left:20px;top:300px;transform:rotate(-90deg);transform-origin:left top">Since 2011</div><div style="position:absolute;left:20px;top:900px;transform:rotate(-90deg);transform-origin:left top">01 Menu</div>', 'Since 2011\n01 Menu'],
+      // Far apart along their line, the second after the first: apart across boxes. The second before the first in one
+      // row of one box (row-reverse, order) is in the other order, as in straight text (round 13 read these apart, so a
+      // visitor's "rye … Fresh" was stored as "Fresh rye").
+      ['<div style="writing-mode:vertical-rl;display:flex;gap:5em;height:500px;font:20px Arial"><span>Fresh</span> <span>bread</span></div>', 'Fresh\nbread'],
+      ['<div style="writing-mode:vertical-rl;display:flex;flex-direction:row-reverse;justify-content:flex-end;gap:5em;height:500px;font:20px Arial"><span>Fresh</span> <span>bread</span></div>', `Fresh${REVERSED}bread`],
+      ['<div style="writing-mode:vertical-rl;display:flex;gap:5em;height:500px;font:20px Arial"><span>Fresh</span> <span style="order:-1">bread</span></div>', `Fresh${REVERSED}bread`],
+      ['<div style="writing-mode:vertical-rl;display:flex;flex-direction:row-reverse;justify-content:space-between;height:400px;font:20px Arial"><span>Scroll</span> <span>down</span></div>', `Scroll${REVERSED}down`],
+      ['<div style="position:absolute;left:30px;top:450px;transform:rotate(-90deg);transform-origin:left top;display:flex;flex-direction:row-reverse;justify-content:space-between;width:400px;font:20px Arial"><span>Scroll</span> <span>down</span></div>', `Scroll${REVERSED}down`],
+      ['<div style="position:absolute;left:30px;top:450px;transform:rotate(-90deg);transform-origin:left top;display:flex;gap:5em;width:400px;font:20px Arial"><span>Fresh</span> <span style="order:-1">bread</span></div>', `Fresh${REVERSED}bread`],
+      // A slight tilt beside straight text is measured along their common line.
+      ['<p>Sale <span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Sale\nnow'],
+      ['<p>Sale<span style="display:inline-block;transform:rotate(3deg)">now</span></p>', 'Salenow'],
+      // A word turned against the text beside it is judged by their shapes on the screen: apart where those stand apart.
+      ['<p>Menu <span style="display:inline-block;transform:rotate(90deg)">Today</span></p>', 'Menu\nToday'],
+      ['<div style="position:absolute;left:300px;top:40px;transform:rotate(90deg);transform-origin:left top">Side</div><p style="margin-top:200px">Body</p>', 'Side\nBody'],
+      // Where the read cannot measure (a turn near an eighth of a turn, a turn in 3D) and the two stand near, a box's edge
+      // between them is never read as parting them: they are glued, marked as not measured (TURNED); in one flow of text
+      // they are as the text runs them.
+      ['<div style="transform:rotate(-45deg);display:flex;width:400px;margin:150px"><span>Already here</span><b>Sign in</b></div>', `Already here${TURNED}Sign in`],
+      ['<div style="transform:perspective(400px) rotateY(40deg);display:flex;width:400px;margin:100px"><span>Tilted card</span><b>Go</b></div>', `Tilted card${TURNED}Go`],
+    ];
+    for (const [b, want] of cases) expect((await pages.shownText(body(b), none)).text, b).toBe(want);
+  }, 120_000);
+
+  it('neighbours across a box\'s edge offset across their line (an item raised or lowered beside the next) stand on one row: where they meet along it the read cannot tell whether they stand apart, and the second before the first is in the other order (r13 verifier)', async () => {
+    const cases: [string, string][] = [
+      // Round 12 and 13 read a pair across a box's edge overlapping across the line by less than half the smaller box as
+      // on rows of their own, apart across boxes however close they stood, and never checked their order: they stored
+      // "Sign in today" a visitor sees as "Sign intoday" beside a lowered link, and "Fresh rye" a visitor reads "rye Fresh".
+      // Lowered by a relative offset, a margin or padding, as beside align-items:flex-start; in straight and vertical text.
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Already have an account?</span><a href="/l" style="position:relative;top:14px">Sign in</a> today</p>', `Already have an account?${OFFSET}Sign in${OFFSET}today`],
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:14px">bread</span></p>', `Fresh${OFFSET}bread`],
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:12px">bread</span></p>', `Fresh${OFFSET}bread`],
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:20px">bread</span></p>', `Fresh${OFFSET}bread`],
+      ['<p style="display:flex;align-items:flex-start;font:18px/28px Arial">Already have an account?<a href="/l" style="padding-top:16px">Sign in</a></p>', `Already have an account?${OFFSET}Sign in`],
+      ['<div style="writing-mode:vertical-rl;display:flex;align-items:flex-start;height:300px;font:20px Arial"><span>Fresh</span><span style="margin-block-start:14px">bread</span></div>', `Fresh${OFFSET}bread`],
+      // Offset by less than half the box: one row, glued; a gap along the line parts them.
+      ['<p style="display:flex;align-items:flex-start;font:20px Arial"><span>Fresh</span><span style="margin-top:8px">bread</span></p>', 'Freshbread'],
+      ['<p style="display:flex;align-items:flex-start;gap:8px;font:20px Arial"><span>Fresh</span><span style="margin-top:14px">bread</span></p>', 'Fresh\nbread'],
+      // The second before the first along the line: in the other order.
+      ['<p style="display:flex;flex-direction:row-reverse;justify-content:flex-end;align-items:flex-start;gap:6px;font:20px Arial"><span>Fresh</span> <span style="margin-top:14px">bread</span></p>', `Fresh${REVERSED}bread`],
+      // Rows of their own stay apart across boxes, though their letters' boxes overlap where lines are set solid: a block
+      // that starts where the one above ends, flex items wrapped onto the next row, words in inline blocks wrapped.
+      ['<div style="font:20px/1 \'Courier New\',monospace"><div>Fresh</div><div style="margin-left:60px">bread</div></div>', 'Fresh\nbread'],
+      ['<p style="display:flex;flex-wrap:wrap;width:120px;font:48px/.85 Arial"><span>Big</span><span>bold</span></p>', 'Big\nbold'],
+      ['<h1 style="font:64px/.9 Arial;width:300px"><span style="display:inline-block">Fresh</span> <span style="display:inline-block">bread</span></h1>', 'Fresh\nbread'],
+      // A line pulled up over the one before by a negative margin overlaps it along the line, so it is not beside it.
+      ['<h2 style="font:36px Arial;margin:0">Fresh bread daily</h2><p style="margin:-8px 0 0;font:16px Arial">Baked every morning</p>', 'Fresh bread daily\nBaked every morning'],
+    ];
+    for (const [b, want] of cases) expect((await pages.shownText(body(b), none)).text, b).toBe(want);
+  }, 120_000);
+
+  it('a box a transform turns or scales clips its text where it stands on the screen, and an ellipsis cuts vertical or turned text where it cuts a line (r12 measured the clip unturned)', async () => {
+    const shown = await pages.shownText(
+      body(
+        [
+          // Turned a quarter turn: the box keeps "Shown" and cuts "Cut", 100 px along its own line.
+          '<div style="position:absolute;left:300px;top:40px;transform:rotate(90deg);transform-origin:left top;width:80px;height:20px;line-height:20px;overflow:hidden;white-space:nowrap">Shown<span style="margin-left:100px">Cut</span></div>',
+          // Scaled up, as a hero's slow zoom or a card's scale-105: the text by its right edge shows.
+          '<div style="margin:160px 0 0 40px;width:300px;transform:scale(1.1);overflow:hidden"><p style="margin:0;text-align:right">Right edge</p></div>',
+          // Tilted a little, as a card turned 2 degrees.
+          '<div style="margin:40px;width:300px;transform:rotate(2deg);overflow:hidden"><p style="margin:0;text-align:right">Tilted edge</p></div>',
+        ].join(''),
+      ),
+      none,
+    );
+    expect(shown.text).toBe('Shown﷭\nRight edge\nTilted edge');
+    expect(shown.hidden).toEqual([['Cut', null]]);
+    // An ellipsis cuts the same characters from a line set top to bottom, or turned a quarter turn, as from the line laid
+    // out across the page.
+    const line = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0;font:16px Arial';
+    const across = await pages.shownText(body(`<p style="width:120px;${line}">Fresh bread baked every day</p>`), none);
+    expect(across.text).toMatch(/^Fresh [^﷭]+﷭$/);
+    const down = await pages.shownText(body(`<p style="writing-mode:vertical-rl;height:120px;${line}">Fresh bread baked every day</p>`), none);
+    const turned = await pages.shownText(body(`<p style="position:absolute;left:300px;top:40px;transform:rotate(90deg);transform-origin:left top;width:120px;${line}">Fresh bread baked every day</p>`), none);
+    for (const r of [down, turned]) {
+      expect(r.text).toBe(across.text);
+      expect(r.hidden).toEqual(across.hidden);
+    }
+  }, 60_000);
+
+  it('an ellipsis, a line clamp and a box of fixed height cut the same characters in a box a transform scales or CSS zoom shrinks as at full size (r13 verifier)', async () => {
+    // Round 13 set the ellipsis's band from the box's scaled place and its unscaled width, so under scale(0.9) or zoom:0.9
+    // the last letters an ellipsis cut were read as shown, and under zoom a box of fixed height kept a row it cuts.
+    const kinds: Record<string, (wrap: string) => string> = {
+      truncate: (wrap) => body(`<div style="${wrap}"><p style="width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:16px Arial;margin:0">Fresh sourdough bread daily</p><p>Second line</p></div>`),
+      clamp: (wrap) => body(`<div style="${wrap}"><p style="width:200px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font:16px/20px Arial;margin:0">Fresh bread baked every single morning by hand in the oven</p><p>Second line</p></div>`),
+      fixed: (wrap) => body(`<div style="${wrap}"><p style="width:220px;height:28px;overflow:hidden;font:16px/20px Arial;margin:0">Fresh bread every morning with our sourdough starter</p><p>Second line</p></div>`),
+    };
+    for (const [kind, page] of Object.entries(kinds)) {
+      const full = await pages.shownText(page(''), none);
+      expect(full.hidden.length, kind).toBe(1);
+      for (const wrap of ['transform:scale(0.9);transform-origin:left top', 'transform:scale(0.8);transform-origin:left top', 'transform:scale(1.1);transform-origin:left top', 'zoom:0.9', 'zoom:0.8']) {
+        const r = await pages.shownText(page(wrap), none);
+        expect(r.text, `${kind} ${wrap}`).toBe(full.text);
+        expect(r.hidden, `${kind} ${wrap}`).toEqual(full.hidden);
+      }
+    }
+  }, 120_000);
+
+  it('a 3D transform that keeps the element\'s own plane flat (AOS\'s flip at rest, vanilla-tilt at rest, translateZ(0)) is read as flat: its box clips where it stands and its flex rows are measured (r13 verifier)', async () => {
+    // Round 13 read any transform holding perspective() as a turn in 3D: a card that hides its overflow kept nothing, so
+    // its lines were not offered, said to be hidden from sight, and its flex rows were read as not measured.
+    const card = (tf: string) => body(`<div style="transform:${tf};overflow:hidden;width:400px;padding:16px"><h3>Fresh bread</h3><p style="display:flex">Already a member? <a href="/in">Sign in</a></p></div><div style="transform:${tf};width:400px;padding:16px"><p style="display:flex">Price: <b>$20</b></p></div>`);
+    for (const tf of ['perspective(2500px) rotateY(0)', 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1,1,1)', 'perspective(1000px)', 'translateZ(0)', 'matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)']) {
+      const r = await pages.shownText(card(tf), none);
+      expect(r.text, tf).toBe('Fresh bread\nAlready a member?Sign in\nPrice:$20');
+      expect(r.hidden, tf).toEqual([]);
+    }
+    // As AOS 2.3.4 runs a flip (its stylesheet's flip-left and flip-up, the class its script adds) and vanilla-tilt 1.8.1
+    // rests (the transform its reset sets), on cards that hide their overflow.
+    const aos = '<style>[data-aos^=flip]{backface-visibility:hidden;transition-property:transform;transition-duration:.4s}[data-aos=flip-left]{transform:perspective(2500px) rotateY(-100deg)}[data-aos=flip-left].aos-animate{transform:perspective(2500px) rotateY(0)}[data-aos=flip-up]{transform:perspective(2500px) rotateX(-100deg)}[data-aos=flip-up].aos-animate{transform:perspective(2500px) rotateX(0)}.c{overflow:hidden;padding:24px;width:320px;display:inline-block;vertical-align:top}</style>';
+    const flips = await pages.shownText(body(`${aos}<div class="c" data-aos="flip-left"><h3>Brand identity</h3><p>Logos, type and colour.</p></div><div class="c" data-aos="flip-up"><h3>Web design</h3><p>Fast sites.</p></div><script>addEventListener('load', () => document.querySelectorAll('[data-aos]').forEach((e) => e.classList.add('aos-animate')));</script>`), none);
+    expect(flips.text).toBe('Brand identity\nLogos, type and colour.\nWeb design\nFast sites.');
+    const tilt = await pages.shownText(body('<div class="t" style="overflow:hidden;padding:24px;width:320px;will-change:transform"><h3>Harbour Coffee</h3><p style="display:flex"><span>A brand</span><b>for a café</b></p></div><script>document.querySelectorAll(".t").forEach((e) => { e.style.transform = "perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)"; });</script>'), none);
+    expect(tilt.text).toBe('Harbour Coffee\nA brandfor a café');
+    // A 3D matrix that tilts the plane, or a box its parent sets in 3D and moves out of the plane, is still not read.
+    expect((await pages.shownText(body('<div style="transform:perspective(1000px) rotateX(0deg);transform-style:preserve-3d;width:400px"><p style="display:flex;transform:translateZ(50px)"><span>Fresh</span><b>bread</b></p></div>'), none)).text).toBe(`Fresh${TURNED}bread`);
+  }, 60_000);
+
+  it('an endless animation is judged at each of the points of its cycle the read holds it at: two neighbours glued at any of them are glued (r12 verifier: a nudge judged at its first keyframe)', async () => {
+    const css = '<style>@keyframes nudge{0%{transform:translateX(-14px)}8%,100%{transform:none}}.n{display:inline-block;margin-left:24px;animation:nudge 3s infinite}@keyframes peek{0%{transform:translateY(-120%)}10%,100%{transform:none}}.peek{display:inline-block;animation:peek 4s infinite}</style>';
+    // The link rests glued to the words after it (a flex item whose leading space a browser drops) for all of its cycle
+    // but its start, where round 12 judged it and stored "Sign intoday".
+    expect((await pages.shownText(body(`${css}<p style="display:flex">Already have an account?<a class="n" href="/l">Sign in</a> today</p>`), none)).text).toBe('Already have an account?\nSign intoday');
+    // A badge that rests glued to its heading and peeks in from above at the start of its cycle.
+    expect((await pages.shownText(body(`${css}<h2 style="display:flex"><span>Pricing</span><b class="peek">New</b></h2>`), none)).text).toBe('PricingNew');
+    // A pulse that only fades, and one that never brings its item beside its neighbour, change nothing.
+    const fade = '<style>@keyframes fade{50%{opacity:.4}}.f{animation:fade 2s infinite}</style>';
+    expect((await pages.shownText(body(`${fade}<p style="display:flex;gap:6px"><span>Fresh</span><b class="f">bread</b></p>`), none)).text).toBe('Fresh\nbread');
+  }, 60_000);
+
+  it('a button is a box of its own: its content stands apart from the text beside it, as a visitor sees it (innerText read them glued)', async () => {
+    const html = '<p>Pay <button type="button"><a href="/b"><i>now</i> today  </a></button>Total <a href="/c"> here </a></p>';
+    const shown = await pages.shownText(html, none);
+    expect(shown.text).toBe('Pay\nnow today\nTotal here');
+    expect(shown.linked.replace(/[﷐-﷒﷠-﷩]/g, '')).toBe(shown.text);
+  }, 60_000);
+
+  it('reads the first document only: a meta refresh does not replace it; other hosts stay blocked', async () => {
+    const asked: string[] = [];
+    const html = '<!doctype html><html><head><meta http-equiv="refresh" content="0;url=/elsewhere"><link rel="stylesheet" href="https://example.com/evil.css"></head><body><p>Stay here</p><img src="/api/artifacts/sha256:abc"></body></html>';
+    const first = await pages.shownText(html, async (id) => {
+      asked.push(id);
+      return undefined;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(first.text).toBe('Stay here');
+    expect(asked).toEqual(['sha256:abc']);
+  }, 60_000);
+
+  it('a page that navigates away as it loads (to about:blank, which no route sees) is a plain StepError, not a raw retried error (r8)', async () => {
+    for (const to of ['about:blank', 'about:srcdoc']) {
+      const html = `<!doctype html><html><head><meta http-equiv="refresh" content="0;url=${to}"></head><body><p>Gone soon</p></body></html>`;
+      for (let k = 0; k < 3; k++) {
+        const err = await pages.shownText(html, none).catch((e: unknown) => e);
+        expect(err, to).toBeInstanceOf(StepError);
+        expect((err as Error).message).toBe('The page navigates away as it loads (a meta refresh, for example), so the text it shows could not be read.');
+      }
+    }
+    // A refresh later than the read, or to the page's own address, reads the page.
+    expect((await pages.shownText('<meta http-equiv="refresh" content="5;url=about:blank"><p>Stay</p>', none)).text).toBe('Stay');
+    expect((await pages.shownText('<meta http-equiv="refresh" content="0"><p>Stay</p>', none)).text).toBe('Stay');
+    // So does one to a fragment of the page: the document stays the same (r9; round 8 called it navigating away).
+    expect((await pages.shownText('<meta http-equiv="refresh" content="0;url=#m"><p id="m">Stay</p>', none)).text).toBe('Stay');
+    expect((await pages.shownText('<meta http-equiv="refresh" content="0;url=/page#top"><p>Stay</p>', none)).text).toBe('Stay');
+  }, 60_000);
+
+  it('reads that share a deadline stop at it, whatever time each read has left (r8)', async () => {
+    const hang = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Text</body></html>';
+    const never = () => new Promise<undefined>(() => undefined);
+    const t0 = Date.now();
+    const err = await pages.shownText(hang, never, { deadline: t0 + 1_500 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe('The page did not finish loading in the time byway gives a page\'s reads, so its text could not be read.');
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    const late = await pages.shownText('<p>Next</p>', none, { deadline: Date.now() - 1 }).catch((e: unknown) => e);
+    expect(late).toBeInstanceOf(StepError);
+    expect((await pages.shownText('<p>Next</p>', none, { deadline: Date.now() + 20_000 })).text).toBe('Next');
+  }, 60_000);
+
+  it('is bounded and cancellable like a render (SEC-5)', async () => {
+    const quick = playwrightPages({ timeoutMs: 2_000, closeTimeoutMs: 2_000 });
+    opened.push(quick);
+    // An artifact that never comes back holds its load; a script that loops once the read runs its clock holds the read.
+    const hang = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Text</body></html>';
+    const never = () => new Promise<undefined>(() => undefined);
+    for (const page of [hang, BUSY]) {
+      const err = await quick.shownText(page, never).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(StepError);
+      expect((err as Error).message).toMatch(/did not finish loading within 2 s, so its text could not be read/);
+    }
+    expect((await quick.shownText('<p>Next</p>', none)).text).toBe('Next');
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled by the run');
+    setTimeout(() => ctrl.abort(reason), 300);
+    await expect(pages.shownText(hang, never, { signal: ctrl.signal })).rejects.toBe(reason);
+  }, 60_000);
+
+  it('turns a renderer failure while reading (a Playwright protocol error) into one plain step failure, as a render\'s is', async () => {
+    const RAW = 'page.evaluate: Protocol error (Runtime.callFunctionOn): Target crashed';
+    const crashing = (b: Browser): Browser =>
+      new Proxy(b, {
+        get(target, prop, receiver) {
+          if (prop !== 'newContext') return Reflect.get(target, prop, receiver);
+          return async (...args: Parameters<Browser['newContext']>) => {
+            const context = await target.newContext(...args);
+            return new Proxy(context, {
+              get(c, p, r) {
+                if (p !== 'newPage') return Reflect.get(c, p, r);
+                return async () => {
+                  const page = await c.newPage();
+                  return new Proxy(page, {
+                    get(pg, name, rr) {
+                      if (name === 'evaluate') return async () => Promise.reject(new Error(`${RAW}\nCall log:\n  - evaluating`));
+                      const v = Reflect.get(pg, name, rr) as unknown;
+                      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
+                    },
+                  });
+                };
+              },
+            });
+          };
+        },
+      });
+    const failing = playwrightPages({ launch: async () => crashing(await launchChromium()) });
+    opened.push(failing);
+    const err = await failing.shownText('<p>Hello</p>', none).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe('The page\'s text could not be read: the page renderer failed while reading it (Target crashed).');
+    expect((err as Error).cause).toBeInstanceOf(Error);
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled by the run');
+    ctrl.abort(reason);
+    await expect(failing.shownText('<p>Hello</p>', none, { signal: ctrl.signal })).rejects.toBe(reason);
   }, 60_000);
 });
