@@ -440,6 +440,9 @@ describe('the AI’s advice, never a veto (D3, ADR-0101)', () => {
   it('the note ends the advice with a stop when it has none, and says nothing for empty advice', async () => {
     expect(adviceNote('A real photograph would serve it better')).toBe('The AI suggests: A real photograph would serve it better. You can cut the image at Trim.');
     expect(adviceNote('Is a header needed?')).toBe('The AI suggests: Is a header needed? You can cut the image at Trim.');
+    // A trailing colon, semicolon or comma gives way to the full stop rather than standing before it.
+    expect(adviceNote('Consider a real photograph:')).toBe('The AI suggests: Consider a real photograph. You can cut the image at Trim.');
+    expect(adviceNote('Keep it simple,')).toBe('The AI suggests: Keep it simple. You can cut the image at Trim.');
     expect(adviceNote('Its own line says it: “less is more.”')).toBe('The AI suggests: Its own line says it: “less is more.” You can cut the image at Trim.');
     expect(adviceNote('Keep it quiet (a photo would do)')).toBe('The AI suggests: Keep it quiet (a photo would do). You can cut the image at Trim.');
     const g = fake([answer(['header'], '  ')]);

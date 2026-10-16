@@ -114,11 +114,15 @@ describe('judging parsers (spec §3.3)', () => {
     });
 
     it('is plain text: control and direction-changing characters go, and a lone surrogate becomes U+FFFD', () => {
-      expect(parseBriefs(answer('Cut\u0007 it\u202E at\u2066 Trim\u200B\ud800.'))).toMatchObject({ value: { advice: 'Cut it at Trim\uFFFD.' } });
+      expect(parseBriefs(answer('Cut\u0007 it\u202E at\u2066 Trim\u200B\ud800.'))).toMatchObject({ value: { advice: 'Cut it at Trim \uFFFD.' } });
+      // A removed character becomes a space, never nothing, so it cannot join two halves of something into one (ADR-0088).
+      expect(parseBriefs(answer('key sk-ant-abc\u200Bdef here'))).toMatchObject({ value: { advice: 'key sk-ant-abc def here' } });
       // Joiners stay: they hold emoji and some scripts together.
       expect(parseBriefs(answer('Keep 👩\u200D🍳 out.'))).toMatchObject({ value: { advice: 'Keep 👩\u200D🍳 out.' } });
       // Only control characters is no advice.
       expect(parseBriefs(answer('\u0007\u202E'))).toEqual(briefsOnly);
+      // Nothing readable is no advice: joiners alone, and blank characters outside the control and format classes.
+      for (const blank of ['\u200D\u200C', '\u3164\u3164', '\u2800', '\u200D \u3164']) expect(parseBriefs(answer(blank)), JSON.stringify(blank)).toEqual(briefsOnly);
     });
 
     it(`is held to ${ADVICE_MAX} characters: a longer line is cut at a word, with an ellipsis`, () => {

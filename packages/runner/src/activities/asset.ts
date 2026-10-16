@@ -53,7 +53,11 @@ export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, 
  * holds every such step to that). The advice is plain, bounded text (parse.ts plainLine); a stop is added if it has none
  * (a stop before a closing quote or bracket counts).
  */
-export const adviceNote = (advice: string): string => `The AI suggests: ${/[.!?…]["'”’)\]]*$/.test(advice) ? advice : `${advice}.`} You can cut the image at Trim.`;
+export const adviceNote = (advice: string): string => {
+  // A trailing colon, semicolon or comma gives way to the full stop.
+  const line = advice.replace(/\s*[:;,]+$/, '');
+  return `The AI suggests: ${/[.!?…]["'”’)\]]*$/.test(line) ? line : `${line}.`} You can cut the image at Trim.`;
+};
 
 /** An ASSET step that turns the script into audio rather than images: @byway/recipe/semantics' audioAsset, which the explainers and the estimate read too. */
 export const isAudioAsset = (step: AssetInput['step']): boolean => audioAsset(step);
