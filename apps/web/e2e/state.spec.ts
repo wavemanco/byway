@@ -53,9 +53,10 @@ async function currentRowTwice(page: Page): Promise<void> {
 }
 
 /**
- * Leave for another screen through the main navigation, then come back with the browser's Back. Back shows the
- * browser's cached copy of the Run page first: the one from when the page was last loaded or reached, which can predate
- * the question (reached from Start) or show it still open after it was answered (reloaded while it was open).
+ * Leave for another screen through the main navigation, then come back with the browser's Back. Back shows the copy
+ * Next.js's client router cache kept of the Run page first (not the browser's back/forward cache; ADR-0082): the one
+ * from when the page was last loaded or reached, which can predate the question (reached from Start) or show it still
+ * open after it was answered (reloaded while it was open).
  */
 async function awayAndBack(page: Page, to: 'History' | 'Settings'): Promise<void> {
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: new RegExp(to) }).click();

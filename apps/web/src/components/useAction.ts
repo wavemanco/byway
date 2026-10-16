@@ -6,8 +6,9 @@
  * attribute did both jobs before, at a cost: a focused control that disables itself drops keyboard focus to the page
  * body, and screen readers lose their place. So every such control stays focusable and says it is unavailable with
  * aria-disabled (ActionButton), and the second press is refused here, synchronously, before React has re-rendered the
- * control as busy. Run start has no server-side idempotency, so on Start and the paid Start button this guard is what
- * stops a double press starting two runs.
+ * control as busy. On Start, which keeps the problem and starts no run, this guard is the only thing that stops a double
+ * press sending it twice. The paid Start button also names its run (startIdentity.ts, ADR-0099 decision 7), and the
+ * server answers a repeated id with the run it already started; this guard still stops the screen sending the second.
  *
  * The rule for the app (apps/web README, guard-disabled.test.ts): no `disabled` on a control a person presses; a busy or
  * unavailable control is an ActionButton (or carries actionAttributes and blockActivation) and its action runs through

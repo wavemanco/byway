@@ -253,7 +253,8 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         return minutes('compare');
       case 'voice': {
         const kind = s.knobs?.scope === 'key-lines' ? 'write-key-lines' : 'write';
-        // The edited copy is written back by a voice.apply call when VOICE changes the work (spec §3.2).
+        // VOICE writes the edited copy back with no model call (ADR-0081, spec §3.2), yet this still counts one mid-tier
+        // voice.apply completion when VOICE changes the work, so VOICE is estimated above what it costs (backlog).
         const apply = s.produces.includes('artifact') ? completion(w, 'voice.apply', 'mid', count(1, 1)) : NONE;
         return add(minutes(kind), apply);
       }

@@ -103,9 +103,11 @@ Logic on top of the contracts sits in view code:
   never cached. So a page served after this change and opened top-level, by any link, typed address or history, runs
   nothing; a copy a browser cached before it may still carry `allow-scripts` (ADR-0085 lists this residual and how to
   clear it). Every "Open" in the app goes to the whole-artifact viewer `/view/<id>` (`openHref`), which shows a page
-  with the same switch, text whole, and images and clips as themselves; the raw address is only an element's `src`
-  and a download. The app's CSP has `frame-src 'self'`, so a framed page cannot be carried to another site by a link
-  or its own script.
+  with the same switch, text whole, and images and clips as themselves. Otherwise the raw address is an element's
+  `src`, a download, what the whole-text loader fetches (ADR-0086), and where the viewer sends a type it cannot show.
+  A Markdown link opens the viewer only when its address is exactly `/artifacts/<id>` or `/api/artifacts/<id>`; with
+  a `#fragment` or a `?query` it opens the raw address, which serves a page inert. The app's CSP has
+  `frame-src 'self'`, so a framed page cannot be carried to another site by a link or its own script.
 - The Run screen's polled data carries at most 16 KB of each text, marked as an excerpt (`complete`, `bytes`;
   ADR-0086). Step rows and cards show it as a snippet, with counts (a diff's size, an option map's titles) taken from
   the whole artifact on the server; views you decide in (compare, references, a step's detail) load the whole text and
@@ -115,11 +117,16 @@ Logic on top of the contracts sits in view code:
   Open to the viewer).
 - **A control that acts never disables itself** (R5). A focused control given the native `disabled` state drops
   keyboard focus to the page, and on Start and the paid Start button `disabled` was also the only guard against a
-  second press (run start has no server-side idempotency). So an action runs through `useAction`
-  (`src/components/useAction.ts`), whose synchronous in-flight guard refuses a second start before React re-renders,
-  and its control is an `ActionButton`: busy or unavailable, it says so with `aria-disabled` (and `aria-busy`), keeps
-  focus and its Tab stop, and a press does nothing (a submit is prevented, so Enter in a field cannot submit either).
-  An action that leaves the screen on success holds the guard until the next screen replaces it.
+  second press. So an action runs through `useAction` (`src/components/useAction.ts`), whose synchronous in-flight
+  guard refuses a second start before React re-renders, and its control is an `ActionButton`: busy or unavailable, it
+  says so with `aria-disabled` (and `aria-busy`), keeps focus and its Tab stop, and a press does nothing (a submit is
+  prevented, so Enter in a field cannot submit either). An action that leaves the screen on success holds the guard
+  until the next screen replaces it. On Start (`POST /api/intakes`, which keeps the problem and starts no run) this
+  guard is the only one against sending it twice. The paid Start (`POST /api/runs`) also names its run with an id
+  (`src/components/startIdentity.ts`, ADR-0099 decision 7): the screen sends the same id again only while that Start
+  got no answer and its inputs are unchanged, and the server answers a repeated id with the run it already started
+  for that intake and recipe, so one Start starts one run. A Start after a reload, or after leaving the screen and
+  coming back, has a new id.
   `test/guard-disabled.test.ts` scans the `.ts` and `.tsx` files in `src/` and `app/`, comments left out, for a
   `disabled` attribute on an intrinsic JSX element (a lower-case tag such as `<button>` or `<fieldset>`, bare or with a
   value) and for a write through the DOM (`.disabled =`, or `setAttribute` or `toggleAttribute` with `'disabled'`). It

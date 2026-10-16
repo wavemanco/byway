@@ -32,8 +32,9 @@ export function useRefresher<T>(key: string, fetch: (signal: AbortSignal) => Pro
       status: (connection) => callbacks.current.status(connection),
     });
     instance.current = refresher;
-    // The server-rendered snapshot (or a stale one from the browser's back/forward cache) is re-read through the same
-    // ordered path, so it is superseded like any other.
+    // The server-rendered snapshot (or, after Back, the older copy Next.js's client router cache kept of the page; not
+    // the browser's back/forward cache, ADR-0082) is re-read through the same ordered path, so it is superseded like
+    // any other.
     void refresher.now();
     return () => {
       refresher.dispose();
