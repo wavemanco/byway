@@ -297,6 +297,8 @@ describe('an existing ledger (spend from before the book)', () => {
     expect((await book.ledgeredCalls()).length).toBe(3);
   });
 
+  // 20 locked appends, then two gateways reading at once: about 0.05 s alone, but 5.1 s on a loaded machine, over
+  // vitest's 5 s default.
   it('read by two gateways at the same time leaves one row per entry', async () => {
     const ledger = new Ledger({ path: ledgerPath });
     for (let i = 0; i < 20; i++) await ledger.append(legacy(0.01));
@@ -304,7 +306,7 @@ describe('an existing ledger (spend from before the book)', () => {
     await Promise.all([a.spend('ws'), b.spend('ws'), a.spend('ws'), b.spend('ws')]);
     expect((await a.spend('ws')).spentUsd).toBeCloseTo(0.2, 9);
     expect((await book.ledgeredCalls()).length).toBe(20);
-  });
+  }, 30_000);
 
   it('a line in the middle that cannot be read stops paid calls until acknowledged; demo calls go on', async () => {
     caps.workspace = 10;
