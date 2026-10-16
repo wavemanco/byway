@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sha256Hex } from '@byway/canonical';
@@ -662,6 +662,9 @@ describe('gateway: prompt provenance (contracts v4, spec §3.3 "Provenance")', (
     const lines = readFileSync(path, 'utf8').trim().split('\n');
     lines[0] = (lines[0] as string).replace('"version":2', '"version":1');
     writeFileSync(path, `${lines.join('\n')}\n`);
+    // The edit keeps the file's size and can land in the last append's mtime tick (Windows), which verify()'s cache
+    // would not see (ADR-0091): move the mtime past any filesystem's resolution.
+    utimesSync(path, new Date(), new Date(Date.now() + 2000));
     expect(await g.verifyLedger()).toBe(res.ledgerEntryId);
   });
 
