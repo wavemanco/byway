@@ -115,11 +115,16 @@ Logic on top of the contracts sits in view code:
   Open to the viewer).
 - **A control that acts never disables itself** (R5). A focused control given the native `disabled` state drops
   keyboard focus to the page, and on Start and the paid Start button `disabled` was also the only guard against a
-  second press (run start has no server-side idempotency). So an action runs through `useAction`
-  (`src/components/useAction.ts`), whose synchronous in-flight guard refuses a second start before React re-renders,
-  and its control is an `ActionButton`: busy or unavailable, it says so with `aria-disabled` (and `aria-busy`), keeps
-  focus and its Tab stop, and a press does nothing (a submit is prevented, so Enter in a field cannot submit either).
-  An action that leaves the screen on success holds the guard until the next screen replaces it.
+  second press. So an action runs through `useAction` (`src/components/useAction.ts`), whose synchronous in-flight
+  guard refuses a second start before React re-renders, and its control is an `ActionButton`: busy or unavailable, it
+  says so with `aria-disabled` (and `aria-busy`), keeps focus and its Tab stop, and a press does nothing (a submit is
+  prevented, so Enter in a field cannot submit either). An action that leaves the screen on success holds the guard
+  until the next screen replaces it. On Start (`POST /api/intakes`, which keeps the problem and starts no run) this
+  guard is the only one against sending it twice. The paid Start (`POST /api/runs`) also names its run with an id
+  (`src/components/startIdentity.ts`, ADR-0099 decision 7): the screen sends the same id again only while that Start
+  got no answer and its inputs are unchanged, and the server answers a repeated id with the run it already started
+  for that intake and recipe, so one Start starts one run. A Start after a reload, or after leaving the screen and
+  coming back, has a new id.
   `test/guard-disabled.test.ts` scans the `.ts` and `.tsx` files in `src/` and `app/`, comments left out, for a
   `disabled` attribute on an intrinsic JSX element (a lower-case tag such as `<button>` or `<fieldset>`, bare or with a
   value) and for a write through the DOM (`.disabled =`, or `setAttribute` or `toggleAttribute` with `'disabled'`). It
