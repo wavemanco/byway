@@ -178,13 +178,57 @@ export function parseOverlap(text: string, seeded: readonly string[], vanilla: r
 
 const Briefs = z.object({
   images: z.array(z.object({ slot: z.union([z.string(), z.number()]).transform(String), prompt: z.string().min(1), alt: z.string().default(''), size: z.enum(['1024x1024', '1536x1024', '1024x1536']).default('1024x1024') })),
+  // Read as text below; anything else is no advice, never a miss (ADR-0101).
+  advice: z.unknown().optional(),
 });
 export type ImageBrief = z.infer<typeof Briefs>['images'][number];
 
-/** asset.briefs: `{"images":[{"slot","prompt","alt","size"}]}`. */
-export function parseBriefs(text: string): Parsed<ImageBrief[]> {
+/** A brief answer: the briefs, and the optional line of advice for the person (ADR-0101), plain and bounded. */
+export interface BriefAnswer {
+  images: ImageBrief[];
+  advice?: string;
+}
+
+/** The most characters of the AI's advice a step's note shows (ADR-0101); C3's prompt states the same bound. */
+export const ADVICE_MAX = 200;
+
+/**
+ * Control characters, and format characters such as direction overrides and zero-width spaces, which could make a
+ * line read differently from what it holds. The zero-width joiner and non-joiner stay: emoji and some scripts need them.
+ */
+const NOT_PLAIN = /(?![\u200C\u200D])[\p{Cc}\p{Cf}]/gu;
+
+/** Something a person can read: a letter, a number, a punctuation mark or a symbol (blank letters such as U+3164 are not). */
+const READABLE = /(?![\u3164\u115F\u1160\uFFA0\u2800])[\p{L}\p{N}\p{P}\p{S}]/u;
+
+/**
+ * Model text as one plain line for the person to read (ADR-0101): well-formed (a lone surrogate becomes U+FFFD),
+ * without control or format characters, its whitespace collapsed, and at most `max` characters, cut at a word with an
+ * ellipsis. Empty when nothing readable is left (no letter, number, punctuation mark or symbol). A removed character
+ * becomes a space, never nothing, so cleaning cannot join two halves of a text into one; the gateway's held-key check
+ * (ADR-0088) runs on the answer's raw text before this.
+ */
+export function plainLine(text: string, max: number): string {
+  // Whitespace first, so a line break between two words leaves a space; then the rest (each removed character becomes a
+  // space), then the spaces left doubled.
+  const t = text.toWellFormed().replace(/\s+/g, ' ').replace(NOT_PLAIN, ' ').replace(/ {2,}/g, ' ').trim();
+  if (!READABLE.test(t)) return '';
+  const chars = [...t];
+  if (chars.length <= max) return t;
+  const cut = chars.slice(0, max - 1).join('');
+  const space = cut.lastIndexOf(' ');
+  return `${(space > cut.length / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/**
+ * asset.briefs: `{"images":[{"slot","prompt","alt","size"}],"advice"?}`. The advice is optional and never makes an
+ * answer a miss: anything but text, or text with nothing readable in it, is no advice, so it never costs a retry.
+ */
+export function parseBriefs(text: string): Parsed<BriefAnswer> {
   const r = json(text, Briefs, '{"images":[{"slot","prompt","alt","size"}]}');
-  return r.ok ? { ok: true, value: r.value.images } : r;
+  if (!r.ok) return r;
+  const advice = typeof r.value.advice === 'string' ? plainLine(r.value.advice, ADVICE_MAX) : '';
+  return { ok: true, value: { images: r.value.images, ...(advice ? { advice } : {}) } };
 }
 
 const Relay = z.object({ clipPrompt: z.string().min(1), durationSec: z.number().positive() });

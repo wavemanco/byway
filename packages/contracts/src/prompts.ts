@@ -68,6 +68,12 @@ export interface RenderedPrompt {
    * range. The runner holds the answer to it, so the prompt and the runtime share one definition. Absent elsewhere.
    */
   images?: ImageCount;
+  /**
+   * For an image-briefs template whose front matter says `advice: yes` (ADR-0101; only C3's header image): its answer
+   * may carry one optional line of advice for the person, which the runner shows in the step's note as the AI's
+   * suggestion. Never a veto: the brief is still required. Absent elsewhere, and the runner then shows no advice.
+   */
+  advice?: true;
 }
 
 /** How many images an image-briefs template asks for: one per shot or option, or between `min` and `max`. */

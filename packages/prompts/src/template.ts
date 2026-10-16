@@ -17,6 +17,7 @@ import { parseBody, slotsUsed, type BodyNode } from './syntax.ts';
  *     output: artifact:prose
  *     source: where the wording comes from
  *     images: 1-3       (image-briefs templates only: `each`, or a range `min-max`)
+ *     advice: yes       (image-briefs templates only, optional: the answer may add one line of advice for the person)
  *     ---
  *     ## system          (optional)
  *     …
@@ -41,6 +42,11 @@ export interface Template {
    * Required on image-briefs templates and refused on any other, so the runtime reads the count the prompt states.
    */
   images: ImageCount | undefined;
+  /**
+   * Whether an image-briefs template asks the model for one optional line of advice for the person (ADR-0101): front
+   * matter `advice: yes`, refused on any other template. The runner shows that line only when the template asks for it.
+   */
+  advice: boolean;
   /** "sha256:<hex>" of the file, line endings normalized to LF. */
   hash: string;
   file: string;
@@ -56,6 +62,7 @@ const FrontMatter = z.strictObject({
   output: z.enum(OUTPUT_IDS as [OutputId, ...OutputId[]]),
   source: z.string().min(1, 'source must say where the wording comes from'),
   images: z.string().regex(/^(?:each|\d+-\d+)$/, 'images is "each" or a range such as 1-3').optional(),
+  advice: z.literal('yes', { error: 'advice is "yes", or left out' }).optional(),
 });
 
 /** The images field as a count: `each`, or a range whose minimum is at most its maximum. */
@@ -115,6 +122,7 @@ export function parseTemplateFile(raw: string, name: string): Template {
   if ((fm.output === 'image-briefs') !== (fm.images !== undefined)) {
     throw new PromptTemplateError('bad-template', fm.images === undefined ? `${name}: an image-briefs template must declare images (each, or a range such as 1-3)` : `${name}: only an image-briefs template declares images`);
   }
+  if (fm.advice !== undefined && fm.output !== 'image-briefs') throw new PromptTemplateError('bad-template', `${name}: only an image-briefs template asks for advice`);
 
   const declared = fm.slots
     .split(',')
@@ -142,6 +150,7 @@ export function parseTemplateFile(raw: string, name: string): Template {
     output: fm.output,
     source: fm.source,
     images: imageCount(fm.images, name),
+    advice: fm.advice === 'yes',
     hash,
     file: name,
     system,

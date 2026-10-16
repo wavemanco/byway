@@ -4,24 +4,26 @@
  * - one slot identity (shot numbers, option labels, trimmed names) decides coverage, purchases, attaching and the anchor;
  * - coverage is checked before anything is bought, and a short answer gets one feedback retry, then degrades with a note
  *   naming what is missing, never a failed run; only a malformed answer still fails the step;
- * - the relay anchor is shot 1's frame or none, and a relay link with no frame to start from is skipped plainly.
+ * - the relay anchor is shot 1's frame or none, and a relay link with no frame to start from is skipped plainly;
+ * - C3's header image: the person's Yes decides, and the AI's view is one line of advice in the step's note (ADR-0101).
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
-import { CATALOG, stepPresentation } from '@byway/catalog';
+import { CATALOG, presentationOf, stepPresentation } from '@byway/catalog';
 import { GatewayError, type CompletionRequest, type CompletionResult, type Gateway, type ImageRequest, type ImageResult, type Medium, type VideoRequest } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
-import { assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE } from '../src/activities/asset.ts';
+import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { ContractMissed, StepError, toFailure } from '../src/activities/failures.ts';
 import { noStartFrameNote, relayLink } from '../src/activities/relay.ts';
 import { checkBriefs, eachPlan, freePlan, slotId } from '../src/activities/slot-plan.ts';
 import { serializeJson } from '../src/formats.ts';
+import { ADVICE_MAX } from '../src/parse.ts';
 import { FAILURE, toStepSpec, type AssetResult, type RunRef, type StepSpec } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
@@ -311,22 +313,34 @@ describe('one slot identity on options (C2 mood boards)', () => {
 });
 
 describe('how many images a prose step may make is the prompt’s to say', () => {
-  it('C3’s prompt may answer with no image: one call, nothing bought or placed, and the step says so (D3: its veto stays)', async () => {
-    const g = fake([EMPTY]);
+  it('C3: your Yes decides. An empty answer is asked again, and the second answer’s image is made and placed (D3, ADR-0101)', async () => {
+    const g = fake([EMPTY, briefsOf('header')]);
     const { result, notes, skipped } = await runAsset('prose', spec('c3', 'asset'), '# Piece\n\nText.\n', g);
-    expect(g.completions).toHaveLength(1);
-    expect(g.images).toHaveLength(0);
-    expect(result).toMatchObject({ costUsd: 0.01 });
-    expect((result as AssetResult).artifactId).toBeUndefined();
+    const briefCalls = g.completions.filter((c) => c.purpose === 'asset.briefs:prose');
+    expect(briefCalls).toHaveLength(2);
+    expect(JSON.stringify(briefCalls[1]!.messages)).toContain('Write at least one image brief.');
+    expect(g.images).toHaveLength(1);
+    expect((result as AssetResult).artifactId).toBeDefined();
     expect(skipped).toEqual([undefined]);
-    expect(notes).toEqual([NO_IMAGE_CHOSEN_NOTE]);
+    expect(notes).toEqual([undefined]);
   });
 
-  it('C3’s explainer promises no image its prompt may decline (round 2; D3 pending, so the copy says what runs today)', () => {
+  it('C3 answered empty twice: nothing is bought, the step is skipped with its note, and the run goes on (no ContractMissed)', async () => {
+    const g = fake([EMPTY, EMPTY]);
+    const { result, notes, skipped } = await runAsset('prose', spec('c3', 'asset'), '# Piece\n\nText.\n', g);
+    expect(g.completions).toHaveLength(2);
+    expect(g.images).toHaveLength(0);
+    expect(result).toMatchObject({ skipped: true, costUsd: 0.02 });
+    expect((result as AssetResult).artifactId).toBeUndefined();
+    expect(skipped).toEqual([true]);
+    expect(notes).toEqual([NO_BRIEF_NOTE]);
+  });
+
+  it('C3’s explainer says Yes makes the image, and that the AI may add advice you can act on at Trim (D3, ADR-0101)', () => {
     const step = spec('c3', 'asset');
-    expect(library.info(step.prompt!, 'prose').images).toEqual({ min: 0, max: 1 });
+    expect(library.info(step.prompt!, 'prose').images).toEqual({ min: 1, max: 1 });
     expect(stepPresentation('c3', 'asset')?.explainer).toBe(
-      'If you want one, the AI makes a header image for the piece, unless it judges the piece better without one. Charts computed from your data are not made in this version.',
+      'If you answer Yes, the AI makes a header image for the piece. It may also add one line of advice, which you can act on at Trim. Charts computed from your data are not made in this version.',
     );
   });
 
@@ -348,6 +362,22 @@ describe('how many images a prose step may make is the prompt’s to say', () =>
     }
     expect(checked).toEqual(expect.arrayContaining(['product.c3.asset@base', 'article.ASSET@base', 'helper.asset.briefs@prose', 'helper.asset.briefs@media']));
     expect(fake.render('product.c4.draft', { medium: 'prose' }).images).toBeUndefined();
+  });
+
+  it('the harness’s fake prompts ask for advice exactly where the real templates do (ADR-0101)', () => {
+    const fake = fakePrompts();
+    for (const id of library.ids()) {
+      for (const medium of [undefined, ...library.variants(id)]) {
+        let info;
+        try {
+          info = library.info(id, medium);
+        } catch {
+          continue;
+        }
+        expect(fake.render(id, medium ? { medium } : {}).advice, `${id}@${medium ?? 'base'}`).toBe(info.advice ? true : undefined);
+      }
+    }
+    expect(fake.render('product.c3.asset', { medium: 'prose' }).advice).toBe(true);
   });
 
   it('C3 asks for one image at most', async () => {
@@ -389,6 +419,94 @@ describe('how many images a prose step may make is the prompt’s to say', () =>
     expect(out).toMatchObject({ skipped: true });
     const finished = (await store.events(run.runId)).filter((e) => e.type === 'step-finished');
     expect(finished.map((e) => e.data)).toEqual([expect.objectContaining({ skipped: true, note: NO_BRIEF_NOTE })]);
+  });
+});
+
+describe('the AI’s advice, never a veto (D3, ADR-0101)', () => {
+  const PIECE = '# Piece\n\nText.\n';
+  const answer = (images: string[], advice?: unknown) =>
+    '```json\n' + JSON.stringify({ images: images.map((slot) => ({ slot, prompt: `An image for ${slot}`, alt: `Alt ${slot}`, size: '1536x1024' })), ...(advice === undefined ? {} : { advice }) }) + '\n```';
+
+  it('C3’s brief may carry one line of advice: the image is still made and placed, and the note gives the advice as the AI’s, with what you can do', async () => {
+    const g = fake([answer(['header'], 'This piece may read better without a header.')]);
+    const { result, notes, skipped } = await runAsset('prose', spec('c3', 'asset'), PIECE, g);
+    expect(g.completions.filter((c) => c.purpose === 'asset.briefs:prose')).toHaveLength(1);
+    expect(g.images).toHaveLength(1);
+    expect((result as AssetResult).artifactId).toBeDefined();
+    expect(skipped).toEqual([undefined]);
+    expect(notes).toEqual(['The AI suggests: This piece may read better without a header. You can cut the image at Trim.']);
+  });
+
+  it('the note ends the advice with a stop when it has none, and says nothing for empty advice', async () => {
+    expect(adviceNote('A real photograph would serve it better')).toBe('The AI suggests: A real photograph would serve it better. You can cut the image at Trim.');
+    expect(adviceNote('Is a header needed?')).toBe('The AI suggests: Is a header needed? You can cut the image at Trim.');
+    // A trailing colon, semicolon or comma gives way to the full stop rather than standing before it.
+    expect(adviceNote('Consider a real photograph:')).toBe('The AI suggests: Consider a real photograph. You can cut the image at Trim.');
+    expect(adviceNote('Keep it simple,')).toBe('The AI suggests: Keep it simple. You can cut the image at Trim.');
+    expect(adviceNote('Its own line says it: “less is more.”')).toBe('The AI suggests: Its own line says it: “less is more.” You can cut the image at Trim.');
+    expect(adviceNote('Keep it quiet (a photo would do)')).toBe('The AI suggests: Keep it quiet (a photo would do). You can cut the image at Trim.');
+    const g = fake([answer(['header'], '  ')]);
+    const { notes } = await runAsset('prose', spec('c3', 'asset'), PIECE, g);
+    expect(g.images).toHaveLength(1);
+    expect(notes).toEqual([undefined]);
+  });
+
+  it('advice that came with an empty first answer stays when the second answer brings the brief', async () => {
+    const g = fake([answer([], 'Better without a header.'), answer(['header'])]);
+    const { notes } = await runAsset('prose', spec('c3', 'asset'), PIECE, g);
+    expect(g.completions).toHaveLength(3);
+    expect(g.images).toHaveLength(1);
+    expect(notes).toEqual([adviceNote('Better without a header.')]);
+  });
+
+  it('the later answer’s advice is the one shown when both give one', async () => {
+    const g = fake([answer([], 'First thought.'), answer(['header'], 'Second thought.')]);
+    const { notes } = await runAsset('prose', spec('c3', 'asset'), PIECE, g);
+    expect(notes).toEqual([adviceNote('Second thought.')]);
+  });
+
+  it('empty twice, even with advice: skipped with the usual note, and nothing said about an image that was not made', async () => {
+    const g = fake([answer([], 'Better without a header.'), answer([], 'Better without a header.')]);
+    const { notes, skipped } = await runAsset('prose', spec('c3', 'asset'), PIECE, g);
+    expect(g.images).toHaveLength(0);
+    expect(skipped).toEqual([true]);
+    expect(notes).toEqual([NO_BRIEF_NOTE]);
+  });
+
+  it('a step whose prompt does not ask for advice never shows any (C1’s ASSET)', async () => {
+    const g = fake([answer(['hero'], 'This page may read better without a hero image.')]);
+    const run = await newRun('web-page');
+    const page = (await store.artifacts.putText('<!doctype html><html><body><div data-slot="hero"></div></body></html>\n', 'text/html')).id;
+    await assetStep({ gateway: g, store, prompts: library }, { run, call: { key: `${run.runId}/asset/-/1`, stepId: 'asset', stage: 'D2' }, step: spec('c1', 'asset'), ports: { artifact: page } });
+    expect(g.images).toHaveLength(1);
+    const finished = (await store.events(run.runId)).filter((e) => e.type === 'step-finished');
+    expect(finished.map((e) => e.data.note)).toEqual([undefined]);
+  });
+
+  it('C3’s prompt states the bound the runner holds the advice to', () => {
+    expect(library.render('product.c3.asset', { medium: 'prose', artifact: PIECE }).user).toContain(`at most ${ADVICE_MAX} characters`);
+  });
+
+  it('every step whose prompt asks for advice has a Trim step after it, so “You can cut the image at Trim.” is true', () => {
+    const asking: string[] = [];
+    for (const recipe of CATALOG) {
+      for (const { step } of steps(recipe)) {
+        if (!step.prompt) continue;
+        let advice = false;
+        try {
+          advice = library.info(step.prompt, recipe.medium).advice;
+        } catch {
+          continue;
+        }
+        if (!advice) continue;
+        asking.push(`${recipe.id}/${step.id}`);
+        const shown = presentationOf(recipe.id)!.stages.flatMap((s) => s.steps);
+        const at = shown.findIndex((s) => s.stepIds.includes(step.id));
+        expect(at, `${recipe.id}/${step.id} has a shown step`).toBeGreaterThanOrEqual(0);
+        expect(shown.slice(at + 1).some((s) => s.label === 'Trim'), `${recipe.id}/${step.id} is followed by Trim`).toBe(true);
+      }
+    }
+    expect(asking).toEqual(['c3/asset']);
   });
 });
 

@@ -13,6 +13,10 @@
  * A short answer gets the one feedback retry, then the step makes what it can and says what is missing, never a failed
  * run; only a malformed answer fails it. A prompt that may answer with no image (its minimum is 0) is taken at its
  * word. The relay anchor is exactly shot 1's frame, or none: a later shot's still never stands in for it.
+ *
+ * Advice, never a veto (ADR-0101): a prompt that asks for it (`advice: yes`; only C3's header image) may add one line
+ * of advice for the person to its briefs. The step's note shows it, as the AI's suggestion, with the image it came with;
+ * it never changes how many images are made, and with no image made it is not shown.
  */
 import { GatewayError, type Medium } from '@byway/contracts';
 import { isHeldKeyError } from '@byway/gateway';
@@ -40,8 +44,20 @@ export const NO_AUDIO_NOTE = 'No voice-over audio provider is configured';
 export const NO_IMAGE_MADE_NOTE = 'No image could be generated for this step; the work passes through unchanged.';
 /** The prompt asks for at least one image, and the AI wrote no usable brief even when asked again (F11). */
 export const NO_BRIEF_NOTE = 'The AI wrote no usable image brief, even when asked again, so no image was made; the work passes through unchanged.';
-/** The prompt lets the AI answer with no image (its minimum is 0), and it did: a choice, not a failure (F11, D3). */
+/** The prompt lets the AI answer with no image (its minimum is 0), and it did: a choice, not a failure (F11). */
 export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, which its instructions allow, so no image was made; the work is unchanged.';
+
+/**
+ * The AI's line of advice, shown with the image it came with as its suggestion, never a veto (ADR-0101, D3). Only a
+ * prompt that asks for advice gets one shown, and only C3's header image does, which its Trim step follows (a test
+ * holds every such step to that). The advice is plain, bounded text (parse.ts plainLine); a stop is added if it has none
+ * (a stop before a closing quote or bracket counts).
+ */
+export const adviceNote = (advice: string): string => {
+  // A trailing colon, semicolon or comma gives way to the full stop.
+  const line = advice.replace(/\s*[:;,]+$/, '');
+  return `The AI suggests: ${/[.!?…]["'”’)\]]*$/.test(line) ? line : `${line}.`} You can cut the image at Trim.`;
+};
 
 /** An ASSET step that turns the script into audio rather than images: @byway/recipe/semantics' audioAsset, which the explainers and the estimate read too. */
 export const isAudioAsset = (step: AssetInput['step']): boolean => audioAsset(step);
@@ -97,7 +113,10 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     maxOutputTokens: 4_000,
     parse: (text, rendered, earlier) => {
       plan = each ?? freePlan(rendered.images, slotsKnob);
-      return checkBriefs(parseBriefs(text), plan, earlier);
+      const answer = parseBriefs(text);
+      if (!answer.ok) return answer;
+      // The advice counts only where the prompt asks for it (ADR-0101); elsewhere an answer's advice is not shown.
+      return checkBriefs({ ok: true, value: answer.value.images }, plan, earlier, rendered.advice ? answer.value.advice : undefined);
     },
   });
   const slots = plan!;
@@ -175,8 +194,10 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const anchorWanted = medium === 'media' && step.produces.includes('anchor') && slots.kind === 'each' && slots.first !== undefined;
   const anchor = anchorWanted ? made.find((m) => m.slot === (slots as Extract<SlotPlan, { kind: 'each' }>).first)?.artifactId : undefined;
   if (anchor) result.anchor = anchor;
-  // What the step could not make, and what keepsVoice wrote back (ADR-0081), in one note.
-  const note = [partialNote(slots, briefs.value.missing, briefs.value.unknown, failed, anchorWanted && !anchor), restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
+  // What the step could not make, the AI's advice on what it made (ADR-0101), and what keepsVoice wrote back (ADR-0081),
+  // in one note.
+  const advice = briefs.value.advice ? adviceNote(briefs.value.advice) : undefined;
+  const note = [partialNote(slots, briefs.value.missing, briefs.value.unknown, failed, anchorWanted && !anchor), advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }

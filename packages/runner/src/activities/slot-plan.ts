@@ -70,6 +70,11 @@ export interface SlotBriefs {
   missing: string[];
   /** Slots the answers named (both, after a retry) that are not shots or options of the work, as written: one per brief. */
   unknown: string[];
+  /**
+   * The AI's line of advice for the person, where the step's prompt asks for one (ADR-0101): the later answer's, else
+   * the earlier one's. Never a reason to make fewer images.
+   */
+  advice?: string;
 }
 
 /**
@@ -79,9 +84,13 @@ export interface SlotBriefs {
  *   answers together. A slot both name is made from this, the later, answer.
  * - An `each` answer that covers every slot is used as it is, without asking again, even when it also names slots the
  *   work does not have: those are left out, and listed in `unknown` for the step's note.
+ * - `advice` is this answer's line of advice, when the prompt asks for one (ADR-0101); without it the earlier answer's
+ *   stays. It never changes what counts as covered.
  */
-export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan, earlier?: SlotBriefs): Usable<SlotBriefs> {
+export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan, earlier?: SlotBriefs, advice?: string): Usable<SlotBriefs> {
   if (!parsed.ok) return parsed;
+  const kept = advice || earlier?.advice;
+  const withAdvice = (v: SlotBriefs): SlotBriefs => (kept ? { ...v, advice: kept } : v);
   const byId = new Map<string, SlotBrief>();
   const unknown: string[] = [...(earlier?.unknown ?? [])];
   for (const b of parsed.value) {
@@ -96,11 +105,11 @@ export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan, earlie
   for (const b of earlier?.briefs ?? []) if (!byId.has(b.slot)) byId.set(b.slot, b);
   if (plan.kind === 'free') {
     const briefs = [...byId.values()].slice(0, plan.max);
-    const value: SlotBriefs = { briefs, missing: [], unknown: [] };
+    const value = withAdvice({ briefs, missing: [], unknown: [] });
     if (briefs.length >= plan.min) return { ok: true, value };
     return { ok: false, problem: plan.min === 1 ? 'Write at least one image brief.' : `Write at least ${plan.min} image briefs.`, usable: value };
   }
-  const value: SlotBriefs = { briefs: plan.expected.flatMap((id) => byId.get(id) ?? []), missing: plan.expected.filter((id) => !byId.has(id)), unknown };
+  const value = withAdvice({ briefs: plan.expected.flatMap((id) => byId.get(id) ?? []), missing: plan.expected.filter((id) => !byId.has(id)), unknown });
   if (!value.missing.length) return { ok: true, value };
   const what = plan.medium === 'media' ? 'storyboard shot (slot = the shot number)' : 'option (slot = its label)';
   const wrong = [
