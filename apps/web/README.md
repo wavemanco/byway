@@ -105,8 +105,8 @@ Logic on top of the contracts sits in view code:
   clear it). Every "Open" in the app goes to the whole-artifact viewer `/view/<id>` (`openHref`), which shows a page
   with the same switch, text whole, and images and clips as themselves. Otherwise the raw address is an element's
   `src`, a download, what the whole-text loader fetches (ADR-0086), and where the viewer sends a type it cannot show.
-  A Markdown link opens the viewer only when its address is exactly `/artifacts/<id>` or `/api/artifacts/<id>`; with
-  a `#fragment` or a `?query` it opens the raw address, which serves a page inert. The app's CSP has
+  A Markdown link to one of byway's own artifacts (`/artifacts/<id>` or `/api/artifacts/<id>`, with or without a
+  `?query` or `#fragment`) opens the viewer; other links are left as written. The app's CSP has
   `frame-src 'self'`, so a framed page cannot be carried to another site by a link or its own script.
 - The Run screen's polled data carries at most 16 KB of each text, marked as an excerpt (`complete`, `bytes`;
   ADR-0086). Step rows and cards show it as a snippet, with counts (a diff's size, an option map's titles) taken from
