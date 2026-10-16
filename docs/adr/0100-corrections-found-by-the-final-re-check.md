@@ -69,7 +69,7 @@ Each item quotes the sentence, says what is true on main and which change made i
 ## Alternatives considered
 
 - **Editing the Accepted ADRs.** Not allowed: a changed decision is not edited in place.
-- **Leaving it to the later ADRs that already say what changed** (items 2 to 5 and 12 to 18). A reader of the earlier record would find no correction, and items 1, 6 to 11 and 14 have no later record at all.
+- **Leaving it to the later ADRs that already say what changed** (items 2 to 5, 12, 13 and 15 to 18). A reader of the earlier record would find no correction, and items 1, 6 to 11 and 14 have no later record at all.
 
 ## Consequences
 
