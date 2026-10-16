@@ -173,8 +173,10 @@ function byRole(writers: { step: Step; path: string }[]): Map<string, { step: St
 /**
  * The writer allowance per VOICE: after each VOICE of the composed recipe, no more machine writers of a role than its
  * nearest recipe has after the counterpart VOICE (C5 makes frames and clips after the locked script, on purpose). A
- * VOICE with no counterpart, or a step that only declares VOICE, allows none. keepsVoice is no excuse here: the runner
- * holds such a write to the latest VOICE answer only, so a writer moved past a later VOICE could change an earlier one.
+ * VOICE with no counterpart, or a step that only declares VOICE, allows none. keepsVoice is no excuse here: a keepsVoice
+ * writer counts like any other. The rule dates from when the runner held such a write to the latest VOICE answer only;
+ * it now holds it to every VOICE answer on the path and the latest words (held-voice.ts keptVoice, ADR-0098) and keeps
+ * the copy deck exactly (copy.ts lockCopy, ADR-0081). The allowance is unchanged.
  */
 function extraWritersPerVoice(recipe: Recipe, nearest: Recipe): { step: Step; path: string; after: string }[] {
   const keyed = (r: Recipe): Checkpoint[] => voiceWrites(r).map((p) => ({ kind: 'voice', stage: p.stage, scope: voiceScope(p.step, r.medium), placement: p }));
