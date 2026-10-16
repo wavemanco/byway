@@ -94,6 +94,19 @@ describe('one rule for opening an artifact (F05)', () => {
     expect(artifactIdOf(undefined)).toBeUndefined();
   });
 
+  it('an own address followed by a query or a #fragment names the same artifact; the path before them is held to the same rule', () => {
+    expect(artifactIdOf(`/artifacts/${PAGE}#top`)).toBe(PAGE);
+    expect(artifactIdOf(`/artifacts/${encodeURIComponent(PAGE)}?scripts=1`)).toBe(PAGE);
+    expect(artifactIdOf(`/api/artifacts/${PAGE}?download=1&name=page.html#top`)).toBe(PAGE);
+    expect(artifactIdOf(`/artifacts/${PAGE}#/../../settings`)).toBe(PAGE);
+    expect(artifactIdOf(`https://attacker.example/artifacts/${PAGE}#top`)).toBeUndefined();
+    expect(artifactIdOf(`//attacker.example/artifacts/${PAGE}?x=1`)).toBeUndefined();
+    expect(artifactIdOf(`/artifacts/${PAGE}/../../settings#top`)).toBeUndefined();
+    expect(artifactIdOf(`/artifacts/${PAGE}0?x=1`)).toBeUndefined();
+    expect(artifactIdOf('#top')).toBeUndefined();
+    expect(artifactIdOf('?scripts=1')).toBeUndefined();
+  });
+
   it('StepDetail: Open goes to the viewer', () => {
     const out = html(createElement(StepDetail, { step: step([PAGE, MEMO]), artifacts, onClose: () => undefined, closeLabel: 'Back' }));
     expect(hrefs(out)).toEqual([VIEW(PAGE), VIEW(MEMO)]);
@@ -185,6 +198,17 @@ describe('one rule for opening an artifact (F05)', () => {
     const own = hrefs(html(createElement(Markdown, { text: `See [the page](/artifacts/${PAGE}) and [the image](/api/artifacts/${encodeURIComponent(MEMO)}).` })));
     expect(own).toEqual([VIEW(PAGE), VIEW(MEMO)]);
     expect(hrefs(html(createElement(Markdown, { text: 'See [the docs](https://example.org/docs).' })))).toEqual(['https://example.org/docs']);
+  });
+
+  it('Markdown: a link to one of byway’s own artifacts with a #fragment or a query opens the viewer too; other links keep theirs', () => {
+    const text = [
+      `[top](/artifacts/${PAGE}#top)`,
+      `[scripts](/artifacts/${PAGE}?scripts=1)`,
+      `[download](/api/artifacts/${encodeURIComponent(MEMO)}?download=1&name=memo.md#end)`,
+      '[docs](https://example.org/docs?a=1#b)',
+      `[elsewhere](https://attacker.example/artifacts/${PAGE}#top)`,
+    ].join(' ');
+    expect(hrefs(html(createElement(Markdown, { text })))).toEqual([VIEW(PAGE), VIEW(PAGE), VIEW(MEMO), 'https://example.org/docs?a=1#b', `https://attacker.example/artifacts/${PAGE}#top`]);
   });
 });
 

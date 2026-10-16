@@ -42,10 +42,18 @@ export function isOwnArtifactUrl(src: string | undefined): boolean {
   return typeof src === 'string' && OWN_ARTIFACT.test(src);
 }
 
-/** The artifact id in one of byway's own artifact addresses (isOwnArtifactUrl), or undefined for any other address. */
-export function artifactIdOf(src: string | undefined): string | undefined {
-  if (!isOwnArtifactUrl(src)) return undefined;
-  const last = (src as string).split('/').pop() ?? '';
+/**
+ * The artifact id in a link to one of byway's own artifact addresses (isOwnArtifactUrl), or undefined for any other
+ * address. The link may add a query or a #fragment: the id is read from the path before the first `?` or `#`, so
+ * `/artifacts/<id>#top` names the same artifact as `/artifacts/<id>`, and a Markdown link to it opens the viewer
+ * (ADR-0085's one rule), which is given neither the query nor the fragment. Images still need the exact address.
+ */
+export function artifactIdOf(href: string | undefined): string | undefined {
+  if (typeof href !== 'string') return undefined;
+  const end = href.search(/[?#]/);
+  const address = end < 0 ? href : href.slice(0, end);
+  if (!isOwnArtifactUrl(address)) return undefined;
+  const last = address.split('/').pop() ?? '';
   return decodeURIComponent(last).toLowerCase();
 }
 
