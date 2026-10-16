@@ -18,7 +18,7 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 | F08 | Composition diff hides real changes | P2 | Fixed | 0098 | — |
 | F09 | C7 clarification never reaches the build | P2 | Fixed | [0089](../adr/0089-recipe-ir-optional-reads.md) | — |
 | F10 | C5 shot check never sees the clip | P2 | Fixed | [0090](../adr/0090-execution-contracts-for-revising-humans-and-media-steps.md) | Middle-frame sampling (backlog) |
-| F11 | C3 "no image" answer fails the run | P3 | Fixed, except D3 | 0090 | Whether C3 keeps its "no image" option |
+| F11 | C3 "no image" answer fails the run | P3 | Fixed | 0090, [0101](../adr/0101-c3-yes-decides-the-header-image.md) | The owner decided D3 on 2026-10-16: your Yes makes the header image, and the AI may add advice |
 | F12 | Media slots validated one way, attached another | P2 | Fixed | 0090 | — |
 | F13 | Review views silently omit content | P2 | Fixed | [0086](../adr/0086-run-screen-excerpts-say-so-and-decision-views-show-whole-text.md), [0087](../adr/0087-lineup-evidence-full-words-and-disclosed-card-budget.md) | — |
 | F14 | Recommendation not refreshed after retry | P2 | Fixed | 0082 | — |
@@ -39,7 +39,7 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 
 ## Decisions still with the owner
 
-- **D1–D4:** the four decisions from the verification (§4), tracked in [the backlog](../backlog.md) under "Owner decisions from the external-review verification".
+- **D1, D2 and D4:** decisions from the verification (§4), tracked in [the backlog](../backlog.md) under "Owner decisions from the external-review verification". D3 was decided on 2026-10-16 ([ADR-0101](../adr/0101-c3-yes-decides-the-header-image.md)).
 - **New from the fix work:**
   - simplify VOICE on web pages to a content layer;
   - ST9/ST10 `human-critique` case 2;
