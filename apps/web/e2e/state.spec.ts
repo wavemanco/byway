@@ -77,14 +77,22 @@ test.describe('the Run screen applies only the newest snapshot (F15)', () => {
     const runId = await startMemo(page);
     const hold: { want: boolean; caught: { route: Route; response: APIResponse } | null } = { want: false, caught: null };
     const fail = { next: false };
+    // After the one failed refresh, later ones wait here until the test has seen the banner (step (b)).
+    const stall = { on: false, waiting: [] as (() => void)[] };
+    const endStall = () => {
+      stall.on = false;
+      for (const go of stall.waiting.splice(0)) go();
+    };
     await page.route(
       (url) => url.pathname === `/api/runs/${runId}` && url.searchParams.has('after'),
       async (route) => {
         if (fail.next) {
           fail.next = false;
+          stall.on = true;
           await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'e2e: one refresh failed' }) });
           return;
         }
+        if (stall.on) await new Promise<void>((go) => stall.waiting.push(go));
         if (hold.want && !hold.caught) {
           hold.want = false;
           // The server's answer as of now, delivered later: an older snapshot arriving after newer ones.
@@ -127,7 +135,10 @@ test.describe('the Run screen applies only the newest snapshot (F15)', () => {
     const second = await turnAfter(page, first.id);
     expect((await timelineLabels(page)).length).toBeGreaterThan(0);
 
-    // (b) The refresh right after an answer fails once: the banner says so, then clears when polling gets through.
+    // (b) The refresh right after an answer fails once: the banner says so, then clears when polling gets through. The
+    // next refresh is held until the banner has been seen. While the run waits, its poll interval equals LOST_RETRY_MS,
+    // so losing the connection does not restart the timer: the retry is the tick already due, which can come a few
+    // hundred milliseconds after the failure and, answered at once, clear the banner between two checks of toBeVisible.
     await page.route(`**/api/runs/${runId}/checkpoints/**`, async (route) => {
       const response = await route.fetch();
       fail.next = true;
@@ -135,6 +146,7 @@ test.describe('the Run screen applies only the newest snapshot (F15)', () => {
     });
     await answerTurn(page, second.turn, second.kind);
     await expect(page.getByText(NOT_ANSWERING)).toBeVisible();
+    endStall();
     await expect(page.getByText(NOT_ANSWERING)).toHaveCount(0, { timeout: 15_000 });
     await page.unroute(`**/api/runs/${runId}/checkpoints/**`);
 
