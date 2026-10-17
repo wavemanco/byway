@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Accepted |
 | **Decided by** | User (the owner approved D4 on 2026-10-16: "proceed", Windows and Linux only, macOS later) |
-| **Date (local, UTC−7)** | 2026-10-16 21:30 |
+| **Date (local, UTC−7)** | 2026-10-16 22:00 |
 | **Track** | Process |
 | **Related** | [ADR-0001](0001-record-architecture-decisions-as-adrs.md), [ADR-0041](0041-shared-engine-pinned-research-versions.md), [ADR-0055](0055-instrument-firewall-and-exposure.md), [ADR-0057](0057-tamper-evident-record-and-disclosure.md), [ADR-0059](0059-engine-requirements-for-composition-and-credibility.md), [ADR-0060](0060-repository-byway-private-remote.md), [ADR-0068](0068-contracts-first-parallel-build.md), [ADR-0100](0100-corrections-found-by-the-final-re-check.md) |
 
@@ -54,7 +54,7 @@ The known exceptions are named in the test, each with its reason. An exception t
 - **ADR-0100's edit in f69b3da** is kept. Restoring item 7 and appending a note after it was considered and rejected: the restored sentence would be false on main. Its text after f69b3da is fixed like any other.
 - **ADR-0041's proposal wording** stays, with the note in §7.
 
-The check needs the whole history. A shallow clone fails with a message saying so. On this repository the history scan takes about 150 ms. With its temporary-repository cases (an edited Decision fails, an appended note passes, a draft revised on a `--no-ff` branch passes and the same branch fast-forwarded fails, a named exception lets one edit through, a late link fails), the file takes about 7 s.
+The check needs the whole history. A shallow clone fails with a message saying so. On this repository the history scan takes about 150 ms. With its temporary-repository cases (an edited Decision fails, an appended note passes, a draft revised on a `--no-ff` branch passes and the same branch fast-forwarded fails, a named exception lets one edit through, a late link fails), the file takes about 1 s on GitHub's Linux machine and 7 to 11 s on Windows, where starting git is slower.
 
 It cannot see a missing "changed by" link: no record says, in a form a test can read, which records it changes. It sees a fast-forward only through the edits that then show up on main.
 
@@ -65,7 +65,11 @@ It cannot see a missing "changed by" link: no record says, in a form a test can 
 - **Pinned.** Node 24.13.1 (`.node-version`) and pnpm 11.12.0 (`packageManager` in package.json), the versions on the owner's machine; every third-party action by commit SHA. npm marks pnpm 11.12.0 deprecated as a broken release (its standalone build, `@pnpm/exe`, shipped without a binary), and pnpm's own installers refuse it. CI installs the npm package with npm, as the owner's machine has it, and that package runs. Moving the pin is in the backlog.
 - **Locked down.** A read-only token, not kept after checkout, and no secrets. The browser tests use stand-in keys and fail if one leaks, so a run never reaches a paid provider.
 - **Reporting, not blocking.** A red run puts a red mark on the commit and emails the owner. Nothing is refused. Before merging a branch or pushing to main, check the last run on main: `gh run list --branch main --limit 1`. A red main is fixed, or a flaky test is named and set aside, before more merges.
-- **macOS later.** The job matrix has one entry per operating system, and each job reads only its entry. macOS is one more entry (`macos-15`, with `playwright install chromium`). Until it runs, byway does not claim macOS.
+- **Linux needs two things set up** besides Chromium's system libraries, both in the Linux job only:
+  - **Noto CJK in place of WenQuanYi Zen Hei.** Playwright's Linux dependencies make WenQuanYi Zen Hei the fallback font for Japanese. With it, Chromium lays out the first item of a vertical row at no height, so one renderer test (a vertical Japanese page in `packages/runner/test/voice.test.ts`) reads a page no person would see. With Noto CJK, which Ubuntu's desktop ships, or IPAGothic, the page lays out as it does on Windows with Yu Gothic.
+  - **An AppArmor profile for Playwright's Chromium.** Ubuntu 23.10 and later restrict unprivileged user namespaces, which Chromium's OS sandbox needs; the runner has `kernel.apparmor_restrict_unprivileged_userns = 1`. One renderer test (`packages/runner/test/pages.test.ts`, F18) starts Chromium inside its sandbox as a control. A profile that allows user namespaces for Playwright's Chromium binaries only lets both the headless shell and full Chromium start inside their sandbox, while the rest of the machine stays restricted. The renderer's own sandbox stays off, as before.
+- **No code needed changing.** The code that had never run on Linux works there unchanged. `scripts/e2e.ts` starts byway through `scripts/serve.ts` and stops it over the IPC channel, as on Windows, and the suite ends "byway stopped cleanly"; their SIGTERM and SIGKILL fallbacks, which run only when a clean stop fails, were not needed. `apps/web/test/dev-server.real.test.ts` lists the process tree's listeners with `ps` and `lsof` and finds only the guarded port. Windows behaviour is unchanged.
+- **macOS later.** The job matrix has one entry per operating system, and each step reads only its own entry; the two Linux-only steps are marked so. macOS is one more entry (`macos-15`, with `playwright install chromium`). Until it runs, byway does not claim macOS.
 
 ### 4. Supported platforms
 
@@ -113,7 +117,11 @@ Read with this record: [ADR-0001](0001-record-architecture-decisions-as-adrs.md)
 
 ## Consequences
 
-- **Cost.** Measured during bring-up (see Evidence). The organization's plan includes 50,000 Linux-rate minutes a month, shared with its other repositories; Windows minutes count at twice the Linux rate.
+- **Time.** Measured on GitHub's 2-CPU machines in the two full runs of the bring-up:
+  - Linux: 13 to 17 minutes a run. About 1 minute to set up, 7.5 to 10 minutes of unit tests, 4.6 to 6 minutes of browser tests.
+  - Windows: 29 to 36 minutes a run. About 2 minutes to set up, 14 to 16 minutes of unit tests, 14 to 18 minutes of browser tests.
+  - A regression shows as a red mark about 15 minutes after a push (Linux) and about 30 minutes after it (Windows).
+- **Money.** GitHub bills each job in whole minutes: Linux at $0.006 a minute and Windows at $0.010 (2-CPU machines, list price). One run is about 14 to 18 Linux minutes and 30 to 36 Windows minutes: about $0.40 to $0.47, the price of 65 to 80 Linux minutes. At 20 to 70 pushes to main a month plus the weekly runs, that is about $10 to $35 a month at list price, 3% to 12% of the 50,000 minutes the organization's plan includes each month. The included minutes are shared with the organization's other repositories; in a month when they run out, as they did in September 2026 when another repository used them all, byway's runs are billed at these prices. The bring-up used 59 Linux minutes and 88 Windows minutes, about $1.23 at list price.
 - **False alarms.** A reporting check raises false alarms on flaky tests. The known ledger-timestamp flake is fixed on main (3822920). A new timing flake on GitHub's 2-CPU machines is named and set aside quickly.
 - **The coordinator's merge procedure changes** (§1.4): the index row and the "changed by" links reach main in the record's own commit.
 - **No product behaviour changes.**
@@ -122,4 +130,9 @@ Read with this record: [ADR-0001](0001-record-architecture-decisions-as-adrs.md)
 
 - The D4 brief and its challenge (C:/Users/arvik/AppData/Local/Temp/byway-fixes/designs/owner-decisions.json, analyse:D4 and challenge:D4), and the owner's answers of 2026-10-16.
 - History: `scripts/test/adr-log.ts` run on main 7ce21cb found one edit to a fixed section (ADR-0100, f69b3da) across 90 first-parent commits and 94 Accepted records; the probes in the D4 brief found the same.
-- Code: `.github/workflows/verify.yml`, `.node-version`, `package.json` (`packageManager`), `scripts/test/adr-records.test.ts`, `scripts/test/adr-log.ts`, `scripts/test/ci.test.ts`, `scripts/test/readme.test.ts`.
+- CI bring-up on branch fix/fx-d4-ci, 2026-10-16 (runs 38997893076, 39000217628, 39001395283, 39001866770 and 39002069426 in wavemanco/byway's Actions):
+  - Before the Linux setup: on Linux every unit test passed except the vertical Japanese page and the sandbox control in §3 (and the ADR-0041 note check, written before this record), and all 53 browser tests passed. Windows passed everything except that note check.
+  - The runner reported `kernel.apparmor_restrict_unprivileged_userns = 1` (uid 1001). Chromium inside its sandbox failed with "No usable sandbox" without the AppArmor profile, and started with it (headless shell 284 ms, full Chromium 642 ms).
+  - Chromium's font for the vertical Japanese row was WenQuanYi Zen Hei (the first item laid out at 0 px high); with IPAGothic, Noto Sans CJK JP or Noto Serif CJK JP it was 64 px, as with Yu Gothic on Windows.
+  - With both set up: 4,751 of 4,753 unit tests and 53 of 53 browser tests passed on each system. The two failures were `scripts/test/ci.test.ts` checking that the workflow runs `pnpm verify` as one step and only for main; the bring-up shape failed them, as intended, and the final workflow passes them.
+- Files: `.github/workflows/verify.yml`, `.node-version`, `package.json` (`packageManager`), `scripts/test/adr-records.test.ts`, `scripts/test/adr-log.ts`, `scripts/test/ci.test.ts`, `scripts/test/readme.test.ts`, the README (Quick start, Scripts, Back up, Tests, CI, Ground rules), spec §4 and §6, and the playbook's public-record row.

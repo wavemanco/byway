@@ -54,7 +54,7 @@ export function recordNumber(file: string): string | undefined {
   return new RegExp(`^${ADR_DIR}/(\\d{4})-[^/]+\\.md$`).exec(rel)?.[1];
 }
 
-/** An Accepted record's Decision that still opens as a proposal does ("Proposed, not decided."). */
+/** Whether a Decision section opens as a proposal's does ("Proposed, not decided."). */
 export const opensAsProposal = (decision: string | undefined): boolean =>
   /^Proposed\b/.test(
     (decision ?? '')
