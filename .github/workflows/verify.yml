@@ -10,7 +10,8 @@ name: verify
 
 on:
   push:
-    branches: [main]
+    # TEMPORARY: proves this workflow on its own branch before the merge; the next commit removes it.
+    branches: [main, fix/fx-d4-ci]
   workflow_dispatch:
   schedule:
     # Weekly (Mondays 06:17 UTC): the tests download Chromium and the Temporal CLI, and pushes can stop for days.
