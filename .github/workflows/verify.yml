@@ -35,9 +35,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # One entry per operating system. macOS is not run yet; to add it later:
+        # One entry per operating system; each step reads only its own entry. macOS is not run yet; to add it later:
         #   - { name: macos, os: macos-15, playwright: chromium }
         include:
+          - { name: windows, os: windows-2025, playwright: chromium }
           - { name: linux, os: ubuntu-24.04, playwright: --with-deps chromium }
     steps:
       - name: Check out, with the whole history (the decision-log check reads main's)
@@ -63,9 +64,15 @@ jobs:
       - name: Playwright's Chromium (the renderer tests and the browser tests)
         run: pnpm --filter ./apps/web exec playwright install ${{ matrix.playwright }}
 
-      - name: The Temporal CLI (the engine tests start a local Temporal server; downloaded once into the temp folder)
-        working-directory: packages/runner
-        run: node --input-type=module -e "const { TestWorkflowEnvironment } = await import('@temporalio/testing'); const env = await TestWorkflowEnvironment.createLocal(); await env.teardown(); console.log('Temporal CLI ready');"
+      # Playwright's Linux dependencies make WenQuanYi Zen Hei the fallback font for Japanese, and with it Chromium lays
+      # out the first item of a vertical row at no height, so a renderer test reads a page no person would see. Ubuntu's
+      # desktop has Noto CJK instead, and with it (or IPAGothic) the same page lays out as on Windows.
+      - name: Fonts as on Ubuntu's desktop (Linux only)
+        if: ${{ matrix.name == 'linux' }}
+        run: |
+          sudo apt-get install --yes --no-install-recommends fonts-noto-cjk > /dev/null
+          sudo apt-get remove --yes fonts-wqy-zenhei > /dev/null
+          fc-match 'sans-serif:lang=ja'
 
       # Linux restricts unprivileged user namespaces (Ubuntu 23.10 and later), which Chromium's OS sandbox needs. One
       # renderer test starts Chromium inside its sandbox as a control, so Playwright's Chromium gets a profile that
@@ -76,12 +83,17 @@ jobs:
           printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' "profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,' '}' | sudo tee /etc/apparmor.d/playwright-chromium
           sudo apparmor_parser --replace /etc/apparmor.d/playwright-chromium
 
-      # Bring-up round 5 only: which font Chromium uses for a vertical Japanese flex row, and how each lays it out.
-      - name: font probe with the runner's fonts
+      - name: The Temporal CLI (the engine tests start a local Temporal server; downloaded once into the temp folder)
         working-directory: packages/runner
-        run: node test/zz-font-probe.mjs
-      - name: install Noto CJK
-        run: sudo apt-get install -y --no-install-recommends fonts-noto-cjk > /dev/null && fc-match 'sans-serif:lang=ja' && ls /etc/fonts/conf.d | grep -iE 'wqy|noto|ipa' || true
-      - name: font probe with Noto CJK
-        working-directory: packages/runner
-        run: node test/zz-font-probe.mjs
+        run: node --input-type=module -e "const { TestWorkflowEnvironment } = await import('@temporalio/testing'); const env = await TestWorkflowEnvironment.createLocal(); await env.teardown(); console.log('Temporal CLI ready');"
+
+      # Bring-up only: the three steps of pnpm verify, each run even when one before it fails.
+      - name: typecheck
+        if: ${{ !cancelled() }}
+        run: pnpm -s typecheck
+      - name: unit tests
+        if: ${{ !cancelled() }}
+        run: pnpm test
+      - name: end-to-end
+        if: ${{ !cancelled() }}
+        run: pnpm e2e
