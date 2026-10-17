@@ -18,7 +18,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileS
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ADR_DIR, checkLog, describeBreach, describeLinkBreach, git, INDEX, isAccepted, opensAsProposal, parseIndex, parseRecord, recordNumber, statusWord, WORKING_TREE, type Exception } from './adr-log.ts';
+import { ADR_DIR, checkLog, describeBreach, describeLinkBreach, git, INDEX, isAccepted, opensAsProposal, parseIndex, parseRecord, recordNumber, statusWord, WORKING_TREE, type Exception, type LinkException } from './adr-log.ts';
 import { read, REPO } from './docs.ts';
 
 /** The record that made the rule; the same-commit link rule applies from it on. */
@@ -38,6 +38,12 @@ const EXCEPTIONS: readonly Exception[] = [
 ];
 
 /**
+ * "Changed by" links that reached main in a later commit than their record (from ADR-0103 on), kept and named with
+ * their reasons. Main's history is not rewritten, so a late link already on main is named here; none is so far.
+ */
+const LINK_EXCEPTIONS: readonly LinkException[] = [];
+
+/**
  * Accepted records whose Decision still opens as a proposal. Each names the record that explains it, which must say so.
  */
 const PROPOSAL_WORDING: ReadonlyArray<{ record: string; note: string; reason: string }> = [
@@ -49,7 +55,7 @@ const PROPOSAL_WORDING: ReadonlyArray<{ record: string; note: string; reason: st
   },
 ];
 
-const log = checkLog(REPO, { exceptions: EXCEPTIONS, linksFrom: LINKS_FROM });
+const log = checkLog(REPO, { exceptions: EXCEPTIONS, linkExceptions: LINK_EXCEPTIONS, linksFrom: LINKS_FROM });
 
 describe('the decision log on main (ADR-0103, CR14)', () => {
   it('reads main’s first-parent history', () => {
@@ -68,8 +74,15 @@ describe('the decision log on main (ADR-0103, CR14)', () => {
     }
   });
 
-  it(`from ADR-${LINKS_FROM} on, a record that changes another reaches main in the same commit as the index's "changed by" link`, () => {
+  it(`from ADR-${LINKS_FROM} on, a record that changes another reaches main in the same commit as the index's "changed by" link, except the links named here`, () => {
     expect(log.linkBreaches.map(describeLinkBreach)).toEqual([]);
+  });
+
+  it('each named link exception matches a late link in main’s history (none is out of date)', () => {
+    for (const e of LINK_EXCEPTIONS) {
+      expect(e.reason.length, `ADR-${e.changed} changed by ADR-${e.by}`).toBeGreaterThan(40);
+      expect(log.usedLinks, `the link exception for ADR-${e.changed} changed by ADR-${e.by} at ${e.commit} matched no late link`).toContain(e);
+    }
   });
 
   it('ADR-0103’s Context counts main’s history at 7ce21cb as git does', () => {
@@ -174,6 +187,8 @@ function fixture() {
     dir,
     git,
     write(n: string, status: string, decision: string, context = 'Why it came up.') {
+      // git removes docs/adr when its last file is removed, so it is made again.
+      mkdirSync(path.dirname(file(n)), { recursive: true });
       writeFileSync(file(n), adr(n, status, context, decision));
     },
     append(n: string, text: string) {
@@ -187,7 +202,7 @@ function fixture() {
       git('commit', '--quiet', '--no-verify', '-m', message);
       return git('rev-parse', 'HEAD');
     },
-    check: (exceptions: Exception[] = [], linksFrom = '0001') => checkLog(dir, { exceptions, linksFrom }),
+    check: (exceptions: Exception[] = [], linksFrom = '0001', linkExceptions: LinkException[] = []) => checkLog(dir, { exceptions, linkExceptions, linksFrom }),
   };
 }
 
@@ -287,13 +302,50 @@ describe('the rule, on a temporary repository', { timeout: 60_000 }, () => {
     expect(r.check([exception]).breaches.map((b) => b.changedIn)).toEqual([again.slice(0, 12)]);
   });
 
-  it('a removed record fails', () => {
+  it('a removed record fails; once the removal is on main, the file is restored and the removal named', () => {
     const r = fixture();
     r.write('0001', 'Accepted', 'We do X.');
     r.commit('accept 0001');
     r.git('rm', '--quiet', 'docs/adr/0001-a-decision.md');
     const removed = r.commit('remove 0001');
     expect(r.check().breaches.map((b) => [b.part, b.changedIn])).toEqual([['record', removed.slice(0, 12)]]);
+    r.write('0001', 'Accepted', 'We do X.');
+    r.commit('restore 0001');
+    const exception: Exception = { record: '0001', commit: removed.slice(0, 7), part: 'record', reason: 'removed by mistake' };
+    expect(r.check([exception])).toMatchObject({ breaches: [], used: [exception] });
+  });
+
+  it('an edit already on main is not cleared by putting the text back: the edit and the commit that restores it are each named', () => {
+    const r = fixture();
+    r.write('0001', 'Accepted', 'We do X.');
+    r.commit('accept 0001');
+    r.write('0001', 'Accepted', 'We do Y.');
+    const edit = r.commit('edit 0001');
+    r.git('revert', '--no-edit', 'HEAD');
+    const revert = r.git('rev-parse', 'HEAD');
+    expect(r.check().breaches.map((b) => b.changedIn)).toEqual([edit.slice(0, 12)]);
+    const named = (commit: string): Exception => ({ record: '0001', commit: commit.slice(0, 7), part: 'Decision', reason: 'edited and put back' });
+    expect(r.check([named(edit)]).breaches.map((b) => b.changedIn)).toEqual([revert.slice(0, 12)]);
+    expect(r.check([named(edit), named(revert)]).breaches).toEqual([]);
+  });
+
+  it('a breach says how to recover: before it is committed, put the text back; once it is on main, name it', () => {
+    const r = fixture();
+    r.write('0001', 'Accepted', 'We do X.');
+    r.commit('accept 0001');
+    r.write('0001', 'Accepted', 'We do Y.');
+    const [uncommitted] = r.check().breaches.map(describeBreach);
+    expect(uncommitted).toMatch(/in the working tree/);
+    expect(uncommitted).toMatch(/Put the text back/);
+    r.commit('edit 0001');
+    const [onMain] = r.check().breaches.map(describeBreach);
+    expect(onMain).not.toMatch(/Put the text back/);
+    expect(onMain).toMatch(/"Protect main" ruleset blocks force pushes/);
+    expect(onMain).toContain('in EXCEPTIONS in scripts/test/adr-records.test.ts with its reason');
+    expect(onMain).toMatch(/If a later commit puts the text back, name that commit too/);
+    r.git('rm', '--quiet', 'docs/adr/0001-a-decision.md');
+    r.commit('remove 0001');
+    expect(r.check().breaches.map(describeBreach).at(-1)).toMatch(/restore the file in a new commit and name .* in EXCEPTIONS/);
   });
 
   it('a changing record and its "changed by" link reach main in the same commit, or the check fails', () => {
@@ -320,6 +372,28 @@ describe('the rule, on a temporary repository', { timeout: 60_000 }, () => {
     const link = late.commit('index: 0002');
     expect(late.check().linkBreaches).toEqual([{ changed: '0001', by: '0002', recordIn: record.slice(0, 12), linkIn: link.slice(0, 12) }]);
     expect(late.check([], '0003').linkBreaches).toEqual([]);
+    // Main is not rewritten, so a late link already on main is named, with its reason.
+    const named: LinkException = { changed: '0001', by: '0002', commit: link.slice(0, 7), reason: 'the index went in after the merge' };
+    expect(late.check([], '0001', [named])).toMatchObject({ linkBreaches: [], usedLinks: [named] });
+    expect(late.check([], '0001', [{ ...named, commit: record.slice(0, 7) }]).linkBreaches).toHaveLength(1);
+    expect(late.check([], '0001', [{ ...named, changed: '0003' }]).linkBreaches).toHaveLength(1);
+    const [message] = late.check().linkBreaches.map(describeLinkBreach);
+    expect(message).toMatch(/"Protect main" ruleset blocks force pushes/);
+    expect(message).toContain('LINK_EXCEPTIONS in scripts/test/adr-records.test.ts with its reason');
+  });
+
+  it('a link added after its record is on main, not yet committed, says to commit it and name that commit', () => {
+    const r = fixture();
+    r.write('0001', 'Accepted', 'We do X.');
+    r.index([row('0001', 'Accepted')]);
+    r.commit('accept 0001');
+    r.write('0002', 'Accepted', 'ADR-0001 is amended: we do X twice.');
+    r.index([row('0001', 'Accepted'), row('0002', 'Accepted')]);
+    r.commit('0002, without its link');
+    r.index([row('0001', 'Accepted; changed by [ADR-0002](0002-a-decision.md)'), row('0002', 'Accepted')]);
+    const [b] = r.check().linkBreaches;
+    expect(b?.linkIn).toBe(WORKING_TREE);
+    expect(describeLinkBreach(b!)).toMatch(/Commit the link, then name the commit .* in LINK_EXCEPTIONS/);
   });
 });
 

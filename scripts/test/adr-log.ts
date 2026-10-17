@@ -13,6 +13,10 @@
  *
  * Only the Context and Decision sections are fixed. The header table (its Status row included) and the other sections
  * may change, and notes may be appended. The working tree is checked too, so an edit fails before it is committed.
+ *
+ * Main's history is not rewritten (the "Protect main" ruleset blocks force pushes), so a breach that has reached main
+ * is named as an exception with its reason, by the commit that made it: an edit or a removal (Exception), or a late
+ * link (LinkException).
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -171,12 +175,27 @@ const linkKey = (changed: string, by: string): string => `${changed}<${by}`;
 
 // ——— the rule, over main's history and the working tree ———
 
-/** An edit to a fixed section that the log keeps, named with its reason. Later text is compared with this one. */
+/**
+ * An edit to a fixed section, or a record's removal, that the log keeps, named with its reason. Later text is compared
+ * with the text after the edit. Main's history is not rewritten, so a breach already on main is named this way.
+ */
 export interface Exception {
   record: string;
   /** The first-parent commit that made the edit (a prefix of at least 7 characters is enough). */
   commit: string;
-  part: Part;
+  /** The section edited, or "record" for a commit that removed the file. */
+  part: Part | 'record';
+  reason: string;
+}
+
+/** A "changed by" link that reached main in a later commit than its record, kept and named with its reason. */
+export interface LinkException {
+  /** The record the link is on. */
+  changed: string;
+  /** The record the link names. */
+  by: string;
+  /** The first-parent commit in which the link first appears (a prefix of at least 7 characters is enough). */
+  commit: string;
   reason: string;
 }
 
@@ -209,16 +228,21 @@ export interface LogCheck {
   /** Records that have reached main's first-parent history, whatever their status. */
   onMain: Set<string>;
   linkBreaches: LinkBreach[];
+  /** The link exceptions that matched a late link; one that matches nothing is out of date. */
+  usedLinks: LinkException[];
 }
 
 export interface LogCheckOptions {
   exceptions?: readonly Exception[];
+  linkExceptions?: readonly LinkException[];
   /** The first record the same-commit link rule applies to (ADR-0103, which made the rule). */
   linksFrom: string;
   mainRef?: string;
 }
 
 const short = (sha: string): string => sha.slice(0, 12);
+/** Whether an exception's commit (a prefix of at least 7 characters) names this commit. */
+const names = (prefix: string, sha: string): boolean => prefix.length >= 7 && sha.startsWith(prefix);
 export const WORKING_TREE = 'the working tree';
 
 /** The record files in the working tree, by number. */
@@ -253,7 +277,7 @@ export function checkLog(repo: string, opts: LogCheckOptions): LogCheck {
     if (!base) return;
     for (const part of PARTS) {
       if (now[part] === base.text[part]) continue;
-      const exception = sha ? exceptions.find((e) => e.record === n && e.part === part && e.commit.length >= 7 && sha.startsWith(e.commit)) : undefined;
+      const exception = sha ? exceptions.find((e) => e.record === n && e.part === part && names(e.commit, sha)) : undefined;
       if (exception) {
         used.push(exception);
         base.text = { ...base.text, [part]: now[part] };
@@ -279,7 +303,10 @@ export function checkLog(repo: string, opts: LogCheckOptions): LogCheck {
       if (file === null) {
         latest.set(n, null);
         const base = fixed.get(n);
-        if (base) breaches.push({ record: n, part: 'record', acceptedIn: short(base.acceptedIn), changedIn: short(commit.sha) });
+        if (!base) continue;
+        const exception = exceptions.find((e) => e.record === n && e.part === 'record' && names(e.commit, commit.sha));
+        if (exception) used.push(exception);
+        else breaches.push({ record: n, part: 'record', acceptedIn: short(base.acceptedIn), changedIn: short(commit.sha) });
         continue;
       }
       onMain.add(n);
@@ -314,22 +341,38 @@ export function checkLog(repo: string, opts: LogCheckOptions): LogCheck {
 
   // From opts.linksFrom on, a changing record and the index's link to it reach main in the same commit.
   const linkBreaches: LinkBreach[] = [];
+  const usedLinks: LinkException[] = [];
   for (const [key, linkIn] of linkFirst) {
     const [changed = '', by = ''] = key.split('<');
     const recordIn = acceptedIn.get(by);
     if (by < opts.linksFrom || recordIn === undefined || linkIn === recordIn) continue;
-    linkBreaches.push({ changed, by, recordIn: short(recordIn), linkIn: linkIn === WORKING_TREE ? linkIn : short(linkIn) });
+    const exception = linkIn === WORKING_TREE ? undefined : (opts.linkExceptions ?? []).find((e) => e.changed === changed && e.by === by && names(e.commit, linkIn));
+    if (exception) usedLinks.push(exception);
+    else linkBreaches.push({ changed, by, recordIn: short(recordIn), linkIn: linkIn === WORKING_TREE ? linkIn : short(linkIn) });
   }
 
-  return { line, breaches, used, acceptedIn, onMain, linkBreaches };
+  return { line, breaches, used, acceptedIn, onMain, linkBreaches, usedLinks };
 }
 
-/** A breach as a sentence a person can act on. */
+/** Why a breach already on main is named rather than undone. */
+const NOT_REWRITTEN = `Main's history is not rewritten (on GitHub the "Protect main" ruleset blocks force pushes)`;
+const IN_EXCEPTIONS = 'in EXCEPTIONS in scripts/test/adr-records.test.ts with its reason';
+
+/** A breach as a sentence a person can act on: before it is committed, undo it; once it is on main, name it. */
 export function describeBreach(b: Breach): string {
-  if (b.part === 'record') return `ADR-${b.record} reached main as Accepted in ${b.acceptedIn} and is gone in ${b.changedIn}. An Accepted record is never removed.`;
-  return `ADR-${b.record}'s ${b.part} changed in ${b.changedIn} after it reached main as Accepted in ${b.acceptedIn}. Put the text back and record the change in a new ADR. (If a branch that revised it was fast-forwarded into main, merge with --no-ff instead.)`;
+  if (b.part === 'record') {
+    if (b.changedIn === WORKING_TREE) return `ADR-${b.record} reached main as Accepted in ${b.acceptedIn} and is gone from the working tree. An Accepted record is never removed: restore the file.`;
+    return `ADR-${b.record} reached main as Accepted in ${b.acceptedIn} and is gone in ${b.changedIn}. An Accepted record is never removed. ${NOT_REWRITTEN}, so restore the file in a new commit and name ${b.changedIn} (part "record") ${IN_EXCEPTIONS}.`;
+  }
+  if (b.changedIn === WORKING_TREE) {
+    return `ADR-${b.record}'s ${b.part} in the working tree differs from the text fixed when it reached main as Accepted in ${b.acceptedIn}. Put the text back before it is committed or merged, and record the change in a new ADR.`;
+  }
+  return `ADR-${b.record}'s ${b.part} changed in ${b.changedIn} after it reached main as Accepted in ${b.acceptedIn}. ${NOT_REWRITTEN}, so putting the text back does not clear this: name ${b.changedIn} ${IN_EXCEPTIONS}, and record the change in a new ADR. If a later commit puts the text back, name that commit too. (A branch fast-forwarded into main puts its draft commits on main's history; merge branches with --no-ff.)`;
 }
 
 export function describeLinkBreach(b: LinkBreach): string {
-  return `ADR-${b.by} reached main in ${b.recordIn}, but the index's "changed by" link from ADR-${b.changed} to it first appears in ${b.linkIn}. The link goes in the same commit as the record.`;
+  if (b.linkIn === WORKING_TREE) {
+    return `ADR-${b.by} reached main in ${b.recordIn} without the index's "changed by" link from ADR-${b.changed} to it, so the link can no longer come in the same commit. ${NOT_REWRITTEN}. Commit the link, then name the commit in which it first appears on main for this link in LINK_EXCEPTIONS in scripts/test/adr-records.test.ts with its reason.`;
+  }
+  return `ADR-${b.by} reached main in ${b.recordIn}, but the index's "changed by" link from ADR-${b.changed} to it first appears in ${b.linkIn}; the link belongs in the record's commit. ${NOT_REWRITTEN}, so name ${b.linkIn} for this link in LINK_EXCEPTIONS in scripts/test/adr-records.test.ts with its reason. (To keep them together, merge with git merge --no-ff --no-commit and add the index row and links before committing.)`;
 }
