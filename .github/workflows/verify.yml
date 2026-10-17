@@ -1,0 +1,79 @@
+# `pnpm verify` (the typecheck, the unit tests, then the end-to-end suite) on Windows and Linux (ADR-0103).
+#
+# It reports and blocks nothing: a red run puts a red mark on the commit and emails the repository's owner, and no
+# push is refused. Read the latest result on main before merging: gh run list --branch main --limit 1
+#
+# No secrets. The tests use stand-in provider keys and fail if one leaks, so a run never reaches a paid provider.
+
+name: verify
+
+on:
+  push:
+    branches: [main, fix/fx-d4-ci]
+  workflow_dispatch:
+  schedule:
+    # Weekly (Mondays 06:17 UTC): the tests download Chromium and the Temporal CLI, and pushes can stop for days.
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+# A newer push cancels a run still going for an older commit on the same branch.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    name: verify (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        # One entry per operating system. macOS is not run yet; to add it later:
+        #   - { name: macos, os: macos-15, playwright: chromium }
+        include:
+          - { name: windows, os: windows-2025, playwright: chromium }
+          - { name: linux, os: ubuntu-24.04, playwright: --with-deps chromium }
+    steps:
+      - name: Check out, with the whole history (the decision-log check reads main's)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Node (the version in .node-version)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: pnpm (the version in package.json's packageManager)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Playwright's Chromium (the renderer tests and the browser tests)
+        run: pnpm --filter ./apps/web exec playwright install ${{ matrix.playwright }}
+
+      - name: The Temporal CLI (the engine tests start a local Temporal server; downloaded once into the temp folder)
+        working-directory: packages/runner
+        run: node --input-type=module -e "const { TestWorkflowEnvironment } = await import('@temporalio/testing'); const env = await TestWorkflowEnvironment.createLocal(); await env.teardown(); console.log('Temporal CLI ready');"
+
+      # Bring-up only: the three steps of pnpm verify, each run even when one before it fails.
+      - name: typecheck
+        if: ${{ !cancelled() }}
+        run: pnpm -s typecheck
+      - name: unit tests
+        if: ${{ !cancelled() }}
+        run: pnpm test
+      - name: end-to-end
+        if: ${{ !cancelled() }}
+        run: pnpm e2e
