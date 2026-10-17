@@ -70,9 +70,13 @@ describe('the CI workflow (ADR-0103)', () => {
     // The owner's decision (ADR-0103 §3): the newest pnpm 11 release at or above 11.13.1. npm marks 11.12.0 as broken
     // ("Please upgrade to v11.13.1 or newer"). `npm view pnpm dist-tags` on 2026-10-17: latest-11 is 11.28.6.
     expect(pkg.packageManager).toBe('pnpm@11.28.6');
-    // pnpm/action-setup reads packageManager itself; given a version of its own as well, it stops with an error.
+    // pnpm/action-setup reads packageManager itself, so the workflow sets no version. At the pinned SHA, a `version`
+    // input that differs from packageManager stops it with an error ("Multiple versions of pnpm specified"); the same
+    // version passes, but would be a second place to keep in step.
     const setup = /^ {6}- name: pnpm[^\n]*\n {8}uses: pnpm\/action-setup@([0-9a-f]{40}) # v6\.1\.0\n(?! {8}with:)/m.exec(workflow);
     expect(setup?.[1]).toBe('ea17c68df8912ef543352723c149a84f56e3d413');
+    expect(workflow).toContain('given a `version` input that differs from it, it stops with an error');
+    expect(workflow).not.toMatch(/given a second one/);
     expect(workflow).not.toMatch(/npm install --global/);
     expect(workflow.indexOf('pnpm/action-setup')).toBeGreaterThan(workflow.indexOf('actions/setup-node'));
     expect(workflow).toMatch(/pnpm install --frozen-lockfile/);
