@@ -52,10 +52,11 @@ jobs:
         with:
           node-version-file: .node-version
 
+      # Installed from npm, as on the owner's machine. pnpm's own installers (pnpm/action-setup, pnpm self-update)
+      # refuse 11.12.0: npm marks it deprecated because its standalone build (@pnpm/exe) shipped without a binary.
+      # The npm package itself runs.
       - name: pnpm (the version in package.json's packageManager)
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          cache: true
+        run: npm install --global "$(node -p "require('./package.json').packageManager")" && pnpm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -66,6 +67,18 @@ jobs:
       - name: The Temporal CLI (the engine tests start a local Temporal server; downloaded once into the temp folder)
         working-directory: packages/runner
         run: node --input-type=module -e "const { TestWorkflowEnvironment } = await import('@temporalio/testing'); const env = await TestWorkflowEnvironment.createLocal(); await env.teardown(); console.log('Temporal CLI ready');"
+
+      # Bring-up only (D2 needs it): can Chromium start inside its OS sandbox on this runner?
+      - name: Chromium's OS sandbox on this runner (bring-up probe)
+        if: ${{ matrix.name == 'linux' && !cancelled() }}
+        working-directory: apps/web
+        run: |
+          uname -a; id -u
+          for k in kernel.apparmor_restrict_unprivileged_userns kernel.apparmor_restrict_unprivileged_unconfined kernel.unprivileged_userns_clone user.max_user_namespaces; do sysctl "$k" 2>&1 || true; done
+          probe() { node --input-type=module -e "const { chromium } = await import('@playwright/test'); for (const sandbox of [false, true]) { const t = Date.now(); try { const b = await chromium.launch({ headless: true, chromiumSandbox: sandbox }); const p = await b.newPage(); await p.setContent('<p>drawn</p>'); console.log('sandbox ' + sandbox + ': ' + (await p.textContent('p')) + ' in ' + (Date.now() - t) + ' ms'); await b.close(); } catch (e) { console.log('sandbox ' + sandbox + ': failed: ' + String(e.message).split('\n').filter(Boolean).slice(0, 4).join(' | ')); } }"; }
+          echo '--- as the runner is set up'; probe
+          echo '--- with kernel.apparmor_restrict_unprivileged_userns=0'; sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 && probe
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 || true
 
       # Bring-up only: the three steps of pnpm verify, each run even when one before it fails.
       - name: typecheck
