@@ -1,7 +1,7 @@
 # `pnpm verify` (the typecheck, the unit tests, then the end-to-end suite) on Windows and Linux (ADR-0103).
 #
-# It reports and blocks nothing: a red run puts a red mark on the commit and emails the repository's owner, and no
-# push is refused. Read the latest result on main before merging: gh run list --branch main --limit 1
+# It reports and blocks nothing: a red run puts a red mark on the commit and GitHub notifies the account that pushed it,
+# and no push is refused. Read the latest result on main before merging: gh run list --branch main --limit 1
 #
 # No secrets. The tests use stand-in provider keys and fail if one leaks, so a run never reaches a paid provider.
 

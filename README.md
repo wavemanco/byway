@@ -164,7 +164,7 @@ The end-to-end suite sets stand-in provider keys and fails if any of them appear
 
 Each job installs the pinned Node (`.node-version`) and pnpm (`packageManager` in `package.json`), the dependencies from the lockfile, Playwright's Chromium (with its system libraries on Linux) and the Temporal CLI, then runs `pnpm verify`. It checks out the whole history, which the decision-log check reads. It uses no secrets: the browser tests set stand-in keys and fail if one leaks, so a run never reaches a paid provider.
 
-CI reports and blocks nothing ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). A red run puts a red mark on the commit and emails the repository's owner; no push is refused. So before merging a branch or pushing to main, look at the last run on main:
+CI reports and blocks nothing ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). A red run puts a red mark on the commit, and GitHub notifies the account that pushed it (for the weekly run, the account that last changed its schedule), as that account's notification settings allow; no push is refused. Nobody else is told, so before merging a branch or pushing to main, look at the last run on main:
 
 ```bash
 gh run list --branch main --limit 1     # "completed success" is green; "completed failure" is red
