@@ -275,6 +275,48 @@ describe('the rule, on a temporary repository', { timeout: 60_000 }, () => {
     }
   });
 
+  it('main’s history is read only as far as the checked-out commit holds it: a branch stacked on a branch merged since, and a merged branch checked out again, pass', () => {
+    const r = fixture();
+    r.write('0001', 'Accepted', 'We do X.');
+    const start = r.commit('accept 0001');
+    r.git('switch', '--quiet', '-c', 'fix/first');
+    r.write('0002', 'Accepted', 'First draft.');
+    r.commit('draft 0002');
+    r.write('0002', 'Accepted', 'Second draft.');
+    r.commit('revise 0002');
+    // A second branch, stacked on the first one's drafts.
+    r.git('switch', '--quiet', '-c', 'fix/stacked');
+    r.append('0001', '\n## Note (2026-10-17)\n\nA note.\n');
+    r.commit('a note on 0001');
+    // The first branch is finished and merged with --no-ff; main fixes ADR-0002's text at the merge.
+    r.git('switch', '--quiet', 'fix/first');
+    r.write('0002', 'Accepted', 'Final text.');
+    r.commit('finish 0002');
+    r.git('switch', '--quiet', 'main');
+    r.git('merge', '--quiet', '--no-edit', '--no-ff', 'fix/first');
+    const merge = r.git('rev-parse', 'HEAD');
+    // Control: main reads its own history, and ADR-0002 reached it at the merge.
+    expect(r.check()).toMatchObject({ breaches: [], linkBreaches: [] });
+    expect(r.check().line.base).toBe(merge);
+    expect(r.check().acceptedIn.get('0002')).toBe(merge);
+    // Each of these meets main at one of the first branch's commits, which main holds only through the merge, not on its
+    // own chain of commits: main's history is read up to the newest commit of that chain each holds, so the first
+    // branch's drafts are not read as main's.
+    for (const branch of ['fix/stacked', 'fix/first']) {
+      r.git('switch', '--quiet', branch);
+      const log = r.check();
+      expect(log.breaches.map(describeBreach), branch).toEqual([]);
+      expect(log.onMain.has('0002'), branch).toBe(false);
+      expect(log.line.base, branch).toBe(start);
+    }
+    // Control: a branch made from main after the merge reads the merge, and is held to ADR-0002's text as main fixed it.
+    r.git('switch', '--quiet', 'main');
+    r.git('switch', '--quiet', '-c', 'fix/after');
+    expect(r.check().line.base).toBe(merge);
+    r.write('0002', 'Accepted', 'Edited after the merge.');
+    expect(r.check().breaches.map((b) => [b.record, b.part, b.changedIn])).toEqual([['0002', 'Decision', WORKING_TREE]]);
+  });
+
   it('a branch is held to main’s fixed text before it merges', () => {
     const r = fixture();
     r.write('0001', 'Accepted', 'We do X.');

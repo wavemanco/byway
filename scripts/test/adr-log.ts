@@ -111,13 +111,22 @@ function readBlobs(repo: string, specs: string[]): Map<string, string | undefine
 export interface MainLine {
   /** The ref read as main: refs/heads/main, else refs/remotes/origin/main (a CI checkout of another branch). */
   ref: string;
-  /** Where the checked-out commit meets main: main's first-parent history is walked from here. */
+  /**
+   * The newest commit of main's first-parent history that the checked-out commit holds: main's first-parent history is
+   * walked from here. Not `git merge-base`: a branch stacked on a branch that main has merged since, or a merged branch
+   * checked out again, meets main at a commit of that branch, which main holds only through the merge.
+   */
   base: string;
   /** Oldest first: each first-parent commit and the files it changed against its first parent. */
   commits: Array<{ sha: string; changed: Array<{ status: string; file: string }> }>;
 }
 
-/** Main's first-parent history up to where HEAD meets it. Throws a plain message when the history is not there. */
+const lines = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter((l) => l !== '');
+
+/**
+ * Main's first-parent history up to the newest commit of it that HEAD holds. Throws a plain message when the history is
+ * not there.
+ */
 export function mainLine(repo: string, mainRef?: string): MainLine {
   if (git(repo, ['rev-parse', '--is-shallow-repository']).trim() === 'true') {
     throw new Error('The decision-log check reads the whole history, and this clone is shallow. Fetch the full history (in GitHub Actions: actions/checkout with fetch-depth: 0).');
@@ -125,8 +134,9 @@ export function mainLine(repo: string, mainRef?: string): MainLine {
   const candidates = mainRef ? [mainRef] : ['refs/heads/main', 'refs/remotes/origin/main'];
   const ref = candidates.find((c) => spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `${c}^{commit}`], { env: gitEnv() }).status === 0);
   if (!ref) throw new Error(`The decision-log check reads main's history, and this clone has no main branch (looked for ${candidates.join(' and ')}).`);
-  const base = git(repo, ['merge-base', 'HEAD', ref]).trim();
-  if (!base) throw new Error(`HEAD and ${ref} have no commit in common.`);
+  const held = new Set(lines(git(repo, ['rev-list', 'HEAD'])));
+  const base = lines(git(repo, ['rev-list', '--first-parent', ref])).find((c) => held.has(c));
+  if (!base) throw new Error(`HEAD holds no commit of ${ref}'s first-parent history.`);
   const log = git(repo, ['log', '--first-parent', '--diff-merges=first-parent', '--no-renames', '--reverse', '--format=%x01%H', '--name-status', base]);
   const commits = log
     .split('\x01')
