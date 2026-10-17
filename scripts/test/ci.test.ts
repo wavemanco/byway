@@ -162,6 +162,63 @@ describe('the pin and secrets guard fails on a bad workflow', () => {
   it('fails on a reusable workflow given the caller’s secrets', () => {
     expect(check({ '.github/workflows/w.yml': `on: push\njobs:\n  call:\n    uses: octo/repo/.github/workflows/build.yml@${SHA}\n    secrets: inherit\n` })).toHaveLength(1);
   });
+
+  // The round-1 check of this guard found these spellings passing a line reader; each is valid YAML that a YAML reader
+  // (yaml@2.9.1) reads as `uses: actions/cache@v4`, or as a run naming the secrets context.
+  it.each([
+    ['a double-quoted key with an escape', '      - "u\\x73es": actions/cache@v4'],
+    ['a double-quoted key with a Unicode escape', '      - "\\u0075ses": actions/cache@v4'],
+    ['a complex key', '      - ? uses\n        : actions/cache@v4'],
+    ['an alias', '      - name: &ref actions/cache@v4\n        run: echo\n      - uses: *ref'],
+    ['a key in capitals', '      - USES: actions/cache@v4'],
+  ])('fails on an unpinned action in %s, read as YAML', (_, steps) => {
+    expect(one(steps)).toHaveLength(1);
+  });
+
+  it('fails on an unpinned action in a flow pair inside a flow sequence', () => {
+    expect(check({ '.github/workflows/w.yml': 'on: push\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps: [uses: actions/cache@v4]\n' })).toHaveLength(1);
+  });
+
+  it('fails closed on a pinned action whose `uses` is not written plainly on its line: the line reader is the backstop for a YAML reader that reads it otherwise', () => {
+    for (const steps of [`      - "u\\x73es": actions/cache@${SHA}`, `      - ? uses\n        : actions/cache@${SHA}`, `      - uses:\n          actions/cache@${SHA}`]) {
+      expect(one(steps), steps).toEqual([expect.stringContaining('write it as "uses: <value>" on one line')]);
+    }
+  });
+
+  it('fails closed on a line that shows an unpinned `uses` where the YAML reader reads text (a script): the line reader stands on its own', () => {
+    expect(one('      - run: |\n          uses: actions/cache@v4')).toEqual([expect.stringContaining('.github/workflows/w.yml:7: actions/cache@v4 is not pinned')]);
+  });
+
+  it.each([
+    ['a hexadecimal escape', '      - run: "echo ${{ s\\x65crets.TOKEN }}"'],
+    ['a Unicode escape', '      - run: "echo ${{ \\u0073ecrets.TOKEN }}"'],
+    ['an escaped line break', '      - run: "echo ${{ sec\\\n          rets.TOKEN }}"'],
+  ])('fails on secrets written with %s in a double-quoted value', (_, steps) => {
+    expect(one(steps)).toHaveLength(1);
+  });
+
+  it.each([
+    ['a duplicate key', `      - uses: actions/cache@${SHA}\n        uses: actions/setup-node@${SHA}`],
+    ['a tag the reader does not know', `      - uses: !pinned actions/cache@${SHA}`],
+    ['a key that is a list', `      - ? [uses]\n        : actions/cache@${SHA}`],
+    ['text that is not YAML', `      - uses: [actions/cache@${SHA}`],
+  ])('fails closed on %s', (_, steps) => {
+    expect(one(steps).length).toBeGreaterThan(0);
+  });
+
+  it('holds a job’s container and its services to images pinned by digest, and fails an action built from a Dockerfile', () => {
+    const DIGEST = `sha256:${'b'.repeat(64)}`;
+    const jobWith = (lines: string) => ({ '.github/workflows/w.yml': `on: push\njobs:\n  build:\n    runs-on: ubuntu-24.04\n${lines}\n    steps:\n      - run: echo\n` });
+    expect(check(jobWith(`    container: node@${DIGEST}\n    services:\n      db:\n        image: postgres@${DIGEST}\n      cache: redis@${DIGEST}`))).toEqual([]);
+    expect(check(jobWith(`    container:\n      image: node@${DIGEST}\n      options: --cpus 1`))).toEqual([]);
+    for (const lines of ['    container: node:24', '    container:\n      image: node:24', '    container:\n      image: ${{ matrix.image }}', '    container:\n      options: --cpus 1', '    services:\n      db:\n        image: postgres:latest', '    services:\n      cache: redis']) {
+      expect(check(jobWith(lines)), lines).toEqual([expect.stringMatching(/is not pinned by its digest|names no image/)]);
+    }
+    const action = (image: string) => ({ '.github/workflows/w.yml': job('      - uses: ./.github/actions/tool'), '.github/actions/tool/action.yml': `runs:\n  using: docker\n  image: ${image}\n` });
+    expect(check(action(`docker://alpine@${DIGEST}`))).toEqual([]);
+    expect(check(action('docker://alpine:3'))).toEqual([expect.stringContaining('runs.image')]);
+    expect(check(action('Dockerfile'))).toEqual([expect.stringContaining('built from a Dockerfile')]);
+  });
 });
 
 describe('branch and tag protection, as set on GitHub (ADR-0103 §8)', () => {
