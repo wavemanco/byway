@@ -148,6 +148,26 @@ describe('the pin and secrets guard fails on a bad workflow', () => {
   });
 });
 
+describe('branch and tag protection, as set on GitHub (ADR-0103 §8)', () => {
+  // `gh api repos/wavemanco/byway/rulesets` on 2026-10-17: "Protect main" (~DEFAULT_BRANCH: deletion,
+  // non_fast_forward) and "Protect tags" (~ALL tags: deletion, update, non_fast_forward), neither with a bypass actor.
+  const adr = section(read('docs/adr/0103-adr-log-rule-and-ci.md'), '### 8. Branch protection, and what CR14 still lacks') ?? '';
+  const playbook = read('docs/playbook.md').split('\n').find((l) => l.startsWith('| **Public record for the charter**')) ?? '';
+
+  it('ADR-0103 says both rulesets exist, with their rules and no bypass list', () => {
+    expect(adr).toContain('"Protect main"');
+    expect(adr).toMatch(/"Protect main"[^.]*`deletion` and `non_fast_forward` on the default branch/);
+    expect(adr).toMatch(/"Protect tags"[^.]*`deletion`, `update` and `non_fast_forward` on all tags/);
+    expect(adr).toMatch(/no bypass list/);
+    expect(adr).not.toMatch(/Branch protection is the owner's setting, made by/);
+  });
+
+  it('the playbook no longer lists protected branches as still to do, and names the rulesets', () => {
+    expect(playbook).not.toMatch(/protected branches too/);
+    expect(playbook).toContain('"Protect main" and "Protect tags"');
+  });
+});
+
 describe('the README on platforms and CI (ADR-0103)', () => {
   const systems = matrix.map((m) => ({ windows: 'Windows', linux: 'Linux', macos: 'macOS' })[m.name] ?? m.name);
 
