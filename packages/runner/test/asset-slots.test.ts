@@ -489,6 +489,15 @@ describe('the AI’s advice, never a veto (D3, ADR-0101)', () => {
     // A trailing colon, semicolon or comma gives way to the full stop rather than standing before it.
     expect(adviceNote('Consider a real photograph:')).toBe('The AI suggests: Consider a real photograph. You can cut the image at Trim.');
     expect(adviceNote('Keep it simple,')).toBe('The AI suggests: Keep it simple. You can cut the image at Trim.');
+    expect(adviceNote('Keep it simple ;')).toBe('The AI suggests: Keep it simple. You can cut the image at Trim.');
+    // In any script: a sentence's own stop counts, and its comma, colon or semicolon gives way too.
+    expect(adviceNote('ヘッダーは不要かもしれません。')).toBe('The AI suggests: ヘッダーは不要かもしれません。 You can cut the image at Trim.');
+    expect(adviceNote('Keep it 「simple。」')).toBe('The AI suggests: Keep it 「simple。」 You can cut the image at Trim.');
+    expect(adviceNote('Keep it «simple.»')).toBe('The AI suggests: Keep it «simple.» You can cut the image at Trim.');
+    expect(adviceNote('标题图片可能不需要，')).toBe('The AI suggests: 标题图片可能不需要. You can cut the image at Trim.');
+    expect(adviceNote('لا حاجة إلى صورة،')).toBe('The AI suggests: لا حاجة إلى صورة. You can cut the image at Trim.');
+    // A Greek question mark looks like a semicolon but ends the sentence: it stays, and no stop is added.
+    expect(adviceNote('Χρειάζεται εικόνα\u037E')).toBe('The AI suggests: Χρειάζεται εικόνα\u037E You can cut the image at Trim.');
     expect(adviceNote('Its own line says it: “less is more.”')).toBe('The AI suggests: Its own line says it: “less is more.” You can cut the image at Trim.');
     expect(adviceNote('Keep it quiet (a photo would do)')).toBe('The AI suggests: Keep it quiet (a photo would do). You can cut the image at Trim.');
     const g = fake([answer(['header'], '  ')]);

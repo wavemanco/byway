@@ -18,14 +18,14 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 | F08 | Composition diff hides real changes | P2 | Fixed | 0098 | — |
 | F09 | C7 clarification never reaches the build | P2 | Fixed | [0089](../adr/0089-recipe-ir-optional-reads.md) | — |
 | F10 | C5 shot check never sees the clip | P2 | Fixed | [0090](../adr/0090-execution-contracts-for-revising-humans-and-media-steps.md) | Middle-frame sampling (backlog) |
-| F11 | C3 "no image" answer fails the run | P3 | Fixed | 0090, [0101](../adr/0101-c3-yes-decides-the-header-image.md) | The owner decided D3 on 2026-10-16: your Yes makes the header image, and the AI may add advice |
+| F11 | C3 "no image" answer fails the run | P3 | Fixed | 0090, [0101](../adr/0101-c3-yes-decides-the-header-image.md), [0104](../adr/0104-c3-advice-needs-a-letter-or-number.md) | The owner decided D3 on 2026-10-16: your Yes makes the header image, and the AI may add advice |
 | F12 | Media slots validated one way, attached another | P2 | Fixed | 0090 | — |
 | F13 | Review views silently omit content | P2 | Fixed | [0086](../adr/0086-run-screen-excerpts-say-so-and-decision-views-show-whole-text.md), [0087](../adr/0087-lineup-evidence-full-words-and-disclosed-card-budget.md) | — |
 | F14 | Recommendation not refreshed after retry | P2 | Fixed | 0082 | — |
 | F15 | Out-of-order polls regress run state | P3 | Fixed | 0082 | — |
 | F16 | Secrets not stripped from returned results | P3 | Fixed | [0088](../adr/0088-provider-boundary-held-keys-and-media-admission.md) | — |
 | F17 | Media fetch trusts URLs and buffers first | P3 | Fixed | 0088 | — |
-| F18 | Renderer Chromium runs unsandboxed | P2 | Fixed, except D2 | [0084](../adr/0084-renderer-launch-without-secrets.md) | The owner decided D2 on 2026-10-16: the sandbox on by default on Windows and Linux (macOS later), with an explicit off switch and a banner while it is off; to be built as ADR-0104 (backlog). Until then it stays off |
+| F18 | Renderer Chromium runs unsandboxed | P2 | Fixed, except D2 | [0084](../adr/0084-renderer-launch-without-secrets.md) | The owner decided D2 on 2026-10-16: the sandbox on by default on Windows and Linux (macOS later), with an explicit off switch and a banner while it is off; to be built as ADR-0105 (backlog). Until then it stays off |
 | F19 | Canonical JSON skips key validation | P3 | Fixed | [0083](../adr/0083-hashed-text-is-well-formed-unicode.md) | — |
 | F20 | Loop cap substitutes for the person's decision | P2 | Fixed | [0093](../adr/0093-every-loop-exit-at-the-cap-follows-one-policy.md) | — |
 | R1 | No CI; toolchain not pinned | P3 | Fixed | [0094](../adr/0094-backup-unit-is-the-data-directory.md) (`pnpm verify`), [0103](../adr/0103-adr-log-rule-and-ci.md) | The owner decided D4 on 2026-10-16: CI runs `pnpm verify` on Windows and Linux on every push to main, reporting only; main and tags are protected by rulesets. A required check waits for its trigger (backlog) |
@@ -39,7 +39,7 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 
 ## Owner decisions
 
-- **D1 to D4, from the verification (§4):** all decided on 2026-10-16. D1 is [ADR-0102](../adr/0102-one-refusal-rule-for-every-provider.md), D3 is [ADR-0101](../adr/0101-c3-yes-decides-the-header-image.md) and D4 is [ADR-0103](../adr/0103-adr-log-rule-and-ci.md); D2 is to be built as ADR-0104, as its row in [the backlog](../backlog.md) under "Owner decisions from the external-review verification" says.
+- **D1 to D4, from the verification (§4):** all decided on 2026-10-16. D1 is [ADR-0102](../adr/0102-one-refusal-rule-for-every-provider.md), D3 is [ADR-0101](../adr/0101-c3-yes-decides-the-header-image.md) and D4 is [ADR-0103](../adr/0103-adr-log-rule-and-ci.md); D2 is to be built as ADR-0105, as its row in [the backlog](../backlog.md) under "Owner decisions from the external-review verification" says.
 - **Questions from the fix work, held by the owner (2026-10-17):**
   - simplify VOICE on web pages to a content layer;
   - ST9/ST10 `human-critique` case 2;

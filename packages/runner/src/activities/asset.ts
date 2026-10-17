@@ -47,16 +47,20 @@ export const NO_BRIEF_NOTE = 'The AI wrote no usable image brief, even when aske
 /** The prompt lets the AI answer with no image (its minimum is 0), and it did: a choice, not a failure (F11). */
 export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, which its instructions allow, so no image was made; the work is unchanged.';
 
+/** A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis or the Greek question mark, before any closing quotes and brackets. */
+const ENDS_SENTENCE = /[\p{Sentence_Terminal}…\u037E]["'\p{Pe}\p{Pf}]*$/u;
+/** A trailing comma, colon or semicolon in the common scripts' forms (Latin, fullwidth, ideographic, Arabic) gives way to the stop. */
+const GIVES_WAY = /\s*[,:;\uFF0C\uFF1A\uFF1B\u3001\uFF64\uFE50\uFE51\uFE54\uFE55\u060C\u061B]+$/u;
+
 /**
  * The AI's line of advice, shown with the image it came with as its suggestion, never a veto (ADR-0101, D3). Only a
  * prompt that asks for advice gets one shown, and only C3's header image does, which its Trim step follows (a test
  * holds every such step to that). The advice is plain, bounded text (parse.ts plainLine); a stop is added if it has none
- * (a stop before a closing quote or bracket counts).
+ * (. ! ? and their forms in other scripts, the ellipsis; one before closing quotes and brackets counts).
  */
 export const adviceNote = (advice: string): string => {
-  // A trailing colon, semicolon or comma gives way to the full stop.
-  const line = advice.replace(/\s*[:;,]+$/, '');
-  return `The AI suggests: ${/[.!?…]["'”’)\]]*$/.test(line) ? line : `${line}.`} You can cut the image at Trim.`;
+  const line = advice.replace(GIVES_WAY, '');
+  return `The AI suggests: ${ENDS_SENTENCE.test(line) ? line : `${line}.`} You can cut the image at Trim.`;
 };
 
 /** An ASSET step that turns the script into audio rather than images: @byway/recipe/semantics' audioAsset, which the explainers and the estimate read too. */

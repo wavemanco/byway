@@ -32,6 +32,8 @@ export function cleanReason(value: unknown, redact: Redactor): string | undefine
 
 /** Who declined: "Anthropic’s model claude-opus-5-5". */
 const whoOf = (d: Pick<DeclineRecord, 'provider' | 'model'>): string => `${PROVIDER_NAMES[d.provider] ?? d.provider}’s model ${d.model}`;
+/** The same, inside a sentence: "the demo’s model mock-mid". */
+const whoInSentence = (d: Pick<DeclineRecord, 'provider' | 'model'>): string => `${nameInSentence(d.provider)}’s model ${d.model}`;
 /** What was declined, by default: "this image" or "this request". */
 const whatOf = (d: Pick<DeclineRecord, 'kind'>): string => (d.kind === 'image' ? 'this image' : 'this request');
 
@@ -103,7 +105,7 @@ export function declineStory(d: DeclineRecord, what: string = whatOf(d)): string
  * outcome (ADR-0102): the step's next attempt asks for the retry alone.
  */
 export function stoppedBeforeRetry(d: Pick<DeclineRecord, 'provider' | 'model' | 'kind'>): string {
-  return `The step was stopped after ${whoOf(d)} declined ${whatOf(d)}, so byway did not ask it once more. The step’s next attempt asks it, without buying the declined call again.`;
+  return `The step was stopped after ${whoInSentence(d)} declined ${whatOf(d)}, so byway did not ask it once more. The step’s next attempt asks it, without buying the declined call again.`;
 }
 
 /**
@@ -133,7 +135,8 @@ export function notMadeProblem(err: GatewayError): string | undefined {
 
 /**
  * What to do after a decline that brought no answer: rephrase, or choose another model profile, and what a budget needs.
- * Not for a retry billed that byway could not keep: that failure's own words say what follows (the gateway's askOnceMore).
+ * Not for a retry billed that byway could not keep or would not use (its answer held one of the person's keys): that
+ * failure's own words say what follows (the gateway's askOnceMore).
  */
 export function declineAdvice(budget?: Pick<BudgetDetails, 'scope'>): string {
   if (budget?.scope === 'run') return 'Rephrase the request, or choose another model profile in Settings, then start again with a larger budget.';

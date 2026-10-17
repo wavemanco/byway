@@ -122,7 +122,12 @@ describe('judging parsers (spec §3.3)', () => {
       // Only control characters is no advice.
       expect(parseBriefs(answer('\u0007\u202E'))).toEqual(briefsOnly);
       // Nothing readable is no advice: joiners alone, and blank characters outside the control and format classes.
-      for (const blank of ['\u200D\u200C', '\u3164\u3164', '\u2800', '\u200D \u3164']) expect(parseBriefs(answer(blank)), JSON.stringify(blank)).toEqual(briefsOnly);
+      for (const blank of ['\u200D\u200C', '\u3164\u3164', '\u115F', '\u1160', '\uFFA0', '\u2800', '\u200D \u3164']) expect(parseBriefs(answer(blank)), JSON.stringify(blank)).toEqual(briefsOnly);
+      // Readable means a letter or a number (ADR-0104): punctuation or symbols alone, such as the answer format's own "\u2026", say nothing.
+      for (const marks of ['\u2026', ',', ':;', ' : ; ', '()', '-', '\ud800', '\uD83D\uDC4D', '?!']) expect(parseBriefs(answer(marks)), JSON.stringify(marks)).toEqual(briefsOnly);
+      expect(parseBriefs(answer('N/A'))).toMatchObject({ value: { advice: 'N/A' } });
+      // Read after the cut: blank letters that fill the part shown make no advice, whatever follows them.
+      expect(parseBriefs(answer(`${'\u3164'.repeat(ADVICE_MAX + 100)}a`))).toEqual(briefsOnly);
     });
 
     it(`is held to ${ADVICE_MAX} characters: a longer line is cut at a word, with an ellipsis`, () => {
@@ -132,8 +137,8 @@ describe('judging parsers (spec §3.3)', () => {
       expect(advice).toMatch(/^word( word)+…$/);
       const exact = 'a'.repeat(ADVICE_MAX);
       expect(parseBriefs(answer(exact))).toMatchObject({ value: { advice: exact } });
-      // Counted in characters, so a cut never splits one.
-      const r2 = parseBriefs(answer('😀'.repeat(ADVICE_MAX + 5)));
+      // Counted in characters, so a cut never splits one (a letter outside the BMP, written as a surrogate pair).
+      const r2 = parseBriefs(answer('\u{20000}'.repeat(ADVICE_MAX + 5)));
       expect(r2.ok && r2.value.advice!.isWellFormed()).toBe(true);
       expect(r2.ok && [...r2.value.advice!].length).toBe(ADVICE_MAX);
     });

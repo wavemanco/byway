@@ -427,8 +427,8 @@ export class ModelGateway implements Gateway {
    * 'refused' GatewayError, never retryable, whose message says what happened (who declined, the reason given), what
    * became of the retry, what each attempt was billed (a retry billed without a usable answer included), what byway
    * counts for either as "may have been billed" (a send retained before it was sent again, a retry that ended unsettled),
-   * and what to do; for a retry billed that byway could not keep (`billed`), that failure's own words instead of the
-   * advice. The answer's `declined` names the same amounts. A budget with no room for the retry, or paid calls paused,
+   * and what to do; for a retry billed that byway could not keep or would not use (its answer held one of the person's
+   * keys; `billed`), that failure's own words instead of the advice. The answer's `declined` names the same amounts. A budget with no room for the retry, or paid calls paused,
    * ends the call here, and no budget question is asked (ADR-0102 Decision 2). The runner's memo keeps the outcome, so a
    * step that runs again gets it back and asks nothing: the runner's image step leaves a declined image alone (unless the
    * failure is billed, which stops it), and Temporal does not retry the failure.
@@ -453,9 +453,10 @@ export class ModelGateway implements Gateway {
       ...(first.uncertainUsd !== undefined ? { uncertainUsd: first.uncertainUsd } : {}),
     };
     // A retry billed that byway could not keep (its media, its request and response, or its cost could not be stored or
-    // recorded), or would not use (its answer held one of the person's keys, ADR-0088), is told in that failure's own words ("It is not retried, because a retry would pay again."), not with the
-    // advice for a decline: the second ask was answered, and the fault is byway's. It stays billed, so a caller with tries
-    // of its own stops, as for any billed failure (ADR-0090, ADR-0099).
+    // recorded), or would not use (its answer held one of the person's keys, ADR-0088), is told in that failure's own
+    // words ("It is not retried, because a retry would pay again."), not with the advice for a decline: the second ask was
+    // answered, so asking the model again is no remedy. It stays billed, so a caller with tries of its own stops, as for
+    // any billed failure (ADR-0090, ADR-0099).
     const fail = (record: DeclineRecord, opts: { budget?: BudgetDetails; billed?: boolean } = {}) =>
       new GatewayError('refused', redact(opts.billed ? declineStory(record) : `${declineStory(record)} ${declineAdvice(opts.budget)}`), false, { declined: record, ...(opts.billed ? { billed: true } : {}) });
     const caller = req.operation;

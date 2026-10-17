@@ -54,7 +54,7 @@ The model a profile names is the only one that answers: byway asks no provider f
 | `pnpm recipes:emit` | Regenerate `recipes/*.json` after changing the catalog |
 | `pnpm prompts:slots` | Regenerate the table of what each prompt template shows (`packages/recipe/src/template-slots.ts`, ADR-0097) after changing a template's slots |
 
-`pnpm start`, `pnpm demo` and `pnpm dev` take `PORT` (web, default 3000), `BYWAY_TEMPORAL_PORT` (default 7233) and `BYWAY_DATA_DIR`. If the run engine stops while byway is running, byway says so and stops; start it again. The first start downloads the Temporal dev server once; later starts reuse it. Web-page recipes render pages with Playwright's Chromium (`pnpm --filter ./apps/web exec playwright install chromium` if it is missing).
+`pnpm start`, `pnpm demo` and `pnpm dev` take `PORT` (web, default 3000), `BYWAY_TEMPORAL_PORT` (default 7233) and `BYWAY_DATA_DIR`. If the run engine stops while byway is running, byway says so and stops; start it again. The first start downloads the Temporal dev server once; later starts reuse it. Web-page recipes render pages with Playwright's Chromium (`pnpm --filter ./apps/web exec playwright install chromium` if it is missing; on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`, which also installs the system libraries Chromium needs).
 
 ## Architecture
 
@@ -137,7 +137,7 @@ byway draws pages with Playwright's Chromium, inside the run engine: the pages a
 - Chromium is started in one place (`chromiumLaunchOptions()` in `packages/runner/src/pages.ts`), the same way every time; nothing can add a flag to it.
 - Its environment holds no provider key, nothing that looks secret and no other name from `.env.agents`. One exception: on Windows, when byway is started from a current directory whose drive letter is lowercase (`c:\…`), the engine loads the gateway twice and Chromium does get the file's other names; provider keys and names that look secret are still left out ([ADR-0100](docs/adr/0100-corrections-found-by-the-final-re-check.md); backlog).
 - Pages may load only Google Fonts, jsDelivr, unpkg, cdnjs and byway's own artifacts, and a redirect is followed only to another of them: the engine fetches those files itself, one hop at a time, and hands Chromium the result ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)), reading at most 20 MiB of any one file ([ADR-0099](docs/adr/0099-paid-operations-keyed-to-their-caller.md)). WebSockets and direct WebRTC are blocked, and a page that never settles is stopped.
-- At start-up byway prints a `renderer` line saying whether Chromium can start. If it cannot, web-page runs are refused before they spend anything, and any other step that needs a page or a card fails with a plain message. If Chromium is missing: `pnpm --filter ./apps/web exec playwright install chromium`.
+- At start-up byway prints a `renderer` line saying whether Chromium can start. If it cannot, web-page runs are refused before they spend anything, and any other step that needs a page or a card fails with a plain message. If Chromium is missing: `pnpm --filter ./apps/web exec playwright install chromium` (on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`).
 - Chromium's own OS sandbox is **off**, as it always has been (Playwright's default). Turning it on (`RENDERER_OS_SANDBOX`) would better contain a page or image that exploits a Chromium bug, but byway would then stop rendering wherever the sandbox cannot start: Linux with unprivileged user namespaces restricted (the default on Ubuntu 24.04 and later), or byway running as root or in a container. The owner has since chosen to switch it on by default, with an explicit off switch in Settings; that is not built yet.
 
 ## Tests
@@ -156,7 +156,7 @@ On Linux the unit run needs two more things, which CI's Linux job sets up (`.git
 - One renderer test starts Chromium inside its OS sandbox, as a control. Where unprivileged user namespaces are restricted (the default on Ubuntu 24.04 and later), Chromium's sandbox cannot start unless an AppArmor profile allows them for Playwright's Chromium; CI adds one for those binaries only.
 - Japanese text needs a CJK font that Chromium lays out correctly. With WenQuanYi Zen Hei as the fallback (Playwright's `install --with-deps` installs it), Chromium lays out the first item of a vertical row at no height, and one renderer test fails. Noto CJK (`fonts-noto-cjk`, as on Ubuntu's desktop) and IPAGothic lay it out as Windows does; CI installs Noto CJK and removes WenQuanYi Zen Hei.
 
-`pnpm verify` is the gate to run before merging a branch ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). For a commit that changes only documents, `pnpm vitest run scripts/test` runs the decision-log and README checks in seconds.
+`pnpm verify` is the gate to run before merging a branch ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). For a commit that changes only documents, `pnpm vitest run scripts/test apps/web/test/guard-` runs, in seconds, the decision-log, CI and README checks and the app's guard tests, some of which read the README too. The last argument is a name filter, not a pattern, so it works in every shell. An edit to `protocol/03-configurations.md` also needs `packages/catalog/test/chooser`.
 
 The end-to-end suite sets stand-in provider keys and fails if any of them appears in a request, a response or the web build's folder.
 
@@ -178,9 +178,13 @@ A red run that is still red when run again (`gh run rerun <run id> --failed`) is
 A risky change (for example the renderer's sandbox on Linux) is run on its branch before it merges, and merges only when both jobs pass:
 
 ```bash
+git push origin <branch>                    # GitHub can only run a branch it has
 gh workflow run verify.yml --ref <branch>
-gh run list --branch <branch> --limit 1
+gh run list --branch <branch> --limit 1     # the run takes a few seconds to appear
+gh run watch <run id> --exit-status         # waits for both jobs; fails if either does
 ```
+
+After the merge, `git push origin --delete <branch>` removes the branch from GitHub.
 
 ## What's here
 

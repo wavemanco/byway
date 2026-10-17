@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { GatewayError, type AdmitRequest, type CompletionRequest, type DeclinedAttempt, type DeclineRecord, type ImageRequest, type SpendContext } from '@byway/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { declineStory } from '../src/declines.ts';
+import { declineStory, stoppedBeforeRetry } from '../src/declines.ts';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { memorySpendBook } from '../src/memory-book.ts';
 import type { AnthropicMessageLike } from '../src/providers/anthropic.ts';
@@ -543,6 +543,7 @@ describe('what each attempt cost, in words from its own cost (ADR-0102)', () => 
     expect(words).toMatch(/^The demo’s model mock-image declined /);
     expect(words).toContain('(its estimate, once for each time it may have reached the demo)');
     expect(words).not.toContain('reached The demo');
+    expect(stoppedBeforeRetry({ provider: 'mock', model: 'mock-mid', kind: 'completion' })).toMatch(/^The step was stopped after the demo’s model mock-mid declined this request, /);
   });
 });
 

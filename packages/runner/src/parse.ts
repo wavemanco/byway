@@ -198,26 +198,32 @@ export const ADVICE_MAX = 200;
  */
 const NOT_PLAIN = /(?![\u200C\u200D])[\p{Cc}\p{Cf}]/gu;
 
-/** Something a person can read: a letter, a number, a punctuation mark or a symbol (blank letters such as U+3164 are not). */
-const READABLE = /(?![\u3164\u115F\u1160\uFFA0\u2800])[\p{L}\p{N}\p{P}\p{S}]/u;
+/**
+ * What makes text say something (ADR-0104): a letter or a number. Blank letters such as U+3164 do not count, and
+ * punctuation or symbols alone (an answer format's own "…", a lone ",", U+FFFD, an emoji) say nothing.
+ */
+const READABLE = /(?![\u3164\u115F\u1160\uFFA0])[\p{L}\p{N}]/u;
 
 /**
- * Model text as one plain line for the person to read (ADR-0101): well-formed (a lone surrogate becomes U+FFFD),
- * without control or format characters, its whitespace collapsed, and at most `max` characters, cut at a word with an
- * ellipsis. Empty when nothing readable is left (no letter, number, punctuation mark or symbol). A removed character
- * becomes a space, never nothing, so cleaning cannot join two halves of a text into one; the gateway's held-key check
- * (ADR-0088) runs on the answer's raw text before this.
+ * Model text as one plain line for the person to read (ADR-0101, ADR-0104): well-formed (a lone surrogate becomes
+ * U+FFFD), without control or format characters, its whitespace collapsed, and at most `max` characters, cut at a word
+ * where the line has one late enough, otherwise at a character, with an ellipsis. Empty when the line, as it would be
+ * shown, holds no letter or number. A removed character becomes a space, never nothing, so cleaning cannot join two
+ * halves of a text into one; the gateway's held-key check (ADR-0088) runs on the answer's raw text before this.
  */
 export function plainLine(text: string, max: number): string {
   // Whitespace first, so a line break between two words leaves a space; then the rest (each removed character becomes a
   // space), then the spaces left doubled.
   const t = text.toWellFormed().replace(/\s+/g, ' ').replace(NOT_PLAIN, ' ').replace(/ {2,}/g, ' ').trim();
-  if (!READABLE.test(t)) return '';
   const chars = [...t];
-  if (chars.length <= max) return t;
-  const cut = chars.slice(0, max - 1).join('');
-  const space = cut.lastIndexOf(' ');
-  return `${(space > cut.length / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+  let line = t;
+  if (chars.length > max) {
+    const cut = chars.slice(0, max - 1).join('');
+    const space = cut.lastIndexOf(' ');
+    line = `${(space > cut.length / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+  }
+  // Read as shown: what the cut keeps must say something.
+  return READABLE.test(line) ? line : '';
 }
 
 /**
