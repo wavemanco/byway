@@ -1,6 +1,6 @@
 # External review: implementation status (16 Oct 2026)
 
-Companion to [the verification of the external review](2026-10-08-external-review-verification.md). The owner's goal was to implement every fix that does not depend on the four pending owner decisions (D1–D4). All of them are on `main`. A final re-check on 2026-10-15 checked main at `1ba72f5`: one checker per cluster reran the review's and the verification's original reproductions, and two independent skeptics re-ran every blocking claim. No original reproduction reproduces. No fix was lost when the branches were merged. The documentation and test items it found were closed on 2026-10-16 ([ADR-0100](../adr/0100-corrections-found-by-the-final-re-check.md) and the cleanup commits after `1ba72f5`).
+Companion to [the verification of the external review](2026-10-08-external-review-verification.md). The owner's goal was to implement every fix that does not depend on the four owner decisions (D1–D4). All of them are on `main`. The owner then decided all four on 2026-10-16: D1, D3 and D4 are on `main` too, and D2 is to be built. A final re-check on 2026-10-15 checked main at `1ba72f5`: one checker per cluster reran the review's and the verification's original reproductions, and two independent skeptics re-ran every blocking claim. No original reproduction reproduces. No fix was lost when the branches were merged. The documentation and test items it found were closed on 2026-10-16 ([ADR-0100](../adr/0100-corrections-found-by-the-final-re-check.md) and the cleanup commits after `1ba72f5`).
 
 ## Status per finding
 
@@ -25,7 +25,7 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 | F15 | Out-of-order polls regress run state | P3 | Fixed | 0082 | — |
 | F16 | Secrets not stripped from returned results | P3 | Fixed | [0088](../adr/0088-provider-boundary-held-keys-and-media-admission.md) | — |
 | F17 | Media fetch trusts URLs and buffers first | P3 | Fixed | 0088 | — |
-| F18 | Renderer Chromium runs unsandboxed | P2 | Fixed, except D2 | [0084](../adr/0084-renderer-launch-without-secrets.md) | Chromium's OS sandbox stays off; no fail-closed or opt-out |
+| F18 | Renderer Chromium runs unsandboxed | P2 | Fixed, except D2 | [0084](../adr/0084-renderer-launch-without-secrets.md) | The owner decided D2 on 2026-10-16: the sandbox on by default on Windows and Linux (macOS later), with an explicit off switch and a banner while it is off; to be built as ADR-0104 (backlog). Until then it stays off |
 | F19 | Canonical JSON skips key validation | P3 | Fixed | [0083](../adr/0083-hashed-text-is-well-formed-unicode.md) | — |
 | F20 | Loop cap substitutes for the person's decision | P2 | Fixed | [0093](../adr/0093-every-loop-exit-at-the-cap-follows-one-policy.md) | — |
 | R1 | No CI; toolchain not pinned | P3 | Fixed | [0094](../adr/0094-backup-unit-is-the-data-directory.md) (`pnpm verify`), [0103](../adr/0103-adr-log-rule-and-ci.md) | The owner decided D4 on 2026-10-16: CI runs `pnpm verify` on Windows and Linux on every push to main, reporting only; main and tags are protected by rulesets. A required check waits for its trigger (backlog) |
@@ -37,17 +37,20 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 
 [ADR-0100](../adr/0100-corrections-found-by-the-final-re-check.md) corrects, by addition, the sentences in earlier records that later work made untrue. The ADR index now links each Accepted record to the later records that change it.
 
-## Decisions still with the owner
+## Owner decisions
 
-- **D1, D2 and D4:** decisions from the verification (§4), tracked in [the backlog](../backlog.md) under "Owner decisions from the external-review verification". D3 was decided on 2026-10-16 ([ADR-0101](../adr/0101-c3-yes-decides-the-header-image.md)).
-- **New from the fix work:**
+- **D1 to D4, from the verification (§4):** all decided on 2026-10-16. D1 is [ADR-0102](../adr/0102-one-refusal-rule-for-every-provider.md), D3 is [ADR-0101](../adr/0101-c3-yes-decides-the-header-image.md) and D4 is [ADR-0103](../adr/0103-adr-log-rule-and-ci.md); D2 is to be built as ADR-0104, as its row in [the backlog](../backlog.md) under "Owner decisions from the external-review verification" says.
+- **Questions from the fix work, held by the owner (2026-10-17):**
   - simplify VOICE on web pages to a content layer;
   - ST9/ST10 `human-critique` case 2;
   - whether an AI direction that takes a person's answer in carries it to the work;
-  - C2 mood boards: one image or one per option.
+  - C2 mood boards: one image or one per option;
+  - C1's seed read as directing on every run;
+  - VOICE-RETRY: C5's launch-gate retry drops the copy written at the first late VOICE;
+  - C3's explainer copy.
 
-  All are in the backlog's Product follow-ups.
+  All are in the backlog's Product follow-ups, each with what would bring it back.
 
 ## Checks on main
 
-After the 2026-10-16 cleanup, the full gate passes on `main`: type-check clean, 4,702 tests in 186 files, the web build, and 53 of 53 browser tests (`pnpm verify` runs the same steps locally). No CI runs it yet; that is D4.
+With D1 and D4 merged (2026-10-17), the full gate passes on `main` on Windows: type-check clean, 4,861 tests in 190 files, the web build, and 53 of 53 browser tests. `pnpm verify` runs the same steps locally, and CI runs them on Windows and Linux on every push to main ([ADR-0103](../adr/0103-adr-log-rule-and-ci.md)).
