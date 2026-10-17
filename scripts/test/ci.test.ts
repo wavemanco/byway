@@ -38,8 +38,14 @@ describe('the CI workflow (ADR-0103)', () => {
     expect(on).not.toMatch(/pull_request/);
   });
 
-  it('a newer push cancels an older run on the same branch', () => {
+  it('a newer run on the same branch, of any trigger, cancels one still going, and the workflow, README and ADR-0103 say so', () => {
+    // One group per ref, whatever started the run: a push, the weekly run or a run started by hand.
     expect(workflow).toMatch(/^concurrency:\n {2}group: verify-\$\{\{ github\.ref \}\}\n {2}cancel-in-progress: true$/m);
+    const said = 'A newer run on the same branch, of any trigger (a push, the weekly run or a run started by hand), cancels one still going.';
+    expect(workflow).toContain(`# ${said}`);
+    expect(section(readme, '## CI')).toContain(said);
+    expect(read('docs/adr/0103-adr-log-rule-and-ci.md')).toContain(said);
+    for (const text of [workflow, readme, read('docs/adr/0103-adr-log-rule-and-ci.md')]) expect(text).not.toMatch(/A newer push cancels/);
   });
 
   it('pins every action and reusable workflow it uses to a commit, in every file under .github and every local action, and names no secrets', () => {
@@ -184,6 +190,13 @@ describe('the README on platforms and CI (ADR-0103)', () => {
     for (const m of matrix) expect(ci).toContain(m.os);
     expect(ci).toContain('gh run list --branch main --limit 1');
     expect(ci).toMatch(/blocks nothing|refuses nothing/);
+  });
+
+  it('gives the Playwright install command each CI job runs: on Linux, with --with-deps', () => {
+    const tests = section(readme, '## Tests') ?? '';
+    expect(tests).toContain('`pnpm --filter ./apps/web exec playwright install chromium`');
+    expect(tests).toContain('on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`');
+    for (const m of matrix) expect(tests, m.name).toContain(`exec playwright install ${m.playwright}\``);
   });
 
   it('no longer says that nothing runs the checks automatically', () => {

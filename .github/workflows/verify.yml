@@ -19,7 +19,7 @@ on:
 permissions:
   contents: read
 
-# A newer push cancels a run still going for an older commit on the same branch.
+# A newer run on the same branch, of any trigger (a push, the weekly run or a run started by hand), cancels one still going.
 concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true

@@ -147,7 +147,7 @@ pnpm vitest run     # all packages and the app: no model or provider calls, no r
 pnpm e2e            # Playwright, demo mode, production server, temp data directory, non-default ports
 ```
 
-The unit run is not self-contained. The renderer tests launch Playwright's Chromium, so install it once (`pnpm --filter ./apps/web exec playwright install chromium`). The engine tests start a local Temporal dev server, and the Temporal CLI is downloaded once when no cached copy exists, so the first run needs the network.
+The unit run is not self-contained. The renderer tests launch Playwright's Chromium, so install it once (`pnpm --filter ./apps/web exec playwright install chromium`; on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`, which also installs the system libraries Chromium needs). The engine tests start a local Temporal dev server, and the Temporal CLI is downloaded once when no cached copy exists, so the first run needs the network.
 
 On Linux the unit run needs two more things, which CI's Linux job sets up (`.github/workflows/verify.yml`):
 
@@ -160,7 +160,7 @@ The end-to-end suite sets stand-in provider keys and fails if any of them appear
 
 ## CI
 
-`.github/workflows/verify.yml` runs `pnpm verify` on GitHub's machines, one job per operating system: Windows (`windows-2025`) and Linux (`ubuntu-24.04`). macOS is not run yet; it will be one more job. A run starts on every push to main, once a week (Mondays 06:17 UTC, because the tests download Chromium and the Temporal CLI), and by hand (`gh workflow run verify.yml`). A newer push cancels a run still going on the same branch.
+`.github/workflows/verify.yml` runs `pnpm verify` on GitHub's machines, one job per operating system: Windows (`windows-2025`) and Linux (`ubuntu-24.04`). macOS is not run yet; it will be one more job. A run starts on every push to main, once a week (Mondays 06:17 UTC, because the tests download Chromium and the Temporal CLI), and by hand (`gh workflow run verify.yml`). A newer run on the same branch, of any trigger (a push, the weekly run or a run started by hand), cancels one still going.
 
 Each job installs the pinned Node (`.node-version`) and pnpm (`packageManager` in `package.json`), the dependencies from the lockfile, Playwright's Chromium (with its system libraries on Linux) and the Temporal CLI, then runs `pnpm verify`. It checks out the whole history, which the decision-log check reads. It uses no secrets: the browser tests set stand-in keys and fail if one leaks, so a run never reaches a paid provider.
 
