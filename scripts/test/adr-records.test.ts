@@ -18,7 +18,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileS
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ADR_DIR, checkLog, describeBreach, describeLinkBreach, INDEX, isAccepted, opensAsProposal, parseIndex, parseRecord, recordNumber, statusWord, WORKING_TREE, type Exception } from './adr-log.ts';
+import { ADR_DIR, checkLog, describeBreach, describeLinkBreach, git, INDEX, isAccepted, opensAsProposal, parseIndex, parseRecord, recordNumber, statusWord, WORKING_TREE, type Exception } from './adr-log.ts';
 import { read, REPO } from './docs.ts';
 
 /** The record that made the rule; the same-commit link rule applies from it on. */
@@ -70,6 +70,20 @@ describe('the decision log on main (ADR-0103, CR14)', () => {
 
   it(`from ADR-${LINKS_FROM} on, a record that changes another reaches main in the same commit as the index's "changed by" link`, () => {
     expect(log.linkBreaches.map(describeLinkBreach)).toEqual([]);
+  });
+
+  it('ADR-0103’s Context counts main’s history at 7ce21cb as git does', () => {
+    // First-parent history is "each direct commit, and the merge commit of each merged branch" (ADR-0103 §1.1), so the
+    // initial import counts as a direct commit, and as one that edits the index (it creates it).
+    const at = '7ce21cb';
+    const count = (...args: string[]) => Number(git(REPO, ['rev-list', '--first-parent', '--count', ...args, at]).trim());
+    const all = count();
+    const direct = count('--no-merges');
+    const index = git(REPO, ['log', '--first-parent', '--no-merges', '--format=%H', at, '--', INDEX]).split('\n').filter((l) => l.trim() !== '').length;
+    expect([all, direct, index]).toEqual([90, 50, 26]);
+    const context = parseRecord(read(`${ADR_DIR}/0103-adr-log-rule-and-ci.md`)).Context ?? '';
+    expect(context).toContain(`${direct} of the ${all} commits on main's first-parent history at ${at} are direct commits, not merges`);
+    expect(context).toContain(`${index} of them edit the decision index`);
   });
 });
 

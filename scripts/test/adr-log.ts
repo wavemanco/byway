@@ -72,7 +72,8 @@ const gitEnv = (): NodeJS.ProcessEnv => Object.fromEntries(Object.entries(proces
 /** Output settings a person's git configuration could change. */
 const PLAIN = ['-c', 'color.ui=false', '-c', 'core.quotePath=false', '-c', 'log.showSignature=false'];
 
-function git(repo: string, args: string[]): string {
+/** A git command's output, run in `repo` with the person's repository variables and output settings set aside. */
+export function git(repo: string, args: string[]): string {
   const r = spawnSync('git', ['-C', repo, ...PLAIN, ...args], { encoding: 'utf8', env: gitEnv(), maxBuffer: 512 * 1024 * 1024 });
   if (r.error) throw new Error(`git could not be run: ${r.error.message}`);
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr.trim()}`);
