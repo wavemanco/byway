@@ -7,10 +7,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CompletionRequest, CompletionResult, Gateway, ImageRequest, ImageResult, VideoRequest, VideoResult } from '@byway/contracts';
+import { GatewayError, type CompletionRequest, type CompletionResult, type DeclineRecord, type Gateway, type ImageRequest, type ImageResult, type VideoRequest, type VideoResult } from '@byway/contracts';
 import type { ApplicationFailure } from '@temporalio/common';
 import { createGateway } from '@byway/gateway';
-import { StepError, toFailure } from '../src/activities/failures.ts';
+import { DeclineRetryPending, StepError, toFailure } from '../src/activities/failures.ts';
 import { memoGateway, memoized, seededRandom } from '../src/activities/memo.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -244,5 +244,126 @@ describe('memoized values and a replayable random', () => {
     expect(draws.every((x) => x >= 0 && x < 1)).toBe(true);
     expect(new Set(draws).size).toBeGreaterThan(40);
     expect(seededRandom('other')()).not.toBe(draws[0]);
+  });
+});
+
+/**
+ * A decline is kept like an answer (ADR-0102): the gateway asks a declining model once more, and a step that runs again
+ * (Temporal's retry after a crash, a timeout or a local failure; the same step after the person raises a budget) must
+ * never buy the declined call again. The memo keeps the decline before the retry (the gateway's keepDecline hook), and
+ * the call's final outcome after it: an answer as before, or the gateway's final 'refused'.
+ */
+describe('a decline is kept like an answer (ADR-0102)', () => {
+  const image: ImageRequest = { workspaceId: 'w', runId: 'run-memo', stepId: 'art', purpose: 'asset:prose', profileId: 'demo', prompt: 'A loaf', size: '1024x1024' };
+  const record: DeclineRecord = {
+    provider: 'google',
+    model: 'gemini-nano-banana-2.1',
+    purpose: 'asset:prose',
+    kind: 'image',
+    reason: 'IMAGE_SAFETY',
+    ledgerEntryId: 'e1',
+    costUsd: 0.0336,
+    retry: 'declined',
+    retryLedgerEntryId: 'e2',
+    retryCostUsd: 0.0336,
+  };
+  const operation = () => ({ until: new AbortController().signal });
+
+  /** A gateway whose image calls are answered by `answer`, given the operation each call carried. */
+  function scripted(answer: (op: NonNullable<ImageRequest['operation']> | undefined, n: number) => Promise<ImageResult>) {
+    const { gateway } = counting();
+    const ops: (NonNullable<ImageRequest['operation']> | undefined)[] = [];
+    gateway.image = async (req) => {
+      ops.push(req.operation);
+      return answer(req.operation, ops.length);
+    };
+    return { gateway, ops };
+  }
+
+  it('a final decline is kept: the step run again gets the same failure and asks nothing', async () => {
+    const message = 'Google’s model gemini-nano-banana-2.1 declined this image (reason given: IMAGE_SAFETY). byway asked it once more, and it declined again.';
+    const { gateway, ops } = scripted(async () => {
+      throw new GatewayError('refused', message, false, { declined: record });
+    });
+    const first = await memoGateway(gateway, store, scope, { operation: operation() }).image(image).catch((e: unknown) => e);
+    const again = await memoGateway(gateway, store, scope, { operation: operation() }).image(image).catch((e: unknown) => e);
+    expect(ops).toHaveLength(1);
+    for (const err of [first, again]) {
+      expect(err).toBeInstanceOf(GatewayError);
+      expect(err).toMatchObject({ code: 'refused', retryable: false, message, declined: record });
+    }
+    // A billed failure stays billed when it is replayed.
+    const billed = scripted(async () => {
+      throw new GatewayError('refused', message, false, { declined: { ...record, retry: 'failed' }, billed: true });
+    });
+    const scoped = { ...scope, key: `${scope.key}/billed` };
+    await memoGateway(billed.gateway, store, scoped).image(image).catch(() => undefined);
+    expect(await memoGateway(billed.gateway, store, scoped).image(image).catch((e: unknown) => e)).toMatchObject({ code: 'refused', billed: true, declined: { retry: 'failed' } });
+    expect(billed.ops).toHaveLength(1);
+  });
+
+  it('a decline kept before the retry sends the next attempt straight to the retry: the declined call is not bought again', async () => {
+    const { gateway, ops } = scripted(async (op, n) => {
+      if (n === 1) {
+        await op!.keepDecline!({ ledgerEntryId: 'e1', costUsd: 0.0336, reason: 'IMAGE_SAFETY' });
+        // The worker dies during the retry: this attempt ends with nothing kept for the call.
+        throw new Error('worker lost');
+      }
+      return { artifactId: `sha256:${'0'.repeat(64)}`, mediaType: 'image/png', servedModel: 'i', provider: 'mock', costUsd: 0.0672, ledgerEntryId: 'e2', declined: { ...record, retry: 'answered' } };
+    });
+    await expect(memoGateway(gateway, store, scope, { operation: operation() }).image(image)).rejects.toThrow('worker lost');
+    const res = await memoGateway(gateway, store, scope, { operation: operation() }).image(image);
+    expect(ops[0]).toHaveProperty('keepDecline');
+    expect(ops[0]).not.toHaveProperty('declinedEarlier');
+    expect(ops[1]).toMatchObject({ key: ops[0]!.key, declinedEarlier: { ledgerEntryId: 'e1', costUsd: 0.0336, reason: 'IMAGE_SAFETY' } });
+    expect(ops[1]).not.toHaveProperty('keepDecline');
+    expect(res).toMatchObject({ ledgerEntryId: 'e2', declined: { retry: 'answered' } });
+    // Its outcome is kept as any answer is: a third attempt asks nothing.
+    expect(await memoGateway(gateway, store, scope, { operation: operation() }).image(image)).toEqual(res);
+    expect(ops).toHaveLength(2);
+  });
+
+  it('a retry byway could not start for a kept decline ends the attempt for Temporal to try again, never as a new try of the image', async () => {
+    const stopping = new GatewayError('byway-failure', 'byway is stopping, so it did not start this call. Try again once it has started again.', true, { billed: false });
+    const { gateway, ops } = scripted(async (op) => {
+      await op!.keepDecline!({ ledgerEntryId: 'e1', costUsd: 0.0336 });
+      throw stopping;
+    });
+    const err = await memoGateway(gateway, store, scope, { operation: operation() }).image(image).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(GatewayError);
+    expect(err).toBeInstanceOf(DeclineRetryPending);
+    expect((err as Error).message).toBe(
+      'The model declined an image this step asked for, and this attempt of the step ended before byway could ask it once more (byway is stopping, so it did not start this call). Trying the step again asks it once more, without buying the declined call again.',
+    );
+    // Retried by Temporal (a plain error), unlike a step failure.
+    expect(toFailure(err)).toBe(err);
+    expect(ops).toHaveLength(1);
+  });
+
+  it('the same failure for a call with no decline kept is the gateway’s own, as before', async () => {
+    const stopping = new GatewayError('byway-failure', 'byway is stopping, so it did not start this call. Try again once it has started again.', true, { billed: false });
+    const { gateway } = scripted(async () => {
+      throw stopping;
+    });
+    expect(await memoGateway(gateway, store, scope, { operation: operation() }).image(image).catch((e: unknown) => e)).toBe(stopping);
+  });
+
+  it('when the final decline cannot be kept, the step fails for good rather than run again and ask a third time', async () => {
+    const { gateway } = scripted(async () => {
+      throw new GatewayError('refused', 'declined twice', false, { declined: record });
+    });
+    const flaky: Parameters<typeof memoGateway>[1] = {
+      getMemo: (r, k) => store.getMemo(r, k),
+      setMemo: async () => {
+        throw new Error('SQLITE_BUSY: database is locked');
+      },
+      artifacts: store.artifacts,
+    };
+    const err = await memoGateway(gateway, flaky, scope, { saveAttempts: 2, saveDelayMs: 1 }).image(image).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe(
+      'The model declined an image this step asked for, and byway could not keep that outcome (SQLITE_BUSY: database is locked). The step stops here rather than run again, which could ask the model again.',
+    );
+    expect((toFailure(err) as ApplicationFailure).nonRetryable).toBe(true);
   });
 });

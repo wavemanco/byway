@@ -44,6 +44,7 @@ const PAYLOADS: Record<RunEventType, z.ZodType> = {
       retry: z.enum(['answered', 'declined', 'not-made', 'failed']),
       retryLedgerEntryId: z.string().min(1).optional(),
       retryCostUsd: z.number().min(0).optional(),
+      retryUncertainUsd: z.number().min(0).optional(),
       problem: z.string().min(1).optional(),
       note: z.string().min(1),
     })

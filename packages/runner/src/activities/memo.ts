@@ -22,10 +22,22 @@
  * second attempt's call is refused 'in-flight', and it waits, looking for the first one's memo every couple of seconds
  * and asking the gateway again now and then (the holder may be gone, and then the call is taken over or resumed). It
  * honours its own cancel, and after five minutes stops with a plain message rather than pay again.
+ *
+ * Declines (ADR-0102). The gateway asks a declining model once more, as a call of its own, and a step that runs again
+ * must never buy the declined call again. So a decline is kept like an answer, twice over: the gateway hands it over
+ * once the declined call is ledgered and before the retry is admitted (operation.keepDecline), and it is kept under the
+ * call's memo key plus `/declined`; then the call's final outcome is kept under the memo key as any outcome is: the
+ * retry's answer, or the gateway's final 'refused', which a step run again gets back word for word and asks nothing. A
+ * step that runs again with only the decline kept (its earlier attempt ended during the retry: a crash, a timeout, a
+ * stop) asks the gateway for the retry alone (operation.declinedEarlier). If byway did not start that retry (it is
+ * stopping, or the step was stopped), the attempt ends with a plain error that Temporal tries again (DeclineRetryPending),
+ * never as a failed image the asset step would try again under a new key. What is not covered: a worker that dies in the
+ * moment between a provider's answer being settled and its keeping (the decline's, or the retry's outcome) leaves
+ * nothing kept, and the next attempt buys that call again, as for any answer (ADR-0099).
  */
 import { createHash, randomBytes } from 'node:crypto';
-import type { CompletionResult, Gateway, SpendContext, Store } from '@byway/contracts';
-import { StepError } from './failures.ts';
+import { GatewayError, type CompletionResult, type DeclinedAttempt, type DeclineRecord, type Gateway, type SpendContext, type Store } from '@byway/contracts';
+import { DeclineRetryPending, StepError } from './failures.ts';
 
 /** Where an activity invocation's memos live: its run, and its step call's key (StepCall.key). */
 export interface MemoScope {
@@ -97,8 +109,54 @@ const SAVE_DELAY_MS = 500;
 
 /** What a paid call returned, as the failure message names it. */
 const PAID: Record<string, string> = { complete: 'AI model’s answer', image: 'image', video: 'video clip' };
+/** What a model declined, as the failure message names it (ADR-0102). */
+const DECLINED: Record<string, string> = { complete: 'a request this step made', image: 'an image this step asked for' };
 
 const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** The gateway's final decline (ADR-0102): 'refused', carrying the decline and what became of the retry. By name and code. */
+const finalDecline = (e: unknown): (GatewayError & { declined: DeclineRecord }) | undefined => {
+  const err = e as { name?: unknown; code?: unknown; declined?: { ledgerEntryId?: unknown } } | null;
+  return err?.name === 'GatewayError' && err.code === 'refused' && typeof err.declined?.ledgerEntryId === 'string' ? (e as GatewayError & { declined: DeclineRecord }) : undefined;
+};
+
+/** A call byway did not start ('byway-failure', not billed: it is stopping, could not record it as sent, or the step was stopped). */
+const notStarted = (e: unknown): e is GatewayError => {
+  const err = e as { name?: unknown; code?: unknown; billed?: unknown } | null;
+  return err?.name === 'GatewayError' && err.code === 'byway-failure' && err.billed === false;
+};
+
+/** A final decline as the memo keeps it, and as a step run again gets it back: the same error, word for word. */
+interface DeclineMemo {
+  declinedCall: { message: string; billed?: boolean; declined: DeclineRecord };
+}
+
+const declineMemo = (err: GatewayError & { declined: DeclineRecord }): string =>
+  JSON.stringify({ declinedCall: { message: err.message, ...(err.billed !== undefined ? { billed: err.billed } : {}), declined: err.declined } } satisfies DeclineMemo);
+
+/** The final decline a memo value holds, as the gateway threw it; undefined for an answer. */
+function keptDecline(value: string): GatewayError | undefined {
+  let memo: Partial<DeclineMemo> | null;
+  try {
+    memo = JSON.parse(value) as Partial<DeclineMemo> | null;
+  } catch {
+    return undefined;
+  }
+  const d = memo?.declinedCall;
+  if (typeof d !== 'object' || d === null) return undefined;
+  return new GatewayError('refused', d.message, false, { declined: d.declined, ...(d.billed !== undefined ? { billed: d.billed } : {}) });
+}
+
+/** A kept outcome: the answer, or the final decline the call ended with. */
+type Kept<T> = { value: T } | { error: GatewayError };
+
+const unwrap = <T>(kept: Kept<T>): T => {
+  if ('error' in kept) throw kept.error;
+  return kept.value;
+};
+
+/** The first sentence of a message, without its stop. */
+const firstSentence = (message: string): string => (message.split(/(?<=[.!?])\s/)[0] ?? message).replace(/[\s.]+$/, '');
 
 /** The gateway one activity invocation sees: provider calls memoized under its scope, everything else passed through. */
 export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, opts: MemoOptions = {}): Gateway {
@@ -115,13 +173,14 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
     return `${scope.key}/${at}/${n}`;
   };
   /**
-   * The call, or, while another attempt holds it (in-flight), that attempt's answer once it is kept: the memo is looked
-   * for every pollMs and the gateway asked again every recallMs, for at most limitMs. A cancel of this attempt ends the
-   * wait at the next ask, which the invocation's gateway refuses as stopped. When the gateway says an earlier attempt
-   * settled the call and has ended, the memo is looked for at once, after that answer: a holder keeps its result before
-   * it ends, so a result that was kept is found, and only when there is none is the call bought again (rebuy).
+   * The call, or, while another attempt holds it (in-flight), that attempt's outcome once it is kept (an answer, or a final
+   * decline): the memo is looked for every pollMs and the gateway asked again every recallMs, for at most limitMs. A
+   * cancel of this attempt ends the wait at the next ask, which the invocation's gateway refuses as stopped. When the
+   * gateway says an earlier attempt settled the call and has ended, the memo is looked for at once, after that answer: a
+   * holder keeps its result before it ends, so a result that was kept is found, and only when there is none is the call
+   * bought again (rebuy).
    */
-  async function callOrWait<T>(kind: string, key: string, call: (rebuy: boolean) => Promise<T>, load: (v: string) => Promise<T>): Promise<{ made: T } | { kept: T }> {
+  async function callOrWait<M, K>(kind: string, key: string, call: (rebuy: boolean) => Promise<M>, load: (v: string) => Promise<K>): Promise<{ made: M } | { kept: K }> {
     const started = Date.now();
     let rebuy = false;
     for (;;) {
@@ -154,36 +213,81 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
     }
   }
 
-  async function once<T>(kind: string, request: object, call: (req: never) => Promise<T>, save: (r: T) => Promise<string>, load: (v: string) => Promise<T>): Promise<T> {
-    const key = keyOf(kind, request);
-    const hit = await store.getMemo(scope.runId, key);
-    if (hit !== undefined) return load(hit);
-    // The operation joins the request after the memo key was made from it, so memo keys are unchanged.
-    const sent = (rebuy: boolean) =>
-      opts.operation ? { ...request, operation: { key: `${scope.runId}/${key}`, ...opts.operation, ...(rebuy ? { rebuy: true } : {}) } } : request;
-    const outcome = await callOrWait(kind, key, (rebuy) => call(sent(rebuy) as never), load);
-    if ('kept' in outcome) return outcome.kept;
-    const result = outcome.made;
-    // From here on the call is paid for: keep its answer, retrying here (see the header), never by Temporal.
-    let saved = '';
-    let kept = '';
+  /**
+   * Keeps a value under `key` (first write wins), retrying here (see the header), never by Temporal: what was saved, and
+   * what is kept (another attempt's, when it wrote first). When it still cannot, `failed` is the step's failure.
+   */
+  async function persist(key: string, make: () => Promise<string>, failed: (reason: string) => Error): Promise<{ saved: string; kept: string }> {
     for (let n = 1; ; n++) {
       try {
-        saved = await save(result);
-        kept = await store.setMemo(scope.runId, key, saved);
-        break;
+        const saved = await make();
+        return { saved, kept: await store.setMemo(scope.runId, key, saved) };
       } catch (e) {
-        if (n >= attempts) {
-          const reason = (e as Error)?.message ?? String(e);
-          throw new StepError(
-            `The ${PAID[kind] ?? 'AI call'} for this step was paid for and is recorded in the spending ledger, but byway could not keep it (${reason}). The step stops here rather than run again, which would pay for the call a second time.`,
-          );
-        }
+        if (n >= attempts) throw failed((e as Error)?.message ?? String(e));
         await pause(delay * 2 ** (n - 1));
       }
     }
-    // A racing attempt that kept its answer first wins: every caller goes on with the one answer that was kept.
-    return kept === saved ? result : load(kept);
+  }
+
+  async function once<T>(kind: string, request: object, call: (req: never) => Promise<T>, save: (r: T) => Promise<string>, load: (v: string) => Promise<T>): Promise<T> {
+    const key = keyOf(kind, request);
+    // What is kept under the key: an answer, or the call's final decline, thrown again as the gateway threw it (ADR-0102).
+    const loadKept = async (v: string): Promise<Kept<T>> => {
+      const declined = keptDecline(v);
+      return declined ? { error: declined } : { value: await load(v) };
+    };
+    const hit = await store.getMemo(scope.runId, key);
+    if (hit !== undefined) return unwrap(await loadKept(hit));
+    // A decline kept before its retry (ADR-0102): a later attempt asks the gateway for the retry alone.
+    const declineKey = `${key}/declined`;
+    const keepDecline = async (first: DeclinedAttempt): Promise<void> => {
+      await persist(declineKey, async () => JSON.stringify(first), (reason) => new Error(reason));
+    };
+    // The operation joins the request after the memo key was made from it, so memo keys are unchanged.
+    const sent = async (rebuy: boolean) => {
+      if (!opts.operation) return request;
+      const earlier = await store.getMemo(scope.runId, declineKey);
+      const decline = earlier !== undefined ? { declinedEarlier: JSON.parse(earlier) as DeclinedAttempt } : { keepDecline };
+      return { ...request, operation: { key: `${scope.runId}/${key}`, ...opts.operation, ...(rebuy ? { rebuy: true } : {}), ...decline } };
+    };
+    let outcome: { made: T } | { kept: Kept<T> };
+    try {
+      outcome = await callOrWait(kind, key, async (rebuy) => call((await sent(rebuy)) as never), loadKept);
+    } catch (e) {
+      const declined = finalDecline(e);
+      if (declined) {
+        // The call's outcome, as an answer would be: kept, so the step run again gets it back and asks nothing.
+        const { saved, kept } = await persist(
+          key,
+          async () => declineMemo(declined),
+          (reason) =>
+            new StepError(`The model declined ${DECLINED[kind] ?? 'a call this step made'}, and byway could not keep that outcome (${reason}). The step stops here rather than run again, which could ask the model again.`),
+        );
+        if (kept === saved) throw declined;
+        return unwrap(await loadKept(kept));
+      }
+      // The retry of a kept decline, not started: no outcome. The step's next attempt asks for the retry alone.
+      if (notStarted(e) && (await store.getMemo(scope.runId, declineKey)) !== undefined) {
+        throw new DeclineRetryPending(
+          `The model declined ${DECLINED[kind] ?? 'a call this step made'}, and this attempt of the step ended before byway could ask it once more (${firstSentence(e.message)}). Trying the step again asks it once more, without buying the declined call again.`,
+          { cause: e },
+        );
+      }
+      throw e;
+    }
+    if ('kept' in outcome) return unwrap(outcome.kept);
+    const result = outcome.made;
+    // From here on the call is paid for: keep its answer, retrying here (see the header), never by Temporal.
+    const { saved, kept } = await persist(
+      key,
+      () => save(result),
+      (reason) =>
+        new StepError(
+          `The ${PAID[kind] ?? 'AI call'} for this step was paid for and is recorded in the spending ledger, but byway could not keep it (${reason}). The step stops here rather than run again, which would pay for the call a second time.`,
+        ),
+    );
+    // A racing attempt that kept its outcome first wins: every caller goes on with the one outcome that was kept.
+    return kept === saved ? result : unwrap(await loadKept(kept));
   }
   const asJson = async <T>(r: T) => JSON.stringify(r);
   const fromJson = async <T>(v: string) => JSON.parse(v) as T;

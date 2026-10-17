@@ -65,9 +65,36 @@ export interface SpendContext {
    * - `rebuy`: the caller was told an earlier attempt settled the call (GatewayError.settledEarlier), looked for its kept
    *   result and found none: buy it again (counted).
    * When the model declines the call, the gateway's one retry (ADR-0102) is a call of its own, keyed
-   * `<key>/after-decline/<the declined call's ledger entry id>`, with the same `until` and `cancel` and never `rebuy`.
+   * `<key>/after-decline/<the declined call's ledger entry id>`, with the same `until` and `cancel`; it is a rebuy only
+   * when the caller asks for the retry alone (`declinedEarlier`) with `rebuy`. So that a step that runs again never buys
+   * a declined call again, its caller keeps the decline:
+   * - `keepDecline`: called once the declined call is settled and ledgered, before the retry is admitted; the runner's
+   *   memo layer keeps it under the call's memo key. If it throws, the retry goes on all the same, and the call ends as
+   *   for a caller that keeps nothing.
+   * - `declinedEarlier`: a decline an earlier attempt kept, whose retry has no kept outcome: the gateway asks for the retry
+   *   alone, and never makes the declined call again.
+   * With the decline kept, an attempt that ends before the retry is made (its step was stopped, byway is stopping, or
+   * another attempt holds the retry) is not an outcome: the gateway throws that failure as it is ('byway-failure' with
+   * `billed` false, or 'in-flight'), and the step's next attempt asks for the retry alone.
    */
-  operation?: { key: string; until: AbortSignal; cancel?: AbortSignal; rebuy?: boolean };
+  operation?: {
+    key: string;
+    until: AbortSignal;
+    cancel?: AbortSignal;
+    rebuy?: boolean;
+    keepDecline?: (first: DeclinedAttempt) => Promise<void>;
+    declinedEarlier?: DeclinedAttempt;
+  };
+}
+
+/** A declined call, as its caller keeps it until byway's one retry of it has an outcome (ADR-0102). */
+export interface DeclinedAttempt {
+  /** The declined call's ledger entry: the retry's key and its `retryOf` name it. */
+  ledgerEntryId: string;
+  /** What it cost, as recorded there. */
+  costUsd: number;
+  /** The reason the provider stated, as the ledger recorded it, when it gave one. */
+  reason?: string;
 }
 
 /**
@@ -93,14 +120,24 @@ export interface DeclineRecord {
    * What became of byway's one retry on the same model:
    * - `answered`: it answered, and its answer is the result;
    * - `declined`: it declined too;
-   * - `not-made`: byway did not make it (`problem` says why: a budget had no room for it, paid calls were paused, byway
-   *   was stopping, or the step was stopped);
+   * - `not-made`: byway did not make it (`problem` says why: a budget had no room for it, paid calls were paused, or,
+   *   for a caller that did not keep the decline, byway was stopping or the step was stopped);
    * - `failed`: it was sent but brought no usable answer (`problem` says why).
    */
   retry: 'answered' | 'declined' | 'not-made' | 'failed';
-  /** The retry's ledger entry and its cost, when it was answered (`answered` or `declined`). */
+  /**
+   * The retry's ledger entry and its cost, whenever the provider answered it and byway recorded it: always for
+   * `answered` and `declined`, and for `failed` when the answer was billed but byway could not use it (an image model's
+   * answer with no image, an answer holding a key, an image that could not be stored).
+   */
   retryLedgerEntryId?: string;
   retryCostUsd?: number;
+  /**
+   * Set on `failed` when the retry may have been billed without byway learning its cost (it was sent, and no answer came
+   * back that byway could record): what byway counts for it against the workspace budget until the person clears it in
+   * Settings, its estimate once for each time it may have reached the provider (ADR-0095).
+   */
+  retryUncertainUsd?: number;
   /** Why the retry was not made, or how it failed, in words. */
   problem?: string;
 }
@@ -341,16 +378,28 @@ export class GatewayError extends Error {
   /**
    * Set on 'refused' when the model declined the call and byway's one retry on the same model did not bring an answer
    * (ADR-0102): what was declined, why, what both attempts cost, and what became of the retry. The message says the same
-   * in plain words, with what to do. Never retryable: asking a third time would break the rule.
+   * in plain words, with what to do. Never retryable: asking a third time would break the rule. A caller that keeps
+   * outcomes (the runner's memo) keeps this one, so a step that runs again gets it back and asks nothing.
    */
   declined?: DeclineRecord;
-  constructor(code: GatewayErrorCode, message: string, retryable = false, opts: { billed?: boolean; settledEarlier?: boolean; declined?: DeclineRecord } = {}) {
+  /**
+   * Set when the call was settled and ledgered before this error (the provider answered and billed it, and byway then
+   * could not use the answer): its ledger entry and what it cost, so whoever counts the call's cost has it.
+   */
+  settled?: { ledgerEntryId: string; costUsd: number };
+  constructor(
+    code: GatewayErrorCode,
+    message: string,
+    retryable = false,
+    opts: { billed?: boolean; settledEarlier?: boolean; declined?: DeclineRecord; settled?: { ledgerEntryId: string; costUsd: number } } = {},
+  ) {
     super(message);
     this.code = code;
     this.retryable = retryable;
     if (opts.billed !== undefined) this.billed = opts.billed;
     if (opts.settledEarlier) this.settledEarlier = true;
     if (opts.declined) this.declined = opts.declined;
+    if (opts.settled) this.settled = opts.settled;
   }
 }
 

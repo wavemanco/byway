@@ -12,8 +12,9 @@
  * invocation's end): an attempt that overlaps another of the same step waits for that one's result, and a timed-out or
  * dead one's call is taken over, its accepted clips resumed (stage 3; ADR-0099).
  *
- * A decline is asked once more by the gateway, on the same model (ADR-0102); a step's calls write each decline they meet
- * to the run's events, with what became of the second ask (declines.ts).
+ * A decline is asked once more by the gateway, on the same model (ADR-0102). The memo keeps the decline and then the
+ * call's outcome, so a step that runs again never buys the declined call again (memo.ts); a step's calls write each
+ * decline they meet to the run's events, with what became of the second ask (declines.ts).
  */
 import type { RunnerActivities } from '../types.ts';
 import { assetStep } from './asset.ts';

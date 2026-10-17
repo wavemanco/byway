@@ -140,7 +140,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     if (!image || 'declined' in image) {
       failed.push(brief.slot);
       if (image) {
-        // Both attempts of a declined image were billed (or recorded at no cost): they are this step's cost too.
+        // What each attempt of a declined image cost (a retry billed with no usable image included) is this step's cost too.
         declined.push({ slot: brief.slot, record: image.declined });
         costUsd += image.declined.costUsd + (image.declined.retryCostUsd ?? 0);
       }
@@ -218,7 +218,10 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * GatewayError fails the step for good.
  *
  * An image the model declined is not tried again here (ADR-0102): the gateway already asked once more on the same model,
- * and a decline gets one retry, not one per layer. The slot is not made, and what happened goes in the step's note.
+ * and a decline gets one retry, not one per layer. The slot is not made, and what happened goes in the step's note. The
+ * memo keeps that outcome, so the step run again (after a budget raise for a later image, or Temporal's retry) gets it
+ * back and asks nothing. An attempt that ended before the gateway's retry was made throws a plain error (memo.ts
+ * DeclineRetryPending), never a GatewayError, so it ends the step's attempt rather than count as a failed try here.
  */
 async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | undefined> {
   const { run, call, step } = input;

@@ -28,28 +28,56 @@ export function cleanReason(value: unknown, redact: Redactor): string | undefine
   return chars.length <= MAX_REASON_CHARS ? text : `${chars.slice(0, MAX_REASON_CHARS - 1).join('')}…`;
 }
 
+/** Who declined: "Anthropic’s model claude-opus-5-5". */
+const whoOf = (d: Pick<DeclineRecord, 'provider' | 'model'>): string => `${PROVIDER_NAMES[d.provider] ?? d.provider}’s model ${d.model}`;
+/** What was declined, by default: "this image" or "this request". */
+const whatOf = (d: Pick<DeclineRecord, 'kind'>): string => (d.kind === 'image' ? 'this image' : 'this request');
+
 /**
- * What happened, in plain words: who declined what, the reason they gave, what byway did once more, and what that cost.
- * `what` names the thing declined ("this request", "this image", "the image for shot 2").
+ * What the attempts cost, each from its own recorded cost: an attempt byway recorded at no cost (OpenAI's moderation
+ * block reports no usage) is never called billed. `retryUsd` is the retry's cost when it was settled.
  */
-export function declineStory(d: DeclineRecord, what: string = d.kind === 'image' ? 'this image' : 'this request'): string {
-  const who = `${PROVIDER_NAMES[d.provider] ?? d.provider}’s model ${d.model}`;
+function costWords(declinedUsd: number, retryUsd: number | undefined): string {
+  if (retryUsd === undefined) return declinedUsd > 0 ? `The declined attempt was billed: ${usd(declinedUsd)}.` : 'byway recorded no cost for the declined attempt.';
+  if (declinedUsd > 0 && retryUsd > 0) return `Both attempts were billed: ${usd(roundUsd(declinedUsd + retryUsd))} in all.`;
+  if (declinedUsd > 0) return `The declined attempt was billed: ${usd(declinedUsd)}; byway recorded no cost for the retry.`;
+  if (retryUsd > 0) return `The retry was billed: ${usd(retryUsd)}; byway recorded no cost for the declined attempt.`;
+  return 'byway recorded no cost for either attempt.';
+}
+
+/**
+ * What happened, in plain words: who declined what, the reason they gave, what byway did once more, and what each attempt
+ * cost: a retry that was billed but brought no usable answer is counted, and one that may have been billed says what
+ * byway counts for it until it is cleared in Settings. `what` names the thing declined ("this request", "this image",
+ * "the image for shot 2").
+ */
+export function declineStory(d: DeclineRecord, what: string = whatOf(d)): string {
   const reason = d.reason?.replace(/[\s.]+$/, '');
-  const first = `${who} declined ${what} ${reason ? `(reason given: ${reason})` : '(no reason given)'}.`;
-  const both = roundUsd(d.costUsd + (d.retryCostUsd ?? 0));
-  const bothCost = both > 0 ? `Both attempts were billed: ${usd(both)} in all.` : 'byway recorded no cost for either attempt.';
-  const oneCost = d.costUsd > 0 ? `The declined attempt was billed: ${usd(d.costUsd)}.` : 'byway recorded no cost for the declined attempt.';
+  const first = `${whoOf(d)} declined ${what} ${reason ? `(reason given: ${reason})` : '(no reason given)'}.`;
+  const cost = costWords(d.costUsd, d.retryCostUsd);
   const problem = d.problem?.replace(/[\s.]+$/, '');
+  const maybe =
+    d.retryUncertainUsd !== undefined && d.retryUncertainUsd > 0
+      ? ` The retry may have been billed${d.costUsd > 0 ? ' too' : ''}, so byway counts ${usd(d.retryUncertainUsd)} for it against the workspace budget (its estimate, once for each time it may have reached ${PROVIDER_NAMES[d.provider] ?? d.provider}) until you clear it in Settings.`
+      : '';
   switch (d.retry) {
     case 'answered':
-      return `${first} byway asked it once more, and it answered. ${bothCost}`;
+      return `${first} byway asked it once more, and it answered. ${cost}`;
     case 'declined':
-      return `${first} byway asked it once more, and it declined again. ${bothCost}`;
+      return `${first} byway asked it once more, and it declined again. ${cost}`;
     case 'not-made':
-      return `${first} byway did not ask it again: ${problem ?? 'it could not'}. ${oneCost}`;
+      return `${first} byway did not ask it again: ${problem ?? 'it could not'}. ${cost}`;
     case 'failed':
-      return `${first} byway asked it once more, but that attempt failed: ${problem ?? 'no answer came'}. ${oneCost}`;
+      return `${first} byway asked it once more, but that attempt failed: ${problem ?? 'no answer came'}. ${cost}${maybe}`;
   }
+}
+
+/**
+ * Why a step's attempt ended between a decline its caller kept and byway's one retry: the step was stopped. Not an
+ * outcome (ADR-0102): the step's next attempt asks for the retry alone.
+ */
+export function stoppedBeforeRetry(d: Pick<DeclineRecord, 'provider' | 'model' | 'kind'>): string {
+  return `The step was stopped after ${whoOf(d)} declined ${whatOf(d)}, so byway did not ask it once more. The step’s next attempt asks it, without buying the declined call again.`;
 }
 
 /**

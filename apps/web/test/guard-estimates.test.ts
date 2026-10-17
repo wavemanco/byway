@@ -28,6 +28,12 @@ const BOUND_CLAIMS: { name: string; pattern: RegExp }[] = [
   { name: 'only slightly over', pattern: /\bslightly (?:over|above|more)\b/i },
 ];
 
+/**
+ * Copy that sizes the overrun by a fallback model byway no longer asks for (ADR-0102 Decision 6): the old sentence's
+ * "twice its estimate", a refusal "routed to another model" (or one Anthropic "routes" there), and "refusal fallback".
+ */
+const STALE = /twice its estimate|rout(?:e|es|ed|ing) to another model|refusal fallbacks?/i;
+
 /** The words both budget sentences and the README use for how far spending can pass a budget. */
 const OVERRUN = 'Estimates can be low, so a call can cost more than its estimate, and';
 
@@ -59,7 +65,22 @@ describe('estimates are not bounds (F04)', () => {
 
   it('no screen, and not the README, still sizes the overrun by a fallback model that byway no longer asks for (ADR-0102)', () => {
     const files = [...filesUnder(path.join(WEB, 'src'), /\.tsx?$/), ...filesUnder(path.join(WEB, 'app'), /\.tsx?$/), README];
-    const stale = files.filter((file) => /twice its estimate|routes? to another model|refusal fallbacks?/i.test(readFileSync(file, 'utf8'))).map(rel);
+    const stale = files.filter((file) => STALE.test(readFileSync(file, 'utf8'))).map(rel);
     expect(stale).toEqual([]);
+  });
+
+  it('the stale-copy guard keeps out every phrase ADR-0102 names', () => {
+    for (const phrase of ['a single call can cost twice its estimate or more', 'a refused call routed to another model', 'a refusal Anthropic routes to another model', 'a refused call that Anthropic routed to another model', 'while refusal fallbacks stay on', 'the refusal fallback']) {
+      expect(STALE.test(phrase), phrase).toBe(true);
+    }
+  });
+
+  it('the README says what a decline does to a step and to an image step, for every outcome of the second ask (ADR-0102)', () => {
+    const readme = readFileSync(README, 'utf8');
+    expect(readme).toContain('If it declines again, or that second call fails or cannot be made, the call ends there.');
+    expect(readme).toContain('A step then stops with a message that says what happened, what was billed, and what to do: rephrase the request, or choose another model profile in Settings.');
+    expect(readme).toContain('An image step instead goes on without that image, and its note says what happened and what was billed.');
+    expect(readme).toContain('A step that runs again (after a restart, or after you raise its budget) does not buy the declined call again.');
+    expect(readme).not.toContain('the step stops with a message');
   });
 });

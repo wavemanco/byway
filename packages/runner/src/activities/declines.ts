@@ -3,12 +3,14 @@
  * calls in the ledger, the second as a retry of the first. This wrapper writes the run's side: one 'model-declined'
  * event per decline, once the second ask has an outcome, with what happened in plain words (declineStory).
  *
- * It wraps the gateway an activity invocation sees, outside the memo layer (memo.ts): an answer kept from an earlier
- * attempt comes back with its decline, and the event's dedupe key (the step call's key and the declined call's ledger
- * entry) makes writing it again a no-op. If writing the event fails after an answer, the error is the step's, and the
- * step is retried: the answer is kept by then, so nothing is bought again. If it fails after a final decline, the
- * decline's own failure stands (it is not retryable, and the step's failure says the same): a lost event never turns a
- * decline into a retryable error that would buy the declined call again.
+ * It wraps the gateway an activity invocation sees, outside the memo layer (memo.ts): an outcome kept from an earlier
+ * attempt comes back as it was (an answer with its decline, or the same final 'refused'), and the event's dedupe key (the
+ * step call's key and the declined call's ledger entry) makes writing it again a no-op. An attempt that ended before the
+ * retry was made carries no decline (memo.ts DeclineRetryPending), so the event is written once, by the attempt that
+ * has the retry's outcome. If writing the event fails after an answer, the error is the step's, and the step is
+ * retried: the answer is kept by then, so nothing is bought again. If it fails after a final decline, the decline's own
+ * failure stands (it is not retryable, and the step's failure says the same): a lost event never turns a decline into a
+ * retryable error.
  */
 import type { DeclineRecord, Gateway, Store } from '@byway/contracts';
 import { declineStory } from '@byway/gateway';

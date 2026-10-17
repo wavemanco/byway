@@ -25,6 +25,16 @@ export class ContractMissed extends StepError {
 }
 
 /**
+ * A decline kept before byway's one retry of it, whose retry this attempt of the step did not make: the step was stopped,
+ * byway is stopping, or byway could not record the retry as sent (ADR-0102). Not the decline's outcome, so it is not a
+ * step failure: the attempt ends with this plain error, which Temporal tries again, and the next attempt asks for the
+ * retry alone, never the declined call again (memo.ts).
+ */
+export class DeclineRetryPending extends Error {
+  override name = 'DeclineRetryPending';
+}
+
+/**
  * A person's answer that cannot be written back as it is (a page's copy with a line added, a claim log with a line
  * too many): not a failed run, a question asked again with this problem (ENG-6). Their text is kept by the workflow.
  */
