@@ -32,8 +32,7 @@ describe('the CI workflow (ADR-0103)', () => {
 
   it('runs on pushes to main, by hand and weekly, and on no other branch', () => {
     const on = /^on:\n([\s\S]*?)\n\S/m.exec(workflow)?.[1] ?? '';
-    // TEMPORARY, this commit only: the workflow also runs for fix/fx-d4-ci, to prove it before the merge.
-    expect(on).toMatch(/^ {2}push:\n {4}# TEMPORARY[^\n]*\n {4}branches: \[main, fix\/fx-d4-ci\]$/m);
+    expect(on).toMatch(/^ {2}push:\n {4}branches: \[main\]$/m);
     expect(on).toMatch(/^ {2}workflow_dispatch:$/m);
     expect(on).toMatch(/^ {4}- cron: '[\d ]+\* \* \d'$/m);
     expect(on).not.toMatch(/pull_request/);
