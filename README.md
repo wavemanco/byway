@@ -136,7 +136,7 @@ byway draws pages with Playwright's Chromium, inside the run engine: the pages a
 - Its environment holds no provider key, nothing that looks secret and no other name from `.env.agents`. One exception: on Windows, when byway is started from a current directory whose drive letter is lowercase (`c:\…`), the engine loads the gateway twice and Chromium does get the file's other names; provider keys and names that look secret are still left out ([ADR-0100](docs/adr/0100-corrections-found-by-the-final-re-check.md); backlog).
 - Pages may load only Google Fonts, jsDelivr, unpkg, cdnjs and byway's own artifacts, and a redirect is followed only to another of them: the engine fetches those files itself, one hop at a time, and hands Chromium the result ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)), reading at most 20 MiB of any one file ([ADR-0099](docs/adr/0099-paid-operations-keyed-to-their-caller.md)). WebSockets and direct WebRTC are blocked, and a page that never settles is stopped.
 - At start-up byway prints a `renderer` line saying whether Chromium can start. If it cannot, web-page runs are refused before they spend anything, and any other step that needs a page or a card fails with a plain message. If Chromium is missing: `pnpm --filter ./apps/web exec playwright install chromium`.
-- Chromium's own OS sandbox is **off**, as it always has been (Playwright's default). Turning it on (`RENDERER_OS_SANDBOX`) would better contain a page or image that exploits a Chromium bug, but byway would then stop rendering wherever the sandbox cannot start: Linux with unprivileged user namespaces restricted (the default on Ubuntu 23.10 and later), or byway running as root or in a container. That choice is open.
+- Chromium's own OS sandbox is **off**, as it always has been (Playwright's default). Turning it on (`RENDERER_OS_SANDBOX`) would better contain a page or image that exploits a Chromium bug, but byway would then stop rendering wherever the sandbox cannot start: Linux with unprivileged user namespaces restricted (the default on Ubuntu 24.04 and later), or byway running as root or in a container. The owner has since chosen to switch it on by default, with an explicit off switch in Settings; that is not built yet.
 
 ## Tests
 
@@ -151,7 +151,7 @@ The unit run is not self-contained. The renderer tests launch Playwright's Chrom
 
 On Linux the unit run needs two more things, which CI's Linux job sets up (`.github/workflows/verify.yml`):
 
-- One renderer test starts Chromium inside its OS sandbox, as a control. Where unprivileged user namespaces are restricted (the default on Ubuntu 23.10 and later), Chromium's sandbox cannot start unless an AppArmor profile allows them for Playwright's Chromium; CI adds one for those binaries only.
+- One renderer test starts Chromium inside its OS sandbox, as a control. Where unprivileged user namespaces are restricted (the default on Ubuntu 24.04 and later), Chromium's sandbox cannot start unless an AppArmor profile allows them for Playwright's Chromium; CI adds one for those binaries only.
 - Japanese text needs a CJK font that Chromium lays out correctly. With WenQuanYi Zen Hei as the fallback (Playwright's `install --with-deps` installs it), Chromium lays out the first item of a vertical row at no height, and one renderer test fails. Noto CJK (`fonts-noto-cjk`, as on Ubuntu's desktop) and IPAGothic lay it out as Windows does; CI installs Noto CJK and removes WenQuanYi Zen Hei.
 
 `pnpm verify` is the gate to run before merging a branch ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). For a commit that changes only documents, `pnpm vitest run scripts/test` runs the decision-log and README checks in seconds.
@@ -172,6 +172,13 @@ gh run view <run id> --log-failed       # which step failed, on which machine, a
 ```
 
 A red run that is still red when run again (`gh run rerun <run id> --failed`) is a real failure: fix it before merging anything else. A test that fails only sometimes is named in the backlog and set aside, so red keeps meaning broken.
+
+A risky change (for example the renderer's sandbox on Linux) is run on its branch before it merges, and merges only when both jobs pass:
+
+```bash
+gh workflow run verify.yml --ref <branch>
+gh run list --branch <branch> --limit 1
+```
 
 ## What's here
 

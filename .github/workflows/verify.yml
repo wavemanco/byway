@@ -75,7 +75,7 @@ jobs:
           sudo apt-get remove --yes fonts-wqy-zenhei > /dev/null
           fc-match 'sans-serif:lang=ja'
 
-      # Linux restricts unprivileged user namespaces (Ubuntu 23.10 and later), which Chromium's OS sandbox needs. One
+      # Linux restricts unprivileged user namespaces (by default from Ubuntu 24.04), which Chromium's OS sandbox needs. One
       # renderer test starts Chromium inside its sandbox as a control, so Playwright's Chromium gets a profile that
       # allows them; the rest of the machine stays restricted.
       - name: Let Playwright's Chromium start its OS sandbox (an AppArmor profile, Linux only)
