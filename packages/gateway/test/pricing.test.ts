@@ -108,6 +108,10 @@ const req = (over: Partial<CompletionRequest> = {}): CompletionRequest => ({
 
 const ledgerLines = () => readFileSync(join(dir, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
 
+/**
+ * An answer that lists two billed attempts, the second by `model`: the shape Anthropic's server-side fallback reported.
+ * byway no longer asks for one (ADR-0102), but settlement still prices any model an answer names at its own row.
+ */
 const fallback = (model: string) =>
   anthropicMessage({
     model,
@@ -132,7 +136,7 @@ describe('gateway: settlement by the served model (F04)', () => {
     expect((await g.spend('ws-1')).assumedPricing).toEqual({ calls: 1, usd: res.costUsd });
   });
 
-  it("prices a dated snapshot of a known fallback model at that model's own row, unflagged", async () => {
+  it("prices a dated snapshot of a known model at that model's own row, unflagged", async () => {
     const g = gateway({ clients: { anthropic: fakeAnthropic([fallback('claude-opus-4-8-20261001')]).client } });
     const res = await g.complete(req());
     // Opus 5.5: 1000 in at $4/M. Opus 4.8: 1000 in at $5/M and 1000 out at $25/M.

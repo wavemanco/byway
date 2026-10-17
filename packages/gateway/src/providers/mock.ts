@@ -57,7 +57,7 @@ export function mockAdapter(opts: MockAdapterOptions = {}): ProviderAdapter {
       counts.set(key, iteration + 1);
       let lineupMemory = memories.get(key);
       if (!lineupMemory) memories.set(key, (lineupMemory = new LineupMemory()));
-      const { text, truncated } = reply(
+      const { text, truncated, declined } = reply(
         {
           purpose: req.context.purpose,
           role,
@@ -77,10 +77,11 @@ export function mockAdapter(opts: MockAdapterOptions = {}): ProviderAdapter {
         text,
         servedModel: req.model,
         usage: { inputTokens: tokens(`${req.system ?? ''}${prompt}`) + images * 1000, outputTokens: tokens(text) },
-        // Only a test responder truncates; the demo's own answers are always whole, whatever maxOutputTokens says.
+        // Only a test responder truncates or declines; the demo's own answers are always whole, whatever maxOutputTokens says.
         ...(truncated ? { truncated: true } : {}),
+        ...(declined ? { refusal: `declined (${declined.reason ?? 'policy'})`, declined } : {}),
         requestBody,
-        responseBody: { model: req.model, text, ...(truncated ? { truncated: true } : {}) },
+        responseBody: { model: req.model, text, ...(truncated ? { truncated: true } : {}), ...(declined ? { declined } : {}) },
       };
     },
     videoSeconds: (_model, requestedSec) => Math.max(1, Math.round(requestedSec)),

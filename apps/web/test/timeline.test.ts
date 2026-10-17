@@ -278,6 +278,24 @@ describe('run timeline without a presentation', () => {
     expect(refine?.steps.map((st) => `${st.stepId}:${st.round}:${st.status}`)).toEqual(['draft:1:done', 'audit:1:done', 'draft:2:running']);
   });
 
+  it('shows a decline that byway’s second ask answered in the row’s note; a decline that ended the step is told by its failure (ADR-0102)', () => {
+    seq_ = 0;
+    const answered = 'Anthropic’s model claude-sonnet-5-5 declined this request (reason given: cyber). byway asked it once more, and it answered. Both attempts were billed: $0.1800 in all.';
+    const again = 'Anthropic’s model claude-sonnet-5-5 declined this request (reason given: cyber). byway asked it once more, and it declined again. Both attempts were billed: $0.0800 in all.';
+    const list = [
+      started('draft', 'Draft', 'D2'),
+      ev('model-declined', 'draft', { retry: 'answered', note: answered }),
+      done('draft', 0.18, { note: 'Drafted.' }),
+      started('fix', 'Fix', 'D2'),
+      ev('model-declined', 'fix', { retry: 'declined', note: again }),
+      ev('step-failed', 'fix', { error: `${again} Rephrase the request, or choose another model profile in Settings, then try again.`, retryable: false }),
+    ];
+    const [refine] = buildTimeline(list, [], 'failed');
+    expect(refine?.steps[0]).toMatchObject({ label: 'Draft', status: 'done', note: `${answered} Drafted.` });
+    expect(refine?.steps[1]).toMatchObject({ label: 'Fix', status: 'failed', error: `${again} Rephrase the request, or choose another model profile in Settings, then try again.` });
+    expect(refine?.steps[1]?.note).toBeUndefined();
+  });
+
   it('tolerates events with missing or malformed data', () => {
     seq_ = 0;
     const list = [ev('step-started', 'x', { label: 42, stage: 'D9' }), ev('artifact', 'x', { artifactId: 7 })];

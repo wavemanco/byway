@@ -44,10 +44,10 @@ export const PRICES: readonly PriceRow[] = [
   // claude-sonnet-5-5: $2 / $10, 5m cache writes $2.50. The pricing table lists cache hits at $0.20 while its prose says
   // $0.10 (0.05x); we record the table's higher figure, so costs lean high rather than low. Source: ANTHROPIC, 2026-10-07.
   { provider: 'anthropic', model: 'claude-sonnet-5-5', inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.2, cacheWritePerMTok: 2.5, source: ANTHROPIC },
-  // Models that `fallbacks: "default"` may serve after a refusal, so their tokens are priced correctly in the ledger:
-  // Opus 5.5 and Fable 5.1 fall back to claude-opus-5 or claude-opus-4-8 (Anthropic routes by refusal category, partly
-  // unpublished). claude-opus-5 and claude-opus-4-8: $5 / $25. Source: ANTHROPIC, 2026-10-07. Sonnet 5.5's fallback,
-  // claude-sonnet-5, has no row here: a call it serves settles at Sonnet 5.5's row, flagged 'assumed' (servedPrice).
+  // Older Opus models no profile names: claude-opus-5 and claude-opus-4-8, $5 / $25. Source: ANTHROPIC, 2026-10-07.
+  // byway asks no provider for a fallback model (ADR-0102), so neither should answer a call. If one ever does, it is
+  // priced at its own row, and the ledger shows the model that answered; any other unpriced model settles at the
+  // requested model's row, flagged 'assumed' (servedPrice).
   { provider: 'anthropic', model: 'claude-opus-5', inputPerMTok: 5, outputPerMTok: 25, cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25, source: ANTHROPIC },
   { provider: 'anthropic', model: 'claude-opus-4-8', inputPerMTok: 5, outputPerMTok: 25, cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25, source: ANTHROPIC },
 

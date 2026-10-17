@@ -43,6 +43,20 @@ describe('byway’s own failures while recommending or composing (follow-up (e))
     });
   });
 
+  it('a model that declined, and declined again when byway asked once more: the gateway’s one plain message (ADR-0102)', () => {
+    const message =
+      'Anthropic’s model claude-opus-5-5 declined this request (reason given: cyber). byway asked it once more, and it declined again. Both attempts were billed: $0.0080 in all. Rephrase the request, or choose another model profile in Settings, then try again.';
+    const err = new GatewayError('refused', message, false, {
+      declined: { provider: 'anthropic', model: 'claude-opus-5-5', purpose: 'advisor.intake', kind: 'completion', reason: 'cyber', ledgerEntryId: 'e1', costUsd: 0.004, retry: 'declined', retryLedgerEntryId: 'e2', retryCostUsd: 0.004 },
+    });
+    expect(modelProblem(err)).toEqual({ status: 502, message });
+    // A retry that failed after it was billed keeps the decline's message too, not the generic billed one.
+    const billedRetry = new GatewayError('refused', 'Anthropic’s model … declined this request … but that attempt failed: …', false, { billed: true, declined: { ...err.declined!, retry: 'failed' } });
+    expect(modelProblem(billedRetry)).toEqual({ status: 502, message: billedRetry.message });
+    // A refusal that is not a decline under the rule keeps the general words.
+    expect(modelProblem(new GatewayError('refused', 'anthropic declined (bio)'))).toEqual({ status: 502, message: 'The model declined to answer this request. Rephrase the problem, or choose a recipe from the Library.' });
+  });
+
   it('keeps the provider’s own failure as it was', () => {
     expect(modelProblem(new GatewayError('provider-error', 'HTTP 503', true))).toEqual({ status: 503, message: 'The model provider did not answer. Try again in a minute.' });
   });

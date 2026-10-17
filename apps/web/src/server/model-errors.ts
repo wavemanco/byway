@@ -11,7 +11,8 @@ export interface ModelProblem {
   message: string;
 }
 
-const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown }; heldKey?: unknown; billed?: unknown } => err instanceof Error && err.name === name;
+const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown }; heldKey?: unknown; billed?: unknown; declined?: unknown } =>
+  err instanceof Error && err.name === name;
 
 /**
  * A call the provider answered and billed, whose answer byway could not keep, record or use (ADR-0099). It is counted in
@@ -28,6 +29,9 @@ export function modelProblem(err: unknown): ModelProblem | undefined {
       if (err.code === 'invalid-request') return { status: 400, message: err.message };
       if (err.code === 'provider-error') return { status: 502, message: err.message };
     }
+    // The model declined and byway's one retry on it brought no answer (ADR-0102): the gateway's message is the one plain
+    // message the Run screen shows too. It says what happened, what both attempts cost, and what to do.
+    if (err.code === 'refused' && typeof err.declined === 'object' && err.declined !== null) return { status: 502, message: err.message };
     // Billed, whatever the code: the provider answered and was paid (ADR-0099), so 'did not answer, try again' is untrue.
     if (err.billed === true) return { status: 500, message: BILLED_CALL_LOST };
     switch (err.code) {

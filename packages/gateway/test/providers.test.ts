@@ -65,7 +65,7 @@ describe('anthropic adapter', () => {
     return { client, calls };
   }
 
-  it('maps the request: system, roles, base64 images, max_tokens, and the refusal fallback', async () => {
+  it('maps the request: system, roles, base64 images, max_tokens, and no fallback to another model (ADR-0102)', async () => {
     const { client, calls } = fake();
     const out = await anthropicAdapter({ client }).complete(request());
     const body = calls[0] as Record<string, unknown>;
@@ -73,9 +73,12 @@ describe('anthropic adapter', () => {
       model: 'model-x',
       max_tokens: 2048,
       system: 'You are a careful critic.',
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
     });
+    // Neither the server-side fallback beta nor its field: a decline is never answered by another model.
+    for (const k of ['betas', 'fallbacks']) {
+      expect(body).not.toHaveProperty(k);
+      expect(out.requestBody).not.toHaveProperty(k);
+    }
     expect(body.messages).toEqual([
       {
         role: 'user',
@@ -102,13 +105,17 @@ describe('anthropic adapter', () => {
     expect(out.refusal).toBeUndefined();
   });
 
-  it('reports a refusal with its category', async () => {
+  it('reports a refusal as a decline, with its category when it states one', async () => {
     const { client } = fake({ stop_reason: 'refusal', stop_details: { category: 'cyber' }, content: [] });
     const out = await anthropicAdapter({ client }).complete(request());
     expect(out.refusal).toContain('cyber');
+    expect(out.declined).toEqual({ reason: 'cyber' });
+    const bare = await anthropicAdapter({ client: fake({ stop_reason: 'refusal', stop_details: null, content: [] }).client }).complete(request());
+    expect(bare.declined).toEqual({});
+    expect((await anthropicAdapter({ client: fake().client }).complete(request())).declined).toBeUndefined();
   });
 
-  it('prices each model separately when a refusal fallback served the call', async () => {
+  it('prices each model a response lists as billed separately (byway asks for no fallback, but a response that names several attempts is still priced per model)', async () => {
     const { client } = fake({
       model: 'claude-opus-4-8',
       usage: {
@@ -141,9 +148,10 @@ describe('anthropic adapter', () => {
     }
   });
 
-  it('can turn the refusal fallback off', async () => {
+  it('has no option that asks for a fallback model (ADR-0102)', async () => {
     const { client, calls } = fake();
-    await anthropicAdapter({ client, refusalFallback: false }).complete(request());
+    // @ts-expect-error The adapter takes a client only: no option can turn server-side fallbacks on.
+    await anthropicAdapter({ client, refusalFallback: true }).complete(request());
     expect(calls[0]).not.toHaveProperty('betas');
     expect(calls[0]).not.toHaveProperty('fallbacks');
   });
@@ -205,11 +213,40 @@ describe('openai adapter', () => {
     expect(out.usage).toEqual({ inputTokens: 300, outputTokens: 25, cacheReadTokens: 100 });
   });
 
-  it('reports refusals and content-filter stops', async () => {
+  it('reports refusals and content-filter stops as declines', async () => {
     const a = fakeOpenAI({ choices: [{ finish_reason: 'stop', message: { content: null, refusal: 'I cannot help with that.' } }] });
-    expect((await openaiAdapter({ client: a.client }).complete(request())).refusal).toContain('cannot help');
+    const refused = await openaiAdapter({ client: a.client }).complete(request());
+    expect(refused.refusal).toContain('cannot help');
+    expect(refused.declined).toEqual({ reason: 'I cannot help with that.' });
     const b = fakeOpenAI({ choices: [{ finish_reason: 'content_filter', message: { content: '' } }] });
-    expect((await openaiAdapter({ client: b.client }).complete(request())).refusal).toContain('content filter');
+    const filtered = await openaiAdapter({ client: b.client }).complete(request());
+    expect(filtered.refusal).toContain('content filter');
+    expect(filtered.declined).toEqual({ reason: 'content filter' });
+    expect((await openaiAdapter({ client: fakeOpenAI().client }).complete(request())).declined).toBeUndefined();
+  });
+
+  it('reads an image request its safety system blocked (HTTP 400, moderation_blocked) as a decline with no image, not an invalid request', async () => {
+    const blocked = Object.assign(new Error('400 Your request was rejected by the safety system.'), {
+      status: 400,
+      code: 'moderation_blocked',
+      error: { code: 'moderation_blocked', message: 'Your request was rejected by the safety system.', type: 'image_generation_user_error' },
+    });
+    const { client } = fakeOpenAI();
+    client.images.generate = async () => {
+      throw blocked;
+    };
+    const out = await openaiAdapter({ client }).image!(imageRequest);
+    expect(out.declined).toEqual({ reason: 'moderation_blocked' });
+    expect(out.refusal).toContain('moderation_blocked');
+    expect(out.bytes.byteLength).toBe(0);
+    // OpenAI reports no usage on a blocked request: none is assumed.
+    expect(out.usage).toEqual({ inputTokens: 0, outputTokens: 0, units: 0 });
+    expect(out.responseBody).toMatchObject({ error: { code: 'moderation_blocked' } });
+    // Any other 400 is still the request's own fault, thrown as before.
+    client.images.generate = async () => {
+      throw Object.assign(new Error('400 bad size'), { status: 400, error: { code: 'invalid_value', message: 'bad size' } });
+    };
+    await expect(openaiAdapter({ client }).image!(imageRequest)).rejects.toMatchObject({ status: 400 });
   });
 
   it("reports truncation when finish_reason is 'length'", async () => {
@@ -236,6 +273,8 @@ describe('openai adapter', () => {
     const { client } = fakeOpenAI({}, { data: [], usage: { input_tokens: 12, output_tokens: 0 } });
     const out = await openaiAdapter({ client }).image!(imageRequest);
     expect(out.refusal).toMatch(/no image/);
+    // No image is not a decline: nothing says the provider declined it.
+    expect(out.declined).toBeUndefined();
     expect(out.bytes.byteLength).toBe(0);
     expect(out.usage).toEqual({ inputTokens: 12, outputTokens: 0, units: 0 });
   });
@@ -249,6 +288,8 @@ describe('openrouter adapter', () => {
     const out = await openrouterAdapter({ client, pins }).complete(request({ model: 'anthropic/claude-opus-5.5' }));
     const body = chat[0] as Record<string, unknown>;
     expect(body.provider).toEqual({ only: ['anthropic'], allow_fallbacks: false });
+    // No other model either: OpenRouter's model fallbacks (`models`, `route`) are never asked for (ADR-0102).
+    for (const k of ['models', 'route']) expect(body).not.toHaveProperty(k);
     expect((body.messages as { role: string }[])[0]?.role).toBe('system');
     expect(out.upstreamProvider).toBe('Anthropic');
     expect(out.reportedCostUsd).toBe(0.00014);
@@ -316,11 +357,24 @@ describe('google adapter', () => {
     expect(out.usage).toMatchObject({ inputTokens: 200, outputTokens: 100 });
   });
 
-  it('reports safety stops and blocked prompts as refusals', async () => {
+  it('reports safety stops and blocked prompts as declines', async () => {
     const a = fake({ candidates: [{ finishReason: 'SAFETY', content: { parts: [] } }] });
-    expect((await googleAdapter({ client: a.client }).complete(request())).refusal).toContain('SAFETY');
+    const stopped = await googleAdapter({ client: a.client }).complete(request());
+    expect(stopped.refusal).toContain('SAFETY');
+    expect(stopped.declined).toEqual({ reason: 'SAFETY' });
     const b = fake({ promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } });
-    expect((await googleAdapter({ client: b.client }).complete(request())).refusal).toContain('PROHIBITED_CONTENT');
+    const blocked = await googleAdapter({ client: b.client }).complete(request());
+    expect(blocked.refusal).toContain('PROHIBITED_CONTENT');
+    expect(blocked.declined).toEqual({ reason: 'prompt blocked: PROHIBITED_CONTENT' });
+    expect((await googleAdapter({ client: fake(ok).client }).complete(request())).declined).toBeUndefined();
+  });
+
+  it('reports an image the safety filter stopped as a decline, and a text-only answer as no image, not a decline', async () => {
+    const stopped = await googleAdapter({ client: fake({ candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [] } }], usageMetadata: { promptTokenCount: 9 } }).client }).image!(imageRequest);
+    expect(stopped.declined).toEqual({ reason: 'IMAGE_SAFETY' });
+    const text = await googleAdapter({ client: fake({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'A loaf, described.' }] } }] }).client }).image!(imageRequest);
+    expect(text.refusal).toMatch(/no image/);
+    expect(text.declined).toBeUndefined();
   });
 
   it("reports truncation when finishReason is 'MAX_TOKENS'", async () => {

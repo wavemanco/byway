@@ -11,10 +11,14 @@
  * Each call also carries its operation key and this invocation's signals to the gateway (Temporal's cancel, and the
  * invocation's end): an attempt that overlaps another of the same step waits for that one's result, and a timed-out or
  * dead one's call is taken over, its accepted clips resumed (stage 3; ADR-0099).
+ *
+ * A decline is asked once more by the gateway, on the same model (ADR-0102); a step's calls write each decline they meet
+ * to the run's events, with what became of the second ask (declines.ts).
  */
 import type { RunnerActivities } from '../types.ts';
 import { assetStep } from './asset.ts';
 import type { RunnerDeps } from './deps.ts';
+import { logDeclines, stepCallOf } from './declines.ts';
 import { guarded } from './failures.ts';
 import { finishHumanStep, openCheckpoint, recordResolution } from './human.ts';
 import { beginRun, cancelRun, emitEvents, failRun, finishRun, passStep, raiseBudget, rerank, setRunStatus, skipStep } from './lifecycle.ts';
@@ -33,9 +37,12 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
       const invocation = startInvocation();
       const gateway = guardGateway(deps.gateway, deps.store, invocation.signal);
       const memo = memoScopeOf(input);
+      const memoized = memo ? memoGateway(gateway, deps.store, memo, { operation: { until: invocation.done, ...(invocation.signal ? { cancel: invocation.signal } : {}) } }) : gateway;
+      // Each decline a step's calls meet is written to the run's events (ADR-0102), outside the memo: see declines.ts.
+      const step = stepCallOf(input);
       const scoped: RunnerDeps = {
         ...deps,
-        gateway: memo ? memoGateway(gateway, deps.store, memo, { operation: { until: invocation.done, ...(invocation.signal ? { cancel: invocation.signal } : {}) } }) : gateway,
+        gateway: step ? logDeclines(memoized, deps.store, step) : memoized,
         ...(deps.pages ? { pages: guardPages(deps.pages, invocation.signal) } : {}),
         ...(invocation.signal ? { signal: invocation.signal } : {}),
       };

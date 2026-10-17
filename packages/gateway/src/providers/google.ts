@@ -40,10 +40,16 @@ export function googleParams(req: ProviderCompletionRequest, inline: boolean): G
   };
 }
 
-function refusalOf(res: GoogleResponseLike): string | undefined {
-  if (res.promptFeedback?.blockReason) return `declined (prompt blocked: ${res.promptFeedback.blockReason})`;
+/** A blocked prompt or a safety stop: a decline (ADR-0102), with the block or finish reason as its stated reason. */
+function declineOf(res: GoogleResponseLike): { reason: string } | undefined {
+  if (res.promptFeedback?.blockReason) return { reason: `prompt blocked: ${res.promptFeedback.blockReason}` };
   const reason = res.candidates?.[0]?.finishReason;
-  return reason && DECLINED.has(reason) ? `declined (${reason})` : undefined;
+  return reason && DECLINED.has(reason) ? { reason } : undefined;
+}
+
+function refusalOf(res: GoogleResponseLike): string | undefined {
+  const declined = declineOf(res);
+  return declined ? `declined (${declined.reason})` : undefined;
 }
 
 export function parseGoogleResponse(res: GoogleResponseLike, requestedModel: string): Omit<ProviderCompletion, 'requestBody'> {
@@ -51,12 +57,14 @@ export function parseGoogleResponse(res: GoogleResponseLike, requestedModel: str
   const text = parts.flatMap((p) => (typeof p.text === 'string' && !p.thought ? [p.text] : [])).join('');
   const u = res.usageMetadata ?? {};
   const refusal = refusalOf(res);
+  const declined = declineOf(res);
   return {
     text,
     servedModel: res.modelVersion ?? requestedModel,
     // Gemini bills thinking tokens as output ("output price including thinking tokens").
     usage: { inputTokens: u.promptTokenCount ?? 0, outputTokens: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cacheReadTokens: u.cachedContentTokenCount ?? 0 },
     ...(refusal ? { refusal } : {}),
+    ...(declined ? { declined } : {}),
     // MAX_TOKENS: the answer hit maxOutputTokens (thinking tokens count toward it).
     ...(res.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? { truncated: true } : {}),
     responseBody: plain(res),
@@ -75,7 +83,8 @@ const MEDIA_TYPES = new Set<MediaType>(['image/png', 'image/jpeg', 'image/webp']
  * billed for its tokens, so it comes back as a no-image result with its usage and a refusal-like reason, which the
  * gateway ledgers and then refuses (not retryable). It used to be thrown as a synthetic 502, which the gateway retried
  * up to four times, paying each time and ledgering none (ENG-5). Whether to try the slot again is the asset step's
- * decision (its triesPerSlot), not a transport retry's.
+ * decision (its triesPerSlot), not a transport retry's. A safety stop or a blocked prompt is a decline instead, which the
+ * gateway asks once more and the asset step then leaves alone (ADR-0102).
  */
 export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string): Omit<ProviderImage, 'requestBody'> {
   const refusal = refusalOf(res);
@@ -92,7 +101,9 @@ export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string
   const servedModel = res.modelVersion ?? requestedModel;
   const noImage = (reason: string) => ({ bytes: new Uint8Array(), mediaType: 'image/png' as const, servedModel, usage, refusal: reason, responseBody: body });
   if (!inline?.data) {
-    if (refusal) return noImage(refusal);
+    // A safety stop or a blocked prompt is a decline (ADR-0102); a text-only answer is only an answer with no image.
+    const declined = declineOf(res);
+    if (refusal !== undefined && declined) return { ...noImage(refusal), declined };
     const finish = res.candidates?.[0]?.finishReason ?? 'none';
     const content = parts.some((p) => typeof p.text === 'string' && p.text.trim() && !p.thought) ? 'text only' : 'no content';
     return noImage(`returned no image (finishReason ${finish}, ${content})`);

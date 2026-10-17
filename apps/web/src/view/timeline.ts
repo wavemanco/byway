@@ -9,7 +9,7 @@
  */
 import type { CheckpointRecord, RunEvent, RunStatus } from '@byway/contracts';
 import { BLOCK_CODES, type BlockCode } from '@byway/protocol';
-import { ArtifactData, CheckpointEventData, LoopIterationData, StepFailedData, StepFinishedData, StepStartedData, read } from './events.ts';
+import { ArtifactData, CheckpointEventData, LoopIterationData, ModelDeclinedData, StepFailedData, StepFinishedData, StepStartedData, read } from './events.ts';
 import { isEnded } from './run.ts';
 import { shownStep, type ShownStep, type StepIndex } from './steps.ts';
 import { BLOCK_NAMES, stageFromCode, type StageName, type Who } from './vocabulary.ts';
@@ -217,6 +217,14 @@ export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[
         }
         if (d.note && !row.notes.includes(d.note)) row.notes.push(d.note);
         row.step.finishedAt = e.at;
+        break;
+      }
+      case 'model-declined': {
+        // A decline byway's second ask answered is shown with the row's notes: its cost is in the step's. One that ended
+        // the step, or an image, is told by the step's failure or note (ADR-0102).
+        const row = rowFor(e);
+        const d = read(ModelDeclinedData, e.data);
+        if (row && d.retry === 'answered' && d.note && !row.notes.includes(d.note)) row.notes.push(d.note);
         break;
       }
       case 'step-failed': {

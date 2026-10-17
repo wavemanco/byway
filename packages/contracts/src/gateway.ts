@@ -64,8 +64,45 @@ export interface SpendContext {
    * - `until`: aborts when the attempt's invocation ends: a settled call is held until then, while its result is kept.
    * - `rebuy`: the caller was told an earlier attempt settled the call (GatewayError.settledEarlier), looked for its kept
    *   result and found none: buy it again (counted).
+   * When the model declines the call, the gateway's one retry (ADR-0102) is a call of its own, keyed
+   * `<key>/after-decline/<the declined call's ledger entry id>`, with the same `until` and `cancel` and never `rebuy`.
    */
   operation?: { key: string; until: AbortSignal; cancel?: AbortSignal; rebuy?: boolean };
+}
+
+/**
+ * A provider's decline of a call, and what byway did about it (ADR-0102). A decline is the provider saying no: its safety
+ * system or the model declined (Anthropic's refusal stop, OpenAI's refusal or content filter, Google's safety stop or
+ * blocked prompt, OpenAI's image moderation block). byway never lets a provider answer with another model. It asks the
+ * same model once more, as a separate paid call (admitted against the caps, ledgered with `retryOf`), and then stops.
+ * An answer that is only missing something (an image model's text-only answer) is not a decline.
+ */
+export interface DeclineRecord {
+  provider: ProviderId;
+  /** The model asked, both times. */
+  model: string;
+  /** What the call was for (SpendContext.purpose). */
+  purpose: string;
+  kind: 'completion' | 'image';
+  /** The reason the provider stated (a refusal category, a block reason, OpenAI's refusal text), when it gave one. */
+  reason?: string;
+  /** The declined call: its ledger entry, and what it cost as recorded there. */
+  ledgerEntryId: string;
+  costUsd: number;
+  /**
+   * What became of byway's one retry on the same model:
+   * - `answered`: it answered, and its answer is the result;
+   * - `declined`: it declined too;
+   * - `not-made`: byway did not make it (`problem` says why: a budget had no room for it, paid calls were paused, byway
+   *   was stopping, or the step was stopped);
+   * - `failed`: it was sent but brought no usable answer (`problem` says why).
+   */
+  retry: 'answered' | 'declined' | 'not-made' | 'failed';
+  /** The retry's ledger entry and its cost, when it was answered (`answered` or `declined`). */
+  retryLedgerEntryId?: string;
+  retryCostUsd?: number;
+  /** Why the retry was not made, or how it failed, in words. */
+  problem?: string;
 }
 
 /** Which prompt template produced a call (from RenderedPrompt), recorded in the ledger for provenance (CR14). */
@@ -106,8 +143,12 @@ export interface CompletionResult {
   servedModel: string;
   provider: ProviderId;
   usage: Usage;
+  /** What this call cost: the declined attempt included when the model declined first (`declined`). */
   costUsd: number;
+  /** The ledger entry of the attempt that answered. */
   ledgerEntryId: string;
+  /** Set when the model declined first and byway's one retry on the same model answered (ADR-0102). */
+  declined?: DeclineRecord;
 }
 
 export interface ImageRequest extends SpendContext {
@@ -122,8 +163,12 @@ export interface ImageResult {
   mediaType: MediaType;
   servedModel: string;
   provider: ProviderId;
+  /** What this call cost: the declined attempt included when the model declined first (`declined`). */
   costUsd: number;
+  /** The ledger entry of the attempt that made the image. */
   ledgerEntryId: string;
+  /** Set when the image model declined first and byway's one retry on the same model made the image (ADR-0102). */
+  declined?: DeclineRecord;
 }
 
 export interface VideoRequest extends SpendContext {
@@ -225,6 +270,16 @@ export interface LedgerEntry {
    * hash chain.
    */
   operationId?: string;
+  /**
+   * Set when the provider declined this call (ADR-0102), with the reason it stated when it gave one; any answer it
+   * carried was not used. Covered by the hash chain.
+   */
+  declined?: { reason?: string };
+  /**
+   * The id of the declined call's entry when this call is byway's one retry of it on the same model (ADR-0102). Covered
+   * by the hash chain.
+   */
+  retryOf?: string;
 }
 
 export type GatewayErrorCode =
@@ -283,12 +338,19 @@ export class GatewayError extends Error {
    * runner's memo), so the caller looks for it before asking again with SpendContext.operation.rebuy.
    */
   settledEarlier?: boolean;
-  constructor(code: GatewayErrorCode, message: string, retryable = false, opts: { billed?: boolean; settledEarlier?: boolean } = {}) {
+  /**
+   * Set on 'refused' when the model declined the call and byway's one retry on the same model did not bring an answer
+   * (ADR-0102): what was declined, why, what both attempts cost, and what became of the retry. The message says the same
+   * in plain words, with what to do. Never retryable: asking a third time would break the rule.
+   */
+  declined?: DeclineRecord;
+  constructor(code: GatewayErrorCode, message: string, retryable = false, opts: { billed?: boolean; settledEarlier?: boolean; declined?: DeclineRecord } = {}) {
     super(message);
     this.code = code;
     this.retryable = retryable;
     if (opts.billed !== undefined) this.billed = opts.billed;
     if (opts.settledEarlier) this.settledEarlier = true;
+    if (opts.declined) this.declined = opts.declined;
   }
 }
 

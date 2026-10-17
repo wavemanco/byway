@@ -18,8 +18,8 @@
  * of advice for the person to its briefs. The step's note shows it, as the AI's suggestion, with the image it came with;
  * it never changes how many images are made, and with no image made it is not shown.
  */
-import { GatewayError, type Medium } from '@byway/contracts';
-import { isHeldKeyError } from '@byway/gateway';
+import { GatewayError, type DeclineRecord, type Medium } from '@byway/contracts';
+import { declineStory, isHeldKeyError } from '@byway/gateway';
 import { audioAsset } from '@byway/recipe/semantics';
 import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson, textView, type Parsed } from '../formats.ts';
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
@@ -131,13 +131,19 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   // 2. Images, at most `triesPerSlot` attempts each; shot 1's frame, which starts the relay chain, at least two.
   const made: MadeImage[] = [];
   const failed: string[] = [];
+  const declined: { slot: string; record: DeclineRecord }[] = [];
   const outputs: string[] = [];
   for (const brief of briefs.value.briefs) {
     const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries).catch((e: unknown) => {
       throw e instanceof GatewayError && e.billed === true ? billedStop(e, slots, brief.slot, made, what) : e;
     });
-    if (!image) {
+    if (!image || 'declined' in image) {
       failed.push(brief.slot);
+      if (image) {
+        // Both attempts of a declined image were billed (or recorded at no cost): they are this step's cost too.
+        declined.push({ slot: brief.slot, record: image.declined });
+        costUsd += image.declined.costUsd + (image.declined.retryCostUsd ?? 0);
+      }
       continue;
     }
     costUsd += image.costUsd;
@@ -145,7 +151,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     outputs.push(image.made.artifactId);
   }
   if (!made.length) {
-    await stepFinished(deps, run, call, { costUsd, skipped: true, note: NO_IMAGE_MADE_NOTE }, true);
+    await stepFinished(deps, run, call, { costUsd, skipped: true, note: [NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined)].join(' ') }, true);
     return { costUsd, skipped: true };
   }
 
@@ -197,7 +203,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   // What the step could not make, the AI's advice on what it made (ADR-0101), and what keepsVoice wrote back (ADR-0081),
   // in one note.
   const advice = briefs.value.advice ? adviceNote(briefs.value.advice) : undefined;
-  const note = [partialNote(slots, briefs.value.missing, briefs.value.unknown, failed, anchorWanted && !anchor), advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
+  const note = [partialNote(slots, briefs.value.missing, briefs.value.unknown, failed, anchorWanted && !anchor, declined), advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
@@ -210,8 +216,11 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * keep would be bought again by another try. A call byway did not start (it is stopping, or could not record the call as
  * sent) billed nothing and is tried again like any other unbilled failure: the step's failure would end the run, as every
  * GatewayError fails the step for good.
+ *
+ * An image the model declined is not tried again here (ADR-0102): the gateway already asked once more on the same model,
+ * and a decline gets one retry, not one per layer. The slot is not made, and what happened goes in the step's note.
  */
-async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | undefined> {
+async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | undefined> {
   const { run, call, step } = input;
   const medium = run.medium;
   for (let attempt = 1; attempt <= tries; attempt++) {
@@ -222,6 +231,7 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
       return { made: { slot: brief.slot, alt, artifactId: img.artifactId }, costUsd: img.costUsd };
     } catch (e) {
       if (!(e instanceof GatewayError) || STOPS_THE_STEP.has(e.code) || e.billed === true || isHeldKeyError(e)) throw e;
+      if (e.declined) return { declined: e.declined };
     }
   }
   return undefined;
@@ -254,7 +264,7 @@ const list = (items: string[]): string => (items.length > 1 ? `${items.slice(0, 
  * left out because they name slots the work does not have (every planned image may still have been made), and, on a
  * storyboard, that the video chain has no start frame. Undefined when everything was made and nothing left out.
  */
-function partialNote(plan: SlotPlan, missing: string[], unknown: string[], failed: string[], noAnchor: boolean): string | undefined {
+function partialNote(plan: SlotPlan, missing: string[], unknown: string[], failed: string[], noAnchor: boolean, declined: { slot: string; record: DeclineRecord }[] = []): string | undefined {
   const name = (id: string) => slotName(plan, id);
   const parts = [
     ...(missing.length ? [`no image brief was written for ${list(missing.map(name))}`] : []),
@@ -263,10 +273,16 @@ function partialNote(plan: SlotPlan, missing: string[], unknown: string[], faile
   const first = plan.kind === 'each' ? plan.first : undefined;
   const sentences = [
     ...(parts.length ? [`Not every image was made: ${parts.join('; ')}.`] : []),
+    ...declinedSentences(plan, declined),
     ...(unknown.length && plan.kind === 'each' ? [leftOutSentence(plan, unknown)] : []),
     ...(noAnchor && first ? [`No frame was made for shot ${first}, so the video chain has no start frame.`] : []),
   ];
   return sentences.length ? sentences.join(' ') : undefined;
+}
+
+/** What happened to each image the model declined (ADR-0102), in the words of the run's events and the gateway. */
+function declinedSentences(plan: SlotPlan, declined: { slot: string; record: DeclineRecord }[]): string[] {
+  return declined.map(({ slot, record }) => declineStory(record, `the image for ${slotName(plan, slot)}`));
 }
 
 /**

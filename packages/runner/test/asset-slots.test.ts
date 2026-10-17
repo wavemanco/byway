@@ -13,7 +13,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
 import { CATALOG, presentationOf, stepPresentation } from '@byway/catalog';
-import { GatewayError, type CompletionRequest, type CompletionResult, type Gateway, type ImageRequest, type ImageResult, type Medium, type VideoRequest } from '@byway/contracts';
+import { GatewayError, type CompletionRequest, type CompletionResult, type DeclineRecord, type Gateway, type ImageRequest, type ImageResult, type Medium, type VideoRequest } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
@@ -192,6 +192,52 @@ describe('one slot identity on media (C5 anchor frames)', () => {
     const { result } = await runAsset('media', frames(), storyboard(), g);
     expect(result).toBeInstanceOf(ContractMissed);
     expect(g.images).toHaveLength(0);
+  });
+});
+
+/**
+ * One refusal rule (ADR-0102): the gateway asks a declining image model once more, so the step never asks again. A
+ * declined image is a slot not made, with what happened in the step's note, and both attempts' cost in the step's cost.
+ */
+describe('an image the model declined (ADR-0102)', () => {
+  const frames = () => spec('c5', 'anchor-frames');
+  const declinedImage = (req: ImageRequest, outcome: Partial<DeclineRecord> = {}) =>
+    new GatewayError('refused', 'the gateway’s plain message', false, {
+      declined: {
+        provider: 'google',
+        model: 'gemini-nano-banana-2.1',
+        purpose: req.purpose,
+        kind: 'image',
+        reason: 'IMAGE_SAFETY',
+        ledgerEntryId: 'e1',
+        costUsd: 0.0336,
+        ...(outcome.retry === undefined ? { retry: 'declined' as const, retryLedgerEntryId: 'e2', retryCostUsd: 0.0336 } : {}),
+        ...outcome,
+      } as DeclineRecord,
+    });
+  const declinedTwice = (req: ImageRequest) => declinedImage(req);
+
+  it('is not tried again by the step, even for shot 1, and the note says what happened and what it cost', async () => {
+    const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 1') ? declinedTwice(req) : false));
+    const { result, notes } = await runAsset('media', frames(), storyboard(), g);
+    // Shot 1 gets at least two tries for any other failure; a decline the gateway already asked again gets none.
+    expect(g.images.filter((r) => r.prompt.endsWith('for 1'))).toHaveLength(1);
+    expect((result as AssetResult).anchor).toBeUndefined();
+    expect(notes[0]).toMatch(/the image for shot 1 could not be made/);
+    expect(notes[0]).toContain(
+      'Google’s model gemini-nano-banana-2.1 declined the image for shot 1 (reason given: IMAGE_SAFETY). byway asked it once more, and it declined again. Both attempts were billed: $0.0672 in all.',
+    );
+    expect(notes[0]).toMatch(/No frame was made for shot 1/);
+    // The brief call at $0.01, the two images made at $0.04 each, and the declined image's two attempts at $0.0672.
+    expect((result as AssetResult).costUsd).toBeCloseTo(0.01 + 0.04 * 2 + 0.0672, 9);
+  });
+
+  it('a slot whose second ask failed after a decline is not tried again either', async () => {
+    const failed = (req: ImageRequest) => declinedImage(req, { retry: 'failed', problem: 'google returned 503: unavailable' });
+    const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 2') ? failed(req) : false));
+    const { notes } = await runAsset('media', frames(), storyboard(), g);
+    expect(g.images.filter((r) => r.prompt.endsWith('for 2'))).toHaveLength(1);
+    expect(notes[0]).toContain('declined the image for shot 2 (reason given: IMAGE_SAFETY). byway asked it once more, but that attempt failed: google returned 503: unavailable. The declined attempt was billed: $0.0336.');
   });
 });
 

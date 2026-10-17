@@ -32,7 +32,11 @@ export interface ProviderCompletion {
   servedModel: string;
   /** Total tokens across every attempt the provider billed for this call. */
   usage: TokenBreakdown;
-  /** Per-model usage when more than one model served the call (Anthropic refusal fallbacks), for pricing. */
+  /**
+   * Per-model usage when the provider's answer lists more than one billed attempt, each with the model that ran it, for
+   * pricing. byway asks no provider for a fallback model (ADR-0102), so this is not expected; when it happens, each
+   * attempt is still priced at its own model's rates.
+   */
   usageByModel?: { model: string; usage: TokenBreakdown }[];
   /** Cost the provider itself reports (OpenRouter `usage.cost`), preferred over the price table. */
   reportedCostUsd?: number;
@@ -40,6 +44,11 @@ export interface ProviderCompletion {
   upstreamProvider?: string;
   /** Set when the provider declined: the call is still ledgered (it may be billed) before the gateway raises 'refused'. */
   refusal?: string;
+  /**
+   * Set with `refusal` when the provider declined (its safety system or the model said no), with the reason it stated, if
+   * any: the gateway asks the same model once more (ADR-0102). Every completion refusal is a decline.
+   */
+  declined?: { reason?: string };
   /** True when the answer was cut off at the output limit; the gateway reports it as stopReason 'max-tokens'. */
   truncated?: boolean;
   /** The request as sent, with image bytes replaced by artifact references. Stored by hash, never inline. */
@@ -60,7 +69,10 @@ export interface ProviderImage {
   mediaType: MediaType;
   servedModel: string;
   usage: Usage;
+  /** Why no image came back: a decline (`declined` is set too) or an answer with no usable image. Refused, not retryable. */
   refusal?: string;
+  /** Set when the provider declined the image, with the reason it stated, if any: the gateway asks once more (ADR-0102). */
+  declined?: { reason?: string };
   requestBody: unknown;
   /** The provider's response as plain JSON, with image bytes removed (they go to the artifact store). */
   responseBody: unknown;

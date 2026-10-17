@@ -1,9 +1,14 @@
 /**
  * Guard (F04, ADR-0091): neither the app nor the README tells a person that an estimate is a bound. The gateway admits
  * a call against its planning estimate, and a call can settle above it (the true cost is recorded and later calls are
- * refused), so a budget is described by what byway checks before a call, and cost figures are called estimates. While
- * Anthropic's refusal fallbacks stay on (decision D1), a refused call routed to another model can settle at about twice
- * its reservation or more, so the copy does not call the overrun slight.
+ * refused), so a budget is described by what byway checks before a call, and cost figures are called estimates.
+ *
+ * How far a call can pass its estimate (ADR-0102, which settles decision D1): byway asks no provider for a fallback
+ * model, so a call is one attempt on the model asked for, and the retry after a decline is a call of its own, admitted
+ * against the budgets. What is left is the estimate's own error: a prompt's tokens are counted without the provider's
+ * tokenizer, and an image model's output per image is a planning figure. The output allowance is reserved whole. So the
+ * copy says a call can cost more than its estimate. It no longer says "twice its estimate or more", which was the size of
+ * a refusal Anthropic routed to another model, and it still does not call the overrun slight: nothing bounds it.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -24,7 +29,7 @@ const BOUND_CLAIMS: { name: string; pattern: RegExp }[] = [
 ];
 
 /** The words both budget sentences and the README use for how far spending can pass a budget. */
-const OVERRUN = 'Estimates can be low, and a single call can cost twice its estimate or more, so';
+const OVERRUN = 'Estimates can be low, so a call can cost more than its estimate, and';
 
 describe('estimates are not bounds (F04)', () => {
   it('no screen, and not the README, promises that a budget cannot be passed', () => {
@@ -50,5 +55,11 @@ describe('estimates are not bounds (F04)', () => {
     const readme = readFileSync(README, 'utf8');
     expect(readme).toMatch(/A run asks before starting a call whose estimated cost would take it over its budget/);
     expect(readme).toContain(`${OVERRUN} spending can end over a budget.`);
+  });
+
+  it('no screen, and not the README, still sizes the overrun by a fallback model that byway no longer asks for (ADR-0102)', () => {
+    const files = [...filesUnder(path.join(WEB, 'src'), /\.tsx?$/), ...filesUnder(path.join(WEB, 'app'), /\.tsx?$/), README];
+    const stale = files.filter((file) => /twice its estimate|routes? to another model|refusal fallbacks?/i.test(readFileSync(file, 'utf8'))).map(rel);
+    expect(stale).toEqual([]);
   });
 });
