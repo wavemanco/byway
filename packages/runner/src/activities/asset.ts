@@ -221,7 +221,10 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * and a decline gets one retry, not one per layer. The slot is not made, and what happened goes in the step's note. The
  * memo keeps that outcome, so the step run again (after a budget raise for a later image, or Temporal's retry) gets it
  * back and asks nothing. An attempt that ended before the gateway's retry was made throws a plain error (memo.ts
- * DeclineRetryPending), never a GatewayError, so it ends the step's attempt rather than count as a failed try here.
+ * DeclineRetryPending), never a GatewayError, so it ends the step's attempt rather than count as a failed try here. One
+ * exception to going on: a retry the provider answered and billed that byway could not keep (its image, its request and
+ * response, or its cost could not be stored or recorded) is a billed failure (`billed`), and it stops the step as any
+ * billed image does, checked before the decline.
  */
 async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | undefined> {
   const { run, call, step } = input;

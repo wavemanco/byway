@@ -46,20 +46,44 @@ function costWords(declinedUsd: number, retryUsd: number | undefined): string {
 }
 
 /**
+ * What byway counts as "may have been billed" for the attempts, beyond what they were billed, in words (ADR-0095): for an
+ * attempt that was settled, the estimate retained for a send of it that may have been billed before it was sent again
+ * (every paid call is sent again like this; for a decline the words name it); for a retry that ended with no answer
+ * byway could record, that it may have been billed, with all byway counts for it. Empty when byway counts nothing.
+ */
+function maybeWords(d: DeclineRecord): string {
+  const declinedUsd = d.uncertainUsd ?? 0;
+  const retryUsd = d.retryUncertainUsd ?? 0;
+  const retrySettled = d.retryCostUsd !== undefined;
+  const resent = [...(declinedUsd > 0 ? ['declined'] : []), ...(retryUsd > 0 && retrySettled ? ['retry'] : [])];
+  const resentUsd = roundUsd(declinedUsd + (retrySettled ? retryUsd : 0));
+  const words: string[] = [];
+  if (resent.length === 2) {
+    words.push(`Both attempts were sent again after a send that may have been billed, so byway also counts ${usd(resentUsd)} for them against the workspace budget (the estimate, once for each such send) until you clear it in Settings.`);
+  } else if (resent.length === 1) {
+    const which = resent[0] === 'declined' ? 'The declined attempt' : 'The retry';
+    words.push(`${which} was sent again after a send that may have been billed, so byway also counts ${usd(resentUsd)} for it against the workspace budget (its estimate, once for each such send) until you clear it in Settings.`);
+  }
+  if (retryUsd > 0 && !retrySettled) {
+    words.push(
+      `The retry may have been billed${d.costUsd > 0 ? ' too' : ''}, so byway counts ${usd(retryUsd)} for it against the workspace budget (its estimate, once for each time it may have reached ${PROVIDER_NAMES[d.provider] ?? d.provider}) until you clear it in Settings.`,
+    );
+  }
+  return words.map((w) => ` ${w}`).join('');
+}
+
+/**
  * What happened, in plain words: who declined what, the reason they gave, what byway did once more, and what each attempt
- * cost: a retry that was billed but brought no usable answer is counted, and one that may have been billed says what
- * byway counts for it until it is cleared in Settings. `what` names the thing declined ("this request", "this image",
- * "the image for shot 2").
+ * cost: a retry that was billed but brought no usable answer is counted, and what byway counts as "may have been billed"
+ * for either attempt (a send that may have been billed before it was sent again, or a retry that ended with no answer
+ * byway could record) is named, until it is cleared in Settings. `what` names the thing declined ("this request", "this
+ * image", "the image for shot 2").
  */
 export function declineStory(d: DeclineRecord, what: string = whatOf(d)): string {
   const reason = d.reason?.replace(/[\s.]+$/, '');
   const first = `${whoOf(d)} declined ${what} ${reason ? `(reason given: ${reason})` : '(no reason given)'}.`;
-  const cost = costWords(d.costUsd, d.retryCostUsd);
+  const cost = `${costWords(d.costUsd, d.retryCostUsd)}${maybeWords(d)}`;
   const problem = d.problem?.replace(/[\s.]+$/, '');
-  const maybe =
-    d.retryUncertainUsd !== undefined && d.retryUncertainUsd > 0
-      ? ` The retry may have been billed${d.costUsd > 0 ? ' too' : ''}, so byway counts ${usd(d.retryUncertainUsd)} for it against the workspace budget (its estimate, once for each time it may have reached ${PROVIDER_NAMES[d.provider] ?? d.provider}) until you clear it in Settings.`
-      : '';
   switch (d.retry) {
     case 'answered':
       return `${first} byway asked it once more, and it answered. ${cost}`;
@@ -68,7 +92,7 @@ export function declineStory(d: DeclineRecord, what: string = whatOf(d)): string
     case 'not-made':
       return `${first} byway did not ask it again: ${problem ?? 'it could not'}. ${cost}`;
     case 'failed':
-      return `${first} byway asked it once more, but that attempt failed: ${problem ?? 'no answer came'}. ${cost}${maybe}`;
+      return `${first} byway asked it once more, but that attempt failed: ${problem ?? 'no answer came'}. ${cost}`;
   }
 }
 
@@ -105,7 +129,10 @@ export function notMadeProblem(err: GatewayError): string | undefined {
   }
 }
 
-/** What to do after a decline that brought no answer: rephrase, or choose another model profile, and what a budget needs. */
+/**
+ * What to do after a decline that brought no answer: rephrase, or choose another model profile, and what a budget needs.
+ * Not for a retry billed that byway could not keep: that failure's own words say what follows (the gateway's askOnceMore).
+ */
 export function declineAdvice(budget?: Pick<BudgetDetails, 'scope'>): string {
   if (budget?.scope === 'run') return 'Rephrase the request, or choose another model profile in Settings, then start again with a larger budget.';
   if (budget?.scope === 'workspace') return 'Rephrase the request, or choose another model profile in Settings, or raise the workspace budget in Settings, then try again.';

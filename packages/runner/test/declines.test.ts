@@ -10,7 +10,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
 import { CATALOG } from '@byway/catalog';
-import type { RunEvent, SpendBook } from '@byway/contracts';
+import type { ArtifactStore, RunEvent, SpendBook } from '@byway/contracts';
 import { createGateway, memorySpendBook, mockAdapter, PRICES, responderFor, type ModelGateway, type PriceRow, type ProviderAdapter, type Responder } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
@@ -154,10 +154,10 @@ describe('an image the model declined, when its step runs again (ADR-0102)', () 
     return { adapter, asks: (prompt: string) => asked.filter((p) => p === prompt).length };
   }
 
-  function imaging(adapter: ProviderAdapter, cap: { run: number }, book: SpendBook = memorySpendBook()): ModelGateway {
+  function imaging(adapter: ProviderAdapter, cap: { run: number }, book: SpendBook = memorySpendBook(), artifacts: ArtifactStore = store.artifacts): ModelGateway {
     const g = createGateway({
       ledgerPath: path.join(dir, 'ledger.jsonl'),
-      artifacts: store.artifacts,
+      artifacts,
       spendBook: book,
       caps: { workspaceCapUsd: () => 100, runCapUsd: () => cap.run },
       env: {},
@@ -229,6 +229,37 @@ describe('an image the model declined, when its step runs again (ADR-0102)', () 
     expect(model.asks(SHOT_1)).toBe(2);
     expect(result.costUsd).toBeCloseTo(0.16, 9);
     expect(await stepNote(input.run.runId)).toContain('byway asked it once more, but that attempt failed: mock returned no image (text only). Both attempts were billed: $0.0800 in all.');
+    const retry = ledger().find((e) => e.retryOf !== undefined)!;
+    expect(declinedEvents(await store.events(input.run.runId)).map((e) => e.data)).toEqual([expect.objectContaining({ retry: 'failed', retryLedgerEntryId: retry.id, retryCostUsd: 0.04 })]);
+  });
+
+  it('a retry billed whose image byway could not store: the step stops, as for any billed image it could not keep, and buys no more images', async () => {
+    const model = imageModel((prompt, n) => (prompt === SHOT_1 && n === 1 ? 'decline' : 'answer'));
+    // The first image byway stores is the retry's: keeping it fails after the retry was billed.
+    let puts = 0;
+    const full: ArtifactStore = {
+      put: async (bytes, mediaType) => {
+        if (++puts === 1) throw new Error('disk full');
+        return store.artifacts.put(bytes, mediaType);
+      },
+      putText: (text, mediaType) => store.artifacts.putText(text, mediaType),
+      get: (id) => store.artifacts.get(id),
+      getText: (id) => store.artifacts.getText(id),
+      has: (id) => store.artifacts.has(id),
+    };
+    const acts = createActivities({ gateway: imaging(model.adapter, { run: 1 }, memorySpendBook(), full), store, prompts: createPromptRenderer() });
+    const input = await frames();
+    const err = await acts.assetStep(input).catch((e: unknown) => e);
+    // The billed failure's own words: nothing is asked again, and the advice for a decline does not follow.
+    expect(err).toBeInstanceOf(ApplicationFailure);
+    expect(err).toMatchObject({
+      type: FAILURE.step,
+      nonRetryable: true,
+      message:
+        'The demo’s model mock-image declined this image (reason given: IMAGE_SAFETY). byway asked it once more, but that attempt failed: mock made the image and billed it, but it could not be stored: disk full. It is not retried, because a retry would pay again. Both attempts were billed: $0.0800 in all. That was the image for shot 1, so the run stops here, at the Custom imagery step, and buys no more images.',
+    });
+    expect(model.asks(SHOT_1)).toBe(2);
+    expect(model.asks('An image for 2')).toBe(0);
     const retry = ledger().find((e) => e.retryOf !== undefined)!;
     expect(declinedEvents(await store.events(input.run.runId)).map((e) => e.data)).toEqual([expect.objectContaining({ retry: 'failed', retryLedgerEntryId: retry.id, retryCostUsd: 0.04 })]);
   });

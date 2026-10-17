@@ -266,10 +266,12 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
         if (kept === saved) throw declined;
         return unwrap(await loadKept(kept));
       }
-      // The retry of a kept decline, not started: no outcome. The step's next attempt asks for the retry alone.
+      // The retry of a kept decline, not started: no outcome. The step's next attempt asks for the retry alone. The words
+      // say what byway does, since no one can try a step of a run again: Temporal tries it while it has tries left, and
+      // the person reads this only when none was (the run's failure is the last attempt's message).
       if (notStarted(e) && (await store.getMemo(scope.runId, declineKey)) !== undefined) {
         throw new DeclineRetryPending(
-          `The model declined ${DECLINED[kind] ?? 'a call this step made'}, and this attempt of the step ended before byway could ask it once more (${firstSentence(e.message)}). Trying the step again asks it once more, without buying the declined call again.`,
+          `The model declined ${DECLINED[kind] ?? 'a call this step made'}, and this attempt of the step ended before byway could ask it once more (${firstSentence(e.message)}). byway tries the step again while it has tries left, and that try asks the model once more without buying the declined call again. If this was the step’s last try, the run stops here: start the run again.`,
           { cause: e },
         );
       }

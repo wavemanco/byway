@@ -332,8 +332,10 @@ describe('a decline is kept like an answer (ADR-0102)', () => {
     const err = await memoGateway(gateway, store, scope, { operation: operation() }).image(image).catch((e: unknown) => e);
     expect(err).not.toBeInstanceOf(GatewayError);
     expect(err).toBeInstanceOf(DeclineRetryPending);
+    // What byway does, not what the person could do: no one can try a failed step again in a run, so the message says the
+    // step is tried again while it has tries, and what the run does when none is left (the person reads it only then).
     expect((err as Error).message).toBe(
-      'The model declined an image this step asked for, and this attempt of the step ended before byway could ask it once more (byway is stopping, so it did not start this call). Trying the step again asks it once more, without buying the declined call again.',
+      'The model declined an image this step asked for, and this attempt of the step ended before byway could ask it once more (byway is stopping, so it did not start this call). byway tries the step again while it has tries left, and that try asks the model once more without buying the declined call again. If this was the step’s last try, the run stops here: start the run again.',
     );
     // Retried by Temporal (a plain error), unlike a step failure.
     expect(toFailure(err)).toBe(err);

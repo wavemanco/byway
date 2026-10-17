@@ -28,7 +28,8 @@ export class ContractMissed extends StepError {
  * A decline kept before byway's one retry of it, whose retry this attempt of the step did not make: the step was stopped,
  * byway is stopping, or byway could not record the retry as sent (ADR-0102). Not the decline's outcome, so it is not a
  * step failure: the attempt ends with this plain error, which Temporal tries again, and the next attempt asks for the
- * retry alone, never the declined call again (memo.ts).
+ * retry alone, never the declined call again (memo.ts). If every try of the step ends this way (byway stopped during each
+ * of them), the run fails with its message, which says that the step had no tries left.
  */
 export class DeclineRetryPending extends Error {
   override name = 'DeclineRetryPending';

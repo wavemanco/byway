@@ -297,7 +297,7 @@ export class ModelGateway implements Gateway {
         { servedModel: out.servedModel, usage: out.usage, ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
         redact,
       );
-      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd };
+      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op) };
       // From here the call is settled and ledgered: a failure says so, with its entry and cost (GatewayError.settled).
       const ledgered = { ledgerEntryId: entry.id, costUsd: entry.costUsd };
       if (out.refusal) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal}`), false, { settled: ledgered });
@@ -400,7 +400,7 @@ export class ModelGateway implements Gateway {
       // From here the call is settled and ledgered: a failure says so, with its entry and cost (GatewayError.settled).
       const ledgered = { ledgerEntryId: entry.id, costUsd: entry.costUsd };
       if (kept?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the image and billed it, but it could not be stored`, kept.error, ledgered);
-      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd };
+      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op) };
       // An answer with no usable image that is not a decline: refused, not asked again here (ENG-5); the asset step decides.
       if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`), false, { settled: ledgered });
       return { answer: { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id } };
@@ -425,11 +425,13 @@ export class ModelGateway implements Gateway {
    *
    * The outcome: the retry's answer, with `declined` set and the declined attempt's cost added to `costUsd`; or a
    * 'refused' GatewayError, never retryable, whose message says what happened (who declined, the reason given), what
-   * became of the retry, what each attempt was billed (a retry billed without a usable answer included, and one that may
-   * have been billed), and what to do. A budget with no room for the retry, or paid calls paused, ends the call here, and
-   * no budget question is asked (ADR-0102 Decision 2). The runner's memo keeps the outcome, so a step that runs again gets
-   * it back and asks nothing: the runner's image step leaves a declined image alone, and Temporal does not retry the
-   * failure.
+   * became of the retry, what each attempt was billed (a retry billed without a usable answer included), what byway
+   * counts for either as "may have been billed" (a send retained before it was sent again, a retry that ended unsettled),
+   * and what to do; for a retry billed that byway could not keep (`billed`), that failure's own words instead of the
+   * advice. The answer's `declined` names the same amounts. A budget with no room for the retry, or paid calls paused,
+   * ends the call here, and no budget question is asked (ADR-0102 Decision 2). The runner's memo keeps the outcome, so a
+   * step that runs again gets it back and asks nothing: the runner's image step leaves a declined image alone (unless the
+   * failure is billed, which stops it), and Temporal does not retry the failure.
    */
   private async askOnceMore<Q extends SpendContext, R extends { costUsd: number; ledgerEntryId: string }>(
     req: Q,
@@ -448,9 +450,14 @@ export class ModelGateway implements Gateway {
       ...(first.declined.reason !== undefined ? { reason: first.declined.reason } : {}),
       ledgerEntryId: first.entryId,
       costUsd: first.costUsd,
+      ...(first.uncertainUsd !== undefined ? { uncertainUsd: first.uncertainUsd } : {}),
     };
+    // A retry billed that byway could not keep (its media, its request and response, or its cost could not be stored or
+    // recorded) is told in that failure's own words ("It is not retried, because a retry would pay again."), not with the
+    // advice for a decline: the second ask was answered, and the fault is byway's. It stays billed, so a caller with tries
+    // of its own stops, as for any billed failure (ADR-0090, ADR-0099).
     const fail = (record: DeclineRecord, opts: { budget?: BudgetDetails; billed?: boolean } = {}) =>
-      new GatewayError('refused', redact(`${declineStory(record)} ${declineAdvice(opts.budget)}`), false, { declined: record, ...(opts.billed ? { billed: true } : {}) });
+      new GatewayError('refused', redact(opts.billed ? declineStory(record) : `${declineStory(record)} ${declineAdvice(opts.budget)}`), false, { declined: record, ...(opts.billed ? { billed: true } : {}) });
     const caller = req.operation;
     const earlier = caller?.declinedEarlier !== undefined;
     const kept = earlier || (await keepDecline(caller, first));
@@ -478,12 +485,14 @@ export class ModelGateway implements Gateway {
       // byway could not mark it sent, so it did not send it: not made, like a refusal at admission.
       if (passing(err)) throw notYet(err, notMadeProblem(err) ?? err.message);
       // Settled and ledgered, then unusable: billed, and counted. Unsettled after a send that may have arrived: counted
-      // at its estimate until cleared in Settings (ADR-0095), which the message says.
-      const billed = err.settled ? { retryLedgerEntryId: err.settled.ledgerEntryId, retryCostUsd: err.settled.costUsd } : op.uncertainUsd > 0 ? { retryUncertainUsd: op.uncertainUsd } : {};
-      throw fail({ ...base, retry: 'failed', problem: err.message, ...billed }, { billed: err.billed === true });
+      // at its estimate until cleared in Settings (ADR-0095), which the message says (retryUncertainUsd, below).
+      const billed = err.settled ? { retryLedgerEntryId: err.settled.ledgerEntryId, retryCostUsd: err.settled.costUsd } : {};
+      throw fail({ ...base, retry: 'failed', problem: err.message, ...billed, ...retryMaybe(op) }, { billed: err.billed === true });
     }
-    if (!('answer' in second)) throw fail({ ...base, retry: 'declined', retryLedgerEntryId: second.entryId, retryCostUsd: second.costUsd });
-    const declined: DeclineRecord = { ...base, retry: 'answered', retryLedgerEntryId: second.answer.ledgerEntryId, retryCostUsd: second.answer.costUsd };
+    // In every outcome the retry was sent in, what the book counts for it as "may have been billed" is named: a send
+    // retained before it was sent again, and (above) its estimate when it ended unsettled (PaidCall.uncertainUsd).
+    if (!('answer' in second)) throw fail({ ...base, retry: 'declined', retryLedgerEntryId: second.entryId, retryCostUsd: second.costUsd, ...retryMaybe(op) });
+    const declined: DeclineRecord = { ...base, retry: 'answered', retryLedgerEntryId: second.answer.ledgerEntryId, retryCostUsd: second.answer.costUsd, ...retryMaybe(op) };
     return { ...second.answer, costUsd: roundUsd(first.costUsd + second.answer.costUsd), declined };
   }
 
@@ -954,19 +963,29 @@ interface ImagePrep {
   estimate: number;
 }
 
-/** A call the provider declined (ADR-0102): the reason it stated, as the ledger recorded it, and its entry and cost. */
+/**
+ * A call the provider declined (ADR-0102): the reason it stated, as the ledger recorded it, its entry and cost, and what
+ * the book retained for a send of it that may have been billed before it was sent again (DeclineRecord.uncertainUsd).
+ */
 interface Declined {
   declined: { reason?: string };
   entryId: string;
   costUsd: number;
+  uncertainUsd?: number;
 }
+
+/** What the book retained for a settled call's sends that may have been billed, as a Declined names it (none: absent). */
+const retainedOf = (op: PaidCall): { uncertainUsd?: number } => (op.retainedUsd > 0 ? { uncertainUsd: op.retainedUsd } : {});
+
+/** What the book counts for an ended retry as "may have been billed" (PaidCall.uncertainUsd), as its record names it. */
+const retryMaybe = (op: PaidCall): { retryUncertainUsd?: number } => (op.uncertainUsd > 0 ? { retryUncertainUsd: op.uncertainUsd } : {});
 
 /** One attempt's outcome: its answer, or a decline for askOnceMore. Every other outcome is thrown. */
 type Attempt<R> = { answer: R } | Declined;
 
 /** A decline an earlier attempt kept (SpendContext.operation.declinedEarlier), as askOnceMore takes it. */
 function declinedFrom(d: DeclinedAttempt): Declined {
-  return { declined: d.reason !== undefined ? { reason: d.reason } : {}, entryId: d.ledgerEntryId, costUsd: d.costUsd };
+  return { declined: d.reason !== undefined ? { reason: d.reason } : {}, entryId: d.ledgerEntryId, costUsd: d.costUsd, ...(d.uncertainUsd !== undefined && d.uncertainUsd > 0 ? { uncertainUsd: d.uncertainUsd } : {}) };
 }
 
 /**
@@ -976,7 +995,12 @@ function declinedFrom(d: DeclinedAttempt): Declined {
 async function keepDecline(caller: SpendContext['operation'], first: Declined): Promise<boolean> {
   if (!caller?.keepDecline) return false;
   try {
-    await caller.keepDecline({ ledgerEntryId: first.entryId, costUsd: first.costUsd, ...(first.declined.reason !== undefined ? { reason: first.declined.reason } : {}) });
+    await caller.keepDecline({
+      ledgerEntryId: first.entryId,
+      costUsd: first.costUsd,
+      ...(first.declined.reason !== undefined ? { reason: first.declined.reason } : {}),
+      ...(first.uncertainUsd !== undefined ? { uncertainUsd: first.uncertainUsd } : {}),
+    });
     return true;
   } catch {
     return false;
@@ -1056,7 +1080,7 @@ function validateOperation(value: unknown): void {
   if (op.cancel !== undefined && !(op.cancel instanceof AbortSignal)) throw invalid('operation.cancel, when given, must be an AbortSignal');
   if (op.keepDecline !== undefined && typeof op.keepDecline !== 'function') throw invalid('operation.keepDecline, when given, must be a function');
   if (op.declinedEarlier !== undefined) {
-    const d = op.declinedEarlier as { ledgerEntryId?: unknown; costUsd?: unknown; reason?: unknown } | null;
+    const d = op.declinedEarlier as { ledgerEntryId?: unknown; costUsd?: unknown; reason?: unknown; uncertainUsd?: unknown } | null;
     const ok =
       typeof d === 'object' &&
       d !== null &&
@@ -1065,8 +1089,9 @@ function validateOperation(value: unknown): void {
       typeof d.costUsd === 'number' &&
       Number.isFinite(d.costUsd) &&
       d.costUsd >= 0 &&
-      (d.reason === undefined || typeof d.reason === 'string');
-    if (!ok) throw invalid('operation.declinedEarlier, when given, must be { ledgerEntryId, costUsd, reason? } as the gateway handed it to keepDecline');
+      (d.reason === undefined || typeof d.reason === 'string') &&
+      (d.uncertainUsd === undefined || (typeof d.uncertainUsd === 'number' && Number.isFinite(d.uncertainUsd) && d.uncertainUsd >= 0));
+    if (!ok) throw invalid('operation.declinedEarlier, when given, must be { ledgerEntryId, costUsd, reason?, uncertainUsd? } as the gateway handed it to keepDecline');
   }
 }
 

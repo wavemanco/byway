@@ -379,7 +379,31 @@ describe('a decline gets one retry on the same model, then a plain failure (ADR-
     const [first, second] = ledgerLines();
     expect(err).toMatchObject({ code: 'refused', billed: true });
     expect(err.declined).toMatchObject({ retry: 'failed', ledgerEntryId: first!.id, costUsd: 0.004, retryLedgerEntryId: second!.id, retryCostUsd: second!.costUsd });
+    // The billed failure's own words say what to do (nothing is asked again); the advice for a decline does not follow.
+    expect(err.message).toMatch(/It is not retried, because a retry would pay again\. Both attempts were billed: \$\d\.\d{4} in all\.$/);
     expect(err.message).toContain(`Both attempts were billed: ${usd(0.004 + (second!.costUsd as number))} in all.`);
+    expect(err.message).not.toContain('Rephrase');
+  });
+
+  it('a retry billed whose image byway could not store: billed, counted, and told in that failure’s own words, not the advice for a decline', async () => {
+    // The declined image stores nothing; the retry's image is made and billed, and keeping it fails (the disk is full).
+    const stop = { modelVersion: 'gemini-nano-banana-2.1', candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [] } }], usageMetadata: { promptTokenCount: 1000 } };
+    const google = fakeGoogle([stop]);
+    const put = artifacts.put.bind(artifacts);
+    artifacts.put = async (bytes, mediaType) => {
+      if (mediaType.startsWith('image/')) throw new Error('disk full');
+      return put(bytes, mediaType);
+    };
+    const err = (await gateway({ clients: { google: google.client } }).image(imageReq()).catch((e: unknown) => e)) as GatewayError;
+    expect(google.calls).toHaveLength(2);
+    const [first, second] = ledgerLines();
+    expect(second).toMatchObject({ retryOf: first!.id });
+    // Billed: a caller with tries of its own (the image step) stops, as for any billed image it could not keep.
+    expect(err).toMatchObject({ code: 'refused', retryable: false, billed: true });
+    expect(err.declined).toMatchObject({ retry: 'failed', retryLedgerEntryId: second!.id, retryCostUsd: second!.costUsd });
+    expect(err.message).toBe(
+      `Google’s model gemini-nano-banana-2.1 declined this image (reason given: IMAGE_SAFETY). byway asked it once more, but that attempt failed: google made the image and billed it, but it could not be stored: disk full. It is not retried, because a retry would pay again. Both attempts were billed: ${usd((first!.costUsd as number) + (second!.costUsd as number))} in all.`,
+    );
   });
 
   it('a retry that may have been billed says so, and what byway counts for it until it is cleared in Settings', async () => {
@@ -397,6 +421,62 @@ describe('a decline gets one retry on the same model, then a plain failure (ADR-
       `byway asked it once more, but that attempt failed: anthropic returned 502: 502 bad gateway. The declined attempt was billed: $0.0040. The retry may have been billed too, so byway counts ${usd(2 * estimate)} for it against the workspace budget (its estimate, once for each time it may have reached Anthropic) until you clear it in Settings. ${TODO}`,
     );
     expect((await g.spend('ws-1')).uncertainUsd).toBeCloseTo(2 * estimate, 9);
+  });
+
+  it('a declined call billed whose request and response byway could not store is a billed failure like any other: nothing more is asked', async () => {
+    const { client, calls } = fakeAnthropic([declined('cyber')]);
+    artifacts.putText = async () => {
+      throw new Error('disk full');
+    };
+    const err = (await gateway({ clients: { anthropic: client } }).complete(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(calls).toHaveLength(1);
+    expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billed: true });
+    expect(err.declined).toBeUndefined();
+    expect(err.message).toMatch(/^anthropic answered and billed this call \(critic:web-page\) and its cost is recorded \(entry [^)]+\), but its request and response could not be stored: disk full\. It is not retried, because a retry would pay again\.$/);
+    expect(ledgerLines()).toEqual([expect.objectContaining({ declined: { reason: 'cyber' } })]);
+  });
+
+  /**
+   * A send that may have been billed (a bare 502 after the request went out) is sent again once, its estimate retained
+   * against the workspace until cleared in Settings (ADR-0095). Every paid call does this. For a decline, the record
+   * and the words name what is retained for either attempt, whatever became of the retry, as they name a retry that may
+   * have been billed.
+   */
+  it('a retry sent again after a send that may have been billed, then answered: the record and the words name what byway counts for that send', async () => {
+    const dropped = () => httpError(502, '502 bad gateway');
+    const { client, calls } = fakeAnthropic([declined('cyber'), dropped()]);
+    const g = gateway({ clients: { anthropic: client } });
+    const res = await g.complete(req());
+    expect(calls).toHaveLength(3);
+    const estimate = admitted[1]!.reserveUsd;
+    expect(res.declined).toMatchObject({ retry: 'answered', retryUncertainUsd: estimate });
+    expect(res.declined).not.toHaveProperty('uncertainUsd');
+    expect(declineStory(res.declined!)).toBe(
+      `Anthropic’s model claude-opus-5-5 declined this request (reason given: cyber). byway asked it once more, and it answered. Both attempts were billed: ${usd(res.costUsd)} in all. The retry was sent again after a send that may have been billed, so byway also counts ${usd(estimate)} for it against the workspace budget (its estimate, once for each such send) until you clear it in Settings.`,
+    );
+    expect((await g.spend('ws-1')).uncertainUsd).toBeCloseTo(estimate, 9);
+  });
+
+  it('a declined call sent again after a send that may have been billed: kept with what byway counts for it, and named in the record and the words', async () => {
+    const until = new AbortController();
+    const kept: DeclinedAttempt[] = [];
+    const dropped = () => httpError(502, '502 bad gateway');
+    const { client, calls } = fakeAnthropic([dropped(), declined('cyber'), dropped(), declined('cyber')]);
+    const g = gateway({ clients: { anthropic: client } });
+    const err = (await g
+      .complete(req({ operation: { key: 'run-1/run-1/critic/-/1/complete/abc/1', until: until.signal, keepDecline: async (first) => void kept.push(first) } }))
+      .catch((e: unknown) => e)) as GatewayError;
+    expect(calls).toHaveLength(4);
+    const estimate = admitted[0]!.reserveUsd;
+    expect(admitted[1]!.reserveUsd).toBe(estimate);
+    const [first] = ledgerLines();
+    expect(kept).toEqual([{ ledgerEntryId: first!.id, costUsd: 0.004, reason: 'cyber', uncertainUsd: estimate }]);
+    expect(err.declined).toMatchObject({ retry: 'declined', uncertainUsd: estimate, retryUncertainUsd: estimate });
+    expect(err.message).toBe(
+      `Anthropic’s model claude-opus-5-5 declined this request (reason given: cyber). byway asked it once more, and it declined again. Both attempts were billed: $0.0080 in all. Both attempts were sent again after a send that may have been billed, so byway also counts ${usd(2 * estimate)} for them against the workspace budget (the estimate, once for each such send) until you clear it in Settings. ${TODO}`,
+    );
+    expect((await g.spend('ws-1')).uncertainUsd).toBeCloseTo(2 * estimate, 9);
+    until.abort();
   });
 
   it('a reason that holds a key or text with no canonical form reaches the ledger redacted and well formed', async () => {
@@ -441,6 +521,21 @@ describe('what each attempt cost, in words from its own cost (ADR-0102)', () => 
       'byway asked it once more, but that attempt failed: google returned 502. byway recorded no cost for the declined attempt. The retry may have been billed, so byway counts $0.0336 for it against the workspace budget (its estimate, once for each time it may have reached Google) until you clear it in Settings.',
     );
     expect(story({ retry: 'not-made', problem: 'paid calls are paused', retryLedgerEntryId: undefined, retryCostUsd: undefined })).toBe('byway did not ask it again: paid calls are paused. The declined attempt was billed: $0.0336.');
+  });
+
+  it('names what byway counts for a send of either attempt that may have been billed before it was sent again, whatever became of the retry', () => {
+    const resent = (what: string, usdText: string, them = false) =>
+      `${what} sent again after a send that may have been billed, so byway also counts ${usdText} for ${them ? 'them' : 'it'} against the workspace budget (${them ? 'the' : 'its'} estimate, once for each such send) until you clear it in Settings.`;
+    expect(story({ uncertainUsd: 0.0336 })).toBe(`byway asked it once more, and it declined again. Both attempts were billed: $0.0672 in all. ${resent('The declined attempt was', '$0.0336')}`);
+    expect(story({ retry: 'answered', retryUncertainUsd: 0.0336 })).toBe(`byway asked it once more, and it answered. Both attempts were billed: $0.0672 in all. ${resent('The retry was', '$0.0336')}`);
+    expect(story({ uncertainUsd: 0.0336, retryUncertainUsd: 0.0336 })).toBe(`byway asked it once more, and it declined again. Both attempts were billed: $0.0672 in all. ${resent('Both attempts were', '$0.0672', true)}`);
+    expect(story({ retry: 'not-made', problem: 'paid calls are paused', retryLedgerEntryId: undefined, retryCostUsd: undefined, uncertainUsd: 0.0336 })).toBe(
+      `byway did not ask it again: paid calls are paused. The declined attempt was billed: $0.0336. ${resent('The declined attempt was', '$0.0336')}`,
+    );
+    // A retry that ended with no answer byway recorded keeps its own sentence; the declined attempt's resend is named apart.
+    expect(story({ uncertainUsd: 0.0336, retry: 'failed', problem: 'google returned 502', retryLedgerEntryId: undefined, retryCostUsd: undefined, retryUncertainUsd: 0.0672 })).toBe(
+      `byway asked it once more, but that attempt failed: google returned 502. The declined attempt was billed: $0.0336. ${resent('The declined attempt was', '$0.0336')} The retry may have been billed too, so byway counts $0.0672 for it against the workspace budget (its estimate, once for each time it may have reached Google) until you clear it in Settings.`,
+    );
   });
 });
 
@@ -487,6 +582,11 @@ describe('a decline its caller keeps (ADR-0102)', () => {
       retryCostUsd: retry!.costUsd,
     });
     expect(res.costUsd).toBeCloseTo(0.004 + (retry!.costUsd as number), 9);
+    // What an earlier attempt counted for a send of the declined call that may have been billed stays named.
+    const resent = await gateway({ clients: { anthropic: fakeAnthropic().client } }).complete(
+      req({ operation: { key: `${key}/resent`, until: until.signal, declinedEarlier: { ...declinedEarlier, uncertainUsd: 0.02 } } }),
+    );
+    expect(resent.declined).toMatchObject({ ledgerEntryId: 'entry-1', uncertainUsd: 0.02, retry: 'answered' });
     until.abort();
   });
 
@@ -532,7 +632,8 @@ describe('a decline its caller keeps (ADR-0102)', () => {
     until.abort();
   });
 
-  it('when another attempt holds the retry, this one waits for its outcome (in-flight) rather than ending the call', async () => {
+  // The gateway's side only: the runner's memo layer then waits for the other attempt's kept outcome (overlap.test.ts).
+  it('when another attempt holds the retry, the gateway throws its in-flight refusal as it is, not a final decline', async () => {
     const until = new AbortController();
     const book = memorySpendBook();
     const admit = book.admit.bind(book);
@@ -571,6 +672,10 @@ describe('a decline its caller keeps (ADR-0102)', () => {
     const until = new AbortController();
     const bad = { ledgerEntryId: '', costUsd: 0.004 } as DeclinedAttempt;
     await expect(gateway().complete(req({ operation: { key, until: until.signal, declinedEarlier: bad } }))).rejects.toMatchObject({ code: 'invalid-request' });
+    for (const uncertainUsd of [-1, Number.NaN, '0.02' as unknown as number]) {
+      const counted: DeclinedAttempt = { ledgerEntryId: 'entry-1', costUsd: 0.004, uncertainUsd };
+      await expect(gateway().complete(req({ operation: { key, until: until.signal, declinedEarlier: counted } }))).rejects.toMatchObject({ code: 'invalid-request' });
+    }
     const notAHook = 'yes' as unknown as (first: DeclinedAttempt) => Promise<void>;
     await expect(gateway().complete(req({ operation: { key, until: until.signal, keepDecline: notAHook } }))).rejects.toMatchObject({ code: 'invalid-request' });
     expect(admitted).toEqual([]);

@@ -77,10 +77,22 @@ describe('estimates are not bounds (F04)', () => {
 
   it('the README says what a decline does to a step and to an image step, for every outcome of the second ask (ADR-0102)', () => {
     const readme = readFileSync(README, 'utf8');
-    expect(readme).toContain('If it declines again, or that second call fails or cannot be made, the call ends there.');
-    expect(readme).toContain('A step then stops with a message that says what happened, what was billed, and what to do: rephrase the request, or choose another model profile in Settings.');
-    expect(readme).toContain('An image step instead goes on without that image, and its note says what happened and what was billed.');
-    expect(readme).toContain('A step that runs again (after a restart, or after you raise its budget) does not buy the declined call again.');
+    // The call ends only for the reasons that end it: a second ask byway stopped before making is made by the step's next
+    // attempt (ADR-0102 Decision 2), so "cannot be made" names its two final reasons.
+    expect(readme).toContain('If it declines again, or that second call fails, or it cannot be made (a budget has no room for it, or paid calls are paused), the call ends there.');
+    expect(readme).toContain(
+      'A step then stops with a message that says what happened, what was billed (or may have been), and what to do: rephrase the request, or choose another model profile in Settings, and, when a budget had no room, start again with a larger budget or raise the workspace budget.',
+    );
+    expect(readme).toContain('An image step instead goes on without that image, and its note says what happened and what was billed (or may have been).');
+    // A billed call byway could not keep, either one, stops the run, an image step's too (ADR-0090, ADR-0099).
+    expect(readme).toContain(
+      'One exception: when either call was billed and byway could not keep it (its image, its request and response, or its cost could not be stored or recorded), byway asks nothing more, the message says so instead of that advice, and the run stops, at an image step too, as it does for any billed call byway cannot keep.',
+    );
+    // The window ADR-0102 names: between a call being settled and its result being kept.
+    expect(readme).toContain(
+      'A step that runs again (after a restart, or after you raise its budget) does not buy the declined call again, unless byway was killed in the moment between a call being billed and its result being kept.',
+    );
     expect(readme).not.toContain('the step stops with a message');
+    expect(readme).not.toContain('fails or cannot be made, the call ends there');
   });
 });

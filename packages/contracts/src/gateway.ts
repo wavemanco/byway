@@ -95,6 +95,8 @@ export interface DeclinedAttempt {
   costUsd: number;
   /** The reason the provider stated, as the ledger recorded it, when it gave one. */
   reason?: string;
+  /** What byway counts for it as "may have been billed" (DeclineRecord.uncertainUsd), when anything. */
+  uncertainUsd?: number;
 }
 
 /**
@@ -133,9 +135,18 @@ export interface DeclineRecord {
   retryLedgerEntryId?: string;
   retryCostUsd?: number;
   /**
-   * Set on `failed` when the retry may have been billed without byway learning its cost (it was sent, and no answer came
-   * back that byway could record): what byway counts for it against the workspace budget until the person clears it in
-   * Settings, its estimate once for each time it may have reached the provider (ADR-0095).
+   * What byway counts for the declined call as "may have been billed" beyond its recorded cost, when anything: the
+   * estimate retained for each send of it that may have been billed before it was sent again (a bare 502 after the
+   * request went out), counted against the workspace budget until the person clears it in Settings (ADR-0095). Every
+   * paid call is sent again like this; for a decline, the record and its words name it.
+   */
+  uncertainUsd?: number;
+  /**
+   * What byway counts for the retry as "may have been billed" beyond any recorded cost, when anything, in every outcome
+   * it was sent in: the estimate retained for each send of it that may have been billed before it was sent again, and,
+   * when it ended with no answer byway could record (`failed` with no `retryCostUsd`: it was sent, and it may have
+   * reached the provider), its estimate once more. Counted against the workspace budget until the person clears it in
+   * Settings (ADR-0095).
    */
   retryUncertainUsd?: number;
   /** Why the retry was not made, or how it failed, in words. */
@@ -378,8 +389,11 @@ export class GatewayError extends Error {
   /**
    * Set on 'refused' when the model declined the call and byway's one retry on the same model did not bring an answer
    * (ADR-0102): what was declined, why, what both attempts cost, and what became of the retry. The message says the same
-   * in plain words, with what to do. Never retryable: asking a third time would break the rule. A caller that keeps
-   * outcomes (the runner's memo) keeps this one, so a step that runs again gets it back and asks nothing.
+   * in plain words, with what to do; when the retry was billed and byway could not keep it (`billed`: its media, its
+   * request and response, or its cost could not be stored or recorded), that failure's own words say it instead, and a
+   * caller with tries of its own stops, as for any billed failure. Never retryable: asking a third time would break the
+   * rule. A caller that keeps outcomes (the runner's memo) keeps this one, so a step that runs again gets it back and
+   * asks nothing.
    */
   declined?: DeclineRecord;
   /**

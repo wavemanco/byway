@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CompletionRequest, SpendBook, Store, VideoRequest } from '@byway/contracts';
+import { GatewayError, type CompletionRequest, type SpendBook, type Store, type VideoRequest } from '@byway/contracts';
 import { createGateway, falAdapter, type FalClientLike, type ModelGateway, type PriceRow, type ProviderAdapter } from '@byway/gateway';
 import { PRICES } from '@byway/gateway';
 import { StepError } from '../src/activities/failures.ts';
@@ -281,6 +281,68 @@ describe('two attempts of one step’s paid call (F03 stage 3, ADR-0099)', () =>
     expect(op?.until).toBe(first.invocation.done);
     expect(op?.cancel).toBe(first.cancel.signal);
     first.invocation.stop();
+  });
+});
+
+/**
+ * A decline whose one retry (ADR-0102) attempt 1 holds when attempt 2 starts. Attempt 2 finds the decline attempt 1
+ * kept, so it asks the gateway for the retry alone; the spend book refuses it 'in-flight' (attempt 1 holds the retry's
+ * key), and the gateway throws that as it is. The memo layer then waits, as for any call another attempt holds, and gets
+ * attempt 1's kept final decline, word for word: the model is asked twice in all, never a third time.
+ */
+describe('two attempts of one step’s declined call (ADR-0102)', () => {
+  it('attempt 2 waits while attempt 1 holds the retry, then gets attempt 1’s kept final decline; the model is asked twice in all', async () => {
+    let calls = 0;
+    const waiting: (() => void)[] = [];
+    const adapter = {
+      id: 'anthropic',
+      async complete(req: { model: string }) {
+        calls += 1;
+        // The retry hangs until released, then declines again.
+        if (calls === 2) await new Promise<void>((r) => waiting.push(r));
+        return { text: '', refusal: 'declined (cyber)', declined: { reason: 'cyber' }, servedModel: req.model, usage: { inputTokens: 0, outputTokens: 1000 }, requestBody: {}, responseBody: {} };
+      },
+    } as unknown as ProviderAdapter;
+    const worker = gateway({ anthropic: adapter });
+    const first = attempt();
+    const one = memoGateway(worker, store, scope(), { ...QUICK, operation: first.operation })
+      .complete(ask())
+      .catch((e: unknown) => e);
+    await until(() => calls === 2);
+    // Attempt 1 kept the decline and holds the retry.
+    const seen: CompletionRequest[] = [];
+    const watched = new Proxy(worker, {
+      get(target, prop, receiver) {
+        if (prop === 'complete') return async (req: CompletionRequest) => (seen.push(req), target.complete(req));
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    });
+    const second = attempt();
+    let twoDone = false;
+    const two = memoGateway(watched, store, scope(), { ...QUICK, operation: second.operation })
+      .complete(ask())
+      .catch((e: unknown) => e)
+      .finally(() => (twoDone = true));
+    await until(() => seen.length >= 3);
+    // Attempt 2 asked for the retry alone, more than once (the memo asks again now and then), and is still waiting.
+    expect(twoDone).toBe(false);
+    for (const req of seen) {
+      expect(req.operation).toMatchObject({ declinedEarlier: { costUsd: 0.1, reason: 'cyber' } });
+      expect(req.operation).not.toHaveProperty('keepDecline');
+    }
+    expect(calls).toBe(2);
+    waiting.splice(0).forEach((r) => r());
+    const a = await one;
+    first.invocation.stop();
+    const b = await two;
+    second.invocation.stop();
+    expect(a).toBeInstanceOf(GatewayError);
+    expect(a).toMatchObject({ code: 'refused', retryable: false, declined: { retry: 'declined', reason: 'cyber', costUsd: 0.1, retryCostUsd: 0.1 } });
+    // The kept outcome, as attempt 1's gateway threw it.
+    expect(b).toBeInstanceOf(GatewayError);
+    expect(b).toMatchObject({ code: 'refused', retryable: false, message: (a as GatewayError).message, declined: (a as GatewayError).declined });
+    expect(calls).toBe(2);
+    expect(await worker.spend(workspaceId)).toMatchObject({ spentUsd: 0.2, inFlightUsd: 0, uncertainUsd: 0 });
   });
 });
 
