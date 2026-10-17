@@ -76,12 +76,12 @@ jobs:
           printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' "profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,' '}' | sudo tee /etc/apparmor.d/playwright-chromium
           sudo apparmor_parser --replace /etc/apparmor.d/playwright-chromium
 
-      # Bring-up round 4 only: does a CJK font with vertical metrics change how Chromium lays out a vertical page?
-      - name: voice probe with the runner's fonts
-        run: pnpm vitest run packages/runner/test/zz-linux-probe.test.ts --silent=false
+      # Bring-up round 5 only: which font Chromium uses for a vertical Japanese flex row, and how each lays it out.
+      - name: font probe with the runner's fonts
+        working-directory: packages/runner
+        run: node test/zz-font-probe.mjs
       - name: install Noto CJK
-        run: time sudo apt-get install -y --no-install-recommends fonts-noto-cjk && fc-match 'sans-serif:lang=ja' && fc-match 'serif:lang=ja'
-      - name: voice probe with Noto CJK
-        run: pnpm vitest run packages/runner/test/zz-linux-probe.test.ts --silent=false
-      - name: the voice and page tests with Noto CJK
-        run: pnpm vitest run packages/runner/test/voice.test.ts packages/runner/test/pages.test.ts packages/runner/test/cards.test.ts
+        run: sudo apt-get install -y --no-install-recommends fonts-noto-cjk > /dev/null && fc-match 'sans-serif:lang=ja' && ls /etc/fonts/conf.d | grep -i 'wqy|noto|ipa'
+      - name: font probe with Noto CJK
+        working-directory: packages/runner
+        run: node test/zz-font-probe.mjs
