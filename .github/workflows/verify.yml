@@ -38,7 +38,6 @@ jobs:
         # One entry per operating system. macOS is not run yet; to add it later:
         #   - { name: macos, os: macos-15, playwright: chromium }
         include:
-          - { name: windows, os: windows-2025, playwright: chromium }
           - { name: linux, os: ubuntu-24.04, playwright: --with-deps chromium }
     steps:
       - name: Check out, with the whole history (the decision-log check reads main's)
@@ -77,31 +76,12 @@ jobs:
           printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' "profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,' '}' | sudo tee /etc/apparmor.d/playwright-chromium
           sudo apparmor_parser --replace /etc/apparmor.d/playwright-chromium
 
-      # Bring-up only (D2 needs it): can Chromium start inside its OS sandbox on this runner?
-      - name: Chromium's OS sandbox on this runner (bring-up probe)
-        if: ${{ matrix.name == 'linux' && !cancelled() }}
-        working-directory: apps/web
-        run: |
-          uname -a; id -u
-          for k in kernel.apparmor_restrict_unprivileged_userns kernel.apparmor_restrict_unprivileged_unconfined kernel.unprivileged_userns_clone user.max_user_namespaces; do sysctl "$k" 2>&1 || true; done
-          ls -d $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome* || true
-          probe() { node --input-type=module -e "const { chromium } = await import('@playwright/test'); for (const [label, opts] of [['headless shell', {}], ['full chromium', { channel: 'chromium' }]]) for (const sandbox of [false, true]) { const t = Date.now(); try { const b = await chromium.launch({ headless: true, chromiumSandbox: sandbox, ...opts }); const p = await b.newPage(); await p.setContent('<p>drawn</p>'); console.log(label + ', sandbox ' + sandbox + ': ' + (await p.textContent('p')) + ' in ' + (Date.now() - t) + ' ms'); await b.close(); } catch (e) { console.log(label + ', sandbox ' + sandbox + ': failed: ' + String(e.message).split(String.fromCharCode(10)).filter(Boolean).slice(0, 3).join(' | ')); } }"; }
-          echo '--- with the AppArmor profile for the Playwright Chromium binaries'; probe
-          echo '--- without it'; sudo apparmor_parser --remove /etc/apparmor.d/playwright-chromium && probe
-          sudo apparmor_parser --replace /etc/apparmor.d/playwright-chromium
-
-      # Bring-up only: the Japanese vertical page the voice test reads, as Chromium reads it here.
-      - name: voice probe (bring-up)
-        if: ${{ matrix.name == 'linux' && !cancelled() }}
-        run: pnpm vitest run packages/runner/test/zz-linux-probe.test.ts --silent=false; fc-match 'sans-serif:lang=ja'; fc-match 'serif:lang=ja'; fc-match 'Times New Roman:lang=ja'; fc-list :lang=ja family | sort | head -20
-
-      # Bring-up only: the three steps of pnpm verify, each run even when one before it fails.
-      - name: typecheck
-        if: ${{ !cancelled() }}
-        run: pnpm -s typecheck
-      - name: unit tests
-        if: ${{ !cancelled() }}
-        run: pnpm test
-      - name: end-to-end
-        if: ${{ !cancelled() }}
-        run: pnpm e2e
+      # Bring-up round 4 only: does a CJK font with vertical metrics change how Chromium lays out a vertical page?
+      - name: voice probe with the runner's fonts
+        run: pnpm vitest run packages/runner/test/zz-linux-probe.test.ts --silent=false
+      - name: install Noto CJK
+        run: time sudo apt-get install -y --no-install-recommends fonts-noto-cjk && fc-match 'sans-serif:lang=ja' && fc-match 'serif:lang=ja'
+      - name: voice probe with Noto CJK
+        run: pnpm vitest run packages/runner/test/zz-linux-probe.test.ts --silent=false
+      - name: the voice and page tests with Noto CJK
+        run: pnpm vitest run packages/runner/test/voice.test.ts packages/runner/test/pages.test.ts packages/runner/test/cards.test.ts

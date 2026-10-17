@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 /** Bring-up only (D4): what Chromium reads of one vertical Japanese page on this computer. Removed before merge. */
 import { afterAll, it } from 'vitest';
 import { playwrightPages } from '../src/pages.ts';
