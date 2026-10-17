@@ -68,6 +68,15 @@ jobs:
         working-directory: packages/runner
         run: node --input-type=module -e "const { TestWorkflowEnvironment } = await import('@temporalio/testing'); const env = await TestWorkflowEnvironment.createLocal(); await env.teardown(); console.log('Temporal CLI ready');"
 
+      # Linux restricts unprivileged user namespaces (Ubuntu 23.10 and later), which Chromium's OS sandbox needs. One
+      # renderer test starts Chromium inside its sandbox as a control, so Playwright's Chromium gets a profile that
+      # allows them; the rest of the machine stays restricted.
+      - name: Let Playwright's Chromium start its OS sandbox (an AppArmor profile, Linux only)
+        if: ${{ matrix.name == 'linux' }}
+        run: |
+          printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' "profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,' '}' | sudo tee /etc/apparmor.d/playwright-chromium
+          sudo apparmor_parser --replace /etc/apparmor.d/playwright-chromium
+
       # Bring-up only (D2 needs it): can Chromium start inside its OS sandbox on this runner?
       - name: Chromium's OS sandbox on this runner (bring-up probe)
         if: ${{ matrix.name == 'linux' && !cancelled() }}
@@ -75,10 +84,16 @@ jobs:
         run: |
           uname -a; id -u
           for k in kernel.apparmor_restrict_unprivileged_userns kernel.apparmor_restrict_unprivileged_unconfined kernel.unprivileged_userns_clone user.max_user_namespaces; do sysctl "$k" 2>&1 || true; done
-          probe() { node --input-type=module -e "const { chromium } = await import('@playwright/test'); for (const sandbox of [false, true]) { const t = Date.now(); try { const b = await chromium.launch({ headless: true, chromiumSandbox: sandbox }); const p = await b.newPage(); await p.setContent('<p>drawn</p>'); console.log('sandbox ' + sandbox + ': ' + (await p.textContent('p')) + ' in ' + (Date.now() - t) + ' ms'); await b.close(); } catch (e) { console.log('sandbox ' + sandbox + ': failed: ' + String(e.message).split('\n').filter(Boolean).slice(0, 4).join(' | ')); } }"; }
-          echo '--- as the runner is set up'; probe
-          echo '--- with kernel.apparmor_restrict_unprivileged_userns=0'; sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 && probe
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 || true
+          ls -d $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome* || true
+          probe() { node --input-type=module -e "const { chromium } = await import('@playwright/test'); for (const [label, opts] of [['headless shell', {}], ['full chromium', { channel: 'chromium' }]]) for (const sandbox of [false, true]) { const t = Date.now(); try { const b = await chromium.launch({ headless: true, chromiumSandbox: sandbox, ...opts }); const p = await b.newPage(); await p.setContent('<p>drawn</p>'); console.log(label + ', sandbox ' + sandbox + ': ' + (await p.textContent('p')) + ' in ' + (Date.now() - t) + ' ms'); await b.close(); } catch (e) { console.log(label + ', sandbox ' + sandbox + ': failed: ' + String(e.message).split(String.fromCharCode(10)).filter(Boolean).slice(0, 3).join(' | ')); } }"; }
+          echo '--- with the AppArmor profile for the Playwright Chromium binaries'; probe
+          echo '--- without it'; sudo apparmor_parser --remove /etc/apparmor.d/playwright-chromium && probe
+          sudo apparmor_parser --replace /etc/apparmor.d/playwright-chromium
+
+      # Bring-up only: the Japanese vertical page the voice test reads, as Chromium reads it here.
+      - name: voice probe (bring-up)
+        if: ${{ matrix.name == 'linux' && !cancelled() }}
+        run: pnpm vitest run packages/runner/test/zz-linux-probe.test.ts --silent=false; fc-match 'sans-serif:lang=ja'; fc-match 'serif:lang=ja'; fc-match 'Times New Roman:lang=ja'; fc-list :lang=ja family | sort | head -20
 
       # Bring-up only: the three steps of pnpm verify, each run even when one before it fails.
       - name: typecheck
