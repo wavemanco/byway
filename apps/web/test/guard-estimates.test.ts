@@ -86,7 +86,7 @@ describe('estimates are not bounds (F04)', () => {
     expect(readme).toContain('An image step instead goes on without that image, and its note says what happened and what was billed (or may have been).');
     // A billed call byway could not keep, either one, stops the run, an image step's too (ADR-0090, ADR-0099).
     expect(readme).toContain(
-      'One exception: when either call was billed and byway could not keep it (its image, its request and response, or its cost could not be stored or recorded), byway asks nothing more, the message says so instead of that advice, and the run stops, at an image step too, as it does for any billed call byway cannot keep.',
+      "One exception: when either call was billed and byway could not keep it (its image, its request and response, or its cost could not be stored or recorded), or the retry's answer held one of your keys (byway never uses such an answer), byway asks nothing more, the message says so instead of that advice, and the run stops, at an image step too, as it does for any billed call byway cannot keep.",
     );
     // The window ADR-0102 names: between a call being settled and its result being kept.
     expect(readme).toContain(

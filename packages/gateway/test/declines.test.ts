@@ -537,6 +537,13 @@ describe('what each attempt cost, in words from its own cost (ADR-0102)', () => 
       `byway asked it once more, but that attempt failed: google returned 502. The declined attempt was billed: $0.0336. ${resent('The declined attempt was', '$0.0336')} The retry may have been billed too, so byway counts $0.0672 for it against the workspace budget (its estimate, once for each time it may have reached Google) until you clear it in Settings.`,
     );
   });
+
+  it('names the demo with a capital only where it opens a sentence', () => {
+    const words = declineStory(record({ provider: 'mock', model: 'mock-image', retry: 'failed', problem: 'mock returned 502', retryLedgerEntryId: undefined, retryCostUsd: undefined, retryUncertainUsd: 0.0336 }));
+    expect(words).toMatch(/^The demo’s model mock-image declined /);
+    expect(words).toContain('(its estimate, once for each time it may have reached the demo)');
+    expect(words).not.toContain('reached The demo');
+  });
 });
 
 /**

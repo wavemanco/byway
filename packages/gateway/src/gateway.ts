@@ -453,7 +453,7 @@ export class ModelGateway implements Gateway {
       ...(first.uncertainUsd !== undefined ? { uncertainUsd: first.uncertainUsd } : {}),
     };
     // A retry billed that byway could not keep (its media, its request and response, or its cost could not be stored or
-    // recorded) is told in that failure's own words ("It is not retried, because a retry would pay again."), not with the
+    // recorded), or would not use (its answer held one of the person's keys, ADR-0088), is told in that failure's own words ("It is not retried, because a retry would pay again."), not with the
     // advice for a decline: the second ask was answered, and the fault is byway's. It stays billed, so a caller with tries
     // of its own stops, as for any billed failure (ADR-0090, ADR-0099).
     const fail = (record: DeclineRecord, opts: { budget?: BudgetDetails; billed?: boolean } = {}) =>

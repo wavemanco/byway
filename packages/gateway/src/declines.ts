@@ -8,6 +8,8 @@ import type { BudgetDetails, DeclineRecord, GatewayError, ProviderId } from '@by
 import type { Redactor } from './redact.ts';
 
 const PROVIDER_NAMES: Record<ProviderId, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google', openrouter: 'OpenRouter', fal: 'fal.ai', mock: 'The demo' };
+/** A provider's name inside a sentence: the demo is no company, so it takes no capital there. */
+const nameInSentence = (p: ProviderId): string => (p === 'mock' ? 'the demo' : (PROVIDER_NAMES[p] ?? p));
 
 /** How long a stated reason may be in the ledger and in what the person reads (OpenAI's is the model's own sentence). */
 export const MAX_REASON_CHARS = 200;
@@ -66,7 +68,7 @@ function maybeWords(d: DeclineRecord): string {
   }
   if (retryUsd > 0 && !retrySettled) {
     words.push(
-      `The retry may have been billed${d.costUsd > 0 ? ' too' : ''}, so byway counts ${usd(retryUsd)} for it against the workspace budget (its estimate, once for each time it may have reached ${PROVIDER_NAMES[d.provider] ?? d.provider}) until you clear it in Settings.`,
+      `The retry may have been billed${d.costUsd > 0 ? ' too' : ''}, so byway counts ${usd(retryUsd)} for it against the workspace budget (its estimate, once for each time it may have reached ${nameInSentence(d.provider)}) until you clear it in Settings.`,
     );
   }
   return words.map((w) => ` ${w}`).join('');
