@@ -3,6 +3,7 @@
  * Product data lives in its own data directory and never feeds a confirmatory study (ADR-0041 rule 3, CR3/CR12).
  */
 import type { ChooserAnswer, ComposeResult, ProblemBrief, Recommendation } from './advisor.ts';
+import type { DeclineRecord } from './gateway.ts';
 import type { Medium } from './medium.ts';
 import type { SpendBook } from './spend.ts';
 
@@ -61,7 +62,9 @@ export type RunEventType =
   | 'run-failed'
   | 'run-cancelled'
   | 'run-paused'
-  | 'run-resumed';
+  | 'run-resumed'
+  /** A model declined a call, and byway asked it once more (ADR-0102). */
+  | 'model-declined';
 
 /**
  * The payload each event type carries (RunEvent.data). The runner emits exactly these; the app reads them. Extra keys
@@ -85,6 +88,12 @@ export interface RunEventPayloads {
   'run-cancelled': Record<string, never>;
   'run-paused': Record<string, never>;
   'run-resumed': Record<string, never>;
+  /**
+   * One per decline (ADR-0102), written once byway's one retry on the same model has an outcome: who declined what and
+   * why, what became of the retry, the two ledger entries and their costs (DeclineRecord), and `note`, the same in plain
+   * words. The step's own failure or note says what it means for the run.
+   */
+  'model-declined': DeclineRecord & { note: string };
 }
 
 /** A RunEvent whose data is typed by its event type. */

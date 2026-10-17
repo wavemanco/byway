@@ -325,6 +325,8 @@ export class PaidCall {
   private ended = false;
   /** The billing of the last failed attempt: decides release or abandon if the call ends without an answer. */
   private lastFailure: Billing | undefined;
+  /** What the book retained for sends that may have been billed before this call was sent again (retain). */
+  private retained = 0;
   private readonly calls: PaidCalls;
   private readonly req: PaidCallRequest;
   private readonly caps: () => Promise<AdmitRequest['caps']>;
@@ -387,6 +389,27 @@ export class PaidCall {
   async retain(usd: number, workspaceCapUsd: number): Promise<void> {
     const out = await this.calls.book.retain(this.opId, usd, workspaceCapUsd);
     if ('budget' in out) throw budgetError(out.budget);
+    this.retained = Math.round((this.retained + usd) * 1_000_000) / 1_000_000;
+  }
+
+  /**
+   * What the book retained for this call before it was sent again, for each send that may have been billed (retain):
+   * counted against the workspace as "may have been billed" until the person clears it in Settings, whatever became of
+   * the call (ADR-0095).
+   */
+  get retainedUsd(): number {
+    return this.retained;
+  }
+
+  /**
+   * What the book counts for this call as "may have been billed" against the workspace, until the person clears it in
+   * Settings (ADR-0095): what was retained for each send that may have been billed before the call was sent again, plus
+   * its estimate once it has ended unsettled and may have been billed (an answer it could not record, or a last send that
+   * may have reached the provider: end() abandons it). Read after end().
+   */
+  get uncertainUsd(): number {
+    const abandoned = !this.settled && (this.answered || (this.sent && this.lastFailure !== 'none'));
+    return Math.round(((abandoned ? this.req.reserveUsd : 0) + this.retained) * 1_000_000) / 1_000_000;
   }
 
   /** A queue job the provider accepted. A failure to record it is reported and the call goes on: it stays counted. */

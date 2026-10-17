@@ -44,6 +44,16 @@ export const ArtifactData = z.object({
  */
 export const LoopIterationData = z.object({ iteration: num, max: num, score: num, rank: num, of: num });
 
+/**
+ * 'model-declined' (ADR-0102): a model declined a call and byway asked it once more. `retry` is what became of that,
+ * `note` the same in plain words. The timeline shows the note only when the second ask answered: otherwise the step's own
+ * failure (or, for an image, its note) says it.
+ */
+export const ModelDeclinedData = z.object({
+  retry: z.enum(['answered', 'declined', 'not-made', 'failed']).optional().catch(undefined),
+  note: str,
+});
+
 /** 'checkpoint-opened' and 'checkpoint-resolved'. */
 export const CheckpointEventData = z.object({ checkpointId: str, kind: str });
 

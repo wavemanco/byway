@@ -90,11 +90,9 @@ export function parseChatCompletion(res: ChatCompletionLike): Omit<ProviderCompl
   const choice = res.choices[0];
   const cached = res.usage?.prompt_tokens_details?.cached_tokens ?? 0;
   const usage: TokenBreakdown = { inputTokens: res.usage?.prompt_tokens ?? 0, outputTokens: res.usage?.completion_tokens ?? 0, cacheReadTokens: cached };
-  const refusal = choice?.message.refusal
-    ? `declined: ${choice.message.refusal}`
-    : choice?.finish_reason === 'content_filter'
-      ? 'declined (content filter)'
-      : undefined;
+  // Both are declines (ADR-0102): the model's own refusal, whose words are its stated reason, and a content-filter stop.
+  const declined = choice?.message.refusal ? { reason: choice.message.refusal } : choice?.finish_reason === 'content_filter' ? { reason: 'content filter' } : undefined;
+  const refusal = choice?.message.refusal ? `declined: ${choice.message.refusal}` : declined ? 'declined (content filter)' : undefined;
   return {
     text: choice?.message.content ?? '',
     servedModel: res.model,
@@ -102,6 +100,7 @@ export function parseChatCompletion(res: ChatCompletionLike): Omit<ProviderCompl
     ...(typeof res.usage?.cost === 'number' ? { reportedCostUsd: res.usage.cost } : {}),
     ...(typeof res.provider === 'string' ? { upstreamProvider: res.provider } : {}),
     ...(refusal ? { refusal } : {}),
+    ...(declined ? { declined } : {}),
     // 'length': the answer hit max_completion_tokens (OpenRouter normalizes every upstream's limit stop to it too).
     ...(choice?.finish_reason === 'length' ? { truncated: true } : {}),
     responseBody: plain(res),
@@ -135,6 +134,32 @@ export function parseImagesResponse(res: ImagesResponseLike, model: string): Omi
   };
 }
 
+/**
+ * The error codes OpenAI's Images API answers with (HTTP 400) when its safety system blocks a request, before or after
+ * the image is made: `moderation_blocked` for the GPT image models, `content_policy_violation` for DALL·E.
+ */
+const MODERATION_CODES = new Set(['moderation_blocked', 'content_policy_violation']);
+
+/**
+ * An Images API error that is OpenAI's safety system declining the image, read as a decline with no image (ADR-0102), so
+ * the gateway records it and asks once more, as for every provider's decline. OpenAI reports no usage with it, so none is
+ * assumed: it is recorded at no cost, with its error body as the evidence. Undefined for any other error.
+ */
+export function moderationDecline(err: unknown, model: string): Omit<ProviderImage, 'requestBody'> | undefined {
+  const e = err as { status?: unknown; code?: unknown; error?: { code?: unknown; message?: unknown } } | null;
+  const code = typeof e?.code === 'string' ? e.code : typeof e?.error?.code === 'string' ? e.error.code : undefined;
+  if (e?.status !== 400 || code === undefined || !MODERATION_CODES.has(code)) return undefined;
+  return {
+    bytes: new Uint8Array(),
+    mediaType: 'image/png',
+    servedModel: model,
+    usage: { inputTokens: 0, outputTokens: 0, units: 0 },
+    refusal: `declined (${code})`,
+    declined: { reason: code },
+    responseBody: plain({ status: 400, error: e.error ?? { code } }),
+  };
+}
+
 export function openaiAdapter(opts: { client: OpenAIClientLike }): ProviderAdapter {
   return {
     id: 'openai',
@@ -144,7 +169,15 @@ export function openaiAdapter(opts: { client: OpenAIClientLike }): ProviderAdapt
     },
     async image(req) {
       const params = openaiImageParams(req);
-      return { ...parseImagesResponse(await opts.client.images.generate(params), req.model), requestBody: params };
+      let res: ImagesResponseLike;
+      try {
+        res = await opts.client.images.generate(params);
+      } catch (e) {
+        const declined = moderationDecline(e, req.model);
+        if (declined) return { ...declined, requestBody: params };
+        throw e;
+      }
+      return { ...parseImagesResponse(res, req.model), requestBody: params };
     },
   };
 }

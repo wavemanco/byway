@@ -10,6 +10,8 @@ import {
   type RecordedFault,
   type CompletionRequest,
   type CompletionResult,
+  type DeclinedAttempt,
+  type DeclineRecord,
   type Gateway,
   type ImageRequest,
   type ImageResult,
@@ -28,6 +30,7 @@ import {
   type VideoRequest,
   type VideoResult,
 } from '@byway/contracts';
+import { cleanReason, declineAdvice, declineStory, notMadeProblem, stoppedBeforeRetry } from './declines.ts';
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
 import { toGatewayError, type ClassifiedError } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost, textTokens } from './estimate.ts';
@@ -87,12 +90,8 @@ export interface GatewayOptions {
   now?: () => Date;
   /** Output allowance when a request names none; it also bounds the pre-call estimate. */
   defaultMaxOutputTokens?: number;
-  /**
-   * Anthropic server-side refusal fallback (default on). Admission reserves one attempt on the requested model, so a
-   * refusal Anthropic routes to another model (or a sticky-routed call) can settle above its reservation (F04). Whether
-   * to turn it off waits on the owner's decision (D1 in docs/backlog.md; ADR-0091 leaves it as it is).
-   */
-  anthropicRefusalFallback?: boolean;
+  // No option asks a provider for a fallback model (ADR-0102, the owner's decision D1): the model a profile names is the
+  // only one that may answer, for the product and the study engine alike, and a decline is asked once more on it.
   /**
    * How long a settled call waits for the ledger's cross-process lock to write its entry to the audit file before it
    * returns and leaves the entry to the gateway's timer. Default two seconds: the spend book already counts the call,
@@ -130,7 +129,9 @@ const invalid = (message: string) => new GatewayError('invalid-request', message
  * tier, checks the key exists (never exposing it), loads images from the artifact store, admits each call in the spend
  * book, which refuses one whose estimated cost would break a spend cap (estimate.ts: planning estimates, not bounds;
  * ADR-0095), retries transient failures, settles the true cost in the book, writes it to the hash-chained ledger, and
- * stores request and response bodies by hash.
+ * stores request and response bodies by hash. The model it calls is the one the profile names, and only that one: no
+ * provider is asked for a fallback model, and a call the model declines is asked once more on it, then ends plainly
+ * (askOnceMore; ADR-0102).
  */
 export class ModelGateway implements Gateway {
   private readonly forcedDemo: boolean;
@@ -225,7 +226,21 @@ export class ModelGateway implements Gateway {
     const { messages, sizes } = await this.resolveMessages(req.messages);
     const inputTokens = estimateInputTokens({ ...(req.system ? { system: req.system } : {}), messages, imageSizes: sizes });
     const estimate = maxCompletionCost(price, inputTokens, maxOutputTokens);
-    const op = await this.admit(req, 'completion', ref, estimate);
+    const prep: CompletionPrep = { ref, messages, inputTokens, maxOutputTokens, estimate, ...(prompt ? { prompt } : {}) };
+    // A decline an earlier attempt of the step kept (ADR-0102): the retry alone, never the declined call again.
+    const earlier = req.operation?.declinedEarlier;
+    const first = earlier ? declinedFrom(earlier) : await this.completeOnce(await this.admit(req, 'completion', ref, estimate), req, prep);
+    if ('answer' in first) return first.answer;
+    // The model declined (ADR-0102): one retry on the same model, as a call of its own, then a plain failure.
+    return this.askOnceMore(req, 'completion', ref, estimate, first, (call, op) => this.completeOnce(op, call, prep, first.entryId));
+  }
+
+  /**
+   * One attempt at a completion, admitted as `op`: sent (with transport retries), settled, ledgered (as a retry of
+   * `retryOf` when it is one), and returned as its answer, or as a decline (ADR-0102) for the caller to decide about.
+   */
+  private async completeOnce(op: PaidCall, req: CompletionRequest, prep: CompletionPrep, retryOf?: string): Promise<Attempt<CompletionResult>> {
+    const { ref, messages, inputTokens, maxOutputTokens, estimate, prompt } = prep;
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
@@ -256,6 +271,7 @@ export class ModelGateway implements Gateway {
       );
       const { completion: out, replaced } = finiteCompletion(reported, { inputTokens, outputTokens: maxOutputTokens });
       const { costUsd, assumed } = this.completionCost(ref, out);
+      const declined = out.declined ? declineMark(out.declined, redact) : undefined;
       const entry = await this.record(
         op,
         {
@@ -273,27 +289,35 @@ export class ModelGateway implements Gateway {
           // Provenance (spec §3.3): the template behind the call, inside the hash chain like every other field.
           ...(prompt ? { prompt } : {}),
           ...(assumed || replaced ? { priceBasis: 'assumed' as const } : {}),
+          // The ledger shows the decline and the retry (ADR-0102), inside the hash chain.
+          ...(declined ? { declined } : {}),
+          ...(retryOf !== undefined ? { retryOf } : {}),
         },
         { profileId: req.profileId, tier: req.tier, provider: ref.provider, model: ref.model, wire: out.requestBody },
         { servedModel: out.servedModel, usage: out.usage, ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
         redact,
       );
-      if (out.refusal) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal}`));
+      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op) };
+      // From here the call is settled and ledgered: a failure says so, with its entry and cost (GatewayError.settled).
+      const ledgered = { ledgerEntryId: entry.id, costUsd: entry.costUsd };
+      if (out.refusal) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal}`), false, { settled: ledgered });
       // The answer crosses into byway here: one holding a key is never handed on (ADR-0088). The call is already
       // ledgered with its evidence redacted, and it is not retried, because a retry would pay again.
       const echoed = findHeldKey(this.env, [out.text]);
       if (echoed) {
-        throw Object.assign(heldKeyError('provider-error', redact(`${ref.provider} answered and billed this call (${req.purpose}), but its answer contained your ${echoed}, so byway did not use it. It is not retried, because a retry would pay again.`), echoed), { billed: true });
+        throw Object.assign(heldKeyError('provider-error', redact(`${ref.provider} answered and billed this call (${req.purpose}), but its answer contained your ${echoed}, so byway did not use it. It is not retried, because a retry would pay again.`), echoed), { billed: true, settled: ledgered });
       }
       return {
-        text: out.text,
-        // A cut-off answer is still returned (and was billed); callers decide whether a partial parse is usable.
-        stopReason: out.truncated ? 'max-tokens' : 'end',
-        servedModel: entry.servedModel,
-        provider: ref.provider,
-        usage: { inputTokens: out.usage.inputTokens, outputTokens: out.usage.outputTokens },
-        costUsd: entry.costUsd,
-        ledgerEntryId: entry.id,
+        answer: {
+          text: out.text,
+          // A cut-off answer is still returned (and was billed); callers decide whether a partial parse is usable.
+          stopReason: out.truncated ? 'max-tokens' : 'end',
+          servedModel: entry.servedModel,
+          provider: ref.provider,
+          usage: { inputTokens: out.usage.inputTokens, outputTokens: out.usage.outputTokens },
+          costUsd: entry.costUsd,
+          ledgerEntryId: entry.id,
+        },
       };
     } finally {
       await op.end();
@@ -314,7 +338,17 @@ export class ModelGateway implements Gateway {
     const generate = adapter.image?.bind(adapter);
     if (!generate) throw invalid(`${ref.provider} does not generate images`);
     const estimate = maxImageCost(price, req);
-    const op = await this.admit(req, 'image', ref, estimate);
+    const prep: ImagePrep = { ref, price, generate, estimate };
+    const earlier = req.operation?.declinedEarlier;
+    const first = earlier ? declinedFrom(earlier) : await this.imageOnce(await this.admit(req, 'image', ref, estimate), req, prep);
+    if ('answer' in first) return first.answer;
+    // The image model declined (ADR-0102): one retry on the same model, as a call of its own, then a plain failure.
+    return this.askOnceMore(req, 'image', ref, estimate, first, (call, op) => this.imageOnce(op, call, prep, first.entryId));
+  }
+
+  /** One attempt at an image, admitted as `op`, as {@link completeOnce} for a completion. */
+  private async imageOnce(op: PaidCall, req: ImageRequest, prep: ImagePrep, retryOf?: string): Promise<Attempt<ImageResult>> {
+    const { ref, price, generate, estimate } = prep;
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
@@ -339,8 +373,9 @@ export class ModelGateway implements Gateway {
       const settled = servedPrice(this.prices, ref.provider, out.servedModel, price, this.now());
       const costUsd = roundUsd(tokenCost(settled.row, out.usage) + (settled.row.perImageUsd ?? 0) * (out.usage.units ?? 1));
       // Billed from here: keeping the image may fail, but the call is ledgered first either way (ENG-3).
-      const kept = out.refusal ? undefined : await keep(() => this.artifacts.put(out.bytes, out.mediaType));
+      const kept = out.refusal || out.declined ? undefined : await keep(() => this.artifacts.put(out.bytes, out.mediaType));
       const stored = kept?.record;
+      const declined = out.declined ? declineMark(out.declined, redact) : undefined;
       const entry = await this.record(
         op,
         {
@@ -355,17 +390,110 @@ export class ModelGateway implements Gateway {
           costUsd,
           latencyMs: Date.now() - started,
           ...(settled.assumed || usage.replaced ? { priceBasis: 'assumed' as const } : {}),
+          ...(declined ? { declined } : {}),
+          ...(retryOf !== undefined ? { retryOf } : {}),
         },
         { profileId: req.profileId, provider: ref.provider, model: ref.model, wire: out.requestBody },
         { servedModel: out.servedModel, usage: out.usage, ...(stored ? { artifactId: stored.id } : {}), ...(out.refusal ? { refusal: out.refusal } : {}), wire: out.responseBody },
         redact,
       );
-      if (kept?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the image and billed it, but it could not be stored`, kept.error);
-      if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`));
-      return { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
+      // From here the call is settled and ledgered: a failure says so, with its entry and cost (GatewayError.settled).
+      const ledgered = { ledgerEntryId: entry.id, costUsd: entry.costUsd };
+      if (kept?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the image and billed it, but it could not be stored`, kept.error, ledgered);
+      if (declined) return { declined, entryId: entry.id, costUsd: entry.costUsd, ...retainedOf(op) };
+      // An answer with no usable image that is not a decline: refused, not asked again here (ENG-5); the asset step decides.
+      if (out.refusal || !stored) throw new GatewayError('refused', redact(`${ref.provider} ${out.refusal ?? 'returned no image'}`), false, { settled: ledgered });
+      return { answer: { artifactId: stored.id, mediaType: out.mediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id } };
     } finally {
       await op.end();
     }
+  }
+
+  /**
+   * The one refusal rule (ADR-0102, the owner's decision D1): a call the model declined is asked once more, on the same
+   * model with the same request, and then the call ends. The retry is a paid call of its own: admitted in the spend book
+   * against both caps at the call's estimate (its admission can refuse it), sent with the gateway's transport retries,
+   * settled and ledgered with `retryOf` naming the declined call's entry. A step's retry is keyed
+   * `<key>/after-decline/<declined entry id>` (ADR-0099): an identity of its own, with the same `until` and `cancel`, and
+   * a rebuy only when the caller asked for the retry alone (`declinedEarlier`) as a rebuy.
+   *
+   * The decline is kept by a caller that keeps outcomes (SpendContext.operation): handed over (`keepDecline`) before the
+   * retry is admitted, or kept by an earlier attempt (`declinedEarlier`, when the declined call is not made again). With
+   * it kept, an attempt that ends before the retry is made (its step was stopped, byway is stopping, another attempt holds
+   * the retry) is not an outcome: that failure is thrown as it is, and the step's next attempt asks for the retry alone.
+   * Without it kept (the advisor's calls, or a hook that failed), the same is a final 'not-made'.
+   *
+   * The outcome: the retry's answer, with `declined` set and the declined attempt's cost added to `costUsd`; or a
+   * 'refused' GatewayError, never retryable, whose message says what happened (who declined, the reason given), what
+   * became of the retry, what each attempt was billed (a retry billed without a usable answer included), what byway
+   * counts for either as "may have been billed" (a send retained before it was sent again, a retry that ended unsettled),
+   * and what to do; for a retry billed that byway could not keep (`billed`), that failure's own words instead of the
+   * advice. The answer's `declined` names the same amounts. A budget with no room for the retry, or paid calls paused,
+   * ends the call here, and no budget question is asked (ADR-0102 Decision 2). The runner's memo keeps the outcome, so a
+   * step that runs again gets it back and asks nothing: the runner's image step leaves a declined image alone (unless the
+   * failure is billed, which stops it), and Temporal does not retry the failure.
+   */
+  private async askOnceMore<Q extends SpendContext, R extends { costUsd: number; ledgerEntryId: string }>(
+    req: Q,
+    kind: 'completion' | 'image',
+    ref: ModelRef,
+    estimate: number,
+    first: Declined,
+    again: (call: Q, op: PaidCall) => Promise<Attempt<R>>,
+  ): Promise<R & { declined: DeclineRecord }> {
+    const redact = makeRedactor(this.env);
+    const base = {
+      provider: ref.provider,
+      model: ref.model,
+      purpose: req.purpose,
+      kind,
+      ...(first.declined.reason !== undefined ? { reason: first.declined.reason } : {}),
+      ledgerEntryId: first.entryId,
+      costUsd: first.costUsd,
+      ...(first.uncertainUsd !== undefined ? { uncertainUsd: first.uncertainUsd } : {}),
+    };
+    // A retry billed that byway could not keep (its media, its request and response, or its cost could not be stored or
+    // recorded), or would not use (its answer held one of the person's keys, ADR-0088), is told in that failure's own words ("It is not retried, because a retry would pay again."), not with the
+    // advice for a decline: the second ask was answered, and the fault is byway's. It stays billed, so a caller with tries
+    // of its own stops, as for any billed failure (ADR-0090, ADR-0099).
+    const fail = (record: DeclineRecord, opts: { budget?: BudgetDetails; billed?: boolean } = {}) =>
+      new GatewayError('refused', redact(opts.billed ? declineStory(record) : `${declineStory(record)} ${declineAdvice(opts.budget)}`), false, { declined: record, ...(opts.billed ? { billed: true } : {}) });
+    const caller = req.operation;
+    const earlier = caller?.declinedEarlier !== undefined;
+    const kept = earlier || (await keepDecline(caller, first));
+    // The retry was not made, for a reason that passes: with the decline kept it is no outcome (see above).
+    const notYet = (err: GatewayError, problem: string) => (kept ? err : fail({ ...base, retry: 'not-made', problem }));
+    if (caller?.cancel?.aborted) throw notYet(new GatewayError('byway-failure', stoppedBeforeRetry(base), false, { billed: false }), 'the step was stopped');
+    const { operation: _ignored, ...rest } = req;
+    const retryOp = caller
+      ? { key: `${caller.key}/after-decline/${first.entryId}`, until: caller.until, ...(caller.cancel ? { cancel: caller.cancel } : {}), ...(earlier && caller.rebuy === true ? { rebuy: true } : {}) }
+      : undefined;
+    const call = (retryOp ? { ...rest, operation: retryOp } : rest) as Q;
+    let op: PaidCall;
+    try {
+      op = await this.admit(call, kind, ref, estimate);
+    } catch (e) {
+      const err = e instanceof GatewayError ? e : toGatewayError(e, ref.provider, redact);
+      if (passing(err)) throw notYet(err, notMadeProblem(err) ?? err.message);
+      throw fail({ ...base, retry: 'not-made', problem: notMadeProblem(err) ?? err.message }, err.budget ? { budget: err.budget } : {});
+    }
+    let second: Attempt<R>;
+    try {
+      second = await again(call, op);
+    } catch (e) {
+      const err = e instanceof GatewayError ? e : toGatewayError(e, ref.provider, redact);
+      // byway could not mark it sent, so it did not send it: not made, like a refusal at admission.
+      if (passing(err)) throw notYet(err, notMadeProblem(err) ?? err.message);
+      // Settled and ledgered, then unusable: billed, and counted. Unsettled after a send that may have arrived: counted
+      // at its estimate until cleared in Settings (ADR-0095), which the message says (retryUncertainUsd, below).
+      const billed = err.settled ? { retryLedgerEntryId: err.settled.ledgerEntryId, retryCostUsd: err.settled.costUsd } : {};
+      throw fail({ ...base, retry: 'failed', problem: err.message, ...billed, ...retryMaybe(op) }, { billed: err.billed === true });
+    }
+    // In every outcome the retry was sent in, what the book counts for it as "may have been billed" is named: a send
+    // retained before it was sent again, and (above) its estimate when it ended unsettled (PaidCall.uncertainUsd).
+    if (!('answer' in second)) throw fail({ ...base, retry: 'declined', retryLedgerEntryId: second.entryId, retryCostUsd: second.costUsd, ...retryMaybe(op) });
+    const declined: DeclineRecord = { ...base, retry: 'answered', retryLedgerEntryId: second.answer.ledgerEntryId, retryCostUsd: second.answer.costUsd, ...retryMaybe(op) };
+    return { ...second.answer, costUsd: roundUsd(first.costUsd + second.answer.costUsd), declined };
   }
 
   /**
@@ -624,7 +752,7 @@ export class ModelGateway implements Gateway {
     let adapter: ProviderAdapter;
     switch (provider) {
       case 'anthropic':
-        adapter = anthropicAdapter({ client: c.anthropic ?? createAnthropicClient(key), refusalFallback: this.opts.anthropicRefusalFallback ?? true });
+        adapter = anthropicAdapter({ client: c.anthropic ?? createAnthropicClient(key) });
         break;
       case 'openai':
         adapter = openaiAdapter({ client: c.openai ?? createOpenAIClient(key) });
@@ -722,9 +850,10 @@ export class ModelGateway implements Gateway {
   }
 
   /**
-   * Provider-reported cost first (OpenRouter), else each model that served the call (every billed attempt of a refusal
-   * fallback) at its own price (servedPrice). `assumed` is true when any of them had no price row and was settled at the
-   * requested model's rates; the ledger records that (priceBasis), so the guess is visible, never silent (F04).
+   * Provider-reported cost first (OpenRouter), else each model that served the call (every billed attempt the answer
+   * lists, which with no fallback asked for is one) at its own price (servedPrice). `assumed` is true when any of them
+   * had no price row and was settled at the requested model's rates; the ledger records that (priceBasis), so the guess
+   * is visible, never silent (F04).
    */
   private completionCost(ref: ModelRef, out: ProviderCompletion): { costUsd: number; assumed: boolean } {
     if (out.reportedCostUsd !== undefined) return { costUsd: roundUsd(out.reportedCostUsd), assumed: false };
@@ -795,7 +924,7 @@ export class ModelGateway implements Gateway {
       await this.artifacts.putText(requestText, 'application/json');
       await this.artifacts.putText(responseText, 'application/json');
     } catch (e) {
-      throw billedFailure(redact, `${billed} and its cost is recorded (entry ${id}), but its request and response could not be stored`, e);
+      throw billedFailure(redact, `${billed} and its cost is recorded (entry ${id}), but its request and response could not be stored`, e, { ledgerEntryId: id, costUsd: entry.costUsd });
     }
     return { id, servedModel: entry.servedModel, costUsd: entry.costUsd };
   }
@@ -816,6 +945,80 @@ function providerLabel(label: string): string {
   return value === undefined ? label : (JSON.stringify(value) ?? typeof value);
 }
 
+/** What a completion's attempts share: worked out once, before the first is admitted. */
+interface CompletionPrep {
+  ref: ModelRef;
+  messages: ResolvedMessage[];
+  inputTokens: number;
+  maxOutputTokens: number;
+  estimate: number;
+  prompt?: PromptRef;
+}
+
+/** What an image's attempts share. */
+interface ImagePrep {
+  ref: ModelRef;
+  price: PriceRow;
+  generate: NonNullable<ProviderAdapter['image']>;
+  estimate: number;
+}
+
+/**
+ * A call the provider declined (ADR-0102): the reason it stated, as the ledger recorded it, its entry and cost, and what
+ * the book retained for a send of it that may have been billed before it was sent again (DeclineRecord.uncertainUsd).
+ */
+interface Declined {
+  declined: { reason?: string };
+  entryId: string;
+  costUsd: number;
+  uncertainUsd?: number;
+}
+
+/** What the book retained for a settled call's sends that may have been billed, as a Declined names it (none: absent). */
+const retainedOf = (op: PaidCall): { uncertainUsd?: number } => (op.retainedUsd > 0 ? { uncertainUsd: op.retainedUsd } : {});
+
+/** What the book counts for an ended retry as "may have been billed" (PaidCall.uncertainUsd), as its record names it. */
+const retryMaybe = (op: PaidCall): { retryUncertainUsd?: number } => (op.uncertainUsd > 0 ? { retryUncertainUsd: op.uncertainUsd } : {});
+
+/** One attempt's outcome: its answer, or a decline for askOnceMore. Every other outcome is thrown. */
+type Attempt<R> = { answer: R } | Declined;
+
+/** A decline an earlier attempt kept (SpendContext.operation.declinedEarlier), as askOnceMore takes it. */
+function declinedFrom(d: DeclinedAttempt): Declined {
+  return { declined: d.reason !== undefined ? { reason: d.reason } : {}, entryId: d.ledgerEntryId, costUsd: d.costUsd, ...(d.uncertainUsd !== undefined && d.uncertainUsd > 0 ? { uncertainUsd: d.uncertainUsd } : {}) };
+}
+
+/**
+ * Hands a decline to a caller that keeps it (SpendContext.operation.keepDecline), before the retry is admitted. True once
+ * kept. A hook that throws keeps nothing: the retry goes on, and the call ends as for a caller that keeps nothing.
+ */
+async function keepDecline(caller: SpendContext['operation'], first: Declined): Promise<boolean> {
+  if (!caller?.keepDecline) return false;
+  try {
+    await caller.keepDecline({
+      ledgerEntryId: first.entryId,
+      costUsd: first.costUsd,
+      ...(first.declined.reason !== undefined ? { reason: first.declined.reason } : {}),
+      ...(first.uncertainUsd !== undefined ? { uncertainUsd: first.uncertainUsd } : {}),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A retry that was not made for a reason that passes: another attempt holds it ('in-flight'), or byway did not start it
+ * (it is stopping, or could not record it as sent: 'byway-failure', not billed). Not a budget or a paused book.
+ */
+const passing = (err: GatewayError): boolean => err.code === 'in-flight' || (err.code === 'byway-failure' && err.billed === false);
+
+/** A decline as the ledger records it: the stated reason, cleaned (declines.ts), or no reason. */
+function declineMark(declined: { reason?: unknown }, redact: Redactor): { reason?: string } {
+  const reason = cleanReason(declined.reason, redact);
+  return reason !== undefined ? { reason } : {};
+}
+
 /** The outcome of keeping media a provider made: its record, or the error (kept for after the call is ledgered). */
 async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: ArtifactRecord; error?: unknown }> {
   try {
@@ -831,9 +1034,9 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
  * answered), and says it was billed (ADR-0099), so no caller presents it as the provider not answering, and a caller with
  * tries of its own (an ASSET step's tries per image, ADR-0090) stops too.
  */
-function billedFailure(redact: Redactor, what: string, cause: unknown): GatewayError {
+function billedFailure(redact: Redactor, what: string, cause: unknown, settled?: { ledgerEntryId: string; costUsd: number }): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);
-  return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true });
+  return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true, ...(settled ? { settled } : {}) });
 }
 
 /**
@@ -864,14 +1067,32 @@ function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: u
   if (req.operation !== undefined) validateOperation(req.operation);
 }
 
-/** SpendContext.operation, checked before anything is reserved: a key, and signals that can say when the caller ends. */
+/**
+ * SpendContext.operation, checked before anything is reserved: a key, signals that can say when the caller ends, and the
+ * caller's side of a decline it keeps (ADR-0102).
+ */
 function validateOperation(value: unknown): void {
-  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; rebuy?: unknown } | null;
-  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, rebuy? }');
+  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; rebuy?: unknown; keepDecline?: unknown; declinedEarlier?: unknown } | null;
+  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, rebuy?, keepDecline?, declinedEarlier? }');
   if (op.rebuy !== undefined && typeof op.rebuy !== 'boolean') throw invalid('operation.rebuy, when given, must be true or false');
   if (typeof op.key !== 'string' || !op.key) throw invalid('operation.key must be a non-empty string');
   if (!(op.until instanceof AbortSignal)) throw invalid('operation.until must be an AbortSignal');
   if (op.cancel !== undefined && !(op.cancel instanceof AbortSignal)) throw invalid('operation.cancel, when given, must be an AbortSignal');
+  if (op.keepDecline !== undefined && typeof op.keepDecline !== 'function') throw invalid('operation.keepDecline, when given, must be a function');
+  if (op.declinedEarlier !== undefined) {
+    const d = op.declinedEarlier as { ledgerEntryId?: unknown; costUsd?: unknown; reason?: unknown; uncertainUsd?: unknown } | null;
+    const ok =
+      typeof d === 'object' &&
+      d !== null &&
+      typeof d.ledgerEntryId === 'string' &&
+      d.ledgerEntryId !== '' &&
+      typeof d.costUsd === 'number' &&
+      Number.isFinite(d.costUsd) &&
+      d.costUsd >= 0 &&
+      (d.reason === undefined || typeof d.reason === 'string') &&
+      (d.uncertainUsd === undefined || (typeof d.uncertainUsd === 'number' && Number.isFinite(d.uncertainUsd) && d.uncertainUsd >= 0));
+    if (!ok) throw invalid('operation.declinedEarlier, when given, must be { ledgerEntryId, costUsd, reason?, uncertainUsd? } as the gateway handed it to keepDecline');
+  }
 }
 
 /**

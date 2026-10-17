@@ -210,14 +210,18 @@ describe('gateway: complete', () => {
     expect(calls).toHaveLength(4);
   });
 
-  it('ledgers a refusal (it may be billed) and then raises refused', async () => {
-    const { client } = fakeAnthropic([anthropicMessage({ stop_reason: 'refusal', stop_details: { category: 'bio' }, content: [], usage: { input_tokens: 1000, output_tokens: 0 } })]);
+  it('ledgers each refusal (it may be billed), asks once more, and then raises refused (ADR-0102)', async () => {
+    const refusal = () => anthropicMessage({ stop_reason: 'refusal', stop_details: { category: 'bio' }, content: [], usage: { input_tokens: 1000, output_tokens: 0 } });
+    const { client } = fakeAnthropic([refusal(), refusal()]);
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
-    await expect(g.complete(req())).rejects.toMatchObject({ code: 'refused' });
-    expect(ledgerLines()[0]).toMatchObject({ costUsd: 0.004, servedModel: 'claude-opus-5-5' });
+    await expect(g.complete(req())).rejects.toMatchObject({ code: 'refused', retryable: false });
+    expect(ledgerLines()).toEqual([
+      expect.objectContaining({ costUsd: 0.004, servedModel: 'claude-opus-5-5', declined: { reason: 'bio' } }),
+      expect.objectContaining({ costUsd: 0.004, servedModel: 'claude-opus-5-5', declined: { reason: 'bio' }, retryOf: ledgerLines()[0]!.id }),
+    ]);
   });
 
-  it('prices a refusal fallback by the models that ran', async () => {
+  it('prices each billed attempt an answer lists at the rates of the model that ran it', async () => {
     const { client } = fakeAnthropic([
       anthropicMessage({
         model: 'claude-opus-4-8',
@@ -275,7 +279,8 @@ describe('gateway: complete', () => {
 
   it('never writes a key to the ledger or the stored bodies when a provider echoes one in what it answers', async () => {
     // A prompt holding a key is refused before it is sent (below); a provider can still put one in a refusal's details.
-    const { client } = fakeAnthropic([anthropicMessage({ stop_reason: 'refusal', stop_details: { category: `policy ${ANTHROPIC_KEY}` }, content: [], usage: { input_tokens: 1000, output_tokens: 0 } })]);
+    const refusal = () => anthropicMessage({ stop_reason: 'refusal', stop_details: { category: `policy ${ANTHROPIC_KEY}` }, content: [], usage: { input_tokens: 1000, output_tokens: 0 } });
+    const { client } = fakeAnthropic([refusal(), refusal()]);
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY }, clients: { anthropic: client } });
     const err = (await g.complete(req()).catch((e: unknown) => e)) as GatewayError;
     expect(err).toMatchObject({ code: 'refused' });

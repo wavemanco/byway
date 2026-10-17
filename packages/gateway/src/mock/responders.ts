@@ -40,10 +40,11 @@ export interface MockContext {
 }
 
 /**
- * A mock answer: its text, or the text with `truncated: true` to stand in for an answer cut off at the output cap. The
- * mock never truncates on its own; only a test's responder asks for it.
+ * A mock answer: its text, or the text with `truncated: true` to stand in for an answer cut off at the output cap, or
+ * `declined` to stand in for a provider's decline (ADR-0102), with the reason it states. The mock never truncates or
+ * declines on its own; only a test's responder asks for it.
  */
-export type MockReply = string | { text: string; truncated?: boolean };
+export type MockReply = string | { text: string; truncated?: boolean; declined?: { reason?: string } };
 
 export type Responder = (ctx: MockContext) => MockReply;
 
@@ -165,10 +166,11 @@ export function responderFor(purpose: string): Responder | undefined {
 }
 
 /** Find the responder (an override for the exact purpose, then for the role, then the defaults) and normalize its reply. */
-export function reply(ctx: MockContext, overrides: Readonly<Record<string, Responder>> = {}): { text: string; truncated: boolean } {
+export function reply(ctx: MockContext, overrides: Readonly<Record<string, Responder>> = {}): { text: string; truncated: boolean; declined?: { reason?: string } } {
   const r = overrides[ctx.purpose] ?? overrides[ctx.role] ?? responderFor(ctx.purpose) ?? fallback;
   const out = r(ctx);
-  return typeof out === 'string' ? { text: out, truncated: false } : { text: out.text, truncated: out.truncated === true };
+  if (typeof out === 'string') return { text: out, truncated: false };
+  return { text: out.text, truncated: out.truncated === true, ...(out.declined ? { declined: out.declined } : {}) };
 }
 
 /** The answer text for `ctx`, as {@link reply} finds it. */

@@ -31,6 +31,24 @@ const PAYLOADS: Record<RunEventType, z.ZodType> = {
   'run-cancelled': empty,
   'run-paused': empty,
   'run-resumed': empty,
+  // One per decline (ADR-0102): who declined what, why, what became of byway's one retry, and both entries' costs.
+  'model-declined': z
+    .object({
+      provider: z.enum(['anthropic', 'openai', 'google', 'openrouter', 'fal', 'mock']),
+      model: z.string().min(1),
+      purpose: z.string().min(1),
+      kind: z.enum(['completion', 'image']),
+      reason: z.string().min(1).optional(),
+      ledgerEntryId: z.string().min(1),
+      costUsd: z.number().min(0),
+      retry: z.enum(['answered', 'declined', 'not-made', 'failed']),
+      retryLedgerEntryId: z.string().min(1).optional(),
+      retryCostUsd: z.number().min(0).optional(),
+      retryUncertainUsd: z.number().min(0).optional(),
+      problem: z.string().min(1).optional(),
+      note: z.string().min(1),
+    })
+    .strict(),
 };
 
 export function checkEvents(view: RunView, recipeId?: string): void {

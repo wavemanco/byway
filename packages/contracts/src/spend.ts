@@ -163,9 +163,9 @@ const own = <T extends object>(table: T, key: unknown): boolean => typeof key ==
  *
  * It is far above what v1 calls cost (prices.ts, as read 2026-10-07). A completion's output is at most 128,000 tokens
  * (the gateway's limit): $6.40 at the dearest output rate ($50 per million: Fable 5.1, GPT-6 Astra). With a million
- * input tokens at the dearest input rate ($12.50 per million, Fable 5.1's cache writes) it is $18.90, and an Anthropic
- * refusal fallback bills at most about 2.25 times one attempt (ADR-0095 decision 10): about $43, a twenty-third of the
- * ceiling. The longest clip (60 s) at the dearest rate ($0.112 a second, Kling v3) is $6.72, with $0.002 for its last
+ * input tokens at the dearest input rate ($12.50 per million, Fable 5.1's cache writes) it is $18.90, under a fiftieth
+ * of the ceiling. One call is one attempt on one model: byway asks no provider for a fallback model, and the retry after
+ * a decline is a call of its own (ADR-0102). The longest clip (60 s) at the dearest rate ($0.112 a second, Kling v3) is $6.72, with $0.002 for its last
  * frame; one image is about $0.25. Input has no fixed limit, but a call estimated above the ceiling is refused, so it
  * holds whatever a model accepts.
  */

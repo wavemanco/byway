@@ -38,24 +38,22 @@ export function createAnthropicClient(apiKey: string): AnthropicClientLike {
 }
 
 /**
- * Server-side refusal fallback (beta `server-side-fallback-2026-07-01`, `fallbacks: "default"`): when a Claude 5.x
- * safety classifier declines, the API re-runs the request on Anthropic's recommended fallback model inside the same
- * call, routed by refusal category. The served model is whatever the response reports, and the ledger records it.
+ * The adapter takes a client and nothing else. In particular it has no way to ask for Anthropic's server-side refusal
+ * fallback, which re-runs a declined request on another Claude model inside the same call: no provider may answer with
+ * another model than the one the person chose (ADR-0102, the owner's decision D1). A decline comes back as a decline,
+ * and the gateway asks the same model once more.
  */
-export const REFUSAL_FALLBACK_BETA = 'server-side-fallback-2026-07-01';
-
 export interface AnthropicAdapterOptions {
   client: AnthropicClientLike;
-  /** Opt into server-side refusal fallbacks (default true). */
-  refusalFallback?: boolean;
 }
 
 /**
  * Build Messages API params. No temperature, top_p or top_k: Claude 4.7+ models reject non-default sampling
  * parameters. No thinking config: Claude Opus 5.5 and Fable 5.1 think adaptively and reject a disabled or budgeted
- * config, and Sonnet 5.5 defaults to adaptive. Effort stays at each model's default.
+ * config, and Sonnet 5.5 defaults to adaptive. Effort stays at each model's default. No beta header and no fallback
+ * field: the model asked for is the only one that may answer (ADR-0102).
  */
-export function anthropicParams(req: ProviderCompletionRequest, inline: boolean, refusalFallback: boolean): Params {
+export function anthropicParams(req: ProviderCompletionRequest, inline: boolean): Params {
   const messages = req.messages.map((m) => ({
     role: m.role,
     content: m.content.map(
@@ -70,7 +68,6 @@ export function anthropicParams(req: ProviderCompletionRequest, inline: boolean,
     max_tokens: req.maxOutputTokens,
     messages,
     ...(req.system ? { system: req.system } : {}),
-    ...(refusalFallback ? { betas: [REFUSAL_FALLBACK_BETA], fallbacks: 'default' as const } : {}),
   };
 }
 
@@ -92,7 +89,8 @@ function breakdown(u: AnthropicMessageLike['usage'] | IterationUsage): TokenBrea
 export function parseAnthropicMessage(msg: AnthropicMessageLike, requestedModel: string): Omit<ProviderCompletion, 'requestBody'> {
   const text = msg.content.flatMap((b) => (b.type === 'text' && typeof b.text === 'string' ? [b.text] : [])).join('');
   // Top-level usage covers only the attempt that produced the message; iterations list every billed attempt and the
-  // model that ran it, so a refusal fallback is priced per model.
+  // model that ran it. byway asks for no fallback (ADR-0102), so one attempt is expected; a response that lists several
+  // is still priced per model.
   const attempts = (msg.usage.iterations ?? []).filter((it) => it.type === 'message' || it.type === 'fallback_message');
   const usageByModel = attempts.length > 1 || attempts.some((it) => it.type === 'fallback_message')
     ? attempts.map((it) => ({ model: it.model ?? requestedModel, usage: breakdown(it) }))
@@ -113,20 +111,22 @@ export function parseAnthropicMessage(msg: AnthropicMessageLike, requestedModel:
     servedModel: msg.model,
     usage,
     ...(usageByModel ? { usageByModel } : {}),
-    ...(msg.stop_reason === 'refusal' ? { refusal: `declined (${msg.stop_details?.category ?? 'policy'})` } : {}),
+    // A refusal stop is a decline: the category, when Anthropic names one, is its stated reason (ADR-0102).
+    ...(msg.stop_reason === 'refusal'
+      ? { refusal: `declined (${msg.stop_details?.category ?? 'policy'})`, declined: msg.stop_details?.category ? { reason: msg.stop_details.category } : {} }
+      : {}),
     ...(msg.stop_reason !== null && TRUNCATED.has(msg.stop_reason) ? { truncated: true } : {}),
     responseBody: plain(msg),
   };
 }
 
 export function anthropicAdapter(opts: AnthropicAdapterOptions): ProviderAdapter {
-  const fallback = opts.refusalFallback ?? true;
   return {
     id: 'anthropic',
     async complete(req) {
       // Streaming keeps long builds (large max_tokens) clear of HTTP timeouts; finalMessage() assembles the result.
-      const msg = await opts.client.beta.messages.stream(anthropicParams(req, true, fallback)).finalMessage();
-      return { ...parseAnthropicMessage(msg, req.model), requestBody: anthropicParams(req, false, fallback) };
+      const msg = await opts.client.beta.messages.stream(anthropicParams(req, true)).finalMessage();
+      return { ...parseAnthropicMessage(msg, req.model), requestBody: anthropicParams(req, false) };
     },
   };
 }
