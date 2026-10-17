@@ -9,7 +9,7 @@ name: verify
 
 on:
   push:
-    branches: [main, fix/fx-d4-ci]
+    branches: [main]
   workflow_dispatch:
   schedule:
     # Weekly (Mondays 06:17 UTC): the tests download Chromium and the Temporal CLI, and pushes can stop for days.
@@ -87,13 +87,5 @@ jobs:
         working-directory: packages/runner
         run: node --input-type=module -e "const { TestWorkflowEnvironment } = await import('@temporalio/testing'); const env = await TestWorkflowEnvironment.createLocal(); await env.teardown(); console.log('Temporal CLI ready');"
 
-      # Bring-up only: the three steps of pnpm verify, each run even when one before it fails.
-      - name: typecheck
-        if: ${{ !cancelled() }}
-        run: pnpm -s typecheck
-      - name: unit tests
-        if: ${{ !cancelled() }}
-        run: pnpm test
-      - name: end-to-end
-        if: ${{ !cancelled() }}
-        run: pnpm e2e
+      - name: pnpm verify (the typecheck, the unit tests, then the end-to-end suite)
+        run: pnpm verify

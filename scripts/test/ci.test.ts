@@ -64,6 +64,21 @@ describe('the CI workflow (ADR-0103)', () => {
     expect(workflow).toMatch(/playwright install \$\{\{ matrix\.playwright \}\}/);
     expect(workflow).toMatch(/TestWorkflowEnvironment\.createLocal\(\)/);
   });
+
+  it('on Linux only: Noto CJK in place of WenQuanYi Zen Hei, and an AppArmor profile that lets Playwright’s Chromium start its sandbox', () => {
+    const linuxOnly = (step: string) => {
+      const at = workflow.indexOf(`- name: ${step}`);
+      expect(at, step).toBeGreaterThan(0);
+      expect(workflow.slice(at).split('\n')[1]?.trim(), step).toBe("if: ${{ matrix.name == 'linux' }}");
+    };
+    linuxOnly("Fonts as on Ubuntu's desktop");
+    expect(workflow).toContain('apt-get install --yes --no-install-recommends fonts-noto-cjk');
+    expect(workflow).toContain('apt-get remove --yes fonts-wqy-zenhei');
+    linuxOnly("Let Playwright's Chromium start its OS sandbox");
+    expect(workflow).toContain(`"profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,'`);
+    // The machine-wide restriction stays on.
+    expect(workflow).not.toMatch(/apparmor_restrict_unprivileged_userns/);
+  });
 });
 
 describe('the README on platforms and CI (ADR-0103)', () => {

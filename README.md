@@ -149,6 +149,11 @@ pnpm e2e            # Playwright, demo mode, production server, temp data direct
 
 The unit run is not self-contained. The renderer tests launch Playwright's Chromium, so install it once (`pnpm --filter ./apps/web exec playwright install chromium`). The engine tests start a local Temporal dev server, and the Temporal CLI is downloaded once when no cached copy exists, so the first run needs the network.
 
+On Linux the unit run needs two more things, which CI's Linux job sets up (`.github/workflows/verify.yml`):
+
+- One renderer test starts Chromium inside its OS sandbox, as a control. Where unprivileged user namespaces are restricted (the default on Ubuntu 23.10 and later), Chromium's sandbox cannot start unless an AppArmor profile allows them for Playwright's Chromium; CI adds one for those binaries only.
+- Japanese text needs a CJK font that Chromium lays out correctly. With WenQuanYi Zen Hei as the fallback (Playwright's `install --with-deps` installs it), Chromium lays out the first item of a vertical row at no height, and one renderer test fails. Noto CJK (`fonts-noto-cjk`, as on Ubuntu's desktop) and IPAGothic lay it out as Windows does; CI installs Noto CJK and removes WenQuanYi Zen Hei.
+
 `pnpm verify` is the gate to run before merging a branch ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). For a commit that changes only documents, `pnpm vitest run scripts/test` runs the decision-log and README checks in seconds.
 
 The end-to-end suite sets stand-in provider keys and fails if any of them appears in a request, a response or the web build's folder.
