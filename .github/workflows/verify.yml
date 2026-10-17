@@ -81,7 +81,7 @@ jobs:
         working-directory: packages/runner
         run: node test/zz-font-probe.mjs
       - name: install Noto CJK
-        run: sudo apt-get install -y --no-install-recommends fonts-noto-cjk > /dev/null && fc-match 'sans-serif:lang=ja' && ls /etc/fonts/conf.d | grep -i 'wqy|noto|ipa'
+        run: sudo apt-get install -y --no-install-recommends fonts-noto-cjk > /dev/null && fc-match 'sans-serif:lang=ja' && ls /etc/fonts/conf.d | grep -iE 'wqy|noto|ipa' || true
       - name: font probe with Noto CJK
         working-directory: packages/runner
         run: node test/zz-font-probe.mjs
