@@ -28,9 +28,9 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 | F18 | Renderer Chromium runs unsandboxed | P2 | Fixed, except D2 | [0084](../adr/0084-renderer-launch-without-secrets.md) | Chromium's OS sandbox stays off; no fail-closed or opt-out |
 | F19 | Canonical JSON skips key validation | P3 | Fixed | [0083](../adr/0083-hashed-text-is-well-formed-unicode.md) | — |
 | F20 | Loop cap substitutes for the person's decision | P2 | Fixed | [0093](../adr/0093-every-loop-exit-at-the-cap-follows-one-policy.md) | — |
-| R1 | No CI; toolchain not pinned | P3 | Fixed, except D4 | [0094](../adr/0094-backup-unit-is-the-data-directory.md) (`pnpm verify`) | The CI workflow, branch protection and Actions minutes |
+| R1 | No CI; toolchain not pinned | P3 | Fixed | [0094](../adr/0094-backup-unit-is-the-data-directory.md) (`pnpm verify`), [0103](../adr/0103-adr-log-rule-and-ci.md) | The owner decided D4 on 2026-10-16: CI runs `pnpm verify` on Windows and Linux on every push to main, reporting only; main and tags are protected by rulesets. A required check waits for its trigger (backlog) |
 | R2 | Licence decisions before distribution | none | Recorded | backlog "Before any distribution" | — |
-| R3 | Decision records drift without pointers | P3 | Fixed, except D4 | ADR index "changed by" links | The ADR-log rule changes; outcome pointers for decided questions (backlog) |
+| R3 | Decision records drift without pointers | P3 | Fixed | ADR index "changed by" links, 0103 | Outcome pointers for decided questions, and structured relation rows (backlog) |
 | R4 | No backup unit or tested recovery | P3 | Fixed | 0094, [0096](../adr/0096-partial-restores-reported-at-start.md) | — |
 | R5 | Accessibility only checked statically | P3 | Fixed | apps/web README (shared-action rule) | — |
 | RS | Research prerequisites and seed wording | P3 | Fixed | 0094 (docs) | — |

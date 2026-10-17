@@ -4,8 +4,8 @@
  *
  * R1: the README said the unit run needs "no network". It needs Playwright's Chromium (the renderer tests launch it)
  * and starts a local Temporal dev server, whose CLI is downloaded once when no cached copy exists. There is also no
- * single command that runs every check, so `pnpm verify` chains them; nothing runs it automatically (no CI service is
- * configured, which is the owner's call), so it is the gate a person or agent runs before merging.
+ * single command that runs every check, so `pnpm verify` chains them. It is the gate a person or agent runs before
+ * merging; since ADR-0103, CI also runs it on Windows and Linux for every push to main, reporting only (ci.test.ts).
  *
  * R3: the README named the product's decisions as a hand-maintained range ("ADR-0064 to ADR-0072") that went stale as
  * records were added. It now links the index sections that list them, and every relative link must resolve.

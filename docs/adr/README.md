@@ -8,14 +8,15 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - **Decided by** says who made the call, honestly: **User** (the user directed it), **User-approved** (Claude recommended, the user explicitly chose it), **By continuation ⚑** (Claude proposed it in delivered work and the user built on it without explicit approval; these need ratification), **Delegated** (Claude decided under authority the user delegated, e.g. "Let's code"; reversible and flagged for review) and **Pending**.
 - Dates are local (UTC−7). Evidence links point to the [conversation record](evidence/conversation.md), the [protocol files](../../protocol/) and the research reports under [docs/research](../research/).
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
+- A record's Context and Decision are final once it reaches main's first-parent history as Accepted. The commit that accepts a Proposed record may finalise its Decision. Branches merge with `--no-ff`, so a branch's own commits are drafts. A record that changes an Accepted one reaches main in the same commit as its "changed by" link: add the index row and the links on the branch before merging, or merge with `git merge --no-ff --no-commit <branch>` and add them before committing. Main's history is not rewritten, so a breach that reaches main is named in the test with its reason. `scripts/test/adr-records.test.ts` checks all this against git history ([ADR-0103](0103-adr-log-rule-and-ci.md)).
 
-**102 records:** 95 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**103 records:** 96 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
 | # | Decision | Status | Decided by | Date |
 |---|---|---|---|---|
-| [ADR-0001](0001-record-architecture-decisions-as-adrs.md) | Record architecture decisions as ADRs | Accepted | User | 2026-10-06 06:00 |
+| [ADR-0001](0001-record-architecture-decisions-as-adrs.md) | Record architecture decisions as ADRs | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | User | 2026-10-06 06:00 |
 | [ADR-0003](0003-stay-faithful-park-off-path-findings.md) | Stay faithful to the article and park off-path findings in More to Explore | Accepted | User | 2026-10-05 21:07 |
 | [ADR-0004](0004-parallel-research-adversarial-review-build-method.md) | Build the protocol through parallel research, adversarial review and a verification pass | Accepted | By continuation ⚑ | 2026-10-05 21:09 |
 | [ADR-0005](0005-ground-configurations-in-use-case-research.md) | Ground the configurations in use-case research, run in parallel with the technique research | Accepted | User | 2026-10-05 21:15 |
@@ -33,11 +34,12 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0052](0052-independent-confirmatory-analysis.md) | Charter CR9: independent confirmatory analysis and code check | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0053](0053-claims-fixed-in-advance-and-red-team.md) | Charter CR10: claims fixed in advance, plus an outside red team | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0054](0054-computed-evidence-labels-and-claims-gate.md) | Charter CR11: computed evidence labels; no efficacy claims before Stage 2 | Accepted | User-approved | 2026-10-07 06:35 |
-| [ADR-0055](0055-instrument-firewall-and-exposure.md) | Charter CR12: evaluation instruments walled off from the product; exposure tracked | Accepted | User-approved | 2026-10-07 06:35 |
-| [ADR-0057](0057-tamper-evident-record-and-disclosure.md) | Charter CR14: tamper-evident record and full disclosure | Accepted | User-approved | 2026-10-07 06:35 |
+| [ADR-0055](0055-instrument-firewall-and-exposure.md) | Charter CR12: evaluation instruments walled off from the product; exposure tracked | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | User-approved | 2026-10-07 06:35 |
+| [ADR-0057](0057-tamper-evident-record-and-disclosure.md) | Charter CR14: tamper-evident record and full disclosure | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | User-approved | 2026-10-07 06:35 |
 | [ADR-0060](0060-repository-byway-private-remote.md) | Version control: git repository named byway, private GitHub remote (wavemanco/byway) | Accepted | User | 2026-10-07 06:35 |
 | [ADR-0062](0062-code-first-work-mode.md) | Code first: people, outside actions and pricing go to a playbook and a backlog | Accepted | User | 2026-10-07 09:40 |
-| [ADR-0068](0068-contracts-first-parallel-build.md) | Build the product contracts-first, in parallel git worktrees | Accepted | Delegated | 2026-10-07 10:48 |
+| [ADR-0068](0068-contracts-first-parallel-build.md) | Build the product contracts-first, in parallel git worktrees | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | Delegated | 2026-10-07 10:48 |
+| [ADR-0103](0103-adr-log-rule-and-ci.md) | The decision log's rule is checked against git history, and CI runs `pnpm verify` on Windows and Linux, reporting only | Accepted | User | 2026-10-16 22:00 |
 
 ## Protocol
 
@@ -86,7 +88,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0032](0032-separate-python-evaluation-side.md) | A separate Python evaluation side runs AI judges (Inspect AI), metrics and statistics | Accepted | User-approved | 2026-10-06 06:00 |
 | [ADR-0039](0039-data-layer-postgres-cas-parquet.md) | Data layer: Postgres and a content-addressed artifact store on WSL ext4, with Parquet data freezes for analysis | Proposed | Pending | 2026-10-06 00:17 |
 | [ADR-0056](0056-open-source-study-engine.md) | Charter CR13: open-source the study engine (OSI) by the end of confirmatory data collection | Accepted | User-approved | 2026-10-07 06:35 |
-| [ADR-0059](0059-engine-requirements-for-composition-and-credibility.md) | Engine requirements for composition and credibility, built into the spine before the pilot | Accepted | User-approved | 2026-10-07 06:35 |
+| [ADR-0059](0059-engine-requirements-for-composition-and-credibility.md) | Engine requirements for composition and credibility, built into the spine before the pilot | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | User-approved | 2026-10-07 06:35 |
 | [ADR-0063](0063-code-workspace-outside-onedrive.md) | The code checkout lives outside OneDrive, at C:\Users\arvik\code\byway | Accepted | Delegated | 2026-10-07 09:45 |
 | [ADR-0066](0066-product-persistence-sqlite-cas.md) | Product persistence: node:sqlite records and content-addressed artifact files outside the repo | Accepted; changed by [ADR-0094](0094-backup-unit-is-the-data-directory.md) | Delegated | 2026-10-07 10:48 |
 | [ADR-0067](0067-product-c1-direct-html-builder.md) | In the product, C1 builds single-file HTML pages by direct model generation and renders them with Playwright | Accepted | Delegated | 2026-10-07 10:48 |
@@ -108,7 +110,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0021](0021-build-testing-app-on-evaluation-harness.md) | Build a testing app on an evaluation harness, with 'for dummies' runbooks per configuration and journal-grade testing protocols | Accepted | User | 2026-10-05 23:46 |
 | [ADR-0033](0033-parallel-research-and-product-tracks.md) | Run two tracks in parallel: harness, evaluation and paper; and a product that draws on the harness | Accepted | User | 2026-10-06 06:00 |
 | [ADR-0040](0040-plain-language-recipe-first-ux.md) | Plain-language vocabulary and a recipe-first UX that hides the block grammar | Proposed | Pending | 2026-10-06 00:17 |
-| [ADR-0041](0041-shared-engine-pinned-research-versions.md) | One engine for research and product: studies pin frozen engine and recipe versions, the product evolves on newer ones, and human checkpoints bind per study | Accepted | User-approved | 2026-10-07 06:35 |
+| [ADR-0041](0041-shared-engine-pinned-research-versions.md) | One engine for research and product: studies pin frozen engine and recipe versions, the product evolves on newer ones, and human checkpoints bind per study | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | User-approved | 2026-10-07 06:35 |
 | [ADR-0042](0042-product-north-star-recommend-or-compose.md) | Product north star: a user brings a problem; the product recommends a configuration or composes one | Accepted (direction) | User | 2026-10-07 00:31 |
 | [ADR-0058](0058-design-time-composition-only.md) | Design-time composition through the validator only; composed recipes labelled Composed; runtime rewiring parked | Accepted | User-approved | 2026-10-07 06:35 |
 | [ADR-0064](0064-product-v1-local-first-web-app.md) | Product v1 is a local-first web app on the shared engine | Accepted | Delegated | 2026-10-07 10:48 |

@@ -8,7 +8,7 @@ The research program and product built on the **Off-Center protocol**: eight com
 
 ## Quick start
 
-Requires Node 24+ and pnpm 11+. Windows, macOS and Linux.
+Requires Node 24+ and pnpm 11+; pnpm switches itself to the version pinned in `package.json` (`packageManager`), downloading it once. Windows and Linux; macOS later (CI tests the first two, with Node 24.13.1 and pnpm 11.28.6: see [CI](#ci)).
 
 ```bash
 pnpm install
@@ -46,7 +46,7 @@ The model a profile names is the only one that answers: byway asks no provider f
 | `pnpm demo` | The same with the mock provider forced on: sample outputs, no AI calls, nothing charged |
 | `pnpm dev` | Contributor mode, with hot reload: `next dev` runs inside byway's own server on 127.0.0.1:3000, which checks every request and WebSocket first and is the only port the web app listens on (see Architecture). `pnpm dev -- --demo` forces the mock |
 | `pnpm e2e` | The Playwright end-to-end suite: starts `pnpm demo` on a temp data directory and free ports, with the web app built into its own folder (`apps/web/.next-e2e`) so a byway you are running is not rebuilt under you; runs C1, C3, C4, C5 and C6a from a typed problem to the Result screen, then stops it and cleans up |
-| `pnpm verify` | The checks to run before a merge: the typecheck, the unit tests, then the end-to-end suite, stopping at the first failure. Nothing runs it automatically (no CI service is set up) |
+| `pnpm verify` | The checks to run before a merge: the typecheck, the unit tests, then the end-to-end suite, stopping at the first failure. CI also runs it on Windows and Linux for every push to main ([CI](#ci)) |
 | `pnpm vitest run` (or `pnpm test`) | Unit, integration, conformance and guard tests for every package and the app |
 | `pnpm -s typecheck` | TypeScript across the packages, the scripts and the app |
 | `pnpm --filter ./apps/web run build` | Production build of the web app |
@@ -108,7 +108,7 @@ The backup unit is the whole data directory, copied while byway is stopped ([ADR
 1. Stop byway (Ctrl+C) and wait until it has exited.
 2. Check that the run engine has stopped too. A Temporal server left over from a byway that did not stop cleanly can still be writing `temporal.sqlite`. Nothing may listen on the engine's port (`BYWAY_TEMPORAL_PORT`, default 7233; put yours in the commands below), and no `temporal-sdk-typescript-*` process may be running:
    - Windows (PowerShell): `Get-NetTCPConnection -LocalPort 7233 -State Listen -ErrorAction SilentlyContinue` and `Get-Process temporal-sdk-typescript-* -ErrorAction SilentlyContinue` print nothing.
-   - macOS and Linux: `lsof -nP -iTCP:7233 -sTCP:LISTEN` and `pgrep -fl temporal-sdk-typescript` print nothing.
+   - Linux: `lsof -nP -iTCP:7233 -sTCP:LISTEN` and `pgrep -fl temporal-sdk-typescript` print nothing.
 3. Copy the whole data directory, every file and folder in it. `bin/` may be left out; byway downloads the Temporal CLI again when it is missing.
 
 **Restore**
@@ -138,7 +138,7 @@ byway draws pages with Playwright's Chromium, inside the run engine: the pages a
 - Its environment holds no provider key, nothing that looks secret and no other name from `.env.agents`. One exception: on Windows, when byway is started from a current directory whose drive letter is lowercase (`c:\…`), the engine loads the gateway twice and Chromium does get the file's other names; provider keys and names that look secret are still left out ([ADR-0100](docs/adr/0100-corrections-found-by-the-final-re-check.md); backlog).
 - Pages may load only Google Fonts, jsDelivr, unpkg, cdnjs and byway's own artifacts, and a redirect is followed only to another of them: the engine fetches those files itself, one hop at a time, and hands Chromium the result ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)), reading at most 20 MiB of any one file ([ADR-0099](docs/adr/0099-paid-operations-keyed-to-their-caller.md)). WebSockets and direct WebRTC are blocked, and a page that never settles is stopped.
 - At start-up byway prints a `renderer` line saying whether Chromium can start. If it cannot, web-page runs are refused before they spend anything, and any other step that needs a page or a card fails with a plain message. If Chromium is missing: `pnpm --filter ./apps/web exec playwright install chromium`.
-- Chromium's own OS sandbox is **off**, as it always has been (Playwright's default). Turning it on (`RENDERER_OS_SANDBOX`) would better contain a page or image that exploits a Chromium bug, but byway would then stop rendering wherever the sandbox cannot start: Linux with unprivileged user namespaces restricted (the default on Ubuntu 23.10 and later), or byway running as root or in a container. That choice is open.
+- Chromium's own OS sandbox is **off**, as it always has been (Playwright's default). Turning it on (`RENDERER_OS_SANDBOX`) would better contain a page or image that exploits a Chromium bug, but byway would then stop rendering wherever the sandbox cannot start: Linux with unprivileged user namespaces restricted (the default on Ubuntu 24.04 and later), or byway running as root or in a container. The owner has since chosen to switch it on by default, with an explicit off switch in Settings; that is not built yet.
 
 ## Tests
 
@@ -149,11 +149,38 @@ pnpm vitest run     # all packages and the app: no model or provider calls, no r
 pnpm e2e            # Playwright, demo mode, production server, temp data directory, non-default ports
 ```
 
-The unit run is not self-contained. The renderer tests launch Playwright's Chromium, so install it once (`pnpm --filter ./apps/web exec playwright install chromium`). The engine tests start a local Temporal dev server, and the Temporal CLI is downloaded once when no cached copy exists, so the first run needs the network.
+The unit run is not self-contained. The renderer tests launch Playwright's Chromium, so install it once (`pnpm --filter ./apps/web exec playwright install chromium`; on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`, which also installs the system libraries Chromium needs). The engine tests start a local Temporal dev server, and the Temporal CLI is downloaded once when no cached copy exists, so the first run needs the network.
 
-No CI service runs these checks. `pnpm verify` is the gate to run before merging.
+On Linux the unit run needs two more things, which CI's Linux job sets up (`.github/workflows/verify.yml`):
+
+- One renderer test starts Chromium inside its OS sandbox, as a control. Where unprivileged user namespaces are restricted (the default on Ubuntu 24.04 and later), Chromium's sandbox cannot start unless an AppArmor profile allows them for Playwright's Chromium; CI adds one for those binaries only.
+- Japanese text needs a CJK font that Chromium lays out correctly. With WenQuanYi Zen Hei as the fallback (Playwright's `install --with-deps` installs it), Chromium lays out the first item of a vertical row at no height, and one renderer test fails. Noto CJK (`fonts-noto-cjk`, as on Ubuntu's desktop) and IPAGothic lay it out as Windows does; CI installs Noto CJK and removes WenQuanYi Zen Hei.
+
+`pnpm verify` is the gate to run before merging a branch ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). For a commit that changes only documents, `pnpm vitest run scripts/test` runs the decision-log and README checks in seconds.
 
 The end-to-end suite sets stand-in provider keys and fails if any of them appears in a request, a response or the web build's folder.
+
+## CI
+
+`.github/workflows/verify.yml` runs `pnpm verify` on GitHub's machines, one job per operating system: Windows (`windows-2025`) and Linux (`ubuntu-24.04`). macOS is not run yet; it will be one more job. A run starts on every push to main, once a week (Mondays 06:17 UTC, because the tests download Chromium and the Temporal CLI), and by hand (`gh workflow run verify.yml`). A newer run on the same branch, of any trigger (a push, the weekly run or a run started by hand), cancels one still going.
+
+Each job installs the pinned Node (`.node-version`) and pnpm (`packageManager` in `package.json`), the dependencies from the lockfile, Playwright's Chromium (with its system libraries on Linux) and the Temporal CLI, then runs `pnpm verify`. It checks out the whole history, which the decision-log check reads. It uses no secrets: the browser tests set stand-in keys and fail if one leaks, so a run never reaches a paid provider.
+
+CI reports and blocks nothing ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). A red run puts a red mark on the commit, and GitHub notifies the account that pushed it (for the weekly run, the account that last changed its schedule), as that account's notification settings allow; no push is refused. Nobody else is told, so before merging a branch or pushing to main, look at the last run on main:
+
+```bash
+gh run list --branch main --limit 1     # "completed success" is green; "completed failure" is red
+gh run view <run id> --log-failed       # which step failed, on which machine, and its output
+```
+
+A red run that is still red when run again (`gh run rerun <run id> --failed`) is a real failure: fix it before merging anything else. A test that fails only sometimes is named in the backlog and set aside, so red keeps meaning broken.
+
+A risky change (for example the renderer's sandbox on Linux) is run on its branch before it merges, and merges only when both jobs pass:
+
+```bash
+gh workflow run verify.yml --ref <branch>
+gh run list --branch <branch> --limit 1
+```
 
 ## What's here
 
@@ -175,5 +202,5 @@ Research credibility comes first, without compromise ([ADR-0043](docs/adr/0043-r
 ## Ground rules
 
 - API keys never enter this repository ([ADR-0009](docs/adr/0009-api-key-fencing-constraints.md)).
-- Accepted ADRs are append-only. A changed decision gets a new ADR that supersedes the old one ([ADR-0057](docs/adr/0057-tamper-evident-record-and-disclosure.md)).
+- Accepted ADRs are append-only. A changed decision gets a new ADR that supersedes the old one ([ADR-0057](docs/adr/0057-tamper-evident-record-and-disclosure.md)). A test checks every Accepted record against main's history, so branches merge with `--no-ff` ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)).
 - Product data stays out of research (ADR-0041 rule 3), and labels are computed, never typed (CR11).
