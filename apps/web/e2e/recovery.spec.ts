@@ -88,8 +88,13 @@ test('F14: after a refused recommendation, Try again shows the stored recommenda
   await describeProblem(page, 'A landing page for the spring classes at my pottery studio');
   await expect(page.getByRole('heading', { name: REFUSED })).toBeVisible({ timeout: 60_000 });
 
-  // Still refused: the panel stays, with the new message.
+  // Still refused: the panel stays, with the new message. The retry's answer is awaited before the cap changes: the
+  // heading is on screen from before the press, and a retry still on its way when the cap is raised is admitted under
+  // the raised cap, so the panel and its Try again button go (seen on GitHub's 2-CPU Windows machine).
+  const refusedAgain = page.waitForResponse((r) => r.url().endsWith('/recommend') && r.request().method() === 'POST');
   await page.getByRole('button', { name: 'Try again' }).first().click();
+  expect((await refusedAgain).status()).toBeGreaterThanOrEqual(400);
+  await expect(page.getByRole('button', { name: 'Try again' }).first()).toBeEnabled();
   await expect(page.getByRole('heading', { name: REFUSED })).toBeVisible();
   await expect(page.locator('#proposal-title')).toHaveCount(0);
 

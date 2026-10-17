@@ -2132,6 +2132,21 @@ export async function checkRenderer(): Promise<RendererCheck> {
 }
 
 /**
+ * The start-up check's answer, waited for at most `ms` counted from this call, not from when the check began. byway
+ * starts the check while it builds the app and starts the engine; on a busy machine Chromium's launch waits for them
+ * (on GitHub's 2-CPU Windows machine it ran past a limit counted from its start, and byway said Chromium could not
+ * start although it could), so the time it is given is counted from when byway is ready to say.
+ */
+export function rendererCheckWithin(checking: Promise<RendererCheck>, ms: number): Promise<RendererCheck> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<RendererCheck>((resolve) => {
+    timer = setTimeout(() => resolve({ ready: false, message: `Playwright's Chromium had not started ${ms / 1000} s after byway was ready to say.` }), ms);
+    timer.unref?.();
+  });
+  return Promise.race([checking, late]).finally(() => clearTimeout(timer));
+}
+
+/**
  * A render's failure as its step sees it. A step failure (the deadline, a Chromium that could not start) and a cancel
  * (its own reason) pass as they are. Anything else is the renderer failing while it drew the page: a Playwright protocol
  * error ("Unable to capture screenshot", seen under load while a page opened dialogs), or a page or browser closed

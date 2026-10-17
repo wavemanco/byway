@@ -46,12 +46,15 @@ import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engi
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { checkRenderer, dataDirReport, engineStartLines, RENDERER_OS_SANDBOX, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheck } from '../packages/runner/src/index.ts';
+import { checkRenderer, dataDirReport, engineStartLines, RENDERER_OS_SANDBOX, rendererCheckWithin, reportLines, startDevEngine, storeCaps, type DevEngine } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
-/** How long the page renderer's start-up check may take before byway says so and carries on (a launch takes ~100 ms). */
+/**
+ * How long byway waits for the page renderer's start-up check once the app is built and the engine is up, before it says
+ * so and carries on (a launch takes ~100 ms on an idle machine; the check starts earlier, while the build runs).
+ */
 const RENDERER_CHECK_MS = 30_000;
 /** Longer than the worker's forced shutdown (30 s), so a normal stop always finishes first. */
 const ENGINE_STOP_DEADLINE_MS = 40_000;
@@ -177,11 +180,8 @@ async function main(): Promise<void> {
   console.log('  engine     starting Temporal and the runner worker…');
   const engineStarting = startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort });
   engineStarting.catch(() => undefined);
-  // The renderer is checked meanwhile; the check never throws.
-  const rendererChecking = Promise.race([
-    checkRenderer(),
-    new Promise<RendererCheck>((resolve) => setTimeout(() => resolve({ ready: false, message: `Playwright's Chromium did not start within ${RENDERER_CHECK_MS / 1000} s.` }), RENDERER_CHECK_MS).unref()),
-  ]);
+  // The renderer is checked meanwhile; the check never throws. Its time limit starts when byway waits for it, below.
+  const rendererChecking = checkRenderer();
   const env: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
   try {
     if (mode === 'start') await build(env);
@@ -201,7 +201,7 @@ async function main(): Promise<void> {
   }
   console.log(`  engine     ${engine.address}`);
   for (const line of engineStartLines(engine.atStart)) console.log(`             ${line}`);
-  const renderer = await rendererChecking;
+  const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS);
   console.log(`  renderer   ${renderer.ready ? `Playwright's Chromium, ready (${RENDERER_OS_SANDBOX ? 'inside its OS sandbox' : 'its OS sandbox is off; see Renderer in the README'})` : `not available: ${renderer.message}`}`);
 
   const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
