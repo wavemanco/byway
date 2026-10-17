@@ -53,11 +53,10 @@ jobs:
         with:
           node-version-file: .node-version
 
-      # Installed from npm, as on the owner's machine. pnpm's own installers (pnpm/action-setup, pnpm self-update)
-      # refuse 11.12.0: npm marks it deprecated because its standalone build (@pnpm/exe) shipped without a binary.
-      # The npm package itself runs.
+      # pnpm/action-setup reads the version from package.json's packageManager (it stops if given a second one), so no
+      # version is set here. It runs after setup-node, so it uses the pinned Node.
       - name: pnpm (the version in package.json's packageManager)
-        run: npm install --global "$(node -p "require('./package.json').packageManager")" && pnpm --version
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

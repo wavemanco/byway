@@ -8,7 +8,7 @@ The research program and product built on the **Off-Center protocol**: eight com
 
 ## Quick start
 
-Requires Node 24+ and pnpm 11+. Windows and Linux; macOS later (CI tests the first two, with Node 24.13.1 and pnpm 11.12.0: see [CI](#ci)).
+Requires Node 24+ and pnpm 11+; pnpm switches itself to the version pinned in `package.json` (`packageManager`), downloading it once. Windows and Linux; macOS later (CI tests the first two, with Node 24.13.1 and pnpm 11.28.6: see [CI](#ci)).
 
 ```bash
 pnpm install

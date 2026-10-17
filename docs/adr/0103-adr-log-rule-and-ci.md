@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Accepted |
-| **Decided by** | User (the owner approved D4 on 2026-10-16: "proceed", Windows and Linux only, macOS later) |
+| **Decided by** | User (the owner approved D4 on 2026-10-16: "proceed", Windows and Linux only, macOS later; on 2026-10-17 the owner moved the pnpm pin to the newest pnpm 11 release at or above 11.13.1) |
 | **Date (local, UTC−7)** | 2026-10-16 22:00 |
 | **Track** | Process |
 | **Related** | [ADR-0001](0001-record-architecture-decisions-as-adrs.md), [ADR-0041](0041-shared-engine-pinned-research-versions.md), [ADR-0055](0055-instrument-firewall-and-exposure.md), [ADR-0057](0057-tamper-evident-record-and-disclosure.md), [ADR-0059](0059-engine-requirements-for-composition-and-credibility.md), [ADR-0060](0060-repository-byway-private-remote.md), [ADR-0068](0068-contracts-first-parallel-build.md), [ADR-0100](0100-corrections-found-by-the-final-re-check.md) |
@@ -30,6 +30,8 @@ A read of main's history found:
 The D4 brief offered four options: keep the honour system; protect main and add a local history test; that plus a Windows CI job that reports and blocks nothing (recommended); or the full design, with a blocking check, a Linux job and structured relation rows in every record. Its skeptic kept the recommendation and added: a check for Accepted records that still read as proposals, the dependency on `--no-ff` merges, a rule that the accepting commit may finalise a Decision, a reader for red runs (`gh run list`), a weekly run, tag protection, and an honest account of what a ruleset on a private repository does.
 
 The owner's answers on 2026-10-16. On D2 (the renderer's sandbox, which needs Linux): "go with revised design but only Windows and Linux for now. MacOS later (so you might want to make certain accommodations now for that)." On D4, asked as "the CI and branch-protection plan; the Linux and macOS runs above would be its first use": "proceed. but remember my earlier point: no macOS for now."
+
+On 2026-10-17, after this record was checked, the owner decided, through the coordinator, to move the pnpm pin to the newest pnpm 11 release at or above 11.13.1. The first pin was 11.12.0, the version on the owner's machine, which npm marks as broken.
 
 ## Decision
 
@@ -64,7 +66,7 @@ It cannot see a missing "changed by" link: no record says, in a form a test can 
 
 - **What runs.** `.github/workflows/verify.yml` runs `pnpm verify` on GitHub's `windows-2025` and `ubuntu-24.04` machines.
 - **When.** On every push to main, by hand (`workflow_dispatch`), and weekly (Mondays 06:17 UTC). The tests download Chromium and the Temporal CLI, so the weekly run catches a broken download in a week with no pushes. A newer run on the same branch, of any trigger (a push, the weekly run or a run started by hand), cancels one still going.
-- **Pinned.** Node 24.13.1 (`.node-version`) and pnpm 11.12.0 (`packageManager` in package.json), the versions on the owner's machine; every third-party action by commit SHA. npm marks pnpm 11.12.0 deprecated as a broken release (its standalone build, `@pnpm/exe`, shipped without a binary), and pnpm's own installers refuse it. CI installs the npm package with npm, as the owner's machine has it, and that package runs. Moving the pin is in the backlog.
+- **Pinned.** Node 24.13.1 (`.node-version`), the version on the owner's machine, and pnpm 11.28.6 (`packageManager` in package.json); every third-party action by commit SHA. 11.28.6 was the newest pnpm 11 release on 2026-10-17 (published 2026-10-15). pnpm was first pinned at 11.12.0, the owner's version, but npm marks it deprecated as a broken release ("This release is broken. Please upgrade to v11.13.1 or newer."; its standalone build, `@pnpm/exe`, shipped without a binary), and pnpm's own installers refuse it, so the owner moved the pin. CI installs pnpm with `pnpm/action-setup` (v6.1.0, pinned by SHA), which reads `packageManager`. On a person's machine, pnpm 11 by default switches itself to the pinned version on its first command in this repository, downloading it once; the lockfile does not change.
 - **Locked down.** A read-only token, not kept after checkout, and no secrets. The browser tests use stand-in keys and fail if one leaks, so a run never reaches a paid provider.
 - **Reporting, not blocking.** A red run puts a red mark on the commit, and GitHub notifies the account that pushed it (for the weekly run, the account that last changed its schedule). Nothing is refused. Agents push with the owner's account, so the notice reaches the owner, who has asked not to be drawn into administration; the reader is whoever merges next. Before merging a branch or pushing to main, check the last run on main: `gh run list --branch main --limit 1`. A red main is fixed, or a flaky test is named and set aside, before more merges.
 - **Linux needs two things set up** besides Chromium's system libraries, both in the Linux job only:
@@ -115,7 +117,7 @@ Read with this record: [ADR-0001](0001-record-architecture-decisions-as-adrs.md)
 - **The full design: a required check, structured "Changes" and "Later records" rows in every record, and a back-fill of all relations.** A blocking check on GitHub guards GitHub's copy, not the local checkout byway runs from, and would force every merge through a pull request. The relation rows are a reading aid; the index already holds the links. Kept in the backlog with triggers.
 - **Linux on every push, Windows nightly** (the verification report's design). Windows is where byway has always run, so it runs on every push too.
 - **A pre-push hook running the fast checks.** Not added now; in the backlog.
-- **Moving the pnpm pin to 11.13.1 or later.** pnpm would then switch the owner's local pnpm to that version on the next command in this repository. Left to the owner (backlog).
+- **Keeping pnpm at 11.12.0,** the owner's version, installed with npm in CI because pnpm's own installers refuse it. npm marks it broken, so the owner moved the pin.
 
 ## Consequences
 
@@ -126,6 +128,7 @@ Read with this record: [ADR-0001](0001-record-architecture-decisions-as-adrs.md)
 - **Money.** GitHub bills each job in whole minutes: Linux at $0.006 a minute and Windows at $0.010 (2-CPU machines, list price). One run is about 14 to 18 Linux minutes and 30 to 36 Windows minutes: about $0.40 to $0.47, the price of 65 to 80 Linux minutes. At 20 to 70 pushes to main a month plus the weekly runs, that is about $10 to $35 a month at list price, 3% to 12% of the 50,000 minutes the organization's plan includes each month. The included minutes are shared with the organization's other repositories; in a month when they run out, as they did in September 2026 when another repository used them all, byway's runs are billed at these prices. The bring-up used 59 Linux minutes and 88 Windows minutes, about $1.23 at list price.
 - **False alarms.** A reporting check raises false alarms on flaky tests. The known ledger-timestamp flake is fixed on main (3822920). A new timing flake on GitHub's 2-CPU machines is named and set aside quickly.
 - **The coordinator's merge procedure changes** (§1.4): the index row and the "changed by" links reach main in the record's own commit.
+- **The owner's pnpm switches to 11.28.6** on its first command in this repository, and downloads it once.
 - **No product behaviour changes.**
 
 ## Evidence
@@ -137,4 +140,5 @@ Read with this record: [ADR-0001](0001-record-architecture-decisions-as-adrs.md)
   - The runner reported `kernel.apparmor_restrict_unprivileged_userns = 1` (uid 1001). Chromium inside its sandbox failed with "No usable sandbox" without the AppArmor profile, and started with it (headless shell 284 ms, full Chromium 642 ms).
   - Chromium's font for the vertical Japanese row was WenQuanYi Zen Hei (the first item laid out at 0 px high); with IPAGothic, Noto Sans CJK JP or Noto Serif CJK JP it was 64 px, as with Yu Gothic on Windows.
   - With both set up: 4,751 of 4,753 unit tests and 53 of 53 browser tests passed on each system. The two failures were `scripts/test/ci.test.ts` checking that the workflow runs `pnpm verify` as one step and only for main; the bring-up shape failed them, as intended, and the final workflow passes them.
-- Files: `.github/workflows/verify.yml`, `.node-version`, `package.json` (`packageManager`), `scripts/test/adr-records.test.ts`, `scripts/test/adr-log.ts`, `scripts/test/ci.test.ts`, `scripts/test/readme.test.ts`, the README (Quick start, Scripts, Back up, Tests, CI, Ground rules), spec §4 and §6, and the playbook's public-record row.
+- The pnpm pin, 2026-10-17: `npm view pnpm dist-tags` gave latest-11 = 11.28.6, which npm does not mark deprecated; `npm view pnpm@11.12.0 deprecated` gave "This release is broken. Please upgrade to v11.13.1 or newer." With 11.28.6 pinned, the owner's pnpm 11.12.0 switched itself to 11.28.6, and `pnpm install --frozen-lockfile` passed in a fresh clone and left `pnpm-lock.yaml` unchanged. `pnpm/action-setup` v6.1.0 installs pnpm 11.25.0 with npm from its own lockfile, then runs `pnpm self-update` to the pinned version.
+- Files: `.github/workflows/verify.yml`, `.node-version`, `package.json` (`packageManager`), `scripts/test/adr-records.test.ts`, `scripts/test/adr-log.ts`, `scripts/test/ci.test.ts`, `scripts/test/workflow-guard.ts`, `scripts/test/readme.test.ts`, the README (Quick start, Scripts, Back up, Tests, CI, Ground rules), spec §4 and §6, and the playbook's public-record row.

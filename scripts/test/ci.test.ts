@@ -67,8 +67,14 @@ describe('the CI workflow (ADR-0103)', () => {
   it('pins Node in .node-version and pnpm in packageManager, and uses both', () => {
     expect(read('.node-version').trim()).toMatch(/^24\.\d+\.\d+$/);
     expect(workflow).toMatch(/node-version-file: \.node-version/);
-    expect(pkg.packageManager).toMatch(/^pnpm@11\.\d+\.\d+$/);
-    expect(workflow).toMatch(/npm install --global "\$\(node -p "require\('\.\/package\.json'\)\.packageManager"\)"/);
+    // The owner's decision (ADR-0103 §3): the newest pnpm 11 release at or above 11.13.1. npm marks 11.12.0 as broken
+    // ("Please upgrade to v11.13.1 or newer"). `npm view pnpm dist-tags` on 2026-10-17: latest-11 is 11.28.6.
+    expect(pkg.packageManager).toBe('pnpm@11.28.6');
+    // pnpm/action-setup reads packageManager itself; given a version of its own as well, it stops with an error.
+    const setup = /^ {6}- name: pnpm[^\n]*\n {8}uses: pnpm\/action-setup@([0-9a-f]{40}) # v6\.1\.0\n(?! {8}with:)/m.exec(workflow);
+    expect(setup?.[1]).toBe('ea17c68df8912ef543352723c149a84f56e3d413');
+    expect(workflow).not.toMatch(/npm install --global/);
+    expect(workflow.indexOf('pnpm/action-setup')).toBeGreaterThan(workflow.indexOf('actions/setup-node'));
     expect(workflow).toMatch(/pnpm install --frozen-lockfile/);
   });
 
@@ -181,6 +187,13 @@ describe('the README on platforms and CI (ADR-0103)', () => {
     const quick = section(readme, '## Quick start') ?? '';
     expect(quick).toContain(`${systems.join(' and ')}; macOS later`);
     expect(readme).not.toMatch(/Windows, macOS and Linux/);
+  });
+
+  it('names the Node and pnpm versions CI pins, and says pnpm switches itself to the pinned one', () => {
+    const quick = section(readme, '## Quick start') ?? '';
+    const pnpm = (pkg.packageManager ?? '').replace(/^pnpm@/, '');
+    expect(quick).toContain(`with Node ${read('.node-version').trim()} and pnpm ${pnpm}`);
+    expect(quick).toContain('pnpm switches itself to the version pinned in `package.json` (`packageManager`), downloading it once');
   });
 
   it('has a CI section that says what runs where, that it blocks nothing, and how to read the last run on main', () => {
