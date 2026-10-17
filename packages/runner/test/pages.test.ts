@@ -66,6 +66,69 @@ async function launchWith(extra: readonly string[], change: Partial<LaunchOption
   return chromium.launch({ ...opts, ...change, args: [...(opts.args ?? []), ...extra] });
 }
 
+/**
+ * Counts the reads of the page's layout and style made in the page from here on (a box's rects, a range's rects, a
+ * computed style), and says how many so far. It wraps the page's own functions once; the read's code calls them.
+ */
+const LAYOUT_READS = `(() => {
+  const key = '__byway_test_layout_reads';
+  if (!window[key]) {
+    const count = { n: 0 };
+    const wrap = (owner, name) => { const f = owner[name]; owner[name] = function (...a) { count.n++; return f.apply(this, a); }; };
+    for (const owner of [Element.prototype, Range.prototype]) for (const name of ['getBoundingClientRect', 'getClientRects']) wrap(owner, name);
+    wrap(window, 'getComputedStyle');
+    Object.defineProperty(window, key, { value: count });
+  }
+  return window[key].n;
+})()`;
+
+/**
+ * Test-only: the stated launch, watched through the `launch` option, as a read sees it. It counts the contexts reads
+ * open (one per read; a read made again opens a second), and notes for each sample of a read how many text nodes it
+ * measured (the read's `r.sample()` returns that number) and how many times it read the page's layout or style. While
+ * `hold` is set, a read's first sample waits for it, as on a machine too slow for any deadline: the read cannot finish
+ * before the test lets it go.
+ */
+function watched() {
+  const seen = { contexts: 0, samples: [] as Array<{ measured: number; layoutReads: number }>, hold: undefined as Promise<void> | undefined };
+  const launch = async (): Promise<Browser> => {
+    const browser = await launchChromium();
+    return new Proxy(browser, {
+      get(target, prop, receiver) {
+        if (prop !== 'newContext') return Reflect.get(target, prop, receiver);
+        return async (...args: Parameters<Browser['newContext']>) => {
+          seen.contexts++;
+          const context = await target.newContext(...args);
+          return new Proxy(context, {
+            get(c, p, r) {
+              if (p !== 'newPage') return Reflect.get(c, p, r);
+              return async () => {
+                const page = await c.newPage();
+                return new Proxy(page, {
+                  get(pg, name, rr) {
+                    const v = Reflect.get(pg, name, rr) as unknown;
+                    if (name !== 'evaluate') return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
+                    return async (code: string) => {
+                      if (typeof code !== 'string' || !code.includes('r.sample()')) return pg.evaluate(code);
+                      if (seen.hold) await seen.hold;
+                      const before = Number(await pg.evaluate(LAYOUT_READS));
+                      const result = await pg.evaluate(code);
+                      const after = Number(await pg.evaluate(LAYOUT_READS));
+                      seen.samples.push({ measured: Number(JSON.parse(String(result))), layoutReads: after - before });
+                      return result;
+                    };
+                  },
+                });
+              };
+            },
+          });
+        };
+      },
+    });
+  };
+  return { seen, launch };
+}
+
 /** The browser's own command line, read through CDP (it answers only when --enable-automation is set). */
 async function commandLine(browser: Browser): Promise<string[]> {
   const session = await browser.newBrowserCDPSession();
@@ -769,17 +832,60 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     }
   }, 120_000);
 
-  it('a page nesting thousands of inline elements left open is read, once, within the deadline (r10: the JavaScript-off read crashed)', async () => {
-    // Read within a render's deadline, not only failed plainly in it: the read measures a page again only after something
-    // on it changed (r11: measuring every text node again at each of the 33 samples ran these pages past the deadline).
-    for (const n of [5_000, 20_000]) {
-      const html = `<!doctype html><html><head><title>T</title></head><body><p>Keep</p><p>${'<span>'.repeat(n)}Gone${'</span>'.repeat(n)}</p></body></html>`;
-      expect((await pages.shownText(html, none)).text, String(n)).toBe('Keep\nGone');
+  // How long a read of such a page takes depends on the machine. The read grows with the page: about 8 s for 20,000
+  // elements left open on the owner's machine. Round 1's test, which required these reads to finish within the 30 s
+  // deadline, took about 12 s there and 18 to 23 s on GitHub's 2-CPU Windows machine, and in run 39015137461 that read
+  // ran past the deadline and failed plainly, as it should; with Chromium's CPU throttled 3 times, it fails the same way
+  // on the owner's machine. So neither test below measures time.
+  // The first reads with a reader whose limit only stops a hung read, and checks the text and the work: the first of the
+  // 33 samples measures each text node once, and the 32 after it, with nothing on the page changed, read nothing of its
+  // layout or style (r11: measuring every node again at each sample ran these pages past the deadline; without that,
+  // the read of the 20,000-element page left open runs past 30 s on the owner's machine too). The second makes the read
+  // slower than its deadline on any machine, and checks that it fails plainly, once.
+  const NESTED = (n: number) => `<!doctype html><html><head><title>T</title></head><body><p>Keep</p><p>${'<span>'.repeat(n)}Gone${'</span>'.repeat(n)}</p></body></html>`;
+  const OPEN = `<!doctype html><html><head><title>T</title></head><body><p>${Array.from({ length: 20_000 }, (_, i) => `<span>w${i} `).join('')}</p><p>Tail</p></body></html>`;
+  /** A read's 33 samples on a page where nothing changes: [text nodes measured, whether it read the layout or style]. */
+  const once = (nodes: number) => [[nodes, true], ...Array.from({ length: 32 }, () => [0, false])];
+
+  it('a page nesting thousands of inline elements left open is read in one call, each text node measured once (r10: the JavaScript-off read crashed; r11)', async () => {
+    const { seen, launch } = watched();
+    // Five minutes a read, many times the slowest seen (about 30 s): a limit that only stops a hung read.
+    const patient = playwrightPages({ timeoutMs: 300_000, launch });
+    opened.push(patient);
+    const read = async (html: string) => {
+      seen.contexts = 0;
+      seen.samples = [];
+      const text = (await patient.shownText(html, none)).text;
+      return { text, contexts: seen.contexts, samples: seen.samples.map((s) => [s.measured, s.layoutReads > 0]) };
+    };
+    for (const n of [5_000, 20_000]) expect(await read(NESTED(n)), String(n)).toEqual({ text: 'Keep\nGone', contexts: 1, samples: once(2) });
+    const open = await read(OPEN);
+    expect(open.text).toMatch(/^w0 w1 w2 [^]* w19999\nTail$/);
+    expect(open).toMatchObject({ contexts: 1, samples: once(20_001) });
+    expect((await read('<p>Next</p>')).text).toBe('Next');
+  }, 1_500_000);
+
+  it('a read slower than its deadline fails plainly at it, once, and the next read works, on any machine (SEC-5)', async () => {
+    // The page above, read by a reader with a short deadline whose first sample is held until the read has failed: the
+    // read cannot finish in time however fast the machine. Were the read to wait for its work past the deadline, it would
+    // never fail, and the test would time out; were it read again, a second context would open.
+    const { seen, launch } = watched();
+    const quick = playwrightPages({ timeoutMs: 5_000, closeTimeoutMs: 2_000, launch });
+    opened.push(quick);
+    await quick.ready();
+    let release = () => {};
+    seen.hold = new Promise<void>((r) => (release = r));
+    try {
+      const err = await quick.shownText(OPEN, none).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(StepError);
+      expect((err as Error).message).toBe('The page did not finish loading within 5 s, so its text could not be read.');
+      expect(seen.contexts).toBe(1);
+    } finally {
+      release();
+      seen.hold = undefined;
     }
-    const open = `<!doctype html><html><head><title>T</title></head><body><p>${Array.from({ length: 20_000 }, (_, i) => `<span>w${i} `).join('')}</p><p>Tail</p></body></html>`;
-    expect((await pages.shownText(open, none)).text).toMatch(/^w0 w1 w2 [^]* w19999\nTail$/);
-    expect((await pages.shownText('<p>Next</p>', none)).text).toBe('Next');
-  }, 180_000);
+    expect((await quick.shownText('<p>Next</p>', none)).text).toBe('Next');
+  }, 60_000);
 
   it('text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee\'s own box (r9)', async () => {
     const html = '<p>Before</p><div><marquee>Breaking news today</marquee></div><div><marquee direction="up" style="height:20px">Up <b>and</b> away</marquee></div><p>After</p>';
