@@ -3,8 +3,11 @@
  * per operating system, reporting only, with pinned tools and actions, no secrets and the full history; and the
  * README's platform claim names exactly the systems CI runs on.
  */
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { read, section } from './docs.ts';
+import { filesUnder, read, REPO, section } from './docs.ts';
+import { actionProblems, usesValues } from './workflow-guard.ts';
 
 const workflow = read('.github/workflows/verify.yml');
 const pkg = JSON.parse(read('package.json')) as { packageManager?: string; scripts: Record<string, string> };
@@ -39,13 +42,16 @@ describe('the CI workflow (ADR-0103)', () => {
     expect(workflow).toMatch(/^concurrency:\n {2}group: verify-\$\{\{ github\.ref \}\}\n {2}cancel-in-progress: true$/m);
   });
 
-  it('pins every action to a commit, reads with a read-only token, keeps no credentials and uses no secrets', () => {
-    const uses = [...workflow.matchAll(/^\s+uses: (\S+)/gm)].map((m) => m[1] ?? '');
-    expect(uses.length).toBeGreaterThan(1);
-    for (const u of uses) expect(u, u).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
+  it('pins every action and reusable workflow it uses to a commit, in every file under .github and every local action, and names no secrets', () => {
+    const files = Object.fromEntries(filesUnder('.github', /\.ya?ml$/).map((f) => [f, read(f)]));
+    expect(Object.keys(files)).toContain('.github/workflows/verify.yml');
+    expect(usesValues('.github/workflows/verify.yml', workflow).length).toBeGreaterThan(1);
+    expect(actionProblems(files, (rel) => (existsSync(path.join(REPO, rel)) ? read(rel) : undefined))).toEqual([]);
+  });
+
+  it('reads with a read-only token and keeps no credentials after checkout', () => {
     expect(workflow).toMatch(/^permissions:\n {2}contents: read$/m);
     expect(workflow).toMatch(/persist-credentials: false/);
-    expect(workflow).not.toMatch(/\$\{\{\s*secrets\./);
   });
 
   it('checks out the whole history, which the decision-log check reads', () => {
@@ -78,6 +84,67 @@ describe('the CI workflow (ADR-0103)', () => {
     expect(workflow).toContain(`"profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,'`);
     // The machine-wide restriction stays on.
     expect(workflow).not.toMatch(/apparmor_restrict_unprivileged_userns/);
+  });
+});
+
+describe('the pin and secrets guard fails on a bad workflow', () => {
+  const SHA = '3d3c42e5aac5ba805825da76410c181273ba90b1';
+  const job = (steps: string) => `on: push\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n${steps}\n`;
+  const check = (files: Record<string, string>) => actionProblems(files);
+  const one = (steps: string) => check({ '.github/workflows/w.yml': job(steps) });
+
+  it('passes actions pinned to a full commit SHA, in either step form, and a Docker image pinned by digest', () => {
+    expect(one(`      - uses: actions/cache@${SHA} # v4\n      - name: Node\n        uses: actions/setup-node@${SHA}\n      - uses: docker://node@sha256:${'a'.repeat(64)}`)).toEqual([]);
+  });
+
+  it.each([
+    ['a "- uses:" step', '      - uses: actions/cache@v4\n        with:\n          path: x'],
+    ['a "uses:" key under "- name:"', '      - name: Cache\n        uses: actions/cache@v4'],
+    ['a flow mapping', '      - { uses: actions/cache@v4 }'],
+    ['a double-quoted value', '      - uses: "actions/cache@v4"'],
+    ['a quoted key', "      - 'uses': actions/cache@v4"],
+    ['a short SHA', '      - uses: actions/cache@3d3c42e'],
+    ['a branch', '      - uses: actions/cache@main'],
+    ['no ref at all', '      - uses: actions/cache'],
+    ['a Docker image by tag', '      - uses: docker://node:24'],
+    ['a value on the next line', '      - uses:\n          actions/cache@v4'],
+  ])('fails on an unpinned action in %s', (_, steps) => {
+    expect(one(steps)).toHaveLength(1);
+  });
+
+  it('fails on a reusable workflow called by tag or branch, and passes one called by commit', () => {
+    const call = (ref: string) => check({ '.github/workflows/w.yml': `on: push\njobs:\n  call:\n    uses: octo/repo/.github/workflows/build.yml@${ref}\n` });
+    expect(call('v1')).toHaveLength(1);
+    expect(call('main')).toHaveLength(1);
+    expect(call(SHA)).toEqual([]);
+  });
+
+  it('reads a local composite action or reusable workflow and fails on an unpinned action inside it, or on one that is missing', () => {
+    const files = (inner: string) => ({
+      '.github/workflows/w.yml': job('      - uses: ./.github/actions/setup\n      - uses: ./tools/release'),
+      '.github/actions/setup/action.yml': `runs:\n  using: composite\n  steps:\n    - uses: actions/cache@${inner}\n`,
+    });
+    const tools = (rel: string) => (rel === 'tools/release/action.yaml' ? `runs:\n  using: composite\n  steps:\n    - run: echo\n      shell: bash\n` : undefined);
+    expect(actionProblems(files(SHA), tools)).toEqual([]);
+    expect(actionProblems(files('v4'), tools)).toEqual([expect.stringContaining('.github/actions/setup/action.yml:4')]);
+    expect(actionProblems(files(SHA))).toEqual([expect.stringContaining('./tools/release')]);
+    const reusable = { '.github/workflows/w.yml': 'on: push\njobs:\n  call:\n    uses: ./.github/workflows/build.yml\n' };
+    expect(actionProblems(reusable)).toEqual([expect.stringContaining('./.github/workflows/build.yml')]);
+    expect(actionProblems({ ...reusable, '.github/workflows/build.yml': job('      - uses: actions/cache@v4') })).toEqual([expect.stringContaining('.github/workflows/build.yml:6')]);
+  });
+
+  it.each([
+    ['an expression', '      - run: echo "${{ secrets.TOKEN }}"'],
+    ['an index', "      - run: echo \"${{ secrets['TOKEN'] }}\""],
+    ['the whole context', '      - run: echo "${{ toJSON(secrets) }}"'],
+    ['capitals', '      - run: echo "${{ SECRETS.TOKEN }}"'],
+    ['an environment variable', '      - run: echo "$TOKEN"\n        env:\n          TOKEN: ${{ secrets.TOKEN }}'],
+  ])('fails on secrets in %s', (_, steps) => {
+    expect(one(steps)).toHaveLength(1);
+  });
+
+  it('fails on a reusable workflow given the caller’s secrets', () => {
+    expect(check({ '.github/workflows/w.yml': `on: push\njobs:\n  call:\n    uses: octo/repo/.github/workflows/build.yml@${SHA}\n    secrets: inherit\n` })).toHaveLength(1);
   });
 });
 
