@@ -49,6 +49,8 @@ const PAYLOADS: Record<RunEventType, z.ZodType> = {
       note: z.string().min(1),
     })
     .strict(),
+  // A step's pages drawn with the page renderer's OS sandbox off (ADR-0105).
+  'renderer-sandbox-off': z.object({ note: z.string().min(1) }).strict(),
 };
 
 export function checkEvents(view: RunView, recipeId?: string): void {

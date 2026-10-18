@@ -1,0 +1,160 @@
+/**
+ * The page renderer's OS sandbox when it cannot start (ADR-0105): how byway tells, why on this computer, and the fix.
+ *
+ * Telling. Chromium says so on its error output ("No usable sandbox!", or a pointer to crbug.com/357670 or
+ * crbug.com/638180, the second when it was started as root) and exits; Playwright rewrites that log to
+ * "Chromium sandboxing failed!" with advice of its own. With its pipe transport the error's first line only says
+ * "Target page, context or browser has been closed" (ADR-0084), so the whole error is read, the log and the call log
+ * included. sandbox.test.ts holds these words to the installed Playwright (the drift test).
+ *
+ * Why, and the fix, per operating system: Windows (the sandbox is Chromium's normal mode there, so something on the
+ * computer blocks it); Linux as root, in a container, with AppArmor restricting unprivileged user namespaces (Ubuntu's
+ * default from 24.04; 23.10 brought the restriction in without turning it on), or with them switched off; and macOS,
+ * which byway does not support yet (the slot the owner asked for: "MacOS later"). Nothing here suggests switching the
+ * sandbox off: that is the person's choice in Settings, which says what it risks.
+ */
+import { existsSync, readFileSync } from 'node:fs';
+
+/** Playwright's words for a Chromium whose sandbox could not start (playwright-core's doRewriteStartupLog). */
+export const SANDBOX_FAILED = 'Chromium sandboxing failed!';
+
+/** Chromium's own words that make Playwright say SANDBOX_FAILED (the same list as Playwright's). */
+export const CHROMIUM_SANDBOX_MARKERS: readonly string[] = ['No usable sandbox!', 'crbug.com/357670', 'crbug.com/638180'];
+
+/** Chromium's word that it was started as root. */
+const AS_ROOT = 'crbug.com/638180';
+
+export type SandboxOs = 'windows' | 'linux' | 'macos' | 'other';
+
+/** What byway knows about the computer, for the reason it gives. */
+export interface SandboxHost {
+  os: SandboxOs;
+  /** Linux: byway runs as root (user id 0). */
+  root: boolean;
+  /** Linux: byway runs inside Docker or another container. */
+  container: boolean;
+  /** Linux: AppArmor restricts unprivileged user namespaces (kernel.apparmor_restrict_unprivileged_userns = 1). */
+  appArmorRestricts: boolean;
+  /** Linux: unprivileged user namespaces are switched off (kernel.unprivileged_userns_clone or user.max_user_namespaces is 0). */
+  userNamespacesOff: boolean;
+}
+
+/** How sandboxHost() reads the computer: the platform, the user id, files and the environment. Tests pass their own. */
+export interface HostProbe {
+  platform: NodeJS.Platform;
+  uid?: number;
+  /** A file's text, or undefined when it cannot be read. */
+  read(path: string): string | undefined;
+  exists(path: string): boolean;
+  env: Record<string, string | undefined>;
+}
+
+const thisComputer = (): HostProbe => ({
+  platform: process.platform,
+  ...(process.getuid ? { uid: process.getuid() } : {}),
+  read: (p) => readFileSync(p, 'utf8'),
+  exists: existsSync,
+  env: process.env,
+});
+
+const OS: Partial<Record<NodeJS.Platform, SandboxOs>> = { win32: 'windows', linux: 'linux', darwin: 'macos' };
+
+/** Reads what the reason depends on. Only Linux is looked into; a file that cannot be read is not a finding. */
+export function sandboxHost(probe: HostProbe = thisComputer()): SandboxHost {
+  const os = OS[probe.platform] ?? 'other';
+  const host: SandboxHost = { os, root: false, container: false, appArmorRestricts: false, userNamespacesOff: false };
+  if (os !== 'linux') return host;
+  const read = (p: string): string | undefined => {
+    try {
+      return probe.read(p)?.trim();
+    } catch {
+      return undefined;
+    }
+  };
+  const exists = (p: string): boolean => {
+    try {
+      return probe.exists(p);
+    } catch {
+      return false;
+    }
+  };
+  host.root = probe.uid === 0;
+  host.container = exists('/.dockerenv') || exists('/run/.containerenv') || Boolean(probe.env.container) || /\/(docker|kubepods|containerd|lxc|libpod)\b/.test(read('/proc/1/cgroup') ?? '');
+  host.appArmorRestricts = read('/proc/sys/kernel/apparmor_restrict_unprivileged_userns') === '1';
+  host.userNamespacesOff = read('/proc/sys/kernel/unprivileged_userns_clone') === '0' || read('/proc/sys/user/max_user_namespaces') === '0';
+  return host;
+}
+
+/**
+ * The whole text of an error: its message and, when Playwright kept it apart, the browser's log, and the same of what
+ * caused it (byway's plain step failure keeps Playwright's error as its cause).
+ */
+function wholeText(err: unknown, depth = 0): string {
+  if (typeof err === 'string') return err;
+  if (!(err instanceof Error) || depth > 4) return '';
+  const logs = (err as { logs?: unknown }).logs;
+  return `${err.message}\n${typeof logs === 'string' ? logs : ''}\n${wholeText(err.cause, depth + 1)}`;
+}
+
+/** Whether an error says Chromium's OS sandbox could not start. */
+export function isSandboxFailure(err: unknown): boolean {
+  const text = wholeText(err);
+  return text.includes(SANDBOX_FAILED) || CHROMIUM_SANDBOX_MARKERS.some((m) => text.includes(m));
+}
+
+export interface SandboxAdvice {
+  /** Why the sandbox cannot start on this computer. */
+  why: string;
+  /** What to do about it. */
+  fix: string;
+}
+
+/** The script README's Renderer section gives for Ubuntu 24.04 and later, and that CI runs (ADR-0105). */
+export const APPARMOR_SCRIPT = 'scripts/linux/allow-chromium-sandbox.sh';
+
+/**
+ * Why the sandbox cannot start here, and the fix. `executable` is Playwright's Chromium, named in the Windows fix;
+ * `error` is the failure, whose word that Chromium was started as root counts whatever byway read.
+ */
+export function sandboxAdvice(host: SandboxHost, opts: { executable?: string; error?: unknown } = {}): SandboxAdvice {
+  switch (host.os) {
+    case 'windows':
+      return {
+        why: 'On Windows the sandbox is how Chromium normally runs, so something on this computer is blocking it, most often security software or a company policy.',
+        fix: `Allow Playwright's Chromium${opts.executable ? ` (${opts.executable})` : ''} in that software, or ask whoever manages this computer, then start byway again.`,
+      };
+    case 'linux':
+      if (host.root || wholeText(opts.error).includes(AS_ROOT)) return { why: 'byway is running as root, and Chromium does not start its sandbox for root.', fix: 'Start byway as an ordinary user.' };
+      if (host.container) {
+        return {
+          why: "byway is running in a container, and a container's default security settings often stop Chromium starting its sandbox.",
+          fix: 'Run byway outside the container. Renderer in the README says more.',
+        };
+      }
+      if (host.appArmorRestricts) {
+        return {
+          why: "This Linux lets only the programs an AppArmor profile allows create the user namespaces Chromium's sandbox needs (Ubuntu does this by default from 24.04).",
+          fix: `Allow them for Playwright's Chromium alone: in the byway folder, run sh ${APPARMOR_SCRIPT} (it asks for your password for sudo), then start byway again.`,
+        };
+      }
+      if (host.userNamespacesOff) return { why: "Unprivileged user namespaces, which Chromium's sandbox needs, are switched off on this Linux.", fix: 'Someone with admin rights has to switch them on. Renderer in the README says more.' };
+      return { why: 'byway could not tell why on this Linux.', fix: 'Renderer in the README lists the usual causes and their fixes.' };
+    case 'macos':
+      return { why: 'byway does not support macOS yet.', fix: 'byway runs on Windows and Linux.' };
+    default:
+      return { why: 'byway does not support this operating system.', fix: 'byway runs on Windows and Linux.' };
+  }
+}
+
+/** A sandbox that could not start, as one plain message: what failed, what it stops, why here and the fix. */
+export function sandboxFailureMessage(advice: SandboxAdvice): string {
+  return `The page renderer could not start inside its OS sandbox on this computer, so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. ${advice.why} ${advice.fix}`;
+}
+
+/**
+ * A page renderer that did not start with the sandbox on, for no reason Chromium gave (a renderer process that security
+ * software stops, for example): the sandbox is one possible cause, memory another. `said` is Playwright's first line.
+ */
+export function possibleSandboxCause(said: string, advice: SandboxAdvice): string {
+  return `The page renderer started but could not draw byway's test page (${said}). One possible cause is that its OS sandbox cannot run on this computer; if so: ${advice.why} ${advice.fix} Another is a computer short of memory.`;
+}

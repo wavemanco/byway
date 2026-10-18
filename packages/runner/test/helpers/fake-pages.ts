@@ -52,6 +52,11 @@ export interface FakePages extends PageRenderer {
   failReady(err: Error | undefined): void;
   /** How many times ready() was asked. */
   readonly readyCalls: number;
+  /**
+   * The OS sandbox setting each render and text read is drawn under, as the real renderer tells it (RenderOptions.drawn;
+   * ADR-0105): on unless set off here.
+   */
+  osSandbox: boolean;
 }
 
 /** How many wide-screen (and phone) tiles a page gets: one, plus one per revision mark. */
@@ -129,6 +134,7 @@ export function fakePages(): FakePages {
   let waiting = 0;
   let notReady: Error | undefined;
   let readyCalls = 0;
+  const self = { osSandbox: true };
 
   const held = async (signal: AbortSignal | undefined) => {
     if (!gate) return;
@@ -147,12 +153,19 @@ export function fakePages(): FakePages {
   const render = async (html: string, surfaces: readonly Surface[], opts: RenderOptions = {}): Promise<SurfaceShots[]> => {
     if (notReady) throw notReady;
     rendered.push(html);
+    opts.drawn?.({ osSandbox: self.osSandbox });
     await held(opts.signal);
     return surfaces.map((s) => fakeShots(html, s));
   };
 
   return {
     rendered,
+    get osSandbox() {
+      return self.osSandbox;
+    },
+    set osSandbox(on: boolean) {
+      self.osSandbox = on;
+    },
     hold() {
       gate ??= new Promise((r) => (open = r));
     },
@@ -174,8 +187,9 @@ export function fakePages(): FakePages {
     },
     render: (html, _resolve, surfaces, opts) => render(html, surfaces, opts),
     screenshots: async (html, _resolve, opts) => (await render(html, ['desktop'], opts))[0]!.tiles,
-    shownText: async (html) => {
+    shownText: async (html, _resolve, opts) => {
       if (notReady) throw notReady;
+      opts?.drawn?.({ osSandbox: self.osSandbox });
       return modelShownText(html);
     },
     async close() {},

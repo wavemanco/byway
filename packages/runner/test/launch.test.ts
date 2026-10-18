@@ -1,12 +1,15 @@
 /**
- * How the page renderer's Chromium is launched (F18; ADR-0084), without a browser: Playwright is mocked here, so these
- * tests see exactly the options byway hands it. One stated launch for every renderer use: headless, the sandbox policy
- * the owner has yet to decide (kept as it was), only the WebRTC flags, and an environment with no provider key, nothing
- * secret-looking and nothing from the secrets file. The production launch takes no parameter, so no caller can add a
- * flag. A Chromium that cannot start fails every renderer path (a C1 view, a lineup card, the readiness check) with one
- * plain message that is not retried, and the start-up check says the same without throwing.
+ * How the page renderer's Chromium is launched (F18; ADR-0084, ADR-0105), without a browser: Playwright is mocked here,
+ * so these tests see exactly the options byway hands it. One stated launch for every renderer use: headless, inside its
+ * OS sandbox unless the person switched it off in Settings, only the WebRTC flags, and an environment with no provider
+ * key, nothing secret-looking and nothing from the secrets file. The production launch takes only the sandbox setting,
+ * so no caller can add a flag, and the renderer reads that setting from the store before each load; a setting it cannot
+ * read is on. A Chromium that cannot start fails every renderer path (a C1 view, a lineup card, the readiness check)
+ * with one plain message that is not retried; a sandbox that cannot start says why on this computer and the fix.
  *
- * The effective command line of a real Chromium is checked in pages.test.ts.
+ * The effective command line of a real Chromium, the readiness check's test page and the start-up check are checked in
+ * pages.test.ts and renderer-check.test.ts; the per-system reasons and the drift test on Playwright's words in
+ * sandbox.test.ts.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,21 +23,25 @@ import type { RunnerDeps } from '../src/activities/deps.ts';
 import { StepError, toFailure } from '../src/activities/failures.ts';
 import { ArtifactReader } from '../src/activities/prompting.ts';
 import { cardHtml } from '../src/cards.ts';
-import { checkRenderer, chromiumLaunchOptions, launchChromium, launchFailure, playwrightPages, RENDERER_OS_SANDBOX } from '../src/pages.ts';
+import { chromiumLaunchOptions, launchChromium, launchFailure, playwrightPages, RENDERER_OS_SANDBOX_DEFAULT, storeOsSandbox } from '../src/pages.ts';
+import { sandboxAdvice, sandboxFailureMessage, type SandboxHost } from '../src/sandbox.ts';
 import { FAILURE, type View } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
 const { launch } = vi.hoisted(() => ({ launch: vi.fn() }));
-vi.mock('playwright', () => ({ chromium: { launch } }));
+const EXECUTABLE = 'C:\\pw\\chromium_headless_shell-1243\\chrome-headless-shell-win64\\chrome-headless-shell.exe';
+vi.mock('playwright', () => ({ chromium: { launch, executablePath: () => EXECUTABLE } }));
 
 const WEBRTC_FLAGS = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
+const ON = { osSandbox: true };
+const OFF = { osSandbox: false };
 
 /** What Playwright 1.63 throws when its Chromium was never downloaded (coreBundle.js, "Executable doesn't exist at"). */
 const MISSING = new Error(
   [
-    "browserType.launch: Executable doesn't exist at C:\\pw\\chromium_headless_shell-1243\\chrome-headless-shell-win64\\chrome-headless-shell.exe",
+    `browserType.launch: Executable doesn't exist at ${EXECUTABLE}`,
     '╔════════════════════════════════════════════════════════════╗',
     '║ Looks like Playwright was just installed or updated.       ║',
     '║ Please run the following command to download new browsers: ║',
@@ -54,10 +61,27 @@ const DIED = new Error(
     '  - <launching> /pw/chrome-headless-shell',
   ].join('\n'),
 );
+/**
+ * What it throws when Chromium's sandbox cannot start: the same first line, then Playwright's own words in place of the
+ * browser's log (sandbox.test.ts holds this shape to the installed Playwright).
+ */
+const SANDBOXED = new Error(
+  [
+    'browserType.launch: Target page, context or browser has been closed',
+    'Browser logs:',
+    'Chromium sandboxing failed!',
+    '================================',
+    'To avoid the sandboxing issue, do either of the following:',
+    '  - (preferred): Configure your environment to support sandboxing',
+    "  - (alternative): Launch Chromium without sandbox using 'chromiumSandbox: false' option",
+    '================================',
+    '',
+    'Call log:',
+    '  - [pid=4242][err] No usable sandbox!',
+  ].join('\n'),
+);
 
 const none = async () => undefined;
-/** A browser that launched: enough for ready() and close(). */
-const fakeBrowser = () => ({ isConnected: () => true, on: () => undefined, close: vi.fn(async () => undefined) });
 
 beforeEach(() => {
   launch.mockReset();
@@ -67,7 +91,7 @@ afterEach(() => {
 });
 
 describe('the one launch every renderer use goes through', () => {
-  it('is headless, keeps the stated sandbox policy, adds only the WebRTC flags, and hands Chromium no key or secrets-file name', () => {
+  it('is headless, inside the OS sandbox or not as the setting says, adds only the WebRTC flags, and hands Chromium no key or secrets-file name', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'byway-launch-'));
     try {
       const file = path.join(dir, '.env.agents');
@@ -76,33 +100,64 @@ describe('the one launch every renderer use goes through', () => {
       const env: Env = { PATH: '/bin', SystemRoot: 'C:\\Windows', HOME: '/home/me', GITHUB_TOKEN: 'ghp-x', MY_SECRET: 'x', OPENAI_API_KEY: 'sk-shell', UNSET: undefined };
       for (const name of Object.values(KEY_VARS)) env[name] ??= `${name}-SENTINEL`;
       loadEnvFile(file, env);
-      const opts = chromiumLaunchOptions(env);
-      expect(opts.headless).toBe(true);
-      expect(opts.chromiumSandbox).toBe(RENDERER_OS_SANDBOX);
-      expect(opts.args).toEqual(WEBRTC_FLAGS);
-      expect(opts.env).toEqual({ PATH: '/bin', SystemRoot: 'C:\\Windows', HOME: '/home/me' });
+      for (const setting of [ON, OFF]) {
+        const opts = chromiumLaunchOptions(setting, env);
+        expect(Object.keys(opts).sort()).toEqual(['args', 'chromiumSandbox', 'env', 'headless']);
+        expect(opts.headless).toBe(true);
+        expect(opts.chromiumSandbox).toBe(setting.osSandbox);
+        expect(opts.args).toEqual(WEBRTC_FLAGS);
+        expect(opts.env).toEqual({ PATH: '/bin', SystemRoot: 'C:\\Windows', HOME: '/home/me' });
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('keeps the sandbox setting byway always had until the owner decides it (review verification §4 item 2)', () => {
-    // Off: Playwright's default, which adds --no-sandbox. Changing it is the owner's call, and this test says so.
-    expect(RENDERER_OS_SANDBOX).toBe(false);
-  });
-
-  it('takes no parameter in production and calls Playwright once, with exactly those options and no key', async () => {
+  it('takes only the sandbox setting in production and calls Playwright once, with exactly those options and no key', async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-SENTINEL');
     vi.stubEnv('MY_SERVICE_TOKEN', 'tok-SENTINEL');
-    const browser = fakeBrowser();
+    const browser = { isConnected: () => true, on: () => undefined, close: vi.fn(async () => undefined) };
     launch.mockResolvedValueOnce(browser);
-    expect(launchChromium.length).toBe(0);
-    expect(await launchChromium()).toBe(browser);
+    expect(launchChromium.length).toBe(1);
+    expect(await launchChromium(ON)).toBe(browser);
     expect(launch).toHaveBeenCalledTimes(1);
     const [given] = launch.mock.calls[0] as [Record<string, unknown>];
-    expect(given).toEqual(chromiumLaunchOptions());
+    expect(given).toEqual(chromiumLaunchOptions(ON));
     expect(given.env).toBeDefined();
     expect(JSON.stringify(given)).not.toContain('SENTINEL');
+  });
+});
+
+describe('the OS sandbox setting (ADR-0105)', () => {
+  /** The options each launch was given, when every launch fails at once (so no browser is needed). */
+  const launchedWith = () => (launch.mock.calls as [{ chromiumSandbox?: boolean }][]).map(([o]) => o.chromiumSandbox);
+
+  it('is on unless the person switched it off: no setting given, or one that cannot be read, launches inside the sandbox', async () => {
+    expect(RENDERER_OS_SANDBOX_DEFAULT).toBe(true);
+    launch.mockRejectedValue(DIED);
+    await playwrightPages().ready().catch(() => undefined);
+    await playwrightPages({ osSandbox: async () => true }).ready().catch(() => undefined);
+    await playwrightPages({ osSandbox: async () => false }).ready().catch(() => undefined);
+    const broken = playwrightPages({
+      osSandbox: async () => {
+        throw new Error('the store is closed');
+      },
+    });
+    await broken.ready().catch(() => undefined);
+    expect(launchedWith()).toEqual([true, true, false, true]);
+  });
+
+  it("is the store's, read through storeOsSandbox before each load", async () => {
+    launch.mockRejectedValue(DIED);
+    let osSandbox = false;
+    let reads = 0;
+    const store = { getRendererSettings: async () => (reads++, { osSandbox }) };
+    const pages = playwrightPages({ osSandbox: storeOsSandbox(store) });
+    await pages.ready().catch(() => undefined);
+    osSandbox = true;
+    await pages.render('<p>Hi</p>', none, ['desktop']).catch(() => undefined);
+    expect(launchedWith()).toEqual([false, true]);
+    expect(reads).toBe(2);
   });
 });
 
@@ -120,16 +175,35 @@ describe('a Chromium that cannot start', () => {
       expect((toWorkflow as ApplicationFailure).type).toBe(FAILURE.step);
       expect((toWorkflow as ApplicationFailure).nonRetryable).toBe(true);
     }
-    expect(launchFailure(MISSING).message).toContain("Executable doesn't exist at C:\\pw\\");
+    expect(launchFailure(MISSING).message).toContain(`Executable doesn't exist at ${EXECUTABLE}`);
     expect(launchFailure(DIED).message).toContain('Target page, context or browser has been closed');
   });
 
-  it('comes out of the production launch as that failure, after one attempt', async () => {
+  it('whose OS sandbox could not start says so, why on this computer and the fix, not the install command, and is not retried either', () => {
+    const host: SandboxHost = { os: 'linux', root: false, container: false, appArmorRestricts: true, userNamespacesOff: false };
+    const failure = launchFailure(SANDBOXED, { osSandbox: true, host });
+    expect(failure).toBeInstanceOf(StepError);
+    expect(failure.cause).toBe(SANDBOXED);
+    expect(failure.message).toBe(sandboxFailureMessage(sandboxAdvice(host)));
+    expect(failure.message).not.toMatch(/playwright install|Target page|chromiumSandbox|\n/);
+    expect((toFailure(failure) as ApplicationFailure).nonRetryable).toBe(true);
+    // Windows: the fix names Playwright's Chromium.
+    const windows: SandboxHost = { ...host, os: 'windows', appArmorRestricts: false };
+    expect(launchFailure(SANDBOXED, { osSandbox: true, host: windows, executable: EXECUTABLE }).message).toContain(`Allow Playwright's Chromium (${EXECUTABLE})`);
+    // A launch without the sandbox cannot fail for it: the plain message.
+    expect(launchFailure(SANDBOXED, { osSandbox: false, host }).message).toMatch(/^The page renderer could not start \(Target page, context or browser has been closed\)/);
+  });
+
+  it('comes out of the production launch as that failure, after one attempt, naming Playwright’s Chromium on this computer', async () => {
     launch.mockRejectedValueOnce(MISSING);
-    const err = await launchChromium().catch((e: unknown) => e);
+    const err = await launchChromium(ON).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StepError);
     expect((err as Error).message).toBe(launchFailure(MISSING).message);
     expect(launch).toHaveBeenCalledTimes(1);
+    launch.mockRejectedValueOnce(SANDBOXED);
+    const sandboxed = await launchChromium(ON).catch((e: unknown) => e);
+    expect((sandboxed as Error).message).toBe(launchFailure(SANDBOXED, { osSandbox: true, executable: EXECUTABLE }).message);
+    expect((sandboxed as Error).message).toMatch(/^The page renderer could not start inside its OS sandbox on this computer/);
   });
 
   describe('on every renderer path', () => {
@@ -138,15 +212,18 @@ describe('a Chromium that cannot start', () => {
     beforeEach(() => {
       dir = mkdtempSync(path.join(tmpdir(), 'byway-launch-paths-'));
       store = createTestStore({ dataDir: dir });
-      launch.mockRejectedValue(DIED);
     });
     afterEach(() => {
       store.close();
       rmSync(dir, { recursive: true, force: true });
     });
 
-    it('a view of a page, a card, the readiness check and a lineup of cards all fail with the same message', async () => {
-      const expected = launchFailure(DIED).message;
+    it.each([
+      ['Chromium died', DIED],
+      ['its OS sandbox could not start', SANDBOXED],
+    ])('(%s) a view of a page, a card, the readiness check and a lineup of cards all fail with the same message', async (_, cause) => {
+      launch.mockRejectedValue(cause);
+      const expected = launchFailure(cause, { osSandbox: true, executable: EXECUTABLE }).message;
       const pages = playwrightPages();
       await expect(pages.render('<!doctype html><p>Hi</p>', none, ['desktop', 'mobile', 'fold'])).rejects.toThrow(expected);
       await expect(pages.render(cardHtml({ images: [], layout: 'grid', text: 'A card' }), none, ['desktop'])).rejects.toBeInstanceOf(StepError);
@@ -161,23 +238,9 @@ describe('a Chromium that cannot start', () => {
       const err = await buildLineup(deps, new ArtifactReader(deps), 'media', { view }, refs, () => 0.5).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(StepError);
       expect((err as Error).message).toBe(expected);
-      // Every attempt is the same stated launch: nothing ever retries with other options.
-      for (const [given] of launch.mock.calls as [unknown][]) expect(given).toEqual(chromiumLaunchOptions());
+      // Every attempt is the same stated launch: nothing ever retries with other options, the sandbox's included.
+      for (const [given] of launch.mock.calls as [unknown][]) expect(given).toEqual(chromiumLaunchOptions(ON));
       await pages.close();
     });
-  });
-});
-
-describe('the start-up check (serve.ts prints it as the "renderer" line)', () => {
-  it('says ready when the stated launch works, and closes the browser it started', async () => {
-    const browser = fakeBrowser();
-    launch.mockResolvedValueOnce(browser);
-    expect(await checkRenderer()).toEqual({ ready: true });
-    expect(browser.close).toHaveBeenCalledTimes(1);
-  });
-
-  it('says why when it does not, and never throws', async () => {
-    launch.mockRejectedValueOnce(MISSING);
-    expect(await checkRenderer()).toEqual({ ready: false, message: launchFailure(MISSING).message });
   });
 });

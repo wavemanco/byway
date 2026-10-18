@@ -11,7 +11,7 @@ import { GracefulShutdownPeriodExpiredError, NativeConnection, Worker } from '@t
 import { createActivities } from './activities/index.ts';
 import type { RunnerDeps } from './activities/deps.ts';
 import { buildWorkflows, workflowBundleHash } from './build.ts';
-import { playwrightPages, type PageRenderer } from './pages.ts';
+import { playwrightPages, storeOsSandbox, type PageRenderer } from './pages.ts';
 import { retireStaleRuns } from './versioning.ts';
 
 export interface CreateWorkerOptions {
@@ -23,7 +23,7 @@ export interface CreateWorkerOptions {
   connection?: NativeConnection;
   namespace?: string;
   taskQueue?: string;
-  /** Web-page screenshots; defaults to Playwright Chromium. */
+  /** Web-page screenshots; defaults to Playwright Chromium, under the store's OS sandbox setting (ADR-0105). */
   pages?: PageRenderer;
   /** A prebuilt workflow bundle; by default the worker builds dist/workflows.js first. */
   workflowsPath?: string;
@@ -60,7 +60,8 @@ export async function createWorker(opts: CreateWorkerOptions): Promise<RunnerWor
   const workflowsPath = opts.workflowsPath ?? (await buildWorkflows());
   const ownConnection = opts.connection ? undefined : await NativeConnection.connect({ address: DEFAULT_TEMPORAL_ADDRESS });
   const connection = opts.connection ?? ownConnection!;
-  const pages = opts.pages ?? playwrightPages();
+  // The page renderer reads the person's OS sandbox setting from the store before each load (ADR-0105).
+  const pages = opts.pages ?? playwrightPages({ osSandbox: storeOsSandbox(opts.store) });
   const ownPages = opts.pages === undefined;
   const deps: RunnerDeps = {
     gateway: opts.gateway,

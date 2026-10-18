@@ -43,11 +43,16 @@ const CLOSE = 5_000;
 const RETIRED = `${BYWAY_CLOSED} after a page in it took more than 5 s to close`;
 const SHUTDOWN = `${BYWAY_CLOSED} as it shut down`;
 
-/** A launcher that hands out stand-ins named b1, b2, …; `next` may hand back a launch of its own instead. */
+/**
+ * A launcher that hands out stand-ins named b1, b2, …, and keeps the OS sandbox setting each launch was given; `next`
+ * may hand back a launch of its own instead.
+ */
 function launcher() {
   const launched: Fake[] = [];
+  const settings: boolean[] = [];
   let next: (() => Promise<Fake>) | undefined;
-  const launch = async () => {
+  const launch = async (osSandbox: boolean) => {
+    settings.push(osSandbox);
     const own = next;
     next = undefined;
     if (own) return own();
@@ -55,7 +60,7 @@ function launcher() {
     launched.push(b);
     return b;
   };
-  return { launched, launch, then: (f: () => Promise<Fake>) => (next = f) };
+  return { launched, settings, launch, then: (f: () => Promise<Fake>) => (next = f) };
 }
 
 beforeEach(() => {
@@ -202,5 +207,112 @@ describe('the renderer\'s browsers (ADR-0106)', () => {
     const next = await browsers.take();
     expect(next).not.toBe(late);
     expect(launched.length).toBe(2);
+  });
+});
+
+describe('the OS sandbox setting, read before each load (ADR-0105)', () => {
+  const CHANGED = `${BYWAY_CLOSED} after its OS sandbox setting changed`;
+
+  /** The person's setting as the store holds it, and how often the renderer asked for it. */
+  function setting(initial: boolean) {
+    const s = { on: initial, reads: 0, read: async () => (s.reads++, s.on) };
+    return s;
+  }
+
+  it('is on when nothing gives it, and a browser is launched with the setting read for the load that launches it', async () => {
+    const { settings, launch } = launcher();
+    const plain = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE });
+    const a = await plain.take();
+    expect(settings).toEqual([true]);
+    expect(plain.osSandboxOf(a)).toBe(true);
+
+    const second = launcher();
+    const off = setting(false);
+    const browsers = renderBrowsers(second.launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE, osSandbox: off.read });
+    const b = await browsers.take();
+    await browsers.find();
+    await browsers.take();
+    expect(second.settings).toEqual([false]);
+    expect(browsers.osSandboxOf(b)).toBe(false);
+    // Read for every load and every readiness check: a change is seen by the next one.
+    expect(off.reads).toBe(3);
+  });
+
+  it('a change retires the browser in use: the next load launches with the new setting, and the loads still on the old one finish there before it is closed', async () => {
+    const { launched, settings, launch } = launcher();
+    const s = setting(true);
+    const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE, osSandbox: s.read });
+    const a = await browsers.take();
+    const b = await browsers.take();
+    s.on = false;
+    const c = await browsers.take();
+    expect(c).not.toBe(a);
+    expect(settings).toEqual([true, false]);
+    expect(browsers.osSandboxOf(c)).toBe(false);
+    // The two loads on the sandboxed browser were not cut short: it stays open until both let it go.
+    await browsers.release(a);
+    expect(launched[0]!.closes).toEqual([]);
+    await browsers.release(b);
+    expect(launched[0]!.closes).toEqual([CHANGED]);
+    expect(browsers.closedWith(a)).toBe(CHANGED);
+    // Switched back on: the same again, the other way.
+    s.on = true;
+    const d = await browsers.take();
+    expect(settings).toEqual([true, false, true]);
+    expect(browsers.osSandboxOf(d)).toBe(true);
+    await browsers.release(c);
+    expect(launched[1]!.closes).toEqual([CHANGED]);
+    expect(launched[2]!.closes).toEqual([]);
+  });
+
+  it('a browser no load holds is closed as soon as the setting changes, and the readiness check follows the setting too', async () => {
+    const { launched, settings, launch } = launcher();
+    const s = setting(false);
+    const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE, osSandbox: s.read });
+    const a = await browsers.find();
+    s.on = true;
+    const b = await browsers.find();
+    expect(b).not.toBe(a);
+    expect(settings).toEqual([false, true]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(launched[0]!.closes).toEqual([CHANGED]);
+  });
+
+  it('loads racing after a change launch one browser between them', async () => {
+    const { launched, settings, launch } = launcher();
+    const s = setting(true);
+    const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE, osSandbox: s.read });
+    await browsers.take();
+    s.on = false;
+    const [x, y, z] = await Promise.all([browsers.take(), browsers.take(), browsers.find()]);
+    expect(new Set([x, y, z]).size).toBe(1);
+    expect(settings).toEqual([true, false]);
+    expect(launched.length).toBe(2);
+  });
+
+  it('a setting that cannot be read counts as on: byway never draws without the sandbox by mistake', async () => {
+    const { settings, launch } = launcher();
+    const browsers = renderBrowsers(launch, {
+      timeoutMs: TIMEOUT,
+      closeTimeoutMs: CLOSE,
+      osSandbox: async () => {
+        throw new Error('the store is closed');
+      },
+    });
+    const a = await browsers.take();
+    expect(settings).toEqual([true]);
+    expect(browsers.osSandboxOf(a)).toBe(true);
+  });
+
+  it('a browser retired for a late close keeps that reason when the setting changes too', async () => {
+    const { launched, launch } = launcher();
+    const s = setting(true);
+    const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE, osSandbox: s.read });
+    const a = await browsers.take();
+    browsers.retire(a);
+    s.on = false;
+    await browsers.take();
+    await browsers.release(a);
+    expect(launched[0]!.closes).toEqual([RETIRED]);
   });
 });

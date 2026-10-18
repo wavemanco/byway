@@ -23,6 +23,7 @@ const MIGRATION_5_CHECKSUM = 'sha256:9a63b55748772581a7a23f8f9eef1ef9c85100cffc8
 /** Pinned when migration 6 (the spend book, ADR-0095) was written; it must never change. */
 const MIGRATION_6_CHECKSUM = 'sha256:8a6190b9d3d2443dc74679922806992d357242034ca7d56766d045ee89abb1f0';
 const MIGRATION_7_CHECKSUM = 'sha256:43d25171342abea916e9cdec341e2871557be594609c277f44369d45ba70113a';
+const MIGRATION_8_CHECKSUM = 'sha256:c0bf1a83fdc56c0292a686df508e44e5a8075f9d18692d96defab8a1e762444c';
 
 const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
 
@@ -194,6 +195,7 @@ describe('migrations', () => {
       [5, 'memos', MIGRATION_5_CHECKSUM],
       [6, 'spend-book', MIGRATION_6_CHECKSUM],
       [7, 'operation-keys', MIGRATION_7_CHECKSUM],
+      [8, 'renderer-settings', MIGRATION_8_CHECKSUM],
     ]);
   });
 

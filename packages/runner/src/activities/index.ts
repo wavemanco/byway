@@ -15,6 +15,9 @@
  * A decline is asked once more by the gateway, on the same model (ADR-0102). The memo keeps the decline and then the
  * call's outcome, so a step that runs again never buys the declined call again (memo.ts); a step's calls write each
  * decline they meet to the run's events, with what became of the second ask (declines.ts).
+ *
+ * A step whose pages are drawn with the page renderer's OS sandbox off (the person switched it off in Settings) notes
+ * that in the run's events, once per step call (sandbox-note.ts; ADR-0105).
  */
 import type { RunnerActivities } from '../types.ts';
 import { assetStep } from './asset.ts';
@@ -28,6 +31,7 @@ import { memoGateway, memoScopeOf } from './memo.ts';
 import { modelStep } from './model-step.ts';
 import { relayLink, storyboardShots } from './relay.ts';
 import { renderView } from './render.ts';
+import { watchSandbox } from './sandbox-note.ts';
 
 export type { RunnerDeps } from './deps.ts';
 
@@ -41,15 +45,18 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
       const memoized = memo ? memoGateway(gateway, deps.store, memo, { operation: { until: invocation.done, ...(invocation.signal ? { cancel: invocation.signal } : {}) } }) : gateway;
       // Each decline a step's calls meet is written to the run's events (ADR-0102), outside the memo: see declines.ts.
       const step = stepCallOf(input);
+      // A step whose pages are drawn with the OS sandbox off says so (ADR-0105): see sandbox-note.ts.
+      const watch = deps.pages ? watchSandbox(guardPages(deps.pages, invocation.signal), deps.store, input) : undefined;
       const scoped: RunnerDeps = {
         ...deps,
         gateway: step ? logDeclines(memoized, deps.store, step) : memoized,
-        ...(deps.pages ? { pages: guardPages(deps.pages, invocation.signal) } : {}),
+        ...(watch ? { pages: watch.pages } : {}),
         ...(invocation.signal ? { signal: invocation.signal } : {}),
       };
       try {
         return await guarded(() => fn(scoped, input));
       } finally {
+        await watch?.settled();
         invocation.stop();
         // Best effort: the step's own outcome stands whether or not the cost could be brought up to date here.
         await settleLateCost(deps.gateway, deps.store, gateway.calledFor).catch(() => undefined);

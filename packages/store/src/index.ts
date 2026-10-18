@@ -12,4 +12,5 @@ export { ArtifactCorruptError, CheckpointResolvedError, CheckpointWithdrawnError
 export { MIGRATIONS, SCHEMA_VERSION, migrate, type Migration } from './migrations.ts';
 export { checkResolution, type ResolutionCheck } from './resolution.ts';
 export { DEFAULT_PREFERENCES } from './preferences.ts';
+export { DEFAULT_RENDERER_SETTINGS } from './renderer.ts';
 export { CHECKPOINT_KINDS, MAX_EVENT_DATA_BYTES, MAX_MEMO_VALUE_BYTES, RUN_EVENT_TYPES, RUN_STATUSES } from './validate.ts';

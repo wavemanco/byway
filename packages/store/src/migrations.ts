@@ -283,6 +283,22 @@ ALTER TABLE paid_operations ADD COLUMN released_key TEXT;
 CREATE UNIQUE INDEX paid_operations_by_key ON paid_operations (op_key) WHERE op_key IS NOT NULL;
 `,
   },
+  {
+    version: 8,
+    name: 'renderer-settings',
+    sql: `
+-- The page renderer's settings (RendererSettings; ADR-0105): one row for the data directory, since the engine's one
+-- renderer serves every workspace. No row means never set, and the store answers with the sandbox on. os_sandbox is
+-- written only by the person's choice in Settings; last_check is what byway's latest start-up check found, kept whole as
+-- JSON and checked by the store on write and read.
+CREATE TABLE renderer_settings (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  os_sandbox  INTEGER NOT NULL CHECK (os_sandbox IN (0, 1)),
+  changed_at  TEXT,
+  last_check  TEXT CHECK (last_check IS NULL OR json_valid(last_check))
+) STRICT;
+`,
+  },
 ];
 
 /** The schema version this build writes. */

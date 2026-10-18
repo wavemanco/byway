@@ -46,5 +46,12 @@ export function prepareQueries(db: DatabaseSync) {
     upsertPreferences: p(`INSERT INTO preferences (workspace_id, profile_id, demo_mode, show_technical_names, updated_at) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (workspace_id) DO UPDATE SET profile_id = excluded.profile_id, demo_mode = excluded.demo_mode,
       show_technical_names = excluded.show_technical_names, updated_at = excluded.updated_at`),
+
+    rendererSettings: p('SELECT * FROM renderer_settings WHERE id = 1'),
+    // The row is made by whichever write comes first; the sandbox's own default (on) is written with it.
+    setRendererSandbox: p(`INSERT INTO renderer_settings (id, os_sandbox, changed_at, last_check) VALUES (1, ?, ?, NULL)
+      ON CONFLICT (id) DO UPDATE SET os_sandbox = excluded.os_sandbox, changed_at = excluded.changed_at`),
+    recordRendererCheck: p(`INSERT INTO renderer_settings (id, os_sandbox, changed_at, last_check) VALUES (1, 1, NULL, ?)
+      ON CONFLICT (id) DO UPDATE SET last_check = excluded.last_check`),
   };
 }

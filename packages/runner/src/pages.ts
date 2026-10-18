@@ -25,11 +25,16 @@
  * web-page references given as HTML, and the cards a GREAT critic sees whenever a lineup mixes forms (BLIND-1), which
  * decode reference images people upload and images providers return. All of that is untrusted, so its Chromium is
  * started in one place with one stated policy (F18; ADR-0084): chromiumLaunchOptions() says how; launchChromium() is the
- * only production launch and takes no parameter, so no caller can add a flag; Chromium's environment holds no provider
- * key, nothing secret-looking and nothing from the secrets file; and a Chromium that cannot start fails every use with
- * one plain message that is not retried. Whether Chromium's OS sandbox is on (RENDERER_OS_SANDBOX) is kept as it always
- * was until the owner decides. ready() and checkRenderer() say whether the renderer can start before a run that needs
- * it spends anything.
+ * only production launch and takes only the OS sandbox setting, so no caller can add a flag; Chromium's environment holds
+ * no provider key, nothing secret-looking and nothing from the secrets file; and a Chromium that cannot start fails every
+ * use with one plain message that is not retried.
+ *
+ * Chromium runs inside its OS sandbox unless the person switched it off in Settings (ADR-0105). The setting is the
+ * store's, read before each load (render-browsers.ts): a change applies from the next load, and the loads under way
+ * finish on the browser they started on. A sandbox that cannot start says why on this computer and the fix (sandbox.ts).
+ * ready() draws byway's own test page, with a script, the first time it is asked on each browser, so the sandboxed page
+ * renderer itself has started before a run that needs it spends anything; checkRenderer() does the same at start-up and,
+ * to tell whether the sandbox is the cause, tries the other setting on that test page.
  *
  * The same renderer, launched as stated above, reads the text a page shows a visitor, for VOICE's arbiter (ADR-0081):
  * the page is loaded with JavaScript on, as a visitor and the critic's renders see it, under the same allowlist, request
@@ -38,13 +43,15 @@
  * Content, a move within the document (a fragment, history.pushState) keeps it, and a page that navigates away where no
  * route sees it (a meta refresh to about:blank) is a plain StepError. Its scripts run under a stopped clock and a seeded
  * Math.random, so a page reads the same each time; the page is scrolled through and back, and what each character
- * shows is measured from its box (ShownText). It changes no sandbox setting.
+ * shows is measured from its box (ShownText). It runs under the same sandbox setting as a render.
  */
 import type { Browser, BrowserContext, LaunchOptions, Page, Route } from 'playwright';
+import type { RendererCheckRecord } from '@byway/contracts';
 import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
 import { renderBrowsers } from './render-browsers.ts';
 import { fetchHop, MAX_RENDER_FETCH_BYTES } from './render-fetch.ts';
+import { isSandboxFailure, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, sandboxHost, type SandboxHost } from './sandbox.ts';
 import type { Surface } from './types.ts';
 
 export type { Surface } from './types.ts';
@@ -64,6 +71,11 @@ export interface RenderOptions {
    * share one deadline share its time (a VOICE question's two reads, inside an activity's one minute).
    */
   deadline?: number;
+  /**
+   * Told, for each load of the page, the OS sandbox setting of the browser it is drawn in, before the page's content
+   * runs: a step whose pages were drawn with the sandbox off says so (the run's note; ADR-0105).
+   */
+  drawn?: (how: { osSandbox: boolean }) => void;
 }
 
 /** Serves `/api/artifacts/<id>` requests from the artifact store; undefined is a 404. */
@@ -254,8 +266,11 @@ export interface PageRenderer {
   /** The text the page shows a visitor, read with JavaScript on (VOICE's arbiter; see ShownText). */
   shownText(html: string, resolve: ArtifactResolver, opts?: RenderOptions): Promise<ShownText>;
   /**
-   * Starts the shared browser, or finds it running, so a run that will need it can be refused before anything is
-   * spent; rejects as a render would when it cannot start. The browser it starts is the one later renders reuse.
+   * Starts the shared browser, or finds it running, under the sandbox setting in force, and draws byway's own test page
+   * in it, with a script, the first time it is asked on that browser: so a run that will need the renderer is refused
+   * before anything is spent when its page renderer cannot start (in its sandbox, when that is on). Rejects with a plain
+   * step failure; one for a sandbox that cannot start says why on this computer and the fix. The browser it starts is
+   * the one later renders reuse.
    */
   ready(): Promise<void>;
   close(): Promise<void>;
@@ -273,38 +288,60 @@ export function allowedUrl(url: URL, hosts: ReadonlySet<string>): boolean {
 const LAUNCH_ARGS: readonly string[] = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
 
 /**
- * Whether the renderer's Chromium runs inside its OS sandbox: the one place byway states it. It is off, as it always
- * has been (Playwright's default, which adds --no-sandbox to every Chromium process), and stays off until the owner
- * decides (docs/reviews/2026-10-08-external-review-verification.md §4 item 2; ADR-0084). Switching it on was verified
- * on Windows 11 (the renderer drops to Untrusted integrity, tiles are pixel-identical, a launch takes about 100 ms), but
- * a host that cannot start the sandbox (Linux with unprivileged user namespaces restricted, running as root or in a
- * container) would then stop rendering, and whether an owner opt-out should exist belongs to the same decision.
+ * Whether the renderer's Chromium runs inside its OS sandbox when nothing has said otherwise: on (ADR-0105). The setting
+ * is the person's, kept in the store (Store.getRendererSettings) and read before each load; only Settings switches it
+ * off, and a setting that cannot be read counts as on. With it on, the page renderer runs at Untrusted integrity on
+ * Windows; with it off, Playwright adds --no-sandbox to every Chromium process.
  */
-export const RENDERER_OS_SANDBOX: boolean = false;
+export const RENDERER_OS_SANDBOX_DEFAULT = true;
+
+/** The one thing a launch of the renderer's Chromium can vary: the person's OS sandbox setting (ADR-0105). */
+export interface LaunchSetting {
+  osSandbox: boolean;
+}
 
 /**
- * How the renderer's Chromium is launched, for every use of it. `env` exists so tests can pass a fixture; it can only
- * take variables away. Playwright would otherwise hand Chromium the engine's whole environment, provider keys included;
- * it gets none of them, nothing secret-looking and no name the secrets file listed (withoutSecrets, the rule `next build`
- * also follows: ADR-0030's "keys never enter a sandbox", applied to the renderer).
+ * How the renderer's Chromium is launched, for every use of it, under the OS sandbox setting. `env` exists so tests can
+ * pass a fixture; it can only take variables away. Playwright would otherwise hand Chromium the engine's whole
+ * environment, provider keys included; it gets none of them, nothing secret-looking and no name the secrets file listed
+ * (withoutSecrets, the rule `next build` also follows: ADR-0030's "keys never enter a sandbox", applied to the renderer).
  */
-export function chromiumLaunchOptions(env: Env = process.env): LaunchOptions {
-  return { headless: true, chromiumSandbox: RENDERER_OS_SANDBOX, args: [...LAUNCH_ARGS], env: withoutSecrets(env, namesFromEnvFile(env)) };
+export function chromiumLaunchOptions(setting: LaunchSetting, env: Env = process.env): LaunchOptions {
+  return { headless: true, chromiumSandbox: setting.osSandbox, args: [...LAUNCH_ARGS], env: withoutSecrets(env, namesFromEnvFile(env)) };
 }
 
 /** What to run when Playwright's Chromium was never downloaded (it is a separate download from the package). */
 const INSTALL_CHROMIUM = 'pnpm --filter ./apps/web exec playwright install chromium';
 
+/** Playwright's first line, without its method ("browserType.launch: ") or a closing stop. */
+const launchSaid = (err: unknown): string =>
+  ((err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '')
+    .replace(/^browserType\.launch:\s*/, '')
+    .trim()
+    .replace(/\.$/, '');
+
+export interface LaunchFailureOptions {
+  /** The setting the launch was made with; a sandbox failure is told apart only when the sandbox was on (or unknown). */
+  osSandbox?: boolean;
+  /** Playwright's Chromium, for the Windows fix. */
+  executable?: string;
+  /** The computer, for the reason given; read from this one when not given. */
+  host?: SandboxHost;
+}
+
 /**
  * A Chromium that could not start, as one plain step failure for every use of the renderer (a web page's view, an HTML
  * reference, a lineup card, the readiness check). Not retried: a missing or broken Chromium does not start on a second
- * try, and a retry would only repeat the wait. Playwright's first line says what went wrong; its box of advice and its
+ * try, and a retry would only repeat the wait. A sandbox that could not start says so, why on this computer and the fix
+ * (sandbox.ts); anything else gives Playwright's first line and the install command. Playwright's box of advice and its
  * call log stay on the cause.
  */
-export function launchFailure(err: unknown): StepError {
-  const first = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
-  const said = first.replace(/^browserType\.launch:\s*/, '').trim().replace(/\.$/, '');
-  return new StepError(`The page renderer could not start (${said}), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: ${INSTALL_CHROMIUM}`, {
+export function launchFailure(err: unknown, opts: LaunchFailureOptions = {}): StepError {
+  if (opts.osSandbox !== false && isSandboxFailure(err)) {
+    const advice = sandboxAdvice(opts.host ?? sandboxHost(), { ...(opts.executable ? { executable: opts.executable } : {}), error: err });
+    return new StepError(sandboxFailureMessage(advice), { cause: err });
+  }
+  return new StepError(`The page renderer could not start (${launchSaid(err)}), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: ${INSTALL_CHROMIUM}`, {
     cause: err,
   });
 }
@@ -336,9 +373,30 @@ export interface PlaywrightPagesOptions {
    * end (ADR-0106). A render that closes a retired browser waits for that close at most this long too.
    */
   closeTimeoutMs?: number;
-  /** For tests only: how to launch the browser. Production passes none, so it is always launchChromium(). */
-  launch?: () => Promise<Browser>;
+  /**
+   * The person's OS sandbox setting, read before each load (ADR-0105): the worker passes the store's
+   * (storeOsSandbox). None: on.
+   */
+  osSandbox?: () => boolean | Promise<boolean>;
+  /**
+   * For tests only: how to launch the browser, given the setting it is launched with. Production passes none, so it is
+   * always launchChromium().
+   */
+  launch?: (setting: LaunchSetting) => Promise<Browser>;
+  /** For tests only: the computer, for the reason a failure gives. */
+  host?: SandboxHost;
 }
+
+/** The store's OS sandbox setting, as the renderer reads it before each load (ADR-0105). */
+export const storeOsSandbox =
+  (store: { getRendererSettings(): Promise<{ osSandbox: boolean }> }): (() => Promise<boolean>) =>
+  async () =>
+    (await store.getRendererSettings()).osSandbox;
+
+/** byway's own test page for the readiness check: the title is set by its script, so a page renderer that runs it answers. */
+const READY_PAGE = '<!doctype html><html><head><meta charset="utf-8"><title>byway</title></head><body><script>document.title = String(6 * 7);</script></body></html>';
+const READY_ANSWER = '42';
+const noArtifacts: ArtifactResolver = async () => undefined;
 
 /** A private origin the page is served from, so relative artifact routes resolve without touching the network. */
 const ORIGIN = 'http://byway-render.localhost';
@@ -363,8 +421,14 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   const timeout = opts.timeoutMs ?? 30_000;
   const maxFetchBytes = opts.maxFetchBytes ?? MAX_RENDER_FETCH_BYTES;
   const closeTimeout = opts.closeTimeoutMs ?? 5_000;
-  /** The shared browser and those retired from it (render-browsers.ts; ADR-0106). */
-  const browsers = renderBrowsers(opts.launch ?? launchChromium, { timeoutMs: timeout, closeTimeoutMs: closeTimeout });
+  const launch = opts.launch ?? launchChromium;
+  /**
+   * The shared browser and those retired from it (render-browsers.ts; ADR-0106), each launched with the OS sandbox
+   * setting read for the load that launched it (ADR-0105).
+   */
+  const browsers = renderBrowsers((osSandbox) => launch({ osSandbox }), { timeoutMs: timeout, closeTimeoutMs: closeTimeout, ...(opts.osSandbox ? { osSandbox: opts.osSandbox } : {}) });
+  /** Browsers that have drawn a page: the readiness check has nothing left to prove on them. */
+  const proven = new WeakSet<Browser>();
 
   /**
    * Close a load's context once the load is over, whether it has opened yet or not: a context that opens after its load
@@ -498,14 +562,26 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
    * context, or a step that is cancelled, ends the load, and its context is closed (SEC-5; dispose). The launch is not
    * under them: it keeps Playwright's own launch timeout, so a slow launch is not cut off. `text` loads it for the
    * arbiter's visitor read (ShownText): on the wide screen, its scripts under a stopped clock, Math.random seeded and
-   * every element an IntersectionObserver watches in view, and it reads the first document only.
+   * every element an IntersectionObserver watches in view, and it reads the first document only. `check` loads byway's
+   * own test page for the readiness check, on the wide screen. `drawn` is told the browser's OS sandbox setting before
+   * the page's content runs (ADR-0105).
    */
-  const loaded = async <T>(html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone' | 'text', signal: AbortSignal | undefined, use: (page: Page) => Promise<T>, deadline?: number, fetches?: Fetches): Promise<T> => {
+  const loaded = async <T>(
+    html: string,
+    resolve: ArtifactResolver,
+    screen: 'wide' | 'phone' | 'text' | 'check',
+    signal: AbortSignal | undefined,
+    use: (page: Page) => Promise<T>,
+    deadline?: number,
+    fetches?: Fetches,
+    drawn?: RenderOptions['drawn'],
+  ): Promise<T> => {
     if (signal?.aborted) throw stopped(signal);
     const text = screen === 'text';
     const late = (cut: boolean) => {
-      if (cut) return new StepError(`The page did not finish ${text ? 'loading' : 'rendering'} in the time byway gives a page's ${text ? 'reads, so its text could not be read' : 'renders, so it could not be shown'}.`);
       const s = Math.round(timeout / 1000);
+      if (screen === 'check') return new StepError(`The page renderer did not draw byway's test page within ${s} s.`);
+      if (cut) return new StepError(`The page did not finish ${text ? 'loading' : 'rendering'} in the time byway gives a page's ${text ? 'reads, so its text could not be read' : 'renders, so it could not be shown'}.`);
       return new StepError(text ? `The page did not finish loading within ${s} s, so its text could not be read.` : `The page did not finish rendering within ${s} s, so it could not be shown.`);
     };
     if (deadline !== undefined && deadline <= Date.now()) throw late(true);
@@ -542,7 +618,10 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         await context.route('**/*', route(html, resolve, text, fetches));
         const page = await context.newPage();
         page.setDefaultTimeout(timeout);
+        drawn?.({ osSandbox: browsers.osSandboxOf(b) ?? RENDERER_OS_SANDBOX_DEFAULT });
         await page.goto(PAGE_URL, { waitUntil: 'load', timeout });
+        // A page renderer started on this browser and loaded a page: the readiness check has nothing left to prove here.
+        proven.add(b);
         return use(page);
       })();
       // Whichever loses the race below still settles later; it must not become an unhandled rejection.
@@ -578,29 +657,38 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   };
 
   /** One screen size: load the page once and take the surfaces it serves, all under one deadline. */
-  const shoot = (html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone', want: readonly Surface[], signal: AbortSignal | undefined): Promise<SurfaceShots[]> =>
-    loaded(html, resolve, screen, signal, async (page) => {
-      const phone = screen === 'phone';
-      await page.evaluate('document.fonts ? document.fonts.ready.then(() => true) : true');
-      const out: SurfaceShots[] = [];
-      // The first screen is taken before anything else touches the page: as a visitor lands.
-      for (const surface of [...want].sort((a, b) => Number(b === 'fold') - Number(a === 'fold'))) {
-        if (surface === 'fold') {
-          await page.evaluate('window.scrollTo(0, 0)');
-          out.push({ surface, tiles: [new Uint8Array(await page.screenshot({ type: 'png', animations: 'disabled' }))] });
-        } else {
-          out.push({ surface, tiles: await tilesOf(page, phone ? mobile.width : width) });
+  const shoot = (html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone', want: readonly Surface[], renderOpts: RenderOptions): Promise<SurfaceShots[]> =>
+    loaded(
+      html,
+      resolve,
+      screen,
+      renderOpts.signal,
+      async (page) => {
+        const phone = screen === 'phone';
+        await page.evaluate('document.fonts ? document.fonts.ready.then(() => true) : true');
+        const out: SurfaceShots[] = [];
+        // The first screen is taken before anything else touches the page: as a visitor lands.
+        for (const surface of [...want].sort((a, b) => Number(b === 'fold') - Number(a === 'fold'))) {
+          if (surface === 'fold') {
+            await page.evaluate('window.scrollTo(0, 0)');
+            out.push({ surface, tiles: [new Uint8Array(await page.screenshot({ type: 'png', animations: 'disabled' }))] });
+          } else {
+            out.push({ surface, tiles: await tilesOf(page, phone ? mobile.width : width) });
+          }
         }
-      }
-      return out;
-    });
+        return out;
+      },
+      undefined,
+      undefined,
+      renderOpts.drawn,
+    );
 
   const render: PageRenderer['render'] = async (html, resolve, surfaces, renderOpts = {}) => {
     try {
       const wide = surfaces.filter((s) => s !== 'mobile');
       const shots = [
-        ...(wide.length ? await shoot(html, resolve, 'wide', wide, renderOpts.signal) : []),
-        ...(surfaces.includes('mobile') ? await shoot(html, resolve, 'phone', ['mobile'], renderOpts.signal) : []),
+        ...(wide.length ? await shoot(html, resolve, 'wide', wide, renderOpts) : []),
+        ...(surfaces.includes('mobile') ? await shoot(html, resolve, 'phone', ['mobile'], renderOpts) : []),
       ];
       return surfaces.map((s) => shots.find((x) => x.surface === s)!);
     } catch (e) {
@@ -611,7 +699,30 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   return {
     render,
     async ready() {
-      await browsers.find();
+      // Found (or launched) under the setting in force. A browser that has drawn a page has nothing left to prove; on one
+      // that has not, byway's own test page is drawn and its script must run (ADR-0105). The test page is not a run's
+      // content, so it never counts as a page drawn for a run (RenderOptions.drawn).
+      const b = await browsers.find();
+      if (proven.has(b)) return;
+      let on = browsers.osSandboxOf(b) ?? RENDERER_OS_SANDBOX_DEFAULT;
+      try {
+        await loaded(
+          READY_PAGE,
+          noArtifacts,
+          'check',
+          undefined,
+          async (page) => {
+            const answer = String(await page.evaluate('document.title'));
+            if (answer !== READY_ANSWER) throw new Error(`its script did not run (the page's title was ${JSON.stringify(answer)})`);
+          },
+          undefined,
+          undefined,
+          // The browser the test page was drawn in, which a change of setting since find() may have replaced.
+          (how) => (on = how.osSandbox),
+        );
+      } catch (e) {
+        throw readyFailure(e, on, opts.host);
+      }
     },
     async screenshots(html, resolve, renderOpts) {
       return (await render(html, resolve, ['desktop'], renderOpts))[0]!.tiles;
@@ -702,6 +813,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       },
       renderOpts.deadline,
       fetches,
+      renderOpts.drawn,
     );
   }
 }
@@ -2106,37 +2218,107 @@ const VISITOR_BEGIN = `(() => {
   return true;
 })()`;
 
-/**
- * The renderer's Chromium, launched once per call as chromiumLaunchOptions() says. It takes no parameter, so nothing
- * can add a flag to the production launch; a test that needs one composes it from chromiumLaunchOptions() in test code.
- * A failure to start is launchFailure's plain message.
- */
-export async function launchChromium(): Promise<Browser> {
+/** Playwright's Chromium on this computer, for the Windows fix; undefined when Playwright cannot say. */
+function executableOf(chromium: { executablePath(): string } | undefined): { executable?: string } {
   try {
-    const { chromium } = await import('playwright');
-    return await chromium.launch(chromiumLaunchOptions());
-  } catch (e) {
-    throw launchFailure(e);
+    const executable = chromium?.executablePath();
+    return executable ? { executable } : {};
+  } catch {
+    return {};
   }
 }
 
-export type RendererCheck = { ready: true } | { ready: false; message: string };
+/**
+ * The renderer's Chromium, launched once per call as chromiumLaunchOptions() says, under the person's OS sandbox setting
+ * (ADR-0105). It takes nothing else, so nothing can add a flag to the production launch; a test that needs one composes
+ * it from chromiumLaunchOptions() in test code. A failure to start is launchFailure's plain message.
+ */
+export async function launchChromium(setting: LaunchSetting): Promise<Browser> {
+  let chromium: typeof import('playwright').chromium | undefined;
+  try {
+    ({ chromium } = await import('playwright'));
+    return await chromium.launch(chromiumLaunchOptions(setting));
+  } catch (e) {
+    throw launchFailure(e, { osSandbox: setting.osSandbox, ...executableOf(chromium) });
+  }
+}
 
 /**
- * Whether the renderer can start on this computer, for the "renderer" line byway prints at start-up. It makes the
- * stated launch once and closes it again, and never throws: byway keeps running either way, since prose, options and
- * code-diff runs need no renderer unless a lineup forms cards.
+ * The readiness check's failure: a launch that failed and a check past its deadline pass as they are (their own plain
+ * messages); a test page that could not be drawn says so. With the sandbox on, a failure Chromium tied to the sandbox is
+ * the sandbox's message, and any other names the sandbox as one possible cause (ADR-0105).
  */
-export async function checkRenderer(): Promise<RendererCheck> {
-  const pages = playwrightPages();
-  try {
-    await pages.ready();
-    return { ready: true };
-  } catch (e) {
-    return { ready: false, message: (e instanceof StepError ? e : launchFailure(e)).message };
-  } finally {
-    await pages.close().catch(() => undefined);
+function readyFailure(err: unknown, osSandbox: boolean, host: SandboxHost | undefined): unknown {
+  if (err instanceof StepError) return err;
+  if (err instanceof RendererClosed) return new StepError(`byway's test page could not be drawn: ${err.message}.`, { cause: err });
+  const advice = () => sandboxAdvice(host ?? sandboxHost(), { error: err });
+  if (osSandbox && isSandboxFailure(err)) return new StepError(sandboxFailureMessage(advice()), { cause: err });
+  const said = playwrightSaid(firstLine(err)) || 'no reason given';
+  if (osSandbox) return new StepError(possibleSandboxCause(said, advice()), { cause: err });
+  return new StepError(`The page renderer started but could not draw byway's test page (${said}).`, { cause: err });
+}
+
+/** What the start-up check found (RendererCheckRecord without its time, which the store adds). */
+export type RendererCheck = Omit<RendererCheckRecord, 'at'>;
+
+export interface RendererCheckOptions {
+  /** For tests only: how to launch (PlaywrightPagesOptions.launch). Production passes none, so it is launchChromium(). */
+  launch?: (setting: LaunchSetting) => Promise<Browser>;
+  /** For tests only: the computer, for the reason given. */
+  host?: SandboxHost;
+}
+
+/**
+ * Whether the renderer can draw a page on this computer under the person's OS sandbox setting, for the "renderer" line
+ * byway prints at start-up and for Settings (ADR-0105). It draws byway's own test page, with a script, in a renderer of
+ * its own, which it closes again, and never throws: byway keeps running either way, since prose, options and code-diff
+ * runs need no renderer unless a lineup forms cards.
+ *
+ * With the sandbox on and failing for a reason Chromium did not tie to the sandbox, it draws the test page once more
+ * without the sandbox: if that works, the sandbox is the cause. With the sandbox off, it draws the test page once more
+ * with the sandbox, to say whether the sandbox could start now; Settings then offers to turn it back on. Neither changes
+ * the setting, and neither draws anything but byway's own test page.
+ */
+export async function checkRenderer(setting: LaunchSetting, opts: RendererCheckOptions = {}): Promise<RendererCheck> {
+  const host = opts.host ?? sandboxHost();
+  /** The test page drawn under `osSandbox`: undefined when it was, else why not. */
+  const attempt = async (osSandbox: boolean): Promise<{ error: unknown } | undefined> => {
+    const pages = playwrightPages({ osSandbox: () => osSandbox, host, ...(opts.launch ? { launch: opts.launch } : {}) });
+    try {
+      await pages.ready();
+      return undefined;
+    } catch (error) {
+      return { error };
+    } finally {
+      await pages.close().catch(() => undefined);
+    }
+  };
+  const plain = (osSandbox: boolean, error: unknown) => (error instanceof StepError ? error : launchFailure(error, { osSandbox, host })).message;
+  const sandboxFails = async (error: unknown) => {
+    let executable: { executable?: string } = {};
+    try {
+      executable = executableOf((await import('playwright')).chromium);
+    } catch {
+      // Playwright itself could not be loaded: the advice names no file.
+    }
+    const advice = sandboxAdvice(host, { ...executable, error });
+    return { sandbox: 'fails' as const, message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix };
+  };
+
+  const first = await attempt(setting.osSandbox);
+  if (setting.osSandbox) {
+    if (!first) return { osSandbox: true, ready: true, sandbox: 'starts' };
+    if (!isSandboxFailure(first.error)) {
+      // Whether the sandbox is the cause: the same test page without it.
+      const without = await attempt(false);
+      if (without) return { osSandbox: true, ready: false, sandbox: 'unknown', message: plain(true, first.error) };
+    }
+    return { osSandbox: true, ready: false, ...(await sandboxFails(first.error)) };
   }
+  if (first) return { osSandbox: false, ready: false, sandbox: 'unknown', message: plain(false, first.error) };
+  // Whether the sandbox could start now. Chromium starts without it here, so a failure with it is the sandbox's.
+  const probe = await attempt(true);
+  return probe ? { osSandbox: false, ready: true, ...(await sandboxFails(probe.error)) } : { osSandbox: false, ready: true, sandbox: 'starts' };
 }
 
 /**
@@ -2145,15 +2327,30 @@ export async function checkRenderer(): Promise<RendererCheck> {
  * (on GitHub's 2-CPU Windows machine it ran past a limit counted from its start, and byway said Chromium could not
  * start although it could), so byway calls this once the app is built (`built`; contributor mode builds nothing first)
  * and the engine is up, just before it prints its `renderer` line, and the message says what the time was counted from.
+ * `osSandbox` is the setting the check runs under.
  */
-export function rendererCheckWithin(checking: Promise<RendererCheck>, ms: number, { built }: { built: boolean }): Promise<RendererCheck> {
+export function rendererCheckWithin(checking: Promise<RendererCheck>, ms: number, { built, osSandbox }: { built: boolean; osSandbox: boolean }): Promise<RendererCheck> {
   const since = built ? 'the app was built and the engine was up' : 'the engine was up';
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<RendererCheck>((resolve) => {
-    timer = setTimeout(() => resolve({ ready: false, message: `Playwright's Chromium had not started ${ms / 1000} s after ${since}.` }), ms);
+    timer = setTimeout(() => resolve({ osSandbox, ready: false, sandbox: 'unknown', message: `Playwright's Chromium had not started ${ms / 1000} s after ${since}.` }), ms);
     timer.unref?.();
   });
   return Promise.race([checking, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * The start-up `renderer` line (scripts/serve.ts) for what the check found: ready or not, the sandbox on or off and,
+ * when off, whether it could start now (ADR-0105). scripts/e2e.ts requires "Playwright's Chromium, ready, inside its OS
+ * sandbox".
+ */
+export function rendererLine(check: RendererCheck): string {
+  const off = 'with its OS sandbox off (switched off in Settings)';
+  if (!check.ready) return check.osSandbox ? `not available: ${check.message}` : `not available, ${off}: ${check.message}`;
+  if (check.osSandbox) return "Playwright's Chromium, ready, inside its OS sandbox";
+  if (check.sandbox === 'starts') return `Playwright's Chromium, ready, ${off}. The sandbox can start on this computer now: Settings offers to turn it back on.`;
+  if (check.sandbox === 'fails') return `Playwright's Chromium, ready, ${off}. The sandbox still cannot start here: ${check.why}`;
+  return `Playwright's Chromium, ready, ${off}.`;
 }
 
 /**

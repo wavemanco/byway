@@ -19,7 +19,11 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import type { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX, REVERSED, TURNED } from '../src/pages.ts';
+import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
+import { possibleSandboxCause, sandboxAdvice, type SandboxHost } from '../src/sandbox.ts';
+
+/** The launch byway makes when the person has not switched the sandbox off: inside it (ADR-0105). */
+const STATED = { osSandbox: RENDERER_OS_SANDBOX_DEFAULT };
 
 const pages = playwrightPages({ maxTileHeight: 1200 });
 const opened: { close(): Promise<void> }[] = [pages];
@@ -61,12 +65,12 @@ const BUSY = '<!doctype html><html><body><script>addEventListener("load", () => 
 const LOCAL_NETWORK_CHECKS_OFF = ['--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests'];
 
 /**
- * Test-only: the stated launch with flags added in test code. Production cannot add any (launchChromium takes no
- * parameter); a test that needs a flag composes it here, from the same options.
+ * Test-only: the stated launch with flags added in test code. Production cannot add any (launchChromium takes only the
+ * OS sandbox setting); a test that needs a flag composes it here, from the same options.
  */
 async function launchWith(extra: readonly string[], change: Partial<LaunchOptions> = {}): Promise<Browser> {
   const { chromium } = await import('playwright');
-  const opts = chromiumLaunchOptions();
+  const opts = chromiumLaunchOptions(STATED);
   return chromium.launch({ ...opts, ...change, args: [...(opts.args ?? []), ...extra] });
 }
 
@@ -141,7 +145,7 @@ function closeSeen<T extends object>(o: T, what: string, log: string[], hold: ()
 function watched() {
   const seen = { contexts: 0, samples: [] as Array<{ measured: number; layoutReads: number }>, finalLayoutReads: 0, hold: undefined as Promise<void> | undefined };
   const launch = async (): Promise<Browser> => {
-    const browser = await launchChromium();
+    const browser = await launchChromium(STATED);
     return new Proxy(browser, {
       get(target, prop, receiver) {
         if (prop !== 'newContext') return Reflect.get(target, prop, receiver);
@@ -256,13 +260,15 @@ describe('web-page RENDER with Playwright Chromium', () => {
     const seen = { launches: 0, contexts: 0 };
     const counted = (into: typeof seen, closing: string[], stuck: () => Promise<void> | undefined) => async () => {
       into.launches++;
-      const b = seenThrough(await launchChromium(), { context: (c) => (into.contexts++, closeSeen(c, 'context', closing, stuck)) });
+      const b = seenThrough(await launchChromium(STATED), { context: (c) => (into.contexts++, closeSeen(c, 'context', closing, stuck)) });
       return closeSeen(b, 'browser', closing, stuck);
     };
     const shut: string[] = [];
     const quick = playwrightPages({ timeoutMs: 5_000, closeTimeoutMs: 2_000, launch: counted(seen, shut, () => undefined) });
     opened.push(quick);
     await quick.ready();
+    // The readiness check drew byway's test page in a context of its own and closed it (ADR-0105): not counted below.
+    shut.length = 0;
     const before = { ...seen };
     const out = await quick.screenshots(BUSY, none).catch((e: unknown) => e);
     expect(out).toBeInstanceOf(StepError);
@@ -286,6 +292,7 @@ describe('web-page RENDER with Playwright Chromium', () => {
     const patient = playwrightPages({ timeoutMs: 300_000, closeTimeoutMs: 2_000, launch: counted(held, closing, () => stuck) });
     opened.push(patient);
     await patient.ready();
+    closing.length = 0;
     // Neither the stuck page's context nor the browser closes until the test lets them: when it ends, whichever way it
     // ends (a timeout included), so the browsers can close after it.
     let release = () => {};
@@ -350,7 +357,7 @@ describe('web-page RENDER with Playwright Chromium', () => {
     const patient = playwrightPages({
       timeoutMs: 300_000,
       launch: async () =>
-        seenThrough(await launchChromium(), {
+        seenThrough(await launchChromium(STATED), {
           context: (c) => closeSeen(c, 'context closed', steps),
           page: (p) => {
             p.once('load', () => {
@@ -375,7 +382,7 @@ describe('web-page RENDER with Playwright Chromium', () => {
     const starting = playwrightPages({
       timeoutMs: 30_000,
       launch: async () => {
-        const b = await launchChromium();
+        const b = await launchChromium(STATED);
         ctrl.abort(reason);
         return b;
       },
@@ -534,7 +541,7 @@ describe('web-page RENDER with Playwright Chromium', () => {
           failNext = false;
           throw new Error('Chromium could not start');
         }
-        const b = await launchChromium();
+        const b = await launchChromium(STATED);
         launched.push(b);
         return b;
       },
@@ -576,7 +583,7 @@ describe('web-page RENDER with Playwright Chromium', () => {
           };
         },
       });
-    const failing = playwrightPages({ launch: async () => refusing(await launchChromium()) });
+    const failing = playwrightPages({ launch: async () => refusing(await launchChromium(STATED)) });
     opened.push(failing);
     const err = await failing.render(SIMPLE, none, ['desktop', 'fold']).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StepError);
@@ -590,37 +597,126 @@ describe('web-page RENDER with Playwright Chromium', () => {
     await expect(failing.screenshots(SIMPLE, none, { signal: ctrl.signal })).rejects.toBe(reason);
   }, 60_000);
 
-  it('starts Chromium from the one stated launch: its sandbox policy and WebRTC flags are what the command line shows (F18)', async () => {
+  it('starts Chromium from the one stated launch: inside its OS sandbox unless the setting is off, with the WebRTC flags, as the command line shows (F18; ADR-0105)', async () => {
+    expect(RENDERER_OS_SANDBOX_DEFAULT).toBe(true);
     const stated = await launchWith(['--enable-automation']);
-    // Control: the other sandbox setting, so the check is seen to tell the two apart on this computer.
-    const other = await launchWith(['--enable-automation'], { chromiumSandbox: !RENDERER_OS_SANDBOX });
+    // The other setting, which only the person can choose in Settings: so the check is seen to tell the two apart here.
+    const off = await launchWith(['--enable-automation'], { chromiumSandbox: chromiumLaunchOptions({ osSandbox: false }).chromiumSandbox });
     try {
       const args = await commandLine(stated);
-      expect(args.includes('--no-sandbox')).toBe(!RENDERER_OS_SANDBOX);
-      for (const flag of chromiumLaunchOptions().args ?? []) expect(args).toContain(flag);
-      expect((await commandLine(other)).includes('--no-sandbox')).toBe(RENDERER_OS_SANDBOX);
+      expect(args).not.toContain('--no-sandbox');
+      for (const flag of chromiumLaunchOptions(STATED).args ?? []) expect(args).toContain(flag);
+      expect(await commandLine(off)).toContain('--no-sandbox');
     } finally {
       await stated.close();
-      await other.close();
+      await off.close();
     }
   }, 60_000);
 
-  it('starts the browser when asked whether it is ready, and the renders that follow share it (F18)', async () => {
+  it("when asked whether it is ready, draws byway's own test page once on each browser, and the renders that follow share the browser (F18; ADR-0105)", async () => {
     let launches = 0;
+    const contexts: string[] = [];
+    const browsers: Browser[] = [];
     const counted = playwrightPages({
-      launch: async () => {
+      launch: async (setting) => {
         launches++;
-        return launchChromium();
+        const b = await launchChromium(setting);
+        browsers.push(b);
+        return seenThrough(b, { context: (c) => (contexts.push('context'), c) });
       },
     });
     opened.push(counted);
     await counted.ready();
     expect(launches).toBe(1);
+    // A launch alone does not start the page renderer, the process the sandbox is for: the check drew a page.
+    expect(contexts).toEqual(['context']);
+    await counted.ready();
+    expect(contexts).toEqual(['context']);
     expect((await counted.screenshots(SIMPLE, none)).length).toBe(1);
     expect((await counted.render(SIMPLE, none, ['fold'])).length).toBe(1);
     await counted.ready();
     expect(launches).toBe(1);
+    expect(contexts.length).toBe(3);
+    // A browser that went away (a crash) is launched again, and the check draws its test page on the new one.
+    await browsers[0]!.close();
+    await counted.ready();
+    expect(launches).toBe(2);
+    expect(contexts.length).toBe(4);
   }, 60_000);
+
+  it("fails plainly when the page renderer cannot draw byway's test page; with the sandbox on, the sandbox is named as one possible cause (ADR-0105)", async () => {
+    const host: SandboxHost = { os: 'windows', root: false, container: false, appArmorRestricts: false, userNamespacesOff: false };
+    // A page renderer that dies as the page loads: what security software stopping it would look like.
+    const crashing = (b: Browser): Browser =>
+      seenThrough(b, {
+        page: (p) =>
+          new Proxy(p, {
+            get(t, name, r) {
+              if (name === 'goto') return async () => Promise.reject(new Error('page.goto: Target crashed\nCall log:\n  - navigating to "http://byway-render.localhost/page"'));
+              const v = Reflect.get(t, name, r) as unknown;
+              return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+            },
+          }),
+      });
+    const on = playwrightPages({ host, launch: async (setting) => crashing(await launchChromium(setting)) });
+    const off = playwrightPages({ host, osSandbox: () => false, launch: async (setting) => crashing(await launchChromium(setting)) });
+    opened.push(on, off);
+    const withSandbox = await on.ready().catch((e: unknown) => e);
+    expect(withSandbox).toBeInstanceOf(StepError);
+    expect((withSandbox as Error).message).toBe(possibleSandboxCause('Target crashed', sandboxAdvice(host)));
+    const without = await off.ready().catch((e: unknown) => e);
+    expect(without).toBeInstanceOf(StepError);
+    expect((without as Error).message).toBe("The page renderer started but could not draw byway's test page (Target crashed).");
+    // Not proven: asked again, it draws the test page again, and fails again.
+    await expect(on.ready()).rejects.toThrow(/could not draw byway's test page/);
+  }, 60_000);
+
+  it('reads the OS sandbox setting before each load: after a change the next load launches with it, and a render under way finishes on the browser it started on (ADR-0105)', async () => {
+    let osSandbox = true;
+    const launchedWith: boolean[] = [];
+    const browsers: Browser[] = [];
+    const r = playwrightPages({
+      osSandbox: () => osSandbox,
+      launch: async (setting) => {
+        launchedWith.push(setting.osSandbox);
+        // The stated launch, with --enable-automation so the test can read the command line.
+        const b = await launchWith(['--enable-automation'], { chromiumSandbox: chromiumLaunchOptions(setting).chromiumSandbox });
+        browsers.push(b);
+        return b;
+      },
+    });
+    opened.push(r);
+    // A render whose page waits for an image the test holds: it is under way on the sandboxed browser.
+    const asked = gate();
+    const image = gate();
+    const drawn: boolean[] = [];
+    const first = r.screenshots(
+      '<!doctype html><html><body><img src="/api/artifacts/sha256:held" width="10" height="10">Waiting</body></html>',
+      async () => {
+        asked.open();
+        await image.wait;
+        return { body: PIXEL, contentType: 'image/png' };
+      },
+      { drawn: (how) => drawn.push(how.osSandbox) },
+    );
+    await asked.wait;
+    osSandbox = false;
+    // The next render launches a browser without the sandbox, and says so to the one who asked for it.
+    expect((await r.screenshots(SIMPLE, none, { drawn: (how) => drawn.push(how.osSandbox) })).length).toBe(1);
+    expect(launchedWith).toEqual([true, false]);
+    expect(drawn).toEqual([true, false]);
+    expect(await commandLine(browsers[0]!)).not.toContain('--no-sandbox');
+    expect(await commandLine(browsers[1]!)).toContain('--no-sandbox');
+    // The render under way was not cut short: it finishes on the sandboxed browser, which is then closed.
+    const gone = new Promise<void>((done) => (browsers[0]!.isConnected() ? browsers[0]!.once('disconnected', () => done()) : done()));
+    image.open();
+    expect((await first).length).toBe(1);
+    await gone;
+    // Switched back on, the same the other way: the readiness check follows the setting too.
+    osSandbox = true;
+    await r.ready();
+    expect(launchedWith).toEqual([true, false, true]);
+  }, 120_000);
 });
 
 /** Test-only: a promise the test settles. `open()` lets whatever waits on `wait` go on. */
@@ -686,7 +782,7 @@ describe('one browser, many renders: a page that is late to close, and a browser
       closeTimeoutMs: 1_000,
       launch: async () => {
         launches++;
-        const b = seenThrough(await launchChromium(), { context: (c) => closeSeen(c, 'context', closing, () => stuck) });
+        const b = seenThrough(await launchChromium(STATED), { context: (c) => closeSeen(c, 'context', closing, () => stuck) });
         return closeSeen(b, 'browser', closing);
       },
     });
@@ -719,13 +815,18 @@ describe('one browser, many renders: a page that is late to close, and a browser
   it('a browser that does not open a context cannot hold a read past its deadline; it is closed, and the next read launches another', async () => {
     const log: string[] = [];
     let launches = 0;
+    // The browser stops answering once the readiness check has drawn its test page on it, so the read's short deadline
+    // is not spent on the launch.
+    let hold = false;
     const hung = playwrightPages({
       timeoutMs: 300_000,
       closeTimeoutMs: 1_000,
-      launch: async () => (++launches === 1 ? opening(await launchChromium(), log, { hold: () => new Promise<void>(() => undefined) }) : launchChromium()),
+      launch: async () => (++launches === 1 ? opening(await launchChromium(STATED), log, { hold: () => (hold ? new Promise<void>(() => undefined) : undefined) }) : launchChromium(STATED)),
     });
     opened.push(hung);
     await hung.ready();
+    hold = true;
+    log.length = 0;
     const err = await hung.shownText('<p>Text</p>', none, { deadline: Date.now() + 1_500 }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StepError);
     expect((err as Error).message).toBe("The page did not finish loading in the time byway gives a page's reads, so its text could not be read.");
@@ -742,7 +843,7 @@ describe('one browser, many renders: a page that is late to close, and a browser
     const cancelled = playwrightPages({
       timeoutMs: 300_000,
       closeTimeoutMs: 1_000,
-      launch: async () => opening(await launchChromium(), told, { asked: () => ctrl.abort(reason), hold: () => new Promise<void>(() => undefined) }),
+      launch: async () => opening(await launchChromium(STATED), told, { asked: () => ctrl.abort(reason), hold: () => new Promise<void>(() => undefined) }),
     });
     opened.push(cancelled);
     await expect(cancelled.screenshots(SIMPLE, none, { signal: ctrl.signal })).rejects.toBe(reason);
@@ -761,7 +862,7 @@ describe('one browser, many renders: a page that is late to close, and a browser
       closeTimeoutMs: 60_000,
       launch: async () => {
         launches++;
-        return opening(await launchChromium(), log, {
+        return opening(await launchChromium(STATED), log, {
           asked: () => {
             // The render gives up (its step is cancelled) while its context is being opened; then the context opens.
             if (!ctrl.signal.aborted) {
@@ -813,7 +914,7 @@ describe('one browser, many renders: a page that is late to close, and a browser
     const r2 = playwrightPages({
       timeoutMs: 300_000,
       launch: async () =>
-        seenThrough(await launchChromium(), {
+        seenThrough(await launchChromium(STATED), {
           page: (p) =>
             new Proxy(p, {
               get(pg, name, rr) {
@@ -1284,13 +1385,15 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     const quick = playwrightPages({ timeoutMs: 5_000, closeTimeoutMs: 2_000, launch });
     opened.push(quick);
     await quick.ready();
+    // The readiness check drew byway's test page in a context of its own (ADR-0105).
+    const before = seen.contexts;
     let release = () => {};
     seen.hold = new Promise<void>((r) => (release = r));
     try {
       const err = await quick.shownText(OPEN, none).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(StepError);
       expect((err as Error).message).toBe('The page did not finish loading within 5 s, so its text could not be read.');
-      expect(seen.contexts).toBe(1);
+      expect(seen.contexts - before).toBe(1);
     } finally {
       release();
       seen.hold = undefined;
@@ -1530,7 +1633,7 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     // shared deadline, however fast the machine. Its message is the shared deadline's, not the reader's own limit's.
     // Nothing here measures time.
     let contexts = 0;
-    const patient = playwrightPages({ timeoutMs: 300_000, launch: async () => seenThrough(await launchChromium(), { context: (c) => (contexts++, c) }) });
+    const patient = playwrightPages({ timeoutMs: 300_000, launch: async () => seenThrough(await launchChromium(STATED), { context: (c) => (contexts++, c) }) });
     opened.push(patient);
     await patient.ready();
     const cut = 'The page did not finish loading in the time byway gives a page\'s reads, so its text could not be read.';
@@ -1593,7 +1696,7 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
           };
         },
       });
-    const failing = playwrightPages({ launch: async () => crashing(await launchChromium()) });
+    const failing = playwrightPages({ launch: async () => crashing(await launchChromium(STATED)) });
     opened.push(failing);
     const err = await failing.shownText('<p>Hello</p>', none).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StepError);

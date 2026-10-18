@@ -11,10 +11,12 @@ import type { Browser } from 'playwright';
 import { afterAll, describe, expect, it } from 'vitest';
 import { deckLines, readPageCopy, readPageEdit, type PageEdit } from '../src/copy.ts';
 import { arbitrate, expectedShown, locateLines, markLines, notShown, notShownWhy, type Location } from '../src/page-arbiter.ts';
-import { chromiumLaunchOptions, playwrightPages } from '../src/pages.ts';
+import { chromiumLaunchOptions, playwrightPages, RENDERER_OS_SANDBOX_DEFAULT } from '../src/pages.ts';
 import { modelShownText } from './helpers/fake-pages.ts';
 
 const chromium = playwrightPages();
+/** The launch byway makes when the person has not switched the sandbox off: inside it (ADR-0105). */
+const STATED = { osSandbox: RENDERER_OS_SANDBOX_DEFAULT };
 afterAll(() => chromium.close(), 60_000);
 const none = async () => undefined;
 /** Chromium's own local-network checks would also stop a page reaching 127.0.0.1; off, so only byway's rule is tested. */
@@ -22,7 +24,7 @@ const LOCAL_NETWORK_CHECKS_OFF = ['--disable-features=LocalNetworkAccessChecks,P
 /** Test-only: the stated launch with flags added in test code (as pages.test.ts does). */
 async function launchWith(extra: readonly string[]): Promise<Browser> {
   const { chromium: c } = await import('playwright');
-  const opts = chromiumLaunchOptions();
+  const opts = chromiumLaunchOptions(STATED);
   return c.launch({ ...opts, args: [...(opts.args ?? []), ...extra] });
 }
 
