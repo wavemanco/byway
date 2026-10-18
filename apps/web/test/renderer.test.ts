@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { RendererCheckRecord, RendererSettings } from '@byway/contracts';
 import { SandboxOffConfirm } from '../src/components/PageRendererSettings.tsx';
+import { SandboxBanner } from '../src/components/SandboxBanner.tsx';
 import { OFF_RISK, rendererBanner, rendererFindings } from '../src/view/renderer.ts';
 
 const AT = '2026-10-18T14:00:00.000Z';
@@ -37,6 +38,21 @@ describe('the banner on every screen', () => {
 
   it('is not there while the sandbox is on and nothing says it cannot start', () => {
     for (const s of [on(), on(starts), on({ at: AT, osSandbox: true, ready: false, sandbox: 'unknown', message: 'Chromium is missing.' })]) expect(rendererBanner(s)).toBeNull();
+  });
+});
+
+/**
+ * The banner as every tab first shows it (SandboxBanner, in the root layout): from the server's state. It then reads the
+ * state again on each navigation and while the tab is visible; e2e/renderer-sandbox.spec.ts shows that in a second tab.
+ */
+describe('the banner, as a tab first shows it', () => {
+  const shown = (renderer: RendererSettings) => renderToStaticMarkup(createElement(SandboxBanner, { renderer }));
+
+  it('off, or on and unable to start: a note with what it means and the link to Settings; nothing while it is on and starts', () => {
+    expect(shown(off(starts))).toBe('<div class="sandbox-banner" data-kind="off" role="note"><p>The page renderer&#x27;s OS sandbox is off, so pages and images byway draws run without it. <a href="/settings#renderer">Page renderer settings</a></p></div>');
+    expect(shown(on(fails))).toBe('<div class="sandbox-banner" data-kind="cannot-start" role="note"><p>byway cannot draw pages: at its last start-up, the page renderer&#x27;s OS sandbox could not start on this computer. <a href="/settings#renderer">How to fix it</a></p></div>');
+    expect(shown(on(starts))).toBe('');
+    expect(shown(on())).toBe('');
   });
 });
 

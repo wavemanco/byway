@@ -5,7 +5,9 @@
  * pins as exact lists every line that mentions a way to switch the setting, build a renderer or launch Chromium,
  * whatever the line's arguments look like:
  * - switching the setting: `setRendererSandbox`, only where Settings' route handler logic passes the person's request
- *   on, with that logic (`updateRenderer`) and its route (`/api/renderer`);
+ *   on, with that logic (`updateRenderer`) and its route (`/api/renderer`, which the banner on every screen only reads),
+ *   and the setting's table and column (`renderer_settings`, `os_sandbox`), named only by the store's migration, its
+ *   queries and the reader of its row, so SQL written elsewhere moves a pin;
  * - Chromium's sandbox option, `chromiumSandbox`: only the one stated launch, which takes it from the setting;
  * - building a renderer: `playwrightPages`, `renderBrowsers`, `checkRenderer` (the start-up check, run only by
  *   scripts/serve.ts) and `storeOsSandbox` (the store's setting, which only the worker gives a renderer);
@@ -17,10 +19,11 @@
  * setting in a named function or shorthand, chromiumLaunchOptions handed to Playwright, Playwright's own launch, whose
  * default is no sandbox, and more) and requires that one pin changes.
  *
- * What it does not see: a use that names none of these (a namespace import called by a computed name), a browser driver
- * it does not list, a browser started as a program of its own, and a change to the launch wiring inside the lines it pins (a retry without the sandbox
- * inside pages.ts): launch.test.ts, pages.test.ts and renderer-check.test.ts check that behaviour. The store never
- * writes the setting except through setRendererSandbox (packages/store/test/renderer-settings.test.ts).
+ * What it does not see: a use that names none of these (a namespace import called by a computed name, SQL that builds the
+ * table's or the column's name from pieces), a browser driver it does not list, a browser started as a program of its
+ * own, and a change to the launch wiring inside the lines it pins (a retry without the sandbox inside pages.ts):
+ * launch.test.ts, pages.test.ts and renderer-check.test.ts check that behaviour. The store never writes the setting
+ * except through setRendererSandbox (packages/store/test/renderer-settings.test.ts).
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -89,7 +92,28 @@ const SWITCH: Pin[] = [
       'apps/web/app/api/renderer/route.ts: return json(await updateRenderer(deps, body.data));',
     ],
   },
-  { what: '/api/renderer: called only by Settings’ switch', pattern: /\/api\/renderer\b/, lines: ["apps/web/src/components/PageRendererSettings.tsx: setSettings(await patch<RendererSettings>('/api/renderer', { osSandbox }));"] },
+  {
+    what: '/api/renderer: switched only by Settings’ switch (PATCH); the banner only reads it (GET)',
+    pattern: /\/api\/renderer\b/,
+    lines: [
+      "apps/web/src/components/PageRendererSettings.tsx: setSettings(await patch<RendererSettings>('/api/renderer', { osSandbox }));",
+      "apps/web/src/components/SandboxBanner.tsx: (signal) => get<RendererSettings>('/api/renderer', signal),",
+    ],
+  },
+  {
+    what: 'the setting’s table and column: only the store’s migration, its queries and the reader of its row',
+    pattern: /\bos_sandbox\b|\brenderer_settings\b/,
+    lines: [
+      'packages/store/src/migrations.ts: -- renderer serves every workspace. No row means never set, and the store answers with the sandbox on. os_sandbox is',
+      'packages/store/src/migrations.ts: CREATE TABLE renderer_settings (',
+      'packages/store/src/migrations.ts: os_sandbox  INTEGER NOT NULL CHECK (os_sandbox IN (0, 1)),',
+      "packages/store/src/queries.ts: rendererSettings: p('SELECT * FROM renderer_settings WHERE id = 1'),",
+      'packages/store/src/queries.ts: setRendererSandbox: p(`INSERT INTO renderer_settings (id, os_sandbox, changed_at, last_check) VALUES (1, ?, ?, NULL)',
+      'packages/store/src/queries.ts: ON CONFLICT (id) DO UPDATE SET os_sandbox = excluded.os_sandbox, changed_at = excluded.changed_at`),',
+      'packages/store/src/queries.ts: recordRendererCheck: p(`INSERT INTO renderer_settings (id, os_sandbox, changed_at, last_check) VALUES (1, 1, NULL, ?)',
+      'packages/store/src/renderer.ts: osSandbox: Number(r.os_sandbox) === 1,',
+    ],
+  },
 ];
 
 /** Chromium's sandbox option: only the one stated launch, from the setting. */
@@ -226,6 +250,8 @@ describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', SCA
     ['the store’s setting given to another renderer', ['const read = storeOsSandbox(store);']],
     ['Chromium’s sandbox option set elsewhere', ['const o = { headless: true, chromiumSandbox: false };']],
     ['the setting switched elsewhere', ['await store.setRendererSandbox(false);']],
+    ["the setting's column written directly (WB-2)", ["db.exec('UPDATE renderer_settings SET os_sandbox = 0 WHERE id = 1');"]],
+    ['Settings’ route called from elsewhere', ["await fetch('/api/renderer', { method: 'PATCH', body: JSON.stringify({ osSandbox: false }) });"]],
     ['an import list that names the launch', ['import {', '  launchChromium,', "} from '../packages/runner/src/pages.ts';"]],
   ])('fails on %s', (_, lines) => {
     const files = [...sources(), { file: 'scripts/zz-way-round.ts', lines }];

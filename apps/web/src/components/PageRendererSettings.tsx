@@ -1,11 +1,11 @@
 'use client';
 
 import type { RendererSettings } from '@byway/contracts';
-import { useRouter } from 'next/navigation';
 import { useId, useRef, useState } from 'react';
 import { OFF_RISK, rendererFindings } from '../view/renderer.ts';
 import { ActionButton } from './ActionButton.tsx';
 import { patch } from './api.ts';
+import { rendererChanged } from './SandboxBanner.tsx';
 import { Switch } from './Switch.tsx';
 import { useAction } from './useAction.ts';
 
@@ -56,7 +56,6 @@ export function SandboxOffConfirm({ riskId, busy, onTurnOff, onKeep }: ConfirmPr
 }
 
 export function PageRendererSettings({ settings: initial }: Props) {
-  const router = useRouter();
   const ids = useId();
   const [settings, setSettings] = useState(initial);
   const [confirming, setConfirming] = useState(false);
@@ -74,8 +73,8 @@ export function PageRendererSettings({ settings: initial }: Props) {
       setConfirming(false);
       setSaid(osSandbox ? 'The OS sandbox is on.' : 'The OS sandbox is off.');
       backToSwitch();
-      // The banner every screen shows is the server's: refresh it.
-      router.refresh();
+      // The banner every screen shows reads the new state now (other tabs read it within a few seconds).
+      rendererChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That was not saved. Try again.');
     }

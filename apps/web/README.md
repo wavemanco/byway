@@ -146,14 +146,19 @@ Logic on top of the contracts sits in view code:
 - The page renderer's OS sandbox (ADR-0105) is switched only in Settings (`PATCH /api/renderer`, which takes
   `{ osSandbox }` and nothing else), which asks before it turns the sandbox off and says what that risks; both answers
   are described by the risk, so a screen reader reads it with the one that has focus. While it is off, every screen
-  carries a banner (`src/view/renderer.ts`, shown by the root layout), and a step whose pages were drawn without it has
-  a note in the Run screen's timeline (under its failure, if it failed) and in the Result's "How this was made".
+  carries a banner (`src/components/SandboxBanner.tsx` in the root layout, its words from `src/view/renderer.ts`). It
+  starts from the server's state and, as Nav does for the waiting count, reads the renderer's state again
+  (`GET /api/renderer`, which only reads) on every navigation and every 5 s while the tab is visible, and at once when
+  that tab's switch changed it, so a tab opened before the change shows it, and loses it, without a reload. A step whose
+  pages were drawn without the sandbox has a note in the Run screen's timeline (under its failure, if it failed) and in
+  the Result's "How this was made".
   `test/guard-sandbox.test.ts` reads the product sources, lines that are only a comment left out, and pins as exact
-  lists every line that mentions a way to switch the setting (`setRendererSandbox`, Settings' route), to set Chromium's
-  sandbox option (`chromiumSandbox`), to build a renderer (`playwrightPages`, `renderBrowsers`, `checkRenderer`,
-  `storeOsSandbox`) or to launch Chromium (`launchChromium`, `chromiumLaunchOptions`, the test-only `launch` seam,
-  Playwright's launch calls, and any line that names Playwright's packages, Puppeteer or `chromium-bidi` in quotes, as
-  an import does), whatever their arguments look like. It also checks itself against each way round it that reviews
-  have found, each of which must change one of its lists. It does not see a use that names none of these, a browser
+  lists every line that mentions a way to switch the setting (`setRendererSandbox`, Settings' route, the setting's
+  table and column), to set Chromium's sandbox option (`chromiumSandbox`), to build a renderer (`playwrightPages`,
+  `renderBrowsers`, `checkRenderer`, `storeOsSandbox`) or to launch Chromium (`launchChromium`,
+  `chromiumLaunchOptions`, the test-only `launch` seam, Playwright's launch calls, and any line that names Playwright's
+  packages, Puppeteer or `chromium-bidi` in quotes, as an import does), whatever their arguments look like. It also
+  checks itself against each way round it that reviews have found, each of which must change one of its lists. It does
+  not see a use that names none of these (SQL that builds the table's or the column's name from pieces, say), a browser
   driver it does not list, a browser started as a program of its own, or a change inside the lines it pins; the
   renderer's own tests check those.

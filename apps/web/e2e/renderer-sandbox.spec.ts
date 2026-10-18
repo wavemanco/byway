@@ -3,9 +3,9 @@
  * on (scripts/e2e.ts requires the start-up line to say so). Turning it off asks first and says the risk; while it is
  * off, every screen carries a banner that links to Settings, and Settings offers to turn it back on, because byway's
  * start-up check found the sandbox could start. All of it by keyboard, with focus where the person is, and the risk read
- * with each answer as a screen reader hears it (its accessible description). The suite's other specs draw pages, so the
- * sandbox is put back on after this one, whatever happens in it. No wall-clock waits: only Playwright's own polling of
- * what the page shows.
+ * with each answer as a screen reader hears it (its accessible description). A second tab, open before the switch, shows
+ * the banner and loses it again without a reload. The suite's other specs draw pages, so the sandbox is put back on after
+ * each test here, whatever happens in it. No wall-clock waits: only Playwright's own polling of what the page shows.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { expectNamedControls, tabTo } from './a11y.ts';
@@ -93,4 +93,47 @@ test("Settings: the page renderer's OS sandbox is on; turning it off asks first,
   await expect(confirm).toHaveCount(0);
   await expect(sandbox).toBeFocused();
   await expect(banner(page)).toHaveCount(0);
+});
+
+/**
+ * Another tab, open before the switch, is told too, without a reload (WEB-R2-1): the root layout outlives page changes,
+ * so the banner reads the renderer's state again on each navigation and while the tab is visible. A mark left on the
+ * tab's window shows it was never reloaded.
+ */
+test('a tab open before the sandbox is turned off shows the banner without a reload, where it is and on every screen its links reach, and loses it when the sandbox is back on', async ({ page, context }) => {
+  const other = await context.newPage();
+  await other.goto('/history');
+  await expect(banner(other)).toHaveCount(0);
+  await other.evaluate(() => {
+    (window as Window & { notReloaded?: boolean }).notReloaded = true;
+  });
+  const notReloaded = () => other.evaluate(() => (window as Window & { notReloaded?: boolean }).notReloaded === true);
+
+  await page.goto('/settings');
+  const section = page.locator('#renderer');
+  const sandbox = section.getByRole('switch', { name: 'Page renderer’s OS sandbox' });
+  await sandbox.click();
+  await section.getByRole('group', { name: 'Turn the OS sandbox off?' }).getByRole('button', { name: 'Turn it off' }).click();
+  await expect(sandbox).toHaveAttribute('aria-checked', 'false');
+
+  // Where it is, with nothing done in it.
+  await expect(banner(other)).toBeVisible();
+  // And on every screen its own links reach.
+  const main = other.getByRole('navigation', { name: 'Main' });
+  for (const [name, at] of [['Library', /\/library$/], ['Start', /\/$/], ['Settings', /\/settings$/], ['History', /\/history$/]] as const) {
+    await main.getByRole('link', { name }).click();
+    await expect(other).toHaveURL(at);
+    await expect(banner(other)).toBeVisible();
+  }
+  expect(await notReloaded()).toBe(true);
+
+  // Back on, from the first tab: the banner goes in the other one, where it is and after a link.
+  await sandbox.click();
+  await expect(sandbox).toHaveAttribute('aria-checked', 'true');
+  await expect(banner(other)).toHaveCount(0);
+  await main.getByRole('link', { name: 'Library' }).click();
+  await expect(other).toHaveURL(/\/library$/);
+  await expect(banner(other)).toHaveCount(0);
+  expect(await notReloaded()).toBe(true);
+  await other.close();
 });

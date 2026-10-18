@@ -3,6 +3,14 @@ import { getDeps, handle } from '../../../src/server/deps.ts';
 import { json, parseBody } from '../../../src/server/http.ts';
 import { RendererPatch } from '../../../src/server/schemas.ts';
 
+/** The renderer's settings and what byway's last start-up check found, for the banner every screen carries (ADR-0105). */
+export async function GET() {
+  return handle(async () => {
+    const { services } = await getDeps();
+    return json(await services.store.getRendererSettings());
+  });
+}
+
 /** Settings' Page renderer switch: the OS sandbox on or off (ADR-0105). Settings asks before it sends off. */
 export async function PATCH(request: Request) {
   return handle(async () => {

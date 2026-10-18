@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Nav } from '../src/components/Nav.tsx';
+import { SandboxBanner } from '../src/components/SandboxBanner.tsx';
 import { TechNamesProvider } from '../src/components/TechNames.tsx';
 import { getContext } from '../src/services/index.ts';
-import { rendererBanner } from '../src/view/renderer.ts';
 import { waitingRunCount } from '../src/view/run.ts';
 import './styles/tokens.css';
 import './styles/base.css';
@@ -39,8 +39,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const technical = preferences.showTechnicalNames;
   const [open, runs, renderer] = await Promise.all([services.store.openCheckpoints(workspaceId), services.store.listRuns(workspaceId), services.store.getRendererSettings()]);
   const waiting = waitingRunCount(open, runs);
-  // On every screen while the page renderer's OS sandbox is off, or on but unable to start (ADR-0105).
-  const sandbox = rendererBanner(renderer);
   return (
     <html lang="en">
       <body>
@@ -54,13 +52,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             </p>
           </div>
         ) : null}
-        {sandbox ? (
-          <div className="sandbox-banner" data-kind={sandbox.kind} role="note">
-            <p>
-              {sandbox.text} <Link href="/settings#renderer">{sandbox.link}</Link>
-            </p>
-          </div>
-        ) : null}
+        {/* On every screen while the page renderer's OS sandbox is off, or on but unable to start (ADR-0105): from the
+            server's state, then read again on each navigation and while the tab is visible. */}
+        <SandboxBanner renderer={renderer} />
         <header className="app-header">
           <div className="app-header-inner">
             <Link href="/" className="wordmark" aria-label="byway, start">
