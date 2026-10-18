@@ -64,7 +64,7 @@ The owner approved the skeptic's revised fix by starting the D2 wave. D2's Setti
 
 **What this changes in earlier records.**
 
-- **ADR-0103 §3 (CI)** is extended by item 6. Nothing in §3 becomes untrue: the workflow's token stays read-only (`contents: read`), it names nothing secret, and it pins every action. The upload steps run only when a job fails, so no run has exercised them yet.
+- **ADR-0103 §3 (CI)** is extended by item 6. Nothing in §3 becomes untrue: the workflow's token stays read-only (`contents: read`), it names nothing secret, and it pins every action. The upload steps run only when a job fails. The first to exercise them was run 39152075629 (2026-10-18, on this branch): its Windows job failed in a browser test and uploaded both, the server log and the failed test's trace and screenshot.
 - **No other Accepted record changes.**
   - ADR-0084's launch, readiness and relaunch-after-a-crash are unchanged.
   - ADR-0099 decision 8 and ADR-0081 (a renderer failure while drawing or reading is one plain step failure, not retried) still hold. When byway itself closed the renderer, that failure now says so.
