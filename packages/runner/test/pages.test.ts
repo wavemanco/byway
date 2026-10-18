@@ -9,20 +9,22 @@
  */
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
-import { afterAll, describe, expect, it } from 'vitest';
-import type { Browser, LaunchOptions } from 'playwright';
+import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
+import type { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
 import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX, REVERSED, TURNED } from '../src/pages.ts';
 
 const pages = playwrightPages({ maxTileHeight: 1200 });
 const opened: { close(): Promise<void> }[] = [pages];
+// All at once: one after another, closing every renderer the tests opened ran past this hook's limit on a loaded
+// machine (32 busy processes on 16 threads), all tests passing.
 afterAll(async () => {
-  for (const p of opened) await p.close();
+  await Promise.all(opened.map((p) => p.close()));
 }, 60_000);
 
 /** Width and height from a PNG's IHDR chunk. */
@@ -83,14 +85,59 @@ const LAYOUT_READS = `(() => {
 })()`;
 
 /**
+ * Test-only: a browser whose contexts and pages the test sees as the renderer opens them: `context` is handed each
+ * context and `page` each page, and either may hand back a Proxy to stand in its place.
+ */
+function seenThrough(b: Browser, see: { context?: (c: BrowserContext) => BrowserContext; page?: (p: Page) => Page }): Browser {
+  return new Proxy(b, {
+    get(target, prop, receiver) {
+      if (prop !== 'newContext') return Reflect.get(target, prop, receiver);
+      return async (...args: Parameters<Browser['newContext']>) => {
+        const context = await target.newContext(...args);
+        const opening = new Proxy(context, {
+          get(c, p, r) {
+            if (p !== 'newPage') return Reflect.get(c, p, r);
+            return async () => {
+              const page = await c.newPage();
+              return see.page ? see.page(page) : page;
+            };
+          },
+        });
+        return see.context ? see.context(opening) : opening;
+      };
+    },
+  });
+}
+
+/**
+ * Test-only: `o` (a browser or a context) with each call of its close() noted in `log` as `what`. While `hold()` gives a
+ * promise, a close waits for it before it starts, as for a renderer too stuck to close: it cannot end before the test
+ * lets it go.
+ */
+function closeSeen<T extends object>(o: T, what: string, log: string[], hold: () => Promise<void> | undefined = () => undefined): T {
+  return new Proxy(o, {
+    get(t, p, r) {
+      const v = Reflect.get(t, p, r) as unknown;
+      if (p !== 'close' || typeof v !== 'function') return v;
+      return async (...a: unknown[]) => {
+        log.push(what);
+        const held = hold();
+        if (held) await held;
+        return (v as (...x: unknown[]) => Promise<void>).apply(t, a);
+      };
+    },
+  });
+}
+
+/**
  * Test-only: the stated launch, watched through the `launch` option, as a read sees it. It counts the contexts reads
  * open (one per read; a read made again opens a second), and notes for each sample of a read how many text nodes it
- * measured (the read's `r.sample()` returns that number) and how many times it read the page's layout or style. While
- * `hold` is set, a read's first sample waits for it, as on a machine too slow for any deadline: the read cannot finish
- * before the test lets it go.
+ * measured (the read's `r.sample()` returns that number) and how many times it read the page's layout or style, and
+ * how many times the end of the read (`r.final()`) read them. While `hold` is set, a read's first sample waits for it,
+ * as on a machine too slow for any deadline: the read cannot finish before the test lets it go.
  */
 function watched() {
-  const seen = { contexts: 0, samples: [] as Array<{ measured: number; layoutReads: number }>, hold: undefined as Promise<void> | undefined };
+  const seen = { contexts: 0, samples: [] as Array<{ measured: number; layoutReads: number }>, finalLayoutReads: 0, hold: undefined as Promise<void> | undefined };
   const launch = async (): Promise<Browser> => {
     const browser = await launchChromium();
     return new Proxy(browser, {
@@ -109,12 +156,14 @@ function watched() {
                     const v = Reflect.get(pg, name, rr) as unknown;
                     if (name !== 'evaluate') return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
                     return async (code: string) => {
-                      if (typeof code !== 'string' || !code.includes('r.sample()')) return pg.evaluate(code);
-                      if (seen.hold) await seen.hold;
+                      const sample = typeof code === 'string' && code.includes('r.sample()');
+                      if (!sample && !(typeof code === 'string' && code.includes('r.final()'))) return pg.evaluate(code);
+                      if (sample && seen.hold) await seen.hold;
                       const before = Number(await pg.evaluate(LAYOUT_READS));
                       const result = await pg.evaluate(code);
                       const after = Number(await pg.evaluate(LAYOUT_READS));
-                      seen.samples.push({ measured: Number(JSON.parse(String(result))), layoutReads: after - before });
+                      if (sample) seen.samples.push({ measured: Number(JSON.parse(String(result))), layoutReads: after - before });
+                      else seen.finalLayoutReads = after - before;
                       return result;
                     };
                   },
@@ -197,22 +246,62 @@ describe('web-page RENDER with Playwright Chromium', () => {
   }, 60_000);
 
   it('bounds a page that never settles: the render fails plainly and is not retried, and the next render works (SEC-5)', async () => {
-    // The limit is short, to keep the test quick, and long enough for the plain page after it to render on a busy
-    // machine. Launching the browser comes before a render's deadline and is the slowest step under load, so the
-    // browser is started first and the time measured is the render's own.
-    const limitMs = 5_000;
-    const closeMs = 2_000;
-    const quick = playwrightPages({ timeoutMs: limitMs, closeTimeoutMs: closeMs });
+    // The page never settles, so a render of it can end only at its deadline, however fast the machine: were the deadline
+    // not kept, the test would time out. The deadline is short, to keep the test quick, and long enough for the plain
+    // page after it to render on a busy machine. The stuck page is then closed and, if it will not close, the browser,
+    // each within its own limit: in the second render the test holds both from closing, as for a renderer too stuck to
+    // close, so that render can end only by giving up on each, and the next render launches a browser again. That page
+    // never settles because its image never comes, so no page spins a CPU while it is held. Nothing here measures time
+    // (this test required the render to end within the limit, both closes and 5 s: on GitHub's 2-CPU Windows machine it
+    // took 18.8 s once, against 14 s, in run 39079760987).
+    const seen = { launches: 0, contexts: 0 };
+    const closing: string[] = [];
+    let stuck: Promise<void> | undefined;
+    const quick = playwrightPages({
+      timeoutMs: 5_000,
+      closeTimeoutMs: 2_000,
+      launch: async () => {
+        seen.launches++;
+        const b = seenThrough(await launchChromium(), { context: (c) => (seen.contexts++, closeSeen(c, 'context', closing, () => stuck)) });
+        return closeSeen(b, 'browser', closing, () => stuck);
+      },
+    });
     opened.push(quick);
     await quick.ready();
-    const started = Date.now();
-    const err = await quick.screenshots(BUSY, none).catch((e: unknown) => e);
-    // The deadline, then closing the stuck page and, if it will not close, the browser: each one bounded.
-    expect(Date.now() - started).toBeLessThan(limitMs + 2 * closeMs + 5_000);
-    expect(err).toBeInstanceOf(StepError);
-    expect((err as Error).message).toMatch(/did not finish rendering within 5 s/);
-    expect((await quick.screenshots(SIMPLE, none)).length).toBe(1);
-  }, 60_000);
+    const render = async (html: string, resolve = none) => {
+      const before = { ...seen };
+      const out = await quick.screenshots(html, resolve).catch((e: unknown) => e);
+      return { out, contexts: seen.contexts - before.contexts, launches: seen.launches - before.launches };
+    };
+    const plainly = (r: { out: unknown; contexts: number }) => {
+      expect(r.out).toBeInstanceOf(StepError);
+      expect((r.out as Error).message).toBe('The page did not finish rendering within 5 s, so it could not be shown.');
+      // Made once: the renderer did not try again (one context), and a StepError is not retried by the workflow.
+      expect(r.contexts).toBe(1);
+    };
+    plainly(await render(BUSY));
+    const next = await render(SIMPLE);
+    expect((next.out as Uint8Array[]).length).toBe(1);
+    expect(next.contexts).toBe(1);
+    // Neither the stuck page's context nor the browser closes until the test lets them: when it ends, whichever way it
+    // ends (a timeout included), so the browsers can close after it.
+    let release = () => {};
+    stuck = new Promise<void>((r) => (release = r));
+    onTestFinished(() => {
+      stuck = undefined;
+      release();
+    });
+    closing.length = 0;
+    const waiting = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Waiting</body></html>';
+    plainly(await render(waiting, () => new Promise<undefined>(() => undefined)));
+    // Later closes are not held; these two stay held until the test ends.
+    stuck = undefined;
+    // The render ended though neither closed: it gave up on the context, then on the browser, which it forgot.
+    expect(closing).toEqual(['context', 'browser']);
+    const after = await render(SIMPLE);
+    expect((after.out as Uint8Array[]).length).toBe(1);
+    expect(after.launches).toBe(1);
+  }, 120_000);
 
   it.each(['interval', 'alertloop', 'confirmloop', 'promptloop', 'once'])(
     'a page that opens dialogs (%s) does not crash the process that renders it (SEC-5)',
@@ -237,12 +326,30 @@ describe('web-page RENDER with Playwright Chromium', () => {
   }, 60_000);
 
   it('stops a render when its step is cancelled', async () => {
+    // A page that never settles, rendered by a renderer whose own limit only stops a hung render: only the cancel can stop
+    // this render before the test's own timeout, however fast the machine. The cancel comes once the page has loaded, so
+    // the render is under way. Nothing here measures time (this test required the render to end within 15 s).
     const ctrl = new AbortController();
     const reason = new Error('cancelled by the run');
-    setTimeout(() => ctrl.abort(reason), 500);
-    const started = Date.now();
-    await expect(pages.screenshots(BUSY, none, { signal: ctrl.signal })).rejects.toBe(reason);
-    expect(Date.now() - started).toBeLessThan(15_000);
+    const steps: string[] = [];
+    const patient = playwrightPages({
+      timeoutMs: 300_000,
+      launch: async () =>
+        seenThrough(await launchChromium(), {
+          context: (c) => closeSeen(c, 'context closed', steps),
+          page: (p) => {
+            p.once('load', () => {
+              steps.push('cancelled');
+              ctrl.abort(reason);
+            });
+            return p;
+          },
+        }),
+    });
+    opened.push(patient);
+    await expect(patient.screenshots(BUSY, none, { signal: ctrl.signal })).rejects.toBe(reason);
+    // Its page's context was closed, which stops the page's renderer, before the render ended.
+    expect(steps).toEqual(['cancelled', 'context closed']);
   }, 60_000);
 
   it('stops a render whose step is cancelled while the browser is still starting', async () => {
@@ -324,38 +431,76 @@ describe('web-page RENDER with Playwright Chromium', () => {
 
   it('holds at most a capped number of bytes of one allowlisted response: a larger one, or one that never ends, is cut off and the render goes on', async () => {
     // An allowlisted CDN serves whatever a package holds, and a model-written page names the files. Each response used
-    // to be held in memory whole, bounded only by the render's deadline.
+    // to be held in memory whole, bounded only by the render's deadline. Here the renderer's own limit only stops a hung
+    // render, so the endless response cannot be waited out: the render can end before the test's own timeout only if
+    // that response is cut off, however fast the machine. Nothing here measures time (this test required the render to
+    // end within 15 s).
     const CAP = 64 * 1024;
     const hits: string[] = [];
-    const endless = new Set<import('node:http').ServerResponse>();
+    const endless = new Set<ServerResponse>();
+    // How much of the endless response the server had sent when the renderer closed it.
+    let sentWhenCut: number | undefined;
+    let cutSeen = () => {};
+    const cut = new Promise<void>((r) => (cutSeen = r));
     const cdn = createServer((req, res) => {
       hits.push(req.url ?? '');
-      const ran = (name: string) => `const img = document.createElement('img'); img.src = 'http://${cdnHost}/${name}.png'; document.documentElement.appendChild(img);`;
+      // In a block of its own, so the second script's const is not declared twice (that threw, so the larger script never
+      // ran even when it came whole, and the check on its image below could not fail).
+      const ran = (name: string) => `{ const img = document.createElement('img'); img.src = 'http://${cdnHost}/${name}.png'; document.documentElement.appendChild(img); }`;
       // A script that runs only if it arrives whole: its last line asks for an image.
       if (req.url === '/big.js') return void res.writeHead(200, { 'content-type': 'text/javascript' }).end(`/*${'x'.repeat(CAP + 1024)}*/\n${ran('big-ran')}`);
       if (req.url === '/small.js') return void res.writeHead(200, { 'content-type': 'text/javascript' }).end(`/*${'x'.repeat(CAP - 1024)}*/\n${ran('small-ran')}`);
       if (req.url === '/endless.js') {
         endless.add(res);
         res.writeHead(200, { 'content-type': 'text/javascript' });
+        let sent = 0;
         const more = () => {
           if (res.destroyed || !endless.has(res)) return;
-          res.write(`/*${'y'.repeat(16 * 1024)}*/\n`, () => setTimeout(more, 1));
+          const chunk = `/*${'y'.repeat(16 * 1024)}*/\n`;
+          res.write(chunk, (e) => {
+            if (!e) sent += chunk.length;
+            setTimeout(more, 1);
+          });
         };
-        res.on('close', () => endless.delete(res));
+        res.on('close', () => {
+          // Closed by the renderer, not by the clean-up below (which empties the set first).
+          if (!endless.delete(res)) return;
+          sentWhenCut ??= sent;
+          cutSeen();
+        });
         return void more();
       }
       res.writeHead(404).end();
     });
     await new Promise<void>((r) => cdn.listen(0, '127.0.0.1', () => r()));
     const cdnHost = `127.0.0.1:${(cdn.address() as AddressInfo).port}`;
-    const capped = playwrightPages({ timeoutMs: 20_000, maxFetchBytes: CAP, admit: (u) => u.protocol === 'http:' && u.host === cdnHost, launch: () => launchWith(LOCAL_NETWORK_CHECKS_OFF) });
+    // The requests of the page that failed, as the page saw them: blocked (Chromium says net::ERR_BLOCKED_BY_CLIENT, with
+    // a suffix for a request a route blocked), or why else.
+    const failed: string[] = [];
+    const why = (text: string) => (/^net::ERR_BLOCKED_BY_CLIENT\b/.test(text) ? 'blocked' : text);
+    const capped = playwrightPages({
+      // Five minutes, many times what this test takes (about 3.4 s on GitHub's 2-CPU Windows machine, a browser launch
+      // included): a limit that only stops a hung render.
+      timeoutMs: 300_000,
+      maxFetchBytes: CAP,
+      admit: (u) => u.protocol === 'http:' && u.host === cdnHost,
+      launch: async () =>
+        seenThrough(await launchWith(LOCAL_NETWORK_CHECKS_OFF), {
+          page: (p) => {
+            p.on('requestfailed', (r) => failed.push(`${new URL(r.url()).pathname} ${why(r.failure()?.errorText ?? '')}`));
+            return p;
+          },
+        }),
+    });
     opened.push(capped);
     try {
       const html = `<!doctype html><html><head><script src="http://${cdnHost}/small.js"></script><script src="http://${cdnHost}/big.js"></script><script src="http://${cdnHost}/endless.js"></script></head><body><div style="height:50px">x</div></body></html>`;
-      const started = Date.now();
       expect((await capped.screenshots(html, none)).length).toBe(1);
-      // The endless one was cut at the cap, not waited out to the deadline.
-      expect(Date.now() - started).toBeLessThan(15_000);
+      // The endless one was cut off once more than the cap of it had come, and closed; the page got neither it nor the
+      // larger one (each blocked, not answered), and the one under the cap ran.
+      await cut;
+      expect(sentWhenCut).toBeGreaterThan(CAP);
+      expect(failed.sort()).toEqual(['/big.js blocked', '/endless.js blocked']);
       expect(hits).toContain('/small-ran.png');
       expect(hits).not.toContain('/big-ran.png');
     } finally {
@@ -692,15 +837,33 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     expect(ticker.hidden).toEqual([]);
   }, 60_000);
 
-  it('a long left-to-right text in a right-to-left page is read within the deadline, its words apart as a visitor sees them', async () => {
-    // Every word boundary there is where runs of two directions meet, judged where the runs meet (round 12).
+  it('a long left-to-right text in a right-to-left page is read in one call, its words apart as a visitor sees them: each character measured once, each space between its words judged once (round 12)', async () => {
+    // Every word boundary there is where runs of two directions meet, judged where the runs meet (round 12): by whether
+    // the space between the two words shows, one read of that space's box. How long the read takes depends on the
+    // machine (1.7 to 4.3 s on GitHub's 2-CPU Windows machine; this test required under 20 s), so the test measures no
+    // time. It reads with a limit that only stops a hung read, and checks the text and the read's work by count: the
+    // first sample reads the layout once for each character it measures, the 32 after it read nothing (nothing on the
+    // page changes), and the end of the read once for each space between two words at most, each with a few reads more
+    // for the page's handful of elements. Reads of the layout that grow faster than the text fail these counts on any
+    // machine; work on boxes already measured is not counted.
+    const { seen, launch } = watched();
+    // Five minutes a read, many times the slowest seen (4.3 s): a limit that only stops a hung read.
+    const patient = playwrightPages({ timeoutMs: 300_000, launch });
+    opened.push(patient);
     const words = Array.from({ length: 12000 }, (_, i) => `word${i}`).join(' ');
-    const t0 = performance.now();
-    const shown = await pages.shownText(`<!doctype html><html dir="rtl"><head><title>T</title></head><body><p>${words}</p><p>مرحبا بكم ١٩٩٨</p></body></html>`, none);
-    expect(performance.now() - t0).toBeLessThan(20_000);
+    const arabic = 'مرحبا بكم ١٩٩٨';
+    const shown = await patient.shownText(`<!doctype html><html dir="rtl"><head><title>T</title></head><body><p>${words}</p><p>${arabic}</p></body></html>`, none);
     expect(shown.text.startsWith('word0 word1 word2 ')).toBe(true);
-    expect(shown.text.endsWith('word11999\nمرحبا بكم ١٩٩٨')).toBe(true);
-  }, 60_000);
+    expect(shown.text.endsWith(`word11999\n${arabic}`)).toBe(true);
+    const characters = (words + arabic).replace(/\s/g, '').length;
+    const spaces = (words + arabic).replace(/\S/g, '').length;
+    const FEW = 100;
+    expect(seen.contexts).toBe(1);
+    expect(seen.samples.map((s) => [s.measured, s.layoutReads > 0])).toEqual([[2, true], ...Array.from({ length: 32 }, () => [0, false])]);
+    expect(seen.samples[0]!.layoutReads).toBeGreaterThanOrEqual(characters);
+    expect(seen.samples[0]!.layoutReads).toBeLessThanOrEqual(characters + FEW);
+    expect(seen.finalLayoutReads).toBeLessThanOrEqual(spaces + FEW);
+  }, 120_000);
 
   it('slides a script fades in and out in turn, stacked in one place, are never seen together: apart across boxes, not in another order', async () => {
     // Each slide is shown at samples the others are hidden at, where it stands. Read from those boxes, the slides
@@ -1114,16 +1277,28 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
   }, 60_000);
 
   it('reads that share a deadline stop at it, whatever time each read has left (r8)', async () => {
+    // The reader's own limit only stops a hung read, so only the shared deadline can stop these reads before the test's
+    // own timeout; the first read's page never finishes loading (its image never comes), so that read can end only at the
+    // shared deadline, however fast the machine. Its message is the shared deadline's, not the reader's own limit's.
+    // Nothing here measures time.
+    let contexts = 0;
+    const patient = playwrightPages({ timeoutMs: 300_000, launch: async () => seenThrough(await launchChromium(), { context: (c) => (contexts++, c) }) });
+    opened.push(patient);
+    await patient.ready();
+    const cut = 'The page did not finish loading in the time byway gives a page\'s reads, so its text could not be read.';
     const hang = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Text</body></html>';
     const never = () => new Promise<undefined>(() => undefined);
-    const t0 = Date.now();
-    const err = await pages.shownText(hang, never, { deadline: t0 + 1_500 }).catch((e: unknown) => e);
+    const err = await patient.shownText(hang, never, { deadline: Date.now() + 1_500 }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StepError);
-    expect((err as Error).message).toBe('The page did not finish loading in the time byway gives a page\'s reads, so its text could not be read.');
-    expect(Date.now() - t0).toBeLessThan(10_000);
-    const late = await pages.shownText('<p>Next</p>', none, { deadline: Date.now() - 1 }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe(cut);
+    // A read whose shared deadline has passed fails before it loads anything; one with time left reads the page.
+    const before = contexts;
+    const late = await patient.shownText('<p>Next</p>', none, { deadline: Date.now() - 1 }).catch((e: unknown) => e);
     expect(late).toBeInstanceOf(StepError);
-    expect((await pages.shownText('<p>Next</p>', none, { deadline: Date.now() + 20_000 })).text).toBe('Next');
+    expect((late as Error).message).toBe(cut);
+    expect(contexts).toBe(before);
+    expect((await patient.shownText('<p>Next</p>', none, { deadline: Date.now() + 300_000 })).text).toBe('Next');
+    expect(contexts).toBe(before + 1);
   }, 60_000);
 
   it('is bounded and cancellable like a render (SEC-5)', async () => {
