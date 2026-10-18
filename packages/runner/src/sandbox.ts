@@ -7,11 +7,16 @@
  * "Target page, context or browser has been closed" (ADR-0084), so the whole error is read, the log and the call log
  * included. sandbox.test.ts holds these words to the installed Playwright (the drift test).
  *
+ * On Windows Chromium prints none of those words: a sandbox that cannot start ends it with no word of why. So a failure
+ * with the sandbox on that names no cause, other than a Chromium that is not there (isChromiumMissing), is said with
+ * the sandbox as one possible cause (maybeTheSandbox), and byway's start-up check tells the causes apart (pages.ts).
+ *
  * Why, and the fix, per operating system: Windows (the sandbox is Chromium's normal mode there, so something on the
- * computer blocks it); Linux as root, in a container, with AppArmor restricting unprivileged user namespaces (Ubuntu's
- * default from 24.04; 23.10 brought the restriction in without turning it on), or with them switched off; and macOS,
- * which byway does not support yet (the slot the owner asked for: "MacOS later"). Nothing here suggests switching the
- * sandbox off: that is the person's choice in Settings, which says what it risks.
+ * computer blocks it; the fix names the Chromium byway launches, Playwright's headless shell: headlessShell); Linux as
+ * root, in a container, with AppArmor restricting unprivileged user namespaces (Ubuntu's default from 24.04; 23.10
+ * brought the restriction in without turning it on), or with them switched off; and macOS, which byway does not
+ * support yet (the slot the owner asked for: "MacOS later"). Nothing here suggests switching the sandbox off: that is
+ * the person's choice in Settings, which says what it risks.
  */
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -102,6 +107,50 @@ export function isSandboxFailure(err: unknown): boolean {
   return text.includes(SANDBOX_FAILED) || CHROMIUM_SANDBOX_MARKERS.some((m) => text.includes(m));
 }
 
+/** Playwright's words when the Chromium it would launch was never downloaded ("Executable doesn't exist at …"). */
+const CHROMIUM_MISSING = "Executable doesn't exist";
+
+/** Whether an error says Playwright's Chromium is not there, which no sandbox causes. */
+export function isChromiumMissing(err: unknown): boolean {
+  return wholeText(err).includes(CHROMIUM_MISSING);
+}
+
+/**
+ * Playwright's Chromium on this computer as byway launches it, for the Windows fix: the file, or, when that file is not
+ * there, the folder Playwright keeps its browsers in; neither when byway cannot tell.
+ */
+export interface ChromiumOnDisk {
+  executable?: string;
+  folder?: string;
+}
+
+/**
+ * The Chromium byway launches, from the full Chromium Playwright names (`chromium.executablePath()`, which follows
+ * PLAYWRIGHT_BROWSERS_PATH). byway launches Chromium headless, which Playwright runs as its headless shell: a download
+ * of its own, beside full Chromium in Playwright's browsers folder and of the same revision, so
+ * `<folder>/chromium-<revision>/chrome-<platform>/…` gives
+ * `<folder>/chromium_headless_shell-<revision>/chrome-headless-shell-<platform>/chrome-headless-shell[.exe]`. The file
+ * when it is there, else the folder; nothing for a path laid out otherwise. pages.test.ts holds this to the file a real
+ * launch runs.
+ */
+export function headlessShell(fullChromium: string, exists: (path: string) => boolean = existsSync): ChromiumOnDisk {
+  const sep = fullChromium.includes('\\') ? '\\' : '/';
+  const parts = fullChromium.split(/[\\/]/);
+  const at = parts.findLastIndex((p) => /^chromium-\d+$/.test(p));
+  const platform = parts[at + 1];
+  if (at < 1 || !platform?.startsWith('chrome-')) return {};
+  const folder = parts.slice(0, at).join(sep);
+  const revision = parts[at]!.slice('chromium-'.length);
+  const file = `chrome-headless-shell${parts.at(-1)?.endsWith('.exe') ? '.exe' : ''}`;
+  const executable = [folder, `chromium_headless_shell-${revision}`, platform.replace(/^chrome-/, 'chrome-headless-shell-'), file].join(sep);
+  try {
+    if (exists(executable)) return { executable };
+  } catch {
+    // Not readable: as though it were not there.
+  }
+  return { folder };
+}
+
 export interface SandboxAdvice {
   /** Why the sandbox cannot start on this computer. */
   why: string;
@@ -113,16 +162,19 @@ export interface SandboxAdvice {
 export const APPARMOR_SCRIPT = 'scripts/linux/allow-chromium-sandbox.sh';
 
 /**
- * Why the sandbox cannot start here, and the fix. `executable` is Playwright's Chromium, named in the Windows fix;
- * `error` is the failure, whose word that Chromium was started as root counts whatever byway read.
+ * Why the sandbox cannot start here, and the fix. `executable` is the Chromium byway launches (headlessShell), named in
+ * the Windows fix, or `folder` Playwright's browsers folder when that file is not there; `error` is the failure, whose
+ * word that Chromium was started as root counts whatever byway read.
  */
-export function sandboxAdvice(host: SandboxHost, opts: { executable?: string; error?: unknown } = {}): SandboxAdvice {
+export function sandboxAdvice(host: SandboxHost, opts: ChromiumOnDisk & { error?: unknown } = {}): SandboxAdvice {
   switch (host.os) {
-    case 'windows':
+    case 'windows': {
+      const what = opts.executable ? `Playwright's Chromium (${opts.executable})` : opts.folder ? `the Chromium in Playwright's browsers folder (${opts.folder})` : "Playwright's Chromium";
       return {
         why: 'On Windows the sandbox is how Chromium normally runs, so something on this computer is blocking it, most often security software or a company policy.',
-        fix: `Allow Playwright's Chromium${opts.executable ? ` (${opts.executable})` : ''} in that software, or ask whoever manages this computer, then start byway again.`,
+        fix: `Allow ${what} in that software, or ask whoever manages this computer, then start byway again.`,
       };
+    }
     case 'linux':
       if (host.root || wholeText(opts.error).includes(AS_ROOT)) return { why: 'byway is running as root, and Chromium does not start its sandbox for root.', fix: 'Start byway as an ordinary user.' };
       if (host.container) {
@@ -151,10 +203,15 @@ export function sandboxFailureMessage(advice: SandboxAdvice): string {
   return `The page renderer could not start inside its OS sandbox on this computer, so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. ${advice.why} ${advice.fix}`;
 }
 
+/** The sandbox named as one possible cause of a failure Chromium gave no reason for, with why here and the fix. */
+export function maybeTheSandbox(advice: SandboxAdvice): string {
+  return `One possible cause is that its OS sandbox cannot run on this computer; if so: ${advice.why} ${advice.fix}`;
+}
+
 /**
  * A page renderer that did not start with the sandbox on, for no reason Chromium gave (a renderer process that security
  * software stops, for example): the sandbox is one possible cause, memory another. `said` is Playwright's first line.
  */
 export function possibleSandboxCause(said: string, advice: SandboxAdvice): string {
-  return `The page renderer started but could not draw byway's test page (${said}). One possible cause is that its OS sandbox cannot run on this computer; if so: ${advice.why} ${advice.fix} Another is a computer short of memory.`;
+  return `The page renderer started but could not draw byway's test page (${said}). ${maybeTheSandbox(advice)} Another is a computer short of memory.`;
 }

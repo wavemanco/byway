@@ -11,7 +11,7 @@ export { LOST_RUN_MESSAGE, ORPHAN_RUN_MESSAGE, reconcileLostRuns, settleLostRun,
 export { dataDirReport, reportLines, type DataDirReport, type DataDirReportOptions, type UnledgeredRun } from './data-check.ts';
 export { OLDER_VERSION_MESSAGE, retireStaleRuns } from './versioning.ts';
 export { createActivities, type RunnerDeps } from './activities/index.ts';
-export { checkRenderer, chromiumLaunchOptions, launchChromium, launchFailure, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, rendererCheckWithin, rendererLine, storeOsSandbox, type ArtifactResolver, type LaunchSetting, type PageRenderer, type PlaywrightPagesOptions, type RenderOptions, type RendererCheck, type RendererCheckOptions, type SurfaceShots } from './pages.ts';
+export { checkRenderer, launchFailure, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, rendererCheckWithin, rendererLine, storeLastCheck, storeOsSandbox, type ArtifactResolver, type LaunchSetting, type PageRenderer, type PlaywrightPagesOptions, type RenderOptions, type RendererCheck, type RendererCheckOptions, type RendererCheckProgress, type SurfaceShots } from './pages.ts';
 export { isSandboxFailure, sandboxAdvice, sandboxFailureMessage, sandboxHost, type SandboxAdvice, type SandboxHost } from './sandbox.ts';
 export { isSurface, rendersKnob, SURFACE_CAPTIONS, SURFACE_NAMES, SURFACES } from './surfaces.ts';
 export { storeCaps } from './caps.ts';

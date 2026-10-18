@@ -5,7 +5,9 @@
  * key, nothing secret-looking and nothing from the secrets file. The production launch takes only the sandbox setting,
  * so no caller can add a flag, and the renderer reads that setting from the store before each load; a setting it cannot
  * read is on. A Chromium that cannot start fails every renderer path (a C1 view, a lineup card, the readiness check)
- * with one plain message that is not retried; a sandbox that cannot start says why on this computer and the fix.
+ * with one plain message that is not retried; a sandbox that cannot start says why on this computer and the fix, naming
+ * on Windows the headless shell byway launches; a Chromium that dies inside the sandbox with no word of why names the
+ * sandbox as one possible cause.
  *
  * The effective command line of a real Chromium, the readiness check's test page and the start-up check are checked in
  * pages.test.ts and renderer-check.test.ts; the per-system reasons and the drift test on Playwright's words in
@@ -14,7 +16,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
 import type { Gateway } from '@byway/contracts';
 import { KEY_VARS, loadEnvFile, type Env } from '@byway/gateway';
@@ -23,16 +25,30 @@ import type { RunnerDeps } from '../src/activities/deps.ts';
 import { StepError, toFailure } from '../src/activities/failures.ts';
 import { ArtifactReader } from '../src/activities/prompting.ts';
 import { cardHtml } from '../src/cards.ts';
-import { chromiumLaunchOptions, launchChromium, launchFailure, playwrightPages, RENDERER_OS_SANDBOX_DEFAULT, storeOsSandbox } from '../src/pages.ts';
+import { checkRenderer, chromiumLaunchOptions, launchChromium, launchFailure, playwrightPages, RENDERER_OS_SANDBOX_DEFAULT, storeOsSandbox } from '../src/pages.ts';
 import { sandboxAdvice, sandboxFailureMessage, type SandboxHost } from '../src/sandbox.ts';
 import { FAILURE, type View } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
-const { launch } = vi.hoisted(() => ({ launch: vi.fn() }));
-const EXECUTABLE = 'C:\\pw\\chromium_headless_shell-1243\\chrome-headless-shell-win64\\chrome-headless-shell.exe';
-vi.mock('playwright', () => ({ chromium: { launch, executablePath: () => EXECUTABLE } }));
+/**
+ * Playwright's browsers folder, as a test folder: chromium.executablePath() names the full Chromium in it, as the real
+ * Playwright does, while byway launches the headless shell beside it, which is the file the Windows fix names.
+ */
+const { launch, BROWSERS, FULL_CHROMIUM, EXECUTABLE, playwrightNames } = await vi.hoisted(async () => {
+  const { mkdirSync, mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { dirname, join } = await import('node:path');
+  const browsers = mkdtempSync(join(tmpdir(), 'byway-ms-playwright-'));
+  const shell = join(browsers, 'chromium_headless_shell-1243', 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');
+  mkdirSync(dirname(shell), { recursive: true });
+  writeFileSync(shell, '');
+  const full = join(browsers, 'chromium-1243', 'chrome-win64', 'chrome.exe');
+  return { launch: vi.fn(), BROWSERS: browsers, FULL_CHROMIUM: full, EXECUTABLE: shell, playwrightNames: { path: full } };
+});
+vi.mock('playwright', () => ({ chromium: { launch, executablePath: () => playwrightNames.path } }));
+afterAll(() => rmSync(BROWSERS, { recursive: true, force: true }));
 
 const WEBRTC_FLAGS = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
 const ON = { osSandbox: true };
@@ -194,6 +210,24 @@ describe('a Chromium that cannot start', () => {
     expect(launchFailure(SANDBOXED, { osSandbox: false, host }).message).toMatch(/^The page renderer could not start \(Target page, context or browser has been closed\)/);
   });
 
+  it('that dies inside the sandbox saying nothing of why names the sandbox as one possible cause, with why and the fix, and keeps the install command; a Chromium that is not there does not', () => {
+    // On Windows a sandbox that cannot start ends Chromium so: none of the markers Linux prints.
+    const windows: SandboxHost = { os: 'windows', root: false, container: false, appArmorRestricts: false, userNamespacesOff: false };
+    const advice = sandboxAdvice(windows, { executable: EXECUTABLE });
+    const failure = launchFailure(DIED, { osSandbox: true, host: windows, executable: EXECUTABLE });
+    expect(failure).toBeInstanceOf(StepError);
+    expect(failure.cause).toBe(DIED);
+    expect(failure.message).toBe(
+      `The page renderer could not start (Target page, context or browser has been closed), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. One possible cause is that its OS sandbox cannot run on this computer; if so: ${advice.why} ${advice.fix} If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium`,
+    );
+    expect((toFailure(failure) as ApplicationFailure).nonRetryable).toBe(true);
+    // Not there, or launched without the sandbox, or with the setting not said: the plain message, no sandbox in it.
+    for (const said of [launchFailure(MISSING, { osSandbox: true, host: windows }), launchFailure(DIED, { osSandbox: false, host: windows }), launchFailure(DIED)]) {
+      expect(said.message).toMatch(/^The page renderer could not start \(.*\), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn\. If Playwright's Chromium is not installed: /);
+      expect(said.message).not.toMatch(/sandbox/i);
+    }
+  });
+
   it('comes out of the production launch as that failure, after one attempt, naming Playwright’s Chromium on this computer', async () => {
     launch.mockRejectedValueOnce(MISSING);
     const err = await launchChromium(ON).catch((e: unknown) => e);
@@ -204,6 +238,25 @@ describe('a Chromium that cannot start', () => {
     const sandboxed = await launchChromium(ON).catch((e: unknown) => e);
     expect((sandboxed as Error).message).toBe(launchFailure(SANDBOXED, { osSandbox: true, executable: EXECUTABLE }).message);
     expect((sandboxed as Error).message).toMatch(/^The page renderer could not start inside its OS sandbox on this computer/);
+    launch.mockRejectedValueOnce(DIED);
+    const died = await launchChromium(ON).catch((e: unknown) => e);
+    expect((died as Error).message).toBe(launchFailure(DIED, { osSandbox: true, executable: EXECUTABLE }).message);
+    expect((died as Error).message).toContain('One possible cause is that its OS sandbox cannot run on this computer');
+  });
+
+  it("names, in the Windows fix, the headless shell byway launches, not the full Chromium Playwright names; or Playwright's browsers folder when the shell is not there", async () => {
+    const windows: SandboxHost = { os: 'windows', root: false, container: false, appArmorRestricts: false, userNamespacesOff: false };
+    launch.mockRejectedValue(SANDBOXED);
+    const check = await checkRenderer(ON, { host: windows });
+    expect(check.fix).toBe(`Allow Playwright's Chromium (${EXECUTABLE}) in that software, or ask whoever manages this computer, then start byway again.`);
+    expect(check.message).not.toContain(FULL_CHROMIUM);
+    // A Playwright whose headless shell is not in its folder (another revision, say): the folder, never a file not there.
+    playwrightNames.path = path.join(BROWSERS, 'chromium-9999', 'chrome-win64', 'chrome.exe');
+    try {
+      expect((await checkRenderer(ON, { host: windows })).fix).toBe(`Allow the Chromium in Playwright's browsers folder (${BROWSERS}) in that software, or ask whoever manages this computer, then start byway again.`);
+    } finally {
+      playwrightNames.path = FULL_CHROMIUM;
+    }
   });
 
   describe('on every renderer path', () => {
@@ -224,6 +277,8 @@ describe('a Chromium that cannot start', () => {
     ])('(%s) a view of a page, a card, the readiness check and a lineup of cards all fail with the same message', async (_, cause) => {
       launch.mockRejectedValue(cause);
       const expected = launchFailure(cause, { osSandbox: true, executable: EXECUTABLE }).message;
+      // Inside the sandbox, the default: a death with no word of why names the sandbox as one possible cause.
+      expect(expected).toContain(cause === DIED ? 'One possible cause is that its OS sandbox cannot run on this computer' : 'could not start inside its OS sandbox on this computer');
       const pages = playwrightPages();
       await expect(pages.render('<!doctype html><p>Hi</p>', none, ['desktop', 'mobile', 'fold'])).rejects.toThrow(expected);
       await expect(pages.render(cardHtml({ images: [], layout: 'grid', text: 'A card' }), none, ['desktop'])).rejects.toBeInstanceOf(StepError);

@@ -51,6 +51,14 @@ describe('the page renderer settings (ADR-0105)', () => {
     expect((await store.getRendererSettings()).lastCheck).toEqual(failed);
   });
 
+  it('keep a check that had not found out in time whether the renderer is ready as one with no `ready`', async () => {
+    const store = openStore();
+    const unfinished: RendererCheckRecord = { at: '2026-10-18T14:00:00.000Z', osSandbox: true, sandbox: 'unknown', message: 'The check had not finished 30 s after the engine was up, so byway could not tell whether it can draw pages.' };
+    expect(await store.recordRendererCheck(unfinished)).toEqual({ osSandbox: true, lastCheck: unfinished });
+    expect('ready' in ((await store.getRendererSettings()).lastCheck ?? {})).toBe(false);
+    await expect(store.recordRendererCheck({ ...unfinished, ready: null } as never)).rejects.toMatchObject({ code: 'invalid' });
+  });
+
   it('refuse a setting that is not true or false, and a check that is not one', async () => {
     const store = openStore();
     await expect(store.setRendererSandbox('off' as never)).rejects.toMatchObject({ code: 'invalid' });

@@ -31,7 +31,8 @@ export function rendererCheck(value: unknown): RendererCheckRecord {
   return {
     at: nonEmpty("a renderer check's time", value.at),
     osSandbox: flag('osSandbox'),
-    ready: flag('ready'),
+    // Absent when the check had not found out in time.
+    ...(value.ready === undefined ? {} : { ready: flag('ready') }),
     sandbox: oneOf('sandbox finding', value.sandbox, SANDBOX_FINDINGS),
     ...words('message'),
     ...words('why'),

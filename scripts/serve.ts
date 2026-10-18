@@ -49,7 +49,7 @@ import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engi
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { checkRenderer, dataDirReport, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine } from '../packages/runner/src/index.ts';
+import { checkRenderer, dataDirReport, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -185,10 +185,11 @@ async function main(): Promise<void> {
   const engineStarting = startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort });
   engineStarting.catch(() => undefined);
   // The renderer is checked meanwhile, under the person's sandbox setting; the check never throws. Its time limit starts
-  // when byway waits for it, below.
+  // when byway waits for it, below, and then says what the check had found by then (rendererProgress).
   // A setting that cannot be read counts as on, as it does for the engine's renderer.
   const { osSandbox } = await store.getRendererSettings().catch(() => ({ osSandbox: true }));
-  const rendererChecking = checkRenderer({ osSandbox });
+  const rendererProgress: RendererCheckProgress = {};
+  const rendererChecking = checkRenderer({ osSandbox }, { progress: rendererProgress });
   const env: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
   try {
     if (mode === 'start') await build(env);
@@ -208,7 +209,7 @@ async function main(): Promise<void> {
   }
   console.log(`  engine     ${engine.address}`);
   for (const line of engineStartLines(engine.atStart)) console.log(`             ${line}`);
-  const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS, { built: mode === 'start', osSandbox });
+  const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS, { built: mode === 'start', osSandbox, progress: rendererProgress });
   console.log(`  renderer   ${rendererLine(renderer)}`);
   // For Settings: what the check found, beside the setting it never changes (ADR-0105).
   await store.recordRendererCheck({ at: new Date().toISOString(), ...renderer }).catch((err: unknown) => console.log(`             (not kept for Settings: ${err instanceof Error ? err.message : String(err)})`));

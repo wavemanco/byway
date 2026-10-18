@@ -204,14 +204,17 @@ export interface RendererCheckRecord {
   at: string;
   /** The OS sandbox setting the check ran under. */
   osSandbox: boolean;
-  /** Whether the renderer could draw the test page under that setting. */
-  ready: boolean;
+  /**
+   * Whether the renderer could draw the test page under that setting; absent when the check had not found out by the time
+   * byway printed its line (the start-up line's limit came first).
+   */
+  ready?: boolean;
   /**
    * Whether Chromium could start inside its OS sandbox and draw the test page: 'starts', 'fails', or 'unknown' when the
-   * check could not tell (Chromium did not start at all, or the check ran out of time).
+   * check could not tell (Chromium did not start at all, or the check, or its probe of the other setting, ran out of time).
    */
   sandbox: 'starts' | 'fails' | 'unknown';
-  /** The plain message, when the renderer was not ready or the sandbox failed. */
+  /** The plain message, when the renderer was not ready, the sandbox failed, or the check had not finished. */
   message?: string;
   /** When the sandbox failed: why on this computer, and the fix (per operating system). */
   why?: string;

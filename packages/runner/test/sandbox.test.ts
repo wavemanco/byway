@@ -5,8 +5,13 @@
  * handed in, so every case is checked on any machine. How a sandbox failure is told from Playwright's error is checked
  * against the installed Playwright too (the drift test, below).
  */
+import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { isSandboxFailure, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, sandboxHost, SANDBOX_FAILED, type HostProbe, type SandboxHost } from '../src/sandbox.ts';
+import { headlessShell, isChromiumMissing, isSandboxFailure, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, sandboxHost, SANDBOX_FAILED, type HostProbe, type SandboxHost } from '../src/sandbox.ts';
 
 /** A machine as sandboxHost() reads it: its platform, user id, files and environment. */
 function probe(over: Partial<HostProbe> & { files?: Record<string, string> } = {}): HostProbe {
@@ -74,11 +79,14 @@ describe('what byway reads about the machine', () => {
 });
 
 describe('why the sandbox cannot start, and the fix, for each system', () => {
-  it('Windows: something on the computer blocks it, and the fix names Playwright’s Chromium', () => {
+  it('Windows: something on the computer blocks it, and the fix names Playwright’s Chromium, or the folder it is in', () => {
     const exe = 'C:\\Users\\me\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1243\\chrome-headless-shell-win64\\chrome-headless-shell.exe';
     const advice = sandboxAdvice({ os: 'windows', root: false, container: false, appArmorRestricts: false, userNamespacesOff: false }, { executable: exe });
     expect(advice.why).toBe('On Windows the sandbox is how Chromium normally runs, so something on this computer is blocking it, most often security software or a company policy.');
     expect(advice.fix).toBe(`Allow Playwright's Chromium (${exe}) in that software, or ask whoever manages this computer, then start byway again.`);
+    // The file is not there (a Playwright installed otherwise): the folder Playwright keeps its browsers in.
+    const folder = 'C:\\Users\\me\\AppData\\Local\\ms-playwright';
+    expect(sandboxAdvice({ ...linux(), os: 'windows' }, { folder }).fix).toBe(`Allow the Chromium in Playwright's browsers folder (${folder}) in that software, or ask whoever manages this computer, then start byway again.`);
     expect(sandboxAdvice({ ...linux(), os: 'windows' }).fix).toBe("Allow Playwright's Chromium in that software, or ask whoever manages this computer, then start byway again.");
   });
 
@@ -130,6 +138,69 @@ describe('why the sandbox cannot start, and the fix, for each system', () => {
   });
 });
 
+/**
+ * The file the Windows fix names: the Chromium byway launches. byway launches Chromium headless, which Playwright runs as
+ * its headless shell, not the full Chromium that Playwright's chromium.executablePath() names (ADR-0105). The real launch
+ * is compared with this in pages.test.ts (the drift test).
+ */
+describe('which Chromium the fix names', () => {
+  const files = (...present: string[]) => (p: string) => present.includes(p);
+
+  it('the headless shell beside the full Chromium Playwright names, of the same revision, on each system Playwright lays out', () => {
+    const win = 'C:\\Users\\me\\AppData\\Local\\ms-playwright\\chromium-1243\\chrome-win64\\chrome.exe';
+    const winShell = 'C:\\Users\\me\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1243\\chrome-headless-shell-win64\\chrome-headless-shell.exe';
+    expect(headlessShell(win, files(winShell))).toEqual({ executable: winShell });
+    const lin = '/home/me/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome';
+    const linShell = '/home/me/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell';
+    expect(headlessShell(lin, files(linShell))).toEqual({ executable: linShell });
+    const arm = '/home/me/.cache/ms-playwright/chromium-1243/chrome-linux-arm64/chrome';
+    const armShell = '/home/me/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux-arm64/chrome-headless-shell';
+    expect(headlessShell(arm, files(armShell))).toEqual({ executable: armShell });
+    const mac = '/Users/me/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+    const macShell = '/Users/me/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell';
+    expect(headlessShell(mac, files(macShell))).toEqual({ executable: macShell });
+  });
+
+  it('never names a file that is not there: then the browsers folder, and nothing for a path laid out otherwise', () => {
+    expect(headlessShell('C:\\pw\\chromium-1243\\chrome-win64\\chrome.exe', files())).toEqual({ folder: 'C:\\pw' });
+    // Only the full Chromium downloaded: the file Playwright names is not the one byway runs.
+    expect(headlessShell('C:\\pw\\chromium-1243\\chrome-win64\\chrome.exe', files('C:\\pw\\chromium-1243\\chrome-win64\\chrome.exe'))).toEqual({ folder: 'C:\\pw' });
+    expect(headlessShell('/opt/chrome/chrome', files('/opt/chrome/chrome'))).toEqual({});
+    expect(headlessShell('', files())).toEqual({});
+    const throwing = () => {
+      throw new Error('EACCES');
+    };
+    expect(headlessShell('/pw/chromium-1243/chrome-linux64/chrome', throwing)).toEqual({ folder: '/pw' });
+  });
+
+  it("follows Playwright's browsers folder where PLAYWRIGHT_BROWSERS_PATH moves it", async () => {
+    const folder = mkdtempSync(path.join(tmpdir(), 'byway-browsers-'));
+    try {
+      // Playwright's own answer in a process started with the variable set (it reads it once, as it loads).
+      const named = await new Promise<string>((resolve, reject) => {
+        const child = spawn(process.execPath, ['-e', "import('playwright').then(({ chromium }) => process.stdout.write(chromium.executablePath()))"], {
+          cwd: fileURLToPath(new URL('..', import.meta.url)),
+          env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: folder },
+          stdio: ['ignore', 'pipe', 'inherit'],
+        });
+        let out = '';
+        child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+        child.on('error', reject);
+        child.on('close', () => resolve(out));
+      });
+      expect(named.startsWith(folder)).toBe(true);
+      expect(headlessShell(named)).toEqual({ folder });
+      const shell = headlessShell(named, () => true).executable!;
+      expect(path.dirname(path.dirname(path.dirname(shell)))).toBe(folder);
+      mkdirSync(path.dirname(shell), { recursive: true });
+      writeFileSync(shell, '');
+      expect(headlessShell(named)).toEqual({ executable: shell });
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('telling a sandbox that cannot start from other failures', () => {
   it('reads Playwright’s own words, or Chromium’s markers, anywhere in the error: its first line only says the browser closed', () => {
     const pipe = (log: string) => Object.assign(new Error(`browserType.launch: Target page, context or browser has been closed\nBrowser logs:\n${log}\nCall log:\n  - <launched> pid=1`), {});
@@ -166,6 +237,30 @@ describe('telling a sandbox that cannot start from other failures', () => {
     expect(message.split('\n')[0]).toBe('browserType.launch: Target page, context or browser has been closed');
     expect(message).toContain(`Browser logs:\n${SANDBOX_FAILED}\n`);
     expect(isSandboxFailure(err)).toBe(true);
+  });
+
+  it('the installed Playwright’s error for a Chromium that is not there is read as that, never as the sandbox', async () => {
+    const folder = mkdtempSync(path.join(tmpdir(), 'byway-no-browsers-'));
+    try {
+      // A Playwright whose browsers folder is empty, in a process of its own (Playwright reads the variable as it loads).
+      const said = await new Promise<string>((resolve, reject) => {
+        const child = spawn(process.execPath, ['-e', "import('playwright').then(({ chromium }) => chromium.launch({ headless: true })).then((b) => b.close(), (e) => process.stdout.write(String(e && e.message)))"], {
+          cwd: fileURLToPath(new URL('..', import.meta.url)),
+          env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: folder },
+          stdio: ['ignore', 'pipe', 'inherit'],
+        });
+        let out = '';
+        child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+        child.on('error', reject);
+        child.on('close', () => resolve(out));
+      });
+      const err = new Error(said);
+      expect(isChromiumMissing(err)).toBe(true);
+      expect(isSandboxFailure(err)).toBe(false);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+    expect(isChromiumMissing(new Error('browserType.launch: Target page, context or browser has been closed'))).toBe(false);
   });
 
   it('the installed Playwright’s error for a Chromium that dies for another reason is not read as the sandbox', async () => {

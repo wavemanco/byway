@@ -10,7 +10,7 @@
  * the two sandbox settings apart; and a readiness check that starts the browser the renders then share.
  */
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
@@ -20,7 +20,7 @@ import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import type { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
 import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
-import { possibleSandboxCause, sandboxAdvice, type SandboxHost } from '../src/sandbox.ts';
+import { headlessShell, possibleSandboxCause, sandboxAdvice, type SandboxHost } from '../src/sandbox.ts';
 
 /** The launch byway makes when the person has not switched the sandbox off: inside it (ADR-0105). */
 const STATED = { osSandbox: RENDERER_OS_SANDBOX_DEFAULT };
@@ -613,6 +613,23 @@ describe('web-page RENDER with Playwright Chromium', () => {
     }
   }, 60_000);
 
+  it("names, in the Windows fix, the file the stated launch runs: Playwright's headless shell, not the full Chromium Playwright names (ADR-0105)", async () => {
+    const { chromium } = await import('playwright');
+    const named = headlessShell(chromium.executablePath());
+    const browser = await launchWith(['--enable-automation']);
+    try {
+      const [ran] = await commandLine(browser);
+      const same = (p: string) => (process.platform === 'win32' ? realpathSync.native(p).toLowerCase() : realpathSync.native(p));
+      expect(named.executable).toBeDefined();
+      expect(same(named.executable!)).toBe(same(ran!));
+      // So the fix byway gives on Windows names that file.
+      const windows: SandboxHost = { os: 'windows', root: false, container: false, appArmorRestricts: false, userNamespacesOff: false };
+      expect(sandboxAdvice(windows, named).fix).toContain(`(${named.executable})`);
+    } finally {
+      await browser.close();
+    }
+  }, 60_000);
+
   it("when asked whether it is ready, draws byway's own test page once on each browser, and the renders that follow share the browser (F18; ADR-0105)", async () => {
     let launches = 0;
     const contexts: string[] = [];
@@ -663,7 +680,10 @@ describe('web-page RENDER with Playwright Chromium', () => {
     opened.push(on, off);
     const withSandbox = await on.ready().catch((e: unknown) => e);
     expect(withSandbox).toBeInstanceOf(StepError);
-    expect((withSandbox as Error).message).toBe(possibleSandboxCause('Target crashed', sandboxAdvice(host)));
+    // The Windows fix names the headless shell byway launches.
+    const named = headlessShell((await import('playwright')).chromium.executablePath());
+    expect((withSandbox as Error).message).toBe(possibleSandboxCause('Target crashed', sandboxAdvice(host, named)));
+    expect((withSandbox as Error).message).toContain(`(${named.executable})`);
     const without = await off.ready().catch((e: unknown) => e);
     expect(without).toBeInstanceOf(StepError);
     expect((without as Error).message).toBe("The page renderer started but could not draw byway's test page (Target crashed).");

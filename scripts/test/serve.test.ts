@@ -31,14 +31,14 @@ describe("serve.ts's renderer line (ADR-0084)", () => {
   });
 
   it('starts the check while the app builds and the engine starts, with no limit of its own', () => {
-    expect(matching(serve, /\bcheckRenderer\(/)).toEqual(['const rendererChecking = checkRenderer({ osSandbox });']);
+    expect(matching(serve, /\bcheckRenderer\(/)).toEqual(['const rendererChecking = checkRenderer({ osSandbox }, { progress: rendererProgress });']);
     const started = index(/^const rendererChecking = /);
     expect(started).toBeGreaterThan(index(/startDevEngine\(/));
     expect(started).toBeLessThan(index(BUILD));
   });
 
   it('starts its limit only once the app is built and the engine is up, and prints the line as soon as the wait ends', () => {
-    expect(matching(serve, /\brendererCheckWithin\(/)).toEqual(["const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS, { built: mode === 'start', osSandbox });"]);
+    expect(matching(serve, /\brendererCheckWithin\(/)).toEqual(["const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS, { built: mode === 'start', osSandbox, progress: rendererProgress });"]);
     const limit = index(/\brendererCheckWithin\(/);
     expect(limit).toBeGreaterThan(index(BUILD));
     expect(limit).toBeGreaterThan(index(ENGINE_UP));
@@ -55,8 +55,17 @@ describe("serve.ts's renderer line and the OS sandbox setting (ADR-0105)", () =>
   it("checks under the store's setting, read just before (a setting it cannot read counts as on), and the wait says the same setting", () => {
     const read = index(/^const \{ osSandbox \} = await store\.getRendererSettings\(\)\.catch\(\(\) => \(\{ osSandbox: true \}\)\);$/);
     expect(read).toBeGreaterThan(0);
-    expect(main[read + 1]).toBe('const rendererChecking = checkRenderer({ osSandbox });');
+    expect(main[read + 1]).toBe('const rendererProgress: RendererCheckProgress = {};');
+    expect(main[read + 2]).toBe('const rendererChecking = checkRenderer({ osSandbox }, { progress: rendererProgress });');
     expect(matching(serve, /\bosSandbox\b/)).toHaveLength(3);
+  });
+
+  it('at its limit, says what the check had found by then: the progress the check is told, used nowhere else', () => {
+    expect(matching(serve, /\brendererProgress\b/)).toEqual([
+      'const rendererProgress: RendererCheckProgress = {};',
+      'const rendererChecking = checkRenderer({ osSandbox }, { progress: rendererProgress });',
+      "const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS, { built: mode === 'start', osSandbox, progress: rendererProgress });",
+    ]);
   });
 
   it('prints the line from what the check found, then records it in the store for Settings, which never changes the setting', () => {

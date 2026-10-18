@@ -59,8 +59,8 @@ describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', SCA
   it('gives a renderer its setting only from the store, or, in the start-up check, for byway’s own test page', () => {
     expect(uses(/\bosSandbox: (\(\)|async \(\)|storeOsSandbox)/)).toEqual([
       'packages/runner/src/pages.ts: const pages = playwrightPages({ osSandbox: () => osSandbox, host, ...(opts.launch ? { launch: opts.launch } : {}) });',
-      'packages/runner/src/worker.ts: const pages = opts.pages ?? playwrightPages({ osSandbox: storeOsSandbox(opts.store) });',
+      'packages/runner/src/worker.ts: const pages = opts.pages ?? playwrightPages({ osSandbox: storeOsSandbox(opts.store), lastCheck: storeLastCheck(opts.store) });',
     ]);
-    expect(uses(/\bcheckRenderer\(\{/)).toEqual(['scripts/serve.ts: const rendererChecking = checkRenderer({ osSandbox });']);
+    expect(uses(/\bcheckRenderer\(\{/)).toEqual(['scripts/serve.ts: const rendererChecking = checkRenderer({ osSandbox }, { progress: rendererProgress });']);
   });
 });
