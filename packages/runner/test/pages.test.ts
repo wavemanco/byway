@@ -3,7 +3,9 @@
  * surfaces (RENDER-1), images from the artifact route, other hosts and WebSockets blocked (ENG-14), a bounded render
  * for a page that never settles, a page that opens dialogs in a loop (in its own process, which must survive) and a
  * failing artifact route (SEC-5), a cancelled render, and a browser that comes back
- * after a crash or a failed launch (ENG-14). And the launch itself (F18; ADR-0084): the effective command line of a
+ * after a crash or a failed launch (ENG-14). Renders sharing one browser (ADR-0106): a page late to close retires the
+ * browser without failing the others, a browser that does not open a context cannot hold a load, and a load byway's own
+ * close stops says so. And the launch itself (F18; ADR-0084): the effective command line of a
  * Chromium started from the one stated launch, read back through CDP, with a control that shows the check can tell
  * the two sandbox settings apart; and a readiness check that starts the browser the renders then share.
  */
@@ -618,6 +620,239 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect((await counted.render(SIMPLE, none, ['fold'])).length).toBe(1);
     await counted.ready();
     expect(launches).toBe(1);
+  }, 60_000);
+});
+
+/** Test-only: a promise the test settles. `open()` lets whatever waits on `wait` go on. */
+function gate(): { wait: Promise<void>; open: () => void } {
+  let open = () => {};
+  const wait = new Promise<void>((r) => (open = r));
+  return { wait, open };
+}
+
+/**
+ * Test-only: `b` with each newContext noted in `log` as 'newContext' (and `asked` called), and each close of the browser
+ * as 'browser'. While `hold()` gives a promise, a context opens only once it settles, as for a browser too stuck to
+ * answer; if the browser is closed first, the newContext fails as Playwright's does on a closed browser. `context` is
+ * handed each context that opens and may hand back a Proxy to stand in its place.
+ */
+function opening(b: Browser, log: string[], see: { asked?: () => void; hold?: () => Promise<void> | undefined; context?: (c: BrowserContext) => BrowserContext } = {}): Browser {
+  let shut = () => {};
+  const closed = new Promise<never>((_, reject) => (shut = () => reject(new Error('browser.newContext: Target page, context or browser has been closed'))));
+  closed.catch(() => undefined);
+  return new Proxy(b, {
+    get(target, prop, receiver) {
+      if (prop === 'newContext') {
+        return async (...args: Parameters<Browser['newContext']>) => {
+          log.push('newContext');
+          see.asked?.();
+          const held = see.hold?.();
+          if (held) await Promise.race([held, closed]);
+          const context = await target.newContext(...args);
+          return see.context ? see.context(context) : context;
+        };
+      }
+      if (prop === 'close') {
+        return async (...a: Parameters<Browser['close']>) => {
+          log.push('browser');
+          shut();
+          return target.close(...a);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
+describe('one browser, many renders: a page that is late to close, and a browser that does not answer (SEC-5; ADR-0106)', () => {
+  // None of these measures time. Where a close or a context must be late, the test holds it until the renderer has
+  // given up on it, so it is late however fast the machine; where a render must end at its deadline or its cancel, the
+  // thing it waits for never comes, so only the deadline or the cancel can end it (else the test times out).
+  const WAITING = '<!doctype html><html><body style="margin:0"><img src="/api/artifacts/sha256:wait" width="10" height="10"><div style="height:100px">Waiting</div></body></html>';
+  const png = { body: PIXEL, contentType: 'image/png' };
+
+  it('a page late to close retires its browser, not closing it under the other renders: they finish, and the browser is closed once the last of them ends', async () => {
+    const closing: string[] = [];
+    let launches = 0;
+    let stuck: Promise<void> | undefined;
+    const held = gate();
+    onTestFinished(() => {
+      stuck = undefined;
+      held.open();
+    });
+    const shared = playwrightPages({
+      // A limit that only stops a hung render; the close limit is short, and the test holds the close past it.
+      timeoutMs: 300_000,
+      closeTimeoutMs: 1_000,
+      launch: async () => {
+        launches++;
+        const b = seenThrough(await launchChromium(), { context: (c) => closeSeen(c, 'context', closing, () => stuck) });
+        return closeSeen(b, 'browser', closing);
+      },
+    });
+    opened.push(shared);
+    // B is under way on the shared browser: its page waits for its image, which the test sends later.
+    const asked = gate();
+    const image = gate();
+    const b = shared.screenshots(WAITING, async () => {
+      asked.open();
+      await image.wait;
+      return png;
+    });
+    await asked.wait;
+    // A renders on the same browser; its context does not close until the test ends, so the renderer gives up on it.
+    stuck = held.wait;
+    expect((await shared.screenshots(SIMPLE, none)).length).toBe(1);
+    stuck = undefined;
+    // A's context was asked to close; the browser was not, as B still renders on it.
+    expect(closing).toEqual(['context']);
+    image.open();
+    expect((await b).length).toBe(1);
+    // B's own context closed, and then the browser, B being the last render on it.
+    expect(closing).toEqual(['context', 'context', 'browser']);
+    // The next render launches a browser again.
+    expect((await shared.screenshots(SIMPLE, none)).length).toBe(1);
+    expect(launches).toBe(2);
+  }, 120_000);
+
+  // A hung browser: its newContext never answers until the browser is closed. Before ADR-0106 nothing bounded it.
+  it('a browser that does not open a context cannot hold a read past its deadline; it is closed, and the next read launches another', async () => {
+    const log: string[] = [];
+    let launches = 0;
+    const hung = playwrightPages({
+      timeoutMs: 300_000,
+      closeTimeoutMs: 1_000,
+      launch: async () => (++launches === 1 ? opening(await launchChromium(), log, { hold: () => new Promise<void>(() => undefined) }) : launchChromium()),
+    });
+    opened.push(hung);
+    await hung.ready();
+    const err = await hung.shownText('<p>Text</p>', none, { deadline: Date.now() + 1_500 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe("The page did not finish loading in the time byway gives a page's reads, so its text could not be read.");
+    // The read asked for a context and gave up on it; the browser, which did not answer, was closed (the read was its last load).
+    expect(log).toEqual(['newContext', 'browser']);
+    expect((await hung.shownText('<p>Next</p>', none)).text).toBe('Next');
+    expect(launches).toBe(2);
+  }, 60_000);
+
+  it('a browser that does not open a context cannot hold a render past its cancel; it is closed', async () => {
+    const told: string[] = [];
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled while the context opened');
+    const cancelled = playwrightPages({
+      timeoutMs: 300_000,
+      closeTimeoutMs: 1_000,
+      launch: async () => opening(await launchChromium(), told, { asked: () => ctrl.abort(reason), hold: () => new Promise<void>(() => undefined) }),
+    });
+    opened.push(cancelled);
+    await expect(cancelled.screenshots(SIMPLE, none, { signal: ctrl.signal })).rejects.toBe(reason);
+    expect(told).toEqual(['newContext', 'browser']);
+  }, 60_000);
+
+  it('a context that opens after its render gave up is closed as it opens, and the browser, which answered, is kept', async () => {
+    const log: string[] = [];
+    let launches = 0;
+    const late = gate();
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled while the context opened');
+    const r = playwrightPages({
+      // A close limit far longer than a context takes to open and close, so the browser is not judged stuck.
+      timeoutMs: 300_000,
+      closeTimeoutMs: 60_000,
+      launch: async () => {
+        launches++;
+        return opening(await launchChromium(), log, {
+          asked: () => {
+            // The render gives up (its step is cancelled) while its context is being opened; then the context opens.
+            if (!ctrl.signal.aborted) {
+              ctrl.abort(reason);
+              late.open();
+            }
+          },
+          hold: () => (ctrl.signal.aborted && log.length === 1 ? late.wait : undefined),
+          context: (c) => closeSeen(c, 'context', log),
+        });
+      },
+    });
+    opened.push(r);
+    await expect(r.screenshots(SIMPLE, none, { signal: ctrl.signal })).rejects.toBe(reason);
+    expect(log).toEqual(['newContext', 'context']);
+    expect((await r.screenshots(SIMPLE, none)).length).toBe(1);
+    expect(launches).toBe(1);
+  }, 60_000);
+
+  it("a render or read that byway's own close stops says so, whether a call was under way or not, and not as a crash would", async () => {
+    const MINE = 'byway closed the page renderer as it shut down';
+    // A render waiting for its image (Playwright's goto under way when the browser is closed).
+    const r1 = playwrightPages({ timeoutMs: 300_000 });
+    opened.push(r1);
+    const asked = gate();
+    const drawing = r1
+      .screenshots(WAITING, () => {
+        asked.open();
+        return new Promise<undefined>(() => undefined);
+      })
+      .catch((e: unknown) => e);
+    await asked.wait;
+    await r1.close();
+    const drawn = await drawing;
+    expect(drawn).toBeInstanceOf(StepError);
+    expect((drawn as Error).message).toBe(`The page could not be drawn: ${MINE}.`);
+    // Playwright's own error, kept as the cause, names the reason byway closed the browser with.
+    const playwrights = (e: unknown): string => {
+      let at = e as { cause?: unknown; message?: string } | undefined;
+      while (at?.cause) at = at.cause as typeof at;
+      return at?.message ?? '';
+    };
+    expect(playwrights(drawn)).toMatch(new RegExp(`^page\\.goto: ${MINE}`));
+
+    // A render between two calls (its screenshot held until the browser is closed): Playwright's error then says only
+    // that the browser is closed, as a crash's would.
+    const between = gate();
+    const shoot = gate();
+    const r2 = playwrightPages({
+      timeoutMs: 300_000,
+      launch: async () =>
+        seenThrough(await launchChromium(), {
+          page: (p) =>
+            new Proxy(p, {
+              get(pg, name, rr) {
+                const v = Reflect.get(pg, name, rr) as unknown;
+                if (name !== 'screenshot') return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
+                return async (...a: Parameters<Page['screenshot']>) => {
+                  between.open();
+                  await shoot.wait;
+                  return pg.screenshot(...a);
+                };
+              },
+            }),
+        }),
+    });
+    opened.push(r2);
+    const shooting = r2.screenshots(SIMPLE, none).catch((e: unknown) => e);
+    await between.wait;
+    await r2.close();
+    shoot.open();
+    const shot = await shooting;
+    expect(shot).toBeInstanceOf(StepError);
+    expect((shot as Error).message).toBe(`The page could not be drawn: ${MINE}.`);
+    expect(playwrights(shot)).toMatch(/^page\.screenshot: Target page, context or browser has been closed/);
+
+    // A read waiting for its image.
+    const r3 = playwrightPages({ timeoutMs: 300_000 });
+    opened.push(r3);
+    const wanted = gate();
+    const reading = r3
+      .shownText(WAITING, () => {
+        wanted.open();
+        return new Promise<undefined>(() => undefined);
+      })
+      .catch((e: unknown) => e);
+    await wanted.wait;
+    await r3.close();
+    const read = await reading;
+    expect(read).toBeInstanceOf(StepError);
+    expect((read as Error).message).toBe(`The page's text could not be read: ${MINE}.`);
   }, 60_000);
 });
 

@@ -10,12 +10,16 @@
  * response (render-fetch.ts), and the local artifact route, served from the artifact store, and WebSockets and
  * non-proxied WebRTC are blocked as well (ENG-14).
  *
- * A render is bounded (SEC-5): everything from loading the page to the last screenshot runs under one deadline. A
- * page that never settles (a script that loops after load) has its context closed, which stops its renderer, and the
- * render fails with a plain message that is not retried. A render whose step is cancelled stops the same way. Dialogs
- * the page opens (alert, confirm, prompt, even in a loop) are dismissed by byway, and a dismissal that fails because the
- * page was closed is swallowed, so such a page cannot end the engine's process. A browser that crashed, disconnected or
- * failed to launch is launched again on the next render (ENG-14).
+ * A render is bounded (SEC-5): everything from opening the page's context to the last screenshot runs under one
+ * deadline. A page that never settles (a script that loops after load) has its context closed, which stops its
+ * renderer, and the render fails with a plain message that is not retried. A render whose step is cancelled stops the
+ * same way, and so does one whose browser does not open a context. Dialogs the page opens (alert, confirm, prompt, even
+ * in a loop) are dismissed by byway, and a dismissal that fails because the page was closed is swallowed, so such a page
+ * cannot end the engine's process. A browser that crashed, disconnected or failed to launch is launched again on the
+ * next render (ENG-14). Renders share one browser. A render whose page does not close in time retires that browser
+ * rather than closing it under the others: new renders launch another, the renders still on it finish there, and it is
+ * closed when the last of them ends, at the latest one render's limit plus the close limit after it was retired
+ * (render-browsers.ts; ADR-0106).
  *
  * The renderer is shared by every medium, not only web pages: it draws C1 views of model-written HTML and JavaScript,
  * web-page references given as HTML, and the cards a GREAT critic sees whenever a lineup mixes forms (BLIND-1), which
@@ -39,6 +43,7 @@
 import type { Browser, BrowserContext, LaunchOptions, Page, Route } from 'playwright';
 import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
+import { renderBrowsers } from './render-browsers.ts';
 import { fetchHop, MAX_RENDER_FETCH_BYTES } from './render-fetch.ts';
 import type { Surface } from './types.ts';
 
@@ -325,7 +330,11 @@ export interface PlaywrightPagesOptions {
   timeoutMs?: number;
   /** The most one allowlisted response may hold (render-fetch.ts MAX_RENDER_FETCH_BYTES); tests pass a small one. */
   maxFetchBytes?: number;
-  /** How long closing a stuck page may take before the whole browser is closed and relaunched. */
+  /**
+   * How long a page's context may take to close once its render or read is over (to open and close, if it had not
+   * opened) before its browser is retired: new renders launch another, and it is closed once the renders still on it
+   * end (ADR-0106). A render that closes a retired browser waits for that close at most this long too.
+   */
   closeTimeoutMs?: number;
   /** For tests only: how to launch the browser. Production passes none, so it is always launchChromium(). */
   launch?: () => Promise<Browser>;
@@ -354,37 +363,22 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   const timeout = opts.timeoutMs ?? 30_000;
   const maxFetchBytes = opts.maxFetchBytes ?? MAX_RENDER_FETCH_BYTES;
   const closeTimeout = opts.closeTimeoutMs ?? 5_000;
-  let browser: Promise<Browser> | undefined;
+  /** The shared browser and those retired from it (render-browsers.ts; ADR-0106). */
+  const browsers = renderBrowsers(opts.launch ?? launchChromium, { timeoutMs: timeout, closeTimeoutMs: closeTimeout });
 
-  /** The shared browser, launched again after a failed launch, a crash or a disconnect. */
-  const getBrowser = async (): Promise<Browser> => {
-    for (let current = browser; current; current = browser) {
-      const b = await current.catch(() => undefined);
-      if (b?.isConnected()) return b;
-      // Gone: forget it, unless a concurrent render already launched a new one (then look again).
-      if (browser === current) browser = undefined;
-    }
-    const launching = (async () => {
-      const b = await (opts.launch ?? launchChromium)();
-      b.on('disconnected', () => {
-        if (browser === launching) browser = undefined;
-      });
-      return b;
-    })();
-    browser = launching;
-    launching.catch(() => {
-      if (browser === launching) browser = undefined;
-    });
-    return launching;
-  };
-
-  /** Close a context; if a stuck renderer keeps it from closing, close the browser too (relaunched on next use). */
-  const dispose = async (b: Browser, context: BrowserContext): Promise<void> => {
-    const closed = await Promise.race([context.close().then(() => 'closed' as const, () => 'closed' as const), sleep(closeTimeout)]);
-    if (closed === 'late') {
-      if (browser && (await browser.catch(() => undefined)) === b) browser = undefined;
-      await Promise.race([b.close().catch(() => undefined), sleep(closeTimeout)]);
-    }
+  /**
+   * Close a load's context once the load is over, whether it has opened yet or not: a context that opens after its load
+   * gave up is closed as it opens. One not closed within closeTimeout means a stuck renderer, a browser that does not
+   * answer, or the engine's own thread paused: its browser is retired, so new loads launch another, and the loads still
+   * on it finish there instead of failing with it (ADR-0106).
+   */
+  const dispose = async (b: Browser, opening: Promise<BrowserContext>): Promise<void> => {
+    const closing = opening.then(
+      (context) => context.close(),
+      () => undefined,
+    );
+    const closed = await Promise.race([closing.then(() => 'closed' as const, () => 'closed' as const), sleep(closeTimeout)]);
+    if (closed === 'late') browsers.retire(b);
   };
 
   /**
@@ -499,10 +493,12 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   };
 
   /**
-   * Load the page once in a fresh context and run `use` on it, everything under one deadline: a page that never
-   * settles, or a step that is cancelled, has its context closed (SEC-5). `text` loads it for the arbiter's visitor read
-   * (ShownText): on the wide screen, its scripts under a stopped clock, Math.random seeded and every element an
-   * IntersectionObserver watches in view, and it reads the first document only.
+   * Load the page once in a fresh context and run `use` on it, everything from opening the context to the last
+   * screenshot under one deadline and the step's cancel: a page that never settles, a browser that does not open a
+   * context, or a step that is cancelled, ends the load, and its context is closed (SEC-5; dispose). The launch is not
+   * under them: it keeps Playwright's own launch timeout, so a slow launch is not cut off. `text` loads it for the
+   * arbiter's visitor read (ShownText): on the wide screen, its scripts under a stopped clock, Math.random seeded and
+   * every element an IntersectionObserver watches in view, and it reads the first document only.
    */
   const loaded = async <T>(html: string, resolve: ArtifactResolver, screen: 'wide' | 'phone' | 'text', signal: AbortSignal | undefined, use: (page: Page) => Promise<T>, deadline?: number, fetches?: Fetches): Promise<T> => {
     if (signal?.aborted) throw stopped(signal);
@@ -513,26 +509,29 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       return new StepError(text ? `The page did not finish loading within ${s} s, so its text could not be read.` : `The page did not finish rendering within ${s} s, so it could not be shown.`);
     };
     if (deadline !== undefined && deadline <= Date.now()) throw late(true);
-    const b = await getBrowser();
+    // Counted on this browser until the load lets it go, below (render-browsers.ts).
+    const b = await browsers.take();
     const phone = screen === 'phone';
-    const context = await b.newContext({
-      viewport: phone ? mobile : { width, height: FOLD_HEIGHT },
-      deviceScaleFactor: 1,
-      reducedMotion: 'reduce',
-      serviceWorkers: 'block',
-      ...(phone ? { isMobile: true, hasTouch: true } : {}),
-    });
-    // Every dialog any page of this context opens (alert, confirm, prompt, also from a popup) is answered here, and a
-    // failed answer is swallowed. Without a listener Playwright answers them itself, and when the deadline closes the
-    // context while a page opens dialogs in a loop, its own answer rejects unhandled ("session closed") and ends the
-    // process the renderer runs in, which is the engine (SEC-5).
-    context.on('dialog', (dialog) => {
-      (dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss()).catch(() => undefined);
-    });
     let timer: NodeJS.Timeout | undefined;
     let onAbort: (() => void) | undefined;
+    let opening: Promise<BrowserContext> | undefined;
     try {
       const work = (async () => {
+        opening = b.newContext({
+          viewport: phone ? mobile : { width, height: FOLD_HEIGHT },
+          deviceScaleFactor: 1,
+          reducedMotion: 'reduce',
+          serviceWorkers: 'block',
+          ...(phone ? { isMobile: true, hasTouch: true } : {}),
+        });
+        const context = await opening;
+        // Every dialog any page of this context opens (alert, confirm, prompt, also from a popup) is answered here, and
+        // a failed answer is swallowed. Without a listener Playwright answers them itself, and when the deadline closes
+        // the context while a page opens dialogs in a loop, its own answer rejects unhandled ("session closed") and ends
+        // the process the renderer runs in, which is the engine (SEC-5).
+        context.on('dialog', (dialog) => {
+          (dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss()).catch(() => undefined);
+        });
         if (text) {
           // The visitor read: one stopped clock for every read, so a page's scripts read the same each time.
           await context.clock.install({ time: READ_CLOCK - 1 });
@@ -553,17 +552,28 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         timer = setTimeout(() => reject(late(left < timeout)), Math.max(left, 0));
         if (signal) {
           onAbort = () => reject(stopped(signal));
-          // A cancel that came while the browser started or the context opened has already fired: no event will follow.
+          // A cancel that came while the browser started has already fired: no event will follow.
           if (signal.aborted) onAbort();
           else signal.addEventListener('abort', onAbort, { once: true });
         }
       });
       limit.catch(() => undefined);
       return await Promise.race([work, limit]);
+    } catch (e) {
+      // A load that failed on a browser byway closed (it shut down, or a retired browser's backstop) says so, whatever
+      // Playwright's error says: a call made after the close fails only with "Target page, context or browser has been
+      // closed", the text a crash gives. The deadline and a cancel keep their own.
+      const why = browsers.closedWith(b);
+      if (why && !(e instanceof StepError) && !signal?.aborted) throw new RendererClosed(why, { cause: e });
+      throw e;
     } finally {
       if (timer) clearTimeout(timer);
       if (signal && onAbort) signal.removeEventListener('abort', onAbort);
-      await dispose(b, context);
+      try {
+        if (opening) await dispose(b, opening);
+      } finally {
+        await browsers.release(b);
+      }
     }
   };
 
@@ -601,7 +611,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
   return {
     render,
     async ready() {
-      await getBrowser();
+      await browsers.find();
     },
     async screenshots(html, resolve, renderOpts) {
       return (await render(html, resolve, ['desktop'], renderOpts))[0]!.tiles;
@@ -622,12 +632,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         }
       }
     },
-    async close() {
-      const current = browser;
-      browser = undefined;
-      const b = await current?.catch(() => undefined);
-      await b?.close();
-    },
+    close: () => browsers.close(),
   };
 
   /**
@@ -703,6 +708,9 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
 
 /** A text read stopped because a file its page loads from an admitted host did not arrive whole: its message says which. */
 class Unloaded extends Error {}
+
+/** A load that failed on a browser byway itself closed (render-browsers.ts): its message is the reason byway gave. */
+class RendererClosed extends Error {}
 
 /**
  * A text read's record of the files its page fetches from admitted hosts (pages.ts route): how many are on their way, who
@@ -2154,11 +2162,14 @@ export function rendererCheckWithin(checking: Promise<RendererCheck>, ms: number
  * error ("Unable to capture screenshot", seen under load while a page opened dialogs), or a page or browser closed
  * underneath. That reached the step raw, an error the workflow does not know, so Temporal retried it as though it were
  * transient and the run showed Playwright's own words. It is one plain step failure instead, not retried, like the
- * deadline: Playwright's message (its method, the protocol command, its call log) stays on the cause.
+ * deadline: Playwright's message (its method, the protocol command, its call log) stays on the cause. A browser byway
+ * closed itself is named as such ("byway closed the page renderer …", ADR-0106); one closed underneath without that
+ * (Playwright's "Target page, context or browser has been closed") went away on its own, as in a crash.
  */
 export function drawFailure(err: unknown, signal: AbortSignal | undefined): unknown {
   if (err instanceof StepError) return err;
   if (signal?.aborted) return stopped(signal);
+  if (err instanceof RendererClosed) return new StepError(`The page could not be drawn: ${err.message}.`, { cause: err });
   const first = firstLine(err);
   const said = playwrightSaid(first);
   const what = /screenshot/i.test(first) ? 'could not take its screenshot' : 'failed while drawing it';
@@ -2169,11 +2180,12 @@ export function drawFailure(err: unknown, signal: AbortSignal | undefined): unkn
  * A text read's failure as its step sees it (VOICE's arbiter, ADR-0081), as drawFailure is a render's: a step failure
  * (the deadline, a page that navigates away, a Chromium that could not start) and a cancel pass as they are; anything
  * else (a Playwright protocol error, a page or browser closed underneath) is one plain step failure, not retried, with
- * Playwright's message on the cause.
+ * Playwright's message on the cause. A browser byway closed itself is named as such, as drawFailure names it.
  */
 export function readFailure(err: unknown, signal: AbortSignal | undefined): unknown {
   if (err instanceof StepError) return err;
   if (signal?.aborted) return stopped(signal);
+  if (err instanceof RendererClosed) return new StepError(`The page's text could not be read: ${err.message}.`, { cause: err });
   const said = playwrightSaid(firstLine(err));
   return new StepError(`The page's text could not be read: the page renderer failed while reading it${said ? ` (${said})` : ''}.`, { cause: err });
 }
