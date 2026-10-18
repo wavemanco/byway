@@ -144,7 +144,14 @@ Logic on top of the contracts sits in view code:
   only whether each key is configured, and the end-to-end suite fails if a stand-in key appears in any request or
   response.
 - The page renderer's OS sandbox (ADR-0105) is switched only in Settings (`PATCH /api/renderer`, which takes
-  `{ osSandbox }` and nothing else), which asks before it turns the sandbox off and says what that risks. While it is
-  off, every screen carries a banner (`src/view/renderer.ts`, shown by the root layout), and a step whose pages were
-  drawn without it has a note on the Run and Result screens. `test/guard-sandbox.test.ts` fails if anything else in
-  the product switches it or gives the renderer a setting of its own.
+  `{ osSandbox }` and nothing else), which asks before it turns the sandbox off and says what that risks; both answers
+  are described by the risk, so a screen reader reads it with the one that has focus. While it is off, every screen
+  carries a banner (`src/view/renderer.ts`, shown by the root layout), and a step whose pages were drawn without it has
+  a note in the Run screen's timeline (under its failure, if it failed) and in the Result's "How this was made".
+  `test/guard-sandbox.test.ts` reads the product sources, comments left out, and pins as exact lists every line that
+  mentions a way to switch the setting (`setRendererSandbox`, Settings' route), to set Chromium's sandbox option
+  (`chromiumSandbox`), to build a renderer (`playwrightPages`, `renderBrowsers`, `checkRenderer`, `storeOsSandbox`) or
+  to launch Chromium (`launchChromium`, `chromiumLaunchOptions`, the test-only `launch` seam, Playwright's launch calls,
+  and any import of Playwright or another browser driver), whatever their arguments look like. It also checks itself
+  against each way round it that reviews have found, each of which must change one of its lists. It does not see a use
+  that names none of these, or a change inside the lines it pins; the renderer's own tests check those.
