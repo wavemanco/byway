@@ -160,5 +160,6 @@ Logic on top of the contracts sits in view code:
   packages, Puppeteer or `chromium-bidi` in quotes, as an import does), whatever their arguments look like. It also
   checks itself against each way round it that reviews have found, each of which must change one of its lists. It does
   not see a use that names none of these (SQL that builds the table's or the column's name from pieces, say), a browser
-  driver it does not list, a browser started as a program of its own, or a change inside the lines it pins; the
-  renderer's own tests check those.
+  driver it does not list, a browser started as a program of its own, a file outside those it reads, or a change inside
+  the lines it pins, such as a retry without the sandbox in `pages.ts`; the renderer's own tests (`launch.test.ts`,
+  `pages.test.ts`, `renderer-check.test.ts`) check that last one, and no test checks the others.

@@ -29,7 +29,7 @@
 set -eu
 
 if [ "$(id -u)" = 0 ]; then
-  echo "Run this as yourself, not as root: byway does not run as root, and the profile names your own folder." >&2
+  echo "Run this as yourself, not as root: the profile names your own folder, and Chromium does not start its sandbox for root anyway (start byway as an ordinary user)." >&2
   exit 1
 fi
 if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then

@@ -9,7 +9,10 @@
  */
 import type { RendererSettings } from '@byway/contracts';
 
-/** What turning the sandbox off risks, said before it is turned off (the owner's words, 2026-10-16). */
+/**
+ * What turning the sandbox off risks, said plainly before it is turned off, as the design the owner approved on
+ * 2026-10-16 has it; the words are Claude's (ADR-0105 item 6).
+ */
 export const OFF_RISK =
   'With the sandbox off, a malicious page or image, together with a bug in Chromium, could run as you on this computer, next to your API keys and spending records. byway shows a banner on every screen while it is off.';
 

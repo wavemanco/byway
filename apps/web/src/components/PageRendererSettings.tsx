@@ -14,16 +14,7 @@ interface Props {
   settings: RendererSettings;
 }
 
-/**
- * Settings' "Page renderer" (ADR-0105): the OS sandbox the renderer's Chromium runs inside, on unless the person switches
- * it off here, the only place it is switched. Turning it off asks first and says what it risks; turning it on does not
- * ask. What byway's last start-up check found is said under it: why the sandbox cannot start on this computer and the
- * fix, or, while it is off and it could start, an offer to turn it back on. byway never switches it by itself.
- *
- * Focus (R5): the switch keeps focus while it saves; the confirmation takes focus on "Keep it on", and when it goes,
- * either way, focus goes back to the switch, as it does from the offer once the sandbox is back on. A screen reader
- * hears the risk with whichever answer has focus (SandboxOffConfirm).
- */
+/** SandboxOffConfirm's props: the id its risk is given, whether the change is saving, and the two answers. */
 interface ConfirmProps {
   /** The id the risk is given. */
   riskId: string;
@@ -55,6 +46,16 @@ export function SandboxOffConfirm({ riskId, busy, onTurnOff, onKeep }: ConfirmPr
   );
 }
 
+/**
+ * Settings' "Page renderer" (ADR-0105): the OS sandbox the renderer's Chromium runs inside, on unless the person switches
+ * it off here, the only place it is switched. Turning it off asks first and says what it risks; turning it on does not
+ * ask. What byway's last start-up check found is said under it: why the sandbox cannot start on this computer and the
+ * fix, or, while it is off and it could start, an offer to turn it back on. byway never switches it by itself.
+ *
+ * Focus (R5): the switch keeps focus while it saves; the confirmation takes focus on "Keep it on", and when it goes,
+ * either way, focus goes back to the switch, as it does from the offer once the sandbox is back on. A screen reader
+ * hears the risk with whichever answer has focus (SandboxOffConfirm).
+ */
 export function PageRendererSettings({ settings: initial }: Props) {
   const ids = useId();
   const [settings, setSettings] = useState(initial);

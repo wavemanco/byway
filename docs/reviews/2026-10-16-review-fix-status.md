@@ -4,7 +4,7 @@ Companion to [the verification of the external review](2026-10-08-external-revie
 
 ## Status per finding
 
-Severity is the verified one. "Fixed, except D*n*" means everything that does not depend on that decision is on main, and the rest waits for it.
+Severity is the verified one.
 
 | # | Finding | Severity | Status on main | Records | What remains |
 |---|---|---|---|---|---|
@@ -53,4 +53,4 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 
 ## Checks on main
 
-With D1 and D4 merged (2026-10-17), the full gate passes on `main` on Windows: type-check clean, 4,861 tests in 190 files, the web build, and 53 of 53 browser tests. `pnpm verify` runs the same steps locally, and CI runs them on Windows and Linux on every push to main ([ADR-0103](../adr/0103-adr-log-rule-and-ci.md)).
+Before D2 was merged, the full gate passed in CI on its branch, run 39172144829 at `a3d271f` (2026-10-18), on Windows and on Linux (where the README's AppArmor script ran first): type-check clean, 4,997 tests in 198 files, the web build, and 55 of 55 browser tests, with the page renderer inside its OS sandbox. The branch's commits after that run change only comments, documents, test names and the wording of one message in that script, and one pattern in `scripts/test/ci.test.ts`. `pnpm verify` runs the same steps locally, and CI runs them on Windows and Linux on every push to main ([ADR-0103](../adr/0103-adr-log-rule-and-ci.md)).

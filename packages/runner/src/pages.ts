@@ -17,9 +17,9 @@
  * in a loop) are dismissed by byway, and a dismissal that fails because the page was closed is swallowed, so such a page
  * cannot end the engine's process. A browser that crashed, disconnected or failed to launch is launched again on the
  * next render (ENG-14). Renders share one browser. A render whose page does not close in time retires that browser
- * rather than closing it under the others: new renders launch another, the renders still on it finish there, and it is
- * closed when the last of them ends, at the latest one render's limit plus the close limit after it was retired
- * (render-browsers.ts; ADR-0106).
+ * rather than closing it under the others: new renders launch another, the renders still on it finish there, and byway
+ * closes it when the last of them ends, at the latest one render's limit plus the close limit after it was retired; a
+ * browser process that does not answer that close is killed by Playwright 30 s later (render-browsers.ts; ADR-0106).
  *
  * The renderer is shared by every medium, not only web pages: it draws C1 views of model-written HTML and JavaScript,
  * web-page references given as HTML, and the cards a GREAT critic sees whenever a lineup mixes forms (BLIND-1), which

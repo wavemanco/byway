@@ -165,14 +165,15 @@ describe('the CI workflow (ADR-0103)', () => {
     }
   });
 
-  it('nowhere says the profile gives the namespaces to Chromium alone, or that the rest of the machine stays restricted', () => {
-    // ADR-0105 and ADR-0103's later note quote them, as what round 2's checks found untrue.
+  it('nowhere says the profile gives the namespaces to Chromium alone, that the rest of the machine stays restricted, that the sandbox off keeps the restriction whole, or that the profile covers every version', () => {
+    // The ADRs quote them as what the checks found untrue: round 2's checks the first two (ADR-0105 and ADR-0103's later
+    // note), round 3's checks and the check of a3d271f the others (ADR-0105, Evidence).
     for (const file of [SCRIPT, '.github/workflows/verify.yml', 'README.md', 'apps/web/README.md', 'packages/runner/src/sandbox.ts', 'packages/runner/src/pages.ts', 'scripts/serve.ts', 'docs/backlog.md']) {
       expect(read(file), file).not.toMatch(/and nothing else, create user namespaces|for nothing else; the rest|rest of the machine stays restricted|Chromium alone|only the Chromium there|restriction whole|every version in that folder|Chromium, any version/);
     }
   });
 
-  it('when a job fails, uploads the end-to-end server log and Playwright’s traces from where the suite writes them, one of each per operating system (ADR-0106)', () => {
+  it('when a job fails, uploads the end-to-end server log and Playwright’s traces from where the suite writes them, at most one of each per operating system, each skipped when it finds no file (ADR-0106)', () => {
     // Where the suite writes them: scripts/e2e.ts puts the server's output in the system temp folder, and Playwright
     // keeps a trace and a screenshot of each failed browser test in apps/web/test-results.
     expect(read('scripts/e2e.ts')).toContain("const logFile = path.join(tmpdir(), 'byway-e2e-server.log');");

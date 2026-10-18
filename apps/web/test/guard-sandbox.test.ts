@@ -1,7 +1,8 @@
 /**
- * Guard: only the person turns the page renderer's OS sandbox off, in Settings (ADR-0105, the owner's "Never automatic:
- * byway never turns the sandbox off by itself"). It reads every product source (packages/<name>/src, apps/web's src
- * and app and its own root files but its browser tests' config, and scripts but scripts/test), comments left out, and
+ * Guard: only the person turns the page renderer's OS sandbox off, in Settings (ADR-0105 item 7, from the design the
+ * owner approved: "Never automatic: byway never turns the sandbox off by itself"). It reads every product source
+ * (packages/<name>/src, apps/web's src and app and its own root files but its browser tests' config, and scripts but
+ * scripts/test), comments left out, and
  * pins as exact lists every line that mentions a way to switch the setting, build a renderer or launch Chromium,
  * whatever the line's arguments look like:
  * - switching the setting: `setRendererSandbox`, only where Settings' route handler logic passes the person's request
