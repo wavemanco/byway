@@ -10,7 +10,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 - A record's Context and Decision are final once it reaches main's first-parent history as Accepted. The commit that accepts a Proposed record may finalise its Decision. Branches merge with `--no-ff`, so a branch's own commits are drafts. A record that changes an Accepted one reaches main in the same commit as its "changed by" link: add the index row and the links on the branch before merging, or merge with `git merge --no-ff --no-commit <branch>` and add them before committing. Main's history is not rewritten (the "Protect main" ruleset blocks force-pushes), so a breach that reaches main is named in the test with its reason. `scripts/test/adr-records.test.ts` checks this against git history ([ADR-0103](0103-adr-log-rule-and-ci.md)): it fails an edited Context or Decision, a "changed by" link that reaches main after the record it names (from ADR-0103 on), and a breach on main that is not named. It cannot see a missing link, because no record says, in a form a test can read, which records it changes; adding the links is the author's job. It sees a fast-forward only through the edits that then show up on main.
 
-**104 records:** 97 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**105 records:** 98 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -39,7 +39,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0060](0060-repository-byway-private-remote.md) | Version control: git repository named byway, private GitHub remote (wavemanco/byway) | Accepted | User | 2026-10-07 06:35 |
 | [ADR-0062](0062-code-first-work-mode.md) | Code first: people, outside actions and pricing go to a playbook and a backlog | Accepted | User | 2026-10-07 09:40 |
 | [ADR-0068](0068-contracts-first-parallel-build.md) | Build the product contracts-first, in parallel git worktrees | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | Delegated | 2026-10-07 10:48 |
-| [ADR-0103](0103-adr-log-rule-and-ci.md) | The decision log's rule is checked against git history, and CI runs `pnpm verify` on Windows and Linux, reporting only | Accepted | User | 2026-10-16 22:00 |
+| [ADR-0103](0103-adr-log-rule-and-ci.md) | The decision log's rule is checked against git history, and CI runs `pnpm verify` on Windows and Linux, reporting only | Accepted; changed by [ADR-0106](0106-a-late-close-retires-the-renderers-browser.md) | User | 2026-10-16 22:00 |
 
 ## Protocol
 
@@ -102,6 +102,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0093](0093-every-loop-exit-at-the-cap-follows-one-policy.md) | Every loop exit at the cap follows one policy; a loop a person holds ends only on their answer | Accepted | Delegated | 2026-10-09 05:30 |
 | [ADR-0098](0098-recipe-limits-disclosure-and-held-voice.md) | Recipe limits, a diff that means "runs the same", and the held voice at run time | Accepted; changed by [ADR-0097](0097-a-step-takes-in-only-what-its-prompt-shows.md) | Delegated | 2026-10-09 05:30 |
 | [ADR-0097](0097-a-step-takes-in-only-what-its-prompt-shows.md) | A step takes in only what its prompt shows | Accepted | Delegated | 2026-10-09 17:15 |
+| [ADR-0106](0106-a-late-close-retires-the-renderers-browser.md) | A page late to close retires the renderer's browser instead of closing it under other renders | Accepted | User-approved | 2026-10-18 06:50 |
 
 ## Product & program
 
