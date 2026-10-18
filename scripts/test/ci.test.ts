@@ -123,7 +123,7 @@ describe('the CI workflow (ADR-0103)', () => {
     expect(sandbox).not.toMatch(/ROOT_BROWSERS_FOLDER|\/opt\//);
 
     // The script: one profile, on Playwright's own folder as Playwright finds it on Linux (XDG_CACHE_HOME moves it), for
-    // the headless shell and full Chromium of any version; it refuses a folder PLAYWRIGHT_BROWSERS_PATH moves elsewhere.
+    // the headless shell and full Chromium in the folder layout Playwright 1.63 uses; it refuses a folder PLAYWRIGHT_BROWSERS_PATH moves elsewhere.
     // It installs nothing and runs nothing of byway's as root: its only commands as root write the profile and load it.
     const script = read(SCRIPT);
     expect(script).toContain('\nfolder="${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright"\n');
@@ -168,7 +168,7 @@ describe('the CI workflow (ADR-0103)', () => {
   it('nowhere says the profile gives the namespaces to Chromium alone, or that the rest of the machine stays restricted', () => {
     // ADR-0105 and ADR-0103's later note quote them, as what round 2's checks found untrue.
     for (const file of [SCRIPT, '.github/workflows/verify.yml', 'README.md', 'apps/web/README.md', 'packages/runner/src/sandbox.ts', 'packages/runner/src/pages.ts', 'scripts/serve.ts', 'docs/backlog.md']) {
-      expect(read(file), file).not.toMatch(/and nothing else, create user namespaces|for nothing else; the rest|rest of the machine stays restricted|Chromium alone|only the Chromium there|restriction whole/);
+      expect(read(file), file).not.toMatch(/and nothing else, create user namespaces|for nothing else; the rest|rest of the machine stays restricted|Chromium alone|only the Chromium there|restriction whole|every version in that folder|Chromium, any version/);
     }
   });
 

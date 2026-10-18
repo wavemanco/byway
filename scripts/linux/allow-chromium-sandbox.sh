@@ -5,8 +5,9 @@
 # and full Chromium, in the folder layout Playwright 1.63 uses) in Playwright's own browsers folder,
 # ${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright, named as the folder it really is when a symbolic link leads to it.
 # The profile lets them create user namespaces, which Chromium's sandbox is built from, and confines them in no other
-# way, as Ubuntu's own profile for Google Chrome does. A Playwright upgrade that keeps that layout needs nothing more:
-# the profile covers every version in that folder. It covers that folder only, so it stops if PLAYWRIGHT_BROWSERS_PATH is set.
+# way, as Ubuntu's own profile for Google Chrome does. A Playwright upgrade that keeps that layout needs nothing more;
+# CI's Linux tests, which run with the sandbox on, show when one does not. It covers that folder only, so it stops if
+# PLAYWRIGHT_BROWSERS_PATH is set.
 #
 # What that allows, plainly: any program running as you can then create user namespaces through this profile, which is
 # what the restriction exists to stop. It can start one of those Chromium programs with a library of its own
