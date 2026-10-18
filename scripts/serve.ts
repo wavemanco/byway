@@ -30,7 +30,7 @@
  * the person's OS sandbox setting (on unless switched off in Settings; ADR-0105), and closes it again. It prints a
  * "renderer" line saying whether the renderer is ready, whether its sandbox is on and, when it is off, whether the
  * sandbox could start now, and records that in the store for Settings. Under that line it names Playwright's browsers
- * folder, which PLAYWRIGHT_BROWSERS_PATH moves (the README's Linux steps install Chromium in one only root can change).
+ * folder, which PLAYWRIGHT_BROWSERS_PATH moves (the README's Linux AppArmor profile covers Playwright's own folder only).
  * byway keeps running either way: prose, options and code-diff runs need no renderer unless a lineup forms cards, and a
  * web-page run whose renderer cannot start is refused before it spends.
  *
@@ -215,7 +215,7 @@ async function main(): Promise<void> {
   // For Settings: what the check found, beside the setting it never changes (ADR-0105).
   await store.recordRendererCheck({ at: new Date().toISOString(), ...renderer }).catch((err: unknown) => console.log(`             (not kept for Settings: ${err instanceof Error ? err.message : String(err)})`));
   // Where Chromium comes from, as Playwright resolves it (PLAYWRIGHT_BROWSERS_PATH moves it), so a person can check
-  // that byway uses the folder the README's Linux steps install it in (ADR-0105).
+  // that byway takes it from the folder the README's Linux AppArmor profile covers (ADR-0105).
   const browsers = await browsersFolder();
   if (browsers) console.log(`             Playwright's browsers folder: ${browsers}`);
 

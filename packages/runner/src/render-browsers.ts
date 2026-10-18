@@ -21,7 +21,7 @@
  *
  * close() is final: once it has run, nothing is launched again. A load or readiness check that asks for a browser
  * afterwards fails with byway's reason (RendererClosed); one already waiting on a launch when close() ran gets
- * that browser, which close() then closes.
+ * that browser, which close() then closes, or, waiting on another load's launch, may get byway's reason instead.
  */
 
 /** What byway's own closes of the renderer's browser say, first: a load they stop says so (pages.ts drawFailure). */

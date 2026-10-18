@@ -78,7 +78,7 @@ describe("serve.ts's renderer line and the OS sandbox setting (ADR-0105)", () =>
 });
 
 describe("serve.ts's renderer line and Playwright's browsers folder (ADR-0105)", () => {
-  it("names, under the renderer line, the browsers folder byway takes Chromium from, as Playwright resolves it (PLAYWRIGHT_BROWSERS_PATH moves it), so a person can check the README's Linux steps took", () => {
+  it("names, under the renderer line, the browsers folder byway takes Chromium from, as Playwright resolves it (PLAYWRIGHT_BROWSERS_PATH moves it), so a person can check it is the folder the README's Linux profile covers", () => {
     const record = index(/^await store\.recordRendererCheck\(/);
     expect(record).toBeGreaterThan(0);
     expect(main[record + 1]).toBe('const browsers = await browsersFolder();');

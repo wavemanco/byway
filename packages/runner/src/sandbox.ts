@@ -179,13 +179,6 @@ export interface SandboxAdvice {
 export const APPARMOR_SCRIPT = 'scripts/linux/allow-chromium-sandbox.sh';
 
 /**
- * Where APPARMOR_SCRIPT installs Playwright's Chromium: a folder only root can change, the only one its AppArmor profile
- * lets create user namespaces (a profile on a folder the person can write would let any program they run put a file
- * there and get them too). byway takes Chromium from it when PLAYWRIGHT_BROWSERS_PATH names it (ADR-0105).
- */
-export const ROOT_BROWSERS_FOLDER = '/opt/byway/ms-playwright';
-
-/**
  * Why the sandbox cannot start here, and the fix. `executable` is the Chromium byway launches (headlessShell), named in
  * the Windows fix, or `folder` Playwright's browsers folder when that file is not there; `error` is the failure, whose
  * word that Chromium was started as root counts whatever byway read.
@@ -210,7 +203,7 @@ export function sandboxAdvice(host: SandboxHost, opts: ChromiumOnDisk & { error?
       if (host.appArmorRestricts) {
         return {
           why: "This Linux lets only the programs an AppArmor profile allows create the user namespaces Chromium's sandbox needs (Ubuntu does this by default from 24.04).",
-          fix: `Allow them for Playwright's Chromium alone, installed in a folder only root can change: in the byway folder, run sh ${APPARMOR_SCRIPT} (it asks for your password for sudo), then start byway again with PLAYWRIGHT_BROWSERS_PATH=${ROOT_BROWSERS_FOLDER}, as the script says.`,
+          fix: `Allow them for Playwright's Chromium: in the byway folder, run sh ${APPARMOR_SCRIPT}, then start byway again. It asks for your password for sudo; Renderer in the README says what else its profile allows.`,
         };
       }
       if (host.userNamespacesOff) return { why: "Unprivileged user namespaces, which Chromium's sandbox needs, are switched off on this Linux.", fix: 'Someone with admin rights has to switch them on. Renderer in the README says more.' };

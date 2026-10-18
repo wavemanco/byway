@@ -101,7 +101,7 @@ describe('why the sandbox cannot start, and the fix, for each system', () => {
     });
     expect(sandboxAdvice(linux({ appArmorRestricts: true, userNamespacesOff: true }))).toEqual({
       why: "This Linux lets only the programs an AppArmor profile allows create the user namespaces Chromium's sandbox needs (Ubuntu does this by default from 24.04).",
-      fix: "Allow them for Playwright's Chromium alone, installed in a folder only root can change: in the byway folder, run sh scripts/linux/allow-chromium-sandbox.sh (it asks for your password for sudo), then start byway again with PLAYWRIGHT_BROWSERS_PATH=/opt/byway/ms-playwright, as the script says.",
+      fix: "Allow them for Playwright's Chromium: in the byway folder, run sh scripts/linux/allow-chromium-sandbox.sh, then start byway again. It asks for your password for sudo; Renderer in the README says what else its profile allows.",
     });
     expect(sandboxAdvice(linux({ userNamespacesOff: true }))).toEqual({
       why: "Unprivileged user namespaces, which Chromium's sandbox needs, are switched off on this Linux.",
@@ -204,14 +204,13 @@ describe('which Chromium the fix names', () => {
 
 /**
  * Where byway takes Chromium from: Playwright's browsers folder, which PLAYWRIGHT_BROWSERS_PATH moves. On a Linux whose
- * AppArmor restricts user namespaces, the README's script installs Chromium in a folder only root can change and
- * attaches its profile to that folder alone (ADR-0105); the start-up line names the folder in use, and the install
- * command a missing Chromium gives depends on it (launch.test.ts).
+ * AppArmor restricts user namespaces, the README's script attaches its profile to Playwright's own folder only
+ * (ADR-0105), so the start-up line names the folder in use (launch.test.ts).
  */
 describe("Playwright's browsers folder", () => {
   it('is the folder above the full Chromium Playwright names, on each system Playwright lays out, and nothing for a path laid out otherwise', () => {
     expect(browsersFolderOf('C:\\Users\\me\\AppData\\Local\\ms-playwright\\chromium-1243\\chrome-win64\\chrome.exe')).toBe('C:\\Users\\me\\AppData\\Local\\ms-playwright');
-    expect(browsersFolderOf('/opt/byway/ms-playwright/chromium-1243/chrome-linux64/chrome')).toBe('/opt/byway/ms-playwright');
+    expect(browsersFolderOf('/home/me/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome')).toBe('/home/me/.cache/ms-playwright');
     expect(browsersFolderOf('/Users/me/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing')).toBe('/Users/me/Library/Caches/ms-playwright');
     expect(browsersFolderOf('/opt/chrome/chrome')).toBeUndefined();
     expect(browsersFolderOf('chromium-1243/chrome-linux64/chrome')).toBeUndefined();

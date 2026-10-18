@@ -259,26 +259,22 @@ describe('a Chromium that cannot start', () => {
     }
   });
 
-  it("names Playwright's browsers folder in use, and for a Chromium not in the folder only root can change (the README's Linux steps) gives the script that installs it there: Playwright's own install cannot write there", async () => {
+  it("names Playwright's browsers folder in use, wherever PLAYWRIGHT_BROWSERS_PATH puts it; a Chromium that cannot start gives Playwright's own install whatever the folder", async () => {
     expect(await browsersFolder()).toBe(BROWSERS);
-    // PLAYWRIGHT_BROWSERS_PATH names the folder the script installs into, and a Playwright update wants a revision that
-    // is not there yet.
-    playwrightNames.path = '/opt/byway/ms-playwright/chromium-9999/chrome-linux64/chrome';
+    // PLAYWRIGHT_BROWSERS_PATH names another folder, and a Playwright update wants a revision that is not there yet.
+    playwrightNames.path = '/srv/browsers/chromium-9999/chrome-linux64/chrome';
     try {
-      expect(await browsersFolder()).toBe('/opt/byway/ms-playwright');
+      expect(await browsersFolder()).toBe('/srv/browsers');
       for (const [cause, osSandbox] of [[MISSING, true], [DIED, true], [DIED, false]] as const) {
         launch.mockRejectedValueOnce(cause);
         const err = await launchChromium({ osSandbox }).catch((e: unknown) => e);
         expect(err).toBeInstanceOf(StepError);
         expect((err as Error).message).toMatch(/^The page renderer could not start \(/);
-        expect((err as Error).message.endsWith(" If Playwright's Chromium is not installed in /opt/byway/ms-playwright (a Playwright update needs it installed again): in the byway folder, run sh scripts/linux/allow-chromium-sandbox.sh")).toBe(true);
-        expect((err as Error).message).not.toContain('playwright install');
+        expect((err as Error).message.endsWith(" If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium")).toBe(true);
       }
     } finally {
       playwrightNames.path = FULL_CHROMIUM;
     }
-    launch.mockRejectedValueOnce(MISSING);
-    expect(((await launchChromium(ON).catch((e: unknown) => e)) as Error).message).toContain("If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium");
   });
 
   describe('on every renderer path', () => {
