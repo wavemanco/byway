@@ -76,3 +76,13 @@ describe("serve.ts's renderer line and the OS sandbox setting (ADR-0105)", () =>
     expect(matching(serve, /setRendererSandbox/)).toEqual([]);
   });
 });
+
+describe("serve.ts's renderer line and Playwright's browsers folder (ADR-0105)", () => {
+  it("names, under the renderer line, the browsers folder byway takes Chromium from, as Playwright resolves it (PLAYWRIGHT_BROWSERS_PATH moves it), so a person can check the README's Linux steps took", () => {
+    const record = index(/^await store\.recordRendererCheck\(/);
+    expect(record).toBeGreaterThan(0);
+    expect(main[record + 1]).toBe('const browsers = await browsersFolder();');
+    expect(main[record + 2]).toBe("if (browsers) console.log(`             Playwright's browsers folder: ${browsers}`);");
+    expect(matching(serve, /\bbrowsersFolder\b/)).toEqual([expect.stringMatching(/^import \{ .*\bbrowsersFolder\b.* \} from '\.\.\/packages\/runner\/src\/index\.ts';$/), 'const browsers = await browsersFolder();']);
+  });
+});

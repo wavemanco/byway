@@ -25,7 +25,7 @@ import type { RunnerDeps } from '../src/activities/deps.ts';
 import { StepError, toFailure } from '../src/activities/failures.ts';
 import { ArtifactReader } from '../src/activities/prompting.ts';
 import { cardHtml } from '../src/cards.ts';
-import { checkRenderer, chromiumLaunchOptions, launchChromium, launchFailure, playwrightPages, RENDERER_OS_SANDBOX_DEFAULT, storeOsSandbox } from '../src/pages.ts';
+import { browsersFolder, checkRenderer, chromiumLaunchOptions, launchChromium, launchFailure, playwrightPages, RENDERER_OS_SANDBOX_DEFAULT, storeOsSandbox } from '../src/pages.ts';
 import { sandboxAdvice, sandboxFailureMessage, type SandboxHost } from '../src/sandbox.ts';
 import { FAILURE, type View } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
@@ -257,6 +257,28 @@ describe('a Chromium that cannot start', () => {
     } finally {
       playwrightNames.path = FULL_CHROMIUM;
     }
+  });
+
+  it("names Playwright's browsers folder in use, and for a Chromium not in the folder only root can change (the README's Linux steps) gives the script that installs it there: Playwright's own install cannot write there", async () => {
+    expect(await browsersFolder()).toBe(BROWSERS);
+    // PLAYWRIGHT_BROWSERS_PATH names the folder the script installs into, and a Playwright update wants a revision that
+    // is not there yet.
+    playwrightNames.path = '/opt/byway/ms-playwright/chromium-9999/chrome-linux64/chrome';
+    try {
+      expect(await browsersFolder()).toBe('/opt/byway/ms-playwright');
+      for (const [cause, osSandbox] of [[MISSING, true], [DIED, true], [DIED, false]] as const) {
+        launch.mockRejectedValueOnce(cause);
+        const err = await launchChromium({ osSandbox }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(StepError);
+        expect((err as Error).message).toMatch(/^The page renderer could not start \(/);
+        expect((err as Error).message.endsWith(" If Playwright's Chromium is not installed in /opt/byway/ms-playwright (a Playwright update needs it installed again): in the byway folder, run sh scripts/linux/allow-chromium-sandbox.sh")).toBe(true);
+        expect((err as Error).message).not.toContain('playwright install');
+      }
+    } finally {
+      playwrightNames.path = FULL_CHROMIUM;
+    }
+    launch.mockRejectedValueOnce(MISSING);
+    expect(((await launchChromium(ON).catch((e: unknown) => e)) as Error).message).toContain("If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium");
   });
 
   describe('on every renderer path', () => {

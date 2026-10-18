@@ -37,10 +37,10 @@ jobs:
       fail-fast: false
       matrix:
         # One entry per operating system; each step reads only its own entry. macOS is not run yet; to add it later:
-        #   - { name: macos, os: macos-15, playwright: chromium }
+        #   - { name: macos, os: macos-15 }
         include:
-          - { name: windows, os: windows-2025, playwright: chromium }
-          - { name: linux, os: ubuntu-24.04, playwright: --with-deps chromium }
+          - { name: windows, os: windows-2025 }
+          - { name: linux, os: ubuntu-24.04 }
     steps:
       - name: Check out, with the whole history (the decision-log check reads main's)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,8 +62,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Playwright's Chromium (the renderer tests and the browser tests)
-        run: pnpm --filter ./apps/web exec playwright install ${{ matrix.playwright }}
+      # The renderer tests and the browser tests run Playwright's Chromium. On Linux the README's script installs it (below).
+      - name: Playwright's Chromium (not on Linux)
+        if: ${{ matrix.name != 'linux' }}
+        run: pnpm --filter ./apps/web exec playwright install chromium
+
+      # Ubuntu restricts unprivileged user namespaces (by default from 24.04), which Chromium's OS sandbox needs, and byway
+      # draws pages inside that sandbox (ADR-0105). This runs the script the README gives a Linux user, so every run tries
+      # the README's steps: Playwright's Chromium, with its system libraries, installed in a folder only root can change,
+      # and an AppArmor profile that lets the Chromium there, and nothing else, create user namespaces, while the rest of
+      # the machine stays restricted. Then, as the README says, byway runs with PLAYWRIGHT_BROWSERS_PATH naming that
+      # folder: every later step has it.
+      - name: Playwright's Chromium in a folder only root can change, allowed to start its OS sandbox (the README's script, Linux only)
+        if: ${{ matrix.name == 'linux' }}
+        run: |
+          sh scripts/linux/allow-chromium-sandbox.sh
+          echo "PLAYWRIGHT_BROWSERS_PATH=/opt/byway/ms-playwright" >> "$GITHUB_ENV"
 
       # Playwright's Linux dependencies make WenQuanYi Zen Hei the fallback font for Japanese, and with it Chromium lays
       # out the first item of a vertical row at no height, so a renderer test reads a page no person would see. Ubuntu's
@@ -74,14 +88,6 @@ jobs:
           sudo apt-get install --yes --no-install-recommends fonts-noto-cjk > /dev/null
           sudo apt-get remove --yes fonts-wqy-zenhei > /dev/null
           fc-match 'sans-serif:lang=ja'
-
-      # Ubuntu restricts unprivileged user namespaces (by default from 24.04), which Chromium's OS sandbox needs, and byway
-      # draws pages inside that sandbox (ADR-0105). This runs the script the README gives a Linux user, so every run tries
-      # the README's steps: an AppArmor profile that allows them for Playwright's Chromium only, while the rest of the
-      # machine stays restricted.
-      - name: Let Playwright's Chromium start its OS sandbox (the README's AppArmor script, Linux only)
-        if: ${{ matrix.name == 'linux' }}
-        run: sh scripts/linux/allow-chromium-sandbox.sh
 
       - name: The Temporal CLI (the engine tests start a local Temporal server; downloaded once into the temp folder)
         working-directory: packages/runner

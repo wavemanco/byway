@@ -53,7 +53,7 @@ import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
 import { renderBrowsers } from './render-browsers.ts';
 import { fetchHop, MAX_RENDER_FETCH_BYTES } from './render-fetch.ts';
-import { headlessShell, isChromiumMissing, isSandboxFailure, maybeTheSandbox, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, sandboxHost, type ChromiumOnDisk, type SandboxHost } from './sandbox.ts';
+import { APPARMOR_SCRIPT, browsersFolderOf, headlessShell, isChromiumMissing, isSandboxFailure, maybeTheSandbox, possibleSandboxCause, ROOT_BROWSERS_FOLDER, sandboxAdvice, sandboxFailureMessage, sandboxHost, type ChromiumOnDisk, type SandboxHost } from './sandbox.ts';
 import type { Surface } from './types.ts';
 
 export type { Surface } from './types.ts';
@@ -315,6 +315,16 @@ export function chromiumLaunchOptions(setting: LaunchSetting, env: Env = process
 /** What to run when Playwright's Chromium was never downloaded (it is a separate download from the package). */
 const INSTALL_CHROMIUM = 'pnpm --filter ./apps/web exec playwright install chromium';
 
+/**
+ * How to install Playwright's Chromium in `browsers`, the browsers folder byway takes it from: Playwright's own install,
+ * or, for the folder only root can change, the script that installs it there (Playwright's install, run as the person,
+ * cannot write there; ADR-0105).
+ */
+function installHint(browsers: string | undefined): string {
+  if (browsers === ROOT_BROWSERS_FOLDER) return `If Playwright's Chromium is not installed in ${ROOT_BROWSERS_FOLDER} (a Playwright update needs it installed again): in the byway folder, run sh ${APPARMOR_SCRIPT}`;
+  return `If Playwright's Chromium is not installed: ${INSTALL_CHROMIUM}`;
+}
+
 /** Playwright's first line, without its method ("browserType.launch: ") or a closing stop. */
 const launchSaid = (err: unknown): string =>
   ((err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '')
@@ -323,6 +333,8 @@ const launchSaid = (err: unknown): string =>
     .replace(/\.$/, '');
 
 export interface LaunchFailureOptions extends ChromiumOnDisk {
+  /** Playwright's browsers folder, which byway takes Chromium from, for the install command. */
+  browsers?: string;
   /**
    * The setting the launch was made with; a sandbox failure is told apart only when the sandbox was on (or unknown), and
    * named as a possible cause only when it was on.
@@ -345,7 +357,7 @@ export function launchFailure(err: unknown, opts: LaunchFailureOptions = {}): St
   const advice = () => sandboxAdvice(opts.host ?? sandboxHost(), { ...(opts.executable ? { executable: opts.executable } : {}), ...(opts.folder ? { folder: opts.folder } : {}), error: err });
   if (opts.osSandbox !== false && isSandboxFailure(err)) return new LaunchFailed(sandboxFailureMessage(advice()), opts.osSandbox, err);
   const couldNot = `The page renderer could not start (${launchSaid(err)}), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn.`;
-  const install = `If Playwright's Chromium is not installed: ${INSTALL_CHROMIUM}`;
+  const install = installHint(opts.browsers);
   if (opts.osSandbox === true && !isChromiumMissing(err)) return new LaunchFailed(`${couldNot} ${maybeTheSandbox(advice())} ${install}`, true, err);
   return new LaunchFailed(`${couldNot} ${install}`, opts.osSandbox, err);
 }
@@ -2252,22 +2264,37 @@ const VISITOR_BEGIN = `(() => {
   return true;
 })()`;
 
-/** The Chromium byway launches, for the Windows fix (sandbox.ts headlessShell); nothing when Playwright cannot say. */
-function onDisk(chromium: { executablePath(): string } | undefined): ChromiumOnDisk {
+/**
+ * The Chromium byway launches, for the Windows fix (sandbox.ts headlessShell), and Playwright's browsers folder it comes
+ * from (browsersFolderOf), for the install command and the start-up line; nothing when Playwright cannot say.
+ */
+function onDisk(chromium: { executablePath(): string } | undefined): ChromiumOnDisk & { browsers?: string } {
   try {
-    return chromium ? headlessShell(chromium.executablePath()) : {};
+    if (!chromium) return {};
+    const full = chromium.executablePath();
+    const browsers = browsersFolderOf(full);
+    return { ...headlessShell(full), ...(browsers ? { browsers } : {}) };
   } catch {
     return {};
   }
 }
 
 /** As onDisk, loading Playwright first; nothing when it cannot be loaded. */
-async function chromiumOnDisk(): Promise<ChromiumOnDisk> {
+async function chromiumOnDisk(): Promise<ChromiumOnDisk & { browsers?: string }> {
   try {
     return onDisk((await import('playwright')).chromium);
   } catch {
     return {};
   }
+}
+
+/**
+ * Playwright's browsers folder, which byway takes Chromium from, as Playwright resolves it (PLAYWRIGHT_BROWSERS_PATH
+ * moves it), for the start-up line (ADR-0105): on Linux, the README's steps install Chromium in a folder only root can
+ * change, and this shows whether byway uses it. Nothing when Playwright cannot say.
+ */
+export async function browsersFolder(): Promise<string | undefined> {
+  return (await chromiumOnDisk()).browsers;
 }
 
 /**

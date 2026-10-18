@@ -49,7 +49,7 @@ import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engi
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { checkRenderer, dataDirReport, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
+import { browsersFolder, checkRenderer, dataDirReport, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -213,6 +213,10 @@ async function main(): Promise<void> {
   console.log(`  renderer   ${rendererLine(renderer)}`);
   // For Settings: what the check found, beside the setting it never changes (ADR-0105).
   await store.recordRendererCheck({ at: new Date().toISOString(), ...renderer }).catch((err: unknown) => console.log(`             (not kept for Settings: ${err instanceof Error ? err.message : String(err)})`));
+  // Where Chromium comes from, as Playwright resolves it (PLAYWRIGHT_BROWSERS_PATH moves it), so a person can check
+  // that byway uses the folder the README's Linux steps install it in (ADR-0105).
+  const browsers = await browsersFolder();
+  if (browsers) console.log(`             Playwright's browsers folder: ${browsers}`);
 
   const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
   let web: ChildProcess;

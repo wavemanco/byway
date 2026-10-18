@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { headlessShell, isChromiumMissing, isSandboxFailure, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, sandboxHost, SANDBOX_FAILED, type HostProbe, type SandboxHost } from '../src/sandbox.ts';
+import { browsersFolderOf, headlessShell, isChromiumMissing, isSandboxFailure, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, sandboxHost, SANDBOX_FAILED, type HostProbe, type SandboxHost } from '../src/sandbox.ts';
 
 /** A machine as sandboxHost() reads it: its platform, user id, files and environment. */
 function probe(over: Partial<HostProbe> & { files?: Record<string, string> } = {}): HostProbe {
@@ -101,7 +101,7 @@ describe('why the sandbox cannot start, and the fix, for each system', () => {
     });
     expect(sandboxAdvice(linux({ appArmorRestricts: true, userNamespacesOff: true }))).toEqual({
       why: "This Linux lets only the programs an AppArmor profile allows create the user namespaces Chromium's sandbox needs (Ubuntu does this by default from 24.04).",
-      fix: "Allow them for Playwright's Chromium alone: in the byway folder, run sh scripts/linux/allow-chromium-sandbox.sh (it asks for your password for sudo), then start byway again.",
+      fix: "Allow them for Playwright's Chromium alone, installed in a folder only root can change: in the byway folder, run sh scripts/linux/allow-chromium-sandbox.sh (it asks for your password for sudo), then start byway again with PLAYWRIGHT_BROWSERS_PATH=/opt/byway/ms-playwright, as the script says.",
     });
     expect(sandboxAdvice(linux({ userNamespacesOff: true }))).toEqual({
       why: "Unprivileged user namespaces, which Chromium's sandbox needs, are switched off on this Linux.",
@@ -189,6 +189,7 @@ describe('which Chromium the fix names', () => {
         child.on('close', () => resolve(out));
       });
       expect(named.startsWith(folder)).toBe(true);
+      expect(browsersFolderOf(named)).toBe(folder);
       expect(headlessShell(named)).toEqual({ folder });
       const shell = headlessShell(named, () => true).executable!;
       expect(path.dirname(path.dirname(path.dirname(shell)))).toBe(folder);
@@ -198,6 +199,23 @@ describe('which Chromium the fix names', () => {
     } finally {
       rmSync(folder, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Where byway takes Chromium from: Playwright's browsers folder, which PLAYWRIGHT_BROWSERS_PATH moves. On a Linux whose
+ * AppArmor restricts user namespaces, the README's script installs Chromium in a folder only root can change and
+ * attaches its profile to that folder alone (ADR-0105); the start-up line names the folder in use, and the install
+ * command a missing Chromium gives depends on it (launch.test.ts).
+ */
+describe("Playwright's browsers folder", () => {
+  it('is the folder above the full Chromium Playwright names, on each system Playwright lays out, and nothing for a path laid out otherwise', () => {
+    expect(browsersFolderOf('C:\\Users\\me\\AppData\\Local\\ms-playwright\\chromium-1243\\chrome-win64\\chrome.exe')).toBe('C:\\Users\\me\\AppData\\Local\\ms-playwright');
+    expect(browsersFolderOf('/opt/byway/ms-playwright/chromium-1243/chrome-linux64/chrome')).toBe('/opt/byway/ms-playwright');
+    expect(browsersFolderOf('/Users/me/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing')).toBe('/Users/me/Library/Caches/ms-playwright');
+    expect(browsersFolderOf('/opt/chrome/chrome')).toBeUndefined();
+    expect(browsersFolderOf('chromium-1243/chrome-linux64/chrome')).toBeUndefined();
+    expect(browsersFolderOf('')).toBeUndefined();
   });
 });
 

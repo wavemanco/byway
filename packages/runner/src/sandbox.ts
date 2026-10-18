@@ -124,6 +124,26 @@ export interface ChromiumOnDisk {
   folder?: string;
 }
 
+/** The full Chromium Playwright names, read as `<folder>/chromium-<revision>/chrome-<platform>/…`; nothing for a path laid out otherwise. */
+function layout(fullChromium: string): { sep: string; parts: string[]; at: number; platform: string; folder: string } | undefined {
+  const sep = fullChromium.includes('\\') ? '\\' : '/';
+  const parts = fullChromium.split(/[\\/]/);
+  const at = parts.findLastIndex((p) => /^chromium-\d+$/.test(p));
+  const platform = parts[at + 1];
+  if (at < 1 || !platform?.startsWith('chrome-')) return undefined;
+  const folder = parts.slice(0, at).join(sep);
+  return folder ? { sep, parts, at, platform, folder } : undefined;
+}
+
+/**
+ * Playwright's browsers folder, which byway takes Chromium from, from the full Chromium Playwright names
+ * (`chromium.executablePath()`, which follows PLAYWRIGHT_BROWSERS_PATH): the folder above `chromium-<revision>`; nothing
+ * for a path laid out otherwise.
+ */
+export function browsersFolderOf(fullChromium: string): string | undefined {
+  return layout(fullChromium)?.folder;
+}
+
 /**
  * The Chromium byway launches, from the full Chromium Playwright names (`chromium.executablePath()`, which follows
  * PLAYWRIGHT_BROWSERS_PATH). byway launches Chromium headless, which Playwright runs as its headless shell: a download
@@ -134,12 +154,9 @@ export interface ChromiumOnDisk {
  * launch runs.
  */
 export function headlessShell(fullChromium: string, exists: (path: string) => boolean = existsSync): ChromiumOnDisk {
-  const sep = fullChromium.includes('\\') ? '\\' : '/';
-  const parts = fullChromium.split(/[\\/]/);
-  const at = parts.findLastIndex((p) => /^chromium-\d+$/.test(p));
-  const platform = parts[at + 1];
-  if (at < 1 || !platform?.startsWith('chrome-')) return {};
-  const folder = parts.slice(0, at).join(sep);
+  const laidOut = layout(fullChromium);
+  if (!laidOut) return {};
+  const { sep, parts, at, platform, folder } = laidOut;
   const revision = parts[at]!.slice('chromium-'.length);
   const file = `chrome-headless-shell${parts.at(-1)?.endsWith('.exe') ? '.exe' : ''}`;
   const executable = [folder, `chromium_headless_shell-${revision}`, platform.replace(/^chrome-/, 'chrome-headless-shell-'), file].join(sep);
@@ -160,6 +177,13 @@ export interface SandboxAdvice {
 
 /** The script README's Renderer section gives for Ubuntu 24.04 and later, and that CI runs (ADR-0105). */
 export const APPARMOR_SCRIPT = 'scripts/linux/allow-chromium-sandbox.sh';
+
+/**
+ * Where APPARMOR_SCRIPT installs Playwright's Chromium: a folder only root can change, the only one its AppArmor profile
+ * lets create user namespaces (a profile on a folder the person can write would let any program they run put a file
+ * there and get them too). byway takes Chromium from it when PLAYWRIGHT_BROWSERS_PATH names it (ADR-0105).
+ */
+export const ROOT_BROWSERS_FOLDER = '/opt/byway/ms-playwright';
 
 /**
  * Why the sandbox cannot start here, and the fix. `executable` is the Chromium byway launches (headlessShell), named in
@@ -186,7 +210,7 @@ export function sandboxAdvice(host: SandboxHost, opts: ChromiumOnDisk & { error?
       if (host.appArmorRestricts) {
         return {
           why: "This Linux lets only the programs an AppArmor profile allows create the user namespaces Chromium's sandbox needs (Ubuntu does this by default from 24.04).",
-          fix: `Allow them for Playwright's Chromium alone: in the byway folder, run sh ${APPARMOR_SCRIPT} (it asks for your password for sudo), then start byway again.`,
+          fix: `Allow them for Playwright's Chromium alone, installed in a folder only root can change: in the byway folder, run sh ${APPARMOR_SCRIPT} (it asks for your password for sudo), then start byway again with PLAYWRIGHT_BROWSERS_PATH=${ROOT_BROWSERS_FOLDER}, as the script says.`,
         };
       }
       if (host.userNamespacesOff) return { why: "Unprivileged user namespaces, which Chromium's sandbox needs, are switched off on this Linux.", fix: 'Someone with admin rights has to switch them on. Renderer in the README says more.' };
