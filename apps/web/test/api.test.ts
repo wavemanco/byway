@@ -21,6 +21,7 @@ import {
   recommendationOrProblem,
   resolveInRun,
   startRun,
+  updateRenderer,
   updateSettings,
   type Deps,
   composeCommand,
@@ -195,6 +196,17 @@ describe('route handler logic', PRODUCT_PATH, () => {
     expect(await d.services.store.getPreferences(d.workspaceId)).toEqual(next);
     expect((await d.services.store.getWorkspace(d.workspaceId))?.budgetUsd).toBe(50);
     await expect(updateSettings(d, { profileId: 'nope' })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("switches the page renderer's OS sandbox only as asked, and keeps it in the store for the engine (ADR-0105)", async () => {
+    const d = await deps();
+    expect(await d.services.store.getRendererSettings()).toEqual({ osSandbox: true });
+    expect(await updateRenderer(d, { osSandbox: false })).toMatchObject({ osSandbox: false, changedAt: expect.any(String) });
+    expect((await d.services.store.getRendererSettings()).osSandbox).toBe(false);
+    // Saving the other settings leaves it as it is.
+    await updateSettings(d, { showTechnicalNames: true });
+    expect((await d.services.store.getRendererSettings()).osSandbox).toBe(false);
+    expect(await updateRenderer(d, { osSandbox: true })).toMatchObject({ osSandbox: true });
   });
 });
 

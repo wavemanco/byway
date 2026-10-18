@@ -7,7 +7,7 @@
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
  */
 import { randomUUID } from 'node:crypto';
-import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RunRecord, SpendRecords } from '@byway/contracts';
+import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
 import { isEngineUnavailable } from '../services/engine-runner.ts';
@@ -25,7 +25,7 @@ import { firstRecommendation } from './first-recommendation.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
-import type { ControlInput, ProblemInput, RecommendInput, RefInput, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
+import type { ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
   override name = 'HttpError';
@@ -401,6 +401,15 @@ export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsP
     ...(patch.demoMode !== undefined ? { demoMode: patch.demoMode } : {}),
     ...(patch.showTechnicalNames !== undefined ? { showTechnicalNames: patch.showTechnicalNames } : {}),
   });
+}
+
+/**
+ * Settings' Page renderer switch (PATCH /api/renderer; ADR-0105): the person's OS sandbox choice, the only call in byway
+ * that switches it. The engine reads it before each page it draws, so it applies from the next page; pages being drawn
+ * finish as they started. Returns the renderer's settings as they now are.
+ */
+export async function updateRenderer(deps: Deps, input: z.infer<typeof RendererPatch>): Promise<RendererSettings> {
+  return deps.services.store.setRendererSandbox(input.osSandbox);
 }
 
 /**

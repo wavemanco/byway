@@ -296,6 +296,24 @@ describe('run timeline without a presentation', () => {
     expect(refine?.steps[1]?.note).toBeUndefined();
   });
 
+  it("shows the note on a step whose pages were drawn with the page renderer's OS sandbox off, once, on the Run and Result screens (ADR-0105)", () => {
+    const off = "Pages in this step were drawn with the page renderer's OS sandbox off (it was switched off in Settings).";
+    const list = [
+      started('render', 'Render', 'D2', 'tool'),
+      ev('renderer-sandbox-off', 'render', { note: off }),
+      ev('renderer-sandbox-off', 'render', { note: off }, 1),
+      done('render', 0, { note: 'Rendered.' }),
+      started('critic', 'Critique', 'D2'),
+      done('critic', 0.02),
+    ];
+    const stages = buildTimeline(list, [], 'done');
+    expect(stages[0]?.steps[0]).toMatchObject({ label: 'Render', status: 'done', note: `${off} Rendered.` });
+    expect(stages[0]?.steps[1]?.note).toBeUndefined();
+    expect(howItWasMade(stages).rows[0]).toMatchObject({ label: 'Render', note: `${off} Rendered.` });
+    // An event with no note says nothing.
+    expect(buildTimeline([started('render', 'Render', 'D2', 'tool'), ev('renderer-sandbox-off', 'render', {}), done('render')], [], 'done')[0]?.steps[0]?.note).toBeUndefined();
+  });
+
   it('tolerates events with missing or malformed data', () => {
     seq_ = 0;
     const list = [ev('step-started', 'x', { label: 42, stage: 'D9' }), ev('artifact', 'x', { artifactId: 7 })];

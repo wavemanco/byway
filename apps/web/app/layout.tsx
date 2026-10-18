@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Nav } from '../src/components/Nav.tsx';
 import { TechNamesProvider } from '../src/components/TechNames.tsx';
 import { getContext } from '../src/services/index.ts';
+import { rendererBanner } from '../src/view/renderer.ts';
 import { waitingRunCount } from '../src/view/run.ts';
 import './styles/tokens.css';
 import './styles/base.css';
@@ -36,8 +37,10 @@ function Mark() {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const { services, workspaceId, preferences } = await getContext();
   const technical = preferences.showTechnicalNames;
-  const [open, runs] = await Promise.all([services.store.openCheckpoints(workspaceId), services.store.listRuns(workspaceId)]);
+  const [open, runs, renderer] = await Promise.all([services.store.openCheckpoints(workspaceId), services.store.listRuns(workspaceId), services.store.getRendererSettings()]);
   const waiting = waitingRunCount(open, runs);
+  // On every screen while the page renderer's OS sandbox is off, or on but unable to start (ADR-0105).
+  const sandbox = rendererBanner(renderer);
   return (
     <html lang="en">
       <body>
@@ -48,6 +51,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <div className="demo-banner" role="note">
             <p>
               Demo mode — sample outputs, no AI calls. <Link href="/settings#providers">Set up providers</Link>
+            </p>
+          </div>
+        ) : null}
+        {sandbox ? (
+          <div className="sandbox-banner" data-kind={sandbox.kind} role="note">
+            <p>
+              {sandbox.text} <Link href="/settings#renderer">{sandbox.link}</Link>
             </p>
           </div>
         ) : null}
