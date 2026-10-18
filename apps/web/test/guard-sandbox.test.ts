@@ -10,14 +10,15 @@
  * - building a renderer: `playwrightPages`, `renderBrowsers`, `checkRenderer` (the start-up check, run only by
  *   scripts/serve.ts) and `storeOsSandbox` (the store's setting, which only the worker gives a renderer);
  * - launching Chromium: `launchChromium`, `chromiumLaunchOptions`, the test-only `launch` seam (`launch:` and `.launch`),
- *   Playwright's own launch calls, and every import of Playwright or another browser driver, which only pages.ts makes.
- * An import or re-export line counts once per file, so naming one more thing in an import list already pinned is not a
- * change, but a new importer is. A second test feeds the pins each way round them found so far (the launch seam, a
+ *   Playwright's own launch calls, and every line that names Playwright's packages, Puppeteer or chromium-bidi in quotes
+ *   (as an import does), which only pages.ts has.
+ * A line that opens an import or re-export list is pinned by its file alone, so naming one more thing in a list already
+ * pinned is not a change, but a new importer is. A second test feeds the pins each way round them found so far (the launch seam, a
  * setting in a named function or shorthand, chromiumLaunchOptions handed to Playwright, Playwright's own launch, whose
  * default is no sandbox, and more) and requires that one pin changes.
  *
- * What it does not see: a use that names none of these (a namespace import called by a computed name), a browser started
- * as a program of its own, and a change to the launch wiring inside the lines it pins (a retry without the sandbox
+ * What it does not see: a use that names none of these (a namespace import called by a computed name), a browser driver
+ * it does not list, a browser started as a program of its own, and a change to the launch wiring inside the lines it pins (a retry without the sandbox
  * inside pages.ts): launch.test.ts, pages.test.ts and renderer-check.test.ts check that behaviour. The store never
  * writes the setting except through setRendererSandbox (packages/store/test/renderer-settings.test.ts).
  */
@@ -171,7 +172,7 @@ const LAUNCH: Pin[] = [
     lines: [pages('return await chromium.launch(chromiumLaunchOptions(setting));')],
   },
   {
-    what: 'Playwright, or another browser driver, loaded only by pages.ts',
+    what: 'Playwright, Puppeteer or chromium-bidi, named only by pages.ts',
     pattern: /['"`](@playwright\/[\w-]+|playwright(-core|-chromium)?|puppeteer[\w-]*|chromium-bidi)['"`/]/,
     lines: [imported(PAGES), pages("return onDisk((await import('playwright')).chromium);"), pages("let chromium: typeof import('playwright').chromium | undefined;"), pages("({ chromium } = await import('playwright'));")],
   },

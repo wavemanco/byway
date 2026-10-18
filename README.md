@@ -172,7 +172,7 @@ pnpm vitest run     # all packages and the app: no model or provider calls, no r
 pnpm e2e            # Playwright, demo mode, production server, temp data directory, non-default ports
 ```
 
-The unit run is not self-contained. The renderer tests launch Playwright's Chromium, so install it once (`pnpm --filter ./apps/web exec playwright install chromium`; on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`, which also installs the system libraries Chromium needs). The engine tests start a local Temporal dev server, and the Temporal CLI is downloaded once when no cached copy exists, so the first run needs the network.
+The unit run is not self-contained. The renderer tests launch Playwright's Chromium, so install it once (`pnpm --filter ./apps/web exec playwright install chromium`; on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`, which also installs the system libraries Chromium needs; on Ubuntu 24.04 and later, the script below instead). The engine tests start a local Temporal dev server, and the Temporal CLI is downloaded once when no cached copy exists, so the first run needs the network.
 
 On Linux the unit run needs two more things, which CI's Linux job sets up (`.github/workflows/verify.yml`):
 
