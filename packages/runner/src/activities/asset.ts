@@ -47,8 +47,12 @@ export const NO_BRIEF_NOTE = 'The AI wrote no usable image brief, even when aske
 /** The prompt lets the AI answer with no image (its minimum is 0), and it did: a choice, not a failure (F11). */
 export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, which its instructions allow, so no image was made; the work is unchanged.';
 
-/** A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis or the Greek question mark, before any closing quotes and brackets. */
-const ENDS_SENTENCE = /[\p{Sentence_Terminal}…\u037E]["'\p{Pe}\p{Pf}]*$/u;
+/**
+ * A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis or the Greek question mark, before any
+ * closing quotes and brackets. Those include the marks Unicode files as opening quotes (Pi), because German and Danish
+ * close a quote with them: „mehr.“ ‚mehr.‘ »mere.«
+ */
+const ENDS_SENTENCE = /[\p{Sentence_Terminal}…\u037E]["'\p{Pe}\p{Pf}\p{Pi}]*$/u;
 /** A trailing comma, colon or semicolon in the common scripts' forms (Latin, fullwidth, ideographic, Arabic) gives way to the stop. */
 const GIVES_WAY = /\s*[,:;\uFF0C\uFF1A\uFF1B\u3001\uFF64\uFE50\uFE51\uFE54\uFE55\u060C\u061B]+$/u;
 
