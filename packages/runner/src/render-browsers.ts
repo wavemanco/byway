@@ -18,10 +18,17 @@
  * byway's own closes give Playwright a reason, which a call still under way on that browser fails with, and are
  * remembered (closedWith), so a load that fails on a browser byway closed can say so: a call made after the close fails
  * only with "Target page, context or browser has been closed", the text a crash gives.
+ *
+ * close() is final: once it has run, nothing is launched again. A load or readiness check that asks for a browser
+ * afterwards fails with byway's reason (RendererClosed); one already waiting on a launch when close() ran gets
+ * that browser, which close() then closes.
  */
 
 /** What byway's own closes of the renderer's browser say, first: a load they stop says so (pages.ts drawFailure). */
 export const BYWAY_CLOSED = 'byway closed the page renderer';
+
+/** A load that failed on a browser byway itself closed, or asked for one after byway closed the renderer: its message is the reason byway gave. */
+export class RendererClosed extends Error {}
 
 /** The part of a browser this needs (Playwright's Browser has it). */
 export interface KeptBrowser {
@@ -46,7 +53,10 @@ export interface RenderBrowsers<B extends KeptBrowser> {
   closedWith(b: B): string | undefined;
   /** The OS sandbox setting b was launched with. */
   osSandboxOf(b: B): boolean | undefined;
-  /** Close every browser: the one in use (after a launch still on its way) and every retired one. */
+  /**
+   * Close every browser: the one in use (after a launch still on its way) and every retired one. Final: take() and find()
+   * then launch nothing, and fail with byway's reason.
+   */
   close(): Promise<void>;
 }
 
@@ -70,6 +80,8 @@ export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolea
   const shutdownReason = `${BYWAY_CLOSED} as it shut down`;
   /** The shared browser, or its launch on the way. */
   let current: Promise<B> | undefined;
+  /** Set by close(): nothing is launched after it. */
+  let closed = false;
   /**
    * Each browser launched that byway has not closed and that has not gone away: its loads, its launch, the setting it was
    * launched with, and once retired its backstop and the reason it will be closed with.
@@ -130,6 +142,9 @@ export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolea
       // Gone or retired: forget it, unless a concurrent load already launched a new one (then look again).
       if (current === c) current = undefined;
     }
+    // Nothing is launched after close(): a load that asks then, or that waited meanwhile (for the setting, or for a browser
+    // close() has since closed), fails with byway's reason.
+    if (closed) throw new RendererClosed(shutdownReason);
     const launching: Promise<B> = reading.then(async (want) => {
       const b = await launch(want);
       kept.set(b, { loads: 0, launching, osSandbox: want });
@@ -164,6 +179,7 @@ export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolea
     closedWith: (b) => closedBy.get(b),
     osSandboxOf: (b) => launchedWith.get(b),
     async close() {
+      closed = true;
       const c = current;
       current = undefined;
       await c?.catch(() => undefined);

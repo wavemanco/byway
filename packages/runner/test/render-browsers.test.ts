@@ -185,8 +185,8 @@ describe('the renderer\'s browsers (ADR-0106)', () => {
     expect(await browsers.take()).not.toBe(found);
   });
 
-  it('close() closes the browser in use and every retired one, with its own reason, after a launch on its way; the next load launches again', async () => {
-    const { launched, launch, then } = launcher();
+  it('close() closes the browser in use and every retired one, with its own reason, after a launch on its way; nothing is launched after it', async () => {
+    const { launched, settings, launch, then } = launcher();
     const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE });
     const a = await browsers.take();
     browsers.retire(a);
@@ -204,9 +204,47 @@ describe('the renderer\'s browsers (ADR-0106)', () => {
     expect(await taking).toBe(late);
     await browsers.release(a);
     expect(launched[0]!.closes).toEqual([SHUTDOWN]);
-    const next = await browsers.take();
-    expect(next).not.toBe(late);
-    expect(launched.length).toBe(2);
+    // A closed renderer stays closed: a later load, or readiness check, fails with byway's own reason and launches nothing.
+    await expect(browsers.take()).rejects.toThrow(SHUTDOWN);
+    await expect(browsers.find()).rejects.toThrow(SHUTDOWN);
+    expect(settings).toEqual([true, true]);
+  });
+
+  it('a readiness check waiting on a launch when close() runs gets that browser, closed; the load it then asks for launches nothing (ADR-0105 item 5)', async () => {
+    const { settings, launch, then } = launcher();
+    const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE });
+    const started = Promise.withResolvers<Fake>();
+    const held = new Fake('held');
+    then(() => started.promise);
+    // The start-up check's probe: find() waits for its launch, and the probe's time runs out first.
+    const finding = browsers.find();
+    const closing = browsers.close();
+    started.resolve(held);
+    expect(await finding).toBe(held);
+    await closing;
+    expect(held.closes).toEqual([SHUTDOWN]);
+    // ready() goes on to draw byway's test page there: its load is refused, and no other Chromium is started.
+    await expect(browsers.take()).rejects.toThrow(SHUTDOWN);
+    expect(settings).toEqual([true]);
+  });
+
+  it('a load that waited on another load\'s launch when close() ran launches nothing either: it gets that browser, closed, or byway\'s reason', async () => {
+    const { settings, launch, then } = launcher();
+    const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE });
+    const started = Promise.withResolvers<Fake>();
+    const held = new Fake('held');
+    then(() => started.promise);
+    const first = browsers.take();
+    // This one finds the first one's launch on its way and waits for it.
+    const second = browsers.take().catch((e: unknown) => e);
+    const closing = browsers.close();
+    started.resolve(held);
+    expect(await first).toBe(held);
+    await closing;
+    const got = await second;
+    expect(got === held || (got instanceof Error && got.message === SHUTDOWN), String(got)).toBe(true);
+    expect(held.closes).toEqual([SHUTDOWN]);
+    expect(settings).toEqual([true]);
   });
 });
 

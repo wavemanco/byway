@@ -31,36 +31,46 @@ const DIED = new Error(
 );
 
 /**
- * A launch held until the test releases it: then it is the real launch, and the browser it gave is watched until byway
- * closes it, with whether a page was ever opened on it. A second call (the renderer launching again after its close)
- * fails at once.
+ * A launch held until the test releases it: then it is the real launch, and each browser it gave is watched until byway
+ * closes it, with whether a page was ever opened on it. Every call is kept (`settings`) and launched for real once
+ * released, so a renderer that launched again after its close would show there, and so would the page it drew (ADR-0105
+ * item 5: a closed renderer launches nothing more).
  */
 function held() {
   let release!: () => void;
   const released = new Promise<void>((r) => (release = r));
-  let launched: Promise<Browser> | undefined;
-  let real: Browser | undefined;
+  const launches: Promise<Browser>[] = [];
+  const real: Browser[] = [];
+  const settings: boolean[] = [];
   const asked: string[] = [];
+  const allClosed = async () => {
+    await Promise.all(launches);
+    await expect.poll(() => real.every((b) => !b.isConnected()), { timeout: 30_000 }).toBe(true);
+  };
   return {
     launch(setting: LaunchSetting): Promise<Browser> {
-      if (launched) return Promise.reject(new StepError('launched once already'));
-      launched = released.then(async () => {
-        real = await launchChromium(setting);
-        return new Proxy(real, {
+      settings.push(setting.osSandbox);
+      const launched = released.then(async () => {
+        const b = await launchChromium(setting);
+        real.push(b);
+        return new Proxy(b, {
           get(target, prop, receiver) {
             if (prop === 'newContext' || prop === 'close') asked.push(prop);
             return Reflect.get(target, prop, receiver);
           },
         });
       });
+      launches.push(launched);
       return launched;
     },
     release,
-    /** Releases the launch and waits until its browser is closed; what was asked of it. */
+    /** The setting of each launch asked of it. */
+    settings,
+    /** Releases the launches and waits until every browser they gave is closed, one launched meanwhile too; what was asked of them. */
     async closedOnceReleased(): Promise<string[]> {
       release();
-      await launched;
-      await expect.poll(() => real!.isConnected(), { timeout: 30_000 }).toBe(false);
+      await allClosed();
+      await allClosed();
       return asked;
     },
   };
@@ -237,8 +247,11 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     expect(check).toEqual({ osSandbox: true, ready: false, sandbox: 'unknown', message: said });
     expect(knownAtProbe).toEqual(check);
     expect(settings).toEqual([true, false]);
-    // The probe's renderer was closed when its time ran out: its browser is closed as its launch arrives, before any page.
+    // The probe's renderer was closed when its time ran out: its browser is closed as its launch arrives, before any page,
+    // and the renderer launches nothing more, so nothing is drawn without the sandbox after the check answered.
     expect(await probe.closedOnceReleased()).not.toContain('newContext');
+    expect(settings).toEqual([true, false]);
+    expect(probe.settings).toEqual([false]);
   }, 60_000);
   it('off: ready without the sandbox, and whether the sandbox could start now, from its own test page', async () => {
     const starts = watched();
@@ -277,6 +290,25 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     expect(settings).toEqual([false, true]);
     expect(rendererLine(check)).toBe("Playwright's Chromium, ready, with its OS sandbox off (switched off in Settings). byway could not tell whether the sandbox can start here now.");
     expect(await probe.closedOnceReleased()).not.toContain('newContext');
+    expect(settings).toEqual([false, true]);
+    expect(probe.settings).toEqual([true]);
+  }, 60_000);
+
+  it("a renderer closed while its launch is on its way launches nothing more: the readiness check waiting on that launch fails plainly, saying byway closed it (ADR-0105 item 5, ADR-0106)", async () => {
+    const probe = held();
+    const pages = playwrightPages({ launch: probe.launch, osSandbox: () => false });
+    const ready = pages.ready();
+    ready.catch(() => undefined);
+    const closing = pages.close();
+    probe.release();
+    await closing;
+    await expect(ready).rejects.toBeInstanceOf(StepError);
+    await expect(ready).rejects.toThrow("byway's test page could not be drawn: byway closed the page renderer as it shut down.");
+    // Asked afterwards, a render and a read say the same, and launch nothing either.
+    await expect(pages.render('<p>hi</p>', async () => undefined, ['desktop'])).rejects.toThrow('The page could not be drawn: byway closed the page renderer as it shut down.');
+    await expect(pages.shownText('<p>hi</p>', async () => undefined)).rejects.toThrow("The page's text could not be read: byway closed the page renderer as it shut down.");
+    expect(await probe.closedOnceReleased()).not.toContain('newContext');
+    expect(probe.settings).toEqual([false]);
   }, 60_000);
 
   it("the start-up line's limit, reached while the probe runs, says what the check has found: ready, the sandbox unknown", async () => {

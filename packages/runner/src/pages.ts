@@ -51,7 +51,7 @@ import type { Browser, BrowserContext, LaunchOptions, Page, Route } from 'playwr
 import type { RendererCheckRecord } from '@byway/contracts';
 import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
-import { renderBrowsers } from './render-browsers.ts';
+import { RendererClosed, renderBrowsers } from './render-browsers.ts';
 import { fetchHop, MAX_RENDER_FETCH_BYTES } from './render-fetch.ts';
 import { APPARMOR_SCRIPT, browsersFolderOf, headlessShell, isChromiumMissing, isSandboxFailure, maybeTheSandbox, possibleSandboxCause, ROOT_BROWSERS_FOLDER, sandboxAdvice, sandboxFailureMessage, sandboxHost, type ChromiumOnDisk, type SandboxHost } from './sandbox.ts';
 import type { Surface } from './types.ts';
@@ -275,6 +275,10 @@ export interface PageRenderer {
    * the one later renders reuse.
    */
   ready(): Promise<void>;
+  /**
+   * Closes the renderer's browsers (ADR-0106), for good: a render, read or readiness check asked of it afterwards fails
+   * with "byway closed the page renderer as it shut down", and nothing is launched again.
+   */
   close(): Promise<void>;
 }
 
@@ -623,7 +627,8 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       return new StepError(text ? `The page did not finish loading within ${s} s, so its text could not be read.` : `The page did not finish rendering within ${s} s, so it could not be shown.`);
     };
     if (deadline !== undefined && deadline <= Date.now()) throw late(true);
-    // Counted on this browser until the load lets it go, below (render-browsers.ts).
+    // Counted on this browser until the load lets it go, below (render-browsers.ts). After byway closed the renderer, it
+    // launches nothing and this fails with byway's reason (RendererClosed).
     const b = await browsers.take();
     const phone = screen === 'phone';
     let timer: NodeJS.Timeout | undefined;
@@ -744,8 +749,10 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
       try {
         b = await browsers.find();
       } catch (e) {
-        // A launch that failed: launchFailure's message, read with the setting the launch was made with. Anything else
-        // (a test seam's own error) passes as it is.
+        // A launch that failed: launchFailure's message, read with the setting the launch was made with; a renderer byway
+        // had closed: its reason (render-browsers.ts launches nothing after close()). Anything else (a test seam's own
+        // error) passes as it is.
+        if (e instanceof RendererClosed) throw await readyFailure(e, false, opts.host, opts.lastCheck);
         if (!(e instanceof LaunchFailed)) throw e;
         throw await readyFailure(e, e.osSandbox === true, opts.host, opts.lastCheck);
       }
@@ -866,9 +873,6 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
 
 /** A text read stopped because a file its page loads from an admitted host did not arrive whole: its message says which. */
 class Unloaded extends Error {}
-
-/** A load that failed on a browser byway itself closed (render-browsers.ts): its message is the reason byway gave. */
-class RendererClosed extends Error {}
 
 /**
  * A text read's record of the files its page fetches from admitted hosts (pages.ts route): how many are on their way, who
