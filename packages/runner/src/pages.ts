@@ -2135,12 +2135,14 @@ export async function checkRenderer(): Promise<RendererCheck> {
  * The start-up check's answer, waited for at most `ms` counted from this call, not from when the check began. byway
  * starts the check while it builds the app and starts the engine; on a busy machine Chromium's launch waits for them
  * (on GitHub's 2-CPU Windows machine it ran past a limit counted from its start, and byway said Chromium could not
- * start although it could), so the time it is given is counted from when byway is ready to say.
+ * start although it could), so byway calls this once the app is built (`built`; contributor mode builds nothing first)
+ * and the engine is up, just before it prints its `renderer` line, and the message says what the time was counted from.
  */
-export function rendererCheckWithin(checking: Promise<RendererCheck>, ms: number): Promise<RendererCheck> {
+export function rendererCheckWithin(checking: Promise<RendererCheck>, ms: number, { built }: { built: boolean }): Promise<RendererCheck> {
+  const since = built ? 'the app was built and the engine was up' : 'the engine was up';
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<RendererCheck>((resolve) => {
-    timer = setTimeout(() => resolve({ ready: false, message: `Playwright's Chromium had not started ${ms / 1000} s after byway was ready to say.` }), ms);
+    timer = setTimeout(() => resolve({ ready: false, message: `Playwright's Chromium had not started ${ms / 1000} s after ${since}.` }), ms);
     timer.unref?.();
   });
   return Promise.race([checking, late]).finally(() => clearTimeout(timer));

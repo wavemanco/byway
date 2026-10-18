@@ -52,8 +52,9 @@ import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
 /**
- * How long byway waits for the page renderer's start-up check once the app is built and the engine is up, before it says
- * so and carries on (a launch takes ~100 ms on an idle machine; the check starts earlier, while the build runs).
+ * How long byway waits for the page renderer's start-up check once the app is built (contributor mode builds nothing
+ * first) and the engine is up, before it says so and carries on (a launch takes ~100 ms on an idle machine; the check
+ * starts earlier, while the build runs). scripts/test/serve.test.ts holds main() to that order.
  */
 const RENDERER_CHECK_MS = 30_000;
 /** Longer than the worker's forced shutdown (30 s), so a normal stop always finishes first. */
@@ -201,7 +202,7 @@ async function main(): Promise<void> {
   }
   console.log(`  engine     ${engine.address}`);
   for (const line of engineStartLines(engine.atStart)) console.log(`             ${line}`);
-  const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS);
+  const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS, { built: mode === 'start' });
   console.log(`  renderer   ${renderer.ready ? `Playwright's Chromium, ready (${RENDERER_OS_SANDBOX ? 'inside its OS sandbox' : 'its OS sandbox is off; see Renderer in the README'})` : `not available: ${renderer.message}`}`);
 
   const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
