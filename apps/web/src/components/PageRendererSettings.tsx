@@ -21,8 +21,40 @@ interface Props {
  * fix, or, while it is off and it could start, an offer to turn it back on. byway never switches it by itself.
  *
  * Focus (R5): the switch keeps focus while it saves; the confirmation takes focus on "Keep it on", and when it goes,
- * either way, focus goes back to the switch, as it does from the offer once the sandbox is back on.
+ * either way, focus goes back to the switch, as it does from the offer once the sandbox is back on. A screen reader
+ * hears the risk with whichever answer has focus (SandboxOffConfirm).
  */
+interface ConfirmProps {
+  /** The id the risk is given. */
+  riskId: string;
+  busy: boolean;
+  onTurnOff: () => void;
+  onKeep: () => void;
+}
+
+/**
+ * Asked before the sandbox is turned off: the question, what it risks, and the two answers, "Keep it on" taking focus.
+ * Both answers are described by the risk, so a screen reader reads it with whichever has focus; the group, named by its
+ * question, is not, or the risk would be read twice as focus enters it.
+ */
+export function SandboxOffConfirm({ riskId, busy, onTurnOff, onKeep }: ConfirmProps) {
+  return (
+    <div className="confirm-inline renderer-confirm" role="group" aria-label="Turn the OS sandbox off?">
+      <p>
+        Turn the sandbox off? <span id={riskId}>{OFF_RISK}</span>
+      </p>
+      <div className="renderer-confirm-actions">
+        <ActionButton className="button button-danger" onClick={onTurnOff} busy={busy} aria-describedby={riskId}>
+          Turn it off
+        </ActionButton>
+        <button type="button" className="button button-quiet" onClick={onKeep} aria-describedby={riskId} autoFocus>
+          Keep it on
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PageRendererSettings({ settings: initial }: Props) {
   const router = useRouter();
   const ids = useId();
@@ -67,25 +99,15 @@ export function PageRendererSettings({ settings: initial }: Props) {
         <Switch ref={switchRef} checked={settings.osSandbox} onChange={(on) => (on ? turn(true) : setConfirming(true))} labelledBy={`${ids}-renderer`} describedBy={`${ids}-renderer-help`} busy={switching.busy} />
       </div>
       {confirming ? (
-        <div className="confirm-inline renderer-confirm" role="group" aria-label="Turn the OS sandbox off?">
-          <p>Turn the sandbox off? {OFF_RISK}</p>
-          <div className="renderer-confirm-actions">
-            <ActionButton className="button button-danger" onClick={() => turn(false)} busy={switching.busy}>
-              Turn it off
-            </ActionButton>
-            <button
-              type="button"
-              className="button button-quiet"
-              onClick={() => {
-                setConfirming(false);
-                backToSwitch();
-              }}
-              autoFocus
-            >
-              Keep it on
-            </button>
-          </div>
-        </div>
+        <SandboxOffConfirm
+          riskId={`${ids}-renderer-risk`}
+          busy={switching.busy}
+          onTurnOff={() => turn(false)}
+          onKeep={() => {
+            setConfirming(false);
+            backToSwitch();
+          }}
+        />
       ) : null}
       {error ? (
         <p className="notice notice-danger" role="alert">

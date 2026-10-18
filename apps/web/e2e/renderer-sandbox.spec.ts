@@ -2,15 +2,18 @@
  * Settings' switch for the page renderer's OS sandbox, end to end in demo mode (ADR-0105). byway starts with the sandbox
  * on (scripts/e2e.ts requires the start-up line to say so). Turning it off asks first and says the risk; while it is
  * off, every screen carries a banner that links to Settings, and Settings offers to turn it back on, because byway's
- * start-up check found the sandbox could start. All of it by keyboard, with focus where the person is. The suite's
- * other specs draw pages, so the sandbox is put back on after this one, whatever happens in it. No wall-clock waits:
- * only Playwright's own polling of what the page shows.
+ * start-up check found the sandbox could start. All of it by keyboard, with focus where the person is, and the risk read
+ * with each answer as a screen reader hears it (its accessible description). The suite's other specs draw pages, so the
+ * sandbox is put back on after this one, whatever happens in it. No wall-clock waits: only Playwright's own polling of
+ * what the page shows.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { expectNamedControls, tabTo } from './a11y.ts';
 
 const RISK =
   'Turn the sandbox off? With the sandbox off, a malicious page or image, together with a bug in Chromium, could run as you on this computer, next to your API keys and spending records. byway shows a banner on every screen while it is off.';
+/** The risk alone: what a screen reader reads with each answer, which it describes (WEB-1). */
+const OFF_RISK = RISK.slice('Turn the sandbox off? '.length);
 const OFF_BANNER = "The page renderer's OS sandbox is off, so pages and images byway draws run without it.";
 
 const banner = (page: Page) => page.getByRole('note').filter({ hasText: OFF_BANNER });
@@ -37,6 +40,8 @@ test("Settings: the page renderer's OS sandbox is on; turning it off asks first,
   const confirm = section.getByRole('group', { name: 'Turn the OS sandbox off?' });
   await expect(confirm).toContainText(RISK);
   await expect(confirm.getByRole('button', { name: 'Keep it on' })).toBeFocused();
+  // A screen reader hears the risk with the answer that has focus, not only the group's question.
+  await expect(confirm.getByRole('button', { name: 'Keep it on' })).toHaveAccessibleDescription(OFF_RISK);
   await expect(sandbox).toHaveAttribute('aria-checked', 'true');
   // Keep it on: nothing changes, and focus is back on the switch.
   await page.keyboard.press('Enter');
@@ -49,6 +54,7 @@ test("Settings: the page renderer's OS sandbox is on; turning it off asks first,
   await expect(confirm.getByRole('button', { name: 'Keep it on' })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(confirm.getByRole('button', { name: 'Turn it off' })).toBeFocused();
+  await expect(confirm.getByRole('button', { name: 'Turn it off' })).toHaveAccessibleDescription(OFF_RISK);
   await page.keyboard.press('Enter');
   await expect(sandbox).toHaveAttribute('aria-checked', 'false');
   await expect(sandbox).toBeFocused();

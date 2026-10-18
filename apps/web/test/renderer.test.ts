@@ -3,8 +3,11 @@
  * while it is on and byway's last start-up check found it could not start; and what Settings says the check found,
  * with the offer to turn it back on when it could start. The words are checked whole: they must be true of the code.
  */
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { RendererCheckRecord, RendererSettings } from '@byway/contracts';
+import { SandboxOffConfirm } from '../src/components/PageRendererSettings.tsx';
 import { OFF_RISK, rendererBanner, rendererFindings } from '../src/view/renderer.ts';
 
 const AT = '2026-10-18T14:00:00.000Z';
@@ -58,12 +61,27 @@ describe('what Settings says the last start-up check found', () => {
     expect(rendererFindings(off({ ...fails, osSandbox: false, ready: true }))).toEqual({ found: said, offerOn: false });
   });
 
-  it('the renderer itself could not start: its message', () => {
+  it('the renderer was not ready: its message, whatever stopped it (it did not start, or started and could not draw the test page)', () => {
     expect(rendererFindings(on({ at: AT, osSandbox: true, ready: false, sandbox: 'unknown', message: 'Chromium is missing.' }))).toEqual({
-      found: { tone: 'caution', text: "At byway's last start-up, the page renderer could not start: Chromium is missing." },
+      found: { tone: 'caution', text: "At byway's last start-up, the page renderer was not ready: Chromium is missing." },
       offerOn: false,
     });
-    expect(rendererFindings(off({ at: AT, osSandbox: false, ready: true, sandbox: 'unknown' }))).toEqual({ found: null, offerOn: false });
+  });
+
+  it('the check had not finished when byway printed its line: says so, and nothing about whether the renderer starts (W1)', () => {
+    const message = 'The check had not finished 30 s after the engine was up, so byway could not tell whether it can draw pages.';
+    for (const s of [on({ at: AT, osSandbox: true, sandbox: 'unknown', message }), off({ at: AT, osSandbox: false, sandbox: 'unknown', message })]) {
+      expect(rendererFindings(s)).toEqual({ found: { tone: 'caution', text: `At byway's last start-up, the page renderer was not checked in time: ${message}` }, offerOn: false });
+      expect(rendererFindings(s).found?.text).not.toMatch(/could not start|not available/);
+    }
+    expect(rendererBanner(on({ at: AT, osSandbox: true, sandbox: 'unknown', message }))).toBeNull();
+  });
+
+  it('off, ready, and the probe with the sandbox had not answered: says byway could not tell, and offers nothing', () => {
+    expect(rendererFindings(off({ at: AT, osSandbox: false, ready: true, sandbox: 'unknown' }))).toEqual({
+      found: { tone: 'plain', text: "At byway's last start-up, byway could not tell whether the OS sandbox can start on this computer." },
+      offerOn: false,
+    });
   });
 });
 
@@ -72,5 +90,23 @@ describe('turning the sandbox off', () => {
     expect(OFF_RISK).toBe(
       'With the sandbox off, a malicious page or image, together with a bug in Chromium, could run as you on this computer, next to your API keys and spending records. byway shows a banner on every screen while it is off.',
     );
+  });
+
+  /**
+   * Focus lands on "Keep it on", inside a group named by its question, so a screen reader hears the risk only if the
+   * answers are described by it (WEB-1). Both are, so it is heard on either; the group is not, or the risk would be
+   * read twice as focus enters it. The keyboard path itself is in e2e/renderer-sandbox.spec.ts.
+   */
+  it('describes both answers by the risk, which a screen reader then reads with whichever has focus', () => {
+    const html = renderToStaticMarkup(createElement(SandboxOffConfirm, { riskId: 'renderer-risk', busy: false, onTurnOff: () => undefined, onKeep: () => undefined }));
+    expect(html).toContain(`<span id="renderer-risk">${OFF_RISK}</span>`);
+    const buttons = [...html.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)].map(([, attrs, name]) => ({ name, describedBy: /aria-describedby="([^"]*)"/.exec(attrs ?? '')?.[1] }));
+    expect(buttons).toEqual([
+      { name: 'Turn it off', describedBy: 'renderer-risk' },
+      { name: 'Keep it on', describedBy: 'renderer-risk' },
+    ]);
+    const group = /<div([^>]*role="group"[^>]*)>/.exec(html)?.[1] ?? '';
+    expect(group).toContain('aria-label="Turn the OS sandbox off?"');
+    expect(group).not.toContain('aria-describedby');
   });
 });

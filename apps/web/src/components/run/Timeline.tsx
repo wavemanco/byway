@@ -86,7 +86,9 @@ export function Timeline({ stages, artifacts, selected, onSelect }: TimelineProp
                       {step.costUsd > 0 ? <span className="tl-cost">{formatUsd(step.costUsd)}</span> : null}
                     </div>
                     <p className="tl-meta">{step.status === 'waiting' ? <span className="tl-turn">Your turn</span> : meta(step).join(', ')}</p>
-                    {step.error ? <p className="tl-error">{step.error}</p> : step.note ? <p className="tl-note">{step.note}</p> : null}
+                    {/* A step that failed keeps its notes under the failure (a sandbox-off note among them; ADR-0105), as its detail does. */}
+                    {step.error ? <p className="tl-error">{step.error}</p> : null}
+                    {step.note ? <p className="tl-note">{step.note}</p> : null}
                     {step.artifacts.length > 0 ? <StepThumbs step={step} artifacts={artifacts} /> : null}
                   </div>
                 </li>

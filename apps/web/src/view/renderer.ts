@@ -50,6 +50,10 @@ export function rendererFindings(s: RendererSettings): { found: RendererFinding 
       ? { found: { tone: 'plain', text: "At byway's last start-up, the page renderer drew a test page inside its OS sandbox." }, offerOn: false }
       : { found: { tone: 'plain', text: "At byway's last start-up, the OS sandbox could start on this computer." }, offerOn: true };
   }
-  if (!check.ready && check.message) return { found: { tone: 'caution', text: `At byway's last start-up, the page renderer could not start: ${check.message}` }, offerOn: false };
+  // The check had not found out, by the time byway printed its line, whether the renderer is ready.
+  if (check.ready === undefined) return check.message ? { found: { tone: 'caution', text: `At byway's last start-up, the page renderer was not checked in time: ${check.message}` }, offerOn: false } : { found: null, offerOn: false };
+  if (!check.ready && check.message) return { found: { tone: 'caution', text: `At byway's last start-up, the page renderer was not ready: ${check.message}` }, offerOn: false };
+  // Ready without the sandbox, and the probe with it had not answered in time.
+  if (check.ready && !check.osSandbox) return { found: { tone: 'plain', text: "At byway's last start-up, byway could not tell whether the OS sandbox can start on this computer." }, offerOn: false };
   return { found: null, offerOn: false };
 }
