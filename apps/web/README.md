@@ -28,8 +28,8 @@ Next sees it and is the only port listening.
 | `src/view/` | Pure view models: the step index and timeline, the cost meter, checkpoint panels, labels, formatting, the claims rule. Unit-tested in `test/` |
 | `src/components/` | Client and shared components; `run/panels/` holds one "Your turn" panel per checkpoint kind |
 | `app/styles/` | Tokens (light and dark), base, components, screens, run |
-| `test/` | Unit tests (vitest), the guard tests (`guard-claims`, `guard-boundaries`, `guard-disabled`) and fixtures: the real services on a temp folder with a fake Runner |
-| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode, and the keyboard and focus checks (`keyboard.spec.ts`) |
+| `test/` | Unit tests (vitest), the guard tests (`guard-claims`, `guard-boundaries`, `guard-disabled`, `guard-sandbox`) and fixtures: the real services on a temp folder with a fake Runner |
+| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode, the keyboard and focus checks (`keyboard.spec.ts`), and Settings' switch for the page renderer's OS sandbox (`renderer-sandbox.spec.ts`) |
 
 ## How the app gets its services
 
@@ -143,3 +143,8 @@ Logic on top of the contracts sits in view code:
 - Provider keys are never read into the browser, shown or sent: the services module is server-only, Settings shows
   only whether each key is configured, and the end-to-end suite fails if a stand-in key appears in any request or
   response.
+- The page renderer's OS sandbox (ADR-0105) is switched only in Settings (`PATCH /api/renderer`, which takes
+  `{ osSandbox }` and nothing else), which asks before it turns the sandbox off and says what that risks. While it is
+  off, every screen carries a banner (`src/view/renderer.ts`, shown by the root layout), and a step whose pages were
+  drawn without it has a note on the Run and Result screens. `test/guard-sandbox.test.ts` fails if anything else in
+  the product switches it or gives the renderer a setting of its own.
