@@ -78,6 +78,12 @@ export const ControlInput = z.object({ action: z.enum(['pause', 'resume', 'cance
 /** Settings' Spending records actions (ADR-0095): clear calls that may have been billed, or acknowledge a fault. */
 export const SpendAction = z.union([z.strictObject({ clear: z.array(z.string().min(1).max(100)).min(1).max(500) }), z.strictObject({ acknowledge: z.number().int().positive() })]);
 
+/**
+ * The page renderer's OS sandbox (ADR-0105), switched in Settings only: on or off, alone in its request. Settings asks
+ * before turning it off; the switch has its own route, so no other save can carry it.
+ */
+export const RendererPatch = z.strictObject({ osSandbox: z.boolean() });
+
 export const SettingsPatch = z.object({
   profileId: z.string().max(64).optional(),
   demoMode: z.boolean().optional(),

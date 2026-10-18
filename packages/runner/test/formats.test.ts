@@ -126,6 +126,8 @@ describe('judging parsers (spec §3.3)', () => {
       // Readable means a letter or a number (ADR-0104): punctuation or symbols alone, such as the answer format's own "\u2026", say nothing.
       for (const marks of ['\u2026', ',', ':;', ' : ; ', '()', '-', '\ud800', '\uD83D\uDC4D', '?!']) expect(parseBriefs(answer(marks)), JSON.stringify(marks)).toEqual(briefsOnly);
       expect(parseBriefs(answer('N/A'))).toMatchObject({ value: { advice: 'N/A' } });
+      // A number says something too, in any script: digits alone are advice.
+      for (const digits of ['42', '٤٢', '४२', 'Ⅻ']) expect(parseBriefs(answer(digits)), digits).toMatchObject({ value: { advice: digits } });
       // Read after the cut: blank letters that fill the part shown make no advice, whatever follows them.
       expect(parseBriefs(answer(`${'\u3164'.repeat(ADVICE_MAX + 100)}a`))).toEqual(briefsOnly);
     });
@@ -141,6 +143,18 @@ describe('judging parsers (spec §3.3)', () => {
       const r2 = parseBriefs(answer('\u{20000}'.repeat(ADVICE_MAX + 5)));
       expect(r2.ok && r2.value.advice!.isWellFormed()).toBe(true);
       expect(r2.ok && [...r2.value.advice!].length).toBe(ADVICE_MAX);
+    });
+
+    it('is cut at a word only where the last space comes in the second half of what is kept, otherwise at a character (ADR-0104)', () => {
+      // The cut keeps ADVICE_MAX - 1 characters, then the ellipsis; here 199, so the second half starts after 99.5.
+      const kept = ADVICE_MAX - 1;
+      const atWord = parseBriefs(answer(`${'a'.repeat(Math.ceil(kept / 2))} ${'b'.repeat(ADVICE_MAX)}`));
+      expect(atWord).toMatchObject({ value: { advice: `${'a'.repeat(Math.ceil(kept / 2))}…` } });
+      const atCharacter = parseBriefs(answer(`${'a'.repeat(Math.floor(kept / 2))} ${'b'.repeat(ADVICE_MAX)}`));
+      expect(atCharacter).toMatchObject({ value: { advice: `${'a'.repeat(Math.floor(kept / 2))} ${'b'.repeat(kept - Math.floor(kept / 2) - 1)}…` } });
+      expect(atCharacter.ok && [...atCharacter.value.advice!].length).toBe(ADVICE_MAX);
+      // Text with no spaces, such as Japanese, is cut at a character.
+      expect(parseBriefs(answer('あ'.repeat(ADVICE_MAX + 50)))).toMatchObject({ value: { advice: `${'あ'.repeat(kept)}…` } });
     });
   });
 });

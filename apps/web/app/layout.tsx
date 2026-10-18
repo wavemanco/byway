@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Nav } from '../src/components/Nav.tsx';
+import { SandboxBanner } from '../src/components/SandboxBanner.tsx';
 import { TechNamesProvider } from '../src/components/TechNames.tsx';
 import { getContext } from '../src/services/index.ts';
 import { waitingRunCount } from '../src/view/run.ts';
@@ -36,7 +37,7 @@ function Mark() {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const { services, workspaceId, preferences } = await getContext();
   const technical = preferences.showTechnicalNames;
-  const [open, runs] = await Promise.all([services.store.openCheckpoints(workspaceId), services.store.listRuns(workspaceId)]);
+  const [open, runs, renderer] = await Promise.all([services.store.openCheckpoints(workspaceId), services.store.listRuns(workspaceId), services.store.getRendererSettings()]);
   const waiting = waitingRunCount(open, runs);
   return (
     <html lang="en">
@@ -51,6 +52,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             </p>
           </div>
         ) : null}
+        {/* On every screen while the page renderer's OS sandbox is off, or on but unable to start (ADR-0105): from the
+            server's state, then read again on each navigation and while the tab is visible. */}
+        <SandboxBanner renderer={renderer} />
         <header className="app-header">
           <div className="app-header-inner">
             <Link href="/" className="wordmark" aria-label="byway, start">

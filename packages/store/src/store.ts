@@ -1,8 +1,8 @@
 /**
- * The product store (spec §2 "Data", ADR-0066): workspaces, runs, run events, checkpoints, intakes and preferences in
- * one SQLite file, `byway.sqlite`, plus the content-addressed artifact files beside it. The web app and the runner
- * worker each open their own instance on the same data directory; every read-then-write runs in an IMMEDIATE
- * transaction so they agree.
+ * The product store (spec §2 "Data", ADR-0066): workspaces, runs, run events, checkpoints, intakes, preferences and the
+ * page renderer's settings (ADR-0105) in one SQLite file, `byway.sqlite`, plus the content-addressed artifact files
+ * beside it. The web app and the runner worker each open their own instance on the same data directory; every
+ * read-then-write runs in an IMMEDIATE transaction so they agree.
  *
  * node:sqlite is synchronous. The contract is asynchronous so that a remote store could stand in later; here the
  * promises simply settle with the synchronous result (or reject with its error).
@@ -18,6 +18,8 @@ import type {
   CheckpointResolution,
   IntakeRecord,
   Preferences,
+  RendererCheckRecord,
+  RendererSettings,
   RunEvent,
   RunRecord,
   RunStatus,
@@ -33,6 +35,7 @@ import { INTAKE_PATCH_KEYS, intakeFieldJson, toIntake, type IntakeField } from '
 import { migrate } from './migrations.ts';
 import { PREFERENCE_KEYS, mergePreferences, toPreferences } from './preferences.ts';
 import { prepareQueries, type Queries } from './queries.ts';
+import { rendererCheck, sandboxFlag, toRendererSettings } from './renderer.ts';
 import { checkResolution } from './resolution.ts';
 import { SqliteSpendBook } from './spend-book.ts';
 import { toCheckpoint, toEvent, toRun, toWorkspace } from './rows.ts';
@@ -429,6 +432,32 @@ export class SqliteStore implements Store {
       const next = mergePreferences(toPreferences(q.preferences.get(workspaceId)), p);
       q.upsertPreferences.run(workspaceId, next.profileId, next.demoMode ? 1 : 0, next.showTechnicalNames ? 1 : 0, this.#stamp());
       return next;
+    });
+  }
+
+  // The page renderer's settings (ADR-0105): one row for the data directory.
+
+  async getRendererSettings(): Promise<RendererSettings> {
+    return toRendererSettings(this.#queries().rendererSettings.get());
+  }
+
+  /** The person's choice in Settings: the only writer of the OS sandbox setting. */
+  async setRendererSandbox(on: boolean): Promise<RendererSettings> {
+    const q = this.#queries();
+    const value = sandboxFlag(on);
+    return writeTransaction(this.#db, () => {
+      q.setRendererSandbox.run(value ? 1 : 0, this.#stamp());
+      return toRendererSettings(q.rendererSettings.get());
+    });
+  }
+
+  /** What byway's start-up check found. It never changes the setting (a new row starts with the sandbox on). */
+  async recordRendererCheck(check: RendererCheckRecord): Promise<RendererSettings> {
+    const q = this.#queries();
+    const record = rendererCheck(check);
+    return writeTransaction(this.#db, () => {
+      q.recordRendererCheck.run(JSON.stringify(record));
+      return toRendererSettings(q.rendererSettings.get());
     });
   }
 

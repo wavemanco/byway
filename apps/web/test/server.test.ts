@@ -5,7 +5,7 @@ import config, { configFor } from '../next.config.ts';
 import { artifactHeaders, isArtifactId, pageScriptsGranted } from '../src/server/artifacts.ts';
 import { checkRequest } from '../src/server/guard.ts';
 import { sniffImage } from '../src/server/refs.ts';
-import { ProblemInput, RefInput, ResolutionInput, SettingsPatch, StartInput } from '../src/server/schemas.ts';
+import { ProblemInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, StartInput } from '../src/server/schemas.ts';
 import { REPO } from './guards/scan.ts';
 
 const ID = `sha256:${'a'.repeat(64)}`;
@@ -149,6 +149,12 @@ describe('request schemas', () => {
     expect(ResolutionInput.safeParse({ approved: 'yes' }).success).toBe(false);
     expect(SettingsPatch.safeParse({ workspaceBudgetUsd: 50, demoMode: true }).success).toBe(true);
     expect(SettingsPatch.safeParse({ workspaceBudgetUsd: -1 }).success).toBe(false);
+    // The page renderer's OS sandbox (ADR-0105): on or off, said as such, and nothing else in the same request.
+    expect(RendererPatch.safeParse({ osSandbox: false }).success).toBe(true);
+    expect(RendererPatch.safeParse({ osSandbox: true }).success).toBe(true);
+    for (const body of [{}, { osSandbox: 'off' }, { osSandbox: 0 }, { osSandbox: false, demoMode: true }, { osSandbox: null }]) expect(RendererPatch.safeParse(body).success, JSON.stringify(body)).toBe(false);
+    // The Settings patch does not take it: the sandbox has its own route and its own confirmation.
+    expect(SettingsPatch.safeParse({ osSandbox: false }).data).toEqual({});
   });
 });
 

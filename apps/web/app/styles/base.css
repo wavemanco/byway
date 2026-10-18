@@ -130,6 +130,24 @@ svg {
   color: var(--ink);
 }
 
+/* The page renderer's OS sandbox (ADR-0105): off, or on and unable to start. On every screen until that changes. */
+.sandbox-banner {
+  background: var(--caution-soft);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.sandbox-banner p {
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: 6px var(--gutter);
+}
+
+.sandbox-banner a {
+  color: var(--ink);
+}
+
 .app-header {
   border-bottom: 1px solid var(--line);
   background: var(--bg);

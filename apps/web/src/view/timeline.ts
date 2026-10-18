@@ -9,7 +9,7 @@
  */
 import type { CheckpointRecord, RunEvent, RunStatus } from '@byway/contracts';
 import { BLOCK_CODES, type BlockCode } from '@byway/protocol';
-import { ArtifactData, CheckpointEventData, LoopIterationData, ModelDeclinedData, StepFailedData, StepFinishedData, StepStartedData, read } from './events.ts';
+import { ArtifactData, CheckpointEventData, LoopIterationData, ModelDeclinedData, RendererSandboxOffData, StepFailedData, StepFinishedData, StepStartedData, read } from './events.ts';
 import { isEnded } from './run.ts';
 import { shownStep, type ShownStep, type StepIndex } from './steps.ts';
 import { BLOCK_NAMES, stageFromCode, type StageName, type Who } from './vocabulary.ts';
@@ -225,6 +225,13 @@ export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[
         const row = rowFor(e);
         const d = read(ModelDeclinedData, e.data);
         if (row && d.retry === 'answered' && d.note && !row.notes.includes(d.note)) row.notes.push(d.note);
+        break;
+      }
+      case 'renderer-sandbox-off': {
+        // The step's pages were drawn with the OS sandbox off (ADR-0105): said with the row's notes, once.
+        const row = rowFor(e);
+        const d = read(RendererSandboxOffData, e.data);
+        if (row && d.note && !row.notes.includes(d.note)) row.notes.push(d.note);
         break;
       }
       case 'step-failed': {

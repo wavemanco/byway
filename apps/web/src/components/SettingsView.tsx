@@ -1,12 +1,13 @@
 'use client';
 
-import type { Preferences, ProfileStatus, ProviderId, ProviderStatus, SpendRecords } from '@byway/contracts';
+import type { Preferences, ProfileStatus, ProviderId, ProviderStatus, RendererSettings, SpendRecords } from '@byway/contracts';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
 import { formatUsd, parseBudgetInput } from '../view/format.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
 import { profileNeeds, videoAvailability } from '../view/labels.ts';
 import { patch } from './api.ts';
+import { PageRendererSettings } from './PageRendererSettings.tsx';
 import { SpendingRecords } from './SpendingRecords.tsx';
 import { Switch } from './Switch.tsx';
 import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
@@ -48,9 +49,11 @@ interface Props {
   mode: 'demo' | 'live';
   /** byway was started with `pnpm demo`: demo mode stays on whatever this setting says. */
   demoForced?: boolean;
+  /** The page renderer's OS sandbox and what the last start-up check found (ADR-0105). */
+  renderer: RendererSettings;
 }
 
-export function SettingsView({ providers, profiles, preferences: initial, spend, records, pricingNote = null, mode, demoForced = false }: Props) {
+export function SettingsView({ providers, profiles, preferences: initial, spend, records, pricingNote = null, mode, demoForced = false, renderer }: Props) {
   const router = useRouter();
   const ids = useId();
   const [prefs, setPrefs] = useState(initial);
@@ -209,6 +212,8 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
       </section>
 
       <SpendingRecords records={records} pricingNote={pricingNote} />
+
+      <PageRendererSettings settings={renderer} />
 
       <section className="settings-section" aria-labelledby={`${ids}-names`}>
         <div className="setting-row">

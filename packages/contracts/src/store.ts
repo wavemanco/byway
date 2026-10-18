@@ -64,7 +64,9 @@ export type RunEventType =
   | 'run-paused'
   | 'run-resumed'
   /** A model declined a call, and byway asked it once more (ADR-0102). */
-  | 'model-declined';
+  | 'model-declined'
+  /** A step's pages were drawn with the page renderer's OS sandbox off, as the person set it in Settings (ADR-0105). */
+  | 'renderer-sandbox-off';
 
 /**
  * The payload each event type carries (RunEvent.data). The runner emits exactly these; the app reads them. Extra keys
@@ -94,6 +96,11 @@ export interface RunEventPayloads {
    * words. The step's own failure or note says what it means for the run.
    */
   'model-declined': DeclineRecord & { note: string };
+  /**
+   * Once per step call whose pages (renders, visitor reads, cards) were drawn with the OS sandbox off (ADR-0105): `note`
+   * says so in plain words, and the Run and Result screens show it with the step's notes.
+   */
+  'renderer-sandbox-off': { note: string };
 }
 
 /** A RunEvent whose data is typed by its event type. */
@@ -188,6 +195,45 @@ export interface Preferences {
   showTechnicalNames: boolean;
 }
 
+/**
+ * What byway's start-up check of the page renderer found (scripts/serve.ts; ADR-0105). The check draws byway's own test
+ * page, with a script, under the setting in force; with the sandbox off it also tries the sandbox, and with the sandbox
+ * on and failing it tries without it, to tell whether the sandbox is the cause.
+ */
+export interface RendererCheckRecord {
+  at: string;
+  /** The OS sandbox setting the check ran under. */
+  osSandbox: boolean;
+  /**
+   * Whether the renderer could draw the test page under that setting; absent when the check had not found out by the time
+   * byway printed its line (the start-up line's limit came first).
+   */
+  ready?: boolean;
+  /**
+   * Whether Chromium could start inside its OS sandbox and draw the test page: 'starts', 'fails', or 'unknown' when the
+   * check could not tell (Chromium did not start at all, or the check, or its probe of the other setting, ran out of time).
+   */
+  sandbox: 'starts' | 'fails' | 'unknown';
+  /** The plain message, when the renderer was not ready, the sandbox failed, or the check had not finished. */
+  message?: string;
+  /** When the sandbox failed: why on this computer, and the fix (per operating system). */
+  why?: string;
+  fix?: string;
+}
+
+/**
+ * The page renderer's settings: one set for the data directory, since the engine's one renderer serves every workspace
+ * (ADR-0105). The engine reads the setting before each page it draws; only Settings writes it.
+ */
+export interface RendererSettings {
+  /** Whether the renderer's Chromium runs inside its OS sandbox: on unless the person switched it off in Settings. */
+  osSandbox: boolean;
+  /** When the person last switched it; absent if never. */
+  changedAt?: string;
+  /** What byway's last start-up check found; absent before the first. */
+  lastCheck?: RendererCheckRecord;
+}
+
 export interface ArtifactStore {
   put(bytes: Uint8Array, mediaType: string): Promise<ArtifactRecord>;
   putText(text: string, mediaType: string): Promise<ArtifactRecord>;
@@ -251,6 +297,16 @@ export interface Store {
   /** Defaults when never set: profileId 'balanced', demoMode false, showTechnicalNames false. */
   getPreferences(workspaceId: string): Promise<Preferences>;
   setPreferences(workspaceId: string, patch: Partial<Preferences>): Promise<Preferences>;
+
+  /** The page renderer's settings (ADR-0105). Never set: the OS sandbox on, and no check recorded. */
+  getRendererSettings(): Promise<RendererSettings>;
+  /**
+   * The person's OS sandbox choice from Settings, the only way it is switched (ADR-0105): byway never switches it by
+   * itself, off or on.
+   */
+  setRendererSandbox(on: boolean): Promise<RendererSettings>;
+  /** What byway's start-up check found. It never changes the setting. */
+  recordRendererCheck(check: RendererCheckRecord): Promise<RendererSettings>;
 
   close(): void;
 }

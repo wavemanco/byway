@@ -10,7 +10,8 @@
  * the same checkout, so a second build writes the same file.
  *
  * The server's output goes to byway-e2e-server.log in the system temp folder (Playwright empties its own output folder).
- * Its start-up lines must say the page renderer is ready (F18): the suite renders pages, so here it has to start.
+ * Its start-up lines must say the page renderer is ready inside its OS sandbox (F18; ADR-0105): the suite renders pages,
+ * so here it has to start, with the sandbox on, as byway's default is.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
@@ -137,11 +138,12 @@ async function main(): Promise<number> {
     log.end();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   }
-  // The start-up "renderer" line (serve.ts) says whether the page renderer's Chromium can start.
+  // The start-up "renderer" line (serve.ts) says whether the page renderer's Chromium can draw a page, and whether inside
+  // its OS sandbox: on a fresh data directory the sandbox is on, as byway's default is (ADR-0105).
   const renderer = /^ {2}renderer {3}(.*)$/m.exec(startup)?.[1]?.trim();
-  if (renderer?.startsWith("Playwright's Chromium, ready")) console.log(`e2e: renderer ${renderer}`);
+  if (renderer === "Playwright's Chromium, ready, inside its OS sandbox") console.log(`e2e: renderer ${renderer}`);
   else {
-    console.error(`e2e: byway did not say at start-up that its page renderer is ready (${renderer ?? 'no "renderer" line'}).`);
+    console.error(`e2e: byway did not say at start-up that its page renderer is ready inside its OS sandbox (${renderer ?? 'no "renderer" line'}).`);
     code ||= 1;
   }
   // The start-up "checked" line (serve.ts; R4, ADR-0096, ADR-0095): a fresh data directory is reported complete, not damaged.

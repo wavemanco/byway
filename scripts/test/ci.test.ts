@@ -3,9 +3,12 @@
  * per operating system, reporting only, with pinned tools and actions, no secrets and the full history; and the
  * README's platform claim names exactly the systems CI runs on.
  */
-import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { filesUnder, read, REPO, section } from './docs.ts';
 import { actionProblems, usesValues } from './workflow-guard.ts';
 
@@ -15,6 +18,13 @@ const readme = read('README.md');
 
 /** The job matrix: one entry per operating system, written `- { name: …, os: …, playwright: … }`. */
 const matrix = [...workflow.matchAll(/^\s*- \{ name: ([\w-]+), os: ([\w.-]+), playwright: ([^}]+?) \}\s*$/gm)].map((m) => ({ name: m[1] ?? '', os: m[2] ?? '', playwright: (m[3] ?? '').trim() }));
+
+type Step = { name?: string; id?: string; if?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+/** The job's steps, as YAML reads them. */
+const steps = (parse(workflow) as { jobs: { verify: { steps: Step[] } } }).jobs.verify.steps;
+
+/** The script the README gives for Ubuntu 24.04 and later (ADR-0105). */
+const SCRIPT = 'scripts/linux/allow-chromium-sandbox.sh';
 
 describe('the CI workflow (ADR-0103)', () => {
   it('has one job per operating system: Windows and Linux, on pinned runner images', () => {
@@ -84,10 +94,11 @@ describe('the CI workflow (ADR-0103)', () => {
 
   it('provisions Chromium (with its Linux libraries) and the Temporal CLI before the tests', () => {
     expect(workflow).toMatch(/playwright install \$\{\{ matrix\.playwright \}\}/);
+    expect(steps.filter((s) => /playwright install/.test(s.run ?? ''))).toHaveLength(1);
     expect(workflow).toMatch(/TestWorkflowEnvironment\.createLocal\(\)/);
   });
 
-  it('on Linux only: Noto CJK in place of WenQuanYi Zen Hei, and an AppArmor profile that lets Playwright’s Chromium start its sandbox', () => {
+  it("on Linux only: Noto CJK in place of WenQuanYi Zen Hei, and the README's script after Playwright's own install: one AppArmor profile, on Playwright's own folder, that says what else it allows", () => {
     const linuxOnly = (step: string) => {
       const at = workflow.indexOf(`- name: ${step}`);
       expect(at, step).toBeGreaterThan(0);
@@ -97,9 +108,100 @@ describe('the CI workflow (ADR-0103)', () => {
     expect(workflow).toContain('apt-get install --yes --no-install-recommends fonts-noto-cjk');
     expect(workflow).toContain('apt-get remove --yes fonts-wqy-zenhei');
     linuxOnly("Let Playwright's Chromium start its OS sandbox");
-    expect(workflow).toContain(`"profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,'`);
-    // The machine-wide restriction stays on.
+
+    // CI runs the script the README gives a Linux user, and byway's own message names, after Playwright's own install and
+    // before the tests, so every run tries those steps on a fresh Ubuntu 24.04 machine (ADR-0105). Nothing else is set up
+    // for it: byway takes Chromium from Playwright's own folder, as on a person's machine.
+    const at = steps.findIndex((s) => (s.name ?? '').startsWith("Let Playwright's Chromium start its OS sandbox"));
+    expect(steps[at]?.run?.trim()).toBe(`sh ${SCRIPT}`);
+    expect(steps.findIndex((s) => /playwright install/.test(s.run ?? ''))).toBeLessThan(at);
+    expect(at).toBeLessThan(steps.findIndex((s) => s.run === 'pnpm verify'));
+    expect(workflow).not.toMatch(/PLAYWRIGHT_BROWSERS_PATH|GITHUB_ENV|\/opt\//);
+    expect(section(readme, '## Renderer')).toContain(`sh ${SCRIPT}`);
+    const sandbox = read('packages/runner/src/sandbox.ts');
+    expect(sandbox).toContain(`export const APPARMOR_SCRIPT = '${SCRIPT}';`);
+    expect(sandbox).not.toMatch(/ROOT_BROWSERS_FOLDER|\/opt\//);
+
+    // The script: one profile, on Playwright's own folder as Playwright finds it on Linux (XDG_CACHE_HOME moves it), for
+    // the headless shell and full Chromium in the folder layout Playwright 1.63 uses; it refuses a folder PLAYWRIGHT_BROWSERS_PATH moves elsewhere.
+    // It installs nothing and runs nothing of byway's as root: its only commands as root write the profile and load it.
+    const script = read(SCRIPT);
+    expect(script).toContain('\nfolder="${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright"\n');
+    expect([...script.matchAll(/profile playwright-chromium (\S+)/g)].map((m) => m[1])).toEqual(['$folder/chromium*/chrome-*/chrome{,-headless-shell}']);
+    expect(script).toContain(`"profile playwright-chromium $folder/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,'`);
+    expect(script).toContain('if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then');
+    const asRoot = script.split('\n').filter((l) => /\bsudo\b/.test(l) && !/^\s*(#|echo )/.test(l));
+    expect(asRoot).toEqual([expect.stringMatching(/\| sudo tee "\$profile" > \/dev\/null$/), 'sudo apparmor_parser --replace "$profile"']);
+    expect(script).not.toMatch(/\/opt\/|PLAYWRIGHT_BROWSERS_PATH=|playwright install|chown|chmod/);
+    // It says plainly, at its top and in what it prints at the end, what else the profile allows, and the alternative.
+    const header = script.slice(0, script.indexOf('set -eu'));
+    const printed = script.slice(script.indexOf('sudo apparmor_parser --replace'));
+    for (const said of [header, printed]) {
+      expect(said).toMatch(/any program running as you can (then|now) create user namespaces through this profile/);
+      expect(said).toContain('LD_PRELOAD');
+      expect(said).toContain('aa-exec');
+      expect(said).toContain('kernel.apparmor_restrict_unprivileged_unconfined is 0');
+      expect(said).toContain("switch byway's sandbox off in Settings");
+    }
+    expect(spawnSync('git', ['ls-files', '--stage', SCRIPT], { cwd: REPO, encoding: 'utf8' }).stdout).toMatch(/^100755 /);
+    // The machine-wide restriction stays on: the script only reads it, and the workflow does not touch it.
+    expect(script).not.toMatch(/sysctl|> *"?\$restrict|tee[^\n]*restrict/);
     expect(workflow).not.toMatch(/apparmor_restrict_unprivileged_userns/);
+    // It is valid shell where a POSIX shell is at hand (on Windows, Git's, when it is on the PATH), and it refuses a moved
+    // folder, and one whose path would change what the profile covers, before it asks for anything.
+    const sh = spawnSync('sh', ['-n', path.join(REPO, SCRIPT)], { encoding: 'utf8' });
+    if (!(process.platform === 'win32' && sh.error) && process.getuid?.() !== 0) {
+      expect(sh.status, sh.stderr).toBe(0);
+      const run = (env: Record<string, string>) => spawnSync('sh', [path.join(REPO, SCRIPT)], { encoding: 'utf8', env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '', ...env } });
+      const moved = run({ PLAYWRIGHT_BROWSERS_PATH: '/elsewhere' });
+      expect(moved.status).toBe(1);
+      expect(moved.stderr).toContain("PLAYWRIGHT_BROWSERS_PATH is set (/elsewhere). This script covers Playwright's own folder only");
+      const spaced = run({ XDG_CACHE_HOME: '/home/a b/.cache' });
+      expect(spaced.status).toBe(1);
+      expect(spaced.stderr).toContain("Playwright's folder, /home/a b/.cache/ms-playwright, has a space or one of");
+      const relative = run({ XDG_CACHE_HOME: 'cache' });
+      expect(relative.status).toBe(1);
+      expect(relative.stderr).toContain("Playwright's folder, cache/ms-playwright, is not a full path");
+    }
+  });
+
+  it('nowhere says the profile gives the namespaces to Chromium alone, that the rest of the machine stays restricted, that the sandbox off keeps the restriction whole, or that the profile covers every version', () => {
+    // The ADRs quote them as what the checks found untrue: round 2's checks the first two (ADR-0105 and ADR-0103's later
+    // note), round 3's checks and the check of a3d271f the others (ADR-0105, Evidence).
+    for (const file of [SCRIPT, '.github/workflows/verify.yml', 'README.md', 'apps/web/README.md', 'packages/runner/src/sandbox.ts', 'packages/runner/src/pages.ts', 'scripts/serve.ts', 'docs/backlog.md']) {
+      expect(read(file), file).not.toMatch(/and nothing else, create user namespaces|for nothing else; the rest|rest of the machine stays restricted|Chromium alone|only the Chromium there|restriction whole|every version in that folder|Chromium, any version/);
+    }
+  });
+
+  it('when a job fails, uploads the end-to-end server log and Playwright’s traces from where the suite writes them, at most one of each per operating system, each skipped when it finds no file (ADR-0106)', () => {
+    // Where the suite writes them: scripts/e2e.ts puts the server's output in the system temp folder, and Playwright
+    // keeps a trace and a screenshot of each failed browser test in apps/web/test-results.
+    expect(read('scripts/e2e.ts')).toContain("const logFile = path.join(tmpdir(), 'byway-e2e-server.log');");
+    const config = read('apps/web/playwright.config.ts');
+    expect(config).toContain("outputDir: './test-results',");
+    expect(config).toContain("trace: 'retain-on-failure',");
+    expect(config).toContain("screenshot: 'only-on-failure',");
+
+    const at = (name: string) => steps.findIndex((s) => s.name === name);
+    const verify = steps.findIndex((s) => s.run === 'pnpm verify');
+    const names = ['Where the end-to-end server log is (on failure)', 'Upload the end-to-end server log (on failure)', "Upload Playwright's traces and screenshots (on failure)"];
+    // The last three steps, after `pnpm verify`, in this order, and only when a step before them failed.
+    expect(names.map(at)).toEqual([verify + 1, verify + 2, verify + 3]);
+    expect(steps.length).toBe(verify + 4);
+    for (const name of names) expect(steps[at(name)]?.if, name).toBe('${{ failure() }}');
+
+    // The first finds the system temp folder as scripts/e2e.ts does, on the machine it runs on.
+    const where = steps[at(names[0]!)]!;
+    expect(where.id).toBe('e2e-log');
+    const script = /^node -e "(.*)" >> "\$GITHUB_OUTPUT"$/.exec(where.run ?? '')?.[1];
+    expect(script).toBeDefined();
+    const printed = spawnSync(process.execPath, ['-e', script!], { encoding: 'utf8' });
+    expect(printed.stdout.trim()).toBe(`path=${path.join(realpathSync.native(tmpdir()), 'byway-e2e-server.log')}`);
+
+    const UPLOAD = 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
+    expect(workflow.split(`uses: ${UPLOAD} # v7.0.1`).length - 1).toBe(2);
+    expect(steps[at(names[1]!)]).toMatchObject({ uses: UPLOAD, with: { name: 'e2e-server-log-${{ matrix.name }}', path: '${{ steps.e2e-log.outputs.path }}', 'if-no-files-found': 'ignore', 'retention-days': 14 } });
+    expect(steps[at(names[2]!)]).toMatchObject({ uses: UPLOAD, with: { name: 'playwright-results-${{ matrix.name }}', path: 'apps/web/test-results', 'if-no-files-found': 'ignore', 'retention-days': 14 } });
   });
 });
 
@@ -266,11 +368,13 @@ describe('the README on platforms and CI (ADR-0103)', () => {
     expect(ci).toMatch(/blocks nothing|refuses nothing/);
   });
 
-  it('gives the Playwright install command each CI job runs: on Linux, with --with-deps', () => {
+  it('gives the Playwright install command each CI job runs: on Linux, with --with-deps, and then the script', () => {
     const tests = section(readme, '## Tests') ?? '';
     expect(tests).toContain('`pnpm --filter ./apps/web exec playwright install chromium`');
     expect(tests).toContain('on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`');
     for (const m of matrix) expect(tests, m.name).toContain(`exec playwright install ${m.playwright}\``);
+    expect(tests).toContain(`\`sh ${SCRIPT}\``);
+    expect(readme).not.toMatch(/PLAYWRIGHT_BROWSERS_PATH=|\/opt\//);
   });
 
   it('no longer says that nothing runs the checks automatically', () => {

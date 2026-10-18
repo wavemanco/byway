@@ -559,6 +559,32 @@
   margin-bottom: var(--s-1);
 }
 
+/* Page renderer (ADR-0105): the question before the sandbox is turned off, and what the last start-up check found. */
+.confirm-inline.renderer-confirm {
+  display: grid;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+  padding: var(--s-3);
+}
+
+.renderer-confirm p,
+.renderer-found p {
+  margin: 0;
+}
+
+.renderer-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.renderer-found {
+  display: grid;
+  gap: var(--s-2);
+  justify-items: start;
+  margin-top: var(--s-3);
+}
+
 .providers {
   list-style: none;
   margin: 0;

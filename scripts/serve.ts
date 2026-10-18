@@ -26,9 +26,13 @@
  * seen, as the first model call would), and byway starts either way. The engine then ends what the store and it disagree on, and
  * says so under "engine".
  *
- * Renderer: while the engine starts, byway launches the page renderer's Chromium once and closes it again, and prints a
- * "renderer" line saying whether it can start. byway keeps running either way: prose, options and code-diff runs need
- * no renderer unless a lineup forms cards, and a web-page run whose renderer cannot start is refused before it spends.
+ * Renderer: while the engine starts, byway draws its own test page, with a script, in the page renderer's Chromium under
+ * the person's OS sandbox setting (on unless switched off in Settings; ADR-0105), and closes it again. It prints a
+ * "renderer" line saying whether the renderer is ready, whether its sandbox is on and, when it is off, whether the
+ * sandbox could start now, and records that in the store for Settings. Under that line it names Playwright's browsers
+ * folder, which PLAYWRIGHT_BROWSERS_PATH moves (the README's Linux AppArmor profile covers Playwright's own folder only).
+ * byway keeps running either way: prose, options and code-diff runs need no renderer unless a lineup forms cards, and a
+ * web-page run whose renderer cannot start is refused before it spends.
  *
  * Environment: BYWAY_DATA_DIR (data directory), PORT (web, default 3000), BYWAY_TEMPORAL_PORT (default 7233),
  * BYWAY_DEMO=1 (same as `--demo`), BYWAY_NEXT_DIST_DIR (the web build's folder inside apps/web, default .next; the e2e
@@ -46,14 +50,15 @@ import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engi
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { checkRenderer, dataDirReport, engineStartLines, RENDERER_OS_SANDBOX, rendererCheckWithin, reportLines, startDevEngine, storeCaps, type DevEngine } from '../packages/runner/src/index.ts';
+import { browsersFolder, checkRenderer, dataDirReport, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
 /**
- * How long byway waits for the page renderer's start-up check once the app is built and the engine is up, before it says
- * so and carries on (a launch takes ~100 ms on an idle machine; the check starts earlier, while the build runs).
+ * How long byway waits for the page renderer's start-up check once the app is built (contributor mode builds nothing
+ * first) and the engine is up, before it says so and carries on (a launch takes ~100 ms on an idle machine; the check
+ * starts earlier, while the build runs). scripts/test/serve.test.ts holds main() to that order.
  */
 const RENDERER_CHECK_MS = 30_000;
 /** Longer than the worker's forced shutdown (30 s), so a normal stop always finishes first. */
@@ -180,8 +185,12 @@ async function main(): Promise<void> {
   console.log('  engine     starting Temporal and the runner worker…');
   const engineStarting = startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort });
   engineStarting.catch(() => undefined);
-  // The renderer is checked meanwhile; the check never throws. Its time limit starts when byway waits for it, below.
-  const rendererChecking = checkRenderer();
+  // The renderer is checked meanwhile, under the person's sandbox setting; the check never throws. Its time limit starts
+  // when byway waits for it, below, and then says what the check had found by then (rendererProgress).
+  // A setting that cannot be read counts as on, as it does for the engine's renderer.
+  const { osSandbox } = await store.getRendererSettings().catch(() => ({ osSandbox: true }));
+  const rendererProgress: RendererCheckProgress = {};
+  const rendererChecking = checkRenderer({ osSandbox }, { progress: rendererProgress });
   const env: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
   try {
     if (mode === 'start') await build(env);
@@ -201,8 +210,14 @@ async function main(): Promise<void> {
   }
   console.log(`  engine     ${engine.address}`);
   for (const line of engineStartLines(engine.atStart)) console.log(`             ${line}`);
-  const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS);
-  console.log(`  renderer   ${renderer.ready ? `Playwright's Chromium, ready (${RENDERER_OS_SANDBOX ? 'inside its OS sandbox' : 'its OS sandbox is off; see Renderer in the README'})` : `not available: ${renderer.message}`}`);
+  const renderer = await rendererCheckWithin(rendererChecking, RENDERER_CHECK_MS, { built: mode === 'start', osSandbox, progress: rendererProgress });
+  console.log(`  renderer   ${rendererLine(renderer)}`);
+  // For Settings: what the check found, beside the setting it never changes (ADR-0105).
+  await store.recordRendererCheck({ at: new Date().toISOString(), ...renderer }).catch((err: unknown) => console.log(`             (not kept for Settings: ${err instanceof Error ? err.message : String(err)})`));
+  // Where Chromium comes from, as Playwright resolves it (PLAYWRIGHT_BROWSERS_PATH moves it), so a person can check
+  // that byway takes it from the folder the README's Linux AppArmor profile covers (ADR-0105).
+  const browsers = await browsersFolder();
+  if (browsers) console.log(`             Playwright's browsers folder: ${browsers}`);
 
   const webEnv = { ...env, BYWAY_DATA_DIR: dataDir, BYWAY_DEMO: demo ? '1' : '0', BYWAY_TEMPORAL_ADDRESS: engine.address, PORT: String(webPort) };
   let web: ChildProcess;

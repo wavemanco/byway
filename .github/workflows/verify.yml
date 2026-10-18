@@ -62,8 +62,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Playwright's Chromium (the renderer tests and the browser tests)
+      - name: Playwright's Chromium (the renderer tests and the browser tests; with its system libraries on Linux)
         run: pnpm --filter ./apps/web exec playwright install ${{ matrix.playwright }}
+
+      # Ubuntu restricts unprivileged user namespaces (by default from 24.04), which Chromium's OS sandbox needs, and byway
+      # draws pages inside that sandbox (ADR-0105). This runs the script the README gives a Linux user, so every run tries
+      # the README's steps: an AppArmor profile that lets Playwright's Chromium, in Playwright's own folder, create user
+      # namespaces. As the README says, any program running as the user can then get them through that profile too.
+      - name: Let Playwright's Chromium start its OS sandbox (the README's AppArmor script, Linux only)
+        if: ${{ matrix.name == 'linux' }}
+        run: sh scripts/linux/allow-chromium-sandbox.sh
 
       # Playwright's Linux dependencies make WenQuanYi Zen Hei the fallback font for Japanese, and with it Chromium lays
       # out the first item of a vertical row at no height, so a renderer test reads a page no person would see. Ubuntu's
@@ -75,18 +83,37 @@ jobs:
           sudo apt-get remove --yes fonts-wqy-zenhei > /dev/null
           fc-match 'sans-serif:lang=ja'
 
-      # Linux restricts unprivileged user namespaces (by default from Ubuntu 24.04), which Chromium's OS sandbox needs. One
-      # renderer test starts Chromium inside its sandbox as a control, so Playwright's Chromium gets a profile that
-      # allows them; the rest of the machine stays restricted.
-      - name: Let Playwright's Chromium start its OS sandbox (an AppArmor profile, Linux only)
-        if: ${{ matrix.name == 'linux' }}
-        run: |
-          printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' "profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,' '}' | sudo tee /etc/apparmor.d/playwright-chromium
-          sudo apparmor_parser --replace /etc/apparmor.d/playwright-chromium
-
       - name: The Temporal CLI (the engine tests start a local Temporal server; downloaded once into the temp folder)
         working-directory: packages/runner
         run: node --input-type=module -e "const { TestWorkflowEnvironment } = await import('@temporalio/testing'); const env = await TestWorkflowEnvironment.createLocal(); await env.teardown(); console.log('Temporal CLI ready');"
 
       - name: pnpm verify (the typecheck, the unit tests, then the end-to-end suite)
         run: pnpm verify
+
+      # Only when a step failed: what the end-to-end suite leaves for a diagnosis, kept 14 days. The server's output
+      # (byway's own, the renderer's included) goes to byway-e2e-server.log in the system temp folder (scripts/e2e.ts),
+      # and Playwright keeps a trace and a screenshot of each failed browser test in apps/web/test-results. Each upload
+      # is skipped when it finds no file: a job that fails before `pnpm e2e` starts uploads nothing, and one in which no
+      # browser test failed uploads the log alone.
+      - name: Where the end-to-end server log is (on failure)
+        id: e2e-log
+        if: ${{ failure() }}
+        run: node -e "console.log('path=' + require('node:path').join(require('node:fs').realpathSync.native(require('node:os').tmpdir()), 'byway-e2e-server.log'))" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the end-to-end server log (on failure)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-server-log-${{ matrix.name }}
+          path: ${{ steps.e2e-log.outputs.path }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Playwright's traces and screenshots (on failure)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-results-${{ matrix.name }}
+          path: apps/web/test-results
+          if-no-files-found: ignore
+          retention-days: 14

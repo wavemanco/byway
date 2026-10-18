@@ -54,6 +54,9 @@ export const ModelDeclinedData = z.object({
   note: str,
 });
 
+/** 'renderer-sandbox-off' (ADR-0105): a step's pages were drawn with the page renderer's OS sandbox off; `note` says so. */
+export const RendererSandboxOffData = z.object({ note: str });
+
 /** 'checkpoint-opened' and 'checkpoint-resolved'. */
 export const CheckpointEventData = z.object({ checkpointId: str, kind: str });
 

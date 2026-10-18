@@ -1,6 +1,9 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { CheckpointRecord, RecipePresentation, RunEvent } from '@byway/contracts';
 import { loop, optional, seq, step, type Recipe } from '@byway/recipe';
+import { Timeline } from '../src/components/run/Timeline.tsx';
 import { shownStep, stepIndex } from '../src/view/steps.ts';
 import { howItWasMade } from '../src/view/run.ts';
 import { buildTimeline, currentStep, judgement, outputArtifacts } from '../src/view/timeline.ts';
@@ -294,6 +297,37 @@ describe('run timeline without a presentation', () => {
     expect(refine?.steps[0]).toMatchObject({ label: 'Draft', status: 'done', note: `${answered} Drafted.` });
     expect(refine?.steps[1]).toMatchObject({ label: 'Fix', status: 'failed', error: `${again} Rephrase the request, or choose another model profile in Settings, then try again.` });
     expect(refine?.steps[1]?.note).toBeUndefined();
+  });
+
+  it("shows the note on a step whose pages were drawn with the page renderer's OS sandbox off, once, on the Run and Result screens (ADR-0105)", () => {
+    const off = "Pages in this step were drawn with the page renderer's OS sandbox off (it was switched off in Settings).";
+    const list = [
+      started('render', 'Render', 'D2', 'tool'),
+      ev('renderer-sandbox-off', 'render', { note: off }),
+      ev('renderer-sandbox-off', 'render', { note: off }, 1),
+      done('render', 0, { note: 'Rendered.' }),
+      started('critic', 'Critique', 'D2'),
+      done('critic', 0.02),
+    ];
+    const stages = buildTimeline(list, [], 'done');
+    expect(stages[0]?.steps[0]).toMatchObject({ label: 'Render', status: 'done', note: `${off} Rendered.` });
+    expect(stages[0]?.steps[1]?.note).toBeUndefined();
+    expect(howItWasMade(stages).rows[0]).toMatchObject({ label: 'Render', note: `${off} Rendered.` });
+    // An event with no note says nothing.
+    expect(buildTimeline([started('render', 'Render', 'D2', 'tool'), ev('renderer-sandbox-off', 'render', {}), done('render')], [], 'done')[0]?.steps[0]?.note).toBeUndefined();
+  });
+
+  it("keeps the sandbox-off note on a step that then failed: the Run screen's timeline shows its failure and the note (ADR-0105)", () => {
+    const off = "Pages in this step were drawn with the page renderer's OS sandbox off (it was switched off in Settings).";
+    const failure = 'The model provider did not answer.';
+    const list = [started('critic', 'Critique', 'D2'), ev('renderer-sandbox-off', 'critic', { note: off }), ev('step-failed', 'critic', { error: failure })];
+    const stages = buildTimeline(list, [], 'failed');
+    expect(stages[0]?.steps[0]).toMatchObject({ status: 'failed', error: failure, note: off });
+    // As the row shows it: the failure, and the note under it.
+    const html = renderToStaticMarkup(createElement(Timeline, { stages, artifacts: {}, selected: null, onSelect: () => undefined }));
+    expect(html).toContain(`<p class="tl-error">${failure}</p>`);
+    expect(html).toContain(`<p class="tl-note">${off.replace(/'/g, '&#x27;')}</p>`);
+    expect(html.indexOf('tl-error')).toBeLessThan(html.indexOf('tl-note'));
   });
 
   it('tolerates events with missing or malformed data', () => {

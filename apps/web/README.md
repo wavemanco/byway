@@ -28,8 +28,8 @@ Next sees it and is the only port listening.
 | `src/view/` | Pure view models: the step index and timeline, the cost meter, checkpoint panels, labels, formatting, the claims rule. Unit-tested in `test/` |
 | `src/components/` | Client and shared components; `run/panels/` holds one "Your turn" panel per checkpoint kind |
 | `app/styles/` | Tokens (light and dark), base, components, screens, run |
-| `test/` | Unit tests (vitest), the guard tests (`guard-claims`, `guard-boundaries`, `guard-disabled`) and fixtures: the real services on a temp folder with a fake Runner |
-| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode, and the keyboard and focus checks (`keyboard.spec.ts`) |
+| `test/` | Unit tests (vitest), the guard tests (`guard-claims`, `guard-boundaries`, `guard-disabled`, `guard-sandbox`) and fixtures: the real services on a temp folder with a fake Runner |
+| `e2e/` | The Playwright suite: C1, C3, C4, C5 and C6a from a typed problem to the Result screen in demo mode, the keyboard and focus checks (`keyboard.spec.ts`), and Settings' switch for the page renderer's OS sandbox (`renderer-sandbox.spec.ts`) |
 
 ## How the app gets its services
 
@@ -143,3 +143,23 @@ Logic on top of the contracts sits in view code:
 - Provider keys are never read into the browser, shown or sent: the services module is server-only, Settings shows
   only whether each key is configured, and the end-to-end suite fails if a stand-in key appears in any request or
   response.
+- The page renderer's OS sandbox (ADR-0105) is switched only in Settings (`PATCH /api/renderer`, which takes
+  `{ osSandbox }` and nothing else), which asks before it turns the sandbox off and says what that risks; both answers
+  are described by the risk, so a screen reader reads it with the one that has focus. While it is off, every screen
+  carries a banner (`src/components/SandboxBanner.tsx` in the root layout, its words from `src/view/renderer.ts`). It
+  starts from the server's state and, as Nav does for the waiting count, reads the renderer's state again
+  (`GET /api/renderer`, which only reads) on every navigation and every 5 s while the tab is visible, and at once when
+  that tab's switch changed it, so a tab opened before the change shows it, and loses it, without a reload. A step whose
+  pages were drawn without the sandbox has a note in the Run screen's timeline (under its failure, if it failed) and in
+  the Result's "How this was made".
+  `test/guard-sandbox.test.ts` reads the product sources, lines that are only a comment left out, and pins as exact
+  lists every line that mentions a way to switch the setting (`setRendererSandbox`, Settings' route, the setting's
+  table and column), to set Chromium's sandbox option (`chromiumSandbox`), to build a renderer (`playwrightPages`,
+  `renderBrowsers`, `checkRenderer`, `storeOsSandbox`) or to launch Chromium (`launchChromium`,
+  `chromiumLaunchOptions`, the test-only `launch` seam, Playwright's launch calls, and any line that names Playwright's
+  packages, Puppeteer or `chromium-bidi` in quotes, as an import does), whatever their arguments look like. It also
+  checks itself against each way round it that reviews have found, each of which must change one of its lists. It does
+  not see a use that names none of these (SQL that builds the table's or the column's name from pieces, say), a browser
+  driver it does not list, a browser started as a program of its own, a file outside those it reads, or a change inside
+  the lines it pins, such as a retry without the sandbox in `pages.ts`; the renderer's own tests (`launch.test.ts`,
+  `pages.test.ts`, `renderer-check.test.ts`) check that last one, and no test checks the others.

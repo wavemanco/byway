@@ -500,10 +500,35 @@ describe('the AI’s advice, never a veto (D3, ADR-0101)', () => {
     expect(adviceNote('Χρειάζεται εικόνα\u037E')).toBe('The AI suggests: Χρειάζεται εικόνα\u037E You can cut the image at Trim.');
     expect(adviceNote('Its own line says it: “less is more.”')).toBe('The AI suggests: Its own line says it: “less is more.” You can cut the image at Trim.');
     expect(adviceNote('Keep it quiet (a photo would do)')).toBe('The AI suggests: Keep it quiet (a photo would do). You can cut the image at Trim.');
+    // The ellipsis is a stop, so a line the cut ended with one (parse.ts plainLine) gets no second stop.
+    expect(adviceNote('A photograph might serve it better…')).toBe('The AI suggests: A photograph might serve it better… You can cut the image at Trim.');
+    expect(adviceNote('It says “less is more…”')).toBe('The AI suggests: It says “less is more…” You can cut the image at Trim.');
     const g = fake([answer(['header'], '  ')]);
     const { notes } = await runAsset('prose', spec('c3', 'asset'), PIECE, g);
     expect(g.images).toHaveLength(1);
     expect(notes).toEqual([undefined]);
+  });
+
+  it('every form of the comma, colon and semicolon the rule names gives way to the stop: ideographic, fullwidth, halfwidth, small and Arabic (ADR-0104)', () => {
+    const ja = 'ヘッダーは不要かもしれません';
+    // 、 ， ： ； (ideographic and fullwidth), ､ (halfwidth), ﹐ ﹑ ﹔ ﹕ (small forms).
+    for (const mark of ['、', '，', '：', '；', '､', '﹐', '﹑', '﹔', '﹕']) {
+      expect(adviceNote(`${ja}${mark}`), `U+${mark.codePointAt(0)!.toString(16).toUpperCase()}`).toBe(`The AI suggests: ${ja}. You can cut the image at Trim.`);
+    }
+    const ar = 'لا حاجة إلى صورة';
+    // ، (the Arabic comma) and ؛ (the Arabic semicolon).
+    for (const mark of ['،', '؛']) {
+      expect(adviceNote(`${ar}${mark}`), `U+${mark.codePointAt(0)!.toString(16).toUpperCase()}`).toBe(`The AI suggests: ${ar}. You can cut the image at Trim.`);
+    }
+  });
+
+  it('a stop before a German or Danish closing quote counts, though Unicode files those quotes as opening ones (“ ‘ «)', () => {
+    expect(adviceNote('Weniger ist „mehr.“')).toBe('The AI suggests: Weniger ist „mehr.“ You can cut the image at Trim.');
+    expect(adviceNote('Weniger ist ‚mehr.‘')).toBe('The AI suggests: Weniger ist ‚mehr.‘ You can cut the image at Trim.');
+    expect(adviceNote('Mindre er »mere.«')).toBe('The AI suggests: Mindre er »mere.« You can cut the image at Trim.');
+    // The quote alone is not a stop: one is added after it.
+    expect(adviceNote('Weniger ist „mehr“')).toBe('The AI suggests: Weniger ist „mehr“. You can cut the image at Trim.');
+    expect(adviceNote('Mindre er »mere«')).toBe('The AI suggests: Mindre er »mere«. You can cut the image at Trim.');
   });
 
   it('advice that came with an empty first answer stays when the second answer brings the brief', async () => {

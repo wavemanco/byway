@@ -1,10 +1,10 @@
 # External review: implementation status (16 Oct 2026)
 
-Companion to [the verification of the external review](2026-10-08-external-review-verification.md). The owner's goal was to implement every fix that does not depend on the four owner decisions (D1–D4). All of them are on `main`. The owner then decided all four on 2026-10-16: D1, D3 and D4 are on `main` too, and D2 is to be built. A final re-check on 2026-10-15 checked main at `1ba72f5`: one checker per cluster reran the review's and the verification's original reproductions, and two independent skeptics re-ran every blocking claim. No original reproduction reproduces. No fix was lost when the branches were merged. The documentation and test items it found were closed on 2026-10-16 ([ADR-0100](../adr/0100-corrections-found-by-the-final-re-check.md) and the cleanup commits after `1ba72f5`).
+Companion to [the verification of the external review](2026-10-08-external-review-verification.md). The owner's goal was to implement every fix that does not depend on the four owner decisions (D1–D4). All of them are on `main`. The owner then decided all four on 2026-10-16, and all four are on `main`: D1, D3 and D4 first, then D2 ([ADR-0105](../adr/0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md)). A final re-check on 2026-10-15 checked main at `1ba72f5`: one checker per cluster reran the review's and the verification's original reproductions, and two independent skeptics re-ran every blocking claim. No original reproduction reproduces. No fix was lost when the branches were merged. The documentation and test items it found were closed on 2026-10-16 ([ADR-0100](../adr/0100-corrections-found-by-the-final-re-check.md) and the cleanup commits after `1ba72f5`).
 
 ## Status per finding
 
-Severity is the verified one. "Fixed, except D*n*" means everything that does not depend on that decision is on main, and the rest waits for it.
+Severity is the verified one.
 
 | # | Finding | Severity | Status on main | Records | What remains |
 |---|---|---|---|---|---|
@@ -25,7 +25,7 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 | F15 | Out-of-order polls regress run state | P3 | Fixed | 0082 | — |
 | F16 | Secrets not stripped from returned results | P3 | Fixed | [0088](../adr/0088-provider-boundary-held-keys-and-media-admission.md) | — |
 | F17 | Media fetch trusts URLs and buffers first | P3 | Fixed | 0088 | — |
-| F18 | Renderer Chromium runs unsandboxed | P2 | Fixed, except D2 | [0084](../adr/0084-renderer-launch-without-secrets.md) | The owner decided D2 on 2026-10-16: the sandbox on by default on Windows and Linux (macOS later), with an explicit off switch and a banner while it is off; to be built as ADR-0105 (backlog). Until then it stays off |
+| F18 | Renderer Chromium runs unsandboxed | P2 | Fixed | [0084](../adr/0084-renderer-launch-without-secrets.md), [0105](../adr/0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) | The sandbox is on by default on Windows and Linux, with an explicit off switch in Settings and a banner while it is off (D2, ADR-0105). macOS is not supported yet (backlog). The AppArmor script for Ubuntu 24.04 and later is tested on CI's machine only |
 | F19 | Canonical JSON skips key validation | P3 | Fixed | [0083](../adr/0083-hashed-text-is-well-formed-unicode.md) | — |
 | F20 | Loop cap substitutes for the person's decision | P2 | Fixed | [0093](../adr/0093-every-loop-exit-at-the-cap-follows-one-policy.md) | — |
 | R1 | No CI; toolchain not pinned | P3 | Fixed | [0094](../adr/0094-backup-unit-is-the-data-directory.md) (`pnpm verify`), [0103](../adr/0103-adr-log-rule-and-ci.md) | The owner decided D4 on 2026-10-16: CI runs `pnpm verify` on Windows and Linux on every push to main, reporting only; main and tags are protected by rulesets. A required check waits for its trigger (backlog) |
@@ -39,7 +39,7 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 
 ## Owner decisions
 
-- **D1 to D4, from the verification (§4):** all decided on 2026-10-16. D1 is [ADR-0102](../adr/0102-one-refusal-rule-for-every-provider.md), D3 is [ADR-0101](../adr/0101-c3-yes-decides-the-header-image.md) and D4 is [ADR-0103](../adr/0103-adr-log-rule-and-ci.md); D2 is to be built as ADR-0105, as its row in [the backlog](../backlog.md) under "Owner decisions from the external-review verification" says.
+- **D1 to D4, from the verification (§4):** all decided on 2026-10-16. D1 is [ADR-0102](../adr/0102-one-refusal-rule-for-every-provider.md), D3 is [ADR-0101](../adr/0101-c3-yes-decides-the-header-image.md) and D4 is [ADR-0103](../adr/0103-adr-log-rule-and-ci.md); D2 is [ADR-0105](../adr/0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md): the renderer's Chromium runs inside its OS sandbox by default, and only the person switches it off, in Settings.
 - **Questions from the fix work, held by the owner (2026-10-17):**
   - simplify VOICE on web pages to a content layer;
   - ST9/ST10 `human-critique` case 2;
@@ -53,4 +53,4 @@ Severity is the verified one. "Fixed, except D*n*" means everything that does no
 
 ## Checks on main
 
-With D1 and D4 merged (2026-10-17), the full gate passes on `main` on Windows: type-check clean, 4,861 tests in 190 files, the web build, and 53 of 53 browser tests. `pnpm verify` runs the same steps locally, and CI runs them on Windows and Linux on every push to main ([ADR-0103](../adr/0103-adr-log-rule-and-ci.md)).
+Before D2 was merged, the full gate passed in CI on its branch, run 39172144829 at `a3d271f` (2026-10-18), on Windows and on Linux (where the README's AppArmor script ran first): type-check clean, 4,997 tests in 198 files, the web build, and 55 of 55 browser tests, with the page renderer inside its OS sandbox. The branch's commits after that run change only comments, documents, test names and the wording of one message in that script, and one pattern in `scripts/test/ci.test.ts`. `pnpm verify` runs the same steps locally, and CI runs them on Windows and Linux on every push to main ([ADR-0103](../adr/0103-adr-log-rule-and-ci.md)).

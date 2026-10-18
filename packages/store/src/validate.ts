@@ -26,6 +26,7 @@ export const RUN_EVENT_TYPES = [
   'run-paused',
   'run-resumed',
   'model-declined',
+  'renderer-sandbox-off',
 ] as const satisfies readonly RunEventType[];
 
 export const CHECKPOINT_KINDS = ['pick', 'select', 'react', 'confirm', 'compare', 'directive', 'write', 'choose'] as const satisfies readonly CheckpointKind[];
