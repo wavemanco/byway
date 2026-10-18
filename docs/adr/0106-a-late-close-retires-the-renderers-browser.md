@@ -6,7 +6,7 @@
 | **Decided by** | User-approved (the owner approved this fix on 2026-10-18 by starting the D2 wave after the investigation's report) |
 | **Date (local, UTC−7)** | 2026-10-18 06:50 |
 | **Track** | System |
-| **Related** | [ADR-0084](0084-renderer-launch-without-secrets.md), [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md), [ADR-0099](0099-paid-operations-keyed-to-their-caller.md), [ADR-0103](0103-adr-log-rule-and-ci.md), [ADR-0074](0074-local-app-security-model.md), [ADR-0080](0080-phase-4-recheck-corrections.md) |
+| **Related** | [ADR-0084](0084-renderer-launch-without-secrets.md), [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md), [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md), [ADR-0099](0099-paid-operations-keyed-to-their-caller.md), [ADR-0103](0103-adr-log-rule-and-ci.md), [ADR-0074](0074-local-app-security-model.md), [ADR-0080](0080-phase-4-recheck-corrections.md) |
 
 ## Context
 
@@ -37,22 +37,25 @@ The owner approved the skeptic's revised fix by starting the D2 wave. D2's Setti
 ## Decision
 
 1. **Retire, don't kill.** If a load's context is not closed within `closeTimeoutMs` after the load is over, its browser is retired, and nothing waits for anything to retire it, including a relaunch already on its way. New loads launch another browser. The loads still on the retired browser finish there. The retired browser is closed when the last of them lets it go. `pages.close()` closes the browser in use and every retired one. The bookkeeping is `packages/runner/src/render-browsers.ts`.
-2. **A backstop.** A retired browser is closed no later than `timeoutMs + closeTimeoutMs` after it was retired (35 s with the defaults), however many loads still hold it. Closing a retired browser waits at most `closeTimeoutMs`; after that, Playwright's own close goes on, with its kill fallback.
+2. **A backstop.** byway closes a retired browser no later than `timeoutMs + closeTimeoutMs` after it was retired (35 s with the defaults), however many loads still hold it. byway waits for that close at most `closeTimeoutMs`; after that, Playwright's own close goes on, and Playwright kills a browser process that has not answered 30 s after the close began (its own fixed timeout, not one of byway's limits).
 3. **Each load counts on its browser** from the moment the shared browser is handed to it until its own context has been closed or given up on. That count is released in a `finally`, so a `newContext` that failed releases it too. A browser that crashes or disconnects is forgotten and launched again on the next load (ENG-14, unchanged). `ready()` finds or launches the shared browser without counting; the test page it then draws, on a browser that has drawn nothing yet, is a load like any other ([ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md)).
 4. **Opening the context is under the deadline and the cancel** (closing E4b).
    - From `newContext` to the last screenshot, everything races the load's deadline and its step's cancel. The launch is not under them: it keeps Playwright's own launch timeout, so a slow launch on CI is not cut off.
    - A context that opens after its load gave up is closed as it opens.
    - If a context has neither opened nor closed within `closeTimeoutMs` of its load giving up, the browser is not answering, and it is retired as for a late close.
-5. **byway's own closes are named.** Every browser close byway makes gives Playwright a reason that starts "byway closed the page renderer": "… after a page in it took more than 5 s to close" (a retired browser, at its last load or its backstop) or "… as it shut down" (`pages.close()`).
+5. **byway's own closes are named.** Every browser close byway makes gives Playwright a reason that starts "byway closed the page renderer" and then says why byway closed it. When this record and [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) were built, there were three reasons; a cause added later gives a reason of its own with the same start.
+   - "… after a page in it took more than 5 s to close" (`closeTimeoutMs`; 5 s by default): a browser retired for a late close or for a context that would not open (item 4), at its last load or its backstop.
+   - "… after its OS sandbox setting changed": a browser retired because the person changed that setting ([ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md)), at its last load or its backstop.
+   - "… as it shut down": every browser `pages.close()` closes.
    - A call under way at that moment fails with the reason. A call made afterwards fails only with "Target page, context or browser has been closed", as the probe under Evidence shows.
    - So the renderer also remembers which browsers it closed and why. A load that fails on such a browser is reported with the reason, unless it ended by its cancel or with a step failure of its own (its deadline, a page that navigates away): "The page could not be drawn: byway closed the page renderer as it shut down." for a render, and "The page's text could not be read: …" for a read.
    - It is still one plain step failure, not retried.
    - A failure that says only "Target page, context or browser has been closed" now comes from a browser byway did not close: one that went away by itself, as in a crash.
-6. **CI keeps what a failed run leaves.** When a job of `.github/workflows/verify.yml` fails, it uploads two artifacts, kept 14 days: the browser tests' server log (`byway-e2e-server.log`, from the system temp folder) and Playwright's traces and screenshots (`apps/web/test-results`). One of each is uploaded per operating system. The step pins `actions/upload-artifact` by commit SHA (v7.0.1), as ADR-0103 §3 asks, and names nothing secret. A run that passes uploads nothing.
+6. **CI keeps what a failed run's browser tests leave.** When a job of `.github/workflows/verify.yml` fails, it uploads what the browser tests left, kept 14 days, as at most two artifacts per operating system: the server log (`byway-e2e-server.log`, in the system temp folder), which `pnpm e2e` writes from its start, and Playwright's traces and screenshots (`apps/web/test-results`), which Playwright keeps for each browser test that failed. Each upload is skipped when it finds no file. So a job that fails before `pnpm e2e` starts (in its setup, the typecheck or the unit tests) uploads nothing; one that fails in `pnpm e2e` with no browser test failed (byway not ready, or a check after a suite that passed) uploads the log alone; and one whose browser tests failed uploads both. The steps pin `actions/upload-artifact` by commit SHA (v7.0.1), as ADR-0103 §3 asks, and name nothing secret. A run that passes uploads nothing.
 7. **SEC-5's intent holds.** A stuck renderer cannot hang a render, a step or byway.
    - A load ends at its deadline or its cancel, waiting for its context included.
    - The render that owns a stuck context still ends at its limit, plus at most two `closeTimeoutMs` (closing its context, then its browser if it was the last load), as before.
-   - A hung Chromium is closed once its last load ends, and in any case within the backstop.
+   - byway closes a hung Chromium once its last load ends, and in any case at the backstop; a browser process that does not answer that close is killed by Playwright 30 s later (item 2). No render or step waits for that kill.
 
 **Not done here.**
 
@@ -84,15 +87,15 @@ The owner approved the skeptic's revised fix by starting the D2 wave. D2's Setti
 - No render or read fails because another page was late to close, whether Chromium was slow, the engine's thread paused or the renderer was stuck.
 - A browser that does not open a context can no longer hold a load past its deadline or its cancel. It is retired and closed, and the next load launches another.
 - A render or read that byway's own close stops says so, and the bare Playwright text now points to Chromium going away by itself.
-- D2's Settings switch can retire the browser to relaunch Chromium with other options, without failing the renders on the old one. This record adds no call for that yet.
-- A failed CI run keeps byway's server log and Playwright's traces, which this failure lacked.
+- D2's Settings switch can retire the browser to relaunch Chromium with other options, without failing the renders on the old one. This record adds no call for that; [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) does.
+- A CI run whose browser tests fail keeps byway's server log and Playwright's traces, which this failure lacked.
 
 **Negative and residual**
 
-- **More than one Chromium at once.** Two can run at once, or more in a cascade, each for at most 35 s after it is retired. They use more memory, and a hung renderer can keep a CPU busy until the loads on its browser end.
+- **More than one Chromium at once.** Two can run at once, or more in a cascade. byway closes each at most `timeoutMs + closeTimeoutMs` after it is retired (35 s with the defaults); one whose browser process does not answer that close is killed by Playwright's own fallback 30 s later, so it can run up to about 65 s after it was retired. They use more memory, and a hung renderer can keep a CPU busy until the loads on its browser end.
 - **A false late verdict still costs a relaunch** (0.1 to 2.4 s measured): an engine pause is still judged as Chromium's lateness (option 2, backlog).
 - **A Chromium crash still fails every load on it**, plainly and not retried (option 3, parked).
-- **The backstop cannot fire before the count in this code.** Every load on a retired browser started before the retirement and ends within its deadline plus `closeTimeoutMs`; the backstop waits that long from the retirement. So it closes a browser only for a load that never lets go, which only a mistake in the count would make. Its unit test shows that it closes such a browser.
+- **The backstop does not come before the count in this code, at most with it.** Every load on a retired browser took it no later than the retirement and lets it go within its deadline plus `closeTimeoutMs`; the backstop waits that long from the retirement. So it closes a browser on its own only for a load that never lets go, which only a mistake in the count would make. Its unit test shows that it closes such a browser.
 - **The fix is not proven for CI.** The investigation could not see CI's trigger. The fix removes the hazard whatever the trigger, except a crash; the next failure's server log will show its cause.
 - **Nothing here differs by operating system.** It is tested on Windows and Linux. macOS is not supported yet.
 
@@ -119,3 +122,4 @@ The owner approved the skeptic's revised fix by starting the D2 wave. D2's Setti
   - the victim got the generic message.
 
   Each new test was then shown to fail with the behaviour it guards taken out of `pages.ts` or `render-browsers.ts`. The red logs and the mutation logs are under `C:\Users\arvik\AppData\Local\Temp\byway-fixes\scratch\d2\retire\`.
+- **Round 1's checks of the D2 wave** (2026-10-18, before this record reached main; the report is `C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\d2-wave-result.json`) found three statements untrue, which were corrected on the branch: item 5 named two reasons when ADR-0105 had added a third (W3, retire-2, DOC-6); item 6 said a failed job always uploads two artifacts (retire-2); and the Consequences gave a retired browser at most 35 s, which a browser process that does not answer outlives by Playwright's 30 s kill (retire-1: 65.3 s measured with the defaults, the process suspended, in `C:\Users\arvik\AppData\Local\Temp\byway-fixes\scratch\d2\refute-retire-retire-1\`). Items 2 and 7 now say the kill too. No code changed for these.

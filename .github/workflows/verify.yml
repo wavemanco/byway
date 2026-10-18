@@ -62,7 +62,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The renderer tests and the browser tests run Playwright's Chromium. On Linux the README's script installs it (below).
+      # The renderer tests and the browser tests run Playwright's Chromium; on Linux, the README's script installs it
+      # (the next step).
       - name: Playwright's Chromium (not on Linux)
         if: ${{ matrix.name != 'linux' }}
         run: pnpm --filter ./apps/web exec playwright install chromium
@@ -98,8 +99,9 @@ jobs:
 
       # Only when a step failed: what the end-to-end suite leaves for a diagnosis, kept 14 days. The server's output
       # (byway's own, the renderer's included) goes to byway-e2e-server.log in the system temp folder (scripts/e2e.ts),
-      # and Playwright keeps a trace and a screenshot of each failed browser test in apps/web/test-results. A run that
-      # fails before the suite starts has neither, and uploads nothing.
+      # and Playwright keeps a trace and a screenshot of each failed browser test in apps/web/test-results. Each upload
+      # is skipped when it finds no file: a job that fails before `pnpm e2e` starts uploads nothing, and one in which no
+      # browser test failed uploads the log alone.
       - name: Where the end-to-end server log is (on failure)
         id: e2e-log
         if: ${{ failure() }}

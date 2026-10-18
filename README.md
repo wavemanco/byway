@@ -196,7 +196,7 @@ gh run list --branch main --limit 1     # "completed success" is green; "complet
 gh run view <run id> --log-failed       # which step failed, on which machine, and its output
 ```
 
-A failed job also keeps two artifacts for 14 days: the browser tests' server log (`e2e-server-log-windows` or `-linux`: byway's own output while the suite ran) and Playwright's traces and screenshots of the failed browser tests (`playwright-results-windows` or `-linux`). `gh run download <run id>` fetches them; `pnpm --filter ./apps/web exec playwright show-trace <trace.zip>` opens a trace.
+A failed job also keeps, for 14 days, what the browser tests left: their server log (`e2e-server-log-windows` or `-linux`: byway's own output while the suite ran), once `pnpm e2e` has started, and Playwright's traces and screenshots of the browser tests that failed (`playwright-results-windows` or `-linux`). A job that failed before `pnpm e2e`, in its setup, the typecheck or the unit tests, keeps nothing, and a passing job keeps nothing. `gh run download <run id>` fetches them; `pnpm --filter ./apps/web exec playwright show-trace <trace.zip>` opens a trace.
 
 A red run that is still red when run again (`gh run rerun <run id> --failed`) is a real failure: fix it before merging anything else. A test that fails only sometimes is named in the backlog and set aside, so red keeps meaning broken.
 
