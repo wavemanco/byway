@@ -248,41 +248,39 @@ describe('web-page RENDER with Playwright Chromium', () => {
   it('bounds a page that never settles: the render fails plainly and is not retried, and the next render works (SEC-5)', async () => {
     // The page never settles, so a render of it can end only at its deadline, however fast the machine: were the deadline
     // not kept, the test would time out. The deadline is short, to keep the test quick, and long enough for the plain
-    // page after it to render on a busy machine. The stuck page is then closed and, if it will not close, the browser,
-    // each within its own limit: in the second render the test holds both from closing, as for a renderer too stuck to
-    // close, so that render can end only by giving up on each, and the next render launches a browser again. That page
-    // never settles because its image never comes, so no page spins a CPU while it is held. Nothing here measures time
-    // (this test required the render to end within the limit, both closes and 5 s: on GitHub's 2-CPU Windows machine it
-    // took 18.8 s once, against 14 s, in run 39079760987).
+    // page after it to render on a busy machine (renders take no deadline of their own, so that next render runs under
+    // the same 5 s). Nothing here measures time (this test required the render to end within the limit, both closes and
+    // 5 s: on GitHub's 2-CPU Windows machine it took 18.8 s once, against 14 s, in run 39079760987).
     const seen = { launches: 0, contexts: 0 };
-    const closing: string[] = [];
-    let stuck: Promise<void> | undefined;
-    const quick = playwrightPages({
-      timeoutMs: 5_000,
-      closeTimeoutMs: 2_000,
-      launch: async () => {
-        seen.launches++;
-        const b = seenThrough(await launchChromium(), { context: (c) => (seen.contexts++, closeSeen(c, 'context', closing, () => stuck)) });
-        return closeSeen(b, 'browser', closing, () => stuck);
-      },
-    });
+    const counted = (into: typeof seen, closing: string[], stuck: () => Promise<void> | undefined) => async () => {
+      into.launches++;
+      const b = seenThrough(await launchChromium(), { context: (c) => (into.contexts++, closeSeen(c, 'context', closing, stuck)) });
+      return closeSeen(b, 'browser', closing, stuck);
+    };
+    const quick = playwrightPages({ timeoutMs: 5_000, closeTimeoutMs: 2_000, launch: counted(seen, [], () => undefined) });
     opened.push(quick);
     await quick.ready();
-    const render = async (html: string, resolve = none) => {
-      const before = { ...seen };
-      const out = await quick.screenshots(html, resolve).catch((e: unknown) => e);
-      return { out, contexts: seen.contexts - before.contexts, launches: seen.launches - before.launches };
-    };
-    const plainly = (r: { out: unknown; contexts: number }) => {
-      expect(r.out).toBeInstanceOf(StepError);
-      expect((r.out as Error).message).toBe('The page did not finish rendering within 5 s, so it could not be shown.');
-      // Made once: the renderer did not try again (one context), and a StepError is not retried by the workflow.
-      expect(r.contexts).toBe(1);
-    };
-    plainly(await render(BUSY));
-    const next = await render(SIMPLE);
-    expect((next.out as Uint8Array[]).length).toBe(1);
-    expect(next.contexts).toBe(1);
+    const before = { ...seen };
+    const out = await quick.screenshots(BUSY, none).catch((e: unknown) => e);
+    expect(out).toBeInstanceOf(StepError);
+    expect((out as Error).message).toBe('The page did not finish rendering within 5 s, so it could not be shown.');
+    // Made once: the renderer did not try again (one context), and a StepError is not retried by the workflow.
+    expect(seen.contexts - before.contexts).toBe(1);
+    const next = await quick.screenshots(SIMPLE, none);
+    expect(next.length).toBe(1);
+    expect(seen.contexts - before.contexts).toBe(2);
+
+    // A stuck page is then closed and, if it will not close, the browser, each within its own limit. Here the test holds
+    // both from closing, as for a renderer too stuck to close, so the render can end only by giving up on each; the next
+    // render then launches a browser again. On a renderer whose own limit only stops a hung render, the render is
+    // cancelled once its page asks for its image, which never comes (so no page spins a CPU while it is held): a cancel
+    // closes the page the same way as the deadline, and nothing in this part runs under a short deadline.
+    const held = { launches: 0, contexts: 0 };
+    const closing: string[] = [];
+    let stuck: Promise<void> | undefined;
+    const patient = playwrightPages({ timeoutMs: 300_000, closeTimeoutMs: 2_000, launch: counted(held, closing, () => stuck) });
+    opened.push(patient);
+    await patient.ready();
     // Neither the stuck page's context nor the browser closes until the test lets them: when it ends, whichever way it
     // ends (a timeout included), so the browsers can close after it.
     let release = () => {};
@@ -291,16 +289,28 @@ describe('web-page RENDER with Playwright Chromium', () => {
       stuck = undefined;
       release();
     });
-    closing.length = 0;
+    const ctrl = new AbortController();
+    const reason = new Error('cancelled while its image was awaited');
     const waiting = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Waiting</body></html>';
-    plainly(await render(waiting, () => new Promise<undefined>(() => undefined)));
+    const from = { ...held };
+    const cancelled = patient.screenshots(
+      waiting,
+      () => {
+        ctrl.abort(reason);
+        return new Promise<undefined>(() => undefined);
+      },
+      { signal: ctrl.signal },
+    );
+    await expect(cancelled).rejects.toBe(reason);
+    expect(held.contexts - from.contexts).toBe(1);
     // Later closes are not held; these two stay held until the test ends.
     stuck = undefined;
     // The render ended though neither closed: it gave up on the context, then on the browser, which it forgot.
     expect(closing).toEqual(['context', 'browser']);
-    const after = await render(SIMPLE);
-    expect((after.out as Uint8Array[]).length).toBe(1);
-    expect(after.launches).toBe(1);
+    const launched = held.launches;
+    const after = await patient.screenshots(SIMPLE, none);
+    expect(after.length).toBe(1);
+    expect(held.launches - launched).toBe(1);
   }, 120_000);
 
   it.each(['interval', 'alertloop', 'confirmloop', 'promptloop', 'once'])(
