@@ -3,9 +3,12 @@
  * per operating system, reporting only, with pinned tools and actions, no secrets and the full history; and the
  * README's platform claim names exactly the systems CI runs on.
  */
-import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { filesUnder, read, REPO, section } from './docs.ts';
 import { actionProblems, usesValues } from './workflow-guard.ts';
 
@@ -100,6 +103,39 @@ describe('the CI workflow (ADR-0103)', () => {
     expect(workflow).toContain(`"profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,'`);
     // The machine-wide restriction stays on.
     expect(workflow).not.toMatch(/apparmor_restrict_unprivileged_userns/);
+  });
+
+  it('when a job fails, uploads the end-to-end server log and Playwright’s traces from where the suite writes them, one of each per operating system (ADR-0106)', () => {
+    // Where the suite writes them: scripts/e2e.ts puts the server's output in the system temp folder, and Playwright
+    // keeps a trace and a screenshot of each failed browser test in apps/web/test-results.
+    expect(read('scripts/e2e.ts')).toContain("const logFile = path.join(tmpdir(), 'byway-e2e-server.log');");
+    const config = read('apps/web/playwright.config.ts');
+    expect(config).toContain("outputDir: './test-results',");
+    expect(config).toContain("trace: 'retain-on-failure',");
+    expect(config).toContain("screenshot: 'only-on-failure',");
+
+    type Step = { name?: string; id?: string; if?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+    const steps = (parse(workflow) as { jobs: { verify: { steps: Step[] } } }).jobs.verify.steps;
+    const at = (name: string) => steps.findIndex((s) => s.name === name);
+    const verify = steps.findIndex((s) => s.run === 'pnpm verify');
+    const names = ['Where the end-to-end server log is (on failure)', 'Upload the end-to-end server log (on failure)', "Upload Playwright's traces and screenshots (on failure)"];
+    // The last three steps, after `pnpm verify`, in this order, and only when a step before them failed.
+    expect(names.map(at)).toEqual([verify + 1, verify + 2, verify + 3]);
+    expect(steps.length).toBe(verify + 4);
+    for (const name of names) expect(steps[at(name)]?.if, name).toBe('${{ failure() }}');
+
+    // The first finds the system temp folder as scripts/e2e.ts does, on the machine it runs on.
+    const where = steps[at(names[0]!)]!;
+    expect(where.id).toBe('e2e-log');
+    const script = /^node -e "(.*)" >> "\$GITHUB_OUTPUT"$/.exec(where.run ?? '')?.[1];
+    expect(script).toBeDefined();
+    const printed = spawnSync(process.execPath, ['-e', script!], { encoding: 'utf8' });
+    expect(printed.stdout.trim()).toBe(`path=${path.join(realpathSync.native(tmpdir()), 'byway-e2e-server.log')}`);
+
+    const UPLOAD = 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
+    expect(workflow.split(`uses: ${UPLOAD} # v7.0.1`).length - 1).toBe(2);
+    expect(steps[at(names[1]!)]).toMatchObject({ uses: UPLOAD, with: { name: 'e2e-server-log-${{ matrix.name }}', path: '${{ steps.e2e-log.outputs.path }}', 'if-no-files-found': 'ignore', 'retention-days': 14 } });
+    expect(steps[at(names[2]!)]).toMatchObject({ uses: UPLOAD, with: { name: 'playwright-results-${{ matrix.name }}', path: 'apps/web/test-results', 'if-no-files-found': 'ignore', 'retention-days': 14 } });
   });
 });
 

@@ -90,3 +90,30 @@ jobs:
 
       - name: pnpm verify (the typecheck, the unit tests, then the end-to-end suite)
         run: pnpm verify
+
+      # Only when a step failed: what the end-to-end suite leaves for a diagnosis, kept 14 days. The server's output
+      # (byway's own, the renderer's included) goes to byway-e2e-server.log in the system temp folder (scripts/e2e.ts),
+      # and Playwright keeps a trace and a screenshot of each failed browser test in apps/web/test-results. A run that
+      # fails before the suite starts has neither, and uploads nothing.
+      - name: Where the end-to-end server log is (on failure)
+        id: e2e-log
+        if: ${{ failure() }}
+        run: node -e "console.log('path=' + require('node:path').join(require('node:fs').realpathSync.native(require('node:os').tmpdir()), 'byway-e2e-server.log'))" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the end-to-end server log (on failure)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-server-log-${{ matrix.name }}
+          path: ${{ steps.e2e-log.outputs.path }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Playwright's traces and screenshots (on failure)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-results-${{ matrix.name }}
+          path: apps/web/test-results
+          if-no-files-found: ignore
+          retention-days: 14
