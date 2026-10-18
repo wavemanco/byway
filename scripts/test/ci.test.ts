@@ -100,8 +100,19 @@ describe('the CI workflow (ADR-0103)', () => {
     expect(workflow).toContain('apt-get install --yes --no-install-recommends fonts-noto-cjk');
     expect(workflow).toContain('apt-get remove --yes fonts-wqy-zenhei');
     linuxOnly("Let Playwright's Chromium start its OS sandbox");
-    expect(workflow).toContain(`"profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,'`);
-    // The machine-wide restriction stays on.
+    // CI runs the script the README gives a Linux user, and byway's own message names, so every run tries those steps
+    // on a fresh Ubuntu 24.04 machine (ADR-0105).
+    const SCRIPT = 'scripts/linux/allow-chromium-sandbox.sh';
+    const step = workflow.slice(workflow.indexOf("- name: Let Playwright's Chromium start its OS sandbox")).split('\n').slice(0, 3);
+    expect(step[2]?.trim()).toBe(`run: sh ${SCRIPT}`);
+    expect(section(readme, '## Renderer')).toContain(`sh ${SCRIPT}`);
+    expect(read('packages/runner/src/sandbox.ts')).toContain(`export const APPARMOR_SCRIPT = '${SCRIPT}';`);
+    const script = read(SCRIPT);
+    expect(script).toContain(`"profile playwright-chromium $HOME/.cache/ms-playwright/chromium*/chrome-*/chrome{,-headless-shell} flags=(unconfined) {" '  userns,'`);
+    expect(script).toContain('sudo apparmor_parser --replace "$profile"');
+    expect(spawnSync('git', ['ls-files', '--stage', SCRIPT], { cwd: REPO, encoding: 'utf8' }).stdout).toMatch(/^100755 /);
+    // The machine-wide restriction stays on: the script only reads it, and the workflow does not touch it.
+    expect(script).not.toMatch(/sysctl|> *"?\$restrict|tee[^\n]*restrict/);
     expect(workflow).not.toMatch(/apparmor_restrict_unprivileged_userns/);
   });
 

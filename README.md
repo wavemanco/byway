@@ -54,7 +54,7 @@ The model a profile names is the only one that answers: byway asks no provider f
 | `pnpm recipes:emit` | Regenerate `recipes/*.json` after changing the catalog |
 | `pnpm prompts:slots` | Regenerate the table of what each prompt template shows (`packages/recipe/src/template-slots.ts`, ADR-0097) after changing a template's slots |
 
-`pnpm start`, `pnpm demo` and `pnpm dev` take `PORT` (web, default 3000), `BYWAY_TEMPORAL_PORT` (default 7233) and `BYWAY_DATA_DIR`. If the run engine stops while byway is running, byway says so and stops; start it again. The first start downloads the Temporal dev server once; later starts reuse it. Web-page recipes render pages with Playwright's Chromium (`pnpm --filter ./apps/web exec playwright install chromium` if it is missing; on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`, which also installs the system libraries Chromium needs).
+`pnpm start`, `pnpm demo` and `pnpm dev` take `PORT` (web, default 3000), `BYWAY_TEMPORAL_PORT` (default 7233) and `BYWAY_DATA_DIR`. If the run engine stops while byway is running, byway says so and stops; start it again. The first start downloads the Temporal dev server once; later starts reuse it. Web-page recipes render pages with Playwright's Chromium (`pnpm --filter ./apps/web exec playwright install chromium` if it is missing; on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`, which also installs the system libraries Chromium needs). On Ubuntu 24.04 and later, also run `sh scripts/linux/allow-chromium-sandbox.sh` once, so Chromium can draw inside its OS sandbox ([The OS sandbox](#the-os-sandbox)).
 
 ## Architecture
 
@@ -134,11 +134,31 @@ A backup holds what was spent up to the moment it was taken. After restoring an 
 
 byway draws pages with Playwright's Chromium, inside the run engine: the pages a model writes (scripts included), web-page examples given as HTML, and the cards a reviewing model sees when the examples and the work take different forms. Cards show images people upload and images providers return. All of this is treated as untrusted ([ADR-0084](docs/adr/0084-renderer-launch-without-secrets.md)):
 
-- Chromium is started in one place (`chromiumLaunchOptions()` in `packages/runner/src/pages.ts`), the same way every time; nothing can add a flag to it.
+- Chromium is started in one place (`chromiumLaunchOptions()` in `packages/runner/src/pages.ts`), the same way every time; nothing can add a flag to it. The only thing that varies is the OS sandbox setting below.
 - Its environment holds no provider key, nothing that looks secret and no other name from `.env.agents`. One exception: on Windows, when byway is started from a current directory whose drive letter is lowercase (`c:\…`), the engine loads the gateway twice and Chromium does get the file's other names; provider keys and names that look secret are still left out ([ADR-0100](docs/adr/0100-corrections-found-by-the-final-re-check.md); backlog).
 - Pages may load only Google Fonts, jsDelivr, unpkg, cdnjs and byway's own artifacts, and a redirect is followed only to another of them: the engine fetches those files itself, one hop at a time, and hands Chromium the result ([ADR-0096](docs/adr/0096-partial-restores-reported-at-start.md)), reading at most 20 MiB of any one file ([ADR-0099](docs/adr/0099-paid-operations-keyed-to-their-caller.md)). WebSockets and direct WebRTC are blocked, and a page that never settles is stopped.
-- At start-up byway prints a `renderer` line saying whether Chromium can start. If it cannot, web-page runs are refused before they spend anything, and any other step that needs a page or a card fails with a plain message. If Chromium is missing: `pnpm --filter ./apps/web exec playwright install chromium` (on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`).
-- Chromium's own OS sandbox is **off**, as it always has been (Playwright's default). Turning it on (`RENDERER_OS_SANDBOX`) would better contain a page or image that exploits a Chromium bug, but byway would then stop rendering wherever the sandbox cannot start: Linux with unprivileged user namespaces restricted (the default on Ubuntu 24.04 and later), or byway running as root or in a container. The owner has since chosen to switch it on by default, with an explicit off switch in Settings; that is not built yet.
+- At start-up byway draws a test page of its own, with a script, and prints a `renderer` line saying whether Chromium is ready, whether its OS sandbox is on and, when it is off, whether the sandbox could start now. Before a web-page run spends anything, and before a run whose examples are shown to a reviewer as cards (three or more, an image among them) makes its first AI call, byway draws that test page again, unless the renderer's Chromium has already drawn a page; a run whose renderer cannot draw it is refused. Any other step that needs a page or a card fails with a plain message. If Chromium is missing: `pnpm --filter ./apps/web exec playwright install chromium` (on Linux, `pnpm --filter ./apps/web exec playwright install --with-deps chromium`).
+
+### The OS sandbox
+
+Chromium draws inside its own OS sandbox, as your web browser does ([ADR-0105](docs/adr/0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md)). A page or image that takes advantage of a bug in Chromium then needs a second bug to get out of the sandbox; on Windows the page renderer runs at Untrusted integrity. On Windows, where it was measured, the sandbox changed nothing else: the same pages, as fast.
+
+- **The switch is in Settings**, under Page renderer's OS sandbox. Turning it off asks first and says what it risks: a malicious page or image, together with a bug in Chromium, could run as you on this computer, next to your API keys (`.env.agents`) and your spending records. A change applies from the next page byway draws; pages being drawn finish as they started.
+- **While it is off**, every screen shows a banner, each step whose pages were drawn without it says so in the run's notes, and the start-up line says so. At each start byway also tries the sandbox on a test page of its own, and when it could start, the start-up line says so and Settings offers to turn it back on. byway never switches the sandbox off, or on, by itself.
+- **When it cannot start**, the start-up line and Settings say why on this computer and the fix, a banner on every screen points to Settings, and the runs above are refused before they spend anything:
+  - **Windows.** The sandbox is Chromium's normal mode there and needs no admin rights. If security software or a company policy blocks it, allow Playwright's Chromium in that software (the message names the file) or ask whoever manages the computer.
+  - **Linux, Ubuntu 24.04 and later**, and other systems where AppArmor restricts unprivileged user namespaces. Chromium's sandbox needs those namespaces, and Ubuntu gives them only to programs an AppArmor profile allows (23.10 brought the restriction in without turning it on; 24.04 turned it on). Run this once, as yourself, in the byway folder; it asks for your password for `sudo`:
+
+    ```bash
+    sh scripts/linux/allow-chromium-sandbox.sh
+    ```
+
+    It adds one AppArmor profile, `playwright-chromium`, that allows user namespaces for Playwright's Chromium under `~/.cache/ms-playwright` and for nothing else; the rest of the machine stays restricted. A Playwright upgrade needs nothing more. It covers Playwright's default folder only, so it stops if `PLAYWRIGHT_BROWSERS_PATH` is set. CI's Linux job runs this same script on a fresh Ubuntu 24.04 machine before every test run ([CI](#ci)).
+  - **Linux, as root.** Chromium does not start its sandbox for root. Run byway as an ordinary user.
+  - **Linux, in Docker or another container.** A container's default security settings often stop the sandbox, and a container often runs its programs as root. Run byway outside the container. Playwright's Docker guide (https://playwright.dev/docs/docker) describes a seccomp profile for running Chromium with its sandbox in a container; byway has not tested it.
+  - **Linux with unprivileged user namespaces switched off** (`kernel.unprivileged_userns_clone` or `user.max_user_namespaces` set to 0): someone with admin rights has to switch them on.
+  - **macOS** is not supported yet.
+- **If none of that is possible**, you can switch the sandbox off in Settings, knowing what it risks.
 
 ## Tests
 
@@ -153,7 +173,7 @@ The unit run is not self-contained. The renderer tests launch Playwright's Chrom
 
 On Linux the unit run needs two more things, which CI's Linux job sets up (`.github/workflows/verify.yml`):
 
-- One renderer test starts Chromium inside its OS sandbox, as a control. Where unprivileged user namespaces are restricted (the default on Ubuntu 24.04 and later), Chromium's sandbox cannot start unless an AppArmor profile allows them for Playwright's Chromium; CI adds one for those binaries only.
+- The renderer tests start Chromium inside its OS sandbox, as byway does. Where AppArmor restricts unprivileged user namespaces (the default on Ubuntu 24.04 and later), Chromium's sandbox cannot start until a profile allows them for Playwright's Chromium: run `sh scripts/linux/allow-chromium-sandbox.sh` once first ([The OS sandbox](#the-os-sandbox)). CI's Linux job runs the same script.
 - Japanese text needs a CJK font that Chromium lays out correctly. With WenQuanYi Zen Hei as the fallback (Playwright's `install --with-deps` installs it), Chromium lays out the first item of a vertical row at no height, and one renderer test fails. Noto CJK (`fonts-noto-cjk`, as on Ubuntu's desktop) and IPAGothic lay it out as Windows does; CI installs Noto CJK and removes WenQuanYi Zen Hei.
 
 `pnpm verify` is the gate to run before merging a branch ([ADR-0103](docs/adr/0103-adr-log-rule-and-ci.md)). For a commit that changes only documents, `pnpm vitest run scripts/test apps/web/test/guard-` runs, in seconds, the decision-log, CI and README checks and the app's guard tests, some of which read the README too. The last argument is a name filter, not a pattern, so it works in every shell. An edit to `protocol/03-configurations.md` also needs `packages/catalog/test/chooser`.

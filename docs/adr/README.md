@@ -10,7 +10,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 - A record's Context and Decision are final once it reaches main's first-parent history as Accepted. The commit that accepts a Proposed record may finalise its Decision. Branches merge with `--no-ff`, so a branch's own commits are drafts. A record that changes an Accepted one reaches main in the same commit as its "changed by" link: add the index row and the links on the branch before merging, or merge with `git merge --no-ff --no-commit <branch>` and add them before committing. Main's history is not rewritten (the "Protect main" ruleset blocks force-pushes), so a breach that reaches main is named in the test with its reason. `scripts/test/adr-records.test.ts` checks this against git history ([ADR-0103](0103-adr-log-rule-and-ci.md)): it fails an edited Context or Decision, a "changed by" link that reaches main after the record it names (from ADR-0103 on), and a breach on main that is not named. It cannot see a missing link, because no record says, in a form a test can read, which records it changes; adding the links is the author's job. It sees a fast-forward only through the edits that then show up on main.
 
-**105 records:** 98 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**106 records:** 99 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -39,7 +39,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0060](0060-repository-byway-private-remote.md) | Version control: git repository named byway, private GitHub remote (wavemanco/byway) | Accepted | User | 2026-10-07 06:35 |
 | [ADR-0062](0062-code-first-work-mode.md) | Code first: people, outside actions and pricing go to a playbook and a backlog | Accepted | User | 2026-10-07 09:40 |
 | [ADR-0068](0068-contracts-first-parallel-build.md) | Build the product contracts-first, in parallel git worktrees | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | Delegated | 2026-10-07 10:48 |
-| [ADR-0103](0103-adr-log-rule-and-ci.md) | The decision log's rule is checked against git history, and CI runs `pnpm verify` on Windows and Linux, reporting only | Accepted; changed by [ADR-0106](0106-a-late-close-retires-the-renderers-browser.md) | User | 2026-10-16 22:00 |
+| [ADR-0103](0103-adr-log-rule-and-ci.md) | The decision log's rule is checked against git history, and CI runs `pnpm verify` on Windows and Linux, reporting only | Accepted; changed by [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md), [ADR-0106](0106-a-late-close-retires-the-renderers-browser.md) | User | 2026-10-16 22:00 |
 
 ## Protocol
 
@@ -126,7 +126,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0077](0077-rank-gates-scale-with-the-lineup.md) | Hidden rank thresholds scale with the lineup actually used | Accepted | Delegated | 2026-10-07 23:00 |
 | [ADR-0079](0079-phase-4-runner-records.md) | Runner decisions made while fixing the Phase 4 review | Accepted; changed by [ADR-0080](0080-phase-4-recheck-corrections.md), [ADR-0095](0095-paid-calls-have-a-durable-spend-book.md) | Delegated | 2026-10-08 00:30 |
 | [ADR-0080](0080-phase-4-recheck-corrections.md) | Corrections after the independent re-check of the Phase 4 fixes | Accepted; changed by [ADR-0085](0085-generated-pages-inert-unless-a-frame-asks-with-consent.md) | Delegated | 2026-10-08 02:00 |
-| [ADR-0084](0084-renderer-launch-without-secrets.md) | The page renderer launches with no secrets and one stated containment policy; the OS sandbox awaits the owner's decision | Accepted; changed by [ADR-0100](0100-corrections-found-by-the-final-re-check.md) | Delegated | 2026-10-08 16:30 |
+| [ADR-0084](0084-renderer-launch-without-secrets.md) | The page renderer launches with no secrets and one stated containment policy; the OS sandbox awaits the owner's decision | Accepted; changed by [ADR-0100](0100-corrections-found-by-the-final-re-check.md), [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) | Delegated | 2026-10-08 16:30 |
 | [ADR-0088](0088-provider-boundary-held-keys-and-media-admission.md) | The provider-key promise is enforced at every crossing; provider media is admitted by one rule on every URL and redirect hop | Accepted; changed by [ADR-0100](0100-corrections-found-by-the-final-re-check.md) | Delegated | 2026-10-08 16:45 |
 | [ADR-0087](0087-lineup-evidence-full-words-and-disclosed-card-budget.md) | Lineup evidence: text critics read every item's full words; image-only critics get a measured, visible, disclosed budget | Accepted; changed by [ADR-0100](0100-corrections-found-by-the-final-re-check.md) | Delegated | 2026-10-08 16:45 |
 | [ADR-0082](0082-web-client-state-ownership.md) | Web client state ownership: drafts, polling and the Recommendation screen | Accepted | Delegated | 2026-10-08 17:00 |
@@ -136,11 +136,12 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0095](0095-paid-calls-have-a-durable-spend-book.md) | Paid calls have a durable spend book: the book in byway.sqlite is the cap authority, ledger.jsonl its hash-chained audit record | Accepted; changed by [ADR-0099](0099-paid-operations-keyed-to-their-caller.md), [ADR-0102](0102-one-refusal-rule-for-every-provider.md) | Delegated | 2026-10-08 21:45 |
 | [ADR-0099](0099-paid-operations-keyed-to-their-caller.md) | A step's paid call is keyed to its caller across retries; byway's own failures say so; byway's stop reaches the web process | Accepted; changed by [ADR-0102](0102-one-refusal-rule-for-every-provider.md) | Delegated | 2026-10-09 01:15 |
 | [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md) | Execution contracts for revising humans and media steps: a reaction revises its port in place, an ASSET prompt declares its image count, the shot check sees its clip | Accepted; changed by [ADR-0101](0101-c3-yes-decides-the-header-image.md), [ADR-0102](0102-one-refusal-rule-for-every-provider.md) | Delegated | 2026-10-09 02:10 |
-| [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md) | VOICE writes the person's copy exactly, without a model | Accepted | Delegated | 2026-10-08 17:00 |
+| [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md) | VOICE writes the person's copy exactly, without a model | Accepted; changed by [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) | Delegated | 2026-10-08 17:00 |
 | [ADR-0100](0100-corrections-found-by-the-final-re-check.md) | Corrections found by the final re-check of the external-review fixes | Accepted | Delegated | 2026-10-16 05:45 |
 | [ADR-0101](0101-c3-yes-decides-the-header-image.md) | C3's header image: your Yes decides, and the AI may add advice | Accepted; changed by [ADR-0104](0104-c3-advice-needs-a-letter-or-number.md) | User | 2026-10-16 09:35 |
 | [ADR-0102](0102-one-refusal-rule-for-every-provider.md) | One refusal rule for every provider: no model substitution, and a decline gets one logged retry on the same model, then a plain failure | Accepted | User | 2026-10-16 20:45 |
 | [ADR-0104](0104-c3-advice-needs-a-letter-or-number.md) | C3's advice says something only with a letter or a number | Accepted | User-approved | 2026-10-17 11:06 |
+| [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) | The page renderer's Chromium runs inside its OS sandbox by default; only the person switches it off, in Settings | Accepted | User | 2026-10-18 07:40 |
 
 ## Open decisions (not yet ADRs)
 
