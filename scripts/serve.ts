@@ -29,9 +29,10 @@
  * Renderer: while the engine starts, byway draws its own test page, with a script, in the page renderer's Chromium under
  * the person's OS sandbox setting (on unless switched off in Settings; ADR-0105), and closes it again. It prints a
  * "renderer" line saying whether the renderer is ready, whether its sandbox is on and, when it is off, whether the
- * sandbox could start now, and records that in the store for Settings. byway keeps running either way: prose, options
- * and code-diff runs need no renderer unless a lineup forms cards, and a web-page run whose renderer cannot start is
- * refused before it spends.
+ * sandbox could start now, and records that in the store for Settings. Under that line it names Playwright's browsers
+ * folder, which PLAYWRIGHT_BROWSERS_PATH moves (the README's Linux steps install Chromium in one only root can change).
+ * byway keeps running either way: prose, options and code-diff runs need no renderer unless a lineup forms cards, and a
+ * web-page run whose renderer cannot start is refused before it spends.
  *
  * Environment: BYWAY_DATA_DIR (data directory), PORT (web, default 3000), BYWAY_TEMPORAL_PORT (default 7233),
  * BYWAY_DEMO=1 (same as `--demo`), BYWAY_NEXT_DIST_DIR (the web build's folder inside apps/web, default .next; the e2e
