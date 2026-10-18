@@ -257,7 +257,8 @@ describe('web-page RENDER with Playwright Chromium', () => {
       const b = seenThrough(await launchChromium(), { context: (c) => (into.contexts++, closeSeen(c, 'context', closing, stuck)) });
       return closeSeen(b, 'browser', closing, stuck);
     };
-    const quick = playwrightPages({ timeoutMs: 5_000, closeTimeoutMs: 2_000, launch: counted(seen, [], () => undefined) });
+    const shut: string[] = [];
+    const quick = playwrightPages({ timeoutMs: 5_000, closeTimeoutMs: 2_000, launch: counted(seen, shut, () => undefined) });
     opened.push(quick);
     await quick.ready();
     const before = { ...seen };
@@ -266,6 +267,8 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect((out as Error).message).toBe('The page did not finish rendering within 5 s, so it could not be shown.');
     // Made once: the renderer did not try again (one context), and a StepError is not retried by the workflow.
     expect(seen.contexts - before.contexts).toBe(1);
+    // The deadline closed the stuck page's context before the render ended (a slow close under load may add the browser).
+    expect(shut[0]).toBe('context');
     const next = await quick.screenshots(SIMPLE, none);
     expect(next.length).toBe(1);
     expect(seen.contexts - before.contexts).toBe(2);
