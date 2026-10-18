@@ -168,7 +168,7 @@ describe('the CI workflow (ADR-0103)', () => {
   it('nowhere says the profile gives the namespaces to Chromium alone, or that the rest of the machine stays restricted', () => {
     // ADR-0105 and ADR-0103's later note quote them, as what round 2's checks found untrue.
     for (const file of [SCRIPT, '.github/workflows/verify.yml', 'README.md', 'apps/web/README.md', 'packages/runner/src/sandbox.ts', 'packages/runner/src/pages.ts', 'scripts/serve.ts', 'docs/backlog.md']) {
-      expect(read(file), file).not.toMatch(/and nothing else, create user namespaces|for nothing else; the rest|rest of the machine stays restricted|Chromium alone|only the Chromium there/);
+      expect(read(file), file).not.toMatch(/and nothing else, create user namespaces|for nothing else; the rest|rest of the machine stays restricted|Chromium alone|only the Chromium there|restriction whole/);
     }
   });
 
