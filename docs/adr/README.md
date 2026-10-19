@@ -40,7 +40,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0062](0062-code-first-work-mode.md) | Code first: people, outside actions and pricing go to a playbook and a backlog | Accepted | User | 2026-10-07 09:40 |
 | [ADR-0068](0068-contracts-first-parallel-build.md) | Build the product contracts-first, in parallel git worktrees | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | Delegated | 2026-10-07 10:48 |
 | [ADR-0103](0103-adr-log-rule-and-ci.md) | The decision log's rule is checked against git history, and CI runs `pnpm verify` on Windows and Linux, reporting only | Accepted; changed by [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md), [ADR-0106](0106-a-late-close-retires-the-renderers-browser.md), [ADR-0107](0107-code-is-checked-before-it-is-pushed.md) | User | 2026-10-16 22:00 |
-| [ADR-0107](0107-code-is-checked-before-it-is-pushed.md) | Every code change is adversarially checked before it is pushed, in larger blocks; no further fix round starts, or is ruled out, without the owner; a risky change merges when Linux passes and Windows passes or fails only on a named timing flake | Accepted | User | 2026-10-16 20:17 |
+| [ADR-0107](0107-code-is-checked-before-it-is-pushed.md) | Every code change is adversarially checked before it is pushed, in larger blocks; no further fix round starts, or is ruled out, without the owner; for D2 the owner chose to merge a risky change when Linux passes and Windows passes or fails only on a named timing flake | Accepted | User | 2026-10-16 20:17 |
 
 ## Protocol
 
