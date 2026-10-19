@@ -1,0 +1,6 @@
+[
+ ["MT4_sub_strong", "<p>bread <math><title>  <sub> open:  </sub></title></math><strong> now</strong></p>", ["bread", "new open: now"]],
+ ["MT5_sub_only", "<p>bread <math><title>  <sub> open:</sub></title></math></p>", ["bread", "new open:"]],
+ ["MT6_sub_tail", "<div><p>bread</p><math><title>  <sub> open:</sub></title></math></div>", ["bread", "new open:"]],
+ ["MT7_text_then_sub", "<div><p>bread</p><math><title>Tip <sub>open:</sub></title></math></div>", ["bread", "Tip open: now"]]
+]

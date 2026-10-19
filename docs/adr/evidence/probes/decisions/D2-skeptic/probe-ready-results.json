@@ -1,0 +1,39 @@
+{
+  "sandboxOff": {
+    "afterLaunchOnly": {
+      "root": true,
+      "types": [
+        "gpu-process",
+        "utility:network.mojom.NetworkService"
+      ]
+    },
+    "afterOnePage": {
+      "root": true,
+      "types": [
+        "gpu-process",
+        "renderer",
+        "utility:network.mojom.NetworkService"
+      ]
+    },
+    "scriptRan": true
+  },
+  "sandboxOn": {
+    "afterLaunchOnly": {
+      "root": true,
+      "types": [
+        "gpu-process",
+        "utility:network.mojom.NetworkService"
+      ]
+    },
+    "afterOnePage": {
+      "root": true,
+      "types": [
+        "gpu-process",
+        "renderer",
+        "utility:network.mojom.NetworkService"
+      ]
+    },
+    "scriptRan": true
+  },
+  "readyMs": 54
+}

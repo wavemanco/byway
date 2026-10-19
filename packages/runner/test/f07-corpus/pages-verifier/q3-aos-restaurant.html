@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trattoria Lumi</title>
+<link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;700&family=Karla:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #1f1a17; --clay: #b5542d; --cream: #f7f1e8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Karla', sans-serif; color: var(--ink); background: var(--cream); }
+  h1, h2, h3 { font-family: 'Cormorant Garamond', serif; margin: 0 0 .5rem; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; }
+  .hero { min-height: 70vh; display: grid; place-items: center; text-align: center; padding: 4rem 0; }
+  .hero h1 { font-size: 4.5rem; line-height: 1; }
+  .hero .kicker { letter-spacing: .3em; text-transform: uppercase; font-size: .8rem; color: var(--clay); }
+  .btn { display: inline-block; padding: .9rem 1.6rem; background: var(--ink); color: var(--cream); text-decoration: none; border-radius: 999px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin: 3rem 0; }
+  .card { background: #fff; border-radius: 1rem; overflow: hidden; padding: 1.5rem; box-shadow: 0 8px 24px rgba(0,0,0,.06); }
+  .menu-row { display: flex; justify-content: space-between; border-bottom: 1px dotted #c9bba8; padding: .6rem 0; }
+  .menu-row .dish { font-weight: 600; }
+  .menu-row .price { color: var(--clay); }
+  .story p:first-of-type::first-letter { float: left; font-family: 'Cormorant Garamond', serif; font-size: 4rem; line-height: .8; padding-right: .4rem; color: var(--clay); }
+  .hours { white-space: pre-line; }
+  .tag { display: inline-block; padding: .15rem .6rem; border-radius: 999px; background: #efe3d3; font-size: .8rem; margin-right: .3rem; }
+  footer { padding: 2rem 0; border-top: 1px solid #e4d8c7; margin-top: 3rem; font-size: .9rem; }
+</style>
+</head>
+<body>
+  <section class="hero">
+    <div data-aos="fade-up">
+      <p class="kicker">Cucina di casa · Est. 1998</p>
+      <h1>Trattoria Lumi</h1>
+      <p>Handmade pasta, wood-fired bread and a short list of very good wine.</p>
+      <p><a class="btn" href="#book">Book a table</a></p>
+    </div>
+  </section>
+  <main class="wrap">
+    <section class="cards">
+      <div class="card" data-aos="flip-left"><h3>Fresh pasta daily</h3><p>Rolled by hand every morning by Nonna Lucia and her team.</p></div>
+      <div class="card" data-aos="flip-left" data-aos-delay="100"><h3>Wood-fired oven</h3><p>Our bread and pizza bianca bake at 450 degrees.</p></div>
+      <div class="card" data-aos="flip-left" data-aos-delay="200"><h3>Natural wines</h3><p>Small producers from Piedmont, Sicily and the Marche.</p></div>
+    </section>
+    <section class="story" data-aos="fade-up">
+      <h2>Our story</h2>
+      <p>Once a bakery on a quiet corner, Lumi became a trattoria when the neighbours kept asking for lunch.</p>
+      <p>Twenty-eight years later, the same oven is still burning, and the same family still runs the floor.</p>
+    </section>
+    <section id="menu" data-aos="fade-up">
+      <h2>Tonight's menu</h2>
+      <div class="menu-row"><span class="dish">Cacio e pepe</span><span class="price">£14</span></div>
+      <div class="menu-row"><span class="dish">Tagliatelle al ragù</span><span class="price">£16</span></div>
+      <div class="menu-row"><span class="dish">Pizza bianca with rosemary</span><span class="price">£9</span></div>
+      <div class="menu-row"><span class="dish">Tiramisù</span><span class="price">£7</span></div>
+      <p><span class="tag">Vegetarian</span><span class="tag">Gluten-free on request</span></p>
+    </section>
+    <section id="book" data-aos="zoom-in">
+      <h2>Book a table</h2>
+      <p class="hours">Tuesday to Thursday: 6pm to 10pm
+Friday and Saturday: 5pm to 11pm
+Sunday lunch: 12pm to 4pm</p>
+      <p>Call us on <a href="tel:+442079460000">020 7946 0000</a> or <a href="/book">book online</a>.</p>
+    </section>
+  </main>
+  <footer>
+    <div class="wrap">© 2026 Trattoria Lumi · 3 Vine Street, London · <a href="https://instagram.com/lumi">Instagram</a></div>
+  </footer>
+  <script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
+  <script>AOS.init({ once: true, duration: 700 });</script>
+</body>
+</html>

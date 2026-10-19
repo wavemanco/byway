@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Northwind Studio — Brands that move people</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/aos@2.3.4/dist/aos.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <style type="text/tailwindcss">
+    @theme { --font-sans: 'Inter', system-ui, sans-serif; --color-brand: #4f46e5; }
+  </style>
+</head>
+<body class="bg-white text-slate-800 antialiased">
+  <header class="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-100">
+    <nav class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/" class="text-xl font-extrabold tracking-tight">Northwind<span class="text-brand">.</span></a>
+      <ul class="hidden md:flex items-center gap-8 text-sm font-semibold">
+        <li><a href="#work" class="hover:text-brand">Work</a></li>
+        <li><a href="#services" class="hover:text-brand">Services</a></li>
+        <li><a href="#about" class="hover:text-brand">About</a></li>
+        <li><a href="#contact" class="rounded-full bg-brand px-4 py-2 text-white">Start a project</a></li>
+      </ul>
+      <button class="md:hidden" aria-label="Open menu"><span class="sr-only">Menu</span>☰</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="max-w-6xl mx-auto px-6 pt-24 pb-20 grid md:grid-cols-2 gap-12 items-center">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-widest text-brand">Brand &amp; product studio</p>
+        <h1 class="mt-4 text-5xl font-extrabold leading-tight">Brands that move people <span class="text-brand">and markets</span>.</h1>
+        <p class="mt-6 text-lg text-slate-600">We design identities, websites and launch campaigns for founders who would rather be remembered than merely noticed.</p>
+        <div class="mt-8 flex gap-4">
+          <a href="#contact" class="rounded-full bg-brand px-6 py-3 font-semibold text-white">Book a call</a>
+          <a href="#work" class="rounded-full border border-slate-300 px-6 py-3 font-semibold">See our work <span aria-hidden="true">&rarr;</span></a>
+        </div>
+      </div>
+      <div class="rounded-3xl bg-slate-50 p-8" data-aos="fade-left">
+        <p class="text-sm text-slate-500">Rated 4.9<span class="sr-only"> out of 5</span> by 120 clients</p>
+        <p class="mt-2 text-3xl font-extrabold">+38% <span class="text-base font-semibold text-slate-500">average conversion lift</span></p>
+      </div>
+    </section>
+
+    <section id="services" class="bg-slate-50 py-20">
+      <div class="max-w-6xl mx-auto px-6">
+        <h2 class="text-3xl font-extrabold" data-aos="fade-up">What we do</h2>
+        <div class="mt-10 grid gap-6 md:grid-cols-3">
+          <article class="rounded-2xl bg-white p-6 shadow-sm" data-aos="fade-up">
+            <h3 class="font-bold text-lg">Identity</h3>
+            <p class="mt-2 text-slate-600">Names, logos and voice that hold up from a favicon to a billboard.</p>
+          </article>
+          <article class="rounded-2xl bg-white p-6 shadow-sm" data-aos="fade-up" data-aos-delay="100">
+            <h3 class="font-bold text-lg">Websites</h3>
+            <p class="mt-2 text-slate-600">Fast, accessible sites your team can update without calling us.</p>
+          </article>
+          <article class="rounded-2xl bg-white p-6 shadow-sm" data-aos="fade-up" data-aos-delay="200">
+            <h3 class="font-bold text-lg">Launches</h3>
+            <p class="mt-2 text-slate-600">Campaigns, decks and the first hundred days after go-live.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="work" class="max-w-6xl mx-auto px-6 py-20">
+      <div class="flex items-end justify-between">
+        <h2 class="text-3xl font-extrabold" data-aos="fade-right">Selected work</h2>
+        <a href="/work" class="text-sm font-semibold text-brand">All case studies <span aria-hidden="true">&rarr;</span></a>
+      </div>
+      <div class="mt-10 grid gap-8 md:grid-cols-2">
+        <a href="/work/tidal" class="group block" data-aos="zoom-in">
+          <div class="aspect-video rounded-2xl bg-indigo-100"></div>
+          <h3 class="mt-4 font-bold">Tidal Bank</h3>
+          <p class="text-slate-600">A calmer way to bank for freelancers.</p>
+        </a>
+        <a href="/work/fern" class="group block" data-aos="zoom-in" data-aos-delay="150">
+          <div class="aspect-video rounded-2xl bg-emerald-100"></div>
+          <h3 class="mt-4 font-bold">Fern &amp; Co.</h3>
+          <p class="text-slate-600">Plant care, delivered with a story.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="about" class="bg-brand text-white py-20">
+      <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-3 gap-8 text-center">
+        <div data-aos="fade-up"><p class="text-4xl font-extrabold"><span class="counter" data-to="140">0</span>+</p><p class="mt-2 text-indigo-100">projects shipped</p></div>
+        <div data-aos="fade-up" data-aos-delay="100"><p class="text-4xl font-extrabold">12</p><p class="mt-2 text-indigo-100">years in practice</p></div>
+        <div data-aos="fade-up" data-aos-delay="200"><p class="text-4xl font-extrabold">9</p><p class="mt-2 text-indigo-100">people, one studio</p></div>
+      </div>
+    </section>
+
+    <section id="contact" class="max-w-3xl mx-auto px-6 py-24 text-center" data-aos="fade-up">
+      <h2 class="text-4xl font-extrabold">Have something worth launching?</h2>
+      <p class="mt-4 text-lg text-slate-600">Tell us about it. We reply within one working day.</p>
+      <a href="mailto:hello@northwind.studio" class="mt-8 inline-block rounded-full bg-brand px-8 py-4 font-semibold text-white">hello@northwind.studio</a>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-100 py-10">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-500">
+      <p>&copy; <span id="year">2025</span> Northwind Studio. All rights reserved.</p>
+      <div class="flex gap-6">
+        <a href="https://instagram.com/northwind" class="hover:text-brand"><span class="sr-only">Instagram</span><svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg></a>
+        <a href="https://linkedin.com/company/northwind" class="hover:text-brand"><span class="sr-only">LinkedIn</span><svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18"/></svg></a>
+        <a href="/privacy" class="hover:text-brand">Privacy</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
+  <script>
+    AOS.init({ duration: 700, once: false });
+    document.getElementById('year').textContent = new Date().getFullYear();
+    const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+      if (!e.isIntersecting) return;
+      const el = e.target, to = +el.dataset.to; let v = 0;
+      const step = () => { v = Math.min(to, v + Math.ceil(to / 40)); el.textContent = v; if (v < to) requestAnimationFrame(step); };
+      requestAnimationFrame(step); io.unobserve(el);
+    }));
+    document.querySelectorAll('.counter').forEach((el) => io.observe(el));
+  </script>
+</body>
+</html>

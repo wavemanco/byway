@@ -1,0 +1,38 @@
+[
+  {
+    "name": "unchanged C1",
+    "nearest": "c1",
+    "ok": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "pickStepsInRoute": [
+      "Refine: Pick one (who=you) - Your turn: choose what to keep."
+    ]
+  },
+  {
+    "name": "C1 pick-one -> random policy pick",
+    "nearest": "c1",
+    "ok": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "pickStepsInRoute": [
+      "Refine: Random pick (who=tool) - The AI chooses what to keep."
+    ]
+  },
+  {
+    "name": "C1 critic-loop threshold 9 -> 1",
+    "nearest": "c1",
+    "ok": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "pickStepsInRoute": [
+      "Refine: Pick one (who=you) - Your turn: choose what to keep."
+    ]
+  }
+]

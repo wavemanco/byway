@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northern Lights Summit 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; font-family: "DM Sans", sans-serif; color:#121826; background:#fff; }
+  .top { background:#0b1530; color:#fff; text-align:center; padding: 10px; font-size: 14px; }
+  .top b { color:#ffd166; }
+  nav { display:flex; justify-content:space-between; align-items:center; padding: 20px 64px; }
+  nav .links { display:flex; gap: 24px; }
+  nav a { text-decoration:none; color:#121826; font-weight:500; }
+  .cta { background:#ff5a5f; color:#fff !important; padding: 10px 20px; border-radius: 8px; animation: beat 2s infinite; display:inline-block; }
+  @keyframes beat { 0%,100% { transform: scale(1) } 50% { transform: scale(1.05) } }
+  .hero { padding: 80px 64px; background: radial-gradient(circle at 20% 20%, #e8efff, #fff 60%); }
+  .hero h1 { font-size: 72px; margin: 0; line-height: 1; }
+  .hero .when { font-size: 22px; margin-top: 18px; color:#3a4566; }
+  .count { display:flex; gap: 16px; margin-top: 40px; }
+  .count div { background:#0b1530; color:#fff; border-radius: 12px; padding: 16px 20px; text-align:center; min-width: 80px; }
+  .count b { display:block; font-size: 36px; }
+  .count small { text-transform: uppercase; letter-spacing: .12em; font-size: 11px; }
+  .section { padding: 72px 64px; }
+  h2 { font-size: 40px; margin: 0 0 32px; }
+  table { width:100%; border-collapse: collapse; }
+  td, th { text-align:left; padding: 14px 12px; border-bottom: 1px solid #e6e9f2; vertical-align: top; }
+  th { font-size: 13px; text-transform: uppercase; color:#6b7590; letter-spacing:.08em; }
+  td.time { white-space: nowrap; font-weight:700; width: 120px; }
+  .speakers { display:grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+  .sp { text-align:center; }
+  .sp .ph { width: 120px; height: 120px; border-radius:50%; margin: 0 auto 12px; background: linear-gradient(135deg,#c8d4ff,#ffd6e0); }
+  .sp h3 { margin: 0; font-size: 18px; }
+  .sp p { margin: 4px 0 0; color:#6b7590; font-size: 14px; }
+  .venue { display:flex; gap: 48px; align-items:flex-start; }
+  .venue .map { flex: 1; height: 260px; border-radius: 16px; background:#e6e9f2; display:flex; align-items:center; justify-content:center; color:#6b7590; }
+  .tickets { display:flex; gap: 24px; }
+  .t { border: 1px solid #e6e9f2; border-radius: 16px; padding: 24px; flex:1; }
+  .t .p { font-size: 40px; font-weight:700; }
+  .t .was { text-decoration: line-through; color:#9aa3bd; margin-left: 8px; font-size: 18px; }
+  footer { background:#0b1530; color:#c8d0e8; padding: 40px 64px; display:flex; justify-content:space-between; }
+  footer a { color:#fff; }
+</style>
+</head>
+<body>
+<div class="top">Early-bird pricing ends <b>31 March</b> — <a href="#tickets" style="color:#fff">save 30%</a></div>
+<nav><strong>NLS26</strong><div class="links"><a href="#agenda">Agenda</a><a href="#speakers">Speakers</a><a href="#venue">Venue</a><a class="cta" href="#tickets">Get tickets</a></div></nav>
+<section class="hero">
+  <h1>Northern Lights<br>Summit 2026</h1>
+  <p class="when">14–15 May · Tromsø, Norway · 600 builders, two days, one aurora</p>
+  <div class="count" id="count"><div><b id="d">0</b><small>days</small></div><div><b id="h">0</b><small>hours</small></div><div><b id="m">0</b><small>minutes</small></div></div>
+</section>
+<section class="section" id="agenda">
+  <h2>Agenda</h2>
+  <table>
+    <tr><th>Time</th><th>Session</th><th>Room</th></tr>
+    <tr><td class="time">09:00</td><td><strong>Opening keynote:</strong> Building for the long night</td><td>Main hall</td></tr>
+    <tr><td class="time">10:30</td><td>Edge computing at the edge of the world</td><td>Fjord room</td></tr>
+    <tr><td class="time">12:00</td><td>Lunch &amp; reindeer stew <em>(vegan option)</em></td><td>Terrace</td></tr>
+    <tr><td class="time">21:00</td><td>Aurora walk <a href="/aurora">(weather permitting)</a></td><td>Outside</td></tr>
+  </table>
+</section>
+<section class="section" id="speakers">
+  <h2>Speakers</h2>
+  <div class="speakers">
+    <div class="sp"><div class="ph"></div><h3>Ingrid Solberg</h3><p>CTO, Polarbase</p></div>
+    <div class="sp"><div class="ph"></div><h3>Kwame Mensah</h3><p>Staff engineer, Lumen</p></div>
+    <div class="sp"><div class="ph"></div><h3>Aiko Tanaka</h3><p>Founder, Kitebird</p></div>
+    <div class="sp"><div class="ph"></div><h3>Lars Eriksen</h3><p>Researcher, UiT</p></div>
+  </div>
+</section>
+<section class="section" id="venue">
+  <h2>Venue</h2>
+  <div class="venue"><div><p><strong>Kulturhuset Tromsø</strong><br>Grønnegata 87<br>9008 Tromsø</p><p>Twenty minutes from the airport by bus.</p></div><div class="map">Map</div></div>
+</section>
+<section class="section" id="tickets">
+  <h2>Tickets</h2>
+  <div class="tickets">
+    <div class="t"><h3>Standard</h3><div><span class="p">€390</span><span class="was">€560</span></div><p>Both days, lunches and the aurora walk.</p></div>
+    <div class="t"><h3>Student</h3><div><span class="p">€90</span></div><p>Valid student ID required at the door.</p></div>
+  </div>
+</section>
+<footer><span>© 2026 Northern Lights Summit AS</span><span><a href="/code-of-conduct">Code of conduct</a> · <a href="mailto:hei@nls26.no">hei@nls26.no</a></span></footer>
+<script>
+  const end = new Date('2026-05-14T09:00:00+02:00').getTime();
+  function tick(){ const s = Math.max(0, end - Date.now())/1000; document.getElementById('d').textContent = Math.floor(s/86400); document.getElementById('h').textContent = Math.floor(s%86400/3600); document.getElementById('m').textContent = Math.floor(s%3600/60); }
+  tick(); setInterval(tick, 1000);
+</script>
+</body>
+</html>

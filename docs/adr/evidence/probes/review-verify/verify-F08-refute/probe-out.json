@@ -1,0 +1,184 @@
+[
+  {
+    "name": "C1 canonical route",
+    "route": "Explore: Random spark[ai] ;; Refine: Outside critique[ai] | Custom imagery[ai] | Pick one[you] ;; Finish: Trim[you] | Cliché sweep[ai] | Keep or revert[you] | Your words[you] | Defect check[ai]"
+  },
+  {
+    "name": "C1 human pick -> random policy pick",
+    "nearest": "c1",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "extra": {
+      "route": "Explore: Random spark[ai] ;; Refine: Outside critique[ai] | Custom imagery[ai] | Random pick[tool] ;; Finish: Trim[you] | Cliché sweep[ai] | Keep or revert[you] | Your words[you] | Defect check[ai]",
+      "pickExplainer": [
+        "Random pick (tool): The AI chooses what to keep."
+      ]
+    }
+  },
+  {
+    "name": "C1 human pick -> AI (critic) pick",
+    "nearest": "c1",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "extra": {
+      "route": "Explore: Random spark[ai] ;; Refine: Outside critique[ai] | Custom imagery[ai] | AI picks[ai] ;; Finish: Trim[you] | Cliché sweep[ai] | Keep or revert[you] | Your words[you] | Defect check[ai]",
+      "pickExplainer": [
+        "AI picks (ai): The AI chooses what to keep."
+      ]
+    }
+  },
+  {
+    "name": "C1 critic threshold 9 -> 1",
+    "nearest": "c1",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ]
+  },
+  {
+    "name": "C1 critic loop onCap human -> policy-best-snapshot",
+    "nearest": "c1",
+    "accepted": false,
+    "violations": [
+      "LS1: critic loop \"critic-loop\" hands the cap to a policy"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ]
+  },
+  {
+    "name": "C1 critic loop onNoConverge -> continue",
+    "nearest": "c1",
+    "accepted": false,
+    "violations": [
+      "LS1: critic loop \"critic-loop\" hands non-convergence to a policy"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ]
+  },
+  {
+    "name": "C1 critic loop hidden true -> false",
+    "nearest": "c1",
+    "accepted": false,
+    "violations": [
+      "DR4: critic loop \"critic-loop\" does not stop on the critic's score against a hidden threshold",
+      "PR2: loop \"critic-loop\" does not hide its threshold"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ]
+  },
+  {
+    "name": "C1 critic loop plateau removed",
+    "nearest": "c1",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ]
+  },
+  {
+    "name": "C1 critic loop probe 2 -> 1",
+    "nearest": "c1",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ]
+  },
+  {
+    "name": "C1 pick k 1 -> 2",
+    "nearest": "c1",
+    "accepted": false,
+    "violations": [
+      "PR4: an unpicked option set may enter D3",
+      "ST5: step \"cut-render\" consumes artifact, which is not in scope on every path",
+      "ST5: step \"apply-cut\" consumes artifact, which is not in scope on every path"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ]
+  },
+  {
+    "name": "C1 optional trigger text changed",
+    "nearest": "c1",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ]
+  },
+  {
+    "name": "C4 rank gate threshold changed",
+    "nearest": "c4",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Memo Polish."
+    ]
+  },
+  {
+    "name": "C5 sitsOut removed (if any)",
+    "nearest": "c5",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Ad Video Chain."
+    ]
+  },
+  {
+    "name": "sitsOut of canonical",
+    "sitsOut": [
+      "c1:",
+      "c2:CUT,TELLS,RELAY",
+      "c3:RELAY",
+      "c4:SEED,ASSET,RELAY",
+      "c5:",
+      "c6:SEED,ASSET,RELAY",
+      "c6a:ASSET,RELAY",
+      "c7:SEED,ASSET,RELAY"
+    ]
+  },
+  {
+    "name": "canonical picks",
+    "picks": [
+      "c1:pick-one:H/human",
+      "c3:pick-angle:H/human",
+      "c5:shortlist:H/human",
+      "c5:pick-concept:H/human",
+      "c6a:pick-card:H/human"
+    ]
+  },
+  {
+    "name": "canonical gates",
+    "gates": [
+      "c1:critic-loop:critic-score/thr=9/max=5/onCap=human",
+      "c2:vision:human/thr=undefined/max=3/onCap=human",
+      "c3:critic-loop:critic-rank/thr=3/max=3/onCap=human",
+      "c4:critic-loop:critic-rank/thr=3/max=2/onCap=human",
+      "c5:shot-repair:check-clean/thr=undefined/max=3/onCap=human",
+      "c5:launch-gate:oneshot critic-rank/thr=3",
+      "c6:author-loop:human/thr=undefined/max=10/onCap=human",
+      "c6a:vision:human/thr=undefined/max=2/onCap=human",
+      "c6a:author-loop:human/thr=undefined/max=10/onCap=human",
+      "c7:review-loop:critic-rank/thr=3/max=3/onCap=human"
+    ]
+  },
+  {
+    "name": "c5 one-shot gate threshold -> 1",
+    "nearest": "c5",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Ad Video Chain."
+    ]
+  }
+]

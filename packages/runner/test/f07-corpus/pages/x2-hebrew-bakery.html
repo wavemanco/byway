@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מאפיית השחר — לחם טרי כל בוקר</title>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Heebo', system-ui, sans-serif; margin: 0; background: #fffaf2; color: #2b2118; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 18px 48px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  header nav { display: flex; gap: 28px; }
+  header a { color: inherit; text-decoration: none; font-weight: 700; }
+  .hero { padding: 80px 48px; text-align: center; }
+  .hero h1 { font-size: 52px; margin: 0; }
+  .hero p { font-size: 20px; color: #6b5a48; }
+  .btn { display: inline-block; margin-top: 24px; background: #b45309; color: #fff; padding: 14px 28px; border-radius: 999px; font-weight: 700; text-decoration: none; }
+  .menu { max-width: 720px; margin: 0 auto; padding: 40px 24px; }
+  .row { display: flex; justify-content: space-between; border-bottom: 1px dashed #d6c4ad; padding: 12px 0; font-size: 18px; }
+  .row .price { font-weight: 700; color: #b45309; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 960px; margin: 0 auto; padding: 40px 24px; }
+  .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+  .info { display: flex; gap: 48px; justify-content: center; padding: 48px 24px; background: #2b2118; color: #fffaf2; }
+  .hours { white-space: pre-line; }
+  .fade { opacity: 0; transition: opacity .8s; }
+  .fade.on { opacity: 1; }
+</style>
+</head>
+<body>
+  <header>
+    <strong style="font-size:24px">מאפיית השחר</strong>
+    <nav><a href="#menu">תפריט</a><a href="#about">עלינו</a><a href="#visit">ביקור</a></nav>
+    <a href="tel:035551234">03-555-1234</a>
+  </header>
+  <section class="hero">
+    <h1>לחם טרי, כל בוקר מ־6:30</h1>
+    <p>מחמצת אמיתית, קמח מטחנת Galil Mills ותנור אבן שעובד מאז 1987.</p>
+    <a class="btn" href="#menu">להזמנה</a>
+  </section>
+  <section id="menu" class="menu fade">
+    <h2>המאפים שלנו</h2>
+    <div class="row"><span>כיכר מחמצת</span><span class="price">₪24</span></div>
+    <div class="row"><span>חלה מתוקה (שישי בלבד)</span><span class="price">₪18</span></div>
+    <div class="row"><span>קרואסון חמאה</span><span class="price">₪12</span></div>
+    <div class="row"><span>Cinnamon roll</span><span class="price">₪14</span></div>
+  </section>
+  <section id="about" class="grid fade">
+    <div class="card"><h3>36 שעות התפחה</h3><p>כל בצק נח יום וחצי לפני שהוא נכנס לתנור.</p></div>
+    <div class="card"><h3>3 סוגי קמח</h3><p>חיטה מלאה, כוסמין ושיפון, טחונים במרחק 40 ק״מ מכאן.</p></div>
+    <div class="card"><h3>משלוח עד 8:00</h3><p>הזמינו עד 22:00 והלחם יגיע אליכם חם.</p></div>
+  </section>
+  <section id="visit" class="info">
+    <div><h3>כתובת</h3><p>רחוב הרצל 12, תל אביב</p></div>
+    <div><h3>שעות פתיחה</h3><p class="hours">א׳–ה׳ 7:00–14:00
+ו׳ 6:30–13:00
+שבת סגור</p></div>
+  </section>
+<script>
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) e.target.classList.add('on'); }), { threshold: 0.2 });
+  document.querySelectorAll('.fade').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Northlight Studio — Brand &amp; Web Design</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Space Grotesk', system-ui, sans-serif; }
+    @keyframes nudge { 0% { transform: translateX(-6px); } 10%, 100% { transform: none; } }
+    .nudge { display: inline-block; animation: nudge 3s ease-out infinite; }
+    @keyframes floaty { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-6px) rotate(-2deg); } }
+    .floaty { animation: floaty 5s ease-in-out infinite; }
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+    .reveal.is-visible { opacity: 1; transform: none; }
+  </style>
+</head>
+<body class="bg-stone-50 text-stone-900 antialiased">
+  <header class="sticky top-0 z-30 bg-stone-50/90 backdrop-blur border-b border-stone-200">
+    <nav class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2 font-bold text-lg"><span class="w-3 h-3 rounded-full bg-orange-500"></span>Northlight</a>
+      <ul class="hidden md:flex items-center gap-8 text-sm">
+        <li><a href="#work" class="hover:text-orange-600">Work</a></li>
+        <li><a href="#services" class="hover:text-orange-600">Services</a></li>
+        <li><a href="#about" class="hover:text-orange-600">About</a></li>
+        <li><a href="#contact" class="hover:text-orange-600">Contact</a></li>
+      </ul>
+      <p class="flex items-center text-sm">Have a brief?<a href="#contact" class="nudge ml-2 font-semibold text-orange-600">Let's talk</a></p>
+    </nav>
+  </header>
+
+  <main>
+    <section class="relative max-w-6xl mx-auto px-6 pt-24 pb-32">
+      <div class="absolute left-0 top-56 -rotate-90 origin-left flex items-center gap-2 text-xs uppercase tracking-widest text-stone-500">
+        <span>Scroll to explore</span><span aria-hidden="true">→</span>
+      </div>
+      <p class="inline-flex items-center gap-2 rounded-full bg-orange-100 text-orange-700 px-3 py-1 text-xs font-semibold"><span class="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>Booking projects for spring</p>
+      <h1 class="mt-6 text-6xl font-bold leading-tight max-w-3xl">Brands and websites with a little light in them.</h1>
+      <p class="mt-6 text-lg text-stone-600 max-w-xl">We are a four-person studio in Leeds designing identities, websites and packaging for independent food and drink makers.</p>
+      <div class="mt-10 flex flex-wrap gap-4">
+        <a href="#work" class="rounded-full bg-stone-900 text-white px-6 py-3 font-semibold hover:bg-stone-700">See our work</a>
+        <a href="#contact" class="rounded-full border border-stone-300 px-6 py-3 font-semibold hover:border-stone-900">Start a project</a>
+      </div>
+      <div class="floaty absolute right-10 top-32 hidden lg:block rounded-2xl bg-white shadow-lg px-5 py-4 text-sm">
+        <p class="font-semibold">Brand of the Year</p>
+        <p class="text-stone-500">Yorkshire Design Awards</p>
+      </div>
+    </section>
+
+    <section id="work" class="bg-white py-24">
+      <div class="max-w-6xl mx-auto px-6">
+        <div class="flex items-end justify-between reveal">
+          <h2 class="text-4xl font-bold">Selected work</h2>
+          <a href="/work" class="text-sm font-semibold text-orange-600">All projects <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="mt-12 grid md:grid-cols-3 gap-8">
+          <article class="reveal rotate-1 overflow-hidden rounded-3xl bg-stone-100">
+            <div class="h-48 bg-gradient-to-br from-amber-300 to-orange-500 scale-105"></div>
+            <div class="p-6">
+              <p class="text-xs uppercase tracking-wider text-stone-500">Identity · Packaging</p>
+              <h3 class="mt-2 text-xl font-semibold">Ember Coffee Roasters</h3>
+              <p class="mt-2 text-stone-600">A warm identity for a roastery that works by hand.</p>
+            </div>
+          </article>
+          <article class="reveal -rotate-1 overflow-hidden rounded-3xl bg-stone-100">
+            <div class="h-48 bg-gradient-to-br from-lime-200 to-emerald-500 scale-105"></div>
+            <div class="p-6">
+              <p class="text-xs uppercase tracking-wider text-stone-500">Website</p>
+              <h3 class="mt-2 text-xl font-semibold">Fieldhouse Bakery</h3>
+              <p class="mt-2 text-stone-600">Online ordering that feels like the shop counter.</p>
+            </div>
+          </article>
+          <article class="reveal rotate-2 overflow-hidden rounded-3xl bg-stone-100">
+            <div class="h-48 bg-gradient-to-br from-sky-200 to-indigo-500 scale-105"></div>
+            <div class="p-6">
+              <p class="text-xs uppercase tracking-wider text-stone-500">Identity</p>
+              <h3 class="mt-2 text-xl font-semibold">Tidewater Gin</h3>
+              <p class="mt-2 text-stone-600">Labels inspired by the coastline it is distilled on.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="services" class="py-24">
+      <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-[120px_1fr] gap-12">
+        <p class="hidden md:block [writing-mode:vertical-rl] rotate-180 text-sm uppercase tracking-widest text-stone-400">What we do</p>
+        <div>
+          <h2 class="flex items-center text-4xl font-bold reveal">Services<span class="ml-3 rounded-md bg-orange-500 text-white text-xs px-2 py-1 animate-bounce">New</span></h2>
+          <ul class="mt-10 divide-y divide-stone-200">
+            <li class="reveal flex justify-between py-5"><span class="text-lg font-semibold">Brand identity</span><span class="text-stone-500">from £4,500</span></li>
+            <li class="reveal flex justify-between py-5"><span class="text-lg font-semibold">Websites</span><span class="text-stone-500">from £6,000</span></li>
+            <li class="reveal flex justify-between py-5"><span class="text-lg font-semibold">Packaging</span><span class="text-stone-500">from £3,200</span></li>
+            <li class="reveal flex justify-between py-5"><span class="text-lg font-semibold">Brand workshops</span><span class="text-stone-500">£900 a day</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-stone-900 text-stone-100 py-24">
+      <div class="max-w-6xl mx-auto px-6">
+        <h2 class="text-4xl font-bold reveal">Kind words</h2>
+        <div class="mt-12 grid md:grid-cols-2 gap-10">
+          <figure class="reveal -rotate-2 rounded-3xl bg-stone-800 p-8">
+            <blockquote class="text-xl">“They understood the business before they drew a single line.”</blockquote>
+            <figcaption class="mt-6 text-sm text-stone-400">— Priya Shah, Ember Coffee</figcaption>
+          </figure>
+          <figure class="reveal rotate-1 rounded-3xl bg-stone-800 p-8">
+            <blockquote class="text-xl">“Orders doubled in the first month after launch.”</blockquote>
+            <figcaption class="mt-6 text-sm text-stone-400">— Tom Hale, Fieldhouse Bakery</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="about" class="py-24">
+      <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-16 items-center">
+        <div class="reveal">
+          <h2 class="text-4xl font-bold">Small on purpose</h2>
+          <p class="mt-6 text-lg text-stone-600">Four of us, one studio, no account managers. You talk to the people doing the work, from the first call to the launch.</p>
+          <p class="mt-4 text-lg text-stone-600">We take on six projects a year so each one gets our full attention.</p>
+        </div>
+        <dl class="reveal grid grid-cols-2 gap-8">
+          <div><dt class="text-sm text-stone-500">Founded</dt><dd class="text-3xl font-bold">2014</dd></div>
+          <div><dt class="text-sm text-stone-500">Projects</dt><dd class="text-3xl font-bold">60+</dd></div>
+          <div><dt class="text-sm text-stone-500">Awards</dt><dd class="text-3xl font-bold">12</dd></div>
+          <div><dt class="text-sm text-stone-500">Team</dt><dd class="text-3xl font-bold">4</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section id="contact" class="bg-orange-500 text-white py-24">
+      <div class="max-w-3xl mx-auto px-6 text-center reveal">
+        <h2 class="text-5xl font-bold">Got something in mind?</h2>
+        <p class="mt-4 text-lg">Tell us about it. We reply within two working days.</p>
+        <a href="mailto:hello@northlight.studio" class="mt-8 inline-block rounded-full bg-white text-orange-600 px-8 py-4 font-semibold">hello@northlight.studio</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="py-10 text-sm text-stone-500">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between gap-4">
+      <p>© 2026 Northlight Studio Ltd. Registered in England.</p>
+      <p class="flex gap-6"><a href="/privacy">Privacy</a><a href="https://instagram.com/northlight"><span class="sr-only">Instagram</span><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg></a><a href="https://dribbble.com/northlight">Dribbble</a></p>
+    </div>
+  </footer>
+
+  <script>
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+  </script>
+</body>
+</html>

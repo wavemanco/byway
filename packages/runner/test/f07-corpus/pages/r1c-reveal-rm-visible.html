@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crumb &amp; Co. — Sourdough delivered at dawn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#2b1d14; --cream:#fbf6ef; --crust:#c46a2b; --muted:#7a6656; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; color: var(--ink); background: var(--cream); line-height: 1.6; }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  header { position: sticky; top: 0; background: rgba(251,246,239,.92); backdrop-filter: blur(8px); border-bottom: 1px solid #eadfce; z-index: 10; }
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .logo { font-family: 'Fraunces', serif; font-weight: 800; font-size: 1.5rem; }
+  .logo span { color: var(--crust); }
+  .nav ul { display: flex; gap: 28px; list-style: none; font-weight: 500; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 999px; font-weight: 600; transition: transform .2s; }
+  .btn-primary { background: var(--crust); color: #fff; }
+  .btn-ghost { border: 1.5px solid var(--ink); }
+  .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; align-items: center; padding: 96px 0 72px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: .78rem; color: var(--crust); font-weight: 600; }
+  h1 { font-family: 'Fraunces', serif; font-size: 3.6rem; line-height: 1.05; margin: 16px 0 20px; }
+  h1 em { font-style: normal; color: var(--crust); }
+  .lead { font-size: 1.15rem; color: var(--muted); max-width: 34ch; }
+  .actions { display: flex; gap: 14px; margin-top: 32px; }
+  .hero-card { background: #fff; border-radius: 24px; padding: 28px; box-shadow: 0 20px 50px -20px rgba(43,29,20,.25); }
+  .hero-card strong { display: block; font-family: 'Fraunces', serif; font-size: 2.4rem; }
+  section { padding: 80px 0; }
+  h2 { font-family: 'Fraunces', serif; font-size: 2.4rem; margin-bottom: 12px; }
+  .sub { color: var(--muted); max-width: 52ch; margin-bottom: 40px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .card { background: #fff; border-radius: 18px; padding: 28px; border: 1px solid #eadfce; }
+  .card h3 { font-size: 1.15rem; margin: 12px 0 8px; }
+  .icon { width: 44px; height: 44px; border-radius: 12px; background: #f6e6d6; display: grid; place-items: center; font-size: 1.3rem; }
+  .steps { counter-reset: s; list-style: none; display: grid; gap: 18px; }
+  .steps li { counter-increment: s; display: flex; gap: 16px; align-items: baseline; }
+  .steps li::before { content: counter(s); font-family: 'Fraunces', serif; font-weight: 800; color: var(--crust); font-size: 1.6rem; }
+  blockquote { font-family: 'Fraunces', serif; font-size: 1.35rem; line-height: 1.4; }
+  cite { display: block; margin-top: 14px; font-style: normal; color: var(--muted); font-size: .95rem; }
+  .price { font-family: 'Fraunces', serif; font-size: 2.6rem; font-weight: 800; }
+  .price small { font-family: 'Inter', sans-serif; font-size: 1rem; color: var(--muted); font-weight: 400; }
+  .card ul { list-style: none; margin: 18px 0 24px; display: grid; gap: 8px; }
+  .card ul li::before { content: "✓ "; color: var(--crust); font-weight: 700; }
+  .card.featured { border: 2px solid var(--crust); position: relative; }
+  .badge { position: absolute; top: -12px; left: 28px; background: var(--crust); color: #fff; font-size: .75rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+  details { border-bottom: 1px solid #eadfce; padding: 18px 0; }
+  summary { font-weight: 600; cursor: pointer; }
+  details p { margin-top: 10px; color: var(--muted); }
+  .cta { background: var(--ink); color: var(--cream); border-radius: 28px; padding: 56px; text-align: center; }
+  .cta h2 { color: #fff; }
+  footer { padding: 48px 0; color: var(--muted); font-size: .92rem; }
+  .foot { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+  .foot nav { display: flex; gap: 20px; }
+  .social { display: flex; gap: 14px; }
+  .social svg { width: 20px; height: 20px; fill: currentColor; }
+  .reveal { opacity: 0; transform: translateY(28px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.visible { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+  @media (max-width: 760px) { .hero, .grid3 { grid-template-columns: 1fr; } h1 { font-size: 2.6rem; } .nav ul { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap nav">
+    <a href="/" class="logo">Crumb<span>&amp;</span>Co.</a>
+    <ul>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#plans">Plans</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+    <a href="#plans" class="btn btn-primary">Start a plan</a>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <p class="eyebrow">Baked at 4 a.m. · Delivered by 7</p>
+      <h1>Real sourdough, <em>on your doorstep</em> before breakfast.</h1>
+      <p class="lead">We bake slow-fermented loaves overnight and bring them to your door while they are still warm.</p>
+      <div class="actions">
+        <a href="#plans" class="btn btn-primary">Choose your bread</a>
+        <a href="#how" class="btn btn-ghost">See how it works</a>
+      </div>
+    </div>
+    <div class="hero-card">
+      <p>This week's loaf</p>
+      <strong>Rye &amp; caraway</strong>
+      <p>48-hour ferment, stone-baked, no additives.</p>
+    </div>
+  </div>
+
+  <section id="why" class="reveal">
+    <div class="wrap">
+      <h2>Why neighbours switch to Crumb</h2>
+      <p class="sub">Supermarket bread is built to last on a shelf. Ours is built to be eaten today.</p>
+      <div class="grid3">
+        <div class="card"><div class="icon">🌾</div><h3>Four ingredients</h3><p>Flour, water, salt and time. Nothing you cannot pronounce.</p></div>
+        <div class="card"><div class="icon">🚲</div><h3>Zero-emission rounds</h3><p>Our riders deliver every loaf by cargo bike before 7 a.m.</p></div>
+        <div class="card"><div class="icon">⏸️</div><h3>Pause any week</h3><p>Away on holiday? Skip a delivery with one tap, no fees.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="reveal">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li><span>Pick a plan and your favourite loaves.</span></li>
+        <li><span>We bake overnight and pack your order at dawn.</span></li>
+        <li><span>Wake up to warm bread on your doorstep.</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="reviews" class="reveal">
+    <div class="wrap">
+      <blockquote>“I have not bought supermarket bread in a year. The rye alone is worth it.”<cite>— Maya R., Hackney</cite></blockquote>
+    </div>
+  </section>
+
+  <section id="plans" class="reveal">
+    <div class="wrap">
+      <h2>Simple plans</h2>
+      <p class="sub">Every plan includes free delivery and can be paused or cancelled any time.</p>
+      <div class="grid3">
+        <div class="card"><h3>Weekend</h3><p class="price">£9<small>/week</small></p><ul><li>One loaf on Saturday</li><li>Free delivery</li></ul><a href="/signup?plan=weekend" class="btn btn-ghost">Choose Weekend</a></div>
+        <div class="card featured"><span class="badge">Most popular</span><h3>Every other day</h3><p class="price">£24<small>/week</small></p><ul><li>Three loaves a week</li><li>Seasonal specials</li><li>Free delivery</li></ul><a href="/signup?plan=alt" class="btn btn-primary">Choose Every other day</a></div>
+        <div class="card"><h3>Daily</h3><p class="price">£45<small>/week</small></p><ul><li>A fresh loaf every morning</li><li>Pastry on Sundays</li><li>Free delivery</li></ul><a href="/signup?plan=daily" class="btn btn-ghost">Choose Daily</a></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="reveal">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <details><summary>Where do you deliver?</summary><p>Hackney, Islington and Camden for now, with more areas this spring.</p></details>
+      <details><summary>What if I am not home?</summary><p>We leave your loaf in a breathable bag by the door, or with a neighbour.</p></details>
+    </div>
+  </section>
+
+  <section class="reveal">
+    <div class="wrap cta">
+      <h2>Your first loaf is on us</h2>
+      <p>Try any plan free for a week. Cancel with one click.</p>
+      <p style="margin-top:24px"><a href="/signup" class="btn btn-primary">Claim your free loaf</a></p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <p>© 2026 Crumb &amp; Co. Bakery, London</p>
+    <nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:hello@crumb.co">Contact</a></nav>
+    <div class="social">
+      <a href="https://instagram.com/crumbco" aria-label="Instagram"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg></a>
+      <a href="https://facebook.com/crumbco" aria-label="Facebook"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/></svg></a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

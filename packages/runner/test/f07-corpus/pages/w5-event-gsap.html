@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northwind Design Summit 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Space Grotesk', sans-serif; background: #0b1020; color: #e8ecf8; }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .top { position: sticky; top: 0; z-index: 10; background: rgba(11,16,32,.85); backdrop-filter: blur(8px); }
+  .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .top nav a { margin-left: 24px; text-decoration: none; opacity: .85; }
+  .register { background: #ff5c39; color: #fff; padding: 10px 18px; border-radius: 999px; text-decoration: none; font-weight: 600; display: inline-block; animation: glow 2s ease-in-out infinite; }
+  @keyframes glow { 0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,92,57,.6); } 50% { transform: scale(1.04); box-shadow: 0 0 0 10px rgba(255,92,57,0); } }
+  .hero { padding: 120px 0 80px; }
+  .hero h1 { font-size: 72px; line-height: 1; margin: 0; }
+  .hero .meta { margin-top: 24px; font-size: 20px; opacity: .8; }
+  .countdown { display: flex; gap: 24px; margin-top: 40px; }
+  .countdown div { background: #141b33; border-radius: 12px; padding: 16px 20px; min-width: 96px; text-align: center; }
+  .countdown strong { display: block; font-size: 36px; }
+  .countdown span { font-size: 12px; text-transform: uppercase; letter-spacing: .2em; opacity: .7; }
+  section { padding: 96px 0; }
+  h2 { font-size: 40px; margin: 0 0 32px; }
+  .speakers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .speaker { background: #141b33; border-radius: 16px; padding: 24px; }
+  .speaker h3 { margin: 0; font-size: 20px; }
+  .speaker p { margin: 6px 0 0; opacity: .7; }
+  .schedule .row { display: flex; gap: 24px; padding: 16px 0; border-bottom: 1px solid #222a47; }
+  .schedule time { width: 120px; flex: none; font-weight: 600; color: #ff8f73; }
+  .ticket { display: flex; align-items: baseline; gap: 4px; }
+  .ticket .amount { font-size: 48px; font-weight: 700; }
+  footer { padding: 48px 0; opacity: .7; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="wrap">
+    <strong>Northwind Summit</strong>
+    <nav><a href="#speakers">Speakers</a><a href="#schedule">Schedule</a><a href="#tickets">Tickets</a></nav>
+    <a class="register" href="#tickets">Register now</a>
+  </div>
+</div>
+<div class="wrap">
+  <header class="hero">
+    <h1 class="split">Design for the next decade</h1>
+    <p class="meta">12–13 May 2026 · Harbour Hall, Copenhagen</p>
+    <div class="countdown" id="countdown">
+      <div><strong id="d">--</strong><span>days</span></div>
+      <div><strong id="h">--</strong><span>hours</span></div>
+      <div><strong id="m">--</strong><span>minutes</span></div>
+    </div>
+  </header>
+  <section id="speakers">
+    <h2 class="up">Speakers</h2>
+    <div class="speakers">
+      <div class="speaker up"><h3>Amara Okafor</h3><p>Head of Design, Fieldnote</p></div>
+      <div class="speaker up"><h3>Jonas Lindqvist</h3><p>Type designer, Nordform</p></div>
+      <div class="speaker up"><h3>Priya Raman</h3><p>Research lead, Kettle</p></div>
+      <div class="speaker up"><h3>Tomás Herrera</h3><p>Creative director, Atlas</p></div>
+      <div class="speaker up"><h3>Mei Chen</h3><p>Accessibility consultant</p></div>
+      <div class="speaker up"><h3>Sofia Rossi</h3><p>Founder, Studio Lume</p></div>
+    </div>
+  </section>
+  <section id="schedule" class="schedule">
+    <h2 class="up">Day one</h2>
+    <div class="row up"><time>09:00</time><span>Doors open and coffee</span></div>
+    <div class="row up"><time>10:00</time><span>Opening keynote: Designing slower</span></div>
+    <div class="row up"><time>11:30</time><span>Panel: Type on small screens</span></div>
+    <div class="row up"><time>14:00</time><span>Workshops in four rooms</span></div>
+    <div class="row up"><time>17:30</time><span>Drinks on the harbour terrace</span></div>
+  </section>
+  <section id="tickets">
+    <h2 class="up">Tickets</h2>
+    <p class="ticket up"><span class="amount">€390</span><span>per person</span></p>
+    <p class="up">Includes both days, lunch and the evening party. Student tickets are €150.</p>
+    <a class="register" href="/tickets">Get your ticket</a>
+  </section>
+  <footer>© 2026 Northwind Events ApS · <a href="/code-of-conduct">Code of conduct</a></footer>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script>
+  gsap.registerPlugin(ScrollTrigger);
+  gsap.utils.toArray('.up').forEach((el, i) => {
+    gsap.from(el, { y: 40, opacity: 0, duration: 0.8, delay: (i % 3) * 0.12, scrollTrigger: { trigger: el, start: 'top 85%' } });
+  });
+  const target = new Date('2026-05-12T09:00:00Z').getTime();
+  const tick = () => {
+    const left = Math.max(0, target - Date.now());
+    document.getElementById('d').textContent = String(Math.floor(left / 864e5));
+    document.getElementById('h').textContent = String(Math.floor(left / 36e5) % 24).padStart(2, '0');
+    document.getElementById('m').textContent = String(Math.floor(left / 6e4) % 60).padStart(2, '0');
+  };
+  tick(); setInterval(tick, 1000);
+</script>
+</body>
+</html>

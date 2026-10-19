@@ -1,0 +1,11 @@
+[
+ ["emoji_last_word_multislot", "<p>Hello <b>world</b> 🎉</p>", ["Hi world 🎉"]],
+ ["emoji_last_word_append", "<p>Order <b>now</b> 🎉</p>", ["Order now 🎉 today"]],
+ ["emoji_cta_link", "<p>Ready? <a href=\"/o\"><b>Order now</b> 🚀</a></p>", ["Ready? [Order today 🚀]"]],
+ ["svg_selfclosed_title_then_font_p", "<p><svg width=\"9\" height=\"9\"><title/></svg></p><div><font face=\"Arial\">Intro<p>Spring sale</p></font>Order today</div>", ["Intro", "", "Order today"]],
+ ["svg_closed_title_then_font_p", "<p><svg width=\"9\" height=\"9\"><title>Logo</title></svg></p><div><font face=\"Arial\">Intro<p>Spring sale</p></font>Order today</div>", ["Logo", "Intro", "", "Order today"]],
+ ["svg_unclosed_title_then_label_p", "<p>X<svg width=\"9\" height=\"9\"><title>Tip</svg></p><div>Name<label><p>(required)</p></label>here</div>", ["X", "Tip", "Name", "", "here"]],
+ ["svg_selfclosed_title_ins_p", "<p>Call <svg viewBox=\"0 0 9 9\"><title/><path d=\"M0 0h9v9H0z\"/></svg> us</p><div>Call us<ins><p>New offer</p></ins>today</div>", ["Call", "us", "Call us", "", "today"]],
+ ["image_tag_link_empty", "<p><a href=\"/h\">Home<image src=\"h.png\"></a> now</p>", ["", "now"]],
+ ["math_selfclosed_title_font_p", "<p>x<math><title/></math></p><div><font>Intro<p>Spring sale</p></font>Order today</div>", ["x", "Intro", "", "Order today"]]
+]

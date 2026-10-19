@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Northwind Studio — Brand and web design</title>
+<link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;font-family:Inter,sans-serif;color:#111;overflow-x:hidden}
+  header{display:flex;justify-content:space-between;padding:24px 56px;align-items:center}
+  header a{margin-left:28px;color:#111;text-decoration:none;font-weight:600}
+  .hero{min-height:80vh;display:flex;flex-direction:column;justify-content:center;padding:0 56px;background:#f4f1ec}
+  .hero h1{font-size:4.5rem;line-height:1;margin:0;max-width:900px}
+  .hero p{font-size:1.25rem;max-width:620px}
+  .services{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;padding:100px 56px}
+  .services h3{font-size:1.4rem}
+  .work{padding:80px 56px;background:#111;color:#fff}
+  .work .row{display:flex;gap:40px;margin-top:40px}
+  .work .row div{flex:1}
+  .quote{padding:120px 56px;text-align:center;font-size:1.8rem}
+  .stats{display:flex;justify-content:space-around;padding:80px 56px;background:#f4f1ec}
+  .stats b{display:block;font-size:3rem}
+  footer{padding:40px 56px;display:flex;justify-content:space-between;color:#555}
+</style>
+</head>
+<body>
+<header><strong>Northwind</strong><nav><a href="#services">Services</a><a href="#work">Work</a><a href="mailto:hi@northwind.studio">Contact</a></nav></header>
+<section class="hero">
+  <h1 data-aos="fade-up">We build brands people remember.</h1>
+  <p data-aos="fade-up" data-aos-delay="150">Strategy, identity and websites for independent businesses that want to look as good as they are.</p>
+</section>
+<section class="services" id="services">
+  <div data-aos="slide-right"><h3>Brand strategy</h3><p>Workshops that turn what you do into a story customers repeat.</p></div>
+  <div data-aos="zoom-in"><h3>Visual identity</h3><p>Logos, type and colour systems that work from a sticker to a shopfront.</p></div>
+  <div data-aos="slide-left"><h3>Websites</h3><p>Fast, accessible sites you can update yourself.</p></div>
+</section>
+<section class="work" id="work">
+  <h2 data-aos="fade-right">Selected work</h2>
+  <div class="row">
+    <div data-aos="flip-left"><h3>Tidewater Coffee</h3><p>A roastery rebrand that doubled wholesale enquiries.</p></div>
+    <div data-aos="flip-right"><h3>Fernhill Clinic</h3><p>A calm, bilingual website for a family practice.</p></div>
+    <div data-aos="fade-up"><h3>Kiln &amp; Co</h3><p>Packaging and an online shop for a ceramics studio.</p></div>
+  </div>
+</section>
+<section class="quote" data-aos="zoom-out"><p>&ldquo;Northwind understood us faster than we understood ourselves.&rdquo;</p><p style="font-size:1rem">Maya Okafor, Tidewater Coffee</p></section>
+<section class="stats">
+  <div data-aos="slide-up"><b>120+</b>projects shipped</div>
+  <div data-aos="slide-up" data-aos-delay="100"><b>14</b>years in practice</div>
+  <div data-aos="slide-up" data-aos-delay="200"><b>9</b>design awards</div>
+</section>
+<footer><span>&copy; 2026 Northwind Studio</span><span>Leeds, United Kingdom</span></footer>
+<script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+<script>AOS.init({ duration: 800, once: true });</script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Osteria Lume — Seasonal Italian in Bristol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;700&family=Work+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css">
+<style>
+  :root{--ink:#2a1d17;--clay:#b4532a;--cream:#fbf6ef}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Work Sans',sans-serif;color:var(--ink);background:var(--cream);overflow-x:hidden}
+  header{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:18px 56px;background:rgba(251,246,239,.95);border-bottom:1px solid #eadfd2}
+  header .logo{font-family:'Cormorant Garamond',serif;font-size:1.7rem;font-weight:700}
+  header nav{display:flex;gap:28px}
+  header nav a{color:var(--ink);text-decoration:none;font-weight:600}
+  .hero{display:grid;grid-template-columns:1.1fr .9fr;gap:56px;padding:96px 56px;align-items:center}
+  .hero h1{font-family:'Cormorant Garamond',serif;font-size:4.2rem;line-height:1.05;margin:0 0 20px}
+  .intro::first-letter{float:left;font-family:'Cormorant Garamond',serif;font-size:4.6rem;line-height:.9;margin:6px 10px 0 0;color:var(--clay)}
+  .intro{font-size:1.15rem;line-height:1.7;max-width:560px}
+  .btn{display:inline-block;background:var(--clay);color:#fff;padding:14px 28px;border-radius:999px;text-decoration:none;font-weight:600}
+  .menu{padding:80px 56px;background:#fff}
+  .menu h2{font-family:'Cormorant Garamond',serif;font-size:2.8rem;margin:0 0 32px;text-align:center}
+  .cols{display:grid;grid-template-columns:repeat(2,1fr);gap:48px}
+  .cols h3{text-transform:uppercase;letter-spacing:.15em;font-size:.85rem;color:var(--clay);margin:0 0 16px}
+  .dish{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px dotted #d9cbbb;padding:10px 0;font-size:1.05rem}
+  .dish .price{font-weight:600}
+  .dish small{display:block;color:#7b6a5d;font-size:.85rem}
+  .why{padding:80px 56px;display:grid;grid-template-columns:1fr 1fr;gap:56px}
+  .why ul{list-style:none;padding:0;margin:0}
+  .why li{padding:10px 0;font-size:1.05rem}
+  .why li::before{content:"\2713\00a0\00a0";color:var(--clay);font-weight:700}
+  .quotes{background:var(--ink);color:var(--cream);padding:80px 56px;text-align:center}
+  .viewport{overflow:hidden;max-width:760px;margin:0 auto}
+  .track{display:flex;transition:transform .7s ease}
+  .track blockquote{flex:0 0 100%;margin:0;font-family:'Cormorant Garamond',serif;font-size:1.9rem;line-height:1.35}
+  .track cite{display:block;margin-top:14px;font-family:'Work Sans',sans-serif;font-size:.95rem;font-style:normal;opacity:.75}
+  footer{display:flex;justify-content:space-between;padding:48px 56px;font-size:.95rem}
+  footer address{font-style:normal;white-space:pre-line}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">Osteria Lume</span>
+  <nav><a href="#menu">Menu</a><a href="#why">Our kitchen</a><a href="#visit">Visit</a><a href="/book">Book a table</a></nav>
+</header>
+<section class="hero">
+  <div>
+    <h1 data-aos="fade-up">Slow food, quick smiles.</h1>
+    <p class="intro" data-aos="fade-up" data-aos-delay="100">Every morning we roll pasta by hand, bake focaccia in a wood oven and shop the market for whatever is best that day. The menu changes with it, and so does the wine list.</p>
+    <a class="btn" href="/book" data-aos="fade-up" data-aos-delay="200">Book a table</a>
+  </div>
+  <div data-aos="slide-left"><p style="font-family:'Cormorant Garamond',serif;font-size:1.6rem;line-height:1.4">Open Tuesday to Sunday, from noon until late. Walk-ins welcome at the bar.</p></div>
+</section>
+<section class="menu" id="menu">
+  <h2>Tonight's menu</h2>
+  <div class="cols">
+    <div data-aos="fade-right">
+      <h3>Antipasti</h3>
+      <div class="dish"><span>Burrata, blood orange, basil<small>Puglian burrata, our olive oil</small></span><span class="price">£11</span></div>
+      <div class="dish"><span>Fritto misto</span><span class="price">£12</span></div>
+      <div class="dish"><span>Focaccia and whipped ricotta</span><span class="price">£6</span></div>
+    </div>
+    <div data-aos="fade-left">
+      <h3>Pasta</h3>
+      <div class="dish"><span>Cacio e pepe</span><span class="price">£13</span></div>
+      <div class="dish"><span>Ravioli di zucca, sage butter</span><span class="price">£15</span></div>
+      <div class="dish"><span>Tagliatelle al ragù</span><span class="price">£16</span></div>
+    </div>
+  </div>
+</section>
+<section class="why" id="why">
+  <div data-aos="fade-up"><h2 style="font-family:'Cormorant Garamond',serif;font-size:2.6rem;margin:0">Why guests come back</h2><p>We keep it small on purpose: twenty-eight seats, one kitchen, no shortcuts.</p></div>
+  <ul>
+    <li data-aos="fade-up">Pasta made by hand every morning</li>
+    <li data-aos="fade-up" data-aos-delay="100">Vegetables from farms within forty miles</li>
+    <li data-aos="fade-up" data-aos-delay="200">Natural wines by the glass</li>
+  </ul>
+</section>
+<section class="quotes">
+  <div class="viewport"><div class="track" id="track">
+    <blockquote>“The best plate of pasta I have eaten outside Rome.”<cite>Hannah W., The Bristol Post</cite></blockquote>
+    <blockquote>“Warm, unfussy and quietly brilliant.”<cite>Tom R., regular since 2019</cite></blockquote>
+  </div></div>
+</section>
+<footer id="visit">
+  <address>Osteria Lume
+14 Gloucester Road
+Bristol BS7 8AE</address>
+  <p>Call us on <a href="tel:+441179000000">0117 900 0000</a></p>
+</footer>
+<script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+<script>
+  AOS.init({ duration: 700, once: true });
+  let i = 0;
+  setInterval(() => { i = (i + 1) % 2; document.getElementById('track').style.transform = 'translateX(' + (-100 * i) + '%)'; }, 4000);
+</script>
+</body>
+</html>

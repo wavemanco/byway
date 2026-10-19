@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen — Notes that think with you</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style type="text/tailwindcss">
+  @theme { --font-sans: 'Space Grotesk', sans-serif; }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans">
+  <header class="flex items-center justify-between px-8 py-5">
+    <a href="/" class="text-xl font-bold">Lumen</a>
+    <nav class="flex gap-6 text-sm text-slate-300">
+      <a href="#features" class="hover:text-white">Features</a>
+      <a href="#pricing" class="hover:text-white">Pricing</a>
+      <a href="#faq" class="hover:text-white">FAQ</a>
+    </nav>
+    <a href="/signup" class="rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold">Start free</a>
+  </header>
+  <div class="fixed left-4 top-1/2 hidden -rotate-90 origin-left text-xs uppercase tracking-[0.3em] text-slate-500 lg:flex gap-2"><span>Scroll</span><span>to explore</span></div>
+  <main>
+    <section class="mx-auto max-w-5xl px-8 pt-20 pb-16 text-center">
+      <p class="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-xs"><span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>Now with offline sync</p>
+      <h1 class="text-5xl font-bold leading-tight md:text-6xl">Notes that think <span class="text-indigo-400">with you</span></h1>
+      <p class="mx-auto mt-6 max-w-2xl text-lg text-slate-300">Lumen links your ideas as you write, so the note you need finds you before you go looking for it.</p>
+      <div class="mt-8 flex justify-center gap-4">
+        <a href="/signup" class="rounded-lg bg-indigo-500 px-6 py-3 font-semibold hover:bg-indigo-400">Get started for free</a>
+        <a href="#demo" class="rounded-lg border border-slate-700 px-6 py-3 font-semibold">Watch the demo</a>
+      </div>
+      <p class="mt-4 text-sm text-slate-400">No card needed. 3 notebooks free forever.</p>
+    </section>
+    <section id="features" class="mx-auto grid max-w-6xl gap-6 px-8 py-16 md:grid-cols-3">
+      <article class="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:-translate-y-1">
+        <h3 class="text-lg font-semibold">Linked thinking</h3>
+        <p class="mt-2 text-slate-400">Type two brackets and Lumen suggests the notes worth linking.</p>
+      </article>
+      <article class="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:-translate-y-1">
+        <h3 class="text-lg font-semibold flex items-center">Daily review<span class="ml-2 rounded bg-amber-300 px-1.5 text-[10px] font-bold text-slate-900 rotate-6 inline-block">BETA</span></h3>
+        <p class="mt-2 text-slate-400">Five minutes each morning to resurface what you wrote last month.</p>
+      </article>
+      <article class="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:-translate-y-1">
+        <h3 class="text-lg font-semibold">Works offline</h3>
+        <p class="mt-2 text-slate-400">Write on the train; everything syncs the moment you are back online.</p>
+      </article>
+    </section>
+    <section id="pricing" class="mx-auto max-w-5xl px-8 py-16">
+      <h2 class="text-center text-3xl font-bold">Simple pricing</h2>
+      <div class="mt-10 grid gap-6 md:grid-cols-2">
+        <div class="rounded-2xl border border-slate-800 p-8">
+          <h3 class="text-xl font-semibold">Free</h3>
+          <p class="mt-4 flex items-baseline"><span class="text-4xl font-bold">$0</span><span class="text-slate-400">/month</span></p>
+          <ul class="mt-6 space-y-2 text-slate-300">
+            <li class="flex gap-2"><span aria-hidden="true">✓</span>3 notebooks</li>
+            <li class="flex gap-2"><span aria-hidden="true">✓</span>Linked notes</li>
+          </ul>
+          <a href="/signup" class="mt-8 block rounded-lg border border-slate-700 py-3 text-center font-semibold">Start free</a>
+        </div>
+        <div class="relative rounded-2xl border-2 border-indigo-500 p-8">
+          <span class="absolute -top-3 right-6 rounded-full bg-indigo-500 px-3 py-1 text-xs font-semibold">Most popular</span>
+          <h3 class="text-xl font-semibold">Pro</h3>
+          <p class="mt-4 flex items-baseline"><span class="text-4xl font-bold">$8</span><span class="text-slate-400">/month</span></p>
+          <ul class="mt-6 space-y-2 text-slate-300">
+            <li class="flex gap-2"><span aria-hidden="true">✓</span>Unlimited notebooks</li>
+            <li class="flex gap-2"><span aria-hidden="true">✓</span>Daily review</li>
+            <li class="flex gap-2"><span aria-hidden="true">✓</span>Offline sync</li>
+          </ul>
+          <a href="/signup?plan=pro" class="mt-8 block rounded-lg bg-indigo-500 py-3 text-center font-semibold">Go Pro</a>
+        </div>
+      </div>
+    </section>
+    <section id="faq" class="mx-auto max-w-3xl px-8 py-16">
+      <h2 class="text-3xl font-bold">Questions</h2>
+      <details class="mt-6 border-b border-slate-800 pb-4"><summary class="cursor-pointer font-semibold">Can I import from Notion?</summary><p class="mt-2 text-slate-400">Yes. Export your workspace as Markdown and drop the folder into Lumen.</p></details>
+      <details class="mt-4 border-b border-slate-800 pb-4"><summary class="cursor-pointer font-semibold">Is my data encrypted?</summary><p class="mt-2 text-slate-400">End to end, on every device.</p></details>
+    </section>
+  </main>
+  <footer class="border-t border-slate-800 px-8 py-8 text-sm text-slate-500">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <p>© 2026 Lumen Labs</p>
+      <div class="flex gap-4"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:hi@lumen.app">hi@lumen.app</a></div>
+    </div>
+  </footer>
+</body>
+</html>

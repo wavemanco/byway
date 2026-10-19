@@ -1,0 +1,11 @@
+hash 38afef53ed613c48e1065255bdbac69c9016af95a156b0559634e67625e0b637
+../protocol/src/blocks.ts
+../protocol/src/media.ts
+../contracts/src/runner.ts
+../recipe/src/semantics.ts
+../recipe/src/limits.ts
+../store/src/resolution.ts
+../prompts/src/ids.ts
+../prompts/src/outputs.ts
+../prompts/src/slots.ts
+zod? false TEMPLATE_SLOTS? false ai-draft? true

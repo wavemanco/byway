@@ -1,0 +1,226 @@
+{
+ "files": 4,
+ "variants": 7958,
+ "runs": 95496,
+ "claimed": {
+  "applies": 462034,
+  "tellsApplies": 57139,
+  "swapAsk": 57139,
+  "run-used-prompt": 94716,
+  "personCritique": 15200,
+  "personAnswered": 15198,
+  "personApplied": 10876,
+  "seedFanOut": 8323,
+  "seedOne": 6462,
+  "notesOnly": 18174,
+  "reactedTo": 1829,
+  "reactedToStrict": 1829,
+  "voiceScriptLocked": 187,
+  "run-locked-prompt": 2228,
+  "relayChain": 8020,
+  "relayOne": 3930,
+  "aiWroteRest": 3488,
+  "tellsAppliesAll": 519
+ },
+ "problems": {
+  "J-ANSWERED-NEVER-APPLIED(info)": 4322,
+  "J2-REACHES-WORK-VIA-AI-DIRECTION(info)": 1108,
+  "E-NO-REACT-CLAIM-BUT-SHOWN(info)": 640,
+  "I-APPLIES-BUT-PROMPT-NEVER-SHOWS": 5853,
+  "E-REACT-SOMETIMES-NOT-SHOWN(info)": 467,
+  "J-SOMETIMES-NOT-APPLIED(info)": 422,
+  "H-NOT-ASKED-BUT-FINDS-REACHED-SWAP-STEP(info)": 305,
+  "I-APPLIES-BUT-OTHER-CRITIQUE": 9
+ },
+ "examples": {
+  "J-ANSWERED-NEVER-APPLIED(info)": [
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1LoopShape"
+    ],
+    "idx": 0,
+    "step": "you-vision-g1330",
+    "answered": 12
+   },
+   {
+    "nearest": "c6a",
+    "muts": [
+     "seedBetween"
+    ],
+    "idx": 1,
+    "step": "you-select-g3537",
+    "answered": 9
+   }
+  ],
+  "J2-REACHES-WORK-VIA-AI-DIRECTION(info)": [
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1CandShape"
+    ],
+    "idx": 9,
+    "step": "you-vision-g13150",
+    "runs": 12
+   },
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1Shape",
+     "c1Shape"
+    ],
+    "idx": 19,
+    "step": "you-vision-g19701",
+    "runs": 8
+   }
+  ],
+  "E-NO-REACT-CLAIM-BUT-SHOWN(info)": [
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1Shape"
+    ],
+    "idx": 11,
+    "step": "c1-carrier-g16163",
+    "ran": 12,
+    "reacted": 4
+   },
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1Shape",
+     "c1Shape"
+    ],
+    "idx": 19,
+    "step": "c1-carrier-g19710",
+    "ran": 12,
+    "reacted": 5
+   }
+  ],
+  "I-APPLIES-BUT-PROMPT-NEVER-SHOWS": [
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1SeedNote",
+     "between",
+     "giveCritique"
+    ],
+    "idx": 22,
+    "lead": "you-check-g21604",
+    "applier": "c1-seed-g21602",
+    "prompt": "article.SEED",
+    "explainer": "A look for defects only, which the AI then fixes."
+   },
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1SeedNote",
+     "between",
+     "giveCritique"
+    ],
+    "idx": 22,
+    "lead": "you-check-g21604",
+    "applier": "c1-seed-g21602",
+    "prompt": "article.SEED",
+    "explainer": "A look for defects only, which the AI then fixes."
+   }
+  ],
+  "E-REACT-SOMETIMES-NOT-SHOWN(info)": [
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1LoopShape"
+    ],
+    "idx": 31,
+    "step": "c1-carrier-g37795",
+    "ran": 12,
+    "reacted": 3
+   },
+   {
+    "nearest": "c6a",
+    "muts": [
+     "port"
+    ],
+    "idx": 55,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 8
+   }
+  ],
+  "J-SOMETIMES-NOT-APPLIED(info)": [
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1Shape"
+    ],
+    "idx": 50,
+    "step": "you-vision-g62019",
+    "answered": 12,
+    "applied": 8
+   },
+   {
+    "nearest": "c1",
+    "muts": [
+     "c1Shape",
+     "legitCut"
+    ],
+    "idx": 54,
+    "step": "you-cut-g69253",
+    "answered": 6,
+    "applied": 3
+   }
+  ],
+  "H-NOT-ASKED-BUT-FINDS-REACHED-SWAP-STEP(info)": [
+   {
+    "nearest": "c1",
+    "muts": [
+     "wrapNode",
+     "legitCut",
+     "c1Shape"
+    ],
+    "idx": 62,
+    "step": "tells-sweep",
+    "swap": "apply-swaps",
+    "explainer": "A fresh reviewer lists the stock patterns it finds, each with an alternative; the AI swaps every one.",
+    "lead": "tells-sweep"
+   },
+   {
+    "nearest": "c1",
+    "muts": [
+     "wrapNode",
+     "legitCut",
+     "c1Shape"
+    ],
+    "idx": 62,
+    "step": "tells-sweep",
+    "swap": "apply-swaps",
+    "explainer": "A fresh reviewer lists the stock patterns it finds, each with an alternative; the AI swaps every one.",
+    "lead": "tells-sweep"
+   }
+  ],
+  "I-APPLIES-BUT-OTHER-CRITIQUE": [
+   {
+    "nearest": "c6a",
+    "muts": [
+     "seedLens"
+    ],
+    "idx": 4488,
+    "lead": "ai-cut-g242925",
+    "applier": "ai-fix-g242929",
+    "crit": "## s0-242923\nNothing to remove.",
+    "explainer": "A fresh reviewer lists what the work could lose, and the AI removes it."
+   },
+   {
+    "nearest": "c6a",
+    "muts": [
+     "seedLens"
+    ],
+    "idx": 4488,
+    "lead": "ai-cut-g242925",
+    "applier": "ai-fix-g242929",
+    "crit": "## s0-242923\nNothing to remove.",
+    "explainer": "A fresh reviewer lists what the work could lose, and the AI removes it."
+   }
+  ]
+ }
+}

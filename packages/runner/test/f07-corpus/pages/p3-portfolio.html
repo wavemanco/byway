@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Noor Haddad — Product designer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/aos@2.3.4/dist/aos.css">
+<style>
+  body { margin:0; font-family: "Space Grotesk", sans-serif; background:#0f0f10; color:#f2f2f2; }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
+  header { display:flex; justify-content:space-between; align-items:center; padding: 28px 0; }
+  .avail { display:inline-flex; align-items:center; gap:8px; font-size:14px; color:#9be7b0; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#3ddc84; box-shadow: 0 0 0 4px rgba(61,220,132,.2); }
+  h1 { font-size: 88px; line-height: .95; letter-spacing: -.03em; margin: 80px 0 24px; }
+  h1 .muted { color:#6d6d72; }
+  .intro { font-size: 22px; max-width: 46ch; color:#c9c9cc; }
+  .marquee { overflow:hidden; border-block: 1px solid #2a2a2e; margin: 72px 0; padding: 18px 0; white-space: nowrap; }
+  .track { display:inline-block; animation: scroll 30s linear infinite; font-size: 28px; color:#8a8a90; }
+  .track span { margin-right: 48px; }
+  @keyframes scroll { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+  .grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 32px; }
+  .card { background:#18181b; border-radius: 20px; overflow:hidden; text-decoration:none; display:block; }
+  .thumb { aspect-ratio: 16/10; background: linear-gradient(120deg,#2b2b40,#3d2b40); }
+  .card-body { padding: 24px; }
+  .card h3 { margin: 0 0 8px; font-size: 24px; }
+  .card p { margin: 0 0 16px; color:#a1a1a6; }
+  .chips { display:flex; flex-wrap:wrap; gap: 8px; }
+  .chip { font-size: 13px; border:1px solid #333; border-radius: 999px; padding: 4px 12px; color:#d0d0d4; }
+  .stats { display:flex; gap: 64px; margin: 96px 0; }
+  .stat b { display:block; font-size: 56px; }
+  .stat span { color:#8a8a90; }
+  .contact { padding: 96px 0; border-top: 1px solid #2a2a2e; }
+  .contact h2 { font-size: 64px; margin: 0 0 24px; }
+  .links { display:flex; gap: 24px; font-size: 18px; }
+  .links a { text-decoration: none; border-bottom: 1px solid #555; }
+  .side { position: fixed; right: 24px; bottom: 120px; transform: rotate(90deg); transform-origin: right bottom; font-size: 12px; letter-spacing: .3em; color:#6d6d72; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><a href="/" style="text-decoration:none;font-weight:700">noor.design</a><span class="avail"><span class="dot"></span>Available from June</span></header>
+  <h1 data-aos="fade-up">Designing calm software <span class="muted">for busy people.</span></h1>
+  <p class="intro" data-aos="fade-up" data-aos-delay="100">I help early-stage teams turn messy workflows into products people actually enjoy using. Previously at Monzo and Ableton.</p>
+</div>
+<div class="marquee" aria-hidden="true"><div class="track"><span>Product strategy</span><span>Interaction design</span><span>Design systems</span><span>Prototyping</span><span>Product strategy</span><span>Interaction design</span><span>Design systems</span><span>Prototyping</span></div></div>
+<div class="wrap">
+  <div class="grid">
+    <a class="card" href="/work/ledger" data-aos="fade-up"><div class="thumb"></div><div class="card-body"><h3>Ledger for Kite</h3><p>A bookkeeping flow that cut month-end close from three days to one.</p><div class="chips"><span class="chip">Fintech</span><span class="chip">Web app</span><span class="chip">2025</span></div></div></a>
+    <a class="card" href="/work/tempo" data-aos="fade-up" data-aos-delay="100"><div class="thumb"></div><div class="card-body"><h3>Tempo practice app</h3><p>Helping 40,000 musicians practise a little every day.</p><div class="chips"><span class="chip">Music</span><span class="chip">iOS</span><span class="chip">2024</span></div></div></a>
+  </div>
+  <div class="stats" data-aos="fade-up"><div class="stat"><b>12</b><span>products shipped</span></div><div class="stat"><b>9 yrs</b><span>in product design</span></div><div class="stat"><b>3</b><span>design systems built</span></div></div>
+  <section class="contact" data-aos="fade-up">
+    <h2>Let's make something calm.</h2>
+    <div class="links"><a href="mailto:hello@noor.design">hello@noor.design</a><a href="https://read.cv/noor">Read.cv</a><a href="https://linkedin.com/in/noor">LinkedIn</a></div>
+  </section>
+</div>
+<div class="side">SCROLL TO EXPLORE</div>
+<script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
+<script>AOS.init({ duration: 700, once: true });</script>
+</body>
+</html>

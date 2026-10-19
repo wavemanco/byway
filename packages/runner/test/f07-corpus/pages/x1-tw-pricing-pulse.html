@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth &amp; Crumb — Bread subscriptions</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fraunces:wght@600&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'DM Sans', system-ui, sans-serif; }
+  h1, h2, h3 { font-family: 'Fraunces', serif; }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.is-visible { opacity: 1; transform: none; }
+  @keyframes wiggle { 0%,100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+  .wiggle { animation: wiggle 1.2s ease-in-out infinite; display: inline-block; }
+</style>
+</head>
+<body class="bg-amber-50 text-stone-800">
+  <header class="bg-white shadow-sm">
+    <nav class="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
+      <a href="/" class="text-2xl font-bold text-amber-800">Hearth &amp; Crumb</a>
+      <ul class="flex gap-6 text-sm font-medium">
+        <li><a href="#plans" class="hover:text-amber-700">Plans</a></li>
+        <li><a href="#how" class="hover:text-amber-700">How it works</a></li>
+        <li><a href="#visit" class="hover:text-amber-700">Visit</a></li>
+      </ul>
+      <div class="flex items-center">Already a member?<a href="/login" class="ml-2 font-bold text-amber-700 animate-pulse">Log in</a></div>
+    </nav>
+  </header>
+
+  <section class="max-w-6xl mx-auto px-6 py-20 grid md:grid-cols-2 gap-12 items-center">
+    <div>
+      <span class="inline-flex items-center gap-2 rounded-full bg-amber-200 px-3 py-1 text-xs font-bold uppercase tracking-wide"><span class="h-2 w-2 rounded-full bg-amber-600 animate-ping"></span>Now delivering in Leeds</span>
+      <h1 class="mt-6 text-5xl font-semibold leading-tight">Real bread, at your door by seven.</h1>
+      <p class="mt-4 text-lg text-stone-600">Slow-fermented loaves baked overnight and delivered warm, three mornings a week.</p>
+      <div class="mt-8 flex items-center gap-4">
+        <a href="#plans" class="rounded-full bg-amber-700 px-6 py-3 font-bold text-white">Choose a plan</a>
+        <a href="#how" class="font-semibold text-amber-800">See how it works <span class="animate-bounce inline-block">↓</span></a>
+      </div>
+    </div>
+    <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f35e.svg" alt="A loaf of bread" class="w-64 mx-auto">
+  </section>
+
+  <section id="plans" class="bg-white py-20">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="text-3xl font-semibold text-center reveal">Pick your bake</h2>
+      <div class="mt-12 grid md:grid-cols-3 gap-8">
+        <div class="rounded-2xl border border-stone-200 p-8 reveal">
+          <h3 class="text-xl font-semibold">Loaf a week</h3>
+          <p class="mt-4 flex items-baseline"><span class="text-4xl font-bold">£9</span><span class="text-stone-500">/week</span></p>
+          <ul class="mt-6 space-y-2 text-sm"><li>One sourdough loaf</li><li>Free delivery</li><li>Skip any week</li></ul>
+        </div>
+        <div class="rounded-2xl border-2 border-amber-600 p-8 reveal relative">
+          <span class="absolute -top-3 right-6 rounded-full bg-amber-600 px-3 py-1 text-xs font-bold text-white wiggle">Most popular</span>
+          <h3 class="text-xl font-semibold">Family bake</h3>
+          <p class="mt-4 flex items-baseline"><span class="text-4xl font-bold">£19</span><span class="text-stone-500">/week</span></p>
+          <ul class="mt-6 space-y-2 text-sm"><li>Two loaves and a dozen rolls</li><li>Free delivery</li><li>Pastry on Fridays</li></ul>
+        </div>
+        <div class="rounded-2xl border border-stone-200 p-8 reveal">
+          <h3 class="text-xl font-semibold">Café supply</h3>
+          <p class="mt-4 flex items-baseline"><span class="text-4xl font-bold">£79</span><span class="text-stone-500">/week</span></p>
+          <ul class="mt-6 space-y-2 text-sm"><li>Twelve loaves daily</li><li>Morning delivery from six</li><li>Invoice monthly</li></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="max-w-6xl mx-auto px-6 py-20">
+    <h2 class="text-3xl font-semibold reveal">How it works</h2>
+    <ol class="mt-10 grid md:grid-cols-3 gap-8">
+      <li class="reveal"><span class="text-amber-700 font-bold">01</span><h3 class="mt-2 text-lg font-semibold">Choose a plan</h3><p class="text-stone-600">Pick a bake and the mornings that suit you.</p></li>
+      <li class="reveal"><span class="text-amber-700 font-bold">02</span><h3 class="mt-2 text-lg font-semibold">We bake overnight</h3><p class="text-stone-600">Every loaf rests for thirty-six hours before the oven.</p></li>
+      <li class="reveal"><span class="text-amber-700 font-bold">03</span><h3 class="mt-2 text-lg font-semibold">Warm at seven</h3><p class="text-stone-600">A rider leaves it at your door before breakfast.</p></li>
+    </ol>
+  </section>
+
+  <section id="visit" class="bg-stone-900 text-amber-50 py-16">
+    <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-8">
+      <div class="reveal">
+        <h2 class="text-2xl font-semibold">Visit the bakery</h2>
+        <address class="mt-4 not-italic whitespace-pre-line">Hearth &amp; Crumb
+14 Mill Lane
+Leeds LS1 4AB</address>
+      </div>
+      <div class="reveal">
+        <h2 class="text-2xl font-semibold">Opening hours</h2>
+        <p class="mt-4 whitespace-pre-line">Tue–Fri 7am–3pm
+Sat 8am–2pm
+Sun–Mon closed</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="py-8 text-center text-sm text-stone-500">
+    <p>© 2026 Hearth &amp; Crumb · <a href="/privacy" class="underline">Privacy</a> · <a href="https://instagram.com/hearthcrumb"><span class="sr-only">Instagram</span><svg class="inline h-4 w-4" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/></svg></a></p>
+  </footer>
+<script>
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('is-visible'); io.unobserve(e.target); } }), { threshold: 0.15 });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

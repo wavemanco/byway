@@ -1,0 +1,6 @@
+[
+ ["MT1_math_title_prepend", "<p>Intro <math><title> <b>Formula</b></title></math></p>", ["Intro", "New Formula"]],
+ ["MT2_math_title_deck", "<p>Intro <math><title> <b>Formula</b></title></math></p>", null],
+ ["MT3_math_title_replace", "<p>Intro <math><title><b>Formula</b> here</title></math></p>", ["Intro", "Formula there"]],
+ ["HB1_hidden_block_ws_gap", "<p><font>sale</font><blockquote hidden> Gone </blockquote>Spring!</p>", ["sale", "", "Spring!"]]
+]

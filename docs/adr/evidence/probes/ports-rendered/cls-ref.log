@@ -1,0 +1,144 @@
+{
+ "answers": 6084,
+ "variants": 5735,
+ "runsA": 421296,
+ "runsB": 421296,
+ "byClause": {
+  "ST12:critique-unapplied": {
+   "answers": 5171,
+   "A": {
+    "nothing": 5171
+   },
+   "B": {
+    "REACHED": 5167,
+    "cand-only": 3,
+    "nothing": 1
+   }
+  },
+  "ST12:critique-per-candidate": {
+   "answers": 895,
+   "A": {
+    "nothing": 895
+   },
+   "B": {
+    "REACHED": 803,
+    "cand-only": 92
+   }
+  },
+  "ST9:human-critique": {
+   "answers": 18,
+   "A": {
+    "nothing": 18
+   },
+   "B": {
+    "REACHED": 18
+   }
+  }
+ },
+ "byNearest": {
+  "c1": {
+   "answers": 5303,
+   "A": {
+    "nothing": 5303
+   },
+   "B": {
+    "REACHED": 5212,
+    "cand-only": 90,
+    "nothing": 1
+   }
+  },
+  "c6a": {
+   "answers": 107,
+   "A": {
+    "nothing": 107
+   },
+   "B": {
+    "REACHED": 107
+   }
+  },
+  "c6": {
+   "answers": 12,
+   "A": {
+    "nothing": 12
+   },
+   "B": {
+    "REACHED": 12
+   }
+  },
+  "c5": {
+   "answers": 48,
+   "A": {
+    "nothing": 48
+   },
+   "B": {
+    "REACHED": 47,
+    "cand-only": 1
+   }
+  },
+  "c3": {
+   "answers": 445,
+   "A": {
+    "nothing": 445
+   },
+   "B": {
+    "REACHED": 442,
+    "cand-only": 3
+   }
+  },
+  "c4": {
+   "answers": 55,
+   "A": {
+    "nothing": 55
+   },
+   "B": {
+    "REACHED": 55
+   }
+  },
+  "c7": {
+   "answers": 60,
+   "A": {
+    "nothing": 60
+   },
+   "B": {
+    "REACHED": 60
+   }
+  },
+  "c2": {
+   "answers": 54,
+   "A": {
+    "nothing": 54
+   },
+   "B": {
+    "REACHED": 53,
+    "cand-only": 1
+   }
+  }
+ },
+ "newly": {
+  "answers": 6084,
+  "A": {
+   "nothing": 6084
+  },
+  "B": {
+   "REACHED": 5988,
+   "cand-only": 95,
+   "nothing": 1
+  }
+ },
+ "missingB": 0,
+ "interestingCount": 6083,
+ "interestingTally": {
+  "c1 A=nothing B=REACHED newly=true": 5212,
+  "c6a A=nothing B=REACHED newly=true": 107,
+  "c6 A=nothing B=REACHED newly=true": 12,
+  "c5 A=nothing B=REACHED newly=true": 47,
+  "c3 A=nothing B=REACHED newly=true": 442,
+  "c4 A=nothing B=REACHED newly=true": 55,
+  "c1 A=nothing B=cand-only newly=true": 90,
+  "c3 A=nothing B=cand-only newly=true": 3,
+  "c7 A=nothing B=REACHED newly=true": 60,
+  "c2 A=nothing B=REACHED newly=true": 53,
+  "c5 A=nothing B=cand-only newly=true": 1,
+  "c2 A=nothing B=cand-only newly=true": 1
+ }
+}

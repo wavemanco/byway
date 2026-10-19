@@ -1,0 +1,23 @@
+[
+ ["open_end_words_after", "<p>Hi <a href=\"/x\">there</p><p>Next</p>", ["Hi [there] friend", "Next"]],
+ ["open_end_punct_after", "<p>Hi <a href=\"/x\">there</p><p>Next</p>", ["Hi [there].", "Next"]],
+ ["open_end_page_end", "<p>Hi <a href=\"/x\">there</p>", ["Hi [there]!"]],
+ ["open_next_link_next_block", "<p>Hi <a href=\"/x\">there</p><p><a href=\"/y\">Next</a></p>", ["Hi [there] friend", "Next"]],
+ ["open_prompt", "<p>Hi <a href=\"/x\">there</p><p>Next</p>", null],
+ ["selfclosed_anchor_name", "<h2><a name=\"top\"/>Welcome</h2><p>Our <a href=\"/menu\">menu</a> changes daily.</p>", null],
+ ["selfclosed_anchor_name_edit", "<h2><a name=\"top\"/>Welcome</h2><p>Our <a href=\"/menu\">menu</a> changes daily.</p>", ["Welcome!", "Our [menu] changes daily."]],
+ ["selfclosed_anchor_name_edit2", "<h2><a name=\"top\"/>Welcome</h2><p>Our <a href=\"/menu\">menu</a> changes daily.</p>", ["Welcome", "Our [menus] change daily!"]],
+ ["glued_lead_icon_link", "<p><a href=\"/o\"><i class=\"icon\"></i> Order</a> now</p>", ["([Order]) now"]],
+ ["glued_trail_icon_link_space_typed", "<p>Go <a href=\"/o\">Order <i class=\"arrow\"></i></a></p>", ["Go [Order] !"]],
+ ["pretty_nested_fmt_link", "<p>Go\n  <a href=\"/x\">\n    <b>\n      now\n    </b>\n  </a>\n</p>", ["Go [now]!"]],
+ ["pretty_nested_fmt_link_lead", "<p>\n  <a href=\"/x\">\n    <b>\n      Read\n    </b>\n  </a>\n  more\n</p>", ["([Read]) more"]],
+ ["edge_ws_split_slots", "<p>Visit <a href=\"/s\"> <b> our shop </b> </a> </p>", ["Visit [our shop]."]],
+ ["whole_link_pretty", "<li>\n  <a href=\"/menu\">\n    <b>Our</b> menu\n  </a>\n</li>", ["Our menu."]],
+ ["glue_before_link_lead_space", "<p><a href=\"/x\"> Read</a> more</p>", ["Please[Read] more"]],
+ ["space_before_link_lead_space", "<p><a href=\"/x\"> Read</a> more</p>", ["Please [Read] more"]],
+ ["entity_space_edge", "<p>Visit <a href=\"/shop\">our shop&#32;</a></p>", ["Visit [our shop]."]],
+ ["nbsp_edge", "<p>Visit <a href=\"/shop\">our shop&nbsp;</a></p>", ["Visit [our shop]."]],
+ ["deleted_middle_word_glue", "<p>Big <b>red</b> apple</p>", ["Big apple"]],
+ ["remove_space_between_words", "<p>Big <b>red</b> apple</p>", ["Bigred apple"]],
+ ["swap_across_fmt", "<p>Big <b>red</b> apple</p>", ["red Big apple"]]
+]

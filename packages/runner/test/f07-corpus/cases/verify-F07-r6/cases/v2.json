@@ -1,0 +1,15 @@
+[
+ ["M1_math_title_breakout_b", "<p><math><title><b>Text</b></title></math><span> b </span><font>C</font></p>", null],
+ ["M1_edit", "<p><math><title><b>Text</b></title></math><span> b </span><font>C</font></p>", ["Text", "", "C"]],
+ ["M2_math_title_open_p", "<div><math><title></title><mi>x</mi></math><span> b </span><font>C</font></div>", ["x", "", "C"]],
+ ["M3_math_selfclosed_then_breakout", "<p>Pay<font> now</font><math><title/><b>Total</b></math></p>", ["Pay", "", "Total"]],
+ ["M4_math_title_unclosed_breakout_span", "<div>Lead<math><title><span>Shown</span></math><font> mid </font><b>End</b></div>", ["Lead", "Shown", "", "End"]],
+ ["S1_svg_title_p_end", "<p>X<svg width=\"9\" height=\"9\"><title>Tip</p><p>Hello</p>", ["X", "Tip", "Hello there"]],
+ ["S2_svg_title_div_end_gap", "<div><font>A</font><span> b </span><svg width=\"9\" height=\"9\"><title>T</div><div>C</div>", null],
+ ["S3_svg_unclosed_title_then_svg_end", "<p><font>A</font><span> b </span><svg width=\"9\" height=\"9\"><title>Tip</svg><font>C</font></p>", ["A", "", "Tip", "C"]],
+ ["S4_svg_g_title_open", "<p><font>A</font><svg width=\"9\" height=\"9\"><g><title>Tip</g></svg><span> b </span><font>C</font></p>", ["A", "Tip", "", "C"]],
+ ["S5_svg_desc_gap", "<p><font>A</font><span> b </span><svg width=\"9\" height=\"9\"><desc>D</desc></svg></p>", ["A", "", "D"]],
+ ["S6_svg_text_shown", "<p><font>A</font><span> b </span><svg width=\"40\" height=\"20\"><text y=\"10\">Label</text></svg></p>", ["A", "", "Label"]],
+ ["S7_svg_title_closed_then_text_elem", "<p><font>A</font><span> b </span><svg width=\"40\" height=\"20\"><title>T</title><text y=\"10\">Label</text></svg></p>", ["A", "", "T", "Label"]],
+ ["S8_foreignobject_title", "<p><font>A</font><span> b </span><svg width=\"40\" height=\"20\"><foreignObject width=\"40\" height=\"20\"><title>T</title><span>Inner</span></foreignObject></svg></p>", ["A", "", "T", "Inner"]]
+]

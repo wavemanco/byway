@@ -1,0 +1,146 @@
+{
+ "files": 1,
+ "variants": 2000,
+ "runs": 24000,
+ "claimed": {
+  "applies": 85798,
+  "tellsApplies": 12755,
+  "swapAsk": 12755,
+  "run-used-prompt": 26670,
+  "reactedTo": 924,
+  "reactedToStrict": 924,
+  "notesOnly": 11439,
+  "refusedPersonCritique": 1773,
+  "refusedAnswered": 1773,
+  "seedFanOut": 1339,
+  "aiWroteRest": 2957,
+  "voiceScriptLocked": 219,
+  "run-locked-prompt": 2628,
+  "relayChain": 9770,
+  "relayOne": 4639,
+  "tellsAppliesAll": 563,
+  "seedOne": 122
+ },
+ "problems": {
+  "J-FORCED(control)": 1754,
+  "E-REACT-SOMETIMES-NOT-SHOWN(info)": 132,
+  "J2-REACHES-WORK-VIA-AI-DIRECTION(info)": 12,
+  "E-NO-REACT-CLAIM-BUT-SHOWN(info)": 25,
+  "H-NOT-ASKED-BUT-FINDS-REACHED-SWAP-STEP(info)": 497
+ },
+ "examples": {
+  "J-FORCED(control)": [
+   {
+    "nearest": "c1",
+    "muts": [
+     "moveTaker"
+    ],
+    "idx": 2,
+    "step": "cut",
+    "answered": 10,
+    "applied": 10
+   },
+   {
+    "nearest": "c3",
+    "muts": [
+     "between"
+    ],
+    "idx": 3,
+    "step": "cut",
+    "answered": 7,
+    "applied": 7
+   }
+  ],
+  "E-REACT-SOMETIMES-NOT-SHOWN(info)": [
+   {
+    "nearest": "c2",
+    "muts": [
+     "giveCritique"
+    ],
+    "idx": 9,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 9
+   },
+   {
+    "nearest": "c2",
+    "muts": [
+     "person"
+    ],
+    "idx": 14,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 8
+   }
+  ],
+  "J2-REACHES-WORK-VIA-AI-DIRECTION(info)": [
+   {
+    "nearest": "c2",
+    "muts": [
+     "giveCritique"
+    ],
+    "idx": 9,
+    "step": "react",
+    "runs": 12
+   },
+   {
+    "nearest": "c2",
+    "muts": [
+     "copy",
+     "giveCritique"
+    ],
+    "idx": 340,
+    "step": "react",
+    "runs": 12
+   }
+  ],
+  "E-NO-REACT-CLAIM-BUT-SHOWN(info)": [
+   {
+    "nearest": "c6a",
+    "muts": [
+     "copy"
+    ],
+    "idx": 26,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 8
+   },
+   {
+    "nearest": "c6a",
+    "muts": [
+     "candTrim"
+    ],
+    "idx": 142,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 19
+   }
+  ],
+  "H-NOT-ASKED-BUT-FINDS-REACHED-SWAP-STEP(info)": [
+   {
+    "nearest": "c4",
+    "muts": [
+     "wrapNode",
+     "wrapNode"
+    ],
+    "idx": 93,
+    "step": "tells-sweep",
+    "swap": "apply-swaps",
+    "explainer": "A fresh reviewer flags stock patterns.",
+    "lead": "tells-sweep"
+   },
+   {
+    "nearest": "c4",
+    "muts": [
+     "wrapNode",
+     "wrapNode"
+    ],
+    "idx": 93,
+    "step": "tells-sweep",
+    "swap": "apply-swaps",
+    "explainer": "A fresh reviewer flags stock patterns.",
+    "lead": "tells-sweep"
+   }
+  ]
+ }
+}

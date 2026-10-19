@@ -1,0 +1,4 @@
+[
+ ["unclosed_li_delete_middle", "<ul><li>One<li>Two<li>Three</ul>", ["One", "", "Three"]],
+ ["unclosed_p_delete_middle", "<div><p>One<p>Two<p>Three</div>", ["One", "", "Three"]]
+]

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse — Uptime monitoring for small teams</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;background:#0a0a0a;color:#fafafa}
+  header{display:flex;justify-content:space-between;align-items:center;padding:20px 48px}
+  header a{color:#fafafa;margin-left:24px;text-decoration:none}
+  .hero{padding:120px 48px;text-align:center}
+  .hero h1{font-size:4rem;margin:0 0 20px}
+  .eyebrow{letter-spacing:.2em;text-transform:uppercase;font-size:.8rem;color:#22c55e}
+  .features{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;padding:80px 48px}
+  .feature i{font-size:1.6rem;color:#22c55e}
+  .numbers{display:flex;justify-content:space-around;padding:80px 48px;border-top:1px solid #262626}
+  .numbers strong{font-size:3rem;display:block}
+  .cta{text-align:center;padding:100px 48px}
+  .cta a{background:#22c55e;color:#0a0a0a;padding:16px 30px;border-radius:10px;text-decoration:none;font-weight:700}
+  footer{padding:30px 48px;color:#737373;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<header><strong><i class="fa-solid fa-heart-pulse"></i> Pulse</strong><nav><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="/login"><i class="fa-solid fa-right-to-bracket"></i> Log in</a></nav></header>
+<section class="hero">
+  <p class="eyebrow">Uptime monitoring</p>
+  <h1 class="g">Know before your customers do.</h1>
+  <p class="g">Pulse checks your site every 30 seconds from five continents and texts you the moment something breaks.</p>
+</section>
+<section class="features" id="features">
+  <div class="feature g"><i class="fa-solid fa-bolt"></i><h3>30-second checks</h3><p>HTTP, ping, SSL expiry and keyword checks on every plan.</p></div>
+  <div class="feature g"><i class="fa-solid fa-mobile-screen"></i><h3>Alerts that reach you</h3><p>SMS, Slack, email or a phone call, with escalation if nobody answers.</p></div>
+  <div class="feature g"><i class="fa-solid fa-chart-line"></i><h3>Status pages</h3><p>A branded public page that updates itself during an incident.</p></div>
+</section>
+<section class="numbers">
+  <div><strong class="count" data-to="4200">0</strong>teams on Pulse</div>
+  <div><strong><span class="count" data-to="99">0</span>.98%</strong>our own uptime</div>
+  <div><strong class="count" data-to="12">0</strong>checks per minute</div>
+</section>
+<section class="cta g"><h2>Start monitoring in two minutes</h2><a href="/signup">Create a free account <i class="fa-solid fa-arrow-right"></i></a></section>
+<footer><span>&copy; 2026 Pulse Labs</span><span>Built in Lisbon</span></footer>
+<script>
+  gsap.registerPlugin(ScrollTrigger);
+  gsap.utils.toArray('.g').forEach((el) => gsap.from(el, { opacity: 0, y: 40, duration: .8, scrollTrigger: { trigger: el, start: 'top 85%' } }));
+  document.querySelectorAll('.count').forEach((el) => {
+    const to = +el.dataset.to; let n = 0;
+    const step = () => { n = Math.min(to, n + Math.ceil(to / 60)); el.textContent = n.toLocaleString(); if (n < to) requestAnimationFrame(step); };
+    new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { step(); o.disconnect(); } }).observe(el);
+  });
+</script>
+</body>
+</html>
