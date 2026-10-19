@@ -1,0 +1,27 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-ci-timing
+
+ ❯ packages/runner/test/zz-tmp-hits-check.test.ts (54 tests | 1 failed | 53 skipped) 6403ms
+   ❯ web-page RENDER with Playwright Chromium (19)
+     × holds at most a capped number of bytes of one allowlisted response: a larger one, or one that never ends, is cut off and the render goes on 6368ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/runner/test/zz-tmp-hits-check.test.ts > web-page RENDER with Playwright Chromium > holds at most a capped number of bytes of one allowlisted response: a larger one, or one that never ends, is cut off and the render goes on
+AssertionError: expected [ '/small.js', '/big.js', …(3) ] to not include '/big-ran.png'
+ ❯ packages/runner/test/zz-tmp-hits-check.test.ts:501:24
+    499|       expect(sentWhenCut).toBeGreaterThan(CAP);
+    500|       expect(hits).toContain('/small-ran.png');
+    501|       expect(hits).not.toContain('/big-ran.png');
+       |                        ^
+    502|     } finally {
+    503|       for (const res of endless) res.destroy();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 53 skipped (54)
+   Start at  18:08:33
+   Duration  7.32s (tests 89%, import 7%, transform 5%)
+

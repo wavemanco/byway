@@ -1,0 +1,6 @@
+M2-context-close-unbounded new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+M3-browser-close-unbounded new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+M7b-cut-by-fetch-limit-not-cap new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+M8a2-sample-looks-again new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+M8a3-sample-remeasures-all new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+done

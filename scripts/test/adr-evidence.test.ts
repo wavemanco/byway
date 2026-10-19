@@ -1,6 +1,7 @@
 /**
- * The decision evidence kept in the repository (docs/adr/evidence; backlog row "Bring the decision evidence kept only
- * in %TEMP% into the repository"). Windows can clear its Temp folder, so evidence kept only there can be lost:
+ * The decision evidence kept in the repository (docs/adr/evidence; it closed the backlog row "Bring the decision
+ * evidence kept only in %TEMP% into the repository"). Windows can clear its Temp folder, so evidence kept only there
+ * can be lost:
  *
  * - an Accepted record that names a path under Temp says in a Later note where that evidence is now, or that it was
  *   not kept;
@@ -49,9 +50,11 @@ describe('decision evidence kept in the repository', () => {
   it('the evidence files hold no email address and no key-shaped string', () => {
     const email = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g;
     const key = /\b(?:sk-(?:ant-)?[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abp]-[A-Za-z0-9-]{10,}|fal-[A-Za-z0-9_-]{16,})/g;
+    // A protobuf type URL ("@type.googleapis.com/…", in Temporal's errors as a test log printed them) is not an address.
+    const typeUrl = (m: string) => m.endsWith('@type.googleapis.com');
     const hits = filesUnder(EVIDENCE, /./).flatMap((file) => {
       const text = read(file);
-      return [...(text.match(email) ?? []), ...(text.match(key) ?? [])].map((m) => `${file}: ${m}`);
+      return [...(text.match(email) ?? []).filter((m) => !typeUrl(m)), ...(text.match(key) ?? [])].map((m) => `${file}: ${m}`);
     });
     expect(hits).toEqual([]);
   });

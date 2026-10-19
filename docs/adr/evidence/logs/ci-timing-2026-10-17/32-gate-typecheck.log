@@ -1,0 +1,5 @@
+$ tsc -p tsconfig.json && tsc -p scripts/tsconfig.json && pnpm -r --if-present run typecheck
+Scope: 13 of 14 workspace projects
+$ next typegen && tsc --noEmit -p tsconfig.json
+Generating route types...
+✓ Types generated successfully

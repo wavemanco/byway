@@ -112,11 +112,11 @@ describe('protected checkpoints are kept in substance, not just in name (COMP-1)
 });
 
 /**
- * B1 (backlog "A model RELAY step is admitted in a non-media composed recipe"): a model RELAY step makes a video clip of
- * a storyboard's shot, and a relay chain runs one link per shot; the runner reads the shots from the work
- * (storyboardShots), which only a media recipe's work has. Elsewhere the step fails when it is reached, after the steps
- * before it were paid for, while its explainer promises "one clip of the last shot". So the composed profile refuses
- * either outside a media recipe.
+ * B1 (ADR-0109, which closed the backlog row "A model RELAY step is admitted in a non-media composed recipe"): a model
+ * RELAY step makes a video clip of a storyboard's shot, and a relay chain runs one link per shot; the runner reads the
+ * shots from the work (storyboardShots), which only a media recipe's work has. Elsewhere the step fails when it is
+ * reached, after the steps before it were paid for, while its explainer promises "one clip of the last shot". So the
+ * composed profile refuses either outside a media recipe.
  */
 describe('RELAY only where the work is a storyboard (COMPOSED-MEDIUM)', () => {
   const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;

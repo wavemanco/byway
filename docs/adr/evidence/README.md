@@ -1,6 +1,6 @@
 # Decision evidence
 
-What the decision records in [docs/adr](..) cite as evidence, kept in the repository. Until 2026-10-18 much of it existed only under the Windows Temp folder (`C:/Users/arvik/AppData/Local/Temp/`), which Windows can clear. On 2026-10-18 Claude brought in what a reader needs to check the records' claims: the briefs, the reports with their findings and verdicts, and the small probes with their outputs. Clones, corpora and logs were left out. Each Accepted record that cited a Temp path now has a Later note that says where each item is, or that it was not kept.
+What the decision records in [docs/adr](..) cite as evidence, kept in the repository. Until 2026-10-18 much of it existed only under the Windows Temp folder (`C:/Users/arvik/AppData/Local/Temp/`), which Windows can clear. On 2026-10-18 Claude brought in what a reader needs to check the records' claims: the briefs, the reports with their findings and verdicts, and the small probes with their outputs. Clones, corpora and logs were left out, except two small sets of logs brought in on 2026-10-19 (below). Each Accepted record that cited a Temp path now has a Later note that says where each item is, or that it was not kept.
 
 | File | What it is | Records |
 |---|---|---|
@@ -13,11 +13,15 @@ What the decision records in [docs/adr](..) cite as evidence, kept in the reposi
 | [probes/decisions/](probes/decisions/) | The D2 brief's, the D2 skeptic's and the D4 brief's probes, with their outputs | ADR-0103, ADR-0105 |
 | [probes/review-verify/](probes/review-verify/) | The external-review verification's probes for F01 (stage 1's prototypes), F02, F08 and F20, with their outputs | ADR-0092, ADR-0093, ADR-0098 |
 | [probes/ports-rendered/](probes/ports-rendered/) | ADR-0097's measurement: the execution oracle, the summaries its numbers come from, and the scripts that made them | ADR-0097 |
+| [logs/](logs/) | The logs behind ADR-0103's note of 2026-10-17 on the five renderer tests' time limits, and the server log and failed page of CI run 39152075629 (C5's 120 s wait) | ADR-0103; the backlog row "Known Windows timing flake" |
 | [probes/d2/](probes/d2/) | The real Windows probe of round 1's S2 fix, and the probe of Playwright's close with a reason | ADR-0105, ADR-0106 |
+
+The external review's verification report ([docs/reviews/2026-10-08-external-review-verification.md](../../reviews/2026-10-08-external-review-verification.md)) names its probe folders under `C:/Users/arvik/AppData/Local/Temp/byway-review-verify/`. The probes the records cite are in [probes/review-verify/](probes/review-verify/). The report also names `revise-H-r1/probe.mts` and its results; on 2026-10-19 that folder was empty. The rest of that folder (clones and the agents' working folders) was not kept.
 
 The probes import the code they checked by absolute path, as it stood when they ran (a worktree or the main checkout of the day). They record what was run; they are not tests that run today.
 
 Elsewhere in the repository:
 
 - [packages/runner/test/f07-corpus/](../../../packages/runner/test/f07-corpus/): F07's arbiter corpus, with its generators, hand cases, oracles and round 14's outcomes, to run again before a Playwright upgrade or a change to how page VOICE writes (ADR-0081).
+- [docs/reviews/2026-10-18-windows-ci.md](../../reviews/2026-10-18-windows-ci.md): the write-up of Windows CI's failures made for the owner on 2026-10-18, which the backlog rows on CI time, the timing flake and engine stalls cite.
 - [scripts/test/claims-oracle.test.ts](../../../scripts/test/claims-oracle.test.ts) and [scripts/test/claims-oracle/](../../../scripts/test/claims-oracle/): the claims oracle of the F01 semantics work, which runs with the unit tests (ADR-0092, ADR-0097, ADR-0098).

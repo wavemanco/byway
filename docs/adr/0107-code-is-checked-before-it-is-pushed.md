@@ -48,6 +48,6 @@ F07 (ADR-0081) ran 14 fix-and-check rounds between 2026-10-08 and 2026-10-15, it
 
 ## Evidence
 
-- The owner's messages and answers are in this session's transcript, `C:\Users\arvik\.claude\projects\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl` (outside the repository), with each option's text as asked: 2026-10-15T07:54:38Z (item 2), 2026-10-15T17:28:07Z (item 3), 2026-10-16T05:05:05Z (item 3, a message the owner queued while Claude worked), 2026-10-17T03:17:31Z (item 1), 2026-10-17T07:32:30Z (item 2), and 2026-10-18T21:02:28Z, 22:23:25Z and 22:49:10Z (item 4). The dates above are local (UTC−7).
+- The owner's messages and answers are in this session's transcript, `C:\Users\arvik\.claude\projects\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl` (outside the repository), with each option's text as asked: 2026-10-15T07:54:38Z (item 2), 2026-10-15T17:28:07Z (item 3), 2026-10-16T05:05:05Z (item 3, a message the owner queued while Claude worked), 2026-10-17T03:17:31Z (item 1), 2026-10-17T07:32:30Z (item 2), and 2026-10-18T21:02:28Z, 22:23:25Z and 22:49:10Z (item 4). The dates above are local (UTC−7). Each is also in [evidence/conversation-continued.md](evidence/conversation-continued.md), under its time.
 - F07's rounds: [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md), header and Evidence.
 - D2's branch run, run 39172144829: [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md), Evidence.

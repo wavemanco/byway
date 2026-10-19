@@ -1,0 +1,11 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-ci-timing
+
+(node:45268) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  10 passed (10)
+      Tests  127 passed (127)
+   Start at  19:21:48
+   Duration  11.41s (tests 74%, import 15%, transform 11%)
+

@@ -39,4 +39,4 @@ The options Claude named that day:
 ## Evidence
 
 - [evidence/conversation.md](evidence/conversation.md) · dialogue 2026-10-07T17:28:22Z (Claude's proposal) and 2026-10-07T17:48:15Z (the owner's answer) — “go with the product track. complete it first.”
-- The restatement of 2026-10-17 (2026-10-17T15:24:29Z) is in this session's transcript, `C:\Users\arvik\.claude\projects\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl` (outside the repository).
+- The restatement of 2026-10-17 (2026-10-17T15:24:29Z) is in this session's transcript, `C:\Users\arvik\.claude\projects\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl` (outside the repository), and in [evidence/conversation-continued.md](evidence/conversation-continued.md), under its time.

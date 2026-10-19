@@ -1,12 +1,12 @@
 /**
- * A run start whose workflow start failed asks Temporal for the workflow before it marks the run failed (B1, ADR-0109;
- * backlog "Run start: describe the workflow before marking a run failed" and "a start that timed out is reported as
- * 'engine was not running'"). A start can fail after Temporal accepted it: its reply timed out (gRPC 4), or, for a Start
- * delivered twice to a stopping engine, the other delivery's start went through. Marking that run failed would refuse
- * its later calls but not one already under way, and the old message said "Nothing was spent". Now a workflow Temporal
- * has is the run's, and the run is left to it; a workflow Temporal does not have means the run did not start; and when
- * byway cannot ask, the run is failed with a message that says it cannot tell. The real store; a stand-in Temporal
- * client (engine-state.test.ts runs the same against a real Temporal server).
+ * A run start whose workflow start failed asks Temporal for the workflow before it marks the run failed (B1, ADR-0109,
+ * which closed the backlog rows "Run start: describe the workflow before marking a run failed" and "a start that timed
+ * out is reported as 'engine was not running'"). A start can fail after Temporal accepted it: its reply timed out (gRPC
+ * 4), or, for a Start delivered twice to a stopping engine, the other delivery's start went through. Marking that run
+ * failed would refuse its later calls but not one already under way, and the old message said "Nothing was spent". Now
+ * a workflow Temporal has is the run's, and the run is left to it; a workflow Temporal does not have means the run did
+ * not start; and when byway cannot ask, the run is failed with a message that says it cannot tell. The real store; a
+ * stand-in Temporal client (engine-state.test.ts runs the same against a real Temporal server).
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
