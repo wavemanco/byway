@@ -3,7 +3,7 @@
  * that fails leaves a failed run in History; its error should say what happened, not quote a gRPC status. When the
  * engine was not reachable, nothing ran and nothing was spent, and the person is told so.
  *
- * A start can also fail after Temporal accepted it (B1, ADR-0107): its reply timed out (gRPC 4, DEADLINE_EXCEEDED), or
+ * A start can also fail after Temporal accepted it (B1, ADR-0109): its reply timed out (gRPC 4, DEADLINE_EXCEEDED), or
  * another delivery of the same Start got there first. So the client asks Temporal for the workflow before it marks the
  * run failed (client.ts), and
  * says here what that found: Temporal has no such workflow ('absent'), or byway could not ask ('unknown'). A timeout is

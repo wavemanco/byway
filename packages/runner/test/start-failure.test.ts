@@ -1,7 +1,7 @@
 /**
  * OPS-2 (runner part): a run whose workflow could not be started stays in History as failed, and says why in plain
  * words. When the engine was simply not there, it says so and that nothing was spent; any other cause keeps its text.
- * B1 (ADR-0107): a start whose reply timed out (gRPC 4, DEADLINE_EXCEEDED) may have reached Temporal, so it is not read
+ * B1 (ADR-0109): a start whose reply timed out (gRPC 4, DEADLINE_EXCEEDED) may have reached Temporal, so it is not read
  * as the engine being down. The client asks Temporal for the workflow first (start-describe.test.ts): when Temporal has
  * none, the run did not start; when byway could not ask, the message says it cannot tell, and does not say nothing was
  * spent.

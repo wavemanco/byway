@@ -171,7 +171,7 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
         if (input.runId !== undefined && e instanceof WorkflowExecutionAlreadyStartedError) return record;
         // A repeated start leaves the run as the first one made it.
         if (!created) throw e;
-        // The start may have failed after Temporal accepted it (B1, ADR-0107): its reply timed out, or another delivery's
+        // The start may have failed after Temporal accepted it (B1, ADR-0109): its reply timed out, or another delivery's
         // start went through. Whatever ran under this run's workflow id is this run's, so it is left to its workflow.
         const workflow = await workflowAfterFailedStart(id);
         if (workflow === 'exists') return record;

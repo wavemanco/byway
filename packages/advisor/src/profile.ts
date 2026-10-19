@@ -36,7 +36,7 @@ import { flowRecipe } from '@byway/validator';
  * A model chose its counts, so it is held to COMPOSED_LIMITS (COMPOSED-LIMIT, F02): far inside the engine's own, which
  * the validator applies to every recipe (ST3 'limit').
  *
- * RELAY only where the work is a storyboard (COMPOSED-MEDIUM, B1, ADR-0107): a model RELAY step makes a video clip of a
+ * RELAY only where the work is a storyboard (COMPOSED-MEDIUM, B1, ADR-0109): a model RELAY step makes a video clip of a
  * storyboard's shot, and a relay chain runs one link per shot, both read from the work (storyboardShots), so outside a
  * media recipe they fail when reached, after the steps before them were paid for. A compositing step (RELAY by a tool)
  * is skipped in v1 in any medium, and stays allowed.

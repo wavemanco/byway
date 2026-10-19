@@ -1,5 +1,5 @@
 /**
- * A run start whose workflow start failed asks Temporal for the workflow before it marks the run failed (B1, ADR-0107;
+ * A run start whose workflow start failed asks Temporal for the workflow before it marks the run failed (B1, ADR-0109;
  * backlog "Run start: describe the workflow before marking a run failed" and "a start that timed out is reported as
  * 'engine was not running'"). A start can fail after Temporal accepted it: its reply timed out (gRPC 4), or, for a Start
  * delivered twice to a stopping engine, the other delivery's start went through. Marking that run failed would refuse

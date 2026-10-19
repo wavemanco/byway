@@ -1,6 +1,6 @@
 /**
  * The renderer's Chromium gets no name the secrets file listed, however the gateway was loaded (B1; ADR-0100 item 6,
- * ADR-0107). On Windows, a `pnpm start` from a current directory whose drive letter is lowercase (`c:\…`) loads the
+ * ADR-0109). On Windows, a `pnpm start` from a current directory whose drive letter is lowercase (`c:\…`) loads the
  * gateway's env module twice: scripts/serve.ts imports it by a relative path (`file:///c:/…`) and pages.ts through the
  * @byway/gateway link (`file:///C:/…`). The names `.env.agents` listed were kept per module copy, so pages.ts's copy
  * knew none of them and Chromium got every name from the file that does not look secret. The fixture loads both as

@@ -91,7 +91,7 @@ describe('a run whose workflow is gone (OPS-1)', () => {
   }, 60_000);
 });
 
-describe('a start whose reply timed out, against a real Temporal server (B1, ADR-0107)', () => {
+describe('a start whose reply timed out, against a real Temporal server (B1, ADR-0109)', () => {
   /**
    * The harness's Temporal client, with a workflow start whose reply is lost: it times out (gRPC 4) after Temporal
    * accepted the workflow, or before the request reached it. Everything else is the real client, the describe included.

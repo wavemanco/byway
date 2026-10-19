@@ -9,7 +9,7 @@
  * and the cached connection is dropped, so the next action connects again once byway has been restarted.
  *
  * A DEADLINE_EXCEEDED can also come from an engine that is running but slow, which may have done what it was asked (B1,
- * ADR-0107), so the message says the engine is not running or did not answer in time. A run start that times out is
+ * ADR-0109), so the message says the engine is not running or did not answer in time. A run start that times out is
  * settled before it gets here: the Runner client asks Temporal whether the run's workflow exists before it marks the run
  * failed (packages/runner/src/client.ts), and the run's own message says what it found.
  */

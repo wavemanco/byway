@@ -1,4 +1,4 @@
-# ADR-0107: The money path before the first live run: prices and model ids read again, a Gemini image's thinking charged, a failed run start asks Temporal first
+# ADR-0109: The money path before the first live run: prices and model ids read again, a Gemini image's thinking charged, a failed run start asks Temporal first
 
 | | |
 |---|---|

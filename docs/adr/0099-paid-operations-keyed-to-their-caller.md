@@ -87,4 +87,4 @@ Decisions D1 to D4 stay with the owner and nothing here pre-decides them: Anthro
 
 Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
 
-- **2026-10-18, [ADR-0107](0107-money-path-before-the-first-live-run.md).** The second double fault under "Run starts, two double faults" is closed: before a run whose workflow start failed is marked failed, the Runner client asks Temporal for its workflow, and a run whose workflow Temporal has (another delivery's start went through, or the failed start's reply only timed out) is left to it. The first double fault is unchanged.
+- **2026-10-18, [ADR-0109](0109-money-path-before-the-first-live-run.md).** The second double fault under "Run starts, two double faults" is closed: before a run whose workflow start failed is marked failed, the Runner client asks Temporal for its workflow, and a run whose workflow Temporal has (another delivery's start went through, or the failed start's reply only timed out) is left to it. The first double fault is unchanged.

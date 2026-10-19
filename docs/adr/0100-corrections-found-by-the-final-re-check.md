@@ -92,4 +92,4 @@ Each item quotes the sentence, says what is true on main and which change made i
 
 Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
 
-- **2026-10-18, [ADR-0107](0107-money-path-before-the-first-live-run.md).** Item 6's defect is fixed: the names the secrets file listed are kept on `globalThis` under a registered symbol, once per process, so both copies of the gateway's env module read them, and Chromium gets none of them on a start from a lowercase drive letter too. ADR-0084's sentences quoted in item 6 hold on every start. `scripts/test/renderer-env.test.ts` starts the gateway that way on Windows.
+- **2026-10-18, [ADR-0109](0109-money-path-before-the-first-live-run.md).** Item 6's defect is fixed: the names the secrets file listed are kept on `globalThis` under a registered symbol, once per process, so both copies of the gateway's env module read them, and Chromium gets none of them on a start from a lowercase drive letter too. ADR-0084's sentences quoted in item 6 hold on every start. `scripts/test/renderer-env.test.ts` starts the gateway that way on Windows.
