@@ -13,9 +13,11 @@ import {
 } from './steps.ts';
 
 /**
- * The C1 that C1-H was derived from: C1's hash at Milestone 0. It is written out here, not read from
- * `c1`, so a later change to the product's C1 changes neither C1-H's hash nor the hashes of the five
- * recipes derived from it. Study 1 registers C1-H's hash, and ADR-0041 freezes research versions.
+ * The C1 that C1-H was derived from: C1's hash since 2026-10-07, when product phase 0 gave the C1
+ * family its medium (ba0e5b9), and the hash conformance.test.ts keeps as C1's Milestone 0 hash. It is
+ * written out here, not read from `c1`, so a later change to the product's C1 changes neither C1-H's
+ * hash nor the hashes of the five recipes derived from it. Study 1 registers C1-H's hash, and ADR-0041
+ * freezes research versions.
  */
 export const C1H_PARENT_HASH = 'sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577';
 

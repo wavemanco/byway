@@ -59,7 +59,8 @@ describe('catalog conformance', () => {
 });
 
 describe('lineage', () => {
-  // C1's hash at Milestone 0, the C1 that C1-H was derived from.
+  // The C1 that C1-H was derived from: C1's hash since product phase 0 gave it its medium (ba0e5b9), as the Milestone 0
+  // hashes above keep it.
   const C1_AT_MILESTONE_0 = 'sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577';
 
   it('C1-H derives from C1 as it stood at Milestone 0, through the Study 1 binding map', () => {
