@@ -17,7 +17,11 @@ pnpm demo        # byway with sample outputs: no keys, no AI calls, nothing char
 
 Open http://127.0.0.1:3000. Ctrl+C stops everything.
 
-To use real models, put your provider keys in `.env.agents` at the repo root (it is gitignored; **never commit keys**), then:
+To use real models:
+
+1. Make API keys for byway alone, so you can revoke them without touching anything else ([ADR-0009](docs/adr/0009-api-key-fencing-constraints.md)).
+2. Before the first live run, set a spending limit, or the smallest prepaid balance, in each provider's console where it offers one. That caps what a leaked or misused key can cost, whatever byway's own budgets do (the [playbook](docs/playbook.md)'s "Protect the product's provider keys").
+3. Put the keys in `.env.agents` at the repo root (it is gitignored; **never commit keys**), then run:
 
 ```bash
 pnpm start
@@ -201,7 +205,7 @@ A failed job also keeps, for 14 days, what the browser tests left: their server 
 
 A red run that is still red when run again (`gh run rerun <run id> --failed`) is a real failure: fix it before merging anything else. A test that fails only sometimes is named in the backlog and set aside, so red keeps meaning broken.
 
-A risky change (for example the renderer's sandbox on Linux) is run on its branch before it merges, and merges only when both jobs pass:
+A risky change (for example the renderer's sandbox on Linux) is run on its branch before it merges. It merges when the Linux job passes and the Windows job passes or fails only on a timing flake already named in the backlog; any other failure is fixed first ([ADR-0107](docs/adr/0107-code-is-checked-before-it-is-pushed.md)):
 
 ```bash
 git push origin <branch>                    # GitHub can only run a branch it has

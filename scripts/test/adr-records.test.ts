@@ -149,6 +149,22 @@ describe('the records and the index agree', () => {
     }
   });
 
+  it('the count line above the tables counts the index rows', () => {
+    // "**106 records:** 99 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed."
+    const line = /\*\*(\d+) records:\*\* (\d+) accepted \((\d+) of them by continuation, awaiting ratification; (\d+) delegated\) and (\d+) proposed\./.exec(read(INDEX));
+    expect(line, 'the index has its count line').not.toBeNull();
+    const [total, accepted, continuation, delegated, proposed] = (line ?? []).slice(1).map(Number);
+    const acceptedRows = rows.filter((r) => isAccepted(r.status));
+    expect({ total, accepted, continuation, delegated, proposed }).toEqual({
+      total: rows.length,
+      accepted: acceptedRows.length,
+      continuation: acceptedRows.filter((r) => r.decidedBy.startsWith('By continuation')).length,
+      delegated: acceptedRows.filter((r) => r.decidedBy === 'Delegated').length,
+      proposed: rows.filter((r) => statusWord(r.status) === 'Proposed').length,
+    });
+    expect(total, 'one row per record').toBe(files.size);
+  });
+
   it('each record that has reached main has an index row', () => {
     const listed = new Set(rows.map((r) => r.number));
     expect([...log.onMain].filter((n) => !listed.has(n)).map((n) => `ADR-${n}`)).toEqual([]);
@@ -452,9 +468,9 @@ describe('reading records and the index', () => {
     expect(opensAsProposal('## Decision\n\nWe do X. Proposed changes go to a new record.')).toBe(false);
   });
 
-  it('reads an index row’s status from the end, so a "|" in a title does not move it', () => {
+  it('reads an index row’s status and Decided by from the end, so a "|" in a title does not move them', () => {
     expect(parseIndex('| [ADR-0066](0066-x.md) | A | B | Accepted; changed by [ADR-0094](0094-y.md), [ADR-0100](0100-z.md) | Delegated | 2026-10-07 10:48 |')).toEqual([
-      { number: '0066', file: '0066-x.md', status: 'Accepted; changed by [ADR-0094](0094-y.md), [ADR-0100](0100-z.md)', changedBy: ['0094', '0100'] },
+      { number: '0066', file: '0066-x.md', status: 'Accepted; changed by [ADR-0094](0094-y.md), [ADR-0100](0100-z.md)', decidedBy: 'Delegated', changedBy: ['0094', '0100'] },
     ]);
   });
 });

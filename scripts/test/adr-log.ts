@@ -161,11 +161,13 @@ export interface IndexRow {
   /** The row's link target, relative to docs/adr. */
   file: string;
   status: string;
+  /** The Decided by cell, as written ("User", "Delegated", "By continuation ⚑", …). */
+  decidedBy: string;
   /** The records its "changed by" links name, in order. */
   changedBy: string[];
 }
 
-/** The index's decision rows (docs/adr/README.md): number, file, Status cell and "changed by" links. */
+/** The index's decision rows (docs/adr/README.md): number, file, Status and Decided by cells, and "changed by" links. */
 export function parseIndex(text: string): IndexRow[] {
   return lf(text)
     .split('\n')
@@ -176,7 +178,8 @@ export function parseIndex(text: string): IndexRow[] {
       const cells = line.replace(/^\|/, '').replace(/\|\s*$/, '').split(' | ');
       const status = (cells[cells.length - 3] ?? '').trim();
       const changed = /changed by (.*)$/.exec(status)?.[1] ?? '';
-      return [{ number: head[1] ?? '', file: head[2] ?? '', status, changedBy: [...changed.matchAll(/\[ADR-(\d{4})\]/g)].map((m) => m[1] ?? '') }];
+      const decidedBy = (cells[cells.length - 2] ?? '').trim();
+      return [{ number: head[1] ?? '', file: head[2] ?? '', status, decidedBy, changedBy: [...changed.matchAll(/\[ADR-(\d{4})\]/g)].map((m) => m[1] ?? '') }];
     });
 }
 
