@@ -209,9 +209,9 @@ describe('an image response with no image is a refusal, not a fake 502 (ENG-5)',
     expect(calls).toHaveLength(1);
     const lines = ledgerLines();
     expect(lines).toHaveLength(1);
-    // Billed for its tokens; no image, so no per-image charge.
+    // Billed for its tokens (its text at the model's $7.50 per 1M text-and-thinking rate, B1); no image, so no per-image charge.
     expect(lines[0]).toMatchObject({ kind: 'image', usage: { inputTokens: 30, outputTokens: 40, units: 0 } });
-    expect(lines[0]?.costUsd as number).toBeCloseTo(30 * 1.5e-6, 9);
+    expect(lines[0]?.costUsd as number).toBeCloseTo(30 * 1.5e-6 + 40 * 7.5e-6, 9);
   });
 
   it('OpenAI: an images response with no data is ledgered once and refused, with no retry', async () => {
