@@ -87,3 +87,9 @@ Each item quotes the sentence, says what is true on main and which change made i
 - The final re-check of the external-review fixes on main 1ba72f5, 2026-10-15 to 2026-10-16 (its notes are outside the repository).
 - Checked on this branch, whose code is main's: the fit probes of `fitCard` with the real renderer (item 9); the placement sweep of `corpus.test.ts` with its tally logged, `PLACEMENT TALLY {"moves":3453,"admitted":1093,"tooMany":0}` and `MONOTONICITY TOTAL 3952 BASES 13` (item 14); a probe that loads the gateway and runner the way `scripts/serve.ts` does, with stand-in values only, and captures the environment each renderer entry (`ready`, a card, `shownText`, `checkRenderer`) hands Chromium: two plain names from the file reached Chromium with a lowercase drive letter and none with an uppercase one; provider keys and secret-looking names were absent in both (item 6).
 - The code and commits named in each item.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, [ADR-0107](0107-money-path-before-the-first-live-run.md).** Item 6's defect is fixed: the names the secrets file listed are kept on `globalThis` under a registered symbol, once per process, so both copies of the gateway's env module read them, and Chromium gets none of them on a start from a lowercase drive letter too. ADR-0084's sentences quoted in item 6 hold on every start. `scripts/test/renderer-env.test.ts` starts the gateway that way on Windows.

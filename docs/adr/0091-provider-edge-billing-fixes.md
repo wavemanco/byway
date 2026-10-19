@@ -114,3 +114,9 @@ What the verifiers reproduced at the provider edge:
   - runner: `packages/runner/test/restore.test.ts`;
   - web: `apps/web/test/api.test.ts`, `history.test.ts` and `guard-estimates.test.ts`.
 - It supersedes no ADR. It narrows ADR-0079's "Retries never buy the same thing twice" at the provider edge only. The memo-save and crash windows stay open until stage 3.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, [ADR-0107](0107-money-path-before-the-first-live-run.md).** "Gemini image thinking tokens are not counted" no longer holds. Google's pricing page prices `gemini-nano-banana-2.1`'s text and thinking output at $7.50 per 1M tokens on top of the image, and its image guide says thinking tokens are billed, so `google.ts` now reports an image answer's thinking and text tokens as output, priced at that rate. The 2,000 such tokens the estimate plans for each image are a planning number, as gpt-image's 8,000 are. Read again on 2026-10-18, the documentation still does not say whether a provider-bodied 5xx or a mid-stream error event is billed, except fal's ("Server errors (HTTP 500+) are never charged"), so treating them as unbilled stays an assumption.
