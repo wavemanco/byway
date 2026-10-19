@@ -1,0 +1,10 @@
+[
+ ["font_p_removed", "<div><font face=\"Arial\">Intro<p>Spring sale</p></font>Order today</div>", ["Intro", "", "Order today"]],
+ ["ins_p_removed", "<div>Call us<ins><p>New offer</p></ins>today</div>", ["Call us", "", "today"]],
+ ["label_p_removed", "<div>Name<label><p>(required)</p></label>here</div>", ["Name", "", "here"]],
+ ["del_p_removed", "<section><p>Price</p><del><p>$20</p></del>Now $15</section>", ["Price", "", "Now $15"]],
+ ["font_p_removed_ws", "<div><font face=\"Arial\">Intro <p>Spring sale</p></font> Order today</div>", ["Intro", "", "Order today"]],
+ ["font_inline_deck", "<p>Hello <font color=\"red\">world</font>!</p>", null],
+ ["font_inline_edit", "<p>Hello <font color=\"red\">world</font>!</p>", ["Hi", "world", "!"]],
+ ["font_li_removed", "<ul><li><font>Item one</font></li></ul><font>Lead<li>Gone</li></font>Tail", ["Item one", "Lead", "", "Tail"]]
+]

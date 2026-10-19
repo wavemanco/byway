@@ -1,0 +1,7 @@
+[
+ ["C1r5_link_emptied_holds_hidden", "<p>Go <a href=\"/x\">Read<span hidden> more</span></a> now</p>", ["Go [] now"]],
+ ["C2r5_button_emptied_holds_hidden", "<p>Go <button type=\"button\">Send<span hidden> it</span></button> now</p>", ["Go", "", "now"]],
+ ["C9_link_only_hidden_words_kept", "<p>Go <a href=\"/x\">Read<span hidden> more</span></a> now</p>", ["Go [Read] now"]],
+ ["C10_button_hidden_label", "<p>Go <button type=\"button\"><b>Send</b><span hidden>Send the form</span></button> now</p>", ["Go", "", "now"]],
+ ["C11_button_icon_hidden", "<p>Go <button type=\"button\"><svg width=\"9\" height=\"9\"></svg> Send<span hidden> it</span></button> now</p>", ["Go", "", "now"]]
+]

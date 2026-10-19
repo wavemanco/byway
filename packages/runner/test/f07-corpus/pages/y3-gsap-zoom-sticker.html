@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Salt &amp; Smoke — Harbourside Grill</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Work+Sans:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Work Sans', sans-serif; background: #111; color: #f3ede4; }
+    h1, h2, .display { font-family: 'Bebas Neue', sans-serif; letter-spacing: .02em; }
+    nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; padding: 18px 40px; background: rgba(17,17,17,.85); }
+    nav .brand { font-family: 'Bebas Neue', sans-serif; font-size: 28px; }
+    nav ul { display: flex; gap: 28px; list-style: none; }
+    nav a { color: #f3ede4; text-decoration: none; font-size: 14px; }
+    @keyframes glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(232,93,4,.6); } 50% { box-shadow: 0 0 0 10px rgba(232,93,4,0); } }
+    .book { background: #e85d04; color: #fff; padding: 10px 20px; border-radius: 4px; font-weight: 600; animation: glow 2s infinite; }
+    .hero { position: relative; height: 100vh; overflow: hidden; display: flex; align-items: center; justify-content: center; text-align: center; }
+    .hero-bg { position: absolute; inset: 0; background: radial-gradient(circle at 30% 40%, #5a2a0c, #111 70%); transform: scale(1.1); }
+    .hero-inner { position: relative; transform: scale(1.04); }
+    .hero h1 { font-size: 120px; line-height: .9; }
+    .hero p { margin-top: 18px; font-size: 20px; color: #d8cbb8; }
+    .sticker { position: absolute; right: 12%; top: 22%; transform: rotate(-12deg); background: #ffd166; color: #111; font-family: 'Bebas Neue', sans-serif; font-size: 28px; padding: 18px 22px; border-radius: 50%; }
+    .side { position: absolute; left: 24px; bottom: 120px; transform: rotate(-90deg); transform-origin: left bottom; display: flex; gap: 10px; font-size: 12px; letter-spacing: .3em; text-transform: uppercase; color: #a8998a; }
+    .ticker { overflow: hidden; white-space: nowrap; background: #e85d04; color: #111; padding: 12px 0; }
+    .ticker-track { display: inline-block; padding-left: 100%; animation: run 30s linear infinite; font-weight: 600; }
+    @keyframes run { to { transform: translateX(-100%); } }
+    section { padding: 100px 40px; max-width: 1200px; margin: 0 auto; }
+    .label { display: inline-block; transform: rotate(-90deg) translateX(-100%); transform-origin: left top; position: absolute; left: 10px; font-size: 13px; color: #a8998a; letter-spacing: .2em; }
+    .menu { position: relative; display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px 64px; }
+    .dish { display: flex; justify-content: space-between; border-bottom: 1px dashed #444; padding-bottom: 12px; }
+    .dish h3 { font-size: 20px; }
+    .dish span { color: #ffd166; }
+    .dish p { grid-column: 1 / -1; color: #a8998a; font-size: 14px; }
+    .stats { display: flex; gap: 80px; justify-content: center; text-align: center; }
+    .stats strong { display: block; font-family: 'Bebas Neue', sans-serif; font-size: 64px; color: #e85d04; }
+    details { border-bottom: 1px solid #333; padding: 18px 0; }
+    summary { cursor: pointer; font-weight: 600; }
+    details p { margin-top: 12px; color: #a8998a; }
+    footer { padding: 40px; text-align: center; color: #776a5d; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="brand">Salt &amp; Smoke</div>
+    <ul><li><a href="#menu">Menu</a></li><li><a href="#story">Story</a></li><li><a href="#faq">FAQ</a></li></ul>
+    <a class="book" href="/book">Book a table</a>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-inner">
+      <h1 class="reveal-up">Fire, fish<br>&amp; the harbour</h1>
+      <p class="reveal-up">Wood-fired seafood on the quay, every night from five.</p>
+    </div>
+    <div class="sticker">New menu!</div>
+    <div class="side"><span>Since</span><span>2011</span></div>
+  </header>
+
+  <div class="ticker"><div class="ticker-track">Oysters are back — Thursday is lobster night — Private dining for up to 24 — Gift cards now online</div></div>
+
+  <section id="menu">
+    <span class="label">01 — Menu</span>
+    <h2 class="display reveal-up" style="font-size:56px;margin-bottom:40px">From the grill</h2>
+    <div class="menu">
+      <div class="dish reveal-up"><h3>Charred mackerel</h3><span>£14</span><p>Rhubarb, horseradish, burnt butter.</p></div>
+      <div class="dish reveal-up"><h3>Half lobster</h3><span>£32</span><p>Garlic and seaweed butter, fries.</p></div>
+      <div class="dish reveal-up"><h3>Smoked hake</h3><span>£21</span><p>Leeks, mussels, cider sauce.</p></div>
+      <div class="dish reveal-up"><h3>Ember beets</h3><span>£11</span><p>Goat's curd, hazelnut, honey.</p></div>
+    </div>
+  </section>
+
+  <section id="story">
+    <div class="stats">
+      <div><strong class="count" data-to="13">0</strong>years on the quay</div>
+      <div><strong class="count" data-to="2400">0</strong>oysters a week</div>
+      <div><strong class="count" data-to="6">0</strong>local boats</div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2 class="display reveal-up" style="font-size:48px;margin-bottom:24px">Good to know</h2>
+    <details><summary>Do you take walk-ins?</summary><p>Yes, the bar is kept for walk-ins every night.</p></details>
+    <details><summary>Is there a vegetarian menu?</summary><p>Always: ask for the garden menu.</p></details>
+    <details><summary>Can we bring a dog?</summary><p>Well-behaved dogs are welcome on the terrace.</p></details>
+  </section>
+
+  <footer>
+    <p>Salt &amp; Smoke, 4 Harbour Quay, Whitby YO21 1DH · <a href="tel:01947600123" style="color:#a8998a">01947 600123</a></p>
+  </footer>
+
+  <script>
+    gsap.registerPlugin(ScrollTrigger);
+    gsap.utils.toArray('.reveal-up').forEach((el, i) => {
+      gsap.from(el, { y: 40, opacity: 0, duration: .9, delay: (i % 4) * .08, ease: 'power3.out', scrollTrigger: { trigger: el, start: 'top 85%' } });
+    });
+    gsap.to('.hero-bg', { scale: 1.2, duration: 18, ease: 'none', repeat: -1, yoyo: true });
+    gsap.to('.sticker', { rotation: -6, duration: 1.6, ease: 'sine.inOut', repeat: -1, yoyo: true });
+    document.querySelectorAll('.count').forEach((el) => {
+      const obj = { v: 0 };
+      gsap.to(obj, { v: Number(el.dataset.to), duration: 2, ease: 'power1.out', scrollTrigger: { trigger: el, start: 'top 90%' }, onUpdate: () => { el.textContent = Math.round(obj.v).toLocaleString('en-GB'); } });
+    });
+  </script>
+</body>
+</html>

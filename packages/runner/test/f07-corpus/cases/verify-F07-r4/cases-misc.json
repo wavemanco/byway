@@ -1,0 +1,6 @@
+[
+ ["trail_ws_in_removed_span_before_icon", "<p>Hello <span>world </span><i class=\"arrow\"></i></p>", ["Hello"]],
+ ["trail_ws_in_removed_em_before_button", "<p>Call us <em>today </em><button type=\"button\" aria-label=\"Call\"><svg width=\"9\" height=\"9\"></svg></button></p>", ["Call us", "", "", ""]],
+ ["own_close_in_td_b_edit", "<div><a href=\"/x\">Shop<table><tr><td>Cell</a> more</td></tr></table>After table</div>", ["Shop", "[Cell] more", "After the table"]],
+ ["own_close_in_td_b_prompt", "<div><a href=\"/x\">Shop<table><tr><td>Cell</a> more</td></tr></table>After table</div>", null]
+]

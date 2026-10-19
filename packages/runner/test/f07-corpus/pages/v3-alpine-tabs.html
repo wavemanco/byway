@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledgerly — Bookkeeping for freelancers</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<style>
+  [x-cloak]{display:none!important}
+  body{margin:0;font-family:system-ui,sans-serif;color:#0f172a}
+  header{display:flex;justify-content:space-between;align-items:center;padding:18px 40px;position:sticky;top:0;background:#fff;box-shadow:0 1px 0 #e2e8f0}
+  header nav{display:flex;gap:20px}
+  header a{color:#0f172a;text-decoration:none}
+  .hero{padding:100px 40px;background:linear-gradient(#eef2ff,#fff)}
+  .hero h1{font-size:3.5rem;margin:0}
+  .tabs{padding:60px 40px}
+  .tabs button{border:0;background:#e2e8f0;padding:10px 18px;border-radius:8px;margin-right:8px;cursor:pointer}
+  .tabs button.on{background:#4f46e5;color:#fff}
+  .faq{padding:60px 40px;max-width:800px}
+  .faq dt{font-weight:600;margin-top:18px;cursor:pointer}
+  .pricing{display:flex;gap:24px;padding:60px 40px}
+  .plan{flex:1;border:1px solid #e2e8f0;border-radius:12px;padding:24px}
+  .price{font-size:2.4rem;font-weight:800}
+  footer{padding:40px;color:#64748b}
+</style>
+</head>
+<body>
+<header x-data="{ open: false }">
+  <strong>Ledgerly</strong>
+  <nav><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="/login">Sign in</a></nav>
+</header>
+<section class="hero">
+  <h1>Your books, done by Friday.</h1>
+  <p>Snap receipts, send invoices and see what you owe in tax, all in one calm place.</p>
+  <a href="/signup" style="display:inline-block;margin-top:20px;background:#4f46e5;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none">Start free for 30 days</a>
+</section>
+<section class="tabs" id="features" x-data="{ tab: 'invoices' }">
+  <h2>Everything a freelancer needs</h2>
+  <button :class="tab === 'invoices' &amp;&amp; 'on'" @click="tab = 'invoices'">Invoices</button>
+  <button :class="tab === 'expenses' &amp;&amp; 'on'" @click="tab = 'expenses'">Expenses</button>
+  <button :class="tab === 'tax' &amp;&amp; 'on'" @click="tab = 'tax'">Tax</button>
+  <div x-show="tab === 'invoices'"><h3>Invoices that get paid</h3><p>Branded invoices with card payments and polite automatic reminders.</p></div>
+  <div x-show="tab === 'expenses'" x-cloak><h3>Expenses without the shoebox</h3><p>Photograph a receipt and Ledgerly reads the amount, date and VAT.</p></div>
+  <div x-show="tab === 'tax'" x-cloak><h3>Tax, estimated every week</h3><p>See what to set aside before the bill arrives.</p></div>
+</section>
+<section class="pricing" id="pricing" x-data="{ yearly: false }">
+  <div class="plan"><h3>Solo</h3><p class="price" x-text="yearly ? '£90/yr' : '£9/mo'">£9/mo</p><p>One business, unlimited invoices.</p></div>
+  <div class="plan"><h3>Studio</h3><p class="price" x-text="yearly ? '£190/yr' : '£19/mo'">£19/mo</p><p>Up to five people and payroll.</p></div>
+</section>
+<section class="faq" x-data="{ q: null }">
+  <h2>Questions</h2>
+  <dl>
+    <dt @click="q = q === 1 ? null : 1">Can I switch from a spreadsheet?</dt>
+    <dd x-show="q === 1" x-cloak>Yes. Import a CSV and Ledgerly matches every column for you.</dd>
+    <dt @click="q = q === 2 ? null : 2">Is my data safe?</dt>
+    <dd x-show="q === 2" x-cloak>Your data is encrypted and stored in the UK.</dd>
+  </dl>
+</section>
+<footer>&copy; 2026 Ledgerly Ltd. Made in Manchester.</footer>
+</body>
+</html>

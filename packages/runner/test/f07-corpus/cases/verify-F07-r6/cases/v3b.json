@@ -1,0 +1,6 @@
+[
+ ["H1r5_head_text_body_tag", "<!doctype html><html><head><title>T</title>Welcome</head><body><h2>Sale</h2>Order today</body></html>", ["T", "", "Order today"], true],
+ ["H8_head_text_no_body_tag", "<!doctype html><html><head><title>T</title>Welcome</head><h2>Sale</h2>Order today</html>", ["T", "Welcome", "", "Order today"], true],
+ ["B1_button_edge_doc", "<p>Pay <button type=\"button\"><b>$20</b> <label>now</label></button>Total</p>", ["Pay", "$20", "", "Total"]],
+ ["B2_button_edge_lead", "<p>Total<button type=\"button\"><label>Now</label> <b>$20</b></button> Pay</p>", ["Total", "", "$20", "Pay"]]
+]

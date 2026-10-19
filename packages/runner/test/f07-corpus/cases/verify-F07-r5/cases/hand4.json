@@ -1,0 +1,11 @@
+[
+ ["append_after_trailing_ws_in_b_del", "<p><del>Was <b>$20 </b></del>Now $15</p>", ["Was $20 only", "Now $15"]],
+ ["prepend_before_lead_ws_in_b_ins", "<p><del>Was $20</del><ins><b> Now</b> $15</ins></p>", ["Was $20", "Only Now $15"]],
+ ["append_label_em", "<p><label>Email <em>address </em></label>is required</p>", ["Email address here", "is required"]],
+ ["prepend_after_label_link", "<p><label>Email</label><a href=\"/help\"> help</a> is here</p>", ["Email", "Get [help] is here"]],
+ ["append_button_span", "<p><button type=\"button\"><span>Buy </span></button>now or later</p>", ["Buy it", "now or later"]],
+ ["append_nobr_i", "<p><nobr>Call <i>us </i></nobr>today please</p>", ["Call us now", "today please"]],
+ ["append_font_b", "<p><font color=\"red\">Sale <b>ends </b></font>tonight at nine</p>", ["Sale ends soon", "tonight at nine"]],
+ ["prepend_font_b", "<p>Sale ends<font color=\"red\"><b> tonight</b> at nine</font></p>", ["Sale ends", "really tonight at nine"]],
+ ["append_whole_line_link_trail", "<p><label><a href=\"/x\">Read more </a></label>after this</p>", ["Read more now", "after this"]]
+]

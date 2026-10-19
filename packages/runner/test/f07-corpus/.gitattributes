@@ -1,0 +1,4 @@
+# The pages are kept byte for byte as F07 round 14 read them (some have CRLF line ends); the VOICE reader works on the
+# HTML source, so a converted line end would be a different page.
+pages/** -text
+pages-verifier/** -text

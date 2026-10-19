@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Little Fern Café — Brunch in Bristol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { --green:#2f5d50; --cream:#f7f3ea; --ink:#1d1d1b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Inter, system-ui, sans-serif; color: var(--ink); background: var(--cream); line-height:1.6; }
+  header { position: sticky; top:0; background: rgba(247,243,234,.95); display:flex; align-items:center; justify-content:space-between; padding: 16px 48px; border-bottom:1px solid #e3dccb; z-index:10; }
+  .logo { font-family: Fraunces, serif; font-weight:700; font-size: 22px; color: var(--green); text-decoration:none; }
+  nav ul { list-style:none; display:flex; gap: 28px; margin:0; padding:0; }
+  nav a { color: var(--ink); text-decoration:none; font-weight:600; font-size:15px; }
+  .btn { display:inline-flex; align-items:center; gap:8px; background: var(--green); color:#fff; padding: 12px 22px; border-radius: 999px; text-decoration:none; font-weight:600; }
+  .btn svg { width:16px; height:16px; }
+  .hero { display:grid; grid-template-columns: 1.1fr 1fr; gap: 48px; padding: 96px 48px; align-items:center; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .18em; font-size: 12px; font-weight:600; color: var(--green); }
+  h1 { font-family: Fraunces, serif; font-size: 64px; line-height:1.05; margin: 12px 0 20px; }
+  h1 em { color: var(--green); font-style: italic; }
+  .lead { font-size: 19px; max-width: 34ch; }
+  .hero-img { aspect-ratio: 4/5; border-radius: 24px; background: linear-gradient(135deg,#cfe3d4,#e9d8b4); position:relative; }
+  .badge { position:absolute; left:-24px; bottom:32px; background:#fff; border-radius: 16px; padding: 14px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.08); font-weight:600; }
+  .badge span { display:block; font-size:12px; font-weight:400; color:#666; }
+  section { padding: 80px 48px; }
+  h2 { font-family: Fraunces, serif; font-size: 40px; margin: 0 0 32px; }
+  .menu { display:grid; grid-template-columns: repeat(2, 1fr); gap: 20px 64px; }
+  .dish { display:flex; justify-content:space-between; align-items:baseline; gap: 12px; border-bottom: 1px dashed #cfc6b2; padding-bottom: 10px; }
+  .dish h3 { margin:0; font-size: 18px; }
+  .dish p { margin: 4px 0 0; color:#555; font-size:15px; }
+  .price { font-weight:600; color: var(--green); white-space:nowrap; }
+  .tag { display:inline-block; font-size: 11px; background:#e2efe6; color: var(--green); padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+  .quotes { display:grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
+  blockquote { margin:0; background:#fff; border-radius: 18px; padding: 28px; }
+  blockquote p { font-family: Fraunces, serif; font-size: 20px; margin: 0 0 16px; }
+  cite { font-style: normal; font-size: 14px; color:#666; }
+  .stars { color:#d9a441; letter-spacing: 2px; }
+  .visit { display:grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  .hours { white-space: pre-line; }
+  footer { background: var(--green); color:#e8efe9; padding: 48px; display:flex; justify-content:space-between; align-items:center; }
+  footer a { color:#fff; }
+  .social { display:flex; gap: 16px; }
+  .social a { display:inline-flex; width:36px; height:36px; border-radius:50%; background: rgba(255,255,255,.12); align-items:center; justify-content:center; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  form { display:flex; gap: 10px; margin-top: 16px; }
+  input { padding: 12px 16px; border-radius: 999px; border:1px solid #cfc6b2; font: inherit; width: 260px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Little Fern</a>
+  <nav><ul><li><a href="#menu">Menu</a></li><li><a href="#reviews">Reviews</a></li><li><a href="#visit">Visit</a></li></ul></nav>
+  <a class="btn" href="#book">Book a table <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+</header>
+<main>
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Brunch · Coffee · Natural wine</p>
+      <h1>Slow mornings, <em>properly</em> fed.</h1>
+      <p class="lead">Seasonal plates from Somerset farms, bread baked at dawn and coffee roasted two streets away.</p>
+      <p><a class="btn" href="#menu">See the menu <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a> &nbsp; <a href="#visit">Find us</a></p>
+    </div>
+    <div class="hero-img"><div class="badge">4.8 on Google<span>from 1,200 reviews</span></div></div>
+  </section>
+  <section id="menu">
+    <h2>This week's menu</h2>
+    <div class="menu">
+      <div class="dish"><div><h3>Shakshuka<span class="tag">V</span></h3><p>Baked eggs, smoked paprika, labneh, sourdough</p></div><span class="price">£11.50</span></div>
+      <div class="dish"><div><h3>Fern breakfast</h3><p>Dry-cured bacon, Cumberland, beans, two eggs any way</p></div><span class="price">£13</span></div>
+      <div class="dish"><div><h3>Buttermilk pancakes</h3><p>Brown butter, berries, crème fraîche</p></div><span class="price">£9.50</span></div>
+      <div class="dish"><div><h3>Mushrooms on toast<span class="tag">VG</span></h3><p>Wild mushrooms, miso butter, chives</p></div><span class="price">£10</span></div>
+    </div>
+  </section>
+  <section id="reviews">
+    <h2>What regulars say</h2>
+    <div class="quotes">
+      <blockquote><p class="stars">★★★★★</p><p>“The best pancakes in Bristol, and the staff remember your order.”</p><cite>— Hannah, Clifton</cite></blockquote>
+      <blockquote><p class="stars">★★★★★</p><p>“Proper coffee. Quiet on weekdays, buzzing on Saturdays.”</p><cite>— Dev, Redland</cite></blockquote>
+      <blockquote><p class="stars">★★★★☆</p><p>“Worth the queue for the shakshuka alone.”</p><cite>— Marta, Cotham</cite></blockquote>
+    </div>
+  </section>
+  <section id="visit" class="visit">
+    <div>
+      <h2>Visit us</h2>
+      <address>14 Chandos Road<br>Bristol BS6 6PG</address>
+      <p class="hours">Mon–Fri  8am – 3pm
+Sat–Sun  9am – 4pm</p>
+    </div>
+    <div id="book">
+      <h2>Get the Sunday letter</h2>
+      <p>New dishes, supper clubs and the odd recipe. No spam, ever.</p>
+      <form onsubmit="return false"><label class="sr-only" for="email">Email address</label><input id="email" type="email" placeholder="you@example.com"><button class="btn" type="submit">Subscribe</button></form>
+    </div>
+  </section>
+</main>
+<footer>
+  <p>© 2026 Little Fern Café · <a href="/privacy">Privacy</a></p>
+  <div class="social"><a href="https://instagram.com/littlefern"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#fff"/></svg><span class="sr-only">Instagram</span></a></div>
+</footer>
+</body>
+</html>

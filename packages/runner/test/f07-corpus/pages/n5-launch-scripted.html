@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit — Calendars for teams that ship</title>
+<style>
+  :root{--bg:#0b1020;--fg:#e6e9f2;--accent:#7cf5c8}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,sans-serif}
+  .progress{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0;z-index:10}
+  nav{display:flex;justify-content:space-between;align-items:center;padding:24px 40px}
+  nav ul{display:flex;gap:28px;list-style:none;margin:0;padding:0}
+  nav a{color:var(--fg);text-decoration:none}
+  .hero{padding:120px 40px 80px;max-width:980px;margin:0 auto}
+  .hero h1{font-size:4rem;line-height:1.05;margin:0}
+  .typed{color:var(--accent)}
+  .hero p{font-size:1.25rem;opacity:.8;max-width:46ch}
+  .split span{display:inline-block;opacity:0;transform:translateY(.4em);transition:all .4s}
+  .split.go span{opacity:1;transform:none}
+  .features{display:grid;grid-template-columns:repeat(2,1fr);gap:28px;max-width:980px;margin:0 auto;padding:40px}
+  .feature{border:1px solid #23304d;border-radius:16px;padding:28px}
+  .feature h3{margin-top:0}
+  .countdown{display:flex;gap:18px;justify-content:center;padding:60px 0;font-variant-numeric:tabular-nums}
+  .countdown div{text-align:center}
+  .countdown b{display:block;font-size:2.4rem}
+  .cta{text-align:center;padding:80px 20px}
+  .cta a{display:inline-block;background:var(--accent);color:var(--bg);padding:16px 28px;border-radius:12px;font-weight:700;text-decoration:none}
+  footer{padding:30px 40px;opacity:.6;font-size:.9rem;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<nav>
+  <strong>Orbit</strong>
+  <ul><li><a href="#features">Features</a></li><li><a href="#launch">Launch</a></li><li><a href="/login">Log in</a></li></ul>
+</nav>
+<section class="hero">
+  <h1 class="split" id="headline">Calendars for teams that ship</h1>
+  <p>Orbit finds the hour your whole team is actually free, guards your focus time and <span class="typed" id="typed">moves meetings for you</span>.</p>
+</section>
+<section id="features" class="features">
+  <div class="feature"><h3>Focus blocks</h3><p>Two protected hours a day, rescheduled around real deadlines.</p></div>
+  <div class="feature"><h3>Smart links</h3><p>Share one link; Orbit offers only the times that work for everyone.</p></div>
+  <div class="feature"><h3>Time zones</h3><p>See colleagues’ working hours at a glance, wherever they are.</p></div>
+  <div class="feature"><h3>Quiet Fridays</h3><p>No meetings unless you say so.</p></div>
+</section>
+<section id="launch">
+  <p style="text-align:center;opacity:.8">Public launch in</p>
+  <div class="countdown" id="countdown"><div><b id="d">00</b>days</div><div><b id="h">00</b>hours</div><div><b id="m">00</b>minutes</div></div>
+</section>
+<section class="cta"><a href="/waitlist">Join the waitlist</a><p>Free for teams of up to five.</p></section>
+<footer><span>© 2025 Orbit Labs</span><span>Made in Lisbon</span></footer>
+<script>
+  // Split the headline into words for a staggered entrance.
+  const h = document.getElementById('headline');
+  h.innerHTML = h.textContent.split(' ').map((w, i) => '<span style="transition-delay:' + i * 60 + 'ms">' + w + '</span>').join(' ');
+  requestAnimationFrame(() => h.classList.add('go'));
+  // Cycle the typed phrase.
+  const phrases = ['moves meetings for you', 'protects your mornings', 'ends calendar Tetris'];
+  let k = 0; const typed = document.getElementById('typed');
+  setInterval(() => { k = (k + 1) % phrases.length; typed.textContent = phrases[k]; }, 3000);
+  // Count down to launch.
+  const launch = new Date('2026-03-01T09:00:00Z').getTime();
+  const pad = (n) => String(Math.max(0, n)).padStart(2, '0');
+  const tick = () => { const s = Math.floor((launch - Date.now()) / 1000); document.getElementById('d').textContent = pad(Math.floor(s / 86400)); document.getElementById('h').textContent = pad(Math.floor(s / 3600) % 24); document.getElementById('m').textContent = pad(Math.floor(s / 60) % 60); };
+  tick(); setInterval(tick, 1000);
+  addEventListener('scroll', () => { const p = scrollY / (document.documentElement.scrollHeight - innerHeight); document.getElementById('progress').style.width = (p * 100) + '%'; });
+</script>
+</body>
+</html>

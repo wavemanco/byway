@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saffron Table — Modern Indian kitchen</title>
+<style>
+  body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;color:#1c1917;background:#fafaf9}
+  .ticker{background:#7c2d12;color:#fff;overflow:hidden;white-space:nowrap;padding:8px 0}
+  .ticker div{display:inline-block;animation:scroll 20s linear infinite;padding-left:100%}
+  @keyframes scroll{to{transform:translateX(-100%)}}
+  header{display:flex;justify-content:space-between;padding:22px 48px;transition:padding .3s}
+  header.small{padding:8px 48px}
+  header a{margin-left:22px;color:inherit}
+  .hero{padding:90px 48px}
+  .hero h1{font-size:3.8rem;margin:0}
+  .slider{overflow:hidden;position:relative;margin:40px 48px;height:200px}
+  .track{display:flex;transition:transform .6s}
+  .slide{min-width:100%;box-sizing:border-box;padding:30px;font-size:1.4rem}
+  .menu{display:grid;grid-template-columns:1fr 1fr;gap:20px 60px;padding:40px 48px}
+  .menu div{display:flex;justify-content:space-between;border-bottom:1px dotted #a8a29e}
+  footer{padding:40px 48px;color:#78716c}
+</style>
+</head>
+<body>
+<div class="ticker"><div>Now open for Sunday lunch &middot; Book a table for Diwali &middot; Free dessert on your birthday</div></div>
+<header id="hdr"><strong>Saffron Table</strong><nav><a href="#menu">Menu</a><a href="/book">Book</a></nav></header>
+<section class="hero"><h1>Spice, slowly.</h1><p>Recipes from Hyderabad and Kerala, cooked over charcoal in the heart of Glasgow.</p></section>
+<div class="slider"><div class="track" id="track">
+  <div class="slide">&ldquo;The best biryani outside India.&rdquo; &mdash; The Herald</div>
+  <div class="slide">&ldquo;Every dish arrives like a celebration.&rdquo; &mdash; Time Out</div>
+  <div class="slide">&ldquo;Book now, thank me later.&rdquo; &mdash; Priya, Google review</div>
+</div></div>
+<section class="menu" id="menu">
+  <div><span>Hyderabadi lamb biryani</span><span>£18</span></div>
+  <div><span>Kerala fish curry</span><span>£16</span></div>
+  <div><span>Paneer tikka</span><span>£11</span></div>
+  <div><span>Masala chai crème brûlée</span><span>£7</span></div>
+</section>
+<footer>&copy; 2026 Saffron Table &middot; 22 Bath Street, Glasgow</footer>
+<script>
+  let i = 0;
+  const track = document.getElementById('track');
+  setInterval(() => { i = (i + 1) % 3; track.style.transform = 'translateX(-' + (i * 100) + '%)'; }, 4000);
+  addEventListener('scroll', () => document.getElementById('hdr').classList.toggle('small', scrollY > 40));
+</script>
+</body>
+</html>

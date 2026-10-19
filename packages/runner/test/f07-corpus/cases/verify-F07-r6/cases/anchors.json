@@ -1,0 +1,6 @@
+[
+ ["placeholder_side_by_side", "<p><a href=\"/x\">Read</a><a> more</a></p>", null],
+ ["placeholder_side_by_side_edit", "<p><a href=\"/x\">Read</a><a> more</a></p>", ["Read", "more today"]],
+ ["name_anchor_words_in_line", "<p>See <a name=\"faq\">our FAQ</a> or <a href=\"/c\">contact</a> us.</p>", ["See our help or [contact] us."]],
+ ["name_anchor_left_open_then_link", "<p><a name=\"top\">Top <a href=\"/m\">menu</a> here</p>", ["Top [menus] here"]]
+]

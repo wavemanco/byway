@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ember &amp; Oak Coffee Roasters</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .serif { font-family: 'Playfair Display', serif; }
+  .fade-up { opacity: 0; transform: translateY(32px); transition: opacity .8s ease-out, transform .8s ease-out; }
+  .fade-up.in { opacity: 1; transform: none; }
+  .slide { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; }
+  .slide.active { opacity: 1; }
+</style>
+</head>
+<body class="bg-stone-50 text-stone-900">
+  <header class="sticky top-0 z-20 bg-stone-50/90 backdrop-blur border-b border-stone-200">
+    <nav class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/" class="serif text-xl">Ember &amp; Oak</a>
+      <ul class="hidden md:flex items-center gap-8 text-sm font-semibold">
+        <li><a href="#beans" class="hover:text-orange-700">Beans</a></li>
+        <li><a href="#subscribe" class="hover:text-orange-700">Subscribe</a></li>
+        <li><a href="#cafe" class="hover:text-orange-700">Our café</a></li>
+      </ul>
+      <a href="/cart" class="rounded-full bg-stone-900 text-white text-sm font-semibold px-4 py-2">Cart<span class="sr-only"> (0 items)</span></a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="max-w-6xl mx-auto px-6 pt-20 pb-16 grid md:grid-cols-2 gap-12 items-center">
+      <div>
+        <p class="text-orange-700 font-semibold uppercase tracking-widest text-xs">Small-batch · Roasted weekly</p>
+        <h1 class="serif text-5xl md:text-6xl leading-tight mt-4">Coffee worth waking up for.</h1>
+        <p class="mt-6 text-lg text-stone-600 max-w-md">We roast in small batches every Monday and ship within 48 hours, so your beans arrive at their peak.</p>
+        <div class="mt-8 flex flex-wrap gap-4">
+          <a href="#beans" class="rounded-full bg-orange-700 text-white font-semibold px-6 py-3">Shop the beans</a>
+          <a href="#subscribe" class="rounded-full border border-stone-300 font-semibold px-6 py-3">Start a subscription</a>
+        </div>
+      </div>
+      <div class="rounded-3xl bg-gradient-to-br from-orange-200 to-amber-100 aspect-square flex items-end p-8">
+        <p class="serif text-2xl">“The best espresso blend in the city.” <span class="block text-sm font-sans mt-2 text-stone-600">— The Daily Grind</span></p>
+      </div>
+    </section>
+
+    <section id="beans" class="bg-white py-20">
+      <div class="max-w-6xl mx-auto px-6">
+        <h2 class="serif text-4xl fade-up">This week's roasts</h2>
+        <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          <article class="fade-up rounded-2xl border border-stone-200 p-6">
+            <span class="inline-block rounded-full bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1">Bestseller</span>
+            <h3 class="mt-4 text-xl font-bold">Hearthstone Espresso</h3>
+            <p class="mt-2 text-stone-600">Dark chocolate, molasses and a long, sweet finish.</p>
+            <div class="mt-6 flex items-baseline justify-between"><span class="text-2xl font-extrabold">$18</span><span class="text-sm text-stone-500">per 340 g bag</span></div>
+          </article>
+          <article class="fade-up rounded-2xl border border-stone-200 p-6">
+            <span class="inline-block rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-1">New</span>
+            <h3 class="mt-4 text-xl font-bold">Highland Ethiopia</h3>
+            <p class="mt-2 text-stone-600">Jasmine, bergamot and ripe peach. Bright and clean.</p>
+            <div class="mt-6 flex items-baseline justify-between"><span class="text-2xl font-extrabold">$21</span><span class="text-sm text-stone-500">per 340 g bag</span></div>
+          </article>
+          <article class="fade-up rounded-2xl border border-stone-200 p-6">
+            <span class="inline-block rounded-full bg-sky-100 text-sky-800 text-xs font-bold px-3 py-1">Decaf</span>
+            <h3 class="mt-4 text-xl font-bold">Night Owl Decaf</h3>
+            <p class="mt-2 text-stone-600">Swiss Water decaf with caramel and toasted almond.</p>
+            <div class="mt-6 flex items-baseline justify-between"><span class="text-2xl font-extrabold">$17</span><span class="text-sm text-stone-500">per 340 g bag</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="subscribe" class="py-20">
+      <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-3 gap-8">
+        <div class="fade-up md:col-span-1">
+          <h2 class="serif text-4xl">Never run out.</h2>
+          <p class="mt-4 text-stone-600">Pick a roast, pick a schedule, pause or skip any time.</p>
+        </div>
+        <ul class="fade-up md:col-span-2 grid sm:grid-cols-2 gap-6">
+          <li class="rounded-2xl bg-white border border-stone-200 p-6"><p class="font-bold">Every week</p><p class="mt-1 flex items-baseline gap-1"><span class="text-3xl font-extrabold">$16</span><span class="text-stone-500">/bag</span></p></li>
+          <li class="rounded-2xl bg-white border border-stone-200 p-6"><p class="font-bold">Every two weeks</p><p class="mt-1 flex items-baseline gap-1"><span class="text-3xl font-extrabold">$17</span><span class="text-stone-500">/bag</span></p></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="bg-stone-900 text-stone-100 py-20">
+      <div class="max-w-3xl mx-auto px-6 text-center">
+        <h2 class="serif text-3xl">What our regulars say</h2>
+        <div class="relative h-32 mt-10" id="quotes">
+          <blockquote class="slide active text-xl">“I switched my whole office to Ember &amp; Oak. Nobody complains about Mondays now.”</blockquote>
+          <blockquote class="slide text-xl">“Fresh, fragrant and always on time. The subscription is a no-brainer.”</blockquote>
+          <blockquote class="slide text-xl">“Their decaf actually tastes like coffee. I did not think that was possible.”</blockquote>
+        </div>
+      </div>
+    </section>
+
+    <section id="cafe" class="py-20">
+      <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-12">
+        <div class="fade-up">
+          <h2 class="serif text-4xl">Visit the café</h2>
+          <address class="not-italic mt-6 whitespace-pre-line text-stone-700">Ember &amp; Oak Roastery
+14 Mill Lane
+Bristol BS1 4DJ</address>
+        </div>
+        <div class="fade-up">
+          <h3 class="font-bold text-lg">Opening hours</h3>
+          <dl class="mt-4 space-y-2 text-stone-700">
+            <div class="flex justify-between"><dt>Monday to Friday</dt><dd>7am – 5pm</dd></div>
+            <div class="flex justify-between"><dt>Saturday</dt><dd>8am – 4pm</dd></div>
+            <div class="flex justify-between"><dt>Sunday</dt><dd>Closed</dd></div>
+          </dl>
+          <details class="mt-8 rounded-xl border border-stone-200 p-4">
+            <summary class="font-semibold cursor-pointer">Do you have oat milk?</summary>
+            <p class="mt-2 text-stone-600">Yes, oat and almond at no extra charge.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-stone-200 py-10">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between gap-4 text-sm text-stone-500">
+      <p>© <span id="year">2025</span> Ember &amp; Oak Coffee Roasters</p>
+      <p><a href="/privacy" class="hover:underline">Privacy</a> · <a href="/terms" class="hover:underline">Terms</a></p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.fade-up').forEach((el) => io.observe(el));
+    const slides = [...document.querySelectorAll('#quotes .slide')];
+    let current = 0;
+    setInterval(() => {
+      slides[current].classList.remove('active');
+      current = (current + 1) % slides.length;
+      slides[current].classList.add('active');
+    }, 3000);
+  </script>
+</body>
+</html>

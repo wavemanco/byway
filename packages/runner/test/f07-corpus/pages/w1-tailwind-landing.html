@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loomly — Plan your week in minutes</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  @keyframes heartbeat { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+  .cta-pulse { animation: heartbeat 2.4s ease-in-out infinite; display: inline-flex; }
+</style>
+</head>
+<body class="bg-white text-slate-800">
+  <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-100">
+    <nav class="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
+      <a href="/" class="flex items-center gap-2 font-extrabold text-xl text-indigo-600">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
+        Loomly
+      </a>
+      <ul class="hidden md:flex items-center gap-8 text-sm font-semibold">
+        <li><a href="#features" class="hover:text-indigo-600">Features</a></li>
+        <li><a href="#pricing" class="hover:text-indigo-600">Pricing</a></li>
+        <li><a href="#faq" class="hover:text-indigo-600">FAQ</a></li>
+      </ul>
+      <a href="/signup" class="cta-pulse items-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white">Start free</a>
+      <button class="md:hidden" aria-label="Open menu"><span class="sr-only">Open menu</span>☰</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="max-w-6xl mx-auto px-6 pt-20 pb-24 text-center">
+      <p class="inline-block rounded-full bg-indigo-50 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-indigo-700">New: shared calendars</p>
+      <h1 class="mt-6 text-5xl md:text-6xl font-extrabold tracking-tight">
+        Plan your week in
+        <span class="bg-gradient-to-r from-indigo-600 to-pink-500 bg-clip-text text-transparent">minutes, not hours</span>
+      </h1>
+      <p class="mx-auto mt-6 max-w-2xl text-lg text-slate-600">Loomly turns your to-do list into a calm, realistic plan. Drag tasks onto your week, and we will warn you before you overbook yourself.</p>
+      <div class="mt-10 flex items-center justify-center gap-4">
+        <a href="/signup" class="rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white shadow hover:bg-indigo-700">Get started free</a>
+        <a href="#demo" class="rounded-lg px-6 py-3 font-semibold text-indigo-700 hover:bg-indigo-50">Watch the demo <span aria-hidden="true">→</span></a>
+      </div>
+      <p class="mt-4 text-sm text-slate-500">No credit card required. Cancel anytime.</p>
+      <div class="mt-16 flex flex-col items-center text-slate-400 text-sm">
+        <span>Scroll to explore</span>
+        <span class="mt-2 animate-bounce">↓</span>
+      </div>
+    </section>
+
+    <section id="features" class="bg-slate-50 py-24">
+      <div class="max-w-6xl mx-auto px-6">
+        <h2 class="text-3xl font-bold text-center">Everything you need to plan well</h2>
+        <div class="mt-14 grid gap-8 md:grid-cols-3">
+          <div class="rounded-2xl bg-white p-8 shadow-sm">
+            <h3 class="text-lg font-semibold">Smart scheduling</h3>
+            <p class="mt-3 text-slate-600">Tell Loomly how long a task takes and it finds the best slot in your week.</p>
+            <a href="/features/scheduling" class="mt-4 inline-block font-semibold text-indigo-600">Learn more<span class="sr-only"> about smart scheduling</span></a>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm">
+            <h3 class="text-lg font-semibold">Focus blocks</h3>
+            <p class="mt-3 text-slate-600">Protect deep work with blocks that move only when you say so.</p>
+            <a href="/features/focus" class="mt-4 inline-block font-semibold text-indigo-600">Learn more<span class="sr-only"> about focus blocks</span></a>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm">
+            <h3 class="text-lg font-semibold">Weekly review</h3>
+            <p class="mt-3 text-slate-600">Every Friday, see what got done and carry the rest forward in one click.</p>
+            <a href="/features/review" class="mt-4 inline-block font-semibold text-indigo-600">Learn more<span class="sr-only"> about the weekly review</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pricing" class="py-24">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-3xl font-bold text-center">Simple pricing</h2>
+        <p class="mt-3 text-center text-slate-600">Start free, upgrade when your team grows.</p>
+        <div class="mt-14 grid gap-8 md:grid-cols-2">
+          <div class="rounded-2xl border border-slate-200 p-8">
+            <h3 class="text-lg font-semibold">Personal</h3>
+            <p class="mt-4 flex items-baseline gap-1"><span class="text-4xl font-extrabold">$0</span><span class="text-slate-500">/month</span></p>
+            <ul class="mt-6 space-y-3 text-slate-600">
+              <li>Unlimited tasks</li>
+              <li>One calendar</li>
+              <li>Weekly review</li>
+            </ul>
+            <a href="/signup" class="mt-8 block rounded-lg border border-indigo-600 py-3 text-center font-semibold text-indigo-600">Choose Personal</a>
+          </div>
+          <div class="relative rounded-2xl border-2 border-indigo-600 p-8">
+            <span class="absolute -top-3 right-6 rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">Most popular</span>
+            <h3 class="text-lg font-semibold">Team</h3>
+            <p class="mt-4 flex items-baseline gap-1"><span class="text-4xl font-extrabold">$12</span><span class="text-slate-500">/user/month</span></p>
+            <ul class="mt-6 space-y-3 text-slate-600">
+              <li>Everything in Personal</li>
+              <li>Shared calendars</li>
+              <li>Priority support</li>
+            </ul>
+            <a href="/signup?plan=team" class="mt-8 block rounded-lg bg-indigo-600 py-3 text-center font-semibold text-white">Choose Team</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq" class="bg-slate-50 py-24">
+      <div class="max-w-3xl mx-auto px-6">
+        <h2 class="text-3xl font-bold text-center">Questions, answered</h2>
+        <div class="mt-10 space-y-4">
+          <details class="rounded-lg bg-white p-6">
+            <summary class="font-semibold cursor-pointer">Can I import from my current calendar?</summary>
+            <p class="mt-3 text-slate-600">Yes. Loomly connects to Google, Outlook and Apple calendars in two clicks.</p>
+          </details>
+          <details class="rounded-lg bg-white p-6">
+            <summary class="font-semibold cursor-pointer">Is there a mobile app?</summary>
+            <p class="mt-3 text-slate-600">Our iOS and Android apps sync instantly with the web.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="py-20 text-center">
+      <h2 class="text-3xl font-bold">Ready for a calmer week?</h2>
+      <p class="mt-4 flex justify-center text-slate-600">Already have an account? <a href="/login" class="ml-1 font-semibold text-indigo-600 cta-pulse">Sign in</a></p>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-100 py-10">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-500">
+      <p>© 2026 Loomly Inc. Made with care in Lisbon.</p>
+      <div class="flex gap-6">
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="https://twitter.com/loomly"><span class="sr-only">Loomly on X</span><svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect width="24" height="24"/></svg></a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

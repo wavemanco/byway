@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>小麦と灯 — 町のパン屋</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink: #2b2420; --paper: #f7f1e8; --accent: #b5482a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font-family: 'Noto Sans JP', sans-serif; line-height: 1.8; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 20px 48px; border-bottom: 1px solid #e3d8c8; }
+    header .logo { font-family: 'Noto Serif JP', serif; font-weight: 700; font-size: 22px; }
+    header nav { display: flex; gap: 28px; font-size: 14px; }
+    header nav a { color: var(--ink); text-decoration: none; }
+    .hero { display: flex; gap: 64px; padding: 80px 48px; align-items: flex-start; }
+    .hero h1 { writing-mode: vertical-rl; font-family: 'Noto Serif JP', serif; font-size: 44px; margin: 0; height: 420px; letter-spacing: .12em; }
+    .hero .lead { max-width: 520px; font-size: 17px; }
+    .badge { display: inline-block; transform: rotate(-6deg); background: var(--accent); color: #fff; padding: 6px 14px; border-radius: 999px; font-size: 13px; }
+    .cta { display: flex; margin-top: 28px; font-size: 15px; }
+    .cta a { color: var(--accent); font-weight: 500; }
+    section { padding: 64px 48px; }
+    .menu { display: flex; gap: 48px; }
+    .menu h2 { writing-mode: vertical-rl; font-family: 'Noto Serif JP', serif; font-size: 30px; margin: 0; border-left: 2px solid var(--accent); padding-left: 12px; }
+    .items { writing-mode: vertical-rl; height: 360px; display: flex; flex-wrap: wrap; gap: 0 36px; }
+    .item { display: flex; justify-content: space-between; height: 340px; font-size: 18px; }
+    .item .price { color: var(--accent); }
+    .story { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; background: #efe6d8; }
+    .story h2 { font-family: 'Noto Serif JP', serif; font-size: 28px; margin-top: 0; }
+    .vertical-note { writing-mode: vertical-rl; font-size: 14px; color: #7a6a5c; height: 220px; }
+    .shop { display: flex; gap: 64px; }
+    .shop address { font-style: normal; white-space: pre-line; }
+    .hours { white-space: pre-line; }
+    .fade { opacity: 0; transform: translateY(20px); transition: opacity .8s, transform .8s; }
+    .fade.on { opacity: 1; transform: none; }
+    footer { padding: 32px 48px; font-size: 13px; color: #7a6a5c; display: flex; justify-content: space-between; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">小麦と灯</div>
+    <nav><a href="#menu">パン</a><a href="#story">わたしたち</a><a href="#shop">お店</a><a href="/order">ご予約</a></nav>
+  </header>
+
+  <div class="hero">
+    <h1>朝いちばんの、やさしいパン。</h1>
+    <div class="lead">
+      <span class="badge">本日焼きたて</span>
+      <p>国産小麦と天然酵母で、毎朝五時から一つずつ手でこねています。駅から歩いて三分、川沿いの小さなパン屋です。</p>
+      <p>季節の果物を使ったデニッシュや、ゆっくり発酵させた食パンをどうぞ。</p>
+      <p class="cta">ご予約は前日まで<a href="/order">こちらから</a></p>
+    </div>
+  </div>
+
+  <section id="menu" class="menu fade">
+    <h2>きょうのパン</h2>
+    <div class="items">
+      <div class="item"><span>天然酵母の食パン</span><span class="price">四八〇円</span></div>
+      <div class="item"><span>くるみとレーズン</span><span class="price">三六〇円</span></div>
+      <div class="item"><span>季節のデニッシュ</span><span class="price">三二〇円</span></div>
+      <div class="item"><span>塩バターロール</span><span class="price">一八〇円</span></div>
+      <div class="item"><span>カンパーニュ</span><span class="price">五二〇円</span></div>
+    </div>
+  </section>
+
+  <section id="story" class="story fade">
+    <div>
+      <h2>わたしたちのこと</h2>
+      <p>二〇一六年、祖母の家の一階を改装して始めました。地元の農家さんから届く小麦を、その日の気温と湿度を見ながら仕込みます。</p>
+      <p>添加物は使いません。焼きあがったパンは、その日のうちに売り切ります。</p>
+    </div>
+    <p class="vertical-note">毎月第一日曜日は、パン教室を開いています。</p>
+  </section>
+
+  <section id="shop" class="shop fade">
+    <address>小麦と灯
+東京都三鷹市下連雀三丁目十二の四
+電話 〇四二二・五五・〇一二三</address>
+    <p class="hours">火曜〜土曜　七時〜十八時
+日曜　七時〜十五時
+月曜定休</p>
+  </section>
+
+  <footer>
+    <p>© 2026 小麦と灯</p>
+    <p><a href="https://instagram.com/komugi_to_akari">Instagram</a></p>
+  </footer>
+
+  <script>
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) e.target.classList.add('on'); }), { threshold: 0.2 });
+    document.querySelectorAll('.fade').forEach((el) => io.observe(el));
+  </script>
+</body>
+</html>

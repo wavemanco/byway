@@ -1,0 +1,6 @@
+[
+ ["wbr_space_after", "<p>Hello<wbr> world</p>", ["Hello there world"]],
+ ["wbr_space_before", "<p>Hello <wbr>world</p>", null],
+ ["wbr_nl_after", "<p>Hello<wbr>\nworld</p>", null],
+ ["wbr_in_url", "<p>Visit example.com/<wbr>long/<wbr>path today</p>", ["Visit example.com/long/path now"]]
+]

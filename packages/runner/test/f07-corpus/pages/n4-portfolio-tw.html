@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maya Okafor — Product designer</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"></script>
+<style>
+  @keyframes ticker { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+  .ticker { animation: ticker 30s linear infinite; }
+  .fade-in { opacity: 0; transform: translateY(16px); transition: all .5s ease-out; }
+  .fade-in.shown { opacity: 1; transform: none; }
+</style>
+</head>
+<body class="bg-stone-50 text-stone-900">
+<header class="max-w-5xl mx-auto px-6 py-8 flex justify-between items-center">
+  <a href="/" class="font-semibold">Maya Okafor</a>
+  <nav class="flex gap-6 text-sm">
+    <a href="#work">Work</a>
+    <a href="#writing">Writing</a>
+    <a href="/cv.pdf">CV <span class="sr-only">(PDF, 2 pages)</span></a>
+  </nav>
+</header>
+
+<section class="max-w-5xl mx-auto px-6 pt-12 pb-20">
+  <p class="text-sm uppercase tracking-[0.3em] text-stone-500">Product designer · Lagos and London</p>
+  <h1 class="mt-6 text-6xl font-semibold leading-none">I design tools <br class="hidden md:block">people trust with money.</h1>
+  <p class="mt-8 max-w-xl text-lg text-stone-600">Ten years at fintech start-ups and one very large bank. Currently designing payments at Brightfield.</p>
+</section>
+
+<div class="overflow-hidden border-y border-stone-200 py-4 bg-white">
+  <div class="ticker flex w-max gap-12 whitespace-nowrap text-sm text-stone-500">
+    <span>Brightfield</span><span>Kora</span><span>Northstar Bank</span><span>Paystack</span><span>Brightfield</span><span>Kora</span><span>Northstar Bank</span><span>Paystack</span>
+  </div>
+</div>
+
+<section id="work" class="max-w-5xl mx-auto px-6 py-20">
+  <h2 class="text-2xl font-semibold">Selected work</h2>
+  <div class="mt-10 grid sm:grid-cols-2 gap-8">
+    <a href="/work/split" class="group relative block fade-in">
+      <div class="aspect-[4/3] rounded-xl bg-amber-100"></div>
+      <div class="absolute inset-0 rounded-xl bg-stone-900/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition">View case study</div>
+      <h3 class="mt-4 font-semibold">Split bills without the awkward chat</h3>
+      <p class="text-stone-600 truncate">A shared-expenses flow for Kora that cut support tickets about refunds by forty percent in its first quarter.</p>
+    </a>
+    <a href="/work/onboarding" class="group relative block fade-in">
+      <div class="aspect-[4/3] rounded-xl bg-sky-100"></div>
+      <div class="absolute inset-0 rounded-xl bg-stone-900/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition">View case study</div>
+      <h3 class="mt-4 font-semibold">Onboarding in four minutes</h3>
+      <p class="text-stone-600 truncate">Identity checks that feel like a conversation.</p>
+    </a>
+  </div>
+</section>
+
+<section id="writing" class="max-w-5xl mx-auto px-6 pb-20">
+  <h2 class="text-2xl font-semibold">Writing</h2>
+  <ul class="mt-8 divide-y divide-stone-200">
+    <li class="py-4 flex justify-between fade-in"><a href="/notes/trust">Designing for trust, not delight</a><span class="text-stone-500">2025</span></li>
+    <li class="py-4 flex justify-between fade-in"><a href="/notes/errors">Error messages people forgive</a><span class="text-stone-500">2024</span></li>
+    <li class="py-4 flex justify-between fade-in"><a href="/notes/forms">Forms are conversations</a><span class="text-stone-500">2023</span></li>
+  </ul>
+</section>
+
+<footer class="max-w-5xl mx-auto px-6 py-10 text-sm text-stone-500 flex flex-col md:flex-row gap-2 justify-between">
+  <p>Say hello: <a class="underline" href="mailto:maya@okafor.design">maya@okafor.design</a></p>
+  <p class="hidden md:block">Set in system fonts, built by hand.</p>
+</footer>
+<script>
+  const els = [...document.querySelectorAll('.fade-in')];
+  const show = () => els.forEach((el) => { if (el.getBoundingClientRect().top < innerHeight - 60) el.classList.add('shown'); });
+  addEventListener('scroll', show, { passive: true });
+  show();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+[
+ ["H1_head_text_body_tag", "<!doctype html><html><head><title>T</title>Welcome</head><body><h2>Sale</h2>Order today</body></html>", ["T", "Welcome", "", "Order today"], true],
+ ["H2_text_before_body_no_head_tag", "<!doctype html><title>T</title>Welcome<body><h2>Sale</h2>Order today", ["T", "Welcome", "", "Order today"], true],
+ ["H3_span_before_body", "<!doctype html><title>T</title><span>Intro</span><body><h2>Sale</h2>Order today", ["T", "Intro", "", "Order today"], true],
+ ["H4_after_head_text", "<!doctype html><html><head><title>T</title></head>Welcome<body><h2>Sale</h2>Order today</body></html>", ["T", "Welcome", "", "Order today"], true],
+ ["H5_stray_quote_in_head", "<!doctype html><html><head><title>T</title><meta name=\"description\" content=\"Fresh\">\"></head><body><h1>Bakery</h1><p>Open daily</p></body></html>", ["T", "\">", "", "Open daily"], true],
+ ["H6_p_before_body_deck", "<!doctype html><title>T</title><p>Intro<body>Text", null, true],
+ ["H7_head_text_body_inline_edit", "<!doctype html><html><head><title>T</title>Welcome</head><body>to <b>our</b> shop</body></html>", ["T", "Welcome", "to our big shop"], true],
+ ["F1_foster_adjacent_block", "<div>Lead<p>Middle</p><table><tr><font>F</font><td>Cell</td></tr></table></div>", ["Lead", "", "F", "Cell"]],
+ ["F2_foster_text_adjacent", "<div>Lead<p>Middle</p><table><tr>Late<td>Cell</td></tr></table></div>", ["Lead", "", "Late", "Cell"]],
+ ["F3_foster_b", "<div><b>Lead</b><h3>Middle</h3><table><tr><b>Bold</b><td>Cell</td></tr></table></div>", ["Lead", "", "Bold", "Cell"]]
+]

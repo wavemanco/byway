@@ -1,0 +1,10 @@
+[
+ ["C1_link_emptied_holds_hidden", "<p>Go <a href=\"/x\">Read<span hidden> more</span></a> now</p>", ["Go [] now"]],
+ ["C2_button_emptied_holds_hidden", "<p>Go <button type=\"button\">Send<span hidden> it</span></button> now</p>", ["Go", "", "now"]],
+ ["C3_hidden_only_ws_between", "<p>Sale<span hidden> </span>today</p>", ["Sale today"]],
+ ["C4_hidden_link_in_line", "<p>See <a href=\"/a\" hidden>secret</a>our <a href=\"/b\">menu</a></p>", ["See our [full menu]"]],
+ ["C5_hidden_span_delete_line", "<p>Sale<span hidden> ends</span> today</p><p>Next</p>", ["", "Next"]],
+ ["C6_until_found", "<p>Sale<span hidden=\"until-found\"> ends</span> today</p>", ["Sale starts today"]],
+ ["C7_select_options", "<p>Pick <select><option>One</option><option>Two</option></select> now</p>", null],
+ ["C8_hidden_font_inline", "<p>A<font hidden>B</font>C</p>", null]
+]
