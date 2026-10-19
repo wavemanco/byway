@@ -117,7 +117,14 @@ function networkSignature(err: unknown): Billing | undefined {
  *   408, 502 and 504, or any 5xx without a provider body (a proxy answered, not the provider); a stream that ended
  *   without its terminal event; and anything this cannot read, because only 'none' permits a blind re-send.
  * Treating a provider-bodied 5xx and a mid-stream error event as unbilled is an assumption, not documented provider
- * billing; it is today's behaviour and costs at most one attempt (ADR-0091).
+ * billing; it is today's behaviour and costs at most one attempt (ADR-0091). Read again on 2026-10-18: only fal says
+ * it ("Server errors (HTTP 500+) are never charged", fal.ai/docs/documentation/model-apis/faq; its pricing page says the
+ * same), and fal's queue jobs are never sent blind again anyway (BILLABLE_JOB). Anthropic's errors and streaming pages,
+ * OpenAI's error codes and pricing pages, Google's troubleshooting, API errors and pricing pages, and OpenRouter's
+ * errors page say nothing about whether a failed request is billed. OpenRouter's says that when a model answers with
+ * no content, "you may still be charged for the prompt processing cost by the upstream provider"; such an answer is
+ * a 200 with its usage, which is ledgered, not an error. So for Anthropic, OpenAI, Google and OpenRouter this is still
+ * an assumption; the first live runs' ledger, against each provider's usage records, is what can settle it (backlog).
  */
 export function billingOf(err: unknown): Billing {
   const stated = isObject(err) ? err.billing : undefined;

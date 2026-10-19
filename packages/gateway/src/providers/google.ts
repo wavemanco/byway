@@ -10,7 +10,14 @@ export interface GoogleResponseLike {
     content?: { parts?: ReadonlyArray<{ text?: string; thought?: boolean; inlineData?: { data?: string; mimeType?: string } }> };
   }>;
   promptFeedback?: { blockReason?: string };
-  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; cachedContentTokenCount?: number };
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    thoughtsTokenCount?: number;
+    cachedContentTokenCount?: number;
+    /** The answer's tokens by modality ("List of modalities that were returned in the response"): TEXT, IMAGE, ... */
+    candidatesTokensDetails?: ReadonlyArray<{ modality?: string; tokenCount?: number }>;
+  };
 }
 
 export interface GoogleClientLike {
@@ -79,6 +86,24 @@ export function googleImageParams(req: ProviderImageRequest): GenerateContentPar
 const MEDIA_TYPES = new Set<MediaType>(['image/png', 'image/jpeg', 'image/webp']);
 
 /**
+ * The tokens of an image answer that are billed at the image model's text-and-thinking rate, on top of the image's own
+ * per-image price (prices.ts, gemini-nano-banana-2.1; read 2026-10-18). Google's pricing page lists that model's output
+ * as "text and thinking" at $7.50 per 1M tokens and images at $30 per 1M ($0.0336 a 1K image); its image guide says
+ * thinking tokens are billed. The API reports thinking apart from the answer (totalTokenCount is "prompt + tool-use
+ * prompt + thoughts + response candidates"), and the answer's tokens by modality, so the image's own tokens (IMAGE) are
+ * left out here: the image is charged per image. Without that breakdown every answer token is counted at the text rate,
+ * the image's included, so the cost leans high. Neither page says whether the interim "thought images" the guide
+ * describes ("not charged") are counted in thoughtsTokenCount; if they are, this leans high too.
+ */
+function textAndThinkingTokens(u: NonNullable<GoogleResponseLike['usageMetadata']>): number {
+  const thoughts = u.thoughtsTokenCount ?? 0;
+  const details = u.candidatesTokensDetails;
+  // A count that is not a number makes the sum not a number, which the gateway replaces and flags (finiteUsage).
+  const answer = Array.isArray(details) ? details.reduce((sum, d) => sum + (d?.modality === 'IMAGE' ? 0 : Number(d?.tokenCount ?? 0)), 0) : (u.candidatesTokenCount ?? 0);
+  return thoughts + answer;
+}
+
+/**
  * An image answer. Image models sometimes answer an image request with text only (finishReason STOP): that answer was
  * billed for its tokens, so it comes back as a no-image result with its usage and a refusal-like reason, which the
  * gateway ledgers and then refuses (not retryable). It used to be thrown as a synthetic 502, which the gateway retried
@@ -97,7 +122,8 @@ export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string
     }
   }
   const u = res.usageMetadata ?? {};
-  const usage = { inputTokens: u.promptTokenCount ?? 0, outputTokens: u.candidatesTokenCount ?? 0, units: inline?.data ? 1 : 0 };
+  // outputTokens: the text and thinking tokens, billed on top of the image (units), which is priced per image.
+  const usage = { inputTokens: u.promptTokenCount ?? 0, outputTokens: textAndThinkingTokens(u), units: inline?.data ? 1 : 0 };
   const servedModel = res.modelVersion ?? requestedModel;
   const noImage = (reason: string) => ({ bytes: new Uint8Array(), mediaType: 'image/png' as const, servedModel, usage, refusal: reason, responseBody: body });
   if (!inline?.data) {

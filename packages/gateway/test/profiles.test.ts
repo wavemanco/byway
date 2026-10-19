@@ -91,10 +91,10 @@ describe('prices', () => {
   it('prices fal.ai video per second, with the model page each figure was read from', () => {
     const v25 = priceFor(PRICES, 'fal', 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', today);
     expect(v25?.perSecondUsd).toBe(0.07);
-    expect(v25?.source).toMatch(/fal\.ai\/models\/fal-ai\/kling-video\/v2\.5-turbo\/pro\/image-to-video.*2026-10-07/);
+    expect(v25?.source).toMatch(/fal\.ai\/models\/fal-ai\/kling-video\/v2\.5-turbo\/pro\/image-to-video.*2026-10-18/);
     const v3 = priceFor(PRICES, 'fal', 'fal-ai/kling-video/v3/pro/image-to-video', today);
     expect(v3?.perSecondUsd).toBe(0.112);
-    expect(v3?.source).toMatch(/fal\.ai\/models\/fal-ai\/kling-video\/v3\/pro\/image-to-video.*2026-10-07/);
+    expect(v3?.source).toMatch(/fal\.ai\/models\/fal-ai\/kling-video\/v3\/pro\/image-to-video.*2026-10-18/);
     expect(priceFor(PRICES, 'fal', 'fal-ai/ffmpeg-api/extract-frame', today)?.perSecondUsd).toBe(0.0002);
     expect(priceFor(PRICES, 'mock', 'mock-video', today)?.perSecondUsd).toBe(0);
   });

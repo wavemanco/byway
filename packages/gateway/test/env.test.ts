@@ -130,4 +130,20 @@ describe('namesFromEnvFile: what the secrets file listed into an environment', (
     loadEnvFile(join(dir, 'absent.env'), env);
     expect(namesFromEnvFile(env)).toEqual([]);
   });
+
+  it('keeps the names across copies of this module: a Windows start from a lowercase drive letter loads two (B1)', async () => {
+    // serve.ts imports the gateway by path and pages.ts through @byway/gateway; from `c:\…` those are two module URLs, so
+    // two copies of this module. Here two copies are made by query string, which gives each its own module instance.
+    type EnvModule = typeof import('../src/env.ts');
+    const copy = async (name: string): Promise<EnvModule> => (await import(/* @vite-ignore */ `../src/env.ts?copy=${name}`)) as EnvModule;
+    const [loader, reader] = [await copy('serve'), await copy('pages')];
+    expect(reader.namesFromEnvFile).not.toBe(loader.namesFromEnvFile);
+    const file = join(dir, 'copies.env');
+    writeFileSync(file, 'ODD_CREDENTIAL=hunter2\nPLAIN_SETTING=x\n');
+    const env: Record<string, string | undefined> = { PATH: '/bin' };
+    loader.loadEnvFile(file, env);
+    expect(reader.namesFromEnvFile(env).sort()).toEqual(['ODD_CREDENTIAL', 'PLAIN_SETTING']);
+    expect(namesFromEnvFile(env).sort()).toEqual(['ODD_CREDENTIAL', 'PLAIN_SETTING']);
+    expect(reader.withoutSecrets(env, reader.namesFromEnvFile(env))).toEqual({ PATH: '/bin' });
+  });
 });

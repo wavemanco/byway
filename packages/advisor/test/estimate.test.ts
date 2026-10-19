@@ -164,6 +164,17 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     expect(fiction.high).toBeGreaterThan(memo.high);
   });
 
+  it('counts a VOICE as your time only: it writes your words back with no model call (ADR-0081, B1)', () => {
+    // The same recipe with each VOICE writing nothing back: the estimate is the same, model calls and dollars alike.
+    const writesNothing = (r: Recipe, ids: string[]) => ids.reduce((acc, id) => edit(acc, id, (n) => (n.op === 'step' ? { ...n, produces: ['voice'], writes: false } : n)), r);
+    for (const [recipe, ids] of [[c3, ['voice']], [c4, ['voice', 'claim-sign-off']]] as const) {
+      const e = advisor.estimate(recipe, 'balanced');
+      const without = advisor.estimate(writesNothing(recipe, [...ids]), 'balanced');
+      expect([e.modelCalls, e.lowUsd, e.highUsd], recipe.id).toEqual([without.modelCalls, without.lowUsd, without.highUsd]);
+      expect(e.humanMinutes, recipe.id).toEqual(without.humanMinutes);
+    }
+  });
+
   it('takes the cheaper and the dearer branch of an open route', () => {
     const e = advisor.estimate(c3, 'balanced');
     const ai = advisor.estimate(edit(c3, 'draft', (n) => (n.op === 'route' ? { ...n, branches: [n.branches[0]!] } : n)), 'balanced');

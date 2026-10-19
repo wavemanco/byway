@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import type { CompletionRequest } from '@byway/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
-import { PRICES, priceFor, servedPrice } from '../src/prices.ts';
+import { maxImageCost } from '../src/estimate.ts';
+import { PRICES, priceFor, servedPrice, tokenCost } from '../src/prices.ts';
 import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, MemoryArtifacts } from './fakes.ts';
 import { memorySpendBook } from '../src/memory-book.ts';
 
@@ -162,12 +163,92 @@ describe('gateway: settlement by the served model (F04)', () => {
       {
         modelVersion: 'gemini-image-preview-x',
         candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: Buffer.from('jpeg-bytes').toString('base64'), mimeType: 'image/jpeg' } }] } }],
-        usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 1290 },
+        usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 1290, candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: 1290 }] },
       },
     ]);
     const g = gateway({ clients: { google: google.client } });
     const res = await g.image({ workspaceId: 'ws-1', purpose: 'asset:web-page', profileId: 'balanced', prompt: 'A loaf', size: '1024x1024' });
     expect(res.costUsd).toBeCloseTo(0.0336 + 30 * 1.5e-6, 9);
     expect(ledgerLines()[0]).toMatchObject({ kind: 'image', priceBasis: 'assumed' });
+  });
+});
+
+/**
+ * B1, before the first live run: every price row read again on 2026-10-18 against the provider's own page (the source
+ * each row names). Two figures changed: claude-sonnet-5-5's cache hits ($0.10: the table, its footnote and the prose
+ * now agree) and gemini-nano-banana-2.1's text and thinking output ($7.50 per 1M tokens, which byway did not charge).
+ */
+describe('the price rows, as the providers documented them on 2026-10-18', () => {
+  const ON = new Date('2026-10-18T12:00:00Z');
+  const figures = (provider: Parameters<typeof priceFor>[1], model: string) => {
+    const { inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWritePerMTok, perImageUsd, perSecondUsd } = priceFor(PRICES, provider, model, ON)!;
+    return { inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWritePerMTok, perImageUsd, perSecondUsd };
+  };
+  const tokens = (inputPerMTok: number, outputPerMTok: number, cache: { cacheReadPerMTok?: number; cacheWritePerMTok?: number } = {}) => ({
+    inputPerMTok,
+    outputPerMTok,
+    cacheReadPerMTok: cache.cacheReadPerMTok,
+    cacheWritePerMTok: cache.cacheWritePerMTok,
+    perImageUsd: undefined,
+    perSecondUsd: undefined,
+  });
+
+  it.each([
+    ['anthropic', 'claude-fable-5-1', tokens(10, 50, { cacheReadPerMTok: 0.25, cacheWritePerMTok: 12.5 })],
+    ['anthropic', 'claude-opus-5-5', tokens(4, 20, { cacheReadPerMTok: 0.2, cacheWritePerMTok: 5 })],
+    ['anthropic', 'claude-sonnet-5-5', tokens(2, 10, { cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 })],
+    ['anthropic', 'claude-opus-5', tokens(5, 25, { cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25 })],
+    ['anthropic', 'claude-opus-4-8', tokens(5, 25, { cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25 })],
+    ['openai', 'gpt-6-astra', tokens(10, 50, { cacheReadPerMTok: 1 })],
+    ['openai', 'gpt-6.1-sol', tokens(2, 10, { cacheReadPerMTok: 0.1 })],
+    ['openai', 'gpt-6-luna', tokens(0.1, 0.5)],
+    ['openai', 'gpt-image-2.5-flare', tokens(5, 30)],
+    ['openai', 'gpt-image-2.5-sunburst', tokens(5, 30)],
+    ['google', 'gemini-3.1-pro-preview', tokens(2, 12)],
+    ['google', 'gemini-3.8-flash', tokens(0.75, 3.75)],
+    ['google', 'gemini-nano-banana-2.1', { ...tokens(1.5, 7.5), perImageUsd: 0.0336 }],
+    ['openrouter', 'anthropic/claude-fable-5.1', tokens(10, 50)],
+    ['openrouter', 'anthropic/claude-opus-5.5', tokens(4, 20)],
+    ['openrouter', 'anthropic/claude-sonnet-5.5', tokens(2, 10)],
+    ['fal', 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', { ...tokens(0, 0), perSecondUsd: 0.07 }],
+    ['fal', 'fal-ai/kling-video/v3/pro/image-to-video', { ...tokens(0, 0), perSecondUsd: 0.112 }],
+    ['fal', 'fal-ai/ffmpeg-api/extract-frame', { ...tokens(0, 0), perSecondUsd: 0.0002 }],
+  ] as const)('%s %s', (provider, model, want) => {
+    expect(figures(provider, model)).toEqual(want);
+    expect(priceFor(PRICES, provider, model, ON)!.source).toMatch(/read 2026-10-18/);
+  });
+
+  it('covers every row a provider charges for', () => {
+    const paid = PRICES.filter((r) => r.provider !== 'mock' && r.from === undefined).map((r) => `${r.provider} ${r.model}`);
+    expect(paid).toHaveLength(19);
+  });
+});
+
+describe('a Gemini image is charged its text and thinking tokens on top of the image (B1)', () => {
+  const image = (usageMetadata: Record<string, unknown>) =>
+    fakeGoogle([
+      {
+        modelVersion: 'gemini-nano-banana-2.1',
+        candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Here it is.' }, { inlineData: { data: Buffer.from('jpeg-bytes').toString('base64'), mimeType: 'image/jpeg' } }] } }],
+        usageMetadata,
+      },
+    ]);
+  const ask = (google: ReturnType<typeof fakeGoogle>) => gateway({ clients: { google: google.client } }).image({ workspaceId: 'ws-1', runId: 'run-1', purpose: 'asset:web-page', profileId: 'balanced', prompt: 'A loaf', size: '1024x1024' });
+
+  it('the image at $0.0336, the prompt at $1.50 per 1M, and the thinking and text at $7.50 per 1M', async () => {
+    const res = await ask(image({ promptTokenCount: 30, candidatesTokenCount: 1130, thoughtsTokenCount: 400, candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: 1120 }, { modality: 'TEXT', tokenCount: 10 }] }));
+    expect(res.costUsd).toBeCloseTo(0.0336 + 30 * 1.5e-6 + 410 * 7.5e-6, 9);
+    expect(ledgerLines()[0]).toMatchObject({ kind: 'image', usage: { inputTokens: 30, outputTokens: 410, units: 1 } });
+    expect(ledgerLines()[0]).not.toHaveProperty('priceBasis');
+  });
+
+  it('plans for 2,000 thinking and text tokens an image before the call (a planning number: Google gives none)', () => {
+    const row = priceFor(PRICES, 'google', 'gemini-nano-banana-2.1', AT)!;
+    expect(row.estimatedOutputTokensPerImage).toBe(2000);
+    // The image, the prompt, and 2,000 tokens at $7.50 per 1M ($0.015).
+    const withoutThinking = maxImageCost({ ...row, estimatedOutputTokensPerImage: 0 }, { prompt: 'A loaf' });
+    expect(withoutThinking).toBeGreaterThan(0.0336);
+    expect(maxImageCost(row, { prompt: 'A loaf' }) - withoutThinking).toBeCloseTo(tokenCost(row, { inputTokens: 0, outputTokens: 2000 }), 9);
+    expect(tokenCost(row, { inputTokens: 0, outputTokens: 2000 })).toBe(0.015);
   });
 });

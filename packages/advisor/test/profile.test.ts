@@ -110,3 +110,48 @@ describe('protected checkpoints are kept in substance, not just in name (COMP-1)
     for (const nearest of [c3, c6, c6a]) expect(offer(nearest, nearest), nearest.id).toEqual([]);
   });
 });
+
+/**
+ * B1 (backlog "A model RELAY step is admitted in a non-media composed recipe"): a model RELAY step makes a video clip of
+ * a storyboard's shot, and a relay chain runs one link per shot; the runner reads the shots from the work
+ * (storyboardShots), which only a media recipe's work has. Elsewhere the step fails when it is reached, after the steps
+ * before it were paid for, while its explainer promises "one clip of the last shot". So the composed profile refuses
+ * either outside a media recipe.
+ */
+describe('RELAY only where the work is a storyboard (COMPOSED-MEDIUM)', () => {
+  const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+  const offer = (raw: unknown, nearest: Recipe) => checkAnswer(fencedJson(raw), nearest, { prompts, catalog: PROTOCOL_CONFIGS }, 'composed-relay').violations;
+  type Seq = { op: 'seq'; steps: Record<string, unknown>[] };
+  const c5Production = (c5.stages[1]!.body as unknown as Seq).steps;
+  const chain = () => clone(c5Production.find((s) => s.op === 'relay')!);
+  const inScene = () => clone(c5Production.find((s) => s.id === 'render-in-scene')!);
+  const matte = () => clone(c5Production.find((s) => s.id === 'matte')!);
+  const relayStep = (id: string) => `step "${id}" is a RELAY step: it makes a video clip from a shot of a storyboard, which only a media recipe has (this recipe's medium is "web-page")`;
+  /** The nearest recipe with these nodes added at the end of its D2. */
+  const withInD2 = (nearest: Recipe, ...nodes: Record<string, unknown>[]) => {
+    const r = clone(nearest) as unknown as { stages: { body: Record<string, unknown> }[] };
+    const d2 = r.stages[1]!.body;
+    r.stages[1]!.body = d2.op === 'seq' ? { ...d2, steps: [...(d2 as unknown as Seq).steps, ...nodes] } : { op: 'seq', steps: [d2, ...nodes] };
+    return r;
+  };
+
+  it('refuses a model RELAY step in a web page recipe, which the profile and the validator otherwise admit', () => {
+    const v = offer(withInD2(c1, inScene()), c1);
+    expect(v.map((x) => x.ruleId)).toEqual(['COMPOSED-MEDIUM']);
+    expect(v[0]!.message).toBe(relayStep('render-in-scene'));
+  });
+
+  it('refuses a relay chain outside a media recipe, with its model steps', () => {
+    const v = offer(withInD2(c1, chain()), c1).filter((x) => x.ruleId === 'COMPOSED-MEDIUM');
+    expect(v.map((x) => x.message)).toEqual([
+      'relay "shot-chain" makes one clip for each shot of a storyboard, which only a media recipe has (this recipe\'s medium is "web-page")',
+      relayStep('clip'),
+      relayStep('regenerate'),
+    ]);
+  });
+
+  it('allows RELAY in a media recipe, and a compositing step (a tool, skipped in v1) anywhere', () => {
+    expect(offer(c5, c5)).toEqual([]);
+    expect(offer(withInD2(c1, matte()), c1)).toEqual([]);
+  });
+});

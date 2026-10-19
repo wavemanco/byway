@@ -137,6 +137,14 @@ export function parseImagesResponse(res: ImagesResponseLike, model: string): Omi
 /**
  * The error codes OpenAI's Images API answers with (HTTP 400) when its safety system blocks a request, before or after
  * the image is made: `moderation_blocked` for the GPT image models, `content_policy_violation` for DALL·E.
+ *
+ * Read again on 2026-10-18 (developers.openai.com/api/docs/guides/image-generation, "Handling blocked requests and other
+ * errors"): OpenAI now documents `moderation_blocked`, with `error.type` "image_generation_user_error" and an optional
+ * `error.moderation_details` whose `moderation_stage` is `input`, `output` or `unknown`. The error body is stored as the
+ * decline's response, which its ledger entry names by hash, so the stage that blocked it is on record.
+ * `content_policy_violation` and the HTTP status are not in OpenAI's documentation; they come from community reports (the
+ * D1 build). Nor is whether a block is billed: neither that guide nor the pricing and error-code pages say, so recording
+ * a block at no cost (below) is still an assumption (backlog).
  */
 const MODERATION_CODES = new Set(['moderation_blocked', 'content_policy_violation']);
 

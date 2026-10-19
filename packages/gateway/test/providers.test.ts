@@ -229,7 +229,8 @@ describe('openai adapter', () => {
     const blocked = Object.assign(new Error('400 Your request was rejected by the safety system.'), {
       status: 400,
       code: 'moderation_blocked',
-      error: { code: 'moderation_blocked', message: 'Your request was rejected by the safety system.', type: 'image_generation_user_error' },
+      // The shape OpenAI's image guide documents (read 2026-10-18), with the optional moderation_details.
+      error: { code: 'moderation_blocked', message: 'Your request was rejected by the safety system.', type: 'image_generation_user_error', moderation_details: { moderation_stage: 'output', categories: ['violence'] } },
     });
     const { client } = fakeOpenAI();
     client.images.generate = async () => {
@@ -241,7 +242,9 @@ describe('openai adapter', () => {
     expect(out.bytes.byteLength).toBe(0);
     // OpenAI reports no usage on a blocked request: none is assumed.
     expect(out.usage).toEqual({ inputTokens: 0, outputTokens: 0, units: 0 });
-    expect(out.responseBody).toMatchObject({ error: { code: 'moderation_blocked' } });
+    // The error body is the decline's stored response, so the stage that blocked it is on record (whether a block at the
+    // output stage is billed is not documented; backlog).
+    expect(out.responseBody).toMatchObject({ error: { code: 'moderation_blocked', moderation_details: { moderation_stage: 'output' } } });
     // Any other 400 is still the request's own fault, thrown as before.
     client.images.generate = async () => {
       throw Object.assign(new Error('400 bad size'), { status: 400, error: { code: 'invalid_value', message: 'bad size' } });
@@ -393,6 +396,25 @@ describe('google adapter', () => {
     // An image of a type the contract cannot carry is not an image either.
     const odd = fake({ candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: PNG_B64, mimeType: 'image/gif' } }] } }] });
     expect((await googleAdapter({ client: odd.client }).image!(imageRequest)).refusal).toMatch(/image\/gif/);
+  });
+
+  it('counts an image answer’s thinking and text tokens as output, not the image’s own tokens, which are priced per image (B1)', async () => {
+    // Google's pricing page (read 2026-10-18): Nano Banana 2.1's "text and thinking" output is $7.50 per 1M tokens and its
+    // images $30 per 1M ($0.0336 for a 1K image of 1,120 tokens). Thinking is reported apart from the answer's tokens.
+    const answer = (usageMetadata: GoogleResponseLike['usageMetadata']): GoogleResponseLike => ({
+      modelVersion: 'gemini-nano-banana-2.1',
+      candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Here you go' }, { inlineData: { data: PNG_B64, mimeType: 'image/png' } }] } }],
+      usageMetadata,
+    });
+    const usageOf = async (u: GoogleResponseLike['usageMetadata']) => (await googleAdapter({ client: fake(answer(u)).client }).image!(imageRequest)).usage;
+    const details = [{ modality: 'IMAGE', tokenCount: 1120 }, { modality: 'TEXT', tokenCount: 10 }];
+    expect(await usageOf({ promptTokenCount: 9, candidatesTokenCount: 1130, thoughtsTokenCount: 400, candidatesTokensDetails: details })).toEqual({ inputTokens: 9, outputTokens: 410, units: 1 });
+    // No thinking reported: only the text.
+    expect(await usageOf({ promptTokenCount: 9, candidatesTokenCount: 1130, candidatesTokensDetails: details })).toEqual({ inputTokens: 9, outputTokens: 10, units: 1 });
+    // Without the breakdown by modality, every answer token counts at the text rate, the image's too: the cost leans high.
+    expect(await usageOf({ promptTokenCount: 9, candidatesTokenCount: 1130, thoughtsTokenCount: 400 })).toEqual({ inputTokens: 9, outputTokens: 1530, units: 1 });
+    // A count that is not a number is not read as zero: the gateway replaces it and flags the price (finiteUsage).
+    expect((await usageOf({ promptTokenCount: 9, candidatesTokensDetails: [{ modality: 'TEXT', tokenCount: 'ten' as never }] })).outputTokens).toBeNaN();
   });
 
   it('generates images through generateContent with an aspect ratio and the 1K size', async () => {

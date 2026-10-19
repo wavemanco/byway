@@ -14,6 +14,7 @@ import {
   voiceScope,
   voiceWrite,
   voiceWrites,
+  walk,
   type Checkpoint,
   type Json,
   type Recipe,
@@ -34,6 +35,11 @@ import { flowRecipe } from '@byway/validator';
  *
  * A model chose its counts, so it is held to COMPOSED_LIMITS (COMPOSED-LIMIT, F02): far inside the engine's own, which
  * the validator applies to every recipe (ST3 'limit').
+ *
+ * RELAY only where the work is a storyboard (COMPOSED-MEDIUM, B1, ADR-0109): a model RELAY step makes a video clip of a
+ * storyboard's shot, and a relay chain runs one link per shot, both read from the work (storyboardShots), so outside a
+ * media recipe they fail when reached, after the steps before them were paid for. A compositing step (RELAY by a tool)
+ * is skipped in v1 in any medium, and stays allowed.
  */
 
 export interface ProfileViolation {
@@ -52,6 +58,7 @@ export const COMPOSED_RULES = {
   prompt: 'COMPOSED-PROMPT',
   internal: 'COMPOSED-INTERNAL',
   limit: 'COMPOSED-LIMIT',
+  medium: 'COMPOSED-MEDIUM',
 } as const;
 
 function knobDefs(step: Step): Record<string, KnobDef> {
@@ -232,6 +239,16 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
         }
       }
     }
+  }
+
+  if (recipe.medium !== 'media') {
+    const medium = `(this recipe's medium is "${recipe.medium ?? 'none'}")`;
+    walk(recipe, (node, path) => {
+      if (node.op === 'relay') add('medium', path, `relay "${node.id}" makes one clip for each shot of a storyboard, which only a media recipe has ${medium}`);
+      else if (node.op === 'step' && node.role === 'relay' && node.actor === 'model') {
+        add('medium', path, `step "${node.id}" is a RELAY step: it makes a video clip from a shot of a storyboard, which only a media recipe has ${medium}`);
+      }
+    });
   }
 
   recipe.exceptions.forEach((id, i) => {

@@ -39,7 +39,7 @@ async function pressStart(page: Page, sent: { ids: string[] }): Promise<string> 
 test('a Start sends its id again only while no answer came back and nothing changed', async ({ page }) => {
   await describeProblem(page, 'Tighten my quarterly status memo for the leadership team before Friday');
   await expect(page.locator('#proposal-title')).toHaveText('Memo Polish', { timeout: 60_000 });
-  const engineDown = { status: 503, error: "byway's run engine is not running. Restart byway (pnpm start), then try again." };
+  const engineDown = { status: 503, error: "byway's run engine is not running, or did not answer in time. Restart byway (pnpm start), then try again." };
   const sent = await answerStarts(page, ['no answer', 'no answer', 'no answer', engineDown, 'no answer']);
 
   const first = await pressStart(page, sent);

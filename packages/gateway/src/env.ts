@@ -88,12 +88,18 @@ export interface EnvLoadReport {
 }
 
 /**
- * The names each secrets file listed, per environment object it was loaded into (set or kept). Held here, beside the
- * loader, so a caller that hands an environment to a child (the page renderer) can leave out everything the secrets
- * file holds without threading the load report through the engine. Keyed weakly: a copy of the environment is a
- * different object and carries no names.
+ * The names each secrets file listed, per environment object it was loaded into (set or kept). Held beside the loader,
+ * so a caller that hands an environment to a child (the page renderer) can leave out everything the secrets file holds
+ * without threading the load report through the engine. Keyed weakly: a copy of the environment is a different object
+ * and carries no names.
+ *
+ * One map per process, not per copy of this module: it lives on globalThis under a registered symbol. A Windows start
+ * from a current directory whose drive letter is lowercase loads this module twice (scripts/serve.ts imports the
+ * gateway by path, `file:///c:/…`, and pages.ts through @byway/gateway, `file:///C:/…`), and a map of the module's own
+ * left the renderer's copy knowing no names, so Chromium got the file's plain names (ADR-0100 item 6; B1).
  */
-const listedByFile = new WeakMap<Env, Set<string>>();
+const LISTED_BY_FILE = Symbol.for('byway.gateway.env-file-names');
+const listedByFile: WeakMap<Env, Set<string>> = ((globalThis as { [LISTED_BY_FILE]?: WeakMap<Env, Set<string>> })[LISTED_BY_FILE] ??= new WeakMap());
 
 /**
  * Load `.env.agents` (ADR-0009: gitignored, never committed) into the environment, setting only variables that are
