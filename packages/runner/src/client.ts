@@ -9,7 +9,7 @@ import { WorkflowNotFoundError } from '@temporalio/common';
 import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
 import { engineProblems, parseRecipe, recipeHash } from '@byway/recipe';
 import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
-import { startFailureMessage } from './start-failure.ts';
+import { startFailureMessage, type WorkflowAfterFailedStart } from './start-failure.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
@@ -98,6 +98,21 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
     return existing;
   };
 
+  /**
+   * Whether Temporal has a workflow under a run's id, asked after that run's workflow start failed: it 'exists' (the
+   * start reached Temporal after all, or another delivery's did), it is 'absent' (the run did not start, and a start
+   * that lands later finds the run failed, so its calls are refused), or byway could not ask ('unknown'). This second RPC
+   * is made only after a start that failed.
+   */
+  const workflowAfterFailedStart = async (runId: string): Promise<'exists' | WorkflowAfterFailedStart> => {
+    try {
+      await handle(runId).describe();
+      return 'exists';
+    } catch (e) {
+      return e instanceof WorkflowNotFoundError ? 'absent' : 'unknown';
+    }
+  };
+
   return {
     async start(input: StartRunInput): Promise<RunRecord> {
       if (input.runId !== undefined && !RUN_ID.test(input.runId)) throw new RunStartInvalidError('A run id must be a lowercase UUID.');
@@ -155,7 +170,12 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
         // them wrote the run. One workflow, already running; the run must not be marked failed under it.
         if (input.runId !== undefined && e instanceof WorkflowExecutionAlreadyStartedError) return record;
         // A repeated start leaves the run as the first one made it.
-        if (created) await store.updateRun(id, { status: 'failed', error: startFailureMessage(e) });
+        if (!created) throw e;
+        // The start may have failed after Temporal accepted it (B1, ADR-0107): its reply timed out, or another delivery's
+        // start went through. Whatever ran under this run's workflow id is this run's, so it is left to its workflow.
+        const workflow = await workflowAfterFailedStart(id);
+        if (workflow === 'exists') return record;
+        await store.updateRun(id, { status: 'failed', error: startFailureMessage(e, workflow) });
         throw e;
       }
       return record;

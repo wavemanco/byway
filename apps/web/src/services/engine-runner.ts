@@ -7,14 +7,19 @@
  * error (UNAVAILABLE, or DEADLINE_EXCEEDED while it waits), which would otherwise reach the person as "Workflow Update
  * failed" or a generic 500. Such a failure is reported as the engine being unavailable (a 503 with a plain message),
  * and the cached connection is dropped, so the next action connects again once byway has been restarted.
+ *
+ * A DEADLINE_EXCEEDED can also come from an engine that is running but slow, which may have done what it was asked (B1,
+ * ADR-0107), so the message says the engine is not running or did not answer in time. A run start that times out is
+ * settled before it gets here: the Runner client asks Temporal whether the run's workflow exists before it marks the run
+ * failed (packages/runner/src/client.ts), and the run's own message says what it found.
  */
 import type { CheckpointResolution, Runner, RunView, StartRunInput, Store } from '@byway/contracts';
 
-/** The engine could not be reached; route handlers answer 503 with this plain message. */
+/** The engine could not be reached, or did not answer in time; route handlers answer 503 with this plain message. */
 export class EngineUnavailableError extends Error {
   override name = 'EngineUnavailableError';
   constructor(cause: unknown) {
-    super('byway’s run engine is not running. Restart byway (pnpm start), then try again.', { cause });
+    super('byway’s run engine is not running, or did not answer in time. Restart byway (pnpm start), then try again.', { cause });
   }
 }
 
@@ -26,7 +31,7 @@ export function isEngineUnavailable(err: unknown): boolean {
   return err instanceof Error && err.name === 'EngineUnavailableError';
 }
 
-/** gRPC status codes that mean the server was not there: 14 UNAVAILABLE, 4 DEADLINE_EXCEEDED. */
+/** gRPC status codes that mean the server was not there or did not answer: 14 UNAVAILABLE, 4 DEADLINE_EXCEEDED. */
 const TRANSPORT_CODES = new Set([14, 4]);
 const TRANSPORT_TEXT = /\bECONNREFUSED\b|\bECONNRESET\b|\b14 UNAVAILABLE\b|No connection established/;
 
