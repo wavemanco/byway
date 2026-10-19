@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Accepted |
-| **Decided by** | Delegated: the owner approved this cleanup pass on 2026-10-16. Claude checked each correction against the code on main (1ba72f5); reversible. |
+| **Decided by** | User-approved: on 2026-10-16 the owner chose the recommended option "One cleanup pass, then done", which named "a correcting ADR-0100 for the three false sentences in Accepted ADRs (0083, 0088, 0084)". The corrections it did not name are Claude's, added in the same pass. Claude checked each correction against the code on main (1ba72f5); reversible (Later notes). |
 | **Date (local, UTC−7)** | 2026-10-16 05:45 |
 | **Track** | Product |
 | **Related** | [ADR-0083](0083-hashed-text-is-well-formed-unicode.md), [ADR-0084](0084-renderer-launch-without-secrets.md), [ADR-0085](0085-generated-pages-inert-unless-a-frame-asks-with-consent.md), [ADR-0087](0087-lineup-evidence-full-words-and-disclosed-card-budget.md), [ADR-0088](0088-provider-boundary-held-keys-and-media-admission.md), [ADR-0089](0089-recipe-ir-optional-reads.md), [ADR-0091](0091-provider-edge-billing-fixes.md), [ADR-0092](0092-recipe-semantics-derived-from-execution.md), [ADR-0094](0094-backup-unit-is-the-data-directory.md), [ADR-0096](0096-partial-restores-reported-at-start.md) |
@@ -87,3 +87,9 @@ Each item quotes the sentence, says what is true on main and which change made i
 - The final re-check of the external-review fixes on main 1ba72f5, 2026-10-15 to 2026-10-16 (its notes are outside the repository).
 - Checked on this branch, whose code is main's: the fit probes of `fitCard` with the real renderer (item 9); the placement sweep of `corpus.test.ts` with its tally logged, `PLACEMENT TALLY {"moves":3453,"admitted":1093,"tooMany":0}` and `MONOTONICITY TOTAL 3952 BASES 13` (item 14); a probe that loads the gateway and runner the way `scripts/serve.ts` does, with stand-in values only, and captures the environment each renderer entry (`ready`, a card, `shownText`, `checkRenderer`) hands Chromium: two plain names from the file reached Chromium with a lowercase drive letter and none with an uppercase one; provider keys and secret-looking names were absent in both (item 6).
 - The code and commits named in each item.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, from an audit of the decision records.** The Decided by row read "Delegated: the owner approved this cleanup pass on 2026-10-16". The owner chose the recommended option "One cleanup pass, then done", which named this record ("a correcting ADR-0100 for the three false sentences in Accepted ADRs (0083, 0088, 0084)"), and by the index's legend an option the owner explicitly chose is User-approved. The row now says so, and marks the corrections that option did not name as Claude's.

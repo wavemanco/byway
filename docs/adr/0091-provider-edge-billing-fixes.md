@@ -114,3 +114,9 @@ What the verifiers reproduced at the provider edge:
   - runner: `packages/runner/test/restore.test.ts`;
   - web: `apps/web/test/api.test.ts`, `history.test.ts` and `guard-estimates.test.ts`.
 - It supersedes no ADR. It narrows ADR-0079's "Retries never buy the same thing twice" at the provider edge only. The memo-save and crash windows stay open until stage 3.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, from a trace of the external review's findings against main (8401820).** Consequences, "Limits of the quarantine and the cache": "A failed quarantine copy (a full disk) still fails the billed call, as before" has not been true since [ADR-0095](0095-paid-calls-have-a-durable-spend-book.md), and [ADR-0100](0100-corrections-found-by-the-final-re-check.md) does not list it. A billed call is settled in the spend book first; ledger.jsonl is written later by the outbox drain, which sets a torn tail aside under the ledger's lock, and a drain that fails never fails the call (`packages/gateway/src/paid.ts`: the call's `end()` and the timer catch it). So when the copy cannot be written, the call stays counted in the book, the torn bytes stay in the file, and the timer tries again.
