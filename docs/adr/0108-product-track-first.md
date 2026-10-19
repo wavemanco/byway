@@ -21,7 +21,7 @@ In the owner's words (2026-10-07 10:48), replying to "or the product track": "go
 - The product track is built first and completed before the research harness. Milestone 1 as proposed, a gateway that refuses to spend without a study registry entry and caps spend per arm and per study, and the rater app wait.
 - The owner restated the order on 2026-10-17 08:24, of the work after the external review: "because once we have drained the review work, I want a real deployment that I can test (remember we went product first)."
 - When the research track resumes is the owner's to say; the owner has not said (backlog, Deferred decisions: "When the research track resumes").
-- This is the close sequencing ADR-0033 allows. It changes no record.
+- Claude's reading: this is the close sequencing ADR-0033 allows, so it changes no record.
 
 ## Alternatives considered
 
