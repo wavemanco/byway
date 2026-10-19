@@ -17,7 +17,11 @@ pnpm demo        # byway with sample outputs: no keys, no AI calls, nothing char
 
 Open http://127.0.0.1:3000. Ctrl+C stops everything.
 
-To use real models, make keys for byway alone, so you can revoke them without touching anything else, and before the first live run give them a spending limit, or the smallest prepaid balance, in each provider's console ([ADR-0009](docs/adr/0009-api-key-fencing-constraints.md); the [playbook](docs/playbook.md)'s "Protect the product's provider keys"). A provider's limit caps what a leaked or misused key can cost, whatever byway's own budgets do. Put the keys in `.env.agents` at the repo root (it is gitignored; **never commit keys**), then:
+To use real models:
+
+1. Make API keys for byway alone, so you can revoke them without touching anything else ([ADR-0009](docs/adr/0009-api-key-fencing-constraints.md)).
+2. Before the first live run, set a spending limit, or the smallest prepaid balance, in each provider's console where it offers one. That caps what a leaked or misused key can cost, whatever byway's own budgets do (the [playbook](docs/playbook.md)'s "Protect the product's provider keys").
+3. Put the keys in `.env.agents` at the repo root (it is gitignored; **never commit keys**), then run:
 
 ```bash
 pnpm start
