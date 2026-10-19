@@ -32,5 +32,7 @@ describe('the renderer’s environment, with the gateway loaded twice', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+    // The child loads the gateway and the runner through tsx, which took 5.5 s with the whole suite running on the
+    // owner's machine: more than vitest's default 5 s. The child's own limit (60 s) stops a hung one.
+  }, 120_000);
 });

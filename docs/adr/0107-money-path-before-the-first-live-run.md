@@ -62,6 +62,7 @@ What the providers' own documentation said on 2026-10-18, read with no keys and 
 
 **Negative, and residuals named**
 
+- **Estimates rise where images come from Gemini** (Balanced and the Google profile), by about $0.015 for each image planned. On Balanced, C3's default run budget goes from $2 to $2.50 by this alone, and C2's twelve mood boards cost about $0.60 rather than $0.40.
 - **2,000 thinking tokens an image is a planning number.** The real count may be higher or lower; the first live run's ledger shows it (backlog "Gemini image thinking tokens"). If `thoughtsTokenCount` also counts the thought images Google does not charge for, byway's cost leans high.
 - **A late start.** When Temporal says it has no workflow, the run is marked failed. A start Temporal was still handling that lands afterwards finds the run failed, so its activities change nothing and its calls are refused; between the describe and that store write, which follows it at once, a call could begin.
 - **Code 14 and reset connections keep "Nothing was spent"** when byway cannot ask Temporal afterwards: an engine that is not there runs nothing. A connection reset after Temporal accepted the start is the exception; the backlog asked only about code 4, and this was judged too rare to word for (Claude's judgement).
