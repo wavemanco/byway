@@ -1,0 +1,44 @@
+{
+ "rendered": {
+  "answers": 16626,
+  "missing": 0,
+  "table": {
+   "F": {
+    "variant-refused-otherwise": 3298,
+    "admitted": 9601
+   },
+   "none": {
+    "refused-answer": 2702
+   },
+   "WND": {
+    "admitted": 163,
+    "variant-refused-otherwise": 841
+   },
+   "cand": {
+    "admitted": 3,
+    "variant-refused-otherwise": 18
+   }
+  }
+ },
+ "byPorts": {
+  "answers": 16626,
+  "missing": 0,
+  "table": {
+   "F": {
+    "variant-refused-otherwise": 3421,
+    "admitted": 9601,
+    "refused-answer": 2330
+   },
+   "WND": {
+    "admitted": 163,
+    "variant-refused-otherwise": 719,
+    "refused-answer": 329
+   },
+   "cand": {
+    "refused-answer": 43,
+    "admitted": 3,
+    "variant-refused-otherwise": 17
+   }
+  }
+ }
+}

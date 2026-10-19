@@ -1,0 +1,20 @@
+{
+  "userns": {
+    "firstLine": "browserType.launch: Target page, context or browser has been closed",
+    "mentionsSandboxingFailed": true,
+    "suggestsSandboxFalse": true,
+    "bywayWouldSay": "The page renderer could not start (Target page, context or browser has been closed), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium"
+  },
+  "root": {
+    "firstLine": "browserType.launch: Target page, context or browser has been closed",
+    "mentionsSandboxingFailed": true,
+    "suggestsSandboxFalse": true,
+    "bywayWouldSay": "The page renderer could not start (Target page, context or browser has been closed), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium"
+  },
+  "unrelated": {
+    "firstLine": "browserType.launch: Target page, context or browser has been closed",
+    "mentionsSandboxingFailed": false,
+    "suggestsSandboxFalse": false,
+    "bywayWouldSay": "The page renderer could not start (Target page, context or browser has been closed), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium"
+  }
+}

@@ -1,0 +1,200 @@
+{
+ "files": 1,
+ "variants": 2000,
+ "runs": 24000,
+ "claimed": {
+  "applies": 85798,
+  "tellsApplies": 12755,
+  "swapAsk": 12755,
+  "run-used-prompt": 26670,
+  "reactedTo": 924,
+  "reactedToStrict": 982,
+  "notesOnly": 11439,
+  "personCritique": 1773,
+  "personAnswered": 1773,
+  "personApplied": 1754,
+  "seedFanOut": 1339,
+  "aiWroteRest": 2957,
+  "voiceScriptLocked": 219,
+  "run-locked-prompt": 2628,
+  "relayChain": 9770,
+  "relayOne": 4639,
+  "tellsAppliesAll": 563,
+  "seedOne": 122
+ },
+ "problems": {
+  "J-SOMETIMES-NOT-APPLIED(info)": 170,
+  "E-REACT-SOMETIMES-NOT-SHOWN(info)": 132,
+  "J2-REACHES-WORK-VIA-AI-DIRECTION(info)": 12,
+  "E-NO-REACT-CLAIM-BUT-SHOWN(info)": 25,
+  "E-STRICT-FORCED(control)": 247,
+  "J-ANSWERED-NEVER-APPLIED(info)": 19,
+  "H-NOT-ASKED-BUT-FINDS-REACHED-SWAP-STEP(info)": 497
+ },
+ "examples": {
+  "J-SOMETIMES-NOT-APPLIED(info)": [
+   {
+    "nearest": "c3",
+    "muts": [
+     "giveCritique"
+    ],
+    "idx": 7,
+    "step": "thesis",
+    "answered": 12,
+    "applied": 10
+   },
+   {
+    "nearest": "c4",
+    "muts": [
+     "legitCut"
+    ],
+    "idx": 32,
+    "step": "you-cut-g5170",
+    "answered": 8,
+    "applied": 5
+   }
+  ],
+  "E-REACT-SOMETIMES-NOT-SHOWN(info)": [
+   {
+    "nearest": "c2",
+    "muts": [
+     "giveCritique"
+    ],
+    "idx": 9,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 9
+   },
+   {
+    "nearest": "c2",
+    "muts": [
+     "person"
+    ],
+    "idx": 14,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 8
+   }
+  ],
+  "J2-REACHES-WORK-VIA-AI-DIRECTION(info)": [
+   {
+    "nearest": "c2",
+    "muts": [
+     "giveCritique"
+    ],
+    "idx": 9,
+    "step": "react",
+    "runs": 12
+   },
+   {
+    "nearest": "c2",
+    "muts": [
+     "copy",
+     "giveCritique"
+    ],
+    "idx": 340,
+    "step": "react",
+    "runs": 12
+   }
+  ],
+  "E-NO-REACT-CLAIM-BUT-SHOWN(info)": [
+   {
+    "nearest": "c6a",
+    "muts": [
+     "copy"
+    ],
+    "idx": 26,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 8
+   },
+   {
+    "nearest": "c6a",
+    "muts": [
+     "candTrim"
+    ],
+    "idx": 142,
+    "step": "sharpen",
+    "ran": 12,
+    "reacted": 19
+   }
+  ],
+  "E-STRICT-FORCED(control)": [
+   {
+    "nearest": "c6a",
+    "muts": [
+     "copy"
+    ],
+    "idx": 26,
+    "step": "sharpen",
+    "next": "react-g4381",
+    "shown": [
+     "note:cut-marks#13838",
+     "note:tells-flags#13839",
+     "note:critic#13840"
+    ]
+   },
+   {
+    "nearest": "c6a",
+    "muts": [
+     "copy"
+    ],
+    "idx": 26,
+    "step": "sharpen",
+    "next": "react-g4381",
+    "shown": [
+     "note:cut-marks#14288",
+     "note:tells-flags#14289",
+     "note:critic#14290"
+    ]
+   }
+  ],
+  "J-ANSWERED-NEVER-APPLIED(info)": [
+   {
+    "nearest": "c6a",
+    "muts": [
+     "giveCritique"
+    ],
+    "idx": 29,
+    "step": "react",
+    "answered": 12
+   },
+   {
+    "nearest": "c6a",
+    "muts": [
+     "giveCritique",
+     "wrapNode"
+    ],
+    "idx": 47,
+    "step": "react",
+    "answered": 12
+   }
+  ],
+  "H-NOT-ASKED-BUT-FINDS-REACHED-SWAP-STEP(info)": [
+   {
+    "nearest": "c4",
+    "muts": [
+     "wrapNode",
+     "wrapNode"
+    ],
+    "idx": 93,
+    "step": "tells-sweep",
+    "swap": "apply-swaps",
+    "explainer": "A fresh reviewer flags stock patterns.",
+    "lead": "tells-sweep"
+   },
+   {
+    "nearest": "c4",
+    "muts": [
+     "wrapNode",
+     "wrapNode"
+    ],
+    "idx": 93,
+    "step": "tells-sweep",
+    "swap": "apply-swaps",
+    "explainer": "A fresh reviewer flags stock patterns.",
+    "lead": "tells-sweep"
+   }
+  ]
+ }
+}

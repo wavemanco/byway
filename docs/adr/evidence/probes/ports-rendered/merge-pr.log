@@ -1,0 +1,80 @@
+{
+ "read": 39291,
+ "unique": 28653,
+ "refused": 7958,
+ "admitted": 20695,
+ "refusedByAnswerClause": 5735,
+ "refusedByPromptOnly": 2223,
+ "refusedByPromptAndAnswer": 5735,
+ "refusedOther": 0,
+ "keys": {
+  "COMPOSED-PROMPT:": 7958,
+  "ST12:critique-unapplied": 4904,
+  "ST12:critique-per-candidate": 889,
+  "ST9:human-critique": 14
+ },
+ "answerRefusals": 6084,
+ "answerRefusalsByClause": {
+  "ST12:critique-unapplied": 5171,
+  "ST12:critique-per-candidate": 895,
+  "ST9:human-critique": 18
+ },
+ "promptByPort": {
+  "critique": 7983,
+  "taste": 1118,
+  "brief": 1413,
+  "view": 74
+ },
+ "promptByRolePort": {
+  "vision critique": 5681,
+  "seed taste": 694,
+  "seed brief": 564,
+  "fix brief": 513,
+  "asset critique": 208,
+  "vision brief": 135,
+  "fix taste": 179,
+  "cut brief": 15,
+  "check view": 74,
+  "asset brief": 76,
+  "seed critique": 1651,
+  "tells-sweep taste": 38,
+  "asset taste": 49,
+  "tells-sweep critique": 161,
+  "cut taste": 9,
+  "tells-sweep brief": 53,
+  "build brief": 51,
+  "cut critique": 30,
+  "relay taste": 23,
+  "vision taste": 72,
+  "build critique": 228,
+  "relay critique": 10,
+  "build taste": 50,
+  "dedupe critique": 2,
+  "overlap critique": 12,
+  "overlap brief": 5,
+  "overlap taste": 2,
+  "dedupe taste": 2,
+  "dedupe brief": 1
+ },
+ "byNearest": {
+  "c7": 3459,
+  "c1": 10761,
+  "c3": 4950,
+  "c4": 3342,
+  "c2": 1321,
+  "c5": 2699,
+  "c6a": 1514,
+  "c6": 607
+ },
+ "refusedByNearest": {
+  "c1": 5684,
+  "c6a": 313,
+  "c3": 1011,
+  "c6": 23,
+  "c5": 201,
+  "c7": 234,
+  "c4": 300,
+  "c2": 192
+ },
+ "mainRefusedBranchAdmits": 0
+}

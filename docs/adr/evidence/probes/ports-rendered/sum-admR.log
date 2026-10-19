@@ -1,0 +1,252 @@
+{
+ "targets": 20515,
+ "reachedF": 20229,
+ "reachedWND": 283,
+ "candOnly": 3,
+ "influenceOnly": 0,
+ "nothing": 0,
+ "examples": [
+  {
+   "file": "o-admR-0.json",
+   "idx": 856,
+   "nearest": "c1",
+   "muts": [
+    "legitCut"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 9
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 870,
+   "nearest": "c1",
+   "muts": [
+    "legitCut"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16,
+    "I": 16,
+    "FI": 1
+   },
+   "mixed": {
+    "W": 13,
+    "I": 13,
+    "FI": 1
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 870,
+   "nearest": "c1",
+   "muts": [
+    "legitCut"
+   ],
+   "step": "you-cut-g183716",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 10,
+    "I": 2
+   },
+   "mixed": {
+    "W": 11,
+    "I": 1
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 996,
+   "nearest": "c1",
+   "muts": [
+    "legitCut"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16,
+    "I": 16
+   },
+   "mixed": {
+    "W": 8,
+    "I": 8
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 996,
+   "nearest": "c1",
+   "muts": [
+    "legitCut"
+   ],
+   "step": "you-cut-g215781",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 12
+   },
+   "mixed": {
+    "W": 6
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 1119,
+   "nearest": "c3",
+   "muts": [
+    "wrapNode",
+    "seedBetween"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 8,
+   "given": {
+    "W": 8,
+    "I": 3,
+    "FI": 1
+   },
+   "mixed": {
+    "W": 3,
+    "I": 2,
+    "FI": 2
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 1150,
+   "nearest": "c1",
+   "muts": [
+    "c1Shape"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 9
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 1283,
+   "nearest": "c3",
+   "muts": [
+    "seedBetween"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16,
+    "I": 7,
+    "FI": 3
+   },
+   "mixed": {
+    "W": 11,
+    "I": 5,
+    "FI": 2
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 1384,
+   "nearest": "c4",
+   "muts": [
+    "wrapCands",
+    "legitCut"
+   ],
+   "step": "you-cut-g305661",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 10
+   },
+   "mixed": {
+    "W": 7
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 1901,
+   "nearest": "c1",
+   "muts": [
+    "c1Shape"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 10
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 2108,
+   "nearest": "c3",
+   "muts": [
+    "seedBetween",
+    "legitCut"
+   ],
+   "step": "you-vision-g148593",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 11
+   }
+  },
+  {
+   "file": "o-admR-0.json",
+   "idx": 2465,
+   "nearest": "c1",
+   "muts": [
+    "legitCut"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16,
+    "I": 10,
+    "FI": 5
+   },
+   "mixed": {
+    "W": 13,
+    "I": 6,
+    "FI": 4
+   }
+  }
+ ],
+ "byNear": {
+  "c1:F": 6239,
+  "c3:F": 5271,
+  "c4:F": 4112,
+  "c2:F": 201,
+  "c5:F": 2642,
+  "c7:F": 1508,
+  "c6a:F": 256,
+  "c1:WND": 240,
+  "c3:WND": 35,
+  "c4:WND": 6,
+  "c7:WND": 1,
+  "c1:cand": 3,
+  "c2:WND": 1
+ }
+}

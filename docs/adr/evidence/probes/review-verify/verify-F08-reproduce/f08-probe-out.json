@@ -1,0 +1,276 @@
+[
+  {
+    "name": "control: C1 against itself",
+    "mutated": false,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "review case 1: C1 pick-one H/human -> R/policy",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": [
+      "+ Refine|Random pick|tool|The AI chooses what to keep.",
+      "- Refine|Pick one|you|Your turn: choose what to keep."
+    ]
+  },
+  {
+    "name": "review case 2: C1 critic-loop threshold 9 -> 1",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 pick-one H/human -> C/model",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": [
+      "+ Refine|AI picks|ai|The AI chooses what to keep.",
+      "- Refine|Pick one|you|Your turn: choose what to keep."
+    ]
+  },
+  {
+    "name": "C1 pick-one k 1 -> 2",
+    "mutated": true,
+    "accepted": false,
+    "violations": [
+      "PR4: an unpicked option set may enter D3",
+      "ST5: step \"cut-render\" consumes artifact, which is not in scope on every path",
+      "ST5: step \"apply-cut\" consumes artifact, which is not in scope on every path"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": [
+      "+ Refine|Pick 2|you|Your turn: choose what to keep.",
+      "- Refine|Pick one|you|Your turn: choose what to keep."
+    ]
+  },
+  {
+    "name": "C1 critic-loop onCap human -> policy-best-snapshot",
+    "mutated": true,
+    "accepted": false,
+    "violations": [
+      "LS1: critic loop \"critic-loop\" hands the cap to a policy"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 critic-loop onNoConverge -> continue",
+    "mutated": true,
+    "accepted": false,
+    "violations": [
+      "LS1: critic loop \"critic-loop\" hands non-convergence to a policy"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 critic-loop plateau removed",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 critic-loop probe 2 -> 5",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 critic-loop hidden true -> false",
+    "mutated": true,
+    "accepted": false,
+    "violations": [
+      "DR4: critic loop \"critic-loop\" does not stop on the critic's score against a hidden threshold",
+      "PR2: loop \"critic-loop\" does not hide its threshold"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 critic-loop max 5 -> 3 (positive control)",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "Changed: Outside critique repeats up to 3 rounds instead of 5"
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 optional asset trigger reworded",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 apply-cut writes:false",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": [
+      "+ Finish|Trim|you|Your turn: mark what the work could lose.",
+      "+ Finish|Revise|ai|The AI revises the work.",
+      "- Finish|Trim|you|Your turn: list what the work could lose, and the AI removes it."
+    ]
+  },
+  {
+    "name": "C1 critic isolated flipped",
+    "mutated": true,
+    "accepted": false,
+    "violations": [
+      "DR3: judge \"critic\" is not isolated",
+      "DR4: critic loop \"critic-loop\" threshold is not hidden from a critic in the worker's context",
+      "PR1: judge \"critic\" is not isolated, so it sees process",
+      "PR2: loop \"critic-loop\" critic shares the worker's context, which holds the threshold"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C1 exceptions cleared",
+    "mutated": true,
+    "accepted": false,
+    "violations": [
+      "DR2: an unpicked option set may enter D2",
+      "DR7: defect check \"critic-check\" runs after Distill has started"
+    ],
+    "diff": [
+      "The same steps as Landing Page Studio."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C3 sitsOut RELAY removed",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Series Writer."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C3 pick-angle H/human -> R/policy",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Series Writer."
+    ],
+    "routeDelta": [
+      "+ Explore|Random pick|tool|The AI chooses what to keep.",
+      "- Explore|Pick one|you|Your turn: choose what to keep."
+    ]
+  },
+  {
+    "name": "C3 route branch \"own\" removed",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "Removed: First draft (Refine)"
+    ],
+    "routeDelta": [
+      "- Refine|Your draft|you|Your turn: write or revise the work yourself."
+    ]
+  },
+  {
+    "name": "C3 critic-loop rank threshold changed",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Series Writer."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C5 launch-gate pass threshold changed",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Ad Video Chain."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C5 launch-gate retry times changed",
+    "mutated": true,
+    "accepted": false,
+    "violations": [
+      "ST10: gate \"launch-gate\" retries 4 times; a retry is 1–3 automatic re-runs"
+    ],
+    "diff": [
+      "The same steps as Ad Video Chain."
+    ],
+    "routeDelta": []
+  },
+  {
+    "name": "C5 pick-concept H/human -> R/policy",
+    "mutated": true,
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "The same steps as Ad Video Chain."
+    ],
+    "routeDelta": [
+      "+ Explore|Random pick|tool|The AI chooses what to keep.",
+      "- Explore|Pick one|you|Your turn: choose what to keep."
+    ]
+  },
+  {
+    "name": "C4 a loop gate metric changed to human",
+    "mutated": true,
+    "accepted": false,
+    "violations": [
+      "DR4: critic loop \"critic-loop\" does not stop on the critic's score against a hidden threshold"
+    ],
+    "diff": [
+      "Changed: Outside critique repeats until you say it is ready instead of until it ranks well enough among examples"
+    ],
+    "routeDelta": []
+  }
+]

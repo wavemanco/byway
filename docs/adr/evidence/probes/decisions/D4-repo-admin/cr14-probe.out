@@ -1,0 +1,16 @@
+ADR files: 100; ever Accepted: 93; Context/Decision changed since first Accepted: 13
+  0081-voice-writes-the-persons-copy-exactly.md (first Accepted 6901118): Context, Decision
+  0082-web-client-state-ownership.md (first Accepted 4df0a18): Decision
+  0086-run-screen-excerpts-say-so-and-decision-views-show-whole-text.md (first Accepted 63c0a4e): Decision
+  0087-lineup-evidence-full-words-and-disclosed-card-budget.md (first Accepted 34fd64a): Decision
+  0090-execution-contracts-for-revising-humans-and-media-steps.md (first Accepted 0e31f90): Decision
+  0091-provider-edge-billing-fixes.md (first Accepted e50619d): Decision
+  0092-recipe-semantics-derived-from-execution.md (first Accepted 9392aa1): Decision
+  0093-every-loop-exit-at-the-cap-follows-one-policy.md (first Accepted 1bc5d0f): Decision
+  0095-paid-calls-have-a-durable-spend-book.md (first Accepted b939315): Decision
+  0097-a-step-takes-in-only-what-its-prompt-shows.md (first Accepted 842d8d7): Decision
+  0098-recipe-limits-disclosure-and-held-voice.md (first Accepted 1bc5d0f): Decision
+  0099-paid-operations-keyed-to-their-caller.md (first Accepted fc61768): Decision
+  0100-corrections-found-by-the-final-re-check.md (first Accepted c74a50c): Decision
+Not ever Accepted: 0034 Proposed; 0035 Proposed; 0036 Proposed; 0037 Proposed; 0038 Proposed; 0039 Proposed; 0040 Proposed
+elapsed 10.0 s

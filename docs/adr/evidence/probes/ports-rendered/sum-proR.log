@@ -1,0 +1,248 @@
+{
+ "targets": 3025,
+ "reachedF": 2700,
+ "reachedWND": 314,
+ "candOnly": 10,
+ "influenceOnly": 0,
+ "nothing": 1,
+ "examples": [
+  {
+   "file": "o-proR-0.json",
+   "idx": 38,
+   "nearest": "c3",
+   "muts": [
+    "seedBetween",
+    "seedBetween"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16,
+    "I": 8,
+    "FI": 3
+   },
+   "mixed": {
+    "W": 14,
+    "I": 4,
+    "FI": 2
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 53,
+   "nearest": "c1",
+   "muts": [
+    "c1Shape"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 10
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 355,
+   "nearest": "c1",
+   "muts": [
+    "c1Shape",
+    "legitCut"
+   ],
+   "step": "you-cut-g69248",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 13
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 355,
+   "nearest": "c1",
+   "muts": [
+    "c1Shape",
+    "legitCut"
+   ],
+   "step": "you-cut-g69253",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 6
+   },
+   "mixed": {
+    "W": 6
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 709,
+   "nearest": "c1",
+   "muts": [
+    "port",
+    "c1Shape",
+    "c1Shape"
+   ],
+   "step": "you-vision-g146705",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 11
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 811,
+   "nearest": "c3",
+   "muts": [
+    "wrapNode",
+    "personTaker"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 11
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 835,
+   "nearest": "c3",
+   "muts": [
+    "seedBetween"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16,
+    "I": 5
+   },
+   "mixed": {
+    "W": 12,
+    "I": 3
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 956,
+   "nearest": "c1",
+   "muts": [
+    "c1Shape"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 12
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 1224,
+   "nearest": "c1",
+   "muts": [
+    "c1CandShape"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 11
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 1369,
+   "nearest": "c1",
+   "muts": [
+    "seedBetween"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16,
+    "I": 11,
+    "FI": 7
+   },
+   "mixed": {
+    "W": 11,
+    "I": 7,
+    "FI": 4
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 1453,
+   "nearest": "c1",
+   "muts": [
+    "c1LoopShape",
+    "remove"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 7
+   }
+  },
+  {
+   "file": "o-proR-0.json",
+   "idx": 1491,
+   "nearest": "c1",
+   "muts": [
+    "c1Shape"
+   ],
+   "step": "cut",
+   "cls": "WND",
+   "asked": 16,
+   "given": {
+    "W": 16
+   },
+   "mixed": {
+    "W": 12
+   }
+  }
+ ],
+ "byNear": {
+  "c3:WND": 56,
+  "c1:WND": 251,
+  "c1:F": 1104,
+  "c3:F": 797,
+  "c5:F": 175,
+  "c4:F": 381,
+  "c7:F": 132,
+  "c6a:F": 91,
+  "c1:cand": 6,
+  "c2:F": 20,
+  "c4:WND": 6,
+  "c3:cand": 3,
+  "c2:WND": 1,
+  "c3:none": 1,
+  "c6a:cand": 1
+ }
+}

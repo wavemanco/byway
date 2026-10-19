@@ -1,0 +1,19 @@
+{
+ "base": {
+  "hash": "e572716aaa5b6d3467b705ab8510f0473b49bc6838e78510917719b06c5d90e0",
+  "hasRules": true,
+  "hasExceptions": true
+ },
+ "decoupled": {
+  "hash": "6a9ad525e8b47aba0e2f67e3be7e3f853027b8655262ae7709aff3b766968805",
+  "hasRules": false,
+  "hasExceptions": true
+ },
+ "decoupledPlusSt12": {
+  "hash": "6a9ad525e8b47aba0e2f67e3be7e3f853027b8655262ae7709aff3b766968805",
+  "hasRules": false,
+  "hasExceptions": true
+ },
+ "decouplingChangesHashOnce": true,
+ "st12AfterDecouplingChangesHash": false
+}

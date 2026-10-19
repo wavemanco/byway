@@ -1,0 +1,201 @@
+{
+  "probes": [
+    {
+      "name": "baseline c1 unchanged",
+      "accepted": true,
+      "violations": [],
+      "ms": 7,
+      "diffShownPlain": [
+        "The same steps as Landing Page Studio."
+      ],
+      "estimateDemo": {
+        "cost": "$0.00",
+        "calls": "25–61 AI calls",
+        "suggestedBudgetText": "1.00",
+        "suggestedBudgetAccepted": true
+      },
+      "estimateBalanced": {
+        "cost": "$1.14–$5.87",
+        "calls": "25–61 AI calls",
+        "suggestedBudgetText": "7.50",
+        "suggestedBudgetAccepted": true
+      }
+    },
+    {
+      "name": "c1 replicate n=1e9 (review case)",
+      "accepted": true,
+      "violations": [],
+      "ms": 4,
+      "diffShownPlain": [
+        "Changed: Random spark: 1000000000 separate drafts instead of 4"
+      ],
+      "estimateDemo": {
+        "cost": "$0.00",
+        "calls": "5000000005–14000000005 AI calls",
+        "suggestedBudgetText": "1.00",
+        "suggestedBudgetAccepted": true
+      },
+      "estimateBalanced": {
+        "cost": "$225,150,000.24–$1,341,150,000.50",
+        "calls": "5000000005–14000000005 AI calls",
+        "suggestedBudgetText": "1676437501.00",
+        "suggestedBudgetAccepted": false
+      }
+    },
+    {
+      "name": "c1 replicate n=2001 (just over Temporal default pending-activity limit)",
+      "accepted": true,
+      "violations": [],
+      "ms": 1,
+      "diffShownPlain": [
+        "Changed: Random spark: 2001 separate drafts instead of 4"
+      ],
+      "estimateDemo": {
+        "cost": "$0.00",
+        "calls": "10010–28019 AI calls",
+        "suggestedBudgetText": "1.00",
+        "suggestedBudgetAccepted": true
+      },
+      "estimateBalanced": {
+        "cost": "$450.77–$2,684.14",
+        "calls": "10010–28019 AI calls",
+        "suggestedBudgetText": "3355.50",
+        "suggestedBudgetAccepted": false
+      }
+    },
+    {
+      "name": "c1 replicate n=12 (a plausible \"more drafts\" request)",
+      "accepted": true,
+      "violations": [],
+      "ms": 1,
+      "diffShownPlain": [
+        "Changed: Random spark: 12 separate drafts instead of 4"
+      ],
+      "estimateDemo": {
+        "cost": "$0.00",
+        "calls": "65–173 AI calls",
+        "suggestedBudgetText": "1.00",
+        "suggestedBudgetAccepted": true
+      },
+      "estimateBalanced": {
+        "cost": "$2.95–$16.60",
+        "calls": "65–173 AI calls",
+        "suggestedBudgetText": "21.00",
+        "suggestedBudgetAccepted": true
+      }
+    },
+    {
+      "name": "c1 nested replicate 100 x 100 inside D1",
+      "accepted": false,
+      "violations": [
+        "ST5: replicate \"outer-x100\" body produces no artifact"
+      ],
+      "ms": 1,
+      "diffShownPlain": [
+        "Added: Random spark: 100 separate drafts",
+        "Changed: Random spark: 100 separate drafts instead of 4"
+      ],
+      "estimateDemo": {
+        "cost": "$0.00",
+        "calls": "10405–11305 AI calls",
+        "suggestedBudgetText": "1.00",
+        "suggestedBudgetAccepted": true
+      },
+      "estimateBalanced": {
+        "cost": "$490.53–$1,070.17",
+        "calls": "10405–11305 AI calls",
+        "suggestedBudgetText": "1338.00",
+        "suggestedBudgetAccepted": false
+      }
+    },
+    {
+      "name": "c1 critic loop max=1e9 (sequential)",
+      "accepted": true,
+      "violations": [],
+      "ms": 1,
+      "diffShownPlain": [
+        "The same steps as Landing Page Studio."
+      ],
+      "estimateDemo": {
+        "cost": "$0.00",
+        "calls": "25–61 AI calls",
+        "suggestedBudgetText": "1.00",
+        "suggestedBudgetAccepted": true
+      },
+      "estimateBalanced": {
+        "cost": "$1.14–$5.87",
+        "calls": "25–61 AI calls",
+        "suggestedBudgetText": "7.50",
+        "suggestedBudgetAccepted": true
+      }
+    },
+    {
+      "name": "c1 replicate n=-5 (negative)",
+      "accepted": false,
+      "violations": [
+        "ST3: replicate \"seeded-x4\" needs an integer n ≥ 1"
+      ],
+      "ms": 1,
+      "diffShownPlain": [
+        "Changed: Random spark: -5 separate drafts instead of 4"
+      ],
+      "estimateDemo": {
+        "cost": "$0.00",
+        "calls": "5 AI calls",
+        "suggestedBudgetText": "1.00",
+        "suggestedBudgetAccepted": true
+      },
+      "estimateBalanced": {
+        "cost": "$0.24–$0.50",
+        "calls": "5 AI calls",
+        "suggestedBudgetText": "1.00",
+        "suggestedBudgetAccepted": true
+      }
+    },
+    {
+      "name": "c1 replicate n=1.5 (fraction)",
+      "accepted": false,
+      "violations": [
+        "SCHEMA: Invalid input: expected int, received number"
+      ],
+      "ms": 1
+    }
+  ],
+  "depthRows": [
+    {
+      "depth": 100,
+      "bytes": 6361,
+      "ok": true,
+      "ms": 3
+    },
+    {
+      "depth": 1000,
+      "bytes": 27061,
+      "threw": "RangeError: Maximum call stack size exceeded",
+      "ms": 23
+    },
+    {
+      "depth": 2000,
+      "bytes": 50061,
+      "threw": "RangeError: Maximum call stack size exceeded",
+      "ms": 24
+    },
+    {
+      "depth": 3000,
+      "bytes": 73061,
+      "threw": "RangeError: Maximum call stack size exceeded",
+      "ms": 17
+    },
+    {
+      "depth": 5000,
+      "bytes": 119061,
+      "threw": "RangeError: Maximum call stack size exceeded",
+      "ms": 13
+    }
+  ],
+  "schemaMax": "schema accepts MAX_SAFE_INTEGER",
+  "c1D1": {
+    "op": "replicate",
+    "n": 4
+  }
+}

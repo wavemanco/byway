@@ -1,0 +1,161 @@
+{
+  "A_humanGate_max1": {
+    "ports": {
+      "artifact": "DRAFT"
+    },
+    "questions": [],
+    "iterations": [
+      {
+        "iteration": 1,
+        "max": 1
+      }
+    ]
+  },
+  "B_humanGate_max3_alwaysNo": {
+    "gate": {
+      "metric": "human",
+      "hidden": false,
+      "holder": "human",
+      "probe": 1,
+      "max": 3,
+      "onCap": "human",
+      "onNoConverge": "recalibrate-human"
+    },
+    "returnedArtifact": "draft-r3",
+    "questions": [
+      "human-loop:READY?",
+      "human-loop:READY?"
+    ],
+    "iterations": [
+      1,
+      2,
+      3
+    ]
+  },
+  "C_control_criticLoop_onCapHuman_max2": {
+    "questions": [
+      "critic-loop:BEST_SO_FAR?"
+    ],
+    "iterations": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "returnedArtifact": "A"
+  },
+  "D_c6_runStages_alwaysNotReady": {
+    "gates": "[\"D1\",\"D2\",\"D3\"]",
+    "loopIterations": {
+      "author-loop": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    "readyQuestionsPerLoop": {
+      "author-loop": 9
+    },
+    "bestSoFarQuestions": 0,
+    "allQuestions": [
+      "angles-if-wanted:Run this step? It is meant for when you want angle",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?"
+    ],
+    "stepsAfterLastLoopRound": [
+      "D2:cut-marks",
+      "D2:tells-flags",
+      "D2:critic",
+      "D3:voice"
+    ],
+    "finalArtifact": "draft-r10",
+    "voiceSawArtifact": "draft-r10"
+  },
+  "D_c6a_runStages_alwaysNotReady": {
+    "gates": "[\"D1\",\"D2\",\"D3\"]",
+    "loopIterations": {
+      "vision": [
+        1,
+        2
+      ],
+      "author-loop": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    "readyQuestionsPerLoop": {
+      "vision": 1,
+      "author-loop": 9
+    },
+    "bestSoFarQuestions": 0,
+    "allQuestions": [
+      "vision:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "author-loop:READY?",
+      "final-tells-read:Run this step? It is meant for when you want a las"
+    ],
+    "stepsAfterLastLoopRound": [
+      "D2:cut-marks",
+      "D2:tells-flags",
+      "D2:critic",
+      "D3:voice"
+    ],
+    "finalArtifact": "draft-r10",
+    "voiceSawArtifact": "draft-r10"
+  },
+  "D_c2_runStages_alwaysNotReady": {
+    "gates": "[\"D1\"]",
+    "loopIterations": {
+      "vision": [
+        1,
+        2,
+        3
+      ]
+    },
+    "readyQuestionsPerLoop": {
+      "vision": 2
+    },
+    "bestSoFarQuestions": 0,
+    "allQuestions": [
+      "vision:READY?",
+      "vision:READY?",
+      "mood-boards-if-wanted:Run this step? It is meant for when you want rough"
+    ],
+    "stepsAfterLastLoopRound": [
+      "D1:option-map",
+      "D1:voice"
+    ],
+    "finalArtifact": "brief-art-6",
+    "voiceSawArtifact": "brief-art-6"
+  },
+  "AUTHOR_ROUNDS": 10
+}

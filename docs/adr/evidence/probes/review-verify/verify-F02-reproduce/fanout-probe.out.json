@@ -1,0 +1,38 @@
+[
+  {
+    "n": 4,
+    "branchesStarted": 4,
+    "branchesStartedBeforeFirstActivity": 4,
+    "activityCallsPendingAtOnce": 4,
+    "occurrenceKeys": 4,
+    "ms": 3,
+    "heapGrowthMB": 1
+  },
+  {
+    "n": 2500,
+    "branchesStarted": 2500,
+    "branchesStartedBeforeFirstActivity": 2500,
+    "activityCallsPendingAtOnce": 2500,
+    "occurrenceKeys": 2500,
+    "ms": 5,
+    "heapGrowthMB": 5
+  },
+  {
+    "n": 100000,
+    "branchesStarted": 100000,
+    "branchesStartedBeforeFirstActivity": 100000,
+    "activityCallsPendingAtOnce": 100000,
+    "occurrenceKeys": 100000,
+    "ms": 238,
+    "heapGrowthMB": 226
+  },
+  {
+    "n": 1000000,
+    "branchesStarted": 1000000,
+    "branchesStartedBeforeFirstActivity": 1000000,
+    "activityCallsPendingAtOnce": 1000000,
+    "occurrenceKeys": 1000000,
+    "ms": 3027,
+    "heapGrowthMB": 1820
+  }
+]

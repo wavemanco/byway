@@ -1,0 +1,31 @@
+{
+ "base": {
+  "hash": "e572716aaa5b6d3467b705ab8510f0473b49bc6838e78510917719b06c5d90e0",
+  "rules": true,
+  "exceptions": true,
+  "protocolFiles": [
+   "blocks",
+   "rules",
+   "exceptions",
+   "media"
+  ]
+ },
+ "sideEffectsFree": {
+  "hash": "bfdda860bb6aff469c48f48389af1795bd1c25f0dd1689b6b45e9b2080bee074",
+  "rules": false,
+  "exceptions": false,
+  "protocolFiles": [
+   "blocks",
+   "media"
+  ]
+ },
+ "sideEffectsFreePlusSt12": {
+  "hash": "bfdda860bb6aff469c48f48389af1795bd1c25f0dd1689b6b45e9b2080bee074",
+  "rules": false,
+  "exceptions": false,
+  "protocolFiles": [
+   "blocks",
+   "media"
+  ]
+ }
+}
