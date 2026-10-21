@@ -28,6 +28,10 @@ afterAll(async () => {
 }, 60_000);
 
 const openCheckpoint = (runId: string) => h.waitFor('an open checkpoint', async () => (await h.store.checkpointsForRun(runId)).find((c) => c.status === 'open'));
+/**
+ * Waits for a run's status. The workflow writes it in an activity of its own, in no fixed order with the activity that
+ * opens a checkpoint, so a run whose checkpoint is open may not read 'waiting' yet.
+ */
 const statusIs = (runId: string, status: string) => h.waitFor(`status ${status}`, async () => (await h.store.getRun(runId))?.status === status);
 const handle = (runId: string) => h.env.client.workflow.getHandle(workflowIdFor(runId));
 
@@ -84,7 +88,7 @@ describe('a run whose workflow is gone (OPS-1)', () => {
     expect(orphaned).toEqual([]);
     await expectClosed(ghost.id, ghostCp.id, 'failed', LOST_RUN_MESSAGE);
     await expectClosed(lost.runId, lost.cpId, 'failed', LOST_RUN_MESSAGE);
-    expect((await h.store.getRun(live.id))?.status).toBe('waiting');
+    await statusIs(live.id, 'waiting');
 
     await h.runner.cancel(live.id);
     await statusIs(live.id, 'cancelled');
@@ -119,7 +123,8 @@ describe('a start whose reply timed out, against a real Temporal server (B1, ADR
   it('Temporal accepted it: the run goes on under its workflow, not marked failed', async () => {
     const run = await startWith(replyLost(true));
     await openCheckpoint(run.id);
-    expect(await h.store.getRun(run.id)).toMatchObject({ status: 'waiting' });
+    // A run marked failed never reads 'waiting': setRunStatus leaves an ended run as it is.
+    await statusIs(run.id, 'waiting');
     expect((await h.store.getRun(run.id))?.error).toBeUndefined();
     await h.runner.cancel(run.id);
     await statusIs(run.id, 'cancelled');
