@@ -3,14 +3,16 @@
  * evidence kept only in %TEMP% into the repository"). Windows can clear its Temp folder, so evidence kept only there
  * can be lost:
  *
- * - an Accepted record that names a path under Temp (as `…/AppData/Local/Temp/…`, `%TEMP%`, `$env:TEMP` or
- *   `Temp/byway-…`) says in a Later note where that evidence is now, or that it was not kept;
+ * - an Accepted record that names a path under Temp (as `…/AppData/Local/Temp/…`, `%TEMP%`, `%TMP%`, `$env:TEMP`,
+ *   `$env:TMP`, `$TEMP/`, `${TEMP}/` or `Temp/byway-…`) has the Later note headed as the one that says where that
+ *   evidence is now, or that it was not kept; only that heading's presence is checked, not that the note names each path;
  * - every relative link in the evidence files written to be read here, and in the records' Later notes, resolves;
  * - the evidence files hold no email address (the conversation records are extracted from a session transcript, and
  *   the probes from scratch folders);
  * - neither they nor the other folders copied in from Temp or written from sessions (F07's corpus,
- *   packages/runner/test/f07-corpus, and docs/reviews) hold a key-shaped string. The F07 pages are model-written sites
- *   with made-up contact details, pinned byte for byte (f07-corpus.test.ts), so the email check stops at the evidence.
+ *   packages/runner/test/f07-corpus; the claims oracle, scripts/test/claims-oracle; and docs/reviews) hold a key-shaped
+ *   string. The F07 pages are model-written sites, contact details included (nobody checked them against real ones),
+ *   pinned byte for byte (f07-corpus.test.ts), so the email check stops at the evidence.
  */
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -21,7 +23,7 @@ import { brokenLink, filesUnder, read, relativeLinks, REPO, section } from './do
 
 const EVIDENCE = `${ADR_DIR}/evidence`;
 const NOTE = '**2026-10-18, the evidence kept only under Temp.**';
-const TEMP = /AppData[\\/]Local[\\/]Temp|%TEMP%|\$env:TEMP\b|\bTemp[\\/]byway-/i;
+const TEMP = /AppData[\\/]Local[\\/]Temp|%TE?MP%|\$env:TE?MP\b|\$\{?TEMP\}?[\\/]|\bTemp[\\/]byway-/i;
 
 const records = readdirSync(path.join(REPO, ADR_DIR))
   .map((name) => `${ADR_DIR}/${name}`)
@@ -42,10 +44,12 @@ const OTHER_SHAPES = /(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat
 /**
  * The external review's verification (docs/reviews/2026-10-08) quotes the gateway tests' stand-in key, a string shaped
  * like a key on purpose (packages/gateway/test/gateway.test.ts and keys.test.ts: a key-shaped string byway does not
- * hold passes through). It is the only one allowed.
+ * hold passes through). It is the only one allowed, and only on its own: a longer key-shaped string that starts or ends
+ * with it is checked whole.
  */
-const STAND_INS = ['sk-proj-' + 'ABCDEFGHIJKLMNOPQRSTUVWX'];
-const withoutStandIns = (line: string) => STAND_INS.reduce((l, s) => l.split(s).join('[stand-in]'), line);
+const STAND_IN = 'sk-proj-' + 'ABCDEFGHIJKLMNOPQRSTUVWX';
+const STAND_IN_ALONE = new RegExp(`(?<![A-Za-z0-9_-])${STAND_IN}(?![A-Za-z0-9_-])`, 'g');
+const withoutStandIns = (line: string) => line.replace(STAND_IN_ALONE, '[stand-in]');
 const masked = (line: string) => providerShapes(withoutStandIns(line)).replace(OTHER_SHAPES, '[redacted]');
 const keyShaped = (line: string) => masked(line) !== withoutStandIns(line);
 
@@ -54,6 +58,12 @@ describe('decision evidence kept in the repository', () => {
     const citing = records.filter((r) => isAccepted(parseRecord(r.text).status) && TEMP.test(cited(r.text)));
     expect(citing.length).toBeGreaterThan(5);
     expect(citing.filter((r) => !(section(r.text, '## Later notes') ?? '').includes(NOTE)).map((r) => r.file)).toEqual([]);
+  });
+
+  it('reads each spelling of a Temp path that the header names, and not a word that only starts like one', () => {
+    const spellings = ['C:/Users/arvik/AppData/Local/Temp/x', 'C:\\Users\\arvik\\AppData\\Local\\Temp\\x', '%TEMP%\\x', '%TMP%\\x', '$env:TEMP\\x', '$env:TMP\\x', '$TEMP/x', '${TEMP}/x', 'Temp/byway-fixes'];
+    expect(spellings.filter((s) => !TEMP.test(s))).toEqual([]);
+    expect(['$env:TEMPLATE', '$TEMPLATE/x', 'a temp file', 'Temporal/byway-x'].filter((s) => TEMP.test(s))).toEqual([]);
   });
 
   it('every relative link in the evidence files and in the Later notes resolves', () => {
@@ -89,18 +99,22 @@ describe('decision evidence kept in the repository', () => {
       fal: `FAL_KEY=${fal}`,
       falUpperCase: `Authorization: Key ${fal.toUpperCase()}`,
       bearer: `Authorization: Bearer ${'D'.repeat(24)}`,
+      bearerLowerCase: `authorization: bearer ${'d'.repeat(24)}`,
+      falUrlEncoded: `FAL_KEY=${fal.replace(':', '%3A')}`,
+      longerThanTheStandIn: `${STAND_IN}${'H'.repeat(40)}`,
+      endingInTheStandIn: `AIza123${STAND_IN}`,
       github: `ghp_${'E'.repeat(36)}`,
       githubFineGrained: `github_pat_${'F'.repeat(22)}_${'G'.repeat(59)}`,
       slack: `xoxb-${'1'.repeat(12)}`,
       jwt: `eyJ${'h'.repeat(20)}.eyJ${'p'.repeat(20)}.${'s'.repeat(20)}`,
     };
     expect(Object.entries(fakes).filter(([, line]) => !keyShaped(line)).map(([name]) => name)).toEqual([]);
-    const plain = [`sha256:${hex(64)}`, `run ${hex(8)}-${hex(4)}-${hex(4)}-${hex(4)}-${hex(12)} at 12:00`, `commit ${hex(40)}`, `the stand-in ${STAND_INS[0]}`];
+    const plain = [`sha256:${hex(64)}`, `run ${hex(8)}-${hex(4)}-${hex(4)}-${hex(4)}-${hex(12)} at 12:00`, `commit ${hex(40)}`, `the stand-in ${STAND_IN}`, `quoting '${STAND_IN}' (not a held key)`];
     expect(plain.filter(keyShaped)).toEqual([]);
   });
 
-  it('the evidence, F07’s corpus and the reviews hold no key-shaped string', () => {
-    const folders = [EVIDENCE, 'packages/runner/test/f07-corpus', 'docs/reviews'];
+  it('the evidence, F07’s corpus, the claims oracle and the reviews hold no key-shaped string', () => {
+    const folders = [EVIDENCE, 'packages/runner/test/f07-corpus', 'scripts/test/claims-oracle', 'docs/reviews'];
     const files = folders.flatMap((folder) => filesUnder(folder, /./));
     expect(files.length).toBeGreaterThan(250);
     const hits = files.flatMap((file) =>
