@@ -16,6 +16,8 @@ What the decision records in [docs/adr](..) cite as evidence, kept in the reposi
 | [logs/](logs/) | The logs behind ADR-0103's note of 2026-10-17 on the five renderer tests' time limits, and the server log and failed page of CI run 39152075629 (C5's 120 s wait) | ADR-0103; the backlog row "Known Windows timing flake" |
 | [probes/d2/](probes/d2/) | The real Windows probe of round 1's S2 fix, and the probe of Playwright's close with a reason | ADR-0105, ADR-0106 |
 
+The organisation details redacted in conversation-continued.md and the D4 brief were also taken out of the batch's commits that brought these files in, on 2026-10-21, before those commits were pushed, so none of them holds the details.
+
 The external review's verification report ([docs/reviews/2026-10-08-external-review-verification.md](../../reviews/2026-10-08-external-review-verification.md)) names its probe folders under `C:/Users/arvik/AppData/Local/Temp/byway-review-verify/`. The probes the records cite are in [probes/review-verify/](probes/review-verify/). The report also names `revise-H-r1/probe.mts` and its results; on 2026-10-19 that folder was empty. The rest of that folder (clones and the agents' working folders) was not kept.
 
 The probes import the code they checked by absolute path, as it stood when they ran (a worktree or the main checkout of the day). They record what was run; they are not tests that run today.
