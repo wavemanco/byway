@@ -37,10 +37,12 @@ export interface PriceRow {
 // Every row below was read again on 2026-10-18, before the first live run. Each figure matched its page then, except two
 // that byway changed: claude-sonnet-5-5's cache hits, and gemini-nano-banana-2.1's text and thinking output, which
 // byway did not charge before. The OpenAI rows lacked a rate their page lists, the cache writes OpenAI charges by
-// default; it was added when the page was read again on 2026-10-21.
+// default; it was added when the page was read again on 2026-10-21. Google's page was read again that day too, and
+// every figure byway records from it was unchanged. Anthropic's page and OpenRouter's model list were read that day
+// only for the rates these rows do not record (ADR-0109 decision 1).
 const ANTHROPIC = 'platform.claude.com/docs/en/about-claude/pricing, read 2026-10-18';
 const OPENAI = 'developers.openai.com/api/docs/pricing, read 2026-10-18 and again 2026-10-21';
-const GOOGLE = 'ai.google.dev/gemini-api/docs/pricing (page dated 2026-10-16), read 2026-10-18';
+const GOOGLE = 'ai.google.dev/gemini-api/docs/pricing (page dated 2026-10-16), read 2026-10-18 and again 2026-10-21 (page dated 2026-10-19)';
 const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.completion), read 2026-10-18';
 
 export const PRICES: readonly PriceRow[] = [

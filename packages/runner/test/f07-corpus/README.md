@@ -65,7 +65,7 @@ It prints every case whose outcome differs from round 13's or that round 13 did 
 
 ## Opening a page
 
-The pages are sites the fix rounds' agents wrote, as a model writes a page. Their names, email addresses, phone numbers and social links were made up with them; they are not real people's or businesses' details, though a made-up address or number can match a real one by chance, and none was checked. They stay as written, because the pages are kept byte for byte.
+The pages are sites the fix rounds' agents wrote, as a model writes a page. Their names, email addresses, phone numbers and social links were written by the model with the pages. Nobody checked whether any of them belongs to a real person or business, and a model can write a real one. They stay as written, because the pages are kept byte for byte.
 
 A page opened in a browser runs the scripts it loads from CDNs (GSAP, Tailwind's browser build, AOS, Bootstrap, Alpine), with no integrity check. Two of those references name no exact version: `cdn.tailwindcss.com` (`pages/e-tailwind.html`) and `@tailwindcss/browser@4` (`pages/y1-tw-studio-turned.html` and `pages-verifier/q2-tailwind-saas.html`), so they load whatever build the CDN serves that day, which may not be the one round 14 ran; a rerun of those pages can differ for that reason alone. The oracles' browsers let through only the font and CDN hosts the pages use, and abort every other request.
 
