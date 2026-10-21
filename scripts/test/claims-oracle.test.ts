@@ -16,6 +16,13 @@
  *
  * Problem kinds marked (info) are what the verifiers recorded as not a false claim (a claim that holds on some runs
  * and not others because the person's random answers differ, say); kinds marked (control) come only from the controls.
+ *
+ * Round 6's check of a person's list or critique (J) does not guard here that their answer reaches the work. Its kinds
+ * for a step refused as unapplied or per candidate need variants marked refused, and this corpus is admitted variants
+ * only (oracle.ts's header), so they never fire; its check of a refused step runs only under the FORCE_J control; and
+ * an answer given and never applied is (info). What never reaches the work is refused by the validator's rule ST12,
+ * which the validator's and the advisor's tests guard (packages/validator/test/semantics-rules.test.ts,
+ * packages/advisor/test/prompt-shows-admission.test.ts).
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { OracleReport } from './claims-oracle/oracle.ts';

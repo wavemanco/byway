@@ -5,6 +5,7 @@
 # each answer's outcome with round 14's.
 #
 # Usage, from anywhere: bash packages/runner/test/f07-corpus/run-realistic.sh [out-folder]
+#   (a relative out-folder is taken from where the command is run)
 #   WORKERS  groups run at once (default 4; round 14 found more than about 6 lose groups to crashed browsers)
 #   KINDS    the edits tried on each offered line (default all six: word,append,insert,punct,rewrite,delete)
 # A group already begun in the out folder is skipped, its log untouched (its lock is beside its outputs), so a second
@@ -15,6 +16,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="${1:-${TMPDIR:-/tmp}/byway-f07-realistic}"
 WORKERS="${WORKERS:-4}"
 mkdir -p "$OUT"
+# Absolute, because what follows runs from packages/runner.
+OUT="$(cd "$OUT" && pwd)" || exit 1
 cd "$HERE/../.." || exit 1
 git rev-parse HEAD > "$OUT/commit.txt" 2>/dev/null
 P=test/f07-corpus/pages
@@ -51,7 +54,8 @@ run() {
   if [ "$name" = G10v6 ] && [ -z "${KINDS:-}" ]; then export KINDS=word,append,punct,delete; fi
   [ -z "${KINDS:-}" ] && unset KINDS
   REAL_OUT="$OUT" npx tsx test/f07-corpus/real14r.mts "$name" "$P" "$files" >> "$OUT/$name.log" 2>&1
-  echo "$(date +%H:%M:%S) $name exit $?" >> "$OUT/done.txt"
+  local rc=$?
+  echo "$(date +%H:%M:%S) $name exit $rc" >> "$OUT/done.txt"
 }
 export -f run
 export OUT P KINDS

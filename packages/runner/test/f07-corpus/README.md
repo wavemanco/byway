@@ -4,7 +4,7 @@ The pages, generators, hand cases and oracles that F07's fix rounds 12 to 14 ran
 
 It does not run with `pnpm test` or `pnpm verify`: the realistic pages alone take hours, and every page needs the runner's Chromium. The files are `.mts`, so neither the typecheck nor vitest picks them up.
 
-Until 2026-10-18 this existed only under the Windows Temp folder (`C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/runner-copy/r13/ev/` and `r14/ev/`, and the round-4 to round-6 verifiers' case files in `scratch/verify-F07-r4/` to `verify-F07-r6/`). The files are copied unchanged but for their paths: they import the runner from this folder (`../../src/…`, `../helpers/voice-activity.ts`) and Playwright as the runner resolves it, and they write their outputs outside the repository, to `$F07_OUT` (default: the system's temp folder, `byway-f07/`) or the folder each command names.
+Until 2026-10-18 this existed only under the Windows Temp folder (`C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/runner-copy/r13/ev/` and `r14/ev/`, and the round-4 to round-6 verifiers' case files in `scratch/verify-F07-r4/` to `verify-F07-r6/`). The files are copied unchanged but for their paths: they import the runner from this folder (`../../src/…`, `../helpers/voice-activity.ts`) and Playwright as the runner resolves it, and they write their outputs outside the repository, to `$F07_OUT` (default: the system's temp folder, `byway-f07/`) or the folder each command names. `run-realistic.sh`, `compare.mjs`, `compare-hand.mjs` and `expected/` were made for this folder when it was copied in.
 
 ## What is here
 
@@ -33,7 +33,7 @@ The realistic pages, compared with round 14, from the repository's root:
 bash packages/runner/test/f07-corpus/run-realistic.sh [out-folder]
 ```
 
-`WORKERS` sets how many groups run at once (default 4; round 14 found that more than about 6 lose groups to crashed browsers). A group already begun in the out folder is skipped, so a second command on the same folder adds workers; to finish a stopped run, remove the stopped groups' locks and outputs and run it again on the folder. The second oracle's groups (`V…`) have one page each, as round 14 split them, because that oracle is slow. At the end `compare.mjs` prints every answer whose outcome differs from round 14's, or that round 14 did not have, and how many of round 14's answers the run is missing, and exits 1 if there is any of these. An outcome is a stored write with its oracle's verdict, a refusal by the arbiter with its reason, or a refusal by the reader or placement (the start of its message).
+A relative out-folder is taken from where the command is run; each group's exit status is in `done.txt` there. `WORKERS` sets how many groups run at once (default 4; round 14 found that more than about 6 lose groups to crashed browsers). A group already begun in the out folder is skipped, so a second command on the same folder adds workers; to finish a stopped run, remove the stopped groups' locks and outputs and run it again on the folder. The second oracle's groups (`V…`) have one page each, as round 14 split them, because that oracle is slow. At the end `compare.mjs` prints every answer whose outcome differs from round 14's, or that round 14 did not have, and how many of round 14's answers the run is missing, and exits 1 if there is any of these. An outcome is a stored write with its oracle's verdict, a refusal by the arbiter with its reason, or a refusal by the reader or placement (the start of its message).
 
 The generators and the hand cases, from `packages/runner`, as round 13 ran them (`OUT=…` names where each writes):
 
@@ -61,7 +61,13 @@ Each generator job took about half an hour on the owner's machine in round 13. T
 node test/f07-corpus/compare-hand.mjs <out>
 ```
 
-It prints every case whose outcome differs from round 13's and exits 1 if there is any. An outcome is cases13's outcome, or hand12's and hand13's kind with the oracle's verdict, or "NOT TRIED" with the lines offered when the case's answer does not fit the offer.
+It prints every case whose outcome differs from round 13's or that round 13 did not have, and every case of round 13's the run is missing, and exits 1 if there is any of these. A case is missing when its file was not run into `<out>`, or its harness stopped before writing (each writes its file once, at the end) or skipped it (`cases13.mts` and `hand12.mts` skip a file whose lock a stopped run left in `<out>`), so a run of some files only does not pass. A folder that does not exist exits 2. An outcome is cases13's outcome, or hand12's and hand13's kind with the oracle's verdict, or "NOT TRIED" with the lines offered when the case's answer does not fit the offer.
+
+## Opening a page
+
+The pages are sites the fix rounds' agents wrote, as a model writes a page. Their names, email addresses, phone numbers and social links were made up with them; they are not real people's or businesses' details, though a made-up address or number can match a real one by chance, and none was checked. They stay as written, because the pages are kept byte for byte.
+
+A page opened in a browser runs the scripts it loads from CDNs (GSAP, Tailwind's browser build, AOS, Bootstrap, Alpine), with no integrity check. Two of those references name no exact version: `cdn.tailwindcss.com` (`pages/e-tailwind.html`) and `@tailwindcss/browser@4` (`pages/y1-tw-studio-turned.html` and `pages-verifier/q2-tailwind-saas.html`), so they load whatever build the CDN serves that day, which may not be the one round 14 ran; a rerun of those pages can differ for that reason alone. The oracles' browsers let through only the font and CDN hosts the pages use, and abort every other request.
 
 ## What a pass means
 
