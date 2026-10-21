@@ -19,7 +19,7 @@ export interface PriceRow {
   outputPerMTok: number;
   /** USD per million cache-read input tokens. */
   cacheReadPerMTok?: number;
-  /** USD per million 5-minute cache-write input tokens. */
+  /** USD per million cache-write input tokens: Anthropic's 5-minute writes, OpenAI's 30-minute writes. */
   cacheWritePerMTok?: number;
   /** Image models priced per image: USD per generated image at the 1K size the gateway requests. */
   perImageUsd?: number;
@@ -36,9 +36,10 @@ export interface PriceRow {
 
 // Every row below was read again on 2026-10-18, before the first live run. Each figure matched its page then, except two
 // that byway changed: claude-sonnet-5-5's cache hits, and gemini-nano-banana-2.1's text and thinking output, which
-// byway did not charge before.
+// byway did not charge before. The OpenAI rows lacked a rate their page lists, the cache writes OpenAI charges by
+// default; it was added when the page was read again on 2026-10-21.
 const ANTHROPIC = 'platform.claude.com/docs/en/about-claude/pricing, read 2026-10-18';
-const OPENAI = 'developers.openai.com/api/docs/pricing, read 2026-10-18';
+const OPENAI = 'developers.openai.com/api/docs/pricing, read 2026-10-18 and again 2026-10-21';
 const GOOGLE = 'ai.google.dev/gemini-api/docs/pricing (page dated 2026-10-16), read 2026-10-18';
 const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.completion), read 2026-10-18';
 
@@ -60,23 +61,38 @@ export const PRICES: readonly PriceRow[] = [
   { provider: 'anthropic', model: 'claude-opus-5', inputPerMTok: 5, outputPerMTok: 25, cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25, source: ANTHROPIC },
   { provider: 'anthropic', model: 'claude-opus-4-8', inputPerMTok: 5, outputPerMTok: 25, cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25, source: ANTHROPIC },
 
-  // OpenAI, Standard processing.
-  // gpt-6-astra: $10 / $50, cached input $1. Source: OPENAI.
-  { provider: 'openai', model: 'gpt-6-astra', inputPerMTok: 10, outputPerMTok: 50, cacheReadPerMTok: 1, source: OPENAI },
-  // gpt-6.1-sol: $2 / $10, cached input $0.10. Source: OPENAI.
-  { provider: 'openai', model: 'gpt-6.1-sol', inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1, source: OPENAI },
-  // gpt-6-luna: $0.10 / $0.50. Source: OPENAI. Its cached input ($0.01) is not recorded, so a cached token would be
-  // charged at the input rate; no profile uses this model.
-  { provider: 'openai', model: 'gpt-6-luna', inputPerMTok: 0.1, outputPerMTok: 0.5, source: OPENAI },
+  // OpenAI, Standard processing, short context (up to 272K input tokens; byway's prompts stay well under).
+  // Cache writes: OpenAI's prompt-caching guide (developers.openai.com/api/docs/guides/prompt-caching, read 2026-10-21)
+  // says caching "is enabled by default for supported OpenAI models", and that for GPT-5.6 and later "cache writes cost
+  // 1.25× the standard, uncached input-token rate" for the default 30-minute lifetime. byway sends no
+  // prompt_cache_options, so OpenAI places its implicit breakpoint (the SDK's default) and writes a prompt of 1,024
+  // tokens or more that it has not cached. The page lists the rate as "Short context 30m write". Writes are "not an
+  // additive fee": each input token is billed at one of the uncached, cached or write rates, as tokenCost charges them.
+  // Chat Completions offers only the 30-minute lifetime (the SDK: the ttl "defaults to `30m`, which is currently the
+  // only supported value"), so the page's 12-hour write rate (2.5×, the Responses API) does not apply. Until 2026-10-21
+  // these rows had no write rate, so a written token was charged at the input rate, a fifth below its cost.
+  // gpt-6-astra: $10 / $50, cached input $1, 30-minute cache writes $12.50. Source: OPENAI.
+  { provider: 'openai', model: 'gpt-6-astra', inputPerMTok: 10, outputPerMTok: 50, cacheReadPerMTok: 1, cacheWritePerMTok: 12.5, source: OPENAI },
+  // gpt-6.1-sol: $2 / $10, cached input $0.10, 30-minute cache writes $2.50. Source: OPENAI.
+  { provider: 'openai', model: 'gpt-6.1-sol', inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5, source: OPENAI },
+  // gpt-6-luna: $0.10 / $0.50, 30-minute cache writes $0.125. Source: OPENAI. Its cached input ($0.01) is not recorded,
+  // so a cached token would be charged at the input rate, which leans high; no profile uses this model.
+  { provider: 'openai', model: 'gpt-6-luna', inputPerMTok: 0.1, outputPerMTok: 0.5, cacheWritePerMTok: 0.125, source: OPENAI },
   // gpt-image-2.5-flare and gpt-image-2.5-sunburst: text input $5, image output $30 per 1M tokens. Source: OPENAI.
-  // byway sends them a text prompt only, so their image input price ($8) does not apply; their cached text input ($1.25)
-  // is not recorded, so a cached token would be charged at $5. OpenAI publishes no per-image figure for these models (it
-  // points to a calculator), so 8,000 output tokens per image (~$0.24) is our planning bound for the pre-call estimate
-  // only; the ledger uses the usage the API returns.
+  // byway sends them a text prompt only, so their image input price ($8) does not apply. Their cached text input ($1.25)
+  // is not recorded: the page says cached input rates for these models "only apply to images generated with the
+  // Responses API", and byway uses the Images API. The page lists no cache-write rate for them. OpenAI publishes no
+  // per-image figure for these models (it points to a calculator), so 8,000 output tokens per image (~$0.24) is our
+  // planning bound for the pre-call estimate only; the ledger uses the usage the API returns.
   { provider: 'openai', model: 'gpt-image-2.5-flare', inputPerMTok: 5, outputPerMTok: 30, estimatedOutputTokensPerImage: 8000, source: OPENAI },
   { provider: 'openai', model: 'gpt-image-2.5-sunburst', inputPerMTok: 5, outputPerMTok: 30, estimatedOutputTokensPerImage: 8000, source: OPENAI },
 
   // Google Gemini API, paid tier, Standard, prompts <= 200k tokens (the product's prompts stay well under).
+  // Context caching is not recorded. The page lists a cache rate for both text models below (gemini-3.1-pro-preview
+  // $0.20; gemini-3.8-flash $0.075 through 2026-12-31, then $0.15), and Google's caching guide
+  // (ai.google.dev/gemini-api/docs/caching, read 2026-10-21) says implicit caching "is enabled by default for all Gemini
+  // 2.5 and newer models". google.ts reports a hit (cachedContentTokenCount) as cache reads, which these rows charge at the
+  // input rate, so the cost leans high. byway makes no explicit caches, so the storage price does not apply.
   // gemini-3.1-pro-preview: $2 / $12, output including thinking (> 200k: $4 / $18). Source: GOOGLE.
   { provider: 'google', model: 'gemini-3.1-pro-preview', inputPerMTok: 2, outputPerMTok: 12, source: GOOGLE },
   // gemini-3.8-flash: $0.75 / $3.75 through 2026-12-31, then $1.50 / $7.50 from 2027-01-01, output including thinking.
@@ -100,8 +116,11 @@ export const PRICES: readonly PriceRow[] = [
   // anthropic/claude-opus-5.5: $4 / $20. Source: OPENROUTER.
   { provider: 'openrouter', model: 'anthropic/claude-opus-5.5', inputPerMTok: 4, outputPerMTok: 20, source: OPENROUTER },
   // anthropic/claude-sonnet-5.5: $2 / $10. Source: OPENROUTER.
-  // OpenRouter also lists cache rates for these three. They are not recorded, so a cache read whose cost OpenRouter does
-  // not report would be charged at the input rate.
+  // OpenRouter also lists cache rates for these three (openrouter.ai/api/v1/models, read 2026-10-21: reads at 0.05× input,
+  // 0.025× for Fable; 5-minute writes at 1.25×; 1-hour writes at 2×). They are not recorded. Anthropic caches only when a
+  // request carries cache_control, which byway never sends, so none of them applies; and OpenRouter reports each call's
+  // cost (usage.cost), which the gateway records instead of pricing the tokens. Were that cost missing, a cache read
+  // would be charged at the input rate (high) and a cache write at the input rate too (low).
   { provider: 'openrouter', model: 'anthropic/claude-sonnet-5.5', inputPerMTok: 2, outputPerMTok: 10, source: OPENROUTER },
 
   // fal.ai video for C5 relay links (ADR-0069), priced per second of video; no token charges.

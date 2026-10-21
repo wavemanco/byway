@@ -177,6 +177,8 @@ describe('gateway: settlement by the served model (F04)', () => {
  * B1, before the first live run: every price row read again on 2026-10-18 against the provider's own page (the source
  * each row names). Two figures changed: claude-sonnet-5-5's cache hits ($0.10: the table, its footnote and the prose
  * now agree) and gemini-nano-banana-2.1's text and thinking output ($7.50 per 1M tokens, which byway did not charge).
+ * The OpenAI rows' 30-minute cache-write rates ("Short context 30m write", 1.25× input) were added from the page as read
+ * on 2026-10-21; the rows had left them out (MONEY-1).
  */
 describe('the price rows, as the providers documented them on 2026-10-18', () => {
   const ON = new Date('2026-10-18T12:00:00Z');
@@ -199,9 +201,9 @@ describe('the price rows, as the providers documented them on 2026-10-18', () =>
     ['anthropic', 'claude-sonnet-5-5', tokens(2, 10, { cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 })],
     ['anthropic', 'claude-opus-5', tokens(5, 25, { cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25 })],
     ['anthropic', 'claude-opus-4-8', tokens(5, 25, { cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25 })],
-    ['openai', 'gpt-6-astra', tokens(10, 50, { cacheReadPerMTok: 1 })],
-    ['openai', 'gpt-6.1-sol', tokens(2, 10, { cacheReadPerMTok: 0.1 })],
-    ['openai', 'gpt-6-luna', tokens(0.1, 0.5)],
+    ['openai', 'gpt-6-astra', tokens(10, 50, { cacheReadPerMTok: 1, cacheWritePerMTok: 12.5 })],
+    ['openai', 'gpt-6.1-sol', tokens(2, 10, { cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 })],
+    ['openai', 'gpt-6-luna', tokens(0.1, 0.5, { cacheWritePerMTok: 0.125 })],
     ['openai', 'gpt-image-2.5-flare', tokens(5, 30)],
     ['openai', 'gpt-image-2.5-sunburst', tokens(5, 30)],
     ['google', 'gemini-3.1-pro-preview', tokens(2, 12)],
@@ -221,6 +223,19 @@ describe('the price rows, as the providers documented them on 2026-10-18', () =>
   it('covers every row a provider charges for', () => {
     const paid = PRICES.filter((r) => r.provider !== 'mock' && r.from === undefined).map((r) => `${r.provider} ${r.model}`);
     expect(paid).toHaveLength(19);
+  });
+});
+
+describe('an OpenAI call is charged the tokens it wrote to the prompt cache at the write rate (MONEY-1)', () => {
+  it('the uncached prompt at $10, the cache reads at $1 and the writes at $12.50 per 1M on gpt-6-astra', async () => {
+    const usage = { prompt_tokens: 16_500, completion_tokens: 800, prompt_tokens_details: { cached_tokens: 4000, cache_write_tokens: 12_000 } };
+    const openai = fakeOpenAI([{ model: 'gpt-6-astra', choices: [{ finish_reason: 'stop', message: { content: 'ok' } }], usage }]);
+    const res = await gateway({ clients: { openai: openai.client } }).complete(req({ profileId: 'openai', tier: 'big' }));
+    // 500 uncached, 4,000 read and 12,000 written of 16,500 prompt tokens, and 800 output at $50 per 1M. At the input
+    // rate the writes would come to $0.12, not $0.15.
+    expect(res.costUsd).toBeCloseTo(0.005 + 0.004 + 0.15 + 0.04, 9);
+    expect(ledgerLines()[0]).toMatchObject({ servedModel: 'gpt-6-astra', costUsd: res.costUsd });
+    expect(ledgerLines()[0]).not.toHaveProperty('priceBasis');
   });
 });
 

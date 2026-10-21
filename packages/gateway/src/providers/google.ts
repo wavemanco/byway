@@ -89,17 +89,29 @@ const MEDIA_TYPES = new Set<MediaType>(['image/png', 'image/jpeg', 'image/webp']
  * The tokens of an image answer that are billed at the image model's text-and-thinking rate, on top of the image's own
  * per-image price (prices.ts, gemini-nano-banana-2.1; read 2026-10-18). Google's pricing page lists that model's output
  * as "text and thinking" at $7.50 per 1M tokens and images at $30 per 1M ($0.0336 a 1K image); its image guide says
- * thinking tokens are billed. The API reports thinking apart from the answer (totalTokenCount is "prompt + tool-use
- * prompt + thoughts + response candidates"), and the answer's tokens by modality, so the image's own tokens (IMAGE) are
- * left out here: the image is charged per image. Without that breakdown every answer token is counted at the text rate,
- * the image's included, so the cost leans high. Neither page says whether the interim "thought images" the guide
+ * thinking tokens are billed. The API reference (ai.google.dev/api/generate-content, read 2026-10-21) reports thinking
+ * apart from the answer (totalTokenCount is "prompt + tool-use prompt + thoughts + response candidates"), so the two are
+ * added, and the answer's tokens by modality (candidatesTokensDetails, "List of modalities that were returned in the
+ * response"), so the image's own tokens (IMAGE) are left out here: the image is charged per image.
+ *
+ * Nothing promises that the breakdown lists every answer token: a third party's measurements of Google's image models
+ * (docs.apiyi.com, nano-banana-usage-metadata) found it listing only IMAGE, with candidatesTokenCount 88 to 630 tokens
+ * above it. So the answer's text-rate tokens are whichever is larger: those the breakdown lists apart from IMAGE, or
+ * candidatesTokenCount less the IMAGE tokens. Unlisted tokens are charged at the text rate, the rate Google's page gives
+ * for an answer's output other than images; neither page says how Google bills them, and the first live run's ledger is
+ * to be compared with Google's usage records (backlog "Gemini image thinking tokens"). Without the breakdown (or with an
+ * empty one) every answer token is counted at the text rate, the image's included, so the cost leans high; without
+ * candidatesTokenCount, only the listed tokens count. Neither page says whether the interim "thought images" the guide
  * describes ("not charged") are counted in thoughtsTokenCount; if they are, this leans high too.
  */
 function textAndThinkingTokens(u: NonNullable<GoogleResponseLike['usageMetadata']>): number {
   const thoughts = u.thoughtsTokenCount ?? 0;
   const details = u.candidatesTokensDetails;
+  if (!Array.isArray(details)) return thoughts + (u.candidatesTokenCount ?? 0);
   // A count that is not a number makes the sum not a number, which the gateway replaces and flags (finiteUsage).
-  const answer = Array.isArray(details) ? details.reduce((sum, d) => sum + (d?.modality === 'IMAGE' ? 0 : Number(d?.tokenCount ?? 0)), 0) : (u.candidatesTokenCount ?? 0);
+  const sum = (image: boolean) => details.reduce((n, d) => n + ((d?.modality === 'IMAGE') === image ? Number(d?.tokenCount ?? 0) : 0), 0);
+  const listed = sum(false);
+  const answer = u.candidatesTokenCount == null ? listed : Math.max(listed, u.candidatesTokenCount - sum(true));
   return thoughts + answer;
 }
 
