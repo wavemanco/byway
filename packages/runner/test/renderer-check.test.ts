@@ -32,13 +32,11 @@ const DIED = new Error(
 
 /**
  * For a test whose answer needs the check's probe of the other setting to finish (a real launch and byway's test page):
- * a bound on the probe that only a probe that hangs reaches, and a test limit that allows the first attempt and then
- * that bound. The product's bound is 15 s (PROBE_MS). Under the unit suite's parallel load a probe ran past it, and the
- * check answered the sandbox 'unknown'. On two CPUs beside twelve busy processes, 'on, and it starts', which draws the
- * test page once and probes nothing, took up to 41 s.
+ * a bound on the probe that only a probe that hangs reaches, inside the test's own 60 s (the owner's choice of 2026-10-21,
+ * "Fix the test in this batch (Recommended)"). The product's bound is 15 s (PROBE_MS). Under the unit suite's parallel
+ * load a probe ran past it, and the check answered the sandbox 'unknown'; that whole test then took 17.6 s.
  */
-const HUNG_PROBE_MS = 90_000;
-const HUNG_PROBE_TEST_MS = 180_000;
+const HUNG_PROBE_MS = 50_000;
 
 /**
  * A launch held until the test releases it: then it is the real launch, and each browser it gave is watched until byway
@@ -222,7 +220,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     const advice = sandboxAdvice(linux);
     expect(await checkRenderer({ osSandbox: true }, { launch, host: linux, probeMs: HUNG_PROBE_MS })).toEqual({ osSandbox: true, ready: false, sandbox: 'fails', message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix });
     expect(settings).toEqual([true, false]);
-  }, HUNG_PROBE_TEST_MS);
+  }, 60_000);
 
   it('on, and Chromium does not start at all: not ready, the sandbox unknown, and the plain message with the install command', async () => {
     const w = watched(() => MISSING);
@@ -276,7 +274,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
     const missing = watched(() => MISSING);
     expect(await checkRenderer({ osSandbox: false }, { launch: missing.launch, host: linux })).toEqual({ osSandbox: false, ready: false, sandbox: 'unknown', message: launchFailure(MISSING).message });
     expect(missing.settings).toEqual([false]);
-  }, HUNG_PROBE_TEST_MS);
+  }, 60_000);
 
   /**
    * The probe of the other setting has a bound of its own (W1, ADR-0105): once the test page is drawn, a probe that does
@@ -418,7 +416,7 @@ describe("a run's refusal agrees with the start-up line and Settings (ADR-0105)"
     // Refused before the run began: nothing spent, nothing written.
     expect((await store.getRun(runId))?.status).toBe('queued');
     expect((await store.events(runId)).map((e) => e.type)).not.toContain('run-started');
-  }, HUNG_PROBE_TEST_MS);
+  }, 60_000);
 
   it('with no start-up check to go by, the refusal names the sandbox as one possible cause, with the same why and fix, and the install command', async () => {
     const { err } = await refusal();
