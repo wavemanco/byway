@@ -136,6 +136,29 @@ describe('a start that failed after Temporal may have accepted it', () => {
     expect((await store.getRun(RUN_ID))?.error).toBeUndefined();
   });
 
+  it('P3 double fault the other way round: a repeat delivery’s start fails while the writer’s is still on its way: only the writer marks a run failed', async () => {
+    // The repeat is refused (here, unavailable) before the writer's start has reached Temporal, so Temporal has no
+    // workflow for the run yet; the writer's start then lands. The repeat must not mark the run failed under it.
+    let repeat: Promise<unknown> | undefined;
+    let first = true;
+    const t = temporal({
+      start: async () => {
+        if (!first) throw UNREACHABLE();
+        first = false;
+        repeat = runner.start(input({ runId: RUN_ID })).catch((e: unknown) => e);
+        await repeat;
+      },
+    });
+    const runner = createRunnerClient({ client: t.client, store });
+    const wrote = await runner.start(input({ runId: RUN_ID }));
+    expect(wrote).toMatchObject({ id: RUN_ID, status: 'queued' });
+    // The repeat's caller is told its start failed; the run is as the writer's start made it.
+    expect(await repeat).toMatchObject({ code: 14 });
+    expect([...t.accepted]).toEqual([workflowIdFor(RUN_ID)]);
+    expect(await store.getRun(RUN_ID)).toMatchObject({ status: 'queued' });
+    expect((await store.getRun(RUN_ID))?.error).toBeUndefined();
+  });
+
   it('a start that succeeds asks Temporal nothing more', async () => {
     const t = temporal({ start: async () => undefined });
     await createRunnerClient({ client: t.client, store }).start(input());
