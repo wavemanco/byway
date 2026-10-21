@@ -3,6 +3,7 @@ import { anthropicAdapter, type AnthropicClientLike, type AnthropicMessageLike }
 import { googleAdapter, type GoogleClientLike, type GoogleResponseLike } from '../src/providers/google.ts';
 import { openaiAdapter, type ChatCompletionLike, type ImagesResponseLike, type OpenAIClientLike } from '../src/providers/openai.ts';
 import { openrouterAdapter } from '../src/providers/openrouter.ts';
+import { PRICES, priceFor, tokenCost } from '../src/prices.ts';
 import type { ProviderCompletionRequest, ProviderImageRequest } from '../src/providers/types.ts';
 
 const PNG_B64 = Buffer.from('fake-png-bytes').toString('base64');
@@ -210,7 +211,22 @@ describe('openai adapter', () => {
     const { client } = fakeOpenAI();
     const out = await openaiAdapter({ client }).complete(request());
     expect([out.text, out.servedModel]).toEqual(['Choice: B', 'gpt-6.1-sol-2026-09-30']);
-    expect(out.usage).toEqual({ inputTokens: 300, outputTokens: 25, cacheReadTokens: 100 });
+    expect(out.usage).toEqual({ inputTokens: 300, outputTokens: 25, cacheReadTokens: 100, cacheWriteTokens: 0 });
+  });
+
+  it('reads the tokens a call wrote to the prompt cache apart from those it read (MONEY-1)', async () => {
+    // OpenAI's prompt-caching guide (read 2026-10-21): cached_tokens "excludes tokens charged as writes", and the
+    // ordinary input is the input count less both. OpenAI writes a new prompt by default from GPT-5.6, at 1.25× input.
+    const usage = { prompt_tokens: 16_500, completion_tokens: 800, prompt_tokens_details: { cached_tokens: 4000, cache_write_tokens: 12_000 } };
+    const { client } = fakeOpenAI({ model: 'gpt-6-astra', usage });
+    const out = await openaiAdapter({ client }).complete(request());
+    expect(out.usage).toEqual({ inputTokens: 16_500, outputTokens: 800, cacheReadTokens: 4000, cacheWriteTokens: 12_000 });
+    // gpt-6-astra: 500 plain input tokens at $10, 4,000 read at $1 and 12,000 written at $12.50 per 1M, and 800 output
+    // at $50 per 1M.
+    expect(tokenCost(priceFor(PRICES, 'openai', 'gpt-6-astra', new Date('2026-10-21T12:00:00Z'))!, out.usage)).toBe(0.199);
+    // A field the answer leaves out, or sends as null, is no tokens.
+    const none = fakeOpenAI({ usage: { prompt_tokens: 300, completion_tokens: 25, prompt_tokens_details: { cached_tokens: null, cache_write_tokens: null } } });
+    expect((await openaiAdapter({ client: none.client }).complete(request())).usage).toEqual({ inputTokens: 300, outputTokens: 25, cacheReadTokens: 0, cacheWriteTokens: 0 });
   });
 
   it('reports refusals and content-filter stops as declines', async () => {
@@ -415,6 +431,33 @@ describe('google adapter', () => {
     expect(await usageOf({ promptTokenCount: 9, candidatesTokenCount: 1130, thoughtsTokenCount: 400 })).toEqual({ inputTokens: 9, outputTokens: 1530, units: 1 });
     // A count that is not a number is not read as zero: the gateway replaces it and flags the price (finiteUsage).
     expect((await usageOf({ promptTokenCount: 9, candidatesTokensDetails: [{ modality: 'TEXT', tokenCount: 'ten' as never }] })).outputTokens).toBeNaN();
+    expect((await usageOf({ promptTokenCount: 9, candidatesTokenCount: 1130, candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: 'many' as never }] })).outputTokens).toBeNaN();
+  });
+
+  it('charges the answer tokens the breakdown by modality does not list at the text rate (MONEY-2)', async () => {
+    // Google's reference promises no breakdown of every answer token; a third party measured image answers whose breakdown
+    // lists only IMAGE, 88 to 630 tokens below candidatesTokenCount. Thinking is reported apart from the answer.
+    const answer = (usageMetadata: GoogleResponseLike['usageMetadata']): GoogleResponseLike => ({
+      modelVersion: 'gemini-nano-banana-2.1',
+      candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Here you go' }, { inlineData: { data: PNG_B64, mimeType: 'image/png' } }] } }],
+      ...(usageMetadata ? { usageMetadata } : {}),
+    });
+    const outputOf = async (u: GoogleResponseLike['usageMetadata']) => (await googleAdapter({ client: fake(answer(u)).client }).image!(imageRequest)).usage.outputTokens;
+    const image = { modality: 'IMAGE', tokenCount: 1120 };
+    // Only IMAGE listed: the 630 tokens above it count at the text rate, with the 200 thinking tokens.
+    expect(await outputOf({ promptTokenCount: 9, candidatesTokenCount: 1750, thoughtsTokenCount: 200, candidatesTokensDetails: [image] })).toBe(830);
+    // TEXT listed but the count leaves more: the larger of the two.
+    expect(await outputOf({ candidatesTokenCount: 1750, candidatesTokensDetails: [image, { modality: 'TEXT', tokenCount: 10 }] })).toBe(630);
+    // TEXT listed above what the count leaves: the listed tokens.
+    expect(await outputOf({ candidatesTokenCount: 1130, candidatesTokensDetails: [image, { modality: 'TEXT', tokenCount: 50 }] })).toBe(50);
+    // An empty breakdown is no breakdown: every answer token at the text rate, as when the field is absent.
+    expect(await outputOf({ candidatesTokenCount: 1300, thoughtsTokenCount: 300, candidatesTokensDetails: [] })).toBe(1600);
+    expect(await outputOf({ candidatesTokenCount: 1300, thoughtsTokenCount: 300 })).toBe(1600);
+    // No candidatesTokenCount: only what the breakdown lists apart from IMAGE.
+    expect(await outputOf({ thoughtsTokenCount: 300, candidatesTokensDetails: [image, { modality: 'TEXT', tokenCount: 10 }] })).toBe(310);
+    expect(await outputOf({ candidatesTokensDetails: [image] })).toBe(0);
+    // No usage at all: nothing.
+    expect(await outputOf(undefined)).toBe(0);
   });
 
   it('generates images through generateContent with an aspect ratio and the 1K size', async () => {

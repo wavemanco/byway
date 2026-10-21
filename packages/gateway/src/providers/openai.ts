@@ -29,7 +29,7 @@ export interface ChatCompletionLike {
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
-    prompt_tokens_details?: { cached_tokens?: number | null } | null;
+    prompt_tokens_details?: { cached_tokens?: number | null; cache_write_tokens?: number | null } | null;
     cost?: number | null;
   } | null;
 }
@@ -88,8 +88,17 @@ export function openaiChatParams(req: ProviderCompletionRequest, inline: boolean
 
 export function parseChatCompletion(res: ChatCompletionLike): Omit<ProviderCompletion, 'requestBody'> {
   const choice = res.choices[0];
-  const cached = res.usage?.prompt_tokens_details?.cached_tokens ?? 0;
-  const usage: TokenBreakdown = { inputTokens: res.usage?.prompt_tokens ?? 0, outputTokens: res.usage?.completion_tokens ?? 0, cacheReadTokens: cached };
+  const details = res.usage?.prompt_tokens_details;
+  // OpenAI's prompt-caching guide (read 2026-10-21): cached_tokens "counts billed reads and excludes tokens charged as
+  // writes", and its worked example bills as ordinary input the input count less cached_tokens and cache_write_tokens.
+  // tokenCost does the same (prices.ts): reads and writes at their own rates, the rest at the input rate. OpenRouter
+  // reports the same two fields.
+  const usage: TokenBreakdown = {
+    inputTokens: res.usage?.prompt_tokens ?? 0,
+    outputTokens: res.usage?.completion_tokens ?? 0,
+    cacheReadTokens: details?.cached_tokens ?? 0,
+    cacheWriteTokens: details?.cache_write_tokens ?? 0,
+  };
   // Both are declines (ADR-0102): the model's own refusal, whose words are its stated reason, and a content-filter stop.
   const declined = choice?.message.refusal ? { reason: choice.message.refusal } : choice?.finish_reason === 'content_filter' ? { reason: 'content filter' } : undefined;
   const refusal = choice?.message.refusal ? `declined: ${choice.message.refusal}` : declined ? 'declined (content filter)' : undefined;
