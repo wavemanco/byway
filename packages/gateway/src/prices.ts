@@ -65,12 +65,12 @@ export const PRICES: readonly PriceRow[] = [
   // Cache writes: OpenAI's prompt-caching guide (developers.openai.com/api/docs/guides/prompt-caching, read 2026-10-21)
   // says caching "is enabled by default for supported OpenAI models", and that for GPT-5.6 and later "cache writes cost
   // 1.25× the standard, uncached input-token rate" for the default 30-minute lifetime. byway sends no
-  // prompt_cache_options, so OpenAI places its implicit breakpoint (the SDK's default) and a new prompt of 1,024 tokens or
-  // more is written. The page lists the rate as "Short context 30m write". Writes are "not an additive fee": each input
-  // token is billed at one of the uncached, cached or write rates, as tokenCost charges them. Chat Completions offers only
-  // the 30-minute lifetime (the SDK: the ttl "defaults to `30m`, which is currently the only supported value"), so the
-  // page's 12-hour write rate (2.5×, the Responses API) does not apply. Until 2026-10-21 these rows had no write rate, so
-  // a written token was charged at the input rate, a fifth below its cost.
+  // prompt_cache_options, so OpenAI places its implicit breakpoint (the SDK's default) and writes a prompt of 1,024
+  // tokens or more that it has not cached. The page lists the rate as "Short context 30m write". Writes are "not an
+  // additive fee": each input token is billed at one of the uncached, cached or write rates, as tokenCost charges them.
+  // Chat Completions offers only the 30-minute lifetime (the SDK: the ttl "defaults to `30m`, which is currently the
+  // only supported value"), so the page's 12-hour write rate (2.5×, the Responses API) does not apply. Until 2026-10-21
+  // these rows had no write rate, so a written token was charged at the input rate, a fifth below its cost.
   // gpt-6-astra: $10 / $50, cached input $1, 30-minute cache writes $12.50. Source: OPENAI.
   { provider: 'openai', model: 'gpt-6-astra', inputPerMTok: 10, outputPerMTok: 50, cacheReadPerMTok: 1, cacheWritePerMTok: 12.5, source: OPENAI },
   // gpt-6.1-sol: $2 / $10, cached input $0.10, 30-minute cache writes $2.50. Source: OPENAI.
