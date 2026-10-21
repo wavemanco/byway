@@ -10,7 +10,18 @@
  * switches that loosened or skipped checks for other corpora (LOOSE_D, LOOSE_G, REFUSED) are gone; the corpus is passed
  * in, not read from a file; the report is returned, not written; the presentation can be given (the RENDERED control,
  * in place of PRES=main); and an audio ASSET finishes skipped, as the real activity does (activities/asset.ts). The
- * checks' own comments are the verifiers'.
+ * checks' own comments are the verifiers'. One fix to the oracle itself: the random answers' product is taken exactly
+ * (see the generator below).
+ *
+ * The J check's kinds for a step refused as unapplied or as asked per candidate (J-REFUSED-BUT-APPLIED,
+ * J2-REFUSED-BUT-REACHES-WORK-VIA-AI-DIRECTION, J3-PER-CANDIDATE-REFUSED-BUT-APPLIED) read a variant's unappliedSteps
+ * and perCandidateSteps, which only rounds 6 to 8's re-admission scripts set, on their refused corpora. The corpus here
+ * is admitted variants only, as in ADR-0097's measurement (gen-pr.mts set neither), so those kinds never fire. The
+ * check of a refused step runs only under the FORCE_J control, which takes every person's list or critique as refused
+ * and reports J-FORCED(control) where an AI writer took the answer in; on the admitted variants an answer given and
+ * never applied is reported (info). That a person's answer reaches the work is the validator's rule ST12
+ * ('critique-unapplied', 'critique-per-candidate'), guarded by the validator's and the advisor's tests
+ * (packages/validator/test/semantics-rules.test.ts, packages/advisor/test/prompt-shows-admission.test.ts), not here.
  *
  * The test file that uses this module must mock `packages/runner/src/workflow/acts.ts` with `respond` (see
  * claims-oracle.test.ts), so the Interpreter's activities come here.
@@ -63,8 +74,12 @@ const E = COMPOSED_EXPLAINERS;
 let opts: OracleOptions = { runs: 12 };
 
 // The random answers: the verifiers' linear congruential generator, with its product taken exactly (Math.imul). As
-// they wrote it, `seed * 1103515245` passed a double's 53 bits, and the generator cycled after 10,466 draws, so runs
-// late in a corpus repeated each other's answers.
+// they wrote it, `seed * 1103515245` passed a double's 53 bits and lost its low bits, so it was not the generator
+// intended, and its states end in short cycles: from the measurement's seeds, after a median of 3,929 draws, in one of
+// 10,466 draws (20,398 of the 20,695 seeds) or of 10 to 378 draws (the other 297). Each variant is seeded afresh
+// (judgeVariants: 1000 + idx * 7919) and its runs draw a few hundred answers (at most 1,000), so a variant's place in
+// the corpus made no difference, and only 23 of the measurement's 20,695 variants, whose draws went round a cycle of 10
+// to 378 draws, repeated answers across their runs (ADR-0097's Later note).
 let seed = 1;
 const rnd = () => {
   seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
@@ -523,6 +538,8 @@ export async function judgeVariants(variants: readonly { nearest: string; muts: 
       }
     }
     // --- J (added, round 6): a person's list or critique, and whether an AI writer took it in ---------------------
+    // (The port: no variant here carries unappliedSteps or perCandidateSteps, so the refused kinds below do not fire;
+    // the file's header says why.)
     {
       const isPersonCritique = (x: N) => x.actor === 'human' && !['voice', 'build', 'fix', 'tells-compare'].includes(x.role) && (x.role === 'cut' || x.produces.includes('critique'));
       const fills = (p: N): string[] => (p.role === 'cut' ? ['critique'] : ['critique', 'brief', 'taste'].filter((q) => p.produces.includes(q)));

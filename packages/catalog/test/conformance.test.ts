@@ -59,12 +59,13 @@ describe('catalog conformance', () => {
 });
 
 describe('lineage', () => {
-  // The C1 that C1-H was derived from: C1's hash since product phase 0 gave it its medium (ba0e5b9), as the Milestone 0
-  // hashes above keep it.
-  const C1_AT_MILESTONE_0 = 'sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577';
+  // The C1 that C1-H was derived from: C1's hash since product phase 0 gave it its medium (ba0e5b9), the one the test of
+  // the recipe hashes above keeps for C1. It is not C1's hash at Milestone 0: the Milestone 0 review's fix (54eed9e) left
+  // C1 at another (sha256:87ae49e3…).
+  const C1_SINCE_PHASE_0 = 'sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577';
 
-  it('C1-H derives from C1 as it stood at Milestone 0, through the Study 1 binding map', () => {
-    expect(c1h.parent).toEqual({ hash: C1_AT_MILESTONE_0, derivation: { transform: 'binding', version: 1, map: 'S1-BIND' } });
+  it('C1-H derives from C1 as of product phase 0 (ba0e5b9), through the Study 1 binding map', () => {
+    expect(c1h.parent).toEqual({ hash: C1_SINCE_PHASE_0, derivation: { transform: 'binding', version: 1, map: 'S1-BIND' } });
   });
 
   it("a change to the product's C1 moves neither C1-H's parent nor its hash, nor the hashes of the recipes derived from it", async () => {
@@ -79,7 +80,7 @@ describe('lineage', () => {
       // The stand-in really is another C1, and the fresh C1-H module was built with it in place.
       expect(changed.hash).not.toBe(c1.hash);
       expect(fresh.c1h).not.toBe(c1h);
-      expect(fresh.c1h.parent?.hash).toBe(C1_AT_MILESTONE_0);
+      expect(fresh.c1h.parent?.hash).toBe(C1_SINCE_PHASE_0);
       expect(fresh.c1h.hash).toBe(c1h.hash);
       expect(fresh.c1hAblations.map((r) => r.hash)).toEqual(c1hAblations.map((r) => r.hash));
     } finally {
