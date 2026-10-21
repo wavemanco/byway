@@ -10,7 +10,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 - New decisions get the next number. A changed decision is not edited in place: a new ADR supersedes it.
 - A record's Context and Decision are final once it reaches main's first-parent history as Accepted. The commit that accepts a Proposed record may finalise its Decision. Branches merge with `--no-ff`, so a branch's own commits are drafts. A record that changes an Accepted one reaches main in the same commit as its "changed by" link: add the index row and the links on the branch before merging, or merge with `git merge --no-ff --no-commit <branch>` and add them before committing. Main's history is not rewritten (the "Protect main" ruleset blocks force-pushes), so a breach that reaches main is named in the test with its reason. `scripts/test/adr-records.test.ts` checks this against git history ([ADR-0103](0103-adr-log-rule-and-ci.md)): it fails an edited Context or Decision, a "changed by" link that reaches main after the record it names (from ADR-0103 on), and a breach on main that is not named. It cannot see a missing link, because no record says, in a form a test can read, which records it changes; adding the links is the author's job. It sees a fast-forward only through the edits that then show up on main.
 
-**109 records:** 102 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
+**109 records:** 102 accepted (15 of them by continuation, awaiting ratification; 37 delegated) and 7 proposed. ADR-0044 to ADR-0057 are the credibility charter (CR1–CR14).
 
 ## Process
 
@@ -40,7 +40,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0062](0062-code-first-work-mode.md) | Code first: people, outside actions and pricing go to a playbook and a backlog | Accepted | User | 2026-10-07 09:40 |
 | [ADR-0068](0068-contracts-first-parallel-build.md) | Build the product contracts-first, in parallel git worktrees | Accepted; changed by [ADR-0103](0103-adr-log-rule-and-ci.md) | Delegated | 2026-10-07 10:48 |
 | [ADR-0103](0103-adr-log-rule-and-ci.md) | The decision log's rule is checked against git history, and CI runs `pnpm verify` on Windows and Linux, reporting only | Accepted; changed by [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md), [ADR-0106](0106-a-late-close-retires-the-renderers-browser.md), [ADR-0107](0107-code-is-checked-before-it-is-pushed.md) | User | 2026-10-16 22:00 |
-| [ADR-0107](0107-code-is-checked-before-it-is-pushed.md) | Every code change is adversarially checked before it is pushed, in larger blocks; no further fix round starts, or is ruled out, without the owner; for D2 the owner chose to merge a risky change when Linux passes and Windows passes or fails only on a named timing flake | Accepted | User | 2026-10-16 20:17 |
+| [ADR-0107](0107-code-is-checked-before-it-is-pushed.md) | Every code change is adversarially checked before it is pushed, in larger blocks; each further fix round is decided together with the owner; a risky change merges when Linux passes and Windows passes or fails only on a timing flake named in the backlog (the owner's rule for D2, and for every risky change since 2026-10-21) | Accepted | User | 2026-10-16 20:17 |
 
 ## Protocol
 
@@ -144,7 +144,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0102](0102-one-refusal-rule-for-every-provider.md) | One refusal rule for every provider: no model substitution, and a decline gets one logged retry on the same model, then a plain failure | Accepted | User | 2026-10-16 20:45 |
 | [ADR-0104](0104-c3-advice-needs-a-letter-or-number.md) | C3's advice says something only with a letter or a number | Accepted | User-approved | 2026-10-17 11:06 |
 | [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) | The page renderer's Chromium runs inside its OS sandbox by default; only the person switches it off, in Settings | Accepted | User | 2026-10-18 07:40 |
-| [ADR-0109](0109-money-path-before-the-first-live-run.md) | The money path before the first live run: prices and model ids read again, a Gemini image's thinking charged, a failed run start asks Temporal first | Accepted | Delegated | 2026-10-18 21:30 |
+| [ADR-0109](0109-money-path-before-the-first-live-run.md) | The money path before the first live run: prices and model ids read again, a Gemini image's thinking charged, a failed run start asks Temporal first | Accepted | User-approved | 2026-10-18 21:30 |
 
 ## Open decisions (not yet ADRs)
 
