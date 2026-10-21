@@ -23,7 +23,9 @@ describe('catalog conformance', () => {
     ]);
   });
 
-  it('keeps the Milestone 0 recipe hashes (the IR extension is backward compatible)', () => {
+  // C1's, C1-H's, the ablations' and the baselines' hashes as product phase 0 (ba0e5b9) left them, when it gave each
+  // recipe its medium; the Milestone 0 review's fix (54eed9e) had left every one of them at another hash.
+  it('keeps the recipe hashes of product phase 0, ba0e5b9 (the IR extension is backward compatible)', () => {
     expect(Object.fromEntries(CATALOG.filter((r) => !/^c[2-7]a?$/.test(r.id)).map((r) => [r.id, r.hash]))).toEqual({
       c1: 'sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577',
       c1h: 'sha256:d2cf85ec155280772a12f4efa17e3db0dc3bee3835a7dd5a7840e35592b35e1a',

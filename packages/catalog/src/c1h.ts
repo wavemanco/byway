@@ -14,7 +14,8 @@ import {
 
 /**
  * The C1 that C1-H was derived from: C1's hash since 2026-10-07, when product phase 0 gave the C1
- * family its medium (ba0e5b9), and the hash conformance.test.ts keeps as C1's Milestone 0 hash. It is
+ * family its medium (ba0e5b9), and the hash conformance.test.ts keeps for C1 among the recipe hashes
+ * of product phase 0 (not C1's Milestone 0 hash, which 54eed9e left at another). It is
  * written out here, not read from `c1`, so a later change to the product's C1 changes neither C1-H's
  * hash nor the hashes of the five recipes derived from it. Study 1 registers C1-H's hash, and ADR-0041
  * freezes research versions.
