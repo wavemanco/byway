@@ -11,8 +11,11 @@
  *   since byway's data folder is `%LOCALAPPDATA%\byway` (ADR-0066);
  * - every relative link in the evidence files written to be read here, and in the records' Later notes, resolves;
  * - the evidence files and the reviews (docs/reviews, where review packets are kept) hold no email address, written
- *   whole, split around its @ before a mail provider's name, or with its @ written as an HTML entity or as %40 (the
- *   conversation records are extracted from a session transcript, the probes from scratch folders, and the reviews
+ *   whole, split around its @ before a mail provider's name (with quotes, backticks, backslashes or spaces on either
+ *   side, or a comma or plus sign between quoted parts), in words ("<local> at <provider> dot com", "period com" or
+ *   ".com"), with its @ or dot written as an HTML entity (with or without its semicolon), as %40 or %2E or behind
+ *   Markdown's backslash, or with zero-width characters in it (B1R2-CODE-4, the re-check of block 1's second fix round;
+ *   the conversation records are extracted from a session transcript, the probes from scratch folders, and the reviews
  *   from what lenses and reviewers wrote);
  * - neither they nor the other folders copied in from Temp or written from sessions (F07's corpus,
  *   packages/runner/test/f07-corpus; the claims oracle, scripts/test/claims-oracle and its test; and docs/reviews) hold
@@ -79,32 +82,42 @@ const WHOLE_ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Z
 const typeUrl = (m: string) => m.endsWith('@type.googleapis.com');
 /**
  * An address split so that the whole shape misses it, as a lens's note once wrote one ("<local part>@/<provider>",
- * SEC-PRIV-1, the check of the first block): a local part, then an @ (or a full-width one) followed by slashes, spaces,
- * quotes or nothing (so the search terms "'<local part>@' / '<provider>'" are found too), or an "at" in brackets, and
- * then a mail provider's name; or "<local part> at <provider>" in words, followed by "dot <ending>" or ".<ending>". Only
- * these providers' names count, so a package scope (`@playwright/test`), a version (`rxjs@7.8.2`) or a type URL is not
- * one; an address at another domain without its dot is not seen.
+ * SEC-PRIV-1, the check of the first block): a local part, then quotes, backticks, backslashes, spaces or nothing, an @
+ * (or a full-width one), and slashes, spaces, quotes, backticks, backslashes, commas, plus signs or nothing (so the
+ * search terms "'<local part>@' / '<provider>'", "'<local part>@', '<provider>.com'", "'<local part>' @ '<provider>'"
+ * and "'<local part>@' + '<provider>'", and a local part and domain each in backticks, are found too), or an "at" in
+ * brackets, and then a mail provider's name; or "<local part> at <provider>" in words, followed by "dot <ending>",
+ * "period <ending>" or ".<ending>" with no space after the dot, so a sentence that ends on a provider's name ("run at
+ * live. Then") is not one (B1R2-CODE-4 and B1R2-CODE-8, the re-check of block 1's second fix round). Only these
+ * providers' names count, so a package scope (`@playwright/test`), a version (`rxjs@7.8.2`) or a type URL is not one; an
+ * address at another domain without its dot is not seen.
  */
 const PROVIDERS = 'gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|protonmail|proton|aol|gmx|zoho|yandex|fastmail|tutanota';
 const SPLIT_ADDRESS = [
-  new RegExp(`[A-Za-z0-9._%+-]+\\s*[@\\uFF20][\\s/\\\\'"\`]*(?:${PROVIDERS})\\b`, 'gi'),
+  new RegExp(`[A-Za-z0-9._%+-]+[\\s\\\\'"\`]*[@\\uFF20][\\s/\\\\'"\`,+]*(?:${PROVIDERS})\\b`, 'gi'),
   new RegExp(`[A-Za-z0-9._%+-]+\\s*(?:\\[at\\]|\\(at\\)|\\{at\\}|<at>)\\s*(?:${PROVIDERS})\\b`, 'gi'),
-  new RegExp(`[A-Za-z0-9._%+-]+\\s+at\\s+(?:${PROVIDERS})(?:\\s+dot\\s+|\\s*\\.\\s*)[A-Za-z]{2,}\\b`, 'gi'),
+  new RegExp(`[A-Za-z0-9._%+-]+\\s+at\\s+(?:${PROVIDERS})(?:\\s+(?:dot|period)\\s+|\\s*\\.)[A-Za-z]{2,}\\b`, 'gi'),
 ];
 const codePoint = (n: number, as: string) => (n <= 0x10ffff ? String.fromCodePoint(n) : as);
 /**
  * A text with the escapes undone that a renderer shows as "@" or ".": HTML's numeric entities, `&commat;` and
  * `&period;` (GitHub shows "jane.doe&#64;example.com" in a .md file as the whole address), and URL encoding's %40 and
- * %2E (RC-5, the re-check of block 1's fix round).
+ * %2E (RC-5, the re-check of block 1's fix round); a numeric entity without its semicolon, read as a browser reads one
+ * (its digits as far as they go), and Markdown's backslash escapes `\@` and `\.` (GitHub shows "jane.doe\@example.com"
+ * as the whole address); and with the zero-width characters dropped that a renderer shows as nothing (U+200B to U+200D,
+ * U+2060 and U+FEFF), so an @ followed by one is still seen (B1R2-CODE-4, the re-check of block 1's second fix round).
+ * An entity past Unicode's end, with or without its semicolon, is left as written.
  */
 const unescaped = (text: string): string =>
   text
-    .replace(/&#(\d{1,8});/g, (m, d: string) => codePoint(Number(d), m))
-    .replace(/&#x([0-9a-f]{1,8});/gi, (m, h: string) => codePoint(Number.parseInt(h, 16), m))
+    .replace(/&#(\d{1,8});?/g, (m, d: string) => codePoint(Number(d), m))
+    .replace(/&#x([0-9a-f]{1,8});?/gi, (m, h: string) => codePoint(Number.parseInt(h, 16), m))
     .replace(/&commat;/gi, '@')
     .replace(/&period;/gi, '.')
     .replace(/%40/g, '@')
-    .replace(/%2e/gi, '.');
+    .replace(/%2e/gi, '.')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .replace(/\\([@.])/g, '$1');
 /** The email addresses a text holds, whole or split, as written once its escapes are undone. */
 const emailsIn = (text: string): string[] => {
   const plain = unescaped(text);
@@ -214,6 +227,20 @@ describe('decision evidence kept in the repository', () => {
       htmlHexEntity: `${local}&#x40;${mail}.com`,
       htmlNamedEntities: `${local}&commat;${mail}&period;com`,
       urlEncoded: `${local}%40${'ex' + 'ample'}%2Ecom`,
+      // B1R2-CODE-4, the re-check of block 1's second fix round: these got past the check before it.
+      markdownEscapedAt: `${local}\\${at}${'ex' + 'ample'}.com`,
+      markdownEscapedDot: `${local}${at}${'ex' + 'ample'}\\.com`,
+      commaBetweenQuoted: `'${local}${at}', '${mail}.com'`,
+      plusBetweenQuoted: `'${local}${at}' + '${mail}'`,
+      quotedBeforeAt: `'${local}' ${at} '${mail}'`,
+      backticked: `\`${local}\`${at}\`${mail}.com\``,
+      backslashBeforeAt: `${local}\\\\${at}${mail}`,
+      entityNoSemicolon: `${local}&#64${'ex' + 'ample'}.com`,
+      hexEntityNoSemicolon: `${local}&#x40${mail}.com`,
+      inWordsPeriod: `${local} at ${mail} period com`,
+      zeroWidthAfterAt: `${local}${at}\u200B${mail}.com`,
+      wordJoinerBeforeAt: `${local}\u2060${at}${mail}.com`,
+      zeroWidthInDomain: `${local}${at}ex\u200Cam\u200Dple\uFEFF.com`,
     };
     expect(Object.entries(split).filter(([, text]) => emailsIn(text).length === 0).map(([name]) => name)).toEqual([]);
     const plain = [
@@ -221,8 +248,12 @@ describe('decision evidence kept in the repository', () => {
       `node_modules\\.pnpm\\${at}temporalio+worker${at}1.24.0`,
       `import { test } from '${at}playwright/test'; rxjs${at}7.8.2, HEAD${at}{1}, "$${at}", ok${at}1084`,
       `the ${mail} and Outlook apps; look at ${mail} later; meet at the office`,
-      // An encoded package scope, and an entity past Unicode's end, which is left as written.
-      `https://registry.npmjs.org/%40playwright%2Ftest, &#99999999; and &#x110000;`,
+      // An encoded package scope, and an entity past Unicode's end, with or without its semicolon, which is left as written.
+      `https://registry.npmjs.org/%40playwright%2Ftest, &#99999999; and &#x110000;, &#99999999 and &#x110000`,
+      // A sentence that ends on a provider's name is not an address in words: no space after the dot (B1R2-CODE-8).
+      `run at ${'li' + 've'}. Then we looked at ${'Out' + 'look'}. The end`,
+      // A Markdown-escaped package scope, and a path's escaped dot.
+      `\\${at}playwright/test, C:\\Users\\x\\.worktrees\\fx`,
     ];
     expect(plain.filter((text) => emailsIn(text).length > 0)).toEqual([]);
   });
