@@ -1102,11 +1102,24 @@ function billedFailure(redact: Redactor, what: string, cause: unknown, settled?:
 
 /**
  * An error an adapter threw as it is, its message passed through the redactor as toGatewayError's are. The error is kept
- * (its code, its billing, its cut-off mark and fal's request ids go on with it); only its words change.
+ * (its class, its code, its billing, its cut-off mark and fal's request ids go on with it); only its words change.
+ *
+ * The message is defined on the error rather than assigned: a DOMException (an AbortError or a TimeoutError, as fetch
+ * and AbortSignal.timeout throw) is an Error whose message is a getter only, and assigning to it throws a TypeError in
+ * strict code, which would take the adapter's error's place (RB1-F1-2, the re-check of block 1's fix round). An error
+ * that takes no new property (frozen, say) is copied instead: the same class and the same own fields, with the new
+ * message, so this never throws.
  */
 function redactMessage(e: unknown, redact: Redactor): unknown {
-  if (e instanceof Error) e.message = redact(e.message);
-  return e;
+  if (!(e instanceof Error)) return e;
+  const message = { value: redact(e.message), writable: true, configurable: true, enumerable: false };
+  try {
+    Object.defineProperty(e, 'message', message);
+    return e;
+  } catch {
+    const own = Object.getOwnPropertyDescriptors(e);
+    return Object.create(Object.getPrototypeOf(e) as object, { ...own, name: { value: e.name, writable: true, configurable: true, enumerable: false }, message }) as Error;
+  }
 }
 
 /**

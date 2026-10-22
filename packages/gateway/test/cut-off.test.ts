@@ -20,7 +20,7 @@ import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { mockAdapter } from '../src/providers/mock.ts';
 import type { AnthropicClientLike, AnthropicMessageLike, AnthropicStreamLike } from '../src/providers/anthropic.ts';
-import { cancelJob, FAL_EXTRACT_FRAME, falAppId, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
+import { cancelJob, FAL_EXTRACT_FRAME, falAdapter, falAppId, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import { googleAdapter } from '../src/providers/google.ts';
 import { completeStreamed, readChatStream, type ChatChunkLike, type OpenAIClientLike } from '../src/providers/openai.ts';
 import { STREAM_IDLE_MS, StreamIdle } from '../src/providers/stream.ts';
@@ -1001,6 +1001,54 @@ describe('a stop cancels fal’s queue job', () => {
     expect(err).toMatchObject({ billing: 'maybe' });
     expect(err.message).toContain('(HTTP 202 CANCELLATION_REQUESTED [redacted])');
     for (const part of KEYS.FAL_KEY.split(':')) expect(err.message).not.toContain(part);
+  });
+
+  /** What video() throws when the fal adapter throws `thrown` as it is: an error the adapter did not map. */
+  const thrownBy = async (thrown: unknown): Promise<{ err: unknown; g: ModelGateway }> => {
+    const { operation } = caller('run-1/clip/video/abc/1');
+    const inner = falAdapter({ client: heldFal({ status: 'removed', detail: 'HTTP 200 OK' }).client });
+    const g = gateway({
+      adapters: {
+        fal: {
+          ...inner,
+          video: async () => {
+            throw thrown;
+          },
+        },
+      },
+    });
+    const err = await g.video(video(operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    return { err, g };
+  };
+
+  // RB1-F1-2: a DOMException's message is a getter only, so assigning the redacted words to it threw a TypeError that
+  // took the adapter's error's place, its billing, cut-off mark and request ids lost with it.
+  it('redacts an adapter’s DOMException, whose message is only a getter, and keeps the error, its class and its fields', async () => {
+    const thrown = Object.assign(new DOMException(`The operation was aborted due to timeout (Key ${KEYS.FAL_KEY})`, 'TimeoutError'), {
+      billing: 'maybe' as const,
+      cutOff: true as const,
+      falRequests: { generation: 'req-1' },
+    });
+    const { err, g } = await thrownBy(thrown);
+    expect(err).toBe(thrown);
+    expect(err).toBeInstanceOf(DOMException);
+    expect(err).toMatchObject({ name: 'TimeoutError', billing: 'maybe', cutOff: true, falRequests: { generation: 'req-1' } });
+    expect((err as Error).message).toBe('The operation was aborted due to timeout (Key [redacted])');
+    for (const part of KEYS.FAL_KEY.split(':')) expect((err as Error).message).not.toContain(part);
+    // The call was ended by the adapter's error before its words were redacted: none is left under way.
+    expect((await g.spendRecords('ws')).inFlight).toEqual([]);
+  });
+
+  it('redacts an error that takes no new property by a copy of it: the same class, code and fields', async () => {
+    const thrown = Object.freeze(Object.assign(new GatewayError('provider-error', `fal said no (Key ${KEYS.FAL_KEY})`, false), { billing: 'maybe' as const, falRequests: { generation: 'req-1' } }));
+    const { err } = await thrownBy(thrown);
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false, billing: 'maybe', falRequests: { generation: 'req-1' } });
+    expect((err as Error).message).toBe('fal said no (Key [redacted])');
+    expect(thrown.message).toContain(KEYS.FAL_KEY);
   });
 
   it('already completed (400): settled at its seconds through the made-and-billed path, with no download and no frame job', async () => {
