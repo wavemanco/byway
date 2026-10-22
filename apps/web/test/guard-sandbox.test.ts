@@ -97,7 +97,7 @@ const SWITCH: Pin[] = [
     what: '/api/renderer: switched only by Settings’ switch (PATCH); the banner only reads it (GET)',
     pattern: /\/api\/renderer\b/,
     lines: [
-      "apps/web/src/components/PageRendererSettings.tsx: setSettings(await patch<RendererSettings>('/api/renderer', { osSandbox }));",
+      "apps/web/src/components/PageRendererSettings.tsx: const saved = await patch<RendererSettings>('/api/renderer', { osSandbox });",
       "apps/web/src/components/SandboxBanner.tsx: (signal) => get<RendererSettings>('/api/renderer', signal),",
     ],
   },
