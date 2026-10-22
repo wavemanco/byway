@@ -93,6 +93,14 @@ function expectedHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string | undefin
   }
 }
 
+/**
+ * How verify() names a broken line: by its entry's id when that is text that is not empty, otherwise as `line:<n>`. A
+ * damaged line's id can be anything JSON holds (a number, an object, an array nested thousands deep), and verify()
+ * returns text: an id that is not text would reach whatever reads the result (auditLedger's brokenLine), which turns it
+ * into text and, for one nested deeply enough, overflows the stack.
+ */
+const lineName = (id: unknown, line: number): string => (typeof id === 'string' && id !== '' ? id : `line:${line}`);
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A stored line read back as an entry the chain can continue from, or undefined (not JSON, not an entry). */
@@ -506,8 +514,9 @@ export class Ledger {
   /**
    * Re-read the whole file and check every link. Returns the id of the first entry that breaks the chain (an edited,
    * moved or missing predecessor, or one with no canonical form), `line:<n>` for an unparseable line or one that is not
-   * an entry object (or an entry without an id), `head` for a head record that is not one (not JSON, a seq below 1, a
-   * field missing), or null when the ledger is intact. It reports damage; it does not throw on it (ADR-0083).
+   * an entry object (or an entry whose id is missing, empty or not text: lineName), `head` for a head record that is not
+   * one (not JSON, a seq below 1, a field missing), or null when the ledger is intact. It reports damage; it does not
+   * throw on it (ADR-0083).
    * The result is kept with the size and modification time of the ledger and of its head, and reused while neither has
    * changed, so it can be asked for on demand (Settings) without re-reading a large ledger each time (ADR-0091). An edit
    * that keeps both a file's size and its modification time is therefore not seen until the file next changes.
@@ -559,7 +568,7 @@ export class Ledger {
       // An entry with no canonical form is broken explicitly, never by comparing hashes: a line whose hash field was
       // removed would otherwise compare undefined with undefined and pass.
       if (expected === undefined || entry.seq !== i + 1 || entry.prevHash !== (prev?.hash ?? GENESIS_HASH) || hash !== expected) {
-        return entry.id ?? `line:${i + 1}`;
+        return lineName(entry.id, i + 1);
       }
       prev = entry;
     }
@@ -568,9 +577,9 @@ export class Ledger {
     if (head) {
       const lastSeq = prev?.seq ?? 0;
       // The head may lag the file by one after a crash between the two writes; it may never run ahead of it.
-      if (lastSeq < head.seq) return head.id;
+      if (lastSeq < head.seq) return lineName(head.id, head.seq);
       const atHead = JSON.parse(raw[head.seq - 1] as string) as GatewayLedgerEntry;
-      if (atHead.hash !== head.hash) return atHead.id;
+      if (atHead.hash !== head.hash) return lineName(atHead.id, head.seq);
     }
     return null;
   }
