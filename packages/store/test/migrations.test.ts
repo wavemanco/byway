@@ -281,7 +281,11 @@ describe('migrations', () => {
     ]);
     expect((await store.openCheckpoints('ws')).map((c) => c.id)).toEqual(['cp-pick', 'cp-voice']);
     expect(await store.withdrawCheckpoints('v3-run')).toBe(2);
-    expect((await store.checkpointsForRun('v3-run')).map((c) => [c.id, c.status])).toEqual([['cp-done', 'resolved'], ['cp-pick', 'withdrawn'], ['cp-voice', 'withdrawn']]);
+    expect((await store.checkpointsForRun('v3-run')).map((c) => [c.id, c.status, c.withdrawnAt])).toEqual([
+      ['cp-done', 'resolved', undefined],
+      ['cp-pick', 'withdrawn', '2026-10-07T10:00:00.000Z'],
+      ['cp-voice', 'withdrawn', '2026-10-07T10:00:00.000Z'],
+    ]);
     expect(await store.openCheckpoints('ws')).toEqual([]);
     // The indexes survive the rebuild.
     const db = new DatabaseSync(store.dbPath);
