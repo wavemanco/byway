@@ -6,23 +6,24 @@
  * interrupted, until it is cleared. Google's calls and every image call are handed no signal and finish as today.
  *
  * Every fake answers only when its signal aborts, or aborts the stop itself at the moment under test: no test waits on
- * the clock.
+ * the clock. The bound on a stalled stream (CC-2) is tested on fake timers.
  */
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { APIUserAbortError } from '@anthropic-ai/sdk';
 import { GatewayError, type CompletionRequest, type ImageRequest, type VideoRequest } from '@byway/contracts';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cutOffError, isCutOff, toGatewayError } from '../src/errors.ts';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
 import { mockAdapter } from '../src/providers/mock.ts';
-import type { AnthropicClientLike } from '../src/providers/anthropic.ts';
+import type { AnthropicClientLike, AnthropicMessageLike, AnthropicStreamLike } from '../src/providers/anthropic.ts';
 import { cancelJob, FAL_EXTRACT_FRAME, falAppId, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import { googleAdapter } from '../src/providers/google.ts';
 import { completeStreamed, readChatStream, type ChatChunkLike, type OpenAIClientLike } from '../src/providers/openai.ts';
+import { STREAM_IDLE_MS, StreamIdle } from '../src/providers/stream.ts';
 import type { ProviderAdapter, ProviderCompletionRequest, ProviderImageRequest } from '../src/providers/types.ts';
 import { makeRedactor } from '../src/redact.ts';
 import { anthropicMessage, fakeFetch, fakeGoogle, fakeOpenAI, MemoryArtifacts, streamOf } from './fakes.ts';
@@ -119,6 +120,45 @@ function heldAnthropic(onHeld: () => void | Promise<void>) {
   return { client, signals };
 }
 
+/** Rejects as the Anthropic SDK's finalMessage does once its signal aborts (at once when it already has). */
+const abortedWith = (signal: AbortSignal): Promise<never> =>
+  new Promise((_, reject) => {
+    if (signal.aborted) return reject(new APIUserAbortError());
+    signal.addEventListener('abort', () => reject(new APIUserAbortError()), { once: true });
+  });
+
+type StreamEventName = 'connect' | 'streamEvent' | 'message';
+
+/**
+ * An Anthropic client whose streams behave as the SDK's MessageStream: listeners for 'connect', 'streamEvent' and
+ * 'message', and a finalMessage that `run` drives (emitting events, then answering or rejecting), told which send it is.
+ */
+function eventedAnthropic(run: (emit: (event: StreamEventName, ...message: AnthropicMessageLike[]) => void, signal: AbortSignal, n: number) => Promise<AnthropicMessageLike>) {
+  const signals: AbortSignal[] = [];
+  const client: AnthropicClientLike = {
+    beta: {
+      messages: {
+        stream(_body, options) {
+          const signal = options?.signal;
+          if (!signal) throw new Error('the stream was given no signal');
+          signals.push(signal);
+          const n = signals.length;
+          const listeners: Partial<Record<StreamEventName, ((...message: AnthropicMessageLike[]) => void)[]>> = {};
+          const stream: AnthropicStreamLike = {
+            on(event: StreamEventName, listener: (...message: AnthropicMessageLike[]) => void) {
+              (listeners[event] ??= []).push(listener);
+              return stream;
+            },
+            finalMessage: () => run((event, ...message) => listeners[event]?.forEach((l) => l(...message)), signal, n),
+          };
+          return stream;
+        },
+      },
+    },
+  };
+  return { client, signals };
+}
+
 describe('a stop cuts off a streamed Anthropic call', () => {
   it('closes the stream: one request was sent and none again, no ledger entry, and the call is interrupted at its reservation', async () => {
     const { stop, operation } = caller();
@@ -132,8 +172,10 @@ describe('a stop cuts off a streamed Anthropic call', () => {
     expect(isCutOff(err)).toBe(true);
     expect(err).toMatchObject({ code: 'byway-failure', retryable: false, billing: 'maybe' });
     expect(err.message).toMatch(/^byway cut off this anthropic call because its run was ending\. .* listed in Settings under Spending records until you clear it\.$/);
-    // Sent once, with the stop's own signal, and not sent again.
-    expect(held.signals).toEqual([stop.signal]);
+    // Sent once, with a signal that aborted with the stop (it is also the bound on a stalled stream), and not sent again.
+    expect(held.signals).toHaveLength(1);
+    expect(held.signals[0]).not.toBe(stop.signal);
+    expect(held.signals[0]?.aborted).toBe(true);
     expect(ledger()).toEqual([]);
     expect(heldAt).toBeGreaterThan(0);
     const records = await g.spendRecords('ws');
@@ -175,7 +217,31 @@ describe('a stop cuts off a streamed Anthropic call', () => {
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
 
-  it('cuts off the one retry after a decline as the declined call was: the retry is handed the same stop', async () => {
+  // The SDK rejects finalMessage when the abort lands after the last event but before it has read the stream's end
+  // (TS-MONEY-5); a stream that breaks there is rejected too. The message arrived whole all the same.
+  it.each([
+    ['the stop closed the stream', 'stop'],
+    ['the stream broke', 'broke'],
+  ] as const)('settles a whole message that arrived before %s, though the SDK then rejects, sending nothing again', async (_label, ending) => {
+    const { stop, operation } = caller();
+    const fake = eventedAnthropic(async (emit, signal) => {
+      emit('connect');
+      emit('streamEvent');
+      emit('message', anthropicMessage());
+      if (ending === 'broke') throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+      stop.abort();
+      return abortedWith(signal);
+    });
+    const g = gateway({ clients: { anthropic: fake.client } });
+    const res = await g.complete(ask({ operation }));
+    expect(res.text).toBe('- Tighten the hero.\nScore: 6/10');
+    expect(fake.signals).toHaveLength(1);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'anthropic', costUsd: res.costUsd })]);
+    expect(res.costUsd).toBeGreaterThan(0);
+    expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
+  });
+
+  it('cuts off the one retry after a decline as the declined call was: the retry’s stream closes with the same stop', async () => {
     const { stop, operation } = caller();
     const signals: (AbortSignal | undefined)[] = [];
     const client: AnthropicClientLike = {
@@ -200,7 +266,8 @@ describe('a stop cuts off a streamed Anthropic call', () => {
     // The cut-off retry is thrown as it is: not a final decline the memo would keep for a run that has ended.
     expect(isCutOff(err)).toBe(true);
     expect(err.declined).toBeUndefined();
-    expect(signals).toEqual([stop.signal, stop.signal]);
+    // The retry's stream rejects only when its signal aborts, so the call ended because the stop closed it.
+    expect(signals.map((s) => s?.aborted)).toEqual([true, true]);
     // The decline was settled and ledgered; its retry was cut off and is counted as interrupted.
     expect(ledger()).toHaveLength(1);
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'interrupted' })]);
@@ -507,7 +574,9 @@ describe('a stop cuts off a streamed OpenAI or OpenRouter call', () => {
     const g = gateway({ clients: { [provider]: chat.client } });
     const err = await failure(g.complete(ask({ profileId, operation })));
     expect(isCutOff(err)).toBe(true);
-    expect(chat.signals).toEqual([stop.signal]);
+    // One request, its stream closed by the stop: it ends only when its signal aborts (heldStream).
+    expect(chat.signals).toHaveLength(1);
+    expect(chat.signals[0]?.aborted).toBe(true);
     expect(ledger()).toEqual([]);
     expect(heldAt).toBeGreaterThan(0);
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider, usd: heldAt, reason: 'interrupted' })]);
@@ -579,6 +648,178 @@ describe('a stop cuts off a streamed OpenAI or OpenRouter call', () => {
     const err = await failure(g.complete(ask({ profileId: 'openai', operation })));
     expect(isCutOff(err)).toBe(true);
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'interrupted' })]);
+  });
+});
+
+// --- a streamed call that stalls (CC-2) ------------------------------------------------------------------------------
+
+/** A stream as the SDK reads one: each chunk `gapMs` after the one before, and a quiet end once `signal` aborts. */
+async function* paced(chunks: ChatChunkLike[], gapMs: number, signal: AbortSignal): AsyncGenerator<ChatChunkLike> {
+  for (const c of chunks) {
+    const closed = await new Promise<boolean>((resolve) => {
+      if (signal.aborted) return resolve(true);
+      const timer = setTimeout(() => resolve(false), gapMs);
+      signal.addEventListener('abort', () => (clearTimeout(timer), resolve(true)), { once: true });
+    });
+    if (closed) return;
+    yield c;
+  }
+}
+
+/** Promises that resolve as each send begins to wait, in order: `started(i)` for the i-th, `start()` from the fake. */
+function starts() {
+  const resolvers: (() => void)[] = [];
+  const promises = [0, 1, 2].map(() => new Promise<void>((resolve) => resolvers.push(resolve)));
+  let n = 0;
+  return { start: () => resolvers[n++]?.(), started: (i: number) => promises[i] as Promise<void> };
+}
+
+describe('a streamed call that stalls (CC-2)', () => {
+  // Only the timers the bound uses are faked; nothing here waits on the real clock.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([0, 1])('closes a stream that sent nothing for STREAM_IDLE_MS (chunks before: %i), and not a moment before, as "may have been billed"', async (count) => {
+    const idle = new StreamIdle(undefined);
+    let held = false;
+    const outcome = readChatStream(heldStream(openaiChunks().slice(0, count), idle.signal, () => (held = true)), 'openai', undefined, idle).then(
+      () => 'answered',
+      (e: unknown) => e,
+    );
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS - 1);
+    expect(held).toBe(true);
+    expect(idle.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(idle.signal.aborted).toBe(true);
+    const err = await outcome;
+    expect(err).toMatchObject({ billing: 'maybe', message: `openai's stream ended without producing a whole answer (nothing came for 10 minutes, after ${count} chunk${count === 1 ? '' : 's'})` });
+    expect(toGatewayError(err, 'openai', makeRedactor({}))).toMatchObject({ code: 'provider-error', retryable: true, billing: 'maybe' });
+  });
+
+  it('never closes a stream whose chunks keep coming, however long it runs in all', async () => {
+    const idle = new StreamIdle(undefined);
+    const chunks = openaiChunks();
+    const read = readChatStream(paced(chunks, STREAM_IDLE_MS - 1, idle.signal), 'openai', undefined, idle);
+    await vi.advanceTimersByTimeAsync((STREAM_IDLE_MS - 1) * chunks.length);
+    expect((await read).completion.choices[0]?.message.content).toBe('Choice: A');
+    expect(idle.signal.aborted).toBe(false);
+  });
+
+  it.each([
+    ['openai', openaiChunks, (500 * 1 + 1000 * 12.5 + 500 * 10 + 300 * 50) / 1e6],
+    ['openrouter', openrouterChunks, 0.0213],
+  ] as const)('%s: a stream that stalls is closed and sent once more, with that attempt retained, and the second answer settled', async (provider, chunks, costUsd) => {
+    const s = starts();
+    const chat = chatClient((n, signal) => (n === 1 ? heldStream(chunks().slice(0, 1), signal, s.start) : streamOf(chunks())));
+    const g = gateway({ clients: { [provider]: chat.client } });
+    const res = g.complete(ask({ profileId: provider }));
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS - 1);
+    expect(chat.bodies).toHaveLength(1);
+    expect(chat.signals[0]?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await res).costUsd).toBeCloseTo(costUsd, 10);
+    expect(chat.signals[0]?.aborted).toBe(true);
+    expect(chat.bodies).toHaveLength(2);
+    expect(ledger()).toHaveLength(1);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider, reason: 'resent' })]);
+  });
+
+  it('openai: a request whose response has not begun is left to the SDK’s own timeout', async () => {
+    const { stop, operation } = caller();
+    const s = starts();
+    const signals: (AbortSignal | undefined)[] = [];
+    const client: OpenAIClientLike = {
+      chat: {
+        completions: {
+          create: (_body, options) => {
+            signals.push(options?.signal);
+            s.start();
+            return options?.signal ? abortedWith(options.signal) : Promise.reject(new Error('the request was given no signal'));
+          },
+        },
+      },
+      images: { generate: async () => ({}) },
+    };
+    const g = gateway({ clients: { openai: client } });
+    const err = failure(g.complete(ask({ profileId: 'openai', operation })));
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS * 2);
+    expect(signals[0]?.aborted).toBe(false);
+    stop.abort();
+    expect(isCutOff(await err)).toBe(true);
+  });
+
+  it.each([0, 1])('anthropic: a stream that sent nothing for STREAM_IDLE_MS once it began (events before: %i) is closed, sent once more, and failed after that', async (count) => {
+    const s = starts();
+    const fake = eventedAnthropic(async (emit, signal) => {
+      emit('connect');
+      for (let i = 0; i < count; i++) emit('streamEvent');
+      s.start();
+      return abortedWith(signal);
+    });
+    const g = gateway({ clients: { anthropic: fake.client } });
+    const err = failure(g.complete(ask()));
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS - 1);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false]);
+    await vi.advanceTimersByTimeAsync(1);
+    await s.started(1);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([true, false]);
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS);
+    // Sent twice in all: one resend after an attempt that may have been billed, as for any lost answer (ADR-0091).
+    expect(await err).toMatchObject({
+      code: 'provider-error',
+      billing: 'maybe',
+      message: `anthropic call failed: anthropic's stream ended without producing a whole answer (nothing came for 10 minutes, after ${count} event${count === 1 ? '' : 's'})`,
+    });
+    expect(fake.signals.map((x) => x.aborted)).toEqual([true, true]);
+    expect(ledger()).toEqual([]);
+    expect((await g.spend('ws')).uncertainUsd).toBeGreaterThan(0);
+  });
+
+  it('anthropic: a stream whose events keep coming is never closed, however long it runs in all', async () => {
+    const s = starts();
+    const fake = eventedAnthropic(async (emit, signal) => {
+      emit('connect');
+      s.start();
+      for (let i = 0; i < 3; i++) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, STREAM_IDLE_MS - 1);
+          signal.addEventListener('abort', () => (clearTimeout(timer), reject(new APIUserAbortError())), { once: true });
+        });
+        emit('streamEvent');
+      }
+      const message = anthropicMessage();
+      emit('message', message);
+      return message;
+    });
+    const g = gateway({ clients: { anthropic: fake.client } });
+    const res = g.complete(ask());
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync((STREAM_IDLE_MS - 1) * 3);
+    expect((await res).costUsd).toBeGreaterThan(0);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false]);
+  });
+
+  it('anthropic: a stream whose response has not begun is left to the SDK’s own timeout', async () => {
+    const { stop, operation } = caller();
+    const s = starts();
+    const fake = eventedAnthropic(async (_emit, signal) => {
+      s.start();
+      return abortedWith(signal);
+    });
+    const g = gateway({ clients: { anthropic: fake.client } });
+    const err = failure(g.complete(ask({ operation })));
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS * 2);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false]);
+    stop.abort();
+    expect(isCutOff(await err)).toBe(true);
   });
 });
 

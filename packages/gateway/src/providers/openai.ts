@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import type { MediaType } from '@byway/contracts';
 import type { TokenBreakdown } from '../prices.ts';
+import { stalledDetail, streamEndedEarly, StreamIdle } from './stream.ts';
 import {
   imageData,
   plain,
@@ -55,7 +56,8 @@ export interface ImagesResponseLike {
 
 /**
  * The slice of the OpenAI SDK client the adapters use (OpenRouter is reached through the same SDK). Chat calls are
- * streamed (ADR-0111), so a stop can close them: `signal` aborts the request, and the SDK then ends the stream.
+ * streamed (ADR-0111), so a stop can close them: `signal` aborts the request, and the SDK then ends the stream. It is
+ * always given: it also closes a stream that has stalled (StreamIdle).
  */
 export interface OpenAIClientLike {
   chat: { completions: { create(body: ChatStreamParams & OpenRouterRouting, options?: { signal?: AbortSignal }): Promise<AsyncIterable<ChatChunkLike>> } };
@@ -112,17 +114,6 @@ export function chatStreamParams(body: ChatParams, usage: 'ask' | 'always'): Cha
   return { ...body, stream: true, ...(usage === 'ask' ? { stream_options: { include_usage: true } } : {}) };
 }
 
-/**
- * A stream that ended without a whole answer, though the provider had answered 200 and may have billed what it made: an
- * error chunk mid-stream (OpenRouter's streaming page: the HTTP status stays 200 once headers are sent, and a choice
- * finishes with "error"; the SDK raises the chunk's error), or no finishing chunk at all. Stated as "may have been
- * billed", so nothing reads it as a provider's refusal of the work, and in the words billingOf's reading of an early end
- * recognises, so the gateway sends it once more at most, as for a lost answer (ADR-0091).
- */
-function streamEndedEarly(provider: string, detail: string, cause?: unknown): Error {
-  return Object.assign(new Error(`${provider}'s stream ended without producing a whole answer (${detail})`, cause === undefined ? {} : { cause }), { billing: 'maybe' as const });
-}
-
 /** A stream closed by its stop, read as the SDKs' own abort reads. */
 const closed = (): Error => Object.assign(new Error('The stream was closed: its call was cut off.'), { name: 'AbortError' });
 
@@ -136,10 +127,17 @@ const closed = (): Error => Object.assign(new Error('The stream was closed: its 
  *   `prompt_tokens_details.cached_tokens` and `cache_write_tokens` as before. Absent when it never came.
  * What it throws: once `signal` has aborted, a stream without its finishing chunk ends as closed (the OpenAI SDK ends a
  * stream it aborted without an error), which the gateway counts as cut off; otherwise an error chunk, a broken stream, a
- * stream with no finishing chunk, or a finish reason of "error" is streamEndedEarly. A stream that finished is returned
- * even when the stop came, or the stream broke, after its finishing chunk: that answer arrived, and it is settled.
+ * stream with no finishing chunk, a stream `idle` closed because it stalled (StreamIdle: its wait starts as the reading
+ * does and again at each chunk), or a finish reason of "error" is streamEndedEarly. A stream that finished is returned
+ * even when the stop came, the bound closed it, or the stream broke, after its finishing chunk: that answer arrived, and
+ * it is settled.
  */
-export async function readChatStream(stream: AsyncIterable<ChatChunkLike>, provider: string, signal?: AbortSignal): Promise<{ completion: ChatCompletionLike; chunks: number; usageArrived: boolean }> {
+export async function readChatStream(
+  stream: AsyncIterable<ChatChunkLike>,
+  provider: string,
+  signal?: AbortSignal,
+  idle?: StreamIdle,
+): Promise<{ completion: ChatCompletionLike; chunks: number; usageArrived: boolean }> {
   let id: string | undefined;
   let model: unknown;
   let host: unknown;
@@ -148,8 +146,10 @@ export async function readChatStream(stream: AsyncIterable<ChatChunkLike>, provi
   let finish: string | undefined;
   let usage: ChatCompletionLike['usage'];
   let chunks = 0;
+  idle?.restart();
   try {
     for await (const chunk of stream) {
+      idle?.restart();
       chunks++;
       if (id === undefined && typeof chunk.id === 'string') id = chunk.id;
       if (model === undefined && chunk.model !== undefined) model = chunk.model;
@@ -164,12 +164,14 @@ export async function readChatStream(stream: AsyncIterable<ChatChunkLike>, provi
     // A stream that broke after its finishing chunk still brought the whole answer: it is settled, below.
     if (finish === undefined || finish === 'error') {
       if (signal?.aborted) throw e;
-      throw streamEndedEarly(provider, e instanceof Error ? e.message : String(e), e);
+      throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk') : e instanceof Error ? e.message : String(e), e);
     }
+  } finally {
+    idle?.end();
   }
   if (finish === undefined) {
     if (signal?.aborted) throw closed();
-    throw streamEndedEarly(provider, `no finishing chunk after ${chunks} ${chunks === 1 ? 'chunk' : 'chunks'}`);
+    throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk') : `no finishing chunk after ${chunks} ${chunks === 1 ? 'chunk' : 'chunks'}`);
   }
   if (finish === 'error') throw streamEndedEarly(provider, 'its last chunk finished with "error"');
   const completion = {
@@ -187,8 +189,8 @@ export async function readChatStream(stream: AsyncIterable<ChatChunkLike>, provi
  * never came was answered, and billed, at a cost byway cannot read: its counts are unknown (NaN), so the gateway settles
  * it at its planning figures, marked as an assumed price (finiteUsage), rather than as free.
  */
-export async function completeStreamed(stream: AsyncIterable<ChatChunkLike>, provider: string, signal: AbortSignal | undefined): Promise<Omit<ProviderCompletion, 'requestBody'>> {
-  const { completion, chunks, usageArrived } = await readChatStream(stream, provider, signal);
+export async function completeStreamed(stream: AsyncIterable<ChatChunkLike>, provider: string, signal: AbortSignal | undefined, idle?: StreamIdle): Promise<Omit<ProviderCompletion, 'requestBody'>> {
+  const { completion, chunks, usageArrived } = await readChatStream(stream, provider, signal, idle);
   const parsed = parseChatCompletion(completion);
   return {
     ...parsed,
@@ -299,8 +301,10 @@ export function openaiAdapter(opts: { client: OpenAIClientLike }): ProviderAdapt
     // Chat calls are streamed so a stop can close them (ADR-0111); image calls are not cut off.
     cutsOff: { complete: true },
     async complete(req) {
-      const stream = await opts.client.chat.completions.create(openaiStreamParams(req, true), req.signal ? { signal: req.signal } : undefined);
-      return { ...(await completeStreamed(stream, 'openai', req.signal)), requestBody: openaiStreamParams(req, false) };
+      // The SDK is handed the stop and the bound on a stalled stream together (StreamIdle).
+      const idle = new StreamIdle(req.signal);
+      const stream = await opts.client.chat.completions.create(openaiStreamParams(req, true), { signal: idle.signal });
+      return { ...(await completeStreamed(stream, 'openai', req.signal, idle)), requestBody: openaiStreamParams(req, false) };
     },
     async image(req) {
       const params = openaiImageParams(req);

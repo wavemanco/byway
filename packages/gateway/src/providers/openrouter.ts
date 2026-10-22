@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { GatewayError } from '@byway/contracts';
 import { chatStreamParams, completeStreamed, openaiChatParams, type OpenAIClientLike, type OpenRouterRouting } from './openai.ts';
+import { StreamIdle } from './stream.ts';
 import type { ProviderAdapter, ProviderCompletionRequest } from './types.ts';
 
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -30,8 +31,10 @@ export function openrouterAdapter(opts: { client: OpenAIClientLike; pins: Readon
       const pin = opts.pins[req.model];
       // An unpinned model could be served by any host; refuse rather than route blind.
       if (!pin) throw new GatewayError('invalid-request', `openrouter model ${req.model} has no pinned upstream provider`);
-      const stream = await opts.client.chat.completions.create(openrouterParams(req, true, pin), req.signal ? { signal: req.signal } : undefined);
-      const parsed = await completeStreamed(stream, 'openrouter', req.signal);
+      // The SDK is handed the stop and the bound on a stalled stream together (StreamIdle).
+      const idle = new StreamIdle(req.signal);
+      const stream = await opts.client.chat.completions.create(openrouterParams(req, true, pin), { signal: idle.signal });
+      const parsed = await completeStreamed(stream, 'openrouter', req.signal, idle);
       // OpenRouter names the serving host in `provider`; with fallbacks off it can only be the pin.
       return { ...parsed, upstreamProvider: parsed.upstreamProvider ?? pin, requestBody: openrouterParams(req, false, pin) };
     },
