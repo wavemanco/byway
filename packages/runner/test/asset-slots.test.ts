@@ -22,7 +22,7 @@ import { GatewayError, type CompletionRequest, type CompletionResult, type Decli
 import { PROFILES } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
-import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MADE_NOTE } from '../src/activities/asset.ts';
+import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MADE_NOTE, NO_SLOTS_NOTE } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { ContractMissed, StepError, toFailure } from '../src/activities/failures.ts';
 import { memoGateway, PaidNotKept } from '../src/activities/memo.ts';
@@ -420,6 +420,33 @@ describe('placing the images bought: a miss never fails the run (ADR-0090’s ru
     expect((result as AssetResult).asset).toHaveLength(2);
     expect(notes).toEqual(['The AI’s answer placing the images in the work could not be used, even when it was asked again, so the work is unchanged, and the images for “hero” and “detail” are kept beside it.']);
   });
+
+  it('of two usable answers that place as many images, the later is used (ADR-0112: on a tie, the later)', async () => {
+    // The first answer places hero's image, the second detail's.
+    const g = fake([briefsOf('hero', 'detail')], () => false, (ids, n) => ids.slice(n - 1, n));
+    const { result, notes, run } = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect(integrateCalls(g)).toHaveLength(2);
+    const r = result as AssetResult;
+    const announced = (await store.events(run.runId)).filter((e) => e.type === 'artifact');
+    const imageOf = (alt: string) => announced.find((e) => e.data.label === `Image: ${alt}`)!.data.artifactId as string;
+    const work = await store.artifacts.getText(r.artifactId!);
+    expect(work).toContain(imageOf('Alt detail'));
+    expect(work).not.toContain(imageOf('Alt hero'));
+    expect(r.asset).toEqual([imageOf('Alt hero')]);
+    expect(notes).toEqual(['The image for “hero” was not placed in the work, even when the AI was asked again, so it is kept beside the work.']);
+  });
+
+  it('a step that does not write the work keeps every image beside it, those its placing answer placed too', async () => {
+    const step: StepSpec = { ...spec('c3', 'asset'), produces: ['asset'], writes: false };
+    const g = fake([briefsOf('header')]);
+    const { result, notes, run } = await runAsset('prose', step, PIECE, g);
+    expect(integrateCalls(g)).toHaveLength(1);
+    const r = result as AssetResult;
+    const image = (await store.events(run.runId)).find((e) => e.type === 'artifact' && e.data.label === 'Image: Alt header')!.data.artifactId as string;
+    expect(r.artifactId).toBeUndefined();
+    expect(r.asset).toEqual([image]);
+    expect(notes).toEqual([undefined]);
+  });
 });
 
 describe('an image whose result byway could not keep stops the run, naming its slot (ADR-0099, ADR-0090)', () => {
@@ -547,6 +574,21 @@ describe('how many images a prose step may make is the prompt’s to say', () =>
     expect(g.images).toHaveLength(1);
     expect((result as AssetResult).artifactId).toBeDefined();
     expect(notes).toEqual(['This step makes at most 1 image, so the brief for “second” was left out.']);
+  });
+
+  it('a slots knob of 0 makes no image: the step is skipped, and its note says the step makes none, not that the AI chose so, and names every brief left out', async () => {
+    const page = '<!doctype html><html><body><div data-slot="hero"></div></body></html>\n';
+    const base = spec('c1', 'asset');
+    const step: StepSpec = { ...base, knobs: { ...base.knobs, slots: 0 } };
+    const g = fake([briefsOf('hero', 'detail')]);
+    const { result, notes, skipped } = await runAsset('web-page', step, page, g);
+    expect(g.images).toHaveLength(0);
+    expect(result).toMatchObject({ skipped: true });
+    expect(skipped).toEqual([true]);
+    expect(notes).toEqual([`${NO_SLOTS_NOTE} The briefs for “hero” and “detail” were left out.`]);
+    expect((await runAsset('web-page', step, page, fake([briefsOf('hero')]))).notes).toEqual([`${NO_SLOTS_NOTE} The brief for “hero” was left out.`]);
+    // An answer with no brief is not the AI's choice here either: the step makes none.
+    expect((await runAsset('web-page', step, page, fake([EMPTY]))).notes).toEqual([NO_SLOTS_NOTE]);
   });
 
   it('C1’s ASSET makes at most three: the briefs beyond them are named, and so they are when every image fails', async () => {

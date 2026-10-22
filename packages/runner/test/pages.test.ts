@@ -1329,7 +1329,8 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     const CAP = 64 * 1024;
     const hits: Record<string, number> = {};
     const cdn = createServer((req, res) => {
-      const u = req.url ?? '';
+      // By path: a file asked for with a query string is the same file.
+      const u = new URL(req.url ?? '/', 'http://cdn').pathname;
       hits[u] = (hits[u] ?? 0) + 1;
       const css = (text: string) => void res.writeHead(200, { 'content-type': 'text/css' }).end(text);
       if (u === '/once.css') return hits[u] === 1 ? void req.socket.destroy() : css('.x{display:none}');
@@ -1348,15 +1349,18 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       // A connection that fails once: the second read gets the stylesheet, and the page is read styled.
       expect((await reader.shownText(page('once.css'), none)).text).toBe('Shown\ufdec');
       expect(hits['/once.css']).toBe(2);
-      for (const [file, what] of [
-        ['never.css', 'could not be fetched'],
-        ['big.css', 'came back cut off, larger than the 64 KiB byway takes from one file'],
-        ['busy.css', 'came back with a server error (503)'],
+      // The read names a file by its origin and path, never its query string (fileSaid): a query can carry what the page
+      // passed along, and the reason reaches the step's error, which the run view shows and stores.
+      for (const [file, said, what] of [
+        ['never.css?token=abc123', 'never.css', 'could not be fetched'],
+        ['big.css', 'big.css', 'came back cut off, larger than the 64 KiB byway takes from one file'],
+        ['busy.css', 'busy.css', 'came back with a server error (503)'],
       ] as const) {
         const err = await reader.shownText(page(file), none).catch((e: unknown) => e);
         expect(err, file).toBeInstanceOf(StepError);
-        expect((err as Error).message, file).toMatch(new RegExp(`^The page's text could not be read as a visitor sees it: it loads http://${host.replace(/\./g, '\\.')}/${file.replace('.', '\\.')}, which ${what.replace(/[()]/g, '\\$&')}`));
-        expect(hits[`/${file}`], file).toBe(2);
+        expect((err as Error).message, file).toMatch(new RegExp(`^The page's text could not be read as a visitor sees it: it loads http://${host.replace(/\./g, '\\.')}/${said.replace('.', '\\.')}, which ${what.replace(/[()]/g, '\\$&')}`));
+        expect((err as Error).message, file).not.toMatch(/token|\?/);
+        expect(hits[`/${said}`], file).toBe(2);
       }
       // A file that is not there is what a visitor's browser gets too: the page is read without it, once.
       expect((await reader.shownText(page('missing.css'), none)).text).toBe('Shown\nGone');
