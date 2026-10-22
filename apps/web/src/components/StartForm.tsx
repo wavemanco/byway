@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from 'react';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { HELD_KEY_REFUSAL } from '../view/refusals.ts';
 import { ActionButton } from './ActionButton.tsx';
@@ -29,7 +29,25 @@ interface Attachment {
   text: string;
 }
 
-const MAX_ATTACHMENTS = 5;
+/** The most attachments Start's request takes (server/schemas.ts ProblemInput). */
+export const MAX_ATTACHMENTS = 5;
+
+/** What Start says in place of its attach button once five attachments are listed. */
+export const ATTACH_LIMIT_NOTE = 'byway takes up to five attachments for one problem.';
+
+/**
+ * Start's attach button while another attachment fits; at the limit, a note in its place that says why it went. The note
+ * is text, not a control: a disabled button would still be a stop in the Tab order that does nothing (R5,
+ * guard-disabled.test.ts), and focus is already in the new attachment's name field.
+ */
+export function AttachControl({ count, onAttach, buttonRef }: { count: number; onAttach: () => void; buttonRef?: Ref<HTMLButtonElement> }) {
+  if (count >= MAX_ATTACHMENTS) return <span className="muted small">{ATTACH_LIMIT_NOTE}</span>;
+  return (
+    <button type="button" className="button" onClick={onAttach} ref={buttonRef}>
+      {count === 0 ? 'Attach a draft or diff' : 'Attach another'}
+    </button>
+  );
+}
 
 export function StartForm({ recipe }: { recipe?: { recipeId: string; name: string; code: string } }) {
   const router = useRouter();
@@ -229,11 +247,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       ) : null}
 
       <div className="start-actions">
-        {attachments.length < MAX_ATTACHMENTS ? (
-          <button type="button" className="button" onClick={addAttachment} ref={attachButton}>
-            {attachments.length === 0 ? 'Attach a draft or diff' : 'Attach another'}
-          </button>
-        ) : null}
+        <AttachControl count={attachments.length} onAttach={addAttachment} buttonRef={attachButton} />
         <span className="start-spacer" />
         {recipe ? (
           <span className="start-recipe">
