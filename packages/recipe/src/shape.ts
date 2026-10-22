@@ -29,6 +29,15 @@ export interface ShapeProblem {
   message: string;
 }
 
+/**
+ * A property name as a finding's path shows it: each lone surrogate written as \uXXXX text, as the canonicalizer quotes
+ * a bad property name (JSON.stringify), so the path is well-formed text wherever it is shown or written. A lone
+ * surrogate arrives as a JSON backslash-u escape in a model's answer or a file. A well-formed name is returned as it is.
+ */
+export function pathName(name: string): string {
+  return name.isWellFormed() ? name : name.replace(/\p{Cs}/gu, (s) => `\\u${s.charCodeAt(0).toString(16)}`);
+}
+
 /** UTF-8 bytes of a string, without allocating its encoding. */
 function utf8Length(s: string): number {
   let n = 0;
@@ -79,7 +88,7 @@ export function shapeProblem(input: unknown): ShapeProblem | undefined {
         for (let i = keys.length - 1; i >= 0; i--) {
           const k = keys[i]!;
           bytes += utf8Length(k) + 2;
-          stack.push({ value: (value as Record<string, unknown>)[k], path: [...path, k], depth: depth + 1 });
+          stack.push({ value: (value as Record<string, unknown>)[k], path: [...path, pathName(k)], depth: depth + 1 });
         }
       }
     }

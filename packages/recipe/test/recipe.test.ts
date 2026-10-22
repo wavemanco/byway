@@ -97,6 +97,16 @@ describe('parseRecipe: every recipe it returns can be hashed (F19)', () => {
     expect(issues[0]!.message.isWellFormed()).toBe(true);
   });
 
+  it('names a reserved key below a lone-surrogate name by a well-formed path, the lone surrogate written as backslash-u text', () => {
+    // The reserved-key walk runs before the hash check, so its finding is the one returned.
+    const issues = parseError(withKnobs('{"a\\ud800":{"__proto__":{"x":1}}}')).issues;
+    expect(issues.map((i) => [i.path, i.message])).toEqual([[['stages', 0, 'body', 'knobs', 'a\\ud800', '__proto__'], 'reserved key name']]);
+    expect(issues[0]!.path.every((p) => typeof p !== 'string' || p.isWellFormed())).toBe(true);
+    // An astral character's pair is well-formed, so it is kept as it is, in a name with a lone surrogate too.
+    expect(parseError(withKnobs('{"\\ud83d\\ude00\\udc00":{"__proto__":{"x":1}}}')).issues[0]!.path).toEqual(['stages', 0, 'body', 'knobs', '😀\\udc00', '__proto__']);
+    expect(parseError(withKnobs('{"\\ud83d\\ude00":{"__proto__":{"x":1}}}')).issues[0]!.path).toEqual(['stages', 0, 'body', 'knobs', '😀', '__proto__']);
+  });
+
   it('either refuses an adversarial input with a ZodError or returns a recipe that hashes', () => {
     const inputs: Record<string, unknown> = {
       'well-formed': minimalRecipe(),
