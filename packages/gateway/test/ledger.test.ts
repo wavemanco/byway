@@ -218,7 +218,8 @@ describe('Ledger.verify on lines that cannot be hashed', () => {
     const ledger = await seed(2);
     const ls = lines();
     // The line hashes as it should, so only the head record (written before the edit) can tell it was changed.
-    const { hash: _h, ...rest } = { ...(JSON.parse(ls[1] as string) as Record<string, unknown>), id: 7 };
+    const edited: Record<string, unknown> = { ...(JSON.parse(ls[1] as string) as Record<string, unknown>), id: 7 };
+    const { hash: _h, ...rest } = edited;
     rewrite([ls[0] as string, JSON.stringify({ ...rest, hash: contentHash(rest) })]);
     expect(await ledger.verify()).toBe('line:2');
   });
