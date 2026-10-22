@@ -12,7 +12,7 @@
 
 byway draws and reads pages with a pinned copy of Playwright's Chromium: `playwright` and `@playwright/test` are pinned at 1.63.0 (`packages/runner/package.json`, `apps/web/package.json`). A pinned Chromium collects known bugs, sandbox escapes among them, though the OS sandbox has been on by default since [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md). The backlog row "Playwright bump policy" asked for a cadence, with no owner decision behind it: "Set the cadence before any distribution, or at the next Playwright upgrade, whichever comes first; the weekly CI run could report when the pinned release falls behind (trigger proposed by Claude, 2026-10-18)".
 
-Each update costs one CI cycle on both systems (a Windows job takes 28 to 40 minutes; backlog row "CI time, and the CI proposal the owner deferred"). The owner said on 2026-10-17: "even if everything passes, over 30 minutes on CI every time isn't practical. We will never get anything done." So a standing cadence is the owner's to set.
+The question put each update at one CI cycle on both systems (a Windows job takes 28 to 40 minutes; backlog row "CI time, and the CI proposal the owner deferred"); by Claude's reading in item 5 below it is two (Consequences). The owner said on 2026-10-17: "even if everything passes, over 30 minutes on CI every time isn't practical. We will never get anything done." So a standing cadence is the owner's to set.
 
 F07's arbiter corpus (`packages/runner/test/f07-corpus`, [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md)) is rerun before a Playwright update: its realistic pages are compared with round 14's outcomes and its hand cases with round 13's. Its generators (`gen13.mts`, `gen-v14.mts`) have no recorded outcome. On 2026-10-18 and 2026-10-19 they were only smoke-run, a few pages each, while round 13 ran 300 pages a job, 12 jobs in all. Their outputs are tallies, not pass or fail, so a later run can be compared only with a baseline, and the baseline can be taken only on the version being left behind. The audit of 2026-10-21 found that this baseline, listed as pending on 2026-10-19, had never been put to the owner, and offered it inside the cadence question.
 
@@ -41,14 +41,18 @@ In the owner's words, the option chosen on 2026-10-21 at 21:27, "Within two week
 ## Consequences
 
 - Playwright ships about once a month with a new Chromium, so byway's browser stays about six weeks behind at most, by Claude's reckoning when the question was put.
-- Each update costs one CI cycle on both systems and the F07 corpus's runs on the owner's machine, about once a month.
+- Each update costs two CI cycles on both systems, not the one the question gave the owner: Claude counts an update as a risky change (item 5), so it runs CI on its branch before the merge ([ADR-0103](0103-adr-log-rule-and-ci.md) §3, [ADR-0107](0107-code-is-checked-before-it-is-pushed.md) item 4), and the merge's push to main runs it again, as every push to main does. That reading is Claude's, not the owner's; without it an update costs the one cycle the question priced. Each update also costs the F07 corpus's runs on the owner's machine, about once a month. (The check of the first block, REC-B1-6, 2026-10-22.)
 - The first update waits for the owner's first live run and for the baseline: about 6 hours of the owner's machine, no paid call.
 - The report runs only when the schedule starts CI's run, so a run started by hand or by a push does not report, and its first output on GitHub is the first Monday run after the first block reaches main. Run by hand on 2026-10-21, it said the pin (1.63.0) is a minor behind the latest release (1.64.1), and that 1.64.0, the first minor after the pin, came out on 2026-10-07, so the two weeks are up; the first update still waits for the owner's first live run and the baseline (items 2 and 3).
 - The only code that comes with this record is the weekly report (17e2599, with its tests in `scripts/test/ci.test.ts`).
 
 ## What this changes in earlier records
 
-Nothing. No Accepted record set a cadence: the backlog row "Playwright bump policy" held the question, and it now points here.
+- **[ADR-0103](0103-adr-log-rule-and-ci.md) §3 (CI)** is extended by item 4, as [ADR-0106](0106-a-late-close-retires-the-renderers-browser.md) extended it: the weekly run has one more step, on the Linux job only and only when the schedule starts the run. Nothing in §3 becomes untrue: the step reports and blocks nothing (`continue-on-error`, and the script exits 0 whatever it finds), the workflow's token stays read-only, it names nothing secret, and the step adds no action. ADR-0103's Later note of 2026-10-21 describes the step.
+- **[ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) item 1** (the sandbox guard) says the lines that name Playwright's packages in quotes are ones "which only `packages/runner/src/pages.ts` has". The pin report adds two: `scripts/playwright-pin.ts` names `playwright` and `@playwright/test` to read their pinned versions from the two package.json files, and loads nothing. `apps/web/test/guard-sandbox.test.ts` admits exactly those two lines, so an import added to that script still moves its pin. ADR-0105's Later note of 2026-10-22 says so.
+- No Accepted record set a cadence: the backlog row "Playwright bump policy" held the question, and it now points here.
+
+(Until 2026-10-22 this section said "Nothing". The check of the first block found the extension of ADR-0103 (MI-1, REC-B1-2), and Claude found the sentence of ADR-0105 while fixing it. Both "changed by" links are in the index before this record reaches main.)
 
 ## Evidence
 
@@ -56,4 +60,5 @@ Nothing. No Accepted record set a cadence: the backlog row "Playwright bump poli
 - The owner on CI time, 2026-10-17 22:19 local: [evidence/conversation-continued.md](evidence/conversation-continued.md).
 - F07's corpus and the generators' commands, with round 13's sizes: [packages/runner/test/f07-corpus/README.md](../../packages/runner/test/f07-corpus/README.md).
 - The pins: `packages/runner/package.json` and `apps/web/package.json` (1.63.0).
-- The weekly report: `scripts/playwright-pin.ts` and its step in `.github/workflows/verify.yml` (batch C of the first block, 17e2599); `scripts/test/ci.test.ts` checks the step's schedule-only, Linux-only and `continue-on-error` settings and the report's wording on fixtures, with no network.
+- The weekly report: `scripts/playwright-pin.ts` and its step in `.github/workflows/verify.yml` (batch C of the first block, 17e2599); `scripts/test/ci.test.ts` checks the step's schedule-only, Linux-only and `continue-on-error` settings and the report's wording on fixtures, with no network. Since the first block's fix round (C-PIN-TIMEBOMB, 2026-10-22), every test of the report reads pins written into a temporary folder, so a Playwright update needs no edit to `ci.test.ts`; only "reads the pins the two packages have" reads the live pins. Before, the warning test read the live pins against a fixed 1.64.1, and with both pins at 1.64.1 it failed (1 of 60), where the new one passes (60 of 60).
+- Claude's audit of 2026-10-21, which found the baseline never put to the owner and put the question: [evidence/reports/audit-2026-10-21.md](evidence/reports/audit-2026-10-21.md) (its D4, as given to the owner at 19:58 local).
