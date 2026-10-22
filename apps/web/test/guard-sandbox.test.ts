@@ -13,15 +13,19 @@
  * - building a renderer: `playwrightPages`, `renderBrowsers`, `checkRenderer` (the start-up check, run only by
  *   scripts/serve.ts) and `storeOsSandbox` (the store's setting, which only the worker gives a renderer);
  * - launching Chromium: `launchChromium`, `chromiumLaunchOptions`, the test-only `launch` seam (`launch:` and `.launch`),
- *   Playwright's own launch calls, and every line that names Playwright's packages, Puppeteer or chromium-bidi in quotes
- *   (as an import does), which only pages.ts has.
+ *   Playwright's own launch calls, every line that names Playwright's packages, Puppeteer or chromium-bidi in quotes (as
+ *   an import does), which only pages.ts has besides two lines of the weekly pin report (scripts/playwright-pin.ts,
+ *   ADR-0110) that name Playwright's packages to read their versions and load nothing, and every module loaded by a name
+ *   its line does not write out (`import(name)`), which no line has: so the names that report holds cannot load
+ *   Playwright unseen.
  * A line that opens an import or re-export list is pinned by its file alone, so naming one more thing in a list already
  * pinned is not a change, but a new importer is. A second test feeds the pins each way round them found so far (the launch seam, a
  * setting in a named function or shorthand, chromiumLaunchOptions handed to Playwright, Playwright's own launch, whose
  * default is no sandbox, and more) and requires that one pin changes.
  *
- * What it does not see: a use that names none of these (a namespace import called by a computed name, SQL that builds the
- * table's or the column's name from pieces), a browser driver it does not list, a browser started as a program of its
+ * What it does not see: a use that names none of these (a namespace import called by a computed name, a module loaded
+ * by a computed name through a require that createRequire made, SQL that builds the table's or the column's name from
+ * pieces), a browser driver it does not list, a browser started as a program of its
  * own, and a change to the launch wiring inside the lines it pins (a retry without the sandbox inside pages.ts):
  * launch.test.ts, pages.test.ts and renderer-check.test.ts check that behaviour. The store never writes the setting
  * except through setRendererSandbox (packages/store/test/renderer-settings.test.ts).
@@ -166,7 +170,10 @@ const BUILD: Pin[] = [
   },
 ];
 
-/** Launching Chromium: launchChromium, the one stated launch, which only the renderer calls; Playwright only in pages.ts. */
+/**
+ * Launching Chromium: launchChromium, the one stated launch, which only the renderer calls; Playwright loaded only in
+ * pages.ts (the pin report names its packages and loads nothing), and no module loaded by a name not written out.
+ */
 const LAUNCH: Pin[] = [
   {
     what: 'launchChromium: defined, and the renderer’s default launch (not exported from the package)',
@@ -209,6 +216,14 @@ const LAUNCH: Pin[] = [
       "scripts/playwright-pin.ts: { file: 'packages/runner/package.json', name: 'playwright' },",
       "scripts/playwright-pin.ts: { file: 'apps/web/package.json', name: '@playwright/test' },",
     ],
+  },
+  {
+    // An import() whose argument is one string literal (comments before it allowed) writes its module out, so the pin
+    // above sees it; any other argument (a variable, PINNED[0].name, 'play' + 'wright') is a module loaded by a name the
+    // line does not write out. An import( with its argument on a later line counts as one too.
+    what: 'modules loaded by a name the line does not write out: none, so the pin report’s names cannot load Playwright',
+    pattern: /\bimport\s*\((?!\s*(?:\/\*.*?\*\/\s*)*(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`\\$\n]*`)\s*[,)])/,
+    lines: [],
   },
 ];
 
@@ -254,6 +269,9 @@ describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', SCA
     ['launchChromium called with the sandbox off (DOC-1)', ['const warm = (): Promise<unknown> => launchChromium({ osSandbox: false });']],
     ["Playwright's own launch, whose default is no sandbox (DOC-1)", ["import { chromium } from 'playwright';", 'const warm = () => chromium.launch({ headless: true });']],
     ['Playwright loaded at run time', ["const { chromium } = await import('playwright-core');"]],
+    ['Playwright loaded by a name built from pieces', ["const { chromium } = await import('play' + 'wright');"]],
+    ['Playwright loaded by the name the pin report holds, from another file (MI-3)', ["import { PINNED } from './playwright-pin.ts';", 'const { chromium } = await import(PINNED[0].name);']],
+    ['a module loaded by a name on the next line', ['const m = await import(', '  name,', ');']],
     ['a renderer built over several lines', ['const r = playwrightPages(', '  { osSandbox: () => false },', ');']],
     ['the start-up check run again, off', ['const again = await checkRenderer({ osSandbox: false });']],
     ['a renderer’s browsers launched by hand', ['const b = renderBrowsers(async () => browser, { timeoutMs: 1, closeTimeoutMs: 1 });']],
@@ -265,6 +283,18 @@ describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', SCA
     ['an import list that names the launch', ['import {', '  launchChromium,', "} from '../packages/runner/src/pages.ts';"]],
   ])('fails on %s', (_, lines) => {
     const files = [...sources(), { file: 'scripts/zz-way-round.ts', lines }];
+    expect(moved(files)).not.toEqual([]);
+  });
+
+  /** The pin report is allowed its two lines, nothing more: Playwright imported or loaded there moves a pin too (MI-3). */
+  it.each([
+    ['Playwright imported by the pin report', ["import { chromium } from 'playwright';"]],
+    ['Playwright loaded at run time by the pin report', ["const { chromium } = await import('playwright');"]],
+    ['Playwright loaded by the name the pin report holds (SEC-NOTE-3)', ['const { chromium } = await import(PINNED[0].name);']],
+    ['a pinned line of the pin report written twice', ["  { file: 'packages/runner/package.json', name: 'playwright' },"]],
+  ])('fails on %s', (_, lines) => {
+    const files = sources().map((s) => (s.file === 'scripts/playwright-pin.ts' ? { ...s, lines: [...s.lines, ...lines] } : s));
+    expect(files.some((s) => s.file === 'scripts/playwright-pin.ts')).toBe(true);
     expect(moved(files)).not.toEqual([]);
   });
 });
