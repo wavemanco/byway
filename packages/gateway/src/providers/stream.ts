@@ -4,19 +4,19 @@
  */
 
 /**
- * How long a streamed answer may go without a chunk before byway reads it as stalled: ten minutes, the request timeout
- * the OpenAI and Anthropic SDKs default to (DEFAULT_TIMEOUT, 600,000 ms, in openai 7.28.0 and @anthropic-ai/sdk 0.131.0).
- * Both SDKs clear that timeout once the response headers arrive, so without this a stream that stalls after its 200
- * waits for its step's timeout (15 minutes), and its connection stays open after the step is given up.
- * - OpenAI and OpenRouter: unstreamed, the SDK's timeout bounded the whole call at ten minutes, so this is no stricter.
- * - Anthropic: its calls were streamed, with no bound, before this. Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 leave their
- *   thinking out of the stream by default (`thinking.display` "omitted", the claude-api reference, read 2026-10-22), so
- *   a model that is thinking sends only pings, which the SDK does not pass on: a think that sends nothing for ten
- *   minutes is read as a stall. At the SDK's own planning rate (128,000 output tokens an hour, its
- *   calculateNonstreamingTimeout) ten minutes is about 21,000 tokens, more than byway's default allowance of 16,000; a
- *   call asked again at 32,000 or 64,000 after a cut-short answer could think that long.
+ * How long a streamed answer may go without a chunk before byway reads it as stalled: fifteen minutes, a model step's
+ * own limit. The owner chose it on 2026-10-22, "In Block 2, 15 meanwhile (Recommended)", until block 2 lets each model
+ * have its own wait, chosen in Settings, and raises the steps' limits so the chosen wait governs (ADR-0111's Later
+ * notes). The OpenAI and Anthropic SDKs clear their own request timeout (DEFAULT_TIMEOUT, ten minutes, in openai 7.28.0
+ * and @anthropic-ai/sdk 0.131.0) once the response headers arrive, so without this bound a stream that stalls after its
+ * 200 keeps its connection open after its step is given up.
+ * - Anthropic: Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 leave their thinking out of the stream by default
+ *   (`thinking.display` "omitted", the claude-api reference, read 2026-10-22), so a model that is thinking sends only
+ *   pings, which the SDK does not pass on. At fifteen minutes no think is cut off before its step would end anyway.
+ * - OpenAI and OpenRouter: unstreamed, the SDK's timeout bounded the whole call at ten minutes; streamed, a stretch of
+ *   up to fifteen minutes with nothing arriving is allowed, and the whole call is bounded by its step.
  */
-export const STREAM_IDLE_MS = 600_000;
+export const STREAM_IDLE_MS = 900_000;
 
 /**
  * A streamed call's bound on stalling (STREAM_IDLE_MS). `signal` is what the SDK is handed: it aborts when the call's

@@ -775,7 +775,7 @@ describe('a streamed call that stalls (CC-2)', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(idle.signal.aborted).toBe(true);
     const err = await outcome;
-    expect(err).toMatchObject({ billing: 'maybe', message: `openai's stream ended without producing a whole answer (nothing came for 10 minutes, after ${count} chunk${count === 1 ? '' : 's'})` });
+    expect(err).toMatchObject({ billing: 'maybe', message: `openai's stream ended without producing a whole answer (nothing came for 15 minutes, after ${count} chunk${count === 1 ? '' : 's'})` });
     expect(toGatewayError(err, 'openai', makeRedactor({}))).toMatchObject({ code: 'provider-error', retryable: true, billing: 'maybe' });
   });
 
@@ -854,7 +854,7 @@ describe('a streamed call that stalls (CC-2)', () => {
     expect(await err).toMatchObject({
       code: 'provider-error',
       billing: 'maybe',
-      message: `anthropic call failed: anthropic's stream ended without producing a whole answer (nothing came for 10 minutes, after ${count} event${count === 1 ? '' : 's'})`,
+      message: `anthropic call failed: anthropic's stream ended without producing a whole answer (nothing came for 15 minutes, after ${count} event${count === 1 ? '' : 's'})`,
     });
     expect(fake.signals.map((x) => x.aborted)).toEqual([true, true]);
     expect(ledger()).toEqual([]);
