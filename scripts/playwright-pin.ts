@@ -1,6 +1,6 @@
 /**
  * Whether byway's pinned Playwright has fallen behind npm's latest release: the weekly CI run's report (verify.yml),
- * at the owner's answer of 2026-10-22 on the Playwright cadence (D4), "Within two weeks of each release
+ * at the owner's answer of 2026-10-21 on the Playwright cadence (D4), "Within two weeks of each release
  * (Recommended)": "Update within two weeks of each Playwright minor release, sooner for a high or critical Chromium
  * security fix. First update right after your first live run, preceded once by the F07 generators' baseline on
  * today's version (about 6 hours of your machine, no paid calls). The weekly CI run reports when the pin falls behind."
@@ -96,7 +96,7 @@ export function pinReport(pins: readonly Pin[], registry: Registry, now: Date): 
     const days = Math.floor((now.getTime() - Date.parse(minor.at)) / DAY_MS);
     const left = WINDOW_DAYS - days;
     lines.push(
-      `${named(minor.v)}, the first minor release after the pin, came out on ${day(minor.at)}, ${days} ${days === 1 ? 'day' : 'days'} ago. The cadence the owner chose on 2026-10-22 is an update within two weeks of each minor release, sooner for a high or critical Chromium security fix: ${left > 0 ? `${left} ${left === 1 ? 'day is' : 'days are'} left.` : 'the two weeks are up.'}`,
+      `${named(minor.v)}, the first minor release after the pin, came out on ${day(minor.at)}, ${days} ${days === 1 ? 'day' : 'days'} ago. The cadence the owner chose on 2026-10-21 is an update within two weeks of each minor release, sooner for a high or critical Chromium security fix: ${left > 0 ? `${left} ${left === 1 ? 'day is' : 'days are'} left.` : 'the two weeks are up.'}`,
     );
   } else {
     lines.push('npm does not say when the first minor release after the pin came out.');

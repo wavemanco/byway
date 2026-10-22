@@ -55,7 +55,7 @@ jobs:
           node-version-file: .node-version
 
       # The weekly run only, on one job: whether the pinned Playwright has fallen behind npm's latest release, for the
-      # cadence the owner chose on 2026-10-22 (scripts/playwright-pin.ts says it). It reports in the log, in the run's
+      # cadence the owner chose on 2026-10-21 (scripts/playwright-pin.ts says it). It reports in the log, in the run's
       # summary and, when the pin is behind, as a warning on the run's page. It fails nothing: the script exits 0 whatever
       # it finds, and the step may fail or time out without failing the job.
       - name: Is the Playwright pin behind npm's latest release? (the weekly run, Linux only; it reports and fails nothing)

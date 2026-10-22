@@ -141,7 +141,7 @@ const BUILD: Pin[] = [
     lines: [
       imported(PAGES),
       pages('const browsers = renderBrowsers((osSandbox) => launch({ osSandbox }), { timeoutMs: timeout, closeTimeoutMs: closeTimeout, ...(opts.osSandbox ? { osSandbox: opts.osSandbox } : {}) });'),
-      'packages/runner/src/render-browsers.ts: export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolean) => Promise<B>, { timeoutMs, closeTimeoutMs, osSandbox }: RenderBrowsersOptions): RenderBrowsers<B> {',
+      'packages/runner/src/render-browsers.ts: export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolean) => Promise<B>, { timeoutMs, closeTimeoutMs, osSandbox, warn = (m) => console.warn(m) }: RenderBrowsersOptions): RenderBrowsers<B> {',
     ],
   },
   {
@@ -188,7 +188,7 @@ const LAUNCH: Pin[] = [
       pages('return await chromium.launch(chromiumLaunchOptions(setting));'),
       pages('launch?: (setting: LaunchSetting) => Promise<Browser>;'),
       pages('const pages = playwrightPages({ osSandbox: () => osSandbox, host, ...(opts.launch ? { launch: opts.launch } : {}) });'),
-      'packages/runner/src/render-browsers.ts: export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolean) => Promise<B>, { timeoutMs, closeTimeoutMs, osSandbox }: RenderBrowsersOptions): RenderBrowsers<B> {',
+      'packages/runner/src/render-browsers.ts: export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolean) => Promise<B>, { timeoutMs, closeTimeoutMs, osSandbox, warn = (m) => console.warn(m) }: RenderBrowsersOptions): RenderBrowsers<B> {',
     ],
   },
   {
@@ -197,9 +197,18 @@ const LAUNCH: Pin[] = [
     lines: [pages('return await chromium.launch(chromiumLaunchOptions(setting));')],
   },
   {
-    what: 'Playwright, Puppeteer or chromium-bidi, named only by pages.ts',
+    what: 'Playwright, Puppeteer or chromium-bidi, named only by pages.ts and by the pin report, which launches nothing',
     pattern: /['"`](@playwright\/[\w-]+|playwright(-core|-chromium)?|puppeteer[\w-]*|chromium-bidi)['"`/]/,
-    lines: [imported(PAGES), pages("return onDisk((await import('playwright')).chromium);"), pages("let chromium: typeof import('playwright').chromium | undefined;"), pages("({ chromium } = await import('playwright'));")],
+    lines: [
+      imported(PAGES),
+      pages("return onDisk((await import('playwright')).chromium);"),
+      pages("let chromium: typeof import('playwright').chromium | undefined;"),
+      pages("({ chromium } = await import('playwright'));"),
+      // The weekly CI report of the Playwright pin (ADR-0110) names the two packages to read their pinned versions from
+      // package.json; it imports and launches nothing.
+      "scripts/playwright-pin.ts: { file: 'packages/runner/package.json', name: 'playwright' },",
+      "scripts/playwright-pin.ts: { file: 'apps/web/package.json', name: '@playwright/test' },",
+    ],
   },
 ];
 

@@ -1,7 +1,7 @@
 /**
  * The CI workflow (.github/workflows/verify.yml; ADR-0103) and what the README says about it: `pnpm verify` on one job
  * per operating system, reporting only, with pinned tools and actions, no secrets and the full history; the weekly
- * run's report of the Playwright pin (scripts/playwright-pin.ts, the owner's answer of 2026-10-22 on D4), which fails
+ * run's report of the Playwright pin (scripts/playwright-pin.ts, the owner's answer of 2026-10-21 on D4), which fails
  * nothing; and the README's platform claim names exactly the systems CI runs on.
  */
 import { spawnSync } from 'node:child_process';
@@ -385,7 +385,7 @@ describe('the README on platforms and CI (ADR-0103)', () => {
 });
 
 /**
- * The owner's answer of 2026-10-22 on the Playwright cadence (D4): "Within two weeks of each release (Recommended)",
+ * The owner's answer of 2026-10-21 on the Playwright cadence (D4): "Within two weeks of each release (Recommended)",
  * with "The weekly CI run reports when the pin falls behind." The report runs on the weekly run, once, and fails
  * nothing; what it says is tested here on npm's record as a fixture, never on the network.
  */
@@ -433,7 +433,7 @@ describe("the weekly run's report of the Playwright pin (D4)", () => {
       behind: true,
       lines: [
         "byway pins Playwright 1.63.0 (packages/runner and apps/web); npm's latest release is 1.64.1, out on 2026-10-14.",
-        '1.64.0, the first minor release after the pin, came out on 2026-10-07, 13 days ago. The cadence the owner chose on 2026-10-22 is an update within two weeks of each minor release, sooner for a high or critical Chromium security fix: 1 day is left.',
+        '1.64.0, the first minor release after the pin, came out on 2026-10-07, 13 days ago. The cadence the owner chose on 2026-10-21 is an update within two weeks of each minor release, sooner for a high or critical Chromium security fix: 1 day is left.',
       ],
     });
     expect(pinReport(PINS, registry('1.64.1', RELEASES), day('2026-10-10')).lines[1]).toMatch(/came out on 2026-10-07, 2 days ago\. .*: 12 days are left\.$/);
