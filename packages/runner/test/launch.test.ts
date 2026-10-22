@@ -4,10 +4,10 @@
  * OS sandbox unless the person switched it off in Settings, only the WebRTC flags, and an environment with no provider
  * key, nothing secret-looking and nothing from the secrets file. The production launch takes only the sandbox setting,
  * so no caller can add a flag, and the renderer reads that setting from the store before each load; a setting it cannot
- * read is on. A Chromium that cannot start fails every renderer path (a C1 view, a lineup card, the readiness check)
- * with one plain message that is not retried; a sandbox that cannot start says why on this computer and the fix, naming
- * on Windows the headless shell byway launches; a Chromium that dies inside the sandbox with no word of why names the
- * sandbox as one possible cause.
+ * read is on. A Chromium that cannot start fails every renderer path (a C1 view, a lineup card, the readiness check, the
+ * visitor read VOICE's arbiter makes) with one plain message that is not retried; a sandbox that cannot start says why
+ * on this computer and the fix, naming on Windows the headless shell byway launches; a Chromium that dies inside the
+ * sandbox with no word of why names the sandbox as one possible cause.
  *
  * The effective command line of a real Chromium, the readiness check's test page and the start-up check are checked in
  * pages.test.ts and renderer-check.test.ts; the per-system reasons and the drift test on Playwright's words in
@@ -292,7 +292,7 @@ describe('a Chromium that cannot start', () => {
     it.each([
       ['Chromium died', DIED],
       ['its OS sandbox could not start', SANDBOXED],
-    ])('(%s) a view of a page, a card, the readiness check and a lineup of cards all fail with the same message', async (_, cause) => {
+    ])('(%s) a view of a page, a card, the readiness check, a visitor read and a lineup of cards all fail with the same message', async (_, cause) => {
       launch.mockRejectedValue(cause);
       const expected = launchFailure(cause, { osSandbox: true, executable: EXECUTABLE }).message;
       // Inside the sandbox, the default: a death with no word of why names the sandbox as one possible cause.
@@ -301,6 +301,13 @@ describe('a Chromium that cannot start', () => {
       await expect(pages.render('<!doctype html><p>Hi</p>', none, ['desktop', 'mobile', 'fold'])).rejects.toThrow(expected);
       await expect(pages.render(cardHtml({ images: [], layout: 'grid', text: 'A card' }), none, ['desktop'])).rejects.toBeInstanceOf(StepError);
       await expect(pages.ready()).rejects.toThrow(expected);
+      // The visitor read (VOICE's arbiter, F07): the same failure, after one launch; a read is made again only when a
+      // file the page loads did not arrive whole.
+      const launched = launch.mock.calls.length;
+      const read = await pages.shownText('<!doctype html><p>Hi</p>', none).catch((e: unknown) => e);
+      expect(read).toBeInstanceOf(StepError);
+      expect((read as Error).message).toBe(expected);
+      expect(launch.mock.calls.length - launched).toBe(1);
 
       // A storyboard against image references forms cards (BLIND-1): every card goes through the same renderer.
       const deps: RunnerDeps = { gateway: {} as Gateway, store, prompts: fakePrompts(), pages };

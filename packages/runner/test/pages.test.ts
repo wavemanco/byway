@@ -19,7 +19,7 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import type { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
+import { allowedUrl, chromiumLaunchOptions, fileSaid, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
 import { headlessShell, possibleSandboxCause, sandboxAdvice, type SandboxHost } from '../src/sandbox.ts';
 
 /** The launch byway makes when the person has not switched the sandbox off: inside it (ADR-0105). */
@@ -202,6 +202,15 @@ describe('the rule for what a rendered page may load from the network (spec §3.
     for (const url of ['http://unpkg.com/react', 'https://unpkg.com.evil.example/x', 'https://evil.example/unpkg.com', 'https://127.0.0.1/x', 'https://cdn.jsdelivr.net.:443/x']) {
       expect(allowedUrl(new URL(url), hosts), url).toBe(false);
     }
+  });
+
+  it('names a file a failed read loads by its origin and path only: never its query string or fragment, and at most 120 characters', () => {
+    expect(fileSaid(new URL('https://cdn.jsdelivr.net/npm/x@1/x.css?token=abc123&user=me#top'))).toBe('https://cdn.jsdelivr.net/npm/x@1/x.css');
+    // An address with a sign-in in it is named without one.
+    expect(fileSaid(new URL('https://me:secret@unpkg.com/react'))).toBe('https://unpkg.com/react');
+    const long = new URL(`https://unpkg.com/${'a'.repeat(200)}?q=${'b'.repeat(50)}`);
+    expect(fileSaid(long)).toBe(`https://unpkg.com/${'a'.repeat(117 - 'https://unpkg.com/'.length)}...`);
+    expect(fileSaid(long)).toHaveLength(120);
   });
 });
 
