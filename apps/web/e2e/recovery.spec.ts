@@ -85,7 +85,11 @@ test.afterEach(async ({ page }) => {
 test('F14: after a refused recommendation, Try again shows the stored recommendation with its reasons, and Start sends it', async ({ page }) => {
   await page.goto('/settings');
   await setCap(page, 0.01);
+  // The page's render only reads what is stored: the first recommendation is the screen's own request, once it is
+  // shown, and that is what is refused here (F03).
+  const firstAsk = page.waitForResponse((r) => r.url().endsWith('/recommend') && r.request().method() === 'POST');
   await describeProblem(page, 'A landing page for the spring classes at my pottery studio');
+  expect((await firstAsk).status()).toBeGreaterThanOrEqual(400);
   await expect(page.getByRole('heading', { name: REFUSED })).toBeVisible({ timeout: 60_000 });
 
   // Still refused: the panel stays, with the new message. The retry's answer is awaited before the cap changes: the
@@ -132,7 +136,8 @@ test('F14: Build my own while the recommendation is refused shows your recipe, a
   const intakePath = new URL(page.url()).pathname;
   await setCap(page, originalCap);
 
-  // A re-render of this page would ask the model for a recommendation; nothing on it may trigger one.
+  // The screen applies each command's whole result itself and never re-runs its server render (ADR-0082). That render
+  // now only reads what is stored, so a re-render would ask the model nothing either; nothing on the screen makes one.
   const rerenders: string[] = [];
   page.on('request', (r) => {
     if (new URL(r.url()).pathname === intakePath && r.headers()['rsc'] !== undefined) rerenders.push(r.url());

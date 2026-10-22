@@ -18,7 +18,6 @@ import {
   currentRecommendation,
   recipeForRun,
   recommendIntake,
-  recommendationOrProblem,
   resolveInRun,
   startRun,
   updateRenderer,
@@ -353,14 +352,14 @@ describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, ()
     await expect(recommendIntake(d, intakeId)).rejects.toBeInstanceOf(TypeError);
   });
 
-  it('gives the Recommendation screen a problem to show instead of failing to load', async () => {
+  it("gives the Recommendation screen's first ask a problem to show in words, stores nothing, and the next ask tries again", async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     vi.spyOn(d.services.advisor, 'recommend').mockRejectedValueOnce(gatewayError('rate-limited'));
-    const first = await recommendationOrProblem(d, intakeId);
-    expect(first).toEqual({ problem: expect.stringMatching(/busy/) });
-    const second = await recommendationOrProblem(d, intakeId);
-    expect('recommendation' in second && second.recommendation.recipeId).toBeTruthy();
+    await expect(recommendCommand(d, intakeId, { ensure: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
+    expect((await d.services.store.getIntake(intakeId))?.recommendation).toBeUndefined();
+    const second = await recommendCommand(d, intakeId, { ensure: true });
+    expect(second.recommendation.recipeId).toBeTruthy();
   });
 });
 
@@ -372,7 +371,7 @@ describe('Recommendation screen commands return everything they change (F14, ADR
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     recommend.mockRejectedValueOnce(rateLimited());
-    expect(await recommendationOrProblem(d, intakeId)).toEqual({ problem: expect.stringMatching(/busy/) });
+    await expect(recommendCommand(d, intakeId, { ensure: true })).rejects.toMatchObject({ message: expect.stringMatching(/busy/) });
     expect(recommend).toHaveBeenCalledTimes(1);
 
     const first = await recommendCommand(d, intakeId, { ensure: true });
@@ -400,7 +399,7 @@ describe('Recommendation screen commands return everything they change (F14, ADR
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     recommend.mockRejectedValueOnce(rateLimited());
-    await recommendationOrProblem(d, intakeId);
+    await expect(currentRecommendation(d, intakeId)).rejects.toBeInstanceOf(HttpError);
     const calls = recommend.mock.calls.length;
     const result = await composeCommand(d, intakeId);
     expect(result.composed.ok).toBe(true);
@@ -529,38 +528,43 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
       .map((l) => JSON.parse(l) as { purpose: string })
       .filter((e) => e.purpose === 'advisor.intake').length;
 
-  it('two first loads of one intake at once share one advisor call and one ledger entry', async () => {
+  // The screen asks for the first recommendation once it is shown ({ ensure: true }); the page's render only reads it
+  // (recommend-page.test.ts). Two tabs, or a remount, make two first asks at once.
+  it("two of the screen's first asks for one intake at once share one advisor call and one ledger entry", async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    const [a, b] = await Promise.all([recommendationOrProblem(d, intakeId), recommendationOrProblem(d, intakeId)]);
-    expect(a).toEqual(b);
+    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { ensure: true }), recommendCommand(d, intakeId, { ensure: true })]);
+    expect(a.recommendation).toEqual(b.recommendation);
     expect(recommend).toHaveBeenCalledTimes(1);
     expect(intakeCalls()).toBe(1);
-    // Later loads read the stored one.
-    await recommendationOrProblem(d, intakeId);
+    // Later asks read the stored one.
+    await recommendCommand(d, intakeId, { ensure: true });
     expect(recommend).toHaveBeenCalledTimes(1);
   });
 
-  it('a page load and Try again ({ ensure: true }) at once share the call too', async () => {
+  it('the first ask and Try again at once share the call too', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
-    const [page, command] = await Promise.all([recommendationOrProblem(d, intakeId), recommendCommand(d, intakeId, { ensure: true })]);
-    expect('recommendation' in page && page.recommendation).toEqual(command.recommendation);
+    const [first, command] = await Promise.all([currentRecommendation(d, intakeId), recommendCommand(d, intakeId, { ensure: true })]);
+    expect(first).toEqual(command.recommendation);
     expect(recommend).toHaveBeenCalledTimes(1);
     expect(intakeCalls()).toBe(1);
   });
 
-  it('shares a failure with the loads that joined it, keeps nothing, and the next load asks again', async () => {
+  it('shares a failure with the asks that joined it, keeps nothing, and the next ask tries again', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A memo' });
     const recommend = vi.spyOn(d.services.advisor, 'recommend');
     recommend.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
-    const both = await Promise.all([recommendationOrProblem(d, intakeId), recommendationOrProblem(d, intakeId)]);
-    expect(both).toEqual([{ problem: expect.stringMatching(/busy/) }, { problem: expect.stringMatching(/busy/) }]);
+    const both = await Promise.allSettled([recommendCommand(d, intakeId, { ensure: true }), recommendCommand(d, intakeId, { ensure: true })]);
+    expect(both).toEqual([
+      { status: 'rejected', reason: expect.objectContaining({ message: expect.stringMatching(/busy/) }) },
+      { status: 'rejected', reason: expect.objectContaining({ message: expect.stringMatching(/busy/) }) },
+    ]);
     expect(recommend).toHaveBeenCalledTimes(1);
-    expect('recommendation' in (await recommendationOrProblem(d, intakeId))).toBe(true);
+    expect((await recommendCommand(d, intakeId, { ensure: true })).recommendation.recipeId).toBeTruthy();
     expect(recommend).toHaveBeenCalledTimes(2);
   });
 

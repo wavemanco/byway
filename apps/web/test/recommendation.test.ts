@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../src/server/api.ts';
-import { composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState } from '../src/view/recommendation.ts';
+import { awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState } from '../src/view/recommendation.ts';
 import { COMPOSED_CHANGED, COMPOSED_REFUSED, HELD_KEY_REFUSAL } from '../src/view/refusals.ts';
 import { composedRefusalGroups, composeNotice } from '../src/view/composed.ts';
 
@@ -74,6 +74,28 @@ describe('the Recommendation screen’s state (F14)', () => {
     const next = rerouted(recovered(failed(), { recommendation: rec('c1'), remainingUsd: 19 }), { recommendation: rec('c4'), remainingUsd: 19 });
     expect(next.selection).toEqual({ kind: 'recipe', recipeId: 'c4' });
     expect(next.rec?.recipeId).toBe('c4');
+  });
+
+  // The page's render no longer makes the first recommendation (recommend-page.test.ts): with none stored, the screen
+  // opens waiting for its own first ask, and only that ask's answer, or its failure, ends the wait.
+  it('with nothing stored and nothing chosen, waits for its first ask; its answer or its failure ends the wait', () => {
+    const fresh = initialRecState({ recommendation: null, recommendProblem: null, chosenRecipeId: null, composed: null, remainingUsd: 19 });
+    expect(fresh.selection).toBeNull();
+    expect(awaitingFirst(fresh, null)).toBe(true);
+    expect(screen(fresh, null, OPTIONS)).toBe('pending');
+    const answered = recovered(fresh, { recommendation: rec('c1'), remainingUsd: 19 });
+    expect(awaitingFirst(answered, null)).toBe(false);
+    expect(screen(answered, null, OPTIONS)).toBe('proposal');
+    const refused = retryFailed(fresh, 'The provider is busy. Try again in a minute.');
+    expect(awaitingFirst(refused, null)).toBe(false);
+    expect(screen(refused, null, OPTIONS)).toBe('failed');
+    // A recipe from the library, or one that was stored, is not waited for.
+    expect(awaitingFirst(initialRecState({ recommendation: null, recommendProblem: null, chosenRecipeId: 'c4', composed: null, remainingUsd: 19 }), 'c4')).toBe(false);
+    expect(awaitingFirst(initialRecState({ recommendation: rec('c1'), recommendProblem: null, chosenRecipeId: null, composed: null, remainingUsd: 19 }), null)).toBe(false);
+    // The person's own recipe, built while waiting, is shown meanwhile; the wait goes on behind it.
+    const built = composedReady(fresh, { composed, remainingUsd: 18.5 });
+    expect(screen(built, null, OPTIONS)).toBe('proposal');
+    expect(awaitingFirst(built, null)).toBe(true);
   });
 
   it('a selection that is not one of the recipes is said to be unavailable, not swapped for another', () => {

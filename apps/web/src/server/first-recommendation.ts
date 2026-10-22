@@ -1,9 +1,9 @@
 /**
- * One in-process call for an intake's first recommendation (F03, ADR-0091). The Recommendation page's render asks the
- * advisor when no recommendation is stored yet, and so does Try again ({ ensure: true }). Two tabs, a reload during the
- * call, or a render and Try again together used to make one paid advisor.intake call each. Concurrent first asks for
- * one intake now share one call; the entry is dropped when the call settles, so a failure is never kept and the next
- * ask tries again.
+ * One in-process call for an intake's first recommendation (F03, ADR-0091). The Recommendation screen asks for it once
+ * it is shown, when no recommendation is stored yet ({ ensure: true }), and so does Try again; the page's render only
+ * reads what is stored. Two tabs, a reload during the call, or the first ask and Try again together used to make one
+ * paid advisor.intake call each. Concurrent first asks for one intake now share one call; the entry is dropped when the
+ * call settles, so a failure is never kept and the next ask tries again.
  *
  * Only this web process calls the advisor, so one map per process is enough. It lives on globalThis because Next.js
  * builds pages and route handlers into separate bundles, each with its own module scope (as the service host does,

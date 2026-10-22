@@ -8,7 +8,7 @@ import type { ComposeResultView, ComposeView, RecommendResult } from '../server/
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
 import { composedRefusalGroups, composeNotice, diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
-import { composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
+import { awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { ActionButton } from './ActionButton.tsx';
 import { ApiError, post } from './api.ts';
@@ -34,10 +34,8 @@ interface Props {
   intakeId: string;
   problem: string;
   attachments: string[];
-  /** Null when the person picked a recipe from the library, or when recommending failed (recommendProblem). */
+  /** The intake's stored recommendation; null when none is stored yet (the screen asks for it), or for a library pick. */
   recommendation: Recommendation | null;
-  /** Why no recommendation could be made (a model error, in words), when that is what happened. */
-  recommendProblem?: string | null;
   chosenRecipeId: string | null;
   questions: ChooserQuestion[];
   options: Record<string, RecipeOption>;
@@ -50,10 +48,10 @@ interface Props {
  * Recommendation (spec §5, screen 2). The screen owns its state (F14, ADR-0082): the recommendation, why it failed,
  * what is selected, the composed recipe and what is left in the workspace are seeded once from the server render and
  * then change only through the commands here (Try again, a flipped answer, Build my own), each applying its whole result
- * in one step (view/recommendation.ts). The screen never re-runs its server render: that render asks the model for a
- * recommendation while none is stored, so a refresh could make a call nobody asked for. The page keys this component
- * by intake and library recipe; the other props (the problem, its attachments, the questions, the recipes on offer,
- * demo mode) cannot change while it is shown.
+ * in one step (view/recommendation.ts). The screen never re-runs its server render, which reads only what is stored:
+ * while no recommendation is stored, the screen asks for the first one itself once it is shown, through the same command
+ * as Try again, so no render calls the model. The page keys this component by intake and library recipe; the other
+ * props (the problem, its attachments, the questions, the recipes on offer, demo mode) cannot change while it is shown.
  */
 export function RecommendationView(props: Props) {
   const { intakeId, chosenRecipeId, options, questions, demo } = props;
@@ -62,7 +60,7 @@ export function RecommendationView(props: Props) {
   const [state, setState] = useState<RecState>(() =>
     initialRecState({
       recommendation: props.recommendation,
-      recommendProblem: props.recommendProblem ?? null,
+      recommendProblem: null,
       chosenRecipeId,
       composed: props.composed ?? null,
       remainingUsd: props.remainingUsd,
@@ -117,19 +115,34 @@ export function RecommendationView(props: Props) {
   // Try again, a flipped answer and Build my own are each one action in flight (R5): a second press while one is on
   // its way does nothing, and the control keeps focus meanwhile.
 
-  /** "Try again": the stored recommendation, or a new one, applied with what is left in the workspace. */
-  const retrying = useAction(async () => {
+  /**
+   * The first recommendation, or "Try again": the stored recommendation, or a new one, applied with what is left in the
+   * workspace. Try again replaces what has focus, so focus goes to the proposal; the first one fills the screen as it
+   * opens, so focus stays where the person is.
+   */
+  const retrying = useAction(async (first: boolean) => {
     setError(null);
     try {
       const result = await post<RecommendResult>(`/api/intakes/${intakeId}/recommend`, { ensure: true });
       setState((s) => recovered(s, result));
-      setNotice(`Now recommending ${recipeTitle(result.recommendation.presentation, technical)}.`);
-      setFocusProposal((n) => n + 1);
+      const title = recipeTitle(result.recommendation.presentation, technical);
+      setNotice(first ? `byway recommends ${title}.` : `Now recommending ${title}.`);
+      if (!first) setFocusProposal((n) => n + 1);
     } catch (err) {
       setState((s) => retryFailed(s, err instanceof Error ? err.message : 'byway could not recommend a recipe. Try again.'));
     }
   });
-  const retry = () => void retrying.run();
+  const retry = () => void retrying.run(false);
+  // The first recommendation is asked for here, once the screen is shown, never by its render (F03), so the page can be
+  // rendered again without calling the model. Another first ask for the intake meanwhile (a second tab, a remount)
+  // shares this one's call on the server (firstRecommendation, ADR-0091).
+  const askedFirst = useRef(false);
+  useEffect(() => {
+    if (askedFirst.current || !awaitingFirst(state, chosenRecipeId)) return;
+    askedFirst.current = true;
+    void retrying.run(true);
+    // Once, as the screen is shown: the state it reads is the server render's.
+  }, []);
 
   const routing = useAction(async (questionId: string, answer: boolean) => {
     if (!rec) return;
@@ -175,7 +188,12 @@ export function RecommendationView(props: Props) {
       </p>
 
       <div className="recommend-grid">
-        {shown === 'failed' ? (
+        {shown === 'pending' ? (
+          <div className="empty">
+            <h1>Choosing a recipe</h1>
+            <p>byway is reading what you wrote, to choose a recipe for it.</p>
+          </div>
+        ) : shown === 'failed' ? (
           <div className="empty" role="alert">
             <h1>byway could not recommend a recipe</h1>
             <p>{state.problem}</p>

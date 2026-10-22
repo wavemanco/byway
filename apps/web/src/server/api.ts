@@ -103,27 +103,15 @@ export async function recommendIntake(deps: Deps, intakeId: string, answers?: Ch
 
 /**
  * The intake's recommendation as last made, or a fresh one the first time. Concurrent first asks for one intake (two
- * tabs, a reload, a render and Try again) share one advisor call (firstRecommendation, F03). Inside the shared call the
- * intake is read again, so an ask that arrives just after another call stored its answer gets that answer, not a second call.
+ * tabs, a reload, the screen's first ask and Try again) share one advisor call (firstRecommendation, F03). Inside the
+ * shared call the intake is read again, so an ask that arrives just after another call stored its answer gets that
+ * answer, not a second call. The Recommendation page's render never calls this: it reads what is stored, and the screen
+ * asks for the first one through POST /recommend ({ ensure: true }).
  */
 export async function currentRecommendation(deps: Deps, intakeId: string): Promise<Recommendation> {
   const intake = await requireIntake(deps, intakeId);
   if (intake.recommendation) return intake.recommendation;
   return firstRecommendation(deps.services.store, intakeId, async () => (await requireIntake(deps, intakeId)).recommendation ?? recommendIntake(deps, intakeId));
-}
-
-/**
- * For the Recommendation screen: the recommendation, or what stopped it in words, so a model error is shown on the
- * screen with a way forward instead of failing the whole screen. Nothing is stored on failure, so trying again asks
- * again.
- */
-export async function recommendationOrProblem(deps: Deps, intakeId: string): Promise<{ recommendation: Recommendation } | { problem: string }> {
-  try {
-    return { recommendation: await currentRecommendation(deps, intakeId) };
-  } catch (err) {
-    if (err instanceof HttpError && err.status !== 404) return { problem: err.message };
-    throw err;
-  }
 }
 
 /** What the browser sees of a composed recipe; the recipe itself stays on the server with the intake. */
@@ -185,9 +173,8 @@ export async function spendAction(deps: Deps, input: z.infer<typeof SpendAction>
 
 /**
  * What a Recommendation screen command returns: everything it changes that the screen shows, so the screen applies it
- * in one step and never re-runs its server render (F14, ADR-0082). That render is not a pure read: while no
- * recommendation is stored it asks the model for one, so re-running it to refresh a figure could make an unrequested call.
- * The remaining amount is read after the command, so it includes what the command itself spent.
+ * in one step and never re-runs its server render (F14, ADR-0082), which reads only what is stored. The remaining amount
+ * is read after the command, so it includes what the command itself spent.
  */
 export interface RecommendResult {
   recommendation: Recommendation;
@@ -200,9 +187,9 @@ export interface ComposeResultView {
 }
 
 /**
- * POST /recommend: `{ answers }` re-routes with the chooser answers as the person left them; `{ ensure: true }` (Try
- * again) returns the stored recommendation, or makes and stores the first one. Called in sequence, ensure asks the model
- * at most once, and at the same time as a first page render it shares that render's call (currentRecommendation).
+ * POST /recommend: `{ answers }` re-routes with the chooser answers as the person left them; `{ ensure: true }` (the
+ * screen's first ask, and Try again) returns the stored recommendation, or makes and stores the first one. Called in
+ * sequence, ensure asks the model at most once, and two at the same time share one call (currentRecommendation).
  */
 export async function recommendCommand(deps: Deps, intakeId: string, input: z.infer<typeof RecommendInput>): Promise<RecommendResult> {
   const recommendation = 'ensure' in input ? await currentRecommendation(deps, intakeId) : await recommendIntake(deps, intakeId, input.answers);
