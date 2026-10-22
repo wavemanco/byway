@@ -81,3 +81,9 @@ ADR-0090's rule that a prompt with minimum 0 is taken at its word still holds. `
   - `packages/runner/test/asset-slots.test.ts`: C3 empty, then a brief; empty twice is skipped with `NO_BRIEF_NOTE`; advice shown with the image; no advice on a skip or where the prompt does not ask; a Trim step follows every step that asks; the explainer.
   - `packages/runner/test/e2e/text-media.ts`: C3 end to end, empty twice, and advice in the note.
 - The D3 brief and its skeptic's corrections (the veto's history, B+, the costs); the external-review verification, `docs/reviews/2026-10-08-external-review-verification.md`, lines 38, 91 and 3163-3247; protocol 03 C3 ("Optional: ASSET. Real photos often beat generated ones, and charts must come from data.") and 01 ASSET step 8 (prune through CUT).
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-21, [ADR-0112](0112-a-placing-answer-that-misses-keeps-the-paid-images-beside-the-work.md).** Decision 1's "What still can fail" no longer holds: a placing call (`asset.integrate`) that misses twice after the image was bought no longer fails the run. For C3's one header image, an answer that cannot be used even when asked again leaves the piece unchanged and keeps the image beside it, and the step's note says so. The AI's advice is then not shown, which keeps Decision 2's rule that it shows "only when the image was made and placed". So the explainer's "If you answer Yes, the AI makes a header image for the piece" has one more case where the image is made but is not in the piece (backlog row "C3's explainer: two copy questions").

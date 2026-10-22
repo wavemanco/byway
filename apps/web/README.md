@@ -60,7 +60,9 @@ templates (read from the package folder), `node:sqlite` and the Temporal client.
 - **Intakes and preferences** live in the `Store` (`createIntake`/`updateIntake`/`getIntake`,
   `getPreferences`/`setPreferences`). An intake keeps the problem, your flipped chooser answers, the last
   recommendation and any composed recipe; a run records its `intakeId`, so a composed run keeps its presentation
-  and label after a restart. A recipe chosen from the Library travels in the address (`/recommend/<id>?recipe=c4`).
+  and label after a restart. The Recommendation page's render only reads the stored recommendation; with none stored,
+  the screen asks for the first one once it is shown (`POST /api/intakes/<id>/recommend` with `{ ensure: true }`, the
+  command Try again sends), and concurrent first asks share one advisor call (ADR-0091). A recipe chosen from the Library travels in the address (`/recommend/<id>?recipe=c4`).
 - **Recipes** come from `Advisor.recipe(id)`, or from the intake's composed recipe.
 - **Pause and resume** are `Runner.pause`/`Runner.resume`; the run's status is `paused` while paused.
 - **Examples you admire** (ADR-0071): for a recipe whose inputs include `refs`, the Recommendation screen takes
@@ -134,7 +136,8 @@ Logic on top of the contracts sits in view code:
   example" once nine examples are listed, and the Switch's configured-unavailable state). It does not see attributes
   spread in (`{...props}`), `createElement` calls, a component's own `disabled` prop (what the component renders is
   scanned where that is written), or a focused control that takes itself off the screen: Start's attach button goes
-  at five attachments, so adding one moves focus to the new attachment's name first. Closing a step opened from the
+  at five attachments, so adding one moves focus to the new attachment's name first; in its place a plain note says
+  "byway takes up to five attachments for one problem." Closing a step opened from the
   timeline returns focus to its row. `e2e/keyboard.spec.ts` drives these with the keyboard in a real browser; it
   reads the focused element and the browser's accessibility tree, never an audit library, and never audits a
   generated page as a product check (CR12).
@@ -149,7 +152,9 @@ Logic on top of the contracts sits in view code:
   carries a banner (`src/components/SandboxBanner.tsx` in the root layout, its words from `src/view/renderer.ts`). It
   starts from the server's state and, as Nav does for the waiting count, reads the renderer's state again
   (`GET /api/renderer`, which only reads) on every navigation and every 5 s while the tab is visible, and at once when
-  that tab's switch changed it, so a tab opened before the change shows it, and loses it, without a reload. A step whose
+  that tab's switch changed it, so a tab opened before the change shows it, and loses it, without a reload. Beside it
+  a polite status (`role="status"`) says, after the tab's first render, when the banner appears, changes or goes,
+  except after the tab's own switch, whose Settings status already says it. A step whose
   pages were drawn without the sandbox has a note in the Run screen's timeline (under its failure, if it failed) and in
   the Result's "How this was made".
   `test/guard-sandbox.test.ts` reads the product sources, lines that are only a comment left out, and pins as exact

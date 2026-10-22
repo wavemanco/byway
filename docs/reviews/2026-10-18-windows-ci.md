@@ -1,6 +1,6 @@
 # Windows CI in byway: what keeps failing, why, and the options
 
-*Written 2026-10-18 for the owner; updated the same evening after D2 merged (main at 8401820). Repository: wavemanco/byway. Workflow: `.github/workflows/verify.yml`. Kept in the repository on 2026-10-19 as it was then; it is not updated. The backlog rows "Known Windows timing flake", "CI time, and the CI proposal the owner deferred" and "Engine-thread stalls on slow machines" carry what is current. Since then ADR-0107 (the owner's choice of 2026-10-21, "Make D2's condition the rule (Recommended)") changed the merge rule §1 states: a risky change merges when Linux passes and Windows passes or fails only on a timing flake already named in the backlog, and any other failure stops the merge and is reported to the owner.*
+*Written 2026-10-18 for the owner; updated the same evening after D2 merged (main at 8401820). Repository: wavemanco/byway. Workflow: `.github/workflows/verify.yml`. Kept in the repository on 2026-10-19 as it was then; it is not updated. The backlog rows "Known Windows timing flake", "CI time, and the CI proposal the owner deferred" and "Engine-thread stalls on slow machines" carry what is current. Since then ADR-0107 (the owner's choice of 2026-10-21, "Make D2's condition the rule (Recommended)") changed the merge rule §1 states: a risky change merges when Linux passes and Windows passes or fails only on a timing flake already named in the backlog, and any other failure stops the merge and is reported to the owner. On 2026-10-21 Claude replaced one sentence of §2's "Money" with "[redacted]", at the owner's request: asked at 23:04 local "The Windows CI write-up (docs/reviews/2026-10-18-windows-ci.md) has a sentence like the one you redacted in ADR-0103: [redacted] (no figure). Redact it too?", the owner chose at 23:05 "Redact it, and say so (Recommended)", whose description reads "Same as D6: replace it with [redacted] and note in the file's header what was redacted, when and at whose request." The sentence concerned the organization's shared CI account and gave no name and no figure; the question's own restatement of it is redacted in the quote above too (Claude's application of the answer). The text before this change stays in the repository's history (it came in with 00401a0 of 2026-10-19, on main since the merge 4363a64 of 2026-10-21), since main is not rewritten ([docs/adr/evidence/conversation-continued.md](../adr/evidence/conversation-continued.md), 2026-10-21 23:04 and 23:05).*
 
 **What changed since the first version:** D2 is merged, so the renderer fix (ADR-0106) is on main. The D2 branch's final CI run (39172144829) and main's first run after the merge (39177268735) both passed on Windows and Linux at the first attempt. The record is now 14 attempts: Windows 8 green and 6 red, Linux 14 of 14. CI time and the deferred proposal now have a backlog row of their own. No new failure has appeared.
 
@@ -48,7 +48,7 @@ Why:
 **Money** (ADR-0103 §"Money"):
 - One run costs about $0.37 to $0.49 at list price.
 - At 20 to 70 pushes a month plus the weekly run, that is about $9 to $37 a month.
-- These minutes come out of the organization's included minutes, which are shared with its other repositories.
+- [redacted]
 
 ## 3. Every Windows failure so far
 

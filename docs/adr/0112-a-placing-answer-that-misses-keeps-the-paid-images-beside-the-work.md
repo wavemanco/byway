@@ -1,0 +1,65 @@
+# ADR-0112: A placing answer that misses keeps the paid images beside the work; every left-out brief is named; an image byway could not keep names its slot
+
+| | |
+|---|---|
+| **Status** | Accepted |
+| **Decided by** | Delegated: Claude built the default it set out in its audit of 2026-10-21, under the owner's answers of 2026-10-21 21:43, "Two blocks: 0+A+B+C, then W (Recommended)", whose description began "Block 1: the records pass, paid images and renderer, the Run and Start screens with the true stop, and the small fixes.", and "Yes, short designs first (Recommended)", whose description read "One page each: what changes, what is recorded when a call is cut off, what ends and when, the tests, and the ADR. Block 1's other parts start meanwhile, since their fixes are written in the backlog rows and the defaults in the file." ([evidence/conversation-continued.md](evidence/conversation-continued.md)). The owner did not answer the default itself; not explicitly approved; reversible. Where the build departs from the default, the departure is Claude's and is named below |
+| **Date (local, UTC−7)** | 2026-10-21 22:16 |
+| **Track** | Product |
+| **Related** | [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md), [ADR-0101](0101-c3-yes-decides-the-header-image.md), [ADR-0099](0099-paid-operations-keyed-to-their-caller.md), [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md), [ADR-0102](0102-one-refusal-rule-for-every-provider.md) |
+
+## Context
+
+An ASSET step on a web page or in prose buys its images first and then asks the model to place them in the work (`helper.asset.integrate`). Until this record the placing answer had no degraded outcome. Its parse refused any answer that left out an image's address or broke a check on the work (the person's held words under keepsVoice, [ADR-0081](0081-voice-writes-the-persons-copy-exactly.md); the run's random string, PR3). After `askModel`'s one retry the step failed with `ContractMissed`. By then the images were bought, so the run ended with paid images outside the work. [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md) parked this ("`asset.integrate`'s "Place every image" miss after purchase still fails the run"), and [ADR-0101](0101-c3-yes-decides-the-header-image.md) said C3's Yes did not change it. The backlog row was due before the owner's first live run that makes an image, the Balanced C3 of the row "First live run with real keys and real money".
+
+Three smaller rows sat on the same path. A free plan's briefs beyond the most the step makes were dropped with no word in the note. On an each plan, the note for an answer that named no slot the work has ("The AI wrote no usable image brief, even when asked again, …") did not name the briefs it left out. And when byway could not keep a paid image's result (the step's memo), the step failed with memo.ts's plain `StepError`, so `billedStop` did not add which image it was and that the images already made are not in the work.
+
+Claude's audit of 2026-10-21, the report put to the owner with D1 to D10, set out its default for each, under "Defaults Claude takes without asking (say if any should be yours)". For the placing answer it read: "Batch A, asset.integrate's miss after purchase: if the answer reads and passes the held-voice check, Claude accepts the partial placement and names the images left beside the work. If the answer is malformed or fails that check, Claude delivers the work unchanged, with every paid image beside it and a note. This is recorded in a short Delegated ADR that amends ADR-0090's parked item, following ADR-0090's own rule that a short answer degrades and only a malformed one fails." For the others: "the note names the briefs left out and the step's maximum, in leftOutSentence's style"; "on an each plan, leftOutSentence is appended to NO_BRIEF_NOTE"; and "memo.ts's StepError gets a billed mark, so asset.ts adds the slot sentences. Model and video calls keep their error class." The owner answered the order and the designs at 21:43 (quoted under Decided by) and did not answer the defaults. The report is not kept in the repository; the defaults are quoted here in full.
+
+## Decision
+
+1. **ADR-0090's rule applies to the placing answer.** ADR-0090 §2 says a short answer degrades and only a malformed one fails; the images are paid for by the time they are placed, so a placing answer that misses never fails the run.
+2. **A usable answer is used after the retry.** An answer that places at least one image and keeps every check on the work (the held voice, and PR3's random string) is used once the one retry has been asked. The images it left out go to the step's `asset` port, kept beside the work. Of two usable answers, the one that placed more is used; on a tie, the later.
+3. **With no usable answer, the work is unchanged.** When neither answer is usable (malformed, cut off twice, placing no image, or breaking a check), the step finishes, not skipped, with the work as it was and every image in `asset`. The step's cost includes both placing answers: `ContractMissed` carries its cost (`failures.ts`, `call.ts`).
+4. **The note names the images.** "The image for “detail” was not placed in the work, even when the AI was asked again, so it is kept beside the work." With no usable answer: "The AI’s answer placing the image in the work could not be used, even when it was asked again, so the work is unchanged, and the image for “header” is kept beside it."
+5. **The AI's advice is not shown when no image is in the work** ([ADR-0101](0101-c3-yes-decides-the-header-image.md) §2 shows it "only when the image was made and placed"), since "You can cut the image at Trim." would then be false.
+6. **Every brief left out is named.** On a free plan: "This step makes at most 1 image, so the brief for “second” was left out." and "This step makes at most 3 images, so the briefs for “map” and “faq” were left out." (`slot-plan.ts` lists them as `dropped`). On an each plan, the briefs for slots the work does not have are named after the no-brief note too: "… Briefs for “4” and “5”, which the storyboard has no shots for, were left out." Both are also said when every image failed.
+7. **An image byway could not keep names its slot.** When the memo cannot keep a paid result, memo.ts throws `PaidNotKept`, a `StepError` marked `billed`. The asset step passes it through `billedStop`, as it does a billed `GatewayError`, so the failure adds "That was the image for shot 2, so the run stops here, … The image already made for shot 1 was billed too, and it is not in the work." It stays a `StepError`, so model and video calls fail as before, and which failures stop the step is unchanged.
+8. **Nothing else changes.** The workflow bundle is unchanged (its hash, 38afef53…, is the one `packages/runner/test/build.test.ts` pins), and so are the prompts and the store.
+
+**Where this departs from the default** (Claude's, in the build):
+
+- An answer that places no image is unusable, so the work stays as it was with every image beside it, rather than storing the model's rewrite with no image in it.
+- "That check" covers every check on the work: PR3's random string as well as the held voice.
+- The advice is left out when no image is in the work (item 5).
+- The left-out briefs are named when every image failed, not only in the partial note and the no-brief note (item 6).
+- Of two usable answers, the one that placed more is kept, the later on a tie (item 2); the default did not say.
+
+## Alternatives considered
+
+- **Always keep the work unchanged, with every image beside it.** Simpler, but it drops a placement the model got partly right.
+- **byway places the missing images itself.** That needs page-format logic for each medium, outside the model's answer.
+- **Keep failing the run, and record why.** The backlog row offered this ("Fix it, or record that it stays"). It ends a paid run late over an optional enhancement, the class F11 removed.
+- **memo.ts throws a billed `GatewayError` (`byway-failure`) for every call.** It would change what model-step.ts and relay.ts receive, for a message on image steps.
+
+## Consequences
+
+- A C3 run whose placing answer misses twice keeps its header image beside the piece, with a note, instead of ending; the owner's first image-making live run no longer waits on this row.
+- The explainer's "If you answer Yes, the AI makes a header image for the piece" has one more case where the image is made but is not in the piece (backlog row "C3's explainer: two copy questions").
+- Claude's findings, not acted on:
+  - On prose, a keepsVoice ASSET can never place an image: the held-voice lock holds the whole text, and an image line reads as a change to it (`copy.ts` `lockCopy` on prose). Under this record such a step keeps its images beside the work instead of failing. No catalog recipe has one (C5's keepsVoice ASSETs are on media). Backlog row "A keepsVoice ASSET on prose can never place an image".
+  - When the memo cannot keep a declined call's outcome, the failure stays a plain `StepError`, since a decline is not always billed.
+  - When the placing answer's own memo cannot be kept (`PaidNotKept` on that completion), the step still fails with the images outside the work, as any billed failure does.
+
+## What this changes in earlier records
+
+- [ADR-0090](0090-execution-contracts-for-revising-humans-and-media-steps.md): Consequences' parked item "`asset.integrate`'s "Place every image" miss after purchase still fails the run" no longer holds (items 1 to 4). Decision 2's notes also name a free plan's dropped briefs, and the no-brief note on an each plan names the briefs it left out (item 6). Decision 4's words on a billed failure are added for `PaidNotKept` too (item 7). Its Later note says so.
+- [ADR-0101](0101-c3-yes-decides-the-header-image.md): Decision 1's "What still can fail. A placing call (`asset.integrate`) that misses twice after the image was bought still fails the run" no longer holds. Decision 2's rule that the advice shows "only when the image was made and placed" holds, and now also covers an image that was made and is kept beside the piece rather than placed (item 5). Its Later note says so.
+- [ADR-0099](0099-paid-operations-keyed-to-their-caller.md) is unchanged: decision 5's classification of billed failures, and which failures stop an image step, are as they were.
+
+## Evidence
+
+- Code: `packages/runner/src/activities/asset.ts` (the placing answer's parse, `billedStop`, `unplacedNote`, `leftOutSentences`), `slot-plan.ts` (`dropped`), `memo.ts` (`PaidNotKept`), `call.ts` and `failures.ts` (`ContractMissed`'s cost); commits 5272cea and 5348879 (batch A of the first block, 2026-10-21).
+- Tests: `packages/runner/test/asset-slots.test.ts` ("placing the images bought: a miss never fails the run (ADR-0090’s rule, applied to the integrate answer)", "an image whose result byway could not keep stops the run, naming its slot (ADR-0099, ADR-0090)", and the left-out notes under "how many images a prose step may make is the prompt’s to say"); `packages/runner/test/held-voice-writers.test.ts` (a web-page placing answer that changes the person's words is never placed). Each guarding test was shown to fail with the behaviour it guards taken out (25 mutations, all caught).
+- The owner's answers of 2026-10-21 21:43: [evidence/conversation-continued.md](evidence/conversation-continued.md), under that time.
+- The probe behind the first finding under Consequences: `lockCopy('prose', ['Mine.'], …)` refuses a memo whose only change is one added image line, with "keep the text exactly as it is" (run again on 2026-10-21 for this record).

@@ -61,3 +61,9 @@ A lone surrogate can arrive only through a JSON `\u` escape: from a model's answ
 - The verification of that review: [docs/reviews/2026-10-08-external-review-verification.md](../reviews/2026-10-08-external-review-verification.md) (table row F19, cluster I, recommendation O3). This covers the two verifier passes (the composer and CLI regressions), the first design round (the `Ledger.verify` regression), and the critique round (the provider-label boundary, the missing-hash hole in `verify`, `sha256Hex`, the `null` line and the drift argument).
 - Tests: `packages/canonical/test/canonical.test.ts`, `packages/recipe/test/recipe.test.ts`, `packages/gateway/test/ledger.test.ts`, `packages/gateway/test/gateway.test.ts`, `packages/advisor/test/compose-unicode.test.ts`, `packages/cli/test/cli.test.ts`.
 - It affirms ADR-0059 and supersedes nothing.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-21, two of the residuals.** Consequences' "It also throws a `RangeError` on a line nested deeply enough to overflow the stack" no longer holds: a ledger line nested more than 64 levels deep (`MAX_LINE_DEPTH`; the entries byway writes nest 2) gets no hash, so `verify()`, and Settings' ledger check through `auditLedger`, name its entry as damaged (`packages/gateway/src/ledger.ts`, 0ed0b52). The throw on a damaged `.head` file is unchanged. And the twin of the zod note: a recipe violation's path below a property name with a lone surrogate, in the reserved-key walk (`packages/recipe/src/schema.ts`) and in the shape bound (`shape.ts`), now writes each lone surrogate as `\uXXXX` text through one helper, `pathName`, and keeps a well-formed pair as it is (2e35ed2). Recipe hashes are unchanged, since the paths appear only in findings. Zod's own "Unrecognized key" message is unchanged. Both in batch C of the first block.

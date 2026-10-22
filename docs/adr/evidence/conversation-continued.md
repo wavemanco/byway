@@ -1,6 +1,6 @@
 # Conversation record, continued (decision evidence)
 
-What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-21 21:43 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local) and again late on 2026-10-21 (the rest, for the records pass of that night) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
+What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-21 23:15 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night) and once more that night (from 22:58 to 23:15, for the records pass of the first block) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
 
 How it differs from conversation.md:
 
@@ -8,7 +8,7 @@ How it differs from conversation.md:
 - Timestamps are local (UTC−7), with UTC in brackets. conversation.md gives UTC only.
 - A message typed while Claude was working is dated when it was typed.
 - Lines starting with ">" after `<!-- reply -->` or `<!-- attach -->` are the part of Claude's message that the owner was answering, which the app quotes in the owner's message.
-- The text is as typed, typos included, and nothing the owner said in this session is left out. Two changes: the app had put a system reminder in front of the message of 2026-10-14 15:05, and it is removed; and in Claude's question of 2026-10-21 13:39, and the owner's answer of 13:41 that quotes it, Claude replaced the names of the owner's other repositories with "[another repository]" and the organisation's overage with "[redacted]", at the owner's request in that answer (as in [decision-briefs-2026-10-16.md](decision-briefs-2026-10-16.md)). No email address or key appears.
+- The text is as typed, typos included, and nothing the owner said in this session is left out. Three changes: the app had put a system reminder in front of the message of 2026-10-14 15:05, and it is removed; and in Claude's question of 2026-10-21 13:39, and the owner's answer of 13:41 that quotes it, Claude replaced the names of the owner's other repositories with "[another repository]" and the organisation's overage with "[redacted]", at the owner's request in that answer (as in [decision-briefs-2026-10-16.md](decision-briefs-2026-10-16.md)); and in Claude's question of 2026-10-21 23:04, and the owner's answer of 23:05 that quotes it, Claude replaced the question's restatement of one sentence of the Windows CI write-up with "[redacted]". That answer had the sentence itself redacted ([docs/reviews/2026-10-18-windows-ci.md](../../reviews/2026-10-18-windows-ci.md), whose header says what), and redacting its restatement here is Claude's application of the answer. No email address or key appears.
 - Only this session is here, not the transcripts of other sessions (such as the one that fixed the flaky ledger test).
 - The questions extracted on 2026-10-18 have a space after each comma and colon between the JSON's fields, and those extracted since 2026-10-21 have none. Their words are the same.
 
@@ -511,4 +511,50 @@ remove them if they can be safely removed.
 ---
 ## USER 2026-10-21T21:43:54.686-07:00 (2026-10-22T04:43:54.686Z)
 [ANSWER] Your questions have been answered: "D5. 37 records were decided by Claude under authority you delegated, and some of your records contain choices Claude made. How should their review be prepared?"="Money and security packet, at your pace (Recommended)", "D10. The old ActAI folder (OneDrive\Documents\ActAI) holds nothing main lacks: a clean tree at a commit already in main's history. Retire it how?"="Claude renames it, on your yes", "How should the landing be ordered? (Research stays parked per D1.)"="Two blocks: 0+A+B+C, then W (Recommended)", "The true stop (D2) and P2 (D3) change how calls and runs work. Before building them, should I show you a short design for each?"="Yes, short designs first (Recommended)". You can now continue with these answers in mind.
+
+---
+## USER 2026-10-21T22:58:04.664-07:00 (2026-10-22T05:58:04.664Z)
+<!-- reply 3 -->
+> Unfiled items: 13. Each one has a proposed backlog or playbook row in the file.
+
+do these include the 5 review items ("not addressed or filed") mentioned in the byway ROUTE MAP artifact?
+
+And, have you filed them already (including the 5 from the artifact if they are additional to these 13)?
+
+<!-- reply -->
+> They were batch B4, not part of the batch you chose, and they go in batch A.
+
+I am confused here. You say they go in batch A but then batch A is listed under the 39 "could land" items. So what is going on and are we working on these two "land now" items or not?
+
+<!-- reply -->
+> There are ten decisions in all
+
+have I provided all 10 decisions?
+
+---
+## CLAUDE-ASKS 2026-10-21T23:04:26.522-07:00 (2026-10-22T06:04:26.522Z)
+[{"question":"The true stop (design file 1): build it as designed? Its five choices, with my recommendations: cut off Anthropic's streams and fal's queue jobs only (the others are billed in full anyway); count a cut-off call as 'may have been billed' at its reservation; one fixed Cancel sentence; Settings uses the existing 'interrupted' reason; a fal job removed before it ran counts nothing.","header":"True stop","multiSelect":false,"options":[{"label":"Approve with all five recommendations (Recommended)","description":"Build it in Block 1 as the design says, with an ADR that quotes your answer and names my choices."},{"label":"Approve, and stream OpenAI/OpenRouter too","description":"As the first, but also switch the OpenAI and OpenRouter chat calls to streaming so Cancel can cut them off; this changes how their usage, cost and refusals are read just before your first live run."},{"label":"Let me answer each choice","description":"I'll put the five choices to you one by one."},{"label":"Hold it","description":"Don't build the true stop yet; Block 1 goes ahead without Cancel."}]},{"question":"P2 (design file 2): build it as designed, as Block 2? Its four choices, with my recommendations: row 104, clear a declined critique; W does not start the content-layer pilot (my narrow reading of its trigger); leave 'each step gets only its ports' on its row; leave long-context pricing to batch 0's row.","header":"P2","multiSelect":false,"options":[{"label":"Approve with all four recommendations (Recommended)","description":"Build Block 2 as the design says (about 8 days with its riders), after Block 1 lands and before your first live run."},{"label":"Approve, and price long-context tiers in W","description":"As the first, but W also records OpenAI's and Google's long-context rates and prices each call at its tier, since W lets very large briefs run where today they fail without spending."},{"label":"Let me answer each choice","description":"I'll put the four choices to you one by one."},{"label":"Hold it","description":"Don't build Block 2 yet."}]},{"question":"The Windows CI write-up (docs/reviews/2026-10-18-windows-ci.md) has a sentence like the one you redacted in ADR-0103: [redacted] (no figure). Redact it too?","header":"Write-up","multiSelect":false,"options":[{"label":"Redact it, and say so (Recommended)","description":"Same as D6: replace it with [redacted] and note in the file's header what was redacted, when and at whose request."},{"label":"Keep it","description":"It gives no name or figure, and your D6 answer was about ADR-0103's sentence."}]}]
+
+---
+## USER 2026-10-21T23:05:56.836-07:00 (2026-10-22T06:05:56.836Z)
+[ANSWER] Your questions have been answered: "The true stop (design file 1): build it as designed? Its five choices, with my recommendations: cut off Anthropic's streams and fal's queue jobs only (the others are billed in full anyway); count a cut-off call as 'may have been billed' at its reservation; one fixed Cancel sentence; Settings uses the existing 'interrupted' reason; a fal job removed before it ran counts nothing."="Approve, and stream OpenAI/OpenRouter too", "P2 (design file 2): build it as designed, as Block 2? Its four choices, with my recommendations: row 104, clear a declined critique; W does not start the content-layer pilot (my narrow reading of its trigger); leave 'each step gets only its ports' on its row; leave long-context pricing to batch 0's row."="Approve, and price long-context tiers in W", "The Windows CI write-up (docs/reviews/2026-10-18-windows-ci.md) has a sentence like the one you redacted in ADR-0103: [redacted] (no figure). Redact it too?"="Redact it, and say so (Recommended)". You can now continue with these answers in mind.
+
+---
+## USER 2026-10-21T23:07:07.624-07:00 (2026-10-22T06:07:07.624Z)
+<!-- reply 1 -->
+> price long-context tiers in Block 2
+
+what does this really mean? what does pricing them in mean - is it that we keep API pricing updated so user can see what they are getting into in terms of spend? what exactly is happening here?
+
+---
+## USER 2026-10-21T23:14:18.550-07:00 (2026-10-22T06:14:18.550Z)
+ok. so then our long run addition is truly warranted. and how often will we update the pricing data because providers will keep changing things up.
+
+---
+## CLAUDE-ASKS 2026-10-21T23:15:31.869-07:00 (2026-10-22T06:15:31.869Z)
+[{"question":"How should byway keep its price table current? (It would land with Block 2, which already changes prices.ts for the long-context tiers.)","header":"Prices","multiSelect":false,"options":[{"label":"Weekly report + monthly re-read + date in the app (Recommended)","description":"A weekly CI report (reporting only) compares OpenRouter's price API exactly and checks the other providers' pages for changed figures; Claude re-reads every page monthly and at once when the report flags a change; Settings and the estimate show when prices were last checked, with a notice after about 45 days. Plus the planned ledger-vs-dashboard check after real runs."},{"label":"Monthly re-read only","description":"Claude re-reads every price page and model list once a month and updates the table with its dates. No automated report, no date in the app."},{"label":"Re-read only when stale","description":"Before a session of real use, Claude re-reads the prices if they are more than 30 days old. Nothing on a schedule."},{"label":"Leave it on its trigger","description":"Keep today's single trigger (re-read if the first live run starts after 2026-11-01) and the ledger check after runs."}]}]
+
+---
+## USER 2026-10-21T23:15:51.493-07:00 (2026-10-22T06:15:51.493Z)
+[ANSWER] Your questions have been answered: "How should byway keep its price table current? (It would land with Block 2, which already changes prices.ts for the long-context tiers.)"="Weekly report + monthly re-read + date in the app (Recommended)". You can now continue with these answers in mind.
 
