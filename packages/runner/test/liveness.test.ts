@@ -8,16 +8,16 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CancelledFailure, Context } from '@temporalio/activity';
 import { ApplicationFailure } from '@temporalio/common';
 import { MockActivityEnvironment } from '@temporalio/testing';
-import { GatewayError, type CompletionRequest, type CompletionResult, type Gateway } from '@byway/contracts';
+import { CANCEL_SIGNAL, GatewayError, type CompletionRequest, type CompletionResult, type Gateway } from '@byway/contracts';
 import { mockAdapter, type ProviderAdapter, type Responder } from '@byway/gateway';
 import { COMPOSED_LIMITS, composedLimitProblems, workBound } from '@byway/recipe';
 import { createActivities } from '../src/activities/index.ts';
-import { CANCELLED_CALL, cancelEndsRun, ENDED_CALL, guardGateway, guardPages, runHasEnded, settleLateCost, STOPPED_STEP, stopSignal } from '../src/activities/liveness.ts';
-import type { StepSpec } from '../src/types.ts';
+import { CANCELLED_CALL, cancelEndsRun, ENDED_CALL, guardGateway, guardPages, HEARTBEAT_EVERY_MS, runHasEnded, settleLateCost, STOPPED_STEP, stopSignal } from '../src/activities/liveness.ts';
+import { workflowIdFor, type StepSpec } from '../src/types.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { fakePages } from './helpers/fake-pages.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
@@ -123,11 +123,27 @@ describe('the stop rule: which cancels cut a call off (ADR-0111)', () => {
     let answered!: Promise<boolean>;
     return { runEnded: () => (answered = Promise.resolve(ended)), settled: async () => (await answered, await Promise.resolve()) };
   };
+  /** The store as the stop rule reads it: what it shows (the test changes it), whether a read fails, and how many reads came. */
+  const shown = (ended = false) => {
+    const state = { ended, fails: false, reads: 0 };
+    return { state, runEnded: async () => (state.reads++, state.fails ? Promise.reject(new Error('the store could not be read')) : state.ended) };
+  };
+  /** An invocation that has not ended; each test ends it, so no read is left waiting on a timer. */
+  const live: AbortController[] = [];
+  const invocation = () => {
+    const until = new AbortController();
+    live.push(until);
+    return until;
+  };
+  afterEach(() => {
+    live.splice(0).forEach((u) => u.abort());
+    vi.useRealTimers();
+  });
 
   it('CANCELLED (the workflow cancelled its one scope: Cancel, "Stop the run", or a failure) cuts the call off at once', () => {
     const { cancel, fire } = cancelled('CANCELLED');
     const read = asked(false);
-    const stop = stopSignal(cancel.signal, read.runEnded);
+    const stop = stopSignal(cancel.signal, read.runEnded, invocation().signal);
     expect(stop?.aborted).toBe(false);
     fire();
     expect(stop?.aborted).toBe(true);
@@ -137,7 +153,7 @@ describe('the stop rule: which cancels cut a call off (ADR-0111)', () => {
   it('TIMED_OUT with the run going cuts nothing off: another attempt takes the call over (ADR-0099)', async () => {
     const { cancel, fire } = cancelled('TIMED_OUT');
     const read = asked(false);
-    const stop = stopSignal(cancel.signal, read.runEnded);
+    const stop = stopSignal(cancel.signal, read.runEnded, invocation().signal);
     fire();
     await read.settled();
     expect(stop?.aborted).toBe(false);
@@ -146,23 +162,97 @@ describe('the stop rule: which cancels cut a call off (ADR-0111)', () => {
   it('NOT_FOUND (the workflow closed) with the run ended cuts the call off; WORKER_SHUTDOWN with the run going does not', async () => {
     const closed = cancelled('NOT_FOUND');
     const ended = asked(true);
-    const stop = stopSignal(closed.cancel.signal, ended.runEnded);
+    const stop = stopSignal(closed.cancel.signal, ended.runEnded, invocation().signal);
     closed.fire();
     await ended.settled();
     expect(stop?.aborted).toBe(true);
     const shutdown = cancelled('WORKER_SHUTDOWN');
     const going = asked(false);
-    const kept = stopSignal(shutdown.cancel.signal, going.runEnded);
+    const kept = stopSignal(shutdown.cancel.signal, going.runEnded, invocation().signal);
     shutdown.fire();
     await going.settled();
     expect(kept?.aborted).toBe(false);
   });
 
+  it.each(['TIMED_OUT', 'NOT_FOUND', 'WORKER_SHUTDOWN'])('%s with the run going keeps asking: once the store shows the run ended (a later Cancel), the call is cut off, and nothing more is asked (RS-2)', async (reason) => {
+    vi.useFakeTimers();
+    const { cancel, fire } = cancelled(reason);
+    const read = shown(false);
+    const stop = stopSignal(cancel.signal, read.runEnded, invocation().signal);
+    fire();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(read.state.reads).toBe(1);
+    // Temporal cancels an invocation once; the rule asks the store again on each tick while the run goes on.
+    await vi.advanceTimersByTimeAsync(2 * HEARTBEAT_EVERY_MS);
+    expect(read.state.reads).toBe(3);
+    expect(stop?.aborted).toBe(false);
+    read.state.ended = true;
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_EVERY_MS);
+    expect(read.state.reads).toBe(4);
+    expect(stop?.aborted).toBe(true);
+    expect((stop?.reason as Error).message).toBe(reason);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a failed read cuts nothing off and is asked again on the next tick (RS-2)', async () => {
+    vi.useFakeTimers();
+    const { cancel, fire } = cancelled('TIMED_OUT');
+    const read = shown(true);
+    read.state.fails = true;
+    const stop = stopSignal(cancel.signal, read.runEnded, invocation().signal);
+    fire();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(read.state.reads).toBe(1);
+    expect(stop?.aborted).toBe(false);
+    read.state.fails = false;
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_EVERY_MS);
+    expect(read.state.reads).toBe(2);
+    expect(stop?.aborted).toBe(true);
+  });
+
+  it('once the invocation has ended, nothing more is asked and nothing is cut off, even by a read already on its way (RS-2)', async () => {
+    vi.useFakeTimers();
+    // Ended between two reads: the waiting read is dropped.
+    const first = cancelled('TIMED_OUT');
+    const read = shown(false);
+    const until = invocation();
+    const stop = stopSignal(first.cancel.signal, read.runEnded, until.signal);
+    first.fire();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(read.state.reads).toBe(1);
+    until.abort();
+    expect(vi.getTimerCount()).toBe(0);
+    read.state.ended = true;
+    await vi.advanceTimersByTimeAsync(3 * HEARTBEAT_EVERY_MS);
+    expect(read.state.reads).toBe(1);
+    expect(stop?.aborted).toBe(false);
+    // Ended while a read was on its way: its answer that the run ended cuts nothing off.
+    const second = cancelled('NOT_FOUND');
+    let answer!: (ended: boolean) => void;
+    const ending = invocation();
+    const late = stopSignal(second.cancel.signal, () => new Promise<boolean>((r) => (answer = r)), ending.signal);
+    second.fire();
+    ending.abort();
+    answer(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(late?.aborted).toBe(false);
+    // A cancel that comes once the invocation has ended asks nothing.
+    const third = cancelled('TIMED_OUT');
+    const after = shown(true);
+    const ended = invocation();
+    ended.abort();
+    const none = stopSignal(third.cancel.signal, after.runEnded, ended.signal);
+    third.fire();
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_EVERY_MS);
+    expect(after.state.reads).toBe(0);
+    expect(none?.aborted).toBe(false);
+  });
+
   it('a cancel already given when the invocation starts is read the same way, and there is no stop outside an activity', () => {
     const { cancel, fire } = cancelled('CANCELLED');
     fire();
-    expect(stopSignal(cancel.signal, async () => false)?.aborted).toBe(true);
-    expect(stopSignal(undefined, async () => true)).toBeUndefined();
+    expect(stopSignal(cancel.signal, async () => false, invocation().signal)?.aborted).toBe(true);
+    expect(stopSignal(undefined, async () => true, invocation().signal)).toBeUndefined();
   });
 
   it('reads the run’s end from the store', async () => {
@@ -197,22 +287,49 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
   });
   const draft: StepSpec = { id: 'draft', role: 'build', actor: 'model', tier: 'mid', prompt: 'product.test.draft', consumes: ['intent'], produces: ['artifact'], writes: true };
 
-  /** A gateway whose call is held until the stop it was handed aborts, then ends as the gateway's cut-off does. */
+  /**
+   * A gateway whose call is held until the stop it was handed aborts, then ends as the gateway's cut-off does; or until
+   * the test lets it answer (`answer`), with a draft the step keeps.
+   */
   function heldUntilStopped() {
     const inner = counting();
     const seen: CompletionRequest[] = [];
+    const answers: (() => void)[] = [];
     const gateway: Gateway = {
       ...inner,
       complete: (req) =>
-        new Promise<CompletionResult>((_, reject) => {
+        new Promise<CompletionResult>((resolve, reject) => {
           seen.push(req);
           const stop = req.operation?.stop;
           if (!stop) return reject(new Error('the call was handed no stop'));
           stop.addEventListener('abort', () => reject(new GatewayError('byway-failure', 'byway cut off this mock call because its run was ending.', false)), { once: true });
+          answers.push(() => resolve({ text: '# A memo\n\nKept after the cancel.\n', stopReason: 'end', servedModel: 'm', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0, ledgerEntryId: 'l1' }));
         }),
     };
-    return { gateway, seen };
+    return { gateway, seen, answer: () => answers.splice(0).forEach((a) => a()) };
   }
+
+  /** The store, counting reads of a run: once the call is held, only the stop rule reads it. */
+  const counted = () => {
+    const reads = { n: 0 };
+    const seen = new Proxy(store, {
+      get(target, prop) {
+        const value: unknown = Reflect.get(target, prop, target);
+        if (typeof value !== 'function') return value;
+        const fn = (value as (...a: unknown[]) => unknown).bind(target);
+        return prop === 'getRun' ? (...a: unknown[]) => (reads.n++, fn(...a)) : fn;
+      },
+    });
+    return { store: seen, reads };
+  };
+
+  /** Waits for a condition (a limit stops only a wait that hangs). */
+  const until = async (what: string, ok: () => boolean) => {
+    for (let i = 0; !ok(); i++) {
+      if (i > 1_000) throw new Error(`timed out waiting for ${what}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
 
   const start = async (status: 'running' | 'cancelled') => {
     const ws = (await store.ensureDefaultWorkspace()).id;
@@ -246,6 +363,56 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
     expect(held.seen).toHaveLength(1);
     expect(held.seen[0]?.operation?.stop?.aborted).toBe(true);
   });
+
+  it.each(['WORKER_SHUTDOWN', 'TIMED_OUT', 'NOT_FOUND'] as const)('%s with the run going: the step applies the stop rule, so its call is not cut off, and its answer is kept (RS-3)', async (reason) => {
+    const held = heldUntilStopped();
+    const reading = counted();
+    const acts = createActivities({ gateway: held.gateway, store: reading.store, prompts: fakePrompts() });
+    const { input } = await start('running');
+    const env = new MockActivityEnvironment();
+    const outcome = env.run(acts.modelStep, input).then(
+      (r) => r,
+      (e: unknown) => e,
+    );
+    await until('the call held', () => held.seen.length > 0);
+    const before = reading.reads.n;
+    env.cancel(reason);
+    expect(held.seen[0]?.operation?.stop?.aborted).toBe(false);
+    // The rule reads the store when the cancel comes and again on the next tick: the run goes on, so nothing is cut off.
+    await until('the store read twice', () => reading.reads.n >= before + 2);
+    expect(held.seen[0]?.operation?.stop).toBeDefined();
+    expect(held.seen[0]?.operation?.stop?.aborted).toBe(false);
+    held.answer();
+    const result = await outcome;
+    expect(result).not.toBeInstanceOf(Error);
+    expect(result).toMatchObject({ artifactId: expect.any(String) });
+    expect(held.seen).toHaveLength(1);
+    expect(held.seen[0]?.operation?.stop?.aborted).toBe(false);
+  }, 30_000);
+
+  it('TIMED_OUT with the run going, then Cancel: the call the step kept is cut off once the store shows the run ended, and the step ends as cancelled (RS-2)', async () => {
+    const held = heldUntilStopped();
+    const reading = counted();
+    const acts = createActivities({ gateway: held.gateway, store: reading.store, prompts: fakePrompts() });
+    const { input, end } = await start('cancelled');
+    const env = new MockActivityEnvironment();
+    const outcome = env.run(acts.modelStep, input).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    await until('the call held', () => held.seen.length > 0);
+    const before = reading.reads.n;
+    env.cancel('TIMED_OUT');
+    await until('the store read', () => reading.reads.n > before);
+    expect(held.seen[0]?.operation?.stop?.aborted).toBe(false);
+    // Temporal cancels an invocation once: the person's Cancel reaches this call only through the store.
+    await end();
+    const err = await outcome;
+    expect(err).toBeInstanceOf(CancelledFailure);
+    expect((err as Error).message).toBe(STOPPED_STEP);
+    expect(held.seen).toHaveLength(1);
+    expect(held.seen[0]?.operation?.stop?.aborted).toBe(true);
+  }, 30_000);
 });
 
 describe('the page renderer one activity invocation sees', () => {
@@ -381,6 +548,20 @@ describe('cancel and stop through the real workflow', () => {
     }
   }, 60_000);
 
+  /**
+   * The activities the run's workflow scheduled from the person's Cancel on, read from Temporal's own history once the
+   * workflow has closed. An activity that starts after run-cancelled leaves no step event (events.ts drops them once
+   * the run has ended) and no call the harness records (the gateway guard refuses it first), so only the history shows it.
+   */
+  const scheduledFromCancel = async (runId: string): Promise<string[]> => {
+    const handle = h.env.client.workflow.getHandle(workflowIdFor(runId));
+    await handle.result();
+    const events = (await handle.fetchHistory()).events ?? [];
+    const cancel = events.findIndex((e) => e.workflowExecutionSignaledEventAttributes?.signalName === CANCEL_SIGNAL);
+    expect(cancel).toBeGreaterThan(0);
+    return events.slice(cancel).flatMap((e) => (e.activityTaskScheduledEventAttributes ? [e.activityTaskScheduledEventAttributes.activityType?.name ?? 'unnamed'] : []));
+  };
+
   it('Cancel at the composed limits’ peak stops every call: no activity starts and nothing is ledgered after it (F02, SUB-DA-4)', async () => {
     // The fan-out is at the composed limits: two slots of a replicate at its limit, 32 model calls at once.
     expect(composedLimitProblems(cancelPeak)).toEqual([]);
@@ -406,7 +587,47 @@ describe('cancel and stop through the real workflow', () => {
       const listed = (await h.gateway.spendRecords(h.workspaceId)).uncertain.filter((c) => c.runId === run.id);
       expect(listed).toHaveLength(COMPOSED_LIMITS.peak);
       expect(listed.every((c) => c.reason === 'interrupted')).toBe(true);
+      // From the Cancel on, the workflow scheduled one activity: the one that ends the run.
+      expect(await scheduledFromCancel(run.id)).toEqual(['cancelRun']);
     } finally {
+      mock.reset();
+    }
+  }, 120_000);
+
+  it('Cancel at the peak with the held calls released (calls byway does not cut off): the 32 answer and are paid for, no activity starts after Cancel but the run’s end, and the ledger holds no other call (F02, SUB-DA-4)', async () => {
+    // A draft that never parses: each step would ask the model again after its answer, after the Cancel.
+    responders['build:prose'] = () => '';
+    mock.hold('build:prose', false);
+    try {
+      const run = await h.start(cancelPeak);
+      await h.waitFor('every branch’s call held', async () => mock.held.length === COMPOSED_LIMITS.peak, 60_000);
+      await h.runner.cancel(run.id);
+      await statusIs(run.id, 'cancelled');
+      // Handed no signal, each held call answers once its step's cancel has come, and is settled after the run has stopped.
+      const answered = await h.waitFor(
+        'the held calls to answer',
+        async () => {
+          const held = h.calls.filter((c) => c.runId === run.id).slice(0, COMPOSED_LIMITS.peak);
+          return held.length === COMPOSED_LIMITS.peak && held.every((c) => c.result !== undefined) && held;
+        },
+        60_000,
+      );
+      expect(mock.held.every((c) => c.req.signal === undefined)).toBe(true);
+      const total = answered.reduce((sum, c) => sum + (c.result as CompletionResult).costUsd, 0);
+      expect(total).toBeGreaterThan(0);
+      await h.waitFor('the run’s cost to catch up with them', async () => ((await h.store.getRun(run.id))?.costUsd ?? 0) >= total - 1e-9, 60_000);
+      expect(await scheduledFromCancel(run.id)).toEqual(['cancelRun']);
+      // The ledger holds those calls and nothing else: each step's ask after its answer was refused before any provider.
+      expect(h.calls.filter((c) => c.runId === run.id)).toHaveLength(COMPOSED_LIMITS.peak);
+      const ledger = h.ledger(run.id);
+      expect(ledger.map((e) => e.id).sort()).toEqual(answered.map((c) => (c.result as CompletionResult).ledgerEntryId).sort());
+      expect((await h.store.getRun(run.id))?.costUsd).toBeCloseTo(total, 9);
+      expect((await h.gateway.spendRecords(h.workspaceId)).uncertain.filter((c) => c.runId === run.id)).toEqual([]);
+      const events = await h.store.events(run.id);
+      expect(events.some((e) => e.type === 'step-started' && e.stepId === 'after')).toBe(false);
+      expect(events.at(-1)?.type).toBe('run-cancelled');
+    } finally {
+      delete responders['build:prose'];
       mock.reset();
     }
   }, 120_000);
@@ -432,13 +653,16 @@ describe('cancel and stop through the real workflow', () => {
     h.setLatency(30_000);
     const slow = await h.start(tiny);
     await h.waitFor('a slow call in flight', async () => h.calls.some((c) => c.runId === slow.id && c.result === undefined));
-    const started = Date.now();
     // Expected output: the SDK logs "[ERROR] Worker failed" with GracefulShutdownPeriodExpiredError here. That is this
     // test's intended outcome (worker.ts `abandoned`), not a failure. The suite's log is left unfiltered, so a real
     // error of that kind elsewhere stays visible.
+    // The limit only stops a shutdown that hangs: one that waited for the slow call would take its 30 s.
     const stopped = await Promise.race([h.worker.shutdown().then(() => 'stopped'), sleep(20_000).then(() => 'still stopping')]);
     expect(stopped).toBe('stopped');
-    expect(Date.now() - started).toBeLessThan(10_000);
+    // The worker stopped with the slow call still in flight: abandoned, not waited for.
+    const slowCalls = h.calls.filter((c) => c.runId === slow.id);
+    expect(slowCalls.length).toBeGreaterThan(0);
+    expect(slowCalls.every((c) => c.result === undefined)).toBe(true);
     // The held renders were told to stop (their step was cancelled by the shutdown), not left waiting.
     expect(h.pages.waiting()).toBe(0);
     expect(pagesRun.id).toBeTruthy();

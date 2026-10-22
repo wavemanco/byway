@@ -53,7 +53,7 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
       const gateway = guardGateway(deps.gateway, deps.store, invocation.signal);
       const memo = memoScopeOf(input);
       // The run is ending (ADR-0111): set beside `until` and `cancel`, after the request is hashed, so memo keys stay.
-      const stop = stopSignal(invocation.signal, () => runHasEnded(deps.store, memo?.runId ?? runIdOf(input)));
+      const stop = stopSignal(invocation.signal, () => runHasEnded(deps.store, memo?.runId ?? runIdOf(input)), invocation.done);
       const operation = { until: invocation.done, ...(invocation.signal ? { cancel: invocation.signal } : {}), ...(stop ? { stop } : {}) };
       const memoized = memo ? memoGateway(gateway, deps.store, memo, { operation }) : gateway;
       // Each decline a step's calls meet is written to the run's events (ADR-0102), outside the memo: see declines.ts.

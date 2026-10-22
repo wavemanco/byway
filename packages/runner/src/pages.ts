@@ -880,6 +880,7 @@ class Unloaded extends Error {}
 interface Fetches {
   pending: number;
   idle: (() => void)[];
+  /** Why the read failed. Every reason names the file by fileSaid, never with its query string. */
   failed?: string;
 }
 

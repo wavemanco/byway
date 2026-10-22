@@ -54,6 +54,8 @@ export const NO_IMAGE_MADE_NOTE = 'No image could be generated for this step; th
 export const NO_BRIEF_NOTE = 'The AI wrote no usable image brief, even when asked again, so no image was made; the work passes through unchanged.';
 /** The prompt lets the AI answer with no image (its minimum is 0), and it did: a choice, not a failure (F11). */
 export const NO_IMAGE_CHOSEN_NOTE = 'The AI chose not to illustrate this piece, which its instructions allow, so no image was made; the work is unchanged.';
+/** The step makes no images (a slots knob below 1): not the AI's choice, and every brief it wrote is left out and named. */
+export const NO_SLOTS_NOTE = 'This step makes no images, so none was made; the work passes through unchanged.';
 
 /**
  * A stop: a sentence end in any script (Unicode's Sentence_Terminal), the ellipsis or the Greek question mark, before any
@@ -146,9 +148,11 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const slots = plan!;
   let costUsd = briefs.costUsd;
   if (!briefs.value.briefs.length) {
-    // Nothing to make: by the prompt's own choice (its minimum is 0), or because no usable brief came even when asked again.
-    const chosen = briefs.shortfall === undefined;
-    const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value)].join(' ');
+    // Nothing to make: by the prompt's own choice (its minimum is 0); because the step makes no images (a slots knob
+    // below 1, so every brief was left out); or because no usable brief came even when asked again.
+    const none = slots.kind === 'free' && slots.max < 1;
+    const chosen = briefs.shortfall === undefined && !none;
+    const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [none ? NO_SLOTS_NOTE : NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value)].join(' ');
     await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note }, true);
     return chosen ? { costUsd } : { costUsd, skipped: true };
   }
@@ -375,10 +379,12 @@ function leftOutSentence(plan: Extract<SlotPlan, { kind: 'each' }>, unknown: str
 
 /**
  * The briefs a free plan left out, beyond the most the step makes (its prompt's maximum, or its slots knob): "This step
- * makes at most 1 image, so the brief for “second” was left out."
+ * makes at most 1 image, so the brief for “second” was left out." A step that makes none says so first (NO_SLOTS_NOTE),
+ * then "The briefs for “hero” and “detail” were left out."
  */
 function droppedSentence(plan: Extract<SlotPlan, { kind: 'free' }>, dropped: string[]): string {
   const quoted = list(dropped.map((d) => slotName(plan, d)));
+  if (plan.max < 1) return dropped.length > 1 ? `The briefs for ${quoted} were left out.` : `The brief for ${quoted} was left out.`;
   const most = `This step makes at most ${plan.max} ${plan.max === 1 ? 'image' : 'images'}`;
   return dropped.length > 1 ? `${most}, so the briefs for ${quoted} were left out.` : `${most}, so the brief for ${quoted} was left out.`;
 }

@@ -9,7 +9,7 @@
  *   calls in flight that it can (Anthropic's, OpenAI's and OpenRouter's streams, fal's queue jobs, the demo's mock),
  *   sends nothing again, and counts what a cut-off call leaves as "may have been billed"; the others finish and are
  *   recorded as usual, and a cancel that does not mean the run is ending (a timeout, a lost or stopping worker, with the
- *   run going) cuts nothing off, so another attempt can take the call over (ADR-0099);
+ *   run going) cuts nothing off while the run goes on, so another attempt can take the call over (ADR-0099);
  * - gets page renders that stop when it is cancelled;
  * - and, if it called the gateway for a run that has meanwhile ended, brings that run's cost up to its settled spend when it
  *   finishes: spend that landed after "cancelled" or "failed" still shows on the run, and so in the workspace's total.
@@ -39,8 +39,9 @@ export const STOPPED_STEP = 'This run was ending, so byway stopped this step and
  *   cancels it only on Cancel, on "Stop the run" and on a failure, so the run is ending: the call is cut off. This
  *   reading holds only while the workflow has that one scope (a source test checks it).
  * - anything else (`TIMED_OUT`, `NOT_FOUND` when the workflow closed, `WORKER_SHUTDOWN`, `PAUSED`, `RESET`): cut off
- *   only when the store already shows the run ended. Otherwise nothing is cut off: another attempt takes the call over
- *   (ADR-0099), or byway's clean stop hands it back.
+ *   once the store shows the run ended, while the invocation lasts. Until then nothing is cut off: another attempt takes
+ *   the call over (ADR-0099), or byway's clean stop hands it back. Temporal cancels an invocation once, so a call kept
+ *   going after a timeout or a lost worker would otherwise never be cut off by a later Cancel (stopSignal).
  */
 export function cancelEndsRun(reason: unknown): true | 'ask' {
   const name = reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : undefined;
@@ -49,22 +50,30 @@ export function cancelEndsRun(reason: unknown): true | 'ask' {
 
 /**
  * A signal that aborts when this invocation's cancel means its run is ending (cancelEndsRun): at once for `CANCELLED`,
- * and for any other reason once `runEnded` says the store shows the run ended. A failed read cuts nothing off. Never
- * aborts without a cancel: undefined outside an activity.
+ * and for any other reason once `runEnded` says the store shows the run ended. That is asked when the cancel comes, and
+ * again every `everyMs` while the run is going, until the invocation ends (`until`): a step that heard a timeout or a
+ * lost worker with the run going keeps its call (ADR-0099), and a later Cancel of the run still cuts that call off. A
+ * failed read cuts nothing off and is asked again. Never aborts without a cancel: undefined outside an activity.
  */
-export function stopSignal(cancel: AbortSignal | undefined, runEnded: () => Promise<boolean>): AbortSignal | undefined {
+export function stopSignal(cancel: AbortSignal | undefined, runEnded: () => Promise<boolean>, until: AbortSignal, everyMs = HEARTBEAT_EVERY_MS): AbortSignal | undefined {
   if (!cancel) return undefined;
   const stop = new AbortController();
-  const decide = () => {
-    const ends = cancelEndsRun(cancel.reason);
-    if (ends === true) return stop.abort(cancel.reason);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const again = () => {
+    if (!until.aborted) timer = setTimeout(ask, everyMs);
+  };
+  const ask = () => {
+    if (until.aborted) return;
     void runEnded().then(
       (ended) => {
-        if (ended) stop.abort(cancel.reason);
+        if (!ended) return again();
+        if (!until.aborted) stop.abort(cancel.reason);
       },
-      () => undefined,
+      () => again(),
     );
   };
+  until.addEventListener('abort', () => clearTimeout(timer), { once: true });
+  const decide = () => (cancelEndsRun(cancel.reason) === true ? stop.abort(cancel.reason) : ask());
   if (cancel.aborted) decide();
   else cancel.addEventListener('abort', decide, { once: true });
   return stop.signal;
