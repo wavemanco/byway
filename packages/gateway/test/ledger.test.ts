@@ -190,6 +190,25 @@ describe('Ledger.verify on lines that cannot be hashed', () => {
     expect(await ledger.verify()).toBe('line:1');
   });
 
+  it('names an entry nested too deeply to hash, instead of overflowing the stack (ADR-0083)', async () => {
+    const ledger = await seed(2);
+    const ls = lines();
+    // Ten thousand arrays deep: JSON.parse reads it, and canonicalize, which recurses, would throw a RangeError on it.
+    const deep = `${'['.repeat(10_000)}${']'.repeat(10_000)}`;
+    rewrite([ls[0] as string, `${(ls[1] as string).slice(0, -1)},"note":${deep}}`]);
+    expect(() => canonicalize(JSON.parse(deep))).toThrow(RangeError);
+    expect(await ledger.verify()).toBe(id(ls[1]));
+  });
+
+  it('still hashes an entry nested well below that limit', async () => {
+    const ledger = await seed(1);
+    const { hash: _h, ...rest } = JSON.parse(lines()[0] as string) as Record<string, unknown>;
+    const nested = { ...rest, note: JSON.parse(`${'['.repeat(40)}${']'.repeat(40)}`) as unknown };
+    rewrite([JSON.stringify({ ...nested, hash: contentHash(nested) })]);
+    await fsp.rm(`${path}.head`);
+    expect(await ledger.verify()).toBeNull();
+  });
+
   it('names an entry whose cost was changed to a number too large for JSON', async () => {
     const ledger = await seed(2);
     const ls = lines();

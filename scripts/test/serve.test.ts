@@ -86,3 +86,26 @@ describe("serve.ts's renderer line and Playwright's browsers folder (ADR-0105)",
     expect(matching(serve, /\bbrowsersFolder\b/)).toEqual([expect.stringMatching(/^import \{ .*\bbrowsersFolder\b.* \} from '\.\.\/packages\/runner\/src\/index\.ts';$/), 'const browsers = await browsersFolder();']);
   });
 });
+
+/**
+ * DEV-1: the e2e suite's byway builds the runner's workflow bundle into a file of its own inside packages/runner/dist,
+ * so it shares no file with a byway you are running from the same checkout. serve.ts reads the file's name from
+ * BYWAY_WORKFLOWS_BUNDLE and hands the engine what it built; without it the worker builds dist/workflows.js itself.
+ */
+describe("serve.ts's workflow bundle, and the e2e suite's own (DEV-1)", () => {
+  const e2e = codeLines(read('scripts/e2e.ts'));
+
+  it('builds the bundle into the file BYWAY_WORKFLOWS_BUNDLE names inside packages/runner/dist, and the engine runs that file', () => {
+    expect(matching(serve, /\bBYWAY_WORKFLOWS_BUNDLE\b/)).toEqual(['const bundle = process.env.BYWAY_WORKFLOWS_BUNDLE?.trim();']);
+    expect(matching(serve, /\bbuildWorkflows\(/)).toEqual(['const workflowsBuilt = bundle ? buildWorkflows({ outfile: path.join(path.dirname(DEFAULT_WORKFLOWS_BUNDLE), bundle) }) : Promise.resolve(undefined);']);
+    expect(matching(serve, /\bstartDevEngine\(/)).toEqual(['const engineStarting = workflowsBuilt.then((workflowsPath) => startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort, ...(workflowsPath ? { workflowsPath } : {}) }));']);
+  });
+
+  it('the e2e byway names a bundle of its own, and removes it with the data directory once byway has stopped', () => {
+    const remove = "rmSync(path.join(ROOT, 'packages', 'runner', 'dist', WORKFLOWS_BUNDLE), { force: true, maxRetries: 20, retryDelay: 250 });";
+    expect(matching(e2e, /\bWORKFLOWS_BUNDLE\b/)).toEqual(['const WORKFLOWS_BUNDLE = `e2e-${process.pid}.js`;', 'BYWAY_WORKFLOWS_BUNDLE: WORKFLOWS_BUNDLE,', remove]);
+    const at = e2e.indexOf(remove);
+    expect(at).toBeGreaterThan(e2e.indexOf('} finally {'));
+    expect(e2e[at - 1]).toBe('rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });');
+  });
+});

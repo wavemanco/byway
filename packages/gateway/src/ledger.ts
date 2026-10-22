@@ -59,11 +59,32 @@ export function entryHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string {
 }
 
 /**
+ * How deeply a stored line may nest before it is hashed. An entry byway writes nests two levels (its usage, its prompt
+ * ref); canonicalize recurses, so a line nested thousands deep, which only damage or a bug makes, would overflow the
+ * stack and throw a RangeError where verify() names the line (ADR-0083).
+ */
+const MAX_LINE_DEPTH = 64;
+
+/** Whether a parsed line nests objects or arrays deeper than `limit`, read without recursion. */
+function nestsDeeperThan(value: unknown, limit: number): boolean {
+  const pending: [unknown, number][] = [[value, 0]];
+  while (pending.length) {
+    const [v, depth] = pending.pop()!;
+    if (v === null || typeof v !== 'object') continue;
+    if (depth >= limit) return true;
+    for (const child of Object.values(v)) pending.push([child, depth + 1]);
+  }
+  return false;
+}
+
+/**
  * The chain hash of a stored line read back, or undefined when it has none: a damaged line can hold text with no
- * canonical form (a lone surrogate written as a JSON \u escape, a number too large for JSON). verify() reports such a
- * line as broken; it does not throw on it (F19).
+ * canonical form (a lone surrogate written as a JSON \u escape, a number too large for JSON), or nest deeper than any
+ * entry (MAX_LINE_DEPTH), which is reported before it is hashed. verify() reports such a line as broken; it does not
+ * throw on it (F19).
  */
 function expectedHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string | undefined {
+  if (nestsDeeperThan(entry, MAX_LINE_DEPTH)) return undefined;
   try {
     return entryHash(entry);
   } catch (e) {

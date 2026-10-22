@@ -42,6 +42,16 @@ describe('the shape bound', () => {
     expect(parseError(r).issues[0]!.message).toMatch(/nests deeper/);
   });
 
+  it('names where it went over by a well-formed path: a lone surrogate in a name written as backslash-u text', () => {
+    let knob: unknown = 1;
+    for (let i = 0; i < 100; i++) knob = { k: knob };
+    const r = minimalRecipe();
+    (r.stages[0]!.body as { knobs?: unknown }).knobs = { [JSON.parse('"b\\udc00"') as string]: knob };
+    const path = parseError(r).issues[0]!.path;
+    expect(path.slice(0, 6)).toEqual(['stages', 0, 'body', 'knobs', 'b\\udc00', 'k']);
+    expect(path.every((p) => typeof p !== 'string' || p.isWellFormed())).toBe(true);
+  });
+
   it('refuses a cyclic object as too deep instead of walking it forever', () => {
     const r = minimalRecipe() as unknown as Record<string, unknown>;
     const loopy: Record<string, unknown> = {};

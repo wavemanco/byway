@@ -3,7 +3,7 @@ import { CanonicalizationError } from '@byway/canonical';
 import { BLOCK_CODES, GLUE_CODES, MEDIA, PORT_TYPES, type BlockCode, type Channel, type GlueCode, type Medium, type PortType, type RecipeKind } from '@byway/protocol';
 // hash.ts imports only the Recipe type from this file, so this is no runtime import cycle.
 import { recipeHash } from './hash.ts';
-import { shapeProblem } from './shape.ts';
+import { pathName, shapeProblem } from './shape.ts';
 
 export const RECIPE_SCHEMA_ID = 'byway.recipe/1';
 
@@ -263,13 +263,17 @@ export const RecipeSchema: z.ZodType<Recipe> = z.strictObject({
   hash: HashString.optional(),
 }) as z.ZodType<Recipe>;
 
-/** Paths of own properties with reserved names anywhere in raw input (zod silently drops `__proto__`). */
+/**
+ * Paths of own properties with reserved names anywhere in raw input (zod silently drops `__proto__`), their names as a
+ * finding shows them (pathName): this runs before the hash check, so a reserved name below a lone-surrogate name would
+ * otherwise put the lone surrogate itself in the path.
+ */
 function reservedKeyPaths(value: unknown, path: (string | number)[] = []): (string | number)[][] {
   if (Array.isArray(value)) return value.flatMap((v, i) => reservedKeyPaths(v, [...path, i]));
   if (value === null || typeof value !== 'object') return [];
   return Object.keys(value).flatMap((k) => [
     ...(FORBIDDEN_KEYS.has(k) ? [[...path, k]] : []),
-    ...reservedKeyPaths((value as Record<string, unknown>)[k], [...path, k]),
+    ...reservedKeyPaths((value as Record<string, unknown>)[k], [...path, pathName(k)]),
   ]);
 }
 

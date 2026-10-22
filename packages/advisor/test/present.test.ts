@@ -224,8 +224,9 @@ describe('presentComposed explains what runs (F08)', () => {
  * Explainers say what the recipe establishes about the steps around them, and nothing more (the round-2 verification):
  * "the AI wrote the rest" only on a VOICE no person's write can come before; "It is locked after this" only on a script
  * no later write of yours can change; "Nothing is deleted for you" and "It flags only" only where no AI writer can take
- * the notes in after them; "for you to react to" only where a step of yours that reacts can follow. Each case below is
- * an admitted composed recipe (checkAnswer finds nothing), so the person can be shown it.
+ * the notes in after them (its prompt shows them, ADR-0097); "for you to react to" only where a step of yours that
+ * reacts can follow. Each case below is an admitted composed recipe (checkAnswer finds nothing), so the person can be
+ * shown it, unless the case says it pins a rule on a recipe that admission refuses.
  */
 describe('explainers claim only what the recipe establishes about the steps around them', () => {
   type N = Record<string, any>;
@@ -330,6 +331,25 @@ describe('explainers claim only what the recipe establishes about the steps arou
     const later = admitted(edited(c7, 'apply-scope-cut', (n) => ({ op: 'seq', steps: [render, n] })), c7);
     // A render between them does not stop the marks reaching the fix, so the trim says the AI removes them.
     expect(explained(later, 'scope-cut')).toBe(E.cutApplies);
+  });
+
+  it('"Nothing is deleted for you" and "It flags only" read what a writer after them takes in, not what it declares (ADR-0097)', () => {
+    // C6 with an AI fix before your words that declares the critique on a draft prompt, which renders none: the fix
+    // never sees the notes, so the trim marks and the flags still change nothing. Admission refuses this recipe, and
+    // the composed profile refuses any step whose prompt never shows a port it takes in, so no admitted recipe reads
+    // differently; this pins the rule that notes, grouping and admission share.
+    const blind = { op: 'step', id: 'blind-fix', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.c4.draft', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true };
+    expect(PROMPTS.info(blind.prompt, 'prose').slots).not.toContain('critique');
+    const raw = edited(c6, 'voice', (n) => ({ op: 'seq', steps: [blind, n] }));
+    const refused = checkAnswer(fencedJson(raw), c6, { prompts: PROMPTS, catalog: PROTOCOL_CONFIGS }, 'composed-c6');
+    expect(refused.violations.map((v) => v.ruleId)).toContain('COMPOSED-PROMPT');
+    const r = asComposed(raw as Recipe);
+    expect(explained(r, 'cut-marks')).toBe(E.cutNothingDeleted);
+    expect(explained(r, 'tells-flags')).toBe(E.tellsFlagsOnly);
+    // The same fix on a prompt that shows the critique takes the notes in.
+    const seeing = asComposed(edited(c6, 'voice', (n) => ({ op: 'seq', steps: [{ ...blind, prompt: 'product.c4.revise' }, n] })) as Recipe);
+    expect(explained(seeing, 'cut-marks')).toBe(E.cut);
+    expect(explained(seeing, 'tells-flags')).toBe(E.tells);
   });
 
   it('a model VISION with no step of yours after it is labelled and explained without "to react to", and the diff names only what changed', () => {
@@ -511,15 +531,36 @@ describe('explainers claim only what the recipe establishes about the steps arou
 
   it('findings are said to be applied only by a writer they reach on every path, not by the writer that comes next', () => {
     // C3 and C4 with the cliché sweep in a replicate of two: the replicate hands on the critique it started with, so the
-    // swap step applies your trim list again, not the sweep's finds.
+    // swap step applies your trim list again, not the sweep's finds. It is shown with the trim whose list it applies.
     for (const r of [c3, c4]) {
       const wrapped = admitted(edited(r, 'tells-sweep', (n) => ({ op: 'replicate', id: 'rep', n: 2, body: n })), r);
       const steps = presentComposed(wrapped, COPY).stages.flatMap((s) => s.steps);
       const sweep = steps.find((s) => s.stepIds.includes('tells-sweep'))!;
       expect(sweep.explainer, r.id).toBe(E.tells);
       expect(sweep.stepIds).not.toContain('apply-swaps');
-      expect(steps.find((s) => s.stepIds.includes('apply-swaps'))!.explainer).toBe(E.fix);
+      expect(steps.find((s) => s.stepIds.includes('apply-swaps'))).toMatchObject({ label: 'Trim', explainer: E.cutYoursApplies, stepIds: ['cut-render', 'cut', 'apply-cut', 'apply-swaps'] });
     }
+  });
+
+  it('a second writer that applies the same findings is shown with the trim or the sweep, not as a "Revise" of its own', () => {
+    /** The node of this id in a catalog recipe, under another id. */
+    const copied = (r: Recipe, id: string, as: string): N => {
+      let found: N | undefined;
+      walk(r, (n) => {
+        if (n.op === 'step' && n.id === id) found = { ...structuredClone(n), id: as };
+      });
+      return found!;
+    };
+    // C4 with another fix between your trim and the step that carries out its removals: both apply your list.
+    const trim = admitted(edited(c4, 'cut', (n) => n, copied(c4, 'revise', 'fix-between')), c4);
+    const trimmed = presentComposed(trim, COPY).stages.find((s) => s.stage === 'Finish')!.steps;
+    expect(trimmed[0]).toMatchObject({ label: 'Trim', who: 'you', explainer: E.cutYoursApplies, stepIds: ['cut-render', 'cut', 'fix-between', 'apply-cut'] });
+    expect(trimmed.map((s) => s.label)).not.toContain('Revise');
+    // C1 with a second swap step after its cliché sweep: you are asked once, and both swap what you chose.
+    const swaps = admitted(edited(c1, 'tells-sweep', (n) => n, copied(c1, 'apply-swaps', 'swap-again')), c1);
+    const swept = presentComposed(swaps, COPY).stages.find((s) => s.stage === 'Finish')!.steps;
+    expect(swept[1]).toMatchObject({ label: 'Cliché sweep', explainer: E.tellsApplies, stepIds: ['tells-render', 'tells-sweep', 'swap-again', 'apply-swaps'] });
+    expect(swept.map((s) => s.label)).not.toContain('Revise');
   });
 
   it('where the run asks which finds to swap, the sweep says so: a render or a direction of yours may sit between it and its swap step', () => {

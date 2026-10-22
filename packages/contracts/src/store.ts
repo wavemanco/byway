@@ -161,6 +161,8 @@ export interface CheckpointRecord {
   status: 'open' | 'resolved' | 'withdrawn';
   openedAt: string;
   resolvedAt?: string;
+  /** When the question was withdrawn; set exactly when the status is 'withdrawn'. */
+  withdrawnAt?: string;
   resolution?: CheckpointResolution;
 }
 
@@ -273,7 +275,7 @@ export interface Store {
   appendEvent(event: Omit<RunEvent, 'seq' | 'at'>, opts?: { dedupeKey?: string }): Promise<RunEvent>;
   events(runId: string, afterSeq?: number): Promise<RunEvent[]>;
 
-  openCheckpoint(cp: Omit<CheckpointRecord, 'status' | 'openedAt' | 'resolvedAt' | 'resolution'>): Promise<CheckpointRecord>;
+  openCheckpoint(cp: Omit<CheckpointRecord, 'status' | 'openedAt' | 'resolvedAt' | 'withdrawnAt' | 'resolution'>): Promise<CheckpointRecord>;
   /** Refuses a checkpoint that is not open (resolved or withdrawn). */
   resolveCheckpoint(res: CheckpointResolution): Promise<CheckpointRecord>;
   /** Marks a run's open checkpoints 'withdrawn' (the run was cancelled or failed); returns how many. Idempotent. */

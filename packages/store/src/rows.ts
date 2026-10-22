@@ -89,6 +89,9 @@ export function toCheckpoint(r: Row): CheckpointRecord {
     status: str(r.status) as CheckpointRecord['status'],
     openedAt: str(r.opened_at),
     ...opt('resolvedAt', r.resolved_at, str),
+    // Migration 4's comment says the record does not expose withdrawn_at. It does now (the contract's withdrawnAt); the
+    // migration is checksummed over its SQL, comments included, so its text stays as it was applied.
+    ...opt('withdrawnAt', r.withdrawn_at, str),
     ...opt('resolution', r.resolution, json<CheckpointResolution>),
   };
 }

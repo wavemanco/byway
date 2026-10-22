@@ -185,7 +185,7 @@ describe("a step's optional reads (ADR-0089)", () => {
   });
 
   it('a read added to a step is named, with the port in plain words', () => {
-    expect(diff(withReads(c7, 'review-fix', ['brief']), c7)).toEqual(['Changed: Outside critique (Refine): now also reads the brief when there is one']);
+    expect(diff(withReads(c7, 'review-fix', ['brief']), c7)).toEqual(['Changed: the AI’s fixes in Outside critique (Refine): now also reads the brief when there is one']);
   });
 
   it('reads reordered, or a read made a consumed port, are other technical changes', () => {
@@ -338,5 +338,52 @@ describe("the verification's cases each read what changed", () => {
 
   it('a change the describers do not name reads "Other technical changes that affect how it runs"', () => {
     expect(diff(edit(clone(c1), 'critic', (n) => ({ ...n, isolated: false })), c1)).toEqual(['Other technical changes that affect how it runs.']);
+  });
+});
+
+// ---- Steps shown together ---------------------------------------------------------------------------------------
+
+/** The recipe without the nodes of these ids, wherever they sit. */
+function without(r: N, ids: string[]): N {
+  const keep = (n: N): N => {
+    const c: N = { ...n };
+    if (c.steps) c.steps = c.steps.filter((x: N) => !ids.includes(x.id)).map(keep);
+    if (c.body) c.body = keep(c.body);
+    if (c.branches) c.branches = c.branches.map((b: N) => ({ ...b, body: keep(b.body) }));
+    if (c.lenses) c.lenses = c.lenses.map((l: N) => ({ ...l, body: keep(l.body) }));
+    return c;
+  };
+  return { ...r, stages: r.stages.map((s: N) => ({ ...s, body: keep(s.body) })) };
+}
+
+/**
+ * A step the nearest recipe's presentation shows with another as its lead (a writer with the step whose findings it
+ * applies, say) is named by its part in that shown step, so that a line about it does not read as if it were about the
+ * whole. A part removed with its lead is said once, by the lead, and lines that come out the same are said once.
+ */
+describe('steps shown together are named by their part', () => {
+  it('C1 without only its swap step: the swaps go, and the sweep stays and no longer asks', () => {
+    expect(diff(without(clone(c1), ['apply-swaps']), c1)).toEqual(['Removed: the AI’s swaps in Cliché sweep (Finish)', 'Changed: Cliché sweep (Finish): no longer asks you which of its finds to swap']);
+  });
+
+  it('a writer is named by what it does with the findings it applies; another step by its own label, or as part of the shown step', () => {
+    expect(diff(without(clone(c1), ['critic-fix']), c1)).toEqual(['Removed: the AI’s fixes in Outside critique (Refine)']);
+    expect(diff(without(clone(c4), ['apply-cut']), c4)).toEqual(['Removed: the AI’s removals in Trim (Finish)']);
+    expect(diff(without(clone(c5), ['regenerate']), c5)).toEqual(['Removed: the AI’s fixes in Motion (Refine)']);
+    expect(diff(without(clone(c2), ['sharpen']), c2)).toEqual(['Removed: Directions to react to in Your direction (Explore)']);
+    expect(diff(without(clone(c5), ['matte']), c5)).toEqual(['Removed: part of Composite (Refine)']);
+    expect(diff(edit(clone(c1), 'critic-fix', (n) => ({ ...n, tier: 'big' })), c1)).toEqual(['Changed: the AI’s fixes in Outside critique (Refine): uses the bigger model']);
+  });
+
+  it('a part removed with its lead is said once, by the lead', () => {
+    expect(diff(without(clone(c1), ['cut', 'apply-cut', 'tells-sweep', 'apply-swaps']), c1)).toEqual(['Removed: Trim (Finish)', 'Removed: Cliché sweep (Finish)']);
+  });
+
+  it('lines that come out the same are said once', () => {
+    const r = clone(c1);
+    const d3 = stageOf(r, 'D3').body;
+    const swaps = d3.steps[at(d3, 'apply-swaps')];
+    d3.steps.push({ ...swaps, id: 'polish-1' }, { ...swaps, id: 'polish-2' });
+    expect(diff(r, c1)).toEqual(['Added: Revise (Finish)']);
   });
 });
