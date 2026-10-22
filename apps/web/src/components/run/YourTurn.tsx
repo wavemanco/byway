@@ -44,10 +44,12 @@ interface Props {
   onDraft: (draft: CheckpointDraft) => void;
   /** Accepted and waiting for byway to confirm: the turn stays locked with the person's own answer. */
   sent: boolean;
+  /** What an answer would cost, said under the question (view/questions.ts questionCost); null for most questions. */
+  cost?: string | null;
 }
 
 /** The "Your turn" panel: it takes over the working area while a checkpoint is open (spec §5, Run). */
-export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit, draft, onDraft, sent }: Props) {
+export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit, draft, onDraft, sent, cost }: Props) {
   const technical = useTechnicalNames();
   const promptId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -75,6 +77,7 @@ export function YourTurn({ cp, step, artifacts, busy, paused, onSubmit, draft, o
           <h2 id={promptId} ref={heading} tabIndex={-1}>
             {cp.prompt}
           </h2>
+          {cost ? <p className="turn-cost">{cost}</p> : null}
         </header>
         {paused ? <p className="notice small">The run is paused. You can answer now; it carries on when you resume.</p> : null}
         <Panel cp={cp} artifacts={artifacts} busy={busy || sent} onSubmit={onSubmit} promptId={promptId} draft={draft} onDraft={onDraft} sent={sent} />

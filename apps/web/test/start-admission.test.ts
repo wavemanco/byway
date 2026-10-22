@@ -23,9 +23,10 @@ afterEach(async () => {
 
 async function deps(): Promise<Deps> {
   current = testHost();
-  const services: Services = current.host.services(true);
+  const { host } = current;
+  const services: Services = host.services(true);
   const ws = await services.store.ensureDefaultWorkspace();
-  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: current.host.heldKeyIn };
+  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates };
 }
 
 /** An intake with a composed recipe the demo composer made (ok: true), and that stored result. */

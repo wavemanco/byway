@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { RunScreen } from '../../../src/components/run/RunScreen.tsx';
-import { recipeForRun } from '../../../src/server/api.ts';
+import { questionCosts, recipeForRun } from '../../../src/server/api.ts';
 import { getDeps } from '../../../src/server/deps.ts';
 import { getRunData } from '../../../src/server/run-data.ts';
 
@@ -19,7 +19,7 @@ export default async function RunPage({ params }: PageProps<'/runs/[id]'>) {
   const run = await deps.services.store.getRun(id);
   if (!run) notFound();
   const initial = await getRunData(deps.services, id);
-  const { presentation, label, steps } = await recipeForRun(deps, run);
+  const { presentation, label, steps, recipe } = await recipeForRun(deps, run);
   // Keyed by the run: the screen owns per-run state (its refresher and the person's drafts, ADR-0082).
-  return <RunScreen key={id} initial={initial} presentation={presentation ?? null} label={label ?? null} steps={steps ?? null} />;
+  return <RunScreen key={id} initial={initial} presentation={presentation ?? null} label={label ?? null} steps={steps ?? null} questions={questionCosts(deps, run, recipe)} />;
 }

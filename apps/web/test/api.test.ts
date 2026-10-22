@@ -16,6 +16,7 @@ import {
   controlRun,
   createIntake,
   currentRecommendation,
+  questionCosts,
   recipeForRun,
   recommendIntake,
   resolveInRun,
@@ -42,9 +43,10 @@ afterEach(async () => {
 /** The real store, gateway (mock provider), prompts and advisor on a temp data directory, with the fake Runner. */
 async function deps(): Promise<Deps> {
   current = testHost();
-  const services: Services = current.host.services(true);
+  const { host } = current;
+  const services: Services = host.services(true);
   const ws = await services.store.ensureDefaultWorkspace();
-  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: current.host.heldKeyIn };
+  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates };
 }
 
 /**
@@ -122,6 +124,28 @@ describe('route handler logic', PRODUCT_PATH, () => {
     const presented = shown.presentation?.stages.flatMap((s) => s.steps.flatMap((step) => step.stepIds)) ?? [];
     expect(presented.length).toBeGreaterThan(0);
     for (const id of presented) expect(shown.steps?.[id]?.label).toBeDefined();
+  });
+
+  // UX-4 remainder: "Run this step?" and "Is this ready?" said what each answer does, never what it costs.
+  it("prices each question an optional or a person's loop asks, with the run's own profile, for the Run screen", async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const { runId } = await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 });
+    const run = await d.services.store.getRun(runId);
+    if (!run) throw new Error('run missing');
+    const { recipe } = await recipeForRun(d, run);
+    const costs = questionCosts(d, run, recipe);
+    // C4 asks three optional questions and has no loop a person ends; the demo profile prices them at nothing.
+    expect(Object.keys(costs ?? {}).sort()).toEqual(['claim-log', 'framings-if-wanted', 'recipient-critic']);
+    expect(costs?.['framings-if-wanted']).toEqual({ asks: 'optional', lowUsd: 0, highUsd: 0, calls: { low: 1, high: 1 } });
+    // The claim log is your own sign-off: no AI call.
+    expect(costs?.['claim-log']?.calls).toEqual({ low: 0, high: 0 });
+    // Asked for the run's own profile, not the one this request's Settings name (services.test.ts has how it is priced).
+    const asked = vi.fn(d.questionEstimates);
+    questionCosts({ ...d, profileId: 'best', questionEstimates: asked }, { ...run, profileId: 'balanced' }, recipe);
+    expect(asked).toHaveBeenCalledWith(recipe, 'balanced');
+    // A run whose recipe is not known gets none.
+    expect(questionCosts(d, run, undefined)).toBeNull();
   });
 
   it('refuses unknown intakes, a missing composed recipe, and budgets over what the workspace has left', async () => {

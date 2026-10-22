@@ -7,6 +7,7 @@
  * Advisor.recipe (or the intake's composed recipe), and pause and resume are the Runner's.
  */
 import { randomUUID } from 'node:crypto';
+import type { QuestionEstimate } from '@byway/advisor';
 import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
@@ -16,6 +17,7 @@ import { budgetProblem, workspaceSpend, type WorkspaceSpend } from '../view/hist
 import { auditText } from '../view/spending.ts';
 import { takesRefs } from '../view/refs.ts';
 import { onlyProtocolChecks } from '../view/composed.ts';
+import type { QuestionCosts } from '../view/questions.ts';
 import { COMPOSED_CHANGED, COMPOSED_REFUSED } from '../view/refusals.ts';
 import { isEnded } from '../view/run.ts';
 import { stepIndex, type StepIndex } from '../view/steps.ts';
@@ -49,6 +51,8 @@ export interface Deps {
   profileId: string;
   /** Names a provider key byway holds found in a request body (ADR-0088); routes hand it to parseBody. */
   heldKeyIn: HeldKeyIn;
+  /** What each answer to a run's questions would cost, for a run on that profile (ServiceHost.questionEstimates). */
+  questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
 }
 
 /** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */
@@ -343,6 +347,19 @@ export async function recipeForRun(deps: Deps, run: RunRecord): Promise<RunRecip
     return { presentation: composed.presentation, label: composed.label, recipe: composed.recipe, steps: stepIndex(composed.presentation, composed.recipe) };
   }
   return {};
+}
+
+/**
+ * What the Run screen says beside each question an optional or a person's loop asks (UX-4 remainder; view/questions.ts):
+ * the figure for one answer, by the asking node's id, priced as the run's own calls are (RunRecord.profileId, or the
+ * demo profile when this byway's calls all go to the mock), not with the profile Settings name now. Null when the
+ * run's recipe is not known.
+ */
+export function questionCosts(deps: Deps, run: RunRecord, recipe: Recipe | undefined): QuestionCosts | null {
+  if (!recipe) return null;
+  return Object.fromEntries(
+    Object.entries(deps.questionEstimates(recipe, run.profileId)).map(([id, q]) => [id, { asks: q.asks, lowUsd: q.estimate.lowUsd, highUsd: q.estimate.highUsd, calls: q.estimate.modelCalls }]),
+  );
 }
 
 export async function resolveInRun(deps: Deps, runId: string, checkpointId: string, input: z.infer<typeof ResolutionInput>): Promise<void> {

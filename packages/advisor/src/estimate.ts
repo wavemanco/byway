@@ -172,6 +172,8 @@ interface Walk {
   priced: Priced;
   /** Stage spans without gate retries, for a one-shot gate's "re-run stage Dk". */
   stageBase?: Map<Stage['stage'], Span>;
+  /** When set, what each optional's and each person's loop's question commits to, by the node's id (estimateQuestions). */
+  questions?: Map<string, { asks: QuestionEstimate['asks']; span: Span }>;
 }
 
 const count = (low: number, high: number): Count => ({ low: Math.max(0, low), high: Math.max(0, high) });
@@ -316,12 +318,15 @@ function walkNode(w: Walk, n: Node, set: Count): Walked {
       const planned = loopRounds(n.gate).planned;
       const rounds = count(Math.min(n.gate.probe, planned), planned);
       // A loop a person ends asks one question a round: "Is this ready?", and at the last round the cap's question.
+      // No to either runs another round of the body.
+      if (n.gate.metric === 'human') w.questions?.set(n.id, { asks: 'round', span: body.span });
       const perRound = n.gate.metric === 'human' ? add(body.span, minutes('confirm')) : body.span;
       return { span: add(times(perRound, rounds), atCap(w, n.gate)), set: body.set };
     }
     case 'optional': {
       // The trigger is asked as a yes/no question either way; the body runs only on a yes.
       const body = walkNode(w, n.body, set);
+      w.questions?.set(n.id, { asks: 'optional', span: body.span });
       return { span: add(minutes('confirm'), onlyHigh(body.span)), set: count(Math.min(set.low, body.set.low), Math.max(set.high, body.set.high)) };
     }
     case 'route': {
@@ -387,16 +392,44 @@ function resolvePrices(recipe: Recipe, ctx: PricingContext): Priced {
 const floorCents = (usd: number) => Math.floor(usd * 100 + 1e-9) / 100;
 const ceilCents = (usd: number) => Math.ceil(usd * 100 - 1e-9) / 100;
 
+/** A span as an estimate: dollars rounded outward to the cent, minutes to whole minutes. */
+function estimateOf(span: Span): CostEstimate {
+  return {
+    lowUsd: floorCents(span.low.usd),
+    highUsd: Math.max(floorCents(span.low.usd), ceilCents(span.high.usd)),
+    modelCalls: { low: span.low.calls, high: Math.max(span.low.calls, span.high.calls) },
+    images: { low: span.low.images, high: Math.max(span.low.images, span.high.images) },
+    humanMinutes: { low: Math.floor(span.low.minutes), high: Math.max(Math.floor(span.low.minutes), Math.ceil(span.high.minutes)) },
+  };
+}
+
 /** Estimate one run of a recipe with a profile: dollars rounded outward to the cent, minutes to whole minutes. */
 export function estimateRecipe(recipe: Recipe, ctx: PricingContext): CostEstimate {
   const priced = resolvePrices(recipe, ctx);
   const base = walkStages({ priced }, recipe);
   const { total } = walkStages({ priced, stageBase: base.byStage }, recipe);
-  return {
-    lowUsd: floorCents(total.low.usd),
-    highUsd: Math.max(floorCents(total.low.usd), ceilCents(total.high.usd)),
-    modelCalls: { low: total.low.calls, high: Math.max(total.low.calls, total.high.calls) },
-    images: { low: total.low.images, high: Math.max(total.low.images, total.high.images) },
-    humanMinutes: { low: Math.floor(total.low.minutes), high: Math.max(Math.floor(total.low.minutes), Math.ceil(total.high.minutes)) },
-  };
+  return estimateOf(total);
+}
+
+/**
+ * What one answer to a run's question commits to (UX-4 remainder), for the Run screen to show beside the question:
+ * - `optional`: "Run this step?"; Yes runs the optional's body once (inside a draft, for that draft);
+ * - `round`: a person's loop, "Is this ready?" or its cap's question; No runs one more round of its body.
+ */
+export interface QuestionEstimate {
+  asks: 'optional' | 'round';
+  estimate: CostEstimate;
+}
+
+/**
+ * The estimate of each question an optional or a person's loop asks, by the node's id, which is the stepId its
+ * checkpoints carry. Taken from the same walk as estimateRecipe's, so a question's figure is priced, banded and rounded
+ * as the recipe's estimate is, and an optional's figure is what that estimate's high end counts each time it is asked.
+ */
+export function estimateQuestions(recipe: Recipe, ctx: PricingContext): Record<string, QuestionEstimate> {
+  const priced = resolvePrices(recipe, ctx);
+  const base = walkStages({ priced }, recipe);
+  const questions = new Map<string, { asks: QuestionEstimate['asks']; span: Span }>();
+  walkStages({ priced, stageBase: base.byStage, questions }, recipe);
+  return Object.fromEntries([...questions].map(([id, q]) => [id, { asks: q.asks, estimate: estimateOf(q.span) }]));
 }

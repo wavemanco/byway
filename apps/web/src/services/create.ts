@@ -13,8 +13,10 @@
  * leases (the residual ADR-0095 decision 5 named).
  */
 import path from 'node:path';
+import type { QuestionEstimate } from '@byway/advisor';
 import type { Advisor, Gateway, PromptRenderer, Runner, Store } from '@byway/contracts';
 import type { Env as GatewayEnv } from '@byway/gateway';
+import type { Recipe } from '@byway/recipe';
 import { effectiveMode } from './config.ts';
 import type { EngineModules } from './engine.ts';
 import { engineRunner } from './engine-runner.ts';
@@ -49,6 +51,15 @@ export interface ServiceHost {
    * included), or undefined. Never the value. Routes refuse such a body before storing anything (ADR-0088).
    */
   heldKeyIn(value: unknown): string | undefined;
+  /**
+   * What each answer to a run's questions would cost (@byway/advisor estimateQuestions; UX-4 remainder), by the id of
+   * the optional or loop that asks it, for a run on `profileId`. Priced as the worker prices that run's calls
+   * (runner activities/availability.ts): with the demo profile when this byway's own gateway is in demo mode (`pnpm
+   * demo`, or no provider key), else with the run's profile, whatever Settings' demo switch says now, since that switch
+   * changes the profile of runs started after it, not the calls of a run under way. Empty when that profile has no
+   * status or no price: the figures are only shown, so a run's screen never fails for want of one.
+   */
+  questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
   close(): Promise<void>;
 }
 
@@ -91,6 +102,21 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
     },
     // An arrow, so routes can pass it on unbound. Reads the environment on every call, as the gateway does.
     heldKeyIn: (value: unknown) => engine.gateway.findHeldKey(opts.env, stringsIn(value)),
+    // An arrow too, for the same reason.
+    questionEstimates: (recipe: Recipe, profileId: string) => {
+      // The gateway set up as the worker's is: demo only when `pnpm demo` forced it or no key is set.
+      const { gateway } = pair(opts.demo);
+      const priced = gateway.demo ? engine.gateway.DEMO_PROFILE_ID : profileId;
+      const status = gateway.profileStatus().find((s) => s.profile.id === priced);
+      if (!status) return {};
+      try {
+        return engine.advisor.estimateQuestions(recipe, { profile: status.profile, images: status.images, video: status.video, otherFamily: status.otherFamily, at: new Date() });
+      } catch (err) {
+        // A model with no price (AdvisorError 'unknown-profile'): no figures, rather than no Run screen.
+        if (err instanceof engine.advisor.AdvisorError) return {};
+        throw err;
+      }
+    },
     async close() {
       for (const { gateway } of pairs.values()) await gateway.close();
       store.close();
