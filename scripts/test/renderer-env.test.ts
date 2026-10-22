@@ -3,8 +3,9 @@
  * ADR-0109). On Windows, a `pnpm start` from a current directory whose drive letter is lowercase (`c:\…`) loads the
  * gateway's env module twice: scripts/serve.ts imports it by a relative path (`file:///c:/…`) and pages.ts through the
  * @byway/gateway link (`file:///C:/…`). The names `.env.agents` listed were kept per module copy, so pages.ts's copy
- * knew none of them and Chromium got every name from the file that does not look secret. The fixture loads both as
- * serve.ts does and is started from the lowercase spelling of the repository's own directory, as a person's shell can.
+ * knew none of them and Chromium got every name from the file that does not look secret. The fixture loads the gateway
+ * a second time under the other spelling of the drive letter, as such a start does, and loads the secrets file with
+ * that copy, as serve.ts does. It makes the copy itself, so the test does not depend on how a machine writes its paths.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,15 +18,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const FIXTURE = path.join('scripts', 'test', 'fixtures', 'renderer-env-twice.ts');
 
 describe('the renderer’s environment, with the gateway loaded twice', () => {
-  it.runIf(process.platform === 'win32')('a start from a lowercase drive letter still gives Chromium no name from the secrets file', () => {
+  it.runIf(process.platform === 'win32')('the gateway loaded twice, as from a lowercase drive letter, still gives Chromium no name from the secrets file', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'byway-renderer-env-'));
     try {
       const file = path.join(dir, '.env.agents');
       // Names that do not look secret, which only the secrets-file rule leaves out.
       writeFileSync(file, 'ODD_CREDENTIAL=hunter2\nPLAIN_SETTING=x\n');
-      const cwd = ROOT[0]!.toLowerCase() + ROOT.slice(1);
-      expect(cwd).toMatch(/^[a-z]:\\/);
-      const run = spawnSync(process.execPath, ['--import', 'tsx', FIXTURE, file], { cwd, encoding: 'utf8', timeout: 60_000 });
+      const run = spawnSync(process.execPath, ['--import', 'tsx', FIXTURE, file], { cwd: ROOT, encoding: 'utf8', timeout: 60_000 });
       expect(run.status, run.stderr).toBe(0);
       // Two copies of the gateway, as on such a start, and Chromium still gets only what the shell had.
       expect(JSON.parse(run.stdout)).toEqual({ twoCopies: true, chromiumEnv: { PATH: 'C:\\Windows' } });
