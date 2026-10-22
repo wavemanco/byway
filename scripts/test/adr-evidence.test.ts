@@ -10,12 +10,14 @@
  *   path cited outside backticks is checked for the heading only. `%LOCALAPPDATA%` counts only with `Temp` after it,
  *   since byway's data folder is `%LOCALAPPDATA%\byway` (ADR-0066);
  * - every relative link in the evidence files written to be read here, and in the records' Later notes, resolves;
- * - the evidence files hold no email address, written whole or split around its @ before a mail provider's name (the
- *   conversation records are extracted from a session transcript, and the probes from scratch folders);
+ * - the evidence files and the reviews (docs/reviews, where review packets are kept) hold no email address, written
+ *   whole, split around its @ before a mail provider's name, or with its @ written as an HTML entity or as %40 (the
+ *   conversation records are extracted from a session transcript, the probes from scratch folders, and the reviews
+ *   from what lenses and reviewers wrote);
  * - neither they nor the other folders copied in from Temp or written from sessions (F07's corpus,
  *   packages/runner/test/f07-corpus; the claims oracle, scripts/test/claims-oracle and its test; and docs/reviews) hold
  *   a key-shaped string. The F07 pages are model-written sites, contact details included (nobody checked them against
- *   real ones), pinned byte for byte (f07-corpus.test.ts), so the email check stops at the evidence.
+ *   real ones), pinned byte for byte (f07-corpus.test.ts), so the email check stops at the evidence and the reviews.
  */
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -77,22 +79,48 @@ const WHOLE_ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Z
 const typeUrl = (m: string) => m.endsWith('@type.googleapis.com');
 /**
  * An address split so that the whole shape misses it, as a lens's note once wrote one ("<local part>@/<provider>",
- * SEC-PRIV-1, the check of the first block): a local part, then an @ (or a full-width one) followed by slashes or spaces
- * or nothing, or an "at" in brackets, and then a mail provider's name; or "<local part> at <provider> dot <ending>" in
- * words. Only these providers' names count, so a package scope (`@playwright/test`), a version (`rxjs@7.8.2`) or a type
- * URL is not one; an address at another domain without its dot is not seen.
+ * SEC-PRIV-1, the check of the first block): a local part, then an @ (or a full-width one) followed by slashes, spaces,
+ * quotes or nothing (so the search terms "'<local part>@' / '<provider>'" are found too), or an "at" in brackets, and
+ * then a mail provider's name; or "<local part> at <provider>" in words, followed by "dot <ending>" or ".<ending>". Only
+ * these providers' names count, so a package scope (`@playwright/test`), a version (`rxjs@7.8.2`) or a type URL is not
+ * one; an address at another domain without its dot is not seen.
  */
 const PROVIDERS = 'gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|protonmail|proton|aol|gmx|zoho|yandex|fastmail|tutanota';
 const SPLIT_ADDRESS = [
-  new RegExp(`[A-Za-z0-9._%+-]+\\s*[@\\uFF20][\\s/\\\\]*(?:${PROVIDERS})\\b`, 'gi'),
+  new RegExp(`[A-Za-z0-9._%+-]+\\s*[@\\uFF20][\\s/\\\\'"\`]*(?:${PROVIDERS})\\b`, 'gi'),
   new RegExp(`[A-Za-z0-9._%+-]+\\s*(?:\\[at\\]|\\(at\\)|\\{at\\}|<at>)\\s*(?:${PROVIDERS})\\b`, 'gi'),
-  new RegExp(`[A-Za-z0-9._%+-]+\\s+at\\s+(?:${PROVIDERS})\\s+dot\\s+[A-Za-z]{2,}\\b`, 'gi'),
+  new RegExp(`[A-Za-z0-9._%+-]+\\s+at\\s+(?:${PROVIDERS})(?:\\s+dot\\s+|\\s*\\.\\s*)[A-Za-z]{2,}\\b`, 'gi'),
 ];
-/** The email addresses a text holds, whole or split, as written. */
-const emailsIn = (text: string): string[] => [
-  ...(text.match(WHOLE_ADDRESS) ?? []).filter((m) => !typeUrl(m)),
-  ...SPLIT_ADDRESS.flatMap((re) => text.match(re) ?? []),
+const codePoint = (n: number, as: string) => (n <= 0x10ffff ? String.fromCodePoint(n) : as);
+/**
+ * A text with the escapes undone that a renderer shows as "@" or ".": HTML's numeric entities, `&commat;` and
+ * `&period;` (GitHub shows "jane.doe&#64;example.com" in a .md file as the whole address), and URL encoding's %40 and
+ * %2E (RC-5, the re-check of block 1's fix round).
+ */
+const unescaped = (text: string): string =>
+  text
+    .replace(/&#(\d{1,8});/g, (m, d: string) => codePoint(Number(d), m))
+    .replace(/&#x([0-9a-f]{1,8});/gi, (m, h: string) => codePoint(Number.parseInt(h, 16), m))
+    .replace(/&commat;/gi, '@')
+    .replace(/&period;/gi, '.')
+    .replace(/%40/g, '@')
+    .replace(/%2e/gi, '.');
+/** The email addresses a text holds, whole or split, as written once its escapes are undone. */
+const emailsIn = (text: string): string[] => {
+  const plain = unescaped(text);
+  return [...(plain.match(WHOLE_ADDRESS) ?? []).filter((m) => !typeUrl(m)), ...SPLIT_ADDRESS.flatMap((re) => plain.match(re) ?? [])];
+};
+/**
+ * Address-shaped strings in the reviews that are not addresses, each named whole with its file, so any other is still
+ * found: a prompt template's name ("<template>@<medium>.md") and the sign-in part of a URL in a test of fal's media hosts,
+ * both in the external review's verification. Built here, so this file holds neither whole.
+ */
+const VERIFICATION = 'docs/reviews/2026-10-08-external-review-verification.md';
+const NOT_ADDRESSES: readonly { file: string; text: string }[] = [
+  { file: VERIFICATION, text: ['helper.asset.briefs', 'prose.md'].join('@') },
+  { file: VERIFICATION, text: ['pw', 'v3.fal.media'].join('@') },
 ];
+const notAnAddress = (file: string, m: string) => NOT_ADDRESSES.some((n) => n.file === file && n.text === m);
 
 describe('decision evidence kept in the repository', () => {
   it('each Accepted record that cites a path under Temp has a Later note saying where that evidence is now', () => {
@@ -153,12 +181,16 @@ describe('decision evidence kept in the repository', () => {
     expect(broken).toEqual([]);
   });
 
-  it('the evidence files hold no email address', () => {
-    const hits = filesUnder(EVIDENCE, /./).flatMap((file) => emailsIn(read(file)).map((m) => `${file}: ${m}`));
+  it('the evidence files and the reviews hold no email address', () => {
+    const files = [...filesUnder(EVIDENCE, /./), ...filesUnder('docs/reviews', /./)];
+    expect(files).toContain('docs/reviews/2026-10-21-review-packet.md');
+    const hits = files.flatMap((file) => emailsIn(read(file)).flatMap((m) => (notAnAddress(file, m) ? [] : [`${file}: ${m}`])));
     expect(hits).toEqual([]);
+    // Each string named as not an address is still in its file, so none is out of date.
+    expect(NOT_ADDRESSES.filter((n) => !emailsIn(read(n.file)).includes(n.text))).toEqual([]);
   });
 
-  it('the email check also finds an address split so the whole-address shape misses it, and passes type URLs and ordinary text', () => {
+  it('the email check also finds an address split so the whole-address shape misses it, or with its @ escaped, and passes type URLs and ordinary text', () => {
     // Fakes, put together here so this file holds none whole (the check of the first block found a real one written
     // "<local part>@/<provider>" in a lens's note, SEC-PRIV-1).
     const local = ['jane', 'doe'].join('.');
@@ -175,6 +207,13 @@ describe('decision evidence kept in the repository', () => {
       inWords: `${local} at ${'ya' + 'hoo'} dot com`,
       fullWidthAt: `${local}＠/${mail}`,
       whole: `${local}${at}${mail}.com`,
+      // RC-5, the re-check of block 1's fix round: these got past the check before it.
+      atAndDot: `${local} at ${mail}.com`,
+      quotedSearchTerms: `'${local}${at}' / '${mail}'`,
+      htmlEntity: `${local}&#64;${'ex' + 'ample'}.com`,
+      htmlHexEntity: `${local}&#x40;${mail}.com`,
+      htmlNamedEntities: `${local}&commat;${mail}&period;com`,
+      urlEncoded: `${local}%40${'ex' + 'ample'}%2Ecom`,
     };
     expect(Object.entries(split).filter(([, text]) => emailsIn(text).length === 0).map(([name]) => name)).toEqual([]);
     const plain = [
@@ -182,6 +221,8 @@ describe('decision evidence kept in the repository', () => {
       `node_modules\\.pnpm\\${at}temporalio+worker${at}1.24.0`,
       `import { test } from '${at}playwright/test'; rxjs${at}7.8.2, HEAD${at}{1}, "$${at}", ok${at}1084`,
       `the ${mail} and Outlook apps; look at ${mail} later; meet at the office`,
+      // An encoded package scope, and an entity past Unicode's end, which is left as written.
+      `https://registry.npmjs.org/%40playwright%2Ftest, &#99999999; and &#x110000;`,
     ];
     expect(plain.filter((text) => emailsIn(text).length > 0)).toEqual([]);
   });
