@@ -4,7 +4,9 @@
  * reads provider keys from the environment, and nothing that holds it may reach a client bundle.
  */
 import 'server-only';
+import type { QuestionEstimate } from '@byway/advisor';
 import type { Preferences } from '@byway/contracts';
+import type { Recipe } from '@byway/recipe';
 import { connection } from 'next/server';
 import { runProfileId, servicesConfig } from './config.ts';
 import { createServiceHost, type ServiceHost } from './create.ts';
@@ -62,6 +64,8 @@ export interface Context {
   demoForced: boolean;
   /** ServiceHost.heldKeyIn: beside the services, not in them, so the Services seam stays the four contracts and the mode. */
   heldKeyIn(value: unknown): string | undefined;
+  /** ServiceHost.questionEstimates, beside the services for the same reason. */
+  questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
 }
 
 /**
@@ -76,5 +80,5 @@ export async function getContext(): Promise<Context> {
   const preferences = await h.store.getPreferences(workspace.id);
   const services = h.services(h.demoForced || preferences.demoMode);
   const profileId = runProfileId(services.mode, preferences.profileId, services.gateway.profileStatus());
-  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced, heldKeyIn: h.heldKeyIn };
+  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced, heldKeyIn: h.heldKeyIn, questionEstimates: h.questionEstimates };
 }

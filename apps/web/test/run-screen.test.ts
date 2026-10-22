@@ -1,8 +1,13 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { RunScreen } from '../src/components/run/RunScreen.tsx';
+import { RunStatusPanel } from '../src/components/run/RunStatusPanel.tsx';
 import { focusAfterRemoval } from '../src/view/focus.ts';
-import { controlPendingLabel } from '../src/view/labels.ts';
-import type { CheckpointRecord } from '@byway/contracts';
+import { CANCEL_QUESTION, CUT_OFF_NOTE, controlPendingLabel, underWayNote } from '../src/view/labels.ts';
+import type { CheckpointRecord, RunRecord } from '@byway/contracts';
 import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, sideImages, waitingRunCount } from '../src/view/run.ts';
+import type { RunData } from '../src/view/rundata.ts';
 import type { TimelineStage, TimelineStep } from '../src/view/timeline.ts';
 
 const cp = (id: string, runId: string, openedAt: string, status: CheckpointRecord['status'] = 'open'): CheckpointRecord => ({
@@ -40,16 +45,26 @@ describe('the Run screen', () => {
   });
 
   it('polls quickly while the AI works, slowly while it waits for you or is paused, and not at all once the run ended', () => {
-    expect(pollDelay('running')).toBe(1000);
-    expect(pollDelay('queued')).toBe(1000);
-    expect(pollDelay('waiting')).toBeGreaterThan(1000);
-    expect(pollDelay('paused')).toBeGreaterThan(1000);
+    expect(pollDelay('running', undefined)).toBe(1000);
+    expect(pollDelay('queued', undefined)).toBe(1000);
+    expect(pollDelay('waiting', undefined)).toBeGreaterThan(1000);
+    expect(pollDelay('paused', undefined)).toBeGreaterThan(1000);
     for (const status of ['done', 'failed', 'cancelled'] as const) {
       expect(isEnded(status)).toBe(true);
-      expect(pollDelay(status)).toBeNull();
+      expect(pollDelay(status, undefined)).toBeNull();
+      expect(pollDelay(status, 0)).toBeNull();
     }
     expect(isEnded('waiting')).toBe(false);
     expect(isEnded('paused')).toBe(false);
+  });
+
+  // RS-5: the run shows Cancelled or Failed at once, while a call byway does not cut off is still under way; its cost is
+  // added to the run when it settles, so the screen keeps polling, lazily, until none of the run's calls is under way.
+  it('keeps polling an ended run, lazily, while some of its calls are still under way', () => {
+    for (const status of ['done', 'failed', 'cancelled'] as const) expect(pollDelay(status, 2)).toBe(3000);
+    // A run still going polls as it always has, whatever is under way.
+    expect(pollDelay('running', 2)).toBe(1000);
+    expect(pollDelay('waiting', 2)).toBe(3000);
   });
 
   it('shows pages as thumbnails, text as excerpts, and diffs, images and clips as themselves', () => {
@@ -140,5 +155,95 @@ describe('images beside an options result (UX-8)', () => {
     ];
     expect(sideImages(stages)).toEqual([{ artifactId: 'sha256:m1', label: 'Mood board for option A', step: 'Custom imagery' }]);
     expect(sideImages([])).toEqual([]);
+  });
+});
+
+const ended = (status: 'failed' | 'cancelled'): RunRecord => ({
+  id: 'r1',
+  workspaceId: 'w',
+  recipeId: 'c4',
+  recipeHash: 'h',
+  profileId: 'balanced',
+  title: 'Memo',
+  problem: 'A memo',
+  medium: 'prose',
+  status,
+  costUsd: 0.4,
+  budgetUsd: 2,
+  createdAt: '2026-10-07T10:00:00.000Z',
+  updatedAt: '2026-10-07T10:00:00.000Z',
+  ...(status === 'failed' ? { error: 'The run stopped at its budget of $2.00, and the budget was not raised.' } : {}),
+});
+
+/** The status panel of an ended run, as the server renders it. */
+const panel = (status: 'failed' | 'cancelled', callsUnderWay = 0) => renderToStaticMarkup(createElement(RunStatusPanel, { run: ended(status), step: undefined, stages: [], artifacts: {}, callsUnderWay }));
+
+describe('the Cancel question and the cancelled run (ADR-0111)', () => {
+  it('says what Cancel cuts off and what finishes, in one sentence true for every profile', () => {
+    expect(CANCEL_QUESTION).toBe(
+      'Cancel this run? What it made so far is kept. An AI call already under way may still be paid for: byway cuts off text and video calls, except Google’s text calls, and other calls finish after the run stops.',
+    );
+  });
+
+  // RS-6: only a cut-off call that may have been billed is listed, and it counts against the workspace, not the run.
+  it('says which cut-off calls are listed, and where they are counted', () => {
+    expect(CUT_OFF_NOTE).toBe(
+      'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts at its estimate against the workspace budget, not this run’s, until you clear it.',
+    );
+  });
+
+  // RS-4: a failure ends the run and cuts off its other calls as Cancel does, so the Failed panel says it too.
+  it('is said under a cancelled run and under a failed one', () => {
+    for (const status of ['cancelled', 'failed'] as const) expect(panel(status), status).toContain(`<p class="muted">${CUT_OFF_NOTE}</p>`);
+  });
+
+  it('says how many of an ended run’s calls are still under way, and only while some are', () => {
+    expect(underWayNote(0)).toBeNull();
+    expect(underWayNote(1)).toBe('1 AI call this run started is still under way; the cost shown is brought up to date as it ends.');
+    expect(underWayNote(3)).toBe('3 AI calls this run started are still under way; the cost shown is brought up to date as they end.');
+    for (const status of ['cancelled', 'failed'] as const) {
+      expect(panel(status, 3), status).toContain(underWayNote(3));
+      expect(panel(status, 0), status).not.toContain('still under way');
+    }
+  });
+});
+
+/**
+ * The whole Run screen, as the server renders it (Next renders this client component on the server too), for a run and
+ * what the spend book said of it once it ended (RunData.ended).
+ */
+const runScreen = (run: RunRecord, spend?: RunData['ended']) =>
+  renderToStaticMarkup(
+    createElement(RunScreen, {
+      initial: { view: { run, events: [], checkpoints: [] }, artifacts: {}, ...(spend ? { ended: spend } : {}) },
+      presentation: null,
+      label: null,
+      steps: null,
+      questions: null,
+    }),
+  );
+
+// F3R-1 (the re-check of block 1's fix round): RS-5's pieces are tested one by one, and RunScreen joins them. A dropped
+// argument fails the typecheck (pollDelay's and runMeter's last parameters have no default). A wrong cost, a wrong count
+// on the panel or a wrong test of the run's end fails here; a wrong count for the poll does not (pollDelay given
+// undefined, 0 or after?.settledUsd in place of after?.callsUnderWay passes every test), since only the polling would
+// show it, which a server render cannot (ADR-0111; B1R2-CODE-5, the re-check of block 1's second fix round).
+describe('the Run screen joins what the spend book says of an ended run (RS-5)', () => {
+  it('shows an ended run’s calls under way and its settled cost, and says nothing of them once none is under way', () => {
+    for (const status of ['cancelled', 'failed'] as const) {
+      const html = runScreen(ended(status), { callsUnderWay: 2, settledUsd: 0.8 });
+      expect(html, status).toContain(underWayNote(2));
+      expect(html, status).toContain('<span class="meter-spent">$0.80</span>');
+      const settled = runScreen(ended(status), { callsUnderWay: 0, settledUsd: 0.4 });
+      expect(settled, status).not.toContain('still under way');
+      expect(settled, status).toContain('<span class="meter-spent">$0.40</span>');
+    }
+  });
+
+  it('shows the run record’s cost when the spend book could not be read, and reads its figures only for an ended run', () => {
+    expect(runScreen(ended('cancelled'))).toContain('<span class="meter-spent">$0.40</span>');
+    expect(runScreen(ended('cancelled'))).not.toContain('still under way');
+    // The server sends them only for an ended run; were a running run's poll to carry them, they are not its meter.
+    expect(runScreen({ ...ended('cancelled'), status: 'running' }, { callsUnderWay: 2, settledUsd: 0.8 })).toContain('<span class="meter-spent">$0.40</span>');
   });
 });

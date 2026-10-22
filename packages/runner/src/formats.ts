@@ -164,6 +164,25 @@ export const parseOptions = (text: string): Parsed<OptionsDoc> => parseJson(text
 export const parseStoryboard = (text: string): Parsed<Storyboard> =>
   parseJson(text, StoryboardSchema, 'storyboard ({"storyboard":[{"shot","description","imagePrompt","durationSec"}],"voiceover"})');
 
+/**
+ * Why a storyboard a writer answers with numbers a shot twice, or undefined. The relay keys a shot's clip by its number
+ * (activities/relay.ts: one link per number, whose clip is written onto every shot with it), so with shots 1, 2, 2 the
+ * second shot 2's clip would replace the first on both. Only what a writer answers is held to it (parseArtifact): a
+ * model's answer, which askModel asks for again with the problem, and a person's own draft (activities/human.ts
+ * finishHumanStep), whose step takes the problem as it takes any other draft parseArtifact cannot use. A storyboard
+ * already stored is read as it is (parseStoryboard), and the late VOICE's "Shot N:" lines are read in order and applied
+ * by position (copy.ts readLabelled, applyOnScreen).
+ */
+function repeatedShots(sb: Storyboard): string | undefined {
+  const seen = new Set<number>();
+  const repeated = new Set<number>();
+  for (const { shot } of sb.storyboard) (seen.has(shot) ? repeated : seen).add(shot);
+  if (!repeated.size) return undefined;
+  const shots = [...repeated];
+  const named = shots.length === 1 ? `Shot ${shots[0]} appears` : `Shots ${shots.slice(0, -1).join(', ')} and ${shots.at(-1)} appear`;
+  return `${named} more than once in the storyboard: give each shot its own number.`;
+}
+
 export const serializeJson = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
 // ---- Code diffs --------------------------------------------------------------------------------------------------
@@ -250,7 +269,7 @@ export function parseMarkdown(text: string): Parsed<string> {
   return { ok: true, value: `${doc}\n` };
 }
 
-/** A builder's answer, as the text to store in the medium's format. */
+/** A builder's answer, as the text to store in the medium's format (a storyboard's shots numbered once each). */
 export function parseArtifact(medium: Medium, text: string): Parsed<string> {
   switch (medium) {
     case 'web-page':
@@ -263,7 +282,9 @@ export function parseArtifact(medium: Medium, text: string): Parsed<string> {
     }
     case 'media': {
       const r = parseStoryboard(text);
-      return r.ok ? { ok: true, value: serializeJson(r.value) } : r;
+      if (!r.ok) return r;
+      const repeated = repeatedShots(r.value);
+      return repeated ? fail(repeated) : { ok: true, value: serializeJson(r.value) };
     }
     case 'code-diff': {
       const r = parseCodeDiff(text);

@@ -35,6 +35,16 @@ describe('polling the Run screen', () => {
     expect(Object.keys(merged.artifacts).sort()).toEqual(['a', 'b']);
   });
 
+  // RS-5: an ended run's calls still under way, from the spend book. The latest poll says how many are left; an older
+  // answer is not carried forward, so the screen stops polling once a poll says none, or cannot say.
+  it("takes what the latest poll says of an ended run's calls under way, and nothing older", () => {
+    const cancelled = data({ status: 'cancelled' });
+    const under = mergeRunData(data({}), { ...cancelled, ended: { callsUnderWay: 2, settledUsd: 0.4 } });
+    expect(under.ended).toEqual({ callsUnderWay: 2, settledUsd: 0.4 });
+    expect(mergeRunData(under, { ...cancelled, ended: { callsUnderWay: 0, settledUsd: 0.8 } }).ended).toEqual({ callsUnderWay: 0, settledUsd: 0.8 });
+    expect(mergeRunData(under, cancelled).ended).toBeUndefined();
+  });
+
   it('asks for events after the highest sequence number seen', () => {
     expect(lastSeq(data({}))).toBe(0);
     expect(lastSeq(data({ events: [event(3), event(7), event(5)] }))).toBe(7);

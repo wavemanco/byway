@@ -32,7 +32,7 @@ import {
 } from '@byway/contracts';
 import { cleanReason, declineAdvice, declineStory, notMadeProblem, stoppedBeforeRetry } from './declines.ts';
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
-import { toGatewayError, type ClassifiedError } from './errors.ts';
+import { billingOf, cutOffError, isCutOff, toGatewayError, type ClassifiedError } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost, textTokens } from './estimate.ts';
 import { ExposureRegister, exposurePath } from './exposure.ts';
 import { findHeldKey, heldKeyError } from './held-key.ts';
@@ -46,6 +46,7 @@ import { createGoogleClient, googleAdapter, type GoogleClientLike } from './prov
 import { mockAdapter } from './providers/mock.ts';
 import { createOpenAIClient, openaiAdapter, type OpenAIClientLike } from './providers/openai.ts';
 import { createOpenRouterClient, openrouterAdapter } from './providers/openrouter.ts';
+import { STREAM_IDLE_MS } from './providers/stream.ts';
 import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, ResolvedImage, ResolvedMessage } from './providers/types.ts';
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
@@ -132,6 +133,13 @@ const invalid = (message: string) => new GatewayError('invalid-request', message
  * stores request and response bodies by hash. The model it calls is the one the profile names, and only that one: no
  * provider is asked for a fallback model, and a call the model declines is asked once more on it, then ends plainly
  * (askOnceMore; ADR-0102).
+ *
+ * A step's call can carry a stop (SpendContext.operation.stop; ADR-0111): its run is ending. Once it aborts, nothing more
+ * is sent for the call (no first send, no resend, no further queue job), a retry's wait ends at once, and an adapter
+ * that can cut its call off (ProviderAdapter.cutsOff) is handed the signal and does. A call cut off after it was sent is
+ * not ledgered, since no answer came to settle: the spend book counts it at its estimate as "may have been billed", as
+ * interrupted, until it is cleared in Settings. One stopped before anything billable was sent is released. A call whose
+ * answer arrived is settled as usual, stop or not.
  */
 export class ModelGateway implements Gateway {
   private readonly forcedDemo: boolean;
@@ -247,9 +255,18 @@ export class ModelGateway implements Gateway {
       // Before the call: a family is exposed by being used as a gate, whether or not the call then succeeds (CR12).
       await this.exposure.record(ref, req.purpose, req.workspaceId, this.now());
       const adapter = this.adapter(ref.provider);
+      // The run is ending (ADR-0111): handed only to an adapter that can cut its call off.
+      const stop = req.operation?.stop;
+      const signal = stop && adapter.cutsOff?.complete ? stop : undefined;
+      // A streamed answer is read as stalled only once its step would have ended anyway (B1R2-CODE-3): a call in an image
+      // or video step waits that step's 45 minutes, as the owner chose on 2026-10-22, "45 minutes for calls in media
+      // steps (Recommended)"; one in a model step or a quick step, or with no step limit, waits STREAM_IDLE_MS.
+      const streamIdleMs = Math.max(STREAM_IDLE_MS, req.operation?.stepLimitMs ?? 0);
       const reported = await withRetries(
         async () => {
+          stopIfEnding(op, stop, ref.provider);
           await op.markSent();
+          stopIfEnding(op, stop, ref.provider);
           try {
             return await adapter.complete({
               model: ref.model,
@@ -258,16 +275,21 @@ export class ModelGateway implements Gateway {
               maxOutputTokens,
               responseFormat: req.responseFormat ?? 'text',
               context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, tier: req.tier, profileId: req.profileId },
+              ...(signal ? { signal } : {}),
+              streamIdleMs,
             });
           } catch (e) {
-            const err = toGatewayError(e, ref.provider, redact);
+            // Cut off by its stop: the call may have been billed and is counted as interrupted, unless what the adapter
+            // threw says the provider did no paid work (billingOf 'none': its own error answer, or a connection that failed
+            // before the request was written), which the stop does not change: read by that error, the call is released.
+            const err = signal?.aborted && billingOf(e) !== 'none' ? cutOffError(ref.provider, 'maybe') : toGatewayError(e, ref.provider, redact);
             op.failed(err);
             throw err;
           }
         },
         this.retry,
         BILLABLE_CALL,
-        this.retainBeforeResend(op, req.workspaceId, estimate),
+        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...(stop ? { stop } : {}) },
       );
       const { completion: out, replaced } = finiteCompletion(reported, { inputTokens, outputTokens: maxOutputTokens });
       const { costUsd, assumed } = this.completionCost(ref, out);
@@ -352,9 +374,14 @@ export class ModelGateway implements Gateway {
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
+      // No image call is cut off (ADR-0111): its provider would bill it in full and byway would lose its cost. A stop
+      // still means nothing more is sent.
+      const stop = req.operation?.stop;
       const reported = await withRetries(
         async () => {
+          stopIfEnding(op, stop, ref.provider);
           await op.markSent();
+          stopIfEnding(op, stop, ref.provider);
           try {
             return await generate({ model: ref.model, prompt: req.prompt, size: req.size, context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId } });
           } catch (e) {
@@ -365,7 +392,7 @@ export class ModelGateway implements Gateway {
         },
         this.retry,
         BILLABLE_CALL,
-        this.retainBeforeResend(op, req.workspaceId, estimate),
+        { ...this.retainBeforeResend(op, req.workspaceId, estimate), ...(stop ? { stop } : {}) },
       );
       const usage = finiteUsage(reported.usage, { inputTokens: textTokens(req.prompt), outputTokens: price.estimatedOutputTokensPerImage ?? 0, units: 1 });
       const out = { ...reported, usage: usage.usage };
@@ -467,7 +494,16 @@ export class ModelGateway implements Gateway {
     if (caller?.cancel?.aborted) throw notYet(new GatewayError('byway-failure', stoppedBeforeRetry(base), false, { billed: false }), 'the step was stopped');
     const { operation: _ignored, ...rest } = req;
     const retryOp = caller
-      ? { key: `${caller.key}/after-decline/${first.entryId}`, until: caller.until, ...(caller.cancel ? { cancel: caller.cancel } : {}), ...(earlier && caller.rebuy === true ? { rebuy: true } : {}) }
+      ? {
+          key: `${caller.key}/after-decline/${first.entryId}`,
+          until: caller.until,
+          ...(caller.cancel ? { cancel: caller.cancel } : {}),
+          // The retry is cut off when its run is ending, as the declined call was (ADR-0111).
+          ...(caller.stop ? { stop: caller.stop } : {}),
+          // And waits on a stalled stream as long as the declined call did, its step's own limit (B1R2-CODE-3).
+          ...(caller.stepLimitMs !== undefined ? { stepLimitMs: caller.stepLimitMs } : {}),
+          ...(earlier && caller.rebuy === true ? { rebuy: true } : {}),
+        }
       : undefined;
     const call = (retryOp ? { ...rest, operation: retryOp } : rest) as Q;
     let op: PaidCall;
@@ -483,6 +519,8 @@ export class ModelGateway implements Gateway {
       second = await again(call, op);
     } catch (e) {
       const err = e instanceof GatewayError ? e : toGatewayError(e, ref.provider, redact);
+      // Cut off because its run was ending (ADR-0111): no outcome for the decline to keep, since the run has ended.
+      if (isCutOff(err)) throw err;
       // byway could not mark it sent, so it did not send it: not made, like a refusal at admission.
       if (passing(err)) throw notYet(err, notMadeProblem(err) ?? err.message);
       // Settled and ledgered, then unusable: billed, and counted. Unsettled after a send that may have arrived: counted
@@ -530,6 +568,10 @@ export class ModelGateway implements Gateway {
     const op = await this.admit(req, 'video', ref, maxVideoCost(price, seconds, extras));
     const redact = makeRedactor(this.env);
     const started = Date.now();
+    // The run is ending (ADR-0111): no more jobs and no more retries, and an adapter that can cancel its job does.
+    const stop = req.operation?.stop;
+    const signal = stop && adapter.cutsOff?.video ? stop : undefined;
+    const stopping = stop ? { stop } : {};
     try {
       const mapped = <T>(fn: () => Promise<T>) => async () => {
         try {
@@ -547,12 +589,14 @@ export class ModelGateway implements Gateway {
           ...(req.shot !== undefined ? { shot: req.shot } : {}),
           ...(startFrame ? { startFrame } : {}),
           context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
-          attempt: (fn) => withRetries(mapped(fn), this.retry, FREE_READ),
+          attempt: (fn) => withRetries(mapped(fn), this.retry, FREE_READ, stopping),
           submit: async (fn, what) => {
+            // Nothing more is submitted once the run is ending: this job was not sent, so nothing was billed for it.
+            if (stop?.aborted) throw cutOffError(ref.provider, 'none', `${what} was not submitted`);
             // The submission is the call's first billable request: the spend book marks the call sent before it.
             await op.markSent();
             try {
-              return await withRetries(mapped(fn), this.retry, BILLABLE_JOB);
+              return await withRetries(mapped(fn), this.retry, BILLABLE_JOB, stopping);
             } catch (e) {
               if ((e as ClassifiedError).billing !== 'maybe') throw e;
               // Not sent again (ADR-0091): a second submission is a second job, billed again.
@@ -568,12 +612,16 @@ export class ModelGateway implements Gateway {
           accepted: (role, requestId) => op.accepted(role, requestId),
           // An earlier attempt's jobs the provider accepted (stage 3): polled by their ids, never submitted again.
           ...(op.resumed ? { resume: op.resumed } : {}),
+          ...(signal ? { signal } : {}),
         });
       } catch (e) {
         // A job fal may have accepted (a lost answer, a status that could not be read) may be billed: the call ends
-        // counted at its estimate against the workspace, as may have been billed (ADR-0095).
+        // counted at its estimate against the workspace, as may have been billed (ADR-0095). One cut off when its run was
+        // ending (ADR-0111) is counted by what its billing says: released when fal removed the job before it ran or
+        // nothing was submitted, otherwise interrupted. Its message is redacted before it is stored or shown: it can
+        // carry fal's own words (its cancel's answer), as any provider's error text can (SEC-NOTE-1).
         op.failed(e);
-        throw e;
+        throw redactMessage(e, redact);
       }
       // fal bills the seconds asked for; a provider that reports none is billed for those, one that reports an unreadable count is assumed to have been.
       const units = out.usage.units === undefined ? { value: seconds, replaced: false } : finiteNumber(out.usage.units, seconds);
@@ -615,6 +663,11 @@ export class ModelGateway implements Gateway {
       if (keptClip?.error !== undefined) throw billedFailure(redact, `${ref.provider} made the clip and billed it, but it could not be stored`, keptClip.error);
       if (keptFrame?.error !== undefined) {
         throw billedFailure(redact, `${ref.provider} made the clip and billed it, but its last frame could not be stored (the clip is kept as ${clip?.id ?? 'nothing'})`, keptFrame.error);
+      }
+      // Settled as made, then left there because its run was ending (ADR-0111): said plainly, without the cut-off's own words.
+      if (failure && isCutOff(failure)) {
+        const what = clip ? `made no last frame for it (the clip is kept as ${clip.id})` : 'did not download it';
+        throw new GatewayError('byway-failure', `${ref.provider} made the clip and billed it (its cost is recorded), but its run was ending, so byway ${what}.`, false, { billed: true });
       }
       if (failure || !clip || !lastFrame) {
         const what = !clip ? 'no usable clip could be downloaded' : `its last frame could not be extracted (the clip is kept as ${clip.id})`;
@@ -946,6 +999,21 @@ function providerLabel(label: string): string {
   return value === undefined ? label : (JSON.stringify(value) ?? typeof value);
 }
 
+/**
+ * Just before a provider request goes out, before the call is marked sent and again once it is (a stop can come while
+ * the mark is written): when its run is ending (ADR-0111), nothing is sent, and the attempt ends as one that billed
+ * nothing, so the call is released. Read first, a stop that came before the send leaves the call never marked sent, so
+ * a crash before its release cannot leave it counted as sent. withRetries sends nothing after a stop, so this is nearly
+ * always the first attempt; if a stop comes between its check and a resend, the earlier attempt that may have been
+ * billed stays counted by what was retained before the resend (ADR-0095).
+ */
+function stopIfEnding(op: PaidCall, stop: AbortSignal | undefined, provider: ProviderId): void {
+  if (!stop?.aborted) return;
+  const err = cutOffError(provider, 'none', 'nothing was sent');
+  op.failed(err);
+  throw err;
+}
+
 /** What a completion's attempts share: worked out once, before the first is admitted. */
 interface CompletionPrep {
   ref: ModelRef;
@@ -1040,6 +1108,38 @@ function billedFailure(redact: Redactor, what: string, cause: unknown, settled?:
   return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true, ...(settled ? { settled } : {}) });
 }
 
+/** What an adapter's error says when its own message cannot be read as text, so none of its words are passed on. */
+const UNREAD_MESSAGE = 'byway could not read this error’s message as text.';
+
+/**
+ * An error an adapter threw as it is, its message passed through the redactor as toGatewayError's are. The error is kept
+ * (its class, its code, its billing, its cut-off mark and fal's request ids go on with it); only its words change.
+ *
+ * The message is defined on the error rather than assigned: a DOMException (an AbortError or a TimeoutError, as fetch
+ * and AbortSignal.timeout throw) is an Error whose message is a getter only, and assigning to it throws a TypeError in
+ * strict code, which would take the adapter's error's place (RB1-F1-2, the re-check of block 1's fix round). An error
+ * that takes no new property (frozen, say) is copied instead: the same class and the same own fields, with the new
+ * message, so this never throws. A copied DOMException keeps its class by its prototype only: its internal brand is not
+ * copied, so reading its `code` on the copy throws. No reader does: byway reads an error's code only on a GatewayError,
+ * and its billing, cut-off mark and fal's request ids are own fields, which the copy keeps.
+ *
+ * The redaction is inside the try too, of the message as text (String(e.message)): an Error whose message is not text
+ * (a number, an object) is redacted as its text rather than making the redactor throw (B1R2-CODE-6, the re-check of
+ * block 1's second fix round), and one whose message cannot be read as text at all is copied with UNREAD_MESSAGE.
+ */
+function redactMessage(e: unknown, redact: Redactor): unknown {
+  if (!(e instanceof Error)) return e;
+  const message = { value: UNREAD_MESSAGE, writable: true, configurable: true, enumerable: false };
+  try {
+    message.value = redact(String(e.message));
+    Object.defineProperty(e, 'message', message);
+    return e;
+  } catch {
+    const own = Object.getOwnPropertyDescriptors(e);
+    return Object.create(Object.getPrototypeOf(e) as object, { ...own, name: { value: e.name, writable: true, configurable: true, enumerable: false }, message }) as Error;
+  }
+}
+
 /**
  * Provider metadata is a label, not content: a key in the served model or the upstream host is scrubbed for the ledger
  * (and the result, which returns what the ledger recorded), never a reason to refuse a call that was paid for (ADR-0088).
@@ -1068,17 +1168,27 @@ function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: u
   if (req.operation !== undefined) validateOperation(req.operation);
 }
 
+/** The longest wait setTimeout keeps (2^31 - 1 ms, about 24.8 days); a longer one fires at once. */
+const MAX_TIMER_MS = 2_147_483_647;
+
 /**
- * SpendContext.operation, checked before anything is reserved: a key, signals that can say when the caller ends, and the
- * caller's side of a decline it keeps (ADR-0102).
+ * SpendContext.operation, checked before anything is reserved: a key, signals that can say when the caller ends, the
+ * step's own time limit, and the caller's side of a decline it keeps (ADR-0102).
  */
 function validateOperation(value: unknown): void {
-  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; rebuy?: unknown; keepDecline?: unknown; declinedEarlier?: unknown } | null;
-  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, rebuy?, keepDecline?, declinedEarlier? }');
+  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; stop?: unknown; rebuy?: unknown; stepLimitMs?: unknown; keepDecline?: unknown; declinedEarlier?: unknown } | null;
+  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, stop?, rebuy?, stepLimitMs?, keepDecline?, declinedEarlier? }');
   if (op.rebuy !== undefined && typeof op.rebuy !== 'boolean') throw invalid('operation.rebuy, when given, must be true or false');
+  // A limit that is not a time a timer can wait would end every streamed answer's wait at once: setTimeout waits 1 ms for
+  // NaN and for anything past 2^31 - 1 ms (Infinity included).
+  const limit = op.stepLimitMs;
+  if (limit !== undefined && !(typeof limit === 'number' && Number.isFinite(limit) && limit > 0 && limit <= MAX_TIMER_MS)) {
+    throw invalid(`operation.stepLimitMs, when given, must be a number of milliseconds above 0 and at most ${MAX_TIMER_MS}`);
+  }
   if (typeof op.key !== 'string' || !op.key) throw invalid('operation.key must be a non-empty string');
   if (!(op.until instanceof AbortSignal)) throw invalid('operation.until must be an AbortSignal');
   if (op.cancel !== undefined && !(op.cancel instanceof AbortSignal)) throw invalid('operation.cancel, when given, must be an AbortSignal');
+  if (op.stop !== undefined && !(op.stop instanceof AbortSignal)) throw invalid('operation.stop, when given, must be an AbortSignal');
   if (op.keepDecline !== undefined && typeof op.keepDecline !== 'function') throw invalid('operation.keepDecline, when given, must be a function');
   if (op.declinedEarlier !== undefined) {
     const d = op.declinedEarlier as { ledgerEntryId?: unknown; costUsd?: unknown; reason?: unknown; uncertainUsd?: unknown } | null;

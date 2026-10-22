@@ -7,8 +7,9 @@
  *
  * Now the screen owns one state, seeded once by its server render, and each command's whole result is applied by one
  * transition here. Commands return everything they change that the screen shows (the recommendation or the composed
- * recipe, and what is left in the workspace), so the screen never re-runs its server render, which asks the model while
- * no recommendation is stored. Nothing here makes up a recipe.
+ * recipe, and what is left in the workspace), so the screen never re-runs its server render. That render reads only
+ * what is stored: the first recommendation is the screen's own first command, so the screen opens waiting for it
+ * ('pending') and applies it, or why it failed, like Try again's. Nothing here makes up a recipe.
  */
 import type { Recommendation } from '@byway/contracts';
 import type { ComposeView } from '../server/api.ts';
@@ -73,12 +74,22 @@ export function selected(state: RecState, selection: Selection): RecState {
 }
 
 /**
- * What the main area shows: the failure panel only when there is nothing else to show (no recommendation, no recipe
- * from the library and nothing selected); the proposal when the selection is a recipe on offer or the composed one;
- * otherwise "not available", never a stand-in.
+ * Whether the screen still has to ask for the intake's first recommendation: none is stored or has come back, none has
+ * failed, and no recipe was chosen from the library.
  */
-export function screen(state: RecState, chosenRecipeId: string | null, recipes: ReadonlySet<string>): 'failed' | 'proposal' | 'unavailable' {
+export function awaitingFirst(state: RecState, chosenRecipeId: string | null): boolean {
+  return !state.rec && !chosenRecipeId && state.problem === null;
+}
+
+/**
+ * What the main area shows: while the first recommendation is on its way and nothing else is selected, that it is being
+ * chosen; the failure panel only when there is nothing else to show (no recommendation, no recipe from the library and
+ * nothing selected); the proposal when the selection is a recipe on offer or the composed one; otherwise "not
+ * available", never a stand-in.
+ */
+export function screen(state: RecState, chosenRecipeId: string | null, recipes: ReadonlySet<string>): 'pending' | 'failed' | 'proposal' | 'unavailable' {
   const { selection } = state;
+  if (!selection && awaitingFirst(state, chosenRecipeId)) return 'pending';
   if (!state.rec && !chosenRecipeId && !selection && state.problem !== null) return 'failed';
   if (selection?.kind === 'composed') return state.composed ? 'proposal' : 'unavailable';
   if (selection?.kind === 'recipe' && recipes.has(selection.recipeId)) return 'proposal';

@@ -27,7 +27,8 @@ const AFTER_WRITE_CODES = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ECONNABO
 const AFTER_WRITE_NAMES = new Set(['AbortError', 'TimeoutError', 'APIConnectionTimeoutError', 'APIConnectionError', 'FetchError']);
 /**
  * A stream that ended without its terminal event (the Anthropic SDK's messages for a response cut off before
- * `message_stop`): the provider answered 200 and may have billed what it generated.
+ * `message_stop`, and the words byway's stream readers use for an error chunk, a missing finishing chunk or a stream
+ * that stalled: providers/stream.ts, ADR-0111): the provider answered 200 and may have billed what it generated.
  */
 const ENDED_EARLY = /stream ended without producing|request ended without sending any chunks/;
 
@@ -139,6 +140,30 @@ export function billingOf(err: unknown): Billing {
   if (bodyType(err) !== undefined) return 'none';
   return networkSignature(err) ?? 'maybe';
 }
+
+/**
+ * A call byway cut off because its run was ending (SpendContext.operation.stop; ADR-0111). Never retryable: its run has
+ * ended, and nothing is sent again. `billing` says how it is counted, as for any failed attempt: 'none' when nothing
+ * billable reached the provider (the stop came first, or fal removed the queued job before it ran: released, counting
+ * nothing), 'maybe' when the provider may have done (and billed) some of the work (counted at its estimate, as
+ * interrupted, until it is cleared in Settings). `billed` is false only for 'none'.
+ */
+export type CutOffError = ClassifiedError & { cutOff: true };
+
+export function cutOffError(provider: ProviderId, billing: Billing, detail?: string): CutOffError {
+  const why = detail ? ` (${detail})` : '';
+  const message =
+    billing === 'none'
+      ? `byway stopped this ${provider} call because its run was ending, before ${provider} did any paid work${why}.`
+      : `byway cut off this ${provider} call because its run was ending${why}. ${provider} may have billed the work it did, so the call is counted at its estimate, as "may have been billed", and listed in Settings under Spending records until you clear it.`;
+  const err = new GatewayError('byway-failure', message.slice(0, 2000), false, billing === 'none' ? { billed: false } : {}) as CutOffError;
+  err.billing = billing;
+  err.cutOff = true;
+  return err;
+}
+
+/** Whether an error is a call byway cut off (cutOffError), by its mark, so it survives being passed along. */
+export const isCutOff = (e: unknown): e is CutOffError => isObject(e) && e.cutOff === true && e instanceof GatewayError;
 
 function retryAfterMs(err: unknown): number | undefined {
   const headers = (err as { headers?: unknown }).headers;

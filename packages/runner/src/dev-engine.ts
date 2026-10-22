@@ -59,7 +59,8 @@ export interface DevEngineOptions {
   httpPort?: number;
   /**
    * A workflow bundle built beforehand (buildWorkflows). By default the worker builds dist/workflows.js on every start;
-   * a test passes its own file, so it never shares that one with a byway or another suite building it at the same time.
+   * a test, or the e2e suite's byway (serve.ts's BYWAY_WORKFLOWS_BUNDLE), passes its own file, so it never shares that
+   * one with a byway or another suite building it at the same time.
    */
   workflowsPath?: string;
 }

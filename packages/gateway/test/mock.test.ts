@@ -1,6 +1,8 @@
 import { MEDIA, type Medium } from '@byway/contracts';
 import { describe, expect, it } from 'vitest';
 import { imageSize } from '../src/estimate.ts';
+import { fencedBlocks, outsideFences } from '../src/mock/extract.ts';
+import { revisionOf } from '../src/mock/revision.ts';
 import { mockAdapter } from '../src/providers/mock.ts';
 import type { ProviderCompletionRequest } from '../src/providers/types.ts';
 import { checkContract, lastBlock } from './contract.ts';
@@ -163,6 +165,15 @@ describe('mock provider: behaviour', () => {
     expect(lastBlock(out, 'markdown')).toBe(md);
   });
 
+  it('reads the whole document from a markdown block that holds a code block, or from a longer outer fence (ENG-1)', async () => {
+    const T = '```';
+    const doc = ['# Setup', '', 'Install it first:', '', `${T}bash`, 'pnpm install', T, '', 'Then run it.'].join('\n');
+    expect(await ask('voice.apply:prose', `Apply the owner's words.\n${T}markdown\n${doc}\n${T}`)).toBe(`${T}markdown\n${doc}\n${T}`);
+    // Its own code block bare, the document comes in a 4-backtick fence, as the templates ask.
+    const bare = doc.replace(`${T}bash`, T);
+    expect(await ask('voice.apply:prose', `Apply the owner's words.\n\`\`\`\`markdown\n${bare}\n\`\`\`\``)).toBe(`${T}markdown\n${bare}\n${T}`);
+  });
+
   it('lets tests override responders by purpose or role', async () => {
     const adapter = mockAdapter({ responders: { 'critic:prose': () => '- override\nScore: 3/10', judge: () => 'Choice: B' } });
     expect((await adapter.complete(req('critic:prose', 'x'))).text).toBe('- override\nScore: 3/10');
@@ -262,4 +273,40 @@ describe('mock provider: advisor', () => {
     expect(JSON.stringify(long)).toContain('recipient-loop');
   });
   // Composing from the nearest recipe (prompt ids, exceptions, checkpoints kept) is covered in compose.test.ts.
+});
+
+/**
+ * ENG-1: the mock reads a prompt's fenced blocks line by line, as the runner reads an answer's (the copy is held to the
+ * runner's in scripts/test/fences-parity.test.ts). Before, a lazy regex cut a block at the first ``` anywhere.
+ */
+describe("the mock's fenced-block reader", () => {
+  const T = '```';
+
+  it('takes a fence named in the middle of a line for words, not for a block', () => {
+    const prompt = `One fenced ${T}json block, shaped like this:\n\n    {"images":[]}\n\nThe current options:\n${T}json\n{"options":[]}\n${T}\n`;
+    expect(fencedBlocks(prompt, ['json'])).toEqual(['{"options":[]}']);
+  });
+
+  it('reads a block that holds a fenced block with a language as one block, and the inner one as none of its own', () => {
+    const doc = `# T\n\n${T}bash\nls\n${T}\n\nEnd.`;
+    expect(fencedBlocks(`${T}markdown\n${doc}\n${T}`, ['markdown', 'bash', ''])).toEqual([doc]);
+  });
+
+  it('leaves out every top-level block whole, a block inside it included, when it reads the words outside them', () => {
+    const prompt = `Images:\n![a](/api/artifacts/a)\n\n${T}markdown\n# T\n\n${T}bash\nls\n${T}\n\n![b](/api/artifacts/b)\n${T}\nAfter.`;
+    expect(outsideFences(prompt)).toBe('Images:\n![a](/api/artifacts/a)\n\nAfter.');
+  });
+
+  it('reads the code change a prompt hands over whole when its diff adds a fenced block, with the Why inside the block or after it', async () => {
+    const diff = ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,4 @@', ' # Invoices', `+${T}bash`, '+pnpm test', `+${T}`].join('\n');
+    const why = 'Why: document the test command.\n<!-- byway-demo-revision: 2 -->';
+    const whole = `${T}diff\n${diff}\n${T}\n\n${why}`;
+    // As the templates hand over a stored change: the artifact whole inside one diff block (the diff, a blank line, the Why).
+    const stored = `The current change:\n\n${T}diff\n${diff}\n\n${why}\n\n${T}\n\nThe developer's words:\n\n<copy>\nWhy: mine.\n</copy>`;
+    expect(await ask('voice.apply:code-diff', stored)).toBe(whole);
+    // As a model answers: the Why after the block.
+    expect(await ask('voice.apply:code-diff', `Apply the developer's words to this change.\n\n${whole}\n\nChange nothing else.`)).toBe(whole);
+    // A fix turn counts from the revision it was given.
+    expect(revisionOf(await ask('fix:code-diff', stored))).toBe(3);
+  });
 });

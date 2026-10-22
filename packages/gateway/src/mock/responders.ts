@@ -1,7 +1,7 @@
 import { MEDIA, type Medium } from '@byway/contracts';
 import { compose, intake } from './advisor.ts';
 import { briefsFor, documentIn, integrateProse } from './assets.ts';
-import { htmlDocument, imageLines, imageRefs, lastFenced, subjectOf } from './extract.ts';
+import { fences, htmlDocument, imageLines, imageRefs, lastFenced, subjectOf } from './extract.ts';
 import { dedupe, overlap } from './glue.ts';
 import { choose, critique, cutDirective, defects, greatCritique, keep, tellsSweep, vision } from './judging.ts';
 import { blindRanking, lineupItems, lineupOf, lookOf, type Attachment, type LineupMemory } from './lineup.ts';
@@ -70,11 +70,22 @@ function existingJson(prompt: string, key: 'options' | 'storyboard'): unknown {
   }
 }
 
-/** The diff the prompt hands over, with its "Why:" paragraph (the text after the block). */
+/**
+ * The diff the prompt hands over, with its "Why:" paragraph: the last top-level diff block, read line by line (fences,
+ * ENG-1), so a diff that adds a fenced block is not cut at its "+```". The paragraph is the one right after the block,
+ * or else the one inside it: the templates put a stored change in the block whole (the diff, a blank line, then
+ * "Why:"), and the runner's parseCodeDiff reads a Why inside the block the same way.
+ */
 function existingDiff(prompt: string): string | undefined {
-  const m = /```diff[^\n]*\n([\s\S]*?)\n?```\s*(Why:[^\n]*(?:\n(?!\s*\n)[^\n]*)*)?/.exec(prompt);
-  if (!m?.[1]) return undefined;
-  return `${fence('diff', m[1])}\n\n${m[2]?.trim() || 'Why: the change keeps the behaviour and makes the code easier to review.'}`;
+  const block = fences(prompt).findLast((b) => b.lang === 'diff');
+  if (!block) return undefined;
+  const lines = block.body.split('\n');
+  const at = lines.findIndex((l, i) => l.startsWith('Why:') && (i === 0 || lines[i - 1]?.trim() === ''));
+  const diff = (at < 0 ? lines : lines.slice(0, at)).join('\n').trimEnd();
+  if (!diff.trim()) return undefined;
+  const inside = at < 0 ? '' : lines.slice(at).join('\n').trim();
+  const after = /^\s*(Why:[^\n]*(?:\n(?!\s*\n)[^\n]*)*)/.exec(prompt.slice(block.end))?.[1]?.trim();
+  return `${fence('diff', diff)}\n\n${after || inside || 'Why: the change keeps the behaviour and makes the code easier to review.'}`;
 }
 
 /** build, seed, fix, asset, asset.integrate and voice.apply: the artifact in its medium's format. */

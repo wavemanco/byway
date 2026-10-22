@@ -1,14 +1,16 @@
 /**
  * The CI workflow (.github/workflows/verify.yml; ADR-0103) and what the README says about it: `pnpm verify` on one job
- * per operating system, reporting only, with pinned tools and actions, no secrets and the full history; and the
- * README's platform claim names exactly the systems CI runs on.
+ * per operating system, reporting only, with pinned tools and actions, no secrets and the full history; the weekly
+ * run's report of the Playwright pin (scripts/playwright-pin.ts, the owner's answer of 2026-10-21 on D4), which fails
+ * nothing; and the README's platform claim names exactly the systems CI runs on.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { pinReport, pinsIn, PINNED, REGISTRY, report, type Registry, type ReportOptions } from '../playwright-pin.ts';
 import { filesUnder, read, REPO, section } from './docs.ts';
 import { actionProblems, usesValues } from './workflow-guard.ts';
 
@@ -19,7 +21,7 @@ const readme = read('README.md');
 /** The job matrix: one entry per operating system, written `- { name: …, os: …, playwright: … }`. */
 const matrix = [...workflow.matchAll(/^\s*- \{ name: ([\w-]+), os: ([\w.-]+), playwright: ([^}]+?) \}\s*$/gm)].map((m) => ({ name: m[1] ?? '', os: m[2] ?? '', playwright: (m[3] ?? '').trim() }));
 
-type Step = { name?: string; id?: string; if?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+type Step = { name?: string; id?: string; if?: string; run?: string; uses?: string; with?: Record<string, unknown>; env?: unknown; 'continue-on-error'?: boolean; 'timeout-minutes'?: number };
 /** The job's steps, as YAML reads them. */
 const steps = (parse(workflow) as { jobs: { verify: { steps: Step[] } } }).jobs.verify.steps;
 
@@ -379,5 +381,124 @@ describe('the README on platforms and CI (ADR-0103)', () => {
 
   it('no longer says that nothing runs the checks automatically', () => {
     expect(readme).not.toMatch(/No CI service|no CI service/);
+  });
+});
+
+/**
+ * The owner's answer of 2026-10-21 on the Playwright cadence (D4): "Within two weeks of each release (Recommended)",
+ * with "The weekly CI run reports when the pin falls behind." The report runs on the weekly run, once, and fails
+ * nothing; what it says is tested here on npm's record as a fixture, never on the network.
+ */
+describe("the weekly run's report of the Playwright pin (D4)", () => {
+  const day = (d: string) => new Date(`${d}T12:00:00.000Z`);
+  /** npm's record as the registry answers it: the latest release, and when each version came out. */
+  const registry = (latest: string, time: Record<string, string>): Registry => ({ 'dist-tags': { latest }, time: { created: '2020-01-01T00:00:00.000Z', ...time } });
+  const PINS = [
+    { where: 'packages/runner', version: '1.63.0' },
+    { where: 'apps/web', version: '1.63.0' },
+  ];
+  const RELEASES = { '1.63.0': '2026-09-04T22:45:21.732Z', '1.64.0-alpha-2026-09-20': '2026-09-20T00:00:00.000Z', '1.64.0': '2026-10-07T20:42:55.791Z', '1.64.1': '2026-10-14T11:54:49.998Z' };
+  type Fetch = NonNullable<ReportOptions['fetch']>;
+  const answer = (status: number, body: () => Promise<unknown>): Fetch => async () => ({ ok: status === 200, status, json: body });
+  /**
+   * A root whose two package files pin Playwright as given, so that what report() says does not depend on the
+   * repository's own pins, which move with every update (ADR-0110). The repository's pins are read in their own test.
+   */
+  const pinnedAt = (version: string): string => {
+    const root = mkdtempSync(path.join(tmpdir(), 'byway-pin-root-'));
+    for (const { file, name } of PINNED) {
+      mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
+      writeFileSync(path.join(root, file), JSON.stringify({ dependencies: { [name]: version } }));
+    }
+    return root;
+  };
+
+  it('runs on the weekly run only, on one job, after Node is set up and before the tests, and cannot fail the job', () => {
+    const at = steps.findIndex((s) => s.run === 'node scripts/playwright-pin.ts');
+    expect(steps.filter((s) => /playwright-pin/.test(s.run ?? ''))).toHaveLength(1);
+    const step = steps[at]!;
+    expect(step.if).toBe("${{ github.event_name == 'schedule' && matrix.name == 'linux' }}");
+    expect(step['continue-on-error']).toBe(true);
+    expect(step['timeout-minutes']).toBeLessThanOrEqual(5);
+    expect(step).not.toHaveProperty('env');
+    expect(step).not.toHaveProperty('uses');
+    expect(at).toBeGreaterThan(steps.findIndex((s) => (s.name ?? '').startsWith('Node (')));
+    expect(at).toBeLessThan(steps.findIndex((s) => s.run === 'pnpm verify'));
+    // The script exits 0 whatever it finds: nothing in it sets an exit code.
+    const script = read('scripts/playwright-pin.ts');
+    expect(script).not.toMatch(/process\.exit|exitCode/);
+    expect(script.trim().split('\n').at(-1)).toBe('if (import.meta.main) await report({ ...(process.env.GITHUB_STEP_SUMMARY ? { summary: process.env.GITHUB_STEP_SUMMARY } : {}) });');
+  });
+
+  it("reads the pins the two packages have, and npm's record with no key", () => {
+    const pins = pinsIn(REPO);
+    expect(pins.map((p) => p.where)).toEqual(['packages/runner', 'apps/web']);
+    for (const [i, { file, name }] of PINNED.entries()) {
+      const pkg = JSON.parse(read(file)) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+      expect(pins[i]!.version, file).toBe(pkg.dependencies?.[name] ?? pkg.devDependencies?.[name]);
+    }
+    expect(REGISTRY).toBe('https://registry.npmjs.org/playwright');
+  });
+
+  it('a pin a minor release behind: when that minor came out, and how much of the two weeks is left, or that they are up', () => {
+    expect(pinReport(PINS, registry('1.64.1', RELEASES), day('2026-10-21'))).toEqual({
+      behind: true,
+      lines: [
+        "byway pins Playwright 1.63.0 (packages/runner and apps/web); npm's latest release is 1.64.1, out on 2026-10-14.",
+        '1.64.0, the first minor release after the pin, came out on 2026-10-07, 13 days ago. The cadence the owner chose on 2026-10-21 is an update within two weeks of each minor release, sooner for a high or critical Chromium security fix: 1 day is left.',
+      ],
+    });
+    expect(pinReport(PINS, registry('1.64.1', RELEASES), day('2026-10-10')).lines[1]).toMatch(/came out on 2026-10-07, 2 days ago\. .*: 12 days are left\.$/);
+    expect(pinReport(PINS, registry('1.64.1', RELEASES), day('2026-10-30')).lines[1]).toMatch(/22 days ago\. .*: the two weeks are up\.$/);
+  });
+
+  it('a pin a patch behind, a pin at the latest release, and pins that differ', () => {
+    const patch = pinReport([{ where: 'packages/runner', version: '1.64.0' }], registry('1.64.1', RELEASES), day('2026-10-21'));
+    expect(patch.behind).toBe(true);
+    expect(patch.lines[1]).toMatch(/^It is a patch release of the pinned minor\./);
+    expect(pinReport(PINS, registry('1.63.0', RELEASES), day('2026-10-21'))).toEqual({ behind: false, lines: ["byway pins Playwright 1.63.0 (packages/runner and apps/web), npm's latest release."] });
+    const differ = pinReport([PINS[0]!, { where: 'apps/web', version: '1.64.1' }], registry('1.64.1', RELEASES), day('2026-10-21'));
+    expect(differ.lines[0]).toBe('The Playwright pins differ: packages/runner 1.63.0, apps/web 1.64.1. They should name one release.');
+    expect(differ.lines[1]).toMatch(/^byway pins Playwright 1\.63\.0 \(packages\/runner\); /);
+  });
+
+  it("never fails: what it cannot read is said in one line, which goes to the run's summary too", async () => {
+    const run = async (fetch: Fetch, root = pinnedAt('1.63.0')) => {
+      const lines: string[] = [];
+      const summary = path.join(mkdtempSync(path.join(tmpdir(), 'byway-pin-')), 'summary.md');
+      writeFileSync(summary, '');
+      const before = process.exitCode;
+      await expect(report({ fetch, root, now: () => day('2026-10-21'), print: (l) => lines.push(l), summary })).resolves.toBeUndefined();
+      expect(process.exitCode).toBe(before);
+      return { lines, summary: readFileSync(summary, 'utf8') };
+    };
+    const cases: [string, Fetch, string][] = [
+      ['no network', async () => Promise.reject(new Error('getaddrinfo ENOTFOUND registry.npmjs.org')), 'getaddrinfo ENOTFOUND registry.npmjs.org'],
+      ['an error status', answer(503, async () => ({})), "npm's registry answered 503"],
+      ['an answer that is not JSON', answer(200, async () => Promise.reject(new SyntaxError('Unexpected token'))), 'Unexpected token'],
+      ['no latest release', answer(200, async () => ({ 'dist-tags': { latest: 'soon' } })), 'npm names no latest release'],
+    ];
+    for (const [what, fetch, said] of cases) {
+      const out = await run(fetch);
+      expect(out.lines, what).toEqual([`Whether the Playwright pin has fallen behind could not be read (${said}), so this run reports nothing on it.`]);
+      expect(out.summary, what).toContain(out.lines[0]);
+    }
+    // Package files that pin no single release.
+    expect((await run(answer(200, async () => registry('1.64.1', RELEASES)), pinnedAt('^1.63.0'))).lines[0]).toContain('does not pin playwright to one release');
+  });
+
+  it("marks a pin that is behind with one warning on the run's page, and a pin at the latest release with none", async () => {
+    const lines: string[] = [];
+    const at = (latest: string) => answer(200, async () => registry(latest, RELEASES));
+    // Fixture pins: the repository's own reach 1.64.1 at their first update, and would then be behind no fixture here.
+    const root = pinnedAt('1.63.0');
+    await report({ fetch: at('1.64.1'), root, now: () => day('2026-10-21'), print: (l) => lines.push(l) });
+    const warnings = lines.filter((l) => l.startsWith('::warning'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/^::warning title=Playwright pin::byway pins Playwright 1\.63\.0 \(packages\/runner and apps\/web\); npm's latest release is 1\.64\.1/);
+    expect(warnings[0]).not.toMatch(/[\r\n]/);
+    lines.length = 0;
+    await report({ fetch: at('1.63.0'), root, now: () => day('2026-10-21'), print: (l) => lines.push(l) });
+    expect(lines).toEqual(["byway pins Playwright 1.63.0 (packages/runner and apps/web), npm's latest release."]);
   });
 });

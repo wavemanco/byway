@@ -17,6 +17,7 @@ export { COMPOSED_SUMMARY, isComposed, labelFor, STUDY_REGISTRY, UNTESTED_SUMMAR
 export {
   ARTIFACT_TOKENS,
   CLIP_SECONDS,
+  estimateQuestions,
   estimateRecipe,
   HUMAN_MINUTES,
   PROMPT_TOKENS,
@@ -25,5 +26,6 @@ export {
   TOKEN_BAND,
   VIEW_TOKENS,
   type PricingContext,
+  type QuestionEstimate,
 } from './estimate.ts';
 export { jsonSlot } from './text.ts';

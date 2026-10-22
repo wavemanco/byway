@@ -1,0 +1,90 @@
+base-pasted-key: expected pass, got fail (exit 1; 5 passed, 1 failed; 26 s)  <-- UNEXPECTED
+    failed: e2e\pasted-key.spec.ts:99:1 › a refused key in an attachment leaves the text kept; once Start finds no key in the fixed attachment, "Change" brings both back
+    at: e2e\pasted-key.spec.ts:125:25
+    error: expect(received).toBe(expected) // Object.is equality
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\base-pasted-key.log
+base-renderer-sandbox: expected pass, got pass (exit 0; 4 passed, 0 failed; 26 s)
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\base-renderer-sandbox.log
+base-keyboard: expected pass, got pass (exit 0; 1 passed, 0 failed; 14 s)
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\base-keyboard.log
+base-recovery: expected pass, got pass (exit 0; 1 passed, 0 failed; 20 s)
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\base-recovery.log
+E1 RunScreen passes no cost to YourTurn: expected fail, got fail (exit 1; 0 passed, 1 failed; 48 s)
+    failed: e2e\configurations.spec.ts:170:1 › C4: an optional step you decline reads Skipped, and the Result lists it as not done
+    at: e2e\configurations.spec.ts:178:44
+    error: expect(locator).toHaveText(expected) failed / element(s) not found
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\E1.log
+E3/W7 an edit to a held attachment keeps it again (the old rule): expected fail, got fail (exit 1; 0 passed, 2 failed; 17 s)
+    failed: e2e\pasted-key.spec.ts:99:1 › a refused key in an attachment leaves the text kept; once Start finds no key in the fixed attachment, "Change" brings both back | e2e\pasted-key.spec.ts:131:1 › a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through a new name for it, edits to the others, a removal and a reload
+    at: e2e\pasted-key.spec.ts:115:37, e2e\pasted-key.spec.ts:154:37
+    error: expect(received).not.toContain(expected) // indexOf / expect(received).not.toContain(expected) // indexOf
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\E3_W7.log
+E4 an accepted request keeps nothing held again: expected fail, got fail (exit 1; 0 passed, 1 failed; 45 s)
+    failed: e2e\pasted-key.spec.ts:99:1 › a refused key in an attachment leaves the text kept; once Start finds no key in the fixed attachment, "Change" brings both back
+    at: e2e\pasted-key.spec.ts:122:57
+    error: expect(locator).toHaveValue(expected) failed / element(s) not found
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\E4.log
+E5/W8 the refusal numbers the attachment by its place in the request: expected fail, got fail (exit 1; 0 passed, 1 failed; 44 s)
+    failed: e2e\pasted-key.spec.ts:131:1 › a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through a new name for it, edits to the others, a removal and a reload
+    at: e2e\pasted-key.spec.ts:51:38, e2e\pasted-key.spec.ts:141:3
+    error: expect(locator).toBeVisible() failed / element(s) not found
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\E5_W8.log
+E6 the refusal fixed at its numbers when it came (stale after a removal): expected fail, got fail (exit 1; 0 passed, 1 failed; 45 s)
+    failed: e2e\pasted-key.spec.ts:131:1 › a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through a new name for it, edits to the others, a removal and a reload
+    at: e2e\pasted-key.spec.ts:159:115
+    error: expect(locator).toBeVisible() failed / element(s) not found
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\E6.log
+W1 banner: no RENDERER_CHANGED listener: expected fail, got fail (exit 1; 0 passed, 1 failed; 43 s)
+    failed: e2e\renderer-sandbox.spec.ts:188:1 › the tab whose Settings switch changed the sandbox shows the banner at once, and loses it at once, with its polls off
+    at: e2e\renderer-sandbox.spec.ts:198:30
+    error: expect(locator).toBeVisible() failed / element(s) not found
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\W1.log
+W1-control: no listener and the spec polls on (the poll alone brings the banner): expected pass, got fail (exit 1; 0 passed, 1 failed; 48 s)  <-- UNEXPECTED
+    failed: e2e\renderer-sandbox.spec.ts:188:1 › the tab whose Settings switch changed the sandbox shows the banner at once, and loses it at once, with its polls off
+    at: e2e\renderer-sandbox.spec.ts:198:28
+    error: expect(locator).toHaveText(expected) failed
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\W1-control_.log
+W2 banner: the status is never written on a read: expected fail, got fail (exit 1; 0 passed, 2 failed; 80 s)
+    failed: e2e\renderer-sandbox.spec.ts:142:1 › a tab open before the sandbox is turned off shows the banner without a reload, where it is and on every screen its links reach, and loses it when the sandbox is back on | e2e\renderer-sandbox.spec.ts:207:1 › a tab with its polls off shows a change made in another tab once it follows a link, and its screen reader is told
+    at: e2e\renderer-sandbox.spec.ts:160:29, e2e\renderer-sandbox.spec.ts:221:29
+    error: expect(locator).toHaveText(expected) failed / expect(locator).toHaveText(expected) failed
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\W2.log
+W3 banner: its own switch not taken as known: expected fail, got fail (exit 1; 1 passed, 3 failed; 115 s)
+    failed: e2e\renderer-sandbox.spec.ts:64:1 › Settings: the page renderer's OS sandbox is on; turning it off asks first, says the risk, and leaves a banner on every screen until it is back on | e2e\renderer-sandbox.spec.ts:142:1 › a tab open before the sandbox is turned off shows the banner without a reload, where it is and on every screen its links reach, and loses it when the sandbox is back on | e2e\renderer-sandbox.spec.ts:188:1 › the tab whose Settings switch changed the sandbox shows the banner at once, and loses it at once, with its polls off
+    at: e2e\renderer-sandbox.spec.ts:103:28, e2e\renderer-sandbox.spec.ts:162:28, e2e\renderer-sandbox.spec.ts:199:28
+    error: expect(locator).toHaveText(expected) failed / expect(locator).toHaveText(expected) failed / expect(locator).toHaveText(expected) failed
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\W3.log
+W4 settings: the switch sends no saved settings: expected fail, got fail (exit 1; 1 passed, 3 failed; 116 s)
+    failed: e2e\renderer-sandbox.spec.ts:64:1 › Settings: the page renderer's OS sandbox is on; turning it off asks first, says the risk, and leaves a banner on every screen until it is back on | e2e\renderer-sandbox.spec.ts:142:1 › a tab open before the sandbox is turned off shows the banner without a reload, where it is and on every screen its links reach, and loses it when the sandbox is back on | e2e\renderer-sandbox.spec.ts:188:1 › the tab whose Settings switch changed the sandbox shows the banner at once, and loses it at once, with its polls off
+    at: e2e\renderer-sandbox.spec.ts:103:28, e2e\renderer-sandbox.spec.ts:162:28, e2e\renderer-sandbox.spec.ts:199:28
+    error: expect(locator).toHaveText(expected) failed / expect(locator).toHaveText(expected) failed / expect(locator).toHaveText(expected) failed
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\W4.log
+W5 banner: re-read keyed on a constant, not the pathname: expected fail, got fail (exit 1; 0 passed, 1 failed; 49 s)
+    failed: e2e\renderer-sandbox.spec.ts:207:1 › a tab with its polls off shows a change made in another tab once it follows a link, and its screen reader is told
+    at: e2e\renderer-sandbox.spec.ts:220:31
+    error: expect(locator).toBeVisible() failed / element(s) not found
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\W5.log
+U1 view: bannerAnnouncer.read always null: expected fail, got fail (exit 1; 0 passed, 2 failed; 81 s)
+    failed: e2e\renderer-sandbox.spec.ts:142:1 › a tab open before the sandbox is turned off shows the banner without a reload, where it is and on every screen its links reach, and loses it when the sandbox is back on | e2e\renderer-sandbox.spec.ts:207:1 › a tab with its polls off shows a change made in another tab once it follows a link, and its screen reader is told
+    at: e2e\renderer-sandbox.spec.ts:160:29, e2e\renderer-sandbox.spec.ts:221:29
+    error: expect(locator).toHaveText(expected) failed / expect(locator).toHaveText(expected) failed
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\U1.log
+W6 start: the save keeps the held attachment: expected fail, got fail (exit 1; 0 passed, 1 failed; 16 s)
+    failed: e2e\pasted-key.spec.ts:131:1 › a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through a new name for it, edits to the others, a removal and a reload
+    at: e2e\pasted-key.spec.ts:145:37
+    error: expect(received).not.toContain(expected) // indexOf
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\W6.log
+W9 start: the refusal holds nothing back: expected fail, got fail (exit 1; 0 passed, 1 failed; 44 s)
+    failed: e2e\pasted-key.spec.ts:131:1 › a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through a new name for it, edits to the others, a removal and a reload
+    at: e2e\pasted-key.spec.ts:143:44
+    error: expect(received).toContain(expected) // indexOf
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\W9.log
+U3 start: no note at the five-attachment limit: expected fail, got fail (exit 1; 0 passed, 1 failed; 45 s)
+    failed: e2e\keyboard.spec.ts:183:1 › Start: each attachment added by keyboard takes focus in its name field, the fifth too, when the attach button goes and a note says why
+    at: e2e\keyboard.spec.ts:195:23
+    error: expect(locator).toBeVisible() failed / element(s) not found
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\U3.log
+R1 recommendation: the render makes the first recommendation again (524e057 reverted): expected fail, got fail (exit 1; 0 passed, 1 failed; 76 s)
+    failed: e2e\recovery.spec.ts:85:1 › F14: after a refused recommendation, Try again shows the stored recommendation with its reasons, and Start sends it
+    at: e2e\recovery.spec.ts:90:25
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e\R1.log

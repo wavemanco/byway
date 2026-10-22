@@ -1,4 +1,4 @@
-# ADR-0109: The money path before the first live run: prices and model ids read again, a Gemini image's thinking charged, a failed run start asks Temporal first
+# ADR-0109: The money path before the first live run: prices and model ids read again, OpenAI's cache writes charged at their rate, a Gemini image's thinking charged, a failed run start asks Temporal first
 
 | | |
 |---|---|
@@ -116,3 +116,13 @@ What the providers' own documentation said on 2026-10-18, read with no keys and 
   - advisor: `estimate.test.ts` (a VOICE writing nothing back gives the same estimate), `profile.test.ts` (a RELAY step and a relay chain refused on C1, allowed on C5; a compositing step allowed anywhere);
   - scripts: `renderer-env.test.ts` (on Windows, a start from the lowercase spelling of the repository's directory loads two copies of the gateway, and Chromium's launch environment holds only the shell's variables);
   - web: `services.test.ts` (the 503's words). `e2e/start-identity.spec.ts` answers every Start itself (page.route) with a 503 body it writes, and checks only that the screen shows "Restart byway", so it does not test what the server says.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-21, the title.** The title now names OpenAI's cache writes charged at their rate (Decision 1, since the check of B1, MONEY-1, its one blocking finding). It read: "The money path before the first live run: prices and model ids read again, a Gemini image's thinking charged, a failed run start asks Temporal first". The title is outside Context and Decision, so rule 1 lets it change; the index row changed with it.
+- **2026-10-21, the evidence kept only under Temp.** This record cites these by name, not by a Temp path, so the Temp-evidence check could not see them:
+  - "The check of B1", which Decided by, Context, Decision item 2 and Evidence name with its finding ids, and the re-check of its fix round, which Alternatives names, are in [evidence/reports/b1-checks-2026-10-21.md](evidence/reports/b1-checks-2026-10-21.md), with the organisation's details redacted (its header says what).
+  - The script Evidence says "was run by hand and is not in the repository", which computed the figures under Consequences, is in [evidence/probes/b1-budgets/2026-10-21-fix/](evidence/probes/b1-budgets/2026-10-21-fix/) with its outputs, beside B1's own script of 2026-10-18 and the check's ([evidence/probes/b1-budgets/](evidence/probes/b1-budgets/)).
+- **2026-10-21, [ADR-0111](0111-cancel-cuts-off-the-calls-byway-can-stop.md).** Decision 7's assumption that a mid-stream error event is unbilled now covers Anthropic's streams only. OpenAI's and OpenRouter's chat calls are now streamed, and an error chunk in their streams after the 200, or a stream with no finishing chunk, is counted as "may have been billed" (sent once more at most, with that attempt retained). Treating a provider-bodied 5xx as unbilled stays an assumption for all four providers, as Decision 7 says. Decision 1's reading of `cached_tokens` and `cache_write_tokens` holds for a streamed answer, which is joined and parsed by the same code; one whose usage chunk never came is settled at its planning figures, marked as an assumed price. The readings ADR-0111 adds that no provider documents (what a closed stream bills, fal's 200 to a cancel counted as nothing, the mid-stream error chunks, a missing usage chunk) join the backlog row "Check the billing assumptions that no provider documentation backs", for the first live runs' ledger to check.

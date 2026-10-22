@@ -290,6 +290,34 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
     );
 
     it(
+      'abandons a call its caller cut off as interrupted, at its reservation, whatever state it was cut off in (ADR-0111)',
+      withBook(async ({ a }) => {
+        const caps = { workspaceUsd: 5, runUsd: 5 };
+        const streamed = admitRequest({ reserveUsd: 0.4, caps });
+        const queued = admitRequest({ kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7, caps });
+        expect(await a.admit(streamed)).toEqual({ admitted: true });
+        expect(await a.admit(queued)).toEqual({ admitted: true });
+        await a.markSent(streamed.opId, 'owner-a');
+        await a.markSent(queued.opId, 'owner-a');
+        await a.accept(queued.opId, 'generation', 'req-gen');
+        await a.abandon(streamed.opId, 'interrupted');
+        await a.abandon(queued.opId, 'interrupted');
+        expect(await a.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 1.1 });
+        const uncertain = (await a.records('ws')).uncertain;
+        expect(uncertain).toHaveLength(2);
+        expect(uncertain).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ opId: streamed.opId, usd: 0.4, reason: 'interrupted' }),
+            expect.objectContaining({ opId: queued.opId, usd: 0.7, reason: 'interrupted', providerJobs: { generation: 'req-gen' } }),
+          ]),
+        );
+        // Cleared like any call that may have been billed.
+        expect(await a.clearUncertain('ws', [streamed.opId, queued.opId])).toBe(2);
+        expect(await a.spend('ws')).toMatchObject({ uncertainUsd: 0 });
+      }),
+    );
+
+    it(
       'records accepted queue jobs; an accepted call whose caller is gone may have been billed, with its job ids listed',
       withBook(async ({ a, advance }) => {
         const r = admitRequest({ kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });

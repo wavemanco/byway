@@ -59,11 +59,32 @@ export function entryHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string {
 }
 
 /**
+ * How deeply a stored line may nest before it is hashed. An entry byway writes nests two levels (its usage, its prompt
+ * ref); canonicalize recurses, so a line nested thousands deep, which only damage or a bug makes, would overflow the
+ * stack and throw a RangeError where verify() names the line (ADR-0083).
+ */
+const MAX_LINE_DEPTH = 64;
+
+/** Whether a parsed line nests objects or arrays deeper than `limit`, read without recursion. */
+function nestsDeeperThan(value: unknown, limit: number): boolean {
+  const pending: [unknown, number][] = [[value, 0]];
+  while (pending.length) {
+    const [v, depth] = pending.pop()!;
+    if (v === null || typeof v !== 'object') continue;
+    if (depth >= limit) return true;
+    for (const child of Object.values(v)) pending.push([child, depth + 1]);
+  }
+  return false;
+}
+
+/**
  * The chain hash of a stored line read back, or undefined when it has none: a damaged line can hold text with no
- * canonical form (a lone surrogate written as a JSON \u escape, a number too large for JSON). verify() reports such a
- * line as broken; it does not throw on it (F19).
+ * canonical form (a lone surrogate written as a JSON \u escape, a number too large for JSON), or nest deeper than any
+ * entry (MAX_LINE_DEPTH), which is reported before it is hashed. verify() reports such a line as broken; it does not
+ * throw on it (F19).
  */
 function expectedHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string | undefined {
+  if (nestsDeeperThan(entry, MAX_LINE_DEPTH)) return undefined;
   try {
     return entryHash(entry);
   } catch (e) {
@@ -71,6 +92,14 @@ function expectedHash(entry: Omit<GatewayLedgerEntry, 'hash'>): string | undefin
     throw e;
   }
 }
+
+/**
+ * How verify() names a broken line: by its entry's id when that is text that is not empty, otherwise as `line:<n>`. A
+ * damaged line's id can be anything JSON holds (a number, an object, an array nested thousands deep), and verify()
+ * returns text: an id that is not text would reach whatever reads the result (auditLedger's brokenLine), which turns it
+ * into text and, for one nested deeply enough, overflows the stack.
+ */
+const lineName = (id: unknown, line: number): string => (typeof id === 'string' && id !== '' ? id : `line:${line}`);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -485,8 +514,10 @@ export class Ledger {
   /**
    * Re-read the whole file and check every link. Returns the id of the first entry that breaks the chain (an edited,
    * moved or missing predecessor, or one with no canonical form), `line:<n>` for an unparseable line or one that is not
-   * an entry object (or an entry without an id), `head` for a head record that is not one (not JSON, a seq below 1, a
-   * field missing), or null when the ledger is intact. It reports damage; it does not throw on it (ADR-0083).
+   * an entry object (or an entry whose id is missing, empty or not text: lineName), `head` for a head record that is not
+   * one (not JSON, a seq below 1, a field missing), or null when the ledger is intact. A head that runs ahead of the file
+   * names the entry it records, missing from the file: by its id, or by its number when its id is empty. It reports
+   * damage; it does not throw on it (ADR-0083).
    * The result is kept with the size and modification time of the ledger and of its head, and reused while neither has
    * changed, so it can be asked for on demand (Settings) without re-reading a large ledger each time (ADR-0091). An edit
    * that keeps both a file's size and its modification time is therefore not seen until the file next changes.
@@ -538,7 +569,7 @@ export class Ledger {
       // An entry with no canonical form is broken explicitly, never by comparing hashes: a line whose hash field was
       // removed would otherwise compare undefined with undefined and pass.
       if (expected === undefined || entry.seq !== i + 1 || entry.prevHash !== (prev?.hash ?? GENESIS_HASH) || hash !== expected) {
-        return entry.id ?? `line:${i + 1}`;
+        return lineName(entry.id, i + 1);
       }
       prev = entry;
     }
@@ -546,10 +577,12 @@ export class Ledger {
     if (head === 'damaged') return 'head';
     if (head) {
       const lastSeq = prev?.seq ?? 0;
-      // The head may lag the file by one after a crash between the two writes; it may never run ahead of it.
-      if (lastSeq < head.seq) return head.id;
+      // The head may lag the file by one after a crash between the two writes; it may never run ahead of it. One that
+      // does records entries missing from the file's end, so it names the entry it records: by its id, or by its number
+      // when the id is empty, never as `line:<n>`, a line the file does not have (RB1-F1-3). headOf makes the id text.
+      if (lastSeq < head.seq) return head.id !== '' ? head.id : String(head.seq);
       const atHead = JSON.parse(raw[head.seq - 1] as string) as GatewayLedgerEntry;
-      if (atHead.hash !== head.hash) return atHead.id;
+      if (atHead.hash !== head.hash) return lineName(atHead.id, head.seq);
     }
     return null;
   }

@@ -284,9 +284,13 @@ export class SqliteStore implements Store {
   async openCheckpoint(cp: CheckpointInput): Promise<CheckpointRecord> {
     const q = this.#queries();
     // The input type has no resolution, but input that crossed JSON can still carry one: refuse it rather than drop it.
+    // So with a withdrawal time: a question is withdrawn with withdrawCheckpoints.
     const raw: unknown = cp;
     if (isPlainObject(raw) && (raw.resolution !== undefined || raw.resolvedAt !== undefined)) {
       throw invalid('a checkpoint is opened without a resolution; answer it with resolveCheckpoint');
+    }
+    if (isPlainObject(raw) && raw.withdrawnAt !== undefined) {
+      throw invalid('a checkpoint is opened without a withdrawal time; withdraw it with withdrawCheckpoints');
     }
     const fields = checkpointFields(cp);
     return writeTransaction(this.#db, () => {
@@ -488,9 +492,10 @@ export class SqliteStore implements Store {
 
 /**
  * The caller-supplied part of a checkpoint (everything but its status, timestamps and resolution), validated, with
- * unknown keys dropped and keys in a fixed order, so the fields of a new and a stored checkpoint compare as JSON text.
+ * unknown keys dropped and keys in a fixed order, so the fields of a new and a stored checkpoint compare as JSON text:
+ * an activity retried after its question was withdrawn finds the stored one the same.
  */
-function checkpointFields(cp: CheckpointInput | CheckpointRecord): Omit<CheckpointRecord, 'status' | 'openedAt' | 'resolvedAt' | 'resolution'> {
+function checkpointFields(cp: CheckpointInput | CheckpointRecord): Omit<CheckpointRecord, 'status' | 'openedAt' | 'resolvedAt' | 'withdrawnAt' | 'resolution'> {
   if (!isPlainObject(cp)) throw invalid('a checkpoint must be a plain object');
   const id = nonEmpty('checkpoint id', cp.id);
   const options = cp.options === undefined ? undefined : checkpointOptions(cp.options);

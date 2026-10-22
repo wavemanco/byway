@@ -226,7 +226,15 @@ describe('one call across a step’s attempts (F03 stage 3, ADR-0099)', () => {
 
   it('refuses an operation that is not a key with its signals, before anything is reserved', async () => {
     const g = gateway({ adapters: { anthropic: answering().adapter } });
-    const bad = [{ key: '', until: new AbortController().signal }, { key: 'k', until: 'soon' }, { key: 'k', until: new AbortController().signal, cancel: 5 }, { key: 'k', until: new AbortController().signal, rebuy: 'yes' }];
+    const bad = [
+      { key: '', until: new AbortController().signal },
+      { key: 'k', until: 'soon' },
+      { key: 'k', until: new AbortController().signal, cancel: 5 },
+      { key: 'k', until: new AbortController().signal, rebuy: 'yes' },
+      // A step limit that is not a time a timer can wait (B1R2-CODE-3): NaN, Infinity or more than 2^31 - 1 ms would read
+      // every streamed answer as stalled at once.
+      ...[Number.NaN, 0, -1, Number.POSITIVE_INFINITY, 2 ** 31, '45 minutes'].map((stepLimitMs) => ({ key: 'k', until: new AbortController().signal, stepLimitMs })),
+    ];
     for (const operation of bad) {
       await expect(g.complete(ask(operation as unknown as SpendContext['operation']))).rejects.toMatchObject({ code: 'invalid-request' });
     }

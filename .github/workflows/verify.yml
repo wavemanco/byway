@@ -13,7 +13,8 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # Weekly (Mondays 06:17 UTC): the tests download Chromium and the Temporal CLI, and pushes can stop for days.
+    # Weekly (Mondays 06:17 UTC): the tests download Chromium and the Temporal CLI, and pushes can stop for days. The
+    # weekly run also says whether the Playwright pin has fallen behind npm's latest release (a step below).
     - cron: '17 6 * * 1'
 
 permissions:
@@ -52,6 +53,16 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
+
+      # The weekly run only, on one job: whether the pinned Playwright has fallen behind npm's latest release, for the
+      # cadence the owner chose on 2026-10-21 (scripts/playwright-pin.ts says it). It reports in the log, in the run's
+      # summary and, when the pin is behind, as a warning on the run's page. It fails nothing: the script exits 0 whatever
+      # it finds, and the step may fail or time out without failing the job.
+      - name: Is the Playwright pin behind npm's latest release? (the weekly run, Linux only; it reports and fails nothing)
+        if: ${{ github.event_name == 'schedule' && matrix.name == 'linux' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        run: node scripts/playwright-pin.ts
 
       # pnpm/action-setup reads the version from package.json's packageManager, so no version is set here
       # (given a `version` input that differs from it, it stops with an error). It runs after setup-node, so it uses

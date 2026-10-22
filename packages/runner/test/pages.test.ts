@@ -19,7 +19,7 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import type { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
-import { allowedUrl, chromiumLaunchOptions, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
+import { allowedUrl, chromiumLaunchOptions, fileSaid, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
 import { headlessShell, possibleSandboxCause, sandboxAdvice, type SandboxHost } from '../src/sandbox.ts';
 
 /** The launch byway makes when the person has not switched the sandbox off: inside it (ADR-0105). */
@@ -202,6 +202,15 @@ describe('the rule for what a rendered page may load from the network (spec §3.
     for (const url of ['http://unpkg.com/react', 'https://unpkg.com.evil.example/x', 'https://evil.example/unpkg.com', 'https://127.0.0.1/x', 'https://cdn.jsdelivr.net.:443/x']) {
       expect(allowedUrl(new URL(url), hosts), url).toBe(false);
     }
+  });
+
+  it('names a file a failed read loads by its origin and path only: never its query string or fragment, and at most 120 characters', () => {
+    expect(fileSaid(new URL('https://cdn.jsdelivr.net/npm/x@1/x.css?token=abc123&user=me#top'))).toBe('https://cdn.jsdelivr.net/npm/x@1/x.css');
+    // An address with a sign-in in it is named without one.
+    expect(fileSaid(new URL('https://me:secret@unpkg.com/react'))).toBe('https://unpkg.com/react');
+    const long = new URL(`https://unpkg.com/${'a'.repeat(200)}?q=${'b'.repeat(50)}`);
+    expect(fileSaid(long)).toBe(`https://unpkg.com/${'a'.repeat(117 - 'https://unpkg.com/'.length)}...`);
+    expect(fileSaid(long)).toHaveLength(120);
   });
 });
 
@@ -1320,7 +1329,8 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
     const CAP = 64 * 1024;
     const hits: Record<string, number> = {};
     const cdn = createServer((req, res) => {
-      const u = req.url ?? '';
+      // By path: a file asked for with a query string is the same file.
+      const u = new URL(req.url ?? '/', 'http://cdn').pathname;
       hits[u] = (hits[u] ?? 0) + 1;
       const css = (text: string) => void res.writeHead(200, { 'content-type': 'text/css' }).end(text);
       if (u === '/once.css') return hits[u] === 1 ? void req.socket.destroy() : css('.x{display:none}');
@@ -1339,15 +1349,18 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       // A connection that fails once: the second read gets the stylesheet, and the page is read styled.
       expect((await reader.shownText(page('once.css'), none)).text).toBe('Shown\ufdec');
       expect(hits['/once.css']).toBe(2);
-      for (const [file, what] of [
-        ['never.css', 'could not be fetched'],
-        ['big.css', 'came back cut off, larger than the 64 KiB byway takes from one file'],
-        ['busy.css', 'came back with a server error (503)'],
+      // The read names a file by its origin and path, never its query string (fileSaid): a query can carry what the page
+      // passed along, and the reason reaches the step's error, which the run view shows and stores.
+      for (const [file, said, what] of [
+        ['never.css?token=abc123', 'never.css', 'could not be fetched'],
+        ['big.css', 'big.css', 'came back cut off, larger than the 64 KiB byway takes from one file'],
+        ['busy.css', 'busy.css', 'came back with a server error (503)'],
       ] as const) {
         const err = await reader.shownText(page(file), none).catch((e: unknown) => e);
         expect(err, file).toBeInstanceOf(StepError);
-        expect((err as Error).message, file).toMatch(new RegExp(`^The page's text could not be read as a visitor sees it: it loads http://${host.replace(/\./g, '\\.')}/${file.replace('.', '\\.')}, which ${what.replace(/[()]/g, '\\$&')}`));
-        expect(hits[`/${file}`], file).toBe(2);
+        expect((err as Error).message, file).toMatch(new RegExp(`^The page's text could not be read as a visitor sees it: it loads http://${host.replace(/\./g, '\\.')}/${said.replace('.', '\\.')}, which ${what.replace(/[()]/g, '\\$&')}`));
+        expect((err as Error).message, file).not.toMatch(/token|\?/);
+        expect(hits[`/${said}`], file).toBe(2);
       }
       // A file that is not there is what a visitor's browser gets too: the page is read without it, once.
       expect((await reader.shownText(page('missing.css'), none)).text).toBe('Shown\nGone');

@@ -89,3 +89,9 @@ Decision D1 is still with the owner: Anthropic's server-side refusal fallbacks s
   - runner: `packages/runner/test/restore.test.ts`, `restart.test.ts` (a clean stop in `scripts/serve.ts`'s order, then a retry under the run's cap on a new worker, with the real store), `ledger-faults.test.ts` (JSON lines with a field of the wrong type or a cost no call can have, with the real store), `activities.test.ts`;
   - web: `apps/web/test/api.test.ts`, `spending.test.ts`, `history.test.ts`, `services.test.ts`;
   - repository: `scripts/test/composition.test.ts`, `backup.test.ts`.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-21, [ADR-0111](0111-cancel-cuts-off-the-calls-byway-can-stop.md).** `SpendBook.abandon` takes a reason, 'failed' (the default) or 'interrupted', which the schema's CHECK already allowed, so there is no migration (`packages/contracts/src/spend.ts`, `packages/store/src/spend-book.ts`, `packages/gateway/src/memory-book.ts`). A call byway cut off after it was sent, because its run was ending, has no ledger entry, since no answer came to settle: it is abandoned as interrupted, counted at its reservation as "may have been billed" against the workspace until it is cleared in Settings. One stopped before anything billable was sent is released. Decision 4's retention now comes after the retry's wait, just before the resend, rather than before the wait (`packages/gateway/src/retry.ts`), so a stop during the wait ends the call on its last attempt's error and nothing is retained for a send that is not made.

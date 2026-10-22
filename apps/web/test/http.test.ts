@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { findHeldKey } from '@byway/gateway';
 import { parseBody } from '../src/server/http.ts';
-import { HELD_KEY_REFUSAL } from '../src/view/refusals.ts';
+import { HELD_KEY_REFUSAL, heldKeyParts, startHeldKeyRefusal, startRefusalNow } from '../src/view/refusals.ts';
 import { ProblemInput, StartInput } from '../src/server/schemas.ts';
 import { stringsIn } from '../src/services/strings-in.ts';
 
@@ -86,6 +86,43 @@ describe('parseBody refuses a body holding a held provider key', () => {
     expect(answer.key).toBe('ANTHROPIC_API_KEY');
   });
 
+  // With five attachments on screen, "an attachment" left the person to search them all, and Start could only stop
+  // keeping the whole list. The refusal now says which items held a key, by position, and which of their fields.
+  it('says which attachments held a key, by their position in the list sent and their own fields, never their values', async () => {
+    const result = await parseBody(
+      post({
+        text: `Use ${ANTHROPIC}`,
+        attachments: [
+          { name: 'Class notes', text: 'Spring classes' },
+          { name: 'Draft', text: `config: ${FAL_SECRET}` },
+          { name: ANTHROPIC, text: 'x' },
+          { name: ANTHROPIC, text: ANTHROPIC },
+        ],
+      }),
+      ProblemInput,
+      heldKeyIn,
+    );
+    if (result.ok) throw new Error('expected a refusal');
+    const answer = (await result.response.json()) as Record<string, unknown>;
+    expect(answer.parts).toEqual([
+      { field: 'text', key: 'ANTHROPIC_API_KEY' },
+      {
+        field: 'attachments',
+        key: 'FAL_KEY',
+        items: [
+          { index: 1, fields: ['text'], key: 'FAL_KEY' },
+          { index: 2, fields: ['name'], key: 'ANTHROPIC_API_KEY' },
+          { index: 3, fields: ['name', 'text'], key: 'ANTHROPIC_API_KEY' },
+        ],
+      },
+    ]);
+    // The screens that read only `fields` see what they saw before.
+    expect(answer.fields).toEqual(['text', 'attachments']);
+    expect(heldKeyParts(answer)).toEqual(answer.parts);
+    expect(JSON.stringify(answer)).not.toContain(ANTHROPIC);
+    expect(JSON.stringify(answer)).not.toContain(FAL_SECRET);
+  });
+
   it('accepts text that only looks like a key, and returns the parsed body', async () => {
     const body = { text: 'The fixture uses sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX as a placeholder.' };
     expect(await parseBody(post(body), ProblemInput, heldKeyIn)).toEqual({ ok: true, data: body });
@@ -98,6 +135,72 @@ describe('parseBody refuses a body holding a held provider key', () => {
 
   it('still refuses anything but JSON first', async () => {
     expect((await refused(await parseBody(post('text=x', 'application/x-www-form-urlencoded'), ProblemInput, heldKeyIn))).status).toBe(415);
+  });
+});
+
+/**
+ * Start's words for the refusal (startHeldKeyRefusal): the server's parts, read back as the client reads them, with the
+ * attachments as Start sent them. An empty attachment is not sent, so the second one sent can be the third on the form.
+ */
+describe("Start's refusal names the attachment that held the key as Start numbers it", () => {
+  const words = async (body: { text: string; attachments: { name: string; text: string }[] }, positions: number[]) => {
+    const result = await parseBody(post(body), ProblemInput, heldKeyIn);
+    if (result.ok) throw new Error('expected a refusal');
+    const answer = (await result.response.json()) as { error: string } & Record<string, unknown>;
+    const sent = body.attachments.map((a, i) => ({ position: positions[i] as number, name: a.name }));
+    return startHeldKeyRefusal(heldKeyParts(answer), sent, answer.error);
+  };
+  const ADVICE = 'Remove it and try again — byway never stores or sends its keys.';
+
+  it.each([
+    ['in its text, by its place and its name', [{ name: 'Class notes', text: 'Spring' }, { name: 'Draft', text: `config: ${ANTHROPIC}` }], [1, 3], `Attachment 3 ("Draft") contains your ANTHROPIC_API_KEY. ${ADVICE}`],
+    ['in its name, which is not repeated', [{ name: `key ${ANTHROPIC}`, text: 'Spring' }], [1], `The name of attachment 1 contains your ANTHROPIC_API_KEY. ${ADVICE}`],
+    ['in both its name and its text', [{ name: ANTHROPIC, text: ANTHROPIC }], [2], `Attachment 2 contains your ANTHROPIC_API_KEY. ${ADVICE}`],
+    ['with no name of its own', [{ name: '  ', text: ANTHROPIC }], [1], `Attachment 1 contains your ANTHROPIC_API_KEY. ${ADVICE}`],
+    ['in two of them', [{ name: 'A', text: ANTHROPIC }, { name: 'B', text: 'x' }, { name: 'C', text: ANTHROPIC }], [1, 2, 3], `Attachment 1 ("A") and attachment 3 ("C") contain your ANTHROPIC_API_KEY. ${ADVICE}`],
+  ] as const)('%s', async (_where, attachments, positions, message) => {
+    expect(await words({ text: 'A memo', attachments: attachments.map((a) => ({ ...a })) }, [...positions])).toBe(message);
+  });
+
+  it('with the text, and with two keys, in the words the server uses for the text', async () => {
+    expect(await words({ text: `Use ${ANTHROPIC}`, attachments: [{ name: 'Draft', text: ANTHROPIC }] }, [1])).toBe(`This text and attachment 1 ("Draft") contain your ANTHROPIC_API_KEY. ${ADVICE}`);
+    expect(await words({ text: `Use ${ANTHROPIC}`, attachments: [{ name: 'Notes', text: 'x' }, { name: 'Draft', text: FAL_SECRET }] }, [1, 2])).toBe(
+      'This text contains your ANTHROPIC_API_KEY, and attachment 2 ("Draft") contains your FAL_KEY. Remove them and try again — byway never stores or sends its keys.',
+    );
+  });
+
+  // B-stale-attachment-number: the refusal is said as the form stands now. Before, its number was fixed when it came, so
+  // removing an attachment above the one that held the key left it pointing at the wrong place.
+  it('numbers the attachment by its place on the form now, and leaves it out once it is removed', async () => {
+    const body = { text: 'A memo', attachments: [{ name: 'Class notes', text: 'Spring' }, { name: 'Draft', text: `config: ${ANTHROPIC}` }] };
+    const result = await parseBody(post(body), ProblemInput, heldKeyIn);
+    if (result.ok) throw new Error('expected a refusal');
+    const answer = (await result.response.json()) as { error: string } & Record<string, unknown>;
+    // Form keys 1, 2 and 3; 2 was empty and not sent, so "Draft" was the second sent and is the third on the form.
+    const refusal = { parts: heldKeyParts(answer), sent: [{ key: 1, name: 'Class notes' }, { key: 3, name: 'Draft' }], message: answer.error };
+    expect(startRefusalNow(refusal, [1, 2, 3])).toBe(`Attachment 3 ("Draft") contains your ANTHROPIC_API_KEY. ${ADVICE}`);
+    // Attachment 1 removed: "Draft" is now the second on the form.
+    expect(startRefusalNow(refusal, [2, 3])).toBe(`Attachment 2 ("Draft") contains your ANTHROPIC_API_KEY. ${ADVICE}`);
+    // "Draft" removed: nothing it named is left.
+    expect(startRefusalNow(refusal, [1, 2])).toBeNull();
+    // With the text named too, the text is still said.
+    const both = await parseBody(post({ ...body, text: `Use ${ANTHROPIC}` }), ProblemInput, heldKeyIn);
+    if (both.ok) throw new Error('expected a refusal');
+    const bothAnswer = (await both.response.json()) as { error: string } & Record<string, unknown>;
+    expect(startRefusalNow({ ...refusal, parts: heldKeyParts(bothAnswer), message: bothAnswer.error }, [1, 2])).toBe(`This text contains your ANTHROPIC_API_KEY. ${ADVICE}`);
+    // A refusal Start cannot read keeps the server's message, whatever was removed.
+    expect(startRefusalNow({ ...refusal, parts: undefined }, [2])).toBe(answer.error);
+  });
+
+  it("keeps the server's message when the refusal does not say which item, or names a position that was not sent", () => {
+    const server = 'An attachment contains your FAL_KEY. Remove it and try again — byway never stores or sends its keys.';
+    const sent = [{ position: 1, name: 'Draft' }];
+    expect(startHeldKeyRefusal(undefined, sent, server)).toBe(server);
+    expect(startHeldKeyRefusal([{ field: 'attachments', key: 'FAL_KEY' }], sent, server)).toBe(server);
+    expect(startHeldKeyRefusal([{ field: 'attachments', key: 'FAL_KEY', items: [{ index: 1, fields: ['text'], key: 'FAL_KEY' }] }], sent, server)).toBe(server);
+    expect(startHeldKeyRefusal([{ field: 'recipeId', key: 'FAL_KEY' }], sent, server)).toBe(server);
+    expect(heldKeyParts({ parts: [{ field: 'attachments', key: 'FAL_KEY', items: [{ index: -1, fields: [], key: 'FAL_KEY' }] }] })).toBeUndefined();
+    expect(heldKeyParts({ error: server })).toBeUndefined();
   });
 });
 

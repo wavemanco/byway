@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { RendererCheckRecord, RendererSettings } from '@byway/contracts';
 import { SandboxOffConfirm } from '../src/components/PageRendererSettings.tsx';
 import { SandboxBanner } from '../src/components/SandboxBanner.tsx';
-import { OFF_RISK, rendererBanner, rendererFindings } from '../src/view/renderer.ts';
+import { bannerAnnouncer, OFF_RISK, rendererBanner, rendererBannerNews, rendererFindings } from '../src/view/renderer.ts';
 
 const AT = '2026-10-18T14:00:00.000Z';
 const starts: RendererCheckRecord = { at: AT, osSandbox: true, ready: true, sandbox: 'starts' };
@@ -44,15 +44,68 @@ describe('the banner on every screen', () => {
 /**
  * The banner as every tab first shows it (SandboxBanner, in the root layout): from the server's state. It then reads the
  * state again on each navigation and while the tab is visible; e2e/renderer-sandbox.spec.ts shows that in a second tab.
+ * Its polite status is always there, so a change can be announced, and empty at first: the banner is read in place.
  */
 describe('the banner, as a tab first shows it', () => {
   const shown = (renderer: RendererSettings) => renderToStaticMarkup(createElement(SandboxBanner, { renderer }));
+  const STATUS = '<p class="sr-only sandbox-news" role="status" aria-live="polite"></p>';
 
   it('off, or on and unable to start: a note with what it means and the link to Settings; nothing while it is on and starts', () => {
-    expect(shown(off(starts))).toBe('<div class="sandbox-banner" data-kind="off" role="note"><p>The page renderer&#x27;s OS sandbox is off, so pages and images byway draws run without it. <a href="/settings#renderer">Page renderer settings</a></p></div>');
-    expect(shown(on(fails))).toBe('<div class="sandbox-banner" data-kind="cannot-start" role="note"><p>byway cannot draw pages: at its last start-up, the page renderer&#x27;s OS sandbox could not start on this computer. <a href="/settings#renderer">How to fix it</a></p></div>');
-    expect(shown(on(starts))).toBe('');
-    expect(shown(on())).toBe('');
+    expect(shown(off(starts))).toBe(`${STATUS}<div class="sandbox-banner" data-kind="off" role="note"><p>The page renderer&#x27;s OS sandbox is off, so pages and images byway draws run without it. <a href="/settings#renderer">Page renderer settings</a></p></div>`);
+    expect(shown(on(fails))).toBe(`${STATUS}<div class="sandbox-banner" data-kind="cannot-start" role="note"><p>byway cannot draw pages: at its last start-up, the page renderer&#x27;s OS sandbox could not start on this computer. <a href="/settings#renderer">How to fix it</a></p></div>`);
+    expect(shown(on(starts))).toBe(STATUS);
+    expect(shown(on())).toBe(STATUS);
+  });
+});
+
+/**
+ * What the banner's status announces (D2 left (9)). The banner used to appear and go with nothing said, so a person on a
+ * screen reader who stayed on one screen was not told the sandbox had been switched off in another tab. The wiring (the
+ * event Settings sends, the reads on navigation and while visible) is in e2e/renderer-sandbox.spec.ts.
+ */
+describe('what the banner announces', () => {
+  const OFF = "The page renderer's OS sandbox is off, so pages and images byway draws run without it.";
+  const CANNOT = "byway cannot draw pages: at its last start-up, the page renderer's OS sandbox could not start on this computer.";
+
+  it('says the new banner when one appears or changes, what it means when it goes, and nothing when it is as it was', () => {
+    const banner = (s: RendererSettings) => rendererBanner(s);
+    expect(rendererBannerNews(banner(on(starts)), banner(off(starts)))).toBe(OFF);
+    expect(rendererBannerNews(banner(on(starts)), banner(on(fails)))).toBe(CANNOT);
+    expect(rendererBannerNews(banner(on(fails)), banner(off(fails)))).toBe(OFF);
+    expect(rendererBannerNews(banner(off(fails)), banner(on(fails)))).toBe(CANNOT);
+    expect(rendererBannerNews(banner(off(starts)), banner(on(starts)))).toBe("The page renderer's OS sandbox is on again.");
+    expect(rendererBannerNews(banner(on(fails)), banner(on(starts)))).toBe("byway no longer reports that the page renderer's OS sandbox cannot start.");
+    for (const s of [on(), on(starts), off(), off(starts), on(fails)]) expect(rendererBannerNews(banner(s), banner(s))).toBeNull();
+    // Off whatever the check found: still the same banner, so nothing to say.
+    expect(rendererBannerNews(banner(off(starts)), banner(off(fails)))).toBeNull();
+  });
+
+  it('is silent for the banner a tab first shows, then announces each change a read brings', () => {
+    const announcer = bannerAnnouncer(off(starts));
+    expect(announcer.read(off(starts))).toBeNull();
+    expect(announcer.read(on(starts))).toBe("The page renderer's OS sandbox is on again.");
+    expect(announcer.read(on(starts))).toBeNull();
+    expect(announcer.read(off(starts))).toBe(OFF);
+  });
+
+  it("is silent for this tab's own switch, clears what it said before, and still announces a change made after it elsewhere", () => {
+    const announcer = bannerAnnouncer(on(starts));
+    // Another tab turned it off: announced.
+    expect(announcer.read(off(starts))).toBe(OFF);
+    // This tab turned it back on: Settings' status says so, so the banner's status is cleared and the read is not news,
+    // whether it lands after the switch or a poll brings it again.
+    expect(announcer.switched(on(starts))).toBe('');
+    expect(announcer.read(on(starts))).toBeNull();
+    expect(announcer.read(on(starts))).toBeNull();
+    // Another tab turns it off again: the same words as before, announced again, since the status was cleared.
+    expect(announcer.read(off(starts))).toBe(OFF);
+  });
+
+  it("announces a read that shows something other than this tab's switch saved", () => {
+    const announcer = bannerAnnouncer(on(starts));
+    announcer.switched(off(starts));
+    // Before the read came back, another tab turned it on again.
+    expect(announcer.read(on(starts))).toBe("The page renderer's OS sandbox is on again.");
   });
 });
 

@@ -1,0 +1,4 @@
+["old",2502,"c2","seeds judged",2700,"never-shown at",14,"seeds; at the measurement seed?",true,"sometimes",1345,"claims",2700]
+["new",2502,"c2","seeds judged",2700,"never-shown at",6,"seeds; at the measurement seed?",false,"sometimes",1398,"claims",2700]
+["old",2677,"c2","seeds judged",2700,"never-shown at",1,"seeds; at the measurement seed?",true,"sometimes",1336,"claims",2700]
+["new",2677,"c2","seeds judged",2700,"never-shown at",1,"seeds; at the measurement seed?",false,"sometimes",1408,"claims",2700]

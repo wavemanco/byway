@@ -290,6 +290,16 @@ export function allowedUrl(url: URL, hosts: ReadonlySet<string>): boolean {
   return url.protocol === 'https:' && hosts.has(url.hostname);
 }
 
+/**
+ * A file a page loads, as a read that failed on it names it: its origin and path, cut to 120 characters. Never its query
+ * string or fragment: the reason reaches the step's error, which the run view shows and stores, and a query can carry
+ * what the page passed along (the automated security review of 2026-10-16).
+ */
+export function fileSaid(url: URL): string {
+  const where = `${url.origin}${url.pathname}`;
+  return where.length > 120 ? `${where.slice(0, 117)}...` : where;
+}
+
 /** Chromium flags: WebRTC may not open UDP paths around the request filter. */
 const LAUNCH_ARGS: readonly string[] = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
 
@@ -550,10 +560,9 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         if (admit(url)) {
           if (!fetches) return void (await fetchAdmitted(r, url));
           fetches.pending++;
-          const said = url.href.length > 120 ? `${url.href.slice(0, 117)}...` : url.href;
           try {
             const why = await fetchAdmitted(r, url);
-            if (why) fetches.failed ??= `it loads ${said}, which ${why}`;
+            if (why) fetches.failed ??= `it loads ${fileSaid(url)}, which ${why}`;
             return;
           } finally {
             if (--fetches.pending === 0) for (const done of fetches.idle.splice(0)) done();
@@ -871,6 +880,7 @@ class Unloaded extends Error {}
 interface Fetches {
   pending: number;
   idle: (() => void)[];
+  /** Why the read failed. Every reason names the file by fileSaid, never with its query string. */
   failed?: string;
 }
 

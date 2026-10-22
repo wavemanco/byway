@@ -1,6 +1,6 @@
 /** Small helpers for route handlers: JSON responses, body parsing, and plain-language errors. */
 import type { z } from 'zod';
-import { HELD_KEY_REFUSAL, heldKeyRefusal, type HeldKeyPart } from '../view/refusals.ts';
+import { HELD_KEY_REFUSAL, heldKeyRefusal, type HeldKeyItem, type HeldKeyPart } from '../view/refusals.ts';
 
 export function json(data: unknown, status = 200): Response {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -8,10 +8,13 @@ export function json(data: unknown, status = 200): Response {
 
 /**
  * A refusal: its message for people, and, for the few a screen acts on, a code (view/refusals.ts), the request's
- * top-level fields it concerns and, for a held key, the key's variable name.
+ * top-level fields it concerns and, for a held key, the key's variable name and where each key was (`parts`).
  */
-export function fail(status: number, message: string, code?: string, fields?: string[], key?: string): Response {
-  return json({ error: message, ...(code === undefined ? {} : { code }), ...(fields === undefined ? {} : { fields }), ...(key === undefined ? {} : { key }) }, status);
+export function fail(status: number, message: string, code?: string, fields?: string[], key?: string, parts?: HeldKeyPart[]): Response {
+  return json(
+    { error: message, ...(code === undefined ? {} : { code }), ...(fields === undefined ? {} : { fields }), ...(key === undefined ? {} : { key }), ...(parts === undefined ? {} : { parts }) },
+    status,
+  );
 }
 
 type Parsed<T> = { ok: true; data: T } | { ok: false; response: Response };
@@ -20,15 +23,26 @@ type Parsed<T> = { ok: true; data: T } | { ok: false; response: Response };
 export type HeldKeyIn = (value: unknown) => string | undefined;
 
 /**
- * The top-level fields of a parsed body that hold a key, with the key each holds: Start keeps its text and its
- * attachments in the tab separately, and stops keeping only the part that held the key (ADR-0088), and the refusal
- * says which part that was. Names fields and keys' variable names, never values.
+ * The top-level fields of a parsed body that hold a key, with the key each holds and, for a list, the items that hold
+ * one: Start keeps its text and each of its attachments in the tab, and stops keeping only the part that held the key
+ * (ADR-0088), and the refusal says which part that was. Names fields, positions and keys' variable names, never values.
  */
 function partsHolding(data: unknown, heldKeyIn: HeldKeyIn): HeldKeyPart[] {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return [];
   return Object.entries(data).flatMap(([field, value]) => {
     const key = heldKeyIn(value);
-    return key === undefined ? [] : [{ field, key }];
+    if (key === undefined) return [];
+    return [Array.isArray(value) ? { field, key, items: itemsHolding(value, heldKeyIn) } : { field, key }];
+  });
+}
+
+/** The items of a list that hold a key: their positions in it, their own fields that hold one, and the key. */
+function itemsHolding(list: readonly unknown[], heldKeyIn: HeldKeyIn): HeldKeyItem[] {
+  return list.flatMap((item, index) => {
+    const key = heldKeyIn(item);
+    if (key === undefined) return [];
+    const fields = typeof item === 'object' && item !== null && !Array.isArray(item) ? Object.entries(item).flatMap(([field, value]) => (heldKeyIn(value) === undefined ? [] : [field])) : [];
+    return [{ index, fields, key }];
   });
 }
 
@@ -56,7 +70,7 @@ export async function parseBody<T extends z.ZodType>(request: Request, schema: T
   const held = heldKeyIn(parsed.data);
   if (held) {
     const parts = partsHolding(parsed.data, heldKeyIn);
-    return { ok: false, response: fail(400, heldKeyRefusal(parts, held), HELD_KEY_REFUSAL, parts.map((p) => p.field), held) };
+    return { ok: false, response: fail(400, heldKeyRefusal(parts, held), HELD_KEY_REFUSAL, parts.map((p) => p.field), held, parts) };
   }
   return { ok: true, data: parsed.data };
 }

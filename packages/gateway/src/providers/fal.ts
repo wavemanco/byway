@@ -1,5 +1,7 @@
 import { createFalClient as createFalSdkClient } from '@fal-ai/client';
 import { GatewayError } from '@byway/contracts';
+import { cutOffError } from '../errors.ts';
+import { makeRedactor } from '../redact.ts';
 import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type ProviderVideoRequest } from './types.ts';
 
 /**
@@ -19,6 +21,10 @@ import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type 
  *   fal itself provides the last frame the next link starts from, and no local video decoder is needed.
  * Media URLs expire, so the gateway downloads and stores both at once, only from fal's media host and within a byte
  * cap (download, below; ADR-0088).
+ *
+ * A stop (ADR-0111: the call's run is ending) submits nothing more, and cancels the job under way over fal's REST queue
+ * API (cancelJob below), whose answer says what the job did: removed before it ran, asked to stop while running, or
+ * already done. The SDK's own cancel resolves the same way for the first two, so it is not used.
  */
 
 /** The slice of the fal client the adapter uses, so tests inject a fake. */
@@ -26,9 +32,23 @@ export interface FalClientLike {
   storage: { upload(file: Blob): Promise<string> };
   queue: {
     submit(endpointId: string, options: { input: Record<string, unknown> }): Promise<{ request_id: string }>;
-    subscribeToStatus(endpointId: string, options: { requestId: string; pollInterval?: number }): Promise<unknown>;
+    subscribeToStatus(endpointId: string, options: { requestId: string; pollInterval?: number; abortSignal?: AbortSignal }): Promise<unknown>;
     result(endpointId: string, options: { requestId: string }): Promise<{ data: unknown; requestId: string }>;
+    /** Cancels a job (cancelJob): what fal answered. Never throws. */
+    cancel(endpointId: string, options: { requestId: string }): Promise<FalCancel>;
   };
+}
+
+/**
+ * fal's answer to a cancel (fal.ai/docs/model-apis/model-endpoints/queue, read 2026-10-21): 200 `{"status": "OK"}`, the
+ * job was in the queue and fal removed it, so it does not run ('removed'); 202 `{"status": "CANCELLATION_REQUESTED"}`,
+ * the job is running and fal signalled its runner, and it can still complete ('requested'); 400
+ * `{"status": "ALREADY_COMPLETED"}`, it finished first ('completed'). Anything else (404, another answer, no answer) is
+ * 'failed', and `detail` says what came back.
+ */
+export interface FalCancel {
+  status: 'removed' | 'requested' | 'completed' | 'failed';
+  detail: string;
 }
 
 /** Clips take minutes; polling every two seconds is plenty. */
@@ -121,6 +141,59 @@ export async function submitJob(fetchImpl: typeof fetch, key: string, endpointId
   return { request_id: id };
 }
 
+/** A cancel is answered at once; this bounds a lost answer. */
+const CANCEL_TIMEOUT_MS = 30_000;
+/**
+ * How much of fal's own status text a cancel's detail keeps. fal's documented answers are single words (at most 22
+ * characters, CANCELLATION_REQUESTED); anything longer is not one of them, and the detail reaches stored and shown errors.
+ */
+const STATUS_CHARS = 64;
+/** Endpoint namespaces whose app id has three parts, as the SDK reads them (parseEndpointId). */
+const NAMESPACES = new Set(['workflows', 'comfy']);
+
+/**
+ * fal's app id for an endpoint: queue requests are addressed under it (`<owner>/<alias>/requests/<id>`), not under the
+ * whole endpoint path a job is submitted to, as the SDK's own status, result and cancel calls build them.
+ */
+export function falAppId(endpointId: string): string {
+  const parts = endpointId.split('/');
+  return (NAMESPACES.has(parts[0] ?? '') ? parts.slice(0, 3) : parts.slice(0, 2)).join('/');
+}
+
+/**
+ * Cancels one fal job: `PUT <queue>/<app id>/requests/<request id>/cancel`, sent once, with no redirect followed (the
+ * key goes nowhere else), and read for what fal said (FalCancel). It never throws: a cancel that fails leaves the job as
+ * it was, which the caller counts as "may have been billed". What came back is redacted (fal could echo the key it was
+ * sent) before it is cut short (STATUS_CHARS) into the detail: cut first, part of a key across the cut would escape.
+ */
+export async function cancelJob(fetchImpl: typeof fetch, key: string, endpointId: string, requestId: string): Promise<FalCancel> {
+  if (!ENDPOINT_ID.test(endpointId)) return { status: 'failed', detail: `"${endpointId}" is not a fal endpoint id` };
+  const redact = makeRedactor({ FAL_KEY: key });
+  let res: Response;
+  try {
+    res = await fetchImpl(`${FAL_QUEUE_URL}/${falAppId(endpointId)}/requests/${encodeURIComponent(requestId)}/cancel`, {
+      method: 'PUT',
+      headers: { Authorization: `Key ${key}`, Accept: 'application/json' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(CANCEL_TIMEOUT_MS),
+    });
+  } catch (e) {
+    return { status: 'failed', detail: redact(`no answer: ${(e as Error)?.message ?? String(e)}`).slice(0, 300) };
+  }
+  const text = await res.text().catch(() => '');
+  let status: unknown;
+  try {
+    status = (JSON.parse(text) as { status?: unknown } | null)?.status;
+  } catch {
+    status = undefined;
+  }
+  const said = `HTTP ${res.status}${typeof status === 'string' ? ` ${redact(status).slice(0, STATUS_CHARS)}` : ''}`;
+  if (res.status === 200 && status === 'OK') return { status: 'removed', detail: said };
+  if (res.status === 202) return { status: 'requested', detail: said };
+  if (res.status === 400 && status === 'ALREADY_COMPLETED') return { status: 'completed', detail: said };
+  return { status: 'failed', detail: said };
+}
+
 /**
  * The fal client: the job submission over fal's REST queue API (submitJob), and the SDK for the rest. The SDK's
  * retries cannot be switched off for its queue calls (each passes its own retry setting, which overrides the client's
@@ -135,6 +208,7 @@ export function createFalClient(key: string, fetchImpl: typeof fetch = fetch): F
       submit: (endpointId, options) => submitJob(fetchImpl, key, endpointId, options.input),
       subscribeToStatus: (endpointId, options) => client.queue.subscribeToStatus(endpointId, options),
       result: (endpointId, options) => client.queue.result(endpointId, options),
+      cancel: (endpointId, options) => cancelJob(fetchImpl, key, endpointId, options.requestId),
     },
   };
 }
@@ -276,6 +350,29 @@ export interface FalAdapterOptions {
 type JobRole = 'generation' | 'extract';
 const JOB_WHAT: Record<JobRole, string> = { generation: 'the clip', extract: 'the last-frame job' };
 
+/** A wait that a stop ended first (untilStopped). */
+const STOPPED = Symbol('stopped');
+
+/** `work`, or STOPPED once `stop` aborts (at once when it already has). What `work` does afterwards is ignored. */
+async function untilStopped<T>(work: Promise<T>, stop: AbortSignal | undefined): Promise<T | typeof STOPPED> {
+  if (!stop) return work;
+  work.catch(() => undefined);
+  if (stop.aborted) return STOPPED;
+  let onAbort: (() => void) | undefined;
+  const stopped = new Promise<typeof STOPPED>((resolve) => {
+    onAbort = () => resolve(STOPPED);
+    stop.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([work, stopped]);
+  } finally {
+    if (onAbort) stop.removeEventListener('abort', onAbort);
+  }
+}
+
+/** A job polled until done and read; or, when a stop came first, whether fal had already finished it. */
+type Polled = { data: unknown; requestId: string } | { stopped: 'running' | 'done'; requestId: string };
+
 /**
  * A job fal accepted whose status or result could not be read, even after retries: fal may still finish it and bill it.
  * The error names the request id, so the job can be found in fal's dashboard (and resumed by a later version, which
@@ -294,13 +391,22 @@ function acceptedButUnread(e: unknown, role: JobRole, requestId: string): Gatewa
 export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
   const fetchImpl = opts.fetch ?? fetch;
   const { queue } = opts.client;
-  /** A job fal accepted, polled until done and read, each round trip retried on its own (free reads). */
-  const pollJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, requestId: string) => {
+  /**
+   * A job fal accepted, polled until done and read, each round trip retried on its own (free reads). A stop ends the
+   * wait (ADR-0111): before fal reported the job done it is 'running' (the caller cancels it), after that 'done'.
+   */
+  const pollJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, requestId: string): Promise<Polled> => {
+    const stop = req.signal;
+    let done = false;
     try {
-      await req.attempt(() => queue.subscribeToStatus(endpointId, { requestId, pollInterval: POLL_INTERVAL_MS }));
-      const { data } = await req.attempt(() => queue.result(endpointId, { requestId }));
-      return { data, requestId };
+      const status = await untilStopped(req.attempt(() => queue.subscribeToStatus(endpointId, { requestId, pollInterval: POLL_INTERVAL_MS, ...(stop ? { abortSignal: stop } : {}) })), stop);
+      if (status === STOPPED) return { stopped: 'running', requestId };
+      done = true;
+      const result = await untilStopped(req.attempt(() => queue.result(endpointId, { requestId })), stop);
+      if (result === STOPPED) return { stopped: 'done', requestId };
+      return { data: result.data, requestId };
     } catch (e) {
+      if (stop?.aborted) return { stopped: done ? 'done' : 'running', requestId };
       throw acceptedButUnread(e, role, requestId);
     }
   };
@@ -309,13 +415,30 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
    * polled and read. The id fal gave the job is the one recorded: the result's own id comes from a header and may be
    * missing. A job an earlier attempt of the call already submitted (req.resume; stage 3) is only polled.
    */
-  const runJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, input: () => Promise<Record<string, unknown>>) => {
+  const runJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, input: () => Promise<Record<string, unknown>>): Promise<Polled> => {
     const resumed = req.resume?.[role];
     if (resumed !== undefined) return pollJob(req, role, endpointId, resumed);
     const body = await input();
+    // Stopped before its submission: nothing more is submitted (ADR-0111), so nothing billable was sent for this job.
+    if (req.signal?.aborted) throw cutOffError('fal', 'none', `${JOB_WHAT[role]} was not submitted`);
     const { request_id: requestId } = await req.submit(() => queue.submit(endpointId, { input: body }), JOB_WHAT[role]);
     await req.accepted?.(role, requestId);
     return pollJob(req, role, endpointId, requestId);
+  };
+  /**
+   * The generation job a stop came to while it was under way (ADR-0111), by what fal said to its cancel: removed before
+   * it ran, it counts nothing (Claude's reading of fal's queue page and its FAQ, which bills only inference time; the
+   * first live runs' ledger is to confirm it); asked to stop while running, or a cancel that failed, it may still finish
+   * and be billed, so it is counted as "may have been billed", listed with its request id; already done, the clip was
+   * made and billed, so it is settled at its seconds through the made-and-billed path, without downloading it.
+   */
+  const stoppedGeneration = async (req: ProviderVideoRequest, polled: { stopped: 'running' | 'done'; requestId: string }): Promise<'done'> => {
+    if (polled.stopped === 'done') return 'done';
+    const cancel = await queue.cancel(req.model, { requestId: polled.requestId });
+    if (cancel.status === 'completed') return 'done';
+    if (cancel.status === 'removed') throw cutOffError('fal', 'none', `fal removed clip job ${polled.requestId} from its queue before it ran: ${cancel.detail}`);
+    const said = cancel.status === 'requested' ? `fal was asked to stop clip job ${polled.requestId} while it ran (${cancel.detail}), and it can still finish it` : `byway's cancel of clip job ${polled.requestId} did not go through (${cancel.detail})`;
+    throw cutOffError('fal', 'maybe', said);
   };
   return {
     id: 'fal',
@@ -324,6 +447,8 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     },
     videoSeconds: falVideoSeconds,
     videoExtras: [{ model: FAL_EXTRACT_FRAME, seconds: EXTRACT_FRAME_SECONDS_BOUND }],
+    // A queue job is cancelled when its call's run is ending (ADR-0111).
+    cutsOff: { video: true },
     async video(req: ProviderVideoRequest): Promise<ProviderVideo> {
       const spec = FAL_VIDEO_MODELS[req.model];
       if (!spec) throw new GatewayError('invalid-request', `fal model ${req.model} has no input mapping in this version`);
@@ -335,10 +460,12 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
       // by fal; the spend book counts the call as may have been billed, with the job's request id, and the error names
       // it.) A generation job an earlier attempt submitted is polled by its id: no upload, no second submission.
       const input = { prompt: req.prompt, duration: String(req.durationSec), ...spec.extra };
-      const generated = await runJob(req, 'generation', req.model, async () => {
+      const polled = await runJob(req, 'generation', req.model, async () => {
         const frameUrl = await req.attempt(() => opts.client.storage.upload(new Blob([Buffer.from(frame.bytes)], { type: frame.mediaType })));
         return { ...input, [spec.imageField]: frameUrl };
       });
+      // A stop while the clip was under way (ADR-0111): its cancel decides what is counted (stoppedGeneration).
+      const stoppedDone = 'stopped' in polled ? await stoppedGeneration(req, polled) : undefined;
 
       const requestBody = {
         endpoint: req.model,
@@ -347,11 +474,17 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
         // A resumed call says which of its jobs an earlier attempt submitted (stage 3).
         ...(req.resume && Object.keys(req.resume).length > 0 ? { resumed: { ...req.resume } } : {}),
       };
-      const response: Record<string, unknown> = { requestId: generated.requestId, video: plain(generated.data) };
+      const response: Record<string, unknown> = { requestId: polled.requestId, ...('data' in polled ? { video: plain(polled.data) } : { stopped: 'its run was ending before byway read the clip' }) };
       // The hosts each download used, in the stored evidence: a live link shows which media hosts fal really serves from.
       const media: { clip?: string[]; frame?: string[] } = {};
       response.media = media;
       const out: ProviderVideo = { servedModel: req.model, usage: { inputTokens: 0, outputTokens: 0, units: req.durationSec }, requestBody, responseBody: response };
+      // The clip was made (and billed) when the stop came: settled as made, never downloaded, and no last-frame job.
+      if (stoppedDone || !('data' in polled)) {
+        out.failure = cutOffError('fal', 'maybe', `fal had made clip job ${polled.requestId}`);
+        return out;
+      }
+      const generated = polled;
       try {
         const video = fileUrl(generated.data, 'video');
         const clip = await req.attempt(() => download(fetchImpl, video.url, 'clip'));
@@ -360,7 +493,15 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
         const clipType = sniffVideoType(clip.bytes);
         if (!clipType) throw new GatewayError('provider-error', 'the clip fal returned is not a video (its bytes are neither MP4 nor WebM)');
         out.clip = { bytes: clip.bytes, mediaType: clipType };
+        // Stopped once the clip is kept, no last-frame job is submitted (runJob; ADR-0111): the clip is settled as made.
         const extracted = await runJob(req, 'extract', FAL_EXTRACT_FRAME, async () => ({ video_url: video.url, frame_type: 'last' }));
+        if ('stopped' in extracted) {
+          // Stopped while the frame job was under way: cancelled, best effort. Its cost is in the clip's settled price
+          // already (the helper's bound, videoExtras), whatever fal does with it.
+          const cancel = extracted.stopped === 'running' ? await queue.cancel(FAL_EXTRACT_FRAME, { requestId: extracted.requestId }) : undefined;
+          response.frame = { requestId: extracted.requestId, stopped: true, ...(cancel ? { cancel: cancel.detail } : {}) };
+          throw cutOffError('fal', 'maybe', `last-frame job ${extracted.requestId} was ${cancel ? `cancelled (${cancel.detail})` : 'done but not read'}`);
+        }
         response.frame = { requestId: extracted.requestId, ...(plain(extracted.data) as object) };
         const last = await req.attempt(() => download(fetchImpl, fileUrl(extracted.data, 'images').url, 'last frame'));
         media.frame = last.via;

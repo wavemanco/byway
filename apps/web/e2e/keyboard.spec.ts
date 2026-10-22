@@ -178,16 +178,25 @@ test.describe('a control that starts something keeps focus, and a second press s
 });
 
 // A control that takes itself off the screen drops focus to the page just as a disabled one does, and the disabled guard
-// cannot see it: Start's attach button goes once five attachments are listed.
-test('Start: each attachment added by keyboard takes focus in its name field, the fifth too, when the attach button goes', async ({ page }) => {
+// cannot see it: Start's attach button goes once five attachments are listed. A note takes its place and says why; it is
+// text, not a control, so it takes no focus.
+test('Start: each attachment added by keyboard takes focus in its name field, the fifth too, when the attach button goes and a note says why', async ({ page }) => {
   await page.goto('/');
-  const attach = page.locator('form.start .start-actions').getByRole('button', { name: /^Attach (a draft or diff|another)$/ });
+  const actions = page.locator('form.start .start-actions');
+  const attach = actions.getByRole('button', { name: /^Attach (a draft or diff|another)$/ });
+  const limit = actions.getByText('byway takes up to five attachments for one problem.', { exact: true });
   for (let n = 1; n <= 5; n++) {
+    await expect(limit).toHaveCount(0);
     await tabTo(page, attach);
     await page.keyboard.press('Enter');
     await expectFocus(page, page.getByRole('textbox', { name: `Name of attachment ${n}`, exact: true }));
   }
   await expect(attach).toHaveCount(0);
+  await expect(limit).toBeVisible();
+  // Removing one brings the button back in the note's place.
+  await page.getByRole('button', { name: 'Remove attachment 5' }).click();
+  await expect(limit).toHaveCount(0);
+  await expect(attach).toHaveText('Attach another');
 });
 
 /** A 1×1 PNG. */

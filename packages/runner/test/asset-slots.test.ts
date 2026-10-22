@@ -5,7 +5,12 @@
  * - coverage is checked before anything is bought, and a short answer gets one feedback retry, then degrades with a note
  *   naming what is missing, never a failed run; only a malformed answer still fails the step;
  * - the relay anchor is shot 1's frame or none, and a relay link with no frame to start from is skipped plainly;
- * - C3's header image: the person's Yes decides, and the AI's view is one line of advice in the step's note (ADR-0101).
+ * - C3's header image: the person's Yes decides, and the AI's view is one line of advice in the step's note (ADR-0101);
+ * - every brief left out is named in the note: one for a slot the work does not have, one beyond the most the step makes;
+ * - the images are bought before they are placed, so a placing answer that misses never fails the run: a short one
+ *   is used after the retry, and the images it left out are kept beside the work; with none usable the work is
+ *   unchanged and every image is kept beside it;
+ * - an image whose result byway could not keep stops the run, naming its slot, as the gateway's billed failures do.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,13 +18,14 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
 import { CATALOG, presentationOf, stepPresentation } from '@byway/catalog';
-import { GatewayError, type CompletionRequest, type CompletionResult, type DeclineRecord, type Gateway, type ImageRequest, type ImageResult, type Medium, type VideoRequest } from '@byway/contracts';
+import { GatewayError, type CompletionRequest, type CompletionResult, type DeclineRecord, type Gateway, type ImageRequest, type ImageResult, type Medium, type Store, type VideoRequest } from '@byway/contracts';
 import { PROFILES } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
-import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE } from '../src/activities/asset.ts';
+import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MADE_NOTE, NO_SLOTS_NOTE } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { ContractMissed, StepError, toFailure } from '../src/activities/failures.ts';
+import { memoGateway, PaidNotKept } from '../src/activities/memo.ts';
 import { noStartFrameNote, relayLink } from '../src/activities/relay.ts';
 import { checkBriefs, eachPlan, freePlan, slotId } from '../src/activities/slot-plan.ts';
 import { serializeJson } from '../src/formats.ts';
@@ -59,8 +65,9 @@ interface Fake extends Gateway {
 /**
  * A demo-mode gateway: brief answers from a script, integrate answers that place every image they are given, and images
  * stored as small PNGs unless `refuse` says otherwise for that request (true: a plain refusal; an Error: that failure).
+ * `place` chooses which of the image addresses the nth integrate answer (from 1) places, or answers with no document.
  */
-function fake(briefs: string[], refuse: (req: ImageRequest) => boolean | Error = () => false): Fake {
+function fake(briefs: string[], refuse: (req: ImageRequest) => boolean | Error = () => false, place: (ids: string[], n: number) => string[] | 'no document' = (ids) => ids): Fake {
   const completions: CompletionRequest[] = [];
   const images: ImageRequest[] = [];
   const videos: VideoRequest[] = [];
@@ -74,8 +81,10 @@ function fake(briefs: string[], refuse: (req: ImageRequest) => boolean | Error =
     async complete(req) {
       completions.push(req);
       if (req.purpose.startsWith('asset.integrate')) {
-        const text = JSON.stringify(req.messages);
-        const ids = [...new Set(text.match(/\/api\/artifacts\/sha256:[0-9a-f]{64}/g) ?? [])];
+        const text = JSON.stringify(req.messages.slice(0, 1));
+        const placed = place([...new Set(text.match(/\/api\/artifacts\/sha256:[0-9a-f]{64}/g) ?? [])], completions.filter((c) => c.purpose === req.purpose).length);
+        if (placed === 'no document') return answer(req, '```json\n{}\n```');
+        const ids = placed;
         if (req.purpose === 'asset.integrate:web-page') return answer(req, '```html\n<!doctype html><html><body>' + ids.map((id) => `<img src="${id}" alt="">`).join('') + '</body></html>\n```');
         return answer(req, `\`\`\`markdown\n# Piece\n\n${ids.map((id, i) => `![Image ${i + 1}](${id})`).join('\n\n')}\n\nThe text.\n\`\`\``);
       }
@@ -192,6 +201,15 @@ describe('one slot identity on media (C5 anchor frames)', () => {
     const { result } = await runAsset('media', frames(), storyboard(), g);
     expect(result).toBeInstanceOf(ContractMissed);
     expect(g.images).toHaveLength(0);
+  });
+
+  it('briefs only for shots the storyboard does not have, twice: nothing is bought, and the note names them', async () => {
+    const g = fake([briefsOf('4', '5'), briefsOf('5')]);
+    const { result, notes, skipped } = await runAsset('media', frames(), storyboard(), g);
+    expect(g.images).toHaveLength(0);
+    expect(result).toMatchObject({ skipped: true });
+    expect(skipped).toEqual([true]);
+    expect(notes).toEqual([`${NO_BRIEF_NOTE} Briefs for “4” and “5”, which the storyboard has no shots for, were left out.`]);
   });
 });
 
@@ -339,6 +357,130 @@ describe('an image billed but not kept stops the run and says what that leaves (
   });
 });
 
+describe('placing the images bought: a miss never fails the run (ADR-0090’s rule, applied to the integrate answer)', () => {
+  const page = '<!doctype html><html><body><div data-slot="hero"></div><div data-slot="detail"></div></body></html>\n';
+  const PIECE = '# Piece\n\nText.\n';
+  const integrateCalls = (g: Fake) => g.completions.filter((c) => c.purpose.startsWith('asset.integrate'));
+
+  it('an answer that places some images, twice: the work holds those, the rest are kept beside it, and the note names them', async () => {
+    const g = fake([briefsOf('hero', 'detail')], () => false, (ids) => ids.slice(0, 1));
+    const { result, notes, skipped, run } = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect(integrateCalls(g)).toHaveLength(2);
+    expect(JSON.stringify(integrateCalls(g)[1]!.messages)).toContain('Place every image by its address; missing:');
+    const r = result as AssetResult;
+    expect(g.images).toHaveLength(2);
+    // The work holds hero's image; detail's is kept beside it, in the asset port.
+    const announced = (await store.events(run.runId)).filter((e) => e.type === 'artifact');
+    const imageOf = (alt: string) => announced.find((e) => e.data.label === `Image: ${alt}`)!.data.artifactId as string;
+    const work = await store.artifacts.getText(r.artifactId!);
+    expect(work).toContain(imageOf('Alt hero'));
+    expect(work).not.toContain(imageOf('Alt detail'));
+    expect(r.asset).toEqual([imageOf('Alt detail')]);
+    expect(skipped).toEqual([undefined]);
+    expect(notes).toEqual(['The image for “detail” was not placed in the work, even when the AI was asked again, so it is kept beside the work.']);
+    // Every call is the step's cost: the brief, two images and both integrate answers.
+    expect(r.costUsd).toBeCloseTo(0.01 + 0.04 * 2 + 0.01 * 2, 9);
+  });
+
+  it('short, then whole: the second answer is used and nothing is said; short, then shorter: the first is kept', async () => {
+    const g = fake([briefsOf('hero', 'detail')], () => false, (ids, n) => (n === 1 ? ids.slice(0, 1) : ids));
+    const whole = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect((whole.result as AssetResult).asset).toBeUndefined();
+    expect(whole.notes).toEqual([undefined]);
+    const h = fake([briefsOf('hero', 'detail', 'team')], () => false, (ids, n) => ids.slice(0, n === 1 ? 2 : 1));
+    const shorter = await runAsset('web-page', spec('c1', 'asset'), page, h);
+    const work = await store.artifacts.getText((shorter.result as AssetResult).artifactId!);
+    expect(work.match(/\/api\/artifacts\/sha256:[0-9a-f]{64}/g)).toHaveLength(2);
+    expect(shorter.notes).toEqual(['The image for “team” was not placed in the work, even when the AI was asked again, so it is kept beside the work.']);
+  });
+
+  it('no usable answer (no document, or one placing none): the work is unchanged, every image is kept beside it, the AI’s advice is not shown, and the run goes on', async () => {
+    for (const place of [() => 'no document' as const, () => []]) {
+      const advised = '```json\n' + JSON.stringify({ images: [{ slot: 'header', prompt: 'A loaf', alt: 'A loaf', size: '1536x1024' }], advice: 'A real photo would serve it better.' }) + '\n```';
+      const g = fake([advised], () => false, place);
+      const { result, notes, skipped, run } = await runAsset('prose', spec('c3', 'asset'), PIECE, g);
+      expect(integrateCalls(g)).toHaveLength(2);
+      const r = result as AssetResult;
+      expect(r).not.toBeInstanceOf(Error);
+      expect(r.artifactId).toBeUndefined();
+      expect(r.asset).toHaveLength(1);
+      expect(skipped).toEqual([undefined]);
+      expect(notes).toEqual(['The AI’s answer placing the image in the work could not be used, even when it was asked again, so the work is unchanged, and the image for “header” is kept beside it.']);
+      // The two integrate answers are the step's cost too, though neither was used.
+      expect(r.costUsd).toBeCloseTo(0.01 + 0.04 + 0.01 * 2, 9);
+      // The image stays among the run's artifacts, and it is the step's output.
+      const finished = (await store.events(run.runId)).filter((e) => e.type === 'step-finished');
+      expect(finished.map((e) => e.data.outputArtifactIds)).toEqual([r.asset]);
+    }
+  });
+
+  it('with several images and no usable answer, every one is named as kept beside the work', async () => {
+    const g = fake([briefsOf('hero', 'detail')], () => false, () => 'no document');
+    const { result, notes } = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect((result as AssetResult).asset).toHaveLength(2);
+    expect(notes).toEqual(['The AI’s answer placing the images in the work could not be used, even when it was asked again, so the work is unchanged, and the images for “hero” and “detail” are kept beside it.']);
+  });
+
+  it('of two usable answers that place as many images, the later is used (ADR-0112: on a tie, the later)', async () => {
+    // The first answer places hero's image, the second detail's.
+    const g = fake([briefsOf('hero', 'detail')], () => false, (ids, n) => ids.slice(n - 1, n));
+    const { result, notes, run } = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect(integrateCalls(g)).toHaveLength(2);
+    const r = result as AssetResult;
+    const announced = (await store.events(run.runId)).filter((e) => e.type === 'artifact');
+    const imageOf = (alt: string) => announced.find((e) => e.data.label === `Image: ${alt}`)!.data.artifactId as string;
+    const work = await store.artifacts.getText(r.artifactId!);
+    expect(work).toContain(imageOf('Alt detail'));
+    expect(work).not.toContain(imageOf('Alt hero'));
+    expect(r.asset).toEqual([imageOf('Alt hero')]);
+    expect(notes).toEqual(['The image for “hero” was not placed in the work, even when the AI was asked again, so it is kept beside the work.']);
+  });
+
+  it('a step that does not write the work keeps every image beside it, those its placing answer placed too', async () => {
+    const step: StepSpec = { ...spec('c3', 'asset'), produces: ['asset'], writes: false };
+    const g = fake([briefsOf('header')]);
+    const { result, notes, run } = await runAsset('prose', step, PIECE, g);
+    expect(integrateCalls(g)).toHaveLength(1);
+    const r = result as AssetResult;
+    const image = (await store.events(run.runId)).find((e) => e.type === 'artifact' && e.data.label === 'Image: Alt header')!.data.artifactId as string;
+    expect(r.artifactId).toBeUndefined();
+    expect(r.asset).toEqual([image]);
+    expect(notes).toEqual([undefined]);
+  });
+});
+
+describe('an image whose result byway could not keep stops the run, naming its slot (ADR-0099, ADR-0090)', () => {
+  it('the memo’s failure stays a StepError, and gains which image it was and that those already made are not in the work', async () => {
+    const g = fake([briefsOf('1', '2', '3')]);
+    const run = await newRun('media');
+    const artifact = (await store.artifacts.putText(storyboard(), 'application/json')).id;
+    const step = spec('c5', 'anchor-frames');
+    const call = { key: `${run.runId}/${step.id}/-/1`, stepId: step.id, stage: 'D2' as const };
+    // The second image's memo cannot be written: that image was paid for, and byway cannot keep it.
+    let imageSaves = 0;
+    const flaky: Pick<Store, 'getMemo' | 'setMemo' | 'artifacts'> = {
+      getMemo: (runId, key) => store.getMemo(runId, key),
+      setMemo: async (runId, key, value) => {
+        if (key.includes('/image/') && ++imageSaves === 2) throw new Error('SQLITE_BUSY: database is locked');
+        return store.setMemo(runId, key, value);
+      },
+      artifacts: store.artifacts,
+    };
+    const gateway = memoGateway(g, flaky, { runId: run.runId, key: call.key }, { saveAttempts: 1 });
+    const err = await assetStep({ gateway, store, prompts: library }, { run, call, step, ports: { artifact } }).catch((e: unknown) => e);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for 1', 'An image for 2']);
+    expect(err).toBeInstanceOf(PaidNotKept);
+    expect(err).toBeInstanceOf(StepError);
+    expect((err as Error).message).toBe(
+      'The image for this step was paid for and is recorded in the spending ledger, but byway could not keep it (SQLITE_BUSY: database is locked). The step stops here rather than run again, which would pay for the call a second time. ' +
+        'That was the image for shot 2, so the run stops here, at the Custom imagery step, and buys no more images. ' +
+        'The image already made for shot 1 was billed too, and it is not in the work.',
+    );
+    expect(toFailure(err)).toMatchObject({ type: FAILURE.step, message: (err as Error).message, nonRetryable: true });
+    expect((await store.events(run.runId)).filter((e) => e.type === 'step-finished')).toEqual([]);
+  });
+});
+
 describe('one slot identity on options (C2 mood boards)', () => {
   const moods = () => spec('c2', 'mood-boards');
 
@@ -426,11 +568,39 @@ describe('how many images a prose step may make is the prompt’s to say', () =>
     expect(fake.render('product.c3.asset', { medium: 'prose' }).advice).toBe(true);
   });
 
-  it('C3 asks for one image at most', async () => {
+  it('C3 asks for one image at most, and the note names the brief left out', async () => {
     const g = fake([briefsOf('header', 'second')]);
-    const { result } = await runAsset('prose', spec('c3', 'asset'), '# Piece\n\nText.\n', g);
+    const { result, notes } = await runAsset('prose', spec('c3', 'asset'), '# Piece\n\nText.\n', g);
     expect(g.images).toHaveLength(1);
     expect((result as AssetResult).artifactId).toBeDefined();
+    expect(notes).toEqual(['This step makes at most 1 image, so the brief for “second” was left out.']);
+  });
+
+  it('a slots knob of 0 makes no image: the step is skipped, and its note says the step makes none, not that the AI chose so, and names every brief left out', async () => {
+    const page = '<!doctype html><html><body><div data-slot="hero"></div></body></html>\n';
+    const base = spec('c1', 'asset');
+    const step: StepSpec = { ...base, knobs: { ...base.knobs, slots: 0 } };
+    const g = fake([briefsOf('hero', 'detail')]);
+    const { result, notes, skipped } = await runAsset('web-page', step, page, g);
+    expect(g.images).toHaveLength(0);
+    expect(result).toMatchObject({ skipped: true });
+    expect(skipped).toEqual([true]);
+    expect(notes).toEqual([`${NO_SLOTS_NOTE} The briefs for “hero” and “detail” were left out.`]);
+    expect((await runAsset('web-page', step, page, fake([briefsOf('hero')]))).notes).toEqual([`${NO_SLOTS_NOTE} The brief for “hero” was left out.`]);
+    // An answer with no brief is not the AI's choice here either: the step makes none.
+    expect((await runAsset('web-page', step, page, fake([EMPTY]))).notes).toEqual([NO_SLOTS_NOTE]);
+  });
+
+  it('C1’s ASSET makes at most three: the briefs beyond them are named, and so they are when every image fails', async () => {
+    const page = '<!doctype html><html><body><div data-slot="hero"></div></body></html>\n';
+    const g = fake([briefsOf('hero', 'detail', 'team', 'map', 'faq')]);
+    const { notes } = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for hero', 'An image for detail', 'An image for team']);
+    expect(notes).toEqual(['This step makes at most 3 images, so the briefs for “map” and “faq” were left out.']);
+    const h = fake([briefsOf('hero', 'detail', 'team', 'map')], () => true);
+    const failed = await runAsset('web-page', spec('c1', 'asset'), page, h);
+    expect(failed.skipped).toEqual([true]);
+    expect(failed.notes).toEqual([`${NO_IMAGE_MADE_NOTE} This step makes at most 3 images, so the brief for “map” was left out.`]);
   });
 
   it('the generic prose helper may answer with no image too', async () => {
@@ -618,6 +788,15 @@ describe('the slot plan on its own', () => {
     expect(freePlan({ min: 0, max: 1 }, 1)).toEqual({ kind: 'free', min: 0, max: 1 });
     expect(freePlan({ min: 1, max: 3 }, 2)).toEqual({ kind: 'free', min: 1, max: 2 });
     expect(freePlan(undefined, undefined)).toEqual({ kind: 'free', min: 1, max: 3 });
+  });
+
+  it('a free plan keeps the first briefs up to its maximum and lists the rest as dropped; an each plan drops none', () => {
+    const brief = (slot: string) => ({ slot, prompt: 'p', alt: '', size: '1024x1024' as const });
+    const kept = checkBriefs({ ok: true, value: ['a', 'b', ' a ', 'c', 'd'].map(brief) }, freePlan({ min: 1, max: 3 }, 2));
+    // The last brief for a slot is kept where it was last given: " a " moves a after b.
+    expect(kept).toMatchObject({ ok: true, value: { missing: [], unknown: [], dropped: ['c', 'd'] } });
+    expect(kept.ok && kept.value.briefs.map((b) => b.slot)).toEqual(['b', 'a']);
+    expect(checkBriefs({ ok: true, value: ['1', '2', '3', '4'].map(brief) }, eachPlan('media', storyboard(), 'Frames')!)).toMatchObject({ ok: true, value: { unknown: ['4'], dropped: [] } });
   });
 
   it('a short answer is a miss that carries what it did give; a malformed one carries nothing', () => {

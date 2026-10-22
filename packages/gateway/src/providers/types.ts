@@ -25,6 +25,19 @@ export interface ProviderCompletionRequest {
   maxOutputTokens: number;
   responseFormat: 'text' | 'json';
   context: CallContext;
+  /**
+   * Aborts when the call's run is ending (SpendContext.operation.stop; ADR-0111). The gateway passes it only to an
+   * adapter whose `cutsOff.complete` is true, and that adapter then cuts the call off when it aborts (its stream is
+   * closed) and throws; the gateway counts what that leaves.
+   */
+  signal?: AbortSignal;
+  /**
+   * How long a streamed answer may go without a chunk before the adapter closes it as stalled (StreamIdle): the longer of
+   * STREAM_IDLE_MS and the call's step limit (SpendContext.operation.stepLimitMs), so a call in an image or video step
+   * waits its step's 45 minutes and one in a model step fifteen (B1R2-CODE-3). Read by the streamed adapters
+   * (Anthropic, OpenAI, OpenRouter); absent, they wait STREAM_IDLE_MS. Never sent to the provider.
+   */
+  streamIdleMs?: number;
 }
 
 export interface ProviderCompletion {
@@ -115,6 +128,13 @@ export interface ProviderVideoRequest {
    * them by these ids and submits only the jobs not listed here, so a retried relay link never buys its clip twice.
    */
   resume?: Partial<Record<'generation' | 'extract', string>>;
+  /**
+   * Aborts when the call's run is ending (ADR-0111), passed only to an adapter whose `cutsOff.video` is true. The adapter
+   * then submits nothing more and cancels the queue job under way, and says what that left: thrown as a cutOffError
+   * whose billing says how it is counted, or, when the clip was already made, returned with the clip's usage and a
+   * `failure`, so the gateway settles it as made and billed.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ProviderVideo {
@@ -150,6 +170,14 @@ export interface ProviderAdapter {
    * bound on their seconds. The gateway prices them from the price table, in the estimate and in the ledger.
    */
   readonly videoExtras?: readonly { model: string; seconds: number }[];
+  /**
+   * Which of this adapter's calls a stop can cut off (ADR-0111): the gateway hands the call's stop signal only to these.
+   * Set where cutting a call off can save money and still leaves an honest count: a stream the provider stops generating
+   * when it is closed (Anthropic, OpenAI and OpenRouter chat), a queue job the provider can cancel (fal), and the demo's
+   * mock, so the demo and the tests take the same path. Absent for calls that would still be billed in full and only lose
+   * their exact cost (Google's SDK abort is client-side only; every image call).
+   */
+  readonly cutsOff?: { readonly complete?: boolean; readonly video?: boolean };
 }
 
 /** Concatenated text of a message's text parts. */

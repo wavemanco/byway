@@ -1,15 +1,17 @@
 'use client';
 
 import type { CheckpointResolution, EvidenceLabel as Label, RecipePresentation } from '@byway/contracts';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { answerable } from '../../view/drafts.ts';
-import { controlPendingLabel, runStatusLabel, type ControlAction } from '../../view/labels.ts';
+import { CANCEL_QUESTION, controlPendingLabel, runStatusLabel, type ControlAction } from '../../view/labels.ts';
 import { runMeter } from '../../view/meter.ts';
 import type { Connection } from '../../view/refresh.ts';
 import { HELD_KEY_REFUSAL } from '../../view/refusals.ts';
 import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
+import type { QuestionCosts } from '../../view/questions.ts';
 import type { StepIndex } from '../../view/steps.ts';
+import { questionCost } from '../../view/questions.ts';
 import { buildTimeline, currentStep } from '../../view/timeline.ts';
 import { recipeTitle } from '../../view/vocabulary.ts';
 import { ActionButton } from '../ActionButton.tsx';
@@ -35,6 +37,8 @@ interface Props {
   label: Label | null;
   /** Run events → plain step labels, from the presentation's stepIds (null when the recipe is unknown). */
   steps: StepIndex | null;
+  /** What an answer to each optional's and each person's loop's question would cost (null when the recipe is unknown). */
+  questions: QuestionCosts | null;
 }
 
 /**
@@ -43,7 +47,7 @@ interface Props {
  * above the working area's conditional render and settled only by snapshots the refresher applied (the draft store,
  * F06). It is mounted once per run (the page keys it by the run's id).
  */
-export function RunScreen({ initial, presentation, label, steps }: Props) {
+export function RunScreen({ initial, presentation, label, steps, questions }: Props) {
   const technical = useTechnicalNames();
   const [data, setData] = useState(initial);
   // Whether `data` includes a snapshot byway served to this screen's refresher. Until then it is only `initial`: the
@@ -54,6 +58,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   // An answer's error belongs to its question: a refusal of one is not shown above the next ('control': Pause etc.).
   const [error, setError] = useState<{ checkpointId: string; message: string } | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const cancelQuestionId = useId();
   // UX-10: Pause, Resume and Cancel take a moment to reach the engine; the button says so at once.
   const [pending, setPending] = useState<ControlAction | null>(null);
   const statusRef = useRef<HTMLSpanElement>(null);
@@ -83,7 +88,9 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
   const step = currentStep(stages);
   const ended = isEnded(run.status);
   const paused = run.status === 'paused';
-  const meter = runMeter(run, events);
+  // An ended run's calls still under way and its settled cost, from the spend book (RunData.ended, ADR-0111).
+  const after = ended ? data.ended : undefined;
+  const meter = runMeter(run, events, after?.settledUsd);
   const selectedStep = selected ? stages.flatMap((s) => s.steps).find((s) => s.key === selected) : undefined;
 
   // F15: one owner of the request sequence. Only the latest-issued request applies a snapshot or sets the connection.
@@ -96,9 +103,10 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
     },
     setConnection,
   );
-  // Poll while the run can still change: briskly while the AI works, lazily while it waits for you. While byway is not
-  // answering, keep retrying whatever the last status said, so the banner clears on an ended run too.
-  usePolling(refresher, connection === 'lost' ? LOST_RETRY_MS : pollDelay(run.status));
+  // Poll while the run can still change: briskly while the AI works, lazily while it waits for you or, once it has ended,
+  // while some of its calls are still under way. While byway is not answering, keep retrying whatever the last status
+  // said, so the banner clears on an ended run too.
+  usePolling(refresher, connection === 'lost' ? LOST_RETRY_MS : pollDelay(run.status, after?.callsUnderWay));
 
   // F06: the person's unsent answers, owned here, above the working area's conditional render. The store is made once
   // per mount without side effects; it loads after hydration (so the server HTML and the first client render agree)
@@ -181,7 +189,9 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
 
   const shownError = error && (error.checkpointId === 'control' || error.checkpointId === turn?.id) ? error.message : null;
   const status = runStatusLabel(run.status);
-  const announcement = paused ? 'Run paused.' : turn ? `Your turn: ${turn.prompt}` : ended ? `Run ${status.toLowerCase()}.` : '';
+  // What an answer would cost is said with the question, here and under it (view/questions.ts).
+  const cost = turn ? questionCost(turn, questions) : null;
+  const announcement = paused ? 'Run paused.' : turn ? `Your turn: ${turn.prompt}${cost ? ` ${cost}` : ''}` : ended ? `Run ${status.toLowerCase()}.` : '';
 
   return (
     <div className="run" ref={rootRef}>
@@ -217,8 +227,10 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
             {status}
           </span>
           {ended ? null : confirmCancel ? (
-            <div className="confirm-inline" role="group" aria-label="Cancel this run?">
-              <span>Cancel this run? What it made so far is kept.</span>
+            // The whole question describes the group, so a screen reader reads all of it (as ConfirmPanel's does). The group
+            // has no name of its own, which would repeat the question's first words.
+            <div className="confirm-inline" role="group" aria-describedby={cancelQuestionId}>
+              <span id={cancelQuestionId}>{CANCEL_QUESTION}</span>
               <ActionButton className="button button-danger" onClick={() => control('cancel')} busy={pending === 'cancel'} unavailable={controlling.busy}>
                 {pending === 'cancel' ? controlPendingLabel('cancel') : 'Cancel run'}
               </ActionButton>
@@ -280,6 +292,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
                 key={turn.id}
                 cp={turn}
                 step={stages.flatMap((s) => s.steps).find((s) => s.checkpointIds.includes(turn.id))}
+                cost={cost}
                 artifacts={data.artifacts}
                 busy={busy}
                 paused={paused}
@@ -290,7 +303,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
               />
             ) : null
           ) : (
-            <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} />
+            <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} callsUnderWay={after?.callsUnderWay ?? 0} />
           )}
         </div>
         <aside className="run-timeline" aria-label="Steps">

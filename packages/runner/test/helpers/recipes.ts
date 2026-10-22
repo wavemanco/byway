@@ -19,6 +19,12 @@ export const tiny = recipe('tiny', 'prose', seq(build('draft'), react('react'), 
 /** Three pages built and rendered concurrently, then a person picks one. */
 export const threePages = recipe('three-pages', 'web-page', seq(replicate('three', 3, seq(build('page'), render('shot'))), pick('pick', 'H', 2, 'human')));
 
+/**
+ * A fan-out at the composed limits' peak (F02, SUB-DA-4): two slots of a replicate at its limit (COMPOSED_LIMITS: 16 per
+ * replicate, 32 steps at once), every branch one model call, then a step that can start only once they have all ended.
+ */
+export const cancelPeak = recipe('cancel-peak', 'prose', seq(replicate('slots', 2, replicate('drafts', 16, build('draft'))), build('after')));
+
 /** A route: the AI drafts, or you do. */
 export const routed = recipe(
   'routed',

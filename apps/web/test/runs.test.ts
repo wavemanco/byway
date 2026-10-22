@@ -75,13 +75,21 @@ describe('cost meter from cost events', () => {
   const record = { costUsd: 0.2, budgetUsd: 2 };
 
   it('reads spend and budget from the latest cost event, including a raised budget', () => {
-    expect(runSpend(record, [cost(3, 0.4, 2), cost(9, 1.1, 3), cost(5, 0.7, 2)])).toEqual({ costUsd: 1.1, budgetUsd: 3 });
-    expect(runMeter(record, [cost(9, 1.5, 3)])).toEqual({ fraction: 0.5, tone: 'ok', spent: '$1.50', budget: '$3.00' });
+    expect(runSpend(record, [cost(3, 0.4, 2), cost(9, 1.1, 3), cost(5, 0.7, 2)], undefined)).toEqual({ costUsd: 1.1, budgetUsd: 3 });
+    expect(runMeter(record, [cost(9, 1.5, 3)], undefined)).toEqual({ fraction: 0.5, tone: 'ok', spent: '$1.50', budget: '$3.00' });
   });
 
   it('falls back to the run record, and never steps backwards when the record is ahead', () => {
-    expect(runSpend(record, [])).toEqual({ costUsd: 0.2, budgetUsd: 2 });
-    expect(runSpend({ costUsd: 0.6, budgetUsd: 4 }, [cost(2, 0.4, 2)])).toEqual({ costUsd: 0.6, budgetUsd: 4 });
+    expect(runSpend(record, [], undefined)).toEqual({ costUsd: 0.2, budgetUsd: 2 });
+    expect(runSpend({ costUsd: 0.6, budgetUsd: 4 }, [cost(2, 0.4, 2)], undefined)).toEqual({ costUsd: 0.6, budgetUsd: 4 });
+  });
+
+  // RS-5: a call that settles after its run stopped is in the spend book's settled cost for the run before the run
+  // record catches up; the meter of an ended run shows it.
+  it("takes in an ended run's settled cost from the spend book, and never steps backwards from it", () => {
+    expect(runSpend(record, [cost(9, 1.1, 3)], 1.5)).toEqual({ costUsd: 1.5, budgetUsd: 3 });
+    expect(runMeter(record, [cost(9, 1.1, 3)], 1.5)).toEqual({ fraction: 0.5, tone: 'ok', spent: '$1.50', budget: '$3.00' });
+    expect(runSpend(record, [cost(9, 1.1, 3)], 0.4)).toEqual({ costUsd: 1.1, budgetUsd: 3 });
   });
 });
 

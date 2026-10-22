@@ -4,14 +4,73 @@
  * (`Problem: …`), fenced blocks, and finally the first substantial line.
  */
 
-/** Contents of every fenced block of a language (```lang … ```), in order. */
-export function fencedBlocks(text: string, langs: readonly string[]): string[] {
-  const out: string[] = [];
-  const re = /```([A-Za-z0-9_-]*)[^\n]*\n([\s\S]*?)\n?```/g;
-  for (const m of text.matchAll(re)) {
-    if (langs.includes((m[1] ?? '').toLowerCase())) out.push(m[2] ?? '');
+/** A top-level fenced block of a prompt. */
+export interface Fenced {
+  /** The info string's first word, lower case ('' for a bare fence). */
+  lang: string;
+  body: string;
+  /** Offset of the opening fence line. */
+  start: number;
+  /** Offset just past the block's closing fence line (the end of the text when it was never closed). */
+  end: number;
+  closed: boolean;
+}
+
+/** A fence line: three or more backticks or tildes at the very start of a line, then an optional info string. */
+const FENCE_LINE = /^(`{3,}|~{3,})(.*)$/;
+
+/**
+ * The prompt's top-level fenced blocks, read line by line by the rules of the runner's reader (packages/runner/src/
+ * formats.ts fences, ENG-1), which this copies: the gateway cannot import the runner, which depends on it, and
+ * scripts/test/fences-parity.test.ts holds the two to the same blocks. A slot can hold a document with fences of its own
+ * (a README's code block), and a template's instructions name a fence in the middle of a line ("One fenced ```json
+ * block"), so a block is not cut at the first ``` anywhere, as a lazy regex does:
+ * - a fence is a line that starts with three or more backticks (or tildes); a fence in the middle of a line, or
+ *   indented, is content;
+ * - a block closes at the first later fence line of the same character, at least as long, with nothing after it
+ *   (CommonMark), so a longer outer fence (````markdown) holds any shorter one;
+ * - inside a block, a fence line with a language (```bash) opens a nested block that the next bare fence closes, so
+ *   the outer block does not end at the inner one's close.
+ * A block never closed runs to the end of the text.
+ */
+export function fences(text: string): Fenced[] {
+  const out: Fenced[] = [];
+  const stack: { char: string; len: number; lang: string; start: number; bodyStart: number }[] = [];
+  let at = 0;
+  for (const raw of text.split('\n')) {
+    const lineStart = at;
+    at += raw.length + 1;
+    const m = FENCE_LINE.exec(raw.replace(/\r$/, ''));
+    if (!m) continue;
+    const run = m[1]!;
+    const info = m[2]!.trim();
+    // "```x```" on one line is inline code, not a fence (a backtick fence's info string has no backticks).
+    if (run[0] === '`' && info.includes('`')) continue;
+    const top = stack.at(-1);
+    if (!top) {
+      stack.push({ char: run[0]!, len: run.length, lang: (info.split(/\s+/)[0] ?? '').toLowerCase(), start: lineStart, bodyStart: Math.min(at, text.length) });
+      continue;
+    }
+    if (!info && run[0] === top.char && run.length >= top.len) {
+      stack.pop();
+      if (!stack.length) {
+        const body = text.slice(top.bodyStart, Math.max(top.bodyStart, lineStart - 1)).replace(/\r$/, '');
+        out.push({ lang: top.lang, body, start: top.start, end: Math.min(at, text.length), closed: true });
+      }
+    } else if (info) {
+      stack.push({ char: run[0]!, len: run.length, lang: '', start: lineStart, bodyStart: at });
+    }
   }
+  const open = stack[0];
+  if (open) out.push({ lang: open.lang, body: text.slice(open.bodyStart).replace(/\n$/, ''), start: open.start, end: text.length, closed: false });
   return out;
+}
+
+/** Contents of every top-level fenced block of a language (```lang … ```), in order. */
+export function fencedBlocks(text: string, langs: readonly string[]): string[] {
+  return fences(text)
+    .filter((b) => langs.includes(b.lang))
+    .map((b) => b.body);
 }
 
 export function lastFenced(text: string, langs: readonly string[]): string | undefined {
@@ -125,9 +184,15 @@ export function labelledItems(text: string, vanilla = false): LabelledItem[] {
   });
 }
 
-/** The text with every fenced block removed, so a slot's plain words are read apart from the artifact. */
+/** The text with every top-level fenced block removed, so a slot's plain words are read apart from the artifact. */
 export function outsideFences(text: string): string {
-  return text.replace(/```[^\n]*\n[\s\S]*?```/g, '');
+  let out = '';
+  let at = 0;
+  for (const b of fences(text)) {
+    out += text.slice(at, b.start);
+    at = b.end;
+  }
+  return out + text.slice(at);
 }
 
 export function escapeHtml(text: string): string {

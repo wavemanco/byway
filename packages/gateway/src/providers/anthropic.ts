@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { TokenBreakdown } from '../prices.ts';
+import { stalledDetail, streamEndedEarly, StreamIdle } from './stream.ts';
 import { imageData, plain, type ProviderAdapter, type ProviderCompletion, type ProviderCompletionRequest } from './types.ts';
 
 type Params = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
@@ -27,9 +28,25 @@ export interface AnthropicMessageLike {
   };
 }
 
-/** The slice of the Anthropic SDK client the adapter uses. The real client satisfies it; tests pass a fake. */
+/**
+ * A streamed answer as the adapter reads it: the slice of the SDK's MessageStream it uses. `on` adds a listener for the
+ * SDK's own events: 'connect' (the response began) and 'streamEvent' (an event came, pings aside) restart the bound on a
+ * stalled stream (StreamIdle), and 'message' is the whole message, sent as its message_stop arrives. Optional, so a fake
+ * that answers at once need not have it.
+ */
+export interface AnthropicStreamLike {
+  finalMessage(): Promise<AnthropicMessageLike>;
+  on?(event: 'connect' | 'streamEvent', listener: () => void): unknown;
+  on?(event: 'message', listener: (message: AnthropicMessageLike) => void): unknown;
+}
+
+/**
+ * The slice of the Anthropic SDK client the adapter uses. The real client satisfies it; tests pass a fake. `signal`
+ * closes the stream when it aborts (the SDK then rejects finalMessage with its APIUserAbortError; ADR-0111). It is always
+ * given: it also closes a stream that has stalled (StreamIdle).
+ */
 export interface AnthropicClientLike {
-  beta: { messages: { stream(body: Params): { finalMessage(): Promise<AnthropicMessageLike> } } };
+  beta: { messages: { stream(body: Params, options?: { signal?: AbortSignal }): AnthropicStreamLike } };
 }
 
 /** SDK retries off: the gateway owns retries, so attempts are counted once and backoff is one policy. */
@@ -123,9 +140,37 @@ export function parseAnthropicMessage(msg: AnthropicMessageLike, requestedModel:
 export function anthropicAdapter(opts: AnthropicAdapterOptions): ProviderAdapter {
   return {
     id: 'anthropic',
+    // A streamed answer is cut off by closing its stream (ADR-0111). Anthropic's streaming page does not say what a
+    // closed stream bills; the gateway counts a call cut off after it was sent as "may have been billed".
+    cutsOff: { complete: true },
     async complete(req) {
+      // The SDK is handed the stop and the request's bound on a stalled stream together (StreamIdle, streamIdleMs).
+      const idle = new StreamIdle(req.signal, req.streamIdleMs);
       // Streaming keeps long builds (large max_tokens) clear of HTTP timeouts; finalMessage() assembles the result.
-      const msg = await opts.client.beta.messages.stream(anthropicParams(req, true)).finalMessage();
+      const stream = opts.client.beta.messages.stream(anthropicParams(req, true), { signal: idle.signal });
+      let events = 0;
+      let whole: AnthropicMessageLike | undefined;
+      stream.on?.('connect', () => idle.restart());
+      stream.on?.('streamEvent', () => {
+        events++;
+        idle.restart();
+      });
+      stream.on?.('message', (message) => {
+        whole = message;
+      });
+      let msg: AnthropicMessageLike;
+      try {
+        msg = await stream.finalMessage();
+      } catch (e) {
+        // The whole message arrived (its message_stop) before the stream was closed, by its stop or its bound, or broke:
+        // that answer is settled, as a streamed OpenAI or OpenRouter answer that finished is (ADR-0111). The SDK rejects
+        // finalMessage when the abort lands after the last event but before it has read the stream's end.
+        if (whole) msg = whole;
+        else if (idle.stalled && !req.signal?.aborted) throw streamEndedEarly('anthropic', stalledDetail(events, 'event', idle.afterMs), e);
+        else throw e;
+      } finally {
+        idle.end();
+      }
       return { ...parseAnthropicMessage(msg, req.model), requestBody: anthropicParams(req, false) };
     },
   };

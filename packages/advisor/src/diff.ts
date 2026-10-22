@@ -2,13 +2,16 @@ import { BLOCK_NAMES, presentedStepFor, STAGE_NAMES } from '@byway/catalog';
 import type { Medium, RecipePresentation } from '@byway/contracts';
 import type { BlockCode, PortType } from '@byway/protocol';
 import {
+  appliesCritique,
   asksSwaps,
+  critiqueSources,
   feedsGate,
   machineWrites,
   projectNode,
   sameRun,
   voiceScope,
   voiceWrite,
+  walk,
   walkNode,
   type Audit,
   type Each,
@@ -46,8 +49,10 @@ import { labelsIn } from './present.ts';
  *
  * Plain words by default (spec §5, UX-13): steps, repeats and parallel drafts are named by the labels the person saw
  * (the nearest recipe's presentation where it has the step, else the block or role name), with the stage they run in;
- * node ids and medium codes are never shown. ComposeResult.diff is a list of strings, so ids have nowhere to go that
- * only "Show technical names" would reveal; they stay in the recipe itself.
+ * a step the presentation shows with another as its lead is named by its part in that shown step ("the AI’s swaps in
+ * Cliché sweep"), so that removing it does not read as removing the whole. Node ids and medium codes are never shown.
+ * ComposeResult.diff is a list of strings, so ids have nowhere to go that only "Show technical names" would reveal; they
+ * stay in the recipe itself.
  */
 
 /** The line for any difference the describers do not name. */
@@ -232,10 +237,54 @@ const mediumWords = (m: Medium | undefined) => (m ? MEDIUM_WORDS[m] : 'an unspec
 interface Labels {
   shown: (id: string) => string | undefined;
   plain: (n: Step | Pick) => string;
+  /** The steps the nearest recipe's presentation shows with another as their lead, each named by its part (partsIn). */
+  parts?: ReadonlyMap<string, Part>;
 }
 
-/** A step or pick as the person knows it: its shown label, and the stage it runs in. */
-const named = (p: Placed<Step | Pick>, labels: Labels) => `${labels.shown(p.node.id) ?? labels.plain(p.node)} (${STAGE_NAMES[p.stage]})`;
+/** A step shown with another as its lead: its name as part of that shown step, and the lead's id. */
+interface Part {
+  name: string;
+  lead: string;
+}
+
+/**
+ * A step or pick as the person knows it: its shown label (or, for a step shown with another as its lead, its part in
+ * it), and the stage it runs in.
+ */
+const named = (p: Placed<Step | Pick>, labels: Labels) => `${labels.parts?.get(p.node.id)?.name ?? labels.shown(p.node.id) ?? labels.plain(p.node)} (${STAGE_NAMES[p.stage]})`;
+
+/**
+ * What the AI does with the findings of the step it applies them from, as the explainers say it ("the AI fixes them",
+ * "the AI removes it", "the AI swaps").
+ */
+const APPLYING: Partial<Record<Step['role'], string>> = { critic: 'the AI’s fixes', check: 'the AI’s fixes', cut: 'the AI’s removals', 'tells-sweep': 'the AI’s swaps' };
+
+/**
+ * The steps and picks a presentation shows with another as their lead (the first that is not a render, as a composed
+ * presentation's groups are led), each named by its part in that shown step, so that a line about it does not read as
+ * if it were about the whole: a writer that applies the findings of a step shown with it, by what it does with them
+ * ("the AI’s swaps in Cliché sweep"); another step by its own plain label where that differs ("Your draft in First
+ * draft"); else as "part of" the shown step.
+ */
+function partsIn(recipe: Recipe, presentation: RecipePresentation, plain: (n: Step | Pick) => string): Map<string, Part> {
+  const nodes = new Map<string, Step | Pick>();
+  walk(recipe, (n) => {
+    if ((n.op === 'step' || n.op === 'pick') && !nodes.has(n.id)) nodes.set(n.id, n);
+  });
+  const from = critiqueSources(recipe);
+  const parts = new Map<string, Part>();
+  for (const { label, stepIds } of presentation.stages.flatMap((s) => s.steps)) {
+    const units = [...nodes.values()].filter((n) => stepIds.includes(n.id) && (n.op === 'pick' || n.role !== 'render'));
+    const [lead, ...rest] = units;
+    for (const n of rest) {
+      const source = n.op === 'step' ? from.get(n) : undefined;
+      const applying = n.op === 'step' && source && units.includes(source) && appliesCritique(n, false, recipe.medium) ? APPLYING[source.role] : undefined;
+      const own = plain(n);
+      parts.set(n.id, { name: applying ? `${applying} in ${label}` : own === label ? `part of ${label}` : `${own} in ${label}`, lead: lead!.id });
+    }
+  }
+  return parts;
+}
 
 /** What a loop or a replicate repeats: the first step in its body that is not a render, as the person knows it. */
 function bodyLabel(n: Node, labels: Labels): string {
@@ -437,7 +486,12 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
   const b = collect(composed);
   const lines: string[] = [];
   let other = false;
-  const shown: Labels = { shown: (id) => (nearestPresentation ? presentedStepFor(nearestPresentation, id)?.label : undefined), plain: labelsIn(nearest) };
+  const plain = labelsIn(nearest);
+  const shown: Labels = {
+    shown: (id) => (nearestPresentation ? presentedStepFor(nearestPresentation, id)?.label : undefined),
+    plain,
+    ...(nearestPresentation ? { parts: partsIn(nearest, nearestPresentation, plain) } : {}),
+  };
   // The composed recipe's own steps are named from its blocks and roles: a nearest label could name something else there.
   const own_: Labels = { shown: () => undefined, plain: labelsIn(composed) };
   const media: [Medium | undefined, Medium | undefined] = [nearest.medium, composed.medium];
@@ -446,8 +500,12 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
 
   // Steps. Renders are glue: they follow from the steps that read them, so they are paired but never named.
   const steps = pair(a.steps, b.steps, ({ node: s }) => `${s.role}|${s.block ?? ''}|${s.actor}`);
+  const picks = pair(a.picks, b.picks, () => 'pick');
+  // A part removed with its lead goes with it: "Removed: Trim" says the whole shown step went.
+  const gone = new Set([...steps.removed, ...picks.removed].map((r) => r.node.id));
+  const withLead = (r: Placed<Step | Pick>) => gone.has(shown.parts?.get(r.node.id)?.lead ?? '');
   const isRender = (p: Placed<Step>) => p.node.role === 'render';
-  for (const r of steps.removed) if (!isRender(r)) lines.push(`Removed: ${named(r, shown)}`);
+  for (const r of steps.removed) if (!isRender(r) && !withLead(r)) lines.push(`Removed: ${named(r, shown)}`);
   for (const x of steps.added) if (!isRender(x)) lines.push(`Added: ${named(x, own_)}${x.where.choice ? ', when it applies' : ''}`);
   let moved = false;
   for (const [x, y] of steps.pairs) {
@@ -465,8 +523,7 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
   if (!moved && JSON.stringify(order(steps.pairs, 0)) !== JSON.stringify(order(steps.pairs, 1))) other = true;
 
   // Picks: who chooses and how many are kept.
-  const picks = pair(a.picks, b.picks, () => 'pick');
-  for (const r of picks.removed) lines.push(`Removed: ${named(r, shown)}`);
+  for (const r of picks.removed) if (!withLead(r)) lines.push(`Removed: ${named(r, shown)}`);
   for (const x of picks.added) lines.push(`Added: ${named(x, own_)}: ${PICK_NOW[x.node.mode]}`);
   for (const [x, y] of picks.pairs) {
     const words: string[] = [];
@@ -535,5 +592,9 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
 
   // The projections differ: if nothing above names it, or something above left a difference unnamed, say so.
   if (other || !lines.length) lines.push(OTHER_CHANGES);
-  return lines;
+  // Two steps known by one label that changed alike (or two added under one plain label) read as one line, which says
+  // how many it stands for: two steps added must not read as one.
+  const times = new Map<string, number>();
+  for (const line of lines) times.set(line, (times.get(line) ?? 0) + 1);
+  return [...times].map(([line, n]) => (n === 1 ? line : `${line}, ${n === 2 ? 'twice' : `${n} times`}`));
 }

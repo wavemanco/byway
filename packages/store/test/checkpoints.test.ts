@@ -74,7 +74,7 @@ describe('checkpoint lifecycle', () => {
     await expect(store.openCheckpoint({ ...pick(), prompt: 'Something else' })).rejects.toThrow(/already exists/);
   });
 
-  it('refuses a checkpoint for an unknown run, or one that arrives already resolved', async () => {
+  it('refuses a checkpoint for an unknown run, or one that arrives already resolved or withdrawn', async () => {
     const store = openStore();
     await expect(store.openCheckpoint(pick('x', 'no-run'))).rejects.toThrow(/no run "no-run"/);
     await seedRun(store);
@@ -82,6 +82,8 @@ describe('checkpoint lifecycle', () => {
     const resolution = { checkpointId: 'cp-pick', choice: ['A', 'B'] };
     await expect(store.openCheckpoint({ ...pick(), resolution } as unknown as OpenInput)).rejects.toThrow(StoreError);
     await expect(store.openCheckpoint({ ...pick(), resolvedAt: '2026-10-07T12:00:00.000Z' } as unknown as OpenInput)).rejects.toThrow(/resolveCheckpoint/);
+    // Nor a withdrawal time: a question is withdrawn with withdrawCheckpoints.
+    await expect(store.openCheckpoint({ ...pick(), withdrawnAt: '2026-10-07T12:00:00.000Z' } as unknown as OpenInput)).rejects.toThrow(/withdrawCheckpoints/);
     await expect(store.openCheckpoint({ ...pick(), kind: 'vote' as never })).rejects.toThrow(/kind/);
     expect(await store.getCheckpoint('cp-pick')).toBeUndefined();
   });
@@ -205,11 +207,16 @@ describe('withdrawn checkpoints (a cancelled or failed run)', () => {
       ['r1', 'withdrawn'],
       ['done', 'resolved'],
     ]);
-    // A withdrawn question was never answered: it has no resolution or resolvedAt; the resolved one is untouched.
+    // A withdrawn question was never answered: it has no resolution or resolvedAt, and says when it was withdrawn. The
+    // resolved one is untouched, and an open one has no withdrawal time.
     const withdrawn = await store.getCheckpoint('p1');
     expect(withdrawn).not.toHaveProperty('resolution');
     expect(withdrawn).not.toHaveProperty('resolvedAt');
+    expect(withdrawn!.withdrawnAt! > withdrawn!.openedAt).toBe(true);
+    expect((await store.getCheckpoint('r1'))!.withdrawnAt).toBe(withdrawn!.withdrawnAt);
     expect(await store.getCheckpoint('done')).toEqual(resolved);
+    expect(resolved).not.toHaveProperty('withdrawnAt');
+    expect(await store.getCheckpoint('c2')).not.toHaveProperty('withdrawnAt');
     // Another run's checkpoint stays open.
     expect((await store.getCheckpoint('c2'))?.status).toBe('open');
   });
@@ -254,7 +261,16 @@ describe('withdrawn checkpoints (a cancelled or failed run)', () => {
   it('re-opening a withdrawn checkpoint with the same content (an activity retry) hands back the stored record', async () => {
     const store = await twoRuns();
     await store.withdrawCheckpoints('run-1');
-    expect(await store.openCheckpoint(pick('p1', 'run-1'))).toMatchObject({ id: 'p1', status: 'withdrawn' });
+    expect(await store.openCheckpoint(pick('p1', 'run-1'))).toEqual(await store.getCheckpoint('p1'));
+    expect(await store.openCheckpoint(pick('p1', 'run-1'))).toMatchObject({ id: 'p1', status: 'withdrawn', withdrawnAt: expect.any(String) });
+  });
+
+  it('a withdrawal is not stamped twice: a second withdrawal leaves the first time', async () => {
+    const store = await twoRuns();
+    await store.withdrawCheckpoints('run-1');
+    const first = await store.checkpointsForRun('run-1');
+    await store.withdrawCheckpoints('run-1');
+    expect(await store.checkpointsForRun('run-1')).toEqual(first);
   });
 
   it('refuses withdrawal input that is not a run id', async () => {

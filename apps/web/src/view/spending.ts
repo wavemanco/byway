@@ -25,7 +25,8 @@ export function uncertainReason(call: UncertainCall): string {
   const ids = jobs.length > 0 ? ` ${who} accepted ${jobs.length === 1 ? 'job' : 'jobs'} ${jobs.join(' and ')}.` : '';
   switch (call.reason) {
     case 'interrupted':
-      return `byway stopped, or lost its connection, while waiting for ${who}'s answer, so it never learned the cost.${ids}`;
+      // Also a call byway cut off because its run was cancelled or ended (ADR-0111).
+      return `byway stopped waiting for ${who}'s answer (its run was cancelled or ended, byway stopped, or it lost its connection), so it never learned the cost.${ids}`;
     case 'failed':
       return `The request may have reached ${who} before the connection failed, so ${who} may have done the work and billed it.${ids}`;
     case 'resent':

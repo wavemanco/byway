@@ -368,6 +368,24 @@ describe('the ledger check says what the spend book did with a line that is not 
     await expect(g.complete(ask())).resolves.toMatchObject({ provider: 'anthropic' });
   });
 
+  it('a line nested too deeply to hash: the check names its entry, and does not throw (ADR-0083)', async () => {
+    await twoEntries();
+    const [first, second] = readFileSync(ledgerPath, 'utf8').split('\n');
+    writeFileSync(ledgerPath, `${first}\n${second!.slice(0, -1)},"note":${'['.repeat(10_000)}${']'.repeat(10_000)}}\n`);
+    expect(await gateway().auditLedger()).toMatchObject({ brokenAt: (JSON.parse(second!) as { id: string }).id });
+  });
+
+  it.each([
+    ['an array nested ten thousand deep', `${'['.repeat(10_000)}${']'.repeat(10_000)}`],
+    ['a number', '7'],
+  ])('a line whose id is %s: the check names it by its line, as a fault, and does not throw', async (_label, value) => {
+    await twoEntries();
+    const [first, second] = readFileSync(ledgerPath, 'utf8').split('\n');
+    const { id } = JSON.parse(second!) as { id: string };
+    writeFileSync(ledgerPath, `${first}\n${second!.replace(`"id":"${id}"`, `"id":${value}`)}\n`);
+    expect(await gateway().auditLedger()).toMatchObject({ brokenAt: 'line:2', brokenLine: { line: 2, book: 'fault' }, openFaults: 1 });
+  });
+
   it('a torn last line: not read, not a fault; set aside when byway next writes to the ledger', async () => {
     await twoEntries();
     writeFileSync(ledgerPath, `${readFileSync(ledgerPath, 'utf8')}{"workspaceId":"ws","cost`);

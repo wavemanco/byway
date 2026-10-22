@@ -1,17 +1,20 @@
 /**
  * What the Run screen polls: the runner's view of the run, plus the media type and a text excerpt of each artifact
  * it shows, so step rows and contact sheets can render drafts without fetching each artifact. Whether the run is
- * paused, its budget and its spend all come from the view itself (the run's status and its `cost` events).
+ * paused, its budget and its spend all come from the view itself (the run's status and its `cost` events); once the run
+ * has ended, the spend book also says how many of its calls are still under way and what it has settled (endedSpend).
  *
  * The excerpt is marked as one (complete, bytes) and never ends in half a character; a diff's size and an option map's
  * titles are counted here from the whole artifact, so a step row never states a count of the excerpt as the
  * artifact's (F13, ADR-0086). The whole text itself is never polled: a view that needs it loads it once.
  */
+import type { RunRecord } from '@byway/contracts';
 import type { Services } from '../services/index.ts';
 import { parseUnifiedDiff } from '../view/diff.ts';
 import { ArtifactData, read } from '../view/events.ts';
 import { parseOptions } from '../view/result.ts';
-import type { ArtifactInfo, RunData } from '../view/rundata.ts';
+import { isEnded } from '../view/run.ts';
+import type { ArtifactInfo, EndedSpend, RunData } from '../view/rundata.ts';
 
 export type { ArtifactInfo, RunData } from '../view/rundata.ts';
 
@@ -62,5 +65,23 @@ export async function getRunData(services: Services, runId: string, afterSeq = 0
     ids.push(...(cp.artifactIds ?? []));
   }
   if (view.run.outputArtifactId) ids.push(view.run.outputArtifactId);
-  return { view, artifacts: await artifactInfo(services, ids) };
+  const ended = isEnded(view.run.status) ? await endedSpend(services, view.run) : undefined;
+  return { view, artifacts: await artifactInfo(services, ids), ...(ended ? { ended } : {}) };
+}
+
+/**
+ * An ended run's calls still under way and its settled cost, from the spend book (RunData.ended). The calls under way are
+ * read first: once none is left, every call of the run has settled, been released or been listed as may have been
+ * billed, so the settled cost read after them is final. Best effort: if the book cannot be read the screen stops
+ * polling at the end, as it did before, rather than the whole poll failing.
+ */
+async function endedSpend(services: Services, run: Pick<RunRecord, 'id' | 'workspaceId'>): Promise<EndedSpend | undefined> {
+  try {
+    const { inFlight } = await services.gateway.spendRecords(run.workspaceId);
+    const callsUnderWay = inFlight.filter((c) => c.runId === run.id).length;
+    const settledUsd = (await services.gateway.spend(run.workspaceId)).byRun[run.id] ?? 0;
+    return { callsUnderWay, settledUsd };
+  } catch {
+    return undefined;
+  }
 }
