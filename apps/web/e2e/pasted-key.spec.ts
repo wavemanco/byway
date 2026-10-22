@@ -30,10 +30,11 @@ const keptInTab = (page: Page) => page.evaluate(() => Object.entries(window.sess
 const PROBLEM = 'A landing page for my pottery studio.';
 const NOTES = 'Spring classes: wheel throwing on Tuesdays, glazing on Thursdays.';
 
-async function attach(page: Page, name: string, text: string): Promise<void> {
-  await page.getByRole('button', { name: 'Attach a draft or diff' }).click();
-  await page.getByLabel('Name of attachment 1').fill(name);
-  await page.getByLabel('Text of attachment 1').fill(text);
+/** Adds an attachment on Start, the `n`th on the form (from 1), with its name and text. */
+async function attach(page: Page, name: string, text: string, n = 1): Promise<void> {
+  await page.getByRole('button', { name: n === 1 ? 'Attach a draft or diff' : 'Attach another' }).click();
+  await page.getByLabel(`Name of attachment ${n}`, { exact: true }).fill(name);
+  await page.getByLabel(`Text of attachment ${n}`, { exact: true }).fill(text);
 }
 
 /** The refusal when the key was in Start's text. */
@@ -99,8 +100,8 @@ test('a refused key in an attachment leaves the text kept; once the attachment i
   await page.goto('/');
   await page.getByLabel('What are you working on?').fill(PROBLEM);
   await attach(page, 'Class notes', `${NOTES}\nconfig: ${key}`);
-  // The refusal says the key was in an attachment, not "this text" (the field the person is looking at).
-  await refuse(page, 'An attachment contains your ANTHROPIC_API_KEY. Remove it and try again');
+  // The refusal says the key was in an attachment, not "this text" (the field the person is looking at), and which one.
+  await refuse(page, 'Attachment 1 ("Class notes") contains your ANTHROPIC_API_KEY. Remove it and try again');
   expect(await keptInTab(page)).not.toContain(key);
   expect(await keptInTab(page)).toContain(PROBLEM);
 
@@ -109,6 +110,43 @@ test('a refused key in an attachment leaves the text kept; once the attachment i
   await page.reload();
   await expect(page.getByLabel('What are you working on?')).toHaveValue(PROBLEM);
   await expect(page.getByLabel('Text of attachment 1')).toHaveValue(NOTES);
+  expect(await keptInTab(page)).not.toContain(key);
+  expect(keys.pastes()).toBe(1);
+  expect(keys.leaks).toEqual([]);
+});
+
+// Per attachment (ADR-0088 follow-up): before, a key in one attachment stopped the tab keeping all of them, and any edit
+// to any of them kept them all again, the one with the key included; a reload before an edit lost the clean ones.
+test('a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through edits to the others and a reload', async ({ page }) => {
+  const key = E2E_KEYS.ANTHROPIC_API_KEY;
+  const keys = watchForKeys(page, { pastedTo: '/api/intakes' });
+  const DRAFT = 'Draft: the spring timetable, with prices.';
+  await page.goto('/');
+  await page.getByLabel('What are you working on?').fill(PROBLEM);
+  await attach(page, 'Class notes', NOTES, 1);
+  // An empty attachment is not sent: the one with the key is the second sent, and the third on the form.
+  await page.getByRole('button', { name: 'Attach another' }).click();
+  await attach(page, 'Draft', `${DRAFT}\nconfig: ${key}`, 3);
+  await refuse(page, 'Attachment 3 ("Draft") contains your ANTHROPIC_API_KEY. Remove it and try again');
+  // The other attachment and the text are still kept; the one that held the key is not, though it is still on screen.
+  await expect.poll(() => keptInTab(page)).toContain(NOTES);
+  expect(await keptInTab(page)).toContain(PROBLEM);
+  expect(await keptInTab(page)).not.toContain(DRAFT);
+  expect(await keptInTab(page)).not.toContain(key);
+  await expect(page.getByLabel('Text of attachment 3', { exact: true })).toHaveValue(new RegExp(`config: ${key}`));
+
+  // Editing another attachment does not bring the one with the key back into the tab.
+  await page.getByLabel('Name of attachment 1', { exact: true }).fill('Class notes, spring');
+  await expect.poll(() => keptInTab(page)).toContain('Class notes, spring');
+  expect(await keptInTab(page)).not.toContain(key);
+
+  // A reload brings back what was kept: the text and the clean attachments, not the one that held the key.
+  await page.reload();
+  await expect(page.getByLabel('What are you working on?')).toHaveValue(PROBLEM);
+  await expect(page.getByLabel('Name of attachment 1', { exact: true })).toHaveValue('Class notes, spring');
+  await expect(page.getByLabel('Text of attachment 1', { exact: true })).toHaveValue(NOTES);
+  await expect(page.getByLabel('Text of attachment 2', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('Name of attachment 3', { exact: true })).toHaveCount(0);
   expect(await keptInTab(page)).not.toContain(key);
   expect(keys.pastes()).toBe(1);
   expect(keys.leaks).toEqual([]);
