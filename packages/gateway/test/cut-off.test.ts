@@ -468,6 +468,15 @@ describe('a streamed chat answer, read as a whole one', () => {
     await expect(readChatStream(streamOf(openaiChunks({ finish: 'error' })), 'openrouter')).rejects.toMatchObject({ billing: 'maybe' });
   });
 
+  it('keeps the last usage a stream sends, neither the first nor their sum', async () => {
+    // An earlier, partial count, as an upstream that sends cumulative usage on more than one chunk would.
+    const [head, ...rest] = openrouterChunks();
+    const early: ChatChunkLike = { ...head!, usage: { prompt_tokens: 1200, completion_tokens: 5, cost: 0.002 } };
+    const out = await completeStreamed(streamOf([early, ...rest]), 'openrouter', undefined);
+    expect(out.usage).toEqual({ inputTokens: 1200, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 1000 });
+    expect(out.reportedCostUsd).toBe(0.0213);
+  });
+
   it('settles a stream that broke after its finishing chunk, since its answer arrived', async () => {
     const chunks = openaiChunks();
     const broke = (async function* () {
@@ -502,6 +511,54 @@ describe('a stop cuts off a streamed OpenAI or OpenRouter call', () => {
     expect(ledger()).toEqual([]);
     expect(heldAt).toBeGreaterThan(0);
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider, usd: heldAt, reason: 'interrupted' })]);
+  });
+
+  // ADR-0111 item 4: an answer that arrives as the stop comes is settled at its true cost, not counted as cut off.
+  it.each([
+    ['openai', openaiChunks, (500 * 1 + 1000 * 12.5 + 500 * 10 + 300 * 50) / 1e6],
+    ['openrouter', openrouterChunks, 0.0213],
+  ] as const)('%s: an answer whose every chunk came before the stop closed its stream is settled at its true cost', async (provider, chunks, costUsd) => {
+    const { stop, operation } = caller();
+    // Every chunk, its usage included; then the stop, and the stream ends quietly, as the SDK ends one it aborted.
+    const chat = chatClient((_n, signal) => heldStream(chunks(), signal, () => stop.abort()));
+    const g = gateway({ clients: { [provider]: chat.client } });
+    const res = await g.complete(ask({ profileId: provider, operation }));
+    expect(stop.signal.aborted).toBe(true);
+    expect(res.costUsd).toBeCloseTo(costUsd, 10);
+    expect(ledger()).toEqual([expect.objectContaining({ provider, costUsd: res.costUsd })]);
+    expect(ledger()[0]).not.toHaveProperty('priceBasis');
+    expect((await g.spendRecords('ws')).uncertain).toEqual([]);
+  });
+
+  it('openai: a stop between the finishing chunk and the usage chunk settles the answer at its planning figures, marked as an assumed price', async () => {
+    const { stop, operation } = caller();
+    const chat = chatClient((_n, signal) => heldStream(openaiChunks().slice(0, 3), signal, () => stop.abort()));
+    const g = gateway({ clients: { openai: chat.client } });
+    const res = await g.complete(ask({ profileId: 'openai', operation }));
+    expect(stop.signal.aborted).toBe(true);
+    expect(res.text).toBe('Choice: A');
+    expect(res.usage.outputTokens).toBe(1000);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'openai', priceBasis: 'assumed' })]);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([]);
+  });
+
+  it.each([
+    ['openai', openaiChunks, (500 * 1 + 1000 * 12.5 + 500 * 10 + 300 * 50) / 1e6],
+    ['openrouter', openrouterChunks, 0.0213],
+  ] as const)('%s: a stream that throws on its stop after its finishing chunk is settled too, since its answer arrived', async (provider, chunks, costUsd) => {
+    const { stop, operation } = caller();
+    const chat = chatClient(() =>
+      (async function* () {
+        for (const c of chunks()) yield c;
+        stop.abort();
+        throw Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+      })(),
+    );
+    const g = gateway({ clients: { [provider]: chat.client } });
+    const res = await g.complete(ask({ profileId: provider, operation }));
+    expect(res.costUsd).toBeCloseTo(costUsd, 10);
+    expect(ledger()).toHaveLength(1);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
 
   it('a stop that comes before the stream answers (the SDK rejects its request) is a cut-off too', async () => {
