@@ -340,7 +340,10 @@ export interface SpendRecords extends BookRecords {
 
 /** The audit file checked against itself and against the book (Settings' "Check the spend ledger", the start-up report). */
 export interface LedgerAudit {
-  /** The hash chain (Gateway.verifyLedger): the first broken entry, `line:<n>`, `head`, or null when intact. */
+  /**
+   * The hash chain (Gateway.verifyLedger): the first broken entry, `line:<n>`, `head`, or the number of a missing entry
+   * whose head record has an empty id; null when intact.
+   */
   brokenAt: string | null;
   /**
    * Calls the book holds as written to the audit file whose entry is not there, or carries another cost: a restore of

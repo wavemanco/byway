@@ -95,11 +95,12 @@ const LINE_FATE_UNKNOWN =
 /**
  * What Settings' "Check the spend ledger" says about the hash chain (Gateway.auditLedger's brokenAt; ADR-0091): null is
  * an intact chain, `head` a head record that cannot be read, `line:<n>` a line that is not an entry, anything else the id
- * of the first entry that breaks the chain. For a line that is not an entry, `brokenLine` says what the spend book did
- * with it (ADR-0095), so the words say what is true of this line: a fault that pauses paid calls, an acknowledged one,
- * a line that changed after the book read it, a blank line, or a torn last line. Without it they say each case
- * conditionally and claim no pause. The backup unit is the whole data directory (ADR-0094): restoring ledger.jsonl alone
- * puts it out of step with its head and with the spend book, so the text never suggests it.
+ * of the first entry that breaks the chain, or the number of a missing entry whose head record has an empty id. For a
+ * line that is not an entry, `brokenLine` says what the spend book did with it (ADR-0095), so the words say what is true
+ * of this line: a fault that pauses paid calls, an acknowledged one, a line that changed after the book read it, a blank
+ * line, or a torn last line. Without it they say each case conditionally and claim no pause. The backup unit is the
+ * whole data directory (ADR-0094): restoring ledger.jsonl alone puts it out of step with its head and with the spend
+ * book, so the text never suggests it.
  */
 export function ledgerCheckText(brokenAt: string | null, brokenLine?: BrokenLine): string {
   if (brokenAt === null) return 'The spend ledger checks out: every entry is intact and chained to the one before it.';

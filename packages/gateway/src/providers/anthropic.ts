@@ -144,8 +144,8 @@ export function anthropicAdapter(opts: AnthropicAdapterOptions): ProviderAdapter
     // closed stream bills; the gateway counts a call cut off after it was sent as "may have been billed".
     cutsOff: { complete: true },
     async complete(req) {
-      // The SDK is handed the stop and the bound on a stalled stream together (StreamIdle).
-      const idle = new StreamIdle(req.signal);
+      // The SDK is handed the stop and the request's bound on a stalled stream together (StreamIdle, streamIdleMs).
+      const idle = new StreamIdle(req.signal, req.streamIdleMs);
       // Streaming keeps long builds (large max_tokens) clear of HTTP timeouts; finalMessage() assembles the result.
       const stream = opts.client.beta.messages.stream(anthropicParams(req, true), { signal: idle.signal });
       let events = 0;
@@ -166,7 +166,7 @@ export function anthropicAdapter(opts: AnthropicAdapterOptions): ProviderAdapter
         // that answer is settled, as a streamed OpenAI or OpenRouter answer that finished is (ADR-0111). The SDK rejects
         // finalMessage when the abort lands after the last event but before it has read the stream's end.
         if (whole) msg = whole;
-        else if (idle.stalled && !req.signal?.aborted) throw streamEndedEarly('anthropic', stalledDetail(events, 'event'), e);
+        else if (idle.stalled && !req.signal?.aborted) throw streamEndedEarly('anthropic', stalledDetail(events, 'event', idle.afterMs), e);
         else throw e;
       } finally {
         idle.end();

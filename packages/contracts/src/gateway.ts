@@ -70,10 +70,17 @@ export interface SpendContext {
    *   billable was sent counts nothing. Its abort comes only after `cancel`'s.
    * - `rebuy`: the caller was told an earlier attempt settled the call (GatewayError.settledEarlier), looked for its kept
    *   result and found none: buy it again (counted).
+   * - `stepLimitMs`: the step's own time limit, in milliseconds (its attempt's start-to-close timeout, as Temporal gives
+   *   it to the activity), so the gateway never reads a streamed answer as stalled before its step would end: a streamed
+   *   call waits the longer of the gateway's bound on a stalled stream (STREAM_IDLE_MS, fifteen minutes) and this for
+   *   its next chunk (B1R2-CODE-3, the re-check of block 1's second fix round). A text call inside an image or video
+   *   step so waits that step's 45 minutes, as the owner chose on 2026-10-22, "45 minutes for calls in media steps
+   *   (Recommended)"; a call in a model step or a one-minute quick step, or with no limit given, waits fifteen. When
+   *   given, a number of milliseconds above 0 and at most 2^31 - 1 (the longest wait a timer keeps).
    * When the model declines the call, the gateway's one retry (ADR-0102) is a call of its own, keyed
-   * `<key>/after-decline/<the declined call's ledger entry id>`, with the same `until` and `cancel`; it is a rebuy only
-   * when the caller asks for the retry alone (`declinedEarlier`) with `rebuy`. So that a step that runs again never buys
-   * a declined call again, its caller keeps the decline:
+   * `<key>/after-decline/<the declined call's ledger entry id>`, with the same `until`, `cancel` and `stepLimitMs`; it
+   * is a rebuy only when the caller asks for the retry alone (`declinedEarlier`) with `rebuy`. So that a step that runs
+   * again never buys a declined call again, its caller keeps the decline:
    * - `keepDecline`: called once the declined call is settled and ledgered, before the retry is admitted; the runner's
    *   memo layer keeps it under the call's memo key. If it throws, the retry goes on all the same, and the call ends as
    *   for a caller that keeps nothing.
@@ -89,6 +96,7 @@ export interface SpendContext {
     cancel?: AbortSignal;
     stop?: AbortSignal;
     rebuy?: boolean;
+    stepLimitMs?: number;
     keepDecline?: (first: DeclinedAttempt) => Promise<void>;
     declinedEarlier?: DeclinedAttempt;
   };
@@ -463,7 +471,8 @@ export interface Gateway {
   profileStatus(): ProfileStatus[];
   /**
    * Verify the ledger hash chain; returns the first broken entry id (`line:<n>` for a line that is not an entry, `head`
-   * for a head record that cannot be read), or null if intact. Reports damage rather than throwing on it.
+   * for a head record that cannot be read, or the number of a missing entry whose head record has an empty id), or null
+   * if intact. Reports damage rather than throwing on it.
    */
   verifyLedger(): Promise<string | null>;
   /** What Settings lists of the spend book (ADR-0095): calls under way, calls that may have been billed, faults, set-aside tails. */

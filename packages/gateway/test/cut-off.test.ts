@@ -900,6 +900,77 @@ describe('a streamed call that stalls (CC-2)', () => {
     stop.abort();
     expect(isCutOff(await err)).toBe(true);
   });
+
+  // B1R2-CODE-3, the re-check of block 1's second fix round: a text call inside an image or video step (an ASSET step's
+  // briefs and integrate calls, a relay link's call) waits that step's own 45 minutes, as the owner chose on 2026-10-22,
+  // "45 minutes for calls in media steps (Recommended)"; a call in a model step, in a one-minute quick step or with no
+  // step at all keeps STREAM_IDLE_MS.
+  const STEP_LIMITS = [
+    ['a media step’s 45 minutes', 45 * 60_000, 45],
+    ['a model step’s 15 minutes', 15 * 60_000, 15],
+    ['a quick step’s minute', 60_000, 15],
+    ['no step limit', undefined, 15],
+  ] as const;
+
+  /** A client of `provider` whose every stream begins (one chunk, for a chat stream) and then sends nothing more. */
+  function stalling(provider: 'anthropic' | 'openai' | 'openrouter', start: () => void): { client: AnthropicClientLike | OpenAIClientLike; signals: () => (AbortSignal | undefined)[] } {
+    if (provider === 'anthropic') {
+      const fake = eventedAnthropic(async (emit, signal) => {
+        emit('connect');
+        start();
+        return abortedWith(signal);
+      });
+      return { client: fake.client, signals: () => fake.signals };
+    }
+    const chunks = provider === 'openai' ? openaiChunks : openrouterChunks;
+    const chat = chatClient((_n, signal) => heldStream(chunks().slice(0, 1), signal, start));
+    return { client: chat.client, signals: () => chat.signals };
+  }
+
+  it.each(STEP_LIMITS.flatMap(([what, limitMs, minutes]) => (['anthropic', 'openai', 'openrouter'] as const).map((provider) => [provider, what, limitMs, minutes] as const)))(
+    '%s: a call whose step has %s reads its stream as stalled only after the longer of that and STREAM_IDLE_MS, and says how long it waited',
+    async (provider, _what, limitMs, minutes) => {
+      const bound = minutes * 60_000;
+      const s = starts();
+      const fake = stalling(provider, s.start);
+      const { operation } = caller();
+      const g = gateway({ clients: { [provider]: fake.client } });
+      const err = failure(g.complete(ask({ profileId: provider === 'anthropic' ? 'balanced' : provider, operation: { ...operation, ...(limitMs !== undefined ? { stepLimitMs: limitMs } : {}) } })));
+      await s.started(0);
+      await vi.advanceTimersByTimeAsync(bound - 1);
+      expect(fake.signals().map((x) => x?.aborted)).toEqual([false]);
+      await vi.advanceTimersByTimeAsync(1);
+      // Closed at the bound and sent once more, as for any lost answer (ADR-0091); the second stalls the same way.
+      await s.started(1);
+      expect(fake.signals().map((x) => x?.aborted)).toEqual([true, false]);
+      await vi.advanceTimersByTimeAsync(bound);
+      const after = provider === 'anthropic' ? '0 events' : '1 chunk';
+      expect(await err).toMatchObject({ code: 'provider-error', billing: 'maybe', message: `${provider} call failed: ${provider}'s stream ended without producing a whole answer (nothing came for ${minutes} minutes, after ${after})` });
+      expect(fake.signals().map((x) => x?.aborted)).toEqual([true, true]);
+    },
+  );
+
+  it('anthropic: the one retry after a decline waits as long as the declined call would have', async () => {
+    const s = starts();
+    const fake = eventedAnthropic(async (emit, signal, n) => {
+      emit('connect');
+      if (n === 1) return anthropicMessage({ stop_reason: 'refusal', content: [] });
+      s.start();
+      return abortedWith(signal);
+    });
+    const { operation } = caller();
+    const g = gateway({ clients: { anthropic: fake.client } });
+    const err = failure(g.complete(ask({ operation: { ...operation, stepLimitMs: 45 * 60_000, keepDecline: async () => undefined } })));
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync(45 * 60_000 - 1);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false, false]);
+    await vi.advanceTimersByTimeAsync(1);
+    await s.started(1);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false, true, false]);
+    await vi.advanceTimersByTimeAsync(45 * 60_000);
+    expect(await err).toBeInstanceOf(GatewayError);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false, true, true]);
+  });
 });
 
 // --- fal's queue jobs ------------------------------------------------------------------------------------------------
@@ -1040,6 +1111,55 @@ describe('a stop cancels fal’s queue job', () => {
     for (const part of KEYS.FAL_KEY.split(':')) expect((err as Error).message).not.toContain(part);
     // The call was ended by the adapter's error before its words were redacted: none is left under way.
     expect((await g.spendRecords('ws')).inFlight).toEqual([]);
+  });
+
+  // B1R2-CODE-6, the re-check of block 1's second fix round: the call above was never sent, so it counts nothing whatever
+  // its error says. Here the adapter throws after its job was submitted (the call marked sent), so what the spend book
+  // counts is what the DOMException's own billing says, read before its words are redacted.
+  it.each([
+    ['may have been billed', 'maybe', 1],
+    ['certainly not billed', 'none', 0],
+  ] as const)('counts a DOMException thrown after the call was sent as its billing says (%s), its words redacted', async (_what, billing, counted) => {
+    const thrown = Object.assign(new DOMException(`The operation was aborted due to timeout (Key ${KEYS.FAL_KEY})`, 'TimeoutError'), { billing });
+    const { operation } = caller('run-1/clip/video/abc/1');
+    const inner = falAdapter({ client: heldFal({ status: 'removed', detail: 'HTTP 200 OK' }).client });
+    const g = gateway({
+      adapters: {
+        fal: {
+          ...inner,
+          video: async (req) => {
+            await req.submit(async () => 'req-1', 'the clip');
+            throw thrown;
+          },
+        },
+      },
+    });
+    const err = await g.video(video(operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toBe(thrown);
+    expect((err as Error).message).toBe('The operation was aborted due to timeout (Key [redacted])');
+    const records = await g.spendRecords('ws');
+    expect(records.inFlight).toEqual([]);
+    expect(records.uncertain).toEqual(counted ? [expect.objectContaining({ provider: 'fal', reason: 'failed', usd: expect.any(Number) })] : []);
+    expect((await g.spend('ws')).uncertainUsd).toBe(counted ? records.uncertain[0]?.usd : 0);
+    if (counted) expect((await g.spend('ws')).uncertainUsd).toBeGreaterThan(0);
+  });
+
+  // B1R2-CODE-6: a message that is not text (a number, an object) is redacted as its text, so the redaction cannot throw
+  // and take the adapter's error's place; one that cannot be read as text at all is not passed on.
+  it('redacts an error whose message is not text as its text, and never throws', async () => {
+    const numbered = Object.assign(new Error('x'), { message: 42 as unknown as string, billing: 'maybe' as const });
+    expect((await thrownBy(numbered)).err).toBe(numbered);
+    expect(numbered.message).toBe('42');
+    const keyed = Object.assign(new Error('x'), { message: { toString: () => `Key ${KEYS.FAL_KEY}` } as unknown as string });
+    expect((await thrownBy(keyed)).err).toBe(keyed);
+    expect(keyed.message).toBe('Key [redacted]');
+    const unreadable = Object.assign(new Error('x'), { message: Object.create(null) as string, billing: 'maybe' as const, falRequests: { generation: 'req-1' } });
+    const { err } = await thrownBy(unreadable);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toMatchObject({ billing: 'maybe', falRequests: { generation: 'req-1' }, message: 'byway could not read this error’s message as text.' });
   });
 
   it('redacts an error that takes no new property by a copy of it: the same class, code and fields', async () => {

@@ -224,7 +224,10 @@ const runScreen = (run: RunRecord, spend?: RunData['ended']) =>
   );
 
 // F3R-1 (the re-check of block 1's fix round): RS-5's pieces are tested one by one, and RunScreen joins them. A dropped
-// argument fails the typecheck (pollDelay's and runMeter's last parameters have no default); a wrong one fails here.
+// argument fails the typecheck (pollDelay's and runMeter's last parameters have no default). A wrong cost, a wrong count
+// on the panel or a wrong test of the run's end fails here; a wrong count for the poll does not (pollDelay given
+// undefined, 0 or after?.settledUsd in place of after?.callsUnderWay passes every test), since only the polling would
+// show it, which a server render cannot (ADR-0111; B1R2-CODE-5, the re-check of block 1's second fix round).
 describe('the Run screen joins what the spend book says of an ended run (RS-5)', () => {
   it('shows an ended run’s calls under way and its settled cost, and says nothing of them once none is under way', () => {
     for (const status of ['cancelled', 'failed'] as const) {

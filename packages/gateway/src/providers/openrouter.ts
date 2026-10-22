@@ -31,8 +31,8 @@ export function openrouterAdapter(opts: { client: OpenAIClientLike; pins: Readon
       const pin = opts.pins[req.model];
       // An unpinned model could be served by any host; refuse rather than route blind.
       if (!pin) throw new GatewayError('invalid-request', `openrouter model ${req.model} has no pinned upstream provider`);
-      // The SDK is handed the stop and the bound on a stalled stream together (StreamIdle).
-      const idle = new StreamIdle(req.signal);
+      // The SDK is handed the stop and the request's bound on a stalled stream together (StreamIdle, streamIdleMs).
+      const idle = new StreamIdle(req.signal, req.streamIdleMs);
       const stream = await opts.client.chat.completions.create(openrouterParams(req, true, pin), { signal: idle.signal });
       const parsed = await completeStreamed(stream, 'openrouter', req.signal, idle);
       // OpenRouter names the serving host in `provider`; with fallbacks off it can only be the pin.
