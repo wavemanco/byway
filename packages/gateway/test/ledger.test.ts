@@ -200,6 +200,37 @@ describe('Ledger.verify on lines that cannot be hashed', () => {
     expect(await ledger.verify()).toBe(id(ls[1]));
   });
 
+  it.each([
+    ['an array nested ten thousand deep', `${'['.repeat(10_000)}${']'.repeat(10_000)}`],
+    ['an array nested a hundred deep', `${'['.repeat(100)}${']'.repeat(100)}`],
+    ['a number', '7'],
+    ['an object', '{"a":1}'],
+    ['empty text', '""'],
+  ])('names a broken line by its number when its id is %s, so the result is always text', async (_label, value) => {
+    const ledger = await seed(2);
+    const ls = lines();
+    rewrite([ls[0] as string, (ls[1] as string).replace(`"id":"${id(ls[1])}"`, `"id":${value}`)]);
+    expect(lines()[1]).toContain(`"id":${value.slice(0, 20)}`);
+    expect(await ledger.verify()).toBe('line:2');
+  });
+
+  it('names the entry at the head by its line number when its id is not text, even with its hash made to match', async () => {
+    const ledger = await seed(2);
+    const ls = lines();
+    // The line hashes as it should, so only the head record (written before the edit) can tell it was changed.
+    const edited: Record<string, unknown> = { ...(JSON.parse(ls[1] as string) as Record<string, unknown>), id: 7 };
+    const { hash: _h, ...rest } = edited;
+    rewrite([ls[0] as string, JSON.stringify({ ...rest, hash: contentHash(rest) })]);
+    expect(await ledger.verify()).toBe('line:2');
+  });
+
+  it('names a head that runs ahead of the file by its line number when its id is empty', async () => {
+    const ledger = await seed(2);
+    writeFileSync(`${path}.head`, JSON.stringify({ seq: 3, id: '', hash: `sha256:${'c'.repeat(64)}` }));
+    utimesSync(`${path}.head`, new Date(), new Date(Date.now() + 2000));
+    expect(await ledger.verify()).toBe('line:3');
+  });
+
   it('still hashes an entry nested well below that limit', async () => {
     const ledger = await seed(1);
     const { hash: _h, ...rest } = JSON.parse(lines()[0] as string) as Record<string, unknown>;

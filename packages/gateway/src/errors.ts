@@ -27,8 +27,8 @@ const AFTER_WRITE_CODES = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ECONNABO
 const AFTER_WRITE_NAMES = new Set(['AbortError', 'TimeoutError', 'APIConnectionTimeoutError', 'APIConnectionError', 'FetchError']);
 /**
  * A stream that ended without its terminal event (the Anthropic SDK's messages for a response cut off before
- * `message_stop`, and the words the OpenAI and OpenRouter stream reader uses for an error chunk or a missing finishing
- * chunk: providers/openai.ts, ADR-0111): the provider answered 200 and may have billed what it generated.
+ * `message_stop`, and the words byway's stream readers use for an error chunk, a missing finishing chunk or a stream
+ * that stalled: providers/stream.ts, ADR-0111): the provider answered 200 and may have billed what it generated.
  */
 const ENDED_EARLY = /stream ended without producing|request ended without sending any chunks/;
 
