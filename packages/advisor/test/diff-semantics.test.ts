@@ -359,7 +359,8 @@ function without(r: N, ids: string[]): N {
 /**
  * A step the nearest recipe's presentation shows with another as its lead (a writer with the step whose findings it
  * applies, say) is named by its part in that shown step, so that a line about it does not read as if it were about the
- * whole. A part removed with its lead is said once, by the lead, and lines that come out the same are said once.
+ * whole. A part removed with its lead is said once, by the lead, and lines that come out the same are said once, with
+ * how many they stand for ("Added: Revise (Finish), twice").
  */
 describe('steps shown together are named by their part', () => {
   it('C1 without only its swap step: the swaps go, and the sweep stays and no longer asks', () => {
@@ -379,11 +380,15 @@ describe('steps shown together are named by their part', () => {
     expect(diff(without(clone(c1), ['cut', 'apply-cut', 'tells-sweep', 'apply-swaps']), c1)).toEqual(['Removed: Trim (Finish)', 'Removed: Cliché sweep (Finish)']);
   });
 
-  it('lines that come out the same are said once', () => {
+  it('lines that come out the same are said once, with how many they stand for', () => {
     const r = clone(c1);
     const d3 = stageOf(r, 'D3').body;
     const swaps = d3.steps[at(d3, 'apply-swaps')];
     d3.steps.push({ ...swaps, id: 'polish-1' }, { ...swaps, id: 'polish-2' });
+    expect(diff(r, c1)).toEqual(['Added: Revise (Finish), twice']);
+    d3.steps.push({ ...swaps, id: 'polish-3' });
+    expect(diff(r, c1)).toEqual(['Added: Revise (Finish), 3 times']);
+    d3.steps.splice(-2, 2);
     expect(diff(r, c1)).toEqual(['Added: Revise (Finish)']);
   });
 });

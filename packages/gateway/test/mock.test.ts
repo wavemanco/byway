@@ -2,6 +2,7 @@ import { MEDIA, type Medium } from '@byway/contracts';
 import { describe, expect, it } from 'vitest';
 import { imageSize } from '../src/estimate.ts';
 import { fencedBlocks, outsideFences } from '../src/mock/extract.ts';
+import { revisionOf } from '../src/mock/revision.ts';
 import { mockAdapter } from '../src/providers/mock.ts';
 import type { ProviderCompletionRequest } from '../src/providers/types.ts';
 import { checkContract, lastBlock } from './contract.ts';
@@ -294,5 +295,18 @@ describe("the mock's fenced-block reader", () => {
   it('leaves out every top-level block whole, a block inside it included, when it reads the words outside them', () => {
     const prompt = `Images:\n![a](/api/artifacts/a)\n\n${T}markdown\n# T\n\n${T}bash\nls\n${T}\n\n![b](/api/artifacts/b)\n${T}\nAfter.`;
     expect(outsideFences(prompt)).toBe('Images:\n![a](/api/artifacts/a)\n\nAfter.');
+  });
+
+  it('reads the code change a prompt hands over whole when its diff adds a fenced block, with the Why inside the block or after it', async () => {
+    const diff = ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,4 @@', ' # Invoices', `+${T}bash`, '+pnpm test', `+${T}`].join('\n');
+    const why = 'Why: document the test command.\n<!-- byway-demo-revision: 2 -->';
+    const whole = `${T}diff\n${diff}\n${T}\n\n${why}`;
+    // As the templates hand over a stored change: the artifact whole inside one diff block (the diff, a blank line, the Why).
+    const stored = `The current change:\n\n${T}diff\n${diff}\n\n${why}\n\n${T}\n\nThe developer's words:\n\n<copy>\nWhy: mine.\n</copy>`;
+    expect(await ask('voice.apply:code-diff', stored)).toBe(whole);
+    // As a model answers: the Why after the block.
+    expect(await ask('voice.apply:code-diff', `Apply the developer's words to this change.\n\n${whole}\n\nChange nothing else.`)).toBe(whole);
+    // A fix turn counts from the revision it was given.
+    expect(revisionOf(await ask('fix:code-diff', stored))).toBe(3);
   });
 });

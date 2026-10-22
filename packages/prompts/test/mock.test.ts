@@ -82,6 +82,16 @@ describe('the gateway mock reads what the templates write', () => {
     expect(answer).not.toContain('Old text.');
   });
 
+  it('finds the whole code change in a voice.apply or fix turn, a diff that adds a fenced block included (ENG-1)', () => {
+    const T = '```';
+    const diff = ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,4 @@', ' # Invoices', `+${T}bash`, '+pnpm test', `+${T}`].join('\n');
+    const why = 'Why: document the test command.\n<!-- byway-demo-revision: 2 -->';
+    const artifact = `${diff}\n\n${why}\n`;
+    // The demo voice.apply hands the change back as it was given, its Why and revision marker included.
+    expect(ask('voice.apply:code-diff', 'helper.voice.apply', { artifact, voice: 'Why: so a new contributor runs the tests first.' })).toBe(`${T}diff\n${diff}\n${T}\n\n${why}`);
+    expect(ask('fix:code-diff', 'product.c7.fix-defects', { critique: '- The test command is wrong.', artifact })).toMatch(/<!-- byway-demo-revision: 3 -->$/);
+  });
+
   it('reads the chooser questions from the intake prompt and answers each by id', () => {
     const questions = JSON.stringify(CHOOSER.map((q) => ({ id: q.id, routesTo: q.routesTo, text: q.text })), null, 2);
     const answer = ask('advisor.intake', 'advisor.intake', { problem: problemSlot({ text: 'A landing page for my bakery' }), questions });

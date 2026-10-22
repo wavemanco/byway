@@ -400,6 +400,18 @@ describe("the weekly run's report of the Playwright pin (D4)", () => {
   const RELEASES = { '1.63.0': '2026-09-04T22:45:21.732Z', '1.64.0-alpha-2026-09-20': '2026-09-20T00:00:00.000Z', '1.64.0': '2026-10-07T20:42:55.791Z', '1.64.1': '2026-10-14T11:54:49.998Z' };
   type Fetch = NonNullable<ReportOptions['fetch']>;
   const answer = (status: number, body: () => Promise<unknown>): Fetch => async () => ({ ok: status === 200, status, json: body });
+  /**
+   * A root whose two package files pin Playwright as given, so that what report() says does not depend on the
+   * repository's own pins, which move with every update (ADR-0110). The repository's pins are read in their own test.
+   */
+  const pinnedAt = (version: string): string => {
+    const root = mkdtempSync(path.join(tmpdir(), 'byway-pin-root-'));
+    for (const { file, name } of PINNED) {
+      mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
+      writeFileSync(path.join(root, file), JSON.stringify({ dependencies: { [name]: version } }));
+    }
+    return root;
+  };
 
   it('runs on the weekly run only, on one job, after Node is set up and before the tests, and cannot fail the job', () => {
     const at = steps.findIndex((s) => s.run === 'node scripts/playwright-pin.ts');
@@ -451,7 +463,7 @@ describe("the weekly run's report of the Playwright pin (D4)", () => {
   });
 
   it("never fails: what it cannot read is said in one line, which goes to the run's summary too", async () => {
-    const run = async (fetch: Fetch, root = REPO) => {
+    const run = async (fetch: Fetch, root = pinnedAt('1.63.0')) => {
       const lines: string[] = [];
       const summary = path.join(mkdtempSync(path.join(tmpdir(), 'byway-pin-')), 'summary.md');
       writeFileSync(summary, '');
@@ -472,25 +484,21 @@ describe("the weekly run's report of the Playwright pin (D4)", () => {
       expect(out.summary, what).toContain(out.lines[0]);
     }
     // Package files that pin no single release.
-    const root = mkdtempSync(path.join(tmpdir(), 'byway-pin-root-'));
-    for (const { file } of PINNED) {
-      mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
-      writeFileSync(path.join(root, file), JSON.stringify({ dependencies: { playwright: '^1.63.0', '@playwright/test': '^1.63.0' } }));
-    }
-    expect((await run(answer(200, async () => registry('1.64.1', RELEASES)), root)).lines[0]).toContain('does not pin playwright to one release');
+    expect((await run(answer(200, async () => registry('1.64.1', RELEASES)), pinnedAt('^1.63.0'))).lines[0]).toContain('does not pin playwright to one release');
   });
 
   it("marks a pin that is behind with one warning on the run's page, and a pin at the latest release with none", async () => {
     const lines: string[] = [];
     const at = (latest: string) => answer(200, async () => registry(latest, RELEASES));
-    await report({ fetch: at('1.64.1'), root: REPO, now: () => day('2026-10-21'), print: (l) => lines.push(l) });
+    // Fixture pins: the repository's own reach 1.64.1 at their first update, and would then be behind no fixture here.
+    const root = pinnedAt('1.63.0');
+    await report({ fetch: at('1.64.1'), root, now: () => day('2026-10-21'), print: (l) => lines.push(l) });
     const warnings = lines.filter((l) => l.startsWith('::warning'));
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/^::warning title=Playwright pin::byway pins Playwright \S+ \(packages\/runner and apps\/web\); npm's latest release is 1\.64\.1/);
+    expect(warnings[0]).toMatch(/^::warning title=Playwright pin::byway pins Playwright 1\.63\.0 \(packages\/runner and apps\/web\); npm's latest release is 1\.64\.1/);
     expect(warnings[0]).not.toMatch(/[\r\n]/);
-    const current = pinsIn(REPO)[0]!.version;
     lines.length = 0;
-    await report({ fetch: at(current), root: REPO, now: () => day('2026-10-21'), print: (l) => lines.push(l) });
-    expect(lines).toEqual([`byway pins Playwright ${current} (packages/runner and apps/web), npm's latest release.`]);
+    await report({ fetch: at('1.63.0'), root, now: () => day('2026-10-21'), print: (l) => lines.push(l) });
+    expect(lines).toEqual(["byway pins Playwright 1.63.0 (packages/runner and apps/web), npm's latest release."]);
   });
 });
