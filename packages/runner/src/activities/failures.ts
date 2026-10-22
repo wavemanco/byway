@@ -13,14 +13,20 @@ export class StepError extends Error {
   override name = 'StepError';
 }
 
-/** A model's answer that missed its contract twice (askModel): the step fails, unless its caller can ask a person. */
+/**
+ * A model's answer that missed its contract twice (askModel): the step fails, unless its caller has another way on (the
+ * asset step: when no answer placing its images can be used, the work stays as it was and the images are kept beside it).
+ */
 export class ContractMissed extends StepError {
   override name = 'ContractMissed';
   /** The last problem with the answer. */
   readonly problem: string;
-  constructor(message: string, problem: string) {
+  /** What the two answers cost, for a caller that goes on and reports the step's cost. */
+  readonly costUsd: number;
+  constructor(message: string, problem: string, costUsd = 0) {
     super(message);
     this.problem = problem;
+    this.costUsd = costUsd;
   }
 }
 

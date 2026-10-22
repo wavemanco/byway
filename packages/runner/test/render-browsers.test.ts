@@ -1,8 +1,9 @@
 /**
  * The renderer's browsers (render-browsers.ts; SEC-5, ADR-0106), with stand-in browsers and fake timers: no Chromium,
  * and no test waits on the clock. A load counts on the browser it takes until it lets it go; a retired browser is
- * closed when its last load lets it go, or at the backstop; byway's own closes give a reason and are remembered; and
- * nothing waits for a launch it did not ask for.
+ * closed when its last load lets it go, or at the backstop; byway's own closes give a reason and are remembered;
+ * nothing waits for a launch it did not ask for; and each retirement and each launch after the first is one line in the
+ * server log, with the reason and the counts only.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BYWAY_CLOSED, renderBrowsers, type KeptBrowser } from '../src/render-browsers.ts';
@@ -65,9 +66,12 @@ function launcher() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // The server log's lines (console.warn by default) are read only where a test asks for them.
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('the renderer\'s browsers (ADR-0106)', () => {
@@ -245,6 +249,50 @@ describe('the renderer\'s browsers (ADR-0106)', () => {
     expect(got === held || (got instanceof Error && got.message === SHUTDOWN), String(got)).toBe(true);
     expect(held.closes).toEqual([SHUTDOWN]);
     expect(settings).toEqual([true]);
+  });
+});
+
+describe('the server log: each retirement and each relaunch is one line (ADR-0106, late-close item 4)', () => {
+  it('says why a browser was retired and how many loads are still on it, and counts each launch after the first; the first launch says nothing', async () => {
+    const lines: string[] = [];
+    const { launched, launch } = launcher();
+    const s = { on: true };
+    const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE, osSandbox: () => s.on, warn: (m) => lines.push(m) });
+    const a = await browsers.take();
+    await browsers.take();
+    expect(lines).toEqual([]);
+    browsers.retire(a);
+    expect(lines).toEqual(["byway retired the page renderer's browser: a page in it took more than 5 s to close. Loads still on it: 2. Retired browsers still open: 1."]);
+    const c = await browsers.take();
+    expect(lines.at(-1)).toBe("byway launched the page renderer's browser again: launch 2 since the renderer started. Browsers open: 2, 1 of them retired.");
+    // A change of setting retires the browser in use. No load holds it, so it is closed at once and not counted as open.
+    await browsers.release(c);
+    s.on = false;
+    await browsers.take();
+    expect(lines.slice(2)).toEqual([
+      "byway retired the page renderer's browser: its OS sandbox setting changed. Loads still on it: 0. Retired browsers still open: 1.",
+      "byway launched the page renderer's browser again: launch 3 since the renderer started. Browsers open: 2, 1 of them retired.",
+    ]);
+    // A browser that went away (a crash) writes nothing; the launch that replaces it does.
+    launched[2]!.crash();
+    await browsers.take();
+    expect(lines.slice(4)).toEqual(["byway launched the page renderer's browser again: launch 4 since the renderer started. Browsers open: 2, 1 of them retired."]);
+    // Retiring a browser twice is one line.
+    browsers.retire(a);
+    expect(lines).toHaveLength(5);
+  });
+
+  it('goes to console.warn by default; a failed launch writes nothing, and the launch after it is the first', async () => {
+    const { launch, then } = launcher();
+    const browsers = renderBrowsers(launch, { timeoutMs: TIMEOUT, closeTimeoutMs: CLOSE });
+    then(async () => {
+      throw new Error('Chromium could not start');
+    });
+    await expect(browsers.take()).rejects.toThrow('Chromium could not start');
+    const a = await browsers.take();
+    expect(console.warn).not.toHaveBeenCalled();
+    browsers.retire(a);
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith("byway retired the page renderer's browser: a page in it took more than 5 s to close. Loads still on it: 1. Retired browsers still open: 1.");
   });
 });
 

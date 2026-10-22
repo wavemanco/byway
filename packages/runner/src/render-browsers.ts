@@ -19,6 +19,9 @@
  * remembered (closedWith), so a load that fails on a browser byway closed can say so: a call made after the close fails
  * only with "Target page, context or browser has been closed", the text a crash gives.
  *
+ * Each retirement and each launch after the first writes one line to the server log (`warn`), so how often they happen
+ * can be read there (ADR-0106's late-close item 4): the reason and the counts, never a page's address or content.
+ *
  * close() is final: once it has run, nothing is launched again. A load or readiness check that asks for a browser
  * afterwards fails with byway's reason (RendererClosed); one already waiting on a launch when close() ran gets
  * that browser, which close() then closes, or, waiting on another load's launch, may get byway's reason instead.
@@ -70,13 +73,17 @@ export interface RenderBrowsersOptions {
    * as on, so byway never draws without the sandbox by mistake.
    */
   osSandbox?: () => boolean | Promise<boolean>;
+  /** Where a retirement or a launch after the first is reported (the server log). Default console.warn. */
+  warn?: (message: string) => void;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
 
-export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolean) => Promise<B>, { timeoutMs, closeTimeoutMs, osSandbox }: RenderBrowsersOptions): RenderBrowsers<B> {
-  const retiredReason = `${BYWAY_CLOSED} after a page in it took more than ${closeTimeoutMs / 1000} s to close`;
-  const changedReason = `${BYWAY_CLOSED} after its OS sandbox setting changed`;
+export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolean) => Promise<B>, { timeoutMs, closeTimeoutMs, osSandbox, warn = (m) => console.warn(m) }: RenderBrowsersOptions): RenderBrowsers<B> {
+  /** Why a browser is retired: a page late to close, or a change of the OS sandbox setting. */
+  const late = `a page in it took more than ${closeTimeoutMs / 1000} s to close`;
+  const changed = 'its OS sandbox setting changed';
+  const retiredReason = `${BYWAY_CLOSED} after ${late}`;
   const shutdownReason = `${BYWAY_CLOSED} as it shut down`;
   /** The shared browser, or its launch on the way. */
   let current: Promise<B> | undefined;
@@ -89,6 +96,9 @@ export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolea
   const kept = new Map<B, { loads: number; launching: Promise<B>; osSandbox: boolean; backstop?: NodeJS.Timeout; reason?: string }>();
   const closedBy = new WeakMap<B, string>();
   const launchedWith = new WeakMap<B, boolean>();
+  /** Browsers launched so far: every launch after the first is a relaunch, which the server log is told of. */
+  let launches = 0;
+  const retiredOpen = () => [...kept.values()].filter((k) => k.backstop).length;
 
   const wanted = async (): Promise<boolean> => {
     if (!osSandbox) return true;
@@ -110,16 +120,19 @@ export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolea
     await (limit === undefined ? closing : Promise.race([closing, sleep(limit)]));
   };
 
-  /** b is retired with `reason`: new loads launch another, and b is closed once no load uses it, or at the backstop. */
-  const retireWith = (b: B, reason: string): void => {
+  /** b is retired, for `why`: new loads launch another, and b is closed once no load uses it, or at the backstop. */
+  const retireWith = (b: B, why: string): void => {
     const k = kept.get(b);
     if (!k || k.backstop) return;
     // Forgotten without waiting for anything: a relaunch on its way is not this browser.
     if (current === k.launching) current = undefined;
+    const reason = `${BYWAY_CLOSED} after ${why}`;
     k.reason = reason;
     k.backstop = setTimeout(() => void shut(b, reason, closeTimeoutMs), timeoutMs + closeTimeoutMs);
     k.backstop.unref();
-    if (k.loads <= 0) void shut(b, reason, closeTimeoutMs);
+    const loads = Math.max(0, k.loads);
+    if (loads === 0) void shut(b, reason, closeTimeoutMs);
+    warn(`byway retired the page renderer's browser: ${why}. Loads still on it: ${loads}. Retired browsers still open: ${retiredOpen()}.`);
   };
 
   const get = async (count: boolean): Promise<B> => {
@@ -136,7 +149,7 @@ export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolea
           return b;
         }
         // Launched with the other setting: retired, so the loads on it finish there and this one launches anew.
-        retireWith(b, changedReason);
+        retireWith(b, changed);
         continue;
       }
       // Gone or retired: forget it, unless a concurrent load already launched a new one (then look again).
@@ -149,6 +162,7 @@ export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolea
       const b = await launch(want);
       kept.set(b, { loads: 0, launching, osSandbox: want });
       launchedWith.set(b, want);
+      if (++launches > 1) warn(`byway launched the page renderer's browser again: launch ${launches} since the renderer started. Browsers open: ${kept.size}, ${retiredOpen()} of them retired.`);
       b.on('disconnected', () => {
         clearTimeout(kept.get(b)?.backstop);
         kept.delete(b);
@@ -175,7 +189,7 @@ export function renderBrowsers<B extends KeptBrowser>(launch: (osSandbox: boolea
       k.loads--;
       if (k.loads <= 0 && k.backstop) await shut(b, k.reason ?? retiredReason, closeTimeoutMs);
     },
-    retire: (b) => retireWith(b, retiredReason),
+    retire: (b) => retireWith(b, late),
     closedWith: (b) => closedBy.get(b),
     osSandboxOf: (b) => launchedWith.get(b),
     async close() {

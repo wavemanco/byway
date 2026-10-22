@@ -12,7 +12,14 @@
  * and every use of a brief's slot goes by one identity (slot-plan.ts). Coverage is checked before anything is bought.
  * A short answer gets the one feedback retry, then the step makes what it can and says what is missing, never a failed
  * run; only a malformed answer fails it. A prompt that may answer with no image (its minimum is 0) is taken at its
- * word. The relay anchor is exactly shot 1's frame, or none: a later shot's still never stands in for it.
+ * word. The relay anchor is exactly shot 1's frame, or none: a later shot's still never stands in for it. Every brief
+ * left out (for a slot the work does not have, or beyond the most the step makes) is named in the step's note.
+ *
+ * Placing what was bought (ADR-0090's rule for briefs, applied to the integrate answer): the images are paid for by
+ * then, so an answer that misses never fails the run. One that places some of them, and keeps every check on the work
+ * (the person's words under keepsVoice, the run's random string), is used after the retry, and the images it left out
+ * are kept beside the work; when no answer is usable (malformed, cut off, placing none, or breaking a check), the work
+ * is unchanged and every image is kept beside it. The note names them.
  *
  * Advice, never a veto (ADR-0101): a prompt that asks for it (`advice: yes`; only C3's header image) may add one line
  * of advice for the person to its briefs. The step's note shows it, as the AI's suggestion, with the image it came with;
@@ -28,7 +35,8 @@ import type { AssetInput, AssetResult } from '../types.ts';
 import { askModel } from './call.ts';
 import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
-import { StepError } from './failures.ts';
+import { ContractMissed, StepError } from './failures.ts';
+import { PaidNotKept } from './memo.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
@@ -77,6 +85,14 @@ interface MadeImage {
   slot: string;
   alt: string;
   artifactId: string;
+}
+
+/** What an integrate answer placed: the work with the images in it (none when no answer was usable), and the images left out. */
+interface Placement {
+  text?: string;
+  missing: MadeImage[];
+  /** What the keepsVoice check wrote back (writes.ts restoredNote). */
+  restored: string[];
 }
 
 export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<AssetResult> {
@@ -132,7 +148,8 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   if (!briefs.value.briefs.length) {
     // Nothing to make: by the prompt's own choice (its minimum is 0), or because no usable brief came even when asked again.
     const chosen = briefs.shortfall === undefined;
-    await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note: chosen ? NO_IMAGE_CHOSEN_NOTE : NO_BRIEF_NOTE }, true);
+    const note = chosen ? NO_IMAGE_CHOSEN_NOTE : [NO_BRIEF_NOTE, ...leftOutSentences(slots, briefs.value)].join(' ');
+    await stepFinished(deps, run, call, { costUsd, ...(chosen ? {} : { skipped: true }), note }, true);
     return chosen ? { costUsd } : { costUsd, skipped: true };
   }
 
@@ -143,7 +160,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const outputs: string[] = [];
   for (const brief of briefs.value.briefs) {
     const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries).catch((e: unknown) => {
-      throw e instanceof GatewayError && e.billed === true ? billedStop(e, slots, brief.slot, made, what) : e;
+      throw (e instanceof GatewayError && e.billed === true) || e instanceof PaidNotKept ? billedStop(e, slots, brief.slot, made, what) : e;
     });
     if (!image || 'declined' in image) {
       failed.push(brief.slot);
@@ -159,42 +176,62 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     outputs.push(image.made.artifactId);
   }
   if (!made.length) {
-    await stepFinished(deps, run, call, { costUsd, skipped: true, note: [NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined)].join(' ') }, true);
+    await stepFinished(deps, run, call, { costUsd, skipped: true, note: [NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...leftOutSentences(slots, briefs.value)].join(' ') }, true);
     return { costUsd, skipped: true };
   }
 
   // 3. Place them.
   const result: AssetResult = { costUsd };
   const writes = step.produces.includes('artifact');
+  /** What the integrate answer did not place, if anything (prose and web pages). */
+  let unplaced: Placement | undefined;
   if (medium === 'web-page' || medium === 'prose') {
-    const integrate = await askModel(deps, reader, {
-      run,
-      call,
-      promptId: 'helper.asset.integrate',
-      // Pages get "address | alt | slot" lines, prose Markdown image lines (@byway/prompts' layout, which the mock reads).
-      slots: { medium, artifact: current, images: imagesSlot(medium, made) },
-      images: [],
-      purpose: `asset.integrate:${medium}`,
-      tier: step.tier ?? 'mid',
-      what,
-      parse: (text) => {
-        const doc: Parsed<string> = medium === 'web-page' ? parseHtml(text) : parseMarkdown(text);
-        if (!doc.ok) return doc;
-        const missing = made.filter((m) => !doc.value.includes(imageRoute(m.artifactId)));
-        const problems = [
-          ...(missing.length ? [`Place every image by its address; missing: ${missing.map((m) => imageRoute(m.artifactId)).join(', ')}.`] : []),
-        ];
-        const checked = write(doc.value);
-        problems.push(...checked.problems);
-        restored = checked.restored;
-        return problems.length ? { ok: false, problem: problems.join(' ') } : { ok: true, value: checked.text };
-      },
-    });
-    result.costUsd += integrate.costUsd;
-    const id = await storeText(deps, run, call, medium === 'web-page' ? `${integrate.value}\n` : integrate.value, { label: what, name: 'work' });
-    outputs.push(id);
-    if (writes) result.artifactId = id;
-    else result.asset = made.map((m) => m.artifactId);
+    let placed: Placement;
+    try {
+      const integrate = await askModel<Placement>(deps, reader, {
+        run,
+        call,
+        promptId: 'helper.asset.integrate',
+        // Pages get "address | alt | slot" lines, prose Markdown image lines (@byway/prompts' layout, which the mock reads).
+        slots: { medium, artifact: current, images: imagesSlot(medium, made) },
+        images: [],
+        purpose: `asset.integrate:${medium}`,
+        tier: step.tier ?? 'mid',
+        what,
+        parse: (text, _rendered, earlier) => {
+          const doc: Parsed<string> = medium === 'web-page' ? parseHtml(text) : parseMarkdown(text);
+          if (!doc.ok) return doc;
+          const missing = made.filter((m) => !doc.value.includes(imageRoute(m.artifactId)));
+          const checked = write(doc.value);
+          const problems = [
+            ...(missing.length ? [`Place every image by its address; missing: ${missing.map((m) => imageRoute(m.artifactId)).join(', ')}.`] : []),
+            ...checked.problems,
+          ];
+          const value: Placement = { text: checked.text, missing, restored: checked.restored };
+          if (!problems.length) return { ok: true, value };
+          // Usable after the retry only when it placed an image and kept every check; of two such, the one that placed more.
+          if (checked.problems.length || missing.length === made.length) return { ok: false, problem: problems.join(' ') };
+          return { ok: false, problem: problems.join(' '), usable: earlier && earlier.missing.length < missing.length ? earlier : value };
+        },
+      });
+      result.costUsd += integrate.costUsd;
+      placed = integrate.value;
+    } catch (e) {
+      // No answer was usable: the work stays as it was, and every image is kept beside it.
+      if (!(e instanceof ContractMissed)) throw e;
+      result.costUsd += e.costUsd;
+      placed = { missing: made, restored: [] };
+    }
+    restored = placed.restored;
+    if (placed.missing.length) unplaced = placed;
+    if (placed.text !== undefined) {
+      const id = await storeText(deps, run, call, medium === 'web-page' ? `${placed.text}\n` : placed.text, { label: what, name: 'work' });
+      outputs.push(id);
+      if (writes) result.artifactId = id;
+    }
+    // A step that does not write the work keeps every image beside it; one that does, those its work does not hold.
+    const beside = writes ? placed.missing : made;
+    if (beside.length) result.asset = beside.map((m) => m.artifactId);
   } else {
     const checked = write(attach(medium, current, made));
     if (checked.problems.length) throw new StepError(`The ${what} step could not attach its images: ${checked.problems.join(' ')}`);
@@ -208,10 +245,11 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const anchorWanted = medium === 'media' && step.produces.includes('anchor') && slots.kind === 'each' && slots.first !== undefined;
   const anchor = anchorWanted ? made.find((m) => m.slot === (slots as Extract<SlotPlan, { kind: 'each' }>).first)?.artifactId : undefined;
   if (anchor) result.anchor = anchor;
-  // What the step could not make, the AI's advice on what it made (ADR-0101), and what keepsVoice wrote back (ADR-0081),
-  // in one note.
-  const advice = briefs.value.advice ? adviceNote(briefs.value.advice) : undefined;
-  const note = [partialNote(slots, briefs.value.missing, briefs.value.unknown, failed, anchorWanted && !anchor, declined), advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
+  // What the step could not make or left out, the images it could not place, the AI's advice on what it made (ADR-0101;
+  // not when no image is in the work, as Trim then has none to cut), and what keepsVoice wrote back (ADR-0081), in one note.
+  const placedNone = unplaced !== undefined && unplaced.text === undefined;
+  const advice = briefs.value.advice && !placedNone ? adviceNote(briefs.value.advice) : undefined;
+  const note = [partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
@@ -256,9 +294,10 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
  * its "billed" mark and its message, which says what was billed and that it is not bought again, and adds what that
  * leaves: which image it was, that the run stops here and buys no more images (a billed failure is a storage or ledger
  * fault that more images could repeat), and that the images this step already made were billed too and are not in the
- * work (the step stops before attaching or placing them).
+ * work (the step stops before attaching or placing them). An image whose result byway could not keep (memo.ts
+ * PaidNotKept) is a billed failure too: the same words are added, and it stays a StepError.
  */
-function billedStop(e: GatewayError, plan: SlotPlan, slot: string, made: MadeImage[], what: string): GatewayError {
+function billedStop(e: GatewayError | PaidNotKept, plan: SlotPlan, slot: string, made: MadeImage[], what: string): GatewayError | PaidNotKept {
   const name = (id: string) => slotName(plan, id);
   const already = !made.length
     ? ''
@@ -266,7 +305,7 @@ function billedStop(e: GatewayError, plan: SlotPlan, slot: string, made: MadeIma
       ? ` The image already made for ${name(made[0]!.slot)} was billed too, and it is not in the work.`
       : ` The ${made.length} images already made for ${list(made.map((m) => name(m.slot)))} were billed too, and they are not in the work.`;
   const message = `${e.message} That was the image for ${name(slot)}, so the run stops here, at the ${what} step, and buys no more images.${already}`;
-  return new GatewayError(e.code, message, e.retryable, { billed: true });
+  return e instanceof GatewayError ? new GatewayError(e.code, message, e.retryable, { billed: true }) : new PaidNotKept(message);
 }
 
 /** "a", "a and b", "a, b and c". */
@@ -275,23 +314,45 @@ const list = (items: string[]): string => (items.length > 1 ? `${items.slice(0, 
 /**
  * The step's note when it made only part of what its plan asked for, or left a brief out. "Not every image was made"
  * only when one was not: the slots no brief covered, and the images that could not be made. Then, apart, the briefs
- * left out because they name slots the work does not have (every planned image may still have been made), and, on a
- * storyboard, that the video chain has no start frame. Undefined when everything was made and nothing left out.
+ * left out (every planned image may still have been made), and, on a storyboard, that the video chain has no start
+ * frame. Undefined when everything was made and nothing left out.
  */
-function partialNote(plan: SlotPlan, missing: string[], unknown: string[], failed: string[], noAnchor: boolean, declined: { slot: string; record: DeclineRecord }[] = []): string | undefined {
+function partialNote(plan: SlotPlan, briefs: SlotBriefs, failed: string[], noAnchor: boolean, declined: { slot: string; record: DeclineRecord }[] = []): string | undefined {
   const name = (id: string) => slotName(plan, id);
   const parts = [
-    ...(missing.length ? [`no image brief was written for ${list(missing.map(name))}`] : []),
+    ...(briefs.missing.length ? [`no image brief was written for ${list(briefs.missing.map(name))}`] : []),
     ...(failed.length ? [`the image for ${list(failed.map(name))} could not be made`] : []),
   ];
   const first = plan.kind === 'each' ? plan.first : undefined;
   const sentences = [
     ...(parts.length ? [`Not every image was made: ${parts.join('; ')}.`] : []),
     ...declinedSentences(plan, declined),
-    ...(unknown.length && plan.kind === 'each' ? [leftOutSentence(plan, unknown)] : []),
+    ...leftOutSentences(plan, briefs),
     ...(noAnchor && first ? [`No frame was made for shot ${first}, so the video chain has no start frame.`] : []),
   ];
   return sentences.length ? sentences.join(' ') : undefined;
+}
+
+/**
+ * The images an integrate answer did not place, kept beside the work: "The image for “detail” was not placed in the
+ * work, even when the AI was asked again, so it is kept beside the work." With none placed (no answer was usable), the
+ * work is said to be unchanged.
+ */
+function unplacedNote(plan: SlotPlan, placement: Placement): string {
+  const names = list(placement.missing.map((m) => slotName(plan, m.slot)));
+  const several = placement.missing.length > 1;
+  if (placement.text === undefined) {
+    return `The AI’s answer placing the ${several ? 'images' : 'image'} in the work could not be used, even when it was asked again, so the work is unchanged, and the ${several ? `images for ${names} are` : `image for ${names} is`} kept beside it.`;
+  }
+  return several
+    ? `The images for ${names} were not placed in the work, even when the AI was asked again, so they are kept beside the work.`
+    : `The image for ${names} was not placed in the work, even when the AI was asked again, so it is kept beside the work.`;
+}
+
+/** The briefs left out, as the note names them: for slots the work does not have (an each plan), or beyond the most the step makes (a free plan). */
+function leftOutSentences(plan: SlotPlan, briefs: SlotBriefs): string[] {
+  if (plan.kind === 'each') return briefs.unknown.length ? [leftOutSentence(plan, briefs.unknown)] : [];
+  return briefs.dropped.length ? [droppedSentence(plan, briefs.dropped)] : [];
 }
 
 /** What happened to each image the model declined (ADR-0102), in the words of the run's events and the gateway. */
@@ -310,6 +371,16 @@ function leftOutSentence(plan: Extract<SlotPlan, { kind: 'each' }>, unknown: str
   const several = names.length > 1;
   const which = plan.medium === 'media' ? `the storyboard has no ${several ? 'shots' : 'shot'} for` : several ? 'are not among the options' : 'is not one of the options';
   return unknown.length > 1 ? `Briefs for ${quoted}, which ${which}, were left out.` : `The brief for ${quoted}, which ${which}, was left out.`;
+}
+
+/**
+ * The briefs a free plan left out, beyond the most the step makes (its prompt's maximum, or its slots knob): "This step
+ * makes at most 1 image, so the brief for “second” was left out."
+ */
+function droppedSentence(plan: Extract<SlotPlan, { kind: 'free' }>, dropped: string[]): string {
+  const quoted = list(dropped.map((d) => slotName(plan, d)));
+  const most = `This step makes at most ${plan.max} ${plan.max === 1 ? 'image' : 'images'}`;
+  return dropped.length > 1 ? `${most}, so the briefs for ${quoted} were left out.` : `${most}, so the brief for ${quoted} was left out.`;
 }
 
 /** The options slot of an options brief: each option's label and title, as "### A" headings. */
