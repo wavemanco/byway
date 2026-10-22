@@ -50,8 +50,9 @@ import { labelsIn } from './present.ts';
  * Plain words by default (spec §5, UX-13): steps, repeats and parallel drafts are named by the labels the person saw
  * (the nearest recipe's presentation where it has the step, else the block or role name), with the stage they run in;
  * a step the presentation shows with another as its lead is named by its part in that shown step ("the AI’s swaps in
- * Cliché sweep"), so that removing it does not read as removing the whole. Node ids and medium codes are never shown. ComposeResult.diff is a list of strings, so ids have nowhere to go that
- * only "Show technical names" would reveal; they stay in the recipe itself.
+ * Cliché sweep"), so that removing it does not read as removing the whole. Node ids and medium codes are never shown.
+ * ComposeResult.diff is a list of strings, so ids have nowhere to go that only "Show technical names" would reveal; they
+ * stay in the recipe itself.
  */
 
 /** The line for any difference the describers do not name. */
