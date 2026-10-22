@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { OUTPUT_CONTRACTS } from '@byway/prompts/pure';
 import { applyCopy, extractCopy, layoutOf, lockCopy, pageCopy, pageEditProblems, placePageEdit, readPageCopy, readPageEdit, roundTripProblem, sameCopy } from '../src/copy.ts';
-import { joinCodeDiff, parseArtifact, parseCodeDiff, serializeJson, splitCodeDiff, textView } from '../src/formats.ts';
+import { joinCodeDiff, parseArtifact, parseCodeDiff, parseStoryboard, serializeJson, splitCodeDiff, textView } from '../src/formats.ts';
 import { ADVICE_MAX, parseBriefs, parseCheck, parseChoice, parseCritic, parseCut, parseDedupe, parseKeep, parseOverlap, parseRelay, parseTellsSweep, sectionOf } from '../src/parse.ts';
 
 const PAGE = `<!doctype html>
@@ -26,6 +26,16 @@ describe('artifact parsers (spec §3.3)', () => {
     expect(ok.ok && JSON.parse(ok.value)).toEqual({ options: [{ title: 'A', pitch: 'B', rationale: 'C' }] });
     expect(parseArtifact('options', '```json\n{"options":[]}\n```')).toMatchObject({ ok: false });
     expect(parseArtifact('media', '```json\n{"storyboard":[{"shot":1,"description":"d","imagePrompt":"p","durationSec":4}],"voiceover":"v"}\n```')).toMatchObject({ ok: true });
+  });
+
+  it("refuses a writer's storyboard that numbers a shot twice, so the model is asked again; a stored one stays readable", () => {
+    // The relay keys a shot's clip by its number: with shots 1, 2, 2 the second shot 2's clip would replace the first.
+    const shots = (...n: number[]) => JSON.stringify({ storyboard: n.map((shot) => ({ shot, description: 'd', imagePrompt: 'p', durationSec: 4 })), voiceover: 'v' });
+    expect(parseArtifact('media', '```json\n' + shots(1, 2, 2) + '\n```')).toEqual({ ok: false, problem: 'Shot 2 appears more than once in the storyboard: give each shot its own number.' });
+    expect(parseArtifact('media', shots(3, 1, 3, 1, 2))).toEqual({ ok: false, problem: 'Shots 3 and 1 appear more than once in the storyboard: give each shot its own number.' });
+    expect(parseArtifact('media', shots(2, 1, 3))).toMatchObject({ ok: true });
+    // Read back as stored (a run's later steps), it is the storyboard it was.
+    expect(parseStoryboard(shots(1, 2, 2))).toMatchObject({ ok: true, value: { storyboard: [{ shot: 1 }, { shot: 2 }, { shot: 2 }] } });
   });
 
   it('reads a diff and its Why paragraph, even when the paragraph slipped inside the block', () => {
@@ -297,6 +307,17 @@ describe('VOICE total readers and the round trip (F07)', () => {
     expect(screen(onScreen.replace('Headline: Fresh at seven\nTagline: Bread club', 'Tagline: Bread club\nHeadline: Fresh at seven')).rejected).toBe('Keep the lines in the order shown.');
     expect(screen(onScreen.replace('Headline: Fresh at seven', 'Headline:'))).toEqual({ headline: null, captions: ['Hot bread', 'At your door'], roundTrip: true });
     expect(screen(onScreen.replace('Shot 1: Hot bread', 'Shot 1: Hot bread\n\n  still warm'))).toEqual({ headline: 'Fresh at seven', captions: ['Hot bread\n\n  still warm', 'At your door'], roundTrip: true });
+  });
+
+  it('a stored storyboard that numbers a shot twice: the late VOICE reads its "Shot N:" lines in order and applies them by position', () => {
+    const twice = serializeJson({
+      voiceover: 'Bread before seven.',
+      storyboard: [1, 2, 2].map((shot, i) => ({ shot, description: `d${i}`, imagePrompt: `p${i}`, durationSec: 3, caption: `c${i}` })),
+    });
+    const offered = extractCopy('media', twice, 'on-screen');
+    expect(offered.split('\n').slice(2)).toEqual(['Shot 1: c0', 'Shot 2: c1', 'Shot 2: c2']);
+    const r = applyCopy('media', twice, offered.replace('Shot 2: c1', 'Shot 2: Oven').replace('Shot 2: c2', 'Shot 2: Door'), 'on-screen');
+    expect(r.ok && (JSON.parse(r.value) as { storyboard: { caption?: string }[] }).storyboard.map((s) => s.caption)).toEqual(['c0', 'Oven', 'Door']);
   });
 
   it('prose and code diffs round-trip as text; a paragraph split is a change', () => {
