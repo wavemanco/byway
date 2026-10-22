@@ -1,0 +1,64 @@
+baseline: exit 0; files 7 passed (7); tests 107 passed (107)
+RS-4: the Failed panel without the cut-off note: exit 1; files 1 failed (1); tests 1 failed | 12 passed (13)
+    test/run-screen.test.ts > the Cancel question and the cancelled run (ADR-0111) > is said under a cancelled run and under a failed one
+RS-6: the note back to its old words: exit 1; files 1 failed (1); tests 1 failed | 12 passed (13)
+    test/run-screen.test.ts > the Cancel question and the cancelled run (ADR-0111) > says which cut-off calls are listed, and where they are counted
+RS-5: an ended run is never polled: exit 1; files 1 failed (1); tests 1 failed | 12 passed (13)
+    test/run-screen.test.ts > the Run screen > keeps polling an ended run, lazily, while some of its calls are still under way
+RS-5: every call under way in the workspace counted as the run’s: exit 1; files 1 failed (1); tests 1 failed | 35 passed (36)
+    test/api.test.ts > what the Run screen polls once its run has ended (ADR-0111) > counts the run's own calls still under way, and once none is, its settled cost
+RS-5: the settled cost not read: exit 1; files 1 failed (1); tests 1 failed | 35 passed (36)
+    test/api.test.ts > what the Run screen polls once its run has ended (ADR-0111) > counts the run's own calls still under way, and once none is, its settled cost
+RS-5: the book read for a run still going: exit 1; files 1 failed (1); tests 1 failed | 35 passed (36)
+    test/api.test.ts > what the Run screen polls once its run has ended (ADR-0111) > counts the run's own calls still under way, and once none is, its settled cost
+RS-5: an unreadable book fails the poll: exit 1; files 1 failed (1); tests 1 failed | 35 passed (36)
+    test/api.test.ts > what the Run screen polls once its run has ended (ADR-0111) > leaves it out when the spend book cannot be read, so the screen stops polling at the end as before
+RS-5: an older answer about calls under way carried forward: exit 1; files 1 failed (1); tests 1 failed | 2 passed (3)
+    test/rundata.test.ts > polling the Run screen > takes what the latest poll says of an ended run's calls under way, and nothing older
+RS-5: the meter leaves out the settled cost: exit 1; files 1 failed (1); tests 1 failed | 10 passed (11)
+    test/runs.test.ts > cost meter from cost events > takes in an ended run's settled cost from the spend book, and never steps backwards from it
+RS-5: the panels never say calls are under way: exit 1; files 1 failed (1); tests 1 failed | 12 passed (13)
+    test/run-screen.test.ts > the Cancel question and the cancelled run (ADR-0111) > says how many of an ended run’s calls are still under way, and only while some are
+RS-5: the Failed panel without the under-way line: exit 1; files 1 failed (1); tests 1 failed | 12 passed (13)
+    test/run-screen.test.ts > the Cancel question and the cancelled run (ADR-0111) > says how many of an ended run’s calls are still under way, and only while some are
+a11y: the answers not described by the cost: exit 1; files 1 failed (1); tests 1 failed | 4 passed (5)
+    test/questions.test.ts > "Your turn" shows it under the question > describes each answer by it, for a screen reader, and the group by the question
+a11y: the cost id passed with no cost: exit 1; files 1 failed (1); tests 1 failed | 4 passed (5)
+    test/questions.test.ts > "Your turn" shows it under the question > describes each answer by it, for a screen reader, and the group by the question
+a11y: the cost paragraph without its id: exit 1; files 1 failed (1); tests 2 failed | 3 passed (5)
+    test/questions.test.ts > "Your turn" shows it under the question > as a line of its own after the question, and not at all when there is none
+    test/questions.test.ts > "Your turn" shows it under the question > describes each answer by it, for a screen reader, and the group by the question
+SEC-NOTE-2: an edited attachment counts as checked: exit 1; files 1 failed (1); tests 1 failed | 12 passed (13)
+    test/start-draft.test.ts > withheldAfterCheck > still holds it back when the request did not carry it as it is now
+SEC-NOTE-2: one not sent counts as checked: exit 1; files 1 failed (1); tests 1 failed | 12 passed (13)
+    test/start-draft.test.ts > withheldAfterCheck > still holds it back when the request did not carry it as it is now
+SEC-NOTE-2: what was held before is kept again on any check: exit 1; files 1 failed (1); tests 1 failed | 12 passed (13)
+    test/start-draft.test.ts > withheldAfterCheck > still holds it back when the request did not carry it as it is now
+stale number: the place as sent, not on the form now: exit 1; files 1 failed (1); tests 1 failed | 25 passed (26)
+    test/http.test.ts > Start's refusal names the attachment that held the key as Start numbers it > numbers the attachment by its place on the form now, and leaves it out once it is removed
+stale number: a removed attachment still named: exit 1; files 1 failed (1); tests 1 failed | 25 passed (26)
+    test/http.test.ts > Start's refusal names the attachment that held the key as Start numbers it > numbers the attachment by its place on the form now, and leaves it out once it is removed
+git status after (only the uncommitted work of this round should show):
+ M apps/web/e2e/configurations.spec.ts
+ M apps/web/e2e/pasted-key.spec.ts
+ M apps/web/src/components/StartForm.tsx
+ M apps/web/src/components/run/RunScreen.tsx
+ M apps/web/src/components/run/RunStatusPanel.tsx
+ M apps/web/src/components/run/YourTurn.tsx
+ M apps/web/src/components/run/panels/ConfirmPanel.tsx
+ M apps/web/src/components/run/panels/types.ts
+ M apps/web/src/components/startDraft.ts
+ M apps/web/src/server/run-data.ts
+ M apps/web/src/view/labels.ts
+ M apps/web/src/view/meter.ts
+ M apps/web/src/view/refusals.ts
+ M apps/web/src/view/run.ts
+ M apps/web/src/view/rundata.ts
+ M apps/web/test/api.test.ts
+ M apps/web/test/http.test.ts
+ M apps/web/test/questions.test.ts
+ M apps/web/test/run-screen.test.ts
+ M apps/web/test/rundata.test.ts
+ M apps/web/test/runs.test.ts
+ M apps/web/test/start-draft.test.ts
+

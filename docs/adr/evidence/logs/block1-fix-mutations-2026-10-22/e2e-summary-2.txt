@@ -1,0 +1,12 @@
+base-pasted-key: expected pass, got pass (exit 0; 6 passed, 0 failed; 31 s)
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e2\base-pasted-key.log
+E3/W7 an edit to a held attachment keeps it again (the old rule): expected fail, got fail (exit 1; 0 passed, 2 failed; 16 s)
+    failed: e2e\pasted-key.spec.ts:99:1 › a refused key in an attachment leaves the text kept; once Start finds no key in the fixed attachment, "Change" brings both back | e2e\pasted-key.spec.ts:134:1 › a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through a new name for it, edits to the others, a removal and a reload
+    at: e2e\pasted-key.spec.ts:118:37, e2e\pasted-key.spec.ts:157:37
+    error: expect(received).not.toContain(expected) // indexOf / expect(received).not.toContain(expected) // indexOf
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e2\E3_W7.log
+E4 an accepted request keeps nothing held again: expected fail, got fail (exit 1; 0 passed, 1 failed; 44 s)
+    failed: e2e\pasted-key.spec.ts:99:1 › a refused key in an attachment leaves the text kept; once Start finds no key in the fixed attachment, "Change" brings both back
+    at: e2e\pasted-key.spec.ts:125:57
+    error: expect(locator).toHaveValue(expected) failed / element(s) not found
+    log: C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\f3\e2e2\E4.log
