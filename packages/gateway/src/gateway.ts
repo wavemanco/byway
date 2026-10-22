@@ -32,7 +32,7 @@ import {
 } from '@byway/contracts';
 import { cleanReason, declineAdvice, declineStory, notMadeProblem, stoppedBeforeRetry } from './declines.ts';
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
-import { cutOffError, isCutOff, toGatewayError, type ClassifiedError } from './errors.ts';
+import { billingOf, cutOffError, isCutOff, toGatewayError, type ClassifiedError } from './errors.ts';
 import { estimateInputTokens, imageSize, maxCompletionCost, maxImageCost, maxVideoCost, textTokens } from './estimate.ts';
 import { ExposureRegister, exposurePath } from './exposure.ts';
 import { findHeldKey, heldKeyError } from './held-key.ts';
@@ -259,6 +259,7 @@ export class ModelGateway implements Gateway {
       const signal = stop && adapter.cutsOff?.complete ? stop : undefined;
       const reported = await withRetries(
         async () => {
+          stopIfEnding(op, stop, ref.provider);
           await op.markSent();
           stopIfEnding(op, stop, ref.provider);
           try {
@@ -272,8 +273,10 @@ export class ModelGateway implements Gateway {
               ...(signal ? { signal } : {}),
             });
           } catch (e) {
-            // Cut off by its stop: whatever the adapter threw, the call may have been billed and is counted as interrupted.
-            const err = signal?.aborted ? cutOffError(ref.provider, 'maybe') : toGatewayError(e, ref.provider, redact);
+            // Cut off by its stop: the call may have been billed and is counted as interrupted, unless what the adapter
+            // threw says the provider did no paid work (billingOf 'none': its own error answer, or a connection that failed
+            // before the request was written), which the stop does not change: read by that error, the call is released.
+            const err = signal?.aborted && billingOf(e) !== 'none' ? cutOffError(ref.provider, 'maybe') : toGatewayError(e, ref.provider, redact);
             op.failed(err);
             throw err;
           }
@@ -370,6 +373,7 @@ export class ModelGateway implements Gateway {
       const stop = req.operation?.stop;
       const reported = await withRetries(
         async () => {
+          stopIfEnding(op, stop, ref.provider);
           await op.markSent();
           stopIfEnding(op, stop, ref.provider);
           try {
@@ -987,10 +991,12 @@ function providerLabel(label: string): string {
 }
 
 /**
- * Just before a provider request goes out, once the call is marked sent: when its run is ending (ADR-0111), nothing is
- * sent, and the attempt ends as one that billed nothing, so the call is released. withRetries sends nothing after a
- * stop, so this is nearly always the first attempt; if a stop comes between its check and a resend, the earlier attempt
- * that may have been billed stays counted by what was retained before the resend (ADR-0095).
+ * Just before a provider request goes out, before the call is marked sent and again once it is (a stop can come while
+ * the mark is written): when its run is ending (ADR-0111), nothing is sent, and the attempt ends as one that billed
+ * nothing, so the call is released. Read first, a stop that came before the send leaves the call never marked sent, so
+ * a crash before its release cannot leave it counted as sent. withRetries sends nothing after a stop, so this is nearly
+ * always the first attempt; if a stop comes between its check and a resend, the earlier attempt that may have been
+ * billed stays counted by what was retained before the resend (ADR-0095).
  */
 function stopIfEnding(op: PaidCall, stop: AbortSignal | undefined, provider: ProviderId): void {
   if (!stop?.aborted) return;

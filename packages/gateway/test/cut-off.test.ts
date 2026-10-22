@@ -26,7 +26,7 @@ import { completeStreamed, readChatStream, type ChatChunkLike, type OpenAIClient
 import { STREAM_IDLE_MS, StreamIdle } from '../src/providers/stream.ts';
 import type { ProviderAdapter, ProviderCompletionRequest, ProviderImageRequest } from '../src/providers/types.ts';
 import { makeRedactor } from '../src/redact.ts';
-import { anthropicMessage, fakeFetch, fakeGoogle, fakeOpenAI, MemoryArtifacts, streamOf } from './fakes.ts';
+import { anthropicMessage, fakeFetch, fakeGoogle, fakeOpenAI, httpError, MemoryArtifacts, streamOf } from './fakes.ts';
 
 /** Placeholders shaped like each provider's keys; none is a real key, and no test reaches a network. */
 const KEYS = {
@@ -86,6 +86,17 @@ const ask = (over: Partial<CompletionRequest> = {}): CompletionRequest => ({
   maxOutputTokens: 1000,
   ...over,
 });
+
+/** The calls the spend book is asked to mark sent, from here on. */
+function marksSent(): string[] {
+  const marked: string[] = [];
+  const markSent = book.markSent.bind(book);
+  book.markSent = async (opId, owner) => {
+    marked.push(opId);
+    return markSent(opId, owner);
+  };
+  return marked;
+}
 
 const failure = async (p: Promise<unknown>): Promise<GatewayError> => {
   const e = await p.then(
@@ -188,12 +199,56 @@ describe('a stop cuts off a streamed Anthropic call', () => {
     const { stop, operation } = caller();
     stop.abort();
     const held = heldAnthropic(() => undefined);
+    const marked = marksSent();
+    const g = gateway({ clients: { anthropic: held.client } });
+    const err = await failure(g.complete(ask({ operation })));
+    expect(err).toMatchObject({ code: 'byway-failure', billing: 'none', billed: false });
+    expect(held.signals).toEqual([]);
+    // Never marked sent, so a crash before its release cannot leave it counted as sent (TS-MONEY-5).
+    expect(marked).toEqual([]);
+    expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('sends nothing when the stop comes while the call is marked sent, and the call counts nothing', async () => {
+    const { stop, operation } = caller();
+    const held = heldAnthropic(() => undefined);
+    const markSent = book.markSent.bind(book);
+    book.markSent = async (opId, owner) => {
+      stop.abort();
+      return markSent(opId, owner);
+    };
     const g = gateway({ clients: { anthropic: held.client } });
     const err = await failure(g.complete(ask({ operation })));
     expect(err).toMatchObject({ code: 'byway-failure', billing: 'none', billed: false });
     expect(held.signals).toEqual([]);
     expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
     expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('reads an error that says the provider did no paid work by that error, though the stop came with it (TS-MONEY-5)', async () => {
+    const { stop, operation } = caller();
+    const client: AnthropicClientLike = {
+      beta: {
+        messages: {
+          stream: () => ({
+            finalMessage: async () => {
+              stop.abort();
+              // Anthropic's own 400 answer, which lost the race with the stop.
+              throw httpError(400, 'max_tokens: too large', { type: 'error', error: { type: 'invalid_request_error', message: 'max_tokens: too large' } });
+            },
+          }),
+        },
+      },
+    };
+    const g = gateway({ clients: { anthropic: client } });
+    const err = await failure(g.complete(ask({ operation })));
+    expect(isCutOff(err)).toBe(false);
+    expect(err).toMatchObject({ code: 'invalid-request', billing: 'none' });
+    expect(err.message).toMatch(/^anthropic returned 400/);
+    // Released: an attempt the provider refused billed nothing, so the call counts nothing.
+    expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
   });
 
   it('settles an answer that arrived as the stop came, at its true cost', async () => {
@@ -382,8 +437,10 @@ describe('calls a stop does not cut off', () => {
     const openai = fakeOpenAI();
     const g = gateway({ clients: { openai: openai.client } });
     const imageReq: ImageRequest = { workspaceId: 'ws', runId: 'run-1', stepId: 'art', purpose: 'asset:web-page', profileId: 'best', prompt: 'A loaf at dawn', size: '1024x1024', operation };
+    const marked = marksSent();
     expect(await failure(g.image(imageReq))).toMatchObject({ code: 'byway-failure', billed: false });
     expect(openai.calls).toEqual([]);
+    expect(marked).toEqual([]);
     expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
   });
 });
