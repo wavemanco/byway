@@ -592,6 +592,9 @@ export function diffFromNearest(composed: Recipe, nearest: Recipe, nearestName: 
 
   // The projections differ: if nothing above names it, or something above left a difference unnamed, say so.
   if (other || !lines.length) lines.push(OTHER_CHANGES);
-  // Two steps known by one label that changed alike (or two added under one plain label) read as one line.
-  return [...new Set(lines)];
+  // Two steps known by one label that changed alike (or two added under one plain label) read as one line, which says
+  // how many it stands for: two steps added must not read as one.
+  const times = new Map<string, number>();
+  for (const line of lines) times.set(line, (times.get(line) ?? 0) + 1);
+  return [...times].map(([line, n]) => (n === 1 ? line : `${line}, ${n === 2 ? 'twice' : `${n} times`}`));
 }
