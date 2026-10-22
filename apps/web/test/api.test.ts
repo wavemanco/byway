@@ -544,6 +544,78 @@ describe('Settings: Spending records (F03, ADR-0095)', PRODUCT_PATH, () => {
   });
 });
 
+// RS-5: the run shows Cancelled at once (ADR-0111), while a call byway does not cut off is still under way; its cost is
+// added to the run when it settles. What the Run screen polls says so, from the spend book, until none is left.
+describe('what the Run screen polls once its run has ended (ADR-0111)', PRODUCT_PATH, () => {
+  async function startedRun(d: Deps): Promise<string> {
+    const { intakeId } = await createIntake(d, { text: 'Tighten my quarterly memo', recipeId: 'c4' });
+    return (await startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 2 })).runId;
+  }
+  const call = (d: Deps, opId: string, runId?: string) => ({
+    opId,
+    owner: 'worker',
+    leaseMs: 60_000,
+    workspaceId: d.workspaceId,
+    ...(runId ? { runId } : {}),
+    purpose: 'build:prose',
+    kind: 'completion' as const,
+    provider: 'google' as const,
+    model: 'gemini-3-pro',
+    reserveUsd: 0.3,
+    paid: true,
+    caps: { workspaceUsd: 1000 },
+  });
+
+  it("counts the run's own calls still under way, and once none is, its settled cost", async () => {
+    const d = await deps();
+    const runId = await startedRun(d);
+    const other = await startedRun(d);
+    const book = d.services.store.spendBook;
+    for (const [opId, run] of [['finishes', runId], ['cut-off', runId], ['other-run', other], ['no-run', undefined]] as const) {
+      expect(await book.admit(call(d, opId, run))).toEqual({ admitted: true });
+    }
+    // While the run goes on, nothing is read from the book: the screen polls as it always has.
+    expect((await getRunData(d.services, runId)).ended).toBeUndefined();
+
+    await controlRun(d, runId, 'cancel');
+    expect((await getRunData(d.services, runId)).ended).toEqual({ callsUnderWay: 2, settledUsd: 0 });
+    // byway cuts one off: it may have been billed, so it counts against the workspace, not the run.
+    expect(await book.markSent('cut-off', 'worker')).toBe(true);
+    await book.abandon('cut-off', 'interrupted');
+    expect((await getRunData(d.services, runId)).ended).toEqual({ callsUnderWay: 1, settledUsd: 0 });
+    // The other finishes after the run stopped, and is settled at its cost: the run's.
+    await book.settle('finishes', {
+      at: '2026-10-22T10:00:00.000Z',
+      entry: {
+        workspaceId: d.workspaceId,
+        runId,
+        stepId: 'write',
+        purpose: 'build:prose',
+        kind: 'completion',
+        provider: 'google',
+        requestedModel: 'gemini-3-pro',
+        servedModel: 'gemini-3-pro',
+        requestSha256: `sha256:${'a'.repeat(64)}`,
+        responseSha256: `sha256:${'b'.repeat(64)}`,
+        usage: { inputTokens: 100, outputTokens: 1000 },
+        costUsd: 0.12,
+        latencyMs: 5,
+      },
+    });
+    expect((await getRunData(d.services, runId)).ended).toEqual({ callsUnderWay: 0, settledUsd: 0.12 });
+  });
+
+  it('leaves it out when the spend book cannot be read, so the screen stops polling at the end as before', async () => {
+    const d = await deps();
+    const runId = await startedRun(d);
+    await controlRun(d, runId, 'cancel');
+    vi.spyOn(d.services.gateway, 'spendRecords').mockRejectedValue(new Error('the book is locked'));
+    const data = await getRunData(d.services, runId);
+    expect(data.view.run.status).toBe('cancelled');
+    expect(data.ended).toBeUndefined();
+  });
+});
+
 describe('the first recommendation is asked for once per intake (F03, ADR-0091)', PRODUCT_PATH, () => {
   const intakeCalls = () =>
     readFileSync(path.join(current!.dataDir, 'ledger.jsonl'), 'utf8')

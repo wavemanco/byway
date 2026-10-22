@@ -10,9 +10,10 @@ import type { PanelProps } from './types.ts';
 /**
  * confirm: a clear yes or no. The question says what each answer does; neither button is styled as the
  * expected answer, because both are yours to give. The answers sit in the sticky footer, so long notes above
- * never push them out of reach.
+ * never push them out of reach. The question describes the group; a cost said under it describes each answer, so a
+ * screen reader reads it with the button that has focus, as the sandbox's turn-off confirmation reads its risk.
  */
-export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId, sent }: PanelProps) {
+export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId, costId, sent }: PanelProps) {
   // The answer being sent, so that button shows as busy and the other only as unavailable; both keep focus (R5).
   const [given, setGiven] = useState<boolean | null>(null);
   const answer = (approved: boolean) => {
@@ -43,10 +44,10 @@ export function ConfirmPanel({ cp, artifacts, busy, onSubmit, promptId, sent }: 
               {sent ? 'Sent' : 'Sending…'}
             </span>
           ) : null}
-          <ActionButton className="button button-large yes-no-button" onClick={() => answer(true)} busy={busy && !sent && given === true} unavailable={busy}>
+          <ActionButton className="button button-large yes-no-button" onClick={() => answer(true)} busy={busy && !sent && given === true} unavailable={busy} aria-describedby={costId}>
             Yes
           </ActionButton>
-          <ActionButton className="button button-large yes-no-button" onClick={() => answer(false)} busy={busy && !sent && given === false} unavailable={busy}>
+          <ActionButton className="button button-large yes-no-button" onClick={() => answer(false)} busy={busy && !sent && given === false} unavailable={busy} aria-describedby={costId}>
             No
           </ActionButton>
         </div>

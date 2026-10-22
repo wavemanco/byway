@@ -28,9 +28,22 @@ export interface ArtifactInfo {
   titles?: string[];
 }
 
+/**
+ * For a run that has ended, what the spend book holds for it: how many of its AI calls are still under way, and its
+ * settled cost. The run shows Cancelled or Failed at once, while a call byway does not cut off (Google's text calls, every
+ * image call) is still under way; that call's cost is added to the run when it settles, so the screen keeps polling
+ * while one is under way and shows the settled cost (ADR-0111).
+ */
+export interface EndedSpend {
+  callsUnderWay: number;
+  settledUsd: number;
+}
+
 export interface RunData {
   view: RunView;
   artifacts: Record<string, ArtifactInfo>;
+  /** Only for a run that has ended, and only when the spend book could be read. */
+  ended?: EndedSpend;
 }
 
 /** Folds a poll (events after the last seen seq) into what the screen already has. */
@@ -40,6 +53,8 @@ export function mergeRunData(prev: RunData, next: RunData): RunData {
   return {
     view: { run: next.view.run, checkpoints: next.view.checkpoints, events },
     artifacts: { ...prev.artifacts, ...next.artifacts },
+    // What the latest poll said: an older answer about calls under way is not carried forward.
+    ...(next.ended ? { ended: next.ended } : {}),
   };
 }
 

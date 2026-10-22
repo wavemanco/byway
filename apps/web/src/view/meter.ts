@@ -30,18 +30,20 @@ export function budgetMeter(costUsd: number, budgetUsd: number | undefined): Bud
 
 /**
  * Spend and budget from the latest `cost` event. Spend only grows and a budget only rises, so the larger of the
- * event and the run record wins: whichever of the two a poll caught first, the meter never steps backwards.
+ * event and the run record wins: whichever of the two a poll caught first, the meter never steps backwards. For a run
+ * that has ended, `settledUsd` is the spend book's settled cost for it (RunData.ended), which takes in a call that
+ * settled after the run stopped before the run record does.
  */
-export function runSpend(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[]): { costUsd: number; budgetUsd: number } {
+export function runSpend(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[], settledUsd = 0): { costUsd: number; budgetUsd: number } {
   const latest = events.filter((e) => e.type === 'cost').reduce<RunEvent | undefined>((a, e) => (!a || e.seq > a.seq ? e : a), undefined);
   const d = latest ? read(CostData, latest.data) : {};
   return {
-    costUsd: Math.max(run.costUsd, d.totalUsd ?? 0),
+    costUsd: Math.max(run.costUsd, d.totalUsd ?? 0, settledUsd),
     budgetUsd: Math.max(run.budgetUsd, d.budgetUsd ?? 0),
   };
 }
 
-export function runMeter(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[]): BudgetMeter {
-  const { costUsd, budgetUsd } = runSpend(run, events);
+export function runMeter(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[], settledUsd = 0): BudgetMeter {
+  const { costUsd, budgetUsd } = runSpend(run, events, settledUsd);
   return budgetMeter(costUsd, budgetUsd);
 }
