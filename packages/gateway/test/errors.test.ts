@@ -32,6 +32,8 @@ describe('makeRedactor', () => {
 
   it('leaves ordinary text alone', () => {
     expect(makeRedactor({})('Score: 7/10')).toBe('Score: 7/10');
+    // "bearer" in prose, in any case, is not a token.
+    expect(makeRedactor({})('A bearer token is required; Bearer tokens expire.')).toBe('A bearer token is required; Bearer tokens expire.');
     // A request id is a bare UUID, not a key.
     expect(makeRedactor({})('request 0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6 done')).toBe('request 0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6 done');
   });

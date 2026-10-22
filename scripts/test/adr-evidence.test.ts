@@ -10,9 +10,9 @@
  * - the evidence files hold no email address (the conversation records are extracted from a session transcript, and
  *   the probes from scratch folders);
  * - neither they nor the other folders copied in from Temp or written from sessions (F07's corpus,
- *   packages/runner/test/f07-corpus; the claims oracle, scripts/test/claims-oracle; and docs/reviews) hold a key-shaped
- *   string. The F07 pages are model-written sites, contact details included (nobody checked them against real ones),
- *   pinned byte for byte (f07-corpus.test.ts), so the email check stops at the evidence.
+ *   packages/runner/test/f07-corpus; the claims oracle, scripts/test/claims-oracle and its test; and docs/reviews) hold
+ *   a key-shaped string. The F07 pages are model-written sites, contact details included (nobody checked them against
+ *   real ones), pinned byte for byte (f07-corpus.test.ts), so the email check stops at the evidence.
  */
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -48,7 +48,8 @@ const OTHER_SHAPES = /(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat
  * with it is checked whole.
  */
 const STAND_IN = 'sk-proj-' + 'ABCDEFGHIJKLMNOPQRSTUVWX';
-const STAND_IN_ALONE = new RegExp(`(?<![A-Za-z0-9_-])${STAND_IN}(?![A-Za-z0-9_-])`, 'g');
+// Alone: no character a key or token is made of on either side (a JWT's '.', base64's '+' and '/', URL-safe '~').
+const STAND_IN_ALONE = new RegExp(`(?<![A-Za-z0-9._~+/-])${STAND_IN}(?![A-Za-z0-9._~+/-])`, 'g');
 const withoutStandIns = (line: string) => line.replace(STAND_IN_ALONE, '[stand-in]');
 const masked = (line: string) => providerShapes(withoutStandIns(line)).replace(OTHER_SHAPES, '[redacted]');
 const keyShaped = (line: string) => masked(line) !== withoutStandIns(line);
@@ -103,6 +104,7 @@ describe('decision evidence kept in the repository', () => {
       falUrlEncoded: `FAL_KEY=${fal.replace(':', '%3A')}`,
       longerThanTheStandIn: `${STAND_IN}${'H'.repeat(40)}`,
       endingInTheStandIn: `AIza123${STAND_IN}`,
+      jwtEndingInTheStandIn: `eyJ${'h'.repeat(20)}.${STAND_IN}`,
       github: `ghp_${'E'.repeat(36)}`,
       githubFineGrained: `github_pat_${'F'.repeat(22)}_${'G'.repeat(59)}`,
       slack: `xoxb-${'1'.repeat(12)}`,
@@ -115,7 +117,7 @@ describe('decision evidence kept in the repository', () => {
 
   it('the evidence, F07’s corpus, the claims oracle and the reviews hold no key-shaped string', () => {
     const folders = [EVIDENCE, 'packages/runner/test/f07-corpus', 'scripts/test/claims-oracle', 'docs/reviews'];
-    const files = folders.flatMap((folder) => filesUnder(folder, /./));
+    const files = [...folders.flatMap((folder) => filesUnder(folder, /./)), 'scripts/test/claims-oracle.test.ts'];
     expect(files.length).toBeGreaterThan(250);
     const hits = files.flatMap((file) =>
       read(file)
