@@ -27,7 +27,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { GatewayError, type AdmitRequest, type BudgetDetails, type LedgerCursor, type LedgerBatch, type ProviderJobRole, type Settlement, type SpendBook } from '@byway/contracts';
-import { billingOf, type Billing } from './errors.ts';
+import { billingOf, isCutOff, type Billing } from './errors.ts';
 import type { Ledger } from './ledger.ts';
 
 export interface PaidCallsOptions {
@@ -325,6 +325,8 @@ export class PaidCall {
   private ended = false;
   /** The billing of the last failed attempt: decides release or abandon if the call ends without an answer. */
   private lastFailure: Billing | undefined;
+  /** The last failed attempt was cut off by its caller's stop (ADR-0111): an abandoned call is recorded as interrupted. */
+  private cutOff = false;
   /** What the book retained for sends that may have been billed before this call was sent again (retain). */
   private retained = 0;
   private readonly calls: PaidCalls;
@@ -380,9 +382,13 @@ export class PaidCall {
     this.sent = true;
   }
 
-  /** A failed attempt: its billing decides what is counted if no attempt succeeds. */
+  /**
+   * A failed attempt: its billing decides what is counted if no attempt succeeds. One byway cut off (cutOffError) that
+   * may have been billed is abandoned as interrupted, not as failed (ADR-0111): Settings says byway stopped waiting.
+   */
   failed(err: unknown): void {
     this.lastFailure = billingOf(err);
+    this.cutOff = isCutOff(err);
   }
 
   /** Before sending again after an attempt that may have been billed: count that attempt's bound against the workspace. */
@@ -451,7 +457,7 @@ export class PaidCall {
     this.calls.ended(this.opId, this.settled);
     try {
       if (this.settled) await this.calls.drain();
-      else if (this.answered || (this.sent && this.lastFailure !== 'none')) await this.calls.book.abandon(this.opId);
+      else if (this.answered || (this.sent && this.lastFailure !== 'none')) await this.calls.book.abandon(this.opId, !this.answered && this.cutOff ? 'interrupted' : 'failed');
       else await this.calls.book.release(this.opId);
     } catch {
       // Unsettled rows the book could not update run out their lease; a drain left undone is done by the timer.

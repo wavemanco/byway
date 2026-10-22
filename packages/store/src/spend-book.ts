@@ -169,8 +169,10 @@ export class SqliteSpendBook implements SpendBook {
     this.#tx(() => this.#queries().release.run({ id: opId, at: this.#stamp() }));
   }
 
-  async abandon(opId: string): Promise<void> {
-    this.#tx(() => this.#queries().abandon.run({ id: opId, at: this.#stamp() }));
+  async abandon(opId: string, reason: 'failed' | 'interrupted' = 'failed'): Promise<void> {
+    // The schema's CHECK already names both reasons (ADR-0111 needs no migration); anything else is refused here.
+    if (reason !== 'failed' && reason !== 'interrupted') throw new Error(`an abandoned call's reason is 'failed' or 'interrupted', not ${JSON.stringify(reason)}`);
+    this.#tx(() => this.#queries().abandon.run({ id: opId, at: this.#stamp(), reason }));
   }
 
   async settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }> {
@@ -546,7 +548,7 @@ function prepare(db: DatabaseSync) {
       provider_jobs = json_set(COALESCE(provider_jobs, '{}'), :path, :job), updated_at = :at WHERE id = :id`),
     retain: p('UPDATE paid_operations SET retained_usd = retained_usd + :usd, updated_at = :at WHERE id = :id'),
     release: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE id = :id AND state <> 'settled'`),
-    abandon: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'failed', updated_at = :at WHERE id = :id AND state IN ('open', 'sent', 'accepted')`),
+    abandon: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = :reason, updated_at = :at WHERE id = :id AND state IN ('open', 'sent', 'accepted')`),
     settle: p(`UPDATE paid_operations SET state = 'settled', settled_usd = :cost, settled_at = :settledAt, served_model = :served, price_basis = :basis,
       entry = :entry, ledger_entry_id = :entryId, settle_seq = (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), updated_at = :at,
       lease_until = CASE WHEN :hold IS NULL OR op_key IS NULL THEN lease_until ELSE MAX(lease_until, :now + :hold) END WHERE id = :id`),

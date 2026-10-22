@@ -379,6 +379,10 @@ describe('a relay link’s clip, attempt 1 lost while fal makes it (F03 stage 3)
           const data = endpoint.includes('extract-frame') ? { images: [{ url: 'https://v3.fal.media/last.png' }] } : { video: { url: 'https://v3.fal.media/clip.mp4' } };
           return { data, requestId: options.requestId };
         },
+        // No stop reaches these jobs: a worker that stops or dies hands its call over, never cuts it off (ADR-0111).
+        async cancel() {
+          throw new Error('no job is cancelled in these tests');
+        },
       },
     };
     const media = (async (url: string | URL | Request) => new Response(String(url).endsWith('.mp4') ? MP4 : PNG)) as typeof fetch;

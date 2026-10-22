@@ -1,9 +1,9 @@
 'use client';
 
 import type { CheckpointResolution, EvidenceLabel as Label, RecipePresentation } from '@byway/contracts';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { answerable } from '../../view/drafts.ts';
-import { controlPendingLabel, runStatusLabel, type ControlAction } from '../../view/labels.ts';
+import { CANCEL_QUESTION, controlPendingLabel, runStatusLabel, type ControlAction } from '../../view/labels.ts';
 import { runMeter } from '../../view/meter.ts';
 import type { Connection } from '../../view/refresh.ts';
 import { HELD_KEY_REFUSAL } from '../../view/refusals.ts';
@@ -58,6 +58,7 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
   // An answer's error belongs to its question: a refusal of one is not shown above the next ('control': Pause etc.).
   const [error, setError] = useState<{ checkpointId: string; message: string } | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const cancelQuestionId = useId();
   // UX-10: Pause, Resume and Cancel take a moment to reach the engine; the button says so at once.
   const [pending, setPending] = useState<ControlAction | null>(null);
   const statusRef = useRef<HTMLSpanElement>(null);
@@ -221,8 +222,9 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
             {status}
           </span>
           {ended ? null : confirmCancel ? (
-            <div className="confirm-inline" role="group" aria-label="Cancel this run?">
-              <span>Cancel this run? What it made so far is kept.</span>
+            // The whole question describes the group, so a screen reader reads all of it (as ConfirmPanel's does).
+            <div className="confirm-inline" role="group" aria-label="Cancel this run?" aria-describedby={cancelQuestionId}>
+              <span id={cancelQuestionId}>{CANCEL_QUESTION}</span>
               <ActionButton className="button button-danger" onClick={() => control('cancel')} busy={pending === 'cancel'} unavailable={controlling.busy}>
                 {pending === 'cancel' ? controlPendingLabel('cancel') : 'Cancel run'}
               </ActionButton>

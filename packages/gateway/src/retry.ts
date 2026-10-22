@@ -40,6 +40,28 @@ export interface RetryHooks {
    * bound against the workspace). If it throws, nothing is sent again and its error is the call's.
    */
   beforeMaybeResend?: (err: ClassifiedError) => Promise<void>;
+  /**
+   * The call's run is ending (SpendContext.operation.stop; ADR-0111): once it aborts, nothing is sent again. A wait
+   * before the next attempt ends at once, and the last attempt's error is the call's. The stop is looked at after the
+   * wait and before `beforeMaybeResend`, so a call that is not sent again retains nothing.
+   */
+  stop?: AbortSignal;
+}
+
+/** The pause before the next attempt, ended at once by `stop`. */
+async function pauseUnlessStopped(sleep: RetryOptions['sleep'], ms: number, stop: AbortSignal | undefined): Promise<void> {
+  if (!stop) return sleep(ms);
+  if (stop.aborted) return;
+  let onAbort: (() => void) | undefined;
+  const stopped = new Promise<void>((resolve) => {
+    onAbort = resolve;
+    stop.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    await Promise.race([sleep(ms), stopped]);
+  } finally {
+    if (onAbort) stop.removeEventListener('abort', onAbort);
+  }
 }
 
 /**
@@ -58,14 +80,17 @@ export async function withRetries<T>(fn: (attempt: number) => Promise<T>, opts: 
       return await fn(attempt);
     } catch (err) {
       const retryable = err instanceof GatewayError && err.retryable;
-      if (!retryable || attempt + 1 >= opts.maxAttempts) throw err;
-      if ((err as ClassifiedError).billing === 'maybe') {
-        if (++maybes > policy.maybeResends) throw err;
-        await hooks.beforeMaybeResend?.(err as ClassifiedError);
-      }
+      if (!retryable || attempt + 1 >= opts.maxAttempts || hooks.stop?.aborted) throw err;
+      const maybe = (err as ClassifiedError).billing === 'maybe';
+      if (maybe && ++maybes > policy.maybeResends) throw err;
       const hint = (err as ClassifiedError).retryAfterMs;
       const backoff = Math.floor(opts.random() * opts.baseDelayMs * 2 ** attempt);
-      await opts.sleep(Math.min(opts.maxDelayMs, hint ?? backoff));
+      await pauseUnlessStopped(opts.sleep, Math.min(opts.maxDelayMs, hint ?? backoff), hooks.stop);
+      // Stopped during the wait: not sent again (ADR-0111), and nothing retained, since nothing more is sent: the call
+      // ends on the last attempt's error, and that attempt is counted once, by how the call ends.
+      if (hooks.stop?.aborted) throw err;
+      // Just before the send that may pay a second time (ADR-0095).
+      if (maybe) await hooks.beforeMaybeResend?.(err as ClassifiedError);
     }
   }
 }

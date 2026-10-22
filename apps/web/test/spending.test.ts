@@ -13,7 +13,11 @@ describe('Spending records in words', () => {
   });
 
   it('says why a call may have been billed, and names the provider’s job ids to look up', () => {
-    expect(uncertainReason(call())).toBe("byway stopped, or lost its connection, while waiting for Anthropic's answer, so it never learned the cost.");
+    // Widened for a call byway cut off when its run was cancelled or ended (ADR-0111): the database's reason is the same.
+    expect(uncertainReason(call())).toBe("byway stopped waiting for Anthropic's answer (its run was cancelled or ended, byway stopped, or it lost its connection), so it never learned the cost.");
+    expect(uncertainReason(call({ provider: 'fal', providerJobs: { generation: 'req-7' } }))).toBe(
+      "byway stopped waiting for fal.ai's answer (its run was cancelled or ended, byway stopped, or it lost its connection), so it never learned the cost. fal.ai accepted job req-7.",
+    );
     expect(uncertainReason(call({ reason: 'failed', provider: 'fal', providerJobs: { generation: 'req-1' } }))).toBe(
       'The request may have reached fal.ai before the connection failed, so fal.ai may have done the work and billed it. fal.ai accepted job req-1.',
     );

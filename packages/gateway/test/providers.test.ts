@@ -5,6 +5,7 @@ import { openaiAdapter, type ChatCompletionLike, type ImagesResponseLike, type O
 import { openrouterAdapter } from '../src/providers/openrouter.ts';
 import { PRICES, priceFor, tokenCost } from '../src/prices.ts';
 import type { ProviderCompletionRequest, ProviderImageRequest } from '../src/providers/types.ts';
+import { chunksOf, streamOf } from './fakes.ts';
 
 const PNG_B64 = Buffer.from('fake-png-bytes').toString('base64');
 
@@ -166,12 +167,15 @@ function fakeOpenAI(completion: Partial<ChatCompletionLike> = {}, images: Partia
       completions: {
         async create(body) {
           chat.push(body as unknown as Record<string, unknown>);
-          return {
-            model: 'gpt-6.1-sol-2026-09-30',
-            choices: [{ finish_reason: 'stop', message: { content: 'Choice: B', refusal: null } }],
-            usage: { prompt_tokens: 300, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 100 } },
-            ...completion,
-          };
+          // Streamed (ADR-0111): the whole answer as the chunks that carry it.
+          return streamOf(
+            chunksOf({
+              model: 'gpt-6.1-sol-2026-09-30',
+              choices: [{ finish_reason: 'stop', message: { content: 'Choice: B', refusal: null } }],
+              usage: { prompt_tokens: 300, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 100 } },
+              ...completion,
+            }),
+          );
         },
       },
     },

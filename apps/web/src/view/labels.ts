@@ -89,6 +89,18 @@ export function decidingQuestion(answers: ChooserAnswer[]): string | undefined {
 
 export type ControlAction = 'pause' | 'resume' | 'cancel';
 
+/**
+ * The Cancel question (ADR-0111): one fixed sentence, true for every profile. byway cuts off a text call to Anthropic,
+ * OpenAI or OpenRouter and a video clip; a text call to Google and every image call finish. The run shows Cancelled at
+ * once, without waiting for its calls, so a call that finishes does so after the run stops, and its cost is then added
+ * to the run. A cut-off call may still be paid for, and so may one that finishes.
+ */
+export const CANCEL_QUESTION =
+  'Cancel this run? What it made so far is kept. An AI call already under way may still be paid for: byway cuts off text and video calls, except Google’s text calls, and other calls finish after the run stops.';
+
+/** Under "This run was cancelled": where a call byway cut off is counted (ADR-0111). */
+export const CANCELLED_NOTE = 'If byway cut off an AI call, Settings lists it under Spending records until you clear it.';
+
 /** What a run control's button says while its request is on its way (UX-10: feedback at once, not after a second). */
 export function controlPendingLabel(action: ControlAction): string {
   return { pause: 'Pausing…', resume: 'Resuming…', cancel: 'Cancelling…' }[action];

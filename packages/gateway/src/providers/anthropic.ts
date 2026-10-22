@@ -27,9 +27,12 @@ export interface AnthropicMessageLike {
   };
 }
 
-/** The slice of the Anthropic SDK client the adapter uses. The real client satisfies it; tests pass a fake. */
+/**
+ * The slice of the Anthropic SDK client the adapter uses. The real client satisfies it; tests pass a fake. `signal`
+ * closes the stream when it aborts (the SDK then rejects finalMessage with its APIUserAbortError; ADR-0111).
+ */
 export interface AnthropicClientLike {
-  beta: { messages: { stream(body: Params): { finalMessage(): Promise<AnthropicMessageLike> } } };
+  beta: { messages: { stream(body: Params, options?: { signal?: AbortSignal }): { finalMessage(): Promise<AnthropicMessageLike> } } };
 }
 
 /** SDK retries off: the gateway owns retries, so attempts are counted once and backoff is one policy. */
@@ -123,9 +126,12 @@ export function parseAnthropicMessage(msg: AnthropicMessageLike, requestedModel:
 export function anthropicAdapter(opts: AnthropicAdapterOptions): ProviderAdapter {
   return {
     id: 'anthropic',
+    // A streamed answer is cut off by closing its stream (ADR-0111). Anthropic's streaming page does not say what a
+    // closed stream bills; the gateway counts a call cut off after it was sent as "may have been billed".
+    cutsOff: { complete: true },
     async complete(req) {
       // Streaming keeps long builds (large max_tokens) clear of HTTP timeouts; finalMessage() assembles the result.
-      const msg = await opts.client.beta.messages.stream(anthropicParams(req, true)).finalMessage();
+      const msg = await opts.client.beta.messages.stream(anthropicParams(req, true), req.signal ? { signal: req.signal } : undefined).finalMessage();
       return { ...parseAnthropicMessage(msg, req.model), requestBody: anthropicParams(req, false) };
     },
   };

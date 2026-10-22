@@ -298,8 +298,10 @@ export interface PaidCallSummary {
 /** A call that may have been billed, as Settings lists it with a Clear action. */
 export interface UncertainCall extends PaidCallSummary {
   /**
-   * `interrupted`: its caller stopped or died while waiting for the provider. `failed`: an attempt failed after the
-   * request may have reached the provider. `resent`: an earlier attempt failed that way, and the call was sent again.
+   * `interrupted`: its caller stopped waiting for the provider's answer: its run was cancelled or ended and byway cut the
+   * call off (ADR-0111), or byway stopped or died, or lost its connection, while waiting. `failed`: an attempt failed
+   * after the request may have reached the provider. `resent`: an earlier attempt failed that way, and the call was sent
+   * again.
    */
   reason: 'interrupted' | 'failed' | 'resent';
   /** Queue jobs the provider accepted (fal request ids by role), to look up in the provider's dashboard. */
@@ -391,8 +393,12 @@ export interface SpendBook {
   retain(opId: string, usd: number, workspaceCapUsd: number): Promise<{ retained: true } | { budget: BudgetDetails }>;
   /** Definitely not billed: the row counts nothing (beyond what was retained). */
   release(opId: string): Promise<void>;
-  /** May have been billed: the row counts its reservation against the workspace until cleared. */
-  abandon(opId: string): Promise<void>;
+  /**
+   * May have been billed: the row counts its reservation against the workspace until cleared. `reason` is what Settings
+   * says of it (UncertainCall.reason): 'failed' (the default) for an attempt that failed after its request may have
+   * reached the provider, 'interrupted' for a call its caller cut off while waiting for the answer (ADR-0111).
+   */
+  abandon(opId: string, reason?: 'failed' | 'interrupted'): Promise<void>;
   /** The provider answered: records the true cost from any state but settled; idempotent, returning the entry id chosen. */
   settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }>;
   /**

@@ -13,6 +13,7 @@ import {
 } from './types.ts';
 
 type ChatParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+type ChatStreamParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ImageParams = OpenAI.Images.ImageGenerateParamsNonStreaming;
 
@@ -34,15 +35,30 @@ export interface ChatCompletionLike {
   } | null;
 }
 
+/**
+ * The fields of a streamed chat completion chunk the adapters read (a structural subset of the SDK's
+ * ChatCompletionChunk; OpenRouter adds `provider`, and `usage.cost` in its last chunk).
+ */
+export interface ChatChunkLike {
+  id?: string;
+  model?: string;
+  provider?: string;
+  choices?: ReadonlyArray<{ index?: number; finish_reason?: string | null; delta?: { content?: string | null; refusal?: string | null } | null }> | null;
+  usage?: ChatCompletionLike['usage'];
+}
+
 export interface ImagesResponseLike {
   data?: ReadonlyArray<{ b64_json?: string | null }> | null;
   output_format?: string | null;
   usage?: { input_tokens: number; output_tokens: number } | null;
 }
 
-/** The slice of the OpenAI SDK client the adapters use (OpenRouter is reached through the same SDK). */
+/**
+ * The slice of the OpenAI SDK client the adapters use (OpenRouter is reached through the same SDK). Chat calls are
+ * streamed (ADR-0111), so a stop can close them: `signal` aborts the request, and the SDK then ends the stream.
+ */
 export interface OpenAIClientLike {
-  chat: { completions: { create(body: ChatParams & OpenRouterRouting): Promise<ChatCompletionLike> } };
+  chat: { completions: { create(body: ChatStreamParams & OpenRouterRouting, options?: { signal?: AbortSignal }): Promise<AsyncIterable<ChatChunkLike>> } };
   images: { generate(body: ImageParams): Promise<ImagesResponseLike> };
 }
 
@@ -83,6 +99,101 @@ export function openaiChatParams(req: ProviderCompletionRequest, inline: boolean
     messages: chatMessages(req, inline, systemRole),
     max_completion_tokens: req.maxOutputTokens,
     ...(req.responseFormat === 'json' ? { response_format: { type: 'json_object' as const } } : {}),
+  };
+}
+
+/**
+ * The streamed form of a chat call (ADR-0111): the same body, with `stream: true`. OpenAI sends usage only when asked
+ * (`stream_options.include_usage`), in one last chunk whose `choices` is empty (OpenAI's chat streaming reference, read
+ * 2026-10-21). OpenRouter always sends usage, with its cost, in a stream's last chunk, and calls that option deprecated
+ * with no effect (its usage-accounting page, read the same day), so it is not asked of OpenRouter.
+ */
+export function chatStreamParams(body: ChatParams, usage: 'ask' | 'always'): ChatStreamParams {
+  return { ...body, stream: true, ...(usage === 'ask' ? { stream_options: { include_usage: true } } : {}) };
+}
+
+/**
+ * A stream that ended without a whole answer, though the provider had answered 200 and may have billed what it made: an
+ * error chunk mid-stream (OpenRouter's streaming page: the HTTP status stays 200 once headers are sent, and a choice
+ * finishes with "error"; the SDK raises the chunk's error), or no finishing chunk at all. Stated as "may have been
+ * billed", so nothing reads it as a provider's refusal of the work, and in the words billingOf's reading of an early end
+ * recognises, so the gateway sends it once more at most, as for a lost answer (ADR-0091).
+ */
+function streamEndedEarly(provider: string, detail: string, cause?: unknown): Error {
+  return Object.assign(new Error(`${provider}'s stream ended without producing a whole answer (${detail})`, cause === undefined ? {} : { cause }), { billing: 'maybe' as const });
+}
+
+/** A stream closed by its stop, read as the SDKs' own abort reads. */
+const closed = (): Error => Object.assign(new Error('The stream was closed: its call was cut off.'), { name: 'AbortError' });
+
+/**
+ * Reads a streamed chat completion into the one answer parseChatCompletion reads (ADR-0111), so a streamed call's usage,
+ * cost, served model and host, refusal, content-filter stop and length stop are read exactly as a whole answer's were:
+ * - text and refusal are the first choice's deltas, joined;
+ * - the finish reason is the last one sent (OpenRouter repeats it on its usage chunk);
+ * - the model and OpenRouter's `provider` are the first chunk's that names them, as sent (the gateway makes labels safe);
+ * - usage is the chunk that carries it: OpenAI's last chunk (empty `choices`), OpenRouter's last (with `cost`), with
+ *   `prompt_tokens_details.cached_tokens` and `cache_write_tokens` as before. Absent when it never came.
+ * What it throws: once `signal` has aborted, a stream without its finishing chunk ends as closed (the OpenAI SDK ends a
+ * stream it aborted without an error), which the gateway counts as cut off; otherwise an error chunk, a broken stream, a
+ * stream with no finishing chunk, or a finish reason of "error" is streamEndedEarly. A stream that finished is returned
+ * even when the stop came, or the stream broke, after its finishing chunk: that answer arrived, and it is settled.
+ */
+export async function readChatStream(stream: AsyncIterable<ChatChunkLike>, provider: string, signal?: AbortSignal): Promise<{ completion: ChatCompletionLike; chunks: number; usageArrived: boolean }> {
+  let id: string | undefined;
+  let model: unknown;
+  let host: unknown;
+  let content = '';
+  let refusal = '';
+  let finish: string | undefined;
+  let usage: ChatCompletionLike['usage'];
+  let chunks = 0;
+  try {
+    for await (const chunk of stream) {
+      chunks++;
+      if (id === undefined && typeof chunk.id === 'string') id = chunk.id;
+      if (model === undefined && chunk.model !== undefined) model = chunk.model;
+      if (host === undefined && chunk.provider !== undefined) host = chunk.provider;
+      const choice = chunk.choices?.find((c) => (c.index ?? 0) === 0);
+      if (typeof choice?.delta?.content === 'string') content += choice.delta.content;
+      if (typeof choice?.delta?.refusal === 'string') refusal += choice.delta.refusal;
+      if (typeof choice?.finish_reason === 'string' && choice.finish_reason) finish = choice.finish_reason;
+      if (chunk.usage) usage = chunk.usage;
+    }
+  } catch (e) {
+    // A stream that broke after its finishing chunk still brought the whole answer: it is settled, below.
+    if (finish === undefined || finish === 'error') {
+      if (signal?.aborted) throw e;
+      throw streamEndedEarly(provider, e instanceof Error ? e.message : String(e), e);
+    }
+  }
+  if (finish === undefined) {
+    if (signal?.aborted) throw closed();
+    throw streamEndedEarly(provider, `no finishing chunk after ${chunks} ${chunks === 1 ? 'chunk' : 'chunks'}`);
+  }
+  if (finish === 'error') throw streamEndedEarly(provider, 'its last chunk finished with "error"');
+  const completion = {
+    ...(id !== undefined ? { id } : {}),
+    model: model as string,
+    ...(host !== undefined ? { provider: host as string } : {}),
+    choices: [{ finish_reason: finish, message: { content, ...(refusal ? { refusal } : {}) } }],
+    ...(usage ? { usage } : {}),
+  } satisfies ChatCompletionLike & { id?: string };
+  return { completion, chunks, usageArrived: usage != null };
+}
+
+/**
+ * A streamed chat call's answer (readChatStream), parsed as a whole one. A stream that finished but whose usage chunk
+ * never came was answered, and billed, at a cost byway cannot read: its counts are unknown (NaN), so the gateway settles
+ * it at its planning figures, marked as an assumed price (finiteUsage), rather than as free.
+ */
+export async function completeStreamed(stream: AsyncIterable<ChatChunkLike>, provider: string, signal: AbortSignal | undefined): Promise<Omit<ProviderCompletion, 'requestBody'>> {
+  const { completion, chunks, usageArrived } = await readChatStream(stream, provider, signal);
+  const parsed = parseChatCompletion(completion);
+  return {
+    ...parsed,
+    ...(usageArrived ? {} : { usage: { inputTokens: Number.NaN, outputTokens: Number.NaN } }),
+    responseBody: plain({ ...completion, streamed: { chunks, usage: usageArrived } }),
   };
 }
 
@@ -177,12 +288,19 @@ export function moderationDecline(err: unknown, model: string): Omit<ProviderIma
   };
 }
 
+/** The OpenAI chat call as sent: streamed, with its usage asked for (chatStreamParams). */
+export function openaiStreamParams(req: ProviderCompletionRequest, inline: boolean): ChatStreamParams {
+  return chatStreamParams(openaiChatParams(req, inline, 'developer'), 'ask');
+}
+
 export function openaiAdapter(opts: { client: OpenAIClientLike }): ProviderAdapter {
   return {
     id: 'openai',
+    // Chat calls are streamed so a stop can close them (ADR-0111); image calls are not cut off.
+    cutsOff: { complete: true },
     async complete(req) {
-      const res = await opts.client.chat.completions.create(openaiChatParams(req, true, 'developer'));
-      return { ...parseChatCompletion(res), requestBody: openaiChatParams(req, false, 'developer') };
+      const stream = await opts.client.chat.completions.create(openaiStreamParams(req, true), req.signal ? { signal: req.signal } : undefined);
+      return { ...(await completeStreamed(stream, 'openai', req.signal)), requestBody: openaiStreamParams(req, false) };
     },
     async image(req) {
       const params = openaiImageParams(req);

@@ -19,5 +19,5 @@ export { composedRecipe } from './mock/compose.ts';
 export { withoutMarks } from './mock/revision.ts';
 export { EXPOSURE_FILENAME, ExposureRegister, exposurePath, familyOf, isJudgingPurpose, readExposure, type ExposureEntry } from './exposure.ts';
 export { mockAdapter } from './providers/mock.ts';
-export { createFalClient, EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, FAL_VIDEO_MODELS, falAdapter, falVideoSeconds, type FalClientLike } from './providers/fal.ts';
+export { cancelJob, createFalClient, EXTRACT_FRAME_SECONDS_BOUND, FAL_EXTRACT_FRAME, FAL_VIDEO_MODELS, falAdapter, falVideoSeconds, type FalCancel, type FalClientLike } from './providers/fal.ts';
 export type { ProviderAdapter } from './providers/types.ts';
