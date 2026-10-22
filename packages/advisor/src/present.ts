@@ -12,10 +12,10 @@ import {
   directionsReactedTo,
   followsEveryRun,
   hasNoExecutor,
-  inputsOf,
   lockedScripts,
   machineWrites,
   personWrite,
+  promptShows,
   replacesCritique,
   runOrder,
   voiceScope,
@@ -233,7 +233,8 @@ function around(recipe: Recipe): Around {
     if (voiceWrite(s)) claim(out.aiWroteRest, s, !before(personWrite));
     if (s.role === 'seed') claim(out.fanOut, s, o.fanOut);
     if (s.role === 'relay') claim(out.inChain, s, o.inRelay);
-    if (s.actor === 'model' && (s.role === 'cut' || s.role === 'tells-sweep')) claim(out.notesOnly, s, !after((t) => machineWrites(t) && inputsOf(t).includes('critique')));
+    // A writer takes the notes in where its prompt shows them (ADR-0097), as appliesFindings and admission read it.
+    if (s.actor === 'model' && (s.role === 'cut' || s.role === 'tells-sweep')) claim(out.notesOnly, s, !after((t) => machineWrites(t) && promptShows(t, 'critique', recipe.medium)));
   }
   return out;
 }
@@ -351,11 +352,15 @@ const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group
 /**
  * The shown steps of one stage, from its steps and picks in order: renders wait for the next node (the one that reads
  * them), and a writer that applies a critique joins the group of the step whose critique it applies on every path
- * (`from`: @byway/recipe critiqueSources), once, with the renders before it, where it comes after every run of that
- * step (`near.everyRun`). Not the group before it: a writer that comes next may apply another step's critique (one
- * that a replicate hands on, say), and one a render or a step of yours sits before may still apply this one's. Nor where
- * a loop round or a relay link runs the step again first: the writer applies only the last run's findings, and stands
- * on its own.
+ * (`from`: @byway/recipe critiqueSources), with the renders before it, where it comes after every run of that step
+ * (`near.everyRun`). Not the group before it: a writer that comes next may apply another step's critique (one that a
+ * replicate hands on, say), and one a render or a step of yours sits before may still apply this one's. Nor where a
+ * loop round or a relay link runs the step again first: the writer applies only the last run's findings, and stands on
+ * its own.
+ *
+ * A second writer that applies the same findings joins the same group (a fix between a trim and the step that carries
+ * out its removals): the group's sentence is true of each. Where the step sits at more than one place, a writer joins
+ * the latest group that step leads, whose run's findings are the latest when the writer runs.
  */
 function groupStage(units: Unit[], near: Around, from: ReadonlyMap<Step, Step>): Unit[][] {
   const groups: Unit[][] = [];
@@ -369,7 +374,7 @@ function groupStage(units: Unit[], near: Around, from: ReadonlyMap<Step, Step>):
     const source = writer ? from.get(writer) : undefined;
     const into =
       writer && source && FINDS.has(source.role) && replacesCritique(source) && near.everyRun(source, writer)
-        ? groups.find((g) => leadOf(g) === source && !g.some((x) => appliesFindings(x, near)))
+        ? groups.findLast((g) => leadOf(g) === source)
         : undefined;
     if (into) into.push(...renders, u);
     else groups.push([...renders, u]);
