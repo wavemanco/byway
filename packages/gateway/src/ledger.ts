@@ -515,8 +515,9 @@ export class Ledger {
    * Re-read the whole file and check every link. Returns the id of the first entry that breaks the chain (an edited,
    * moved or missing predecessor, or one with no canonical form), `line:<n>` for an unparseable line or one that is not
    * an entry object (or an entry whose id is missing, empty or not text: lineName), `head` for a head record that is not
-   * one (not JSON, a seq below 1, a field missing), or null when the ledger is intact. It reports damage; it does not
-   * throw on it (ADR-0083).
+   * one (not JSON, a seq below 1, a field missing), or null when the ledger is intact. A head that runs ahead of the file
+   * names the entry it records, missing from the file: by its id, or by its number when its id is empty. It reports
+   * damage; it does not throw on it (ADR-0083).
    * The result is kept with the size and modification time of the ledger and of its head, and reused while neither has
    * changed, so it can be asked for on demand (Settings) without re-reading a large ledger each time (ADR-0091). An edit
    * that keeps both a file's size and its modification time is therefore not seen until the file next changes.
@@ -576,8 +577,10 @@ export class Ledger {
     if (head === 'damaged') return 'head';
     if (head) {
       const lastSeq = prev?.seq ?? 0;
-      // The head may lag the file by one after a crash between the two writes; it may never run ahead of it.
-      if (lastSeq < head.seq) return lineName(head.id, head.seq);
+      // The head may lag the file by one after a crash between the two writes; it may never run ahead of it. One that
+      // does records entries missing from the file's end, so it names the entry it records: by its id, or by its number
+      // when the id is empty, never as `line:<n>`, a line the file does not have (RB1-F1-3). headOf makes the id text.
+      if (lastSeq < head.seq) return head.id !== '' ? head.id : String(head.seq);
       const atHead = JSON.parse(raw[head.seq - 1] as string) as GatewayLedgerEntry;
       if (atHead.hash !== head.hash) return lineName(atHead.id, head.seq);
     }

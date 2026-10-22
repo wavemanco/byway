@@ -224,11 +224,16 @@ describe('Ledger.verify on lines that cannot be hashed', () => {
     expect(await ledger.verify()).toBe('line:2');
   });
 
-  it('names a head that runs ahead of the file by its line number when its id is empty', async () => {
+  // RB1-F1-3 (the re-check of block 1's fix round): `line:3` named a line the file does not have, which the ledger check
+  // then called unreadable, perhaps cut short by a crash; what is wrong is that the entry the head records is missing.
+  it('names a head that runs ahead of the file by the entry it records: its id, or its number when the id is empty', async () => {
     const ledger = await seed(2);
     writeFileSync(`${path}.head`, JSON.stringify({ seq: 3, id: '', hash: `sha256:${'c'.repeat(64)}` }));
     utimesSync(`${path}.head`, new Date(), new Date(Date.now() + 2000));
-    expect(await ledger.verify()).toBe('line:3');
+    expect(await ledger.verify()).toBe('3');
+    writeFileSync(`${path}.head`, JSON.stringify({ seq: 3, id: 'le_gone', hash: `sha256:${'c'.repeat(64)}` }));
+    utimesSync(`${path}.head`, new Date(), new Date(Date.now() + 4000));
+    expect(await ledger.verify()).toBe('le_gone');
   });
 
   it('still hashes an entry nested well below that limit', async () => {
