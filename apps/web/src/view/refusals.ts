@@ -150,6 +150,35 @@ export function startHeldKeyRefusal(parts: readonly HeldKeyPart[] | undefined, s
   return heldIn(places);
 }
 
+/** A held-key refusal of Start as it came: where the keys were, Start's attachments as sent (by their keys on the form, with their names), and the server's message. */
+export interface StartRefusal {
+  parts: HeldKeyPart[] | undefined;
+  sent: { key: number; name: string }[];
+  message: string;
+}
+
+/**
+ * Start's refusal in words as the form stands now (`formKeys`, its attachments' keys in order): each attachment it named
+ * is numbered by its place on the form now, so removing one above it does not leave a stale number, and is left out
+ * once it has been removed itself. Null when every place it named has been removed. The name quoted is the one sent.
+ */
+export function startRefusalNow(refusal: StartRefusal, formKeys: readonly number[]): string | null {
+  const places = refusal.sent.map((s) => formKeys.indexOf(s.key) + 1);
+  // An item whose attachment was sent and has been removed is left out. One at a position the request did not hold still
+  // reaches startHeldKeyRefusal, which then says the server's message.
+  const parts = refusal.parts?.flatMap((p) => {
+    if (p.field !== 'attachments' || !p.items) return [p];
+    const items = p.items.filter((i) => places[i.index] !== 0);
+    return items.length > 0 ? [{ ...p, items }] : [];
+  });
+  if (refusal.parts && refusal.parts.length > 0 && parts?.length === 0) return null;
+  return startHeldKeyRefusal(
+    parts,
+    refusal.sent.map((s, i) => ({ position: places[i] ?? 0, name: s.name })),
+    refusal.message,
+  );
+}
+
 /**
  * The refusal of one of "Examples you admire", naming it as the screen numbers it ("Example 2"), since several can be on
  * screen and the server only saw "this text". Without the key's name (an older server), the server's message follows.

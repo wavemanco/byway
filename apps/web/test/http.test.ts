@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { findHeldKey } from '@byway/gateway';
 import { parseBody } from '../src/server/http.ts';
-import { HELD_KEY_REFUSAL, heldKeyParts, startHeldKeyRefusal } from '../src/view/refusals.ts';
+import { HELD_KEY_REFUSAL, heldKeyParts, startHeldKeyRefusal, startRefusalNow } from '../src/view/refusals.ts';
 import { ProblemInput, StartInput } from '../src/server/schemas.ts';
 import { stringsIn } from '../src/services/strings-in.ts';
 
@@ -167,6 +167,29 @@ describe("Start's refusal names the attachment that held the key as Start number
     expect(await words({ text: `Use ${ANTHROPIC}`, attachments: [{ name: 'Notes', text: 'x' }, { name: 'Draft', text: FAL_SECRET }] }, [1, 2])).toBe(
       'This text contains your ANTHROPIC_API_KEY, and attachment 2 ("Draft") contains your FAL_KEY. Remove them and try again — byway never stores or sends its keys.',
     );
+  });
+
+  // B-stale-attachment-number: the refusal is said as the form stands now. Before, its number was fixed when it came, so
+  // removing an attachment above the one that held the key left it pointing at the wrong place.
+  it('numbers the attachment by its place on the form now, and leaves it out once it is removed', async () => {
+    const body = { text: 'A memo', attachments: [{ name: 'Class notes', text: 'Spring' }, { name: 'Draft', text: `config: ${ANTHROPIC}` }] };
+    const result = await parseBody(post(body), ProblemInput, heldKeyIn);
+    if (result.ok) throw new Error('expected a refusal');
+    const answer = (await result.response.json()) as { error: string } & Record<string, unknown>;
+    // Form keys 1, 2 and 3; 2 was empty and not sent, so "Draft" was the second sent and is the third on the form.
+    const refusal = { parts: heldKeyParts(answer), sent: [{ key: 1, name: 'Class notes' }, { key: 3, name: 'Draft' }], message: answer.error };
+    expect(startRefusalNow(refusal, [1, 2, 3])).toBe(`Attachment 3 ("Draft") contains your ANTHROPIC_API_KEY. ${ADVICE}`);
+    // Attachment 1 removed: "Draft" is now the second on the form.
+    expect(startRefusalNow(refusal, [2, 3])).toBe(`Attachment 2 ("Draft") contains your ANTHROPIC_API_KEY. ${ADVICE}`);
+    // "Draft" removed: nothing it named is left.
+    expect(startRefusalNow(refusal, [1, 2])).toBeNull();
+    // With the text named too, the text is still said.
+    const both = await parseBody(post({ ...body, text: `Use ${ANTHROPIC}` }), ProblemInput, heldKeyIn);
+    if (both.ok) throw new Error('expected a refusal');
+    const bothAnswer = (await both.response.json()) as { error: string } & Record<string, unknown>;
+    expect(startRefusalNow({ ...refusal, parts: heldKeyParts(bothAnswer), message: bothAnswer.error }, [1, 2])).toBe(`This text contains your ANTHROPIC_API_KEY. ${ADVICE}`);
+    // A refusal Start cannot read keeps the server's message, whatever was removed.
+    expect(startRefusalNow({ ...refusal, parts: undefined }, [2])).toBe(answer.error);
   });
 
   it("keeps the server's message when the refusal does not say which item, or names a position that was not sent", () => {
