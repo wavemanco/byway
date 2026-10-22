@@ -1,11 +1,13 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { RunScreen } from '../src/components/run/RunScreen.tsx';
 import { RunStatusPanel } from '../src/components/run/RunStatusPanel.tsx';
 import { focusAfterRemoval } from '../src/view/focus.ts';
 import { CANCEL_QUESTION, CUT_OFF_NOTE, controlPendingLabel, underWayNote } from '../src/view/labels.ts';
 import type { CheckpointRecord, RunRecord } from '@byway/contracts';
 import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, sideImages, waitingRunCount } from '../src/view/run.ts';
+import type { RunData } from '../src/view/rundata.ts';
 import type { TimelineStage, TimelineStep } from '../src/view/timeline.ts';
 
 const cp = (id: string, runId: string, openedAt: string, status: CheckpointRecord['status'] = 'open'): CheckpointRecord => ({
@@ -43,13 +45,13 @@ describe('the Run screen', () => {
   });
 
   it('polls quickly while the AI works, slowly while it waits for you or is paused, and not at all once the run ended', () => {
-    expect(pollDelay('running')).toBe(1000);
-    expect(pollDelay('queued')).toBe(1000);
-    expect(pollDelay('waiting')).toBeGreaterThan(1000);
-    expect(pollDelay('paused')).toBeGreaterThan(1000);
+    expect(pollDelay('running', undefined)).toBe(1000);
+    expect(pollDelay('queued', undefined)).toBe(1000);
+    expect(pollDelay('waiting', undefined)).toBeGreaterThan(1000);
+    expect(pollDelay('paused', undefined)).toBeGreaterThan(1000);
     for (const status of ['done', 'failed', 'cancelled'] as const) {
       expect(isEnded(status)).toBe(true);
-      expect(pollDelay(status)).toBeNull();
+      expect(pollDelay(status, undefined)).toBeNull();
       expect(pollDelay(status, 0)).toBeNull();
     }
     expect(isEnded('waiting')).toBe(false);
@@ -203,5 +205,42 @@ describe('the Cancel question and the cancelled run (ADR-0111)', () => {
       expect(panel(status, 3), status).toContain(underWayNote(3));
       expect(panel(status, 0), status).not.toContain('still under way');
     }
+  });
+});
+
+/**
+ * The whole Run screen, as the server renders it (Next renders this client component on the server too), for a run and
+ * what the spend book said of it once it ended (RunData.ended).
+ */
+const runScreen = (run: RunRecord, spend?: RunData['ended']) =>
+  renderToStaticMarkup(
+    createElement(RunScreen, {
+      initial: { view: { run, events: [], checkpoints: [] }, artifacts: {}, ...(spend ? { ended: spend } : {}) },
+      presentation: null,
+      label: null,
+      steps: null,
+      questions: null,
+    }),
+  );
+
+// F3R-1 (the re-check of block 1's fix round): RS-5's pieces are tested one by one, and RunScreen joins them. A dropped
+// argument fails the typecheck (pollDelay's and runMeter's last parameters have no default); a wrong one fails here.
+describe('the Run screen joins what the spend book says of an ended run (RS-5)', () => {
+  it('shows an ended run’s calls under way and its settled cost, and says nothing of them once none is under way', () => {
+    for (const status of ['cancelled', 'failed'] as const) {
+      const html = runScreen(ended(status), { callsUnderWay: 2, settledUsd: 0.8 });
+      expect(html, status).toContain(underWayNote(2));
+      expect(html, status).toContain('<span class="meter-spent">$0.80</span>');
+      const settled = runScreen(ended(status), { callsUnderWay: 0, settledUsd: 0.4 });
+      expect(settled, status).not.toContain('still under way');
+      expect(settled, status).toContain('<span class="meter-spent">$0.40</span>');
+    }
+  });
+
+  it('shows the run record’s cost when the spend book could not be read, and reads its figures only for an ended run', () => {
+    expect(runScreen(ended('cancelled'))).toContain('<span class="meter-spent">$0.40</span>');
+    expect(runScreen(ended('cancelled'))).not.toContain('still under way');
+    // The server sends them only for an ended run; were a running run's poll to carry them, they are not its meter.
+    expect(runScreen({ ...ended('cancelled'), status: 'running' }, { callsUnderWay: 2, settledUsd: 0.8 })).toContain('<span class="meter-spent">$0.40</span>');
   });
 });

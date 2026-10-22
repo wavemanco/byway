@@ -17,9 +17,11 @@ export function isEnded(status: RunStatus): boolean {
  * finish; a run waiting for you, or paused, changes only when you act, so it is polled lazily. An ended run is polled
  * lazily while some of its AI calls are still under way (`callsUnderWay`, from the spend book: RunData.ended): a call
  * byway does not cut off finishes after the run shows Cancelled or Failed, and its cost is added to the run then.
+ * `callsUnderWay` has no default, so a caller that leaves it out does not compile (F3R-1, the re-check of block 1's fix
+ * round): undefined says the spend book was not read, or the run has not ended.
  */
-export function pollDelay(status: RunStatus, callsUnderWay = 0): number | null {
-  if (isEnded(status)) return callsUnderWay > 0 ? 3000 : null;
+export function pollDelay(status: RunStatus, callsUnderWay: number | undefined): number | null {
+  if (isEnded(status)) return (callsUnderWay ?? 0) > 0 ? 3000 : null;
   if (status === 'paused' || status === 'waiting') return 3000;
   return 1000;
 }

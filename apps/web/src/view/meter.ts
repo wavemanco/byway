@@ -32,18 +32,19 @@ export function budgetMeter(costUsd: number, budgetUsd: number | undefined): Bud
  * Spend and budget from the latest `cost` event. Spend only grows and a budget only rises, so the larger of the
  * event and the run record wins: whichever of the two a poll caught first, the meter never steps backwards. For a run
  * that has ended, `settledUsd` is the spend book's settled cost for it (RunData.ended), which takes in a call that
- * settled after the run stopped before the run record does.
+ * settled after the run stopped before the run record does. It has no default, so a caller that leaves it out does not
+ * compile (F3R-1, the re-check of block 1's fix round): undefined says there is no such figure.
  */
-export function runSpend(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[], settledUsd = 0): { costUsd: number; budgetUsd: number } {
+export function runSpend(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[], settledUsd: number | undefined): { costUsd: number; budgetUsd: number } {
   const latest = events.filter((e) => e.type === 'cost').reduce<RunEvent | undefined>((a, e) => (!a || e.seq > a.seq ? e : a), undefined);
   const d = latest ? read(CostData, latest.data) : {};
   return {
-    costUsd: Math.max(run.costUsd, d.totalUsd ?? 0, settledUsd),
+    costUsd: Math.max(run.costUsd, d.totalUsd ?? 0, settledUsd ?? 0),
     budgetUsd: Math.max(run.budgetUsd, d.budgetUsd ?? 0),
   };
 }
 
-export function runMeter(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[], settledUsd = 0): BudgetMeter {
+export function runMeter(run: Pick<RunRecord, 'costUsd' | 'budgetUsd'>, events: RunEvent[], settledUsd: number | undefined): BudgetMeter {
   const { costUsd, budgetUsd } = runSpend(run, events, settledUsd);
   return budgetMeter(costUsd, budgetUsd);
 }
