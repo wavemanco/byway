@@ -125,12 +125,14 @@ const closed = (): Error => Object.assign(new Error('The stream was closed: its 
  * - the model and OpenRouter's `provider` are the first chunk's that names them, as sent (the gateway makes labels safe);
  * - usage is the chunk that carries it: OpenAI's last chunk (empty `choices`), OpenRouter's last (with `cost`), with
  *   `prompt_tokens_details.cached_tokens` and `cache_write_tokens` as before. Absent when it never came.
- * What it throws: once `signal` has aborted, a stream without its finishing chunk ends as closed (the OpenAI SDK ends a
- * stream it aborted without an error), which the gateway counts as cut off; otherwise an error chunk, a broken stream, a
- * stream with no finishing chunk, a stream `idle` closed because it stalled (StreamIdle: its wait starts as the reading
- * does and again at each chunk), or a finish reason of "error" is streamEndedEarly. A stream that finished is returned
- * even when the stop came, the bound closed it, or the stream broke, after its finishing chunk: that answer arrived, and
- * it is settled.
+ * What it throws: once `signal` has aborted, a stream that ended quietly without its finishing chunk ends as closed (the
+ * OpenAI SDK ends a stream it aborted without an error), which the gateway counts as cut off; otherwise a stream with no
+ * finishing chunk, a stream `idle` closed because it stalled (StreamIdle: its wait starts as the reading does and again
+ * at each chunk), or a finish reason of "error" is streamEndedEarly. An error chunk or a broken stream is
+ * streamEndedEarly whether or not the stop came, so it is never read by the error's own body ("may have been billed",
+ * ADR-0111 item 8): the gateway counts it as cut off when the stop came, as the gateway reads any "may have been billed"
+ * failure after a stop. A stream that finished is returned even when the stop came, the bound closed it, or the stream
+ * broke, after its finishing chunk: that answer arrived, and it is settled.
  */
 export async function readChatStream(
   stream: AsyncIterable<ChatChunkLike>,
@@ -163,7 +165,6 @@ export async function readChatStream(
   } catch (e) {
     // A stream that broke after its finishing chunk still brought the whole answer: it is settled, below.
     if (finish === undefined || finish === 'error') {
-      if (signal?.aborted) throw e;
       throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk') : e instanceof Error ? e.message : String(e), e);
     }
   } finally {

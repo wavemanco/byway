@@ -687,6 +687,28 @@ describe('a stop cuts off a streamed OpenAI or OpenRouter call', () => {
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
 
+  it.each([
+    ['openai', 'openai', openaiChunks],
+    ['openrouter', 'openrouter', openrouterChunks],
+  ] as const)('%s: an error chunk that comes with the stop is still a cut-off, "may have been billed" (ADR-0111 item 8)', async (provider, profileId, chunks) => {
+    const { stop, operation } = caller();
+    // An error chunk with a type in its body, which billingOf alone would read as the provider's own refusal.
+    const errorChunk = Object.assign(new Error('The server had an error while processing your request.'), { error: { type: 'server_error', message: 'The server had an error' } });
+    const chat = chatClient(() =>
+      (async function* () {
+        yield chunks()[0] as ChatChunkLike;
+        stop.abort();
+        throw errorChunk;
+      })(),
+    );
+    const g = gateway({ clients: { [provider]: chat.client } });
+    const err = await failure(g.complete(ask({ profileId, operation })));
+    expect(isCutOff(err)).toBe(true);
+    expect(err).toMatchObject({ billing: 'maybe' });
+    expect(ledger()).toEqual([]);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider, reason: 'interrupted' })]);
+  });
+
   it('a stop that comes before the stream answers (the SDK rejects its request) is a cut-off too', async () => {
     const { stop, operation } = caller();
     const client: OpenAIClientLike = {
