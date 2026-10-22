@@ -1108,6 +1108,9 @@ function billedFailure(redact: Redactor, what: string, cause: unknown, settled?:
   return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true, ...(settled ? { settled } : {}) });
 }
 
+/** What an adapter's error says when its own message cannot be read as text, so none of its words are passed on. */
+const UNREAD_MESSAGE = 'byway could not read this error’s message as text.';
+
 /**
  * An error an adapter threw as it is, its message passed through the redactor as toGatewayError's are. The error is kept
  * (its class, its code, its billing, its cut-off mark and fal's request ids go on with it); only its words change.
@@ -1116,12 +1119,19 @@ function billedFailure(redact: Redactor, what: string, cause: unknown, settled?:
  * and AbortSignal.timeout throw) is an Error whose message is a getter only, and assigning to it throws a TypeError in
  * strict code, which would take the adapter's error's place (RB1-F1-2, the re-check of block 1's fix round). An error
  * that takes no new property (frozen, say) is copied instead: the same class and the same own fields, with the new
- * message, so this never throws.
+ * message, so this never throws. A copied DOMException keeps its class by its prototype only: its internal brand is not
+ * copied, so reading its `code` on the copy throws. No reader does: byway reads an error's code only on a GatewayError,
+ * and its billing, cut-off mark and fal's request ids are own fields, which the copy keeps.
+ *
+ * The redaction is inside the try too, of the message as text (String(e.message)): an Error whose message is not text
+ * (a number, an object) is redacted as its text rather than making the redactor throw (B1R2-CODE-6, the re-check of
+ * block 1's second fix round), and one whose message cannot be read as text at all is copied with UNREAD_MESSAGE.
  */
 function redactMessage(e: unknown, redact: Redactor): unknown {
   if (!(e instanceof Error)) return e;
-  const message = { value: redact(e.message), writable: true, configurable: true, enumerable: false };
+  const message = { value: UNREAD_MESSAGE, writable: true, configurable: true, enumerable: false };
   try {
+    message.value = redact(String(e.message));
     Object.defineProperty(e, 'message', message);
     return e;
   } catch {

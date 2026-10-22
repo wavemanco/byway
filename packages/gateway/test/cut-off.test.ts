@@ -1113,6 +1113,55 @@ describe('a stop cancels fal’s queue job', () => {
     expect((await g.spendRecords('ws')).inFlight).toEqual([]);
   });
 
+  // B1R2-CODE-6, the re-check of block 1's second fix round: the call above was never sent, so it counts nothing whatever
+  // its error says. Here the adapter throws after its job was submitted (the call marked sent), so what the spend book
+  // counts is what the DOMException's own billing says, read before its words are redacted.
+  it.each([
+    ['may have been billed', 'maybe', 1],
+    ['certainly not billed', 'none', 0],
+  ] as const)('counts a DOMException thrown after the call was sent as its billing says (%s), its words redacted', async (_what, billing, counted) => {
+    const thrown = Object.assign(new DOMException(`The operation was aborted due to timeout (Key ${KEYS.FAL_KEY})`, 'TimeoutError'), { billing });
+    const { operation } = caller('run-1/clip/video/abc/1');
+    const inner = falAdapter({ client: heldFal({ status: 'removed', detail: 'HTTP 200 OK' }).client });
+    const g = gateway({
+      adapters: {
+        fal: {
+          ...inner,
+          video: async (req) => {
+            await req.submit(async () => 'req-1', 'the clip');
+            throw thrown;
+          },
+        },
+      },
+    });
+    const err = await g.video(video(operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toBe(thrown);
+    expect((err as Error).message).toBe('The operation was aborted due to timeout (Key [redacted])');
+    const records = await g.spendRecords('ws');
+    expect(records.inFlight).toEqual([]);
+    expect(records.uncertain).toEqual(counted ? [expect.objectContaining({ provider: 'fal', reason: 'failed', usd: expect.any(Number) })] : []);
+    expect((await g.spend('ws')).uncertainUsd).toBe(counted ? records.uncertain[0]?.usd : 0);
+    if (counted) expect((await g.spend('ws')).uncertainUsd).toBeGreaterThan(0);
+  });
+
+  // B1R2-CODE-6: a message that is not text (a number, an object) is redacted as its text, so the redaction cannot throw
+  // and take the adapter's error's place; one that cannot be read as text at all is not passed on.
+  it('redacts an error whose message is not text as its text, and never throws', async () => {
+    const numbered = Object.assign(new Error('x'), { message: 42 as unknown as string, billing: 'maybe' as const });
+    expect((await thrownBy(numbered)).err).toBe(numbered);
+    expect(numbered.message).toBe('42');
+    const keyed = Object.assign(new Error('x'), { message: { toString: () => `Key ${KEYS.FAL_KEY}` } as unknown as string });
+    expect((await thrownBy(keyed)).err).toBe(keyed);
+    expect(keyed.message).toBe('Key [redacted]');
+    const unreadable = Object.assign(new Error('x'), { message: Object.create(null) as string, billing: 'maybe' as const, falRequests: { generation: 'req-1' } });
+    const { err } = await thrownBy(unreadable);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toMatchObject({ billing: 'maybe', falRequests: { generation: 'req-1' }, message: 'byway could not read this error’s message as text.' });
+  });
+
   it('redacts an error that takes no new property by a copy of it: the same class, code and fields', async () => {
     const thrown = Object.freeze(Object.assign(new GatewayError('provider-error', `fal said no (Key ${KEYS.FAL_KEY})`, false), { billing: 'maybe' as const, falRequests: { generation: 'req-1' } }));
     const { err } = await thrownBy(thrown);
