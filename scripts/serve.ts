@@ -36,7 +36,9 @@
  *
  * Environment: BYWAY_DATA_DIR (data directory), PORT (web, default 3000), BYWAY_TEMPORAL_PORT (default 7233),
  * BYWAY_DEMO=1 (same as `--demo`), BYWAY_NEXT_DIST_DIR (the web build's folder inside apps/web, default .next; the e2e
- * suite uses its own, so it never rebuilds under a byway you are running).
+ * suite uses its own, so it never rebuilds under a byway you are running), BYWAY_WORKFLOWS_BUNDLE (the runner's workflow
+ * bundle's file inside packages/runner/dist, default workflows.js; the e2e suite builds its own for the same reason. It
+ * stays inside packages/runner, whose node_modules Temporal's own bundler resolves the bundle's @temporalio imports from).
  *
  * The packages are imported by path: the repo root has no dependencies of its own, and each package resolves its own.
  */
@@ -50,7 +52,7 @@ import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engi
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { browsersFolder, checkRenderer, dataDirReport, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
+import { browsersFolder, buildWorkflows, checkRenderer, dataDirReport, DEFAULT_WORKFLOWS_BUNDLE, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -181,9 +183,12 @@ async function main(): Promise<void> {
     console.log(`  checked    the data directory could not be checked (${err instanceof Error ? err.message : String(err)}); byway starts anyway`);
   }
 
-  // The engine starts while the app builds.
+  // The engine starts while the app builds. With BYWAY_WORKFLOWS_BUNDLE, the workflow bundle is built into that file
+  // first and the worker runs it; otherwise the worker builds dist/workflows.js itself.
   console.log('  engine     starting Temporal and the runner worker…');
-  const engineStarting = startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort });
+  const bundle = process.env.BYWAY_WORKFLOWS_BUNDLE?.trim();
+  const workflowsBuilt = bundle ? buildWorkflows({ outfile: path.join(path.dirname(DEFAULT_WORKFLOWS_BUNDLE), bundle) }) : Promise.resolve(undefined);
+  const engineStarting = workflowsBuilt.then((workflowsPath) => startDevEngine({ dataDir, gateway, store, prompts, port: temporalPort, ...(workflowsPath ? { workflowsPath } : {}) }));
   engineStarting.catch(() => undefined);
   // The renderer is checked meanwhile, under the person's sandbox setting; the check never throws. Its time limit starts
   // when byway waits for it, below, and then says what the check had found by then (rendererProgress).

@@ -6,8 +6,10 @@
  * (apps/web/e2e/keys.ts; SEC-3). When the suite ends it stops byway the clean way (the same path as Ctrl+C) and removes
  * the data directory. Arguments are passed to `playwright test`.
  *
- * Both byways still build the runner's workflow bundle into packages/runner/dist/workflows.js; it is the same code from
- * the same checkout, so a second build writes the same file.
+ * It also builds the runner's workflow bundle into a file of its own (packages/runner/dist/e2e-<pid>.js, serve.ts's
+ * BYWAY_WORKFLOWS_BUNDLE), removed at the end, so the two byways share no file there either. The bundle is the same code
+ * either way, and its hash does not depend on its file's name (build.test.ts), so no run either byway started is ended
+ * by it (ADR-0078).
  *
  * The server's output goes to byway-e2e-server.log in the system temp folder (Playwright empties its own output folder).
  * Its start-up lines must say the page renderer is ready inside its OS sandbox (F18; ADR-0105): the suite renders pages,
@@ -25,6 +27,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = path.join(ROOT, 'apps', 'web');
 /** The e2e build's own folder inside apps/web (next.config.ts). */
 const DIST_DIR = '.next-e2e';
+/** The e2e byway's own workflow bundle, inside packages/runner/dist (serve.ts's BYWAY_WORKFLOWS_BUNDLE). */
+const WORKFLOWS_BUNDLE = `e2e-${process.pid}.js`;
 
 /** Files under a folder that contain a stand-in key: none may (keys are never written under the repo, SEC-3). */
 function filesWithKeys(dir: string): string[] {
@@ -91,6 +95,7 @@ async function main(): Promise<number> {
       BYWAY_DATA_DIR: dataDir,
       BYWAY_DEMO: '1',
       BYWAY_NEXT_DIST_DIR: DIST_DIR,
+      BYWAY_WORKFLOWS_BUNDLE: WORKFLOWS_BUNDLE,
       PORT: String(webPort),
       BYWAY_TEMPORAL_PORT: String(temporalPort),
     },
@@ -137,6 +142,7 @@ async function main(): Promise<number> {
     }
     log.end();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    rmSync(path.join(ROOT, 'packages', 'runner', 'dist', WORKFLOWS_BUNDLE), { force: true, maxRetries: 20, retryDelay: 250 });
   }
   // The start-up "renderer" line (serve.ts) says whether the page renderer's Chromium can draw a page, and whether inside
   // its OS sandbox: on a fresh data directory the sandbox is on, as byway's default is (ADR-0105).
