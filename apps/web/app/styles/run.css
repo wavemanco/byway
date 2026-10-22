@@ -337,6 +337,13 @@
   line-height: 1.35;
 }
 
+/* What an answer would cost, under the question it belongs to (view/questions.ts). */
+.turn-cost {
+  margin-top: var(--s-2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
 /* The question receives focus when it opens so screen readers announce it; it is not a control, so no ring. */
 .turn-head h2:focus,
 .turn-head h2:focus-visible {

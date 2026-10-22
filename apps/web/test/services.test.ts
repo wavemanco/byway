@@ -245,6 +245,41 @@ describe('the service host', () => {
     await expect(live.store.spendBook.spend(ws.id)).rejects.toMatchObject({ code: 'closed' });
   });
 
+  // The Run screen's figure beside an optional's or a person's loop's question (UX-4 remainder): the advisor's own walk,
+  // priced with the run's profile as the gateway sees it, so it is what the Recommendation screen's estimate counts.
+  it("prices a run's questions with the run's profile, as the advisor prices a recipe, whatever Settings' demo switch says", async () => {
+    current = testHost({ demo: false, env: { ...FAKE_KEYS } });
+    const live = current.host.services(false);
+    const c4 = live.advisor.recipe('c4');
+    if (!c4) throw new Error('c4 missing');
+    const framings = current.host.questionEstimates(c4, 'balanced')['framings-if-wanted'];
+    expect(framings?.asks).toBe('optional');
+    expect(framings?.estimate.lowUsd).toBeGreaterThan(0);
+    // The same figure the advisor gives a recipe that is that step alone.
+    const optional = c4.stages.flatMap((s) => (s.body.op === 'seq' ? s.body.steps : [s.body])).find((n) => n.op === 'optional' && n.id === 'framings-if-wanted');
+    if (optional?.op !== 'optional') throw new Error('framings-if-wanted missing');
+    expect(framings?.estimate).toEqual(live.advisor.estimate({ ...c4, stages: [{ stage: 'D1', body: optional.body }] }, 'balanced'));
+    // A run started in demo mode is on the demo profile, and its calls cost nothing.
+    expect(current.host.questionEstimates(c4, 'demo')['framings-if-wanted']?.estimate.highUsd).toBe(0);
+    // Settings' demo switch, on now, does not move a run started live onto the mock: the worker still makes its calls.
+    current.host.services(true);
+    expect(current.host.questionEstimates(c4, 'balanced')['framings-if-wanted']).toEqual(framings);
+    // A profile byway does not have gets no figures.
+    expect(current.host.questionEstimates(c4, 'retired')).toEqual({});
+  });
+
+  it("prices every run's questions at nothing when byway's own calls all go to the mock (pnpm demo, or no keys)", async () => {
+    for (const opts of [{ demo: true, env: { ...FAKE_KEYS } }, { demo: false, env: {} }]) {
+      current = testHost(opts);
+      const c4 = current.host.services(false).advisor.recipe('c4');
+      if (!c4) throw new Error('c4 missing');
+      const framings = current.host.questionEstimates(c4, 'balanced')['framings-if-wanted'];
+      expect(framings?.estimate).toMatchObject({ lowUsd: 0, highUsd: 0, modelCalls: { low: 1, high: 1 } });
+      await current.dispose();
+      current = undefined;
+    }
+  });
+
   it('is in demo mode with no keys, and reports providers without their keys', async () => {
     current = testHost({ demo: false, env: { FAL_KEY: FAKE_KEYS.FAL_KEY } });
     const services = current.host.services(false);

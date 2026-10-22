@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from 'react';
 import { recipeTitle } from '../view/vocabulary.ts';
-import { HELD_KEY_REFUSAL } from '../view/refusals.ts';
+import { HELD_KEY_REFUSAL, heldKeyParts, startHeldKeyRefusal } from '../view/refusals.ts';
 import { ActionButton } from './ActionButton.tsx';
 import { ApiError, post } from './api.ts';
-import { forgetRefusedStart, loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft } from './startDraft.ts';
+import { forgetRefusedStart, heldAttachmentKeys, loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft } from './startDraft.ts';
 import { useTechnicalNames } from './TechNames.tsx';
 import { useAction } from './useAction.ts';
 import { useShortcuts } from './useShortcuts.ts';
@@ -29,7 +29,25 @@ interface Attachment {
   text: string;
 }
 
-const MAX_ATTACHMENTS = 5;
+/** The most attachments Start's request takes (server/schemas.ts ProblemInput). */
+export const MAX_ATTACHMENTS = 5;
+
+/** What Start says in place of its attach button once five attachments are listed. */
+export const ATTACH_LIMIT_NOTE = 'byway takes up to five attachments for one problem.';
+
+/**
+ * Start's attach button while another attachment fits; at the limit, a note in its place that says why it went. The note
+ * is text, not a control: a disabled button would still be a stop in the Tab order that does nothing (R5,
+ * guard-disabled.test.ts), and focus is already in the new attachment's name field.
+ */
+export function AttachControl({ count, onAttach, buttonRef }: { count: number; onAttach: () => void; buttonRef?: Ref<HTMLButtonElement> }) {
+  if (count >= MAX_ATTACHMENTS) return <span className="muted small">{ATTACH_LIMIT_NOTE}</span>;
+  return (
+    <button type="button" className="button" onClick={onAttach} ref={buttonRef}>
+      {count === 0 ? 'Attach a draft or diff' : 'Attach another'}
+    </button>
+  );
+}
 
 export function StartForm({ recipe }: { recipe?: { recipeId: string; name: string; code: string } }) {
   const router = useRouter();
@@ -53,6 +71,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
     attachmentsTouched.current = true;
     setRefocus({ key: focusAfterRemoval(attachments.map((a) => a.key), key) });
     setAttachments((list) => list.filter((x) => x.key !== key));
+    keepAgain(key);
   }
   const [nextKey, setNextKey] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -68,11 +87,20 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       setNextKey((k) => Math.max(k, kept.length + 1));
     }
   }, []);
-  // Attachments are kept as you change them; nothing is written until you do, so a restore is never overwritten.
+  // Attachments are kept as you change them; nothing is written until you do, so a restore is never overwritten. One
+  // that held a key byway refused (ADR-0088) is shown to be edited but not kept, by its key here, until it is edited.
   const attachmentsTouched = useRef(false);
+  const [withheld, setWithheld] = useState<ReadonlySet<number>>(() => new Set());
   useEffect(() => {
-    if (attachmentsTouched.current) saveStartAttachments(attachments.map(({ name, text: body }) => ({ name, text: body })));
-  }, [attachments]);
+    if (attachmentsTouched.current) saveStartAttachments(attachments.filter((a) => !withheld.has(a.key)).map(({ name, text: body }) => ({ name, text: body })));
+  }, [attachments, withheld]);
+  const keepAgain = (key: number) =>
+    setWithheld((keys) => {
+      if (!keys.has(key)) return keys;
+      const next = new Set(keys);
+      next.delete(key);
+      return next;
+    });
 
   function edit(next: string) {
     setText(next);
@@ -88,10 +116,12 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       return;
     }
     setError(null);
+    // An empty attachment is not sent, so the refusal's positions are positions in this list, not on the form.
+    const sent = attachments.filter((a) => a.text.trim());
     try {
       const { intakeId } = await post<{ intakeId: string }>('/api/intakes', {
         text,
-        attachments: attachments.filter((a) => a.text.trim()).map(({ name, text: body }) => ({ name: name.trim() || 'Attachment', text: body })),
+        attachments: sent.map(({ name, text: body }) => ({ name: name.trim() || 'Attachment', text: body })),
         ...(recipe ? { recipeId: recipe.recipeId } : {}),
       });
       // A library choice travels in the address, so the Recommendation screen shows that recipe instead of choosing.
@@ -99,9 +129,17 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       return 'hold';
     } catch (err) {
       // A refused key (ADR-0088): the form keeps everything so the key can be taken out, but the tab's session stops
-      // keeping the part that held it (the text, the attachments or both) and keeps the rest. That part is kept again
-      // once it is edited: the text on each keystroke, the attachments on any change to them.
-      if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) forgetRefusedStart(err.fields);
+      // keeping the part that held it (the text, an attachment or both) and keeps the rest. That part is kept again once
+      // it is edited: the text on each keystroke, an attachment on any change to that attachment. The refusal names the
+      // attachment as this form numbers it, and by the name you gave it.
+      if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) {
+        const parts = heldKeyParts(err.body);
+        forgetRefusedStart(err.fields);
+        attachmentsTouched.current = true;
+        setWithheld(new Set(heldAttachmentKeys(err.fields, parts, sent.map((a) => a.key))));
+        setError(startHeldKeyRefusal(parts, sent.map((a) => ({ position: attachments.indexOf(a) + 1, name: a.name })), err.message));
+        return;
+      }
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
     }
   });
@@ -134,6 +172,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
   function updateAttachment(key: number, patch: Partial<Attachment>) {
     attachmentsTouched.current = true;
     setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
+    keepAgain(key);
   }
 
   return (
@@ -229,11 +268,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       ) : null}
 
       <div className="start-actions">
-        {attachments.length < MAX_ATTACHMENTS ? (
-          <button type="button" className="button" onClick={addAttachment} ref={attachButton}>
-            {attachments.length === 0 ? 'Attach a draft or diff' : 'Attach another'}
-          </button>
-        ) : null}
+        <AttachControl count={attachments.length} onAttach={addAttachment} buttonRef={attachButton} />
         <span className="start-spacer" />
         {recipe ? (
           <span className="start-recipe">

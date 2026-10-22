@@ -2,13 +2,15 @@
  * Codes the server puts beside a refusal's message (`{ error, code }`), for the few refusals a screen acts on rather than
  * only shows. Shared by the route helpers and the client.
  */
+import { z } from 'zod';
 
 /**
  * The request held one of byway's provider keys and was refused before anything was stored or sent (ADR-0088). The
- * refusal also names the body's top-level fields that held it (`fields`) and the key's variable name (`key`, as the
- * message already says it; never its value). Start then stops keeping those parts in the tab's session, and keeps the
- * rest: the form keeps everything so the person can take the key out, but the tab's storage does not hold a key byway
- * refused. The Recommendation screen does the same for the one example refused (/api/refs) and the Run screen for the
+ * refusal also names the body's top-level fields that held it (`fields`), the key's variable name (`key`, as the
+ * message already says it; never its value) and, beside them, each part with its own key and, for a list, which of its
+ * items held one, by position (`parts`, HeldKeyPart). Start then stops keeping those parts in the tab's session, its
+ * attachments one by one, and keeps the rest: the form keeps everything so the person can take the key out, but the
+ * tab's storage does not hold a key byway refused. The Recommendation screen does the same for the one example refused (/api/refs) and the Run screen for the
  * one answer refused (a checkpoint route); each request carries one example or one question's answer, so that is the
  * part that held the key.
  */
@@ -28,10 +30,36 @@ export const COMPOSED_REFUSED = 'composed-refused';
  */
 export const COMPOSED_CHANGED = 'composed-changed';
 
-/** A top-level field of a refused body, and the variable name of the key found in it. */
+/** A top-level field of a refused body, the variable name of the key found in it and, for a list, its items that held one. */
 export interface HeldKeyPart {
   field: string;
   key: string;
+  /** For a list (Start's attachments): the items that held a key. */
+  items?: HeldKeyItem[];
+}
+
+/**
+ * An item of a list that held a key: its position in the list as sent (from 0), its own fields that held one (for Start's
+ * attachments, `name`, `text` or both) and the key's variable name. Positions and names, never values.
+ */
+export interface HeldKeyItem {
+  index: number;
+  fields: string[];
+  key: string;
+}
+
+const HeldKeyParts = z.array(
+  z.object({
+    field: z.string(),
+    key: z.string(),
+    items: z.array(z.object({ index: z.number().int().min(0), fields: z.array(z.string()), key: z.string() })).optional(),
+  }),
+);
+
+/** The parts a held-key refusal names (`parts`), or undefined when it sent none that can be read. */
+export function heldKeyParts(body: Readonly<Record<string, unknown>> | undefined): HeldKeyPart[] | undefined {
+  const parsed = HeldKeyParts.safeParse(body?.parts);
+  return parsed.success ? parsed.data : undefined;
 }
 
 /** The parts of a request a person can recognise, in the words the screens use for them (Start's text and attachments). */
@@ -44,22 +72,82 @@ function advice(keys: number): string {
   return `Remove ${keys > 1 ? 'them' : 'it'} and try again — byway never stores or sends its keys.`;
 }
 
+/** Where a key was, in the words a screen uses for that place, and the key's variable name. */
+interface Place {
+  words: string;
+  key: string;
+}
+
+/** "a", "a and b", "a, b and c". */
+const listed = (words: readonly string[]): string => (words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words.at(-1)}` : (words[0] ?? ''));
+
+/**
+ * Where the keys were, and what to do: "This text contains your ANTHROPIC_API_KEY", "This text and an attachment contain
+ * …" for one key in several places, or, for several keys, each place with its own ("…, and an attachment contains your
+ * FAL_KEY"), then the advice.
+ */
+function heldIn(places: readonly Place[]): string {
+  const keys = new Set(places.map((p) => p.key)).size;
+  const first = places[0] as Place;
+  const where =
+    keys === 1
+      ? `${listed(places.map((p) => p.words))} ${places.length > 1 ? 'contain' : 'contains'} your ${first.key}`
+      : places.map((p) => `${p.words} contains your ${p.key}`).join(', and ');
+  return `${capital(where)}. ${advice(keys)}`;
+}
+
 /**
  * The refusal of a body holding a key, saying where it was: "This text contains your ANTHROPIC_API_KEY", "An attachment
  * contains …", both, or, for a part a person would not recognise (or none found), "This request contains …". `held` is
- * the key found in the body as a whole, for that last case.
+ * the key found in the body as a whole, for that last case. The server does not know how a screen numbers a list's
+ * items, so Start, which shows up to five attachments, words them itself (startHeldKeyRefusal).
  */
 export function heldKeyRefusal(parts: readonly HeldKeyPart[], held: string): string {
-  const worded = parts.length > 0 && parts.every((p) => PART_WORDS[p.field] !== undefined) ? parts : [];
-  const keys = new Set(parts.map((p) => p.key)).size;
-  if (worded.length === 0) return `This request contains your ${held}. ${advice(keys)}`;
-  const words = (p: HeldKeyPart) => PART_WORDS[p.field] as string;
-  const first = worded[0] as HeldKeyPart;
-  const where =
-    keys === 1
-      ? `${worded.map(words).join(' and ')} ${worded.length > 1 ? 'contain' : 'contains'} your ${first.key}`
-      : worded.map((p) => `${words(p)} contains your ${p.key}`).join(', and ');
-  return `${capital(where)}. ${advice(keys)}`;
+  if (parts.length === 0 || !parts.every((p) => Object.hasOwn(PART_WORDS, p.field))) return `This request contains your ${held}. ${advice(new Set(parts.map((p) => p.key)).size)}`;
+  return heldIn(parts.map((p) => ({ words: PART_WORDS[p.field] as string, key: p.key })));
+}
+
+/** One of Start's attachments as it was sent: where it stood among Start's attachments (from 1), and its name there. */
+export interface SentAttachment {
+  position: number;
+  name: string;
+}
+
+/**
+ * An attachment that held a key, as Start numbers it: 'attachment 2 ("Class notes")' when the key was in its text, by
+ * the name the person gave it; 'the name of attachment 2' when it was in the name alone, which is then not repeated;
+ * 'attachment 2' when it has no name, or the key was in both.
+ */
+function attachmentWords(sent: SentAttachment, item: HeldKeyItem): string {
+  const inName = item.fields.includes('name');
+  if (inName && !item.fields.includes('text')) return `the name of attachment ${sent.position}`;
+  const name = sent.name.trim();
+  return name && !inName && item.fields.includes('text') ? `attachment ${sent.position} ("${name}")` : `attachment ${sent.position}`;
+}
+
+/**
+ * Start's refusal of a held key, naming each attachment that held one as Start numbers it ('Attachment 2 ("Class notes")
+ * contains your ANTHROPIC_API_KEY …'), since up to five can be on screen and the server saw only "an attachment". `sent`
+ * is Start's attachments as sent, in the request's order: an empty one is not sent, so an item's position in the request
+ * is not always its place on the form. When the refusal does not say which item it was, or names a part Start does not
+ * show, the server's message stands.
+ */
+export function startHeldKeyRefusal(parts: readonly HeldKeyPart[] | undefined, sent: readonly SentAttachment[], serverMessage: string): string {
+  if (!parts || parts.length === 0) return serverMessage;
+  const places: Place[] = [];
+  for (const part of parts) {
+    if (part.field === 'text') {
+      places.push({ words: 'this text', key: part.key });
+      continue;
+    }
+    if (part.field !== 'attachments' || !part.items || part.items.length === 0) return serverMessage;
+    for (const item of part.items) {
+      const attachment = sent[item.index];
+      if (!attachment) return serverMessage;
+      places.push({ words: attachmentWords(attachment, item), key: item.key });
+    }
+  }
+  return heldIn(places);
 }
 
 /**

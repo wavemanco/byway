@@ -9,7 +9,9 @@ import type { Connection } from '../../view/refresh.ts';
 import { HELD_KEY_REFUSAL } from '../../view/refusals.ts';
 import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
+import type { QuestionCosts } from '../../view/questions.ts';
 import type { StepIndex } from '../../view/steps.ts';
+import { questionCost } from '../../view/questions.ts';
 import { buildTimeline, currentStep } from '../../view/timeline.ts';
 import { recipeTitle } from '../../view/vocabulary.ts';
 import { ActionButton } from '../ActionButton.tsx';
@@ -35,6 +37,8 @@ interface Props {
   label: Label | null;
   /** Run events → plain step labels, from the presentation's stepIds (null when the recipe is unknown). */
   steps: StepIndex | null;
+  /** What an answer to each optional's and each person's loop's question would cost (null when the recipe is unknown). */
+  questions: QuestionCosts | null;
 }
 
 /**
@@ -43,7 +47,7 @@ interface Props {
  * above the working area's conditional render and settled only by snapshots the refresher applied (the draft store,
  * F06). It is mounted once per run (the page keys it by the run's id).
  */
-export function RunScreen({ initial, presentation, label, steps }: Props) {
+export function RunScreen({ initial, presentation, label, steps, questions }: Props) {
   const technical = useTechnicalNames();
   const [data, setData] = useState(initial);
   // Whether `data` includes a snapshot byway served to this screen's refresher. Until then it is only `initial`: the
@@ -280,6 +284,7 @@ export function RunScreen({ initial, presentation, label, steps }: Props) {
                 key={turn.id}
                 cp={turn}
                 step={stages.flatMap((s) => s.steps).find((s) => s.checkpointIds.includes(turn.id))}
+                cost={questionCost(turn, questions)}
                 artifacts={data.artifacts}
                 busy={busy}
                 paused={paused}
