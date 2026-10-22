@@ -1,4 +1,4 @@
-*The adversarial check of Block 1 (fix/fx-block1 at 18ae018, against main at a002e60), as Claude sent it to the owner on 2026-10-22, before the fix round. The organisation's figures and every fragment of the owner's email address are masked; the email fragments are also described here without their @ form. The owner's answers are in [conversation-continued.md](../conversation-continued.md), 2026-10-22 01:54.*
+*The adversarial check of Block 1 (fix/fx-block1 at 18ae018, against main at a002e60), as Claude sent it to the owner on 2026-10-22, before the fix round. The commit ids in it are those before the history rewrite of 2026-10-22 that took the organisation's overage and the email fragment out of the block's unpushed commits; the commits kept their messages, and the rewrite gave each a new id (18ae018 is now ba0adee). The organisation's figures and every fragment of the owner's email address are masked; the email fragments are also described here without their @ form. The owner's answers are in [conversation-continued.md](../conversation-continued.md), 2026-10-22 01:54.*
 
 # Adversarial check of Block 1 (fix/fx-block1)
 
