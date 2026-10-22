@@ -16,7 +16,7 @@ import { CANCEL_SIGNAL, GatewayError, type CompletionRequest, type CompletionRes
 import { mockAdapter, type ProviderAdapter, type Responder } from '@byway/gateway';
 import { COMPOSED_LIMITS, composedLimitProblems, workBound } from '@byway/recipe';
 import { createActivities } from '../src/activities/index.ts';
-import { CANCELLED_CALL, cancelEndsRun, ENDED_CALL, guardGateway, guardPages, HEARTBEAT_EVERY_MS, runHasEnded, settleLateCost, STOPPED_STEP, stopSignal } from '../src/activities/liveness.ts';
+import { CANCELLED_CALL, cancelEndsRun, ENDED_CALL, guardGateway, guardPages, HEARTBEAT_EVERY_MS, runHasEnded, settleLateCost, startInvocation, STOPPED_STEP, stopSignal } from '../src/activities/liveness.ts';
 import { workflowIdFor, type StepSpec } from '../src/types.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { fakePages } from './helpers/fake-pages.ts';
@@ -413,6 +413,77 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
     expect(held.seen).toHaveLength(1);
     expect(held.seen[0]?.operation?.stop?.aborted).toBe(true);
   }, 30_000);
+});
+
+/**
+ * B1R2-CODE-3, the re-check of block 1's second fix round: a step's calls carry the attempt's own time limit
+ * (SpendContext.operation.stepLimitMs), so the gateway never reads a streamed answer as stalled before its step would
+ * end. The owner chose on 2026-10-22, "45 minutes for calls in media steps (Recommended)".
+ */
+describe('the step limit an activity invocation hands its calls', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'byway-step-limit-'));
+  const store = createTestStore({ dataDir: dir });
+  afterAll(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const draft: StepSpec = { id: 'draft', role: 'build', actor: 'model', tier: 'mid', prompt: 'product.test.draft', consumes: ['intent'], produces: ['artifact'], writes: true };
+
+  /** A gateway that answers each call at once with a draft the step keeps, and keeps the requests it was handed. */
+  function answering() {
+    const seen: CompletionRequest[] = [];
+    const gateway: Gateway = {
+      ...counting(),
+      complete: async (req) => {
+        seen.push(req);
+        return { text: '# A memo\n\nWritten in one go.\n', stopReason: 'end', servedModel: 'm', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0, ledgerEntryId: 'l1' };
+      },
+    };
+    return { gateway, seen };
+  }
+
+  /** A model step's input for a new run that is going. */
+  const input = async () => {
+    const ws = (await store.ensureDefaultWorkspace()).id;
+    const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
+    await store.updateRun(run.id, { status: 'running' });
+    return { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problem: { text: 'A memo' }, seeds: [] }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
+  };
+
+  it('startInvocation carries the attempt’s own limit, as Temporal’s activity info gives it, and none outside an activity', async () => {
+    const outside = startInvocation();
+    outside.stop();
+    expect(outside.limitMs).toBeUndefined();
+    let inside: ReturnType<typeof startInvocation> | undefined;
+    await new MockActivityEnvironment({ startToCloseTimeoutMs: 45 * 60_000 }).run(async () => {
+      inside = startInvocation();
+    });
+    inside?.stop();
+    expect(inside?.limitMs).toBe(45 * 60_000);
+  });
+
+  it.each([
+    ['a media step', 45 * 60_000],
+    ['a model step', 15 * 60_000],
+    ['a quick step', 60_000],
+  ] as const)('in %s, each call the step makes carries its attempt’s limit to the gateway', async (_what, limitMs) => {
+    const { gateway, seen } = answering();
+    const acts = createActivities({ gateway, store, prompts: fakePrompts() });
+    await new MockActivityEnvironment({ startToCloseTimeoutMs: limitMs }).run(acts.modelStep, await input());
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.map((r) => r.operation?.stepLimitMs)).toEqual(seen.map(() => limitMs));
+  });
+
+  it('called outside an activity (as unit tests call steps), a step’s calls carry no limit', async () => {
+    const { gateway, seen } = answering();
+    const acts = createActivities({ gateway, store, prompts: fakePrompts() });
+    await acts.modelStep(await input());
+    expect(seen.length).toBeGreaterThan(0);
+    for (const r of seen) {
+      expect(r.operation?.key).toBeDefined();
+      expect(r.operation).not.toHaveProperty('stepLimitMs');
+    }
+  });
 });
 
 describe('the page renderer one activity invocation sees', () => {

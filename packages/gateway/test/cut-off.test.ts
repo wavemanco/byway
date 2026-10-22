@@ -900,6 +900,77 @@ describe('a streamed call that stalls (CC-2)', () => {
     stop.abort();
     expect(isCutOff(await err)).toBe(true);
   });
+
+  // B1R2-CODE-3, the re-check of block 1's second fix round: a text call inside an image or video step (an ASSET step's
+  // briefs and integrate calls, a relay link's call) waits that step's own 45 minutes, as the owner chose on 2026-10-22,
+  // "45 minutes for calls in media steps (Recommended)"; a call in a model step, in a one-minute quick step or with no
+  // step at all keeps STREAM_IDLE_MS.
+  const STEP_LIMITS = [
+    ['a media step’s 45 minutes', 45 * 60_000, 45],
+    ['a model step’s 15 minutes', 15 * 60_000, 15],
+    ['a quick step’s minute', 60_000, 15],
+    ['no step limit', undefined, 15],
+  ] as const;
+
+  /** A client of `provider` whose every stream begins (one chunk, for a chat stream) and then sends nothing more. */
+  function stalling(provider: 'anthropic' | 'openai' | 'openrouter', start: () => void): { client: AnthropicClientLike | OpenAIClientLike; signals: () => (AbortSignal | undefined)[] } {
+    if (provider === 'anthropic') {
+      const fake = eventedAnthropic(async (emit, signal) => {
+        emit('connect');
+        start();
+        return abortedWith(signal);
+      });
+      return { client: fake.client, signals: () => fake.signals };
+    }
+    const chunks = provider === 'openai' ? openaiChunks : openrouterChunks;
+    const chat = chatClient((_n, signal) => heldStream(chunks().slice(0, 1), signal, start));
+    return { client: chat.client, signals: () => chat.signals };
+  }
+
+  it.each(STEP_LIMITS.flatMap(([what, limitMs, minutes]) => (['anthropic', 'openai', 'openrouter'] as const).map((provider) => [provider, what, limitMs, minutes] as const)))(
+    '%s: a call whose step has %s reads its stream as stalled only after the longer of that and STREAM_IDLE_MS, and says how long it waited',
+    async (provider, _what, limitMs, minutes) => {
+      const bound = minutes * 60_000;
+      const s = starts();
+      const fake = stalling(provider, s.start);
+      const { operation } = caller();
+      const g = gateway({ clients: { [provider]: fake.client } });
+      const err = failure(g.complete(ask({ profileId: provider === 'anthropic' ? 'balanced' : provider, operation: { ...operation, ...(limitMs !== undefined ? { stepLimitMs: limitMs } : {}) } })));
+      await s.started(0);
+      await vi.advanceTimersByTimeAsync(bound - 1);
+      expect(fake.signals().map((x) => x?.aborted)).toEqual([false]);
+      await vi.advanceTimersByTimeAsync(1);
+      // Closed at the bound and sent once more, as for any lost answer (ADR-0091); the second stalls the same way.
+      await s.started(1);
+      expect(fake.signals().map((x) => x?.aborted)).toEqual([true, false]);
+      await vi.advanceTimersByTimeAsync(bound);
+      const after = provider === 'anthropic' ? '0 events' : '1 chunk';
+      expect(await err).toMatchObject({ code: 'provider-error', billing: 'maybe', message: `${provider} call failed: ${provider}'s stream ended without producing a whole answer (nothing came for ${minutes} minutes, after ${after})` });
+      expect(fake.signals().map((x) => x?.aborted)).toEqual([true, true]);
+    },
+  );
+
+  it('anthropic: the one retry after a decline waits as long as the declined call would have', async () => {
+    const s = starts();
+    const fake = eventedAnthropic(async (emit, signal, n) => {
+      emit('connect');
+      if (n === 1) return anthropicMessage({ stop_reason: 'refusal', content: [] });
+      s.start();
+      return abortedWith(signal);
+    });
+    const { operation } = caller();
+    const g = gateway({ clients: { anthropic: fake.client } });
+    const err = failure(g.complete(ask({ operation: { ...operation, stepLimitMs: 45 * 60_000, keepDecline: async () => undefined } })));
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync(45 * 60_000 - 1);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false, false]);
+    await vi.advanceTimersByTimeAsync(1);
+    await s.started(1);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false, true, false]);
+    await vi.advanceTimersByTimeAsync(45 * 60_000);
+    expect(await err).toBeInstanceOf(GatewayError);
+    expect(fake.signals.map((x) => x.aborted)).toEqual([false, true, true]);
+  });
 });
 
 // --- fal's queue jobs ------------------------------------------------------------------------------------------------

@@ -370,7 +370,7 @@ describe('a decline is kept like an answer (ADR-0102)', () => {
   });
 });
 
-describe('the stop joins a call after its memo key is made (ADR-0111)', () => {
+describe('the stop and the step’s limit join a call after its memo key is made (ADR-0111, B1R2-CODE-3)', () => {
   const draft: CompletionRequest = { workspaceId: 'w', runId: 'run-memo', stepId: 'draft', purpose: 'build:prose', profileId: 'demo', tier: 'mid', messages: [{ role: 'user', content: [{ type: 'text', text: 'Write it.' }] }] };
   const stopScope = { runId: 'run-memo', key: 'draft#stop' };
 
@@ -391,5 +391,32 @@ describe('the stop joins a call after its memo key is made (ADR-0111)', () => {
     expect(await memoGateway(gateway, store, stopScope, { operation: { until } }).complete(draft)).toEqual(first);
     expect(await memoGateway(gateway, store, stopScope).complete(draft)).toEqual(first);
     expect(made.complete).toBe(1);
+  });
+
+  // B1R2-CODE-3: the step's own limit (operation.stepLimitMs) is a number, which would change the hash if it were part of
+  // the request when the key is made; it joins the request after, as the signals do.
+  it('hands the call its step’s limit, and the same request finds the same memo under another limit or none', async () => {
+    const { gateway, made } = counting();
+    const seen: CompletionRequest[] = [];
+    const answer = gateway.complete.bind(gateway);
+    gateway.complete = async (req) => {
+      seen.push(req);
+      return answer(req);
+    };
+    const until = new AbortController().signal;
+    const limitScope = { runId: 'run-memo', key: 'draft#limit' };
+    const first = await memoGateway(gateway, store, limitScope, { operation: { until, stepLimitMs: 45 * 60_000 } }).complete(draft);
+    expect(seen[0]?.operation?.stepLimitMs).toBe(45 * 60_000);
+    expect(seen[0]?.operation?.key).toMatch(/^run-memo\/draft#limit\/complete\/[0-9a-f]{32}\/1$/);
+    // Asked again under another limit, with none, and with no operation at all: the memo is found, nothing is bought.
+    expect(await memoGateway(gateway, store, limitScope, { operation: { until, stepLimitMs: 15 * 60_000 } }).complete(draft)).toEqual(first);
+    expect(await memoGateway(gateway, store, limitScope, { operation: { until } }).complete(draft)).toEqual(first);
+    expect(await memoGateway(gateway, store, limitScope).complete(draft)).toEqual(first);
+    expect(made.complete).toBe(1);
+    // The request's hash in the key is the one the same request makes with no limit, in a scope of its own.
+    await memoGateway(gateway, store, { runId: 'run-memo', key: 'draft#no-limit' }, { operation: { until } }).complete(draft);
+    const hash = (req: CompletionRequest | undefined) => req?.operation?.key.split('/')[3];
+    expect(seen[1]?.operation).not.toHaveProperty('stepLimitMs');
+    expect(hash(seen[1])).toBe(hash(seen[0]));
   });
 });

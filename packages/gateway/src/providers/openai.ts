@@ -165,14 +165,14 @@ export async function readChatStream(
   } catch (e) {
     // A stream that broke after its finishing chunk still brought the whole answer: it is settled, below.
     if (finish === undefined || finish === 'error') {
-      throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk') : e instanceof Error ? e.message : String(e), e);
+      throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk', idle.afterMs) : e instanceof Error ? e.message : String(e), e);
     }
   } finally {
     idle?.end();
   }
   if (finish === undefined) {
     if (signal?.aborted) throw closed();
-    throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk') : `no finishing chunk after ${chunks} ${chunks === 1 ? 'chunk' : 'chunks'}`);
+    throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk', idle.afterMs) : `no finishing chunk after ${chunks} ${chunks === 1 ? 'chunk' : 'chunks'}`);
   }
   if (finish === 'error') throw streamEndedEarly(provider, 'its last chunk finished with "error"');
   const completion = {
@@ -302,8 +302,8 @@ export function openaiAdapter(opts: { client: OpenAIClientLike }): ProviderAdapt
     // Chat calls are streamed so a stop can close them (ADR-0111); image calls are not cut off.
     cutsOff: { complete: true },
     async complete(req) {
-      // The SDK is handed the stop and the bound on a stalled stream together (StreamIdle).
-      const idle = new StreamIdle(req.signal);
+      // The SDK is handed the stop and the request's bound on a stalled stream together (StreamIdle, streamIdleMs).
+      const idle = new StreamIdle(req.signal, req.streamIdleMs);
       const stream = await opts.client.chat.completions.create(openaiStreamParams(req, true), { signal: idle.signal });
       return { ...(await completeStreamed(stream, 'openai', req.signal, idle)), requestBody: openaiStreamParams(req, false) };
     },

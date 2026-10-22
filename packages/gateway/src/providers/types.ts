@@ -31,6 +31,13 @@ export interface ProviderCompletionRequest {
    * closed) and throws; the gateway counts what that leaves.
    */
   signal?: AbortSignal;
+  /**
+   * How long a streamed answer may go without a chunk before the adapter closes it as stalled (StreamIdle): the longer of
+   * STREAM_IDLE_MS and the call's step limit (SpendContext.operation.stepLimitMs), so a call in an image or video step
+   * waits its step's 45 minutes and one in a model step fifteen (B1R2-CODE-3). Read by the streamed adapters
+   * (Anthropic, OpenAI, OpenRouter); absent, they wait STREAM_IDLE_MS. Never sent to the provider.
+   */
+  streamIdleMs?: number;
 }
 
 export interface ProviderCompletion {

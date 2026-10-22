@@ -46,6 +46,7 @@ import { createGoogleClient, googleAdapter, type GoogleClientLike } from './prov
 import { mockAdapter } from './providers/mock.ts';
 import { createOpenAIClient, openaiAdapter, type OpenAIClientLike } from './providers/openai.ts';
 import { createOpenRouterClient, openrouterAdapter } from './providers/openrouter.ts';
+import { STREAM_IDLE_MS } from './providers/stream.ts';
 import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, ResolvedImage, ResolvedMessage } from './providers/types.ts';
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
@@ -257,6 +258,10 @@ export class ModelGateway implements Gateway {
       // The run is ending (ADR-0111): handed only to an adapter that can cut its call off.
       const stop = req.operation?.stop;
       const signal = stop && adapter.cutsOff?.complete ? stop : undefined;
+      // A streamed answer is read as stalled only once its step would have ended anyway (B1R2-CODE-3): a call in an image
+      // or video step waits that step's 45 minutes, as the owner chose on 2026-10-22, "45 minutes for calls in media
+      // steps (Recommended)"; one in a model step or a quick step, or with no step limit, waits STREAM_IDLE_MS.
+      const streamIdleMs = Math.max(STREAM_IDLE_MS, req.operation?.stepLimitMs ?? 0);
       const reported = await withRetries(
         async () => {
           stopIfEnding(op, stop, ref.provider);
@@ -271,6 +276,7 @@ export class ModelGateway implements Gateway {
               responseFormat: req.responseFormat ?? 'text',
               context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, tier: req.tier, profileId: req.profileId },
               ...(signal ? { signal } : {}),
+              streamIdleMs,
             });
           } catch (e) {
             // Cut off by its stop: the call may have been billed and is counted as interrupted, unless what the adapter
@@ -494,6 +500,8 @@ export class ModelGateway implements Gateway {
           ...(caller.cancel ? { cancel: caller.cancel } : {}),
           // The retry is cut off when its run is ending, as the declined call was (ADR-0111).
           ...(caller.stop ? { stop: caller.stop } : {}),
+          // And waits on a stalled stream as long as the declined call did, its step's own limit (B1R2-CODE-3).
+          ...(caller.stepLimitMs !== undefined ? { stepLimitMs: caller.stepLimitMs } : {}),
           ...(earlier && caller.rebuy === true ? { rebuy: true } : {}),
         }
       : undefined;
@@ -1150,14 +1158,23 @@ function validateSpend(req: { workspaceId?: unknown; runId?: unknown; stepId?: u
   if (req.operation !== undefined) validateOperation(req.operation);
 }
 
+/** The longest wait setTimeout keeps (2^31 - 1 ms, about 24.8 days); a longer one fires at once. */
+const MAX_TIMER_MS = 2_147_483_647;
+
 /**
- * SpendContext.operation, checked before anything is reserved: a key, signals that can say when the caller ends, and the
- * caller's side of a decline it keeps (ADR-0102).
+ * SpendContext.operation, checked before anything is reserved: a key, signals that can say when the caller ends, the
+ * step's own time limit, and the caller's side of a decline it keeps (ADR-0102).
  */
 function validateOperation(value: unknown): void {
-  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; stop?: unknown; rebuy?: unknown; keepDecline?: unknown; declinedEarlier?: unknown } | null;
-  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, stop?, rebuy?, keepDecline?, declinedEarlier? }');
+  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; stop?: unknown; rebuy?: unknown; stepLimitMs?: unknown; keepDecline?: unknown; declinedEarlier?: unknown } | null;
+  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, stop?, rebuy?, stepLimitMs?, keepDecline?, declinedEarlier? }');
   if (op.rebuy !== undefined && typeof op.rebuy !== 'boolean') throw invalid('operation.rebuy, when given, must be true or false');
+  // A limit that is not a time a timer can wait would end every streamed answer's wait at once: setTimeout waits 1 ms for
+  // NaN and for anything past 2^31 - 1 ms (Infinity included).
+  const limit = op.stepLimitMs;
+  if (limit !== undefined && !(typeof limit === 'number' && Number.isFinite(limit) && limit > 0 && limit <= MAX_TIMER_MS)) {
+    throw invalid(`operation.stepLimitMs, when given, must be a number of milliseconds above 0 and at most ${MAX_TIMER_MS}`);
+  }
   if (typeof op.key !== 'string' || !op.key) throw invalid('operation.key must be a non-empty string');
   if (!(op.until instanceof AbortSignal)) throw invalid('operation.until must be an AbortSignal');
   if (op.cancel !== undefined && !(op.cancel instanceof AbortSignal)) throw invalid('operation.cancel, when given, must be an AbortSignal');
