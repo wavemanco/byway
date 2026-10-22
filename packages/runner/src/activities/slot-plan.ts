@@ -6,7 +6,8 @@
  *   Coverage is checked before anything is bought: a missing slot is a miss, naming any unknown ones too; an answer that
  *   covers every slot is used, and briefs for slots the work does not have are left out (the step's note says so).
  * - `free`: on prose and web pages, between the counts the step's prompt declares (`images: min-max`), at most the
- *   step's `slots` knob. A slot is a name (trimmed); duplicates collapse, the last one kept.
+ *   step's `slots` knob. A slot is a name (trimmed); duplicates collapse, the last one kept. Briefs beyond the most it
+ *   makes are left out, and the step's note names them.
  * A miss that still names some usable briefs carries them (formats.ts Usable): askModel asks once more, the second
  * answer is added to them (checkBriefs' `earlier`), and the step makes what the two cover and says what is missing,
  * instead of failing the run.
@@ -70,6 +71,8 @@ export interface SlotBriefs {
   missing: string[];
   /** Slots the answers named (both, after a retry) that are not shots or options of the work, as written: one per brief. */
   unknown: string[];
+  /** On a free plan, the slots of the briefs beyond the most the step makes, in the order kept: left out. */
+  dropped: string[];
   /**
    * The AI's line of advice for the person, where the step's prompt asks for one (ADR-0101): the later answer's, else
    * the earlier one's. Never a reason to make fewer images.
@@ -104,12 +107,13 @@ export function checkBriefs(parsed: Parsed<ImageBrief[]>, plan: SlotPlan, earlie
   }
   for (const b of earlier?.briefs ?? []) if (!byId.has(b.slot)) byId.set(b.slot, b);
   if (plan.kind === 'free') {
-    const briefs = [...byId.values()].slice(0, plan.max);
-    const value = withAdvice({ briefs, missing: [], unknown: [] });
+    const all = [...byId.values()];
+    const briefs = all.slice(0, plan.max);
+    const value = withAdvice({ briefs, missing: [], unknown: [], dropped: all.slice(plan.max).map((b) => b.slot) });
     if (briefs.length >= plan.min) return { ok: true, value };
     return { ok: false, problem: plan.min === 1 ? 'Write at least one image brief.' : `Write at least ${plan.min} image briefs.`, usable: value };
   }
-  const value = withAdvice({ briefs: plan.expected.flatMap((id) => byId.get(id) ?? []), missing: plan.expected.filter((id) => !byId.has(id)), unknown });
+  const value = withAdvice({ briefs: plan.expected.flatMap((id) => byId.get(id) ?? []), missing: plan.expected.filter((id) => !byId.has(id)), unknown, dropped: [] });
   if (!value.missing.length) return { ok: true, value };
   const what = plan.medium === 'media' ? 'storyboard shot (slot = the shot number)' : 'option (slot = its label)';
   const wrong = [

@@ -13,7 +13,8 @@
  * Keeping a paid answer is not left to Temporal (ENG-3): if the memo write (or, for a long answer, its artifact write)
  * fails after the provider answered, a Temporal retry would find no memo and buy the call again. So the save is
  * retried here, a few times with growing pauses, and if it still fails the step fails for good with a plain message:
- * the call was paid for and is in the spending ledger.
+ * the call was paid for and is in the spending ledger. That failure is a StepError marked billed (PaidNotKept), so the
+ * asset step can say which image it was, as it does for the gateway's billed failures (asset.ts billedStop).
  *
  * Overlapping attempts (stage 3; ADR-0099). Temporal starts a second attempt of a step while the first may still run:
  * after a timeout, or a worker it lost touch with. The memo cannot tell them apart, because the first records its
@@ -38,6 +39,15 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { GatewayError, type CompletionResult, type DeclinedAttempt, type DeclineRecord, type Gateway, type SpendContext, type Store } from '@byway/contracts';
 import { DeclineRetryPending, StepError } from './failures.ts';
+
+/**
+ * A paid call whose result byway could not keep (see the header): the provider was paid, as a GatewayError's `billed`
+ * mark says. Still a StepError, so model, image and video calls fail as before; the mark lets the asset step add which
+ * image it was and what that leaves (asset.ts billedStop).
+ */
+export class PaidNotKept extends StepError {
+  readonly billed = true;
+}
 
 /** Where an activity invocation's memos live: its run, and its step call's key (StepCall.key). */
 export interface MemoScope {
@@ -284,7 +294,7 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
       key,
       () => save(result),
       (reason) =>
-        new StepError(
+        new PaidNotKept(
           `The ${PAID[kind] ?? 'AI call'} for this step was paid for and is recorded in the spending ledger, but byway could not keep it (${reason}). The step stops here rather than run again, which would pay for the call a second time.`,
         ),
     );
