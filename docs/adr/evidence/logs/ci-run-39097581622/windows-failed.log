@@ -1,0 +1,959 @@
+﻿2026-10-18T04:36:17.2678145Z ##[group]Run pnpm verify
+2026-10-18T04:36:17.2678504Z pnpm verify
+2026-10-18T04:36:17.2697086Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-10-18T04:36:17.2697504Z env:
+2026-10-18T04:36:17.2697769Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+2026-10-18T04:36:17.2698099Z ##[endgroup]
+2026-10-18T04:36:18.0996738Z $ pnpm -s typecheck && pnpm test && pnpm e2e
+2026-10-18T04:36:18.7428154Z $ tsc -p tsconfig.json && tsc -p scripts/tsconfig.json && pnpm -r --if-present run typecheck
+2026-10-18T04:36:26.3578760Z Scope: 13 of 14 workspace projects
+2026-10-18T04:36:26.3827721Z $ next typegen && tsc --noEmit -p tsconfig.json
+2026-10-18T04:36:27.0160495Z Generating route types...
+2026-10-18T04:36:27.0500813Z ✓ Types generated successfully
+2026-10-18T04:36:31.2933930Z $ vitest run
+2026-10-18T04:36:31.8160214Z 
+2026-10-18T04:36:31.8166521Z  RUN  v5.0.3 D:/a/byway/byway
+2026-10-18T04:36:31.8167426Z 
+2026-10-18T04:36:41.1282333Z  ✓ packages/runner/test/page-copy.test.ts (90 tests) 7668ms
+2026-10-18T04:36:41.1284536Z    ✓ size: reading, placing and verifying are linear in the page (F07) (6)
+2026-10-18T04:36:41.1287783Z      ✓ a 4,000-item list (24,010 tags) opens, places and verifies well inside five seconds; a bad markup is still found 2014ms
+2026-10-18T04:36:41.1290663Z      ✓ one block of 12,000 words with emphasis: a word changed near each end is placed with every <em> kept, within the bound (r2) 563ms
+2026-10-18T04:36:41.1305619Z      ✓ 20,000 inline elements a block leaves open: read, placed and verified within the bound, without copying the open elements per run of text (r5) 3099ms
+2026-10-18T04:36:41.1308150Z      ✓ 20,000 nested elements, emptied: the removal rule is linear too (r5) 520ms
+2026-10-18T04:36:41.1309954Z      ✓ a 20,000-path svg page and 1,000 identical items, every other one deleted 828ms
+2026-10-18T04:38:54.7224705Z  ✓ packages/runner/test/pages.test.ts (54 tests) 132199ms
+2026-10-18T04:38:54.7226091Z    ✓ web-page RENDER with Playwright Chromium (19)
+2026-10-18T04:38:54.7227628Z      ✓ screenshots the full page at 1440 wide in tiles, serving artifacts and blocking other hosts 1898ms
+2026-10-18T04:38:54.7229711Z      ✓ renders the surfaces the prompts name: a wide screen, a phone and the first screen (RENDER-1) 780ms
+2026-10-18T04:38:54.7231996Z      ✓ bounds a page that never settles: the render fails plainly and is not retried, and the next render works (SEC-5) 10270ms
+2026-10-18T04:38:54.7234541Z      ✓ a page that opens dialogs (interval) does not crash the process that renders it (SEC-5) 3840ms
+2026-10-18T04:38:54.7237184Z      ✓ a page that opens dialogs (alertloop) does not crash the process that renders it (SEC-5) 5999ms
+2026-10-18T04:38:54.7324715Z      ✓ a page that opens dialogs (confirmloop) does not crash the process that renders it (SEC-5) 6067ms
+2026-10-18T04:38:54.7326900Z      ✓ a page that opens dialogs (promptloop) does not crash the process that renders it (SEC-5) 5990ms
+2026-10-18T04:38:54.7328881Z      ✓ a page that opens dialogs (once) does not crash the process that renders it (SEC-5) 3599ms
+2026-10-18T04:38:54.7330362Z      ✓ stops a render when its step is cancelled 324ms
+2026-10-18T04:38:54.7331767Z      ✓ blocks WebSockets, which request routing does not see (ENG-14) 1068ms
+2026-10-18T04:38:54.7342664Z      ✓ holds the allowlist on every redirect hop: a hop to another host is blocked, hops within it are followed, a loop is cut 470ms
+2026-10-18T04:38:54.7345023Z      ✓ holds at most a capped number of bytes of one allowlisted response: a larger one, or one that never ends, is cut off and the render goes on 3355ms
+2026-10-18T04:38:54.7347207Z      ✓ launches the browser again after a crash or a failed launch (ENG-14) 904ms
+2026-10-18T04:38:54.7350253Z      ✓ turns a renderer failure while drawing (a Playwright protocol error) into one plain step failure, not the raw error 339ms
+2026-10-18T04:38:54.7352615Z      ✓ starts Chromium from the one stated launch: its sandbox policy and WebRTC flags are what the command line shows (F18) 671ms
+2026-10-18T04:38:54.7355933Z      ✓ starts the browser when asked whether it is ready, and the renders that follow share it (F18) 551ms
+2026-10-18T04:38:54.7358261Z    ✓ the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on (34)
+2026-10-18T04:38:54.7360207Z      ✓ leaves out text a stylesheet hides from sight though a browser lays it out, and lists it with its link (r9) 601ms
+2026-10-18T04:38:54.7362542Z      ✓ separators come from where a visitor sees each character: glued, apart in the flow, apart across boxes, or in the other order (r10) 5644ms
+2026-10-18T04:38:54.7365037Z      ✓ a character a box cuts off is shown only where the box keeps its middle: a sliver of a row is hidden from sight (r10 verifier) 731ms
+2026-10-18T04:38:54.7367206Z      ✓ a drop cap (a floated first letter) is read as part of its word, as a visitor reads it (r10 verifier) 969ms
+2026-10-18T04:38:54.7370826Z      ✓ a section that waits out of view (moved aside by a transform) for a scroll script is read where it shows once revealed (r10 verifier) 825ms
+2026-10-18T04:38:54.7374414Z      ✓ a long left-to-right text in a right-to-left page is read in one call, its words apart as a visitor sees them: each character measured once, each space between its words judged once (round 12) 3029ms
+2026-10-18T04:38:54.7377347Z      ✓ runs a page's scripts the same way each time: a stopped clock, a seeded Math.random, however long the page is (r10) 1346ms
+2026-10-18T04:38:54.7380016Z      ✓ runs animation frames on the read's clock, twenty a second, so an animation that draws every frame ends where its time says (r10 verifier: GSAP) 351ms
+2026-10-18T04:38:54.7382703Z      ✓ reads a page whose sections a script reveals as the visitor scrolls, revealed, whatever the script does on the way back (r10) 358ms
+2026-10-18T04:38:55.7322745Z      ✓ applies a stylesheet a script makes, as a visitor's browser does: Tailwind's browser build, from an admitted host (r10) 1372ms
+2026-10-18T04:38:55.7326138Z      ✓ a file the page loads from an admitted host that fails, comes back cut off or with a server error is fetched again in a second read, then the read fails plainly; one slow to come is waited for (r12 verifier: Tailwind under load) 5094ms
+2026-10-18T04:38:55.7330757Z      ✓ a page nesting thousands of inline elements left open is read in one call, each text node measured once (r10: the JavaScript-off read crashed; r11) 23088ms
+2026-10-18T04:38:55.7335184Z      ✓ a read slower than its deadline fails plainly at it, once, and the next read works, on any machine (SEC-5) 5422ms
+2026-10-18T04:38:55.7345710Z      ✓ text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee's own box (r9) 1107ms
+2026-10-18T04:38:55.7348539Z      ✓ vertical and turned text: whether two neighbours stand glued is judged along the text's own line, from its writing mode and its transforms (r12 verifier) 7087ms
+2026-10-18T04:38:55.7352041Z      ✓ neighbours across a box's edge offset across their line (an item raised or lowered beside the next) stand on one row: where they meet along it the read cannot tell whether they stand apart, and the second before the first is in the other order (r13 verifier) 2956ms
+2026-10-18T04:38:55.7556699Z      ✓ a box a transform turns or scales clips its text where it stands on the screen, and an ellipsis cuts vertical or turned text where it cuts a line (r12 measured the clip unturned) 1188ms
+2026-10-18T04:38:55.7560036Z      ✓ an ellipsis, a line clamp and a box of fixed height cut the same characters in a box a transform scales or CSS zoom shrinks as at full size (r13 verifier) 6053ms
+2026-10-18T04:38:55.7563549Z      ✓ a 3D transform that keeps the element's own plane flat (AOS's flip at rest, vanilla-tilt at rest, translateZ(0)) is read as flat: its box clips where it stands and its flex rows are measured (r13 verifier) 2445ms
+2026-10-18T04:38:55.7566898Z      ✓ an endless animation is judged at each of the points of its cycle the read holds it at: two neighbours glued at any of them are glued (r12 verifier: a nudge judged at its first keyframe) 775ms
+2026-10-18T04:38:55.7569462Z      ✓ reads the first document only: a meta refresh does not replace it; other hosts stay blocked 603ms
+2026-10-18T04:38:55.7571853Z      ✓ a page that navigates away as it loads (to about:blank, which no route sees) is a plain StepError, not a raw retried error (r8) 2037ms
+2026-10-18T04:38:55.7606456Z      ✓ reads that share a deadline stop at it, whatever time each read has left (r8) 1988ms
+2026-10-18T04:38:55.7608636Z      ✓ is bounded and cancellable like a render (SEC-5) 5089ms
+2026-10-18T04:38:55.7611789Z      ✓ turns a renderer failure while reading (a Playwright protocol error) into one plain step failure, as a render's is 766ms
+2026-10-18T04:38:57.7644586Z (node:12800) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:38:57.7645871Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:41:29.6143244Z  ✓ packages/runner/test/voice.test.ts (71 tests) 152380ms
+2026-10-18T04:41:29.6248907Z    ✓ a broken character is asked about again, in every medium, before anything is stored (F07, r7) (2)
+2026-10-18T04:41:29.6275205Z      ✓ VOICE on options, prose, a code diff, a storyboard, a claim log and a page 1570ms
+2026-10-18T04:41:29.6455411Z    ✓ VOICE on a web page: deterministic, no model (F07) (21)
+2026-10-18T04:41:29.7325912Z      ✓ writes deletions, order and link words exactly, with no model call, at no cost 1418ms
+2026-10-18T04:41:29.7336885Z      ✓ a page with an out-of-range character reference opens and finishes 1571ms
+2026-10-18T04:41:29.7356987Z      ✓ refusals name the line and quote how it was first offered 1022ms
+2026-10-18T04:41:29.7367738Z      ✓ the prompt says how a page is written and where each link goes, once, on the first offer and on a re-ask 2204ms
+2026-10-18T04:41:29.7371858Z      ✓ an in-flight question read differently since it opened: a moved line is refused on the first offer and applied on the re-ask 2226ms
+2026-10-18T04:41:29.7375102Z      ✓ a line beside an image link or an svg social link is written (the link held no words to lose) 1308ms
+2026-10-18T04:41:29.7740747Z      ✓ words added beside a share icon stay outside its link, and the stored page locks the person's deck (r3) 1259ms
+2026-10-18T04:41:29.7745307Z      ✓ punctuation glued to a pretty-printed link is stored glued, and the stored page locks the person's deck (r4) 1245ms
+2026-10-18T04:41:29.7749354Z      ✓ a link the page leaves open: the prompt names where its carried words go, and an edit to them is stored (r4) 1242ms
+2026-10-18T04:41:29.7752725Z      ✓ where byway cannot tell a left-open link's words, the prompt says so and a change there is refused, never mis-written (r4) 1701ms
+2026-10-18T04:41:29.7767578Z      ✓ a block inside an element browsers show inline, emptied, is kept where removing it would run two lines together; the lock reads as a browser shows it (r5) 3602ms
+2026-10-18T04:41:29.7776776Z      ✓ an svg or math <title> before such a block, self-closed or left open, does not stop that: the block is still kept (r6) 10729ms
+2026-10-18T04:41:29.7780218Z      ✓ two lines a browser shows on one screen line stay apart: a deleted line leaves its space, and new words at a line's edge keep one (r6) 7931ms
+2026-10-18T04:41:29.7847544Z      ✓ a line whose kept last word is an emoji is stored, in a link and outside one (r6) 6230ms
+2026-10-18T04:41:29.7861224Z      ✓ a name-only anchor the page leaves open is not a link: the next paragraph is edited as the person sees it (r5) 1638ms
+2026-10-18T04:41:29.7868271Z      ✓ an </a> inside a table cell the link holds does not end it: the prompt names those lines, and a change there is refused (r5) 1070ms
+2026-10-18T04:41:29.7875063Z      ✓ a link or button whose only other words are hidden is never left without a name: the edit is asked again, naming the line (r7) 3121ms
+2026-10-18T04:41:29.7882886Z      ✓ a <body> after text that began the body is ignored, so deleting the block between them keeps it, empty (r7) 1443ms
+2026-10-18T04:41:29.7889249Z      ✓ a script, noscript or comment inside an element the edit empties stays, byte for byte (r7) 3957ms
+2026-10-18T04:41:29.7905333Z      ✓ an answer equal to the offer writes nothing, whatever its whitespace 550ms
+2026-10-18T04:41:29.7908640Z      ✓ a claim-log VOICE on a web-page run offers the page deck 1209ms
+2026-10-18T04:41:29.7913960Z    ✓ the browser has the last word on a page write (F07, r7) (23)
+2026-10-18T04:41:29.7919131Z      ✓ the round 4 to 6 glue reproductions are written as Chromium shows the person's lines 11244ms
+2026-10-18T04:41:29.7956468Z      ✓ a menu table: deleting either line of a two-line cell is written, as Chromium shows the person's lines (r8) 7739ms
+2026-10-18T04:41:29.7971869Z      ✓ a space the person types at a changed line's edge, or keeps beside a link they remove, shows beside the text the page glues on (r8) 11604ms
+2026-10-18T04:41:29.7976152Z      ✓ an emptied element holding a table cell is kept, so deleting its words is written, not refused for another number of cells (r8) 4734ms
+2026-10-18T04:41:29.8004651Z      ✓ an inline block's last block line, deleted beside the next inline block, is written: the two blocks stay apart across boxes (r10; round 8 and 9 refused it) 4381ms
+2026-10-18T04:41:29.8058256Z      ✓ an address and opening hours a white-space style breaks over lines keep their breaks beside a word changed in place of another (r11 verifier) 9871ms
+2026-10-18T04:41:29.8102043Z      ✓ punctuation glued to a line's last word in a box of its own is written into that box (r11 verifier) 2738ms
+2026-10-18T04:41:29.8107546Z      ✓ vertical and turned text: a typed space a flex item's edge drops is asked again, and words glued as the line has them are written (r12 verifier) 11764ms
+2026-10-18T04:41:29.8175733Z      ✓ a link that rests glued to the words after it and is nudged apart only at the start of its cycle is judged where it rests: a typed space it drops is asked again (r12 verifier) 1270ms
+2026-10-18T04:41:29.8202128Z      ✓ neighbours across a box's edge offset across their line: a typed space the edge drops is asked again saying why, and a row a visitor reads in the other order is not offered (r13 verifier) 4474ms
+2026-10-18T04:41:29.8306262Z      ✓ a card a 3D transform leaves flat (AOS's flip at rest) is offered and written; one truly turned in 3D that hides its overflow is named as turned in a way byway cannot measure (r13 verifier) 1985ms
+2026-10-18T04:41:29.8341416Z      ✓ a line an ellipsis cuts in a box scaled down or shrunk by CSS zoom is not offered, and words pushed into the row a box of fixed height cuts under zoom are asked again (r13 verifier) 2257ms
+2026-10-18T04:41:29.8345051Z      ✓ where the reader misreads the page, the edit is asked again with the browser's reason, never mis-written 2366ms
+2026-10-18T04:41:29.8393351Z      ✓ a line a browser does not show is not offered, and stays byte for byte; the prompt says so 2823ms
+2026-10-18T04:41:29.8420402Z      ✓ a heading a script splits into letters and a section a script slides into view are offered and written; a slide never shown is named as moved out of view (r10 verifier) 1384ms
+2026-10-18T04:41:29.8424113Z      ✓ text a style hides from sight, though a browser lays it out, never takes the person's words: its line is not offered, and stays byte for byte (r9) 1311ms
+2026-10-18T04:41:29.8458714Z      ✓ a page a browser shows differently when the answer comes is asked again as read differently, not as lines added or dropped (r9) 1043ms
+2026-10-18T04:41:29.8464820Z      ✓ a page with a marquee is read the same way each time, so its lines can be changed (r9) 1393ms
+2026-10-18T04:41:29.8485136Z      ✓ a canvas's fallback, which Chromium shows with JavaScript off but a visitor does not see, is not offered and stays byte for byte (r9) 1215ms
+2026-10-18T04:41:29.8492614Z      ✓ a write that would put the person's words where a style hides them from sight is asked again, naming the line (r9) 1234ms
+2026-10-18T04:41:29.8495761Z      ✓ a line a style breaks over two screen lines is written, its break kept where the words around it were kept 3808ms
+2026-10-18T04:41:29.8522166Z      ✓ a page that navigates away as it loads cannot be read, so its VOICE fails plainly, not with a retried error (r8) 358ms
+2026-10-18T04:41:30.5541979Z  ✓ packages/recipe/test/semantics.test.ts (58 tests) 104ms
+2026-10-18T04:43:54.0045899Z  ✓ packages/runner/test/page-arbiter.test.ts (35 tests) 142279ms
+2026-10-18T04:43:54.0048314Z    ✓ where Chromium shows each line (4)
+2026-10-18T04:43:54.0050180Z      ✓ marks each line at its first and last character without changing what a browser shows 2569ms
+2026-10-18T04:43:54.0052956Z      ✓ a line a browser does not show, or shows elsewhere than one piece, is not placed, so it is not offered 1095ms
+2026-10-18T04:43:54.0056003Z      ✓ a line holding text a style hides from sight, though a browser lays it out, is not placed, so it is not offered (r9) 584ms
+2026-10-18T04:43:54.0067563Z    ✓ the check of a written page: Chromium against the person's edit, whatever wrote it (7)
+2026-10-18T04:43:54.0069525Z      ✓ accepts a written page that shows exactly the person's lines, the page's own separators kept 2169ms
+2026-10-18T04:43:54.0071891Z      ✓ refuses lines run together, a space or a line break that was not there, and other words, naming the line 5232ms
+2026-10-18T04:43:54.0073898Z      ✓ refuses a word moved into or out of a link, or into another link 3015ms
+2026-10-18T04:43:54.0077012Z      ✓ table cells are boxes of their own: a deleted line at a cell's edge leaves the cell's edge between its neighbours (r8, r10) 4925ms
+2026-10-18T04:43:54.0079262Z      ✓ a deleted line has no link words to check: a line whose link words the reader misreads can be deleted, not changed (r8) 1959ms
+2026-10-18T04:43:54.0081688Z      ✓ refuses a write that would show the person's words hidden from sight, hide text the page showed, or show text it hid (r9) 3323ms
+2026-10-18T04:43:54.0083774Z      ✓ a control left with only hidden words shows the same text, so the in-code check, not the arbiter, refuses it 840ms
+2026-10-18T04:43:54.0085507Z    ✓ the visitor read decides what shows, what is hidden, and how words sit (r10) (23)
+2026-10-18T04:43:54.0087358Z      ✓ a flex row: the round-9 write that glued the person's words after a link is refused; a row whose own words show glued is not offered 3484ms
+2026-10-18T04:43:54.0089455Z      ✓ grid cards and floats: cards are boxes of their own; a line a float or a reversed row reorders is not offered 4296ms
+2026-10-18T04:43:54.0091679Z      ✓ a space the person types at a line's edge is kept apart from its neighbour however the page sets them apart, in the other order included (r10) 3818ms
+2026-10-18T04:43:54.0094618Z      ✓ a neighbour the page shows in the other order stays so when the line beside it now ends in punctuation (r10 generator) 2498ms
+2026-10-18T04:43:54.0097413Z      ✓ a gap beside text its box cuts off is measured from what shows, not from where the cut-off characters would be (r10 generator) 2455ms
+2026-10-18T04:43:54.0100601Z      ✓ content-visibility skips only a box that can contain its content, and display: contents shows its text (r10 hand cases) 2219ms
+2026-10-18T04:43:54.6551199Z      ✓ a deleted line glued to a box beside it leaves its neighbours apart, in the flow or across the box's edge (r10) 3442ms
+2026-10-18T04:43:54.6553770Z      ✓ a block break where the line has no space (a display:block cite) is the page's own: the line is offered, and an edit keeps the break 6476ms
+2026-10-18T04:43:54.6556629Z      ✓ text clipped in part (an ellipsis, a line clamp, a box of fixed height) is hidden from sight character by character 9995ms
+2026-10-18T04:43:54.6559139Z      ✓ a box that cuts a row partway hides that row from sight: the person's words, or the page's, pushed into it are refused (r10 verifier) 8017ms
+2026-10-18T04:43:54.6561462Z      ✓ a word whose text fill leaves it clear is hidden from sight, so its line is not offered (r10 verifier) 831ms
+2026-10-18T04:43:54.6564824Z      ✓ a heading a script splits into letters keeps its marks: the page's lines are placed and can be changed (r10 verifier) 5970ms
+2026-10-18T04:43:54.6567782Z      ✓ a box edge the page shows where a line has no space stays the page's own beside the text kept: a menu's dish and price, a drop cap (r10 verifier) 13337ms
+2026-10-18T04:43:54.6570479Z      ✓ refuses a deletion that leaves text a stylesheet adds standing on its own, in an emptied element kept for its hook (r10 verifier) 2303ms
+2026-10-18T04:43:54.6572852Z      ✓ filter: opacity(0), opacity just above 0 and clip-path shapes with no area hide text from sight (r10) 1283ms
+2026-10-18T04:43:54.6575464Z      ✓ a page styled by a script (Tailwind's browser build): screen-reader-only text is hidden and a desktop-only word is shown, as a visitor sees them 2893ms
+2026-10-18T04:43:54.6578138Z      ✓ a page whose sections wait at opacity 0 for a scroll-reveal script is read revealed: its lines are offered and can be written 1729ms
+2026-10-18T04:43:54.6581679Z      ✓ script-made text is not offered, and must read the same after the write: a script that rewrites other text from the edited line refuses it 4283ms
+2026-10-18T04:43:54.6584999Z      ✓ an item that keeps moving (an endless pulse, a tween that settles later than its neighbour) is judged beside its neighbour where both stand: at the read's last instant, or at one sample (r11 verifier) 11867ms
+2026-10-18T04:43:54.6589069Z      ✓ vertical and turned text is judged along its own line; where the read cannot measure it, a box's edge never stands for a space: such a line is not offered, and a space typed there is refused, saying why (r12 verifier) 5211ms
+2026-10-18T04:43:54.6593096Z      ✓ neighbours across a box's edge offset across their line: a line with a space between two that meet is not offered, a space typed there is refused saying why, and a line a visitor reads in the other order is not offered (r13 verifier) 2955ms
+2026-10-18T04:43:54.6597792Z      ✓ a card a 3D transform leaves flat (AOS's flip at rest) is offered and written; a box turned in 3D that hides its overflow is named as turned in a way byway cannot measure, not as hidden from sight (r13 verifier) 2478ms
+2026-10-18T04:43:54.6600971Z      ✓ right-to-left pages: native digits, numbers, Latin names and left-to-right boxes read in the order a visitor reads them (r11 verifier) 13925ms
+2026-10-18T04:43:54.6603079Z    ✓ the reader's model of a browser (the fake renderer the e2e scenarios use) (1)
+2026-10-18T04:43:54.6604541Z      ✓ places the lines of a plain page as Chromium does 489ms
+2026-10-18T04:43:55.8532522Z  ✓ packages/advisor/test/present.test.ts (67 tests) 515ms
+2026-10-18T04:43:57.1884776Z  ✓ packages/gateway/test/declines.test.ts (37 tests) 581ms
+2026-10-18T04:43:58.7797043Z  ✓ packages/gateway/test/gateway.test.ts (72 tests) 811ms
+2026-10-18T04:43:59.7578338Z (node:7728) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:43:59.7580059Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:44:07.9216335Z  ✓ packages/runner/test/asset-slots.test.ts (41 tests) 8160ms
+2026-10-18T04:44:07.9218978Z    ✓ how many images a prose step may make is the prompt’s to say (9)
+2026-10-18T04:44:07.9221480Z      ✓ the harness’s fake prompts carry the count each real image-briefs template declares, so e2e ASSET steps are held to it (round 2) 369ms
+2026-10-18T04:44:08.4926191Z  ✓ packages/validator/test/semantics-rules.test.ts (38 tests) 190ms
+2026-10-18T04:44:10.2454844Z (node:2608) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:44:10.2520991Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:44:16.6273674Z  ✓ apps/web/test/api.test.ts (32 tests) 6352ms
+2026-10-18T04:44:16.6275308Z    ✓ route handler logic (10)
+2026-10-18T04:44:16.6277117Z      ✓ composes a recipe, keeps it on the intake and starts it as composed, presentable even after a restart 356ms
+2026-10-18T04:44:16.6279981Z    ✓ Recommendation screen commands return everything they change (F14, ADR-0082) (5)
+2026-10-18T04:44:16.6281970Z      ✓ Build my own during a failure asks the model for no recommendation, stores none, and says what is left 335ms
+2026-10-18T04:44:16.6283741Z    ✓ the first recommendation is asked for once per intake (F03, ADR-0091) (4)
+2026-10-18T04:44:16.6285371Z      ✓ two first loads of one intake at once share one advisor call and one ledger entry 312ms
+2026-10-18T04:44:18.5370741Z  ✓ packages/gateway/test/video.test.ts (72 tests) 1177ms
+2026-10-18T04:44:19.0128473Z  ✓ packages/runner/test/formats.test.ts (37 tests) 95ms
+2026-10-18T04:44:20.0097267Z (node:5464) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:44:20.0100347Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:44:30.0339734Z  ✓ packages/runner/test/critic.test.ts (25 tests) 10021ms
+2026-10-18T04:44:30.0615472Z    ✓ a GREAT lineup: every item one block, in one form, nothing that gives ours away (4)
+2026-10-18T04:44:30.0619844Z      ✓ a storyboard against image references is drawn by its frames only: no words, no image prompts, no process lines (BLIND-1) 393ms
+2026-10-18T04:44:30.0622898Z      ✓ a web page and its HTML references are shown by the same named surfaces, under their labels (RENDER-1) 486ms
+2026-10-18T04:44:30.0627877Z    ✓ every item of a GREAT lineup reaches the critic in the same number and kind of parts (BLIND-1) (8)
+2026-10-18T04:44:30.0642921Z      ✓ a storyboard against four image references (the re-check) 418ms
+2026-10-18T04:44:30.0651890Z      ✓ a storyboard against four storyboard references (the re-check) 374ms
+2026-10-18T04:44:30.0654245Z      ✓ a storyboard against images and text 424ms
+2026-10-18T04:44:30.0656143Z      ✓ prose against image references 307ms
+2026-10-18T04:44:30.0657939Z      ✓ a web page against image references 409ms
+2026-10-18T04:44:30.0659629Z      ✓ a web page against pages given as HTML 409ms
+2026-10-18T04:44:30.0661418Z      ✓ a card shows a text reference and our words escaped, and a page one under another as the page 2163ms
+2026-10-18T04:44:30.0663009Z    ✓ a card lineup shows every word or says what it left out (F13) (10)
+2026-10-18T04:44:30.0665002Z      ✓ whether a label carries words follows whether its item has words, never whether it is ours 326ms
+2026-10-18T04:44:30.0667303Z      ✓ an image-only critic’s card cuts words visibly, and the cut is recorded for the item, never for its label 460ms
+2026-10-18T04:44:30.0670081Z      ✓ a cut is kept with its card: the same run gives the same record and note again, without drawing again 459ms
+2026-10-18T04:44:30.0672536Z      ✓ the note names the cut items once over the step’s shuffles, as the person knows them, never by label 371ms
+2026-10-18T04:44:30.0674328Z      ✓ a GREAT critic step whose card was cut (2)
+2026-10-18T04:44:30.0675927Z        ✓ shows the critic the cut card, one image under each label, and ranks ours 489ms
+2026-10-18T04:44:30.0677767Z        ✓ says in the step’s note whose words the critic was not shown 455ms
+2026-10-18T04:44:30.0679744Z      ✓ a card that does not fit in one picture stops the step, naming the item, rather than show part of it 307ms
+2026-10-18T04:44:32.3656889Z  ✓ packages/gateway/test/spend-book.test.ts (32 tests) 1588ms
+2026-10-18T04:44:32.3658471Z    ✓ leases while a call is in progress (2)
+2026-10-18T04:44:32.3660580Z      ✓ the gateway renews a call it is still waiting on, so a long call stays in flight, not "may have been billed" 351ms
+2026-10-18T04:44:33.3342584Z (node:11560) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:44:33.3344282Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:44:46.4839443Z  ✓ packages/runner/test/cards.test.ts (22 tests) 13148ms
+2026-10-18T04:44:46.4841004Z    ✓ cards rendered by Playwright Chromium (7)
+2026-10-18T04:44:46.4842683Z      ✓ a contact sheet of six frames with its words is one image 1141ms
+2026-10-18T04:44:46.4844703Z      ✓ a page of three tall screenshots is one image, and so is a single image 783ms
+2026-10-18T04:44:46.4847440Z      ✓ a long text runs past one image: nothing hides it, so the render shows it does not fit (F13) 509ms
+2026-10-18T04:44:46.4856540Z      ✓ a card of 20,000 to 30,000 characters is fitted into one image: every word shows, or the card says how many do not (F13) 5026ms
+2026-10-18T04:44:46.4859743Z      ✓ text in capitals that fits at the 12 px floor is shown whole, whatever size the estimate tried first (F13) 949ms
+2026-10-18T04:44:46.4862336Z      ✓ a long paragraph without spaces is cut by characters: its first part shows, and the card says how many do not (F13) 2497ms
+2026-10-18T04:44:46.4864570Z      ✓ a media lineup records whose words its cards cut, as the step note names them (F13) 1890ms
+2026-10-18T04:45:07.7033655Z  ✓ scripts/test/adr-records.test.ts (26 tests) 20150ms
+2026-10-18T04:45:07.7036689Z    ✓ the rule, on a temporary repository (12)
+2026-10-18T04:45:07.7038460Z      ✓ an edited Decision fails, and so does an edit not yet committed 1634ms
+2026-10-18T04:45:07.7043334Z      ✓ an appended note passes, and so does a header change 1224ms
+2026-10-18T04:45:07.7045410Z      ✓ the commit that accepts a record may finalise its Decision; the next edit fails 1604ms
+2026-10-18T04:45:07.7059356Z      ✓ a draft revised on its branch passes when the branch is merged with --no-ff, and fails when it is fast-forwarded 2618ms
+2026-10-18T04:45:07.7062234Z      ✓ main’s history is read only as far as the checked-out commit holds it: a branch stacked on a branch merged since, and a merged branch checked out again, pass 3032ms
+2026-10-18T04:45:07.7064543Z      ✓ a branch is held to main’s fixed text before it merges 1173ms
+2026-10-18T04:45:07.7066769Z      ✓ a named exception lets its one edit through; the text after it is fixed again 1082ms
+2026-10-18T04:45:07.7069030Z      ✓ a removed record fails; once the removal is on main, the file is restored and the removal named 1010ms
+2026-10-18T04:45:07.7071054Z      ✓ an edit already on main is not cleared by putting the text back: the edit and the commit that restores it are each named 1183ms
+2026-10-18T04:45:07.7073096Z      ✓ a breach says how to recover: before it is committed, put the text back; once it is on main, name it 1285ms
+2026-10-18T04:45:07.7074967Z      ✓ a changing record and its "changed by" link reach main in the same commit, or the check fails 3126ms
+2026-10-18T04:45:07.7076804Z      ✓ a link added after its record is on main, not yet committed, says to commit it and name that commit 737ms
+2026-10-18T04:45:07.9021537Z (node:11544) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:45:07.9023262Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:45:10.0943692Z  ✓ packages/store/test/migrations.test.ts (18 tests) 2056ms
+2026-10-18T04:45:10.7951843Z  ✓ packages/gateway/test/providers.test.ts (24 tests) 21ms
+2026-10-18T04:45:12.1036046Z  ✓ packages/advisor/test/semantics-admission.test.ts (63 tests) 377ms
+2026-10-18T04:45:13.3353988Z (node:10536) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:45:13.3358269Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:45:34.4318309Z  ✓ packages/runner/test/semantics-effects.test.ts (132 tests) 21075ms
+2026-10-18T04:45:34.4320095Z    ✓ the notes a model step leaves beside the work (leavesNote) (3)
+2026-10-18T04:45:34.4322757Z      ✓ as modelStep runs: a noting role leaves a note with every answer, nothing found included; a seed only with a direction 349ms
+2026-10-18T04:45:35.2908203Z (node:2468) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:45:35.2909878Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:45:38.0438044Z  ✓ packages/runner/test/overlap.test.ts (7 tests) 2751ms
+2026-10-18T04:45:38.0439798Z    ✓ two attempts of one step’s paid call (F03 stage 3, ADR-0099) (5)
+2026-10-18T04:45:38.0443896Z      ✓ attempt 1 timed out between settlement and its memo save: attempt 2 waits and returns attempt 1’s answer; one provider call 538ms
+2026-10-18T04:45:38.0461140Z      ✓ attempt 1 hung in its provider call past its timeout: attempt 2 takes the call over within one lease, and the first counts as may have been billed 496ms
+2026-10-18T04:45:38.0463668Z      ✓ a holder that never lets go: attempt 2 stops after its wait with a plain step failure, and pays nothing 367ms
+2026-10-18T04:45:38.0466353Z    ✓ two attempts of one step’s declined call (ADR-0102) (1)
+2026-10-18T04:45:38.0475813Z      ✓ attempt 2 waits while attempt 1 holds the retry, then gets attempt 1’s kept final decline; the model is asked twice in all 431ms
+2026-10-18T04:45:38.0477623Z    ✓ a relay link’s clip, attempt 1 lost while fal makes it (F03 stage 3) (1)
+2026-10-18T04:45:38.0479235Z      ✓ attempt 2 resumes the clip from its stored request id: no new submission, one ledger entry 424ms
+2026-10-18T04:45:40.2988257Z  ✓ packages/advisor/test/compose.test.ts (26 tests) 1155ms
+2026-10-18T04:45:41.3730449Z (node:8140) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:45:41.3732475Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:45:44.1077036Z  ✓ packages/runner/test/memo.test.ts (16 tests) 2732ms
+2026-10-18T04:45:44.1078592Z    ✓ saving what a paid call returned (ENG-3) (3)
+2026-10-18T04:45:44.1081273Z      ✓ when the save still fails, the step fails for good, saying the call was paid and is in the ledger: Temporal must not buy it again 399ms
+2026-10-18T04:45:49.2618107Z  ✓ packages/advisor/test/diff-semantics.test.ts (48 tests) 4129ms
+2026-10-18T04:45:49.2645110Z    ✓ every single-field change of a semantic field gets a line (FIELD_ROLES, C1–C7) (9)
+2026-10-18T04:45:49.2647239Z      ✓ c1: never "The same steps", and a changed quality bar is never quoted 612ms
+2026-10-18T04:45:49.2649725Z      ✓ c3: never "The same steps", and a changed quality bar is never quoted 553ms
+2026-10-18T04:45:49.2796216Z      ✓ c4: never "The same steps", and a changed quality bar is never quoted 399ms
+2026-10-18T04:45:49.2827479Z      ✓ c5: never "The same steps", and a changed quality bar is never quoted 1168ms
+2026-10-18T04:45:49.2830047Z      ✓ c6a: never "The same steps", and a changed quality bar is never quoted 378ms
+2026-10-18T04:45:49.2832370Z      ✓ c7: never "The same steps", and a changed quality bar is never quoted 548ms
+2026-10-18T04:46:11.1946913Z  ✓ packages/advisor/test/corpus.test.ts (27 tests) 20763ms
+2026-10-18T04:46:11.1949872Z    ✓ declaration monotonicity: no single declaration change admits a refused recipe (14)
+2026-10-18T04:46:11.1951817Z      ✓ S1 838ms
+2026-10-18T04:46:11.1952862Z      ✓ M2 987ms
+2026-10-18T04:46:11.1953718Z      ✓ W2 1042ms
+2026-10-18T04:46:11.1954624Z      ✓ W1 303ms
+2026-10-18T04:46:11.1955562Z      ✓ Q1 300ms
+2026-10-18T04:46:11.1956502Z      ✓ V1 997ms
+2026-10-18T04:46:11.1957405Z      ✓ V2c 1477ms
+2026-10-18T04:46:11.1958913Z      ✓ X1 1010ms
+2026-10-18T04:46:11.1959893Z      ✓ X3 845ms
+2026-10-18T04:46:11.1961509Z      ✓ K1-C1 594ms
+2026-10-18T04:46:11.1969993Z      ✓ K2b 1526ms
+2026-10-18T04:46:11.1970993Z      ✓ K2f 1298ms
+2026-10-18T04:46:11.1972448Z    ✓ placement soundness: no single move admission accepts breaks a checkpoint protection (9)
+2026-10-18T04:46:11.1974143Z      ✓ c1 1094ms
+2026-10-18T04:46:11.1975009Z      ✓ c3 1618ms
+2026-10-18T04:46:11.1975863Z      ✓ c4 654ms
+2026-10-18T04:46:11.1976712Z      ✓ c5 3821ms
+2026-10-18T04:46:11.1977547Z      ✓ c6a 742ms
+2026-10-18T04:46:11.1978343Z      ✓ c7 1108ms
+2026-10-18T04:46:12.7828731Z  ✓ packages/gateway/test/ledger.test.ts (41 tests) 1356ms
+2026-10-18T04:46:13.5970898Z (node:12348) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:46:13.5973496Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:46:17.8813341Z  ✓ packages/runner/test/restore.test.ts (15 tests) 4271ms
+2026-10-18T04:46:17.8815201Z    ✓ the start-up report after a restore (R4) (12)
+2026-10-18T04:46:17.8817227Z      ✓ notes settled calls the spend book has not written to ledger.jsonl yet, without calling them a problem 370ms
+2026-10-18T04:46:17.8820465Z      ✓ names a line of the ledger the spend book could not read, which pauses paid calls until it is acknowledged in Settings 325ms
+2026-10-18T04:46:17.8831450Z      ✓ names them after a restore of an older ledger and head pair too, which the ledger also calls intact 314ms
+2026-10-18T04:46:17.8833542Z      ✓ reports a ledger whose head names entries the file no longer has 306ms
+2026-10-18T04:46:17.8835488Z      ✓ only reads: the records, the ledger and the artifact files are unchanged after a report 313ms
+2026-10-18T04:46:17.8837568Z    ✓ caps after a restore that lost the ledger (F03, ADR-0095: the spend book in byway.sqlite is their authority) (3)
+2026-10-18T04:46:17.8840765Z      ✓ without ledger.jsonl and its head, a call the original spend puts over the run cap is refused 335ms
+2026-10-18T04:46:18.8438210Z (node:6412) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:46:18.8440468Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:46:22.1460382Z  ✓ packages/runner/test/declines.test.ts (8 tests) 3222ms
+2026-10-18T04:46:22.1462522Z    ✓ a model that declines once (ADR-0102) (2)
+2026-10-18T04:46:22.1474271Z      ✓ is asked once more; the step goes on with the answer, and the run’s events say what happened 376ms
+2026-10-18T04:46:22.1476310Z    ✓ an image the model declined, when its step runs again (ADR-0102) (5)
+2026-10-18T04:46:22.1478456Z      ✓ declined twice, then a later image meets the budget question: the step run again after the raise asks shot 1 nothing 498ms
+2026-10-18T04:46:22.1480939Z      ✓ declined once with no room for the retry, then the budget question: the decline stays final, and nothing asks shot 1 again 504ms
+2026-10-18T04:46:22.1483529Z      ✓ a retry billed with no image: both attempts are in the step’s cost and its note, and the run’s event names the retry’s entry 541ms
+2026-10-18T04:46:22.1486221Z      ✓ a worker lost during the retry: the next attempt makes the retry alone, and the declined image is not bought again 564ms
+2026-10-18T04:46:23.1816473Z (node:7012) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:46:23.1820311Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:46:26.1803633Z  ✓ packages/runner/test/activities.test.ts (17 tests) 2996ms
+2026-10-18T04:46:26.5705500Z  ✓ scripts/test/ci.test.ts (52 tests) 80ms
+2026-10-18T04:46:27.1088117Z  ✓ packages/gateway/test/purposes.test.ts (124 tests) 89ms
+2026-10-18T04:46:27.4858302Z  ✓ apps/web/test/timeline.test.ts (13 tests) 30ms
+2026-10-18T04:46:27.9162583Z  ✓ packages/catalog/test/presentation.test.ts (96 tests) 99ms
+2026-10-18T04:46:29.4168334Z  ✓ apps/web/test/evidence.test.ts (16 tests) 428ms
+2026-10-18T04:46:29.9379263Z  ✓ packages/gateway/test/mock.test.ts (104 tests) 118ms
+2026-10-18T04:46:30.3908525Z  ✓ packages/catalog/test/configurations.test.ts (34 tests) 73ms
+2026-10-18T04:46:31.3451125Z (node:8296) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:46:31.3453135Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:46:35.9066381Z  ✓ apps/web/test/services.test.ts (19 tests) 2324ms
+2026-10-18T04:46:35.9107949Z    ✓ the service host (6)
+2026-10-18T04:46:35.9401113Z      ✓ opens the store and the ledger in the data directory and recommends through the mock in demo mode 748ms
+2026-10-18T04:46:36.5783734Z (node:2192) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:46:36.5785483Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:46:39.5418811Z  ✓ packages/store/test/checkpoints.test.ts (21 tests) 2954ms
+2026-10-18T04:46:40.8473137Z  ✓ packages/gateway/test/operation-keys.test.ts (8 tests) 591ms
+2026-10-18T04:46:42.4648195Z (node:1124) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:46:42.4649771Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:46:42.9124446Z time=2026-10-18T04:46:42.911 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+2026-10-18T04:46:58.3293708Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:46:58.3333181Z 
+2026-10-18T04:46:58.3333565Z Temporal Server:      localhost:58818
+2026-10-18T04:46:58.3334246Z Temporal Persistence: in-memory
+2026-10-18T04:46:58.3334987Z Temporal Metrics:     http://localhost:58820/metrics
+2026-10-18T04:47:27.4256252Z  ✓ packages/runner/test/real-prompts.test.ts (17 tests) 44819ms
+2026-10-18T04:47:27.4259555Z    ✓ the real templates, the runner and the demo gateway agree (spec §3.3) (17)
+2026-10-18T04:47:27.4261721Z      ✓ c1 on web-page: renders, parses, records provenance and finishes 3704ms
+2026-10-18T04:47:27.4265357Z      ✓ c2 on options, with references (GREAT critics): renders, parses, records provenance and finishes 2470ms
+2026-10-18T04:47:27.4274192Z      ✓ c2 on options: renders, parses, records provenance and finishes 1960ms
+2026-10-18T04:47:27.4276708Z      ✓ c3 on prose, with references (GREAT critics): renders, parses, records provenance and finishes 2681ms
+2026-10-18T04:47:27.4279164Z      ✓ c3 on prose: renders, parses, records provenance and finishes 1953ms
+2026-10-18T04:47:27.4284045Z      ✓ c4 on prose, with references (GREAT critics): renders, parses, records provenance and finishes 2201ms
+2026-10-18T04:47:27.4286166Z      ✓ c4 on prose: renders, parses, records provenance and finishes 2052ms
+2026-10-18T04:47:27.4288233Z      ✓ c5 on media, with references (GREAT critics): renders, parses, records provenance and finishes 3537ms
+2026-10-18T04:47:27.4289972Z      ✓ c5 on media: renders, parses, records provenance and finishes 5377ms
+2026-10-18T04:47:27.4291755Z      ✓ c6 on prose, with references (GREAT critics): renders, parses, records provenance and finishes 1163ms
+2026-10-18T04:47:27.4293817Z      ✓ c6 on prose: renders, parses, records provenance and finishes 979ms
+2026-10-18T04:47:27.4295647Z      ✓ c6a on prose, with references (GREAT critics): renders, parses, records provenance and finishes 1960ms
+2026-10-18T04:47:27.4297617Z      ✓ c6a on prose: renders, parses, records provenance and finishes 1847ms
+2026-10-18T04:47:27.4299727Z      ✓ c7 on code-diff, with references (GREAT critics): renders, parses, records provenance and finishes 1835ms
+2026-10-18T04:47:27.4301592Z      ✓ c7 on code-diff: renders, parses, records provenance and finishes 1900ms
+2026-10-18T04:47:27.4303280Z      ✓ a worker given no renderer renders these same templates (the product wiring) 2408ms
+2026-10-18T04:47:27.9581057Z  ✓ packages/validator/test/operators.test.ts (48 tests) 121ms
+2026-10-18T04:47:29.2895798Z  ✓ packages/advisor/test/recommend.test.ts (28 tests) 430ms
+2026-10-18T04:47:29.5368678Z  ✓ apps/web/test/draft-store.test.ts (20 tests) 24ms
+2026-10-18T04:47:30.6300534Z  ✓ packages/advisor/test/estimate.test.ts (31 tests) 174ms
+2026-10-18T04:47:31.6689664Z  ✓ apps/web/test/open-links.test.ts (14 tests) 102ms
+2026-10-18T04:47:32.0560047Z  ✓ apps/web/test/server.test.ts (18 tests) 73ms
+2026-10-18T04:47:32.5800012Z  ✓ packages/runner/test/held-voice.test.ts (14 tests) 33ms
+2026-10-18T04:47:32.9167931Z  ✓ packages/recipe/test/limits.test.ts (23 tests) 22ms
+2026-10-18T04:47:37.7504565Z  ✓ packages/gateway/test/billed.test.ts (11 tests) 4129ms
+2026-10-18T04:47:37.7506557Z    ✓ a billed completion is ledgered before anything else can fail (ENG-3) (7)
+2026-10-18T04:47:37.7508944Z      ✓ waits briefly for another process holding the ledger lock, then writes the call to the audit file 326ms
+2026-10-18T04:47:37.7511872Z      ✓ fails a call whose cost could not be recorded with a non-retryable GatewayError saying it was billed (never a plain Error Temporal retries) 3536ms
+2026-10-18T04:47:38.2162031Z  ✓ packages/validator/test/validator.test.ts (45 tests) 117ms
+2026-10-18T04:47:39.0691699Z  ✓ apps/web/test/panels.test.ts (15 tests) 60ms
+2026-10-18T04:47:39.3795633Z (node:10496) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:47:39.3797360Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:47:42.8676870Z  ✓ packages/store/test/records.test.ts (20 tests) 3484ms
+2026-10-18T04:47:42.8678397Z    ✓ close (1)
+2026-10-18T04:47:42.8680034Z      ✓ closes the database; later calls fail and closing twice is harmless 376ms
+2026-10-18T04:47:43.4742637Z  ✓ packages/recipe/test/prompt-shows.test.ts (13 tests) 21ms
+2026-10-18T04:47:45.2223131Z (node:3096) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:47:45.2224808Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:47:47.1609919Z  ✓ packages/runner/test/link-view.test.ts (7 tests) 1913ms
+2026-10-18T04:47:47.1611934Z    ✓ the shot check inside a relay link (F10) (7)
+2026-10-18T04:47:47.1614056Z      ✓ sees exactly the frame its clip started from and the clip’s last frame, under their captions, and that shot’s line 357ms
+2026-10-18T04:47:47.1623595Z      ✓ two clips with different last frames send different checks 420ms
+2026-10-18T04:47:47.1625462Z      ✓ records the clip’s last frame on its shot, beside the clip 350ms
+2026-10-18T04:47:47.5526315Z  ✓ packages/gateway/test/great-critic.test.ts (10 tests) 34ms
+2026-10-18T04:47:48.5717101Z (node:11100) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:47:48.5718948Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:47:50.9015289Z  ✓ packages/runner/test/prompt-shows.test.ts (354 tests) 2327ms
+2026-10-18T04:47:51.3806274Z  ✓ packages/runner/test/loop-cap.test.ts (8 tests) 24ms
+2026-10-18T04:47:51.7536304Z stderr | apps/web/test/dev-server.test.ts > contributor mode’s guarded server > answers a plain 500 when Next throws, and stays up
+2026-10-18T04:47:51.7538700Z The web app failed to answer a request: Error: boom
+2026-10-18T04:47:51.7540201Z     at D:/a/byway/byway/apps/web/test/dev-server.test.ts:164:13
+2026-10-18T04:47:51.7541927Z     at D:/a/byway/byway/apps/web/src/server/dev-server.ts:167:19
+2026-10-18T04:47:51.7543835Z     at processTicksAndRejections (node:internal/process/task_queues:103:5)
+2026-10-18T04:47:51.7544930Z 
+2026-10-18T04:47:51.7560692Z stderr | apps/web/test/dev-server.test.ts > contributor mode’s guarded server > answers a plain 500 when Next throws, and stays up
+2026-10-18T04:47:51.7562825Z The web app failed to answer a request: Error: boom
+2026-10-18T04:47:51.7569513Z     at D:/a/byway/byway/apps/web/test/dev-server.test.ts:164:13
+2026-10-18T04:47:51.7570747Z     at D:/a/byway/byway/apps/web/src/server/dev-server.ts:167:19
+2026-10-18T04:47:51.7572318Z     at processTicksAndRejections (node:internal/process/task_queues:103:5)
+2026-10-18T04:47:51.7573786Z 
+2026-10-18T04:47:51.7624734Z  ✓ apps/web/test/dev-server.test.ts (11 tests) 146ms
+2026-10-18T04:47:52.5525899Z  ✓ packages/gateway/test/fal-submit.test.ts (11 tests) 71ms
+2026-10-18T04:47:53.5115062Z (node:9472) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:47:53.5131184Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:47:53.8322907Z  ✓ packages/runner/test/launch.test.ts (8 tests) 311ms
+2026-10-18T04:47:54.1491685Z  ✓ packages/gateway/test/billing.test.ts (42 tests) 47ms
+2026-10-18T04:47:55.6559973Z (node:7564) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:47:55.6627658Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:47:55.8475598Z time=2026-10-18T04:47:55.846 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+2026-10-18T04:47:56.2325462Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:47:56.2361220Z 
+2026-10-18T04:47:56.2361769Z Temporal Server:      localhost:58924
+2026-10-18T04:47:56.2362415Z Temporal Persistence: in-memory
+2026-10-18T04:47:56.2363367Z Temporal Metrics:     http://localhost:58925/metrics
+2026-10-18T04:47:59.5968917Z 2026-10-18T04:47:59.589561Z  WARN temporalio_sdk_core::worker::workflow: Task not found when completing error=code: 'Some requested entity was not found', message: "Workflow task not found." run_id="01a14d56-89f4-786a-b6a6-d689147a1daf"
+2026-10-18T04:48:01.5694723Z  ✓ packages/runner/test/engine-state.test.ts (8 tests) 5892ms
+2026-10-18T04:48:01.5727558Z    ✓ a run whose workflow is gone (OPS-1) (4)
+2026-10-18T04:48:01.5985295Z      ✓ an answer is refused with a plain reason, and the run ends as failed 341ms
+2026-10-18T04:48:01.5999587Z    ✓ a run workflow whose run the store does not have (R4: a store older than the engine) (1)
+2026-10-18T04:48:01.6044886Z      ✓ is stopped at engine start, before the worker polls, so none of its steps runs 1261ms
+2026-10-18T04:48:02.0195246Z  ✓ packages/validator/test/review-regressions.test.ts (24 tests) 86ms
+2026-10-18T04:48:02.8348962Z  ✓ packages/runner/test/build.test.ts (5 tests) 561ms
+2026-10-18T04:48:03.8054523Z (node:10088) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:48:03.8056262Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:48:05.4617273Z  ✓ packages/runner/test/voice-faults.test.ts (9 tests) 1654ms
+2026-10-18T04:48:06.3971986Z  ✓ packages/gateway/test/pricing.test.ts (26 tests) 106ms
+2026-10-18T04:48:08.0498581Z (node:5412) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:48:08.0500341Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:48:08.3199652Z time=2026-10-18T04:48:08.318 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+2026-10-18T04:48:08.7138774Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:48:08.7139320Z 
+2026-10-18T04:48:08.7211884Z Temporal Server:      localhost:58944
+2026-10-18T04:48:08.7311307Z Temporal Persistence: in-memory
+2026-10-18T04:48:08.7471174Z Temporal Metrics:     http://localhost:58945/metrics
+2026-10-18T04:48:20.4853561Z 2026-10-18T04:48:20.397Z [ERROR] Worker failed {
+2026-10-18T04:48:20.4855158Z   sdkComponent: 'worker',
+2026-10-18T04:48:20.4855812Z   taskQueue: 'runner-test-byway-runner-UePGs7',
+2026-10-18T04:48:20.4857026Z   error: GracefulShutdownPeriodExpiredError: Timed out while waiting for worker to shutdown gracefully
+2026-10-18T04:48:20.4859636Z       at Object.next (D:\a\byway\byway\node_modules\.pnpm\@temporalio+worker@1.24.0_@_bf1641040c96deebfe4a12d55be9a405\node_modules\@temporalio\worker\lib\worker.js:650:57)
+2026-10-18T04:48:20.4868310Z       at D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\tap.js:20:81
+2026-10-18T04:48:20.4870604Z       at OperatorSubscriber._this._next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+2026-10-18T04:48:20.4872667Z       at OperatorSubscriber.Subscriber.next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+2026-10-18T04:48:20.4874477Z       at D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\mergeInternals.js:28:28
+2026-10-18T04:48:20.4876420Z       at OperatorSubscriber._this._next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+2026-10-18T04:48:20.4878267Z       at OperatorSubscriber.Subscriber.next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+2026-10-18T04:48:20.4879773Z       at D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\map.js:10:24
+2026-10-18T04:48:20.4881371Z       at OperatorSubscriber._this._next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+2026-10-18T04:48:20.4883162Z       at OperatorSubscriber.Subscriber.next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+2026-10-18T04:48:20.4884262Z }
+2026-10-18T04:48:20.4885384Z  ✓ packages/runner/test/liveness.test.ts (7 tests) 12425ms
+2026-10-18T04:48:20.4886545Z    ✓ cancel and stop through the real workflow (3)
+2026-10-18T04:48:20.4888090Z      ✓ Cancel stops new provider calls, and the run’s cost catches up with the ledger once the call in flight returns (ENG-4) 4317ms
+2026-10-18T04:48:20.4889900Z      ✓ Cancel reaches steps that are running: held renders stop without being released (ENG-4) 1255ms
+2026-10-18T04:48:20.4891741Z      ✓ stopping the worker does not wait for steps in flight: renders stop, a slow call is abandoned (ENG-10) 3154ms
+2026-10-18T04:48:21.0847283Z  ✓ packages/catalog/test/conformance.test.ts (86 tests) 221ms
+2026-10-18T04:48:21.5177125Z  ✓ packages/runner/test/semantics-exits.test.ts (15 tests) 28ms
+2026-10-18T04:48:21.7292889Z  ✓ apps/web/test/drafts.test.ts (18 tests) 12ms
+2026-10-18T04:48:21.9044182Z (node:10180) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:48:21.9045976Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:48:22.8542938Z  ✓ packages/store/test/intakes.test.ts (7 tests) 837ms
+2026-10-18T04:48:23.5139434Z (node:12996) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:48:23.5141556Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:48:24.6259107Z  ✓ packages/runner/test/run-identity.test.ts (8 tests) 1110ms
+2026-10-18T04:48:26.1083118Z (node:13244) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:48:26.1090891Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:48:26.3670207Z time=2026-10-18T04:48:26.366 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+2026-10-18T04:48:26.7472806Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:48:26.7479707Z 
+2026-10-18T04:48:26.7577215Z Temporal Server:      localhost:58968
+2026-10-18T04:48:26.7592042Z Temporal Persistence: in-memory
+2026-10-18T04:48:26.7668053Z Temporal Metrics:     http://localhost:58969/metrics
+2026-10-18T04:49:06.8539202Z time=2026-10-18T04:49:06.852 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+2026-10-18T04:49:07.2333160Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:49:07.2333699Z 
+2026-10-18T04:49:07.2334072Z Temporal Server:      localhost:59001
+2026-10-18T04:49:07.2334725Z Temporal Persistence: in-memory
+2026-10-18T04:49:07.2335460Z Temporal Metrics:     http://localhost:59002/metrics
+2026-10-18T04:49:11.3190597Z 2026-10-18T04:49:11.284Z [ERROR] Worker failed {
+2026-10-18T04:49:11.3191639Z   sdkComponent: 'worker',
+2026-10-18T04:49:11.3192348Z   taskQueue: 'runner-test-byway-runner-Ced34T',
+2026-10-18T04:49:11.3198975Z   error: GracefulShutdownPeriodExpiredError: Timed out while waiting for worker to shutdown gracefully
+2026-10-18T04:49:11.3201250Z       at Object.next (D:\a\byway\byway\node_modules\.pnpm\@temporalio+worker@1.24.0_@_bf1641040c96deebfe4a12d55be9a405\node_modules\@temporalio\worker\lib\worker.js:650:57)
+2026-10-18T04:49:11.3203254Z       at D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\tap.js:20:81
+2026-10-18T04:49:11.3205236Z       at OperatorSubscriber._this._next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+2026-10-18T04:49:11.3207527Z       at OperatorSubscriber.Subscriber.next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+2026-10-18T04:49:11.3209561Z       at D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\mergeInternals.js:28:28
+2026-10-18T04:49:11.3214261Z       at OperatorSubscriber._this._next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+2026-10-18T04:49:11.3257393Z       at OperatorSubscriber.Subscriber.next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+2026-10-18T04:49:11.3260981Z       at D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\map.js:10:24
+2026-10-18T04:49:11.3263984Z       at OperatorSubscriber._this._next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\operators\OperatorSubscriber.js:33:21)
+2026-10-18T04:49:11.3270279Z       at OperatorSubscriber.Subscriber.next (D:\a\byway\byway\node_modules\.pnpm\rxjs@7.8.2\node_modules\rxjs\dist\cjs\internal\Subscriber.js:51:18)
+2026-10-18T04:49:11.3271486Z }
+2026-10-18T04:49:47.8564121Z  ✓ packages/runner/test/worker-loss.test.ts (2 tests) 81737ms
+2026-10-18T04:49:47.8566030Z    ✓ a worker killed while fal makes a relay link’s clip (F03 stage 3) (1)
+2026-10-18T04:49:47.8568661Z      ✓ a new worker resumes the clip by its stored request id: one clip bought per link, one ledger entry each, nothing left as may have been billed 36988ms
+2026-10-18T04:49:47.8580433Z    ✓ a worker stopped cleanly during a C2 seed stage, and started again (F03 stage 3) (1)
+2026-10-18T04:49:47.8582825Z      ✓ the stopped seeds count against the workspace only, as interrupted, until cleared; the retried stage raises no budget question 38752ms
+2026-10-18T04:49:48.3647137Z  ✓ apps/web/test/guard-boundaries.test.ts (10 tests) 293ms
+2026-10-18T04:50:01.2640931Z stdout | apps/web/test/dev-server.real.test.ts > pnpm dev’s web server, with the real next dev > listens on the guarded port only: no internal next dev port, no other listener in its process tree
+2026-10-18T04:50:01.2644801Z dev-web.ts (pid 12804) listens on: TCP 127.0.0.1:59035
+2026-10-18T04:50:01.2645971Z 
+2026-10-18T04:50:01.3244123Z  ✓ apps/web/test/dev-server.real.test.ts (4 tests) 12228ms
+2026-10-18T04:50:01.3252688Z    ✓ pnpm dev’s web server, with the real next dev (4)
+2026-10-18T04:50:01.3277165Z      ✓ listens on the guarded port only: no internal next dev port, no other listener in its process tree 9099ms
+2026-10-18T04:50:01.7090042Z  ✓ apps/web/test/vocabulary.test.ts (16 tests) 20ms
+2026-10-18T04:50:02.3962096Z  ✓ apps/web/test/results.test.ts (13 tests) 41ms
+2026-10-18T04:50:02.4217950Z  ✓ packages/runner/test/claims.test.ts (11 tests) 15ms
+2026-10-18T04:50:03.1036812Z  ✓ packages/gateway/test/compose.test.ts (13 tests) 182ms
+2026-10-18T04:50:03.4094185Z (node:9356) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:50:03.4095765Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:50:05.4509497Z  ✓ packages/store/test/events.test.ts (12 tests) 2026ms
+2026-10-18T04:50:06.2300406Z  ✓ apps/web/test/previews.test.ts (8 tests) 68ms
+2026-10-18T04:50:06.4520840Z (node:9232) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:50:06.4523669Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:50:08.5487856Z  ✓ scripts/test/backup.test.ts (6 tests) 647ms
+2026-10-18T04:50:09.0821737Z  ✓ packages/runner/test/swap-choice.test.ts (6 tests) 17ms
+2026-10-18T04:50:09.5067005Z  ✓ packages/recipe/test/recipe.test.ts (19 tests) 75ms
+2026-10-18T04:50:09.7825820Z  ✓ apps/web/test/recommendation.test.ts (13 tests) 10ms
+2026-10-18T04:50:10.2613921Z  ✓ packages/validator/test/operator-semantics.test.ts (20 tests) 90ms
+2026-10-18T04:50:11.2121180Z  ✓ apps/web/test/http.test.ts (17 tests) 34ms
+2026-10-18T04:50:11.7410548Z  ✓ packages/runner/test/limits-batch.test.ts (4 tests) 18ms
+2026-10-18T04:50:12.7536481Z  ✓ packages/gateway/test/exposure.test.ts (10 tests) 190ms
+2026-10-18T04:50:14.1462376Z (node:2036) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:50:14.1464140Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:50:16.4166997Z  ✓ apps/web/test/start-admission.test.ts (6 tests) 2268ms
+2026-10-18T04:50:16.4168697Z    ✓ starting a composed recipe admits it again (5)
+2026-10-18T04:50:16.4170519Z      ✓ an unchanged recipe starts with the hash that was offered 485ms
+2026-10-18T04:50:16.4187328Z      ✓ a stored ok recipe that fails the checks as they are now is refused (400), and the intake says so 345ms
+2026-10-18T04:50:16.4189492Z      ✓ a recipe that no longer hashes to what was offered is refused (400) 350ms
+2026-10-18T04:50:16.4192026Z      ✓ a recipe built from one byway no longer has is refused (400), asking for a new one; the intake says so 386ms
+2026-10-18T04:50:16.4194541Z      ✓ a recipe whose explanation changed does not start (409); the intake holds the new one, and the next start runs 306ms
+2026-10-18T04:50:16.4196798Z    ✓ the engine's own refusal at start (F02, ADR-0092 stage 2) (1)
+2026-10-18T04:50:16.4198385Z      ✓ a recipe the runner refuses (RecipeRefused) is a 400 that says why, and no run exists 393ms
+2026-10-18T04:50:17.6039041Z  ✓ packages/advisor/test/prompt-shows-admission.test.ts (8 tests) 173ms
+2026-10-18T04:50:17.8281067Z  ✓ apps/web/test/guard-estimates.test.ts (6 tests) 38ms
+2026-10-18T04:50:18.3346270Z  ✓ packages/runner/test/script-lock.test.ts (4 tests) 27ms
+2026-10-18T04:50:18.8115647Z  ✓ packages/prompts/test/media-contracts.test.ts (11 tests) 13ms
+2026-10-18T04:50:20.1517800Z  ✓ apps/web/test/guard-claims.test.ts (10 tests) 80ms
+2026-10-18T04:50:21.0173295Z (node:13084) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:50:21.0207111Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:50:21.8529999Z  ✓ packages/runner/test/restart.test.ts (2 tests) 830ms
+2026-10-18T04:50:21.8531977Z    ✓ a worker stopped mid-call, and its step retried on a new worker (ADR-0095) (2)
+2026-10-18T04:50:21.8534469Z      ✓ after a clean stop the retry is admitted under the run’s budget at once; the stopped call counts against the workspace only 428ms
+2026-10-18T04:50:21.8547095Z      ✓ after a crash the stopped call counts against the run until its lease runs out, then against the workspace only 401ms
+2026-10-18T04:50:22.8989049Z (node:12536) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:50:22.8991488Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:50:24.8544223Z  ✓ packages/runner/test/surfaces.test.ts (6 tests) 1897ms
+2026-10-18T04:50:24.8545765Z    ✓ rendering a web page (RENDER-1) (2)
+2026-10-18T04:50:24.8547578Z      ✓ makes the wide screen, the phone and the first screen, and labels each screenshot with its surface 330ms
+2026-10-18T04:50:24.8549213Z    ✓ showing the surfaces to a model (4)
+2026-10-18T04:50:24.8550901Z      ✓ attaches every surface under the line that names it, for a critic that asks for all three 377ms
+2026-10-18T04:50:24.8552940Z      ✓ a step with no knob (defect check, tells sweep) sees every surface rendered 323ms
+2026-10-18T04:50:24.8554883Z      ✓ a pool shows each candidate under one label, its surfaces named beneath it 327ms
+2026-10-18T04:50:25.8131465Z (node:7148) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:50:25.8206233Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:50:27.3303638Z  ✓ apps/web/test/shutdown.test.ts (5 tests) 820ms
+2026-10-18T04:50:28.0427991Z  ✓ packages/cli/test/cli.test.ts (15 tests) 93ms
+2026-10-18T04:50:30.4109498Z (node:8096) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:50:30.4111172Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:50:41.1759058Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:50:41.1815421Z 
+2026-10-18T04:50:41.1829253Z Temporal Server:      localhost:59086
+2026-10-18T04:50:41.1888977Z Temporal Persistence: C:\Users\RUNNER~1\AppData\Local\Temp\byway-engine-Cj016i\temporal.sqlite
+2026-10-18T04:50:41.1963285Z Temporal Metrics:     http://localhost:59088/metrics
+2026-10-18T04:50:44.2432375Z time=2026-10-18T04:50:44.242 level=ERROR msg="Operation failed with internal error." error="GetWorkflowExecution: failed to get signal info. Error: Failed to get signal info. Error: context deadline exceeded" error-type=serviceerror.Unavailable operation=GetWorkflowExecution
+2026-10-18T04:50:44.2438037Z time=2026-10-18T04:50:44.242 level=ERROR msg="Persistent fetch operation Failure" shard-id=1 address=127.0.0.1:59099 wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-tq-scanner wf-run-id=01a14d58-ffb7-77c8-a4ef-58cf7a59ade9 store-operation=get-wf-execution error="GetWorkflowExecution: failed to get signal info. Error: Failed to get signal info. Error: context deadline exceeded"
+2026-10-18T04:50:44.2443142Z time=2026-10-18T04:50:44.242 level=WARN msg="Fail to process task" shard-id=1 address=127.0.0.1:59099 component=visibility-queue-processor wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-tq-scanner wf-run-id=01a14d58-ffb7-77c8-a4ef-58cf7a59ade9 queue-task-key="{FireTime:1970-01-01 00:00:00 +0000 UTC TaskID:1048580}" queue-task-type=VisibilityStartExecution queue-task=32049b68-7872-4094-8e63-d0dd59896a83/temporal-sys-tq-scanner/01a14d58-ffb7-77c8-a4ef-58cf7a59ade9 wf-history-event-id=0 error="GetWorkflowExecution: failed to get signal info. Error: Failed to get signal info. Error: context deadline exceeded" error-type=serviceerror.Unavailable attempt=2 unexpected-error-attempts=1 lifecycle=ProcessingFailed task-category=visibility
+2026-10-18T04:50:45.8423016Z time=2026-10-18T04:50:45.841 level=ERROR msg="Operation failed with internal error." error="GetWorkflowExecution: failed to get request cancel info. Error: Failed to get request cancel info. Error: context deadline exceeded" error-type=serviceerror.Unavailable operation=GetWorkflowExecution
+2026-10-18T04:50:45.8426784Z time=2026-10-18T04:50:45.841 level=ERROR msg="Persistent fetch operation Failure" shard-id=1 address=127.0.0.1:59099 wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-history-scanner wf-run-id=01a14d58-ffbe-7cce-9c9b-cd539d144590 store-operation=get-wf-execution error="GetWorkflowExecution: failed to get request cancel info. Error: Failed to get request cancel info. Error: context deadline exceeded"
+2026-10-18T04:50:45.8432125Z time=2026-10-18T04:50:45.841 level=WARN msg="Fail to process task" shard-id=1 address=127.0.0.1:59099 component=visibility-queue-processor wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-history-scanner wf-run-id=01a14d58-ffbe-7cce-9c9b-cd539d144590 queue-task-key="{FireTime:1970-01-01 00:00:00 +0000 UTC TaskID:1048584}" queue-task-type=VisibilityStartExecution queue-task=32049b68-7872-4094-8e63-d0dd59896a83/temporal-sys-history-scanner/01a14d58-ffbe-7cce-9c9b-cd539d144590 wf-history-event-id=0 error="GetWorkflowExecution: failed to get request cancel info. Error: Failed to get request cancel info. Error: context deadline exceeded" error-type=serviceerror.Unavailable attempt=2 unexpected-error-attempts=1 lifecycle=ProcessingFailed task-category=visibility
+2026-10-18T04:50:47.2443538Z time=2026-10-18T04:50:47.243 level=ERROR msg="Operation failed with internal error." error="GetWorkflowExecution: failed to get signal info. Error: Failed to get signal info. Error: context deadline exceeded" error-type=serviceerror.Unavailable operation=GetWorkflowExecution
+2026-10-18T04:50:47.2448712Z time=2026-10-18T04:50:47.243 level=ERROR msg="Persistent fetch operation Failure" shard-id=1 address=127.0.0.1:59099 wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-tq-scanner wf-run-id=01a14d58-ffb7-77c8-a4ef-58cf7a59ade9 store-operation=get-wf-execution error="GetWorkflowExecution: failed to get signal info. Error: Failed to get signal info. Error: context deadline exceeded"
+2026-10-18T04:50:47.2458130Z time=2026-10-18T04:50:47.243 level=WARN msg="Fail to process task" shard-id=1 address=127.0.0.1:59099 component=visibility-queue-processor wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-tq-scanner wf-run-id=01a14d58-ffb7-77c8-a4ef-58cf7a59ade9 queue-task-key="{FireTime:1970-01-01 00:00:00 +0000 UTC TaskID:1048580}" queue-task-type=VisibilityStartExecution queue-task=32049b68-7872-4094-8e63-d0dd59896a83/temporal-sys-tq-scanner/01a14d58-ffb7-77c8-a4ef-58cf7a59ade9 wf-history-event-id=0 error="GetWorkflowExecution: failed to get signal info. Error: Failed to get signal info. Error: context deadline exceeded" error-type=serviceerror.Unavailable attempt=3 unexpected-error-attempts=2 lifecycle=ProcessingFailed task-category=visibility
+2026-10-18T04:50:47.5373037Z time=2026-10-18T04:50:47.535 level=WARN msg="List query exceeded threshold" operation=ListWorkflowExecutions duration=2.6441594s visibility-query="WorkflowType = 'runRecipe' AND ExecutionStatus = 'Running'" namespace=default
+2026-10-18T04:50:48.8425559Z time=2026-10-18T04:50:48.841 level=ERROR msg="Operation failed with internal error." error="GetWorkflowExecution: failed to get child executionsRow info. Error: Failed to get timer info. Error: context deadline exceeded" error-type=serviceerror.Unavailable operation=GetWorkflowExecution
+2026-10-18T04:50:48.8430691Z time=2026-10-18T04:50:48.841 level=ERROR msg="Persistent fetch operation Failure" shard-id=1 address=127.0.0.1:59099 wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-history-scanner wf-run-id=01a14d58-ffbe-7cce-9c9b-cd539d144590 store-operation=get-wf-execution error="GetWorkflowExecution: failed to get child executionsRow info. Error: Failed to get timer info. Error: context deadline exceeded"
+2026-10-18T04:50:48.8436320Z time=2026-10-18T04:50:48.841 level=WARN msg="Fail to process task" shard-id=1 address=127.0.0.1:59099 component=visibility-queue-processor wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-history-scanner wf-run-id=01a14d58-ffbe-7cce-9c9b-cd539d144590 queue-task-key="{FireTime:1970-01-01 00:00:00 +0000 UTC TaskID:1048584}" queue-task-type=VisibilityStartExecution queue-task=32049b68-7872-4094-8e63-d0dd59896a83/temporal-sys-history-scanner/01a14d58-ffbe-7cce-9c9b-cd539d144590 wf-history-event-id=0 error="GetWorkflowExecution: failed to get child executionsRow info. Error: Failed to get timer info. Error: context deadline exceeded" error-type=serviceerror.Unavailable attempt=3 unexpected-error-attempts=2 lifecycle=ProcessingFailed task-category=visibility
+2026-10-18T04:50:49.5958998Z time=2026-10-18T04:50:49.594 level=WARN msg="List query exceeded threshold" operation=ListWorkflowExecutions duration=2.0499504s visibility-query="WorkflowType = 'runRecipe' AND ExecutionStatus = 'Running'" namespace=default
+2026-10-18T04:50:50.2454138Z time=2026-10-18T04:50:50.243 level=ERROR msg="Operation failed with an error." error="context deadline exceeded"
+2026-10-18T04:50:50.2461052Z time=2026-10-18T04:50:50.243 level=WARN msg="Fail to process task" shard-id=1 address=127.0.0.1:59099 component=visibility-queue-processor wf-namespace-id=32049b68-7872-4094-8e63-d0dd59896a83 wf-id=temporal-sys-tq-scanner wf-run-id=01a14d58-ffb7-77c8-a4ef-58cf7a59ade9 queue-task-key="{FireTime:1970-01-01 00:00:00 +0000 UTC TaskID:1048580}" queue-task-type=VisibilityStartExecution queue-task=32049b68-7872-4094-8e63-d0dd59896a83/temporal-sys-tq-scanner/01a14d58-ffb7-77c8-a4ef-58cf7a59ade9 wf-history-event-id=0 error="context deadline exceeded" error-type=context.DeadlineExceeded attempt=4 unexpected-error-attempts=3 lifecycle=ProcessingFailed task-category=visibility
+2026-10-18T04:50:57.9704766Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:50:57.9760776Z 
+2026-10-18T04:50:57.9800280Z Temporal Server:      localhost:59086
+2026-10-18T04:50:57.9949129Z Temporal Persistence: C:\Users\RUNNER~1\AppData\Local\Temp\byway-engine-Cj016i\temporal.sqlite
+2026-10-18T04:50:58.0110425Z Temporal Metrics:     http://localhost:59118/metrics
+2026-10-18T04:51:04.3822995Z time=2026-10-18T04:51:04.380 level=ERROR msg="Operation failed with internal error." error="CreateTaskQueue operation failed. Failed to make task queue 8096@runnervm0xl3a-71774d564d3841a79894f08c7fd605eb of type Workflow. Error: context canceled" error-type=serviceerror.Unavailable operation=CreateTaskQueue
+2026-10-18T04:51:05.1357277Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:51:05.1399581Z 
+2026-10-18T04:51:05.1619746Z Temporal Server:      localhost:59086
+2026-10-18T04:51:05.1682112Z Temporal Persistence: C:\Users\RUNNER~1\AppData\Local\Temp\byway-engine-Cj016i\temporal.sqlite
+2026-10-18T04:51:05.1683919Z Temporal HTTP:        localhost:59130
+2026-10-18T04:51:05.1730178Z Temporal Metrics:     http://localhost:59131/metrics
+2026-10-18T04:51:11.0372857Z time=2026-10-18T04:51:11.034 level=WARN msg="List query exceeded threshold" operation=ListWorkflowExecutions duration=3.7116276s visibility-query="WorkflowType = 'runRecipe' AND ExecutionStatus = 'Running'" namespace=default
+2026-10-18T04:51:12.1242468Z time=2026-10-18T04:51:12.121 level=WARN msg="List query exceeded threshold" operation=ListWorkflowExecutions duration=1.0839424s visibility-query="WorkflowType = 'runRecipe' AND ExecutionStatus = 'Running'" namespace=default
+2026-10-18T04:51:12.2289735Z  ✓ packages/runner/test/dev-engine.test.ts (3 tests) 41820ms
+2026-10-18T04:51:12.2291209Z    ✓ the dev engine (3)
+2026-10-18T04:51:12.2292923Z      ✓ runs a recipe end to end, and keeps its history in the data directory across restarts 33819ms
+2026-10-18T04:51:12.2308091Z      ✓ keeps the Temporal HTTP API closed: no rebinding reads, no cross-site writes (SEC-2) 7762ms
+2026-10-18T04:51:13.4141707Z  ✓ packages/prompts/test/mock.test.ts (28 tests) 37ms
+2026-10-18T04:51:13.6920623Z  ✓ packages/gateway/test/errors.test.ts (22 tests) 72ms
+2026-10-18T04:51:14.0196386Z  ✓ apps/web/test/refresh.test.ts (9 tests) 127ms
+2026-10-18T04:51:14.7758948Z  ✓ packages/runner/test/html-tokens.test.ts (8 tests) 30ms
+2026-10-18T04:51:15.9438139Z  ✓ packages/advisor/test/profile.test.ts (18 tests) 199ms
+2026-10-18T04:51:16.4714771Z  ✓ packages/prompts/test/guards.test.ts (367 tests) 95ms
+2026-10-18T04:51:16.6750978Z  ✓ apps/web/test/checkpoints.test.ts (11 tests) 10ms
+2026-10-18T04:51:16.8896005Z  ✓ apps/web/test/api-client.test.ts (10 tests) 16ms
+2026-10-18T04:51:17.3872138Z  ✓ packages/prompts/test/contracts.test.ts (152 tests) 66ms
+2026-10-18T04:51:18.4273152Z (node:11228) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:51:18.4276872Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:51:19.6011201Z  ✓ packages/runner/test/begin-run.test.ts (5 tests) 1169ms
+2026-10-18T04:51:19.6013276Z    ✓ a model step whose run has image references (2)
+2026-10-18T04:51:19.6014904Z      ✓ does not ask the renderer when the run has fewer than three references, or none of them is an image 309ms
+2026-10-18T04:51:19.8429324Z  ✓ packages/store/test/resolution.test.ts (7 tests) 9ms
+2026-10-18T04:51:20.0621464Z  ✓ apps/web/test/history.test.ts (9 tests) 10ms
+2026-10-18T04:51:20.2924688Z  ✓ apps/web/test/run-screen.test.ts (8 tests) 32ms
+2026-10-18T04:51:20.4981868Z  ✓ packages/protocol/test/protocol.test.ts (13 tests) 14ms
+2026-10-18T04:51:21.3678528Z (node:10732) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:51:21.3681489Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:51:23.6894463Z  ✓ packages/runner/test/ledger-faults.test.ts (6 tests) 2318ms
+2026-10-18T04:51:23.6896423Z    ✓ a ledger line the spend book cannot record is an accounting fault (ADR-0095) (6)
+2026-10-18T04:51:23.6899408Z      ✓ its time missing ("at" became "au"): paid calls wait until it is acknowledged; demo calls, spend, Settings and the start-up report go on 410ms
+2026-10-18T04:51:23.6910036Z      ✓ a served model that is an object: paid calls wait until it is acknowledged; demo calls, spend, Settings and the start-up report go on 364ms
+2026-10-18T04:51:23.6912921Z      ✓ a step id that is an object: paid calls wait until it is acknowledged; demo calls, spend, Settings and the start-up report go on 398ms
+2026-10-18T04:51:23.6915701Z      ✓ a price basis that is a number: paid calls wait until it is acknowledged; demo calls, spend, Settings and the start-up report go on 363ms
+2026-10-18T04:51:23.6918655Z      ✓ a cost of 1e303, which rounds to Infinity: paid calls wait until it is acknowledged; demo calls, spend, Settings and the start-up report go on 371ms
+2026-10-18T04:51:23.6921221Z      ✓ a cost of $5,000, more than one call can cost: paid calls wait until it is acknowledged; demo calls, spend, Settings and the start-up report go on 409ms
+2026-10-18T04:51:23.9627821Z  ✓ packages/canonical/test/canonical.test.ts (28 tests) 19ms
+2026-10-18T04:51:24.3445567Z  ✓ packages/gateway/test/profiles.test.ts (13 tests) 18ms
+2026-10-18T04:51:24.8228512Z  ✓ packages/recipe/test/operators.test.ts (12 tests) 41ms
+2026-10-18T04:51:25.4312263Z  ✓ packages/validator/test/reads.test.ts (9 tests) 32ms
+2026-10-18T04:51:25.9952733Z  ✓ packages/recipe/test/projection.test.ts (19 tests) 23ms
+2026-10-18T04:51:26.5075455Z (node:4172) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:51:26.5099613Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:51:28.8998111Z  ✓ packages/store/test/artifacts.test.ts (12 tests) 2387ms
+2026-10-18T04:51:28.8999602Z    ✓ artifact store (12)
+2026-10-18T04:51:28.9001015Z      ✓ dedupes concurrent puts of the same content 409ms
+2026-10-18T04:51:29.2352010Z  ✓ scripts/test/seed-evidence.test.ts (5 tests) 48ms
+2026-10-18T04:51:29.5357874Z (node:2328) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:51:29.5359538Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:51:30.9740714Z  ✓ packages/store/test/check.test.ts (7 tests) 1425ms
+2026-10-18T04:51:31.7836364Z  ✓ packages/gateway/test/family.test.ts (7 tests) 49ms
+2026-10-18T04:51:32.2759624Z  ✓ packages/validator/test/scope-cost.test.ts (17 tests) 114ms
+2026-10-18T04:51:32.5041216Z  ✓ packages/gateway/test/estimate.test.ts (14 tests) 11ms
+2026-10-18T04:51:32.7184898Z  ✓ packages/gateway/test/env.test.ts (13 tests) 14ms
+2026-10-18T04:51:34.2565475Z  ✓ packages/advisor/test/real-prompts.test.ts (17 tests) 537ms
+2026-10-18T04:51:34.7061549Z  ✓ packages/prompts/test/renderer.test.ts (10 tests) 55ms
+2026-10-18T04:51:34.9276157Z  ✓ apps/web/test/guard-disabled.test.ts (3 tests) 34ms
+2026-10-18T04:51:35.3522525Z  ✓ packages/catalog/test/semantics.test.ts (109 tests) 42ms
+2026-10-18T04:51:35.5717809Z  ✓ apps/web/test/spending.test.ts (6 tests) 7ms
+2026-10-18T04:51:35.9156833Z  ✓ packages/runner/test/fences.test.ts (14 tests) 15ms
+2026-10-18T04:51:36.1828425Z  ✓ apps/web/test/examples-draft.test.ts (6 tests) 45ms
+2026-10-18T04:51:36.6888219Z  ✓ packages/prompts/test/coverage.test.ts (157 tests) 31ms
+2026-10-18T04:51:36.9698683Z  ✓ apps/web/test/model-errors.test.ts (6 tests) 7ms
+2026-10-18T04:51:37.1717889Z  ✓ apps/web/test/session-slot.test.ts (8 tests) 9ms
+2026-10-18T04:51:37.4295636Z  ✓ packages/runner/test/gates.test.ts (11 tests) 28ms
+2026-10-18T04:51:39.3925153Z  ✓ packages/validator/test/flow-memo.test.ts (4 tests) 1627ms
+2026-10-18T04:51:39.3927011Z    ✓ the memoized walk finds exactly what the full walk finds (1)
+2026-10-18T04:51:39.3929322Z      ✓ on 600 random recipes of every operator, nested up to 4 levels: the same verdict, finding for finding 1613ms
+2026-10-18T04:51:39.6933940Z  ✓ apps/web/test/action.test.ts (6 tests) 19ms
+2026-10-18T04:51:40.1274839Z  ✓ packages/prompts/test/review-fixes.test.ts (41 tests) 14ms
+2026-10-18T04:51:40.4089860Z  ✓ apps/web/test/start-identity.test.ts (6 tests) 12ms
+2026-10-18T04:51:40.7595857Z  ✓ apps/web/test/runs.test.ts (10 tests) 13ms
+2026-10-18T04:51:41.8880163Z  ✓ packages/advisor/test/limits-admission.test.ts (10 tests) 111ms
+2026-10-18T04:51:42.2722234Z (node:12032) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:51:42.2724294Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:51:42.4959362Z  ✓ packages/store/test/datadir.test.ts (14 tests) 207ms
+2026-10-18T04:51:43.4298796Z  ✓ packages/advisor/test/routing.test.ts (17 tests) 11ms
+2026-10-18T04:51:43.7667600Z (node:13036) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:51:43.7669286Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:51:53.8891226Z  ✓ packages/store/test/spend-book.test.ts (79 tests) 10117ms
+2026-10-18T04:51:53.8893184Z    ✓ SpendBook contract: SQLite, two connections on one file (38)
+2026-10-18T04:51:53.8895814Z      ✓ ends one owner’s leases at once (a clean stop): its sent and accepted calls may have been billed, against the workspace only; its open ones count nothing 354ms
+2026-10-18T04:51:53.8906253Z      ✓ settles from every state, idempotently: the true cost wins, and a second settlement changes nothing 432ms
+2026-10-18T04:51:53.8907920Z      ✓ operation keys (8)
+2026-10-18T04:51:53.8910260Z        ✓ lets a later attempt take the key of an owner that is gone: an open row is released, a sent one may have been billed; a settled one first says so, and is bought again (counted) only when asked to 311ms
+2026-10-18T04:51:53.8913035Z    ✓ two processes admitting against one remaining budget (F03) (1)
+2026-10-18T04:51:53.8914555Z      ✓ admit exactly as many calls together as the budget holds 2157ms
+2026-10-18T04:51:54.3626370Z  ✓ packages/validator/test/limits-rules.test.ts (14 tests) 92ms
+2026-10-18T04:51:54.6590463Z (node:3592) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:51:54.6592519Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:51:55.6146108Z  ✓ packages/store/test/memo.test.ts (7 tests) 950ms
+2026-10-18T04:51:56.5900025Z  ✓ packages/advisor/test/label.test.ts (16 tests) 35ms
+2026-10-18T04:51:57.4146079Z  ✓ packages/gateway/test/index.test.ts (4 tests) 20ms
+2026-10-18T04:51:57.7772352Z  ✓ apps/web/test/format.test.ts (15 tests) 98ms
+2026-10-18T04:51:58.5161218Z  ✓ packages/gateway/test/keys.test.ts (7 tests) 9ms
+2026-10-18T04:51:58.8797703Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:51:58.8799801Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:51:59.9890136Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:00.0302349Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:00.0670243Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:00.0845411Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:00.0931724Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:00.1070624Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:00.1767827Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:00.1769348Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:01.5490582Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:01.5616951Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:01.5662619Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:01.5798637Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:01.6419669Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:01.6454631Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:01.7114200Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:01.7117131Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.1280560Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:03.1451634Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.1735870Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:03.2359207Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.2575010Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:03.2808457Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.2874996Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:03.3161993Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.3240839Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:03.3277782Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.3852856Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:03.3909315Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.4730216Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:03.4836488Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.5217835Z (node:10576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:03.5221110Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:03.5469957Z  ✓ packages/store/test/concurrency.test.ts (4 tests) 4654ms
+2026-10-18T04:52:03.5475214Z    ✓ concurrent store instances on one file (4)
+2026-10-18T04:52:03.5488408Z      ✓ parallel writers on separate threads get unique, gap-free seqs 1545ms
+2026-10-18T04:52:03.5490695Z      ✓ parallel writers on separate threads retrying the same keyed appends insert each key once 1233ms
+2026-10-18T04:52:03.5493488Z      ✓ threads opening a fresh data directory at once migrate it once and agree on one default workspace 1659ms
+2026-10-18T04:52:03.8960420Z  ✓ packages/prompts/test/template.test.ts (17 tests) 19ms
+2026-10-18T04:52:05.0645596Z  ✓ packages/advisor/test/compose-unicode.test.ts (4 tests) 109ms
+2026-10-18T04:52:05.2610717Z  ✓ packages/prompts/test/slots.test.ts (8 tests) 9ms
+2026-10-18T04:52:05.4965709Z  ✓ packages/runner/test/temporal-cli.test.ts (8 tests) 13ms
+2026-10-18T04:52:05.9276030Z  ✓ packages/recipe/test/shape.test.ts (7 tests) 81ms
+2026-10-18T04:52:06.1229838Z  ✓ scripts/test/readme.test.ts (5 tests) 12ms
+2026-10-18T04:52:06.3514401Z  ✓ packages/prompts/test/syntax.test.ts (13 tests) 12ms
+2026-10-18T04:52:07.0736702Z  ✓ packages/runner/test/start-refusal.test.ts (4 tests) 52ms
+2026-10-18T04:52:07.4673368Z  ✓ packages/runner/test/no-executor.test.ts (34 tests) 15ms
+2026-10-18T04:52:07.8745242Z  ✓ packages/catalog/test/limits.test.ts (86 tests) 59ms
+2026-10-18T04:52:08.2900785Z (node:11160) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:08.2909080Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:08.8853677Z  ✓ packages/store/test/preferences.test.ts (4 tests) 581ms
+2026-10-18T04:52:09.2288055Z  ✓ packages/prompts/test/outputs.test.ts (25 tests) 14ms
+2026-10-18T04:52:09.5064764Z  ✓ apps/web/test/start-draft.test.ts (6 tests) 12ms
+2026-10-18T04:52:10.8082534Z  ✓ packages/advisor/test/admit.test.ts (4 tests) 226ms
+2026-10-18T04:52:11.2944011Z  ✓ packages/catalog/test/chooser.test.ts (4 tests) 12ms
+2026-10-18T04:52:11.9990086Z  ✓ packages/prompts/test/step-slots.test.ts (75 tests) 30ms
+2026-10-18T04:52:12.6651930Z  ✓ packages/runner/test/build-atomic.test.ts (2 tests) 363ms
+2026-10-18T04:52:13.0614887Z  ✓ apps/web/test/shortcuts.test.ts (3 tests) 9ms
+2026-10-18T04:52:13.3314242Z  ✓ scripts/test/composition.test.ts (4 tests) 7ms
+2026-10-18T04:52:13.8132366Z  ✓ packages/runner/test/revise-in-place.test.ts (3 tests) 7ms
+2026-10-18T04:52:14.1988207Z  ✓ packages/recipe/test/derive.test.ts (5 tests) 10ms
+2026-10-18T04:52:14.4001318Z  ✓ packages/contracts/test/contracts.test.ts (5 tests) 6ms
+2026-10-18T04:52:15.3841581Z  ✓ packages/advisor/test/advisor.test.ts (5 tests) 50ms
+2026-10-18T04:52:16.3177440Z  ✓ packages/runner/test/renderer-check.test.ts (3 tests) 12ms
+2026-10-18T04:52:16.5252161Z  ✓ apps/web/test/serving.test.ts (3 tests) 14ms
+2026-10-18T04:52:16.9354349Z  ✓ packages/recipe/test/reads.test.ts (3 tests) 17ms
+2026-10-18T04:52:17.3741148Z  ✓ packages/prompts/test/template-slots.test.ts (2 tests) 13ms
+2026-10-18T04:52:17.5933587Z  ✓ apps/web/test/rundata.test.ts (2 tests) 7ms
+2026-10-18T04:52:17.9453682Z  ✓ packages/runner/test/reads.test.ts (2 tests) 7ms
+2026-10-18T04:52:18.1285595Z  ✓ packages/runner/test/start-failure.test.ts (2 tests) 5ms
+2026-10-18T04:52:18.3219357Z  ✓ apps/web/test/refs.test.ts (3 tests) 6ms
+2026-10-18T04:52:18.5317274Z  ✓ apps/web/test/claims.test.ts (3 tests) 6ms
+2026-10-18T04:52:18.7321638Z  ✓ packages/prompts/test/pure.test.ts (2 tests) 7ms
+2026-10-18T04:52:20.4388090Z (node:12128) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:52:20.4391138Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:52:20.6466679Z time=2026-10-18T04:52:20.638 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+2026-10-18T04:52:21.0275368Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:52:21.0320444Z 
+2026-10-18T04:52:21.0469991Z Temporal Server:      localhost:59181
+2026-10-18T04:52:21.0527485Z Temporal Persistence: in-memory
+2026-10-18T04:52:21.0532326Z Temporal Metrics:     http://localhost:59182/metrics
+2026-10-18T04:53:11.7396563Z  ✓ packages/runner/test/configurations.test.ts (17 tests) 51264ms
+2026-10-18T04:53:11.7436892Z    ✓ C1 on web-page (2)
+2026-10-18T04:53:11.7438762Z      ✓ runs end to end: loops stop at the hidden threshold, ASSET on request, your pick, your words 2366ms
+2026-10-18T04:53:11.7441469Z      ✓ at the cap, re-ranks the best versions in a fresh call and asks whether to use the best so far 4024ms
+2026-10-18T04:53:11.7443816Z    ✓ C2 on options (1)
+2026-10-18T04:53:11.7446034Z      ✓ runs end to end: twelve sparks, dedupe, annotations, your vision rounds, your words, mood boards beside the work 1796ms
+2026-10-18T04:53:11.7447771Z    ✓ C5 on media (2)
+2026-10-18T04:53:11.7451420Z      ✓ runs the relay one shot after another from the anchor frames, holds your script, and retries D2 when the launch gate fails 5297ms
+2026-10-18T04:53:11.7455041Z      ✓ with keys but no video model, every relay link finishes skipped and says so; the storyboard and anchor pass through 3040ms
+2026-10-18T04:53:11.7457509Z    ✓ C4 on prose (1)
+2026-10-18T04:53:11.7459953Z      ✓ runs end to end: framings, your brief, a draft, the recipient critic in OK mode, distill, your key lines, the claim log 2207ms
+2026-10-18T04:53:11.7462955Z    ✓ C4 with references (GREAT mode, ADR-0072) (1)
+2026-10-18T04:53:11.7479955Z      ✓ ranks our draft blind among four exemplars; each round shows our rank of five, and the loop stops at the hidden middle 1947ms
+2026-10-18T04:53:11.7491599Z    ✓ C6a on prose (1)
+2026-10-18T04:53:11.7506781Z      ✓ your draft by a write checkpoint, three readers who only point, your call when it is done; no model writes a sentence 2352ms
+2026-10-18T04:53:11.7732974Z    ✓ C7 on code-diff (2)
+2026-10-18T04:53:11.7754348Z      ✓ runs end to end: implement, defect check, scope cut, the review loop, the bloat cut, the sweep and your why 2001ms
+2026-10-18T04:53:11.7874224Z      ✓ with the interview: you answer its questions in place, and implement works from the whole spec (F09) 2147ms
+2026-10-18T04:53:11.7875933Z    ✓ C3 on prose (3)
+2026-10-18T04:53:11.7886536Z      ✓ asks who writes the first draft, takes yours, and illustrates the piece on request 2700ms
+2026-10-18T04:53:11.7915257Z      ✓ your Yes decides: an empty brief is asked for again; empty twice, the step is skipped with its note and the run goes on (D3, ADR-0101) 2762ms
+2026-10-18T04:53:11.7926116Z      ✓ the AI’s advice comes with the image, in the step’s note, as its suggestion; it never stops the image (D3, ADR-0101) 2689ms
+2026-10-18T04:53:11.7945861Z    ✓ a loop a person holds, at its cap (C6a's author loop, two rounds) (3)
+2026-10-18T04:53:11.7956959Z      ✓ asks at the last round; No raises it once; at the raised cap you keep this version, and the run goes on 3076ms
+2026-10-18T04:53:11.7969852Z      ✓ 'Stop the run' at the last choice ends the run cancelled: you stopped it, nothing failed 3885ms
+2026-10-18T04:53:11.7979472Z      ✓ Cancel while the cap question is open ends the run cancelled and withdraws the question 4514ms
+2026-10-18T04:53:13.8764490Z (node:13276) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:53:13.8768612Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:53:14.4408454Z time=2026-10-18T04:53:14.440 level=WARN msg="Cluster Id in Cluster Metadata config is not a valid uuid. Generating a new Cluster Id" component=metadata-initializer
+2026-10-18T04:53:15.0017936Z Temporal CLI 1.9.1 (Server 1.32.0, UI 2.54.1)
+2026-10-18T04:53:15.0304249Z 
+2026-10-18T04:53:15.0306020Z Temporal Server:      localhost:59221
+2026-10-18T04:53:15.0308283Z Temporal Persistence: in-memory
+2026-10-18T04:53:15.0316854Z Temporal Metrics:     http://localhost:59223/metrics
+2026-10-18T04:53:22.7782508Z 2026-10-18T04:53:22.773703Z  WARN temporalio_sdk_core::worker::activities: Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. task_token=TaskToken(CiQwMWExNGQ1Yi01ODJjLTc4OTYtODcxYS0yZTk2ODE2NGZiOGYSLmJ5d2F5LXJ1bi1mNDE4OTAxNC03YzlhLTQyNDctOTRhOS01M2U3YzA0YzcyNmQaJDAxYTE0ZDViLTc4MTMtNzk0MC1hOTYxLWE0MmI2MThiM2MyNiAYKAEyATVCCnJlbmRlclZpZXdKCAgBENSJQBgB) details=Status { code: NotFound, message: "workflow execution already completed", details: b"\x08\x05\x12$workflow execution already completed\x1aB\n@type.googleapis.com/temporal.api.errordetails.v1.NotFoundFailure", metadata: MetadataMap { headers: {"content-type": "application/grpc"} }, source: None }
+2026-10-18T04:53:22.7798841Z 2026-10-18T04:53:22.777868Z  WARN temporalio_sdk_core::worker::activities: Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. task_token=TaskToken(CiQwMWExNGQ1Yi01ODJjLTc4OTYtODcxYS0yZTk2ODE2NGZiOGYSLmJ5d2F5LXJ1bi1mNDE4OTAxNC03YzlhLTQyNDctOTRhOS01M2U3YzA0YzcyNmQaJDAxYTE0ZDViLTc4MTMtNzk0MC1hOTYxLWE0MmI2MThiM2MyNiAZKAEyATZCCnJlbmRlclZpZXdKCAgBENWJQBgB) details=Status { code: NotFound, message: "workflow execution already completed", details: b"\x08\x05\x12$workflow execution already completed\x1aB\n@type.googleapis.com/temporal.api.errordetails.v1.NotFoundFailure", metadata: MetadataMap { headers: {"content-type": "application/grpc"} }, source: None }
+2026-10-18T04:53:22.7820122Z 2026-10-18T04:53:22.777868Z  WARN temporalio_sdk_core::worker::activities: Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. task_token=TaskToken(CiQwMWExNGQ1Yi01ODJjLTc4OTYtODcxYS0yZTk2ODE2NGZiOGYSLmJ5d2F5LXJ1bi1mNDE4OTAxNC03YzlhLTQyNDctOTRhOS01M2U3YzA0YzcyNmQaJDAxYTE0ZDViLTc4MTMtNzk0MC1hOTYxLWE0MmI2MThiM2MyNiAaKAEyATdCCnJlbmRlclZpZXdKCAgBENaJQBgB) details=Status { code: NotFound, message: "workflow execution already completed", details: b"\x08\x05\x12$workflow execution already completed\x1aB\n@type.googleapis.com/temporal.api.errordetails.v1.NotFoundFailure", metadata: MetadataMap { headers: {"content-type": "application/grpc"} }, source: None }
+2026-10-18T04:53:45.4334237Z  ✓ packages/runner/test/controls.test.ts (44 tests) 31544ms
+2026-10-18T04:53:45.4426044Z    ✓ a run from start to finish (1)
+2026-10-18T04:53:45.4453170Z      ✓ starts with a queued RunRecord, then runs the steps, waits for a person and ends with the output 666ms
+2026-10-18T04:53:45.4691601Z    ✓ checkpoint answers (3)
+2026-10-18T04:53:45.5110265Z      ✓ a pick must choose exactly k of the options shown 531ms
+2026-10-18T04:53:45.5248537Z    ✓ pause and resume (2)
+2026-10-18T04:53:45.5487180Z      ✓ lets running candidates finish their step, then pauses; nothing starts until resume 873ms
+2026-10-18T04:53:45.5727785Z      ✓ pauses a run that is waiting for a person, and keeps it paused after the answer until resume 585ms
+2026-10-18T04:53:45.5788890Z    ✓ cancel (2)
+2026-10-18T04:53:45.5822745Z      ✓ cancels while steps are running, and nothing is logged after "cancelled" 690ms
+2026-10-18T04:53:45.6175872Z    ✓ budget (2)
+2026-10-18T04:53:45.6180315Z      ✓ asks to raise the budget when a call would exceed it, raises it, and carries on 378ms
+2026-10-18T04:53:45.6184027Z      ✓ fails the run with a plain message when the raise is declined 346ms
+2026-10-18T04:53:45.6186753Z    ✓ routes (2)
+2026-10-18T04:53:45.6198343Z      ✓ asks with a choose checkpoint otherwise, and follows the answer 385ms
+2026-10-18T04:53:45.6212596Z    ✓ CRITIC modes (ADR-0071) (3)
+2026-10-18T04:53:45.6221083Z      ✓ falls back to OK mode without three references, and says so 362ms
+2026-10-18T04:53:45.6224636Z      ✓ runs in GREAT mode with three or more references: a shuffled, blind lineup, ranked whole, with no threshold in sight (ADR-0072) 405ms
+2026-10-18T04:53:45.6289002Z      ✓ asks once more when the ranking does not name every label exactly once 339ms
+2026-10-18T04:53:45.6301915Z    ✓ answers that miss their contract (4)
+2026-10-18T04:53:45.6308653Z      ✓ asks again with a larger output allowance when an answer was cut off 430ms
+2026-10-18T04:53:45.6329219Z    ✓ determinism (1)
+2026-10-18T04:53:45.6373507Z      ✓ replays recorded histories of concurrent and interactive runs without a mismatch 3708ms
+2026-10-18T04:53:45.6440632Z    ✓ relay with a check-clean repair loop (1)
+2026-10-18T04:53:45.6460623Z      ✓ regenerates a link that has a defect, from the same start frame, until the check is clean; links run in order 1803ms
+2026-10-18T04:53:45.6466217Z    ✓ demo mode decides media by the demo profile (contracts v4 Gateway.demo) (1)
+2026-10-18T04:53:45.6473569Z      ✓ a run on a profile without a video model still gets the demo clips, because every call goes to the mock 754ms
+2026-10-18T04:53:45.6506231Z    ✓ an empty CUT directive (spec §3.3 "Nothing to remove.") (3)
+2026-10-18T04:53:45.6555497Z      ✓ a model that finds nothing to remove ends the trim there: the fix makes no change and says so 371ms
+2026-10-18T04:53:45.6570603Z    ✓ a loop capped by policy (1)
+2026-10-18T04:53:45.6574642Z      ✓ takes the best snapshot by a fresh re-rank, asking no one 780ms
+2026-10-18T04:53:45.6601459Z    ✓ keepsVoice (port rule 6) (1)
+2026-10-18T04:53:45.6666156Z      ✓ writes back the voice-over a machine write changed, exactly as you wrote it, and the step says so (F07) 357ms
+2026-10-18T04:53:45.6715197Z    ✓ the cliché sweep is decided hit by hit (TELLS-1, convention C2) (2)
+2026-10-18T04:53:45.6718711Z      ✓ asks which hits to swap, one by one; only the chosen reach the swap step, and the A/B compare follows 684ms
+2026-10-18T04:53:45.6783319Z      ✓ none chosen: the swap step changes nothing and says so, and there is nothing to compare 598ms
+2026-10-18T04:53:45.6805909Z    ✓ a paid call is not bought twice (ENG-3, ENG-12, convention C5) (5)
+2026-10-18T04:53:45.6903088Z      ✓ a step whose local write failed after its model call is retried by Temporal and reuses the answer it bought 1244ms
+2026-10-18T04:53:45.6936158Z      ✓ a memo write that fails once after the model answered is retried in place: the call is bought once (the re-check) 754ms
+2026-10-18T04:53:45.6939529Z      ✓ a memo write that keeps failing fails the step for good, saying the call was paid and is in the ledger 3640ms
+2026-10-18T04:53:45.7430684Z      ✓ a step run again after a budget raise reuses its briefs and images, and the timeline shows the images it placed 363ms
+2026-10-18T04:53:45.7461100Z      ✓ a GREAT critic refused on its second shuffle reuses the first after the raise: the same lineup, not bought again 410ms
+2026-10-18T04:53:45.7463884Z    ✓ an answer that cannot be written back is asked for again, never a failed run (ENG-6) (2)
+2026-10-18T04:53:45.7497610Z      ✓ your words on a page with a line added: asked again with your text and why, at no cost; the fixed answer is placed 573ms
+2026-10-18T04:53:46.0277439Z  ✓ packages/gateway/test/memory-book.test.ts (38 tests) 75ms
+2026-10-18T04:53:46.1380928Z 
+2026-10-18T04:53:46.1383638Z  Test Files  191 passed (191)
+2026-10-18T04:53:46.1388952Z       Tests  4864 passed (4864)
+2026-10-18T04:53:46.1420921Z    Start at  04:36:31
+2026-10-18T04:53:46.1427150Z    Duration  1034.19s (tests 91%, import 8%, transform 1%)
+2026-10-18T04:53:46.1430844Z 
+2026-10-18T04:53:46.1528801Z     Isolate  191 workers spawned · ~181ms startup each (spawn + environment, per file)
+2026-10-18T04:53:46.1532006Z              at least ~34.36s faster with isolate: false — reuses workers across files instead of one per file
+2026-10-18T04:53:46.1537337Z 
+2026-10-18T04:53:47.4654277Z $ tsx scripts/e2e.ts
+2026-10-18T04:53:48.0389861Z e2e: starting byway in demo mode at http://127.0.0.1:59249 (engine port 59250, data C:\Users\RUNNER~1\AppData\Local\Temp\byway-e2e-ymWSdb)
+2026-10-18T04:54:22.9192469Z e2e: byway is ready; running the suite
+2026-10-18T04:54:24.8892082Z (node:9332) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:54:24.8894118Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:54:26.9294145Z 
+2026-10-18T04:54:26.9298930Z Running 53 tests using 1 worker
+2026-10-18T04:54:26.9299932Z 
+2026-10-18T04:54:27.9218135Z (node:13048) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+2026-10-18T04:54:27.9220637Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-10-18T04:54:36.1293660Z   ok  1 [chromium] › e2e\artifact-views.spec.ts:80:3 › every Open goes to the viewer, with the page’s scripts off (F05) › a step’s Open, and a link to a page in a memo (7.8s)
+2026-10-18T04:54:40.7057459Z   ok  2 [chromium] › e2e\artifact-views.spec.ts:92:3 › every Open goes to the viewer, with the page’s scripts off (F05) › a draft’s Open on a pick, for a page and for text (4.6s)
+2026-10-18T04:54:44.4191438Z   ok  3 [chromium] › e2e\artifact-views.spec.ts:102:3 › every Open goes to the viewer, with the page’s scripts off (F05) › a reference’s Open (3.7s)
+2026-10-18T04:54:47.8877366Z   ok  4 [chromium] › e2e\artifact-views.spec.ts:108:3 › every Open goes to the viewer, with the page’s scripts off (F05) › the Result screen’s “Open in a new tab”, beside a download that says what a downloaded page does (3.5s)
+2026-10-18T04:54:52.9861566Z   ok  5 [chromium] › e2e\artifact-views.spec.ts:117:3 › the viewer’s scripts switch (F05) › turned on, the page runs in a frame that asked for its scripts, and still cannot leave; a reload turns it off (5.1s)
+2026-10-18T04:54:55.7315543Z   ok  6 [chromium] › e2e\artifact-views.spec.ts:138:3 › the viewer’s scripts switch (F05) › a page that reloads itself once its scripts are on comes back without them (fails closed) (2.7s)
+2026-10-18T04:55:00.2763553Z   ok  7 [chromium] › e2e\artifact-views.spec.ts:150:1 › a page’s own address, opened top-level, runs nothing, with or without ?scripts=1 (F05) (4.5s)
+2026-10-18T04:55:08.0547189Z   ok  8 [chromium] › e2e\artifact-views.spec.ts:161:3 › decision views show whole text, and row facts count the whole artifact (F13) › a compare of two long memos that differ only in their endings shows both endings (7.8s)
+2026-10-18T04:55:10.8155143Z   ok  9 [chromium] › e2e\artifact-views.spec.ts:169:3 › decision views show whole text, and row facts count the whole artifact (F13) › a long memo is whole in its step and in the viewer; a big diff’s row counts every file (2.7s)
+2026-10-18T04:55:13.6645655Z   ok 10 [chromium] › e2e\composed-start.spec.ts:48:1 › a composed recipe that no longer reads as the one offered is refused at Start (400), worded as what it is (2.8s)
+2026-10-18T04:55:15.3587966Z   ok 11 [chromium] › e2e\composed-start.spec.ts:60:1 › a composed recipe that no longer passes the checks is refused at Start (400), under the protocol checks (1.7s)
+2026-10-18T04:55:21.8028762Z   ok 12 [chromium] › e2e\composed-start.spec.ts:77:1 › a composed recipe whose explanation changed does not start (409); the new one shows, and a second Start runs it (6.4s)
+2026-10-18T04:58:31.9734223Z   ok 13 [chromium] › e2e\configurations.spec.ts:106:3 › C1 Landing Page Studio: problem to deliverable, every turn answered in the app (3.2m)
+2026-10-18T04:58:58.1421093Z   ok 14 [chromium] › e2e\configurations.spec.ts:106:3 › C4 Memo Polish: problem to deliverable, every turn answered in the app (26.2s)
+2026-10-18T04:59:21.6855868Z   ok 15 [chromium] › e2e\configurations.spec.ts:106:3 › C6a Fiction Second Reader: problem to deliverable, every turn answered in the app (23.5s)
+2026-10-18T05:01:42.3770605Z   ok 16 [chromium] › e2e\configurations.spec.ts:106:3 › C5 Ad Video Chain: problem to deliverable, every turn answered in the app (2.3m)
+2026-10-18T05:02:09.8718127Z   ok 17 [chromium] › e2e\configurations.spec.ts:134:1 › C3 from the Library: no route chosen up front, so the run asks who writes the first draft (choose) (27.4s)
+2026-10-18T05:02:10.9047913Z   ok 18 [chromium] › e2e\configurations.spec.ts:154:1 › Settings in demo mode: the banner, the demo profile, and providers shown without their keys (1.0s)
+2026-10-18T05:02:59.6683853Z   ok 19 [chromium] › e2e\configurations.spec.ts:170:1 › C4: an optional step you decline reads Skipped, and the Result lists it as not done (48.4s)
+2026-10-18T05:02:59.7534822Z   ok 20 [chromium] › e2e\configurations.spec.ts:185:1 › the local guard refuses a foreign Host on every path, Next.js internals included (SEC-6, DNS rebinding) (374ms)
+2026-10-18T05:03:00.1898326Z   ok 21 [chromium] › e2e\consent-boundary.spec.ts:141:1 › control: a page without byway’s sandbox reaches the collector, so an empty collector means something (397ms)
+2026-10-18T05:03:06.8442460Z   ok 22 [chromium] › e2e\consent-boundary.spec.ts:146:1 › opened at the top level, a page runs nothing: its address, with or without ?scripts=1, and a meta refresh (6.6s)
+2026-10-18T05:03:12.7935628Z   ok 23 [chromium] › e2e\consent-boundary.spec.ts:156:1 › an Open link to a page’s address opens it inert in the new tab (5.9s)
+2026-10-18T05:03:21.4914562Z   ok 24 [chromium] › e2e\consent-boundary.spec.ts:171:1 › a frame with scripts off runs nothing, even when it asks; and no link in it can leave byway (8.7s)
+2026-10-18T05:03:23.2409219Z   ok 25 [chromium] › e2e\consent-boundary.spec.ts:186:1 › a frame the person turned scripts on for runs them, and still cannot carry the page to another site (1.7s)
+2026-10-18T05:03:25.0264546Z   ok 26 [chromium] › e2e\consent-boundary.spec.ts:195:1 › a consented frame cannot take another page’s scripts by moving itself to that page’s ?scripts=1 (1.8s)
+2026-10-18T05:03:26.8098213Z   ok 27 [chromium] › e2e\consent-boundary.spec.ts:206:1 › a consented frame that reloads itself comes back with scripts off (fails closed) (1.8s)
+2026-10-18T05:03:28.3072614Z   ok 28 [chromium] › e2e\flow.spec.ts:48:1 › answerUntilDone ends when the last turn goes between being found and being read, instead of waiting for it (1.5s)
+2026-10-18T05:03:31.0156346Z   ok 29 [chromium] › e2e\keyboard.spec.ts:91:3 › a control that starts something keeps focus, and a second press sends nothing (R5) › Yes on a confirm, pressed with Enter twice, while the answer is on its way and after it is refused (2.6s)
+2026-10-18T05:03:33.6995711Z   ok 30 [chromium] › e2e\keyboard.spec.ts:101:3 › a control that starts something keeps focus, and a second press sends nothing (R5) › Send reaction, pressed with Enter twice; the words stay (2.7s)
+2026-10-18T05:03:34.8604708Z   ok 31 [chromium] › e2e\keyboard.spec.ts:111:3 › a control that starts something keeps focus, and a second press sends nothing (R5) › “Choose all” and “Clear” keep focus when pressing them leaves nothing for them to do (1.1s)
+2026-10-18T05:03:43.9876104Z   ok 32 [chromium] › e2e\keyboard.spec.ts:134:3 › a control that starts something keeps focus, and a second press sends nothing (R5) › Start, the paid Start button, Build my own and the examples’ image input (9.1s)
+2026-10-18T05:03:46.6784843Z   ok 33 [chromium] › e2e\keyboard.spec.ts:182:1 › Start: each attachment added by keyboard takes focus in its name field, the fifth too, when the attach button goes (2.7s)
+2026-10-18T05:03:48.7596945Z   ok 34 [chromium] › e2e\keyboard.spec.ts:197:3 › a step opened from the timeline (R5) › closing it with Escape or Back returns focus to the row that opened it, with no question open (2.1s)
+2026-10-18T05:03:50.8968726Z   ok 35 [chromium] › e2e\keyboard.spec.ts:218:3 › a step opened from the timeline (R5) › [F06] with a question open, a step opened and closed by keyboard gives the turn back with your words, in its field (2.1s)
+2026-10-18T05:03:52.7434918Z   ok 36 [chromium] › e2e\keyboard.spec.ts:234:1 › [F05] the viewer’s scripts switch is reached with Tab, named, and turned on and off with Space (1.8s)
+2026-10-18T05:03:59.9588147Z   ok 37 [chromium] › e2e\keyboard.spec.ts:272:1 › [F13 compare view] each version of a page compare is a named picture of its first screen, said so, and opens whole from the keyboard (7.2s)
+2026-10-18T05:09:16.0156019Z   ok 38 [chromium] › e2e\keyboard.spec.ts:338:1 › [F07] after a nav link of a page is edited, every link on the page still has a name (5.3m)
+2026-10-18T05:09:16.7383879Z   ok 39 [chromium] › e2e\pasted-key.spec.ts:53:1 › a provider key pasted on Start is refused before anything is stored, naming the key but never showing it (675ms)
+2026-10-18T05:09:17.9201719Z   ok 40 [chromium] › e2e\pasted-key.spec.ts:76:1 › a refused key in the text leaves the attachments kept; once the text is fixed, a reload brings both back (1.2s)
+2026-10-18T05:09:19.4860743Z   ok 41 [chromium] › e2e\pasted-key.spec.ts:96:1 › a refused key in an attachment leaves the text kept; once the attachment is fixed, a reload brings both back (1.6s)
+2026-10-18T05:09:20.9308397Z   ok 42 [chromium] › e2e\pasted-key.spec.ts:130:1 › a refused key in an example you admire stops that example being kept; the others stay kept, and it is kept again once fixed (1.4s)
+2026-10-18T05:09:33.1433991Z   ok 43 [chromium] › e2e\pasted-key.spec.ts:166:1 › a refused key in an answer stops that answer being kept, through a reload; once fixed it is kept again and sends (12.2s)
+2026-10-18T05:09:34.5863082Z   ok 44 [chromium] › e2e\start-identity.spec.ts:39:1 › a Start sends its id again only while no answer came back and nothing changed (1.4s)
+2026-10-18T05:10:04.3322277Z   ok 45 [chromium] › e2e\state.spec.ts:77:3 › the Run screen applies only the newest snapshot (F15) › a late, older poll never reopens an answered question, and a late failure leaves no banner on a finished run (29.7s)
+2026-10-18T05:10:47.0405847Z   ok 46 [chromium] › e2e\state.spec.ts:167:3 › your unsent answer belongs to its question, not to the panel showing it (F06) › what you type survives looking at earlier steps, Esc, the current row, a reload and Back, and is exactly what is sent (42.7s)
+2026-10-18T05:10:55.6500577Z   ok 47 [chromium] › e2e\state.spec.ts:192:3 › your unsent answer belongs to its question, not to the panel showing it (F06) › reached from Start with no reload, what you type survives History then Back and Settings then Back (8.6s)
+2026-10-18T05:12:03.7829619Z   x  48 [chromium] › e2e\state.spec.ts:214:3 › your unsent answer belongs to its question, not to the panel showing it (F06) › lists, ticks and highlights survive inspection; lists and ticks survive a reload, a compare highlight does not (UX-1) (1.1m)
+2026-10-18T05:12:26.8464044Z   ok 49 [chromium] › e2e\state.spec.ts:296:3 › your unsent answer belongs to its question (F06), continued › a refused answer keeps your words; a sent one stays locked as Sent, never the starting text, until byway confirms it (16.6s)
+2026-10-18T05:12:34.9599236Z   ok 50 [chromium] › e2e\state.spec.ts:362:3 › your unsent answer belongs to its question (F06), continued › words typed for a question that closes unsent are shown read-only, with Copy and Discard, and cannot be sent (8.1s)
+2026-10-18T05:12:43.0633630Z   ok 51 [chromium] › e2e\state.spec.ts:387:1 › examples you admire and Start attachments survive a detour, and are cleared once the run starts (8.1s)
+2026-10-18T05:12:43.4163752Z 
+2026-10-18T05:12:43.4170507Z 
+2026-10-18T05:12:43.4173571Z   1) [chromium] › e2e\state.spec.ts:214:3 › your unsent answer belongs to its question, not to the panel showing it (F06) › lists, ticks and highlights survive inspection; lists and ticks survive a reload, a compare highlight does not (UX-1) 
+2026-10-18T05:12:43.4176627Z 
+2026-10-18T05:12:43.4183319Z     Error: The run failed: The page could not be drawn: the page renderer failed while drawing it (Target page, context or browser has been closed).
+2026-10-18T05:12:43.4190980Z 
+2026-10-18T05:12:43.4191413Z       235 |     const outcome = await nextTurn(page, after, 120_000);
+2026-10-18T05:12:43.4196114Z       236 |     if ('done' in outcome) return checked;
+2026-10-18T05:12:43.4197208Z     > 237 |     if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
+2026-10-18T05:12:43.4198057Z           |                                    ^
+2026-10-18T05:12:43.4203600Z       238 |     const { id, kind } = outcome;
+2026-10-18T05:12:43.4204691Z       239 |     const t: Turn = { turn: outcome.turn, id, kind };
+2026-10-18T05:12:43.4217368Z       240 |     after = id;
+2026-10-18T05:12:43.4218253Z         at roundTripEachKind (D:\a\byway\byway\apps\web\e2e\state.spec.ts:237:36)
+2026-10-18T05:12:43.4219220Z         at D:\a\byway\byway\apps\web\e2e\state.spec.ts:221:24
+2026-10-18T05:12:43.4231235Z 
+2026-10-18T05:12:43.4245010Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+2026-10-18T05:12:43.4246635Z     test-results\state-your-unsent-answer-b-8d744-re-highlight-does-not-UX-1--chromium\test-failed-1.png
+2026-10-18T05:12:43.4253250Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+2026-10-18T05:12:43.4254146Z 
+2026-10-18T05:12:43.4255093Z     Error Context: test-results\state-your-unsent-answer-b-8d744-re-highlight-does-not-UX-1--chromium\error-context.md
+2026-10-18T05:12:43.4256057Z 
+2026-10-18T05:12:43.4261375Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+2026-10-18T05:12:43.4262814Z     test-results\state-your-unsent-answer-b-8d744-re-highlight-does-not-UX-1--chromium\trace.zip
+2026-10-18T05:12:43.4263845Z     Usage:
+2026-10-18T05:12:43.4268235Z 
+2026-10-18T05:12:43.4269313Z         pnpm exec playwright show-trace test-results\state-your-unsent-answer-b-8d744-re-highlight-does-not-UX-1--chromium\trace.zip
+2026-10-18T05:12:43.4270307Z 
+2026-10-18T05:12:43.4271029Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+2026-10-18T05:12:43.4275586Z 
+2026-10-18T05:12:43.4276300Z   Slow test file: [chromium] › e2e\configurations.spec.ts (7.6m)
+2026-10-18T05:12:43.4277427Z   Slow test file: [chromium] › e2e\keyboard.spec.ts (5.8m)
+2026-10-18T05:12:43.4283208Z   Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel
+2026-10-18T05:12:43.4284312Z   1 failed
+2026-10-18T05:12:43.4286539Z     [chromium] › e2e\state.spec.ts:214:3 › your unsent answer belongs to its question, not to the panel showing it (F06) › lists, ticks and highlights survive inspection; lists and ticks survive a reload, a compare highlight does not (UX-1) 
+2026-10-18T05:12:43.4302396Z   2 did not run
+2026-10-18T05:12:43.4302934Z   50 passed (18.3m)
+2026-10-18T05:12:43.5158760Z e2e: the server's output is in C:\Users\RUNNER~1\AppData\Local\Temp\byway-e2e-server.log
+2026-10-18T05:12:44.2895683Z e2e: byway stopped cleanly
+2026-10-18T05:12:44.5520372Z e2e: renderer Playwright's Chromium, ready (its OS sandbox is off; see Renderer in the README)
+2026-10-18T05:12:44.5535981Z e2e: checked the database and its 0 artifact files are complete; the spend ledger's chain is intact, and it holds every call the spend book records as written to it, at the same cost
+2026-10-18T05:12:44.9270986Z e2e: no stand-in key under apps/web/.next-e2e
+2026-10-18T05:12:45.3691706Z [ELIFECYCLE] Command failed with exit code 1.
+2026-10-18T05:12:46.0038057Z [ELIFECYCLE] Command failed with exit code 1.
+2026-10-18T05:12:46.2253871Z ##[error]Process completed with exit code 1.

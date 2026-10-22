@@ -3,9 +3,12 @@
  * evidence kept only in %TEMP% into the repository"). Windows can clear its Temp folder, so evidence kept only there
  * can be lost:
  *
- * - an Accepted record that names a path under Temp (as `…/AppData/Local/Temp/…`, `%TEMP%`, `%TMP%`, `$env:TEMP`,
- *   `$env:TMP`, `$TEMP/`, `${TEMP}/` or `Temp/byway-…`) has the Later note headed as the one that says where that
- *   evidence is now, or that it was not kept; only that heading's presence is checked, not that the note names each path;
+ * - an Accepted record that names a path under Temp (as `…/AppData/Local/Temp/…`, `%LOCALAPPDATA%\Temp`, `%TEMP%`,
+ *   `%TMP%`, `$env:TEMP`, `$env:TMP`, `$TEMP/`, `${TEMP}/`, `$TMP/`, `${TMP}/`, Git Bash's `/tmp/` or `Temp/byway-…`) has
+ *   the Later note headed as the one that says where that evidence is now, or that it was not kept, and its Later notes
+ *   name each Temp path it cites in backticks, whole or by its last part (one range, ADR-0098's, is named as such); a
+ *   path cited outside backticks is checked for the heading only. `%LOCALAPPDATA%` counts only with `Temp` after it,
+ *   since byway's data folder is `%LOCALAPPDATA%\byway` (ADR-0066);
  * - every relative link in the evidence files written to be read here, and in the records' Later notes, resolves;
  * - the evidence files hold no email address (the conversation records are extracted from a session transcript, and
  *   the probes from scratch folders);
@@ -23,7 +26,7 @@ import { brokenLink, filesUnder, read, relativeLinks, REPO, section } from './do
 
 const EVIDENCE = `${ADR_DIR}/evidence`;
 const NOTE = '**2026-10-18, the evidence kept only under Temp.**';
-const TEMP = /AppData[\\/]Local[\\/]Temp|%TE?MP%|\$env:TE?MP\b|\$\{?TEMP\}?[\\/]|\bTemp[\\/]byway-/i;
+const TEMP = /AppData[\\/]Local[\\/]Temp|%LOCALAPPDATA%[\\/]Temp\b|%TE?MP%|\$env:TE?MP\b|\$\{?TE?MP\}?[\\/]|(?<![\w.~-])\/tmp\/|\bTemp[\\/]byway-/i;
 
 const records = readdirSync(path.join(REPO, ADR_DIR))
   .map((name) => `${ADR_DIR}/${name}`)
@@ -32,6 +35,20 @@ const records = readdirSync(path.join(REPO, ADR_DIR))
 
 /** A record's text before its Later notes, where a Temp path is a citation rather than a note about one. */
 const cited = (text: string) => text.split(/^## Later notes\s*$/m)[0] ?? text;
+
+/** The Temp paths a record's text before its Later notes cites in backticks, as it writes them. */
+const tempPaths = (text: string) => [...new Set([...cited(text).matchAll(/`([^`\n]+)`/g)].map((m) => m[1] ?? '').filter((p) => TEMP.test(p)))];
+const lastPart = (p: string) => p.split(/[\\/]/).filter((s) => s !== '').at(-1) ?? p;
+/** Whether a record's Later notes name a cited path: whole, or by its last part (a file or a folder's name). */
+const named = (notes: string, p: string) => notes.includes(p) || notes.includes(lastPart(p));
+/**
+ * Cited paths a note names only inside a range, with the range: ADR-0098's note covers rounds 6 to 11 as
+ * "`…/semantics-2-r6/` to `semantics-2-r11/`", so rounds 7 to 10 are not named one by one (the backlog row "The
+ * Temp-evidence check passes a record on its note's heading alone").
+ */
+const IN_A_RANGE: Readonly<Record<string, { range: string; parts: readonly string[] }>> = {
+  '0098': { range: '/semantics-2-r6/` to `semantics-2-r11/`', parts: ['semantics-2-r7', 'semantics-2-r8', 'semantics-2-r9', 'semantics-2-r10'] },
+};
 
 /**
  * A line with its key-shaped strings replaced. The provider key shapes are the gateway's own: its redactor, holding no
@@ -61,16 +78,48 @@ describe('decision evidence kept in the repository', () => {
     expect(citing.filter((r) => !(section(r.text, '## Later notes') ?? '').includes(NOTE)).map((r) => r.file)).toEqual([]);
   });
 
-  it('reads each spelling of a Temp path that the header names, and not a word that only starts like one', () => {
-    const spellings = ['C:/Users/arvik/AppData/Local/Temp/x', 'C:\\Users\\arvik\\AppData\\Local\\Temp\\x', '%TEMP%\\x', '%TMP%\\x', '$env:TEMP\\x', '$env:TMP\\x', '$TEMP/x', '${TEMP}/x', 'Temp/byway-fixes'];
+  it('that note names each Temp path the record cites in backticks, whole or by its last part, but for the range named here', () => {
+    const accepted = records.filter((r) => isAccepted(parseRecord(r.text).status));
+    expect(accepted.flatMap((r) => tempPaths(r.text)).length).toBeGreaterThan(10);
+    const unnamed = accepted.flatMap((r) => {
+      const notes = section(r.text, '## Later notes') ?? '';
+      const ranged = IN_A_RANGE[recordNumber(r.file) ?? ''];
+      return tempPaths(r.text)
+        .filter((p) => !named(notes, p) && !(ranged && notes.includes(ranged.range) && ranged.parts.includes(lastPart(p))))
+        .map((p) => `${r.file}: ${p}`);
+    });
+    expect(unnamed).toEqual([]);
+    // Each range still covers paths its record cites and its note does not name one by one, so none is out of date.
+    for (const [n, { parts }] of Object.entries(IN_A_RANGE)) {
+      const r = records.find((x) => recordNumber(x.file) === n);
+      const notes = section(r?.text ?? '', '## Later notes') ?? '';
+      expect(tempPaths(r?.text ?? '').filter((p) => !named(notes, p)).map(lastPart), `ADR-${n}`).toEqual(parts);
+    }
+    // The note's heading alone names no path.
+    const record = '## Context\n\nIt ran in `C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/a-probe/`.\n\n## Later notes\n\n- **2026-10-18, the evidence kept only under Temp.**\n';
+    expect(tempPaths(record).filter((p) => !named(section(record, '## Later notes') ?? '', p))).toEqual(['C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/a-probe/']);
+  });
+
+  it('reads each spelling of a Temp path that the header names, and not a word that only starts like one, nor byway’s data folder', () => {
+    const spellings = [
+      ...['C:/Users/arvik/AppData/Local/Temp/x', 'C:\\Users\\arvik\\AppData\\Local\\Temp\\x', '%LOCALAPPDATA%\\Temp\\x', '%LOCALAPPDATA%/Temp/x'],
+      ...['%TEMP%\\x', '%TMP%\\x', '$env:TEMP\\x', '$env:TMP\\x', '$TEMP/x', '${TEMP}/x', '$TMP/x', '${TMP}/x', '/tmp/x', 'in /tmp/byway-x', 'Temp/byway-fixes'],
+    ];
     expect(spellings.filter((s) => !TEMP.test(s))).toEqual([]);
-    expect(['$env:TEMPLATE', '$TEMPLATE/x', 'a temp file', 'Temporal/byway-x'].filter((s) => TEMP.test(s))).toEqual([]);
+    expect(['$env:TEMPLATE', '$TEMPLATE/x', '$TMPDIR/x', 'a temp file', 'Temporal/byway-x', 'docs/tmp/x', 'C:/Users/arvik/tmp/x'].filter((s) => TEMP.test(s))).toEqual([]);
+    // byway's data folder (ADR-0066) is under %LOCALAPPDATA% too, and is not Temp.
+    expect(['%LOCALAPPDATA%\\byway', '%LOCALAPPDATA%\\byway\\byway.sqlite', '%LOCALAPPDATA%/byway', '%LOCALAPPDATA%\\Templates\\x'].filter((s) => TEMP.test(s))).toEqual([]);
   });
 
   it('every relative link in the evidence files and in the Later notes resolves', () => {
-    // The conversation records and the D2 checks' report quote text as it was written, links and all, so their links
-    // point from where their authors stood; the other files are written to be read here.
-    const QUOTED = new Set([`${EVIDENCE}/conversation.md`, `${EVIDENCE}/conversation-continued.md`, `${EVIDENCE}/reports/d2-checks-2026-10-18.md`]);
+    // The conversation records and the D2 and B1 checks' reports quote text as it was written, links and all, so their
+    // links point from where their authors stood; the other files are written to be read here.
+    const QUOTED = new Set([
+      `${EVIDENCE}/conversation.md`,
+      `${EVIDENCE}/conversation-continued.md`,
+      `${EVIDENCE}/reports/d2-checks-2026-10-18.md`,
+      `${EVIDENCE}/reports/b1-checks-2026-10-21.md`,
+    ]);
     const evidence = filesUnder(EVIDENCE, /\.md$/).filter((file) => !QUOTED.has(file));
     expect(evidence.length).toBeGreaterThanOrEqual(4);
     const broken = [

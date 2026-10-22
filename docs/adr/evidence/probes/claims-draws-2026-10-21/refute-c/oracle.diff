@@ -1,0 +1,34 @@
+diff --git a/scripts/test/claims-oracle/oracle.ts b/scripts/test/claims-oracle/oracle.ts
+index 28b4322..13e6224 100644
+--- a/scripts/test/claims-oracle/oracle.ts
++++ b/scripts/test/claims-oracle/oracle.ts
+@@ -66,8 +66,11 @@ let opts: OracleOptions = { runs: 12 };
+ // they wrote it, `seed * 1103515245` passed a double's 53 bits, and the generator cycled after 10,466 draws, so runs
+ // late in a corpus repeated each other's answers.
+ let seed = 1;
++let draws = 0;
++export const drawLog: { idx: number; seed0: number; draws: number }[] = [];
+ const rnd = () => {
+-  seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
++  draws++;
++  seed = process.env.OLD_LCG === '1' ? (seed * 1103515245 + 12345) & 0x7fffffff : (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+   return seed / 0x7fffffff;
+ };
+ const LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+@@ -323,6 +326,8 @@ export async function judgeVariants(variants: readonly { nearest: string; muts:
+     const locked = new Set([...lockedScripts(recipe as never)].map((s: N) => s.id));
+     stats.variants++;
+     seed = 1000 + idx * 7919;
++    draws = 0;
++    const seed0 = seed;
+     const runs: Run[] = [];
+     for (let k = 0; k < RUNS; k++) {
+       const r = await runOnce(recipe);
+@@ -332,6 +337,7 @@ export async function judgeVariants(variants: readonly { nearest: string; muts:
+       stats.outcomes[o] = (stats.outcomes[o] ?? 0) + 1;
+       if (o !== 'done' && o !== 'RunFailure' && o !== 'RunStopped') add('UNEXPECTED-OUTCOME', v, { outcome: r.outcome });
+     }
++    drawLog.push({ idx, seed0, draws });
+     const explainerOf = new Map<string, N>();
+     for (const s of shown) if (s.lead?.op === 'step') explainerOf.set(s.lead.id, s);
+ 
