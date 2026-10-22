@@ -144,7 +144,7 @@ Every architectural decision behind the Off-Center protocol, its testing harness
 | [ADR-0102](0102-one-refusal-rule-for-every-provider.md) | One refusal rule for every provider: no model substitution, and a decline gets one logged retry on the same model, then a plain failure | Accepted | User | 2026-10-16 20:45 |
 | [ADR-0104](0104-c3-advice-needs-a-letter-or-number.md) | C3's advice says something only with a letter or a number | Accepted | User-approved | 2026-10-17 11:06 |
 | [ADR-0105](0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md) | The page renderer's Chromium runs inside its OS sandbox by default; only the person switches it off, in Settings | Accepted | User | 2026-10-18 07:40 |
-| [ADR-0109](0109-money-path-before-the-first-live-run.md) | The money path before the first live run: prices and model ids read again, a Gemini image's thinking charged, a failed run start asks Temporal first | Accepted | User-approved | 2026-10-18 21:30 |
+| [ADR-0109](0109-money-path-before-the-first-live-run.md) | The money path before the first live run: prices and model ids read again, OpenAI's cache writes charged at their rate, a Gemini image's thinking charged, a failed run start asks Temporal first | Accepted | User-approved | 2026-10-18 21:30 |
 
 ## Open decisions (not yet ADRs)
 
