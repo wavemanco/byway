@@ -10,8 +10,8 @@
  *   path cited outside backticks is checked for the heading only. `%LOCALAPPDATA%` counts only with `Temp` after it,
  *   since byway's data folder is `%LOCALAPPDATA%\byway` (ADR-0066);
  * - every relative link in the evidence files written to be read here, and in the records' Later notes, resolves;
- * - the evidence files hold no email address (the conversation records are extracted from a session transcript, and
- *   the probes from scratch folders);
+ * - the evidence files hold no email address, written whole or split around its @ before a mail provider's name (the
+ *   conversation records are extracted from a session transcript, and the probes from scratch folders);
  * - neither they nor the other folders copied in from Temp or written from sessions (F07's corpus,
  *   packages/runner/test/f07-corpus; the claims oracle, scripts/test/claims-oracle and its test; and docs/reviews) hold
  *   a key-shaped string. The F07 pages are model-written sites, contact details included (nobody checked them against
@@ -70,6 +70,29 @@ const STAND_IN_ALONE = new RegExp(`(?<![A-Za-z0-9._~+/-])${STAND_IN}(?![A-Za-z0-
 const withoutStandIns = (line: string) => line.replace(STAND_IN_ALONE, '[stand-in]');
 const masked = (line: string) => providerShapes(withoutStandIns(line)).replace(OTHER_SHAPES, '[redacted]');
 const keyShaped = (line: string) => masked(line) !== withoutStandIns(line);
+
+/** An address as written whole: a local part, an @ and a domain with a dot. */
+const WHOLE_ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g;
+// A protobuf type URL ("@type.googleapis.com/…", in Temporal's errors as a test log printed them) is not an address.
+const typeUrl = (m: string) => m.endsWith('@type.googleapis.com');
+/**
+ * An address split so that the whole shape misses it, as a lens's note once wrote one ("<local part>@/<provider>",
+ * SEC-PRIV-1, the check of the first block): a local part, then an @ (or a full-width one) followed by slashes or spaces
+ * or nothing, or an "at" in brackets, and then a mail provider's name; or "<local part> at <provider> dot <ending>" in
+ * words. Only these providers' names count, so a package scope (`@playwright/test`), a version (`rxjs@7.8.2`) or a type
+ * URL is not one; an address at another domain without its dot is not seen.
+ */
+const PROVIDERS = 'gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|protonmail|proton|aol|gmx|zoho|yandex|fastmail|tutanota';
+const SPLIT_ADDRESS = [
+  new RegExp(`[A-Za-z0-9._%+-]+\\s*[@\\uFF20][\\s/\\\\]*(?:${PROVIDERS})\\b`, 'gi'),
+  new RegExp(`[A-Za-z0-9._%+-]+\\s*(?:\\[at\\]|\\(at\\)|\\{at\\}|<at>)\\s*(?:${PROVIDERS})\\b`, 'gi'),
+  new RegExp(`[A-Za-z0-9._%+-]+\\s+at\\s+(?:${PROVIDERS})\\s+dot\\s+[A-Za-z]{2,}\\b`, 'gi'),
+];
+/** The email addresses a text holds, whole or split, as written. */
+const emailsIn = (text: string): string[] => [
+  ...(text.match(WHOLE_ADDRESS) ?? []).filter((m) => !typeUrl(m)),
+  ...SPLIT_ADDRESS.flatMap((re) => text.match(re) ?? []),
+];
 
 describe('decision evidence kept in the repository', () => {
   it('each Accepted record that cites a path under Temp has a Later note saying where that evidence is now', () => {
@@ -130,11 +153,36 @@ describe('decision evidence kept in the repository', () => {
   });
 
   it('the evidence files hold no email address', () => {
-    const email = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g;
-    // A protobuf type URL ("@type.googleapis.com/…", in Temporal's errors as a test log printed them) is not an address.
-    const typeUrl = (m: string) => m.endsWith('@type.googleapis.com');
-    const hits = filesUnder(EVIDENCE, /./).flatMap((file) => (read(file).match(email) ?? []).filter((m) => !typeUrl(m)).map((m) => `${file}: ${m}`));
+    const hits = filesUnder(EVIDENCE, /./).flatMap((file) => emailsIn(read(file)).map((m) => `${file}: ${m}`));
     expect(hits).toEqual([]);
+  });
+
+  it('the email check also finds an address split so the whole-address shape misses it, and passes type URLs and ordinary text', () => {
+    // Fakes, put together here so this file holds none whole (the check of the first block found a real one written
+    // "<local part>@/<provider>" in a lens's note, SEC-PRIV-1).
+    const local = ['jane', 'doe'].join('.');
+    const at = '@';
+    const mail = 'hot' + 'mail';
+    const split = {
+      slash: `no owner email (${local}${at}/${mail})`,
+      backslash: `${local}${at}\\${mail}`,
+      spaces: `${local} ${at} ${mail}`,
+      spaceAfter: `${local}${at} ${'out' + 'look'}`,
+      noDomain: `${local}${at}${'pro' + 'ton'}`,
+      bracketed: `${local} [at] ${mail} [dot] com`,
+      parenthesised: `${local}(at)${'ic' + 'loud'}`,
+      inWords: `${local} at ${'ya' + 'hoo'} dot com`,
+      fullWidthAt: `${local}＠/${mail}`,
+      whole: `${local}${at}${mail}.com`,
+    };
+    expect(Object.entries(split).filter(([, text]) => emailsIn(text).length === 0).map(([name]) => name)).toEqual([]);
+    const plain = [
+      `\\x1aB\\n${at}type.googleapis.com/temporal.api.failure.v1.ApplicationFailureInfo`,
+      `node_modules\\.pnpm\\${at}temporalio+worker${at}1.24.0`,
+      `import { test } from '${at}playwright/test'; rxjs${at}7.8.2, HEAD${at}{1}, "$${at}", ok${at}1084`,
+      `the ${mail} and Outlook apps; look at ${mail} later; meet at the office`,
+    ];
+    expect(plain.filter((text) => emailsIn(text).length > 0)).toEqual([]);
   });
 
   it('the key check finds every shape it is meant to, and passes hashes and ids', () => {
