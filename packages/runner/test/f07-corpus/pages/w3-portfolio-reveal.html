@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ines Duarte — Product designer</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Work+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #1d1b16; --muted: #6b665c; --accent: #c2410c; --paper: #faf7f2; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Work Sans', sans-serif; color: var(--ink); background: var(--paper); line-height: 1.6; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 28px 0; }
+  header nav a { margin-left: 28px; color: var(--ink); text-decoration: none; font-weight: 500; }
+  .eyebrow { font-size: 12px; letter-spacing: .32em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
+  h1 { font-family: 'Fraunces', serif; font-size: 64px; line-height: 1.05; margin: 0; }
+  h2 { font-family: 'Fraunces', serif; font-size: 36px; margin: 0 0 24px; }
+  .intro { font-size: 20px; color: var(--muted); max-width: 640px; }
+  .drop::first-letter { float: left; font-family: 'Fraunces', serif; font-size: 3.4em; line-height: .9; margin: 6px 10px 0 0; color: var(--accent); }
+  section { padding: 96px 0; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px; }
+  .card { background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .card h3 { margin: 0 0 8px; font-size: 22px; }
+  .tags { margin-top: 14px; }
+  .tag { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: #f3ede4; margin-right: 6px; }
+  .more { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 500; text-decoration: none; margin-top: 16px; }
+  .more .arrow { transition: transform .2s; }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.is-visible { opacity: 1; transform: none; }
+  .stats { display: flex; gap: 48px; margin-top: 40px; }
+  .stat strong { display: block; font-family: 'Fraunces', serif; font-size: 40px; }
+  .stat span { color: var(--muted); }
+  footer { padding: 40px 0; border-top: 1px solid #e7e0d5; color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; }
+  @media (prefers-reduced-motion: reduce) { .reveal { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a href="/" style="font-family:Fraunces,serif;font-size:22px;color:var(--ink);text-decoration:none">Ines Duarte</a>
+    <nav><a href="#work">Work</a><a href="#about">About</a><a href="#contact">Contact</a></nav>
+  </header>
+
+  <section style="padding-top:64px">
+    <p class="eyebrow">Product designer · Porto</p>
+    <h1>I design calm software for busy people.</h1>
+    <p class="intro">For ten years I have helped health, finance and travel teams turn complicated flows into tools people trust.</p>
+    <div class="stats">
+      <div class="stat"><strong class="count" data-to="38">0</strong><span>products shipped</span></div>
+      <div class="stat"><strong>10 yrs</strong><span>in product design</span></div>
+      <div class="stat"><strong>4</strong><span>design awards</span></div>
+    </div>
+  </section>
+
+  <section id="work">
+    <p class="eyebrow reveal">Selected work</p>
+    <h2 class="reveal">Recent projects</h2>
+    <div class="grid">
+      <article class="card reveal">
+        <h3>Clinic check-in</h3>
+        <p>A tablet check-in that cut waiting-room queues by a third at twelve clinics.</p>
+        <div class="tags"><span class="tag">Health</span><span class="tag">Service design</span></div>
+        <a class="more" href="/work/clinic">Read the case study <span class="arrow" aria-hidden="true">→</span></a>
+      </article>
+      <article class="card reveal">
+        <h3>Spending insights</h3>
+        <p>Monthly summaries that helped two million bank customers understand where their money goes.</p>
+        <div class="tags"><span class="tag">Finance</span><span class="tag">Data</span></div>
+        <a class="more" href="/work/insights">Read the case study <span class="arrow" aria-hidden="true">→</span></a>
+      </article>
+      <article class="card reveal">
+        <h3>Rail journeys</h3>
+        <p>A trip planner that explains delays in plain words and offers the next best route.</p>
+        <div class="tags"><span class="tag">Travel</span><span class="tag">Mobile</span></div>
+        <a class="more" href="/work/rail">Read the case study <span class="arrow" aria-hidden="true">→</span></a>
+      </article>
+      <article class="card reveal">
+        <h3>Design system</h3>
+        <p>Forty components and one shared vocabulary for a team of sixty designers and engineers.</p>
+        <div class="tags"><span class="tag">Systems</span><span class="tag">Documentation</span></div>
+        <a class="more" href="/work/system">Read the case study <span class="arrow" aria-hidden="true">→</span></a>
+      </article>
+    </div>
+  </section>
+
+  <section id="about">
+    <p class="eyebrow reveal">About</p>
+    <h2 class="reveal">A little about me</h2>
+    <p class="drop reveal">Before design, I trained as a pharmacist. Counting pills taught me that small mistakes matter and that clear labels save time. I still bring that habit to every screen I draw.</p>
+    <p class="reveal">Outside work I teach a weekend course on interface writing and grow far too many tomatoes.</p>
+  </section>
+
+  <section id="contact">
+    <p class="eyebrow reveal">Contact</p>
+    <h2 class="reveal">Let's work together</h2>
+    <p class="reveal">I take on two new projects each quarter. Write to <a href="mailto:hello@inesduarte.design">hello@inesduarte.design</a> and tell me what you are building.</p>
+  </section>
+
+  <footer>
+    <span>© 2026 Ines Duarte</span>
+    <span><a href="https://linkedin.com/in/inesduarte" style="color:inherit">LinkedIn</a> · <a href="https://dribbble.com/ines" style="color:inherit">Dribbble</a></span>
+  </footer>
+</div>
+<script>
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('is-visible'); io.unobserve(e.target); } });
+  }, { threshold: 0.15 });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+  document.querySelectorAll('.count').forEach((el) => {
+    const to = Number(el.dataset.to); let n = 0;
+    const t = setInterval(() => { n += 2; el.textContent = String(Math.min(n, to)); if (n >= to) clearInterval(t); }, 40);
+  });
+</script>
+</body>
+</html>

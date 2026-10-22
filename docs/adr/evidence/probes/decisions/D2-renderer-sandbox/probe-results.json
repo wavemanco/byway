@@ -1,0 +1,157 @@
+{
+  "node": "v24.13.1",
+  "platform": "win32",
+  "playwright": "1.63.0",
+  "chromiumExecutable": "C:\\Users\\arvik\\AppData\\Local\\ms-playwright\\chromium-1243\\chrome-win64\\chrome.exe",
+  "RENDERER_OS_SANDBOX": false,
+  "mainOptions": {
+    "headless": true,
+    "chromiumSandbox": false,
+    "args": [
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--webrtc-ip-handling-policy=disable_non_proxied_udp"
+    ],
+    "envNames": 107
+  },
+  "launchPlusCloseMs": {
+    "off": [
+      87,
+      225,
+      162,
+      117,
+      109
+    ],
+    "on": [
+      111,
+      118,
+      115,
+      103,
+      97
+    ]
+  },
+  "cdpNoSandbox": {
+    "off": true,
+    "on": false
+  },
+  "processes": {
+    "off": {
+      "title": "SCRIPT_RAN",
+      "procs": [
+        {
+          "pid": 59624,
+          "type": "browser",
+          "sub": "",
+          "noSandbox": true,
+          "integrity": "0x2000"
+        },
+        {
+          "pid": 33088,
+          "type": "gpu-process",
+          "sub": "",
+          "noSandbox": true,
+          "integrity": "0x2000"
+        },
+        {
+          "pid": 41784,
+          "type": "utility",
+          "sub": "network.mojom.NetworkService",
+          "noSandbox": true,
+          "integrity": "0x2000"
+        },
+        {
+          "pid": 61576,
+          "type": "renderer",
+          "sub": "",
+          "noSandbox": true,
+          "integrity": "0x2000"
+        }
+      ]
+    },
+    "on": {
+      "title": "SCRIPT_RAN",
+      "procs": [
+        {
+          "pid": 68276,
+          "type": "browser",
+          "sub": "",
+          "noSandbox": false,
+          "integrity": "0x2000"
+        },
+        {
+          "pid": 59832,
+          "type": "gpu-process",
+          "sub": "",
+          "noSandbox": false,
+          "integrity": "0x1000"
+        },
+        {
+          "pid": 70412,
+          "type": "utility",
+          "sub": "network.mojom.NetworkService",
+          "noSandbox": false,
+          "integrity": "0x2000"
+        },
+        {
+          "pid": 27784,
+          "type": "renderer",
+          "sub": "",
+          "noSandbox": false,
+          "integrity": "0x0000"
+        }
+      ]
+    }
+  },
+  "render": {
+    "offTiles": [
+      "desktop:27b7410dc0ca0e27,01267c7f161174c3,8f0ff459fb9dc4d1",
+      "mobile:fb4de8d2759c186d,50ef520361de00c3,798075cbbe33d1b1",
+      "fold:d66b0be1b45ab2c4"
+    ],
+    "onTiles": [
+      "desktop:27b7410dc0ca0e27,01267c7f161174c3,8f0ff459fb9dc4d1",
+      "mobile:fb4de8d2759c186d,50ef520361de00c3,798075cbbe33d1b1",
+      "fold:d66b0be1b45ab2c4"
+    ],
+    "offDeterministic": true,
+    "tilesIdenticalOffVsOn": true,
+    "shownTextIdenticalOffVsOn": true,
+    "shownTextOffDeterministic": true,
+    "titles": {
+      "off": "SCRIPT_RAN",
+      "on": "SCRIPT_RAN"
+    },
+    "shownTextSample": "Heading written by a script\nPlain text before the images.\nText a script reveals.",
+    "ms": {
+      "off": [
+        779,
+        170,
+        750,
+        179
+      ],
+      "on": [
+        853,
+        475
+      ]
+    }
+  },
+  "simulatedSandboxFailure": {
+    "userns": {
+      "firstLine": "browserType.launch: Arguments can not specify page to be opened",
+      "mentionsSandboxingFailed": false,
+      "suggestsSandboxFalse": false,
+      "bywayWouldSay": "The page renderer could not start (Arguments can not specify page to be opened), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium"
+    },
+    "root": {
+      "firstLine": "browserType.launch: Arguments can not specify page to be opened",
+      "mentionsSandboxingFailed": false,
+      "suggestsSandboxFalse": false,
+      "bywayWouldSay": "The page renderer could not start (Arguments can not specify page to be opened), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium"
+    },
+    "unrelated": {
+      "firstLine": "browserType.launch: Arguments can not specify page to be opened",
+      "mentionsSandboxingFailed": false,
+      "suggestsSandboxFalse": false,
+      "bywayWouldSay": "The page renderer could not start (Arguments can not specify page to be opened), so pages, and the cards that show a reviewer the examples beside the work, cannot be drawn. If Playwright's Chromium is not installed: pnpm --filter ./apps/web exec playwright install chromium"
+    }
+  }
+}

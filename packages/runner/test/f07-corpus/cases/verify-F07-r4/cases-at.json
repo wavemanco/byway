@@ -1,0 +1,19 @@
+[
+ ["AT1_deletion", "<h1>Head</h1><p>Old middle</p><p>Tail</p>", ["New head", "", "Tail"]],
+ ["AT2_repeat", "<p>Alpha</p><p>Beta</p>", ["Repeated", "Repeated"]],
+ ["AT2_swap", "<p>Alpha</p><p>Beta</p>", ["Beta", "Alpha"]],
+ ["AT4_move", "<h1>Bread at six</h1><p>Order by nine</p>", ["Bread before", "seven Order by nine"]],
+ ["AT7_link", "<p>Please <a href=\"/terms\">read terms</a> today.</p>", ["Please [read the terms] today."]],
+ ["AT7_link_indented", "<p>\n    Please\n    <a href=\"/terms\">read terms</a>\n    today.\n  </p>", ["Please [read the terms] today."]],
+ ["AT8_come", "<p>Please <a href=\"/terms\">read terms</a> today.</p>", ["Please [come] today."]],
+ ["AT8_cond", "<p>Please <a href=\"/terms\">read terms</a> today.</p>", ["Review [the conditions] now."]],
+ ["AT8_today", "<p>Please <a href=\"/terms\">read terms</a> today.</p>", ["Today, please [read terms]."]],
+ ["AT8_empty", "<p>Please <a href=\"/terms\">read terms</a> today.</p>", ["Please [] today."]],
+ ["AT11_footer", "<footer><a href=\"/terms\">Terms</a> · <a href=\"/privacy\">Privacy</a></footer>", ["[Terms] · [Privacy policy]"]],
+ ["AT12_br_link", "<p>See <a href=\"/m\">our<br>menu</a> today</p>", ["", "[menu] today"]],
+ ["AT24_br", "<p>A<br>B<br>C</p>", ["A", "", "C"]],
+ ["AT25_join", "<div>Alpha<p>X</p><p>Y</p>Omega</div>", ["Alpha", "", "", "Omega"]],
+ ["AT29_whole", "<nav><a href=\"#how\">How it works</a><a href=\"#start\">Contact</a></nav>", ["How it works", "[Contact us]"]],
+ ["AT29_whole_refuse", "<nav><a href=\"#how\">How it works</a><a href=\"#start\">Contact</a></nav>", ["How it works", "Contact [us]"]],
+ ["AT29_nolink_brackets", "<p>Read the terms today.</p>", ["Read [the terms] today."]]
+]

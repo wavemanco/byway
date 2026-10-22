@@ -102,7 +102,8 @@ export function fakeGoogle(queue: Step<GoogleResponseLike>[] = []) {
         return next(queue, () => ({
           modelVersion: params.model,
           candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { data: Buffer.from('jpeg-bytes').toString('base64'), mimeType: 'image/jpeg' } }] } }],
-          usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 1290 },
+          // As Google reports an image answer: its tokens by modality (the image is priced per image, B1).
+          usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 1290, candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: 1290 }] },
         }));
       },
     },

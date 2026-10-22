@@ -8,10 +8,14 @@ const ref = (provider: ProviderId, model: string): ModelRef => ({ provider, mode
 
 /**
  * Model profiles: data, chosen per run (judgment uses the big tier, execution the mid tier: default rule 5).
- * Every model id was checked against its provider's documentation on 2026-10-07:
- * - Anthropic: platform.claude.com/docs/en/about-claude/models/overview (claude-fable-5-1, claude-opus-5-5, claude-sonnet-5-5).
+ * Every model id was checked against its provider's documentation on 2026-10-07, and again on 2026-10-18 before the
+ * first live run, when every id below was still listed:
+ * - Anthropic: platform.claude.com/docs/en/about-claude/models/overview (claude-fable-5-1, claude-opus-5-5, claude-sonnet-5-5;
+ *   each a current model, retired not sooner than September 2027).
  * - OpenAI: developers.openai.com/api/docs/models (gpt-6-astra, gpt-6.1-sol, gpt-image-2.5-flare, gpt-image-2.5-sunburst).
- * - Google: ai.google.dev/gemini-api/docs/models (gemini-3.1-pro-preview, gemini-3.8-flash, gemini-nano-banana-2.1).
+ * - Google: ai.google.dev/gemini-api/docs/models (page dated 2026-10-13) and ai.google.dev/gemini-api/docs/deprecations
+ *   (2026-10-12): gemini-3.8-flash and gemini-nano-banana-2.1 are stable; gemini-3.1-pro-preview is still a preview
+ *   (listed without a status), and no shutdown date is announced for any of the three.
  * - OpenRouter: openrouter.ai/api/v1/models (anthropic/claude-opus-5.5, anthropic/claude-sonnet-5.5).
  * - fal.ai: fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video and fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video
  *   (also listed in @fal-ai/client 1.10.1's endpoint types).
@@ -84,8 +88,9 @@ export const DEMO_PROFILE_ID = 'demo';
 
 /**
  * OpenRouter upstream pins: each OpenRouter model is served only by the named provider slug, with fallbacks off, so
- * a run never silently moves to another host. A base slug matches that provider's regions but not its service tiers
- * (`anthropic/fast` must be named explicitly), per openrouter.ai/docs/guides/routing/provider-selection, 2026-10-07.
+ * a run never silently moves to another host. A base slug matches that provider's regions but does not by itself opt
+ * into a service-tier endpoint (the page's examples are `openai/fast` and `google-vertex/flex`), per
+ * openrouter.ai/docs/guides/routing/provider-selection, read 2026-10-07 and again 2026-10-18.
  */
 export const OPENROUTER_PINS: Readonly<Record<string, string>> = {
   'anthropic/claude-fable-5.1': 'anthropic',

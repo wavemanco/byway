@@ -1,5 +1,4 @@
 import { critiqueSelf, each, leaveOneOut, loop, replicate, seq, withHash, type Recipe } from '@byway/recipe';
-import { c1 } from './c1.ts';
 import {
   applyDirective,
   asset,
@@ -12,6 +11,16 @@ import {
   tellsCompareByProxy,
   tellsSweep,
 } from './steps.ts';
+
+/**
+ * The C1 that C1-H was derived from: C1's hash since 2026-10-07, when product phase 0 gave the C1
+ * family its medium (ba0e5b9), and the hash conformance.test.ts keeps for C1 among the recipe hashes
+ * of product phase 0 (not C1's Milestone 0 hash, which 54eed9e left at another). It is
+ * written out here, not read from `c1`, so a later change to the product's C1 changes neither C1-H's
+ * hash nor the hashes of the five recipes derived from it. Study 1 registers C1-H's hash, and ADR-0041
+ * freezes research versions.
+ */
+export const C1H_PARENT_HASH = 'sha256:686bd9726a32f7d655653fb751ab574a53fb12fd9d733f7c358c67a27d08c577';
 
 /**
  * C1-H: headless C1, the Study 1 treatment arm (protocol v1.1 §3.2). Every human checkpoint is bound
@@ -27,7 +36,7 @@ export const c1h: Recipe = withHash({
   family: 'C1',
   channel: 'research-frozen',
   medium: 'web-page',
-  parent: { hash: c1.hash!, derivation: { transform: 'binding', version: 1, map: 'S1-BIND' } },
+  parent: { hash: C1H_PARENT_HASH, derivation: { transform: 'binding', version: 1, map: 'S1-BIND' } },
   inputs: ['intent', 'voice', 'tells'],
   stages: [
     { stage: 'D1', body: replicate('seeded-x4', 4, seedBuild('seed-build', ['intent', 'voice'], false)) },

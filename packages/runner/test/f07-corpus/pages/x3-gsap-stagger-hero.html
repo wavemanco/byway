@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northwind Studio — Brands that move</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Space Grotesk', sans-serif; background: #0e0e10; color: #f4f1ea; }
+  nav { display: flex; justify-content: space-between; align-items: center; padding: 24px 56px; }
+  nav ul { display: flex; gap: 32px; list-style: none; margin: 0; padding: 0; }
+  nav a { color: inherit; text-decoration: none; }
+  .hero { padding: 120px 56px 80px; }
+  .hero h1 { font-size: 88px; line-height: 1; margin: 0; display: flex; flex-wrap: wrap; gap: 0 24px; }
+  .hero h1 .word { display: inline-block; }
+  .hero p { max-width: 560px; font-size: 20px; color: #b9b4aa; }
+  .cta { display: inline-flex; align-items: center; gap: 12px; margin-top: 32px; padding: 16px 28px; border-radius: 999px; background: #e8ff59; color: #0e0e10; font-weight: 700; text-decoration: none; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+  .stats { display: flex; gap: 64px; padding: 40px 56px; border-top: 1px solid #2a2a2e; }
+  .stat strong { display: block; font-size: 48px; }
+  .stat span { color: #b9b4aa; }
+  .work { display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px; padding: 56px; }
+  .tile { background: #1a1a1d; border-radius: 20px; padding: 32px; }
+  .tile .tag { display: inline-block; font-size: 12px; text-transform: uppercase; letter-spacing: .12em; padding: 4px 10px; border: 1px solid #e8ff59; border-radius: 999px; color: #e8ff59; }
+  .price-row { display: flex; align-items: baseline; gap: 8px; }
+  footer { padding: 40px 56px; color: #77736b; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+  <nav>
+    <a href="/" style="font-weight:700;font-size:22px">Northwind</a>
+    <ul><li><a href="#work">Work</a></li><li><a href="#studio">Studio</a></li><li><a href="#contact">Contact</a></li></ul>
+  </nav>
+  <header class="hero">
+    <h1><span class="word">Brands</span><span class="word">that</span><span class="word">move.</span></h1>
+    <p class="lede">We design identities, sites and motion systems for companies that would rather be remembered than merely seen.</p>
+    <a class="cta" href="#contact">Start a project <span aria-hidden="true">→</span></a>
+  </header>
+  <section class="stats" id="studio">
+    <div class="stat"><strong><span class="count" data-to="120">0</span>+</strong><span>brands launched</span></div>
+    <div class="stat"><strong>14</strong><span>years in Rotterdam</span></div>
+    <div class="stat"><strong>9</strong><span>people, one studio</span></div>
+  </section>
+  <section class="work" id="work">
+    <article class="tile"><span class="tag">Identity</span><h3>Tidewater Coffee</h3><p>A coastal roaster's mark, packaging and shopfront.</p></article>
+    <article class="tile"><span class="tag">Website</span><h3>Halden Bikes</h3><p>A shop that sold out its first frame in a weekend.</p></article>
+    <article class="tile"><span class="tag">Motion</span><h3>Atlas Rail</h3><p>Wayfinding animations for forty stations.</p></article>
+    <article class="tile"><span class="tag">Strategy</span><h3>Fennel &amp; Co</h3><p>From two market stalls to a national grocer.</p></article>
+  </section>
+  <section id="contact" style="padding:56px">
+    <h2>Retainers</h2>
+    <div class="price-row"><strong style="font-size:40px">€4,800</strong><span>/month</span></div>
+    <p>Two days a week of design and development, cancel any month.</p>
+  </section>
+  <footer><span>© 2026 Northwind Studio</span><a href="mailto:hello@northwind.studio" style="color:inherit">hello@northwind.studio</a></footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script>
+  gsap.registerPlugin(ScrollTrigger);
+  gsap.from('.hero .word', { y: 80, opacity: 0, duration: 1, stagger: 0.25, ease: 'power3.out' });
+  gsap.from('.lede', { y: 20, opacity: 0, duration: 0.8, delay: 0.9 });
+  gsap.from('.price-row > *', { x: -40, opacity: 0, duration: 0.8, stagger: 0.4, scrollTrigger: { trigger: '.price-row' } });
+  gsap.utils.toArray('.tile').forEach((t, i) => gsap.from(t, { y: 60, opacity: 0, duration: 0.8, delay: i * 0.1, scrollTrigger: { trigger: t, start: 'top 85%' } }));
+  document.querySelectorAll('.count').forEach((el) => { const o = { v: 0 }; gsap.to(o, { v: +el.dataset.to, duration: 2, snap: { v: 1 }, onUpdate: () => { el.textContent = o.v; }, scrollTrigger: { trigger: el } }); });
+</script>
+</body>
+</html>

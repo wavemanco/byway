@@ -19,10 +19,21 @@ describe('makeRedactor', () => {
   it('removes fal.ai keys (key id, colon, secret) even when they are not in the environment', () => {
     const out = makeRedactor({})('Authorization: Key 0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff rejected');
     expect(out).toBe('Authorization: Key [redacted] rejected');
+    // In a URL or a form body the colon is written %3A.
+    expect(makeRedactor({})('key=0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6%3A00112233445566778899aabbccddeeff&x=1')).toBe('key=[redacted]&x=1');
+  });
+
+  it('removes a bearer token whatever the case of "Bearer", since HTTP reads the scheme so', () => {
+    const token = 'abcDEF0123456789._~+/-xyz';
+    for (const scheme of ['Bearer', 'bearer', 'BEARER']) {
+      expect(makeRedactor({})(`authorization: ${scheme} ${token}== sent`)).toBe('authorization: [redacted] sent');
+    }
   });
 
   it('leaves ordinary text alone', () => {
     expect(makeRedactor({})('Score: 7/10')).toBe('Score: 7/10');
+    // "bearer" in prose, in any case, is not a token.
+    expect(makeRedactor({})('A bearer token is required; Bearer tokens expire.')).toBe('A bearer token is required; Bearer tokens expire.');
     // A request id is a bare UUID, not a key.
     expect(makeRedactor({})('request 0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6 done')).toBe('request 0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6 done');
   });

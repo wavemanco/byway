@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ledgerly — Bookkeeping that does itself</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"></script>
+</head>
+<body class="bg-white text-slate-900 antialiased">
+  <header class="border-b border-slate-200">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <a href="/" class="text-xl font-bold">Ledgerly</a>
+      <nav class="hidden gap-8 text-sm font-medium md:flex">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="/blog">Blog</a>
+      </nav>
+      <div class="flex items-center gap-3">
+        <a href="/login" class="text-sm font-medium">Log in</a>
+        <a href="/signup" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Start free trial</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="mx-auto max-w-6xl px-6 py-24 text-center">
+      <p class="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-sm text-indigo-700">New <span class="font-semibold">Bank sync for 12,000 banks</span></p>
+      <h1 class="mt-6 text-5xl font-extrabold tracking-tight">Bookkeeping that <span class="text-indigo-600">does itself</span></h1>
+      <p class="mx-auto mt-6 max-w-2xl text-lg text-slate-600">Ledgerly reads your bank feeds, categorises every transaction and hands your accountant clean books each month.</p>
+      <div class="mt-10 flex justify-center gap-4">
+        <a href="/signup" class="rounded-md bg-indigo-600 px-6 py-3 font-semibold text-white">Get started free</a>
+        <a href="#demo" class="rounded-md px-6 py-3 font-semibold">Watch the demo <span aria-hidden="true">→</span></a>
+      </div>
+      <p class="mt-4 flex items-center justify-center text-sm text-slate-500">Rated 4.9<span class="sr-only"> out of 5</span> by 2,000 small businesses</p>
+    </section>
+
+    <section id="features" class="bg-slate-50 py-20">
+      <div class="mx-auto max-w-6xl px-6">
+        <h2 class="text-3xl font-bold">Everything your books need</h2>
+        <div class="mt-12 grid gap-8 md:grid-cols-3">
+          <div class="rounded-xl bg-white p-6 shadow-sm">
+            <h3 class="font-semibold">Automatic categories</h3>
+            <p class="mt-2 text-slate-600">Rules learn from your corrections, so month two needs half the clicks.</p>
+            <a href="/features/categories" class="mt-4 inline-block text-sm font-semibold text-indigo-600">Learn more<span class="sr-only"> about automatic categories</span></a>
+          </div>
+          <div class="rounded-xl bg-white p-6 shadow-sm">
+            <h3 class="font-semibold">Receipt capture</h3>
+            <p class="mt-2 text-slate-600">Forward a receipt by email and it lands on the right transaction.</p>
+            <a href="/features/receipts" class="mt-4 inline-block text-sm font-semibold text-indigo-600">Learn more<span class="sr-only"> about receipt capture</span></a>
+          </div>
+          <div class="rounded-xl bg-white p-6 shadow-sm">
+            <h3 class="font-semibold">Accountant access</h3>
+            <p class="mt-2 text-slate-600">Invite your accountant for free and close the year in an afternoon.</p>
+            <a href="/features/accountants" class="mt-4 inline-block text-sm font-semibold text-indigo-600">Learn more<span class="sr-only"> about accountant access</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pricing" class="py-20">
+      <div class="mx-auto max-w-6xl px-6">
+        <h2 class="text-3xl font-bold">Pricing</h2>
+        <div class="mt-10 grid gap-8 md:grid-cols-2">
+          <div class="rounded-xl border p-8">
+            <h3 class="text-lg font-semibold">Solo</h3>
+            <p class="mt-4 flex items-baseline gap-1"><span class="text-4xl font-bold">$12</span><span class="text-slate-500">/month</span></p>
+            <ul class="mt-6 space-y-2 text-sm">
+              <li class="flex gap-2"><span aria-hidden="true">✓</span> One bank account</li>
+              <li class="flex gap-2"><span aria-hidden="true">✓</span> Receipt capture</li>
+            </ul>
+            <a href="/signup?plan=solo" class="mt-8 block rounded-md border px-4 py-2 text-center font-semibold">Choose Solo</a>
+          </div>
+          <div class="rounded-xl border-2 border-indigo-600 p-8">
+            <h3 class="text-lg font-semibold">Team</h3>
+            <p class="mt-4 flex items-baseline gap-1"><span class="text-4xl font-bold">$29</span><span class="text-slate-500">/month</span></p>
+            <ul class="mt-6 space-y-2 text-sm">
+              <li class="flex gap-2"><span aria-hidden="true">✓</span> Unlimited bank accounts</li>
+              <li class="flex gap-2"><span aria-hidden="true">✓</span> Accountant access</li>
+            </ul>
+            <a href="/signup?plan=team" class="mt-8 block rounded-md bg-indigo-600 px-4 py-2 text-center font-semibold text-white">Choose Team</a>
+          </div>
+        </div>
+        <p class="mt-8 flex justify-center text-sm text-slate-600">Already have an account? <a href="/login" class="ml-1 font-semibold text-indigo-600">Sign in</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-200">
+    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 md:flex-row">
+      <p class="text-sm text-slate-500">© 2026 Ledgerly, Inc. All rights reserved.</p>
+      <div class="flex gap-6">
+        <a href="https://x.com/ledgerly" class="text-slate-500"><span class="sr-only">X</span><svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l16 16M20 4L4 20"/></svg></a>
+        <a href="https://github.com/ledgerly" class="text-slate-500"><span class="sr-only">GitHub</span><svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg></a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -145,3 +145,9 @@ The verification recommended option C of its cluster A: write the executed seman
   - advisor: `packages/advisor/test/semantics-admission.test.ts`, `admit.test.ts` and `corpus.test.ts`;
   - web: `apps/web/test/start-admission.test.ts` and `recommendation.test.ts`.
 - It supersedes no ADR. It makes [ADR-0058](0058-design-time-composition-only.md)'s "cannot be removed" mean one-to-one counterparts of executed checkpoints that run every time, and holds [ADR-0069](0069-product-c5-relay-and-honest-skips.md)'s honest skips to their declarations.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, the evidence kept only under Temp.** The verification's prototypes named under Evidence (`sem.mts`, `drive.mts`, `oracle.mts` and `bundle-se.mts`, in `C:/Users/arvik/AppData/Local/Temp/byway-review-verify/round3/revise-A-r3-1b/`) are now in [evidence/probes/review-verify/revise-A-r3-1b/](evidence/probes/review-verify/revise-A-r3-1b/), with the oracle's output and log and the two bundle checks. They import the repository's code by absolute path as it stood when they ran, so they record what was run; they are not a test that runs today. The claims oracle of the F01 semantics work, which checks every explainer claim against executed runs, now runs with the unit tests (`scripts/test/claims-oracle.test.ts`).

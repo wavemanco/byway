@@ -1,0 +1,38 @@
+monotonicity: 4256 single declaration changes (writes, produces voice, keepsVoice, 8 blocks + none) on 14 refused bases; admitted: 0
+c1: moves 443, admitted 182, HOLES 0 (today 0, r3 0), refused 261 (oracle-clean among refused 213), tooMany 0, nearest traces 12, guaranteed ["voice:D3:all"], self-oracle []  [0s]
+   refused only by r3-1b rules with the oracle clean: {} {}
+c2: moves 150, admitted 18, HOLES 0 (today 2, r3 0), refused 132 (oracle-clean among refused 114), tooMany 0, nearest traces 4, guaranteed ["voice:D1:all"], self-oracle []  [0s]
+   today-hole vanilla-x3 -> stages.0.body[7] ["P2:writers-after(D1:all#1:build 1>0)"]
+   today-hole vanilla-x3 -> stages.0.body[8] ["P2:writers-after(D1:all#1:build 1>0)"]
+   refused only by r3-1b rules with the oracle clean: {"ST5:set-aside":2,"ST12:writer-undeclared":4} {"ST5:set-aside":"dedupe -> stages.0.body[6]: ST5:set-aside(step:dedupe)","ST12:writer-undeclared":"vanilla-x3 -> stages.0.body[5]: ST12:writer-undeclared(vanilla-build)"}
+c3: moves 543, admitted 196, HOLES 0 (today 8, r3 1), refused 347 (oracle-clean among refused 280), tooMany 0, nearest traces 24, guaranteed ["voice:D3:all"], self-oracle []  [1s]
+   r3-hole tells-compare -> stages.2.body[2] ["P3:restore-after-write(tells-compare)"]
+   today-hole vanilla-x3 -> stages.2.body[9] ["P2:writers-after(D3:all#1:build 1>0)"]
+   today-hole draft -> stages.1.body.steps.0.body[0] ["P3:snapshot-before-write(critic-loop)"]
+   today-hole draft -> stages.1.body.steps.0.body[1] ["P3:snapshot-before-write(critic-loop)"]
+   today-hole draft -> stages.1.body.steps.0.body[2] ["P3:snapshot-before-write(critic-loop)"]
+   refused only by r3-1b rules with the oracle clean: {"ST12:writer-undeclared":9} {"ST12:writer-undeclared":"vanilla-x3 -> stages.2.body[0]: ST12:writer-undeclared(vanilla-build)"}
+c4: moves 319, admitted 90, HOLES 0 (today 0, r3 0), refused 229 (oracle-clean among refused 181), tooMany 0, nearest traces 28, guaranteed ["voice:D3:all/kl"], self-oracle []  [1s]
+   refused only by r3-1b rules with the oracle clean: {} {}
+c5: moves 1138, admitted 391, HOLES 0 (today 55, r3 15), refused 747 (oracle-clean among refused 500), tooMany 0, nearest traces 9, guaranteed ["voice:D1:script","voice:D3:on-screen"], self-oracle []  [2s]
+   r3-hole render-in-scene -> stages.2.body[9] ["P2:writers-after(D3:on-screen#1:relay 1>0)"]
+   r3-hole render-in-scene -> stages.2.body[10] ["P2:writers-after(D3:on-screen#1:relay 1>0)"]
+   r3-hole render-in-scene -> stages.2.body[11] ["P2:writers-after(D3:on-screen#1:relay 1>0)"]
+   r3-hole vo-audio -> stages.2.body[9] ["P2:writers-after(D3:on-screen#1:asset 1>0)"]
+   r3-hole vo-audio -> stages.2.body[10] ["P2:writers-after(D3:on-screen#1:asset 1>0)"]
+   r3-hole vo-audio -> stages.2.body[11] ["P2:writers-after(D3:on-screen#1:asset 1>0)"]
+   today-hole vo-script -> stages.1.body[0] ["P1:missing(voice:D1:script)","P2:writers-after(D2:script#1:asset 2>0)","P2:writers-after(D2:script#1:relay 3>0)","P2:writers-after(D2:script#1:fix 2>0)"]
+   today-hole vo-script -> stages.1.body[1] ["P1:missing(voice:D1:script)","P2:writers-after(D2:script#1:relay 3>0)","P2:writers-after(D2:script#1:asset 1>0)","P2:writers-after(D2:script#1:fix 2>0)"]
+   today-hole vo-script -> stages.1.body[2] ["P1:missing(voice:D1:script)","P2:writers-after(D2:script#1:relay 1>0)","P2:writers-after(D2:script#1:asset 1>0)","P2:writers-after(D2:script#1:fix 2>0)"]
+   today-hole vo-script -> stages.1.body[3] ["P1:missing(voice:D1:script)","P2:writers-after(D2:script#1:asset 1>0)","P2:writers-after(D2:script#1:fix 2>0)"]
+   refused only by r3-1b rules with the oracle clean: {"ST12:writer-undeclared":2,"COMPOSED-VOICE:extra-writer-after":3} {"ST12:writer-undeclared":"vanilla-x3 -> stages.0.body[6]: ST12:writer-undeclared(vanilla-build)","COMPOSED-VOICE:extra-writer-after":"matte -> stages.2.body[9]: COMPOSED-VOICE:extra-writer-after(voice:relay 1>0)"}
+c6: moves 25, admitted 0, HOLES 0 (today 0, r3 0), refused 25 (oracle-clean among refused 22), tooMany 0, nearest traces 4, guaranteed ["author:D2","voice:D3:all"], self-oracle []  [2s]
+   refused only by r3-1b rules with the oracle clean: {} {}
+c6a: moves 311, admitted 73, HOLES 0 (today 7, r3 0), refused 238 (oracle-clean among refused 187), tooMany 0, nearest traces 8, guaranteed ["author:D2","voice:D3:all"], self-oracle []  [2s]
+   today-hole vanilla-x3 -> stages.2.body[1] ["P2:writers-after(D3:all#1:build 1>0)"]
+   today-hole vanilla-x3 -> stages.2.body[2] ["P2:writers-after(D3:all#1:build 1>0)"]
+   today-hole write -> stages.0.body[5] ["P1:missing(author:D2)"]
+   today-hole write -> stages.0.body.steps.4.body[2] ["P1:missing(author:D2)"]
+   refused only by r3-1b rules with the oracle clean: {"COMPOSED-AUTHOR:writer-after+ST12:writer-undeclared":1} {"COMPOSED-AUTHOR:writer-after+ST12:writer-undeclared":"vanilla-x3 -> stages.2.body[0]: ST12:writer-undeclared(vanilla-build), COMPOSED-AUTHOR:writer-after(vanilla-build)"}
+c7: moves 524, admitted 230, HOLES 0 (today 0, r3 0), refused 294 (oracle-clean among refused 262), tooMany 0, nearest traces 12, guaranteed ["voice:D3:all"], self-oracle []  [3s]
+   refused only by r3-1b rules with the oracle clean: {} {}

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledgerly — Bookkeeping for freelancers</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"></script>
+<style>
+  .reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+  .reveal.shown{opacity:1;transform:none}
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+<header class="flex items-center justify-between px-10 py-5 bg-white shadow-sm">
+  <a href="/" class="text-xl font-bold text-indigo-600">Ledgerly</a>
+  <nav class="flex gap-8 text-sm font-medium">
+    <a href="#features" class="hover:text-indigo-600">Features</a>
+    <a href="#pricing" class="hover:text-indigo-600">Pricing</a>
+    <a href="/login" class="hover:text-indigo-600">Log in<span class="sr-only"> to your account</span></a>
+  </nav>
+</header>
+<section class="px-10 py-24 text-center">
+  <h1 id="hero" class="text-6xl font-extrabold tracking-tight">Taxes, without the dread.</h1>
+  <p class="mx-auto mt-6 max-w-2xl text-lg text-slate-600">Ledgerly sorts your receipts, sends your invoices and tells you what to set aside for tax, every week.</p>
+  <div class="mt-10 flex justify-center gap-4">
+    <a href="/signup" class="rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white">Start free<span class="hidden md:inline"> for 30 days</span></a>
+    <a href="#features" class="rounded-lg border border-slate-300 px-6 py-3 font-semibold">See how it works</a>
+  </div>
+</section>
+<section id="features" class="mx-auto grid max-w-6xl grid-cols-3 gap-8 px-10 py-16">
+  <article class="reveal rounded-2xl bg-white p-6 shadow">
+    <h3 class="text-lg font-semibold">Receipts, sorted</h3>
+    <p class="mt-2 h-20 overflow-hidden text-base text-slate-600">Snap a photo and Ledgerly files it under the right category, ready for your return.</p>
+  </article>
+  <article class="reveal rounded-2xl bg-white p-6 shadow">
+    <h3 class="text-lg font-semibold">Invoices that get paid</h3>
+    <p class="mt-2 h-20 overflow-hidden text-base text-slate-600">Branded invoices with card payments built in, and polite reminders when they are late.</p>
+  </article>
+  <article class="reveal rounded-2xl bg-white p-6 shadow">
+    <h3 class="text-lg font-semibold">Know your tax bill</h3>
+    <p class="mt-2 line-clamp-2 text-base text-slate-600">A running estimate of what you owe, updated every time money comes in.</p>
+  </article>
+</section>
+<section id="pricing" class="mx-auto max-w-3xl px-10 py-16">
+  <h2 class="text-center text-3xl font-bold">Simple pricing</h2>
+  <div class="reveal mt-10 divide-y rounded-2xl bg-white shadow">
+    <div class="flex items-center justify-between p-6"><span class="font-semibold">Solo</span><span class="text-slate-600">£8<span class="text-sm">/month</span></span></div>
+    <div class="flex items-center justify-between p-6"><span class="font-semibold">Studio</span><span class="text-slate-600">£19<span class="text-sm">/month</span></span></div>
+  </div>
+  <p class="mt-6 text-center text-sm text-slate-500">Prices include VAT. Cancel any time.</p>
+</section>
+<section class="bg-indigo-600 px-10 py-20 text-center text-white">
+  <h2 class="reveal text-4xl font-bold">Ready when you are.</h2>
+  <p class="reveal mx-auto mt-4 max-w-xl text-indigo-100">Join 12,000 freelancers who stopped dreading January.</p>
+</section>
+<footer class="flex justify-between px-10 py-8 text-sm text-slate-500">
+  <p>&copy; 2026 Ledgerly Ltd</p>
+  <p><a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a></p>
+</footer>
+<script>
+  const h = document.getElementById('hero');
+  const words = h.textContent.split(' ');
+  h.textContent = '';
+  words.forEach((w, i) => {
+    const s = document.createElement('span');
+    s.textContent = w;
+    s.className = 'reveal inline-block';
+    s.style.transitionDelay = (i * 80) + 'ms';
+    h.appendChild(s);
+    if (i < words.length - 1) h.appendChild(document.createTextNode(' '));
+  });
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('shown'); io.unobserve(e.target); } }), { threshold: 0.15 });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

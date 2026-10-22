@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth &amp; Grain Bakery</title>
+<link rel="stylesheet" href="https://unpkg.com/aos@2.3.4/dist/aos.css">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; font-family: 'DM Sans', sans-serif; color: #3b2f2f; background: #fdf8f1; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+  h1, h2 { font-family: 'DM Serif Display', serif; font-weight: 400; }
+  .hero { padding: 96px 0; text-align: center; }
+  .hero h1 { font-size: 60px; margin: 0; }
+  .typed { color: #b45309; border-right: 2px solid #b45309; }
+  .hero p { font-size: 20px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .card { background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+  .card h3 { margin: 0 0 8px; }
+  .price { display: flex; align-items: baseline; gap: 2px; font-weight: 700; color: #b45309; }
+  .price small { font-weight: 400; color: #7c6f64; }
+  .checks li { list-style: none; padding-left: 0; }
+  .checks li::before { content: "✓ "; color: #15803d; font-weight: 700; }
+  .hours { white-space: pre-line; font-size: 18px; }
+  section { padding: 72px 0; }
+  .newsletter { display: flex; gap: 0; }
+  .newsletter input { padding: 12px; border: 1px solid #d6c7b5; border-radius: 8px 0 0 8px; }
+  .newsletter button { padding: 12px 20px; border: 0; background: #b45309; color: #fff; border-radius: 0 8px 8px 0; }
+  footer { padding: 32px 0; font-size: 14px; color: #7c6f64; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <h1>Bread worth <span class="typed" id="typed">waking up for</span></h1>
+    <p>Slow-fermented loaves, flaky pastries and good coffee on Elm Street since 2009.</p>
+  </header>
+  <section>
+    <h2 data-aos="fade-up">Baked this morning</h2>
+    <div class="cards">
+      <div class="card" data-aos="fade-up"><h3>Country sourdough</h3><p>Forty-eight hour ferment, dark crust, open crumb.</p><p class="price">$9<small>/loaf</small></p></div>
+      <div class="card" data-aos="fade-up" data-aos-delay="100"><h3>Butter croissant</h3><p>Laminated by hand with cultured French butter.</p><p class="price">$4.50<small>/each</small></p></div>
+      <div class="card" data-aos="fade-up" data-aos-delay="200"><h3>Cardamom bun</h3><p>Swedish style, knotted and rolled in pearl sugar.</p><p class="price">$5<small>/each</small></p></div>
+    </div>
+  </section>
+  <section>
+    <h2 data-aos="fade-right">Why our bread is different</h2>
+    <ul class="checks">
+      <li data-aos="fade-up">Organic flour milled twenty miles away</li>
+      <li data-aos="fade-up">No commercial yeast in our sourdough</li>
+      <li data-aos="fade-up">Everything baked before seven each morning</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Opening hours</h2>
+    <p class="hours">Tuesday to Friday 7am–3pm
+Saturday 8am–2pm
+Sunday and Monday closed</p>
+    <p>Find us at <a href="https://maps.example.com/hearth">212 Elm Street, Portland</a>.</p>
+  </section>
+  <section>
+    <h2>Get the weekly bake list</h2>
+    <form class="newsletter"><input type="email" placeholder="you@example.com" aria-label="Email address"><button type="submit">Subscribe</button></form>
+    <p style="font-size:14px;color:#7c6f64">One email on Monday. Unsubscribe anytime.</p>
+  </section>
+  <footer>© 2026 Hearth &amp; Grain · <a href="/allergens">Allergen information</a></footer>
+</div>
+<script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
+<script>
+  AOS.init({ once: true, duration: 700 });
+  const words = ['waking up for', 'sharing', 'crossing town for'];
+  let w = 0;
+  setInterval(() => { w = (w + 1) % words.length; document.getElementById('typed').textContent = words[w]; }, 3000);
+</script>
+</body>
+</html>

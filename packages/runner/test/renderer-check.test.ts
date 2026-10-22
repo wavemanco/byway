@@ -31,6 +31,14 @@ const DIED = new Error(
 );
 
 /**
+ * For a test whose answer needs the check's probe of the other setting to finish (a real launch and byway's test page):
+ * a bound on the probe that only a probe that hangs reaches, inside the test's own 60 s (the owner's choice of 2026-10-21,
+ * "Fix the test in this batch (Recommended)"). The product's bound is 15 s (PROBE_MS). Under the unit suite's parallel
+ * load a probe ran past it, and the check answered the sandbox 'unknown'; that whole test then took 17.6 s.
+ */
+const HUNG_PROBE_MS = 50_000;
+
+/**
  * A launch held until the test releases it: then it is the real launch, and each browser it gave is watched until byway
  * closes it, with whether a page was ever opened on it. Every call is kept (`settings`) and launched for real once
  * released, so a renderer that launched again after its close would show there, and so would the page it drew (ADR-0105
@@ -210,7 +218,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
       return setting.osSandbox ? dying(b) : b;
     };
     const advice = sandboxAdvice(linux);
-    expect(await checkRenderer({ osSandbox: true }, { launch, host: linux })).toEqual({ osSandbox: true, ready: false, sandbox: 'fails', message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix });
+    expect(await checkRenderer({ osSandbox: true }, { launch, host: linux, probeMs: HUNG_PROBE_MS })).toEqual({ osSandbox: true, ready: false, sandbox: 'fails', message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix });
     expect(settings).toEqual([true, false]);
   }, 60_000);
 
@@ -255,7 +263,7 @@ describe('the start-up check (serve.ts prints it as the "renderer" line, and Set
   }, 60_000);
   it('off: ready without the sandbox, and whether the sandbox could start now, from its own test page', async () => {
     const starts = watched();
-    expect(await checkRenderer({ osSandbox: false }, { launch: starts.launch, host: linux })).toEqual({ osSandbox: false, ready: true, sandbox: 'starts' });
+    expect(await checkRenderer({ osSandbox: false }, { launch: starts.launch, host: linux, probeMs: HUNG_PROBE_MS })).toEqual({ osSandbox: false, ready: true, sandbox: 'starts' });
     expect(starts.settings).toEqual([false, true]);
     expect(starts.browsers.map((b) => b.isConnected())).toEqual([false, false]);
 
@@ -392,7 +400,7 @@ describe("a run's refusal agrees with the start-up line and Settings (ADR-0105)"
   }
 
   it('the start-up check found the sandbox cannot start: the run is refused with its message, the why and the fix Settings shows, and no install command', async () => {
-    const check = await checkRenderer({ osSandbox: true }, { launch: blocked, host: windows });
+    const check = await checkRenderer({ osSandbox: true }, { launch: blocked, host: windows, probeMs: HUNG_PROBE_MS });
     const advice = sandboxAdvice(windows, onDisk);
     expect(check).toEqual({ osSandbox: true, ready: false, sandbox: 'fails', message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix });
     expect(check.fix).toContain(`(${onDisk.executable})`);

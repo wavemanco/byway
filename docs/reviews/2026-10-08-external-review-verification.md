@@ -104,7 +104,7 @@ Effort: S small, M medium, L large, XL extra large. "Root" is whether the option
 
 # Appendix: detail per cluster
 
-Verbatim from the final adjudicated design of each cluster (after the adversarial rounds). File and line references are to commit `b33f128`. Probe paths refer to the agents' scratch folders under `C:\Users\arvik\AppData\Local\Temp\byway-review-verify\`.
+Verbatim from the final adjudicated design of each cluster (after the adversarial rounds). File and line references are to commit `b33f128`. Probe paths refer to the agents' scratch folders under `C:\Users\arvik\AppData\Local\Temp\byway-review-verify\`. *(Note of 2026-10-19: the probes the decision records cite are kept in [docs/adr/evidence/probes/review-verify/](../adr/evidence/probes/review-verify/); [docs/adr/evidence/README.md](../adr/evidence/README.md) says what was not kept.)*
 
 
 ## Cluster A: Executable plan, admission and composition semantics

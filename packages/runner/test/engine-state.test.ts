@@ -6,7 +6,10 @@
  * older than temporal.sqlite) is stopped at engine start, before the worker polls, so none of its steps runs.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ResolutionRejectedError } from '../src/client.ts';
+import type { Client } from '@temporalio/client';
+import { WorkflowNotFoundError } from '@temporalio/common';
+import { createRunnerClient, ResolutionRejectedError } from '../src/client.ts';
+import { ENGINE_SLOW_AT_START } from '../src/start-failure.ts';
 import { engineStartLines, settleBeforePolling } from '../src/dev-engine.ts';
 import { LOST_RUN_MESSAGE, ORPHAN_RUN_MESSAGE, reconcileLostRuns } from '../src/lost-runs.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from '../src/types.ts';
@@ -25,6 +28,10 @@ afterAll(async () => {
 }, 60_000);
 
 const openCheckpoint = (runId: string) => h.waitFor('an open checkpoint', async () => (await h.store.checkpointsForRun(runId)).find((c) => c.status === 'open'));
+/**
+ * Waits for a run's status. The workflow writes it in an activity of its own, in no fixed order with the activity that
+ * opens a checkpoint, so a run whose checkpoint is open may not read 'waiting' yet.
+ */
 const statusIs = (runId: string, status: string) => h.waitFor(`status ${status}`, async () => (await h.store.getRun(runId))?.status === status);
 const handle = (runId: string) => h.env.client.workflow.getHandle(workflowIdFor(runId));
 
@@ -81,10 +88,54 @@ describe('a run whose workflow is gone (OPS-1)', () => {
     expect(orphaned).toEqual([]);
     await expectClosed(ghost.id, ghostCp.id, 'failed', LOST_RUN_MESSAGE);
     await expectClosed(lost.runId, lost.cpId, 'failed', LOST_RUN_MESSAGE);
-    expect((await h.store.getRun(live.id))?.status).toBe('waiting');
+    await statusIs(live.id, 'waiting');
 
     await h.runner.cancel(live.id);
     await statusIs(live.id, 'cancelled');
+  }, 60_000);
+});
+
+describe('a start whose reply timed out, against a real Temporal server (B1, ADR-0109)', () => {
+  /**
+   * The harness's Temporal client, with a workflow start whose reply is lost: it times out (gRPC 4) after Temporal
+   * accepted the workflow, or before the request reached it. Everything else is the real client, the describe included.
+   */
+  function replyLost(acceptFirst: boolean): Client {
+    const real = h.env.client;
+    const timedOut = () => Object.assign(new Error('4 DEADLINE_EXCEEDED: Deadline exceeded'), { code: 4 });
+    const bound = <T extends object>(target: T, prop: PropertyKey) => {
+      const v = Reflect.get(target, prop, target) as unknown;
+      return typeof v === 'function' ? v.bind(target) : v;
+    };
+    const workflow = new Proxy(real.workflow, {
+      get: (target, prop) =>
+        prop === 'start'
+          ? async (...args: Parameters<Client['workflow']['start']>) => {
+              if (acceptFirst) await target.start(...args);
+              throw timedOut();
+            }
+          : bound(target, prop),
+    });
+    return new Proxy(real, { get: (target, prop) => (prop === 'workflow' ? workflow : bound(target, prop)) });
+  }
+  const startWith = (client: Client) => createRunnerClient({ client, store: h.store, taskQueue: h.taskQueue }).start({ workspaceId: h.workspaceId, recipe: tiny, problem: PROBLEM, profileId: 'demo', budgetUsd: 50 });
+
+  it('Temporal accepted it: the run goes on under its workflow, not marked failed', async () => {
+    const run = await startWith(replyLost(true));
+    await openCheckpoint(run.id);
+    // A run marked failed never reads 'waiting': setRunStatus leaves an ended run as it is.
+    await statusIs(run.id, 'waiting');
+    expect((await h.store.getRun(run.id))?.error).toBeUndefined();
+    await h.runner.cancel(run.id);
+    await statusIs(run.id, 'cancelled');
+  }, 60_000);
+
+  it('it never reached Temporal: Temporal says it has no such workflow, and the run is failed as one that did not start', async () => {
+    const err = await startWith(replyLost(false)).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 4 });
+    const [run] = (await h.store.listRuns(h.workspaceId)).filter((r) => r.error === ENGINE_SLOW_AT_START);
+    expect(run).toMatchObject({ status: 'failed' });
+    await expect(handle(run!.id).describe()).rejects.toBeInstanceOf(WorkflowNotFoundError);
   }, 60_000);
 });
 

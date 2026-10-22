@@ -1,0 +1,10 @@
+five, Chromium throttled 4x: exit 0
+whole file, 32 busy processes: exit 1 in 555 s
+gate typecheck exit 0
+gate vitest exit 0
+gate build exit 0
+gate e2e exit 0
+ M docs/adr/0103-adr-log-rule-and-ci.md
+ M docs/backlog.md
+ M packages/runner/test/pages.test.ts
+done

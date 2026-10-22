@@ -1,0 +1,40 @@
+[
+  {
+    "name": "c1 every loop gate max=1e9",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "Changed: Outside critique repeats up to 1000000000 rounds instead of 5"
+    ],
+    "estimateBalanced": {
+      "cost": "$1.14–$711,600,002.31",
+      "calls": "25–8000000021 AI calls"
+    }
+  },
+  {
+    "name": "c1 D1 = replicate 50 x (replicate 50 seed-build, then random pick 1)",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "Added: Random spark: 50 separate drafts",
+      "Changed: Random spark: 50 separate drafts instead of 4"
+    ],
+    "estimateBalanced": {
+      "cost": "$127.26–$299.09",
+      "calls": "2705–3155 AI calls"
+    }
+  },
+  {
+    "name": "c1 D1 = replicate 1000 x (replicate 1000 seed-build, random pick 1)",
+    "accepted": true,
+    "violations": [],
+    "diff": [
+      "Added: Random spark: 1000 separate drafts",
+      "Changed: Random spark: 1000 separate drafts instead of 4"
+    ],
+    "estimateBalanced": {
+      "cost": "$47,428.14–$95,747.15",
+      "calls": "1004005–1013005 AI calls"
+    }
+  }
+]

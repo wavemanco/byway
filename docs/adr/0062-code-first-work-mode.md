@@ -39,3 +39,9 @@ This does not relax the credibility charter ([ADR-0043](0043-research-credibilit
 ## Evidence
 
 - [evidence/conversation.md](evidence/conversation.md) · dialogue 2026-10-07T16:40:58Z — “This is a coding session. Let's code.”
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, from an audit of the decision records.** "No alternatives were recorded at the time" under Alternatives is not so. The question the owner answered offered three (the conversation record, 2026-10-07T16:40:58Z): "Proceed; set ceiling after cost probe (Recommended)", "Proceed, but aim for the lean design" and "Too much: rethink Paper 1's scope". The owner chose none of them and answered with the words quoted under Decision. Of the three questions asked with it, the owner gave the same answer to two (the baselines, and an academic co-investigator for the ethics review) and chose "Accept all recommendations (Recommended)" for the third, the technical choices ([ADR-0061](0061-study-1-technical-choices-accepted.md)).

@@ -2,3 +2,5 @@
 * text=auto eol=lf
 *.png binary
 *.pdf binary
+# The evidence logs are kept byte for byte as they were written (two build logs have CRs in their progress lines).
+docs/adr/evidence/logs/** -text

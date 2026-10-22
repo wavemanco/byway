@@ -69,3 +69,9 @@ The verification's recommendation (cluster A, option C, stage 4) drafted this re
   - validator: `packages/validator/test/operator-semantics.test.ts`;
   - advisor: `packages/advisor/test/estimate.test.ts`.
 - It extends ADR-0073 (the raise-once rule now holds for every loop exit at the cap) and supersedes no ADR.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, the evidence kept only under Temp.** The verifiers' probes named under Evidence are now in [evidence/probes/review-verify/verify-F20-reproduce/](evidence/probes/review-verify/verify-F20-reproduce/) (`f20-probe.mts`, with its output) and [evidence/probes/review-verify/verify-F20-refute/](evidence/probes/review-verify/verify-F20-refute/) (`probe.mts`). They import the repository's code by absolute path as it stood when they ran, so they record what was run; they are not a test that runs today.

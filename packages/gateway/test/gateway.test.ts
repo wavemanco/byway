@@ -396,13 +396,13 @@ describe('gateway: an answer that names no served model is settled as the reques
       complete: async () => {
         throw new Error('not used');
       },
-      image: async () => ({ bytes: encodePng(2, 2, new Uint8Array(12).fill(9)), mediaType: 'image/png', servedModel: model as string, usage: { inputTokens: 30, outputTokens: 1290, units: 1 }, requestBody: {}, responseBody: {} }),
+      image: async () => ({ bytes: encodePng(2, 2, new Uint8Array(12).fill(9)), mediaType: 'image/png', servedModel: model as string, usage: { inputTokens: 30, outputTokens: 40, units: 1 }, requestBody: {}, responseBody: {} }),
     };
     const g = gateway({ env: { ANTHROPIC_API_KEY: ANTHROPIC_KEY, GEMINI_API_KEY: 'AIza-test-not-real-0000000000000' }, adapters: { google: adapter } });
     const res = await g.image({ workspaceId: 'ws-1', runId: 'run-1', stepId: 'asset', purpose: 'asset:web-page', profileId: 'balanced', prompt: 'A loaf', size: '1024x1024' });
-    // gemini-nano-banana-2.1: $0.0336 an image and 30 prompt tokens at $1.50/M.
+    // gemini-nano-banana-2.1: $0.0336 an image, 30 prompt tokens at $1.50/M and 40 text and thinking tokens at $7.50/M.
     expect(ledgerLines()).toEqual([expect.objectContaining({ id: res.ledgerEntryId, kind: 'image', requestedModel: 'gemini-nano-banana-2.1', servedModel: 'gemini-nano-banana-2.1', priceBasis: 'assumed' })]);
-    expect(res.costUsd).toBeCloseTo(0.0336 + 30 * 1.5e-6, 9);
+    expect(res.costUsd).toBeCloseTo(0.0336 + 30 * 1.5e-6 + 40 * 7.5e-6, 9);
     expect(res.servedModel).toBe('gemini-nano-banana-2.1');
     expect(await g.spend('ws-1')).toMatchObject({ uncertainUsd: 0, assumedPricing: { calls: 1 } });
   });

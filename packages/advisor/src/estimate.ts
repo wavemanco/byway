@@ -35,8 +35,8 @@ export interface PricingContext {
  * Typical tokens per call, by role or helper (input, output), for an artifact of `ARTIFACT_TOKENS` and a view of
  * `VIEW_TOKENS`. They are planning numbers, written down so they can be checked against the ledger:
  * - every prompt carries about 1,500 tokens of instructions, the problem and the brief (`PROMPT_TOKENS`);
- * - writers (build, seed) produce one artifact; revisers (fix, voice.apply, asset.integrate) read one and a critique
- *   and produce one;
+ * - writers (build, seed) produce one artifact; revisers (fix, asset.integrate) read one and a critique and produce one
+ *   (VOICE makes no model call: ADR-0081);
  * - readers of the work (critic, check, cut, tells, vision, dedupe, overlap) read its view and answer briefly; the TELLS
  *   sweep also reads a tell catalog of about 2,500 tokens;
  * - judges read every candidate's view; a GREAT critic reads the references too (low: none, ADR-0071's OK fallback;
@@ -67,7 +67,6 @@ export const TOKEN_ASSUMPTIONS: Readonly<Record<string, TokenRule>> = {
   build: (m) => ({ input: PROMPT_TOKENS, output: art(m) }),
   seed: (m) => ({ input: PROMPT_TOKENS, output: art(m) }),
   fix: (m) => ({ input: PROMPT_TOKENS + art(m) + CRITIQUE_TOKENS, output: art(m) }),
-  'voice.apply': (m) => ({ input: PROMPT_TOKENS + 2 * art(m), output: art(m) }),
   'asset.integrate': (m) => ({ input: PROMPT_TOKENS + art(m), output: art(m) }),
   'asset.briefs': (m) => ({ input: PROMPT_TOKENS + art(m), output: 600 }),
   critic: (m, readers) => ({ input: PROMPT_TOKENS + view(m) * readers, output: CRITIQUE_TOKENS }),
@@ -251,13 +250,10 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         return minutes('directive');
       case 'tells-compare':
         return minutes('compare');
-      case 'voice': {
-        const kind = s.knobs?.scope === 'key-lines' ? 'write-key-lines' : 'write';
-        // VOICE writes the edited copy back with no model call (ADR-0081, spec §3.2), yet this still counts one mid-tier
-        // voice.apply completion when VOICE changes the work, so VOICE is estimated above what it costs (backlog).
-        const apply = s.produces.includes('artifact') ? completion(w, 'voice.apply', 'mid', count(1, 1)) : NONE;
-        return add(minutes(kind), apply);
-      }
+      case 'voice':
+        // Your time only: VOICE writes the edited copy back with no model call (ADR-0081, spec §3.2). Until B1 this also
+        // counted a mid-tier voice.apply completion for each VOICE that changes the work.
+        return minutes(s.knobs?.scope === 'key-lines' ? 'write-key-lines' : 'write');
       case 'build':
         return minutes('author');
       default:

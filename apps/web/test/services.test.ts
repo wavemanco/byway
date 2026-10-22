@@ -164,8 +164,10 @@ describe('the engine Runner (the web process is only a Temporal client)', () => 
     expect(isTransportFailure('ECONNREFUSED')).toBe(false);
   });
 
-  it('says plainly that the engine stopped and how to bring it back, and is recognised across server bundles', () => {
-    expect(new EngineUnavailableError(new Error('x')).message).toBe('byway’s run engine is not running. Restart byway (pnpm start), then try again.');
+  it('says plainly that the engine stopped or did not answer, and how to bring it back, and is recognised across server bundles', () => {
+    // A timeout (gRPC 4) is one of its causes, and an engine that answers slowly may still have done what it was asked,
+    // so the words do not say only that it is not running (B1, ADR-0109).
+    expect(new EngineUnavailableError(new Error('x')).message).toBe('byway’s run engine is not running, or did not answer in time. Restart byway (pnpm start), then try again.');
     // Another bundle's copy of the class: same name, different constructor.
     const other = Object.assign(new Error('elsewhere'), { name: 'EngineUnavailableError' });
     expect(isEngineUnavailable(other)).toBe(true);

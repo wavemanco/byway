@@ -1,0 +1,14 @@
+reason goto    : page.goto: byway closed the page renderer as it shut down
+reason evaluate: page.evaluate: Execution context was destroyed, most likely because of a navigation
+reason shot    : page.screenshot: Target page, context or browser has been closed
+reason newPage : browserContext.newPage: Target page, context or browser has been closed
+reason route   : browserContext.route: Target page, context or browser has been closed
+reason newCtx  : browser.newContext: Target page, context or browser has been closed
+reason clock   : clock.install: Target page, context or browser has been closed
+bare goto    : page.goto: Target page, context or browser has been closed
+bare evaluate: page.evaluate: Execution context was destroyed, most likely because of a navigation
+bare shot    : page.screenshot: Target page, context or browser has been closed
+bare newPage : browserContext.newPage: Target page, context or browser has been closed
+bare route   : browserContext.route: Target page, context or browser has been closed
+bare newCtx  : browser.newContext: Target page, context or browser has been closed
+bare clock   : clock.install: Target page, context or browser has been closed

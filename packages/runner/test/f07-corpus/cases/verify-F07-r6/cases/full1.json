@@ -1,0 +1,6 @@
+[
+ ["head_text_visible", "<!doctype html><html><head><title>T</title>Welcome</head><body><p>Hi</p></body></html>", null, true],
+ ["head_text_then_b", "<!doctype html><html><head><title>T</title>Hello <b>world</b></html>", null, true],
+ ["no_head_text", "<!doctype html><title>T</title>Plain text first<p>Para</p>", null, true],
+ ["quirks_table_p", "<html><head><title>T</title></head><body><p>Intro<table><tr><td>Cell</td></tr></table>Outro</p></body></html>", null, true]
+]

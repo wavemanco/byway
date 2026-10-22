@@ -1,0 +1,44 @@
+[
+  {
+    "depth": 600,
+    "bytes": 17768,
+    "ok": true
+  },
+  {
+    "depth": 700,
+    "bytes": 20068,
+    "ok": true
+  },
+  {
+    "depth": 800,
+    "bytes": 22368,
+    "ok": true
+  },
+  {
+    "depth": 900,
+    "bytes": 24668,
+    "ok": true
+  },
+  {
+    "depth": 1000,
+    "bytes": 26968,
+    "ok": true
+  },
+  {
+    "depth": 1100,
+    "bytes": 29268,
+    "ok": true
+  },
+  {
+    "depth": 1200,
+    "bytes": 31568,
+    "threw": "RangeError: Maximum call stack size exceeded",
+    "topFrames": [
+      "at Object.keys (<anonymous>)",
+      "at reservedKeyPaths (C:\\Users\\arvik\\code\\byway\\packages\\recipe\\src\\schema.ts:251:17)",
+      "at <anonymous> (C:\\Users\\arvik\\code\\byway\\packages\\recipe\\src\\schema.ts:249:60)",
+      "at Array.flatMap (<anonymous>)",
+      "at reservedKeyPaths (C:\\Users\\arvik\\code\\byway\\packages\\recipe\\src\\schema.ts:249:42)"
+    ]
+  }
+]

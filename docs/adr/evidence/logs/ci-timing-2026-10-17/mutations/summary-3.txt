@@ -1,0 +1,6 @@
+M2-context-close-unbounded new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+M3-browser-close-unbounded new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+M4-browser-not-forgotten new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+M5-render-retried new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+M1-no-deadline new exit=1  Tests 1 failed | 53 skipped (54) (hook timeouts: 0)
+done

@@ -1,0 +1,870 @@
+{
+  "mono": {
+    "tried": 4256,
+    "flips": 0,
+    "flipList": []
+  },
+  "sweep": {
+    "c1": {
+      "moves": 443,
+      "admitted": 182,
+      "refused": 261,
+      "holes": [],
+      "todayHoles": [],
+      "r3Holes": [],
+      "newOnly": {},
+      "newOnlyEx": {},
+      "overStrict": 213,
+      "tooMany": 0,
+      "nearestGuaranteed": [
+        "voice:D3:all"
+      ],
+      "nearestTraces": 12,
+      "selfOracle": []
+    },
+    "c2": {
+      "moves": 150,
+      "admitted": 18,
+      "refused": 132,
+      "holes": [],
+      "todayHoles": [
+        {
+          "move": "vanilla-x3 -> stages.0.body[7]",
+          "oracle": [
+            "P2:writers-after(D1:all#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.0.body[8]",
+          "oracle": [
+            "P2:writers-after(D1:all#1:build 1>0)"
+          ]
+        }
+      ],
+      "r3Holes": [],
+      "newOnly": {
+        "ST5:set-aside": 2,
+        "ST12:writer-undeclared": 4
+      },
+      "newOnlyEx": {
+        "ST5:set-aside": "dedupe -> stages.0.body[6]: ST5:set-aside(step:dedupe)",
+        "ST12:writer-undeclared": "vanilla-x3 -> stages.0.body[5]: ST12:writer-undeclared(vanilla-build)"
+      },
+      "overStrict": 114,
+      "tooMany": 0,
+      "nearestGuaranteed": [
+        "voice:D1:all"
+      ],
+      "nearestTraces": 4,
+      "selfOracle": []
+    },
+    "c3": {
+      "moves": 543,
+      "admitted": 196,
+      "refused": 347,
+      "holes": [],
+      "todayHoles": [
+        {
+          "move": "vanilla-x3 -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:all#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "draft -> stages.1.body.steps.0.body[0]",
+          "oracle": [
+            "P3:snapshot-before-write(critic-loop)"
+          ]
+        },
+        {
+          "move": "draft -> stages.1.body.steps.0.body[1]",
+          "oracle": [
+            "P3:snapshot-before-write(critic-loop)"
+          ]
+        },
+        {
+          "move": "draft -> stages.1.body.steps.0.body[2]",
+          "oracle": [
+            "P3:snapshot-before-write(critic-loop)"
+          ]
+        },
+        {
+          "move": "draft -> stages.1.body.steps.0.body[3]",
+          "oracle": [
+            "P3:snapshot-before-write(critic-loop)"
+          ]
+        },
+        {
+          "move": "draft -> stages.2.body[6]",
+          "oracle": [
+            "P3:restore-after-write(tells-compare)"
+          ]
+        },
+        {
+          "move": "draft -> stages.2.body[7]",
+          "oracle": [
+            "P3:restore-after-write(tells-compare)"
+          ]
+        },
+        {
+          "move": "tells-compare -> stages.2.body[2]",
+          "oracle": [
+            "P3:restore-after-write(tells-compare)"
+          ]
+        }
+      ],
+      "r3Holes": [
+        {
+          "move": "tells-compare -> stages.2.body[2]",
+          "oracle": [
+            "P3:restore-after-write(tells-compare)"
+          ]
+        }
+      ],
+      "newOnly": {
+        "ST12:writer-undeclared": 9
+      },
+      "newOnlyEx": {
+        "ST12:writer-undeclared": "vanilla-x3 -> stages.2.body[0]: ST12:writer-undeclared(vanilla-build)"
+      },
+      "overStrict": 280,
+      "tooMany": 0,
+      "nearestGuaranteed": [
+        "voice:D3:all"
+      ],
+      "nearestTraces": 24,
+      "selfOracle": []
+    },
+    "c4": {
+      "moves": 319,
+      "admitted": 90,
+      "refused": 229,
+      "holes": [],
+      "todayHoles": [],
+      "r3Holes": [],
+      "newOnly": {},
+      "newOnlyEx": {},
+      "overStrict": 181,
+      "tooMany": 0,
+      "nearestGuaranteed": [
+        "voice:D3:all/kl"
+      ],
+      "nearestTraces": 28,
+      "selfOracle": []
+    },
+    "c5": {
+      "moves": 1138,
+      "admitted": 391,
+      "refused": 747,
+      "holes": [],
+      "todayHoles": [
+        {
+          "move": "vo-script -> stages.1.body[0]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:asset 2>0)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body[1]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body[2]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 1>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body[3]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body[4]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body.steps.1.body[0]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)",
+            "P2:writers-after(D2:script#2:relay 3>0)",
+            "P2:writers-after(D2:script#2:asset 1>0)",
+            "P2:writers-after(D2:script#2:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body.steps.1.body[1]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)",
+            "P2:writers-after(D2:script#2:relay 2>0)",
+            "P2:writers-after(D2:script#2:asset 1>0)",
+            "P2:writers-after(D2:script#2:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body.steps.1.body[2]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)",
+            "P2:writers-after(D2:script#2:relay 1>0)",
+            "P2:writers-after(D2:script#2:asset 1>0)",
+            "P2:writers-after(D2:script#2:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body.steps.1.body.steps.1.body[0]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)",
+            "P2:writers-after(D2:script#2:relay 3>0)",
+            "P2:writers-after(D2:script#2:asset 1>0)",
+            "P2:writers-after(D2:script#2:fix 2>0)",
+            "P2:writers-after(D2:script#3:relay 2>0)",
+            "P2:writers-after(D2:script#3:asset 1>0)",
+            "P2:writers-after(D2:script#3:fix 2>0)",
+            "P2:writers-after(D2:script#4:relay 2>0)",
+            "P2:writers-after(D2:script#4:asset 1>0)",
+            "P2:writers-after(D2:script#4:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body.steps.1.body.steps.1.body[1]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)",
+            "P2:writers-after(D2:script#2:relay 3>0)",
+            "P2:writers-after(D2:script#2:asset 1>0)",
+            "P2:writers-after(D2:script#2:fix 2>0)",
+            "P2:writers-after(D2:script#3:relay 2>0)",
+            "P2:writers-after(D2:script#3:asset 1>0)",
+            "P2:writers-after(D2:script#3:fix 2>0)",
+            "P2:writers-after(D2:script#4:relay 2>0)",
+            "P2:writers-after(D2:script#4:asset 1>0)",
+            "P2:writers-after(D2:script#4:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body.steps.1.body.steps.1.body[2]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)",
+            "P2:writers-after(D2:script#2:relay 3>0)",
+            "P2:writers-after(D2:script#2:asset 1>0)",
+            "P2:writers-after(D2:script#2:fix 2>0)",
+            "P2:writers-after(D2:script#3:relay 2>0)",
+            "P2:writers-after(D2:script#3:asset 1>0)",
+            "P2:writers-after(D2:script#3:fix 2>0)",
+            "P2:writers-after(D2:script#4:relay 2>0)",
+            "P2:writers-after(D2:script#4:asset 1>0)",
+            "P2:writers-after(D2:script#4:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vo-script -> stages.1.body.steps.1.body.steps.1.body[3]",
+          "oracle": [
+            "P1:missing(voice:D1:script)",
+            "P2:writers-after(D2:script#1:relay 3>0)",
+            "P2:writers-after(D2:script#1:asset 1>0)",
+            "P2:writers-after(D2:script#1:fix 2>0)",
+            "P2:writers-after(D2:script#2:relay 3>0)",
+            "P2:writers-after(D2:script#2:asset 1>0)",
+            "P2:writers-after(D2:script#2:fix 2>0)",
+            "P2:writers-after(D2:script#3:relay 2>0)",
+            "P2:writers-after(D2:script#3:asset 1>0)",
+            "P2:writers-after(D2:script#3:fix 2>0)",
+            "P2:writers-after(D2:script#4:relay 1>0)",
+            "P2:writers-after(D2:script#4:asset 1>0)",
+            "P2:writers-after(D2:script#4:fix 2>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[0]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[1]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[2]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[3]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[4]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[5]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[6]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[7]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[8]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)",
+            "P2:writers-after(D3:on-screen#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)",
+            "P2:writers-after(D3:on-screen#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[11]",
+          "oracle": [
+            "P2:writers-after(D1:script#1:build 1>0)",
+            "P2:writers-after(D3:on-screen#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "render-in-scene -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "render-in-scene -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "render-in-scene -> stages.2.body[11]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "vo-audio -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:asset 1>0)"
+          ]
+        },
+        {
+          "move": "vo-audio -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:asset 1>0)"
+          ]
+        },
+        {
+          "move": "vo-audio -> stages.2.body[11]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:asset 1>0)"
+          ]
+        },
+        {
+          "move": "regenerate -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "regenerate -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "regenerate -> stages.2.body[11]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "apply-cut -> stages.2.body[8]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-cut -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-cut -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-swaps -> stages.2.body[8]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-swaps -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-swaps -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "tells-compare -> stages.2.body[2]",
+          "oracle": [
+            "P3:restore-after-write(tells-compare)"
+          ]
+        },
+        {
+          "move": "voice -> stages.0.body[8]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D1:on-screen#1:asset 2>0)",
+            "P2:writers-after(D1:on-screen#1:relay 3>0)",
+            "P2:writers-after(D1:on-screen#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.0.body[9]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D1:on-screen#1:asset 2>0)",
+            "P2:writers-after(D1:on-screen#1:relay 3>0)",
+            "P2:writers-after(D1:on-screen#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body[0]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:asset 2>0)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body[1]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body[2]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 1>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body[3]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body[4]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body[5]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body.steps.1.body[0]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)",
+            "P2:writers-after(D2:on-screen#2:relay 3>0)",
+            "P2:writers-after(D2:on-screen#2:asset 1>0)",
+            "P2:writers-after(D2:on-screen#2:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body.steps.1.body[1]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)",
+            "P2:writers-after(D2:on-screen#2:relay 2>0)",
+            "P2:writers-after(D2:on-screen#2:asset 1>0)",
+            "P2:writers-after(D2:on-screen#2:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body.steps.1.body[2]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)",
+            "P2:writers-after(D2:on-screen#2:relay 1>0)",
+            "P2:writers-after(D2:on-screen#2:asset 1>0)",
+            "P2:writers-after(D2:on-screen#2:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body.steps.1.body.steps.1.body[0]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)",
+            "P2:writers-after(D2:on-screen#2:relay 3>0)",
+            "P2:writers-after(D2:on-screen#2:asset 1>0)",
+            "P2:writers-after(D2:on-screen#2:fix 2>0)",
+            "P2:writers-after(D2:on-screen#3:relay 2>0)",
+            "P2:writers-after(D2:on-screen#3:asset 1>0)",
+            "P2:writers-after(D2:on-screen#3:fix 2>0)",
+            "P2:writers-after(D2:on-screen#4:relay 2>0)",
+            "P2:writers-after(D2:on-screen#4:asset 1>0)",
+            "P2:writers-after(D2:on-screen#4:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body.steps.1.body.steps.1.body[1]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)",
+            "P2:writers-after(D2:on-screen#2:relay 3>0)",
+            "P2:writers-after(D2:on-screen#2:asset 1>0)",
+            "P2:writers-after(D2:on-screen#2:fix 2>0)",
+            "P2:writers-after(D2:on-screen#3:relay 2>0)",
+            "P2:writers-after(D2:on-screen#3:asset 1>0)",
+            "P2:writers-after(D2:on-screen#3:fix 2>0)",
+            "P2:writers-after(D2:on-screen#4:relay 2>0)",
+            "P2:writers-after(D2:on-screen#4:asset 1>0)",
+            "P2:writers-after(D2:on-screen#4:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body.steps.1.body.steps.1.body[2]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)",
+            "P2:writers-after(D2:on-screen#2:relay 3>0)",
+            "P2:writers-after(D2:on-screen#2:asset 1>0)",
+            "P2:writers-after(D2:on-screen#2:fix 2>0)",
+            "P2:writers-after(D2:on-screen#3:relay 2>0)",
+            "P2:writers-after(D2:on-screen#3:asset 1>0)",
+            "P2:writers-after(D2:on-screen#3:fix 2>0)",
+            "P2:writers-after(D2:on-screen#4:relay 2>0)",
+            "P2:writers-after(D2:on-screen#4:asset 1>0)",
+            "P2:writers-after(D2:on-screen#4:fix 2>0)"
+          ]
+        },
+        {
+          "move": "voice -> stages.1.body.steps.1.body.steps.1.body[3]",
+          "oracle": [
+            "P1:missing(voice:D3:on-screen)",
+            "P2:writers-after(D2:on-screen#1:relay 3>0)",
+            "P2:writers-after(D2:on-screen#1:asset 1>0)",
+            "P2:writers-after(D2:on-screen#1:fix 2>0)",
+            "P2:writers-after(D2:on-screen#2:relay 3>0)",
+            "P2:writers-after(D2:on-screen#2:asset 1>0)",
+            "P2:writers-after(D2:on-screen#2:fix 2>0)",
+            "P2:writers-after(D2:on-screen#3:relay 2>0)",
+            "P2:writers-after(D2:on-screen#3:asset 1>0)",
+            "P2:writers-after(D2:on-screen#3:fix 2>0)",
+            "P2:writers-after(D2:on-screen#4:relay 1>0)",
+            "P2:writers-after(D2:on-screen#4:asset 1>0)",
+            "P2:writers-after(D2:on-screen#4:fix 2>0)"
+          ]
+        }
+      ],
+      "r3Holes": [
+        {
+          "move": "render-in-scene -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "render-in-scene -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "render-in-scene -> stages.2.body[11]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "vo-audio -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:asset 1>0)"
+          ]
+        },
+        {
+          "move": "vo-audio -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:asset 1>0)"
+          ]
+        },
+        {
+          "move": "vo-audio -> stages.2.body[11]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:asset 1>0)"
+          ]
+        },
+        {
+          "move": "regenerate -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "regenerate -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "regenerate -> stages.2.body[11]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:relay 1>0)"
+          ]
+        },
+        {
+          "move": "apply-cut -> stages.2.body[8]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-cut -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-cut -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-swaps -> stages.2.body[8]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-swaps -> stages.2.body[9]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        },
+        {
+          "move": "apply-swaps -> stages.2.body[10]",
+          "oracle": [
+            "P2:writers-after(D3:on-screen#1:fix 1>0)"
+          ]
+        }
+      ],
+      "newOnly": {
+        "ST12:writer-undeclared": 2,
+        "COMPOSED-VOICE:extra-writer-after": 3
+      },
+      "newOnlyEx": {
+        "ST12:writer-undeclared": "vanilla-x3 -> stages.0.body[6]: ST12:writer-undeclared(vanilla-build)",
+        "COMPOSED-VOICE:extra-writer-after": "matte -> stages.2.body[9]: COMPOSED-VOICE:extra-writer-after(voice:relay 1>0)"
+      },
+      "overStrict": 500,
+      "tooMany": 0,
+      "nearestGuaranteed": [
+        "voice:D1:script",
+        "voice:D3:on-screen"
+      ],
+      "nearestTraces": 9,
+      "selfOracle": []
+    },
+    "c6": {
+      "moves": 25,
+      "admitted": 0,
+      "refused": 25,
+      "holes": [],
+      "todayHoles": [],
+      "r3Holes": [],
+      "newOnly": {},
+      "newOnlyEx": {},
+      "overStrict": 22,
+      "tooMany": 0,
+      "nearestGuaranteed": [
+        "author:D2",
+        "voice:D3:all"
+      ],
+      "nearestTraces": 4,
+      "selfOracle": []
+    },
+    "c6a": {
+      "moves": 311,
+      "admitted": 73,
+      "refused": 238,
+      "holes": [],
+      "todayHoles": [
+        {
+          "move": "vanilla-x3 -> stages.2.body[1]",
+          "oracle": [
+            "P2:writers-after(D3:all#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "vanilla-x3 -> stages.2.body[2]",
+          "oracle": [
+            "P2:writers-after(D3:all#1:build 1>0)"
+          ]
+        },
+        {
+          "move": "write -> stages.0.body[5]",
+          "oracle": [
+            "P1:missing(author:D2)"
+          ]
+        },
+        {
+          "move": "write -> stages.0.body.steps.4.body[2]",
+          "oracle": [
+            "P1:missing(author:D2)"
+          ]
+        },
+        {
+          "move": "write -> stages.2.body[0]",
+          "oracle": [
+            "P1:missing(author:D2)"
+          ]
+        },
+        {
+          "move": "write -> stages.2.body[1]",
+          "oracle": [
+            "P1:missing(author:D2)"
+          ]
+        },
+        {
+          "move": "write -> stages.2.body[2]",
+          "oracle": [
+            "P1:missing(author:D2)"
+          ]
+        }
+      ],
+      "r3Holes": [],
+      "newOnly": {
+        "COMPOSED-AUTHOR:writer-after+ST12:writer-undeclared": 1
+      },
+      "newOnlyEx": {
+        "COMPOSED-AUTHOR:writer-after+ST12:writer-undeclared": "vanilla-x3 -> stages.2.body[0]: ST12:writer-undeclared(vanilla-build), COMPOSED-AUTHOR:writer-after(vanilla-build)"
+      },
+      "overStrict": 187,
+      "tooMany": 0,
+      "nearestGuaranteed": [
+        "author:D2",
+        "voice:D3:all"
+      ],
+      "nearestTraces": 8,
+      "selfOracle": []
+    },
+    "c7": {
+      "moves": 524,
+      "admitted": 230,
+      "refused": 294,
+      "holes": [],
+      "todayHoles": [],
+      "r3Holes": [],
+      "newOnly": {},
+      "newOnlyEx": {},
+      "overStrict": 262,
+      "tooMany": 0,
+      "nearestGuaranteed": [
+        "voice:D3:all"
+      ],
+      "nearestTraces": 12,
+      "selfOracle": []
+    }
+  }
+}

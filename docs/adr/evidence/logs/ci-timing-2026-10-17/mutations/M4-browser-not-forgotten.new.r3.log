@@ -1,0 +1,88 @@
+applied M4-browser-not-forgotten to pages.ts
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-ci-timing
+
+ ↓ packages/runner/test/pages.test.ts > the rule for what a rendered page may load from the network (spec §3.2) > admits HTTPS from an allowlisted host, and nothing else
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > screenshots the full page at 1440 wide in tiles, serving artifacts and blocking other hosts
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > renders the surfaces the prompts name: a wide screen, a phone and the first screen (RENDER-1)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > shoots a phone page as wide as it overflows, so sideways scrolling shows
+ × packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > bounds a page that never settles: the render fails plainly and is not retried, and the next render works (SEC-5) 14562ms
+   → expected +0 to be 1 // Object.is equality
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > a page that opens dialogs (interval) does not crash the process that renders it (SEC-5)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > a page that opens dialogs (alertloop) does not crash the process that renders it (SEC-5)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > a page that opens dialogs (confirmloop) does not crash the process that renders it (SEC-5)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > a page that opens dialogs (promptloop) does not crash the process that renders it (SEC-5)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > a page that opens dialogs (once) does not crash the process that renders it (SEC-5)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > answers 404 when the artifact route fails, instead of an unhandled rejection (SEC-5)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > stops a render when its step is cancelled
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > stops a render whose step is cancelled while the browser is still starting
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > blocks WebSockets, which request routing does not see (ENG-14)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > holds the allowlist on every redirect hop: a hop to another host is blocked, hops within it are followed, a loop is cut
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > holds at most a capped number of bytes of one allowlisted response: a larger one, or one that never ends, is cut off and the render goes on
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > launches the browser again after a crash or a failed launch (ENG-14)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > turns a renderer failure while drawing (a Playwright protocol error) into one plain step failure, not the raw error
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > starts Chromium from the one stated launch: its sandbox policy and WebRTC flags are what the command line shows (F18)
+ ↓ packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > starts the browser when asked whether it is ready, and the renders that follow share it (F18)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > reads the body as a visitor sees it (hidden content out, one separator between neighbours), the title, and the text a script makes
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > leaves out text a stylesheet hides from sight though a browser lays it out, and lists it with its link (r9)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > separators come from where a visitor sees each character: glued, apart in the flow, apart across boxes, or in the other order (r10)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > hides from sight, character by character, what a visitor cannot see: faint, filtered, clipped by a shape, cut off by an ellipsis or a box (r10)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a character a box cuts off is shown only where the box keeps its middle: a sliver of a row is hidden from sight (r10 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a colour that leaves the text no ink hides it: a clear text fill, as Chromium paints with, or a colour almost clear (r10 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > svg text is inked by its fill and stroke; a character with no glyph neither hides its line nor stands between neighbours a visitor sees glued (r11 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > lists the text a stylesheet adds on an element that shows none of the page's own text (r10 verifier: generated content)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a drop cap (a floated first letter) is read as part of its word, as a visitor reads it (r10 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a section that waits out of view (moved aside by a transform) for a scroll script is read where it shows once revealed (r10 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a long left-to-right text in a right-to-left page is read in one call, its words apart as a visitor sees them: each character measured once, each space between its words judged once (round 12)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > slides a script fades in and out in turn, stacked in one place, are never seen together: apart across boxes, not in another order
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > runs a page's scripts the same way each time: a stopped clock, a seeded Math.random, however long the page is (r10)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > runs animation frames on the read's clock, twenty a second, so an animation that draws every frame ends where its time says (r10 verifier: GSAP)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > reads a page whose sections a script reveals as the visitor scrolls, revealed, whatever the script does on the way back (r10)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > applies a stylesheet a script makes, as a visitor's browser does: Tailwind's browser build, from an admitted host (r10)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a file the page loads from an admitted host that fails, comes back cut off or with a server error is fetched again in a second read, then the read fails plainly; one slow to come is waited for (r12 verifier: Tailwind under load)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a page nesting thousands of inline elements left open is read in one call, each text node measured once (r10: the JavaScript-off read crashed; r11)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a read slower than its deadline fails plainly at it, once, and the next read works, on any machine (SEC-5)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee's own box (r9)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > reads a page as it settles: animations and transitions are taken to their end, an endless one is stopped (r9)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > marks each link's words with its index, and lists each address
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > vertical and turned text: whether two neighbours stand glued is judged along the text's own line, from its writing mode and its transforms (r12 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > neighbours across a box's edge offset across their line (an item raised or lowered beside the next) stand on one row: where they meet along it the read cannot tell whether they stand apart, and the second before the first is in the other order (r13 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a box a transform turns or scales clips its text where it stands on the screen, and an ellipsis cuts vertical or turned text where it cuts a line (r12 measured the clip unturned)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > an ellipsis, a line clamp and a box of fixed height cut the same characters in a box a transform scales or CSS zoom shrinks as at full size (r13 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a 3D transform that keeps the element's own plane flat (AOS's flip at rest, vanilla-tilt at rest, translateZ(0)) is read as flat: its box clips where it stands and its flex rows are measured (r13 verifier)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > an endless animation is judged at each of the points of its cycle the read holds it at: two neighbours glued at any of them are glued (r12 verifier: a nudge judged at its first keyframe)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a button is a box of its own: its content stands apart from the text beside it, as a visitor sees it (innerText read them glued)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > reads the first document only: a meta refresh does not replace it; other hosts stay blocked
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > a page that navigates away as it loads (to about:blank, which no route sees) is a plain StepError, not a raw retried error (r8)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > reads that share a deadline stop at it, whatever time each read has left (r8)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > is bounded and cancellable like a render (SEC-5)
+ ↓ packages/runner/test/pages.test.ts > the text a page shows a visitor, for VOICE's arbiter (ADR-0081): Chromium, JavaScript on > turns a renderer failure while reading (a Playwright protocol error) into one plain step failure, as a render's is
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/runner/test/pages.test.ts > web-page RENDER with Playwright Chromium > bounds a page that never settles: the render fails plainly and is not retried, and the next render works (SEC-5)
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ packages/runner/test/pages.test.ts:303:28
+    301|     const after = await render(SIMPLE);
+    302|     expect((after.out as Uint8Array[]).length).toBe(1);
+    303|     expect(after.launches).toBe(1);
+       |                            ^
+    304|   }, 120_000);
+    305|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 53 skipped (54)
+   Start at  19:01:40
+   Duration  15.60s (tests 94%, import 4%, transform 2%)
+
+restored pages.ts

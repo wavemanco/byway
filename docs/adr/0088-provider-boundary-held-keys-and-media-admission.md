@@ -71,3 +71,9 @@ So "keys never enter prompts" holds for text submitted after this change.
 - [External-review verification](../reviews/2026-10-08-external-review-verification.md), cluster G (F16, F17: both "accept, partly", P3), recommendation B.
 - The original review: `C:/Users/arvik/code/byway_review/byway-review.md` (outside the repository).
 - Tests: `packages/gateway/test/keys.test.ts`, `gateway.test.ts` and `video.test.ts`; `packages/runner/test/memo.test.ts` and `activities.test.ts`; `apps/web/test/http.test.ts`, `services.test.ts` and `api.test.ts`; `apps/web/e2e/pasted-key.spec.ts`.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, from a trace of the external review's findings against main (8401820).** "What the promise does not cover" leaves out a case [ADR-0101](0101-c3-yes-decides-the-header-image.md) names under "Held keys": the gateway checks an answer's raw text, and a JSON answer's `\u` escapes are decoded after that check, so a key a model wrote as escapes would pass. byway never puts a key in a prompt, so a model has none to echo. The check also holds only for routes that read their body through `parseBody` (`apps/web/src/server/http.ts`), which every route does today; no test holds a new route to it ([ADR-0100](0100-corrections-found-by-the-final-re-check.md) item 11). The backlog row "Held keys the checks do not see" tracks both.

@@ -1,0 +1,19 @@
+same c1 hash = ok main=true branch=true findings main=0 branch=0 composed main=0 branch=0 asked=[cut] unapplied=[] exceptions = ["C1-DR2","C1-DR7"] presentation =
+same c2 hash = ok main=true branch=true findings main=0 branch=0 composed main=0 branch=0 asked=[] unapplied=[] exceptions = ["C2-DR4","C2-DR7"] presentation =
+same c3 hash = ok main=true branch=true findings main=0 branch=0 composed main=0 branch=0 asked=[cut] unapplied=[] exceptions = [] presentation =
+same c4 hash = ok main=true branch=true findings main=0 branch=0 composed main=0 branch=0 asked=[cut] unapplied=[] exceptions = ["C4-DR9"] presentation =
+same c5 hash = ok main=true branch=true findings main=0 branch=0 composed main=0 branch=0 asked=[cut] unapplied=[] exceptions = ["C5-DR7"] presentation =
+same c6 hash = ok main=true branch=true findings main=0 branch=0 composed main=0 branch=0 asked=[] unapplied=[] exceptions = ["C6-DR4","C6-DR7"] presentation =
+same c6a hash = ok main=true branch=true findings main=0 branch=0 composed main=0 branch=0 asked=[] unapplied=[] exceptions = ["C6a-DR4","C6a-DR7"] presentation =
+same c7 hash = ok main=true branch=true findings main=0 branch=0 composed main=0 branch=0 asked=[] unapplied=[] exceptions = ["C7-PR1","C7-DR7"] presentation =
+same c1h hash = ok main=true branch=true findings main=1 branch=1 asked=[] unapplied=[] exceptions = ["C1-DR2","SM-1","SM-2","SM-3","SM-4","SM-6"] presentation =
+same c1h-no-seed hash = ok main=true branch=true findings main=1 branch=1 asked=[] unapplied=[] exceptions = ["C1-DR2","SM-1","SM-2","SM-3","SM-4","SM-6"] presentation =
+same c1h-no-critic hash = ok main=true branch=true findings main=1 branch=1 asked=[] unapplied=[] exceptions = ["C1-DR2","SM-1","SM-3","SM-4","SM-6"] presentation =
+same c1h-no-asset hash = ok main=true branch=true findings main=1 branch=1 asked=[] unapplied=[] exceptions = ["C1-DR2","SM-1","SM-2","SM-3","SM-4","SM-6"] presentation =
+same c1h-no-d3 hash = ok main=true branch=true findings main=1 branch=1 asked=[] unapplied=[] exceptions = ["C1-DR2","SM-2","SM-6"] presentation =
+same c1h-critic-self hash = ok main=true branch=true findings main=1 branch=1 asked=[] unapplied=[] exceptions = ["C1-DR2","SM-1","SM-2","SM-3","SM-4","SM-6","SM-5"] presentation =
+same b-plain hash = ok main=true branch=true findings main=0 branch=0 asked=[] unapplied=[] exceptions = ["SM-6"] presentation =
+same b-random hash = ok main=true branch=true findings main=0 branch=0 asked=[] unapplied=[] exceptions = ["SM-6"] presentation =
+same b-skill hash = ok main=true branch=true findings main=0 branch=0 asked=[] unapplied=[] exceptions = ["SM-6"] presentation =
+same b-bon hash = ok main=true branch=true findings main=0 branch=0 asked=[] unapplied=[] exceptions = ["SM-6"] presentation =
+catalog 18 main 18 diffs 0

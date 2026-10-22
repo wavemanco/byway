@@ -1,0 +1,11 @@
+[
+ ["span_div_misnest_deck", "<section><span>one<div>two</span>three</div>after</section>", null],
+ ["span_div_misnest_glue", "<section><span>one<div>two</span>three</div>after</section>", ["", "three", "after"]],
+ ["td_close_a_deck", "<p>Hi <a href=\"/x\">one<table><tr><td>two</a>three</td></tr></table>four</p><p>five</p>", null],
+ ["td_close_a_glue", "<p>Hi <a href=\"/x\">one<table><tr><td>two</a>three</td></tr></table>four</p><p>five</p>", ["", "[]three", "four", "five"]],
+ ["b_li_misnest_glue", "<div><b>one<li>two</b>three</li>after</div>", ["", "three", "after"]],
+ ["span_h2_misnest_glue", "<div><span>one<h2>two</span>three</h2>after</div>", ["", "three", "after"]],
+ ["em_div_misnest_glue_kept_words", "<div>Lead <em>old<div>x</em> Title</div> tail</div>", ["Lead", "Title", "tail"]],
+ ["a_div_misnest_glue", "<section><a href=\"/x\">one<div>two</a>three</div>after</section>", ["", "[]three", "after"]],
+ ["span_br_removal", "<p>Hello <span>one<br>two</span> world</p>", ["Hello", "world"]]
+]

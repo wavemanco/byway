@@ -82,3 +82,9 @@ Decisions D1 to D4 stay with the owner and nothing here pre-decides them: Anthro
   - runner: `packages/runner/test/overlap.test.ts`, `worker-loss.test.ts` (the harness with the store's book: a worker process killed during a relay link; a clean stop and restart during a C2 seed stage), `run-identity.test.ts`, `build.test.ts` (the pinned bundle hash), `build-atomic.test.ts`, `pages.test.ts`, `activities.test.ts`;
   - web: `apps/web/test/model-errors.test.ts`, `shutdown.test.ts`, `api.test.ts`, `server.test.ts`, `start-identity.test.ts`, `api-client.test.ts`, and the end-to-end `apps/web/e2e/start-identity.spec.ts`;
   - repository: `scripts/test/composition.test.ts`.
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-18, updated 2026-10-21, [ADR-0109](0109-money-path-before-the-first-live-run.md).** The second double fault under "Run starts, two double faults" is narrowed, not closed: before a run whose workflow start failed is marked failed, the Runner client asks Temporal for its workflow, and a run whose workflow Temporal has (another delivery's start went through, or the failed start's reply only timed out) is left to it. It is closed when the other delivery's start reached Temporal before that describe and Temporal answered it. A start that lands after the describe still finds the run failed. Its workflow's calls are refused, but for a call that begins between the describe and the store write that marks the run failed, which follows it at once (ADR-0109 "A late start"). One whose recipe asks a question first does not end at once: it waits, unseen and spending nothing, until byway's workflow code changes, when the next engine start terminates it and withdraws its question (ADR-0109 "A workflow left under a failed run"). The first double fault is unchanged.
