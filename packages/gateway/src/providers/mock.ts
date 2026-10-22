@@ -45,7 +45,11 @@ export function mockAdapter(opts: MockAdapterOptions = {}): ProviderAdapter {
   const memories = new Map<string, LineupMemory>();
   return {
     id: 'mock',
+    // Cut off like a stream (ADR-0111), so the demo and the tests take the same path as a configured profile. It answers
+    // at once, so only a stop that came first cuts it off; it reserves $0, so that counts nothing.
+    cutsOff: { complete: true },
     async complete(req) {
+      if (req.signal?.aborted) throw Object.assign(new Error('The mock call was cut off before it answered.'), { name: 'AbortError' });
       const { role, medium } = parsePurpose(req.context.purpose);
       const prompt = req.messages
         .filter((m) => m.role === 'user')

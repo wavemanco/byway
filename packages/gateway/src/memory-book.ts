@@ -177,9 +177,9 @@ export class MemorySpendBook implements SpendBook {
     if (r && r.state !== 'settled') Object.assign(r, { state: 'released', updatedAt: this.stamp() });
   }
 
-  async abandon(opId: string): Promise<void> {
+  async abandon(opId: string, reason: 'failed' | 'interrupted' = 'failed'): Promise<void> {
     const r = this.rows.get(opId);
-    if (r && (r.state === 'open' || r.state === 'sent' || r.state === 'accepted')) Object.assign(r, { state: 'uncertain', uncertainReason: 'failed', updatedAt: this.stamp() });
+    if (r && (r.state === 'open' || r.state === 'sent' || r.state === 'accepted')) Object.assign(r, { state: 'uncertain', uncertainReason: reason, updatedAt: this.stamp() });
   }
 
   async settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }> {

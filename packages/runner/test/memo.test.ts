@@ -369,3 +369,27 @@ describe('a decline is kept like an answer (ADR-0102)', () => {
     expect((toFailure(err) as ApplicationFailure).nonRetryable).toBe(true);
   });
 });
+
+describe('the stop joins a call after its memo key is made (ADR-0111)', () => {
+  const draft: CompletionRequest = { workspaceId: 'w', runId: 'run-memo', stepId: 'draft', purpose: 'build:prose', profileId: 'demo', tier: 'mid', messages: [{ role: 'user', content: [{ type: 'text', text: 'Write it.' }] }] };
+  const stopScope = { runId: 'run-memo', key: 'draft#stop' };
+
+  it('hands the call its stop, and the same request finds the same memo with or without one', async () => {
+    const { gateway, made } = counting();
+    const seen: CompletionRequest[] = [];
+    const answer = gateway.complete.bind(gateway);
+    gateway.complete = async (req) => {
+      seen.push(req);
+      return answer(req);
+    };
+    const stop = new AbortController();
+    const until = new AbortController().signal;
+    const first = await memoGateway(gateway, store, stopScope, { operation: { until, cancel: stop.signal, stop: stop.signal } }).complete(draft);
+    expect(seen[0]?.operation?.stop).toBe(stop.signal);
+    expect(seen[0]?.operation?.key).toMatch(/^run-memo\/draft#stop\/complete\/[0-9a-f]{32}\/1$/);
+    // Asked again without a stop, and with no operation at all: the memo is found under the same key, nothing is bought.
+    expect(await memoGateway(gateway, store, stopScope, { operation: { until } }).complete(draft)).toEqual(first);
+    expect(await memoGateway(gateway, store, stopScope).complete(draft)).toEqual(first);
+    expect(made.complete).toBe(1);
+  });
+});

@@ -62,6 +62,12 @@ export interface SpendContext {
    * - `cancel`: aborts when Temporal cancels the attempt (a cancel, a timeout, a lost worker): an unsettled call is held
    *   no longer, so a later attempt can take it over within one lease.
    * - `until`: aborts when the attempt's invocation ends: a settled call is held until then, while its result is kept.
+   * - `stop`: aborts when the call's run is ending (ADR-0111: the person's Cancel, "Stop the run", or a failure elsewhere
+   *   in the run; or any cancel of the attempt once the store shows the run ended). It cuts the call off where its
+   *   provider allows (Anthropic's, OpenAI's and OpenRouter's streams, fal's queue jobs, the demo's mock), and with any
+   *   provider nothing is sent again and a retry's wait ends at once. A call cut off after it was sent is counted as "may
+   *   have been billed" at its estimate, as interrupted, until it is cleared in Settings; one cut off before anything
+   *   billable was sent counts nothing. Its abort comes only after `cancel`'s.
    * - `rebuy`: the caller was told an earlier attempt settled the call (GatewayError.settledEarlier), looked for its kept
    *   result and found none: buy it again (counted).
    * When the model declines the call, the gateway's one retry (ADR-0102) is a call of its own, keyed
@@ -81,6 +87,7 @@ export interface SpendContext {
     key: string;
     until: AbortSignal;
     cancel?: AbortSignal;
+    stop?: AbortSignal;
     rebuy?: boolean;
     keepDecline?: (first: DeclinedAttempt) => Promise<void>;
     declinedEarlier?: DeclinedAttempt;

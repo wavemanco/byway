@@ -3,6 +3,7 @@
 import type { RunRecord } from '@byway/contracts';
 import Link from 'next/link';
 import { exportLabel } from '../../view/history.ts';
+import { CANCELLED_NOTE } from '../../view/labels.ts';
 import type { ArtifactInfo } from '../../view/rundata.ts';
 import type { TimelineStage, TimelineStep } from '../../view/timeline.ts';
 import { codeForLabel, stepTitle } from '../../view/vocabulary.ts';
@@ -77,6 +78,7 @@ export function RunStatusPanel({ run, step, stages, artifacts }: Props) {
       <section className="state" aria-labelledby="state-title">
         <h2 id="state-title">This run was cancelled</h2>
         <p className="muted">What it made before it stopped is in the steps; open any step to see it.</p>
+        <p className="muted">{CANCELLED_NOTE}</p>
         <Link className="button" href="/">
           Start something new
         </Link>

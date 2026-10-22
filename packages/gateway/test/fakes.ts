@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import type { ArtifactRecord, ArtifactStore } from '@byway/contracts';
 import { encodePng } from '../src/mock/png.ts';
 import type { AnthropicClientLike, AnthropicMessageLike } from '../src/providers/anthropic.ts';
-import { FalQueueError, type FalClientLike } from '../src/providers/fal.ts';
+import { FalQueueError, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import type { GoogleClientLike, GoogleResponseLike } from '../src/providers/google.ts';
-import type { ChatCompletionLike, ImagesResponseLike, OpenAIClientLike } from '../src/providers/openai.ts';
+import type { ChatChunkLike, ChatCompletionLike, ImagesResponseLike, OpenAIClientLike } from '../src/providers/openai.ts';
 
 /** A content-addressed artifact store in memory, as the contract describes (ids are sha256 of the bytes). */
 export class MemoryArtifacts implements ArtifactStore {
@@ -68,18 +68,49 @@ export function fakeAnthropic(queue: Step<AnthropicMessageLike>[] = []) {
   return { client, calls };
 }
 
+/**
+ * A whole chat completion as the stream that would carry it (ADR-0111: chat calls are streamed), as OpenAI and
+ * OpenRouter send one: the model (and OpenRouter's host) on every chunk, the text in two deltas, the refusal in its own,
+ * a finishing chunk, and then the usage in a last chunk with no choices. A completion with no finish reason finishes
+ * with "stop", as every whole stream does.
+ */
+export function chunksOf(c: ChatCompletionLike): ChatChunkLike[] {
+  const head = { id: 'chatcmpl-fake', ...(c.model !== undefined ? { model: c.model } : {}), ...(c.provider !== undefined ? { provider: c.provider } : {}) };
+  const choice = c.choices[0];
+  const text = choice?.message.content ?? '';
+  const half = Math.ceil(text.length / 2);
+  const delta = (d: { content?: string; refusal?: string }) => ({ ...head, choices: [{ index: 0, delta: d, finish_reason: null }] });
+  return [
+    delta({ content: text.slice(0, half) }),
+    ...(text.length > half ? [delta({ content: text.slice(half) })] : []),
+    ...(choice?.message.refusal ? [delta({ refusal: choice.message.refusal })] : []),
+    { ...head, choices: [{ index: 0, delta: {}, finish_reason: choice?.finish_reason ?? 'stop' }] },
+    ...(c.usage ? [{ ...head, choices: [], usage: c.usage }] : []),
+  ];
+}
+
+/** Chunks as the SDK's stream yields them. */
+export async function* streamOf(chunks: readonly ChatChunkLike[]): AsyncGenerator<ChatChunkLike> {
+  for (const chunk of chunks) yield chunk;
+}
+
+/** A fake OpenAI (or OpenRouter) client: chat answers stream whole completions from a queue (chunksOf), then a default. */
 export function fakeOpenAI(chat: Step<ChatCompletionLike>[] = [], images: Step<ImagesResponseLike>[] = []) {
   const calls: Record<string, unknown>[] = [];
+  /** What each chat call was given besides its body: the stop's signal, when the gateway handed one over. */
+  const options: ({ signal?: AbortSignal } | undefined)[] = [];
   const client: OpenAIClientLike = {
     chat: {
       completions: {
-        async create(body) {
+        async create(body, opts) {
           calls.push(body as unknown as Record<string, unknown>);
-          return next(chat, () => ({
+          options.push(opts);
+          const answer = next(chat, () => ({
             model: body.model,
             choices: [{ finish_reason: 'stop', message: { content: 'Choice: A' } }],
             usage: { prompt_tokens: 1000, completion_tokens: 100 },
           }));
+          return streamOf(chunksOf(answer));
         },
       },
     },
@@ -90,7 +121,7 @@ export function fakeOpenAI(chat: Step<ChatCompletionLike>[] = [], images: Step<I
       },
     },
   };
-  return { client, calls };
+  return { client, calls, options };
 }
 
 export function fakeGoogle(queue: Step<GoogleResponseLike>[] = []) {
@@ -118,7 +149,12 @@ const FAL_MEDIA = 'https://v3.fal.media/files';
  * image-to-video model, an image list for frame extraction). `failures` are thrown by submits to that endpoint, and
  * `pollFailures` by its status polls, in order. `calls` lists the submitted jobs (the billable step).
  */
-export function fakeFal(failures: Record<string, Error[]> = {}, opts: { clipUrl?: string; frameUrl?: string; pollFailures?: Record<string, Error[]> } = {}) {
+export function fakeFal(
+  failures: Record<string, Error[]> = {},
+  opts: { clipUrl?: string; frameUrl?: string; pollFailures?: Record<string, Error[]>; cancel?: (endpoint: string, requestId: string) => FalCancel } = {},
+) {
+  /** Each job cancelled (ADR-0111), by endpoint and request id. */
+  const cancels: { endpoint: string; requestId: string }[] = [];
   const clipUrl = opts.clipUrl ?? `${FAL_MEDIA}/clip.mp4`;
   const frameUrl = opts.frameUrl ?? `${FAL_MEDIA}/last.png`;
   const calls: { endpoint: string; input: Record<string, unknown> }[] = [];
@@ -155,9 +191,13 @@ export function fakeFal(failures: Record<string, Error[]> = {}, opts: { clipUrl?
           : { video: { url: clipUrl, content_type: 'video/mp4', file_size: 9 } };
         return { data, requestId: options.requestId };
       },
+      async cancel(endpoint, options) {
+        cancels.push({ endpoint, requestId: options.requestId });
+        return opts.cancel?.(endpoint, options.requestId) ?? { status: 'failed', detail: 'the fake has no cancel answer' };
+      },
     },
   };
-  return { client, calls, polls, uploads, uploadedUrl, clipUrl, frameUrl };
+  return { client, calls, polls, uploads, uploadedUrl, clipUrl, frameUrl, cancels };
 }
 
 /** The start of a real MP4: an ISO-BMFF `ftyp` box (size 24, brand isom), then a little of an `mdat` box. */

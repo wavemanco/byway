@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { focusAfterRemoval } from '../src/view/focus.ts';
-import { controlPendingLabel } from '../src/view/labels.ts';
+import { CANCEL_QUESTION, CANCELLED_NOTE, controlPendingLabel } from '../src/view/labels.ts';
 import type { CheckpointRecord } from '@byway/contracts';
 import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, sideImages, waitingRunCount } from '../src/view/run.ts';
 import type { TimelineStage, TimelineStep } from '../src/view/timeline.ts';
@@ -140,5 +140,17 @@ describe('images beside an options result (UX-8)', () => {
     ];
     expect(sideImages(stages)).toEqual([{ artifactId: 'sha256:m1', label: 'Mood board for option A', step: 'Custom imagery' }]);
     expect(sideImages([])).toEqual([]);
+  });
+});
+
+describe('the Cancel question and the cancelled run (ADR-0111)', () => {
+  it('says what Cancel cuts off and what finishes, in one sentence true for every profile', () => {
+    expect(CANCEL_QUESTION).toBe(
+      'Cancel this run? What it made so far is kept. An AI call already under way may still be paid for: byway cuts off text and video calls, except Google’s text calls, and other calls finish after the run stops.',
+    );
+  });
+
+  it('says where a call byway cut off is counted', () => {
+    expect(CANCELLED_NOTE).toBe('If byway cut off an AI call, Settings lists it under Spending records until you clear it.');
   });
 });
