@@ -98,12 +98,15 @@ test('a refused key in the text leaves the attachments kept; once the text is fi
 // next request carries it as it is now. Before, any edit to it kept it again, so a new name put the key back in the tab.
 test('a refused key in an attachment leaves the text kept; once Start finds no key in the fixed attachment, "Change" brings both back', async ({ page }) => {
   const key = E2E_KEYS.ANTHROPIC_API_KEY;
-  const keys = watchForKeys(page, { pastedTo: '/api/intakes' });
+  // The paste is the first request to Start; the one sent after the fix is watched like any other.
+  let pasting = true;
+  const keys = watchForKeys(page, { pastedTo: (pathname) => pasting && pathname === '/api/intakes' });
   await page.goto('/');
   await page.getByLabel('What are you working on?').fill(PROBLEM);
   await attach(page, 'Class notes', `${NOTES}\nconfig: ${key}`);
   // The refusal says the key was in an attachment, not "this text" (the field the person is looking at), and which one.
   await refuse(page, 'Attachment 1 ("Class notes") contains your ANTHROPIC_API_KEY. Remove it and try again');
+  pasting = false;
   expect(await keptInTab(page)).not.toContain(key);
   expect(await keptInTab(page)).toContain(PROBLEM);
 
