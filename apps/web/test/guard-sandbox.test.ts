@@ -16,8 +16,8 @@
  *   Playwright's own launch calls, every line that names Playwright's packages, Puppeteer or chromium-bidi in quotes (as
  *   an import does), which only pages.ts has besides two lines of the weekly pin report (scripts/playwright-pin.ts,
  *   ADR-0110) that name Playwright's packages to read their versions and load nothing, and every module loaded by a name
- *   its line does not write out (`import(name)`), which no line has: so the names that report holds cannot load
- *   Playwright unseen.
+ *   its line does not write out (`import(name)`), which no line has, so the names that report holds load nothing
+ *   through an import() this guard reads (the two layouts it does not read are below).
  * A line that opens an import or re-export list is pinned by its file alone, so naming one more thing in a list already
  * pinned is not a change, but a new importer is. A second test feeds the pins each way round them found so far (the launch seam, a
  * setting in a named function or shorthand, chromiumLaunchOptions handed to Playwright, Playwright's own launch, whose
@@ -25,7 +25,9 @@
  *
  * What it does not see: a use that names none of these (a namespace import called by a computed name, a module loaded
  * by a computed name through a require that createRequire made, SQL that builds the table's or the column's name from
- * pieces), a browser driver it does not list, a browser started as a program of its
+ * pieces), a code line that begins with a block comment, its import(name) after it (a line that begins with //,
+ * /* or * is read as a comment, so a literal import there is unseen too), an `import` whose `(` is on the next line (the
+ * LC-1 note of the re-check of block 1's fix round), a browser driver it does not list, a browser started as a program of its
  * own, and a change to the launch wiring inside the lines it pins (a retry without the sandbox inside pages.ts):
  * launch.test.ts, pages.test.ts and renderer-check.test.ts check that behaviour. The store never writes the setting
  * except through setRendererSandbox (packages/store/test/renderer-settings.test.ts).
@@ -221,7 +223,7 @@ const LAUNCH: Pin[] = [
     // An import() whose argument is one string literal (comments before it allowed) writes its module out, so the pin
     // above sees it; any other argument (a variable, PINNED[0].name, 'play' + 'wright') is a module loaded by a name the
     // line does not write out. An import( with its argument on a later line counts as one too.
-    what: 'modules loaded by a name the line does not write out: none, so the pin report’s names cannot load Playwright',
+    what: 'modules loaded by a name the line does not write out: none (the header says which layouts it does not read)',
     pattern: /\bimport\s*\((?!\s*(?:\/\*.*?\*\/\s*)*(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`\\$\n]*`)\s*[,)])/,
     lines: [],
   },
