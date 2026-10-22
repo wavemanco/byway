@@ -70,12 +70,14 @@ export function PageRendererSettings({ settings: initial }: Props) {
     setError(null);
     setSaid(null);
     try {
-      setSettings(await patch<RendererSettings>('/api/renderer', { osSandbox }));
+      const saved = await patch<RendererSettings>('/api/renderer', { osSandbox });
+      setSettings(saved);
       setConfirming(false);
       setSaid(osSandbox ? 'The OS sandbox is on.' : 'The OS sandbox is off.');
       backToSwitch();
-      // The banner every screen shows reads the new state now (other tabs read it within a few seconds).
-      rendererChanged();
+      // The banner every screen shows reads the new state now (other tabs read it within a few seconds). It does not
+      // announce it as well: the status above has just said it.
+      rendererChanged(saved);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That was not saved. Try again.');
     }

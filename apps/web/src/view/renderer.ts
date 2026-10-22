@@ -30,6 +30,48 @@ export function rendererBanner(s: RendererSettings): RendererBanner | null {
   return null;
 }
 
+/**
+ * What a screen reader is told when the banner appears, changes or goes while the person stays on a screen (D2 left
+ * (9)): the new banner's own words, or, when it goes, what that means. Null when the banner is as it was.
+ */
+export function rendererBannerNews(before: RendererBanner | null, after: RendererBanner | null): string | null {
+  if ((before?.kind ?? null) === (after?.kind ?? null)) return null;
+  if (after) return after.text;
+  return before?.kind === 'off' ? "The page renderer's OS sandbox is on again." : "byway no longer reports that the page renderer's OS sandbox cannot start.";
+}
+
+/**
+ * What the banner's polite status says (D2 left (9)). The banner a tab first renders is read where it stands, before the
+ * header, so it is not announced. After that, each read of the renderer's state that shows the banner appearing,
+ * changing or going is announced, except one this tab's own Settings switch caused: Settings' own status already says
+ * what changed, and the banner would say it a second time.
+ */
+export interface BannerAnnouncer {
+  /** A read of the renderer's state: the sentence to announce, or null to leave the status as it is. */
+  read(settings: RendererSettings): string | null;
+  /**
+   * This tab's switch saved `settings`: a read that shows them is not news. Returns what the status says now: nothing,
+   * so a stale sentence is not left behind, and the next one is announced even if it repeats an earlier one.
+   */
+  switched(settings: RendererSettings): string;
+}
+
+export function bannerAnnouncer(initial: RendererSettings): BannerAnnouncer {
+  let known = rendererBanner(initial);
+  return {
+    read(settings) {
+      const next = rendererBanner(settings);
+      const news = rendererBannerNews(known, next);
+      known = next;
+      return news;
+    },
+    switched(settings) {
+      known = rendererBanner(settings);
+      return '';
+    },
+  };
+}
+
 export interface RendererFinding {
   tone: 'plain' | 'caution';
   text: string;
