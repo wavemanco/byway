@@ -11,6 +11,11 @@ export interface PanelProps {
   /** Id of the question's heading, for aria-describedby on the panel's fields. */
   promptId: string;
   /**
+   * Id of the cost said under the question, when it has one (only a yes/no question an optional or a person's loop
+   * asks: view/questions.ts): the answers that would spend it are described by it.
+   */
+  costId?: string;
+  /**
    * What the person had entered for this question when the panel opened, from the Run screen's draft store (F06,
    * ADR-0082). A panel seeds its state from it once and never re-reads it, so nothing changes under the person.
    */

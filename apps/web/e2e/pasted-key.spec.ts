@@ -94,21 +94,35 @@ test('a refused key in the text leaves the attachments kept; once the text is fi
   expect(keys.leaks).toEqual([]);
 });
 
-test('a refused key in an attachment leaves the text kept; once the attachment is fixed, a reload brings both back', async ({ page }) => {
+// The attachment that held the key is kept again only once byway's own check finds no key in it (SEC-NOTE-2): Start's
+// next request carries it as it is now. Before, any edit to it kept it again, so a new name put the key back in the tab.
+test('a refused key in an attachment leaves the text kept; once Start finds no key in the fixed attachment, "Change" brings both back', async ({ page }) => {
   const key = E2E_KEYS.ANTHROPIC_API_KEY;
-  const keys = watchForKeys(page, { pastedTo: '/api/intakes' });
+  // The paste is the first request to Start; the one sent after the fix is watched like any other.
+  let pasting = true;
+  const keys = watchForKeys(page, { pastedTo: (pathname) => pasting && pathname === '/api/intakes' });
   await page.goto('/');
   await page.getByLabel('What are you working on?').fill(PROBLEM);
   await attach(page, 'Class notes', `${NOTES}\nconfig: ${key}`);
   // The refusal says the key was in an attachment, not "this text" (the field the person is looking at), and which one.
   await refuse(page, 'Attachment 1 ("Class notes") contains your ANTHROPIC_API_KEY. Remove it and try again');
+  pasting = false;
   expect(await keptInTab(page)).not.toContain(key);
   expect(await keptInTab(page)).toContain(PROBLEM);
 
+  // Fixed, it is still not kept: byway has not checked it yet. The problem is edited after it and is kept, so once that
+  // edit shows in the tab, the fixed attachment has been looked at too.
   await page.getByLabel('Text of attachment 1').fill(NOTES);
-  await expect.poll(() => keptInTab(page)).toContain(NOTES);
-  await page.reload();
-  await expect(page.getByLabel('What are you working on?')).toHaveValue(PROBLEM);
+  await page.getByLabel('What are you working on?').fill(`${PROBLEM} Before Friday.`);
+  await expect.poll(() => keptInTab(page)).toContain('Before Friday.');
+  expect(await keptInTab(page)).not.toContain(NOTES);
+
+  // Start's request carries it as it is, and byway finds no key in it: it is kept again, so "Change" brings it back.
+  await page.getByRole('button', { name: /Get a recommendation/ }).click();
+  await expect(page).toHaveURL(/\/recommend\//, { timeout: 60_000 });
+  await page.getByRole('link', { name: 'Change', exact: true }).click();
+  await expect(page.getByLabel('What are you working on?')).toHaveValue(`${PROBLEM} Before Friday.`);
+  await expect(page.getByLabel('Name of attachment 1')).toHaveValue('Class notes');
   await expect(page.getByLabel('Text of attachment 1')).toHaveValue(NOTES);
   expect(await keptInTab(page)).not.toContain(key);
   expect(keys.pastes()).toBe(1);
@@ -117,7 +131,7 @@ test('a refused key in an attachment leaves the text kept; once the attachment i
 
 // Per attachment (ADR-0088 follow-up): before, a key in one attachment stopped the tab keeping all of them, and any edit
 // to any of them kept them all again, the one with the key included; a reload before an edit lost the clean ones.
-test('a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through edits to the others and a reload', async ({ page }) => {
+test('a refused key in one attachment names it as Start numbers it, and stops only that one being kept, through a new name for it, edits to the others, a removal and a reload', async ({ page }) => {
   const key = E2E_KEYS.ANTHROPIC_API_KEY;
   const keys = watchForKeys(page, { pastedTo: '/api/intakes' });
   const DRAFT = 'Draft: the spring timetable, with prices.';
@@ -135,18 +149,24 @@ test('a refused key in one attachment names it as Start numbers it, and stops on
   expect(await keptInTab(page)).not.toContain(key);
   await expect(page.getByLabel('Text of attachment 3', { exact: true })).toHaveValue(new RegExp(`config: ${key}`));
 
-  // Editing another attachment does not bring the one with the key back into the tab.
+  // A new name for the one with the key, its text unchanged, does not bring it back into the tab (SEC-NOTE-2), and nor
+  // does editing another attachment. That edit comes after the rename, so once it is kept the rename was looked at.
+  await page.getByLabel('Name of attachment 3', { exact: true }).fill('Draft v2');
   await page.getByLabel('Name of attachment 1', { exact: true }).fill('Class notes, spring');
   await expect.poll(() => keptInTab(page)).toContain('Class notes, spring');
+  expect(await keptInTab(page)).not.toContain('Draft v2');
   expect(await keptInTab(page)).not.toContain(key);
 
-  // A reload brings back what was kept: the text and the clean attachments, not the one that held the key.
+  // The refusal numbers the attachment as the form does now: with the empty one above it removed, it is the second.
+  await page.getByRole('button', { name: 'Remove attachment 2' }).click();
+  await expect(page.getByText('Attachment 2 ("Draft") contains your ANTHROPIC_API_KEY. Remove it and try again')).toBeVisible();
+
+  // A reload brings back what was kept: the text and the clean attachment, not the one that held the key.
   await page.reload();
   await expect(page.getByLabel('What are you working on?')).toHaveValue(PROBLEM);
   await expect(page.getByLabel('Name of attachment 1', { exact: true })).toHaveValue('Class notes, spring');
   await expect(page.getByLabel('Text of attachment 1', { exact: true })).toHaveValue(NOTES);
-  await expect(page.getByLabel('Text of attachment 2', { exact: true })).toHaveValue('');
-  await expect(page.getByLabel('Name of attachment 3', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Name of attachment 2', { exact: true })).toHaveCount(0);
   expect(await keptInTab(page)).not.toContain(key);
   expect(keys.pastes()).toBe(1);
   expect(keys.leaks).toEqual([]);

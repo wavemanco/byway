@@ -98,8 +98,24 @@ export type ControlAction = 'pause' | 'resume' | 'cancel';
 export const CANCEL_QUESTION =
   'Cancel this run? What it made so far is kept. An AI call already under way may still be paid for: byway cuts off text and video calls, except Google’s text calls, and other calls finish after the run stops.';
 
-/** Under "This run was cancelled": where a call byway cut off is counted (ADR-0111). */
-export const CANCELLED_NOTE = 'If byway cut off an AI call, Settings lists it under Spending records until you clear it.';
+/**
+ * Under a cancelled run, and under a failed one, since a failure ends the run and cuts off its other calls the same way:
+ * where a call byway cut off is counted (ADR-0111). Only a cut-off call that may have been billed is listed; one stopped
+ * before anything was sent, or a fal job removed before it ran, counts nothing, and one whose answer or clip came anyway
+ * is settled at its cost, in the run's.
+ */
+export const CUT_OFF_NOTE =
+  'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts at its estimate against the workspace budget, not this run’s, until you clear it.';
+
+/**
+ * Under a run that has ended while some of its AI calls are still under way: a call byway does not cut off (Google's text
+ * calls, every image call) finishes after the run stops, and its cost is added to the run then. The screen keeps
+ * polling until none is left (view/run.ts pollDelay).
+ */
+export function underWayNote(calls: number): string | null {
+  if (calls <= 0) return null;
+  return `${calls === 1 ? '1 AI call this run started is' : `${calls} AI calls this run started are`} still under way; the cost shown is brought up to date as ${calls === 1 ? 'it ends' : 'they end'}.`;
+}
 
 /** What a run control's button says while its request is on its way (UX-10: feedback at once, not after a second). */
 export function controlPendingLabel(action: ControlAction): string {

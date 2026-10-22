@@ -1,7 +1,10 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { RunStatusPanel } from '../src/components/run/RunStatusPanel.tsx';
 import { focusAfterRemoval } from '../src/view/focus.ts';
-import { CANCEL_QUESTION, CANCELLED_NOTE, controlPendingLabel } from '../src/view/labels.ts';
-import type { CheckpointRecord } from '@byway/contracts';
+import { CANCEL_QUESTION, CUT_OFF_NOTE, controlPendingLabel, underWayNote } from '../src/view/labels.ts';
+import type { CheckpointRecord, RunRecord } from '@byway/contracts';
 import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, sideImages, waitingRunCount } from '../src/view/run.ts';
 import type { TimelineStage, TimelineStep } from '../src/view/timeline.ts';
 
@@ -47,9 +50,19 @@ describe('the Run screen', () => {
     for (const status of ['done', 'failed', 'cancelled'] as const) {
       expect(isEnded(status)).toBe(true);
       expect(pollDelay(status)).toBeNull();
+      expect(pollDelay(status, 0)).toBeNull();
     }
     expect(isEnded('waiting')).toBe(false);
     expect(isEnded('paused')).toBe(false);
+  });
+
+  // RS-5: the run shows Cancelled or Failed at once, while a call byway does not cut off is still under way; its cost is
+  // added to the run when it settles, so the screen keeps polling, lazily, until none of the run's calls is under way.
+  it('keeps polling an ended run, lazily, while some of its calls are still under way', () => {
+    for (const status of ['done', 'failed', 'cancelled'] as const) expect(pollDelay(status, 2)).toBe(3000);
+    // A run still going polls as it always has, whatever is under way.
+    expect(pollDelay('running', 2)).toBe(1000);
+    expect(pollDelay('waiting', 2)).toBe(3000);
   });
 
   it('shows pages as thumbnails, text as excerpts, and diffs, images and clips as themselves', () => {
@@ -143,6 +156,26 @@ describe('images beside an options result (UX-8)', () => {
   });
 });
 
+const ended = (status: 'failed' | 'cancelled'): RunRecord => ({
+  id: 'r1',
+  workspaceId: 'w',
+  recipeId: 'c4',
+  recipeHash: 'h',
+  profileId: 'balanced',
+  title: 'Memo',
+  problem: 'A memo',
+  medium: 'prose',
+  status,
+  costUsd: 0.4,
+  budgetUsd: 2,
+  createdAt: '2026-10-07T10:00:00.000Z',
+  updatedAt: '2026-10-07T10:00:00.000Z',
+  ...(status === 'failed' ? { error: 'The run stopped at its budget of $2.00, and the budget was not raised.' } : {}),
+});
+
+/** The status panel of an ended run, as the server renders it. */
+const panel = (status: 'failed' | 'cancelled', callsUnderWay = 0) => renderToStaticMarkup(createElement(RunStatusPanel, { run: ended(status), step: undefined, stages: [], artifacts: {}, callsUnderWay }));
+
 describe('the Cancel question and the cancelled run (ADR-0111)', () => {
   it('says what Cancel cuts off and what finishes, in one sentence true for every profile', () => {
     expect(CANCEL_QUESTION).toBe(
@@ -150,7 +183,25 @@ describe('the Cancel question and the cancelled run (ADR-0111)', () => {
     );
   });
 
-  it('says where a call byway cut off is counted', () => {
-    expect(CANCELLED_NOTE).toBe('If byway cut off an AI call, Settings lists it under Spending records until you clear it.');
+  // RS-6: only a cut-off call that may have been billed is listed, and it counts against the workspace, not the run.
+  it('says which cut-off calls are listed, and where they are counted', () => {
+    expect(CUT_OFF_NOTE).toBe(
+      'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts at its estimate against the workspace budget, not this run’s, until you clear it.',
+    );
+  });
+
+  // RS-4: a failure ends the run and cuts off its other calls as Cancel does, so the Failed panel says it too.
+  it('is said under a cancelled run and under a failed one', () => {
+    for (const status of ['cancelled', 'failed'] as const) expect(panel(status), status).toContain(`<p class="muted">${CUT_OFF_NOTE}</p>`);
+  });
+
+  it('says how many of an ended run’s calls are still under way, and only while some are', () => {
+    expect(underWayNote(0)).toBeNull();
+    expect(underWayNote(1)).toBe('1 AI call this run started is still under way; the cost shown is brought up to date as it ends.');
+    expect(underWayNote(3)).toBe('3 AI calls this run started are still under way; the cost shown is brought up to date as they end.');
+    for (const status of ['cancelled', 'failed'] as const) {
+      expect(panel(status, 3), status).toContain(underWayNote(3));
+      expect(panel(status, 0), status).not.toContain('still under way');
+    }
   });
 });

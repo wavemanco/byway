@@ -14,10 +14,12 @@ export function isEnded(status: RunStatus): boolean {
 
 /**
  * Polling interval in milliseconds, or null to stop. A working run is polled briskly so steps appear as they
- * finish; a run waiting for you, or paused, changes only when you act, so it is polled lazily.
+ * finish; a run waiting for you, or paused, changes only when you act, so it is polled lazily. An ended run is polled
+ * lazily while some of its AI calls are still under way (`callsUnderWay`, from the spend book: RunData.ended): a call
+ * byway does not cut off finishes after the run shows Cancelled or Failed, and its cost is added to the run then.
  */
-export function pollDelay(status: RunStatus): number | null {
-  if (isEnded(status)) return null;
+export function pollDelay(status: RunStatus, callsUnderWay = 0): number | null {
+  if (isEnded(status)) return callsUnderWay > 0 ? 3000 : null;
   if (status === 'paused' || status === 'waiting') return 3000;
   return 1000;
 }

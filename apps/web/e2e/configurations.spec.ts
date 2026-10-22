@@ -172,6 +172,12 @@ test('C4: an optional step you decline reads Skipped, and the Result lists it as
   await startRecommended(page, 'Memo Polish');
   const turn = page.locator('section.turn[data-kind="confirm"]');
   await expect(turn).toBeVisible({ timeout: 120_000 });
+  // "Run this step?" says what Yes would cost: the Run page prices the question, RunScreen passes it on, and "Your turn"
+  // says it under the question. A screen reader hears it with each answer.
+  const COST = /^Estimated cost if you say Yes: \$\d+\.\d\d(–\$\d+\.\d\d)? \(\d+ AI calls?\)\.$/;
+  await expect(turn.locator('.turn-cost')).toHaveText(COST);
+  for (const answer of ['Yes', 'No']) await expect(turn.getByRole('button', { name: answer, exact: true })).toHaveAccessibleDescription(COST);
+  await expect(page.locator('.run > p[aria-live="polite"]')).toContainText('Estimated cost if you say Yes');
   const declined = (await turn.getAttribute('data-checkpoint')) ?? undefined;
   await turn.getByRole('button', { name: 'No', exact: true }).click();
   await answerUntilDone(page, declined ? { after: declined } : {});

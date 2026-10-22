@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from 'react';
 import { recipeTitle } from '../view/vocabulary.ts';
-import { HELD_KEY_REFUSAL, heldKeyParts, startHeldKeyRefusal } from '../view/refusals.ts';
+import { HELD_KEY_REFUSAL, heldKeyParts, startRefusalNow, type StartRefusal } from '../view/refusals.ts';
 import { ActionButton } from './ActionButton.tsx';
 import { ApiError, post } from './api.ts';
-import { forgetRefusedStart, heldAttachmentKeys, loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft } from './startDraft.ts';
+import { forgetRefusedStart, heldAttachmentKeys, loadStartAttachments, loadStartDraft, saveStartAttachments, saveStartDraft, withheldAfterCheck } from './startDraft.ts';
 import { useTechnicalNames } from './TechNames.tsx';
 import { useAction } from './useAction.ts';
 import { useShortcuts } from './useShortcuts.ts';
@@ -71,10 +71,11 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
     attachmentsTouched.current = true;
     setRefocus({ key: focusAfterRemoval(attachments.map((a) => a.key), key) });
     setAttachments((list) => list.filter((x) => x.key !== key));
-    keepAgain(key);
   }
   const [nextKey, setNextKey] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  // A held-key refusal is kept as it came, and said as the form stands now (startRefusalNow).
+  const [refusal, setRefusal] = useState<StartRefusal | null>(null);
 
   // Restore what you wrote, and what you attached, before following "Change" back from the Recommendation screen (after
   // hydration, so the server HTML and the first client render agree; ADR-0082).
@@ -88,19 +89,17 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
     }
   }, []);
   // Attachments are kept as you change them; nothing is written until you do, so a restore is never overwritten. One
-  // that held a key byway refused (ADR-0088) is shown to be edited but not kept, by its key here, until it is edited.
+  // that held a key byway refused (ADR-0088) is shown to be edited but not kept, by its key here, until byway's own
+  // check finds no key in it: Start's next request carries it as it is, and is accepted or refused for other parts only
+  // (withheldAfterCheck). Editing it is not enough, since a rename leaves the key in its text.
   const attachmentsTouched = useRef(false);
   const [withheld, setWithheld] = useState<ReadonlySet<number>>(() => new Set());
   useEffect(() => {
     if (attachmentsTouched.current) saveStartAttachments(attachments.filter((a) => !withheld.has(a.key)).map(({ name, text: body }) => ({ name, text: body })));
   }, [attachments, withheld]);
-  const keepAgain = (key: number) =>
-    setWithheld((keys) => {
-      if (!keys.has(key)) return keys;
-      const next = new Set(keys);
-      next.delete(key);
-      return next;
-    });
+  // The attachments as the form holds them now, for an answer that comes back after they were edited.
+  const current = useRef(attachments);
+  current.current = attachments;
 
   function edit(next: string) {
     setText(next);
@@ -116,6 +115,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
       return;
     }
     setError(null);
+    setRefusal(null);
     // An empty attachment is not sent, so the refusal's positions are positions in this list, not on the form.
     const sent = attachments.filter((a) => a.text.trim());
     try {
@@ -124,25 +124,30 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
         attachments: sent.map(({ name, text: body }) => ({ name: name.trim() || 'Attachment', text: body })),
         ...(recipe ? { recipeId: recipe.recipeId } : {}),
       });
+      // byway found no key in what was sent: an attachment not kept since an earlier refusal is kept again if it is
+      // still as it was sent, so "Change" brings it back.
+      setWithheld((keys) => withheldAfterCheck(keys, sent, [], current.current));
       // A library choice travels in the address, so the Recommendation screen shows that recipe instead of choosing.
       router.push(recipe ? `/recommend/${intakeId}?recipe=${encodeURIComponent(recipe.recipeId)}` : `/recommend/${intakeId}`);
       return 'hold';
     } catch (err) {
       // A refused key (ADR-0088): the form keeps everything so the key can be taken out, but the tab's session stops
-      // keeping the part that held it (the text, an attachment or both) and keeps the rest. That part is kept again once
-      // it is edited: the text on each keystroke, an attachment on any change to that attachment. The refusal names the
-      // attachment as this form numbers it, and by the name you gave it.
+      // keeping the part that held it (the text, an attachment or both) and keeps the rest. The text is kept again on
+      // its next keystroke; an attachment once byway's check finds no key in it (withheldAfterCheck). The refusal names
+      // the attachment as this form numbers it, and by the name you gave it.
       if (err instanceof ApiError && err.code === HELD_KEY_REFUSAL) {
         const parts = heldKeyParts(err.body);
         forgetRefusedStart(err.fields);
         attachmentsTouched.current = true;
-        setWithheld(new Set(heldAttachmentKeys(err.fields, parts, sent.map((a) => a.key))));
-        setError(startHeldKeyRefusal(parts, sent.map((a) => ({ position: attachments.indexOf(a) + 1, name: a.name })), err.message));
+        const named = heldAttachmentKeys(err.fields, parts, sent.map((a) => a.key));
+        setWithheld((keys) => withheldAfterCheck(keys, sent, named, current.current));
+        setRefusal({ parts, sent: sent.map((a) => ({ key: a.key, name: a.name })), message: err.message });
         return;
       }
       setError(err instanceof Error ? err.message : 'That did not work. Try again.');
     }
   });
+  const shownError = error ?? (refusal ? startRefusalNow(refusal, attachments.map((a) => a.key)) : null);
   const busy = submitting.busy;
   function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -172,7 +177,6 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
   function updateAttachment(key: number, patch: Partial<Attachment>) {
     attachmentsTouched.current = true;
     setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
-    keepAgain(key);
   }
 
   return (
@@ -285,7 +289,7 @@ export function StartForm({ recipe }: { recipe?: { recipeId: string; name: strin
         </ActionButton>
       </div>
       <p className="error-text" role="alert">
-        {error}
+        {shownError}
       </p>
     </form>
   );

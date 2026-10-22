@@ -49,7 +49,24 @@ describe('"Your turn" shows it under the question', () => {
   it('as a line of its own after the question, and not at all when there is none', () => {
     const record = cp('framings-if-wanted', 'confirm', 'Run this step? It is meant for when you want framings. Yes runs it; No skips it.');
     const html = shown(record, questionCost(record, COSTS));
-    expect(html).toMatch(/Yes runs it; No skips it\.<\/h2><p class="turn-cost">Estimated cost if you say Yes: \$0\.04–\$0\.12 \(1 AI call\)\.<\/p><\/header>/);
+    expect(html).toMatch(/Yes runs it; No skips it\.<\/h2><p id="[^"]+" class="turn-cost">Estimated cost if you say Yes: \$0\.04–\$0\.12 \(1 AI call\)\.<\/p><\/header>/);
     expect(shown(record, null)).not.toContain('turn-cost');
+  });
+
+  // A screen reader hears the cost with the answer that has focus, as the sandbox's turn-off confirmation reads its risk
+  // (D2's WEB-1): the question still describes the group, and the cost describes each answer.
+  it('describes each answer by it, for a screen reader, and the group by the question', () => {
+    const record = cp('author-loop', 'confirm', 'Is this ready? Yes keeps this version and moves on; No starts another round.');
+    const html = shown(record, questionCost(record, COSTS));
+    const costId = /<p id="([^"]+)" class="turn-cost">/.exec(html)?.[1];
+    const promptId = /<h2 id="([^"]+)"/.exec(html)?.[1];
+    expect(costId).toBeDefined();
+    expect(costId).not.toBe(promptId);
+    expect(html).toContain(`<div class="yes-no" role="group" aria-describedby="${promptId}">`);
+    const answers = [...html.matchAll(/<button[^>]*>(Yes|No)<\/button>/g)];
+    expect(answers.map((m) => m[1])).toEqual(['Yes', 'No']);
+    for (const [button] of answers) expect(button).toContain(`aria-describedby="${costId}"`);
+    // With no cost, an answer is described by nothing of its own.
+    expect([...shown(record, null).matchAll(/<button[^>]*>(?:Yes|No)<\/button>/g)].map(([b]) => b).join('')).not.toContain('aria-describedby');
   });
 });

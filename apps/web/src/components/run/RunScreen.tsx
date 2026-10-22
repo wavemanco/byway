@@ -88,7 +88,9 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
   const step = currentStep(stages);
   const ended = isEnded(run.status);
   const paused = run.status === 'paused';
-  const meter = runMeter(run, events);
+  // An ended run's calls still under way and its settled cost, from the spend book (RunData.ended, ADR-0111).
+  const after = ended ? data.ended : undefined;
+  const meter = runMeter(run, events, after?.settledUsd);
   const selectedStep = selected ? stages.flatMap((s) => s.steps).find((s) => s.key === selected) : undefined;
 
   // F15: one owner of the request sequence. Only the latest-issued request applies a snapshot or sets the connection.
@@ -101,9 +103,10 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
     },
     setConnection,
   );
-  // Poll while the run can still change: briskly while the AI works, lazily while it waits for you. While byway is not
-  // answering, keep retrying whatever the last status said, so the banner clears on an ended run too.
-  usePolling(refresher, connection === 'lost' ? LOST_RETRY_MS : pollDelay(run.status));
+  // Poll while the run can still change: briskly while the AI works, lazily while it waits for you or, once it has ended,
+  // while some of its calls are still under way. While byway is not answering, keep retrying whatever the last status
+  // said, so the banner clears on an ended run too.
+  usePolling(refresher, connection === 'lost' ? LOST_RETRY_MS : pollDelay(run.status, after?.callsUnderWay));
 
   // F06: the person's unsent answers, owned here, above the working area's conditional render. The store is made once
   // per mount without side effects; it loads after hydration (so the server HTML and the first client render agree)
@@ -186,7 +189,9 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
 
   const shownError = error && (error.checkpointId === 'control' || error.checkpointId === turn?.id) ? error.message : null;
   const status = runStatusLabel(run.status);
-  const announcement = paused ? 'Run paused.' : turn ? `Your turn: ${turn.prompt}` : ended ? `Run ${status.toLowerCase()}.` : '';
+  // What an answer would cost is said with the question, here and under it (view/questions.ts).
+  const cost = turn ? questionCost(turn, questions) : null;
+  const announcement = paused ? 'Run paused.' : turn ? `Your turn: ${turn.prompt}${cost ? ` ${cost}` : ''}` : ended ? `Run ${status.toLowerCase()}.` : '';
 
   return (
     <div className="run" ref={rootRef}>
@@ -222,8 +227,9 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
             {status}
           </span>
           {ended ? null : confirmCancel ? (
-            // The whole question describes the group, so a screen reader reads all of it (as ConfirmPanel's does).
-            <div className="confirm-inline" role="group" aria-label="Cancel this run?" aria-describedby={cancelQuestionId}>
+            // The whole question describes the group, so a screen reader reads all of it (as ConfirmPanel's does). The group
+            // has no name of its own, which would repeat the question's first words.
+            <div className="confirm-inline" role="group" aria-describedby={cancelQuestionId}>
               <span id={cancelQuestionId}>{CANCEL_QUESTION}</span>
               <ActionButton className="button button-danger" onClick={() => control('cancel')} busy={pending === 'cancel'} unavailable={controlling.busy}>
                 {pending === 'cancel' ? controlPendingLabel('cancel') : 'Cancel run'}
@@ -286,7 +292,7 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
                 key={turn.id}
                 cp={turn}
                 step={stages.flatMap((s) => s.steps).find((s) => s.checkpointIds.includes(turn.id))}
-                cost={questionCost(turn, questions)}
+                cost={cost}
                 artifacts={data.artifacts}
                 busy={busy}
                 paused={paused}
@@ -297,7 +303,7 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
               />
             ) : null
           ) : (
-            <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} />
+            <RunStatusPanel run={run} step={step} stages={stages} artifacts={data.artifacts} callsUnderWay={after?.callsUnderWay ?? 0} />
           )}
         </div>
         <aside className="run-timeline" aria-label="Steps">
