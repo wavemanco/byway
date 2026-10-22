@@ -15,7 +15,7 @@ export class StepError extends Error {
 
 /**
  * A model's answer that missed its contract twice (askModel): the step fails, unless its caller has another way on (the
- * asset step keeps its images beside the work unchanged when their placing answer cannot be used).
+ * asset step: when no answer placing its images can be used, the work stays as it was and the images are kept beside it).
  */
 export class ContractMissed extends StepError {
   override name = 'ContractMissed';
