@@ -610,9 +610,10 @@ export class ModelGateway implements Gateway {
         // A job fal may have accepted (a lost answer, a status that could not be read) may be billed: the call ends
         // counted at its estimate against the workspace, as may have been billed (ADR-0095). One cut off when its run was
         // ending (ADR-0111) is counted by what its billing says: released when fal removed the job before it ran or
-        // nothing was submitted, otherwise interrupted.
+        // nothing was submitted, otherwise interrupted. Its message is redacted before it is stored or shown: it can
+        // carry fal's own words (its cancel's answer), as any provider's error text can (SEC-NOTE-1).
         op.failed(e);
-        throw e;
+        throw redactMessage(e, redact);
       }
       // fal bills the seconds asked for; a provider that reports none is billed for those, one that reports an unreadable count is assumed to have been.
       const units = out.usage.units === undefined ? { value: seconds, replaced: false } : finiteNumber(out.usage.units, seconds);
@@ -1097,6 +1098,15 @@ async function keep(put: () => Promise<ArtifactRecord>): Promise<{ record?: Arti
 function billedFailure(redact: Redactor, what: string, cause: unknown, settled?: { ledgerEntryId: string; costUsd: number }): GatewayError {
   const reason = cause instanceof Error ? cause.message : String(cause);
   return new GatewayError('byway-failure', redact(`${what}: ${reason}. It is not retried, because a retry would pay again.`.slice(0, 2000)), false, { billed: true, ...(settled ? { settled } : {}) });
+}
+
+/**
+ * An error an adapter threw as it is, its message passed through the redactor as toGatewayError's are. The error is kept
+ * (its code, its billing, its cut-off mark and fal's request ids go on with it); only its words change.
+ */
+function redactMessage(e: unknown, redact: Redactor): unknown {
+  if (e instanceof Error) e.message = redact(e.message);
+  return e;
 }
 
 /**

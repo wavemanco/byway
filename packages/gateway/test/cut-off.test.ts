@@ -968,6 +968,19 @@ describe('a stop cancels fal’s queue job', () => {
     expect(uncertain[0]?.usd).toBeGreaterThan(0.35);
   });
 
+  it('redacts the cut-off’s message, fal’s words in it included, before it is thrown (SEC-NOTE-1)', async () => {
+    const { stop, operation } = caller('run-1/clip/video/abc/1');
+    // A client that hands fal's answer on as it came, the key echoed in it.
+    const fal = heldFal({ status: 'requested', detail: `HTTP 202 CANCELLATION_REQUESTED ${KEYS.FAL_KEY}` });
+    fal.control.stop = stop;
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = await failure(g.video(video(operation)));
+    expect(isCutOff(err)).toBe(true);
+    expect(err).toMatchObject({ billing: 'maybe' });
+    expect(err.message).toContain('(HTTP 202 CANCELLATION_REQUESTED [redacted])');
+    for (const part of KEYS.FAL_KEY.split(':')) expect(err.message).not.toContain(part);
+  });
+
   it('already completed (400): settled at its seconds through the made-and-billed path, with no download and no frame job', async () => {
     const { stop, operation } = caller('run-1/clip/video/abc/1');
     const fal = heldFal({ status: 'completed', detail: 'HTTP 400 ALREADY_COMPLETED' });
@@ -1058,6 +1071,17 @@ describe('fal’s queue cancel over REST', () => {
     const lost = await cancelJob(fetchWith(() => Promise.reject(new TypeError('fetch failed'))), key, BALANCED_VIDEO, 'r');
     expect(lost.status).toBe('failed');
     expect(lost.detail).toMatch(/^no answer: fetch failed/);
+  });
+
+  it('redacts fal’s words before cutting them short, so a cancel’s detail never carries the key (SEC-NOTE-1)', async () => {
+    const key = KEYS.FAL_KEY;
+    // The key straddles the cut: cut before it is redacted, its first characters would be kept.
+    const echoed = await cancelJob(fetchWith(answer(202, { status: `CANCELLATION_REQUESTED for Key ${key} ${'x'.repeat(500)}` })), key, BALANCED_VIDEO, 'r');
+    expect(echoed.status).toBe('requested');
+    expect(echoed.detail).toBe(`HTTP 202 ${`CANCELLATION_REQUESTED for Key [redacted] ${'x'.repeat(500)}`.slice(0, 64)}`);
+    expect(echoed.detail).not.toContain(key.slice(0, 16));
+    const lost = await cancelJob(fetchWith(() => Promise.reject(new TypeError(`fetch failed (Key ${key})`))), key, BALANCED_VIDEO, 'r');
+    expect(lost.detail).toBe('no answer: fetch failed (Key [redacted])');
   });
 });
 

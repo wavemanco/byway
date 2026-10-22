@@ -1,6 +1,7 @@
 import { createFalClient as createFalSdkClient } from '@fal-ai/client';
 import { GatewayError } from '@byway/contracts';
 import { cutOffError } from '../errors.ts';
+import { makeRedactor } from '../redact.ts';
 import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type ProviderVideoRequest } from './types.ts';
 
 /**
@@ -142,6 +143,11 @@ export async function submitJob(fetchImpl: typeof fetch, key: string, endpointId
 
 /** A cancel is answered at once; this bounds a lost answer. */
 const CANCEL_TIMEOUT_MS = 30_000;
+/**
+ * How much of fal's own status text a cancel's detail keeps. fal's documented answers are single words (at most 22
+ * characters, CANCELLATION_REQUESTED); anything longer is not one of them, and the detail reaches stored and shown errors.
+ */
+const STATUS_CHARS = 64;
 /** Endpoint namespaces whose app id has three parts, as the SDK reads them (parseEndpointId). */
 const NAMESPACES = new Set(['workflows', 'comfy']);
 
@@ -157,10 +163,12 @@ export function falAppId(endpointId: string): string {
 /**
  * Cancels one fal job: `PUT <queue>/<app id>/requests/<request id>/cancel`, sent once, with no redirect followed (the
  * key goes nowhere else), and read for what fal said (FalCancel). It never throws: a cancel that fails leaves the job as
- * it was, which the caller counts as "may have been billed".
+ * it was, which the caller counts as "may have been billed". What came back is redacted (fal could echo the key it was
+ * sent) before it is cut short (STATUS_CHARS) into the detail: cut first, part of a key across the cut would escape.
  */
 export async function cancelJob(fetchImpl: typeof fetch, key: string, endpointId: string, requestId: string): Promise<FalCancel> {
   if (!ENDPOINT_ID.test(endpointId)) return { status: 'failed', detail: `"${endpointId}" is not a fal endpoint id` };
+  const redact = makeRedactor({ FAL_KEY: key });
   let res: Response;
   try {
     res = await fetchImpl(`${FAL_QUEUE_URL}/${falAppId(endpointId)}/requests/${encodeURIComponent(requestId)}/cancel`, {
@@ -170,7 +178,7 @@ export async function cancelJob(fetchImpl: typeof fetch, key: string, endpointId
       signal: AbortSignal.timeout(CANCEL_TIMEOUT_MS),
     });
   } catch (e) {
-    return { status: 'failed', detail: `no answer: ${(e as Error)?.message ?? String(e)}`.slice(0, 300) };
+    return { status: 'failed', detail: redact(`no answer: ${(e as Error)?.message ?? String(e)}`).slice(0, 300) };
   }
   const text = await res.text().catch(() => '');
   let status: unknown;
@@ -179,7 +187,7 @@ export async function cancelJob(fetchImpl: typeof fetch, key: string, endpointId
   } catch {
     status = undefined;
   }
-  const said = `HTTP ${res.status}${typeof status === 'string' ? ` ${status}` : ''}`;
+  const said = `HTTP ${res.status}${typeof status === 'string' ? ` ${redact(status).slice(0, STATUS_CHARS)}` : ''}`;
   if (res.status === 200 && status === 'OK') return { status: 'removed', detail: said };
   if (res.status === 202) return { status: 'requested', detail: said };
   if (res.status === 400 && status === 'ALREADY_COMPLETED') return { status: 'completed', detail: said };
