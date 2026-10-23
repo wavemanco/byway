@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationFailure } from '@temporalio/common';
 import { CATALOG, presentationOf, stepPresentation } from '@byway/catalog';
 import { GatewayError, type CompletionRequest, type CompletionResult, type DeclineRecord, type Gateway, type ImageRequest, type ImageResult, type Medium, type Store, type VideoRequest } from '@byway/contracts';
-import { PROFILES } from '@byway/gateway';
+import { PROFILES, waitedError, waitedWords } from '@byway/gateway';
 import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
 import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MADE_NOTE, NO_SLOTS_NOTE } from '../src/activities/asset.ts';
@@ -257,6 +257,70 @@ describe('an image the model declined (ADR-0102)', () => {
     const { notes } = await runAsset('media', frames(), storyboard(), g);
     expect(g.images.filter((r) => r.prompt.endsWith('for 2'))).toHaveLength(1);
     expect(notes[0]).toContain('declined the image for shot 2 (reason given: IMAGE_SAFETY). byway asked it once more, but that attempt failed: google returned 503: unavailable. The declined attempt was billed: $0.0336.');
+  });
+});
+
+/**
+ * An image whose wait ran out (the waits design of 2026-10-22; the owner's "Give up and end the call plainly
+ * (Recommended)": "It stops at your wait, and the step says the wait ran out and where to change it in Settings ...
+ * Google charges for a call that is stopped, so a resend mostly pays twice."). The gateway fails it not retryable and
+ * may have been billed, with its words (waitedError); the step does not try that slot again, whatever its tries per slot,
+ * and its note gives the gateway's words with the image they were for. Other unbilled failures keep their tries.
+ */
+describe('an image whose wait ran out (the waits design; MONEY-1)', () => {
+  const nanoBanana = { provider: 'google' as const, model: 'gemini-nano-banana-2.1' };
+  const waited = () => waitedError(nanoBanana, { minutes: 15, how: 'answer' }, { retryable: false, billing: 'maybe' });
+  const words = waitedWords(nanoBanana, { minutes: 15, how: 'answer' });
+  const page = '<!doctype html><html><body><div data-slot="hero"></div><div data-slot="detail"></div></body></html>\n';
+
+  it('on media, shot 1’s frame (at least two tries for any other failure) is asked for once, the other shots are made, and the note says the wait ran out and where to change it', async () => {
+    const g = fake([briefsOf('1', '2', '3')], (req) => (req.prompt.endsWith('for 1') ? waited() : false));
+    const { result, notes, skipped } = await runAsset('media', spec('c5', 'anchor-frames'), storyboard(), g);
+    expect(g.images.filter((r) => r.prompt.endsWith('for 1'))).toHaveLength(1);
+    expect(g.images).toHaveLength(3);
+    expect((result as AssetResult).anchor).toBeUndefined();
+    expect(skipped).toEqual([undefined]);
+    expect(notes).toEqual([
+      `Not every image was made: the image for shot 1 could not be made. The image for shot 1 was not asked for again: ${words} No frame was made for shot 1, so the video chain has no start frame.`,
+    ]);
+    expect(notes[0]).toMatch(/did not answer within 15 minutes, the wait chosen in Settings, .* change 'How long to wait for an answer' in Settings\./);
+  });
+
+  it('on a web page whose step tries each slot three times (C1’s asset-if-plain), the image is asked for once', async () => {
+    expect(spec('c1', 'asset').knobs).toMatchObject({ triesPerSlot: 3 });
+    const g = fake([briefsOf('hero', 'detail')], (req) => (req.prompt.endsWith('for hero') ? waited() : false));
+    const { result, notes } = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect(g.images.map((r) => r.prompt)).toEqual(['An image for hero', 'An image for detail']);
+    expect((result as AssetResult).artifactId).toBeDefined();
+    expect(notes).toEqual([`Not every image was made: the image for “hero” could not be made. The image for “hero” was not asked for again: ${words}`]);
+  });
+
+  it('with no image made, the step is skipped as before, and its note still says the wait ran out, for each image', async () => {
+    const g = fake([briefsOf('hero', 'detail')], () => waited());
+    const { result, notes, skipped } = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect(g.images).toHaveLength(2);
+    expect(result).toMatchObject({ skipped: true });
+    expect(skipped).toEqual([true]);
+    expect(notes).toEqual([`${NO_IMAGE_MADE_NOTE} The image for “hero” was not asked for again: ${words} The image for “detail” was not asked for again: ${words}`]);
+  });
+
+  it('the wait’s mark reaches the step through the memo layer, so a step run under its memo asks once too', async () => {
+    const g = fake([briefsOf('hero')], () => waited());
+    const run = await newRun('web-page');
+    const artifact = (await store.artifacts.putText(page, 'text/html')).id;
+    const step = spec('c1', 'asset');
+    const call = { key: `${run.runId}/${step.id}/-/1`, stepId: step.id, stage: 'D2' as const };
+    const gateway = memoGateway(g, store, { runId: run.runId, key: call.key });
+    const result = await assetStep({ gateway, store, prompts: library }, { run, call, step, ports: { artifact } });
+    expect(g.images).toHaveLength(1);
+    expect(result).toMatchObject({ skipped: true });
+  });
+
+  it('any other unbilled failure is still tried again, up to the step’s tries per slot', async () => {
+    const g = fake([briefsOf('hero', 'detail')], (req) => (req.prompt.endsWith('for hero') ? new GatewayError('provider-error', 'google returned 503: unavailable', true) : false));
+    const { notes } = await runAsset('web-page', spec('c1', 'asset'), page, g);
+    expect(g.images.filter((r) => r.prompt.endsWith('for hero'))).toHaveLength(3);
+    expect(notes).toEqual(['Not every image was made: the image for “hero” could not be made.']);
   });
 });
 

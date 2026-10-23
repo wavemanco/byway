@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GatewayError, type CheckpointRecord, type GatewayErrorCode } from '@byway/contracts';
 import { AdvisorError } from '@byway/advisor';
-import { heldKeyError } from '@byway/gateway';
+import { heldKeyError, waitedError } from '@byway/gateway';
 import type { Services } from '../src/services/index.ts';
 import {
   HttpError,
@@ -416,6 +416,14 @@ describe('model errors while recommending or composing (UX-2)', PRODUCT_PATH, ()
     const compose = vi.spyOn(d.services.advisor, 'compose');
     compose.mockRejectedValueOnce(new AdvisorError('compose-unreadable', 'unreadable'));
     await expect(composeIntake(d, intakeId)).rejects.toMatchObject({ status: 502, message: expect.stringMatching(/build a recipe/) });
+    // A call that used the whole of its model's wait (CRITIC-1), while recommending or composing: the wait ran out, it
+    // may have billed the work, where to wait longer, and that trying again is a new call.
+    const waited = waitedError({ provider: 'google', model: 'gemini-3.1-pro-preview' }, { minutes: 15, how: 'answer' }, { retryable: false, billing: 'maybe' });
+    const said = expect.stringMatching(/^Google’s model gemini-3\.1-pro-preview did not answer within 15 minutes, the wait chosen in Settings, so byway stopped waiting\. It may have billed the work\. To wait longer, change 'How long to wait for an answer' in Settings\. Trying again makes a new call, which may be billed too\.$/);
+    recommend.mockRejectedValueOnce(waited);
+    await expect(recommendIntake(d, intakeId)).rejects.toMatchObject({ status: 504, message: said });
+    compose.mockRejectedValueOnce(waited);
+    await expect(composeIntake(d, intakeId)).rejects.toMatchObject({ status: 504, message: said });
     // Anything else is not dressed up as a model problem.
     recommend.mockRejectedValueOnce(new TypeError('a bug'));
     await expect(recommendIntake(d, intakeId)).rejects.toBeInstanceOf(TypeError);

@@ -382,6 +382,20 @@ CREATE INDEX paid_operations_outbox ON paid_operations (settle_seq) WHERE state 
 CREATE UNIQUE INDEX paid_operations_by_key ON paid_operations (op_key) WHERE op_key IS NOT NULL;
 `,
   },
+  {
+    version: 11,
+    name: 'spend-book-retained-waits',
+    sql: `
+-- How an earlier send of a paid call ended, when it used the whole of its model's wait and byway sent the call again
+-- (block 2's check, WEB-1). A stream that sent nothing for its wait is sent once more, and the book retains that send's
+-- bound before it is (SpendBook.retain). retained_waited holds how long and how that send waited (WaitedFor), so
+-- Settings' Spending records say the earlier send went silent rather than that its connection failed. It belongs to
+-- what was retained, whatever became of the call, so it is not paired with uncertain_reason as waited is: the call
+-- sent again may have settled. Rows from before this migration have none. SQLite checks a column added with a CHECK
+-- against every row, and every row holds NULL.
+ALTER TABLE paid_operations ADD COLUMN retained_waited TEXT CHECK (retained_waited IS NULL OR json_valid(retained_waited));
+`,
+  },
 ];
 
 /** The schema version this build writes. */

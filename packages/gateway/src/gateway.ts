@@ -53,7 +53,7 @@ import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, Resolve
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
 import { BILLABLE_CALL, BILLABLE_JOB, DEFAULT_RETRY, FREE_READ, withRetries, type RetryHooks, type RetryOptions } from './retry.ts';
-import { waitedError, waitMinutes } from './waited.ts';
+import { waitedError, waitedOf, waitMinutes } from './waited.ts';
 import { minutesMs, waitMinutesFor } from './waits.ts';
 
 /**
@@ -996,10 +996,11 @@ export class ModelGateway implements Gateway {
   /**
    * Before a completion or an image is sent again after an attempt that may have been billed: that attempt's estimate
    * is retained against the workspace cap (not the run's), or, when it does not fit, the call stops with
-   * 'budget-exceeded' at workspace scope instead of risking a second charge (ADR-0095).
+   * 'budget-exceeded' at workspace scope instead of risking a second charge (ADR-0095). An attempt that used the whole of
+   * its model's wait (a stream's silence) is retained with how long and how it waited (waitedOf), for Settings' words.
    */
   private retainBeforeResend(op: PaidCall, workspaceId: string, estimateUsd: number): RetryHooks {
-    return { beforeMaybeResend: async () => op.retain(roundUsd(estimateUsd), await this.caps.workspaceCapUsd(workspaceId)) };
+    return { beforeMaybeResend: async (err) => op.retain(roundUsd(estimateUsd), await this.caps.workspaceCapUsd(workspaceId), waitedOf(err)) };
   }
 
   /**

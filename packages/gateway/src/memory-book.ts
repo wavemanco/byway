@@ -48,6 +48,8 @@ interface Row {
   uncertainReason?: 'interrupted' | 'failed' | 'waited';
   /** With the reason 'waited': how long and how the call waited. */
   waited?: WaitedFor;
+  /** How the last retained send that used the whole of its wait waited (SpendBook.retain), whatever became of the call. */
+  retainedWaited?: WaitedFor;
   providerJobs?: Partial<Record<ProviderJobRole, string>>;
   /** When each of providerJobs was accepted, by the book's clock. */
   providerJobsAt?: Partial<Record<ProviderJobRole, string>>;
@@ -88,6 +90,8 @@ const uncertain = (r: Row, now: number) => r.clearedAt === undefined && (r.state
 /** A wait that ran out, as the store's book checks it: minutes above 0, one of the three ways, fal's answer as text. */
 const isWaitedFor = (w: WaitedFor | undefined): w is WaitedFor =>
   typeof w === 'object' && w !== null && typeof w.minutes === 'number' && Number.isFinite(w.minutes) && w.minutes > 0 && (w.how === 'silence' || w.how === 'answer' || w.how === 'clip') && (w.cancel === undefined || typeof w.cancel === 'string');
+/** A wait as the book keeps it: its own copy, with only WaitedFor's fields. */
+const copyWait = (w: WaitedFor): WaitedFor => ({ minutes: w.minutes, how: w.how, ...(w.cancel !== undefined ? { cancel: w.cancel } : {}) });
 
 export class MemorySpendBook implements SpendBook {
   private readonly rows = new Map<string, Row>();
@@ -172,12 +176,15 @@ export class MemorySpendBook implements SpendBook {
     r.updatedAt = at;
   }
 
-  async retain(opId: string, usd: number, workspaceCapUsd: number): Promise<{ retained: true } | { budget: BudgetDetails }> {
+  async retain(opId: string, usd: number, workspaceCapUsd: number, waited?: WaitedFor): Promise<{ retained: true } | { budget: BudgetDetails }> {
+    // As the store's book: a wait given with the send is one, or nothing is retained.
+    if (waited !== undefined && !isWaitedFor(waited)) throw new Error('a retained send that used its whole wait needs how long and how it waited');
     const r = this.mustGet(opId);
     const ws = this.workspaceExposure(r.workspaceId, this.ms());
     const total = ws.settled + ws.inFlight + ws.uncertain + usd;
     if (total > workspaceCapUsd + EPSILON) return { budget: details('workspace', workspaceCapUsd, ws.settled, ws.inFlight, usd, total, ws.uncertain) };
     r.retainedUsd += usd;
+    if (waited) r.retainedWaited = copyWait(waited);
     r.updatedAt = this.stamp();
     return { retained: true };
   }
@@ -193,7 +200,7 @@ export class MemorySpendBook implements SpendBook {
     const r = this.rows.get(opId);
     if (r && (r.state === 'open' || r.state === 'sent' || r.state === 'accepted')) {
       Object.assign(r, { state: 'uncertain', uncertainReason: reason, updatedAt: this.stamp() });
-      if (waited) r.waited = { minutes: waited.minutes, how: waited.how, ...(waited.cancel !== undefined ? { cancel: waited.cancel } : {}) };
+      if (waited) r.waited = copyWait(waited);
     }
   }
 
@@ -322,6 +329,8 @@ export class MemorySpendBook implements SpendBook {
           since: r.updatedAt,
           reason,
           ...(reason === 'waited' && r.waited ? { waited: { ...r.waited } } : {}),
+          ...(r.retainedUsd > 0 ? { retainedUsd: roundUsd(r.retainedUsd) } : {}),
+          ...(r.retainedUsd > 0 && r.retainedWaited ? { retainedWaited: { ...r.retainedWaited } } : {}),
           ...(r.providerJobs && Object.keys(r.providerJobs).length > 0 ? { providerJobs: { ...r.providerJobs } } : {}),
         };
       });

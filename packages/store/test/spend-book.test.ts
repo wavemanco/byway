@@ -40,12 +40,13 @@ spendBookContract('SQLite in memory', () => {
 });
 
 describe('the store’s spend book', () => {
-  it('is migration 6 (with its operation keys, migration 7, and its answer waits, migration 10), and two stores on one data directory share it', async () => {
+  it('is migration 6 (with its operation keys, migration 7, its answer waits, migration 10, and its retained sends’ waits, migration 11), and two stores on one data directory share it', async () => {
     // Migrations 8 (the page renderer's settings, ADR-0105) and 9 (each model's answer wait) came between them.
-    expect(SCHEMA_VERSION).toBe(10);
+    expect(SCHEMA_VERSION).toBe(11);
     expect(MIGRATIONS[5]?.name).toBe('spend-book');
     expect(MIGRATIONS[6]?.name).toBe('operation-keys');
     expect(MIGRATIONS[9]?.name).toBe('spend-book-waits');
+    expect(MIGRATIONS[10]?.name).toBe('spend-book-retained-waits');
     const dataDir = tempDir();
     const web = openStore({ dataDir });
     const worker = openStore({ dataDir });
