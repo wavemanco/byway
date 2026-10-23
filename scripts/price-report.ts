@@ -21,8 +21,8 @@
  *   the switch above the Flagship models' table on OpenAI's; a row with no tier that the page now prices by prompt
  *   length; the figures byway's reading of a page rests on without recording them (Kling 2.5's price for its first 5
  *   seconds, 5 times its rate per second); and the sentence it rests on, read whole (Anthropic's standard pricing
- *   across 1M tokens, with its list of exceptions). A figure not found means the page changed or moved it, and that
- *   page is read again (AGENTS.md); it cannot see a new rate the table does not record.
+ *   across 1M tokens, with its list of exceptions). A figure not found means the page changed or moved it, and every
+ *   page is then read again (AGENTS.md); it cannot see a new rate the table does not record.
  * - How long ago the last full re-read was (PRICES_CHECKED): the monthly re-read is due from 30 days after it (Claude's
  *   reading of "monthly").
  *
@@ -406,8 +406,15 @@ export interface PriceReportOptions {
   summary?: string;
 }
 
+/**
+ * What follows a flag: a full re-read, every page and not the flagged one alone. The option the owner chose on
+ * 2026-10-22 at 18:54, "Claude checks at each session's start (Recommended)", reads "when a session opens and the
+ * last-checked date is 30 days old, or the weekly CI report has flagged a change, Claude re-reads every page first",
+ * and the owner's note of 18:55 makes the re-read any capable agent's or a person's (AGENTS.md). A full re-read is
+ * also the only one that moves PRICES_CHECKED (PRICES-6).
+ */
 const FLAGGED_NEXT =
-  'The agent running the next session (any model with web access, or a person) reads each flagged page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
+  'The agent running the next session (any model with web access, or a person) reads every page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
 
 /** The report, printed: it never throws and never sets a failing exit code. */
 export async function report(opts: PriceReportOptions = {}): Promise<void> {

@@ -231,8 +231,10 @@ describe('the price rows, as the providers documented them on 2026-10-18', () =>
  * answer of 2026-10-21 23:15, "Weekly report + monthly re-read + date in the app (Recommended)" ("... Claude re-reads
  * every page monthly and at once when the report flags a change; Settings and the estimate show when prices were last
  * checked, with a notice after about 45 days. ..."). It is the day of the last full re-read, so it is true only when
- * every row a provider charges for was read that day: a page read alone does not move it. Every row was read again on
- * 2026-10-22 against its page, and every figure the rows recorded matched (the long-context tiers were added that day).
+ * every row a provider charges for was read that day; a page the weekly report flags calls for a full re-read too (the
+ * owner's option of 2026-10-22 18:54: "Claude re-reads every page first"), so no source names a later day. Every row
+ * was read again on 2026-10-22 against its page, and every figure the rows recorded matched (the long-context tiers
+ * were added that day).
  */
 describe('the day prices were last checked (PRICES_CHECKED)', () => {
   const paid = PRICES.filter((r) => r.provider !== 'mock');

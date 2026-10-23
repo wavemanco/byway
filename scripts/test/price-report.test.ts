@@ -139,7 +139,8 @@ async function run(fetch: Fetch, now = CHECKED) {
   return { lines, warnings: lines.filter((l) => l.startsWith('::warning')), summary: readFileSync(summary, 'utf8') };
 }
 
-const NEXT = 'The agent running the next session (any model with web access, or a person) reads each flagged page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
+/** What follows a flag: every page read again, as the owner's option of 2026-10-22 18:54 says (PRICES-6). */
+const NEXT = 'The agent running the next session (any model with web access, or a person) reads every page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
 
 describe("the weekly run's price report (PRICE-CADENCE)", () => {
   it('checks every row a provider charges for: OpenRouter in its model list, every other row on its own page', () => {

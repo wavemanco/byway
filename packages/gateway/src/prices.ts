@@ -85,9 +85,12 @@ const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.comple
  * (YYYY-MM-DD, the session's day, as the sources give it). Settings and the Recommendation's estimated cost show it,
  * with a notice once it is more than about 45 days old, as the owner chose on 2026-10-21 ("Settings and the estimate
  * show when prices were last checked, with a notice after about 45 days"); they count whole UTC days from its start, so
- * its age can read a day off the session's clock. Moved only by a full re-read: a page read alone, after the weekly
- * report flags it, changes that page's rows and their sources, not this day (pricing.test.ts holds every paid row's
- * source to it).
+ * its age can read a day off the session's clock. Moved only by a full re-read, which a page the weekly report flags
+ * calls for too: the option the owner chose on 2026-10-22 at 18:54, "Claude checks at each session's start
+ * (Recommended)", reads "when a session opens and the last-checked date is 30 days old, or the weekly CI report has
+ * flagged a change, Claude re-reads every page first", and the owner's note of 18:55 makes that re-read any capable
+ * agent's or a person's (AGENTS.md). pricing.test.ts holds every paid row's source to name this day, and no source to
+ * name a later one.
  */
 export const PRICES_CHECKED = '2026-10-22';
 
