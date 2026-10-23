@@ -12,6 +12,7 @@
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ApiError } from '@fal-ai/client';
 import { GatewayError, type VideoRequest } from '@byway/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
@@ -101,9 +102,10 @@ const aborted = () => Object.assign(new Error('This operation was aborted'), { n
 /**
  * A fake fal whose clip job takes `clipTakesMs` and whose frame job takes `frameTakesMs` from their first status poll
  * (undefined: they never finish), each poll ending as the SDK's does once its signal aborts. A cancel answers `cancel`;
- * one that says the job was already done leaves it done. Every submission, poll and cancel is kept, with the clock.
+ * one that says the job was already done leaves it done. The clip's result read throws `clipResultFails` when given.
+ * Every submission, poll and cancel is kept, with the clock.
  */
-function clipFal(opts: { clipTakesMs?: number; frameTakesMs?: number; cancel?: FalCancel } = {}) {
+function clipFal(opts: { clipTakesMs?: number; frameTakesMs?: number; cancel?: FalCancel; clipResultFails?: unknown } = {}) {
   const submitted: { endpoint: string; at: number; startTimeoutSeconds?: number }[] = [];
   const polls: { endpoint: string; requestId: string; at: number }[] = [];
   const cancels: { endpoint: string; requestId: string; at: number }[] = [];
@@ -125,6 +127,8 @@ function clipFal(opts: { clipTakesMs?: number; frameTakesMs?: number; cancel?: F
         });
       },
       async result(endpoint, options) {
+        // The clip's result read failing as `clipResultFails` says (fal's answer for a job it dropped, say).
+        if (endpoint !== FAL_EXTRACT_FRAME && opts.clipResultFails !== undefined) throw opts.clipResultFails;
         const data = endpoint === FAL_EXTRACT_FRAME ? { images: [{ url: 'https://v3.fal.media/files/last.png', content_type: 'image/png' }] } : { video: { url: 'https://v3.fal.media/files/clip.mp4', content_type: 'video/mp4' } };
         return { data, requestId: options.requestId };
       },
@@ -330,6 +334,55 @@ describe('fal’s start deadline: below the wait by about one clip’s making, u
     expect(FAL_START_TIMEOUT_HEADERS).toEqual(['X-Fal-Request-Start-Timeout', 'x-fal-request-timeout']);
     expect([seen[0]?.get('X-Fal-Request-Start-Timeout'), seen[0]?.get('x-fal-request-timeout')]).toEqual(['1500', '1500']);
     expect([seen[1]?.get('X-Fal-Request-Start-Timeout'), seen[1]?.get('x-fal-request-timeout')]).toEqual([null, null]);
+  });
+});
+
+/**
+ * A clip job fal dropped at the start deadline byway sent with it: fal answers its result with 504 and
+ * `X-Fal-Request-Timeout-Type: user` (fal's queue page, read 2026-10-22), which @fal-ai/client 1.10.1 hands on as an
+ * ApiError whose status is 504 and timeoutType "user". fal's pricing page (read 2026-10-22): "If a request fails with an
+ * HTTP 500 or higher status code, no charge is incurred." So nothing was billed, and the step says so.
+ */
+describe('a clip job fal dropped at its start deadline (504, timeout type "user"): nothing was billed, and the step says so', () => {
+  const dropped = () => new ApiError({ message: 'Gateway Timeout', status: 504, body: { detail: 'Request timed out' }, timeoutType: 'user' });
+  const notStarted = (model: string, minutes: number, start: number) =>
+    `fal.ai’s model ${model} did not start clip job req-1 in time to finish within ${minutes} minutes, the wait chosen in Settings, so fal dropped it at the start deadline byway set (${start} minutes) and nothing was billed. ${TAIL}`;
+
+  it.each([
+    ['balanced', BALANCED_VIDEO, 5, undefined, 25],
+    ['balanced', BALANCED_VIDEO, 10, 45, 35],
+    ['best', BEST_VIDEO, 15, 75, 60],
+  ] as const)('%s (%s): a %s-second clip at a %s-minute wait (none chosen: 30), dropped at %s minutes, is released counting nothing, never cancelled or sent again', async (profileId, model, seconds, chosen, start) => {
+    const minutes = chosen ?? 30;
+    // fal reports the job done at its start deadline, and its result is the 504.
+    const fal = clipFal({ clipTakesMs: start * MINUTE, clipResultFails: dropped() });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch, caps: waitsOf({ [`fal/${model}`]: chosen }).caps });
+    const call = failure(g.video(clipOf({ profileId, durationSec: seconds })));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(start * MINUTE);
+    const e = await settled(call);
+    expect(fal.submitted.map(({ at: _at, ...job }) => job)).toEqual([{ endpoint: model, startTimeoutSeconds: start * 60 }]);
+    expect(e).toMatchObject({ code: 'provider-error', retryable: false, billing: 'none', billed: false, message: notStarted(model, minutes, start) });
+    expect(e).not.toHaveProperty('waited');
+    // Not cancelled (fal dropped it), no frame job, nothing ledgered, nothing counted or listed.
+    expect(fal.cancels).toEqual([]);
+    expect(ledger()).toEqual([]);
+    expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a 504 that is not fal’s start deadline (no timeout type: a proxy’s answer) is read as before: the clip may still be made and billed, and is listed with its job', async () => {
+    const fal = clipFal({ clipTakesMs: MINUTE, clipResultFails: new ApiError({ message: 'Gateway Timeout', status: 504 }) });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const call = failure(g.video(clipOf()));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    const e = await settled(call);
+    expect(e.message).toMatch(/^fal accepted the clip \(request req-1\), but its result could not be read: .*fal may still make it and bill it; byway did not submit it again\.$/);
+    expect(e).toMatchObject({ retryable: false });
+    expect(fal.submitted).toHaveLength(1);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider: 'fal', providerJobs: { generation: 'req-1' } })]);
   });
 });
 
