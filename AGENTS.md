@@ -6,15 +6,22 @@ at the owner's choice of 2026-10-23 (ADR-0107's Later note of that day), is that
 records must work for any capable model from any provider, or a person, and falls to whichever agent runs the session.
 So nothing here needs a particular one. `CLAUDE.md` only imports this file.
 
+Start with the section "Plan to all clear" at the top of `docs/backlog.md`: that file is the single version of what is
+pending, and the section is the working memory of whichever agent runs the session. Read it first in every session and
+after any context compression, and update its "Where we are" in the same commit as the work (the owner, 2026-10-23;
+ADR-0107's Later note of that day).
+
 byway's records say what is decided and what is open: `docs/playbook.md` (people and roles, the outside actions and
 the standing duties), `docs/backlog.md` (open work, each row with its trigger) and `docs/adr/` (the decisions, with
 `docs/adr/README.md` as their index).
 
 The owner's working rules are in the ADRs, not in the playbook: ADR-0062 (code first: people, outside actions and
-pricing go to the playbook and the backlog), ADR-0107 (every change adversarially checked before it is pushed, in larger
-blocks; each further fix round decided with the owner; proportion; the merge condition for a risky change), and
-ADR-0103 §3 with the README's CI section (`pnpm verify` before a merge, CI that reports and blocks nothing, and main's
-last run looked at first).
+pricing go to the playbook and the backlog), ADR-0107 (an adversarial check, in larger blocks, for a chunk of code
+that touches money, keys and security, the engine and workflow, or stored data, before it is pushed, where any push
+counts, so a branch's CI starts only after its check; records, docs, tests-only and scripts-only changes run the gate and
+merge without one (both the owner's, 2026-10-23, in its Later notes of that day); each further fix round decided with the
+owner; proportion; the merge condition for a risky change), and ADR-0103 §3 with the README's CI section (`pnpm verify` before a merge, CI that reports and blocks nothing,
+and main's last run looked at first).
 
 ## Keys
 

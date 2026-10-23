@@ -1,4 +1,7 @@
-# External review: implementation status (16 Oct 2026; corrected 18 Oct 2026; updated 21 Oct 2026 for the first block of that night and its true stop, and 22 Oct 2026 for the block's fix round)
+# External review: implementation status
+
+> Since 2026-10-23 what is left of the external review is listed in the "Review checklist" section of [docs/backlog.md](../backlog.md), the single version of what is pending; this page is the history up to 2026-10-22 and is not kept up to date.
+ (16 Oct 2026; corrected 18 Oct 2026; updated 21 Oct 2026 for the first block of that night and its true stop, and 22 Oct 2026 for the block's fix round)
 
 Companion to [the verification of the external review](2026-10-08-external-review-verification.md). The owner's goal was to implement every fix that does not depend on the four owner decisions (D1–D4). The owner then decided all four on 2026-10-16, and all four are built and on `main`: D1, D3 and D4 first, then D2 ([ADR-0105](../adr/0105-renderer-os-sandbox-on-with-an-explicit-off-switch.md)). A final re-check on 2026-10-15 checked main at `1ba72f5`: one checker per cluster reran the review's and the verification's original reproductions, and two independent skeptics re-ran every blocking claim. No original reproduction reproduces. No fix was lost when the branches were merged. The documentation and test items it found were closed on 2026-10-16 ([ADR-0100](../adr/0100-corrections-found-by-the-final-re-check.md) and the cleanup commits after `1ba72f5`).
 
