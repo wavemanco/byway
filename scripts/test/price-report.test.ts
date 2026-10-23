@@ -24,17 +24,48 @@ function anthropicPage(rows = PRICES.filter((r) => r.provider === 'anthropic'), 
   return ['## Model pricing', '', '| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |', ...lines, '', '### Long context pricing', '', 'Claude 4.6 and later models include the full [1M token context window](https://example.test/context) at standard pricing.', ''].join('\n');
 }
 
-/** OpenAI's page: its short-context table in HTML, the Long tab's label, and the island that loads its pricing script. */
-function openaiPage(rows = PRICES.filter((r) => r.provider === 'openai')): string {
-  const cells = (r: PriceRow) => [r.inputPerMTok, r.outputPerMTok, r.cacheReadPerMTok, r.cacheWritePerMTok].map((n) => `<td>${n === undefined ? '-' : $(n)}</td>`).join('');
-  return `<html><body><astro-island component-url="/_astro/pricing.Ab1.js?dpl=x" props="{}"></astro-island><astro-island component-url="https://elsewhere.example/_astro/x.js"></astro-island><button aria-label="Short: ≤272K input tokens">Short</button><button aria-label="Long: &gt;272K input tokens">Long</button><table>${rows.map((r) => `<tr><td>${r.model}</td>${cells(r)}</tr>`).join('')}</table><script>var hidden = "gpt-6-astra $1.00";</script></body></html>`;
+/**
+ * How OpenAI's page prices its other processing speeds against Standard, each in a table of its own that names every
+ * model again: Batch at half, Fast at twice and Ultrafast at six times (the page as read on 2026-10-23). Its pricing
+ * script has a map per speed at the same ratios, and a Flex map at Batch's. So when every price of a model doubles,
+ * its Batch row shows the old figures, and when every price halves, its Fast row does.
+ */
+const OPENAI_SPEEDS = [
+  ['Standard', 1],
+  ['Batch', 0.5],
+  ['Fast', 2],
+  ['Ultrafast', 6],
+] as const;
+/** A figure times a factor, as the page would print it. */
+const times = (n: number, k: number) => Math.round(n * k * 1_000_000) / 1_000_000;
+
+/**
+ * OpenAI's page: the Long tab's label, a table per processing speed in the page's order, Standard first, and the
+ * island that loads its pricing script. `scale` multiplies every figure of a model, in every table, as a change of its
+ * prices would.
+ */
+function openaiPage(rows = PRICES.filter((r) => r.provider === 'openai'), scale: Readonly<Record<string, number>> = {}): string {
+  const cells = (r: PriceRow, k: number) => [r.inputPerMTok, r.outputPerMTok, r.cacheReadPerMTok, r.cacheWritePerMTok].map((n) => `<td>${n === undefined ? '-' : $(times(n, k * (scale[r.model] ?? 1)))}</td>`).join('');
+  const tables = OPENAI_SPEEDS.map(([speed, k]) => `<h4>${speed}</h4><table>${rows.map((r) => `<tr><td>${r.model}</td>${cells(r, k)}</tr>`).join('')}</table><p>All models</p>`).join('');
+  return `<html><body><astro-island component-url="/_astro/pricing.Ab1.js?dpl=x" props="{}"></astro-island><astro-island component-url="https://elsewhere.example/_astro/x.js"></astro-island><button aria-label="Short: ≤272K input tokens">Short</button><button aria-label="Long: &gt;272K input tokens">Long</button>${tables}<script>var hidden = "gpt-6-astra $1.00";</script></body></html>`;
 }
 
-/** OpenAI's pricing script: the Long table per processing tier, as minified object literals. */
-function openaiScript(rows = PRICES.filter((r) => r.provider === 'openai' && r.longContext)): string {
+/**
+ * OpenAI's pricing script: the Long table as a map per processing speed, minified object literals in the script's
+ * order (ultrafast, standard, fast, batch, flex), at the page's ratios to Standard; `scale` as for the page.
+ */
+function openaiScript(rows = PRICES.filter((r) => r.provider === 'openai' && r.longContext), scale: Readonly<Record<string, number>> = {}): string {
   const lit = (n: number) => String(n).replace(/^0\./, '.');
-  const standard = rows.map((r) => `"${r.model}":{input:${lit(r.longContext!.inputPerMTok)},output:${lit(r.longContext!.outputPerMTok)},cachedInput:${r.longContext!.cacheReadPerMTok === undefined ? '.02' : lit(r.longContext!.cacheReadPerMTok)},cacheWrite:${lit(r.longContext!.cacheWritePerMTok!)}}`).join(',');
-  return `var m={fast:{"gpt-6-astra":{input:40,output:150,cachedInput:4,cacheWrite:50}},standard:{${standard}}};export{m as default}`;
+  const map = (k: number) =>
+    rows
+      .map((r) => {
+        const t = r.longContext!;
+        const at = (n: number) => lit(times(n, k * (scale[r.model] ?? 1)));
+        // A cached-input rate the row does not record is still in the script (gpt-6-luna's).
+        return `"${r.model}":{input:${at(t.inputPerMTok)},output:${at(t.outputPerMTok)},cachedInput:${at(t.cacheReadPerMTok ?? t.inputPerMTok / 10)},cacheWrite:${at(t.cacheWritePerMTok!)}}`;
+      })
+      .join(',');
+  return `var m={ultrafast:{${map(6)}},standard:{${map(1)}},fast:{${map(2)}},batch:{${map(0.5)}},flex:{${map(0.5)}}};export{m as default}`;
 }
 
 /** Google's page: a section per model, each with its paid-tier input and output prices, tiers where it has them. */
@@ -165,6 +196,24 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     // A script that cannot be read leaves the rates unread, which is said, for every tiered row.
     const unread = (await run(web({ 'https://developers.openai.com/_astro/pricing.Ab1.js?dpl=x': 503 }).fetch)).lines.filter((l) => !l.startsWith('::warning') && l.includes("the page's scripts do not give"));
     expect(unread.map((l) => l.split(':')[0])).toEqual(['OpenAI gpt-6-astra', 'OpenAI gpt-6.1-sol', 'OpenAI gpt-6-luna']);
+  });
+
+  it("reads OpenAI's Standard prices only: a model whose every price doubles or halves, in every table and every map, is flagged (PRICES-1)", async () => {
+    for (const r of PRICES.filter((p) => p.provider === 'openai')) {
+      for (const k of [2, 0.5]) {
+        const pages = { 'https://developers.openai.com/api/docs/pricing': openaiPage(undefined, { [r.model]: k }), 'https://developers.openai.com/_astro/pricing.Ab1.js?dpl=x': openaiScript(undefined, { [r.model]: k }) };
+        const lines = (await run(web(pages).fetch)).lines.filter((l) => l.startsWith(`OpenAI ${r.model}:`));
+        const shown = [['input', r.inputPerMTok], ['output', r.outputPerMTok], ['cache read', r.cacheReadPerMTok], ['cache write', r.cacheWritePerMTok]].filter(([, n]) => n !== undefined);
+        const expected = [`OpenAI ${r.model}: not found after its name on the page: ${shown.map(([what, n]) => `${what} $${n}`).join(', ')}.`];
+        if (r.longContext) expected.push(`OpenAI ${r.model}: the page's scripts do not give its long-context rates as byway records them (input $${r.longContext.inputPerMTok}, output $${r.longContext.outputPerMTok}).`);
+        expect(lines, `${r.model} x${k}`).toEqual(expected);
+      }
+    }
+    // A model's stretch also ends where the page names it again, as when it ends one table and starts the next: here
+    // every table holds gpt-6-astra alone, so its Standard row runs straight into its Batch row.
+    const astra = row('openai', 'gpt-6-astra');
+    const alone = (await run(web({ 'https://developers.openai.com/api/docs/pricing': openaiPage([astra], { [astra.model]: 2 }) }).fetch)).lines;
+    expect(alone).toContain(`OpenAI gpt-6-astra: not found after its name on the page: input $${astra.inputPerMTok}, output $${astra.outputPerMTok}, cache read $${astra.cacheReadPerMTok}, cache write $${astra.cacheWritePerMTok}.`);
   });
 
   it("flags a sentence the table's reading of a page rests on that the page no longer carries", async () => {

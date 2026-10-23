@@ -14,8 +14,9 @@
  * - OpenRouter's model list (openrouter.ai/api/v1/models): each pinned model's pricing.prompt and pricing.completion,
  *   per token, compared exactly, as decimals, with the row's rates per 1M tokens.
  * - Every other row's page (Anthropic's, OpenAI's, Google's and fal's): each figure the row records must be on the
- *   page, as a dollar amount shortly after a name the page gives the model; OpenAI's long-context rates, which the page
- *   draws from its own script, in the page's scripts; and the sentences byway's reading of a page rests on (Anthropic's
+ *   page, as a dollar amount shortly after the first place the page names the model with a price (on OpenAI's page,
+ *   its Standard row, before its Batch, Fast and Ultrafast rows); OpenAI's long-context rates, which the page draws
+ *   from its own script, in that script's standard map; and the sentences byway's reading of a page rests on (Anthropic's
  *   standard pricing across 1M tokens, the two thresholds). A figure not found means the page changed or moved it, and
  *   that page is read again (AGENTS.md); it cannot see a new rate the table does not record.
  * - How long ago the last full re-read was (PRICES_CHECKED): the monthly re-read is due from 30 days after it (Claude's
@@ -132,27 +133,29 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const nameRe = (name: string) => new RegExp(`(?<![\\w.-])${escapeRe(name)}(?![\\w-]|\\.\\d)`, 'g');
 
 /**
- * The figures of a row the page's text does not show: for some place the page names the model, every figure must be
- * among the dollar amounts in the stretch after it (to the end of the line in Markdown, else WINDOW characters, cut at
- * the next name of another model on the page). Returns the figures missing at the place that shows the most of them.
+ * The figures of a row the page's text does not show: every figure must be among the dollar amounts in the stretch
+ * after the first place the page names the model with a dollar amount after it. A stretch runs to the end of the line
+ * in Markdown, else WINDOW characters, and is cut at the next name of any model on the page, the same model's included.
+ * Only the first such place is read because a page that prices a model several ways names it again in each table, in
+ * an order that puts the plain price first: OpenAI's page has the model's Standard row, then its Batch, Fast and
+ * Ultrafast rows at half, twice and six times it. Read at any place instead, a model whose every price doubled would
+ * still show byway's figures in its Batch row, and one whose every price halved in its Fast row (PRICES-1). A page that
+ * names the model first in a sentence with some other price is flagged, which a re-read clears.
  */
 export function missingFigures(text: string, name: string, wanted: readonly { what: string; usd: number }[], otherNames: readonly string[], form: PricePage['form']): { what: string; usd: number }[] {
-  let best = [...wanted];
   for (const m of text.matchAll(nameRe(name))) {
     const from = m.index + m[0].length;
     let to = form === 'markdown' ? (text.indexOf('\n', from) < 0 ? text.length : text.indexOf('\n', from)) : Math.min(text.length, from + WINDOW);
-    for (const other of otherNames) {
+    for (const other of [...otherNames, name]) {
       const next = nameRe(other);
       next.lastIndex = from;
       const at = next.exec(text);
       if (at && at.index < to) to = at.index;
     }
     const shown = dollars(text.slice(from, to));
-    const missing = wanted.filter((f) => !shown.includes(f.usd));
-    if (missing.length < best.length) best = missing;
-    if (best.length === 0) break;
+    if (shown.length > 0) return wanted.filter((f) => !shown.includes(f.usd));
   }
-  return best;
+  return [...wanted];
 }
 
 /** The script files a page loads from its own site (Astro's islands name them in component-url). */
@@ -163,13 +166,38 @@ export function pageScripts(html: string, pageUrl: string): string[] {
 }
 
 /**
- * Whether a script states a row's long-context rates: an object literal for the model, `"<model>":{input:20,output:75,
- * cachedInput:2,cacheWrite:25}` as OpenAI's pricing script writes its Long table, whose numbers equal the tier's.
+ * The bodies of a script's `<key>:{...}` object literals, each to its matching brace: OpenAI's pricing script writes its
+ * Long table as `var m={ultrafast:{...},standard:{...},fast:{...},batch:{...},flex:{...}}`. The maps hold numbers and
+ * short strings, with no braces in them, so the braces are counted as they come.
+ */
+function scriptObjects(script: string, key: string): string[] {
+  const bodies: string[] = [];
+  for (const m of script.matchAll(new RegExp(`(?<![\\w$])${escapeRe(key)}:\\{`, 'g'))) {
+    const open = m.index + m[0].length - 1;
+    let depth = 0;
+    for (let i = open; i < script.length; i++) {
+      if (script[i] === '{') depth++;
+      else if (script[i] === '}' && --depth === 0) {
+        bodies.push(script.slice(open + 1, i));
+        break;
+      }
+    }
+  }
+  return bodies;
+}
+
+/**
+ * Whether a script states a row's long-context rates: an object literal for the model in the script's `standard` map,
+ * `"<model>":{input:20,output:75,cachedInput:2,cacheWrite:25}` as OpenAI's pricing script writes its Long table, whose
+ * numbers equal the tier's. Only the standard map, as the rows are Standard processing: the script holds the model in
+ * its ultrafast, fast, batch and flex maps too, at the page's ratios to Standard, so a doubled or halved price would
+ * still be found in one of them (PRICES-1).
  */
 export function scriptStatesTier(script: string, row: PriceRow): boolean {
   const tier = row.longContext;
   if (!tier) return true;
-  for (const m of script.matchAll(new RegExp(`"${escapeRe(row.model)}":\\{([^{}]*)\\}`, 'g'))) {
+  const literal = new RegExp(`"${escapeRe(row.model)}":\\{([^{}]*)\\}`, 'g');
+  for (const m of scriptObjects(script, 'standard').flatMap((body) => [...body.matchAll(literal)])) {
     const v = Object.fromEntries([...m[1]!.matchAll(/(\w+):(-?(?:\d+\.?\d*|\.\d+))/g)].map((p) => [p[1]!, Number(p[2])]));
     if (
       v.input === tier.inputPerMTok &&
