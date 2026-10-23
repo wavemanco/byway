@@ -12,9 +12,10 @@ the standing duties), `docs/backlog.md` (open work, each row with its trigger) a
 
 The owner's working rules are in the ADRs, not in the playbook: ADR-0062 (code first: people, outside actions and
 pricing go to the playbook and the backlog), ADR-0107 (every change adversarially checked before it is pushed, in larger
-blocks; each further fix round decided with the owner; proportion; the merge condition for a risky change), and
-ADR-0103 §3 with the README's CI section (`pnpm verify` before a merge, CI that reports and blocks nothing, and main's
-last run looked at first).
+blocks, where any push counts, so a branch's CI starts only after its check, the owner's choice of 2026-10-23 in its
+Later note of that day; each further fix round decided with the owner; proportion; the merge condition for a risky
+change), and ADR-0103 §3 with the README's CI section (`pnpm verify` before a merge, CI that reports and blocks nothing,
+and main's last run looked at first).
 
 ## Keys
 
