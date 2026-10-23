@@ -89,9 +89,11 @@ export type AdmitOutcome =
   /**
    * The operation key's row had queue jobs the provider accepted, and its holder is gone (its lease ran out, or it
    * stopped and handed the call back): this caller now holds that row (`opId`, owner and lease) and polls the jobs by
-   * their ids instead of submitting new ones. Nothing more is reserved: the row was already counted.
+   * their ids instead of submitting new ones. Nothing more is reserved: the row was already counted. `acceptedAt` is
+   * when each job was accepted (SpendBook.accept), so a resumed fal clip keeps the clock its wait counts from; a job
+   * accepted before the book kept the time has none, and its wait counts from the resume.
    */
-  | { resume: { opId: string; jobs: Partial<Record<ProviderJobRole, string>> } };
+  | { resume: { opId: string; jobs: Partial<Record<ProviderJobRole, string>>; acceptedAt?: Partial<Record<ProviderJobRole, string>> } };
 
 /** A settled call as the audit file will record it: a ledger entry without what the ledger assigns. */
 export type SettledCall = Omit<LedgerEntry, 'id' | 'seq' | 'at' | 'prevHash' | 'hash' | 'operationId'>;
@@ -295,15 +297,31 @@ export interface PaidCallSummary {
   since: string;
 }
 
+/**
+ * A call that used the whole of its model's wait, chosen in Settings' "How long to wait for an answer" (the waits design
+ * of 2026-10-22, section 7), as the spend book keeps it beside the reason 'waited': how long it waited, and how.
+ * - `silence`: a streamed answer sent nothing for the wait (sent once more first, as for any lost answer);
+ * - `answer`: a call answered whole (a Google text call, an image) did not answer within the wait, and was not sent again;
+ * - `clip`: a fal clip was not finished within the wait from fal's acceptance, and byway cancelled it; `cancel` is what
+ *   fal answered to the cancel, in byway's words for it (fal's own status text, redacted and cut short).
+ */
+export interface WaitedFor {
+  minutes: number;
+  how: 'silence' | 'answer' | 'clip';
+  cancel?: string;
+}
+
 /** A call that may have been billed, as Settings lists it with a Clear action. */
 export interface UncertainCall extends PaidCallSummary {
   /**
    * `interrupted`: its caller stopped waiting for the provider's answer: its run was cancelled or ended and byway cut the
    * call off (ADR-0111), or byway stopped or died, or lost its connection, while waiting. `failed`: an attempt failed
    * after the request may have reached the provider. `resent`: an earlier attempt failed that way, and the call was sent
-   * again.
+   * again. `waited`: the call used the whole of its model's wait and byway stopped waiting (`waited` says how).
    */
-  reason: 'interrupted' | 'failed' | 'resent';
+  reason: 'interrupted' | 'failed' | 'resent' | 'waited';
+  /** With the reason 'waited': how long the call waited, and how. */
+  waited?: WaitedFor;
   /** Queue jobs the provider accepted (fal request ids by role), to look up in the provider's dashboard. */
   providerJobs?: Partial<Record<ProviderJobRole, string>>;
 }
@@ -387,7 +405,10 @@ export interface SpendBook {
   admit(req: AdmitRequest): Promise<AdmitOutcome>;
   /** Compare-and-set from open to sent, for the live row this owner holds. False when it was swept meanwhile. */
   markSent(opId: string, owner: string): Promise<boolean>;
-  /** Records a queue job the provider accepted (sent or open becomes accepted). */
+  /**
+   * Records a queue job the provider accepted (sent or open becomes accepted), and when, by the book's clock: a call
+   * resumed later is handed that time (AdmitOutcome `resume.acceptedAt`), so a fal clip's wait keeps counting from it.
+   */
   accept(opId: string, role: ProviderJobRole, providerJobId: string): Promise<void>;
   /**
    * Before a call is sent again after an attempt that may have been billed: counts that attempt's bound against the
@@ -399,9 +420,10 @@ export interface SpendBook {
   /**
    * May have been billed: the row counts its reservation against the workspace until cleared. `reason` is what Settings
    * says of it (UncertainCall.reason): 'failed' (the default) for an attempt that failed after its request may have
-   * reached the provider, 'interrupted' for a call its caller cut off while waiting for the answer (ADR-0111).
+   * reached the provider, 'interrupted' for a call its caller cut off while waiting for the answer (ADR-0111), 'waited'
+   * for a call that used the whole of its model's wait, with `waited` (required with it, refused without it).
    */
-  abandon(opId: string, reason?: 'failed' | 'interrupted'): Promise<void>;
+  abandon(opId: string, reason?: 'failed' | 'interrupted' | 'waited', waited?: WaitedFor): Promise<void>;
   /** The provider answered: records the true cost from any state but settled; idempotent, returning the entry id chosen. */
   settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }>;
   /**

@@ -24,6 +24,20 @@ describe('Spending records in words', () => {
     expect(uncertainReason(call({ reason: 'resent' }))).toMatch(/^An earlier attempt may have reached Anthropic .* counted separately\.$/);
   });
 
+  it('says how a call that used the whole of its model’s wait waited, for how long, and where to wait longer (the waits design)', () => {
+    const tail = "It may have billed the work. To wait longer, change 'How long to wait for an answer' in Settings.";
+    expect(uncertainReason(call({ reason: 'waited', waited: { minutes: 45, how: 'silence' } }))).toBe(
+      `Anthropic’s model claude-opus-5-5 sent nothing for 45 minutes, the wait chosen in Settings, so byway stopped waiting. ${tail}`,
+    );
+    expect(uncertainReason(call({ reason: 'waited', provider: 'google', model: 'gemini-3.1-pro-preview', waited: { minutes: 15, how: 'answer' } }))).toBe(
+      `Google’s model gemini-3.1-pro-preview did not answer within 15 minutes, the wait chosen in Settings, so byway stopped waiting. ${tail}`,
+    );
+    const cancel = 'fal was asked to stop it while it ran (HTTP 202 CANCELLATION_REQUESTED), and it can still finish it';
+    expect(uncertainReason(call({ reason: 'waited', provider: 'fal', model: 'fal-ai/kling-video/v3/pro/image-to-video', providerJobs: { generation: 'req-7' }, waited: { minutes: 30, how: 'clip', cancel } }))).toBe(
+      `fal.ai’s model fal-ai/kling-video/v3/pro/image-to-video did not finish clip job req-7 within 30 minutes, the wait chosen in Settings, so byway stopped waiting and cancelled it: ${cancel}. ${tail}`,
+    );
+  });
+
   it('notes calls under way, calls not yet written to the ledger, and set-aside tails, and nothing when there are none', () => {
     expect(inFlightNote({ inFlight: [] })).toBeNull();
     expect(inFlightNote({ inFlight: [{ opId: 'a', purpose: 'p', provider: 'anthropic', model: 'm', usd: 0.25, since: 'now' }] })).toBe('1 call is under way, counted at $0.25 until it settles.');

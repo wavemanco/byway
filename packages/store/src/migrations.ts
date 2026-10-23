@@ -318,6 +318,70 @@ CREATE TABLE answer_waits (
 ) STRICT, WITHOUT ROWID;
 `,
   },
+  {
+    version: 10,
+    name: 'spend-book-waits',
+    sql: `
+-- Two things the answer waits need of the spend book (the waits design of 2026-10-22, sections 2 and 7):
+-- * provider_jobs_at: when each queue job in provider_jobs was accepted, by role ({"generation": "<ISO time>"}), so a
+--   fal clip resumed by a later attempt keeps the clock its wait counts from. Rows from before this migration have none.
+-- * a third reason a call may have been billed, 'waited': it used the whole of its model's wait, chosen in Settings'
+--   "How long to wait for an answer", and byway stopped waiting. waited holds how long and how (WaitedFor), and is set
+--   with that reason only. Migration 6 pinned uncertain_reason to ('interrupted', 'failed') with a CHECK, and SQLite
+--   cannot alter a CHECK, so the table is rebuilt (SQLite's documented create-copy-drop-rename procedure, as migration
+--   4 did): nothing references paid_operations, and rowids are copied so ties in created_at and updated_at keep their
+--   order. Every column, CHECK and index is as migrations 6 and 7 made it, with the two new columns.
+CREATE TABLE paid_operations_v10 (
+  id                TEXT PRIMARY KEY CHECK (id <> ''),
+  workspace_id      TEXT NOT NULL CHECK (workspace_id <> ''),
+  run_id            TEXT,
+  step_id           TEXT,
+  purpose           TEXT NOT NULL,
+  kind              TEXT NOT NULL,
+  provider          TEXT NOT NULL,
+  model             TEXT NOT NULL,
+  paid              INTEGER NOT NULL CHECK (paid IN (0, 1)),
+  reserved_usd      REAL NOT NULL CHECK (reserved_usd >= 0),
+  retained_usd      REAL NOT NULL DEFAULT 0 CHECK (retained_usd >= 0),
+  state             TEXT NOT NULL CHECK (state IN ('open', 'sent', 'accepted', 'settled', 'released', 'uncertain')),
+  uncertain_reason  TEXT CHECK (uncertain_reason IS NULL OR uncertain_reason IN ('interrupted', 'failed', 'waited')),
+  provider_jobs     TEXT CHECK (provider_jobs IS NULL OR json_valid(provider_jobs)),
+  owner             TEXT,
+  lease_until       INTEGER NOT NULL,
+  sent_at           TEXT,
+  settled_at        TEXT,
+  settle_seq        INTEGER UNIQUE,
+  settled_usd       REAL CHECK (settled_usd IS NULL OR settled_usd >= 0),
+  served_model      TEXT,
+  price_basis       TEXT,
+  entry             TEXT CHECK (entry IS NULL OR json_valid(entry)),
+  ledger_entry_id   TEXT UNIQUE,
+  ledgered_seq      INTEGER,
+  cleared_at        TEXT,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  op_key            TEXT CHECK (op_key IS NULL OR op_key <> ''),
+  released_key      TEXT,
+  provider_jobs_at  TEXT CHECK (provider_jobs_at IS NULL OR json_valid(provider_jobs_at)),
+  waited            TEXT CHECK (waited IS NULL OR json_valid(waited)),
+  CHECK ((state = 'settled') = (settled_usd IS NOT NULL)),
+  CHECK ((uncertain_reason IS 'waited') = (waited IS NOT NULL))
+) STRICT;
+INSERT INTO paid_operations_v10 (rowid, id, workspace_id, run_id, step_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd,
+  state, uncertain_reason, provider_jobs, owner, lease_until, sent_at, settled_at, settle_seq, settled_usd, served_model, price_basis, entry,
+  ledger_entry_id, ledgered_seq, cleared_at, created_at, updated_at, op_key, released_key, provider_jobs_at, waited)
+  SELECT rowid, id, workspace_id, run_id, step_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd,
+  state, uncertain_reason, provider_jobs, owner, lease_until, sent_at, settled_at, settle_seq, settled_usd, served_model, price_basis, entry,
+  ledger_entry_id, ledgered_seq, cleared_at, created_at, updated_at, op_key, released_key, NULL, NULL FROM paid_operations;
+DROP TABLE paid_operations;
+ALTER TABLE paid_operations_v10 RENAME TO paid_operations;
+CREATE INDEX paid_operations_by_workspace ON paid_operations (workspace_id, state);
+CREATE INDEX paid_operations_by_run ON paid_operations (run_id, state) WHERE run_id IS NOT NULL;
+CREATE INDEX paid_operations_live ON paid_operations (lease_until) WHERE state IN ('open', 'sent', 'accepted');
+CREATE INDEX paid_operations_outbox ON paid_operations (settle_seq) WHERE state = 'settled' AND ledgered_seq IS NULL;
+CREATE UNIQUE INDEX paid_operations_by_key ON paid_operations (op_key) WHERE op_key IS NOT NULL;
+`,
+  },
 ];
 
 /** The schema version this build writes. */

@@ -31,8 +31,29 @@ export function uncertainReason(call: UncertainCall): string {
       return `The request may have reached ${who} before the connection failed, so ${who} may have done the work and billed it.${ids}`;
     case 'resent':
       return `An earlier attempt may have reached ${who} before the connection failed; byway sent the call again, and that call's own cost is counted separately.${ids}`;
+    case 'waited':
+      return waitedText(call);
   }
 }
+
+/**
+ * A call that used the whole of its model's wait (the reason 'waited'), in the words the step's failure used (the
+ * gateway's waitedWords; the waits design of 2026-10-22, section 7): how it waited, for how long, that it may have billed
+ * the work, and where to wait longer. A fal clip names its job and what fal answered to byway's cancel.
+ */
+function waitedText(call: UncertainCall): string {
+  const model = `${providerName(call.provider)}’s model ${call.model}`;
+  const waited = call.waited;
+  const minutes = waited?.minutes;
+  if (!waited || minutes === undefined) return `${model} used the whole of the wait chosen in Settings, so byway stopped waiting. ${WAITED_TAIL}`;
+  if (waited.how === 'silence') return `${model} sent nothing for ${minutes} minutes, the wait chosen in Settings, so byway stopped waiting. ${WAITED_TAIL}`;
+  if (waited.how === 'answer') return `${model} did not answer within ${minutes} minutes, the wait chosen in Settings, so byway stopped waiting. ${WAITED_TAIL}`;
+  const job = call.providerJobs?.generation;
+  const cancel = waited.cancel !== undefined ? `: ${waited.cancel}` : '';
+  return `${model} did not finish ${job !== undefined ? `clip job ${job}` : 'its clip'} within ${minutes} minutes, the wait chosen in Settings, so byway stopped waiting and cancelled it${cancel}. ${WAITED_TAIL}`;
+}
+
+const WAITED_TAIL = "It may have billed the work. To wait longer, change 'How long to wait for an answer' in Settings.";
 
 /** The advice under the list of calls that may have been billed. */
 export const UNCERTAIN_ADVICE =
