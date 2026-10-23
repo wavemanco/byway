@@ -164,7 +164,7 @@ export class PaidCalls {
   }
 
   /** @internal Admission itself, also used for the one re-admission of a call swept while its process slept. */
-  async admitOnce(req: PaidCallRequest, caps: AdmitRequest['caps'], caller?: CallerSignals): Promise<{ opId: string; resumed?: ResumedJobs }> {
+  async admitOnce(req: PaidCallRequest, caps: AdmitRequest['caps'], caller?: CallerSignals): Promise<{ opId: string; resumed?: ResumedJobs; resumedAt?: ResumedJobs }> {
     // Nothing would renew its lease or hand it back: a closed gateway starts no paid call.
     if (this.closed) throw stopping();
     const fresh = randomUUID();
@@ -187,7 +187,7 @@ export class PaidCalls {
     this.held.set(opId, { ...(caller ? { caller } : {}), ended: false });
     // The invocation ended: a settled call it was keeping is let go now, not when its lease runs out.
     caller?.until.addEventListener('abort', () => this.callerEnded(opId), { once: true });
-    return { opId, ...(resumed ? { resumed: resumed.jobs } : {}) };
+    return { opId, ...(resumed ? { resumed: resumed.jobs, ...(resumed.acceptedAt ? { resumedAt: resumed.acceptedAt } : {}) } : {}) };
   }
 
   /**
@@ -320,6 +320,8 @@ export class PaidCall {
   private opId: string;
   /** Queue jobs the provider already accepted, when this call resumes one its earlier attempt made (stage 3). */
   private resumedJobs: ResumedJobs | undefined;
+  /** When the book says each of them was accepted (ISO times), so a resumed clip's wait keeps counting from then. */
+  private resumedJobsAt: ResumedJobs | undefined;
   private sent = false;
   private answered = false;
   private settled = false;
@@ -337,10 +339,11 @@ export class PaidCall {
   private readonly caps: () => Promise<AdmitRequest['caps']>;
   private readonly caller: CallerSignals | undefined;
 
-  constructor(calls: PaidCalls, admitted: { opId: string; resumed?: ResumedJobs }, req: PaidCallRequest, caps: () => Promise<AdmitRequest['caps']>, caller?: CallerSignals) {
+  constructor(calls: PaidCalls, admitted: { opId: string; resumed?: ResumedJobs; resumedAt?: ResumedJobs }, req: PaidCallRequest, caps: () => Promise<AdmitRequest['caps']>, caller?: CallerSignals) {
     this.calls = calls;
     this.opId = admitted.opId;
     this.resumedJobs = admitted.resumed;
+    this.resumedJobsAt = admitted.resumedAt;
     // A resumed call was sent (and accepted) by its earlier attempt.
     this.sent = admitted.resumed !== undefined;
     this.req = req;
@@ -355,6 +358,11 @@ export class PaidCall {
   /** The provider's job ids when this call resumes one an earlier attempt made: poll them, never submit again. */
   get resumed(): ResumedJobs | undefined {
     return this.resumedJobs;
+  }
+
+  /** When those jobs were accepted, by the spend book's clock (ISO times): absent for a job accepted before it kept one. */
+  get resumedAt(): ResumedJobs | undefined {
+    return this.resumedJobsAt;
   }
 
   /** The call's planning estimate, as admitted: what it counts while in flight, and what it settles at when its reported figures cannot be believed. */
@@ -375,6 +383,7 @@ export class PaidCall {
       if (again.resumed) {
         // Another attempt's accepted jobs, taken over meanwhile: polled, not sent again.
         this.resumedJobs = again.resumed;
+        this.resumedJobsAt = again.resumedAt;
         this.sent = true;
         return;
       }

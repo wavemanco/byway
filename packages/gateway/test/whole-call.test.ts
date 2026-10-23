@@ -338,6 +338,8 @@ describe('the deadline never carries the run’s stop: a Cancel leaves the call 
     answer?.();
     expect((await result).costUsd).toBeGreaterThan(0);
     expect(ledger()).toHaveLength(1);
+    // Its deadline ended with it: no timer of the call is left waiting to fire.
+    expect(vi.getTimerCount()).toBe(0);
     // The request as recorded is the request: the signal the SDK was handed is not part of it.
     expect(artifacts.allText()).toContain('"model":');
     expect(artifacts.allText()).not.toContain('abortSignal');

@@ -639,6 +639,9 @@ export class ModelGateway implements Gateway {
       startFrame = { artifactId: record.id, bytes, mediaType: record.mediaType };
     }
     const seconds = adapter.videoSeconds?.(ref.model, req.durationSec) ?? Math.ceil(req.durationSec);
+    // The video model's wait, read before the call is admitted as a completion's is: how long byway waits for the clip
+    // from the provider's acceptance before it cancels the job (the waits design of 2026-10-22).
+    const waitMs = await this.waitMs(req, 'video', ref);
     const op = await this.admit(req, 'video', ref, maxVideoCost(price, seconds, extras));
     const redact = makeRedactor(this.env);
     const started = Date.now();
@@ -684,8 +687,10 @@ export class ModelGateway implements Gateway {
             }
           },
           accepted: (role, requestId) => op.accepted(role, requestId),
-          // An earlier attempt's jobs the provider accepted (stage 3): polled by their ids, never submitted again.
-          ...(op.resumed ? { resume: op.resumed } : {}),
+          // An earlier attempt's jobs the provider accepted (stage 3): polled by their ids, never submitted again, and
+          // waited for from when they were accepted, so the clip keeps its clock.
+          ...(op.resumed ? { resume: op.resumed, ...acceptedTimes(op.resumedAt) } : {}),
+          waitMs,
           ...(signal ? { signal } : {}),
         });
       } catch (e) {
@@ -1098,6 +1103,16 @@ function stopIfEnding(op: PaidCall, stop: AbortSignal | undefined, provider: Pro
   const err = cutOffError(provider, 'none', 'nothing was sent');
   op.failed(err);
   throw err;
+}
+
+/** When a resumed call's jobs were accepted (the spend book's ISO times), in milliseconds, for the adapter; a time that cannot be read is left out. */
+function acceptedTimes(at: Partial<Record<'generation' | 'extract', string>> | undefined): { acceptedAt?: Partial<Record<'generation' | 'extract', number>> } {
+  const out: Partial<Record<'generation' | 'extract', number>> = {};
+  for (const role of ['generation', 'extract'] as const) {
+    const ms = at?.[role] === undefined ? Number.NaN : Date.parse(at[role]);
+    if (Number.isFinite(ms)) out[role] = ms;
+  }
+  return Object.keys(out).length > 0 ? { acceptedAt: out } : {};
 }
 
 /** What a completion's attempts share: worked out once, before the first is admitted. */

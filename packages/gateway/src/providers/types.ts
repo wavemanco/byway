@@ -141,6 +141,18 @@ export interface ProviderVideoRequest {
    */
   resume?: Partial<Record<'generation' | 'extract', string>>;
   /**
+   * When each of the `resume` jobs was accepted, in milliseconds since the epoch, as the spend book recorded it: a resumed
+   * clip's wait keeps counting from fal's acceptance. A job without one (accepted before the book kept the time) counts
+   * from the resume.
+   */
+  acceptedAt?: Partial<Record<'generation' | 'extract', number>>;
+  /**
+   * The clip's wait (the video model's, chosen in Settings or read by a relay step for it; the gateway's waitMs): how
+   * long byway waits for the clip from fal's acceptance before it cancels the job (the waits design of 2026-10-22,
+   * section 2). Absent, the clip waits as long as its step does.
+   */
+  waitMs?: number;
+  /**
    * Aborts when the call's run is ending (ADR-0111), passed only to an adapter whose `cutsOff.video` is true. The adapter
    * then submits nothing more and cancels the queue job under way, and says what that left: thrown as a cutOffError
    * whose billing says how it is counted, or, when the clip was already made, returned with the clip's usage and a
