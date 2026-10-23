@@ -180,18 +180,41 @@ export function controlScenarios(use: () => Harness): void {
 
   describe('failure', () => {
     it('a run that fails withdraws the questions it left open', async () => {
+      // The first draft is in; its tidy names a prompt that does not exist, so its branch fails the run while the
+      // second draft is still asked for.
+      h.prompts.missing.add('product.test.tidy');
+      try {
+        const run = await h.start(twoAuthors, { problem: { text: 'Fix the rounding bug in the invoice total' } });
+        const open = await h.waitFor('both drafts asked for', async () => {
+          const cps = (await h.store.checkpointsForRun(run.id)).filter((c) => c.status === 'open');
+          return cps.length === 2 && cps;
+        });
+        const draft = '```diff\n--- a/invoice.ts\n+++ b/invoice.ts\n@@ -1 +1 @@\n-const total = round(sum);\n+const total = roundHalfEven(sum);\n```\n\nWhy: banker\'s rounding.';
+        await h.runner.resolve({ checkpointId: open[0]!.id, text: draft });
+        const view = await h.drive(run.id, () => 'wait');
+        expect(view.run.status).toBe('failed');
+        expect(view.run.error).toMatch(/step has no prompt template "product\.test\.tidy"\.$/);
+        expect(view.checkpoints.find((c) => c.id === open[0]!.id)?.status).toBe('resolved');
+        expect(view.checkpoints.find((c) => c.id === open[1]!.id)?.status).toBe('withdrawn');
+        await expect(h.runner.resolve({ checkpointId: open[1]!.id, text: 'Late.' })).rejects.toThrow(/withdrawn/);
+      } finally {
+        h.prompts.missing.clear();
+      }
+    }, 60_000);
+
+    it("a draft byway cannot read is asked again with why, starting from what was written; the run goes on (ENG-6)", async () => {
       const run = await h.start(twoAuthors, { problem: { text: 'Fix the rounding bug in the invoice total' } });
       const open = await h.waitFor('both drafts asked for', async () => {
         const cps = (await h.store.checkpointsForRun(run.id)).filter((c) => c.status === 'open');
         return cps.length === 2 && cps;
       });
       await h.runner.resolve({ checkpointId: open[0]!.id, text: 'not a diff at all' });
-      const view = await h.drive(run.id, () => 'wait');
-      expect(view.run.status).toBe('failed');
-      expect(view.run.error).toMatch(/^Your draft could not be used as the code-diff/);
-      expect(view.checkpoints.find((c) => c.id === open[0]!.id)?.status).toBe('resolved');
-      expect(view.checkpoints.find((c) => c.id === open[1]!.id)?.status).toBe('withdrawn');
-      await expect(h.runner.resolve({ checkpointId: open[1]!.id, text: 'Late.' })).rejects.toThrow(/withdrawn/);
+      const again = await h.waitFor('the draft asked again', async () => (await h.store.checkpointsForRun(run.id)).find((c) => c.status === 'open' && c.id !== open[1]!.id));
+      expect(again).toMatchObject({ stepId: 'own-diff', kind: 'write', initialText: 'not a diff at all' });
+      expect(again.prompt).toMatch(/^Your draft could not be used as the code-diff: The answer is not a unified diff/);
+      expect((await h.store.getRun(run.id))?.status).not.toBe('failed');
+      await h.runner.cancel(run.id);
+      await statusIs(run.id, 'cancelled');
     }, 60_000);
   });
 

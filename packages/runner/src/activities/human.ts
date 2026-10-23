@@ -267,9 +267,11 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
       outputs.push(written.artifactId);
     }
   } else if (input.kind === 'write' && step.produces.includes('artifact')) {
-    // The author's own draft (C3 "your own draft", C6/C6a every sentence): their text is the work.
+    // The author's own draft (C3 "your own draft", C6/C6a every sentence): their text is the work. A draft byway cannot
+    // read as the medium (bad JSON, a shot numbered twice, a diff without headers) is asked about again with why, before
+    // anything is stored, as any other answer that cannot be written is (ENG-6); the workflow keeps their text.
     const parsed = run.medium === 'prose' ? { ok: true as const, value: `${text.trimEnd()}\n` } : parseArtifact(run.medium, text);
-    if (!parsed.ok) throw new StepError(`Your draft could not be used as the ${run.medium}: ${parsed.problem}`);
+    if (!parsed.ok) throw new AnswerRejected(`Your draft could not be used as the ${run.medium}: ${parsed.problem}`);
     const problems = writeProblems({ seeds: await runSeeds(deps.store, run.runId) }, parsed.value);
     if (problems.length) throw new StepError(problems.join(' '));
     result.artifactId = await storeText(deps, run, call, parsed.value, { label: 'Your draft', name: 'work' });

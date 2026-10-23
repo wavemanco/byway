@@ -261,6 +261,28 @@ describe('a broken character is asked about again, in every medium, before anyth
   });
 });
 
+describe("the author's own draft that byway cannot read is asked again with why, not a failed run (ENG-6)", () => {
+  const draft: StepSpec = { id: 'draft', role: 'build', actor: 'human', consumes: [], produces: ['artifact'], writes: true };
+  const finish = (run: Awaited<ReturnType<typeof benchRun>>, text: string) => finishHumanStep(b.deps, { run, call: stepCall(run, 'draft'), step: draft, kind: 'write', resolution: { checkpointId: 'cp-draft', text }, ports: {} });
+  const nothingStored = async (runId: string) => expect(await b.store.events(runId)).not.toContainEqual(expect.objectContaining({ type: 'artifact' }));
+
+  it('a storyboard with a shot numbered twice: the problem goes back to the person, nothing is stored, and their corrected draft is the work', async () => {
+    const run = await benchRun(b, 'media');
+    const twice = storyboard({ voiceover: 'Bread before seven.', storyboard: [{ shot: 1, caption: 'Oven' }, { shot: 1, caption: 'Door' }] });
+    expect(await rejected(finish(run, twice))).toBe('Your draft could not be used as the media: Shot 1 appears more than once in the storyboard: give each shot its own number.');
+    await nothingStored(run.runId);
+    const fixed = await finish(run, twice.replace(/"shot": 1,(?![\s\S]*"shot": 1,)/, '"shot": 2,'));
+    expect(((await json(fixed.artifactId!)).storyboard as { shot: number }[]).map((s) => s.shot)).toEqual([1, 2]);
+  });
+
+  it('a code diff that is not a diff at all', async () => {
+    const run = await benchRun(b, 'code-diff');
+    expect(await rejected(finish(run, 'not a diff at all'))).toMatch(/^Your draft could not be used as the code-diff: The answer is not a unified diff/);
+    await nothingStored(run.runId);
+    expect(b.gateway.requests).toEqual([]);
+  });
+});
+
 describe('keepsVoice holds the person’s words exactly (F07)', () => {
   const fixSpec: StepSpec = { id: 'apply-cut', role: 'fix', block: 'CUT', actor: 'model', tier: 'mid', prompt: 'product.test.polish', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true, keepsVoice: true };
   const fenced = (text: string) => '```json\n' + text + '\n```';

@@ -35,11 +35,21 @@ export const routed = recipe(
   ]),
 );
 
-/** Two people's own diffs, written side by side: one bad draft fails the run while the other is still open. */
+/**
+ * Two people's own diffs, written side by side, each tidied by a model once it is in: a tidy that fails fails the run
+ * while the other draft is still asked for. (A draft byway cannot read is asked again, never a failed run: ENG-6.)
+ */
 export const twoAuthors = recipe(
   'two-authors',
   'code-diff',
-  replicate('both', 2, step({ id: 'own-diff', role: 'build', actor: 'human', consumes: ['intent'], produces: ['artifact'], writes: true })),
+  replicate(
+    'both',
+    2,
+    seq(
+      step({ id: 'own-diff', role: 'build', actor: 'human', consumes: ['intent'], produces: ['artifact'], writes: true }),
+      step({ id: 'tidy', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.test.tidy', consumes: ['artifact'], produces: ['artifact'], writes: true }),
+    ),
+  ),
 );
 
 /** A draft, a CUT by a model (or by a person), and the fix that applies it. */

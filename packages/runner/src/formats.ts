@@ -169,7 +169,7 @@ export const parseStoryboard = (text: string): Parsed<Storyboard> =>
  * (activities/relay.ts: one link per number, whose clip is written onto every shot with it), so with shots 1, 2, 2 the
  * second shot 2's clip would replace the first on both. Only what a writer answers is held to it (parseArtifact): a
  * model's answer, which askModel asks for again with the problem, and a person's own draft (activities/human.ts
- * finishHumanStep), whose step takes the problem as it takes any other draft parseArtifact cannot use. A storyboard
+ * finishHumanStep), which is asked for again with the problem, as any other draft parseArtifact cannot use is. A storyboard
  * already stored is read as it is (parseStoryboard), and the late VOICE's "Shot N:" lines are read in order and applied
  * by position (copy.ts readLabelled, applyOnScreen).
  */
