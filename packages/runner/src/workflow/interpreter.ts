@@ -9,7 +9,8 @@
  * - loop applies its hidden threshold outside every prompt, with probe, plateau, cap and best-snapshot rules;
  * - route takes the run's up-front choice or asks; optional asks with its trigger;
  * - audit runs its lenses concurrently and keeps their notes beside the work, never in it;
- * - a one-shot gate re-runs a stage on a fail, then asks; relay runs one link per storyboard shot, in order.
+ * - a one-shot gate re-runs a stage on a fail, then asks; each VOICE that runs again starts from the person's answer
+ *   there before the retry, where it still fits (VOICE-RETRY); relay runs one link per storyboard shot, in order.
  */
 import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '@temporalio/workflow';
 import type { CheckpointResolution } from '@byway/contracts';
@@ -19,7 +20,7 @@ import { asksSwaps, feedsGate, lockedScripts, machineWrites, voiceWrite } from '
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
-import { FAILURE, toStepSpec, type BudgetFailureDetails, type RejectedAnswerDetails, type CheckpointSpec, type ModelStepResult, type OpenCheckpointInput, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
+import { FAILURE, toStepSpec, type BudgetFailureDetails, type RejectedAnswerDetails, type CheckpointSpec, type EarlierAnswer, type ModelStepResult, type OpenCheckpointInput, type OpenCheckpointResult, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
 import { media, model, quick } from './acts.ts';
 import type { PendingCheckpoint, RunControl } from './control.ts';
 import {
@@ -131,6 +132,16 @@ export class Interpreter {
   private budgetCount = 0;
   /** The script VOICEs locked after they run (lockedScripts), read from the recipe the first time a VOICE asks. */
   private locked: ReadonlySet<Step> | undefined;
+  /**
+   * Each VOICE write's last answer and the deck it answered, by its place in the run (the step and its path), by their
+   * files' ids (VOICE-RETRY, D9).
+   */
+  private readonly answers = new Map<string, EarlierAnswer>();
+  /**
+   * The answers a gate's retry carried back over: those in `answers` when it re-entered a stage, whose ports drop them.
+   * The VOICE at each place, asked again, takes its own once, and its box starts from those lines where they still fit.
+   */
+  private carried = new Map<string, EarlierAnswer>();
 
   constructor(input: RunInput, control: RunControl) {
     this.input = input;
@@ -154,7 +165,10 @@ export class Interpreter {
 
   // ---- Stages -----------------------------------------------------------------------------------------------------
 
-  /** Run every stage; a gate's retry re-enters an earlier stage from the ports it started with. */
+  /**
+   * Run every stage; a gate's retry re-enters an earlier stage from the ports it started with. Those ports hold none of
+   * the person's VOICE answers given since, so each answer is carried to its VOICE, asked again (VOICE-RETRY).
+   */
   async runStages(): Promise<Ports> {
     const stages = this.input.recipe.stages;
     const entries: Ports[] = [];
@@ -172,6 +186,7 @@ export class Interpreter {
         const j = stages.findIndex((s) => s.stage === e.stage);
         if (j < 0 || j > i) throw new RunFailure(`The recipe asks to re-run stage ${e.stage}, which has not run.`);
         ports = entries[j]!;
+        this.carried = new Map(this.answers);
         i = j;
       }
     }
@@ -269,7 +284,7 @@ export class Interpreter {
    * Open a checkpoint and wait for its answer. The answer arrives through the RESOLVE_UPDATE Update, which validates it
    * against this checkpoint and records it before this resumes.
    */
-  async ask(call: StepCall, spec: Omit<CheckpointSpec, 'id'>, extra: Pick<OpenCheckpointInput, 'step' | 'initial'> = {}): Promise<CheckpointResolution & { initialText?: string }> {
+  async ask(call: StepCall, spec: Omit<CheckpointSpec, 'id'>, extra: Pick<OpenCheckpointInput, 'step' | 'initial'> = {}): Promise<CheckpointResolution & Pick<OpenCheckpointResult, 'initialText' | 'deckId'>> {
     await this.control.boundary();
     const id = `${this.input.runId}/cp${++this.checkpointCount}-${call.stepId}`;
     const entry: PendingCheckpoint = { cp: { id, kind: spec.kind, ...(spec.options ? { options: spec.options } : {}), ...(spec.k !== undefined ? { k: spec.k } : {}) }, call, recording: false };
@@ -277,7 +292,7 @@ export class Interpreter {
     try {
       const opened = await this.act(call, () => quick.openCheckpoint({ run: this.run, call, checkpoint: { id, ...spec }, ...extra }));
       await condition(() => entry.resolution !== undefined);
-      return { ...entry.resolution!, ...(opened.initialText !== undefined ? { initialText: opened.initialText } : {}) };
+      return { ...entry.resolution!, ...(opened.initialText !== undefined ? { initialText: opened.initialText } : {}), ...(opened.deckId !== undefined ? { deckId: opened.deckId } : {}) };
     } finally {
       this.control.pending.delete(id);
     }
@@ -389,6 +404,7 @@ export class Interpreter {
     const kind = humanKind(s);
     const spec = toStepSpec(s);
     const round = ctx.loop?.round;
+    const place = placeOf(s, ctx);
     if (kind === 'compare' && ports.artifact && (!ports.previousArtifact || ports.previousArtifact === ports.artifact)) {
       // No swap was made (none chosen, or none found): both versions are the same, so there is nothing to ask.
       await this.control.machine(() => this.act(call, () => quick.passStep({ run: this.run, call, step: spec, note: NOTHING_TO_COMPARE })));
@@ -412,7 +428,10 @@ export class Interpreter {
         ],
       };
     } else if (kind === 'write') {
-      if (s.role === 'voice') initial = { from: s.variant === 'claim-log' ? 'claims' : 'copy', ...(ports.artifact ? { artifactId: ports.artifact } : {}) };
+      // A VOICE the final check sent the run back over is handed its last answer there and the deck it answered, once.
+      const earlier = voiceWrite(s) ? this.carried.get(place) : undefined;
+      if (earlier) this.carried.delete(place);
+      if (s.role === 'voice') initial = { from: s.variant === 'claim-log' ? 'claims' : 'copy', ...(ports.artifact ? { artifactId: ports.artifact } : {}), ...(earlier ? { earlier } : {}) };
       // The author revises their own last draft; the first time, they start from the draft they brought (or nothing),
       // never from a machine's text (a seed card or a premise is not their draft).
       else if (ports.artifact && ports.artifact === ports.authored) initial = { from: 'artifact', artifactId: ports.artifact };
@@ -425,13 +444,14 @@ export class Interpreter {
       checkpoint.artifactIds = beside(ports, shown.length ? shown : undefined);
     }
     const res = await this.ask(call, checkpoint, { step: spec, ...(initial ? { initial } : {}) });
-    // What the checkpoint first offered: "unchanged" is measured against it, however often the person is asked again.
-    const { initialText: offered, ...first } = res;
+    // What the checkpoint first offered: "unchanged" is measured against it, however often the person is asked again,
+    // unless the box started from the person's earlier lines (VOICE-RETRY): then against the work's lines, by `deckId`.
+    const { initialText: offered, deckId, ...first } = res;
     let resolution: CheckpointResolution = first;
     let fin;
     for (;;) {
       // Writing the answer back (VOICE may call the model) is the rest of this step: a pause waits for it.
-      const finish = { run: this.run, call, step: spec, kind, resolution, ports, ...(offered !== undefined ? { initialText: offered } : {}) };
+      const finish = { run: this.run, call, step: spec, kind, resolution, ports, ...(offered !== undefined ? { initialText: offered } : {}), ...(deckId !== undefined ? { deckId } : {}) };
       try {
         fin = await this.control.track(() => this.act(call, () => model.finishHumanStep(finish)));
         break;
@@ -439,7 +459,7 @@ export class Interpreter {
         const problem = rejectedAnswer(e);
         if (problem === undefined) throw e;
         // Asked again, starting from what they wrote, with why it could not be used (ENG-6).
-        const { initialText: _again, ...next } = await this.ask(call, { ...checkpoint, prompt: `${problem} ${checkpoint.prompt}`, initialText: resolution.text ?? '' }, { step: spec });
+        const { initialText: _again, deckId: _deck, ...next } = await this.ask(call, { ...checkpoint, prompt: `${problem} ${checkpoint.prompt}`, initialText: resolution.text ?? '' }, { step: spec });
         resolution = next;
       }
     }
@@ -458,6 +478,8 @@ export class Interpreter {
         if (voiceWrite(s)) {
           if (fin.voiceId === undefined) throw new RunFailure(`byway could not keep your words from step "${s.id}", so the run stopped before any step could change them.`);
           Object.assign(out, { voice: fin.voiceId, held: [...(ports.held ?? []), fin.voiceId] });
+          // Kept with the deck it answered, for this VOICE asked again after a gate's retry (VOICE-RETRY).
+          if (fin.deckId !== undefined) this.answers.set(place, { answerId: fin.voiceId, deckId: fin.deckId });
         }
         break;
       case 'directive':
@@ -788,6 +810,9 @@ export class Interpreter {
 }
 
 const cand = (call: StepCall): { candidate?: number } => (call.candidate !== undefined ? { candidate: call.candidate } : {});
+
+/** A step's place in the run, the same on every pass through it: its id and its candidate path (each fan-out branch's own). */
+const placeOf = (s: Step, ctx: Ctx): string => `${s.id}|${ctx.path.length ? ctx.path.join('.') : '-'}`;
 
 /**
  * Why a judging step (a model critic or check) inside a relay link has nothing to see: every item of the view it would

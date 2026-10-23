@@ -34,10 +34,11 @@ import { parseArtifact, parseStoryboard } from '../formats.ts';
 import { arbiterProblem, expectedShown, locate, markedCopy, notShown, notShownWhy, WHY_NOT_SHOWN, type Location, type NotShownWhy } from '../page-arbiter.ts';
 import type { ArtifactResolver, PageRenderer, RenderOptions } from '../pages.ts';
 import { INPUT_MEDIA_TYPE } from '../stored-inputs.ts';
-import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, StepSpec } from '../types.ts';
+import type { EarlierAnswer, FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, RunRef, StepSpec } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
 import { AnswerRejected, StepError } from './failures.ts';
+import { unreadableAnswer } from './held-voice.ts';
 import { ArtifactReader } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
 import { runSeeds, storeText, writeProblems } from './writes.ts';
@@ -51,6 +52,8 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
   // A page's VOICE: the page and the lines a browser shows, read once for the deck and the prompt.
   const page = await pageQuestion(deps, input);
   let initialText = checkpoint.initialText;
+  let deckId: string | undefined;
+  let earlier = '';
   if (input.initial) {
     // The demo's revision markers never reach a person (UX-6); the stored work keeps them for the demo's critic.
     const text = input.initial.artifactId ? withoutMarks(await deps.store.artifacts.getText(input.initial.artifactId)) : '';
@@ -75,9 +78,12 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
         initialText = input.initial.draftId ? await new ArtifactReader(deps).startInput(input.initial.draftId, 'draft') : '';
         break;
     }
+    if (input.initial.earlier && input.step && (from === 'copy' || from === 'claims') && initialText !== undefined) {
+      ({ box: initialText, deckId, note: earlier } = await earlierLines(deps, { run, step: input.step, from, work: text, deck: initialText, earlier: input.initial.earlier }));
+    }
   }
   const { prompt: asked, options } = plainChoice(run.recipeId, call.stepId, checkpoint);
-  const prompt = withPageRules(page, asked);
+  const prompt = withPageRules(page, `${asked}${earlier}`);
   const stored = await deps.store.openCheckpoint({
     id: checkpoint.id,
     runId: run.runId,
@@ -91,7 +97,80 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
     ...(checkpoint.artifactIds?.length ? { artifactIds: checkpoint.artifactIds } : {}),
   });
   await emit(deps.store, run.runId, 'checkpoint-opened', { checkpointId: stored.id, kind: stored.kind }, at(call, `checkpoint/${stored.id}/opened`));
-  return { checkpointId: stored.id, ...(stored.initialText !== undefined ? { initialText: stored.initialText } : {}) };
+  return { checkpointId: stored.id, ...(stored.initialText !== undefined ? { initialText: stored.initialText } : {}), ...(deckId !== undefined ? { deckId } : {}) };
+}
+
+/**
+ * Why a VOICE cannot read the work's lines it kept for itself (VOICE-RETRY): the deck its earlier answer was offered, or
+ * the one an answer is measured against. Kept by this run, so a file that cannot be read now was lost since.
+ */
+const unreadableDeck = (id: string): string =>
+  `The lines of the work this step offered cannot be read: their file (${id}) is missing or damaged in byway's data folder, perhaps from a partial restore (see "Back up and restore" in the README). Start the run again.`;
+
+/**
+ * VOICE-RETRY (D9; the P2 design, approved 2026-10-21): a VOICE the final check sent the run back over is asked again
+ * with the person's last answer there and the deck it answered (OpenCheckpointInput.initial.earlier, by their files'
+ * ids). The box starts from those lines where they still fit the work: on a deck of named fields (a storyboard's
+ * on-screen copy, options) when they still read as an answer to the work's deck, as the total reader and the round trip
+ * decide; on any other deck (prose, the voice-over script, a diff's "Why:", a claim log) only when the work's deck has
+ * not changed. The work's deck is then kept as a text file and its id returned, so "unchanged" is measured against the
+ * work's lines, not what the box started from, and sending the earlier lines back writes them (Claude's detail).
+ * Otherwise the box starts from the work's lines, and the question says the earlier lines could not be kept and quotes
+ * them. A page's question names them but never fills them in, since a page's lines are read again from the browser
+ * (Claude's detail).
+ *
+ * An answer that changed nothing it was offered held none of the person's own lines, and one that equals the work's
+ * lines needs no keeping: the box starts from the work's lines and the question says nothing (Claude's reading). A file
+ * lost since fails the step plainly, as the held voice's do.
+ */
+async function earlierLines(
+  deps: RunnerDeps,
+  q: { run: RunRef; step: StepSpec; from: 'copy' | 'claims'; work: string; deck: string; earlier: EarlierAnswer },
+): Promise<{ box: string; note: string; deckId?: string }> {
+  const reader = new ArtifactReader(deps);
+  const answer = await reader.ownText(q.earlier.answerId, unreadableAnswer(q.earlier.answerId));
+  const answered = await reader.ownText(q.earlier.deckId, unreadableDeck(q.earlier.deckId));
+  const asBefore = { box: q.deck, note: '' };
+  const medium = q.run.medium;
+  if (medium === 'web-page') return samePageCopy(answered, answer) || samePageCopy(q.deck, answer) ? asBefore : { box: q.deck, note: earlierNote(true, answered, answer) };
+  const scope = mediaCopyOf(q.step);
+  if (sameCopy(medium, scope, answered, answer) || sameCopy(medium, scope, q.deck, answer)) return asBefore;
+  if (!fitsWork(medium, scope, q.from, q.work, q.deck, answered, answer)) return { box: q.deck, note: earlierNote(false, answered, answer) };
+  return { box: answer, note: '', deckId: (await deps.store.artifacts.putText(q.deck, INPUT_MEDIA_TYPE)).id };
+}
+
+/** Whether an earlier VOICE answer still fits the work (earlierLines). Pure; a fault in the copy code is a no. */
+function fitsWork(medium: Exclude<Medium, 'web-page'>, scope: MediaCopy, from: 'copy' | 'claims', work: string, deck: string, answered: string, answer: string): boolean {
+  const kind = deckKindOf(medium, scope);
+  if (from === 'claims' || (kind !== 'options' && kind !== 'on-screen')) return sameCopy(medium, scope, answered, deck);
+  try {
+    const applied = applyCopy(medium, work, answer, scope);
+    return applied.ok && roundTripProblem(medium, scope, applied.value, answer) === undefined;
+  } catch {
+    return false;
+  }
+}
+
+/** At most this many of the person's earlier lines are quoted when they could not be kept, each cut to 80 characters. */
+const EARLIER_QUOTED = 5;
+
+/**
+ * What a VOICE asked again after a gate's retry says when its box does not start from the person's earlier lines: the
+ * lines of their answer that were not lines of the deck it answered (what they wrote, not what they left as offered).
+ */
+function earlierNote(page: boolean, answered: string, answer: string): string {
+  const offered = new Set(lfLines(answered).map((l) => l.trim()));
+  const theirs = lfLines(answer)
+    .map((l) => l.trim())
+    .filter((l) => l && !offered.has(l));
+  const cut = (s: string) => (s.length > 80 ? `${s.slice(0, 79)}…` : s);
+  const more = theirs.length - EARLIER_QUOTED;
+  const quoted = theirs.length ? `${theirs.slice(0, EARLIER_QUOTED).map((l) => `"${cut(l)}"`).join('; ')}${more > 0 ? `; and ${more} more` : ''}` : '';
+  if (page) {
+    const wrote = quoted ? `you had written: ${quoted}.` : 'you had changed lines here.';
+    return ` Before the final check sent the work back, ${wrote} A page's lines are read again from the browser, so they are not filled in here: write them again where they still fit.`;
+  }
+  return ` Your lines from before the final check sent the work back could not be kept, because the work's lines have changed since.${quoted ? ` You had written: ${quoted}.` : ''} The box starts from the work's lines: write yours again where they still fit.`;
 }
 
 /** A page's VOICE question: the work (the checkpoint's artifact) and the lines it does not offer. */
@@ -283,8 +362,14 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
     result.text = text;
   }
   // A VOICE write's answer is the person's words from here on (ADR-0092), held by every keepsVoice write after it: kept
-  // as a text file, an empty one included (an empty answer is an answer), and the workflow holds its id (P2).
-  if (input.kind === 'write' && voiceWrite(step)) result.voiceId = (await deps.store.artifacts.putText(text, INPUT_MEDIA_TYPE)).id;
+  // as a text file, an empty one included (an empty answer is an answer), and the workflow holds its id (P2). Beside it,
+  // the deck it answered (the work's lines it was measured against), so that if a gate's retry runs this VOICE again,
+  // its box can start from the answer where it still fits (VOICE-RETRY).
+  if (input.kind === 'write' && voiceWrite(step)) {
+    result.voiceId = (await deps.store.artifacts.putText(text, INPUT_MEDIA_TYPE)).id;
+    const deckId = input.deckId ?? (input.initialText !== undefined ? (await deps.store.artifacts.putText(input.initialText, INPUT_MEDIA_TYPE)).id : undefined);
+    if (deckId !== undefined) result.deckId = deckId;
+  }
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(outputs.length ? { outputArtifactIds: outputs } : {}) }, result.costUsd > 0);
   return result;
 }
@@ -324,8 +409,12 @@ async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: str
   if (run.medium === 'web-page') return writePageVoice(deps, input, edited);
   const medium = run.medium;
   const scope = mediaCopyOf(step);
-  if (input.initialText !== undefined && sameCopy(medium, scope, input.initialText, edited)) return { costUsd: 0 };
-  const before = await new ArtifactReader(deps).text(ports.artifact!);
+  const reader = new ArtifactReader(deps);
+  // "Unchanged" is against the work's lines: what the box first offered, or, when it started from the person's earlier
+  // lines (VOICE-RETRY), the work's deck it was handed by id.
+  const unchanged = input.deckId !== undefined ? await reader.ownText(input.deckId, unreadableDeck(input.deckId)) : input.initialText;
+  if (unchanged !== undefined && sameCopy(medium, scope, unchanged, edited)) return { costUsd: 0 };
+  const before = await reader.text(ports.artifact!);
   const seeds = await runSeeds(deps.store, run.runId);
   let written: string;
   try {

@@ -312,14 +312,29 @@ export interface OpenCheckpointInput {
   meta?: StepMeta;
   /**
    * Ask the activity to compute the initial text (VOICE copy, the author's draft) from these: the work, or the draft
-   * the run was given, by its file's id (RunInput.inputs.draftId).
+   * the run was given, by its file's id (RunInput.inputs.draftId). `earlier`: a VOICE the final check sent the run back
+   * over, asked again (VOICE-RETRY), with its last answer before the retry; the box starts from it where it still fits.
    */
-  initial?: { from: 'copy' | 'artifact' | 'draft' | 'claims'; artifactId?: string; draftId?: string };
+  initial?: { from: 'copy' | 'artifact' | 'draft' | 'claims'; artifactId?: string; draftId?: string; earlier?: EarlierAnswer };
+}
+
+/**
+ * A VOICE's last answer and the deck it answered, by their files' ids (FinishHumanResult.voiceId and deckId): what the
+ * interpreter carries across a gate's retry for that VOICE (VOICE-RETRY, D9).
+ */
+export interface EarlierAnswer {
+  answerId: string;
+  deckId: string;
 }
 
 export interface OpenCheckpointResult {
   checkpointId: string;
   initialText?: string;
+  /**
+   * Set when the box starts from something other than the work's lines (the person's earlier lines, VOICE-RETRY): the
+   * work's lines, kept as a text file, by its id. An answer is unchanged when it equals them.
+   */
+  deckId?: string;
 }
 
 export interface RecordResolutionInput {
@@ -335,8 +350,13 @@ export interface FinishHumanInput {
   kind: CheckpointKind;
   resolution: CheckpointResolution;
   ports: Ports;
-  /** The text the checkpoint offered, for "unchanged" detection. */
+  /** The text the checkpoint first offered: for "unchanged" detection, and how a refusal quotes the lines it names. */
   initialText?: string;
+  /**
+   * OpenCheckpointResult.deckId, when the box started from the person's earlier lines (VOICE-RETRY): "unchanged" is then
+   * measured against these, the work's lines, not against initialText, so sending the earlier lines back writes them.
+   */
+  deckId?: string;
 }
 
 export interface FinishHumanResult {
@@ -345,6 +365,11 @@ export interface FinishHumanResult {
   text?: string;
   /** A VOICE write's answer, kept as a text file: its id is the person's latest words, and held (Ports.voice, held). */
   voiceId?: string;
+  /**
+   * A VOICE write's deck: the work's lines its answer was measured against, kept as a text file beside it. The
+   * interpreter keeps both ids, so if a gate's retry runs this VOICE again it can tell whether the answer still fits.
+   */
+  deckId?: string;
   /** compare: the version kept. */
   keep?: 'A' | 'B';
 }

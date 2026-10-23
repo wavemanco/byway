@@ -117,10 +117,12 @@ export function c2c5Scenarios(use: () => Harness): void {
       const script = 'Less time on the road.\nMore time on the trail.';
       try {
         const headline = 'Less road. More trail.';
+        let lateAsked = 0;
         const run = await h.start(c5, { problem: { text: 'A 30-second video ad for trail running shoes' } });
         const view = await h.drive(run.id, (cp) => {
           if (cp.stepId === 'vo-script') return { checkpointId: cp.id, text: script };
-          if (cp.stepId === 'voice') return { checkpointId: cp.id, text: cp.initialText!.replace(/^Headline: .*$/m, `Headline: ${headline}`) };
+          // You write the headline at the first late VOICE, and send the second one back as it was offered.
+          if (cp.stepId === 'voice') return { checkpointId: cp.id, text: ++lateAsked === 1 ? cp.initialText!.replace(/^Headline: .*$/m, `Headline: ${headline}`) : cp.initialText! };
           return undefined;
         });
         expect(view.run.status).toBe('done');
@@ -132,11 +134,14 @@ export function c2c5Scenarios(use: () => Harness): void {
           expect(cp.initialText).toMatch(/^Headline: .*\nTagline: .*\nShot 1: /);
           expect(cp.initialText).not.toContain('Less time on the road');
         }
-        // VOICE-RETRY (parked, docs/backlog.md; ADR-0081): the gate's retry re-enters D2 from the ports it started with,
-        // so the second pass's late VOICE offers model copy again, without the headline you wrote the first time. This
-        // records today's behaviour; it is not the intended one.
+        // VOICE-RETRY (D9): the gate's retry re-enters D2 from the ports it started with, which hold none of the copy you
+        // wrote at the first late VOICE; the interpreter carries that answer across the retry, and the second late VOICE
+        // starts from your lines, which still fit the work (the same shots). Sent back as offered, they are written: the
+        // work delivered carries your headline (below), though you typed it once.
         expect(late).toHaveLength(2);
-        expect(late[1]!.initialText).not.toContain(`Headline: ${headline}`);
+        expect(late[0]!.initialText).not.toContain(`Headline: ${headline}`);
+        expect(late[1]!.initialText).toContain(`Headline: ${headline}`);
+        expect(late[1]!.prompt).toBe(late[0]!.prompt);
         const purposes = h.succeeded(run.id).map((c) => c.purpose);
         expect(purposes.filter((p) => p === 'seed:media')).toHaveLength(8);
         expect(purposes).toContain('dedupe:media');
