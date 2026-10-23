@@ -24,7 +24,7 @@ const p = prompts.render('product.c4.draft', { medium: 'prose', problem: problem
 |---|---|
 | `article.*`, `runbook.*` | C1's step prompts: the article's prompts and the 06-runbook templates, paraphrased |
 | `product.<config>.<step-id>` | The step prompts of C2–C7 and C6a, written by the project |
-| `helper.asset.briefs`, `helper.asset.integrate`, `helper.voice.apply`, `helper.rerank` | Runner helpers, rendered for the purposes `asset.briefs:<m>`, `asset.integrate:<m>`, `voice.apply:<m>`, `rerank:<m>` (`HELPER_PROMPTS`) |
+| `helper.asset.briefs`, `helper.asset.integrate`, `helper.rerank` | Runner helpers, rendered for the purposes `asset.briefs:<m>`, `asset.integrate:<m>`, `rerank:<m>` (`HELPER_PROMPTS`). VOICE has none: it writes the person's copy back with no model call (ADR-0081) |
 | `advisor.intake`, `advisor.compose`, `advisor.compose.repair` | Advisor calls; the purpose is the id |
 | `tells.<medium>`, `tells.<domain>` | Tell catalogs: not prompts, but the text the runner puts in a TELLS sweep's `tells` slot |
 

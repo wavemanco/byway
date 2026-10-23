@@ -76,19 +76,12 @@ describe('the gateway mock reads what the templates write', () => {
     expect(answer).toContain('src="/api/artifacts/abc123"');
   });
 
-  it('applies the person\'s prose as written (voice.apply returns the voice, not the old draft)', () => {
-    const answer = ask('voice.apply:prose', 'helper.voice.apply', { artifact: '# Old\n\nOld text.', voice: '# Mine\n\nMy own words.' });
-    expect(answer).toContain('My own words.');
-    expect(answer).not.toContain('Old text.');
-  });
-
-  it('finds the whole code change in a voice.apply or fix turn, a diff that adds a fenced block included (ENG-1)', () => {
+  it('finds the whole code change in a fix turn, a diff that adds a fenced block included (ENG-1)', () => {
     const T = '```';
     const diff = ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,4 @@', ' # Invoices', `+${T}bash`, '+pnpm test', `+${T}`].join('\n');
     const why = 'Why: document the test command.\n<!-- byway-demo-revision: 2 -->';
     const artifact = `${diff}\n\n${why}\n`;
-    // The demo voice.apply hands the change back as it was given, its Why and revision marker included.
-    expect(ask('voice.apply:code-diff', 'helper.voice.apply', { artifact, voice: 'Why: so a new contributor runs the tests first.' })).toBe(`${T}diff\n${diff}\n${T}\n\n${why}`);
+    // The fix counts from the revision marker in the Why paragraph it was given, so it read the change whole.
     expect(ask('fix:code-diff', 'product.c7.fix-defects', { critique: '- The test command is wrong.', artifact })).toMatch(/<!-- byway-demo-revision: 3 -->$/);
   });
 

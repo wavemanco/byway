@@ -160,7 +160,5 @@ describe('demo revision markers', () => {
     expect(built.trim().split('\n').at(-1)).toBe('<!-- byway-demo-revision: 1 -->');
     const fixed = await ask(adapter, 'fix:code-diff', `Critique:\n- Smaller.\n\n${built}`);
     expect(revisionOf(fixed)).toBe(2);
-    const applied = await ask(adapter, 'voice.apply:code-diff', `Your words:\nWhy: callers expect 2.\n\n${fixed}`);
-    expect(revisionOf(applied)).toBe(2);
   });
 });

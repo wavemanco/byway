@@ -6,7 +6,7 @@ import type { Medium } from '@byway/protocol';
  * the advisor and the mock agree on one format. Pure functions: safe in workflow bundles.
  */
 
-/** The fence language a medium's artifact travels in, in fix, voice.apply and asset.integrate turns. */
+/** The fence language a medium's artifact travels in, in fix and asset.integrate turns. */
 export const ARTIFACT_FENCE: Readonly<Record<Medium, string>> = {
   'web-page': 'html',
   prose: 'markdown',

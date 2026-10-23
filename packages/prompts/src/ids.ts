@@ -89,11 +89,13 @@ export const RECIPE_PROMPT_IDS = [
   'product.c7.apply-swaps',
 ] as const;
 
-/** Runner helper calls, by the purpose they answer (spec §3.3): purpose `<helper>:<medium>` renders `helper.<helper>`. */
+/**
+ * Runner helper calls, by the purpose they answer (spec §3.3): purpose `<helper>:<medium>` renders `helper.<helper>`.
+ * VOICE has none: it writes the person's copy back with no model call (ADR-0081), and voice.apply is retired.
+ */
 export const HELPER_PROMPTS = {
   'asset.briefs': 'helper.asset.briefs',
   'asset.integrate': 'helper.asset.integrate',
-  'voice.apply': 'helper.voice.apply',
   rerank: 'helper.rerank',
 } as const;
 

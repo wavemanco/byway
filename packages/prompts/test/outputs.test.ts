@@ -32,7 +32,6 @@ describe('output contracts (spec §3.3)', () => {
     ['seed:options', 'artifact:options'],
     ['fix:code-diff', 'artifact:code-diff'],
     ['asset.integrate:prose', 'artifact:prose'],
-    ['voice.apply:media', 'artifact:media'],
     ['critic:prose', 'critique'],
     ['judge:web-page', 'choice'],
     ['select:prose', 'choice'],
@@ -58,6 +57,8 @@ describe('output contracts (spec §3.3)', () => {
     expect(() => outputForPurpose('dance:prose')).toThrow(/purpose/);
     expect(() => outputForPurpose('build')).toThrow(/medium/);
     expect(() => outputForPurpose('build:poster')).toThrow(/medium/);
+    // VOICE writes the person's copy back with no model call (ADR-0081), and its helper is retired: no voice.apply.
+    for (const m of MEDIA) expect(() => outputForPurpose(`voice.apply:${m}`)).toThrow(/Unknown purpose "voice\.apply:/);
   });
 
   it('maps recipe steps by role and medium; an ASSET step that turns the voice into audio has no v1 call', () => {

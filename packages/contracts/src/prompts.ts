@@ -4,8 +4,8 @@
  *
  * Prompt ids:
  * - recipe steps: the step's `prompt` field (`article.*`, `runbook.*`, `product.<config>.<step-id>`);
- * - helpers: `helper.asset.briefs`, `helper.asset.integrate`, `helper.voice.apply`, `helper.rerank`,
- *   `advisor.intake`, `advisor.compose`, `advisor.compose.repair`;
+ * - helpers: `helper.asset.briefs`, `helper.asset.integrate`, `helper.rerank`, `advisor.intake`, `advisor.compose`,
+ *   `advisor.compose.repair`;
  * - tell catalogs (the TELLS sweep's `tells` port): `tells.<medium>`.
  * A template may vary by medium; `render` receives the medium as a slot.
  */

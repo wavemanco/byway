@@ -20,7 +20,6 @@ export const TEMPLATE_SLOTS: TemplateSlots = {
   'helper.asset.briefs': { 'web-page': ['artifact'], 'prose': ['artifact'], 'options': ['artifact', 'options'], 'media': ['artifact'] },
   'helper.asset.integrate': { 'web-page': ['artifact', 'images'], 'prose': ['artifact', 'images'] },
   'helper.rerank': { '*': ['view'], 'web-page': [], 'media': ['view'] },
-  'helper.voice.apply': { 'web-page': ['artifact', 'voice'], 'prose': ['artifact', 'voice'], 'options': ['artifact', 'voice'], 'media': ['artifact', 'voice'], 'code-diff': ['artifact', 'voice'] },
   'product.c2.critic': { '*': ['view', 'refs', 'labels'] },
   'product.c2.dedupe': { '*': ['options'] },
   'product.c2.mood-boards': { '*': ['artifact', 'options'] },

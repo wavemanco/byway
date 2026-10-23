@@ -40,7 +40,7 @@ export const OUTPUT_IDS = Object.keys(OUTPUT_CONTRACTS) as OutputId[];
 const isMedium = (m: string | undefined): m is Medium => (MEDIA as readonly string[]).includes(m ?? '');
 
 /** Roles and helpers whose answer is the artifact itself, in the medium's format. */
-const ARTIFACT_ROLES = new Set(['build', 'seed', 'fix', 'asset.integrate', 'voice.apply']);
+const ARTIFACT_ROLES = new Set(['build', 'seed', 'fix', 'asset.integrate']);
 
 const BY_ROLE: Record<string, OutputId> = {
   critic: 'critique',

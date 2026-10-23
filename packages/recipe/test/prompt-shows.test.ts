@@ -86,7 +86,7 @@ describe("what a model step's prompt shows of the ports it takes in (promptShows
     expect(promptShows(model('apply', 'fix', 'study1.A10', ['critique', 'artifact'], ['artifact']), 'critique', 'web-page')).toBe(true);
     expect(promptShows(model('apply', 'fix', undefined, ['critique', 'artifact'], ['artifact']), 'critique', 'prose')).toBe(true);
     // A prompt the library holds for other media only (a helper written per medium) has no template on this one.
-    expect(promptShows(model('apply', 'fix', 'helper.voice.apply', ['critique', 'artifact'], ['artifact']), 'critique', undefined)).toBe(true);
+    expect(promptShows(model('apply', 'fix', 'helper.asset.integrate', ['critique', 'artifact'], ['artifact']), 'critique', 'options')).toBe(true);
     expect(promptShows(step({ id: 'yours', role: 'build', actor: 'human', consumes: ['critique', 'artifact'], produces: ['artifact'] }), 'critique', 'prose')).toBe(true);
     expect(promptShows(model('apply', 'fix', 'product.c3.revise', ['artifact'], ['artifact']), 'critique', 'prose')).toBe(false);
   });

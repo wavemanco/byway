@@ -33,7 +33,7 @@ function req(purpose: string, prompt: string, over: Partial<ProviderCompletionRe
 const ask = async (purpose: string, prompt: string, images = 0) => (await mockAdapter().complete(req(purpose, prompt, {}, images))).text;
 
 describe('mock provider: output contracts for every purpose and medium', () => {
-  const builders = ['build', 'seed', 'fix', 'asset.integrate', 'voice.apply'];
+  const builders = ['build', 'seed', 'fix', 'asset.integrate'];
   for (const medium of MEDIA) {
     for (const role of builders) {
       it(`${role}:${medium}`, async () => {
@@ -159,19 +159,14 @@ describe('mock provider: behaviour', () => {
     expect(out).not.toMatch(/data-slot="hero"><svg/);
   });
 
-  it('applies voice edits by returning the document unchanged in shape', async () => {
-    const md = '# Q3 update\n\nThe migration is on track.\n\n## Next\n\nShip on the 24th.';
-    const out = await ask('voice.apply:prose', `Apply the owner's words.\n\`\`\`markdown\n${md}\n\`\`\``);
-    expect(lastBlock(out, 'markdown')).toBe(md);
-  });
-
   it('reads the whole document from a markdown block that holds a code block, or from a longer outer fence (ENG-1)', async () => {
     const T = '```';
     const doc = ['# Setup', '', 'Install it first:', '', `${T}bash`, 'pnpm install', T, '', 'Then run it.'].join('\n');
-    expect(await ask('voice.apply:prose', `Apply the owner's words.\n${T}markdown\n${doc}\n${T}`)).toBe(`${T}markdown\n${doc}\n${T}`);
+    // An integrate turn with no image to place hands the document back as it read it.
+    expect(await ask('asset.integrate:prose', `Place these images.\n${T}markdown\n${doc}\n${T}`)).toBe(`${T}markdown\n${doc}\n${T}`);
     // Its own code block bare, the document comes in a 4-backtick fence, as the templates ask.
     const bare = doc.replace(`${T}bash`, T);
-    expect(await ask('voice.apply:prose', `Apply the owner's words.\n\`\`\`\`markdown\n${bare}\n\`\`\`\``)).toBe(`${T}markdown\n${bare}\n${T}`);
+    expect(await ask('asset.integrate:prose', `Place these images.\n\`\`\`\`markdown\n${bare}\n\`\`\`\``)).toBe(`${T}markdown\n${bare}\n${T}`);
   });
 
   it('lets tests override responders by purpose or role', async () => {
@@ -301,12 +296,11 @@ describe("the mock's fenced-block reader", () => {
     const diff = ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,4 @@', ' # Invoices', `+${T}bash`, '+pnpm test', `+${T}`].join('\n');
     const why = 'Why: document the test command.\n<!-- byway-demo-revision: 2 -->';
     const whole = `${T}diff\n${diff}\n${T}\n\n${why}`;
-    // As the templates hand over a stored change: the artifact whole inside one diff block (the diff, a blank line, the Why).
-    const stored = `The current change:\n\n${T}diff\n${diff}\n\n${why}\n\n${T}\n\nThe developer's words:\n\n<copy>\nWhy: mine.\n</copy>`;
-    expect(await ask('voice.apply:code-diff', stored)).toBe(whole);
-    // As a model answers: the Why after the block.
-    expect(await ask('voice.apply:code-diff', `Apply the developer's words to this change.\n\n${whole}\n\nChange nothing else.`)).toBe(whole);
-    // A fix turn counts from the revision it was given.
+    // As the templates hand over a stored change: the artifact whole inside one diff block (the diff, a blank line, the
+    // Why). A fix turn counts from the revision it was given, which only the Why paragraph carries.
+    const stored = `The current change:\n\n${T}diff\n${diff}\n\n${why}\n\n${T}\n\nThe critique:\n\n- Name the command.`;
     expect(revisionOf(await ask('fix:code-diff', stored))).toBe(3);
+    // As a model answers: the Why after the block.
+    expect(revisionOf(await ask('fix:code-diff', `Fix this change.\n\n${whole}\n\nChange nothing else.`))).toBe(3);
   });
 });
