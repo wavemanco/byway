@@ -18,6 +18,7 @@ import { inputsOf } from '@byway/recipe';
 import { labelled, labelOf, problemSlot, vanillaLabelled } from '@byway/prompts/pure';
 import { textView, viewKindOf } from '../formats.ts';
 import { readBrief, unreadableInput } from '../stored-inputs.ts';
+import { personsWords } from './held-voice.ts';
 import { rendersKnob, SURFACE_CAPTIONS } from '../surfaces.ts';
 import type { Ports, StepSpec, Surface, View, ViewRef } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
@@ -73,18 +74,24 @@ export class ArtifactReader {
   }
 
   /**
-   * A file the run was started with (P2, stored-inputs.ts), by its id. One the store cannot find, or finds damaged,
-   * was lost after the run began (a partial restore): the step fails plainly and for good (StepError), since reading
-   * it again finds the same. Any other trouble reading it is left to the activity's retries.
+   * A text the run stored for itself (P2), by its id: a file it was started with (stored-inputs.ts) or one of the
+   * person's VOICE answers (held-voice.ts). One the store cannot find, or finds damaged, was lost after it was stored
+   * (a partial restore): the step fails plainly and for good with `unreadable` (StepError), since reading it again
+   * finds the same. Any other trouble reading it is left to the activity's retries.
    */
-  async startInput(id: string, what: string): Promise<string> {
+  async ownText(id: string, unreadable: string): Promise<string> {
     try {
       return await this.text(id);
     } catch (e) {
       const code = (e as { code?: unknown } | null)?.code;
-      if (code === 'not-found' || code === 'corrupt') throw new StepError(unreadableInput(what, id));
+      if (code === 'not-found' || code === 'corrupt') throw new StepError(unreadable);
       throw e;
     }
+  }
+
+  /** A file the run was started with (P2, stored-inputs.ts), by its id; `what` names it if it was lost. */
+  async startInput(id: string, what: string): Promise<string> {
+    return this.ownText(id, unreadableInput(what, id));
   }
 
   /** The run's brief (RunRef.problemId): read from its file once per activity, however many prompts show it. */
@@ -207,7 +214,8 @@ export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Pro
         slots.taste = ports.taste ?? '';
         break;
       case 'voice':
-        slots.voice = ports.voice ?? '';
+        // The person's latest words, by their file's id (P2): read only for a step that takes them in.
+        slots.voice = ports.voice !== undefined ? await personsWords(reader, ports, ports.voice) : '';
         break;
       case 'tells':
         slots.tells = ctx.tells ?? '';

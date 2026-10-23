@@ -32,7 +32,8 @@ vi.mock('../src/workflow/acts.ts', () => {
         return { costUsd: 0, artifactId: `${id}-${++state.n}` };
       }
       case 'finishHumanStep':
-        return { costUsd: 0, text: 'words', artifactId: `${id}-${++state.n}`, keep: 'B' };
+        // A VOICE's answer comes back by the id of the file it was kept in (P2), as from the activity.
+        return { costUsd: 0, text: 'words', artifactId: `${id}-${++state.n}`, voiceId: `words-${state.n}`, keep: 'B' };
       case 'renderView':
         return { costUsd: 0, view: { pool: false, items: [{ imageArtifactIds: [] }] } };
       case 'storyboardShots':

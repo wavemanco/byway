@@ -109,7 +109,8 @@ async function requestFor(step: StepSpec, medium: Medium): Promise<CompletionReq
     brief: 'MARK-brief',
     critique: 'MARK-critique',
     taste: 'MARK-taste',
-    voice: 'MARK-voice',
+    // The person's words, by their file's id (P2).
+    voice: await text('MARK-voice', INPUT_MEDIA_TYPE),
     view: { pool: false, items: [await viewOf(medium, 'MARK-view', images.view)] },
     options: [await text(workText(medium, 'MARK-options'))],
     optionViews: [await viewOf(medium, 'MARK-option-view', images.option)],

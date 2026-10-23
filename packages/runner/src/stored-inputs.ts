@@ -24,7 +24,10 @@ import type { RunInput } from './types.ts';
 /** The brief's file is JSON. */
 export const BRIEF_MEDIA_TYPE = 'application/json';
 
-/** The person's own inputs (the fixed copy deck, the author's draft, their tell catalog) are plain text files. */
+/**
+ * The person's own inputs (the fixed copy deck, the author's draft, their tell catalog) are plain text files, as are
+ * their VOICE answers, kept when each VOICE step finishes (human.ts finishHumanStep).
+ */
 export const INPUT_MEDIA_TYPE = 'text/plain';
 
 /** The brief's file: canonical JSON (see the header). */

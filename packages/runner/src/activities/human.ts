@@ -8,6 +8,7 @@
 import { routeChoice } from '@byway/catalog';
 import type { Medium } from '@byway/contracts';
 import { withoutMarks } from '@byway/gateway';
+import { voiceWrite } from '@byway/recipe/semantics';
 import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
 import { applyClaims, claimLines } from '../claims.ts';
 import {
@@ -32,6 +33,7 @@ import {
 import { parseArtifact, parseStoryboard } from '../formats.ts';
 import { arbiterProblem, expectedShown, locate, markedCopy, notShown, notShownWhy, WHY_NOT_SHOWN, type Location, type NotShownWhy } from '../page-arbiter.ts';
 import type { ArtifactResolver, PageRenderer, RenderOptions } from '../pages.ts';
+import { INPUT_MEDIA_TYPE } from '../stored-inputs.ts';
 import type { FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, StepSpec } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
@@ -278,6 +280,9 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
   } else {
     result.text = text;
   }
+  // A VOICE write's answer is the person's words from here on (ADR-0092), held by every keepsVoice write after it: kept
+  // as a text file, an empty one included (an empty answer is an answer), and the workflow holds its id (P2).
+  if (input.kind === 'write' && voiceWrite(step)) result.voiceId = (await deps.store.artifacts.putText(text, INPUT_MEDIA_TYPE)).id;
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(outputs.length ? { outputArtifactIds: outputs } : {}) }, result.costUsd > 0);
   return result;
 }

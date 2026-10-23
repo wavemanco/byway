@@ -3,9 +3,9 @@
  * module, so nothing here may touch Node.
  *
  * Port values travel by reference (spec §3: "Workflow state holds port values by reference (artifact ids, short
- * texts); activities do all I/O"): artifacts, views and images are artifact ids; briefs, critiques, tastes and the
- * human's words are short texts. What the run was started with travels by reference too (P2): the person's problem
- * brief, fixed copy deck, draft and tell catalog as their files' ids (RunInput), never their texts.
+ * texts); activities do all I/O"): artifacts, views and images are artifact ids; briefs, critiques and tastes are short
+ * texts. What the run was started with travels by reference too (P2): the person's problem brief, fixed copy deck,
+ * draft and tell catalog as their files' ids (RunInput), never their texts; and so do the person's VOICE answers.
  */
 import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, RunEventPayloads, RunEventType, RunStatus } from '@byway/contracts';
 import type { PortType } from '@byway/protocol';
@@ -89,14 +89,15 @@ export interface Ports {
   score?: Score;
   taste?: string;
   /**
-   * The person's latest words: the latest VOICE write's answer. What a step that reads 'voice' gets (C5's voice-over
-   * audio after the locked script). Until a VOICE answers, such a step reads the fixed copy deck the run was given in
-   * its place (RunRef.voiceId; held-voice.ts withDeck).
+   * The person's latest words, by their file's id (P2): the latest VOICE write's answer, or until one answers the fixed
+   * copy deck the run was given (RunInput.inputs.voiceId). What a step that reads 'voice' gets (C5's voice-over audio
+   * after the locked script), read from its file (held-voice.ts).
    */
   voice?: string;
   /**
-   * The held voice (ADR-0092 stage 4): every VOICE write's answer on the path, in order. A machine write declared
-   * keepsVoice keeps every line of all of them, not only the latest; and no other machine write may follow them.
+   * The held voice (ADR-0092 stage 4): every VOICE write's answer on the path, in order, by their files' ids (P2). A
+   * machine write declared keepsVoice keeps every line of all of them, not only the latest; and no other machine write
+   * may follow them.
    */
   held?: string[];
   /** option_set<artifact>: candidate artifact ids, labelled A, B, C… in order. */
@@ -152,11 +153,6 @@ export interface RunRef {
   medium: Medium;
   /** The brief's artifact id (RunInput.problemId): a step that fills the problem slot reads it (prompting.ts). */
   problemId: string;
-  /**
-   * The fixed copy deck the run was given, by its file's id (RunInput.inputs.voiceId): the person's words until a VOICE
-   * answers, which a step that takes them in, or is held to keep them, reads (held-voice.ts withDeck).
-   */
-  voiceId?: string;
 }
 
 /** The parts of a recipe step the activities read. */
@@ -347,6 +343,8 @@ export interface FinishHumanResult {
   costUsd: number;
   artifactId?: string;
   text?: string;
+  /** A VOICE write's answer, kept as a text file: its id is the person's latest words, and held (Ports.voice, held). */
+  voiceId?: string;
   /** compare: the version kept. */
   keep?: 'A' | 'B';
 }

@@ -40,7 +40,7 @@ import { PaidNotKept } from './memo.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
-import { keptVoice, withDeck } from './held-voice.ts';
+import { keptVoice } from './held-voice.ts';
 import { announce, checkedWriter, restoredNote, runSeeds, storeText } from './writes.ts';
 
 /** Image failures that stop the asset step instead of trying the image again (a billed failure does too: see below). */
@@ -98,7 +98,7 @@ interface Placement {
 }
 
 export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<AssetResult> {
-  const { run, call, step } = input;
+  const { run, call, step, ports } = input;
   const medium = run.medium;
   await stepStarted(deps, run, call, step, input.meta);
   const what = input.meta?.label ?? labelFor(deps, run.recipeId, step);
@@ -108,15 +108,12 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   };
   if (isAudioAsset(step)) return skip(NO_AUDIO_NOTE);
   if (!mediaStatus(deps, run).images) return skip(NO_IMAGES_NOTE);
-  if (!input.ports.artifact) throw new StepError(`The ${what} step has no work to make images for.`);
+  if (!ports.artifact) throw new StepError(`The ${what} step has no work to make images for.`);
 
   const reader = new ArtifactReader(deps);
-  // A fixed copy deck the run was given travels as its file's id (P2): read here for a step that takes it in or is
-  // held to keep it (held-voice.ts withDeck).
-  const ports = await withDeck(reader, run, step, input.ports);
-  const current = await reader.text(input.ports.artifact);
+  const current = await reader.text(ports.artifact);
   // keepsVoice: locked before the paid calls, so a fault in the check never repeats them.
-  const write = checkedWriter({ medium, seeds: await runSeeds(deps.store, run.runId) }, step.keepsVoice ? keptVoice(ports) : undefined, current);
+  const write = checkedWriter({ medium, seeds: await runSeeds(deps.store, run.runId) }, step.keepsVoice ? await keptVoice(reader, ports) : undefined, current);
   let restored: string[] = [];
   const knobs = step.knobs ?? {};
   const slotsKnob = typeof knobs.slots === 'number' ? knobs.slots : undefined;

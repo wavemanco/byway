@@ -20,7 +20,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
-import { keptVoice, withDeck } from './held-voice.ts';
+import { keptVoice } from './held-voice.ts';
 import { checkedWriter, restoredNote, runSeeds, seedMemoKey, storeText, type CheckedWrite } from './writes.ts';
 
 const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);
@@ -55,10 +55,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
   const purpose = `${step.role}:${run.medium}`;
   if (!step.prompt) throw new StepError(`The ${what} step names no prompt.`);
   const promptId = step.prompt;
-  // The run's own tell catalog and its fixed copy deck travel as their files' ids (P2): read here, for the steps that
-  // take them (held-voice.ts withDeck).
+  // The run's own tell catalog travels as its file's id (P2): read here, for the steps that take it.
   const tells = step.consumes.includes('tells') ? tellsText(deps.prompts, run.medium, step, input.tellsId ? await reader.startInput(input.tellsId, 'tell catalog') : undefined) : undefined;
-  const given = await withDeck(reader, run, step, input.ports);
   await rendererReady(deps, reader, input.refs);
 
   const result: ModelStepResult = { costUsd: 0 };
@@ -75,8 +73,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     const notes = [plan.note, otherFamily && !reviewer ? OTHER_FAMILY_FALLBACK_NOTE : undefined].filter(Boolean);
     const answers: { answer: CriticAnswer; lineup?: Lineup }[] = [];
     for (let i = 0; i < plan.shuffles; i++) {
-      const built = await buildPrompt(reader, { medium: run.medium, problemId: run.problemId, step, ports: given, ...(input.round !== undefined ? { round: input.round } : {}) });
-      const lineup = plan.mode === 'GREAT' ? await buildLineup(deps, reader, run.medium, given, plan.refs, random, plan.shuffle, rendersKnob(step.knobs), run.runId) : undefined;
+      const built = await buildPrompt(reader, { medium: run.medium, problemId: run.problemId, step, ports: input.ports, ...(input.round !== undefined ? { round: input.round } : {}) });
+      const lineup = plan.mode === 'GREAT' ? await buildLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle, rendersKnob(step.knobs), run.runId) : undefined;
       if (lineup) {
         Object.assign(built.slots, lineup.slots);
         built.images = lineup.images;
@@ -109,7 +107,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     // One string per step call, kept for its retries (convention C5): the same prompt, so the answer bought is reused.
     // It is kept in the run's seed range, where every write check of the run reads it (writes.ts runSeeds).
     const seed = step.role === 'seed' || step.consumes.includes('seed') ? await memoized(deps.store, run.runId, seedMemoKey(call), deps.seed ?? defaultSeed) : undefined;
-    const ports = input.candidates ? { ...given, options: input.candidates } : given;
+    const ports = input.candidates ? { ...input.ports, options: input.candidates } : input.ports;
     const built = await buildPrompt(reader, {
       medium: run.medium,
       problemId: run.problemId,
@@ -126,8 +124,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     // PR3: every seed the run has handed out, this step's own included, read from the store (P2).
     const seeds = await runSeeds(deps.store, run.runId);
     // keepsVoice: the person's deck is locked before the call (an empty voice is a voice too), and held after it.
-    const voice = step.keepsVoice ? keptVoice(given) : undefined;
-    const before = voice !== undefined && given.artifact ? await reader.text(given.artifact) : undefined;
+    const voice = step.keepsVoice ? await keptVoice(reader, input.ports) : undefined;
+    const before = voice !== undefined && input.ports.artifact ? await reader.text(input.ports.artifact) : undefined;
     const parse = parserFor(step.role, run.medium, ports, checkedWriter({ seeds, medium: run.medium }, voice, before));
     const answer = await askModel(deps, reader, {
       run,

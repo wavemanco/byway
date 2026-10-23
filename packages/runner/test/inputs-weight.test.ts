@@ -6,7 +6,8 @@
  * input the interpreter schedules holds the brief's id, never the brief, and stays under a fixed size. So with the
  * person's own inputs: a fixed copy deck, an author's draft and their own tell catalog travel as their files' ids. And
  * no input holds a SEED string: every seed handed out once rode in every later input, and now PR3 reads them from the
- * store (writes.ts runSeeds).
+ * store (writes.ts runSeeds). Nor a VOICE answer: each is kept as a text file when its step finishes, and the ports hold
+ * its id (the deck's is the first ports.voice).
  *
  * The start input is the one Runner.start sends (a stand-in Temporal client keeps it; the real store). The real
  * Interpreter then runs the catalog recipe on it with every activity answered at once by a stand-in, and every input
@@ -30,6 +31,8 @@ import { createTestStore, type MemoStore } from './helpers/memo.ts';
 const seen = vi.hoisted(() => ({ inputs: [] as { name: string; input: unknown }[], n: 0 }));
 /** A SEED string as the runner makes them (01 SEED seed_shape: 48 base64url characters). */
 const SEED = vi.hoisted(() => 'S'.repeat(48));
+/** What the person answers at a VOICE: 100,000 characters (what the answer route takes), each a mark of its own. */
+const ANSWER = vi.hoisted(() => Array.from({ length: 100_000 }, (_, i) => String.fromCharCode(0x4e00 + ((i * 7919 + 23) % 20_000))).join(''));
 
 const hex = (n: number) => n.toString(16).padStart(64, '0');
 /** A web page's view at its largest: desktop and mobile at their 8 tiles each, and the first screen (limits-batch.test.ts). */
@@ -65,6 +68,8 @@ vi.mock('../src/workflow/acts.ts', () => {
         // A web page is seen in screenshots, at their most; any other work as a text rendering.
         return { costUsd: 0, view: { pool: !!input.pool, items: (input.artifactIds ?? []).map((_, i) => (input.run?.medium === 'web-page' ? pageView(seen.n * 10 + i) : { textArtifactId: `sha256:${hex(seen.n * 10 + i)}`, imageArtifactIds: [] })) } };
       case 'finishHumanStep':
+        // A VOICE write keeps the person's answer as a text file and hands back its id (human.ts finishHumanStep).
+        if (input.kind === 'write' && input.step?.role === 'voice') return { costUsd: 0, text: ANSWER, artifactId: id, voiceId: `sha256:${hex(++seen.n)}` };
         return { costUsd: 0, text: '- Warmer, please.', ...(input.kind === 'write' ? { artifactId: id } : {}) };
       case 'assetStep':
       case 'relayLink':
@@ -143,8 +148,8 @@ describe('a run with the largest brief the web accepts carries its id, never the
   const brief: ProblemBrief = maximalBrief();
   /** The person's own inputs, each 100,000 characters of Chinese of its own. */
   const own = { voice: chinese(100_000, 11), draft: chinese(100_000, 13), tells: chinese(100_000, 17) };
-  const pieces = [...briefPieces(brief), ...Object.values(own).flatMap(piecesOf)];
-  /** Whether a value holds a piece of the brief or of one of the person's own inputs. */
+  const pieces = [...briefPieces(brief), ...[...Object.values(own), ANSWER].flatMap(piecesOf)];
+  /** Whether a value holds a piece of the brief, of one of the person's own inputs, or of a VOICE answer. */
   const carries = (v: unknown) => pieces.some((p) => JSON.stringify(v).includes(p));
 
   it.each([
@@ -168,11 +173,18 @@ describe('a run with the largest brief the web accepts carries its id, never the
       expect(carries(input), name).toBe(false);
       expect(JSON.stringify(input), name).not.toContain(SEED);
       expect(bytes(input), name).toBeLessThan(STEP_INPUT_BYTES);
-      const run = (input as { run?: { problemId?: string; voiceId?: string } }).run;
-      if (run) expect(run.problemId, name).toBe(start.problemId);
-      // The deck reaches the steps as the run's (held-voice.ts withDeck reads it).
-      if (run) expect(run.voiceId, name).toBe(start.inputs.voiceId);
+      const run = (input as { run?: { problemId?: string } }).run;
+      if (run) expect(run, name).toEqual(expect.objectContaining({ problemId: start.problemId }));
+      if (run) expect(Object.keys(run).sort(), name).toEqual(['medium', 'problemId', 'profileId', 'recipeId', 'runId', 'workspaceId']);
     }
+    // The deck reaches the steps as the first ports.voice, by its id (held-voice.ts reads it for those that take it).
+    const voices = inputs.map((i) => (i.input as { ports?: { voice?: string } }).ports?.voice).filter((v) => v !== undefined);
+    if (over.inputs?.voice) expect(voices).toContain(start.inputs.voiceId);
+    // Steps ran after a VOICE answered and hold its id (C1's final check, C2's mood boards; C3 ends at its VOICE), so
+    // none holding the answer is no accident.
+    const firstVoice = inputs.findIndex((i) => i.name === 'finishHumanStep' && (i.input as { step?: { role?: string } }).step?.role === 'voice');
+    const afterVoice = firstVoice >= 0 ? inputs.slice(firstVoice + 1) : [];
+    if (afterVoice.length) expect(afterVoice.some((i) => (i.input as { ports?: { held?: string[] } }).ports?.held?.length)).toBe(true);
     // The ids reach the steps that read them: the sweep's catalog, and the question that starts from the draft.
     const handed = (name: string, pick: (i: Record<string, any>) => unknown) => inputs.filter((i) => i.name === name).map((i) => pick(i.input as Record<string, any>));
     if (over.inputs?.tells) expect(handed('modelStep', (i) => i.tellsId)).toContain(start.inputs.tellsId);

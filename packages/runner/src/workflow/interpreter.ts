@@ -138,8 +138,8 @@ export class Interpreter {
   }
 
   private get run(): RunRef {
-    const { runId, workspaceId, recipe, profileId, medium, problemId, inputs } = this.input;
-    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problemId, ...(inputs.voiceId ? { voiceId: inputs.voiceId } : {}) };
+    const { runId, workspaceId, recipe, profileId, medium, problemId } = this.input;
+    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problemId };
   }
 
   /** A step's (or operator's) call at this place in the run; the key is stable across replays and retries. */
@@ -158,9 +158,8 @@ export class Interpreter {
   async runStages(): Promise<Ports> {
     const stages = this.input.recipe.stages;
     const entries: Ports[] = [];
-    // A fixed copy deck the run was given is the run's (RunRef.voiceId), read by the steps that take it in until a
-    // VOICE answers: the ports carry the person's answers only.
-    let ports: Ports = {};
+    // A fixed copy deck the run was given is the person's latest words until a VOICE answers, by its file's id (P2).
+    let ports: Ports = this.input.inputs.voiceId ? { voice: this.input.inputs.voiceId } : {};
     let i = 0;
     while (i < stages.length) {
       const stage = stages[i]!;
@@ -454,8 +453,12 @@ export class Interpreter {
       case 'write':
         if (fin.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: fin.artifactId, ...(s.role !== 'voice' ? { authored: fin.artifactId } : {}) });
         // The person's words are what a VOICE write executes, not what a step declares (ADR-0092): the latest answer is
-        // what a 'voice' reader gets, and every answer is held for the keepsVoice writers after it.
-        if (voiceWrite(s)) Object.assign(out, { voice: text, held: [...(ports.held ?? []), text] });
+        // what a 'voice' reader gets, and every answer is held for the keepsVoice writers after it, by the id of the file
+        // the step kept it in (P2). An answer not kept could not be held, so the run stops before anything writes on.
+        if (voiceWrite(s)) {
+          if (fin.voiceId === undefined) throw new RunFailure(`byway could not keep your words from step "${s.id}", so the run stopped before any step could change them.`);
+          Object.assign(out, { voice: fin.voiceId, held: [...(ports.held ?? []), fin.voiceId] });
+        }
         break;
       case 'directive':
         // A person who lists nothing to remove gives an empty directive, as a model's "Nothing to remove." does.

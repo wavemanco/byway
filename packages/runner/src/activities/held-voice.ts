@@ -11,32 +11,41 @@
  * In C5, the only catalog recipe with a keepsVoice writer, every such writer runs between its two VOICEs, where this is
  * exactly the latest answer, so the catalog runs as before.
  *
- * A fixed copy deck the run was given is stored at start and travels as its file's id (P2, RunRef.voiceId): `withDeck`
- * reads it for a step that takes the person's words in or is held to keep them, as their latest words until a VOICE
- * answers, as when the deck travelled as the first ports.voice.
+ * The person's words travel by reference (P2): each VOICE answer is kept as a text file when its step finishes (human.ts
+ * finishHumanStep), a fixed copy deck the run was given was stored at start (stored-inputs.ts), and the ports hold their
+ * ids, the deck's as the first ports.voice. They are read here, by the steps that need their texts: one that takes the
+ * words in (the voice slot, prompting.ts) or is held to keep them (keptVoice). No other step reads their files.
  */
-import { inputsOf } from '@byway/recipe';
-import type { Ports, RunRef, StepSpec } from '../types.ts';
+import { unreadableInput } from '../stored-inputs.ts';
+import type { Ports } from '../types.ts';
 import type { ArtifactReader } from './prompting.ts';
 
+/** What reads the person's words by their files' ids (prompting.ts ArtifactReader). */
+type WordsReader = Pick<ArtifactReader, 'ownText'>;
+
 /**
- * The person's words a keepsVoice write is held to: the held VOICE answers and the latest words, each once, the latest
- * last; undefined when there are none (an empty answer is an answer).
+ * Why a step cannot read a VOICE answer its run holds. The answer was kept when its step finished, so a file that
+ * cannot be read now was lost or damaged since (a partial restore), and reading it again finds the same.
  */
-export function keptVoice(ports: Pick<Ports, 'voice' | 'held'>): string[] | undefined {
-  const texts = [...(ports.held ?? []), ...(ports.voice !== undefined ? [ports.voice] : [])];
-  const distinct = texts.filter((t, i) => texts.lastIndexOf(t) === i);
-  return distinct.length ? distinct : undefined;
+export const unreadableAnswer = (id: string): string =>
+  `Your words from an earlier step of this run cannot be read: their file (${id}) is missing or damaged in byway's data folder, perhaps from a partial restore (see "Back up and restore" in the README). Start the run again.`;
+
+/**
+ * One of the person's words, by its file's id: a VOICE answer (every one is in `ports.held`) or else the fixed copy
+ * deck the run was given, the only other id `ports.voice` holds (until a VOICE answers on the path). A file lost since
+ * fails the step with a plain message saying which it was.
+ */
+export function personsWords(reader: WordsReader, ports: Pick<Ports, 'held'>, id: string): Promise<string> {
+  return reader.ownText(id, ports.held?.includes(id) ? unreadableAnswer(id) : unreadableInput('copy deck', id));
 }
 
 /**
- * The ports a step works from, with the fixed copy deck the run was given (read from its file) as the person's latest
- * words while no VOICE has answered on the path: only for a step that takes them in (the 'voice' port, consumed or read)
- * or is held to keep them (keepsVoice), so no other step reads the file. Once a VOICE has answered, its answer is the
- * latest words, an empty one included, and the deck is not read.
+ * The person's words a keepsVoice write is held to: the held VOICE answers and the latest words, each once, the latest
+ * last, read from their files; undefined when there are none (an empty answer is an answer).
  */
-export async function withDeck(reader: ArtifactReader, run: Pick<RunRef, 'voiceId'>, step: Pick<StepSpec, 'consumes' | 'reads' | 'keepsVoice'>, ports: Ports): Promise<Ports> {
-  if (ports.voice !== undefined || !run.voiceId) return ports;
-  if (!step.keepsVoice && !inputsOf(step).includes('voice')) return ports;
-  return { ...ports, voice: await reader.startInput(run.voiceId, 'copy deck') };
+export async function keptVoice(reader: WordsReader, ports: Pick<Ports, 'voice' | 'held'>): Promise<string[] | undefined> {
+  const ids = [...(ports.held ?? []), ...(ports.voice !== undefined ? [ports.voice] : [])];
+  const texts = await Promise.all(ids.map((id) => personsWords(reader, ports, id)));
+  const distinct = texts.filter((t, i) => texts.lastIndexOf(t) === i);
+  return distinct.length ? distinct : undefined;
 }

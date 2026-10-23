@@ -17,7 +17,7 @@ import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
-import { keptVoice, withDeck } from './held-voice.ts';
+import { keptVoice } from './held-voice.ts';
 import { announce, checkedWriter, restoredNote, runSeeds, storeText } from './writes.ts';
 
 export const NO_VIDEO_NOTE = 'No video provider key is configured';
@@ -48,17 +48,14 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   const sb = parseStoryboard(storyboardText);
   if (!sb.ok) throw new StepError(`The ${what} step could not read the storyboard: ${sb.problem}`);
   if (!sb.value.storyboard.some((s) => s.shot === shot)) throw new StepError(`The storyboard has no shot ${shot}.`);
-  // A fixed copy deck the run was given travels as its file's id (P2): read here for a step that takes it in or is held
-  // to keep it (held-voice.ts withDeck).
-  const given = await withDeck(reader, run, step, ports);
   // keepsVoice: locked before the paid calls, so a fault in the check never repeats them.
-  const write = checkedWriter({ medium: run.medium, seeds: await runSeeds(deps.store, run.runId) }, step.keepsVoice ? keptVoice(given) : undefined, storyboardText);
+  const write = checkedWriter({ medium: run.medium, seeds: await runSeeds(deps.store, run.runId) }, step.keepsVoice ? await keptVoice(reader, ports) : undefined, storyboardText);
 
   const built = await buildPrompt(reader, {
     medium: run.medium,
     problemId: run.problemId,
     step,
-    ports: given,
+    ports,
     extra: { artifact: storyboardText, brief: `Shot ${shot}` },
     extraImages: [{ artifactIds: [start] }],
   });

@@ -11,6 +11,7 @@ import { relayLink } from '../src/activities/relay.ts';
 import { pageCopy, pageLockView } from '../src/copy.ts';
 import { joinCodeDiff, parseStoryboard, serializeJson, splitCodeDiff } from '../src/formats.ts';
 import { playwrightPages, type PageRenderer } from '../src/pages.ts';
+import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import type { StepSpec } from '../src/types.ts';
 import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
@@ -27,6 +28,8 @@ beforeEach(async () => {
 afterEach(() => b.close());
 
 const json = async (id: string) => JSON.parse(await b.store.artifacts.getText(id)) as Record<string, unknown>;
+/** The person's words as the run holds them (P2): kept as a text file, by its id. */
+const kept = async (text: string) => (await b.store.artifacts.putText(text, INPUT_MEDIA_TYPE)).id;
 const rejected = (p: Promise<unknown>) => p.then(
   () => {
     throw new Error('expected the answer to be refused');
@@ -272,7 +275,7 @@ describe('keepsVoice holds the person’s words exactly (F07)', () => {
       b.gateway.requests.push(req);
       return { text: scripted.shift() ?? '', stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, ledgerEntryId: `l${b.gateway.requests.length}` };
     };
-    const out = await modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact, critique: '- Cut shot 2.', ...(voice !== undefined ? { voice } : {}) }, refs: [] });
+    const out = await modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact, critique: '- Cut shot 2.', ...(voice !== undefined ? { voice: await kept(voice) } : {}) }, refs: [] });
     const finished = (await b.store.events(run.runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
     return { out, finished, run };
   };
@@ -328,7 +331,7 @@ describe('keepsVoice holds the person’s words exactly (F07)', () => {
     const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true };
     // The link starts from shot 1's frame (a link with none makes no clip, ADR-0090).
     const start = (await b.store.artifacts.put(new Uint8Array([137, 80, 78, 71]), 'image/png')).id;
-    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, voice: script, anchor: start }, shot: 1 });
+    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, voice: await kept(script), anchor: start }, shot: 1 });
     const stored = await json(out.artifactId!);
     expect(stored.voiceover).toBe(script);
     const shot = (stored.storyboard as { clipArtifactId?: string; lastFrameArtifactId?: string }[])[0]!;
@@ -957,7 +960,7 @@ describe('keepsVoice on a web page (F07)', () => {
       b.gateway.requests.push(req);
       return { text: '```html\n' + after + '\n```', stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, ledgerEntryId: 'l1' };
     };
-    return modelStep(b.deps, { run, call: { key: `${run.runId}/polish/-/1`, stepId: 'polish', stage: 'D3' }, step: fixSpec, ports: { artifact, voice: 'T\nNew head\nPlease [read the terms] today.' }, refs: [] });
+    return modelStep(b.deps, { run, call: { key: `${run.runId}/polish/-/1`, stepId: 'polish', stage: 'D3' }, step: fixSpec, ports: { artifact, voice: await kept('T\nNew head\nPlease [read the terms] today.') }, refs: [] });
   };
 
   it('refuses a write that adds a claim or retargets a link; a class change passes', async () => {
