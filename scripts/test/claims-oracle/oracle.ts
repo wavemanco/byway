@@ -126,6 +126,9 @@ const newArt = (prefix: string, stepId: string, parent: string | undefined): str
 
 /** The stubbed activities: each call is recorded as an event of the current run, with a canned or random answer. */
 export async function respond(name: string, input: any): Promise<unknown> {
+  // The waits a relay step's calls keep, read just before it (a quick step that makes no claim and writes nothing): the
+  // defaults, recorded as no event and drawing no answer, so the runs are those the measurement judged.
+  if (name === 'relayWaits') return { linkMs: 15 * 60_000, videoMs: 30 * 60_000 };
   const ev: N = { type: name, stepId: input?.call?.stepId, key: input?.call?.key, candidate: input?.call?.candidate, role: input?.step?.role, step: input?.step, critiqueIn: input?.ports?.critique, briefIn: input?.ports?.brief, tasteIn: input?.ports?.taste, artifactIn: input?.ports?.artifact, shot: input?.shot ?? input?.ports?.shot, linkStart: input?.ports?.linkStart, anchorIn: input?.ports?.anchor, sbArt: input?.artifactId };
   cur.events.push(ev);
   if (cur.events.length > 20000) throw new Error('runaway');

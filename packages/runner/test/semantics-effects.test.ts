@@ -17,7 +17,7 @@ import type { RunnerDeps } from '../src/activities/deps.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
 import { directionOf, modelStep, NOTE_LABELS, parserFor } from '../src/activities/model-step.ts';
 import { ArtifactReader, buildPrompt } from '../src/activities/prompting.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
 import { toStepSpec, type RunRef, type StepCall, type StepSpec } from '../src/types.ts';
 import { humanKind } from '../src/workflow/wording.ts';
 import { storeBrief } from './helpers/briefs.ts';
@@ -170,6 +170,7 @@ describe('ASSET and RELAY steps', () => {
       step: spec('relay', 'model', produces, { block: 'RELAY', consumes: ['anchor', 'artifact'] }),
       ports: { artifact: board, anchor: start },
       shot: 1,
+      waits: DEFAULT_RELAY_WAITS,
     });
     expect(res.artifactId).toBeDefined();
     expect(stepEffect({ actor: 'model', role: 'relay', produces })).toBe('writes');

@@ -18,7 +18,7 @@ import { AnswerRejected, StepError } from '../src/activities/failures.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
 import { memoized } from '../src/activities/memo.ts';
 import { modelStep } from '../src/activities/model-step.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
 import { runSeeds, seedMemoKey } from '../src/activities/writes.ts';
 import { toStepSpec, type RunRef, type StepCall, type StepSpec } from '../src/types.ts';
 import { fakePages, png } from './helpers/fake-pages.ts';
@@ -147,7 +147,7 @@ describe("every write is checked against the run's seeds, read from the store", 
     };
     const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true };
     const start = (await b.store.artifacts.put(png(4, 3, [1, 2, 3]), 'image/png')).id;
-    const link = relayLink(b.deps, { run, call: callOf(run, 'clip', 'D2'), step: relay, ports: { artifact: await putWork(b, 'media', seeded), anchor: start }, shot: 1 });
+    const link = relayLink(b.deps, { run, call: callOf(run, 'clip', 'D2'), step: relay, ports: { artifact: await putWork(b, 'media', seeded), anchor: start }, shot: 1, waits: DEFAULT_RELAY_WAITS });
     await expect(link).rejects.toThrow(/could not update the storyboard: The answer contains the random string/);
   });
 

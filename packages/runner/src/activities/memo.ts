@@ -24,6 +24,12 @@
  * and asking the gateway again now and then (the holder may be gone, and then the call is taken over or resumed). It
  * honours its own cancel, and after five minutes stops with a plain message rather than pay again.
  *
+ * A call's own wait (withWait; the waits design of 2026-10-22, section 4). A relay step's calls each carry the wait read
+ * before the step began (operation.waitMs: the link model's for its link call, the video model's for its clip), which the
+ * gateway keeps instead of reading Settings. It is not part of what the call asks: the memo key is made without the
+ * request's operation, and the wait joins the operation handed to the gateway beside the key and the invocation's
+ * signals, so a step that runs again under another wait finds the same memo and buys nothing again.
+ *
  * Declines (ADR-0102). The gateway asks a declining model once more, as a call of its own, and a step that runs again
  * must never buy the declined call again. So a decline is kept like an answer, twice over: the gateway hands it over
  * once the declined call is ledgered and before the retry is admitted (operation.keepDecline), and it is kept under the
@@ -39,6 +45,16 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { GatewayError, type CompletionResult, type DeclinedAttempt, type DeclineRecord, type Gateway, type SpendContext, type Store } from '@byway/contracts';
 import { DeclineRetryPending, StepError } from './failures.ts';
+
+/**
+ * `req` with its caller's own wait for this call, in milliseconds (SpendContext.operation.waitMs, which the gateway keeps
+ * instead of the wait chosen in Settings): a relay step's link call and clip (see the header). Only the wait is set here;
+ * the memo layer completes the operation (its key and the invocation's signals) when it hands the call on. A gateway
+ * handed it without the memo layer refuses it (operation.key must be a non-empty string), so it never passes silently.
+ */
+export function withWait<R extends SpendContext>(req: R, waitMs: number): R {
+  return { ...req, operation: { ...req.operation, waitMs } as NonNullable<SpendContext['operation']> };
+}
 
 /**
  * A paid call whose result byway could not keep (see the header): the provider was paid, as a GatewayError's `billed`
@@ -239,8 +255,12 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
     }
   }
 
-  async function once<T>(kind: string, request: object, call: (req: never) => Promise<T>, save: (r: T) => Promise<string>, load: (v: string) => Promise<T>): Promise<T> {
-    const key = keyOf(kind, request);
+  async function once<T>(kind: string, request: SpendContext, call: (req: never) => Promise<T>, save: (r: T) => Promise<string>, load: (v: string) => Promise<T>): Promise<T> {
+    // What the call asks, without the operation its caller may have set (withWait): the key is made from this alone. A
+    // request with no operation is the same request, so its key is the one it always had.
+    const { operation: own, ...asked } = request;
+    const ownWait = own?.waitMs !== undefined ? { waitMs: own.waitMs } : {};
+    const key = keyOf(kind, asked);
     // What is kept under the key: an answer, or the call's final decline, thrown again as the gateway threw it (ADR-0102).
     const loadKept = async (v: string): Promise<Kept<T>> => {
       const declined = keptDecline(v);
@@ -253,12 +273,14 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
     const keepDecline = async (first: DeclinedAttempt): Promise<void> => {
       await persist(declineKey, async () => JSON.stringify(first), (reason) => new Error(reason));
     };
-    // The operation joins the request after the memo key was made from it, so memo keys are unchanged.
+    // The operation joins the request after the memo key was made from it, so memo keys are unchanged: the key and this
+    // invocation's signals, and the caller's own wait for this call, which a wait given for the invocation does not
+    // replace.
     const sent = async (rebuy: boolean) => {
       if (!opts.operation) return request;
       const earlier = await store.getMemo(scope.runId, declineKey);
       const decline = earlier !== undefined ? { declinedEarlier: JSON.parse(earlier) as DeclinedAttempt } : { keepDecline };
-      return { ...request, operation: { key: `${scope.runId}/${key}`, ...opts.operation, ...(rebuy ? { rebuy: true } : {}), ...decline } };
+      return { ...asked, operation: { key: `${scope.runId}/${key}`, ...opts.operation, ...ownWait, ...(rebuy ? { rebuy: true } : {}), ...decline } };
     };
     let outcome: { made: T } | { kept: Kept<T> };
     try {

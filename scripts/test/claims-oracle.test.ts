@@ -44,7 +44,8 @@ const h = vi.hoisted(() => ({ respond: undefined as undefined | ((name: string, 
 /** The Interpreter's activities, stubbed by the oracle. */
 vi.mock('../../packages/runner/src/workflow/acts.ts', () => {
   const group = () => new Proxy({}, { get: (_t, name: string) => async (input: unknown) => h.respond!(name, input) });
-  return { quick: group(), model: group(), media: group() };
+  // A relay step runs on a proxy of its own, its limit worked out from its waits (acts.ts relayProxy).
+  return { quick: group(), model: group(), media: group(), relayProxy: () => group() };
 });
 
 const { judgeVariants, respond } = await import('./claims-oracle/oracle.ts');

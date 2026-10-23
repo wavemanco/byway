@@ -17,7 +17,7 @@ import { steps } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
 import { modelStep } from '../src/activities/model-step.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
 import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import { toStepSpec, type AssetResult, type Ports, type StepSpec } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
@@ -105,7 +105,7 @@ describe('every keepsVoice call site holds its write to the held voice, not the 
     };
     const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true };
     const start = (await b.store.artifacts.put(png(4, 3, [1, 2, 3]), 'image/png')).id;
-    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, anchor: start, ...(await heldIds()) }, shot: 1 });
+    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, anchor: start, ...(await heldIds()) }, shot: 1, waits: DEFAULT_RELAY_WAITS });
     expect(out.artifactId).toBeDefined();
     expect(seen.voices).toEqual([[onScreen, script]]);
   });
@@ -194,7 +194,7 @@ describe('a fixed copy deck the run was given, read by its id until a VOICE answ
     };
     const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true };
     const start = (await b.store.artifacts.put(png(4, 3, [1, 2, 3]), 'image/png')).id;
-    await relayLink(b.deps, { run: linkRun, call: { key: `${linkRun.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact: await putWork(b, 'media', before), anchor: start, ...(await deck()) }, shot: 1 });
+    await relayLink(b.deps, { run: linkRun, call: { key: `${linkRun.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact: await putWork(b, 'media', before), anchor: start, ...(await deck()) }, shot: 1, waits: DEFAULT_RELAY_WAITS });
     expect(seen.voices).toEqual([[onScreen]]);
 
     seen.voices = [];

@@ -71,6 +71,9 @@ vi.mock('../src/workflow/acts.ts', () => {
         // A VOICE write keeps the person's answer as a text file and hands back its id (human.ts finishHumanStep).
         if (input.kind === 'write' && input.step?.role === 'voice') return { costUsd: 0, text: ANSWER, artifactId: id, voiceId: `sha256:${hex(++seen.n)}` };
         return { costUsd: 0, text: '- Warmer, please.', ...(input.kind === 'write' ? { artifactId: id } : {}) };
+      case 'relayWaits':
+        // The waits a relay step's calls keep, read before it (the defaults: 15 minutes for the link, 30 for the clip).
+        return { linkMs: 15 * 60_000, videoMs: 30 * 60_000 };
       case 'assetStep':
       case 'relayLink':
         return { costUsd: 0 };
@@ -85,7 +88,8 @@ vi.mock('../src/workflow/acts.ts', () => {
     return respond(name, input);
   };
   const group = () => new Proxy({}, { get: (_t, name: string) => call(name) });
-  return { quick: group(), model: group(), media: group() };
+  // A relay step runs on a proxy of its own, its limit worked out from its waits (acts.ts relayProxy).
+  return { quick: group(), model: group(), media: group(), relayProxy: () => group() };
 });
 
 const { Interpreter } = await import('../src/workflow/interpreter.ts');

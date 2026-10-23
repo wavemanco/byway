@@ -26,7 +26,7 @@ import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MA
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { ContractMissed, StepError, toFailure } from '../src/activities/failures.ts';
 import { memoGateway, PaidNotKept } from '../src/activities/memo.ts';
-import { noStartFrameNote, relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, noStartFrameNote, relayLink } from '../src/activities/relay.ts';
 import { checkBriefs, eachPlan, freePlan, slotId } from '../src/activities/slot-plan.ts';
 import { serializeJson } from '../src/formats.ts';
 import { ADVICE_MAX } from '../src/parse.ts';
@@ -766,7 +766,7 @@ describe('a relay link with no frame to start from (F12)', () => {
     const g = fake([]);
     const run = await newRun('media');
     const artifact = (await store.artifacts.putText(storyboard(), 'application/json')).id;
-    const out = await relayLink({ gateway: g, store, prompts: library }, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: spec('c5', 'clip'), ports: { artifact, shot: 1 }, shot: 1 });
+    const out = await relayLink({ gateway: g, store, prompts: library }, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: spec('c5', 'clip'), ports: { artifact, shot: 1 }, shot: 1, waits: DEFAULT_RELAY_WAITS });
     expect(out).toMatchObject({ skipped: true, costUsd: 0 });
     expect(g.completions).toHaveLength(0);
     expect(g.videos).toHaveLength(0);

@@ -38,6 +38,9 @@ vi.mock('../src/workflow/acts.ts', () => {
         return { costUsd: 0, view: { pool: false, items: [{ imageArtifactIds: [] }] } };
       case 'storyboardShots':
         return [1];
+      case 'relayWaits':
+        // The waits a relay step's calls keep, read before it (the defaults: 15 minutes for the link, 30 for the clip).
+        return { linkMs: 15 * 60_000, videoMs: 30 * 60_000 };
       case 'assetStep':
       case 'relayLink':
         return { costUsd: 0 };
@@ -46,7 +49,8 @@ vi.mock('../src/workflow/acts.ts', () => {
     }
   };
   const group = () => new Proxy({}, { get: (_t, name: string) => async (input: never) => respond(name, input) });
-  return { quick: group(), model: group(), media: group() };
+  // A relay step runs on a proxy of its own, its limit worked out from its waits (acts.ts relayProxy).
+  return { quick: group(), model: group(), media: group(), relayProxy: () => group() };
 });
 
 const { Interpreter } = await import('../src/workflow/interpreter.ts');

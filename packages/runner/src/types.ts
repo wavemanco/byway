@@ -274,6 +274,23 @@ export interface AssetResult {
   skipped?: boolean;
 }
 
+/**
+ * The answer waits a relay step's calls keep, in milliseconds, read just before the step begins (the relayWaits
+ * activity; the waits design of 2026-10-22, section 4): the link model's, a text model's, for the link call, and the
+ * video model's, for the clip and its last frame. The workflow sizes the step's own limit from the same reading
+ * (workflow/acts.ts relayLimitMs), so the limit and the calls always fit each other.
+ */
+export interface RelayWaits {
+  linkMs: number;
+  videoMs: number;
+}
+
+/** What the waits are read for: the run (its workspace and profile) and the relay step (the tier its link call asks). */
+export interface RelayWaitsInput {
+  run: RunRef;
+  step: StepSpec;
+}
+
 export interface RelayInput {
   run: RunRef;
   call: StepCall;
@@ -281,6 +298,11 @@ export interface RelayInput {
   ports: Ports;
   /** The shot this link makes. */
   shot: number;
+  /**
+   * The waits read before this step began (RelayWaits): its calls carry them (operation.waitMs), so a wait changed in
+   * Settings while the step runs changes none of its calls, and every attempt of the step keeps the same ones.
+   */
+  waits: RelayWaits;
   meta?: StepMeta;
 }
 
@@ -426,6 +448,8 @@ export interface RunnerActivities {
   modelStep(input: ModelStepInput): Promise<ModelStepResult>;
   renderView(input: RenderInput): Promise<RenderResult>;
   assetStep(input: AssetInput): Promise<AssetResult>;
+  /** The waits a relay step's calls keep, read from Settings just before the step (a quick step). */
+  relayWaits(input: RelayWaitsInput): Promise<RelayWaits>;
   relayLink(input: RelayInput): Promise<RelayResult>;
   storyboardShots(input: { artifactId: string }): Promise<number[]>;
   skipStep(input: SkipInput): Promise<void>;

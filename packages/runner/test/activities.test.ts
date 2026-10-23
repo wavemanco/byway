@@ -15,7 +15,7 @@ import { cancelRun, failRun } from '../src/activities/lifecycle.ts';
 import { recordResolution } from '../src/activities/human.ts';
 import { assetStep, NO_IMAGES_NOTE } from '../src/activities/asset.ts';
 import { ArtifactReader } from '../src/activities/prompting.ts';
-import { NO_VIDEO_NOTE, relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, NO_VIDEO_NOTE, relayLink } from '../src/activities/relay.ts';
 import { createActivities } from '../src/activities/index.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { runSeeds } from '../src/activities/writes.ts';
@@ -226,7 +226,7 @@ describe('which profile says whether images and video exist', () => {
     const deps: RunnerDeps = { gateway: scripted([], { demo: false }), store, prompts: fakePrompts() };
     const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
     expect(await assetStep(deps, { run, call: call(run, 'art'), step: assetSpec, ports: { artifact: doc } })).toMatchObject({ skipped: true });
-    expect(await relayLink(deps, { run, call: call(run, 'clip'), step: relaySpec, ports: { artifact: doc }, shot: 1 })).toMatchObject({ skipped: true });
+    expect(await relayLink(deps, { run, call: call(run, 'clip'), step: relaySpec, ports: { artifact: doc }, shot: 1, waits: DEFAULT_RELAY_WAITS })).toMatchObject({ skipped: true });
     const notes = (await store.events(run.runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
     expect(notes).toEqual([NO_IMAGES_NOTE, NO_VIDEO_NOTE]);
   });

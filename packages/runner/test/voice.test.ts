@@ -7,7 +7,7 @@ import type { Medium } from '@byway/contracts';
 import { AnswerRejected, StepError } from '../src/activities/failures.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
 import { modelStep } from '../src/activities/model-step.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
 import { pageCopy, pageLockView } from '../src/copy.ts';
 import { joinCodeDiff, parseStoryboard, serializeJson, splitCodeDiff } from '../src/formats.ts';
 import { playwrightPages, type PageRenderer } from '../src/pages.ts';
@@ -353,7 +353,7 @@ describe('keepsVoice holds the person’s words exactly (F07)', () => {
     const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true };
     // The link starts from shot 1's frame (a link with none makes no clip, ADR-0090).
     const start = (await b.store.artifacts.put(new Uint8Array([137, 80, 78, 71]), 'image/png')).id;
-    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, voice: await kept(script), anchor: start }, shot: 1 });
+    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, voice: await kept(script), anchor: start }, shot: 1, waits: DEFAULT_RELAY_WAITS });
     const stored = await json(out.artifactId!);
     expect(stored.voiceover).toBe(script);
     const shot = (stored.storyboard as { clipArtifactId?: string; lastFrameArtifactId?: string }[])[0]!;

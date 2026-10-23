@@ -34,7 +34,7 @@ import { beginRun, cancelRun, emitEvents, failRun, finishRun, passStep, raiseBud
 import { guardGateway, guardPages, runHasEnded, settleLateCost, startInvocation, stopSignal, STOPPED_STEP } from './liveness.ts';
 import { memoGateway, memoScopeOf } from './memo.ts';
 import { modelStep } from './model-step.ts';
-import { relayLink, storyboardShots } from './relay.ts';
+import { relayLink, relayWaits, storyboardShots } from './relay.ts';
 import { renderView } from './render.ts';
 import { watchSandbox } from './sandbox-note.ts';
 
@@ -88,6 +88,7 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
     modelStep: wrap(modelStep),
     renderView: wrap(renderView),
     assetStep: wrap(assetStep),
+    relayWaits: wrap(relayWaits),
     relayLink: wrap(relayLink),
     storyboardShots: wrap(storyboardShots),
     skipStep: wrap(skipStep),

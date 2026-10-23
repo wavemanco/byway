@@ -20,7 +20,7 @@ import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { JUDGING_ROLES } from '../src/activities/prompting.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
 import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import type { Ports, RunRef, StepSpec, ViewRef } from '../src/types.ts';
 import { storeBrief } from './helpers/briefs.ts';
@@ -122,7 +122,7 @@ async function requestFor(step: StepSpec, medium: Medium): Promise<CompletionReq
   const call = { key: `${runId}/${step.id}/-/1`, stepId: step.id, stage: 'D2' as const };
   try {
     if (step.role === 'asset') await assetStep(deps, { run, call, step, ports });
-    else if (step.role === 'relay') await relayLink(deps, { run, call, step, ports, shot: 1 });
+    else if (step.role === 'relay') await relayLink(deps, { run, call, step, ports, shot: 1, waits: DEFAULT_RELAY_WAITS });
     // The run's own tell catalog, stored as Runner.start stores it (P2).
     else await modelStep(deps, { run, call, step, ports, refs: [], tellsId: await text('MARK-tells', INPUT_MEDIA_TYPE) });
   } catch (e) {

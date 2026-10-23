@@ -6,15 +6,23 @@
  * ADR-0069's note, and the storyboard and anchor pass through unchanged. So does a link with no frame to start from
  * (shot 1's frame was not made, F12): a clip is never started from another shot's still, nor sent without a start
  * frame for the video model to refuse.
+ *
+ * Its calls keep the waits read just before the step began (relayWaits, a quick step of its own; the waits design of
+ * 2026-10-22, section 4): the link call the link model's wait, the clip and its last frame the video model's. The
+ * workflow sized this step's limit from the same reading (workflow/acts.ts relayLimitMs), and every attempt of the step
+ * is handed the same waits, so a wait changed in Settings while the step runs changes neither its limit nor its calls.
  */
-import { GatewayError } from '@byway/contracts';
+import { GatewayError, type ModelRef, type Tier, type WaitKind } from '@byway/contracts';
+import { DEFAULT_WAIT_MINUTES, minutesMs, waitMinutesFor } from '@byway/gateway';
+import { storeCaps } from '../caps.ts';
 import { parseStoryboard, serializeJson } from '../formats.ts';
 import { parseRelay } from '../parse.ts';
-import type { RelayInput, RelayResult } from '../types.ts';
+import type { RelayInput, RelayResult, RelayWaits, RelayWaitsInput, StepSpec } from '../types.ts';
 import { askModel } from './call.ts';
 import { mediaStatus } from './availability.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
+import { withWait } from './memo.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { keptVoice } from './held-voice.ts';
@@ -27,8 +35,34 @@ export const noStartFrameNote = (shot: number): string => `Shot ${shot} has no f
 /** The gateway refuses clips longer than this; relay links are a few seconds each (03 C5). */
 const MAX_CLIP_SECONDS = 60;
 
+/** The tier a relay step's link call asks for: the step's own, else mid. */
+export const relayTier = (step: Pick<StepSpec, 'tier'>): Tier => step.tier ?? 'mid';
+
+/** The waits of a relay step whose models have none chosen in Settings: a text model's default and a video model's. */
+export const DEFAULT_RELAY_WAITS: RelayWaits = { linkMs: minutesMs(DEFAULT_WAIT_MINUTES.text), videoMs: minutesMs(DEFAULT_WAIT_MINUTES.video) };
+
+/**
+ * The `relayWaits` activity, a quick step the workflow runs just before each relay step: the waits that step's calls
+ * keep, read from Settings for the run's workspace and profile as the gateway reads them for a call (the same store
+ * lookup, storeCaps; the same rule, waitMinutesFor: a choice the model's kind does not offer is not used, and a model
+ * with none waits its kind's default). The link model is the profile's model for the step's tier, as the gateway
+ * resolves a completion that names no model; the video model is the profile's. In demo mode every call goes to the
+ * mock, whose models have no wait to choose, and so does a profile's mock model: their kinds' defaults. A profile byway
+ * does not list, or one with no video model, waits the defaults too: the step's own calls then fail or skip plainly.
+ */
+export async function relayWaits(deps: RunnerDeps, input: RelayWaitsInput): Promise<RelayWaits> {
+  const { run, step } = input;
+  const profile = deps.gateway.demo ? undefined : deps.gateway.profileStatus().find((s) => s.profile.id === run.profileId)?.profile;
+  const caps = storeCaps(deps.store);
+  const wait = async (kind: WaitKind, ref: ModelRef | undefined): Promise<number> => {
+    const chosen = ref && ref.provider !== 'mock' ? await caps.waitMinutes?.(run.workspaceId, ref) : undefined;
+    return minutesMs(waitMinutesFor(kind, chosen));
+  };
+  return { linkMs: await wait('text', profile?.tiers[relayTier(step)]), videoMs: await wait('video', profile?.video) };
+}
+
 export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<RelayResult> {
-  const { run, call, step, ports, shot } = input;
+  const { run, call, step, ports, shot, waits } = input;
   await stepStarted(deps, run, call, step, input.meta);
   const what = input.meta?.label ?? labelFor(deps, run.recipeId, step);
   const skip = async (note: string, costUsd = 0): Promise<RelayResult> => {
@@ -66,26 +100,35 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
     slots: built.slots,
     images: built.images,
     purpose: 'relay:media',
-    tier: step.tier ?? 'mid',
+    tier: relayTier(step),
     what,
     maxOutputTokens: 4_000,
     parse: parseRelay,
+    // The link model's wait, read before the step began (see the header).
+    waitMs: waits.linkMs,
   });
   let costUsd = link.costUsd;
 
   let clip;
   try {
-    clip = await deps.gateway.video({
-      workspaceId: run.workspaceId,
-      runId: run.runId,
-      stepId: step.id,
-      purpose: 'relay:media',
-      profileId: run.profileId,
-      prompt: link.value.clipPrompt,
-      startFrameArtifactId: start,
-      durationSec: Math.min(MAX_CLIP_SECONDS, Math.max(1, link.value.durationSec)),
-      shot,
-    });
+    // The video model's wait, read before the step began: the clip's, which bounds its last frame too (the gateway's fal
+    // adapter: the time left on the clip's wait plus two minutes).
+    clip = await deps.gateway.video(
+      withWait(
+        {
+          workspaceId: run.workspaceId,
+          runId: run.runId,
+          stepId: step.id,
+          purpose: 'relay:media',
+          profileId: run.profileId,
+          prompt: link.value.clipPrompt,
+          startFrameArtifactId: start,
+          durationSec: Math.min(MAX_CLIP_SECONDS, Math.max(1, link.value.durationSec)),
+          shot,
+        },
+        waits.videoMs,
+      ),
+    );
   } catch (e) {
     if (e instanceof GatewayError && e.code === 'no-credentials') return skip(NO_VIDEO_NOTE, costUsd);
     throw e;

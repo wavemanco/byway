@@ -21,7 +21,7 @@ import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../ga
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
 import { FAILURE, toStepSpec, type BudgetFailureDetails, type RejectedAnswerDetails, type CheckpointSpec, type EarlierAnswer, type ModelStepResult, type OpenCheckpointInput, type OpenCheckpointResult, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
-import { media, model, quick } from './acts.ts';
+import { media, model, quick, relayProxy } from './acts.ts';
 import type { PendingCheckpoint, RunControl } from './control.ts';
 import {
   BEST_SO_FAR_PROMPT,
@@ -353,7 +353,10 @@ export class Interpreter {
           const shots = await this.act(call, () => quick.storyboardShots({ artifactId: ports.artifact! }));
           shot = shots.at(-1) ?? 1;
         }
-        const res = await this.act(call, () => media.relayLink({ run: this.run, call, step: spec, ports, shot: shot! }));
+        // The waits its calls keep, read just before the step by a quick step (recorded, so the same on every replay): the
+        // step's limit is worked out from them, and they travel in its input, so each attempt keeps them (acts.ts).
+        const waits = await this.act(call, () => quick.relayWaits({ run: this.run, step: spec }));
+        const res = await this.act(call, () => relayProxy(waits).relayLink({ run: this.run, call, step: spec, ports, shot: shot!, waits }));
         const out: Ports = { ...ports };
         if (res.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: res.artifactId });
         if (res.anchor) out.anchor = res.anchor;
