@@ -17,7 +17,7 @@ ship (ADR-0009). Never read that file, and never print, store, log, commit or re
 
 byway's caps and recorded costs are only as true as its price table, `packages/gateway/src/prices.ts`. The owner chose a
 weekly CI report, a monthly re-read and a date in the app (2026-10-21), and a check at the start of each session
-(2026-10-22). So, before other work that touches money:
+(2026-10-22). So, before other work:
 
 1. Read `PRICES_CHECKED` in `prices.ts`, the day of the last full re-read, and the latest weekly price report: the step
    "Do the providers' pages still give byway's prices?" of the scheduled `verify` run on main
@@ -34,3 +34,20 @@ weekly CI report, a monthly re-read and a date in the app (2026-10-21), and a ch
 
 This needs a model with web access, from any provider, or a person. Until a re-read lands, estimates and recorded costs
 use the table as it is, and Settings shows how long ago prices were checked, with a notice after about 45 days.
+
+At a session's start, also read that week's Playwright pin report beside the price report: the step "Is the Playwright
+pin behind npm's latest release?" of the same scheduled run (Claude's proposal, from the backlog row "Nobody reads the
+weekly Playwright pin report"; the cadence it serves is ADR-0110's).
+
+## Before a first live run of a new kind
+
+Before the first live run, the first run that makes an image, the first live C5 run and the first run on Best or
+OpenAI, go through the "Launch checklist" section of `docs/backlog.md` with the owner.
+
+## Checks that clone the repository
+
+A check of the local repository works in its own clone, made with `git clone --no-local`, which copies only the commits
+the repository's branches and tags reach. Never use a plain local clone or `--no-hardlinks`: they copy the whole object
+store, commits that history rewrites replaced included, and those can hold details the owner asked to keep out of
+byway. Delete the clones once the check no longer needs them. The rule comes from the owner's answer of 2026-10-22,
+"Delete them after the re-check (Recommended)" (ADR-0107's Later note of 2026-10-22 quotes it).

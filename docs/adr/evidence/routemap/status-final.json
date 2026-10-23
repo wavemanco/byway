@@ -1,0 +1,1986 @@
+[
+ {
+  "id": "widen-video-media-type",
+  "status": "open",
+  "evidence": "No commit in 8401820..37a4104 touches video/mp4 in packages (git log -S). The row is still at docs/backlog.md:44; the only change is a trigger Claude proposed on 2026-10-18 (489483e).",
+  "landedIn": "nothing on main",
+  "left": "All of it. Pick up when a video provider returns another container or a second video provider is added.",
+  "rowAt37a4104": "Widen `VideoResult.mediaType` beyond `video/mp4`"
+ },
+ {
+  "id": "expose-withdrawn-at",
+  "status": "done",
+  "evidence": "eb712c3 (batch C, 'Store (batch C): a withdrawn checkpoint says when it was withdrawn (CheckpointRecord.withdrawnAt)'): packages/contracts/src/store.ts:165 has `withdrawnAt?: string`. packages/store/src/rows.ts:94 reads it from migration 4's withdrawn_at. Store tests are in packages/store/test/checkpoints.test.ts:215-219 and 265, and in migrations.test.ts:284. 9ac54d3 (records pass, Batch C: 'Closed: withdrawnAt') removed the backlog row. The block1-check report (docs/adr/evidence/reports/block1-check-2026-10-22.md:614) lists it among the 22 closed rows backed by code. eb712c3 and 9ac54d3 are both ancestors of 37a4104 (reached main through 7de1a3c into Block 1, then 37a4104). There was no playbook row.",
+  "landedIn": "eb712c3; row closed in 9ac54d3; on main via 7de1a3c and 37a4104",
+  "left": "Nothing on the row, which named contracts and store as its scope. eb712c3's message says the API passes the record through but no screen shows the time yet. No backlog row tracks showing it.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "research-arm-prompt-templates",
+  "status": "open",
+  "evidence": "The row still exists (backlog.md:45) with the trigger 'Pick up when the research track resumes (ADR-0108)'. On 2026-10-21 21:31 the owner answered D1 with \"Keep all of it parked\" (described as \"Nothing on the research track moves until it resumes.\"). No templates were added.",
+  "landedIn": "nothing on main",
+  "left": "All of it. It waits for the research track to resume.",
+  "rowAt37a4104": "Templates for the Study 1 research arms' prompt ids (`article.B1`, `study1.*`)"
+ },
+ {
+  "id": "cancel-in-flight-calls",
+  "status": "done",
+  "evidence": "The true stop: 333728a, ADR-0111 (c1fc822), merged as 60e80f9, with fix rounds bcbfa11, 35cda68, e925c05 and 3d26250. All are ancestors of 37a4104. ProviderAdapter.cutsOff (packages/gateway/src/providers/types.ts:180) is read at gateway.ts:260 (complete) and :573 (video). It is set for anthropic.ts:145, openai.ts:303, openrouter.ts:29, mock.ts:50 and fal.ts:451 (video). OpenAI and OpenRouter chat calls are streamed (openai.ts:114 `stream: true`, readChatStream). Tests are in packages/gateway/test/cut-off.test.ts and packages/runner/test/liveness.test.ts. Owner's answers, verbatim in conversation-continued.md: D2 \"Build a true stop now\" (2026-10-21 21:27) and the design answer \"Approve, and stream OpenAI/OpenRouter too\" (23:05). ba0adee removed the row ('Backlog: \"Cancel stops calls already in flight\" closed (ADR-0111)'). There was no playbook row.",
+  "landedIn": "333728a, c1fc822 (ADR-0111), 60e80f9, fix rounds bcbfa11/35cda68/e925c05/3d26250; row closed in ba0adee; on main via 37a4104",
+  "left": "Nothing on this row. Google's text calls and every image call are deliberately left uncut. ADR-0111 item 3 records that as Claude's choice, and its Consequences say they 'still finish after the run stops, are paid for'. No backlog row tracks cutting them; the playbook row 'Review the 38 Delegated records' lists that choice for the owner's review. A follow-up from the build, the proxies' cancellation type and the one scope, is backlog row 'Block 2 (P2): the activity proxies' cancellation type and the one cancellation scope', which is Block 2 plan item CANCEL-SCOPE.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "cost-in-step-questions",
+  "status": "done",
+  "evidence": "000c095: @byway/advisor exports estimateQuestions (packages/advisor/src/estimate.ts:429, index.ts:20). apps/web/src/services/create.ts:113 prices a run's questions. apps/web/src/view/questions.ts:31 shows 'Estimated cost if you say Yes: …' for an optional ('Run this step?') and 'Estimated cost of the next round, if you say No: …' for a person's loop ('Is this ready?', per questions.ts:3 and 25). Tests are in apps/web/test/questions.test.ts, packages/advisor/test/estimate-questions.test.ts and the e2e configurations.spec.ts:177. 5c55592 (B-a11y-cost-not-described) followed. 9ac54d3 (Batch B: 'Closed: cost in \"Run this step?\"') removed the row. Both commits are ancestors of 37a4104. There was no playbook row.",
+  "landedIn": "000c095, 5c55592; row closed in 9ac54d3; on main via 37a4104",
+  "left": "Nothing within this row's two questions. A separate row covers three other paid questions that still show no figure (best-so-far at the cap, not-converging, gate-failed): 'Other questions that commit money show no figure'.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "c2-export-mood-boards",
+  "status": "open",
+  "evidence": "The combined row is still at backlog.md:46. Its trigger is 'Pick up with the C2 mood-board question (its row)'. That question (\"C2 mood boards: one image for the chosen option, or one per option?\") is still held by the owner (2026-10-17). No commit changes C2's JSON export.",
+  "landedIn": "nothing on main",
+  "left": "All of it. It waits for the owner's answer to the mood-board question.",
+  "rowAt37a4104": "C2 JSON export carries the mood boards; demo option-map flags follow \"Chosen / Not chosen\""
+ },
+ {
+  "id": "c2-demo-option-map-chosen-flags",
+  "status": "open",
+  "evidence": "At 37a4104 the demo mock's options (packages/gateway/src/mock/structured.ts:5-16, renderOptions) write rationales without a 'Chosen.' or 'Not chosen.' prefix. A case-insensitive git grep finds 'Chosen' only in the template product.c2.option-map.md, never in packages/gateway. It shares the combined row with the export item.",
+  "landedIn": "nothing on main",
+  "left": "All of it. The row's trigger is the C2 mood-board question.",
+  "rowAt37a4104": "C2 JSON export carries the mood boards; demo option-map flags follow \"Chosen / Not chosen\""
+ },
+ {
+  "id": "dev-engine-workflows-path",
+  "status": "done",
+  "evidence": "9f1bb47: scripts/serve.ts:189 reads BYWAY_WORKFLOWS_BUNDLE and builds the bundle into that file inside packages/runner/dist. scripts/e2e.ts:30/98 sets it to its own `e2e-${process.pid}.js` and removes the file afterwards, so a running byway and pnpm e2e never write one bundle file. packages/runner/src/dev-engine.ts:62 documents it. It was built as an env variable, not as startDevEngine({ workflowsPath }), the audit's default (audit-2026-10-21.md:258). scripts/test/serve.test.ts:98-106 pins the wiring. 9ac54d3 (Batch C: 'Closed: ... startDevEngine's workflowsPath') removed the row. The block1-check report line 614 confirms it. There was no playbook row; the playbook's review row lists the env-var choice for review.",
+  "landedIn": "9f1bb47; row closed in 9ac54d3; on main via 37a4104",
+  "left": "Nothing. The playbook row 'Review the 38 Delegated records' lists `BYWAY_WORKFLOWS_BUNDLE` as a builder's choice for the owner to review; that is not an open build item.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "mock-fenced-block-reader",
+  "status": "done",
+  "evidence": "246a3e2: packages/gateway/src/mock/extract.ts:36 defines `fences`, a copy of the runner's formats.ts line-by-line reader. fencedBlocks and outsideFences use it (extract.ts:71, 191). At 8401820 the lazy regex was /```([A-Za-z0-9_-]*)[^\\n]*\\n([\\s\\S]*?)\\n?```/g; no lazy fence regex remains in the mock at 37a4104. scripts/test/fences-parity.test.ts holds the two readers to the same blocks. 87806a4 (C-MOCK-DIFF) extended it to the code-change hand-over. 9ac54d3 (Batch C: 'Closed: ... the mock's fenced-block reader') removed the row. There was no playbook row.",
+  "landedIn": "246a3e2, 87806a4; row closed in 9ac54d3; on main via 37a4104",
+  "left": "Nothing.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "temporal-metrics-host-check",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:47, with a trigger Claude proposed on 2026-10-18: 'Pick up at the next Temporal CLI upgrade, or if the metrics ever carry run data'. No commit adds a Host check for the metrics port.",
+  "landedIn": "nothing on main",
+  "left": "All of it.",
+  "rowAt37a4104": "Temporal metrics port has no Host check"
+ },
+ {
+  "id": "reconcile-lost-runs-live",
+  "status": "in-block-2",
+  "evidence": "Block 2 plan item R-RECONCILE (builder B4): reconcileLostRuns also runs periodically while the engine runs and skips queued runs. Its design was approved by the owner on 2026-10-21 23:05 with \"Approve, and price long-context tiers in W\". On main, packages/runner/src/lost-runs.ts is unchanged in 8401820..37a4104. The row says it 'rides with the second block'.",
+  "landedIn": "not on main; Block 2 plan R-RECONCILE",
+  "left": "All of it, on main. It is being built in Block 2.",
+  "rowAt37a4104": "Reconcile lost runs while the engine runs, not only at start"
+ },
+ {
+  "id": "advisor-diff-structured",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:49, with the trigger 'Pick up at the next change to diff.ts or to the web's \"How it differs\" lines'. That trigger has fired: packages/advisor/src/diff.ts changed in 7935624 (C-DIFF-DEDUPE), ab217bc and f922278. Those changes kept the text output and returned no structured differences, and the row was not updated.",
+  "landedIn": "nothing on main (diff.ts wording changes only)",
+  "left": "All of it. The trigger has fired but no work is scheduled.",
+  "rowAt37a4104": "Advisor diff as structured data"
+ },
+ {
+  "id": "renderer-cdn-allowlist",
+  "status": "open",
+  "evidence": "RENDER_ALLOWLIST (packages/runner/src/pages.ts:286) is unchanged: host-only, with no path pins or SRI. The row is still at backlog.md:50, with the trigger 'Decide before any distribution or hosted use, or at the next change to the allowlist'.",
+  "landedIn": "nothing on main",
+  "left": "The whole decision on pinning paths or requiring SRI.",
+  "rowAt37a4104": "Renderer egress: narrow the CDN allowlist"
+ },
+ {
+  "id": "playwright-bump-policy",
+  "status": "partly",
+  "evidence": "The cadence is set. At 2026-10-21 21:27 the owner chose D4 \"Within two weeks of each release (Recommended)\", recorded in ADR-0110 (dc19903). The weekly CI report landed in 17e2599 (scripts/playwright-pin.ts, .github/workflows/verify.yml:58-65), with pin-report tests in 711a2b7 and the date in 41bbaa9. The row is still open: run by hand, the report shows 1.63.0 pinned against 1.64.1 latest.",
+  "landedIn": "dc19903 (ADR-0110), 17e2599, 711a2b7, 41bbaa9; on main via 37a4104",
+  "left": "The first update, to be made right after the owner's first live run and preceded by the F07 generators' baseline (row \"F07 generators' baseline on Playwright 1.63.0\"), then later bumps within two weeks of each minor release. Both are recorded in the row \"Playwright bump policy\".",
+  "rowAt37a4104": "Playwright bump policy"
+ },
+ {
+  "id": "windows-network-service-integrity",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:53, with the trigger 'Look again at the next Playwright upgrade'. No investigation or change is on main.",
+  "landedIn": "nothing on main",
+  "left": "All of it.",
+  "rowAt37a4104": "Windows: Chromium's network service runs at Medium integrity"
+ },
+ {
+  "id": "renderer-env-allowlist",
+  "status": "open",
+  "evidence": "The scrub is still a deny-list. d4bd96b (B1) only keeps the secrets file's names once per process, for the lowercase-drive start. The row is still at backlog.md:54, with the trigger 'Find them before any distribution, or with macOS support'.",
+  "landedIn": "nothing on main (d4bd96b is a related deny-list fix)",
+  "left": "The switch to an allowlist, once the needed font and locale variables are known.",
+  "rowAt37a4104": "Renderer environment as an allowlist"
+ },
+ {
+  "id": "runbook-render-snippet",
+  "status": "open",
+  "evidence": "protocol/06-runbook.md is unchanged in 8401820..37a4104. On 2026-10-21 21:31 the owner chose D1 \"Keep all of it parked\" (described as \"Nothing on the research track moves until it resumes.\"), and the row quotes that answer. The snippet decision itself has not been made.",
+  "landedIn": "nothing on main",
+  "left": "The protocol track's decision on a safer snippet, parked until the research track resumes.",
+  "rowAt37a4104": "Protocol runbook's RENDER snippet"
+ },
+ {
+  "id": "fal-media-host-set",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:56, with the trigger 'Do it at the first live C5 run'. No live C5 run has happened, and no stored response has been read. The FAL_MEDIA_HOST code is unchanged.",
+  "landedIn": "nothing on main",
+  "left": "All of it. A related row is also open: \"The start frame's upload is outside the media admission rule\".",
+  "rowAt37a4104": "Confirm fal's live media host set"
+ },
+ {
+  "id": "memoize-row-facts",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:58, parked 'only if the cost shows', and now also covers re-hashing open checkpoints' artifacts (F15). run-data.ts changed only for RS-5's polling (5c55592), with no memoization.",
+  "landedIn": "nothing on main",
+  "left": "All of it.",
+  "rowAt37a4104": "Remember run-data row facts by artifact id"
+ },
+ {
+  "id": "start-attachments-after-held-key",
+  "status": "done",
+  "evidence": "2645433: the held-key refusal carries `parts` (apps/web/src/view/refusals.ts, server/http.ts). StartForm.tsx:139-144 uses heldKeyParts and heldAttachmentKeys (startDraft.ts:99) to withhold only the attachments that held a key and keep the clean ones at once, so a reload no longer loses them. The message names the attachment that held the key. c58d01c (SEC-NOTE-2) keeps a refused attachment again only once byway's check finds no key in it (withheldAfterCheck, startDraft.ts:122). ADR-0100 has Later notes of 2026-10-21 and 2026-10-22 on item 10. 9ac54d3 (Batch B: 'Closed: ... Start keeps attachments per attachment') removed the row. There was no playbook row.",
+  "landedIn": "2645433, c58d01c; row closed in 9ac54d3; on main via 37a4104",
+  "left": "Nothing for attachments. The separate row 'Kept again with the key still in it: Start's text, an example, a Run answer' covers Start's text, examples and Run answers, which keep looser rules.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "gemini-image-thinking-tokens",
+  "status": "partly",
+  "evidence": "6e4eb65 (B1) charges a Gemini image's text and thinking tokens. 248e6fe (MONEY-2) charges the unlisted answer tokens at the text rate. Both are recorded in ADR-0109 and reached main through 4363a64. The row now opens with 'Charged since B1 (ADR-0109)' and says Google's pricing page and image guide say thinking tokens are billed.",
+  "landedIn": "6e4eb65, 248e6fe (ADR-0109); on main via 4363a64",
+  "left": "Three checks against the first live image run's ledger and Google's usage records: the 2,000 tokens planned per image, the candidatesTokensDetails split, and whether thoughtsTokenCount includes the thought images. They are recorded in the row \"Gemini image thinking tokens\" and fed by \"First live run with real keys and real money\".",
+  "rowAt37a4104": "Gemini image thinking tokens"
+ },
+ {
+  "id": "run-screen-back-snapshot",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:65, with the trigger 'Pick up if a person reports a send refused just after Back, or with that way to show the kept draft'. Nothing was built.",
+  "landedIn": "nothing on main",
+  "left": "All of it.",
+  "rowAt37a4104": "Run screen on Back: hide Your turn until the first served snapshot"
+ },
+ {
+  "id": "drafts-survive-tab-close",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:66, unchanged ('revisit if people report losing text'). Drafts still live in sessionStorage.",
+  "landedIn": "nothing on main",
+  "left": "All of it (parked).",
+  "rowAt37a4104": "Your-turn drafts survive closing the tab"
+ },
+ {
+  "id": "guard-disabled-blind-spots",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:67, unchanged ('Extend the scan if a shared component starts spreading native button props'). The guard was not extended.",
+  "landedIn": "nothing on main",
+  "left": "All of it (parked).",
+  "rowAt37a4104": "guard-disabled's blind spots"
+ },
+ {
+  "id": "paste-example-action-button",
+  "status": "open",
+  "evidence": "The row is still at backlog.md:68, unchanged ('Make it an ActionButton marked unavailable if either flow changes'). It remains the one allowlisted native disabled button.",
+  "landedIn": "nothing on main",
+  "left": "All of it (parked).",
+  "rowAt37a4104": "\"Paste an example\" at nine: an unavailable ActionButton"
+ },
+ {
+  "id": "attach-another-limit-note",
+  "status": "done",
+  "evidence": "d2a133d: at MAX_ATTACHMENTS, AttachControl renders ATTACH_LIMIT_NOTE ('byway takes up to five attachments for one problem.', apps/web/src/components/StartForm.tsx:36 and 44) where the button was, as text rather than a disabled button. Tests are in apps/web/test/start-form.test.ts:22-27 and e2e/keyboard.spec.ts. 9ac54d3 (Batch B: 'Closed: ... Start says why \"Attach another\" went') removed the row. There was no playbook row.",
+  "landedIn": "d2a133d; row closed in 9ac54d3; on main via 37a4104",
+  "left": "Nothing.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "repair-ledger-from-book",
+  "status": "open",
+  "evidence": "The ledger commits in the range (0ed0b52, f6d2816, cda27c3) change only how verify() names broken or missing lines. Nothing re-appends calls from the spend book. The row is still at backlog.md:70, with its trigger: the start-up report or 'Check the spend ledger' first shows calls the ledger lacks.",
+  "landedIn": "nothing on main",
+  "left": "All of it.",
+  "rowAt37a4104": "Repair ledger.jsonl from the spend book"
+ },
+ {
+  "id": "reconcile-maybe-billed",
+  "status": "open",
+  "evidence": "No reconciliation with fal's request status was built. The row is still at backlog.md:72. ba0adee widened it: since ADR-0111, cut-off calls and fal clips whose cancel was answered 202 or failed are listed too. Trigger: 'Pick up when a live run leaves a \"may have been billed\" call in Settings'.",
+  "landedIn": "nothing on main (row widened in ba0adee)",
+  "left": "All of it.",
+  "rowAt37a4104": "Reconcile \"may have been billed\" calls with the providers"
+ },
+ {
+  "id": "activity-inputs-by-reference",
+  "status": "in-block-2",
+  "evidence": "Block 2 plan items P2-BRIEF (the brief stored once in CAS, its id in RunInput and RunRef), P2-SEEDS (RunRef stops carrying seeds) and P2-INPUTS (deck, draft and tells by reference). The owner chose D3 \"Now, before the first live run\" (2026-10-21 21:31) and approved the design with \"Approve, and price long-context tiers in W\" (23:05). On main, RunInput and RunRef still carry problem and seeds, and the row is open.",
+  "landedIn": "not on main; Block 2 plan P2-BRIEF, P2-SEEDS, P2-INPUTS",
+  "left": "All of it, on main. After Block 2, the part 'activities receive only the ports their step reads' stays on this row by the approved design. The plan's B2-RECORDS keeps the row open for that part only.",
+  "rowAt37a4104": "Activity inputs carry the brief and the step's ports by value (P2)"
+ },
+ {
+  "id": "reopen-never-started-run",
+  "status": "open",
+  "evidence": "No reopen code on main. Runner.start is unchanged apart from B1's describe-first check (22f521b). At 37a4104 the row is still in Product follow-ups, with an added note: \"B1 (ADR-0109) built the describe-first check, which this row was to be picked up with, but not this reopen, and records no reason\". It also gives Claude's reading that the describe gives no 'never started' marker, because with the engine down it cannot reach Temporal either. New trigger: 'Pick up if a Start is seen to return a failed run after the engine was down (trigger proposed by Claude, 2026-10-18)'. It is not in the Block 2 plan.",
+  "landedIn": "nothing (only the neighbouring describe-first check landed: 22f521b, ADR-0109 decision 3)",
+  "left": "All of it: the reliable 'never started' marker on the run record, and Runner.start reopening such a run.",
+  "rowAt37a4104": "Run start: reopen a run whose workflow never started (P3 double fault)"
+ },
+ {
+  "id": "describe-before-failed",
+  "status": "done",
+  "evidence": "Re-checked. 22f521b (2026-10-18, B1) is on main; it reached main through 98d016d (fix/fx-b1) and 4363a64. Its message: 'a run start that failed asks Temporal for its workflow before marking the run failed'. At 37a4104, packages/runner/src/client.ts:109 calls `handle(runId).describe()`, and packages/runner/test/start-describe.test.ts exists. ADR-0109 decision 3 is 'A failed run start asks Temporal before the run is marked failed'. ADR-0109's Related list says ADR-0099's second double fault 'is narrowed, not closed (item 3)'. The row's own fix, describing the workflow first, is in main's code. Commit 00401a0 (2026-10-19) removes the row '-| Run start: describe the workflow before marking a run failed (P3 double fault)' and does not add it back. A grep of docs/backlog.md at 37a4104 finds no match.",
+  "landedIn": "22f521b; merged via 98d016d and 4363a64; ADR-0109 decision 3; row closed in 00401a0",
+  "left": "Residuals, all recorded at 37a4104. (1) Row 77, 'Run start: the describe doubles the wait when the engine is down': about 40 s before the 503. Its trigger: a person reports a Start that stayed busy for half a minute or more. (2) Row 128, 'Paid-call residuals named only in ADRs', and ADR-0109's Negative item 'A late start'. A start that lands after the describe finds the run failed. A connection reset after Temporal accepted a start, when the describe fails too, marks the run failed with 'Nothing was spent'. The separate row 76, 'Run start: reopen a run whose workflow never started (P3 double fault)', stays open.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "keep-start-id-reload",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104. In RecommendationView.tsx the Start id still lives only while the screen is mounted: useState(createStartIdentity), startIdentity.ts. startDraft.ts does not keep it. No commit between 8401820 and 37a4104 touched startDraft.ts. It is not in the Block 2 plan.",
+  "landedIn": "nothing",
+  "left": "Keep the Start's id with the start draft (startDraft.ts). The trigger is unchanged: 'if this is seen (ADR-0099)'.",
+  "rowAt37a4104": "Keep the Start id across a reload"
+ },
+ {
+  "id": "billed-image-ends-run",
+  "status": "open",
+  "evidence": "Still parked on purpose. The row is present with an added trigger: 'Revisit if a live run ends this way (trigger proposed by Claude, 2026-10-18)'. The behaviour is unchanged: billedStop still stops the step rather than buying again. ADR-0112 item 7 (5272cea) routes a memo failure after a paid image (PaidNotKept) through billedStop too, so that case now also ends the run, with the image's slot named.",
+  "landedIn": "nothing (only the related message change in 5272cea / ADR-0112 item 7)",
+  "left": "The decision as written: keep stopping, or record the slot as failed and go on with a partial result (ADR-0090 §4). It waits on a live run that ends this way.",
+  "rowAt37a4104": "An image billed but not kept ends the run"
+ },
+ {
+  "id": "asset-free-plan-drop-note",
+  "status": "done",
+  "evidence": "Re-checked. 5272cea (2026-10-21, batch A) is on main. Its message: 'A free plan's briefs beyond the most the step makes are named (\"This step makes at most 1 image, so the brief for “second” was left out.\")'. In slot-plan.ts at 37a4104, freePlan (line 51) sets max = min(declared max, slots knob), and line 112 lists `dropped: all.slice(plan.max)`. asset.ts's droppedSentence (lines 385-389) writes the note. Tests: asset-slots.test.ts:576 checks 'This step makes at most 1 image, so the brief for “second” was left out.', and lines 594-603 check C1's at-most-three case, including the case where every image fails. 852aecc (2026-10-22, A3) adds code for a slots knob below 1: NO_SLOTS_NOTE, then every brief is named. Correction to the earlier evidence: 772fedf changes records only, namely ADR-0112 item 6 and backlog row 82 for a knob between 0 and 1. ADR-0112 item 6 (Delegated, 2026-10-21 22:16) is on main. 9ac54d3 removes the row; its message says it closed 'free-plan briefs dropped without a note'.",
+  "landedIn": "5272cea, 852aecc (code); 772fedf (records); ADR-0112 item 6; row closed in 9ac54d3",
+  "left": "Nothing of this row. A related row at 37a4104, row 82 'An ASSET step whose slots knob is below 1 still buys its brief answer', is Block 2 plan item SLOTS-KNOB (B1 W-core).",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "asset-no-brief-note-names-left-out",
+  "status": "done",
+  "evidence": "Re-checked. 5272cea (2026-10-21) is on main. Its message: 'NO_BRIEF_NOTE and NO_IMAGE_MADE_NOTE name the briefs left out too'. asset.ts at 37a4104, lines 356-377, builds the sentence for briefs that name slots the work does not have, for example 'Briefs for ${quoted}, which ${which}, were left out.'. asset-slots.test.ts:212 checks `${NO_BRIEF_NOTE} Briefs for “4” and “5”, which the storyboard has no shots for, were left out.`. ADR-0112 item 6 records it. 9ac54d3 removes the row; its message says it closed 'the briefs left out under the no-brief note'. The row's title does not appear in the backlog at 37a4104.",
+  "landedIn": "5272cea; ADR-0112 item 6; row closed in 9ac54d3",
+  "left": "Nothing.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "asset-merged-briefs-style",
+  "status": "open",
+  "evidence": "Still parked. The row is present with an added trigger: 'Revisit if a live run shows shots or options that differ in style (trigger proposed by Claude, 2026-10-18)'. slot-plan.ts still merges the earlier answer's briefs (checkBriefs' `earlier`). It is not in the Block 2 plan.",
+  "landedIn": "nothing",
+  "left": "The choice of asking the retry for the full set instead. It waits on a live run that shows the style difference.",
+  "rowAt37a4104": "Briefs merged across the two tries may differ in style from shot to shot"
+ },
+ {
+  "id": "c5-clip-middle-frame",
+  "status": "open",
+  "evidence": "No middle-frame extraction on main. The row is present with an added trigger: 'Before the first live C5 run (trigger proposed by Claude, 2026-10-18)'. It is not in the Block 2 plan.",
+  "landedIn": "nothing",
+  "left": "All of it: fal frame_type 'middle' as best-effort evidence, counted in videoExtras and in the advisor's estimate.",
+  "rowAt37a4104": "C5 clip evidence: sample a middle frame of each clip"
+ },
+ {
+  "id": "c5-anchor-frames-knob-and-wording",
+  "status": "open",
+  "evidence": "At 37a4104, packages/prompts/templates/product.c5.anchor-frames.md:11 still reads 'each the exact first frame its clip will start from'. No prompt template changed between 8401820 and 37a4104. The row is present and widened. It now also names the Anchor frames explainer in catalog presentation.ts:288 ('the shots will start from'), and its trigger is 'Before the first live C5 run (trigger proposed by Claude, 2026-10-18)'. It is not in the Block 2 plan.",
+  "landedIn": "nothing",
+  "left": "All of it. Buy a still only where it is used (the slots knob on media), and fix the prompt's wording and the presentation.ts explainer.",
+  "rowAt37a4104": "C5 anchor frames: the slots knob is ignored on media, and the prompt says every still is its clip's start frame"
+ },
+ {
+  "id": "c5-anchor-frame-check-before-relay",
+  "status": "open",
+  "evidence": "This is a protocol research question. No answer appears in conversation-continued.md, and no ADR covers it. The row is present with a trigger: 'Decide before the first live C5 run, or when the research track resumes (trigger proposed by Claude, 2026-10-18)'.",
+  "landedIn": "nothing",
+  "left": "The whole decision (protocol, research track).",
+  "rowAt37a4104": "Should an anchor-frame check run before the relay chain?"
+ },
+ {
+  "id": "asset-integrate-miss-after-purchase",
+  "status": "done",
+  "evidence": "Re-checked. 5272cea (2026-10-21, batch A) is on main. Its message: 'asset.integrate's \"Place every image\" miss after purchase no longer fails the run'. A usable partial placement is used after the retry. With no usable answer, the work is unchanged and every image is kept beside it, with a note. ContractMissed now carries both answers' cost (call.ts, failures.ts). asset.ts at 37a4104 has the placement result type at line 92 ('the work with the images in it (none when no answer was usable), and the images left out'). ADR-0112 (Delegated, 2026-10-21 22:16), items 1 to 5, records it. ADR-0112 says ADR-0090's parked item and ADR-0101's 'What still can fail' no longer hold. 9ac54d3 removes the row ('asset.integrate's miss after purchase'). The only text left at 37a4104 is a mention in row 153, 'First live run with real keys and real money': 'The row on asset.integrate's \"Place every image\" miss after purchase, due before the C3 run, was settled on 2026-10-21 (ADR-0112)'.",
+  "landedIn": "5272cea, with ADR-0112 tests in 852aecc (A2, A4); ADR-0112 items 1-5; row closed in 9ac54d3",
+  "left": "Residuals. (1) Row 81, 'A keepsVoice ASSET on prose can never place an image'. (2) ADR-0112's Consequences: when the placing answer's own memo cannot be kept (PaidNotKept on that completion), the step still fails with the images outside the work. This is accepted, and no row tracks it.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "c2-mood-boards-chosen-or-all",
+  "status": "open",
+  "evidence": "The owner has not decided; the question is still held. The row at 37a4104 still says 'Held by the owner (2026-10-17). Decide before the first live C2 run on the Best or OpenAI profile; until then, test C2 on Balanced'. Only the Balanced cost was updated, to about $0.59 after ADR-0109. The owner's words on 2026-10-17 08:24, replying to the list that included 'C2 mood boards, chosen options only': \"we can hold these for a while right? is everything filed in backlog with triggers?\" conversation-continued.md has no later answer about C2 mood boards. It is not in the Block 2 plan.",
+  "landedIn": "nothing",
+  "left": "The owner's decision: boards for the chosen options only (recommended, capped at 3, found from a flag VOICE cannot edit) or one per option. The dependent row 'C2 JSON export carries the mood boards; demo option-map flags follow \"Chosen / Not chosen\"' waits on it.",
+  "rowAt37a4104": "C2 mood boards: one image for the chosen option, or one per option?"
+ },
+ {
+  "id": "advisor-c5-shot-check-estimate",
+  "status": "open",
+  "evidence": "Still accepted knowingly. estimate.ts changed only for a VOICE counted as the person's time (afcc3fd) and the cost of questions (000c095), not for shot checks. The row is present with an added trigger: 'Revisit when the advisor's planning numbers are checked against the ledger (its row) (trigger proposed by Claude, 2026-10-18)'.",
+  "landedIn": "nothing",
+  "left": "Stop counting C5's per-link shot-check calls when no video key is set. It waits on the ledger-check row.",
+  "rowAt37a4104": "Advisor estimate counts C5 shot-check calls per link even without a video key"
+ },
+ {
+  "id": "recipe-ir-loop-reads-first-round",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104. The validator's scope typing did not change: no commit touched packages/validator/src between 8401820 and 37a4104.",
+  "landedIn": "nothing",
+  "left": "Type reads inside loop and relay bodies beyond the first round, 'if a recipe needs it' (ADR-0089).",
+  "rowAt37a4104": "Recipe IR: reads inside loops or relays are typed on the first round only"
+ },
+ {
+  "id": "c6-angles-react-as-reads",
+  "status": "open",
+  "evidence": "Still deferred. The row is present with an added trigger: 'Pick up then, or at the next change to how the recipe IR types reads (trigger proposed by Claude, 2026-10-21)'. The recipe and validator read typing did not change.",
+  "landedIn": "nothing",
+  "left": "Model C6's angles and the person's react as reads, once person-step read semantics are designed (ADR-0089).",
+  "rowAt37a4104": "C6 angles and react to the author's write as reads"
+ },
+ {
+  "id": "paid-image-save-failure-slot",
+  "status": "done",
+  "evidence": "Re-checked. 5272cea (2026-10-21) is on main. Its message: 'memo.ts's failure to keep a paid result is PaidNotKept, a StepError marked billed, so the asset step adds the slot and \"not in the work\" sentences (billedStop)'. At 37a4104, memo.ts:48 has `export class PaidNotKept extends StepError` and throws it at line 297. asset.ts:167 sends `e instanceof PaidNotKept` through billedStop, and billedStop (lines 304-312) returns a PaidNotKept with the added words. ADR-0112 item 7 records it. 9ac54d3 removes the row ('the paid image whose result byway cannot save').",
+  "landedIn": "5272cea; ADR-0112 item 7; row closed in 9ac54d3",
+  "left": "Nothing of this row. Model and video calls still fail with a plain StepError, by design (ADR-0112 item 7). A memo that cannot keep a declined call's outcome also stays a plain StepError (ADR-0112's Consequences).",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "held-voice-by-reference",
+  "status": "in-block-2",
+  "evidence": "Nothing is on main: packages/runner/src/workflow is unchanged since 8401820. The owner chose when it lands on 2026-10-21 21:31, answering D3 (P2, with the held voice) with \"Now, before the first live run\". On 2026-10-21 23:05 the owner approved the design: \"Approve, and price long-context tiers in W\". The Block 2 plan builds it as P2-HELD: finishHumanStep stores each VOICE answer and ports.voice and ports.held hold ids. The row's first sentence, the fixed voice deck, is P2-INPUTS. The row at 37a4104 records both answers.",
+  "landedIn": "not on main; Block 2 plan items P2-HELD (and P2-INPUTS for the fixed deck)",
+  "left": "All of it, in Block 2 (builder B1, W-core).",
+  "rowAt37a4104": "Run inputs by reference also covers the held voice"
+ },
+ {
+  "id": "work-bound-over-approximates",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104, and limits.ts's workBound is unchanged. The Block 2 plan does not name this row. However, its item P2-SEEDS removes the batch bound's seed term (limits.ts ACTIVITY_BYTES.seed, the Walker's seedsTotal), and seeds feed only batchBytes. That bears on the row's 'every seed' part.",
+  "landedIn": "nothing",
+  "left": "The over-approximation from every seed, from views at a web page's size, and from a raised cap on every loop a person holds. After Block 2's P2-SEEDS, the seed part should fall away; the views and loop-cap parts stay. Trigger: 'if a real recipe ever hits the limit'.",
+  "rowAt37a4104": "The work bound over-approximates"
+ },
+ {
+  "id": "composed-diff-precision",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104. diff.ts changed for shared labels and repeated lines (ab217bc, 7935624), but not for re-nesting or the reorder of consumes or reads.",
+  "landedIn": "nothing",
+  "left": "Narrow 'Other technical changes that affect how it runs', 'only if composers produce such changes'.",
+  "rowAt37a4104": "Composed diff precision"
+ },
+ {
+  "id": "diff-shared-label-repeat",
+  "status": "done",
+  "evidence": "Re-checked. ab217bc (2026-10-21, batch C) is on main, and its message names the row. diff.ts now names a part of a shown step by its part, for example 'the AI’s swaps in Cliché sweep', and says identical lines once. 7935624 (2026-10-22, C-DIFF-DEDUPE) is on main. diff.ts:597-599 at 37a4104 counts repeats ('twice', 'n times'), and diff-semantics.test.ts tests it. 9ac54d3 removes the row ('the diff's repeated shared labels').",
+  "landedIn": "ab217bc, 7935624; row closed in 9ac54d3",
+  "left": "Nothing. Separate rows on the diff stay open at 37a4104: 'Advisor diff as structured data' and 'Composed diff precision'.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "revise-step-grouping",
+  "status": "done",
+  "evidence": "Re-checked. ab217bc (2026-10-21, batch C) is on main. Its message: 'the case that reproduces is a second writer that applies the same findings (a fix between a trim and its removals, or two swap steps)'. In present.ts's groupStage, the writer's group search changed from `groups.find(... && !g.some(appliesFindings))` to `groups.findLast((g) => leadOf(g) === source)`, and present.test.ts was updated. Before the change, groupStage's doc comment already grouped a writer that applies a critique with the step whose critique it applies, wherever it comes after every run of that step, so the general 'separated by another step' case was already grouped. 9ac54d3 removes the row, noting 'what reproduced: only a second writer applying the same findings split off; a swap step after a sweep inside a replicate is now shown with Trim'.",
+  "landedIn": "ab217bc; row closed in 9ac54d3",
+  "left": "Nothing recorded. By design (groupStage's comment), a writer stands on its own where a loop round or a relay link runs its step again first. The separate row 'The obvious-answer check's plain drafts show as their own composed step' stays open.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "composed-media-explainer-skip",
+  "status": "open",
+  "evidence": "The row is present with an added trigger: 'Pick up when the advisor's presentation gets the profile, or at the next change to present.ts (trigger proposed by Claude, 2026-10-18)'. present.ts did change in ab217bc on 2026-10-21 (groupStage and notesOnly), but the row was not picked up or re-triggered.",
+  "landedIn": "nothing",
+  "left": "Say in composed image and motion explainers that the step is skipped without an image or video provider. It needs the profile at presentation time. Its present.ts trigger appears already met by ab217bc.",
+  "rowAt37a4104": "Composed image and motion explainers do not say the step is skipped without an image or video provider"
+ },
+ {
+  "id": "lazy-swap-question",
+  "status": "open",
+  "evidence": "The row is present with an added trigger: 'Decide at the next change to asksSwaps or to the interpreter's swap step (trigger proposed by Claude, 2026-10-18)'. The workflow and semantics.ts are unchanged on main. Section 4 of the Block 2 plan lists it as not built, quoting the design: 'W does not change the swap step, which is its trigger.'",
+  "landedIn": "nothing",
+  "left": "The TELLS-1 convention decision: whether asksSwaps becomes a fact of each run.",
+  "rowAt37a4104": "Ask the swap question lazily when an optional or route step may replace the finds"
+ },
+ {
+  "id": "route-branch-run-order",
+  "status": "open",
+  "evidence": "The row is present with an added trigger: 'Pick up at the next change to canPrecede or canRunAfter (trigger proposed by Claude, 2026-10-18)'. It also notes that its other condition, the claims oracle in the suite, holds since 2026-10-18. packages/recipe/src/semantics.ts is unchanged between 8401820 and 37a4104.",
+  "landedIn": "nothing",
+  "left": "Branch exclusivity in the run order, for canPrecede and canRunAfter.",
+  "rowAt37a4104": "Route branches in the run-order claims"
+ },
+ {
+  "id": "pick-not-asked-your-turn-copy",
+  "status": "open",
+  "evidence": "The row is present with an added trigger: 'Pick up at the next change to pickYours or to C5's presentation (trigger proposed by Claude, 2026-10-18)'. Neither pickYours in present.ts nor catalog presentation.ts changed since 8401820.",
+  "landedIn": "nothing",
+  "left": "Explainer copy for a pick that is skipped when there are no more drafts than it keeps.",
+  "rowAt37a4104": "\"Your turn: choose what to keep.\" on a pick that is not asked when there are no more drafts than it keeps"
+ },
+ {
+  "id": "obvious-answer-drafts-grouping",
+  "status": "open",
+  "evidence": "The row is present with an added trigger: 'Pick up at the next change to present.ts's grouping (trigger proposed by Claude, 2026-10-18)'. groupStage did change in ab217bc (2026-10-21) for the second-writer case, but this row was not picked up or re-triggered.",
+  "landedIn": "nothing",
+  "left": "Merging the plain drafts with their obvious-answer check, a presentation-design choice. Its grouping trigger appears already met by ab217bc.",
+  "rowAt37a4104": "The obvious-answer check's plain drafts show as their own composed step"
+ },
+ {
+  "id": "declined-critique-older-critique",
+  "status": "in-block-2",
+  "evidence": "Decided, not built: interpreter.ts is unchanged on main. On 2026-10-21 23:05 the owner answered the P2 question, whose text included 'with my recommendations: row 104, clear a declined critique', with \"Approve, and price long-context tiers in W\". The row at 37a4104 records this and says 'It is built in the second block'. The Block 2 plan builds it as R-DECLINED, together with the claims oracle at full size (ORACLE).",
+  "landedIn": "not on main; Block 2 plan item R-DECLINED (with ORACLE)",
+  "left": "All of the build, in Block 2: the interpreter and semantics clear the critique when an optional critique step is declined, and the writer after it passes with a note.",
+  "rowAt37a4104": "A writer acts on an older critique when an optional critique step is declined"
+ },
+ {
+  "id": "st12-per-candidate-fix",
+  "status": "open",
+  "evidence": "The row is present with an added trigger: 'Revisit if a catalog or composed recipe needs it (trigger proposed by Claude, 2026-10-18)'. No commit touched the validator's src between 8401820 and 37a4104.",
+  "landedIn": "nothing",
+  "left": "Let ST12 admit a per-candidate list that a fix in the same candidate applies, if a recipe needs it.",
+  "rowAt37a4104": "ST12 critique-per-candidate also refuses a per-candidate list that a fix in the same candidate would apply"
+ },
+ {
+  "id": "one-shot-gate-empty-critique-mark",
+  "status": "in-block-2",
+  "evidence": "Nothing is on main: packages/runner/src/workflow is unchanged since 8401820, and the gate at interpreter.ts:756 still spreads the entry ports. The row at 37a4104 adds 'It rides with the second block (P2's design, approved by the owner on 2026-10-21 23:05 ...): the gate's critique clears the empty-critique mark it was handed'. The owner's answer at 23:05 was \"Approve, and price long-context tiers in W\". The Block 2 plan item is R-GATE-MARK (withCritique(ports, out.critique)).",
+  "landedIn": "not on main; Block 2 plan item R-GATE-MARK",
+  "left": "All of the fix, in Block 2 (builder B1), with a runner-level test on a hand-built recipe.",
+  "rowAt37a4104": "A one-shot gate hands on the entry ports' emptyCritique mark beside its body's critique"
+ },
+ {
+  "id": "directions-critique-sources-conservative",
+  "status": "open",
+  "evidence": "The row is still in docs/backlog.md at 37a4104 with the same scope. The only change is a trigger: \"Revisit at the next change to these claims in semantics.ts (trigger proposed by Claude, 2026-10-18)\". Its other condition, the claims oracle in the suite, has held since 24e69f5. Block 2 plan section 4 lists it as not built: the trigger fires only if R-DECLINED changes critiqueSources' walk at an optional step, and widening the claims is out of scope.",
+  "landedIn": "none",
+  "left": "All of it: directionsReactedTo and critiqueSources still make no claim in the listed shapes.",
+  "rowAt37a4104": "directionsReactedTo and critiqueSources withhold some true claims"
+ },
+ {
+  "id": "answer-unapplied-unchosen-paths",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104 apart from an added trigger: \"Before composed recipes are offered to anyone besides the owner, or before the study registry's first entry\" (Claude, 2026-10-18). Block 2 plan section 4: named \"do not come\" in the approved P2 design, so W does not build it.",
+  "landedIn": "none",
+  "left": "All of it: refuse such an answer, or say at run time that it was not used (ADR-0098 decision 7).",
+  "rowAt37a4104": "An admitted answer can go unapplied on paths no one chooses"
+ },
+ {
+  "id": "composed-relay-outside-media",
+  "status": "done",
+  "evidence": "Checked and it holds. 2b1021a (B1, 2026-10-18) adds the COMPOSED-MEDIUM rule. At 37a4104, packages/advisor/src/profile.ts:39-41 holds the comment, :61 maps medium to 'COMPOSED-MEDIUM', and :244-252 is the rule: outside a medium of 'media' it refuses a relay node and a model step whose role is relay. packages/advisor/test/profile.test.ts:115-153 tests that the step and the chain are refused on C1, allowed on C5, and that a compositing step is allowed anywhere. The commit message says it was mutation-checked with 4 mutations. Recorded as ADR-0109 item 6 (first written as ADR-0107 in e885788, renumbered in 88853f5). The backlog row was removed in 00401a0 (the batch's hand-offs, \"8 rows closed\"). All of these commits are ancestors of 4363a64, which merged into main.",
+  "landedIn": "2b1021a; ADR-0109 (e885788, renumbered in 88853f5); row closed in 00401a0; merged to main in 4363a64",
+  "left": "nothing",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "port-claims-oracle",
+  "status": "done",
+  "evidence": "Checked and it holds. 24e69f5 (2026-10-18) added scripts/test/claims-oracle.test.ts and scripts/test/claims-oracle/{oracle.ts,variants.ts}. vitest.config.ts:6 includes 'scripts/test/**/*.test.ts', so the oracle runs with the unit tests. It sits in scripts/test, not the runner suite the row named, because it spans the advisor and the runner. The row's adjustments are in the code. The G check reads the storyboardShots of the storyboard the relay takes in (oracle.ts:629, and :302 for the candidate path). An audio ASSET is stubbed as skipped (oracle.ts:204-205). Loop gates have probe 1 (variants.ts:211). FORCE, FORCE_REACT and FORCE_J are kept (oracle.ts:20, :587). The backlog row was removed in 00401a0, and both commits are in 4363a64.",
+  "landedIn": "24e69f5; row closed in 00401a0; merged to main in 4363a64",
+  "left": "Not part of this row: a follow-up row, \"When to run the claims oracle at the measurement's size\", which still exists at 37a4104 (backlog line 104). It covers the full-size run on the final tree and the header note, and it is Block 2 plan item ORACLE.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "answer-replaced-before-delivery",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104 apart from an added trigger: \"Before composed recipes are offered to anyone besides the owner, or before the study registry's first entry\" (Claude, 2026-10-18). It is not among the Block 2 plan items.",
+  "landedIn": "none",
+  "left": "All of it: follow \"the work is replaced\" in answersReachingWork, or have the composed profile refuse a from-scratch writer after Distill.",
+  "rowAt37a4104": "An answer applied by a writer can be replaced before delivery by a from-scratch writer or a later pick"
+ },
+ {
+  "id": "owner-st9-st10-case-2",
+  "status": "open",
+  "evidence": "Still a held owner question at 37a4104 (the row: \"Held by the owner (2026-10-17)\"). On 2026-10-17 08:24 the owner quoted Claude's recommendation \"ST9/ST10 case 2: keep it.\" and asked \"we can hold these for a while right? is everything filed in backlog with triggers?\" (conversation-continued.md). That holds the question rather than answering it, and no later answer is recorded. Block 2 plan section 4 lists it as not built.",
+  "landedIn": "none",
+  "left": "The owner's answer (keep case 2, or limit it to audits a critique can precede) and the optional activity-only guard.",
+  "rowAt37a4104": "Owner question: ST9/ST10 human-critique case 2"
+ },
+ {
+  "id": "owner-ai-direction-carries-answer",
+  "status": "open",
+  "evidence": "Still held at 37a4104 (the row: \"Held by the owner (2026-10-17)\"; \"Decide before the study registry's first entry\"). On 2026-10-17 08:24 the owner quoted Claude's recommendation \"An AI direction built from your answer counts as acting on it: confirm.\" and replied \"we can hold these for a while right? is everything filed in backlog with triggers?\". No later answer is in conversation-continued.md. The code still admits these shapes as built (carriesOn).",
+  "landedIn": "none",
+  "left": "The owner's confirmation, or a change of the wider carriesOn rule, recorded in an ADR.",
+  "rowAt37a4104": "Owner question: does an AI direction that takes the person's answer in carry it to the work?"
+ },
+ {
+  "id": "influence-through-candidates",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104 apart from an added trigger: \"Before composed recipes are offered to anyone besides the owner, or before the study registry's first entry\" (Claude, 2026-10-18). It is not in Block 2.",
+  "landedIn": "none",
+  "left": "All of it: admission does not yet follow an answer applied inside candidates.",
+  "rowAt37a4104": "Influence through candidates is not followed"
+ },
+ {
+  "id": "c1h-seed-voice-port",
+  "status": "open",
+  "evidence": "The row is still there with a trigger: \"Decide before Study 1's prompt registration\" (Claude, 2026-10-18). Only the thing it was to be decided with has landed: C1-H's parent hash was pinned in d98d5fa (C1H_PARENT_HASH in c1h.ts). The research track stays parked. The owner's D1 answer of 2026-10-21 21:31 was \"Keep all of it parked\".",
+  "landedIn": "none (the related parent pin landed in d98d5fa)",
+  "left": "The research track's decision on dropping the voice-deck port from c1h and its four ablations.",
+  "rowAt37a4104": "C1-H's seed build consumes the voice deck its prompt never renders"
+ },
+ {
+  "id": "composed-prompt-unshown-port",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104, with the same \"if composers hit it\" condition (ADR-0097). There is no commit for it in 8401820..37a4104, and it is not in the Block 2 plan.",
+  "landedIn": "none",
+  "left": "All of it: forceComposed could drop unshown ports instead of refusing them.",
+  "rowAt37a4104": "COMPOSED-PROMPT refuses an unshown declared port even when no answer depends on it"
+ },
+ {
+  "id": "foreign-prompt-declared-ports",
+  "status": "open",
+  "evidence": "The row is still there with an added trigger: \"Revisit when the research track resumes and the CLI validates research recipes for a study\" (Claude, 2026-10-18). The research track stays parked (D1 \"Keep all of it parked\", 2026-10-21 21:31).",
+  "landedIn": "none",
+  "left": "All of it.",
+  "rowAt37a4104": "A prompt outside byway's library is still read by its declared ports"
+ },
+ {
+  "id": "promptshows-some-run",
+  "status": "open",
+  "evidence": "The row is still there with an added trigger: \"Revisit if the claims oracle ... finds a claim that rests on promptShows false on a run\" (Claude, 2026-10-18). There is no code change.",
+  "landedIn": "none",
+  "left": "All of it: parked behind that trigger.",
+  "rowAt37a4104": "promptShows means \"shown on some run\""
+ },
+ {
+  "id": "notes-only-promptshows",
+  "status": "done",
+  "evidence": "Checked and it holds. ab217bc (batch C, 2026-10-21) changed present.ts notesOnly. At 37a4104, packages/advisor/src/present.ts:18 imports promptShows, and :237 sets notesOnly for a model cut or tells-sweep only when no later machine writer's prompt shows 'critique' (promptShows(t, 'critique', recipe.medium)). Before, it read declared ports. The texts 'Nothing is deleted for you.' (:137) and 'It flags only.' (:142) are chosen at :281 and :287. A test was added in packages/advisor/test/present.test.ts. The row was removed in records pass 9ac54d3 (\"notes-only reading declared ports\"). Both commits reached main in 37a4104 through fix/fx-nC (7de1a3c), then fix/fx-block1.",
+  "landedIn": "ab217bc; row closed in 9ac54d3; merged to main in 37a4104 (via fix/fx-nC, 7de1a3c)",
+  "left": "nothing",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "voice-content-layer",
+  "status": "open",
+  "evidence": "Still held at 37a4104 (the row: \"Held by the owner (2026-10-17)\"). The owner approved P2's design on 2026-10-21 23:05 with \"Approve, and price long-context tiers in W\". The row records that this took the recommendation \"W does not start the content-layer pilot\", so Block 2 does not fire the trigger. Block 2 plan section 4 lists it as not built. The other triggers stand.",
+  "landedIn": "none",
+  "left": "The pilot (about 5 real C1 runs), then the owner's choice between a content layer, a source-text editor, or retiring only the arbiter.",
+  "rowAt37a4104": "Owner decision: simplify VOICE on web pages to a content layer"
+ },
+ {
+  "id": "f07-arbiter-limits",
+  "status": "open",
+  "evidence": "The row is still there with the same policy (\"revisit only on a real report, or retire them with the content-layer simplification\"). One sentence was added: no test pins the raised badge the owner accepted. There is no code change.",
+  "landedIn": "none",
+  "left": "All of it: parked.",
+  "rowAt37a4104": "F07 browser-arbiter limits (only while the arbiter is kept)"
+ },
+ {
+  "id": "voice-retry-c5",
+  "status": "in-block-2",
+  "evidence": "The owner decided it (D9, 2026-10-21 21:31): \"The interpreter carries it, with P2 (Recommended)\". The P2 design, VOICE-RETRY part included, was approved 2026-10-21 23:05: \"Approve, and price long-context tiers in W\". The build is Block 2 plan item VOICE-RETRY (builder B1). At 37a4104 it is not built: the C5 e2e still asserts the parked behaviour (packages/runner/test/e2e/c2-c5.ts:114).",
+  "landedIn": "not on main; the decision is recorded in the backlog row and conversation-continued.md (records pass 9ac54d3)",
+  "left": "The build: the interpreter carries each VOICE's last answer and deck id across RetryStage, and the C5 e2e assertions flip (Block 2).",
+  "rowAt37a4104": "VOICE-RETRY: C5's launch-gate retry drops the copy written at the first late VOICE"
+ },
+ {
+  "id": "retire-voice-apply",
+  "status": "in-block-2",
+  "evidence": "Block 2 plan item R-VOICE-APPLY: the id, the five templates, the mock responder and their tests go. At 37a4104 the five helper.voice.apply@*.md templates and 'voice.apply' in packages/prompts/src/ids.ts:96 are still there. The row says it \"rides with the second block (P2's design, approved by the owner on 2026-10-21 23:05)\".",
+  "landedIn": "not on main",
+  "left": "The whole retirement (Block 2, B1).",
+  "rowAt37a4104": "Retire the helper.voice.apply templates and the voice.apply id"
+ },
+ {
+  "id": "voice-suffix-out-of-opencheckpoint",
+  "status": "in-block-2",
+  "evidence": "Block 2 plan item R-SUFFIX. Only the fixed sentence of pageVoiceSuffix moves into the workflow's wording (Claude's design under the approved P2 design). The page-dependent rest stays in the activity, since the copy code may not be bundled (ADR-0081). At 37a4104 pageVoiceSuffix is still built in human.ts:179.",
+  "landedIn": "not on main",
+  "left": "The move (Block 2, B1). By design the page-dependent part stays in the activity even after Block 2.",
+  "rowAt37a4104": "Move VOICE's prompt suffix out of openCheckpoint"
+ },
+ {
+  "id": "server-snapshot-revision",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104 (\"Revisit on push or server-sent events, state shared across tabs, or a tear R3 does not cover\"). There is no code change, and it is not in Block 2.",
+  "landedIn": "none",
+  "left": "All of it: needs a migration and a contracts change.",
+  "rowAt37a4104": "A server snapshot revision and consistent view() reads"
+ },
+ {
+  "id": "recommendation-off-get-render",
+  "status": "done",
+  "evidence": "Checked and it holds. 524e057 (batch B, 2026-10-21) changed the page. At 37a4104, apps/web/app/recommend/[intakeId]/page.tsx only reads intake.recommendation from the store. Its header comment says the render \"calls no model\" and that the screen posts /recommend { ensure: true }. git grep finds recommendationOrProblem nowhere in apps or packages. New test apps/web/test/recommend-page.test.ts checks that rendering the page asks the advisor nothing. ADR-0091 has a Later note, \"2026-10-21, the first recommendation is asked for by the screen\" (line 124). The row was removed in records pass 9ac54d3. Both commits reached main in 37a4104 through fix/fx-nB (2cf07a1).",
+  "landedIn": "524e057; row closed in 9ac54d3; merged to main in 37a4104 (via fix/fx-nB, 2cf07a1)",
+  "left": "Only the old row's side note, now a row of its own at 37a4104 (backlog line 122): \"The Recommendation screen's remaining figure after a change in another tab\" (pick up before a second client or hosted use). It is not in Block 2.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "long-example-admission-warning",
+  "status": "open",
+  "evidence": "The row is still there with an added trigger: \"Revisit before an image-only critic serves a study arm, or if step notes show cuts in most runs\" (Claude, 2026-10-18). Still deferred by ADR-0087.",
+  "landedIn": "none",
+  "left": "All of it.",
+  "rowAt37a4104": "An admission-time warning for long examples in image-only recipes"
+ },
+ {
+  "id": "rebuy-between-settlement-and-memo",
+  "status": "open",
+  "evidence": "The row is still there with an added second trigger: \"For an ordinary re-buy, revisit if a live run's ledger shows one call bought twice\" (Claude, 2026-10-18). There is no code change.",
+  "landedIn": "none",
+  "left": "All of it: answering the next attempt from the spend book's settled entry.",
+  "rowAt37a4104": "A counted re-buy when a call's holder dies between settlement and its memo save"
+ },
+ {
+  "id": "provider-token-counting",
+  "status": "open",
+  "evidence": "The row is still there with an added trigger: \"Pick up when a live call settles more than 25% above its reservation, or when the planning-numbers row finds the figures low\" (Claude, 2026-10-18). Block 2's LC-TIERS prices long-context tiers but does not add count_tokens.",
+  "landedIn": "none",
+  "left": "All of it.",
+  "rowAt37a4104": "Provider token counting instead of planning estimates"
+ },
+ {
+  "id": "ledger-head-anchor",
+  "status": "open",
+  "evidence": "The row is still there with an added trigger: \"Before the ledger is relied on as an audit record off the owner's machine (a study run, a hosted byway)\" (Claude, 2026-10-18). Block 1 changed Ledger.verify (0ed0b52, f6d2816, cda27c3) but added no outside anchor.",
+  "landedIn": "none",
+  "left": "All of it.",
+  "rowAt37a4104": "Anchor the ledger chain's head outside the data directory"
+ },
+ {
+  "id": "r3-outcome-pointers",
+  "status": "done",
+  "evidence": "Checked and it holds. dca74a7 (2026-10-18) changed the ADR index. At 37a4104, the \"Where it stands\" column of docs/adr/README.md's Open decisions table names ADR-0061 D16, D14, D12 and D5 for those rows. It names ADR-0064 (with ADR-0108) for the product's form, and it marks the open rows as tracked in the backlog's Deferred decisions or the playbook. Line 154 links the backlog's Pricing and Deferred decisions sections. The commit message says \"the R3 remainder row closes\", and git log -S shows dca74a7 removed the row. The spec's note on ADR-0040 (docs/superpowers/specs/2026-10-07-product-v1-design.md:165, \"proposed, adopted here for the product\") was already at 8401820 and is unchanged. dca74a7 is in 4363a64.",
+  "landedIn": "dca74a7 (row closed in the same commit); merged to main in 4363a64",
+  "left": "Not part of this row: the structured Changes and Later-records rows are tracked in a separate row that is still open at 37a4104 (backlog line 143), \"Structured \"Changes\" and \"Later records\" rows in ADRs, with a back-fill\".",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "estimate-voice-free",
+  "status": "done",
+  "evidence": "Checked and it holds. afcc3fd (B1, 2026-10-18) removed the term. At 37a4104, the 'voice' case of packages/advisor/src/estimate.ts (:255-257) counts the person's time only. The only remaining mention of voice.apply is a history comment (\"Until B1 this also counted a mid-tier voice.apply completion\"). The commit also dropped the term's token assumption and added an estimate.test.ts case that was mutation-checked. Recorded as ADR-0109 item 5 (e885788, renumbered in 88853f5). The row was removed in 00401a0. All of these commits are in 4363a64.",
+  "landedIn": "afcc3fd; ADR-0109 (e885788, renumbered in 88853f5); row closed in 00401a0; merged to main in 4363a64",
+  "left": "nothing (the history comment at estimate.ts:257 is on Block 2 item R-VOICE-APPLY's list of code sites, but that is a different row)",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "f07-two-backlog-items",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104 (\"Same policy as the F07 arbiter-limits row: retired by the content-layer simplification\"). There is no code change.",
+  "landedIn": "none",
+  "left": "Both gaps stay until the content-layer decision.",
+  "rowAt37a4104": "F07: the two items ADR-0081 marks \"(backlog)\""
+ },
+ {
+  "id": "env-names-module-identity",
+  "status": "done",
+  "evidence": "Checked and it holds. d4bd96b (B1, 2026-10-18) moved the names. At 37a4104, packages/gateway/src/env.ts:101 reads `const LISTED_BY_FILE = Symbol.for('byway.gateway.env-file-names')`. The same commit added packages/gateway/test/env.test.ts cases, scripts/test/renderer-env.test.ts (the lowercase-drive test) and the fixture scripts/test/fixtures/renderer-env-twice.ts. 56afdde set the test's 120 s limit. bbefdee (merged in a002e60) made the fixture create the gateway's second copy itself. e885788 dropped the exception. At 8401820, README.md:138 read \"One exception: on Windows ... lowercase\". At 37a4104, README.md:142 says Chromium gets no .env.agents name on a lowercase-drive start too, and the spec no longer mentions it. Recorded as ADR-0109 item 4. The row was removed in 00401a0.",
+  "landedIn": "d4bd96b, 56afdde, e885788 (ADR-0109); row closed in 00401a0; merged to main in 4363a64; bbefdee in a002e60",
+  "left": "nothing",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "escape-reserved-key-paths",
+  "status": "done",
+  "evidence": "Checked and it holds. 2e35ed2 (batch C, 2026-10-21) added the helper. At 37a4104, packages/recipe/src/shape.ts:37 exports pathName, which writes a lone surrogate as \\uXXXX text. It is used in the reserved-key walk (packages/recipe/src/schema.ts:276) and in the shape bound (shape.ts:91). Tests were added in packages/recipe/test/recipe.test.ts and shape.test.ts. The commit message says each was shown to fail with the raw name back. The row was removed in records pass 9ac54d3 (\"escaped names in reserved-key paths\"). Both commits reached main in 37a4104 through fix/fx-nC (7de1a3c).",
+  "landedIn": "2e35ed2; row closed in 9ac54d3; merged to main in 37a4104 (via fix/fx-nC, 7de1a3c)",
+  "left": "nothing",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "keepsvoice-activity-test",
+  "status": "done",
+  "evidence": "Re-checked, and the status holds. 5272cea (batch A, 2026-10-21 22:16) adds packages/runner/test/held-voice-writers.test.ts. Its message says the test \"drives modelStep, relayLink and assetStep with a held voice that differs from ports.voice\". At 37a4104 the file (152 lines) has four cases inside one describe (lines 68-151; the it() calls are at 72, 86, 102 and 115): modelStep, relayLink, assetStep on C5's anchor-frames storyboard, and assetStep on a web page. Each mocks writes.ts checkedWriter and asserts that the voice it was built with is the held array ([onScreen, script]), not ports.voice. The modelStep case also has a control: held to ports.voice alone, the same answer is stored. That is the regression the row asked to catch. git log -S shows that 9ac54d3 (the records pass, 2026-10-21 23:41) removed the row \"An activity-level test that keepsVoice writes check the held voice\". Its message lists \"the activity-level keepsVoice test\" among the rows closed. Block 2's P2-HELD only moves this test to ids (plan: \"held-voice-writers.test.ts:68-120 moves to ids\"); the test as filed is already done.",
+  "landedIn": "5272cea (test) and 9ac54d3 (records, row removed). Both reached main in merge 37a4104 (fix/fx-block1), via 213fae1 (fix/fx-nA into Block 1).",
+  "left": "Nothing. The backlog row is gone and the playbook has no such row.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "f15-e2e-b-flake",
+  "status": "open",
+  "evidence": "No commit in 8401820..37a4104 changes e2e/state.spec.ts for this race. The row is still there, now with the trigger \"Fix it if it fails on CI (trigger proposed by Claude, 2026-10-18)\". Block 2's C5-FLAKE covers a different row, the C5 nextTurn flake. The plan's section 4 says F15's code is not changed in Block 2.",
+  "landedIn": "not landed",
+  "left": "The whole fix. It is still recorded under the row \"F15 e2e (b): land the one failure on the post-answer refresh only\".",
+  "rowAt37a4104": "F15 e2e (b): land the one failure on the post-answer refresh only"
+ },
+ {
+  "id": "pin-shown-text-launch-failure",
+  "status": "done",
+  "evidence": "Re-checked, and the status holds. f6449f5 (batch A, 2026-10-21 22:16) says: \"launch.test.ts: a Chromium that cannot start fails pages.shownText with the same plain message, after one launch\". At 37a4104 the check is inside launch.test.ts's describe('on every renderer path'), in the it.each over DIED and SANDBOXED. Line 307 calls pages.shownText(...).catch. The case then asserts the result is a StepError, its message equals launchFailure(cause, ...).message, and launch.mock.calls grew by exactly 1, so the failure is not retried. This is what the row asked for. git log -S shows that 9ac54d3 removed the row \"Pin pages.shownText's launch failure in launch.test.ts\". Its message lists \"pages.shownText's launch failure\" among the rows closed.",
+  "landedIn": "f6449f5 (test) and 9ac54d3 (records, row removed). Both reached main in merge 37a4104 (fix/fx-block1), via 213fae1 (fix/fx-nA).",
+  "left": "Nothing. The backlog row is gone.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "output-contract-c3-advice",
+  "status": "in-block-2",
+  "evidence": "Not on main: at 37a4104, packages/prompts/src/outputs.ts:25 'image-briefs' still lists only slot, prompt, alt and size. The row now says \"It rides with the second block (P2's design, approved by the owner on 2026-10-21 23:05)\". It is Block 2 plan item R-ADVICE, built by B1 (W-core) as step 9. ADR-0101 gets a dated Later note in B2-RECORDS.",
+  "landedIn": "not on main; Block 2 branch work (R-ADVICE)",
+  "left": "Add the optional advice field to OUTPUT_CONTRACTS['image-briefs'] with the one bundle change, and add the ADR-0101 Later note.",
+  "rowAt37a4104": "The output-contract table's image-briefs line leaves out C3's optional \"advice\" field"
+ },
+ {
+  "id": "measure-c3-header-trim",
+  "status": "open",
+  "evidence": "There has been no live run yet, so there is no data. The row is still there with the trigger \"Measure it from the first live C3 runs (trigger proposed by Claude, 2026-10-18)\". The first-live-run row lists it under \"It settles or feeds\".",
+  "landedIn": "not landed",
+  "left": "The whole measurement, after the first live C3 runs. It is still recorded in its own row.",
+  "rowAt37a4104": "Measure how often C3's generated header is cut at Trim, and how often the AI adds advice"
+ },
+ {
+  "id": "c3-explainer-copy",
+  "status": "open",
+  "evidence": "The owner has not answered. conversation-continued.md has no answer on either copy question. presentation.ts:205 still reads \"If you answer Yes, the AI makes a header image for the piece...\". 9ac54d3 only added a case to the row (ADR-0112's placing miss). The trigger is still \"Decide at the next catalog presentation change\".",
+  "landedIn": "not landed",
+  "left": "Both copy questions are still open for the owner.",
+  "rowAt37a4104": "C3's explainer: two copy questions"
+ },
+ {
+  "id": "custom-profile-per-role",
+  "status": "open",
+  "evidence": "Not built. The row still says \"Not approved to build. Revisit after the owner's first live run, if the fixed profiles get in the way\". The conversation record has no newer owner answer about it.",
+  "landedIn": "not landed",
+  "left": "The whole feature, waiting on the owner's go-ahead after the first live run.",
+  "rowAt37a4104": "Choose the provider and model per role (the owner's add-on to D1)"
+ },
+ {
+  "id": "unbacked-billing-assumptions",
+  "status": "partly",
+  "evidence": "The documentation half is done. 6e4eb65 (2026-10-18) read the billing assumptions again with no change: \"only fal documents that server errors are not charged ... OpenAI documents moderation_blocked (with its moderation_stage) but not whether a block is billed\". It updated the comments in errors.ts and openai.ts. ADR-0109 records this in item 7, \"The billing assumptions stay, and say so\". Since then ADR-0111 and the Block 1 fix round have added more undocumented readings to the row (closed streams, fal cancel, error chunks, stalls, TS-MONEY-4 and TS-MONEY-5).",
+  "landedIn": "6e4eb65 (and ADR-0109), merged to main by 4363a64 (fix/fx-batch)",
+  "left": "The live-ledger half: settle each assumption from the first live runs' ledger against the providers' usage records. It is recorded under the row \"Check the billing assumptions that no provider documentation backs\", which is still there and longer than before.",
+  "rowAt37a4104": "Check the billing assumptions that no provider documentation backs"
+ },
+ {
+  "id": "budget-question-for-decline-retry",
+  "status": "open",
+  "evidence": "Not built. The row is unchanged, with the trigger \"Pick up if live runs show declines ending on a budget\". The Block 2 plan's section 4 leaves it out: \"The design's row 145: it waits for live runs.\"",
+  "landedIn": "not landed",
+  "left": "The whole item, after live runs.",
+  "rowAt37a4104": "Ask to raise the budget when a declined call's retry does not fit"
+ },
+ {
+  "id": "video-decline-rule",
+  "status": "open",
+  "evidence": "Parked as before. The row is unchanged, with the trigger \"Revisit when a live fal answer, or a new video provider, shows a stated decline\".",
+  "landedIn": "not landed",
+  "left": "The whole item, waiting on a stated decline from a video provider.",
+  "rowAt37a4104": "A decline rule for video"
+ },
+ {
+  "id": "served-model-check",
+  "status": "open",
+  "evidence": "Not built. The row now says \"Pick it up once the first live run has recorded them, and in any case before the first study run\" (trigger proposed by Claude, 2026-10-18).",
+  "landedIn": "not landed",
+  "left": "The whole check. It needs each provider's live served-model labels from the first live run.",
+  "rowAt37a4104": "Served-model check in the product"
+ },
+ {
+  "id": "macos-support",
+  "status": "open",
+  "evidence": "Still deferred by the owner (\"no macOS for now\" for D4, \"MacOS later\" for D2, both answered in 2026-10-16 local time, before the route map). verify.yml:41 still has the macos matrix entry commented out. No commit in the range adds macOS.",
+  "landedIn": "not landed",
+  "left": "The whole item, waiting for the owner to bring macOS into scope.",
+  "rowAt37a4104": "macOS support (deferred by the owner, 2026-10-16)"
+ },
+ {
+  "id": "adr-changes-later-records",
+  "status": "open",
+  "evidence": "Not built. dca74a7 (2026-10-18) updated the row: \"Its trigger fired on 2026-10-18 ... Claude added the missing link and left the rows for later, without putting it to the owner (Claude's call, 2026-10-18)\". The trigger was re-armed: \"Revisit when another missing link is found\".",
+  "landedIn": "not landed (dca74a7 only added the missing link and re-armed the trigger)",
+  "left": "The Changes and Later-records rows, the back-fill, and the check that uses them.",
+  "rowAt37a4104": "Structured \"Changes\" and \"Later records\" rows in ADRs, with a back-fill"
+ },
+ {
+  "id": "pre-push-hook",
+  "status": "open",
+  "evidence": "No hook was added: git grep finds no pre-push outside docs at 37a4104. The row is unchanged, with the trigger \"Revisit if a red CI run on main comes from an unchecked push\".",
+  "landedIn": "not landed",
+  "left": "The whole item.",
+  "rowAt37a4104": "An opt-in pre-push hook for the fast checks"
+ },
+ {
+  "id": "verify-required-check",
+  "status": "open",
+  "evidence": "The row is unchanged. Its trigger (\"when a second person merges to main, or when a public mirror is about to go live\") has not fired. CI still only reports, and the merge rule since 2026-10-21 is \"Make D2's condition the rule (Recommended)\" (13:41), not a required check.",
+  "landedIn": "not landed",
+  "left": "The owner adds verify as a required check in a ruleset on main when the trigger fires.",
+  "rowAt37a4104": "Make `verify` a required check on main"
+ },
+ {
+  "id": "actions-sha-pinning-setting",
+  "status": "open",
+  "evidence": "The row is unchanged. It still says \"Optional at the same time or earlier: turn on the repository's Actions setting that requires every action to be pinned to a full commit SHA ... the D4 work read it on 2026-10-17 as all actions allowed, with SHA pinning not required\". There is no playbook row.",
+  "landedIn": "not landed",
+  "left": "Turning on the repository setting, an owner action.",
+  "rowAt37a4104": "Make `verify` a required check on main (the row that holds it)"
+ },
+ {
+  "id": "linux-renderer-fonts",
+  "status": "open",
+  "evidence": "Not decided. The row is unchanged, with the trigger \"Pick up before any study renders on Linux, or when a Linux user draws Japanese pages\".",
+  "landedIn": "not landed",
+  "left": "The choice between a README line for Noto CJK and fonts pinned in the renderer, then the change.",
+  "rowAt37a4104": "Renderer fonts on Linux"
+ },
+ {
+  "id": "product-data-vs-adr0041-rule3",
+  "status": "open",
+  "evidence": "Neither the owner nor a record has decided it: conversation-continued.md has no answer on it. The row is unchanged, with the trigger \"before Stage 0's consent and preregistration wording, or at the next edit of those documents\". The research track is still parked (D1 \"Keep all of it parked\", 2026-10-21 21:31).",
+  "landedIn": "not landed",
+  "left": "The decision and the documents brought into line, with a new record.",
+  "rowAt37a4104": "\"Product data never feeds a study\" against ADR-0041 rule 3"
+ },
+ {
+  "id": "renderer-test-short-deadlines",
+  "status": "open",
+  "evidence": "In this range pages.test.ts changed only in f6449f5 and 852aecc, and neither touches the 5 s or 2 s deadlines. 194d6d2 and 0cf577a change renderer-check.test.ts, a different file. The row is unchanged, with the trigger \"If one fails on a run of main\".",
+  "landedIn": "not landed",
+  "left": "Giving the stuck render or read its short deadline some other way, and the plain page none.",
+  "rowAt37a4104": "Wall-clock limits left in the renderer tests"
+ },
+ {
+  "id": "visitor-read-scaling",
+  "status": "open",
+  "evidence": "Parked. The row is unchanged, with the trigger \"Revisit if a real page's read fails its deadline: speed these up, or take it to the content-layer question\".",
+  "landedIn": "not landed",
+  "left": "The whole item.",
+  "rowAt37a4104": "The visitor read's time grows with the page"
+ },
+ {
+  "id": "first-live-run",
+  "status": "open",
+  "evidence": "No live run has happened. The row now quotes the owner (2026-10-17) and sets a C4-then-C3 order (Claude's proposal, 2026-10-21). It adds the OpenAI organisation-verification check, which the owner chose at 01:54 on 2026-10-22 (\"Record it and add a check (Recommended)\"). The run now waits on Block 2: D3 was answered \"Now, before the first live run\" (2026-10-21 21:31), and the order \"Two blocks: 0+A+B+C, then W (Recommended)\" (21:43) says \"All before your first live run, per D3\". The playbook row \"Protect the product's provider keys before the first live run\" comes first.",
+  "landedIn": "not landed (owner action)",
+  "left": "The owner's run, after Block 2 merges and the keys are protected.",
+  "rowAt37a4104": "First live run with real keys and real money"
+ },
+ {
+  "id": "recheck-model-ids-prices",
+  "status": "done",
+  "evidence": "Re-checked, and the status holds. 6e4eb65 (2026-10-18 19:45) says: \"Every profile model id (profiles.ts) and every price row (prices.ts) was checked against the provider's own documentation on 2026-10-18 ... Every id is still listed. Two figures were wrong\". It corrected those two: claude-sonnet-5-5's cache hits, now $0.10, and the Gemini image's text and thinking tokens, now charged. 248e6fe (2026-10-21, MONEY-1) adds the OpenAI cache-write rates after OpenAI's and Google's pages were read again. At 37a4104 prices.ts:37-46 names its sources as \"read 2026-10-18 and again 2026-10-21\" (OpenAI, Google), \"read 2026-10-18\" (Anthropic, OpenRouter), and the fal rows \"read 2026-10-18\". ADR-0109 Decision 1, \"Prices and ids, read again\", records it. The step lived inside the first-live-run row. That row now says the ids and prices \"were checked against provider documentation again on 2026-10-18\" and read again on 2026-10-21, and adds a new conditional trigger: \"If the run starts after 2026-11-01, read them again first (trigger proposed by Claude, 2026-10-18)\". The ongoing cadence is a separate row (\"Keep the price table current\") and Block 2's PRICE-CADENCE (plan B2 Prices); it is not part of this item.",
+  "landedIn": "6e4eb65 and 248e6fe, recorded in ADR-0109 (Decision 1). Both reached main in merge 4363a64 (fix/fx-batch).",
+  "left": "Nothing for this item. If the first live run starts after 2026-11-01, another read is due (the first-live-run row's trigger). The ongoing cadence is Block 2's PRICE-CADENCE, with its own row \"Keep the price table current\".",
+  "rowAt37a4104": "First live run with real keys and real money (the item was one sentence of this row, which still exists; the sentence now records the 2026-10-18 and 2026-10-21 reads and the after-2026-11-01 trigger)"
+ },
+ {
+  "id": "advisor-planning-numbers",
+  "status": "open",
+  "evidence": "No live run has written to the ledger. The row is still there and now names more planning numbers to check: 2,000 Gemini image tokens (ADR-0109), OpenAI's cache writes planned at the input rate, and the estimateQuestions sizes from batch B.",
+  "landedIn": "not landed",
+  "left": "Comparing estimate.ts's figures with the first live runs' ledger.",
+  "rowAt37a4104": "Check the advisor's planning numbers against the ledger"
+ },
+ {
+  "id": "research-harness",
+  "status": "open",
+  "evidence": "Not built and still parked. The owner answered D1 on 2026-10-21 at 21:31 with \"Keep all of it parked\" (the option read \"Nothing on the research track moves until it resumes.\"). The row records this.",
+  "landedIn": "not landed",
+  "left": "All of P0. Pick up when the owner resumes the research track.",
+  "rowAt37a4104": "Build the research harness (parked while the product came first)"
+ },
+ {
+  "id": "protocol-a-marks-audit",
+  "status": "open",
+  "evidence": "Not done. The owner kept it parked with D1 on 2026-10-21 at 21:31: \"Keep all of it parked\". The row now says so.",
+  "landedIn": "not landed",
+  "left": "The whole audit, due before Study 1 locks C1, once the research track resumes.",
+  "rowAt37a4104": "Audit protocol files 01–03 again for additions not marked ⟨A⟩"
+ },
+ {
+  "id": "protocol-readme-facts",
+  "status": "open",
+  "evidence": "Not done. The owner kept it parked with D1 on 2026-10-21 at 21:31: \"Keep all of it parked\". The row now adds a re-check of summary sentences against 01 and the map's Google Fonts load.",
+  "landedIn": "not landed",
+  "left": "The three corrections plus the added items, waiting for the research track.",
+  "rowAt37a4104": "Protocol README: three factual follow-ups"
+ },
+ {
+  "id": "pin-c1h-parent-hash",
+  "status": "done",
+  "evidence": "Re-checked, and the status holds. d98d5fa (2026-10-18 19:29): \"C1-H's parent is pinned to C1's Milestone 0 hash, so a change to the product's C1 no longer moves C1-H's hash\". At 37a4104 packages/catalog/src/c1h.ts:23 exports C1H_PARENT_HASH = 'sha256:686bd972...', and :39 uses it (parent: { hash: C1H_PARENT_HASH, ... }) instead of c1.hash!. conformance.test.ts:73 (\"a change to the product's C1 moves neither C1-H's parent nor its hash, nor the hashes of the recipes derived from it\") uses vi.doMock('../src/c1.ts') at :75 and asserts the parent hash at :85. ac83bac, 2e5fbfa (C1H-1) and d187fab later renamed the comment and test to say the hash dates from product phase 0 (ba0e5b9), not Milestone 0. git log -S shows that 00401a0 (2026-10-19 02:05, records hand-off, \"8 rows closed\") removed the row \"Pin C1-H's parent hash before Study 1's prompt registration\". At 37a4104 three other rows say it is done: c1-entry-routes (\"Since 2026-10-18 C1-H's parent has been a pinned hash\"), the content-layer row, and the seed-build voice-deck row (\"pinned since 2026-10-18 (C1H_PARENT_HASH in c1h.ts)\").",
+  "landedIn": "d98d5fa (pin and test), ac83bac, 2e5fbfa and d187fab (naming), and 00401a0 (records, row removed). All reached main in merge 4363a64 (fix/fx-batch).",
+  "left": "Nothing. The backlog row is gone.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "c1-entry-routes",
+  "status": "open",
+  "evidence": "Not modelled. The row is still there, now noting that C1-H's parent is pinned while c1's own hash still changes, and that \"It needs the research track's agreement and an ADR\". The trigger is unchanged.",
+  "landedIn": "not landed",
+  "left": "Modelling the VISION and C2 entry routes, the early pick, RELAY, refs and calibration.",
+  "rowAt37a4104": "C1's other entry routes are not modelled"
+ },
+ {
+  "id": "protocol-features-unmodelled",
+  "status": "open",
+  "evidence": "Not modelled. The row is unchanged, with the trigger \"when the composer or a person needs a series, a front end or a backtrack, or at the next recipe-IR change\". Block 2 does not change the recipe IR for these features.",
+  "landedIn": "not landed",
+  "left": "The whole list of protocol features, plus the backtrack.",
+  "rowAt37a4104": "Protocol features the catalog recipes do not model"
+ },
+ {
+  "id": "v1-skipped-steps",
+  "status": "open",
+  "evidence": "The row's text is the same at 8401820 and 37a4104. No commit in 8401820..37a4104 gives C5's matte or vo-audio steps an executor, adds a voice-over audio provider, or adds data charts to C3 or C4. Its trigger (after the first live C5 runs) has not fired: the row 'First live run with real keys and real money' is still open. The Block 2 plan has no item for it.",
+  "landedIn": "",
+  "left": "All of it: executors for matte and vo-audio, an audio provider, and charts computed from data in C3 and C4.",
+  "rowAt37a4104": "Steps v1 skips: C5's compositing and voice-over audio, and charts from data in C3 and C4"
+ },
+ {
+  "id": "dummies-runbooks",
+  "status": "open",
+  "evidence": "The row's text is unchanged and still says 'None is written.' Neither trigger has fired: the first live run has not happened (its row is still open), and the harness is not built (row 'Build the research harness (parked while the product came first)'). Block 2's AGENTS.md (PRICE-CADENCE) is a duty file for price re-reads, not a configuration runbook.",
+  "landedIn": "",
+  "left": "Both parts: running each configuration (after the first live run) and testing it (once the harness exists).",
+  "rowAt37a4104": "Per-configuration \"for dummies\" runbooks"
+ },
+ {
+  "id": "recommender-composer-evaluation",
+  "status": "open",
+  "evidence": "The row's text is unchanged at 37a4104. No commit adds an evaluation design to the product spec, logs decision traces, or logs development data with provenance. The store still keeps only the latest recommendation for each intake. Block 2 has no item for it.",
+  "landedIn": "",
+  "left": "The evaluation design (ADR-0042), decision-trace logging, and provenance-logged development data (ADR-0059).",
+  "rowAt37a4104": "How the recommender and composer are themselves evaluated"
+ },
+ {
+  "id": "c1-seed-direction-reading",
+  "status": "open",
+  "evidence": "The row's text is unchanged. docs/adr/evidence/conversation-continued.md at 37a4104 records no owner answer to this choice. On 2026-10-17 08:24 the owner held the F01 questions: \"we can hold these for a while right? is everything filed in backlog with triggers?\" Block 2's plan lists the sibling question 'Owner question: ST9/ST10 human-critique case 2' as held and not built.",
+  "landedIn": "",
+  "left": "The owner's choice between an exact reading at run time and the conservative refusal (ADR-0098). It is to be decided with the other F01 questions, before the study registry's first entry.",
+  "rowAt37a4104": "Owner question: C1's seed read as directing on every run"
+ },
+ {
+  "id": "page-voice-gaps",
+  "status": "open",
+  "evidence": "The row still exists. 489483e (2026-10-18) only extended it with two items F07 had parked: marks for formatting elements and a labelled copy deck. No code change to page-copy.ts or copy.ts closes the gaps. Block 2 does not start the content-layer pilot; the plan's section 4 says so, under the P2 design the owner approved on 2026-10-21 at 23:05.",
+  "landedIn": "",
+  "left": "Everything: attribute, <pre> and script-generated copy are still never offered, and the lock still does not hold visibility or line spacing. It goes with the content-layer question.",
+  "rowAt37a4104": "What page VOICE does not offer or hold"
+ },
+ {
+  "id": "temp-evidence-into-repo",
+  "status": "done",
+  "evidence": "Checked and the classification holds. b015077 (2026-10-19) brought in the D1-D4 and held-question briefs with their skeptics (docs/adr/evidence/decision-briefs-2026-10-16.md), the reports and the probes, plus conversation-continued.md (the owner's answers after 2026-10-07), and added a Later note to each Accepted ADR that cited Temp. d754402 ported F07's arbiter corpus with its generators, hand cases and oracles into packages/runner/test/f07-corpus: 129 files at 37a4104, and pages/ holds the 46 realistic pages. 24e69f5 ported the claims oracle into scripts/test, and 00401a0 closed that row too. 126025f (2026-10-21) brought in more of the evidence the records cite. The row 'Bring the decision evidence kept only in %TEMP% into the repository' was removed in 00401a0 (2026-10-19). Its whole text is in that commit's diff, and the two things it asked for 'at least' are both on main.",
+  "landedIn": "b015077, d754402, 24e69f5, 126025f; row closed in 00401a0; index in docs/adr/evidence/README.md",
+  "left": "Clones, corpora and most raw logs were left out on purpose; docs/adr/evidence/README.md says so. A follow-up on the new evidence check, not on this work, is the row 'The Temp-evidence check names only the paths cited in backticks'.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "start-timeout-misreported",
+  "status": "done",
+  "evidence": "Checked and the classification holds. In 22f521b (B1, ADR-0109), a failed workflow start describes the workflow first, and gRPC 4 is no longer read as the engine being down. packages/runner/src/start-failure.ts has TIMEOUT_TEXT /\\b4 DEADLINE_EXCEEDED\\b/ (:40), ENGINE_SLOW_AT_START (:21) and ENGINE_SLOW_UNCONFIRMED (:30). When byway cannot tell whether the run started, the message drops 'Nothing was spent' and says a call 'may still be charged'. The 503 in apps/web/src/services/engine-runner.ts:22 now reads 'is not running, or did not answer in time'. start-failure.test.ts:30-43 pins code 4 to the new messages instead of ENGINE_DOWN_AT_START. The commit message records a test against a real Temporal server and 9 mutations caught. 38eafa8 added the START-1 and START-6 run-start tests. The row was removed in 00401a0.",
+  "landedIn": "22f521b, 38eafa8; ADR-0109; row closed in 00401a0",
+  "left": "Nothing for this item. The neighbouring residuals have their own rows: 'Run start: reopen a run whose workflow never started (P3 double fault)' and 'Run start: the describe doubles the wait when the engine is down'. The Block 2 plan has neither.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "renderer-url-in-error",
+  "status": "done",
+  "evidence": "Checked and the classification holds. f6449f5 (batch A) added fileSaid(url) in packages/runner/src/pages.ts:298-301. It returns `${url.origin}${url.pathname}`, cut to 120 characters, never the query or fragment. The read-failure reason uses it at :565. The only url.href left in pages.ts is the fetch itself (:507), which is not a message. 852aecc tests it in pages.test.ts: a request for never.css?token=abc123 names the file with neither 'token' nor '?'. The test was mutation-checked against putting url.href back. The records pass 9ac54d3 removed the row and lists it as closed ('a renderer read failure repeating the full URL').",
+  "landedIn": "f6449f5, 852aecc; row closed in 9ac54d3",
+  "left": "Nothing.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "ledger-verify-deep-nesting",
+  "status": "done",
+  "evidence": "Checked and the classification holds. One correction: the cited lines ledger.ts:63-64 and 98-100 are comments. The code is MAX_LINE_DEPTH = 64, nestsDeeperThan (a walk with no recursion) and expectedHash in packages/gateway/src/ledger.ts:65-92. verify() names a line that nests too deeply as broken instead of throwing a RangeError. Added in 0ed0b52 (batch C) and tested in packages/gateway/test/ledger.test.ts:193-239, with arrays 10,000 and 100 deep. f6d2816 (C-LEDGER-ID) added lineName (:102), so a deeply nested id cannot overflow auditLedger either. cda27c3 (RB1-F1-3) names a missing head entry by its number. ADR-0083 has Later notes of 2026-10-21 and 2026-10-22 (:69-70). The row was removed in 9ac54d3 ('Ledger.verify on a deeply nested line').",
+  "landedIn": "0ed0b52, f6d2816, cda27c3; ADR-0083 Later notes; row closed in 9ac54d3",
+  "left": "Nothing.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "temporal-test-server-slow-start",
+  "status": "open",
+  "evidence": "The row still exists. packages/runner/test/helpers/harness.ts did not change in 8401820..37a4104. e8905f9 (2026-10-21) amended the row: under Claude's reading of the owner's 'Not now', such a fix is put to the owner first. Block 2 has no item for it.",
+  "landedIn": "",
+  "left": "A retry of the ephemeral server's start, or a longer SDK wait, if the failure recurs (after asking the owner).",
+  "rowAt37a4104": "Runner tests: Temporal's local test server sometimes starts too slowly under load"
+ },
+ {
+  "id": "c5-e2e-120s-wait",
+  "status": "in-block-2",
+  "evidence": "Block 2 plan item C5-FLAKE (builder B5): nextTurn restarts its 120 s window on run progress, with a unit test on a fake clock and a mutation. The owner's 'Fix it in Block 2 (Recommended)' is quoted in the plan from the Block 2 brief; the plan says the conversation record at 37a4104 does not hold it yet. On main, apps/web/e2e/flow.ts still waits 120_000 ms (lines 112, 199), and the row still says the e2e waits 'are left as they are'. 00401a0 kept the server log, page and trace of CI run 39152075629 in docs/adr/evidence/logs/ci-run-39152075629/.",
+  "landedIn": "Block 2 plan: C5-FLAKE (not on main)",
+  "left": "The whole fix and the row's update (B2-RECORDS).",
+  "rowAt37a4104": "Known Windows timing flake: browser test C5 waits at most 120 s for each next turn"
+ },
+ {
+  "id": "ci-time-proposal",
+  "status": "open",
+  "evidence": "The proposal is still deferred. The owner answered \"Not now\" on 2026-10-18 at 14:02, before the route map, and has given no answer on it since. On 2026-10-21 at 13:41 the owner answered a related question with \"Make D2's condition the rule (Recommended)\" (ADR-0107 item 4: a risky change merges when Linux passes and Windows passes or fails only on a named timing flake). That is a merge rule, not adoption of the proposal (local-gate merge, Linux on each push, Windows weekly, parallel jobs). The row still says to revisit the proposal 'when Windows CI next goes red on timing ... or when the owner raises CI time', and that the Windows CI write-up's recommendation has 'no answer is recorded'.",
+  "landedIn": "",
+  "left": "The owner's decision on the proposal, and an ADR amending ADR-0103 if it is adopted.",
+  "rowAt37a4104": "CI time, and the CI proposal the owner deferred (\"Not now\", 2026-10-18)"
+ },
+ {
+  "id": "remaining-wall-clock-limits",
+  "status": "partly",
+  "evidence": "bcbfa11 (RS-7, Block 1) made liveness.test.ts's 10 s shutdown limit time-free: the test now checks that the worker stopped with the slow call in flight. The row records this (7735a91). The other limits are unchanged on main: page-copy.test.ts:1194 still has BOUND_MS = 5000, state.spec.ts still has timeout: 30_000, and vitest.config.ts has no testTimeout.",
+  "landedIn": "bcbfa11 (liveness.test.ts); 7735a91 (row updated)",
+  "left": "The fixed limits in page-copy.test.ts (BOUND_MS), flow-memo.test.ts:73, limits.test.ts:95, spend-book.test.ts:235 and :255, and memo.test.ts:175; state.spec.ts's 30 s wait for 'Sent'; and vitest's default 5 s. The row's list now also includes renderer-check.test.ts's 13 real-Chromium tests (60 s) and renderer-env.test.ts (120 s). All are recorded in the CI-time row.",
+  "rowAt37a4104": "CI time, and the CI proposal the owner deferred (\"Not now\", 2026-10-18)"
+ },
+ {
+  "id": "storyboard-duplicate-shots",
+  "status": "done",
+  "evidence": "The status holds, but one piece of the evidence was wrong. f24041d (batch C) added repeatedShots in packages/runner/src/formats.ts:168-185 and applies it in parseArtifact's media case (:283-287). A storyboard from a writer that numbers a shot twice is refused, the model is asked again, and stored storyboards are still read by parseStoryboard unchanged. That is the row's 'cheap fix', and it removes the risk of one paid clip replacing another for any writer. Correction: 681e0de did not extend the check. Its own message says 'Comment only; no behaviour changes'. A person's own draft already went through parseArtifact, and the comment now names both callers. The row was removed in 9ac54d3 ('storyboards repeating a shot number (repeats are refused in the writer's parse only; none is stored, since C5 has had no live run)').",
+  "landedIn": "f24041d (681e0de: comment only); row closed in 9ac54d3",
+  "left": "Not 'Nothing'. A person's own media draft with a repeated shot number fails its step (StepError in finishHumanStep) instead of being asked again. This is recorded in the backlog row 'A person's own draft that byway cannot read fails the run instead of being asked again' (C-STORY-PERSON, filed 2026-10-22) and is the Block 2 plan item OWN-DRAFT.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "d2-linux-real-machine",
+  "status": "open",
+  "evidence": "Item (1) of the D2 row is unchanged: the steps have run only on CI's Ubuntu 24.04, and 'trying them on the first real Linux machine stays here'. No commit records a run on a real Linux machine.",
+  "landedIn": "",
+  "left": "The AppArmor script with the person's sudo, the start-up line naming ~/.cache/ms-playwright, and a page drawn inside the sandbox, on a real Ubuntu machine.",
+  "rowAt37a4104": "What D2 left (ADR-0105)"
+ },
+ {
+  "id": "d2-in-app-linux-choice",
+  "status": "open",
+  "evidence": "Item (2) of the D2 row: on 2026-10-18 at 15:37 the owner asked \"and we are providing this choice to them yeah?\". Claude offered to have the in-app message name both choices, and the row says 'no answer is recorded'. 489483e added a trigger: when the owner answers, at the next change to sandbox.ts's Linux advice, or before another Linux user runs byway. The conversation record at 37a4104 has no later answer.",
+  "landedIn": "",
+  "left": "The owner's answer on whether the in-app message names both choices, then the small wording change if yes.",
+  "rowAt37a4104": "What D2 left (ADR-0105)"
+ },
+ {
+  "id": "d2-container-seccomp",
+  "status": "open",
+  "evidence": "Item (3) of the D2 row is still untested; the README says so. 489483e added a trigger: when someone runs byway in a container, or before the README offers a container.",
+  "landedIn": "",
+  "left": "A test of Playwright's seccomp profile for Chromium's sandbox in a container.",
+  "rowAt37a4104": "What D2 left (ADR-0105)"
+ },
+ {
+  "id": "d2-findings-refresh-on-restart",
+  "status": "open",
+  "evidence": "Item (4) of the D2 row is unchanged. 489483e added a trigger: if a person reports the banner or Settings unchanged after a fix. 24ffc74 added tests for the banner's two re-reads but did not change the start-up check's snapshot.",
+  "landedIn": "",
+  "left": "Refreshing the banner, Settings' findings and the re-enable offer without a restart.",
+  "rowAt37a4104": "What D2 left (ADR-0105)"
+ },
+ {
+  "id": "d2-second-probe",
+  "status": "open",
+  "evidence": "Item (5) of the D2 row: the second Chromium probe stays at 15 s each. The owner kept it on 2026-10-18 at 09:22 (\"Keep it, recorded as delegated (Recommended)\"), and the row keeps a revisit trigger. Only the tests changed: at the owner's 2026-10-21 13:41 \"Fix the test in this batch (Recommended)\", 0cf577a and 194d6d2 give the three renderer-check tests a 50 s probe bound. The product's 15 s is unchanged.",
+  "landedIn": "",
+  "left": "Revisit if the start-up check's time is a problem on a slow machine or on CI.",
+  "rowAt37a4104": "What D2 left (ADR-0105)"
+ },
+ {
+  "id": "d2-timeout-message-sandbox",
+  "status": "open",
+  "evidence": "Item (7) of the D2 row still says routing through the 'one possible cause' message is 'not built'. 489483e added the trigger 'at the next change to the sandbox messages'.",
+  "landedIn": "",
+  "left": "Routing the 30 s test-page timeout through the sandbox 'one possible cause' message (W1 point 5).",
+  "rowAt37a4104": "What D2 left (ADR-0105)"
+ },
+ {
+  "id": "d2-windows-real-case-test",
+  "status": "open",
+  "evidence": "Item (8) of the D2 row: the real job-object case 'is not in the suite'. 489483e added the trigger 'at the next change to the sandbox's Windows path'.",
+  "landedIn": "",
+  "left": "A suite test of the real Windows case (a job object denying the sandbox its desktop).",
+  "rowAt37a4104": "What D2 left (ADR-0105)"
+ },
+ {
+  "id": "d2-banner-screen-reader",
+  "status": "done",
+  "evidence": "Checked and the classification holds. 24ffc74 added an always-present polite status beside the banner (SandboxBanner.tsx:64, <p className=\"sr-only sandbox-news\" role=\"status\" aria-live=\"polite\">). After the tab's first render it says when the banner appears, changes or goes, and it stays silent for the tab's own Settings switch. The banner itself keeps role=\"note\" (:68). Tested in apps/web/e2e/renderer-sandbox.spec.ts and apps/web/test/renderer.test.ts. No later commit on main touched SandboxBanner.tsx or view/renderer.ts. ADR-0105 has a Later note of 2026-10-21 (:171), and 9ac54d3 rewrote the row's item (9) to 'Done in the first block (24ffc74)'. The row stays open for its other items.",
+  "landedIn": "24ffc74; ADR-0105 Later note of 2026-10-21; row item (9) updated in 9ac54d3",
+  "left": "What a real screen reader announces stays with the row 'Live-region announcements and screen-reader checks'. The other items of 'What D2 left (ADR-0105)' remain.",
+  "rowAt37a4104": "What D2 left (ADR-0105)"
+ },
+ {
+  "id": "late-close-engine-pause",
+  "status": "open",
+  "evidence": "Item (1) of the late-close row is unchanged: 'Build it if relaunches turn out to be frequent'. The look-again-once form is not built. Since f6449f5, relaunch frequency can be read from server logs.",
+  "landedIn": "",
+  "left": "Looking again once when the close timer itself fired late, if relaunches turn out to be frequent.",
+  "rowAt37a4104": "What the late-close fix left (ADR-0106)"
+ },
+ {
+  "id": "chromium-crash-retry",
+  "status": "open",
+  "evidence": "Item (2) of the late-close row is unchanged: a crash still fails every render and read on it, without a retry.",
+  "landedIn": "",
+  "left": "Retrying a crash's victims once within their deadline if a crash shows up. This would change ADR-0099 decision 8 and ADR-0081's no-retry rule.",
+  "rowAt37a4104": "What the late-close fix left (ADR-0106)"
+ },
+ {
+  "id": "ci-log-engine-pause-sources",
+  "status": "open",
+  "evidence": "Item (3) of the late-close row has the same text as at 8401820. Its reading of run 39152075629 (Temporal's SQLite store timing out) was already there, and no further check of the two named sources is recorded. 00401a0 kept that run's server log in docs/adr/evidence/logs/ci-run-39152075629/. Since f6449f5, later logs also show retirements and relaunches.",
+  "landedIn": "",
+  "left": "Checking failed-run server logs for the spend book's synchronous=FULL commits and for the e2e data folder on C:, as sources of engine pauses.",
+  "rowAt37a4104": "What the late-close fix left (ADR-0106)"
+ },
+ {
+  "id": "renderer-retire-log-line",
+  "status": "done",
+  "evidence": "The status holds, with one correction: the lines are in packages/runner/src/render-browsers.ts, not pages.ts. f6449f5 (batch A) writes 'byway retired the page renderer's browser: ...' at render-browsers.ts:135 (the reason, the loads still on it, the retired browsers still open). It also writes 'byway launched the page renderer's browser again: launch N ...' at :165, for each launch after the first, with no URL or page content. The default sink is console.warn and can be injected (:82). Tested in packages/runner/test/render-browsers.test.ts. ADR-0106 has a Later note of 2026-10-21 (:139), and 9ac54d3 rewrote the row's item (4) to 'Done in the first block (f6449f5)'. The row stays open for items (1) to (3).",
+  "landedIn": "f6449f5 (render-browsers.ts); ADR-0106 Later note of 2026-10-21; row item (4) updated in 9ac54d3",
+  "left": "Nothing for this item. Items (1) to (3) of 'What the late-close fix left (ADR-0106)' remain open.",
+  "rowAt37a4104": "What the late-close fix left (ADR-0106)"
+ },
+ {
+  "id": "price-study1-core",
+  "status": "open",
+  "evidence": "The row's estimate is unchanged (~$100k central, range ~$66-141k), and no quotes or cost-probe results exist. 489483e added a section trigger: the figures 'come back together when the spending ceiling is set (D13), after the cost probe and the quotes, which wait for the research track (ADR-0108...)'. The research track stays parked: on 2026-10-21 at 21:31 the owner answered \"Keep all of it parked\" to D1.",
+  "landedIn": "",
+  "left": "Replacing the estimate after the cost probe and the quotes, and setting the spending ceiling (D13), when the research track resumes.",
+  "rowAt37a4104": "**Study 1 core** at 72 briefs (pre-pilot, pilot, generation, lay and expert rating, Monitor, copywriter, red team, legal, compute, hosting)"
+ },
+ {
+  "id": "price-cost-probe",
+  "status": "open",
+  "evidence": "The row is unchanged ('Once the registry entry and spend gate exist.'). No cost probe has run. The study registry's first entry and the study spend gate do not exist (backlog section 'Before the study registry's first entry'), and the research track is parked (owner, 2026-10-21 21:31: \"Keep all of it parked\").",
+  "landedIn": "",
+  "left": "The ~$1.4k paid probe on public engineering briefs, once the registry entry and spend gate exist.",
+  "rowAt37a4104": "Cost probe on public engineering briefs"
+ },
+ {
+  "id": "price-pilot",
+  "status": "open",
+  "evidence": "The row is unchanged ('Only after the Monitor is contracted.'). The playbook's 'Independent Integrity Monitor' row and the milestone 'Monitor contracted; copywriter contracted' are not done, and the research track is parked (owner, 2026-10-21 21:31: \"Keep all of it parked\").",
+  "landedIn": "",
+  "left": "The Monitor-held all-arm pilot (~$5.5k), after the Monitor is contracted.",
+  "rowAt37a4104": "Pilot (all arms, 12 sealed development briefs, ~1,500 lay judgments)"
+ },
+ {
+  "id": "price-integrity-monitor",
+  "status": "open",
+  "evidence": "The Pricing table is unchanged from 8401820 to 37a4104. Commit 489483e (2026-10-18) only added a trigger to the section intro: the rows \"come back together when the spending ceiling is set (D13), after the cost probe and the quotes, which wait for the research track\". There is no quote or contract on main. The playbook row \"Independent Integrity Monitor\" is still to be contracted, and its milestone (\"Monitor contracted ... ~mid-November 2026\") has not been revised. The research track is still parked (ADR-0108).",
+  "landedIn": "nothing (only the section's trigger, 489483e)",
+  "left": "Get the Monitor's quote and contract them. This comes back with D13 when the research track resumes (Deferred decisions, \"When the research track resumes\").",
+  "rowAt37a4104": "Integrity Monitor"
+ },
+ {
+  "id": "price-red-team",
+  "status": "open",
+  "evidence": "The row has not changed since 8401820, and no quote is recorded anywhere. The playbook row \"Red team (3–5)\" is still due \"Before Stage 1 and before Stage 2 submission\". The research track is parked (ADR-0108), and the section waits on D13 (trigger added in 489483e).",
+  "landedIn": "nothing (only the section's trigger, 489483e)",
+  "left": "Quote and budget the two rounds when D13 is set, after the research track resumes.",
+  "rowAt37a4104": "Red team"
+ },
+ {
+  "id": "price-charter-addons",
+  "status": "open",
+  "evidence": "The row has not changed since 8401820. The only edit to this section in the range is the intro trigger in 489483e. D13 is still undecided (Deferred decisions row \"D13 Spending ceiling\").",
+  "landedIn": "nothing (only the section's trigger, 489483e)",
+  "left": "The estimate comes back with the spending ceiling (D13), after the cost probe and the quotes.",
+  "rowAt37a4104": "Charter add-ons overall"
+ },
+ {
+  "id": "price-b-bon-arm",
+  "status": "open",
+  "evidence": "The row has not changed. The protocol's baseline-set decision D1 is still open: the Deferred decisions row \"D1 Baseline set\" still reads \"Recommended: B-Skill + B-Outside + B-BoN, gated behind H1a\", with the deadline \"Before Stage 0\". recipes/b-bon.json still carries the title \"N is a planning value until Stage 1\". This is a different D1 from the audit's D1 answered on 2026-10-21, which was about the research documents.",
+  "landedIn": "nothing (only the section's trigger, 489483e)",
+  "left": "D1 (baseline set) and D13 (ceiling) are both still open. N is fixed at Stage 1 (v1.2 row \"B-BoN's N\").",
+  "rowAt37a4104": "Compute-matched best-of-N arm (B-BoN)"
+ },
+ {
+  "id": "price-b-skill-arm",
+  "status": "open",
+  "evidence": "The row has not changed. The Deferred decisions row \"D1 Baseline set\" is still undecided at 37a4104, deadline \"Before Stage 0\". There is no commit in the range on this arm's budget.",
+  "landedIn": "nothing (only the section's trigger, 489483e)",
+  "left": "Waits on D1 (baseline set) and D13 (spending ceiling).",
+  "rowAt37a4104": "Frontend-design skill arm (B-Skill)"
+ },
+ {
+  "id": "price-b-outside-arm",
+  "status": "open",
+  "evidence": "The row has not changed (\"Required by CR5 in some form\"). The playbook row \"Outside baseline owner\" still says \"Invitations after the Monitor is in post\", and no Monitor is contracted. D1 (baseline set) and D13 are still open in Deferred decisions.",
+  "landedIn": "nothing (only the section's trigger, 489483e)",
+  "left": "The Monitor has to be contracted, the outside owner invited, and the cost budgeted under D13.",
+  "rowAt37a4104": "Outside baseline (B-Outside)"
+ },
+ {
+  "id": "price-h1c-positive-control",
+  "status": "open",
+  "evidence": "The design was settled before the route map. Answering on 2026-10-07T16:40:58Z (09:40 local), the owner chose \"Accept all recommendations (Recommended)\" (conversation.md, which predates conversation-continued.md). That answer accepts ADR-0061 D19 (H1c) and D20 (positive control). The budget line itself has not moved: nothing has been spent, and D13 is unset. The row is unchanged at 37a4104.",
+  "landedIn": "ADR-0061 (2026-10-07, before 8401820); nothing in 8401820..37a4104",
+  "left": "The ~$1.7k line still waits on D13 and the research track; H1c and the positive control are not built or run.",
+  "rowAt37a4104": "H1c test + positive control"
+ },
+ {
+  "id": "price-regeneration-reserve",
+  "status": "open",
+  "evidence": "The row is unchanged and still contingent (\"Only if Stage 1 reviewers change the generation protocol after escrowed generation\"). Stage 0 and Stage 1 have not been filed; docs/study1 holds only protocol-v1.1-draft.md.",
+  "landedIn": "nothing",
+  "left": "The reserve applies only if Stage 1 reviewers change the generation protocol after escrowed generation; otherwise it waits on D13.",
+  "rowAt37a4104": "Regeneration reserve"
+ },
+ {
+  "id": "price-lean-variant",
+  "status": "decided",
+  "evidence": "Re-checked; the status holds. The question \"There are ~15 technical design choices ... (effect-size margin, error control, 72 briefs, ...)\" got the answer \"Accept all recommendations (Recommended)\" at 2026-10-07T16:40:58Z (09:40 local, UTC-7), in docs/adr/evidence/conversation.md lines 924-928. ADR-0061 (dated 2026-10-07 09:40) records D18 as \"Fixed at 72 (12 strata × 6), no reserve stratum\". The budget question offered \"Proceed, but aim for the lean design\" (60 briefs), and the owner did not pick it. The answer began \"Focus on code please. Design the study yes but we can price the thing after.\" The row is the same at 8401820 and 37a4104 (git diff 8401820 37a4104 -- docs/backlog.md does not touch it). It is line 22 and reads \"Not chosen: 72 briefs accepted (ADR-0061).\"",
+  "landedIn": "ADR-0061 (2026-10-07 09:40, before 8401820); conversation.md 2026-10-07T16:40:58Z",
+  "left": "Nothing. The row only records an option that was not chosen. ADR-0061's Negative consequences say the package stays \"reopenable before Stage 0\".",
+  "rowAt37a4104": "Lean variant (60 briefs)"
+ },
+ {
+  "id": "price-gpt-worker-arm",
+  "status": "decided",
+  "evidence": "Re-checked; the status holds. The owner's \"Accept all recommendations (Recommended)\" at 2026-10-07T16:40:58Z (conversation.md line 928) accepted ADR-0061's D14, \"Deferred to Paper 2 and logged in the roadmap\". The ADR index's open-decisions table (docs/adr/README.md) says of \"Optional GPT worker arm in Study 1\": \"Decided: ADR-0061 D14, deferred to Paper 2.\" Backlog line 23 is the same at 8401820 and 37a4104 and reads \"Deferred to Paper 2 (ADR-0061).\" The 'logged in the roadmap' part has not been done. The backlog paragraph \"Before the study registry's first entry\" (line 194) says \"No roadmap has been written\", and no roadmap file exists on main. On 2026-10-21 21:31:18 local (conversation-continued.md line 506) the owner answered the D1 question about the research documents, which named a draft research roadmap, with \"Keep all of it parked\". That option's description read \"Nothing on the research track moves until it resumes.\" Commit dc19903 (on main) added this answer to the roadmap row and the other research rows.",
+  "landedIn": "ADR-0061 D14 (2026-10-07 09:40, before 8401820); dc19903 (2026-10-21) recorded the roadmap staying parked",
+  "left": "The arm still has to be logged in the research roadmap. The roadmap would be held by the Program Registry (ADR-0046, CR3) and is described in the backlog paragraph \"Before the study registry's first entry\". It waits until the research track resumes (row \"When the research track resumes\").",
+  "rowAt37a4104": "GPT-5.6 Sol worker arm"
+ },
+ {
+  "id": "price-study1b",
+  "status": "open",
+  "evidence": "The structure was decided before the route map. ADR-0061 D15 makes Study 1b a separate, decoupled Registered Report, accepted on 2026-10-07 09:40 with \"Accept all recommendations (Recommended)\". The budget line is unchanged at 37a4104, and nothing for Study 1b was built or filed in the range.",
+  "landedIn": "nothing in 8401820..37a4104",
+  "left": "Study 1b's budget (D13), its own Stage 0 (to be filed before Study 1's confirmatory lock) and its operators. All of this waits for the research track.",
+  "rowAt37a4104": "Study 1b (C1-HITL, 8 operators)"
+ },
+ {
+  "id": "price-quotes-needed",
+  "status": "open",
+  "evidence": "The row is unchanged at 37a4104 (\"Monitor, copywriter, red team, legal, IRB, recruiting vendor, CODECHECK\"). The playbook's only changes in the range were the venue and transcription rows, the ActAI folder rename, the delegated-records review and the dangling-commits row; none records a quote. The research track is parked (ADR-0108; on 2026-10-21 21:31 the owner chose \"Keep all of it parked\").",
+  "landedIn": "nothing (only the section's trigger, 489483e)",
+  "left": "Every quote is still to get. They feed D13.",
+  "rowAt37a4104": "Quotes still needed"
+ },
+ {
+  "id": "price-set-spending-ceiling",
+  "status": "open",
+  "evidence": "This owner decision is still unanswered. Both rows exist at 37a4104: \"**Set the Study 1 spending ceiling**\" in Pricing, and \"D13 Spending ceiling\" in Deferred decisions (\"After the cost probe and quotes\"). ADR-0061 lists D13 under \"Not decided here\". In conversation-continued.md the owner has not answered on the ceiling. The 2026-10-07 answer (conversation.md) deferred it: \"Focus on code please. Design the study yes but we can price the thing after.\"",
+  "landedIn": "nothing (only the section's trigger, 489483e)",
+  "left": "The owner sets the ceiling after the cost probe and the quotes, which wait for the research track (ADR-0108).",
+  "rowAt37a4104": "**Set the Study 1 spending ceiling**"
+ },
+ {
+  "id": "v12-sm5-exception-row",
+  "status": "open",
+  "evidence": "No commit in 8401820..37a4104 touches docs/study1/ or protocol/; docs/study1 holds only protocol-v1.1-draft.md. Commit 489483e added the section's trigger (\"comes back when the research track resumes (ADR-0108) and is due before Stage 0\"). dc19903 recorded the owner's answer of 2026-10-21 21:31 (04:31:18Z) to D1 (\"Should the research documents among the 39 land now (protocol corrections, a v1.2 draft, a draft research roadmap)...?\"): \"Keep all of it parked\", whose description read \"Nothing on the research track moves until it resumes.\"",
+  "landedIn": "nothing (records only: 489483e trigger, dc19903 owner's parking answer)",
+  "left": "The whole edit, in the protocol v1.2 pass, when the research track resumes and before Stage 0.",
+  "rowAt37a4104": "SM-5's row in §5.6 should list DR3 (isolation), DR4 (hidden threshold) and DR5 (judge tier) as well as port rules 1 and 2"
+ },
+ {
+  "id": "v12-c1h-critic-in-arm-table",
+  "status": "open",
+  "evidence": "docs/study1 is unchanged in the range, and only protocol-v1.1-draft.md exists. The section is parked by the owner's answer of 2026-10-21 21:31, \"Keep all of it parked\" (\"Nothing on the research track moves until it resumes.\"), recorded in dc19903. Its trigger (489483e) is the research track resuming, due before Stage 0.",
+  "landedIn": "nothing (records only: 489483e, dc19903)",
+  "left": "State it in the v1.2 arm table, during the v1.2 pass.",
+  "rowAt37a4104": "State that the C1-H critic receives one desktop render and that CRITIC-check sits out in every C1-H arm (already in S1-BIND and deviation 14) in the arm table itself"
+ },
+ {
+  "id": "v12-bbon-n",
+  "status": "open",
+  "evidence": "recipes/b-bon.json at 37a4104 is still titled \"B-BoN (per-slot best-of-5, A.14 selector; N is a planning value until Stage 1)\". No pilot has run and no Stage 1 has been filed. The section is parked by the owner's \"Keep all of it parked\" (2026-10-21 21:31; dc19903).",
+  "landedIn": "nothing",
+  "left": "Stage 1 fixes N from the pilot's costs, and the recipe is regenerated with the final N.",
+  "rowAt37a4104": "B-BoN's N"
+ },
+ {
+  "id": "v12-fold-adr0061-options",
+  "status": "open",
+  "evidence": "No protocol v1.2 exists: docs/study1 at 37a4104 holds only protocol-v1.1-draft.md, and git grep counts 54 lines with [Dn] markers in it, as at the route map. No commit in the range touches docs/study1. On 2026-10-21 21:31 the owner was asked whether \"a v1.2 draft\" should land now and answered \"Keep all of it parked\" (\"Nothing on the research track moves until it resumes.\"; dc19903).",
+  "landedIn": "nothing (records only: 489483e trigger, dc19903)",
+  "left": "Write v1.2 with D3, D5, D6, D11, D12 and D14 to D23 folded in and their markers removed, before Stage 0, once the research track resumes.",
+  "rowAt37a4104": "Fold in the options ADR-0061 accepted (D3, D5, D6, D11, D12 and D14 to D23) and remove their [Dn] markers"
+ },
+ {
+  "id": "v12-single-ai-rater",
+  "status": "open",
+  "evidence": "protocol/04-use-case-evidence.md:23 at 37a4104 still reads \"A single rater (the protocol author) scored them from the evidence below\", without saying the rater was an AI. No commit in 8401820..37a4104 touches protocol/. The owner's \"Keep all of it parked\" (2026-10-21 21:31) covers the \"protocol corrections\" named in that question.",
+  "landedIn": "nothing",
+  "left": "Correct the sentence and consider independent human re-scoring, for any paper that cites the configuration set.",
+  "rowAt37a4104": "State that a single AI rater produced the anchored-rubric scores behind the configuration set, and consider independent human re-scoring"
+ },
+ {
+  "id": "agent-layer-claude-code-codex",
+  "status": "open",
+  "evidence": "There is no design brief and no ADR; the highest ADR in the index is 0112. Commit 489483e (2026-10-18) widened the row with two more questions for the design: whether the host can make images and video on the person's subscription, and whether the channel is product only. The owner has not scheduled the design. The owner's only later word on it, 2026-10-18 15:31: \"the MCP option is not yet designed (from what I remember of our past conversations)\". It is not in the Block 2 plan.",
+  "landedIn": "nothing (row widened in 489483e)",
+  "left": "A design brief and an ADR, then the build. Pick up when the owner schedules the design.",
+  "rowAt37a4104": "Run byway inside Claude Code and Codex, on the person's own subscription"
+ },
+ {
+  "id": "hosted-byway",
+  "status": "open",
+  "evidence": "Not built, and the row is unchanged at 37a4104. Its owner question (\"is it wanted, given the Claude Code and Codex layer?\") is still unanswered. e6fc542 (2026-10-18) added it to the status page's open owner questions: docs/reviews/2026-10-16-review-fix-status.md:45, \"whether a hosted byway is wanted (Ways to run byway)\". No answer appears in conversation-continued.md.",
+  "landedIn": "nothing",
+  "left": "The owner's answer on whether a hosted URL is wanted; then its own ADR (sign-in, tenancy, keys or billing, data residency).",
+  "rowAt37a4104": "A hosted byway: a URL other people can open"
+ },
+ {
+  "id": "external-review-owner-decisions",
+  "status": "done",
+  "evidence": "Re-checked; the status holds. ADR-0101 (User, 2026-10-16 09:35, D3), ADR-0102 (User, 2026-10-16 20:45, D1), ADR-0103 (User, 2026-10-16 22:00, D4; the owner's \"proceed. but remember my earlier point: no macOS for now.\") and ADR-0105 (User, 2026-10-18 07:40, D2) are all on main, and all were present at 8401820. ADR-0106 is the related renderer fix that came with D2. CI exists as .github/workflows/verify.yml. The section's paragraph (backlog line 186 at 37a4104) is the same as at 8401820 and reads \"All four are built, and their rows have closed; what D2 left is the row \\\"What D2 left (ADR-0105)\\\".\" There is one apparent gap in D4. The CI-time row says the caching of Playwright and the Temporal CLI is \"Not built either\". That caching was part of the verification's design, not of what ADR-0103 decided, so it does not make D4 incomplete. ADR-0103's Alternatives keeps the fuller design in the backlog with triggers.",
+  "landedIn": "ADR-0101, ADR-0102, ADR-0103, ADR-0105, ADR-0106 (all on main before 8401820)",
+  "left": "Nothing in this item. The rest of D2 is in the row \"What D2 left (ADR-0105)\", still open at 37a4104 with items (1) to (10); only (9) is marked done in the first block (24ffc74). The caching not built under D4 is in the row \"CI time, and the CI proposal the owner deferred ('Not now', 2026-10-18)\". macOS has its own row.",
+  "rowAt37a4104": "Section paragraph under \"## Owner decisions from the external-review verification (2026-10-08)\" (not a table row). It is still there, unchanged."
+ },
+ {
+  "id": "dist-licence-notice-manifest",
+  "status": "open",
+  "evidence": "There is no manifest generator or distribution job on main: git grep at 37a4104 finds no NOTICE, licence manifest or publishConfig outside docs. The \"Before any distribution\" paragraph still states the step as required. 489483e (2026-10-18) added that no test makes the trigger observable and proposed a guard test (fail when a package.json drops private: true, or gains bin or publishConfig, or a plugin or MCP manifest appears). That test was not built. Not in the Block 2 plan.",
+  "landedIn": "nothing (records only, 489483e)",
+  "left": "The distribution job's manifest built from the actual artifact, and the proposed guard test. Due before any packaged build, replication kit or installable plugin.",
+  "rowAt37a4104": "section paragraph \"Before any distribution\" (no table row; still present)"
+ },
+ {
+  "id": "dist-license-file",
+  "status": "open",
+  "evidence": "There is no LICENSE file at 37a4104 (git show 37a4104:LICENSE fails). The root package.json still says \"license\": \"Apache-2.0\". The paragraph still says \"(the owner's call)\". No owner answer on the product's licence appears in conversation-continued.md.",
+  "landedIn": "nothing",
+  "left": "The owner's choice of the product's licence, then the LICENSE file. Due before any distribution.",
+  "rowAt37a4104": "section paragraph \"Before any distribution\" (no table row; still present)"
+ },
+ {
+  "id": "dist-product-release-ci",
+  "status": "open",
+  "evidence": "The only CI change in 8401820..37a4104 is 17e2599: verify.yml's weekly, report-only Playwright pin step (D4/ADR-0110). There is no release CI, and the paragraph still says \"neither exists, because byway has no release process yet (ADR-0103 §5)\".",
+  "landedIn": "nothing",
+  "left": "Release CI that blocks a product release claiming a label its hash did not earn. Due with the claims linter, before the first public product surface.",
+  "rowAt37a4104": "section paragraph \"Before any distribution\" (no table row; still present)"
+ },
+ {
+  "id": "dist-replication-kit-ci",
+  "status": "open",
+  "evidence": "No replication-kit CI exists at 37a4104 (verify.yml only gained the Playwright pin report, 17e2599). The paragraph still lists it as required by ADR-0059. The research track is parked (\"Keep all of it parked\", 2026-10-21 21:31).",
+  "landedIn": "nothing",
+  "left": "Assemble the kit at lock, and add the data tables and CR13 logs at data freeze. Due before confirmatory data collection ends.",
+  "rowAt37a4104": "section paragraph \"Before any distribution\" (no table row; still present)"
+ },
+ {
+  "id": "reg-label-expires",
+  "status": "open",
+  "evidence": "packages/advisor/src/registry.ts is unchanged from 8401820 to 37a4104 (git diff is empty). At 37a4104 labelFor only spreads `expires` through, at lines 43-57, and STUDY_REGISTRY is still empty. The paragraph is still in the backlog. Not in the Block 2 plan.",
+  "landedIn": "nothing",
+  "left": "Enforce expires, with an outcome the verdict union can represent (for example Historical), before the registry's first entry.",
+  "rowAt37a4104": "section paragraph \"Before the study registry's first entry\" (no table row; still present)"
+ },
+ {
+  "id": "reg-cr11-scope-tuple",
+  "status": "open",
+  "evidence": "StudyEntry at 37a4104 (registry.ts:10-21) still has only id, recipeHash, reported, verdict, summary and expires, with no CR11 scope tuple. The file is unchanged in the range.",
+  "landedIn": "nothing",
+  "left": "Add ruleset, model profile, checkpoint binding, domain/task, outcome and rater population (ADR-0054).",
+  "rowAt37a4104": "section paragraph \"Before the study registry's first entry\" (no table row; still present)"
+ },
+ {
+  "id": "reg-label-frozen-snapshot",
+  "status": "open",
+  "evidence": "labelFor at 37a4104 still matches on `recipeHash(recipe)` alone (registry.ts:45-46), and registry.ts is unchanged in the range. The paragraph is still in the backlog.",
+  "landedIn": "nothing",
+  "left": "Key labels on the ADR-0041 frozen snapshot (recipe, prompt template versions, models, engine, renderer, fallback policy).",
+  "rowAt37a4104": "section paragraph \"Before the study registry's first entry\" (no table row; still present)"
+ },
+ {
+  "id": "reg-lineage-exposure-crosscheck",
+  "status": "open",
+  "evidence": "packages/gateway/src/exposure.ts is unchanged from 8401820 to 37a4104 (git diff is empty). The paragraph still says the lineage check \"must not trust an `exposure.jsonl` restored from an older backup; it cross-checks against the ledger's judging calls\". Not in the Block 2 plan.",
+  "landedIn": "nothing",
+  "left": "Cross-check exposure.jsonl against the ledger's judging calls, before the registry's first entry.",
+  "rowAt37a4104": "section paragraph \"Before the study registry's first entry\" (no table row; still present)"
+ },
+ {
+  "id": "reg-activation-prerequisites",
+  "status": "open",
+  "evidence": "The backlog paragraph under 'Before the study registry's first entry' (docs/backlog.md line 194 at 37a4104) still lists the review's other activation prerequisites (treatment-fidelity dry run, instrument separation, operational governance, independent metric validation) word for word as at 8401820. The only change since then is an added sentence: the owner chose on 2026-10-21 21:31 to keep the research documents parked (D1, \"Keep all of it parked\": \"Nothing on the research track moves until it resumes.\"). ADR-0108 (the product track goes first) says the research harness waits. No commit in 8401820..37a4104 builds any of them.",
+  "landedIn": "none",
+  "left": "All four prerequisites, due before confirmatory collection. They wait for the research track to resume (ADR-0108; backlog row 'When the research track resumes').",
+  "rowAt37a4104": "Before the study registry's first entry (prose section, not a table row)"
+ },
+ {
+  "id": "reg-study-served-model-halt",
+  "status": "open",
+  "evidence": "There is no study engine at 37a4104, and no check halts a run when the served model differs from the profile. `git grep servedModel` finds it only in the gateway's ledger and pricing (settlement at the served model's row, F04; contracts/gateway.ts, gateway/src/gateway.ts). ADR-0102's two later notes (2026-10-18 evidence and 2026-10-21 ADR-0111 retry stop) do not touch §5.1. The backlog paragraph still names it as left to the study engine. ADR-0108's Consequences: 'The registry spend gate, the Judge app, the agent sandbox and the Python evaluation side do not exist'. Block 2's plan has no such item.",
+  "landedIn": "none",
+  "left": "The served-model halt (§5.1) in the study engine, due before the first study run (the pilot or any development-brief tuning). Parked with the research track (backlog row 'Build the research harness (parked while the product came first)').",
+  "rowAt37a4104": "Before the study registry's first entry (prose section, not a table row)"
+ },
+ {
+  "id": "reg-class-q-refusal-count",
+  "status": "open",
+  "evidence": "`git grep -i \"class q|provider refusal\"` over packages and apps at 37a4104 finds nothing. The backlog paragraph under 'Before the study registry's first entry' still lists counting a second refusal as Class Q 'provider refusal' (§5.2), from the ledger's declined and retryOf entries and the model-declined events. ADR-0102's note of 2026-10-21 (ADR-0111) changes only how the retry after a decline is stopped, not how it is counted for a study. Not in Block 2's plan.",
+  "landedIn": "none",
+  "left": "The Class Q count in the study engine, due before the first study run. Waits for the research track to resume (ADR-0108).",
+  "rowAt37a4104": "Before the study registry's first entry (prose section, not a table row)"
+ },
+ {
+  "id": "reg-program-registry-entries",
+  "status": "open",
+  "evidence": "There is no Program Registry and no spend gate that checks it. ADR-0108 (added since 8401820), Alternatives: the product's gateway 'caps spend and keeps a hash-chained ledger, but nothing in it checks a Program Registry entry before a paid call (ADR-0046)'. Its Consequences say the registry spend gate does not exist. The backlog row 'Build the research harness (parked while the product came first)' says the same, and so does the paragraph's sentence 'CR3 needs Program Registry entries before a study's first paid call', unchanged at 37a4104. `git grep -i \"program registry\"` over packages and apps finds nothing.",
+  "landedIn": "none",
+  "left": "The public Program Registry (ADR-0046, CR3), its entries, and the gateway spend gate that refuses a study's paid call without one. Recorded in the 'Before the study registry's first entry' paragraph and the row 'Build the research harness (parked while the product came first)'.",
+  "rowAt37a4104": "Before the study registry's first entry (prose section, not a table row)"
+ },
+ {
+  "id": "reg-research-roadmap",
+  "status": "open",
+  "evidence": "No roadmap has been written: the paragraph still reads 'No roadmap has been written'. On 2026-10-21 21:31 the owner was asked 'Should the research documents among the 39 land now (protocol corrections, a v1.2 draft, a draft research roadmap), with Claude drafting the two venue emails for you to send?' and chose \"Keep all of it parked\", whose description read \"Nothing on the research track moves until it resumes.\" (docs/adr/evidence/conversation-continued.md, USER 2026-10-21T21:31:18). The backlog added: 'On 2026-10-21 21:31 the owner chose to keep the research documents parked, a draft roadmap among them'. So the roadmap is parked, not dropped.",
+  "landedIn": "none",
+  "left": "Write the roadmap (ladder rungs, candidate Paper 2 domains, comparator-selection criteria, ADR-0061's GPT worker arm, ADR-0035's deferred ablations, protocol v1.1 App. B.2 item 12) when the research track resumes (backlog row 'When the research track resumes').",
+  "rowAt37a4104": "Before the study registry's first entry (prose section, not a table row)"
+ },
+ {
+  "id": "dec-d1-baseline-set",
+  "status": "open",
+  "evidence": "The backlog row 'D1 Baseline set' (Deferred decisions, line 200 at 37a4104) is unchanged since 8401820 and still shows only the recommended default (B-Skill + B-Outside + B-BoN, gated behind H1a). The playbook's 'Confirm the baseline set' row is unchanged too. conversation-continued.md records no answer on B-Skill, B-BoN or the baseline set. Its 'D1' of 2026-10-21 ('Keep all of it parked') is a different question, numbered in that day's set.",
+  "landedIn": "none",
+  "left": "The owner confirms or changes the baseline set before Stage 0. Parked with the research track (ADR-0108).",
+  "rowAt37a4104": "D1 Baseline set"
+ },
+ {
+  "id": "dec-d4-venue",
+  "status": "open",
+  "evidence": "The backlog row 'D4 Registered Report venue' is unchanged, deadline 'October 2026'. The venue question is not answered, because the journals have not been asked. The playbook row 'Ask PLOS ONE Registered Reports and Royal Society Open Science' now reads 'October 2026; parked with the research track since 2026-10-21 (D1)'. On 2026-10-21 21:31 the owner chose \"Keep all of it parked\" for the venue emails' drafts. Asked 'D8. If the venue emails go out, how do they introduce you?', the owner chose at the same time \"Name byway and the equity interest (Recommended)\" (conversation-continued.md, USER 2026-10-21T21:31:18). That settles how the emails introduce the owner, not the venue.",
+  "landedIn": "none (playbook records only the parking and the email-introduction choice)",
+  "left": "Send the two venue emails, get the journals' answers, and choose PLOS ONE, RSOS or stop. All of it waits for the research track to resume. The October 2026 deadline is effectively slipping.",
+  "rowAt37a4104": "D4 Registered Report venue"
+ },
+ {
+  "id": "dec-d7-monitor-deputy-guarantor",
+  "status": "open",
+  "evidence": "The backlog row 'D7 Monitor, deputy, guarantor' (default 'Three different people', 'Before any pilot spend') is unchanged since 8401820. The playbook rows for the Monitor, deputy and guarantor are unchanged, and no one has been named. The conversation record has no answer on it.",
+  "landedIn": "none",
+  "left": "Name three different people for the Monitor, deputy key-holder and guarantor roles before any pilot spend. Parked with the research track (ADR-0108).",
+  "rowAt37a4104": "D7 Monitor, deputy, guarantor"
+ },
+ {
+  "id": "dec-d8-ethics-raters",
+  "status": "open",
+  "evidence": "The backlog row 'D8 Ethics route and rater population' is unchanged since 8401820, with the same default. The owner's 'D8' of 2026-10-21 21:31 (\"Name byway and the equity interest (Recommended)\") is a different question, numbered in that day's set, about how the venue emails introduce the owner. It does not decide the ethics route or the rater population. The playbook's 'IRB submission' row is unchanged.",
+  "landedIn": "none",
+  "left": "Decide the ethics route (IRB) and rater population before any rating. Parked with the research track.",
+  "rowAt37a4104": "D8 Ethics route and rater population"
+ },
+ {
+  "id": "dec-d9-funding-patents",
+  "status": "open",
+  "evidence": "The backlog row 'D9 Funding, patents, legal entity' is unchanged ('—', 'Before Stage 0'). The playbook action 'Funding, patents and legal entity' is unchanged. The conversation record has no answer on it.",
+  "landedIn": "none",
+  "left": "Decide and disclose who funds Study 1, whether any patent is filed, and the legal entity, before Stage 0.",
+  "rowAt37a4104": "D9 Funding, patents, legal entity"
+ },
+ {
+  "id": "dec-d10-ratifications",
+  "status": "open",
+  "evidence": "The backlog row 'D10 Ratifications and charter interpretations' and the playbook row 'Ratify the 15 by-continuation ADRs' are both unchanged since 8401820. The owner's D5 answer of 2026-10-21 21:43 (\"Money and security packet, at your pace (Recommended)\") is about a different playbook row, 'Review the 38 Delegated records', not the ratification pass. Its D10 that day was the ActAI folder, a different question.",
+  "landedIn": "none",
+  "left": "The ratification pass before Stage 0: ratify the 15 by-continuation ADRs, accept ADR-0034 to 0038 as amended, adopt SM-1 to SM-6 and the other interpretations (co-signed by the Monitor).",
+  "rowAt37a4104": "D10 Ratifications and charter interpretations"
+ },
+ {
+  "id": "dec-d13-spending-ceiling",
+  "status": "open",
+  "evidence": "The backlog row 'D13 Spending ceiling' ('After the cost probe and quotes') and the Pricing row 'Set the Study 1 spending ceiling' both still exist at 37a4104. The Pricing intro gained a sentence: the figures 'come back together when the spending ceiling is set (D13), after the cost probe and the quotes, which wait for the research track (ADR-0108...)'. No cost probe has run and no quotes exist.",
+  "landedIn": "none",
+  "left": "Run the cost probe (needs the Program Registry entry and the spend gate), get the quotes, then set the ceiling. Duplicate of the Pricing row 'Set the Study 1 spending ceiling'.",
+  "rowAt37a4104": "D13 Spending ceiling"
+ },
+ {
+  "id": "dec-d24-product-consequences",
+  "status": "open",
+  "evidence": "The backlog row 'D24 Product consequences (\"Worse\" rows)' and the playbook row 'Fill in the product-consequences table' are both unchanged since 8401820. The table is still a draft in protocol v1.1, and the conversation record has no answer on it.",
+  "landedIn": "none",
+  "left": "Fill in the product-consequences table before Stage 1 (CR10).",
+  "rowAt37a4104": "D24 Product consequences (\"Worse\" rows)"
+ },
+ {
+  "id": "dec-seed-string-source",
+  "status": "open",
+  "evidence": "The backlog row 'SEED string source in the product' is unchanged. At 37a4104 the code is still runner-injected: packages/runner/src/activities/model-step.ts:31 `export const defaultSeed = (): string => randomBytes(36).toString('base64url');`, and deps.ts:17 says it 'Defaults to crypto.randomBytes'. The conversation record has no answer on it.",
+  "landedIn": "none",
+  "left": "Choose between keeping the runner-injected seed and switching to a model-written one, before SEED is studied or claimed. No behaviour or recipe-hash change until then.",
+  "rowAt37a4104": "SEED string source in the product"
+ },
+ {
+  "id": "dec-judge-hosting-lab-access",
+  "status": "open",
+  "evidence": "The backlog row 'Judge hosting and data residency; who needs Lab access' is unchanged since 8401820. The Judge app and the Lab do not exist: ADR-0108's Consequences say 'the Judge app ... do[es] not exist', and the row 'Build the research harness' lists Judge hosting and Lab access as open inputs. D8, which this decision follows, is still open.",
+  "landedIn": "none",
+  "left": "Choose the Judge host after D8 and before the Judge app is built. Decide who gets Lab access before the Lab is built.",
+  "rowAt37a4104": "Judge hosting and data residency; who needs Lab access"
+ },
+ {
+  "id": "ppl-integrity-monitor",
+  "status": "open",
+  "evidence": "The playbook section 1 row is unchanged between 8401820 and 37a4104 (a diff of docs/playbook.md touches only section 2 rows and the section 3 note). No Monitor has been contracted. The section 3 note added since then says the milestones (the Monitor contracted by about mid-November) 'come from protocol v1.1's timeline' and that 'none of the dates has been revised since' the product track went first (ADR-0108).",
+  "landedIn": "none",
+  "left": "Find and contract the Monitor before any pilot spend. Parked with the research track.",
+  "rowAt37a4104": "Independent Integrity Monitor"
+ },
+ {
+  "id": "ppl-deputy-key-holder",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. No deputy has been named, and the conversation record has nothing on it.",
+  "landedIn": "none",
+  "left": "Find the deputy key-holder together with the Monitor.",
+  "rowAt37a4104": "Deputy key-holder"
+ },
+ {
+  "id": "ppl-guarantor",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. No guarantor has been named.",
+  "landedIn": "none",
+  "left": "Find the guarantor before Stage 2, a different person from the Monitor and the deputy.",
+  "rowAt37a4104": "Guarantor"
+ },
+ {
+  "id": "ppl-academic-co-investigator",
+  "status": "open",
+  "evidence": "The playbook row ('IRB submission ~November 2026') and the 'IRB submission' outside action are unchanged since 8401820. No co-investigator has been found.",
+  "landedIn": "none",
+  "left": "Find the academic co-investigator, which gives the IRB route. Parked with the research track.",
+  "rowAt37a4104": "Academic co-investigator"
+ },
+ {
+  "id": "ppl-independent-copywriter",
+  "status": "open",
+  "evidence": "The playbook row ('Contracted ~October–November 2026') is unchanged since 8401820. No copywriter has been contracted, and no quote exists (the Pricing row 'Quotes still needed' still lists the copywriter).",
+  "landedIn": "none",
+  "left": "Contract the independent copywriter, then the 12 development briefs and the 72 confirmatory briefs.",
+  "rowAt37a4104": "Independent copywriter"
+ },
+ {
+  "id": "ppl-independent-designer",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. No designer has been contracted.",
+  "landedIn": "none",
+  "left": "Contract the designer before the freeze, for the calibration exemplars, defect gold pairs and positive-control pairs.",
+  "rowAt37a4104": "Independent designer"
+ },
+ {
+  "id": "ppl-second-transcriber",
+  "status": "open",
+  "evidence": "The playbook role row is unchanged. The outside action 'Transcribe the article's prompts' now records that on 2026-10-21 21:31 the owner chose to keep this transcription and the search for the second transcriber parked: (D1, \"Keep all of it parked\": \"Nothing on the research track moves until it resumes.\"; not \"Same, and find the 2nd transcriber now\"). That is verbatim in conversation-continued.md, USER 2026-10-21T21:31:18. Its deadline now reads '2026-11-30; parked with the research track since 2026-10-21 (D1)'.",
+  "landedIn": "none (playbook records the parking only)",
+  "left": "Find a second transcriber when the research track resumes. The 2026-11-30 date is at risk.",
+  "rowAt37a4104": "Second transcriber"
+ },
+ {
+  "id": "ppl-outside-baseline-owner",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. Invitations wait for the Monitor, who is not in post. The baseline set (D1) is still open.",
+  "landedIn": "none",
+  "left": "Invite an outside baseline owner under the registered rule once the Monitor is in post.",
+  "rowAt37a4104": "Outside baseline owner"
+ },
+ {
+  "id": "ppl-lay-raters",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. No rating has happened: there is no Judge app (ADR-0108), and the ethics route (D8) is open.",
+  "landedIn": "none",
+  "left": "Recruit Prolific lay raters for the pilot (~Feb 2027) and the confirmatory rating.",
+  "rowAt37a4104": "Lay raters"
+ },
+ {
+  "id": "ppl-expert-panel",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. The panel has not been recruited (the 'Recruiting vendor' row is unchanged too).",
+  "landedIn": "none",
+  "left": "Recruit 20 portfolio-verified designers for the confirmatory rating.",
+  "rowAt37a4104": "Expert designer panel"
+ },
+ {
+  "id": "ppl-detector-coders",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. No coders have been found.",
+  "landedIn": "none",
+  "left": "Find two independent coders during Stage 1 review to validate the tell detector (κ ≥ .70).",
+  "rowAt37a4104": "Detector coders (2)"
+ },
+ {
+  "id": "ppl-statistician",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. It is optional and depends on the Monitor, who is not contracted.",
+  "landedIn": "none",
+  "left": "Optional: the Monitor may contract a statistician for the analysis phase.",
+  "rowAt37a4104": "Statistician (optional)"
+ },
+ {
+  "id": "ppl-red-team",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. No red team has been contracted, and the Pricing row 'Quotes still needed' still lists the red team.",
+  "landedIn": "none",
+  "left": "Contract 3–5 paid outside reviewers before Stage 1 and before Stage 2 submission.",
+  "rowAt37a4104": "Red team (3–5)"
+ },
+ {
+  "id": "ppl-codecheck",
+  "status": "open",
+  "evidence": "The playbook row is unchanged since 8401820. No CODECHECK has been arranged (the Pricing row 'Quotes still needed' lists CODECHECK), and the analysis pipeline (the Python evaluation side) does not exist (ADR-0108 Consequences).",
+  "landedIn": "none",
+  "left": "Arrange an independent CODECHECK reproduction, with a DOI certificate, before Stage 2.",
+  "rowAt37a4104": "CODECHECK"
+ },
+ {
+  "id": "ppl-legal-reviewer",
+  "status": "open",
+  "evidence": "Playbook §1 row unchanged between 8401820 and 37a4104 (diff of docs/playbook.md touches only lines 37-38, 48-51 and the §3 intro). No commit in 8401820..37a4104 names a legal reviewer; backlog Pricing row 'Quotes still needed' still lists legal. Research track parked by the owner on 2026-10-21 21:31 (D1, \"Keep all of it parked\": \"Nothing on the research track moves until it resumes.\").",
+  "landedIn": "not landed",
+  "left": "Find and engage the legal reviewer before contracting the Monitor (Monitor contract with the six CR1 powers, results escrow, publication freedom; deal clause; licence review). Waits for the research track to resume.",
+  "rowAt37a4104": "**Legal reviewer**"
+ },
+ {
+  "id": "ppl-recruiting-vendor",
+  "status": "open",
+  "evidence": "Playbook §1 row unchanged at 37a4104; backlog Pricing 'Quotes still needed' still lists the recruiting vendor; no commit in 8401820..37a4104 touches it. Research track parked (D1, 2026-10-21 21:31, \"Keep all of it parked\").",
+  "landedIn": "not landed",
+  "left": "Choose and contract the one recruiting vendor (experts, designer, coders, Study 1b operators) before those roles are needed.",
+  "rowAt37a4104": "**Recruiting vendor**"
+ },
+ {
+  "id": "ppl-study1b-operators",
+  "status": "open",
+  "evidence": "Playbook §1 row unchanged at 37a4104; Study 1b stays a decoupled Registered Report (backlog Pricing row 'Study 1b (C1-HITL, 8 operators)', ADR-0061). Nothing in 8401820..37a4104 touches it.",
+  "landedIn": "not landed",
+  "left": "Recruit the eight operators when Study 1b is designed (after Study 1; research track parked).",
+  "rowAt37a4104": "**Study 1b designer-operators (8)**"
+ },
+ {
+  "id": "ppl-journal-editors",
+  "status": "open",
+  "evidence": "Playbook §1 row unchanged at 37a4104. The venue emails were not sent: the owner chose on 2026-10-21 21:31 (D1) \"Keep all of it parked\" (\"Nothing on the research track moves until it resumes.\") over \"Documents now, emails this month (Recommended)\" (docs/adr/evidence/conversation-continued.md). Recorded on the venue row by dc19903.",
+  "landedIn": "not landed",
+  "left": "The editors' answers to the venue questions; waits for the emails, which wait for the research track to resume (backlog Deferred decisions, 'When the research track resumes').",
+  "rowAt37a4104": "**Journal editors**"
+ },
+ {
+  "id": "ppl-article-author",
+  "status": "open",
+  "evidence": "Playbook §1 row unchanged at 37a4104. The transcription it depends on is parked: on 2026-10-21 21:31 the owner chose D1 \"Keep all of it parked\" (\"Nothing on the research track moves until it resumes.\"), not \"Same, and find the 2nd transcriber now\" (conversation-continued.md; noted on the transcription row in dc19903).",
+  "landedIn": "not landed",
+  "left": "Author/publisher confirms the transcribed prompts and permits publication (by 2026-11-30, otherwise register by hash); waits for the transcription and the research track.",
+  "rowAt37a4104": "**Article author / publisher**"
+ },
+ {
+  "id": "act-ask-venues",
+  "status": "open",
+  "evidence": "Not sent. Two owner answers of 2026-10-21 21:31 (conversation-continued.md) bear on it, recorded on the row by dc19903: D1 \"Keep all of it parked\" (\"Nothing on the research track moves until it resumes.\"), so the email drafts are parked; and D8, for when the emails go, \"Name byway and the equity interest (Recommended)\". The row's deadline now reads \"October 2026; parked with the research track since 2026-10-21 (D1)\". Backlog Deferred decisions 'D4 Registered Report venue' still open.",
+  "landedIn": "records only: dc19903 (owner's D1 and D8 answers on the playbook row); no emails drafted or sent",
+  "left": "Draft and send the seven questions to PLOS ONE RR and RSOS (introducing byway and the equity interest per D8) when the research track resumes; then the go/no-go.",
+  "rowAt37a4104": "**Ask PLOS ONE Registered Reports and Royal Society Open Science** in writing: (i) ... (vii) conflict-of-interest terms for equity-holding authors?"
+ },
+ {
+  "id": "act-transcribe-prompts",
+  "status": "open",
+  "evidence": "Not done. On 2026-10-21 21:31 the owner chose D1 \"Keep all of it parked\" (\"Nothing on the research track moves until it resumes.\"), not \"Same, and find the 2nd transcriber now\" (conversation-continued.md); dc19903 put this on the row, whose deadline now reads \"2026-11-30; parked with the research track since 2026-10-21 (D1)\". ADR index open decision 'Source of the baseline and seed prompts' still Open (D2).",
+  "landedIn": "records only: dc19903 (parked note on the row)",
+  "left": "Owner and an independent second transcriber copy B-Random, SEED, the critic-loop worker prompt and ASSET from the live page, reconcile, and ask the author for confirmation and permission; waits for the research track.",
+  "rowAt37a4104": "**Transcribe the article's prompts** (B-Random, SEED, the critic-loop worker prompt, ASSET) from the live page, with a second independent transcriber; ask the author to confirm and permit publication. ..."
+ },
+ {
+  "id": "act-irb-submission",
+  "status": "open",
+  "evidence": "Playbook row unchanged at 37a4104; ADR index open decision 'Ethics review route and rater population' still Open (D8 of the protocol set; the D8 answered on 2026-10-21 is the venue-email introduction, a different question). Backlog Deferred decisions 'D8 Ethics route and rater population' still there.",
+  "landedIn": "not landed",
+  "left": "Submit to the co-investigator's or an independent IRB with a consent form naming the commercial sponsor and AI-generated pages (target November 2026; research track parked).",
+  "rowAt37a4104": "**IRB submission** (academic co-investigator's IRB, or an independent IRB); consent form names the commercial sponsor and says the pages were AI-generated."
+ },
+ {
+  "id": "act-anthropic-org-account",
+  "status": "open",
+  "evidence": "Playbook row unchanged at 37a4104; ADR index open decision 'Anthropic organization account and dedicated study keys' still Open. No commit in 8401820..37a4104 touches it.",
+  "landedIn": "not landed",
+  "left": "Set up the organization account (one workspace per arm) and dedicated spend-capped study keys at every provider before the pilot.",
+  "rowAt37a4104": "**Anthropic organization account**, one workspace per arm, dedicated spend-capped keys per study at every provider."
+ },
+ {
+  "id": "act-provider-rate-limits",
+  "status": "open",
+  "evidence": "Playbook row unchanged at 37a4104; nothing in 8401820..37a4104 touches it.",
+  "landedIn": "not landed",
+  "left": "Ask providers for higher rate and spend tiers before confirmatory generation (~$15-20k in about 10 days).",
+  "rowAt37a4104": "**Ask providers for higher rate and spend limits** before confirmatory generation (~$15–20k in about 10 days, bursty)."
+ },
+ {
+  "id": "act-public-record",
+  "status": "open",
+  "evidence": "The private repository's rulesets ('Protect main', 'Protect tags') and the ADR check in CI landed before the route map (ADR-0103, 2026-10-17); the row text is unchanged between 8401820 and 37a4104. No public mirror, DOI snapshot or published hash of private ADRs exists; commits on main are unsigned (git log %G? shows N for 37a4104 and its parents). ADR index: 'How CR14's public record is published' Decided by ADR-0061 D12 (both), work held by this row.",
+  "landedIn": "before the route map: ADR-0103 (rulesets, ADR check in CI); nothing since 8401820",
+  "left": "Public mirror of the research ADRs, Program Registry and deviation log; DOI snapshots at milestones; published hashes of private product ADRs; signed commits (decided at the mirror step); same protections on the mirror. Still on the playbook row 'Public record for the charter', before the brief draw (~November 2026).",
+  "rowAt37a4104": "**Public record for the charter** while the repository is private: a public mirror of the research ADRs, Program Registry and deviation log, plus DOI snapshots ..."
+ },
+ {
+  "id": "act-funding-patents-entity",
+  "status": "open",
+  "evidence": "Playbook row unchanged; backlog Deferred decisions row 'D9 Funding, patents, legal entity | — | Before Stage 0' still there; ADR index open decision 'Patents, funding and legal entity disclosure' still Open. (The 'D9' the owner answered on 2026-10-21 21:31 is VOICE-RETRY, a different question set.)",
+  "landedIn": "not landed",
+  "left": "Owner decides and discloses who funds Study 1 and their role, and whether any patent is filed (file before Stage 1, never delaying publication).",
+  "rowAt37a4104": "**Funding, patents and legal entity**: decide and disclose (who pays for Study 1 and their role; whether any patent is filed; if so, file before Stage 1 and commit that it never delays publication)."
+ },
+ {
+  "id": "act-ratify-adrs",
+  "status": "open",
+  "evidence": "ADR index at 37a4104 still reads \"112 records: 105 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed\"; open decision 'Ratify the 15 ADRs accepted only by continuation' still Open (D10, before Stage 0). Playbook row text unchanged since 8401820. (The 'D10' answered on 2026-10-21 is the ActAI folder, a different question set.)",
+  "landedIn": "not landed",
+  "left": "One owner pass: ratify the 15, accept ADR-0034 to 0038 as amended, adopt SM-1 to SM-6, the port-rule wording and the CR11 interpretation, accept or reject ADR-0039 and ADR-0040, settle the ADR-0006/0019/0020 follow-ups, confirm ADR-0041's rules.",
+  "rowAt37a4104": "**Ratify the 15 by-continuation ADRs**, accept ADR-0034 to ADR-0038 as amended by protocol v1.1, and adopt exceptions SM-1 to SM-6, ..."
+ },
+ {
+  "id": "act-confirm-baseline-set",
+  "status": "open",
+  "evidence": "Playbook row unchanged; backlog Deferred decisions row 'D1 Baseline set' still reads \"Recommended: B-Skill + B-Outside + B-BoN, gated behind H1a\" with deadline Before Stage 0. (The D1 answered on 2026-10-21 21:31, \"Keep all of it parked\", is about the research documents; the D1 of 2026-10-16 is declines, ADR-0102.)",
+  "landedIn": "not landed",
+  "left": "Owner confirms or changes the baseline set before Stage 0.",
+  "rowAt37a4104": "**Confirm the baseline set** (default: the recommended B-Skill + B-Outside + B-BoN, all gated behind H1a)."
+ },
+ {
+  "id": "act-product-consequences-table",
+  "status": "open",
+  "evidence": "Playbook row unchanged; backlog Deferred decisions row 'D24 Product consequences (\"Worse\" rows) | Draft table in protocol v1.1 | Before Stage 1' still there; protocol files untouched in 8401820..37a4104.",
+  "landedIn": "not landed",
+  "left": "Owner fills in the 'Worse' rows of the product-consequences table before Stage 1 (CR10).",
+  "rowAt37a4104": "**Fill in the product-consequences table** (\"Worse\" rows)."
+ },
+ {
+  "id": "act-clear-licences",
+  "status": "open",
+  "evidence": "Playbook row unchanged at 37a4104; no commit in 8401820..37a4104 clears the frontend-design SKILL.md licence or provider output terms.",
+  "landedIn": "not landed",
+  "left": "Clear the B-Skill SKILL.md licence and providers' output terms before generated pages are released (CR13).",
+  "rowAt37a4104": "**Clear licences**: the frontend-design SKILL.md used by B-Skill; provider output terms before releasing generated pages."
+ },
+ {
+  "id": "act-rename-actai-folder",
+  "status": "done",
+  "evidence": "I re-checked this and the status holds. The owner was asked at 2026-10-21T21:32:01-07:00 (conversation-continued.md, CLAUDE-ASKS): \"D10. The old ActAI folder (OneDrive\\Documents\\ActAI) holds nothing main lacks: a clean tree at a commit already in main's history. Retire it how?\" The owner answered at 2026-10-21T21:43:54-07:00 (USER [ANSWER], line 514): \"Claude renames it, on your yes\". The rename is outside the repository, so main's records are the evidence. In playbook.md line 48 at 37a4104 the row reads 'Done on 2026-10-21 at 21:44 local ... Claude renamed it OneDrive\\Documents\\ActAI-retired-2026-10', with Owner 'Claude, at the owner's choice' and Deadline 'Done (2026-10-21)'. The ADR index (README.md line 172, open-decisions table) says 'Done: the code moved to its own checkout outside OneDrive (ADR-0063), and on 2026-10-21 Claude renamed the old folder ActAI-retired-2026-10'. Block 1's check report (block1-check-2026-10-22.md line 621, added in fdf60d1) checked it separately: 'the folder is OneDrive/Documents/ActAI-retired-2026-10, renamed at 21:44 local'. I also looked at the disk without changing anything. C:/Users/arvik/OneDrive/Documents/ActAI-retired-2026-10 exists and OneDrive/Documents/ActAI does not. The retired folder's HEAD is f1e013d, which is an ancestor of 37a4104, so it holds nothing main lacks. The summary's second part, 'carry the Claude project memory across', is done too: byway's own project memory folder is populated (C:/Users/arvik/.claude/projects/C--Users-arvik-code-byway/memory, with MEMORY.md and the topic files), and the 2026-10-21 audit already marked it 'memory moved'. Claude's ActAI project folder is kept on purpose, because its transcripts are the source of docs/adr/evidence/conversation.md, as the playbook row says. The backlog has no row for this item. At 8401820 the row was 'User | Any time' with no Done mark.",
+  "landedIn": "dc19903 (2026-10-21 22:41, the owner's answers of 2026-10-21): the playbook row was rewritten to Done (2026-10-21) and the ADR index's open-decisions row went from Open to Done. fdf60d1 added Block 1's check report, which confirms the rename separately. The rename itself and the memory move happened outside the repository.",
+  "left": "Nothing to build. The playbook row (section 2, Outside actions) was not removed. It is still there, marked 'Done (2026-10-21)' in its Deadline column. There is no backlog row.",
+  "rowAt37a4104": "**Rename the local ActAI folder** or retire it in favour of the code checkout. Done on 2026-10-21 at 21:44 local: asked how to retire it (D10, \"The old ActAI folder (OneDrive\\Documents\\ActAI) holds nothing main lacks: a clean tree at a commit already in main's history. Retire it how?\"), the owner chose \"Claude renames it, on your yes\" (21:43), and Claude renamed it OneDrive\\Documents\\ActAI-retired-2026-10. Claude's project folder for ActAI is kept, because its transcripts are the source of docs/adr/evidence/conversation.md."
+ },
+ {
+  "id": "act-review-delegated-records",
+  "status": "partly",
+  "evidence": "Owner's answer of 2026-10-21 21:43 (conversation-continued.md): to \"D5. 37 records were decided by Claude under authority you delegated, and some of your records contain choices Claude made. How should their review be prepared?\" the owner chose \"Money and security packet, at your pace (Recommended)\". Claude gave the packet on 2026-10-21 at 23:04; it is kept as docs/reviews/2026-10-21-review-packet.md (960e5ba), prepared from a002e60 (covers ADR-0095, 0099, 0091, 0088, 0074, 0084 and B1's choices in ADR-0109). No keep or change answer from the owner is recorded. ADR index still counts 38 delegated. The row grew with Block 1's Claude choices (dc19903, 9ac54d3, ba0adee, 7735a91, 772fedf, b395d32). Block 2's plan (B2-RECORDS) only adds its own choices to playbook:49.",
+  "landedIn": "960e5ba (the D5 packet), dc19903 and 7735a91 (row records D5 and the packet); records passes that extended the list",
+  "left": "The owner's keep-or-change answer per record, at the owner's pace and not a condition of any run; any change recorded in a new ADR. The packet does not cover ADR-0111, which changes four of its records. Still on the playbook row 'Review the 38 Delegated records'.",
+  "rowAt37a4104": "**Review the 38 Delegated records** (decided by Claude under authority the owner delegated; reversible and flagged for review), ..."
+ },
+ {
+  "id": "act-protect-provider-keys",
+  "status": "open",
+  "evidence": "Playbook row text unchanged between 8401820 and 37a4104; it still says the owner was asked to rotate keys and \"no reply is recorded\". The conversation record up to 2026-10-22 12:10 has no owner statement that spending limits were set or keys rotated. Backlog row 'First live run with real keys and real money' still lists it as the first step.",
+  "landedIn": "not landed",
+  "left": "Owner sets a spending limit or smallest prepaid balance at Anthropic, OpenAI, Google, OpenRouter and fal for the .env.agents keys, and rotates any real key the dev server had on 2026-10-07, before the first live run.",
+  "rowAt37a4104": "**Protect the product's provider keys before the first live run**: set a spending limit, or the smallest prepaid balance, in each provider's own console ..."
+ },
+ {
+  "id": "act-protocol-verification-log",
+  "status": "open",
+  "evidence": "No commit in 8401820..37a4104 touches docs/study1 or protocol (git log on those paths is empty); the row says none of B.3's 29 claims is marked verified. Research track parked (D1, 2026-10-21 21:31, \"Keep all of it parked\").",
+  "landedIn": "not landed",
+  "left": "A human checks B.3's 29 claims against their primary sources and the B.2 checks are completed (retirement dates, frame terms, power_sim3 certification, Stage 0 names and hashes, Judge hosting, Monitor key backup, HEDS/CONSORT templates, spike tests, throughput plan, CR10 tables) before Stage 0.",
+  "rowAt37a4104": "**Complete Study 1 protocol v1.1's verification log (Appendix B.3) and its open checks (Appendix B.2)**"
+ },
+ {
+  "id": "ms-venue-answers",
+  "status": "open",
+  "evidence": "Milestones table unchanged; dca74a7 (2026-10-18) added the §3 note that the dates come from protocol v1.1's timeline and \"none of the dates has been revised since\". The emails were not sent: owner's D1 of 2026-10-21 21:31, \"Keep all of it parked\" (\"Nothing on the research track moves until it resumes.\").",
+  "landedIn": "not landed (dca74a7 added the unrevised-dates note)",
+  "left": "Venue answers (go/no-go); the October 2026 target will not hold while the track is parked. When the research track resumes is open (backlog Deferred decisions, 'When the research track resumes').",
+  "rowAt37a4104": "Venue answers (go/no-go)"
+ },
+ {
+  "id": "ms-monitor-copywriter-contracted",
+  "status": "open",
+  "evidence": "Milestones row unchanged; ADR index open decision 'Find and contract the Integrity Monitor' still Open (D7); backlog Deferred decisions 'D7 Monitor, deputy, guarantor' still there. Research track parked (D1, 2026-10-21).",
+  "landedIn": "not landed",
+  "left": "Contract the Monitor and the copywriter (~mid-November 2026 target, unrevised).",
+  "rowAt37a4104": "Monitor contracted; copywriter contracted"
+ },
+ {
+  "id": "ms-prompt-registration-brief-draw",
+  "status": "open",
+  "evidence": "Milestones row unchanged; the transcription it needs is parked (D1, 2026-10-21 21:31); no Program Registry or drand step exists on main.",
+  "landedIn": "not landed",
+  "left": "Register the prompt hashes and draw the briefs by commit-reveal on a pre-named drand round (~November-December 2026 target, unrevised).",
+  "rowAt37a4104": "Prompt registration; brief draw (drand round named in advance)"
+ },
+ {
+  "id": "ms-stage0-registration",
+  "status": "open",
+  "evidence": "Milestones row unchanged; its prerequisites are open at 37a4104 (the v1.2 [Dn] marker removal row in the backlog, the transcription, the B.3 log).",
+  "landedIn": "not landed",
+  "left": "File Stage 0 once every blocking decision is closed and its marker removed, the prompts transcribed and the B.3 log complete (~2027-02-01 target).",
+  "rowAt37a4104": "Stage 0 public registration"
+ },
+ {
+  "id": "ms-pilot",
+  "status": "open",
+  "evidence": "Milestones row unchanged; backlog Pricing 'Pilot' (~$5.5k, only after the Monitor is contracted) and the harness row 'Build the research harness (parked while the product came first)' still open.",
+  "landedIn": "not landed",
+  "left": "The all-arm Monitor-held pilot (February 2027 target), after the Monitor and P0 harness.",
+  "rowAt37a4104": "Pilot (Monitor-held)"
+ },
+ {
+  "id": "ms-stage1-submitted",
+  "status": "open",
+  "evidence": "Milestones row unchanged; research track parked.",
+  "landedIn": "not landed",
+  "left": "Submit the Stage 1 Registered Report (~2027-04-19 target).",
+  "rowAt37a4104": "Stage 1 submitted"
+ },
+ {
+  "id": "ms-escrowed-generation",
+  "status": "open",
+  "evidence": "Milestones row unchanged; Fable 5.1's retirement date is still unverified (B.3 item 1; protocol files untouched since 8401820).",
+  "landedIn": "not landed",
+  "left": "Escrowed confirmatory generation (~July 2027), before Fable 5.1's earliest retirement on 2027-09-01 (unverified).",
+  "rowAt37a4104": "Escrowed confirmatory generation"
+ },
+ {
+  "id": "ms-in-principle-acceptance",
+  "status": "open",
+  "evidence": "Milestones row unchanged; research track parked.",
+  "landedIn": "not landed",
+  "left": "In-principle acceptance of the Stage 1 report (~August-November 2027).",
+  "rowAt37a4104": "In-principle acceptance"
+ },
+ {
+  "id": "ms-stage2",
+  "status": "open",
+  "evidence": "Milestones row unchanged; research track parked.",
+  "landedIn": "not landed",
+  "left": "Submit the Stage 2 results paper (~2028 Q1).",
+  "rowAt37a4104": "Stage 2"
+ },
+ {
+  "id": "CONV-1",
+  "status": "done",
+  "evidence": "ADR-0107 'Code is adversarially checked before it is pushed, in larger blocks; each further fix round is decided together with the owner' (Process, User) was added in dca74a7 (2026-10-18) and reached main through merge 4363a64. Its items 1-3 quote the owner from conversation-continued.md: 2026-10-16 20:17 \"I am big on adversarial checks on all code we will push before we push it\", 2026-10-15 00:54, 2026-10-17 00:32, and 2026-10-15 10:28 and 22:05 (\"design is design\"). Item 5, Claude's practice, is marked Delegated, as the gap's part 3 asked. af3bf5d took 'independent' out of the rule sentence. Correction to the earlier entry: item 4 was already in dca74a7 as D2's merge condition of 2026-10-18 (14:02, 15:23, 15:49). b098380 added the owner's answer of 2026-10-21 13:41, \"Make D2's condition the rule (Recommended)\", which made item 4 the rule for every risky change. 00401a0 pointed its Evidence at conversation-continued.md. 50f4e97 (merge 37a4104) added the Later note with three more rules, at the D7 answer of 2026-10-21 21:27, \"Record all three (Recommended)\". At 37a4104 the ADR index's Process section has the row, and the count line reads '112 records: 105 accepted (15 of them by continuation, awaiting ratification; 38 delegated) and 7 proposed'.",
+  "landedIn": "dca74a7, af3bf5d, 00401a0, b098380 (merge 4363a64); 50f4e97 (merge 37a4104)",
+  "left": "Nothing for this gap. Item 5 and the reading of item 2 are on the playbook's delegated-review row ('ADR-0107's item 5 ... and its reading that item 2 holds for every fix round').",
+  "rowAt37a4104": "[ADR-0107](0107-code-is-checked-before-it-is-pushed.md) (ADR index, Process)"
+ },
+ {
+  "id": "CONV-2",
+  "status": "done",
+  "evidence": "489483e (merge 4363a64) replaced item (2) of 'What D2 left (ADR-0105)' with the drafted text. Only the punctuation differs (semicolons for two full stops), and '(trigger proposed by Claude, 2026-10-18)' was added. At 37a4104 the item quotes the owner's \"and we are providing this choice to them yeah?\" (2026-10-18 15:37), Claude's offer to have the in-app message name both choices, 'no answer is recorded', and the trigger. conversation-continued.md has no later answer: the next message, at 15:45, asks for the Windows CI write-up, and no answer after it is on this question. The trigger has not fired: packages/runner/src/sandbox.ts and scripts/linux/ are unchanged between 8401820 and 37a4104 (only SandboxBanner changed, in 24ffc74).",
+  "landedIn": "489483e (merge 4363a64)",
+  "left": "The filing is done; the question it files is still open. The owner has not said whether the app should name both Linux choices. It stays as item (2) of the row, and Block 2's plan does not touch it.",
+  "rowAt37a4104": "What D2 left (ADR-0105) (item (2))"
+ },
+ {
+  "id": "CONV-3",
+  "status": "done",
+  "evidence": "489483e (merge 4363a64) appended the write-up's two extra options to the CI-time row's Why column: larger GitHub machines ('4 or 8 CPUs', 'an organization setting and so the owner's') and reducing the engine's own stalls (row 'Engine-thread stalls on slow machines'). It also appended the recommendation to make the limits time-free soon, in one bounded batch like fx-ci-timing, ending 'no answer is recorded'. The Where column ends 'GitHub organization settings (owner)'. 00401a0 brought the write-up in as docs/reviews/2026-10-18-windows-ci.md, which the row cites at 37a4104. e6fc542 added the write-up's recommendation to the status page's open owner questions (docs/reviews/2026-10-16-review-fix-status.md). The only later owner answer on the write-up (2026-10-21 23:05, \"Redact it, and say so (Recommended)\") is about redacting one sentence, not about its recommendation.",
+  "landedIn": "489483e, 00401a0, e6fc542 (merge 4363a64)",
+  "left": "The owner has not answered the write-up's recommendation (time-free limits now) or the larger-machines option. The row's trigger is unchanged ('when Windows CI next goes red on timing ... or when the owner raises CI time'). Block 2's C5-FLAKE covers only the C5 e2e wait, not the limits this row lists.",
+  "rowAt37a4104": "CI time, and the CI proposal the owner deferred (\"Not now\", 2026-10-18)"
+ },
+ {
+  "id": "CONV-4",
+  "status": "done",
+  "evidence": "489483e (merge 4363a64) added the row, with small wording changes from the draft ('held to 2 CPUs', 'bursts of load'). Its title leaves out the parenthetical '(the Windows CI write-up's option 6)'. The draft's corrections are in it: the 2.5 to 4.1 s and 9.5 s pauses were measured on the owner's machine under load, and on CI the evidence is Temporal's SQLite 'context deadline exceeded' and calls of up to 12 s (run 39152075629). It names spend-book.ts's synchronous=FULL, db.ts's DatabaseSync busy timeout and scripts/e2e.ts. At 37a4104 it also cites docs/reviews/2026-10-18-windows-ci.md. The code is unchanged: spend-book.ts:440 still sets 'PRAGMA synchronous = FULL', and scripts/e2e.ts:81 still puts the data folder under tmpdir(). Neither spend-book.ts nor db.ts changed since 8401820.",
+  "landedIn": "489483e (merge 4363a64)",
+  "left": "The filing is done; the work it records is open. Its trigger is unchanged (a live run or a kept server log shows stalls, or Windows CI still goes red on timing once the tests' time limits are gone). Section 4 of the Block 2 plan lists it as not built in Block 2.",
+  "rowAt37a4104": "Engine-thread stalls on slow machines"
+ },
+ {
+  "id": "CONV-5",
+  "status": "done",
+  "evidence": "489483e (merge 4363a64) added the clause word for word to 'The design has to settle:'. It now asks 'whether the host can make images and video on the person's subscription, or media steps still need byway's own provider keys, and with them its spend book and budgets (... open since 2026-10-17)', and 'whether the channel is product only, as the provider and model picker is, since a study pins its models and records them exactly (ADR-0041)'. Both are in the row at 37a4104.",
+  "landedIn": "489483e (merge 4363a64)",
+  "left": "The filing is done. The design itself is not scheduled: the row's trigger is still 'Pick up when the owner schedules the design'.",
+  "rowAt37a4104": "Run byway inside Claude Code and Codex, on the person's own subscription"
+ },
+ {
+  "id": "CONV-6",
+  "status": "done",
+  "evidence": "The append was not needed, because the evidence itself was brought into the repository and the row was closed. 00401a0 (2026-10-19 02:05, merge 4363a64) removed the row 'Bring the decision evidence kept only in %TEMP% into the repository' (git log -S finds only this commit). It also added docs/adr/evidence/logs/ci-timing-2026-10-17/ (ADR-0103's Later note now points there), logs/ci-run-39152075629/byway-e2e-server.log and c5-error-context.md, and docs/reviews/2026-10-18-windows-ci.md. b015077 (2026-10-19 01:45) created docs/adr/evidence. Line 29 of its README says which of the verification report's Temp/byway-review-verify probes are kept (probes/review-verify/). 126025f (merge 37a4104) added the run's c5-test-failed.png and c5-test.trace. logs/README.md says the 141 MB trace zip was left out. The 'Known Windows timing flake' row cites docs/adr/evidence/logs/ci-run-39152075629/.",
+  "landedIn": "b015077, 00401a0 (merge 4363a64); 126025f (merge 37a4104)",
+  "left": "Nothing for this gap. Some ADRs (0092, 0093, 0098) still name Temp/byway-review-verify paths, alongside notes that say which copies are kept.",
+  "rowAt37a4104": "gone"
+ },
+ {
+  "id": "U2",
+  "status": "done",
+  "evidence": "dca74a7 (2026-10-18, merge 4363a64) amended the playbook row as drafted, without the start-up probe. Its message says the delegated-review row 'adds ADR-0105's and ADR-0107's delegated choices'. At 37a4104 row 49 of '2. Outside actions' says: 'ADR-0105's one sandbox setting for the whole data directory (the brief had named the workspace's preferences; round 1's report on the D2 wave listed it for the owner) and its read of that setting before each load'. Its Why column says 'The one setting for the data directory matters if byway is ever hosted'. The D5 packet (docs/reviews/2026-10-21-review-packet.md, added in 960e5ba) names 'ADR-0105's one setting for the data directory' under 'Not in this packet'.",
+  "landedIn": "dca74a7 (merge 4363a64)",
+  "left": "The filing is done. The owner has not reviewed these choices; D5 (\"Money and security packet, at your pace (Recommended)\", 2026-10-21 21:43) left them out of the packet. The row has grown since: it covers the 38 Delegated records plus Claude's choices inside ADR-0100, 0105, 0107, 0108, 0109, 0111 and 0112 and in Block 1.",
+  "rowAt37a4104": "Review the 38 Delegated records (playbook, 2. Outside actions)"
+ },
+ {
+  "id": "U4",
+  "status": "done",
+  "evidence": "489483e (merge 4363a64) added the row as drafted. Only the punctuation differs, and '(trigger proposed by Claude, 2026-10-18)' was added. The trigger reads 'Fix at the next change to plainLine or adviceNote, or when a live C3 run shows such advice'. The code gaps are still there at 37a4104. packages/runner/src/parse.ts:223 still compares `space > cut.length / 2`, and parse.ts has not changed since 8401820. activities/asset.ts:65's ENDS_SENTENCE is /[\\p{Sentence_Terminal}…;].../u, and run in node it does not match U+0F0D or U+0F0E. Block 1 (5272cea, 852aecc) changed only where asset.ts calls adviceNote (no advice note when no image is placed), not adviceNote or ENDS_SENTENCE, so the trigger has not clearly fired.",
+  "landedIn": "489483e (merge 4363a64)",
+  "left": "The filing is done; the fix itself is open on the row: count the halfway point in characters, and add U+0F0D and U+0F0E. It is not among the Block 2 plan's items.",
+  "rowAt37a4104": "C3's advice: the text gaps ADR-0104's later note records"
+ },
+ {
+  "id": "U5",
+  "status": "done",
+  "evidence": "489483e (merge 4363a64) added item (10), 'Tests D2 left out', to 'What D2 left (ADR-0105)' (git log -S). Part (b) has since been built. 24ffc74 (Block 1 batch B, merge 37a4104) gave the banner's two re-reads browser tests of their own in apps/web/e2e/renderer-sandbox.spec.ts, with the tab's polls switched off ('the tab whose Settings switch changed the sandbox shows the banner at once...' and 'a tab with its polls off shows a change made in another tab once it follows a link...'). Item (10) says so at 37a4104. Part (a) is not built: scripts/test/ci.test.ts at 37a4104 has no test that expects 'does not exist yet' or 'leads to', only the 'has a space or one of' case.",
+  "landedIn": "489483e (merge 4363a64); part (b) built in 24ffc74 (merge 37a4104)",
+  "left": "Part (a) is open: three of the AppArmor script's refusals run in no test (as root, a folder that does not exist yet, and a link target with a space or a pattern character). Its trigger has not fired: scripts/linux/ is unchanged since 8401820. Item (10)'s trigger is the next change to the script, or item (1)'s trial on a real Linux machine.",
+  "rowAt37a4104": "What D2 left (ADR-0105) (item (10))"
+ },
+ {
+  "id": "U10",
+  "status": "done",
+  "evidence": "489483e (merge 4363a64; git log -S finds 'since the lockfile change in 7f8001d' there). At 37a4104 the paragraph reads 'since the lockfile change in 7f8001d (D4, when yaml was added; ADR-0103)'. '(checked with `pnpm why <package> -r --prod` on 2026-10-17)' now follows '(a dependency of @byway/runner)', before 'Neither loads at run time ... development mode', so it no longer follows the claim pnpm why cannot check.",
+  "landedIn": "489483e (merge 4363a64)",
+  "left": "Nothing.",
+  "rowAt37a4104": "Before any distribution (section paragraph at backlog line 190, not a table row)"
+ },
+ {
+  "id": "ext-owner-resumes-research",
+  "status": "open",
+  "evidence": "Not resumed and not scheduled. The audit's D1 of 2026-10-21, not protocol D1, asked at 21:28 whether the research documents should land now. At 21:31 the owner chose \"Keep all of it parked\", whose description read \"Nothing on the research track moves until it resumes.\" dc19903 recorded this in the backlog and playbook. The Deferred-decisions row still says 'when it resumes is still the owner's to say', so the scheduling question is unanswered. The harness row ('Build the research harness (parked while the product came first)') is unchanged.",
+  "landedIn": "dc19903 (records the D1 answer; merge 37a4104)",
+  "left": "When the track resumes is unanswered. The playbook milestones (venue answers October 2026, the Monitor by mid-November, the transcription by 2026-11-30, Stage 0 ~2027-02-01) are not revised.",
+  "rowAt37a4104": "When the research track resumes (backlog, Deferred decisions)"
+ },
+ {
+  "id": "ext-bundle-change",
+  "status": "decided",
+  "evidence": "The owner scheduled it (conversation-continued.md). D3, 2026-10-21 21:31: \"Now, before the first live run\". The order, 21:43: \"Two blocks: 0+A+B+C, then W (Recommended)\". The P2 design, 23:05: \"Approve, and price long-context tiers in W\", whose description begins \"As the first, but W also records OpenAI's and Google's long-context rates\". It therefore keeps the design's recommendation that 'W does not start the content-layer pilot', a reading of the trigger that stays Claude's. D9, 21:31: \"The interpreter carries it, with P2 (Recommended)\". dc19903 recorded the D3 and D9 answers in the backlog row, 9ac54d3 the P2 approval, and ba0adee added docs/adr/evidence/designs/2026-10-21-p2.md. None of the build is on main: packages/runner/test/e2e/c2-c5.ts:114 still says 'VOICE-RETRY (parked ...)'.",
+  "landedIn": "dc19903, 9ac54d3, ba0adee (records only; merge 37a4104)",
+  "left": "The build is Block 2 (plan keys P2-BRIEF, P2-INPUTS, P2-SEEDS, P2-HELD, VOICE-RETRY, R-VOICE-APPLY, R-SUFFIX, R-ADVICE, R-C7, R-GATE-MARK, R-DECLINED, R-PORTS-MOVE, LC-TIERS and the rest of section 2). After W the row stays open only for 'activities receive only the ports their step reads'. The content-layer row ('Owner decision: simplify VOICE on web pages to a content layer') is not started by W.",
+  "rowAt37a4104": "Activity inputs carry the brief and the step's ports by value (P2)"
+ },
+ {
+  "id": "ext-owner-schedules-agent-design",
+  "status": "open",
+  "evidence": "Not scheduled. The row still ends 'Pick up when the owner schedules the design'. 489483e only added two more design questions.",
+  "landedIn": "none",
+  "left": "The owner has to schedule it; then come the design brief and the ADR.",
+  "rowAt37a4104": "Run byway inside Claude Code and Codex, on the person's own subscription"
+ },
+ {
+  "id": "ext-owner-paid-fal-link",
+  "status": "open",
+  "evidence": "No choice recorded. The row still reads 'Otherwise run one live link if the owner chooses'. e6fc542 gave it the trigger 'Do it at the first live C5 run'.",
+  "landedIn": "none",
+  "left": "Confirm fal's media hosts at the first live C5 run, or on a paid link if the owner chooses one.",
+  "rowAt37a4104": "Confirm fal's live media host set"
+ },
+ {
+  "id": "ext-owner-macos-scope",
+  "status": "open",
+  "evidence": "Still deferred by the owner ('MacOS later'). The row still ends 'Pick up when the owner brings macOS into scope'.",
+  "landedIn": "none",
+  "left": "The owner has to bring macOS into scope.",
+  "rowAt37a4104": "macOS support (deferred by the owner, 2026-10-16)"
+ },
+ {
+  "id": "ext-owner-wants-hosted",
+  "status": "open",
+  "evidence": "Unanswered. The row still asks 'Owner question: is it wanted, given the Claude Code and Codex layer?', and e6fc542's status page lists a hosted byway among the open owner questions.",
+  "landedIn": "none",
+  "left": "The owner's answer.",
+  "rowAt37a4104": "A hosted byway: a URL other people can open"
+ }
+]

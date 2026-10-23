@@ -1,0 +1,16 @@
+Scope: all 14 workspace projects
+✓ Lockfile passes supply-chain policies (verified 47m ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+Done in 756ms using pnpm v11.28.6
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-block2
+
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  22:11:05
+   Duration  1457.30s (tests 100%)
+
+exit 0
