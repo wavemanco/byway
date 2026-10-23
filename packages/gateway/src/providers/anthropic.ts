@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { TokenBreakdown } from '../prices.ts';
+import { providerFetch } from './fetch.ts';
 import { stalledDetail, streamEndedEarly, StreamIdle } from './stream.ts';
 import { imageData, plain, type ProviderAdapter, type ProviderCompletion, type ProviderCompletionRequest } from './types.ts';
 
@@ -49,9 +50,12 @@ export interface AnthropicClientLike {
   beta: { messages: { stream(body: Params, options?: { signal?: AbortSignal }): AnthropicStreamLike } };
 }
 
-/** SDK retries off: the gateway owns retries, so attempts are counted once and backoff is one policy. */
-export function createAnthropicClient(apiKey: string): AnthropicClientLike {
-  return new Anthropic({ apiKey, maxRetries: 0 });
+/**
+ * SDK retries off: the gateway owns retries, so attempts are counted once and backoff is one policy. Requests go through
+ * the provider Agent's fetch (fetch.ts), so Node's five-minute limits do not cut a long answer off under its wait.
+ */
+export function createAnthropicClient(apiKey: string, fetchImpl: typeof fetch = providerFetch): AnthropicClientLike {
+  return new Anthropic({ apiKey, maxRetries: 0, fetch: fetchImpl });
 }
 
 /**

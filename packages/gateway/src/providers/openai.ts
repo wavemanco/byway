@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import type { MediaType } from '@byway/contracts';
 import type { TokenBreakdown } from '../prices.ts';
+import { providerFetch } from './fetch.ts';
 import { stalledDetail, streamEndedEarly, StreamIdle } from './stream.ts';
 import {
   imageData,
@@ -64,8 +65,9 @@ export interface OpenAIClientLike {
   images: { generate(body: ImageParams): Promise<ImagesResponseLike> };
 }
 
-export function createOpenAIClient(apiKey: string): OpenAIClientLike {
-  return new OpenAI({ apiKey, maxRetries: 0 });
+/** SDK retries off, as for every client; requests go through the provider Agent's fetch (fetch.ts). */
+export function createOpenAIClient(apiKey: string, fetchImpl: typeof fetch = providerFetch): OpenAIClientLike {
+  return new OpenAI({ apiKey, maxRetries: 0, fetch: fetchImpl });
 }
 
 /**

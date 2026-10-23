@@ -1,5 +1,6 @@
 import { GoogleGenAI, type GenerateContentParameters } from '@google/genai';
 import type { MediaType } from '@byway/contracts';
+import { providerFetch } from './fetch.ts';
 import { IMAGE_ASPECT, imageData, plain, type ProviderAdapter, type ProviderCompletion, type ProviderCompletionRequest, type ProviderImage, type ProviderImageRequest } from './types.ts';
 
 /** The fields of a generateContent response the adapter reads (a structural subset of GenerateContentResponse). */
@@ -24,8 +25,13 @@ export interface GoogleClientLike {
   models: { generateContent(params: GenerateContentParameters): Promise<GoogleResponseLike> };
 }
 
-export function createGoogleClient(apiKey: string): GoogleClientLike {
-  return new GoogleGenAI({ apiKey });
+/**
+ * The SDK retries only when asked to (no retryOptions), so the gateway's policy is the only one. Requests go through the
+ * provider Agent's fetch (fetch.ts): Node's own gives up on a call that has sent nothing for five minutes, and a Google
+ * answer arrives whole, so it would cut every call at about five minutes, under any wait chosen in Settings.
+ */
+export function createGoogleClient(apiKey: string, fetchImpl: typeof fetch = providerFetch): GoogleClientLike {
+  return new GoogleGenAI({ apiKey, httpOptions: { fetch: fetchImpl } });
 }
 
 /** Finish reasons that mean the model or its filters declined. */
