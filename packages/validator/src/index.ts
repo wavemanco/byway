@@ -7,7 +7,7 @@ import { checkPorts } from './checks/ports.ts';
 import { checkStructural } from './checks/structural.ts';
 import { checkVoiceLock } from './checks/voice.ts';
 import { Findings, type Finding } from './context.ts';
-import { typeRecipe } from './scope.ts';
+import { typeRecipe, type Typing } from './scope.ts';
 
 export interface Violation extends Finding {
   class: RuleClass;
@@ -137,5 +137,15 @@ export function validate(recipe: Recipe): Verdict {
   };
 }
 
+/**
+ * The scope typing of a recipe (spec: "Scope typing"): the ports in scope at each stage's and each node's entry, with
+ * who may have made them, as `validate` reads it. Pure. The runner's operator-ports test runs small admitted recipes
+ * through the real interpreter and holds what each operator hands on to it.
+ */
+export function scopeTyping(recipe: Recipe): Typing {
+  return typeRecipe(recipe, new Findings());
+}
+
 export type { Finding } from './context.ts';
+export type { Producer, ScopeState, Typing } from './scope.ts';
 export { flowRecipe, withoutFlowMemo, type FlowOps } from './flow.ts';
