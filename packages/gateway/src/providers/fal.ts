@@ -34,9 +34,9 @@ import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type 
  * stop while running, or a cancel that failed, it may have been billed, and the call says so with the job's id; already
  * done, the clip is kept and used, since it is paid for. fal is asked once for the job's status before a resumed job
  * whose wait has already run out is cancelled, and once more after a cancel that failed, so a clip it finished is kept
- * either way (pollJob, waitedGeneration). The job is never submitted again. The clip job is submitted
- * with a start deadline below the wait (falStartTimeoutSeconds), and the last frame's extraction is bounded by the time
- * left on the clip's wait plus FRAME_GRACE_MS. A clip job fal dropped at that deadline, before it started, answers its
+ * either way (pollJob, waitedGeneration); each read is waited for as long as a cancel is (seenDone). The job is never
+ * submitted again. The clip job is submitted with a start deadline below the wait (falStartTimeoutSeconds), and the
+ * last frame's extraction is bounded by the time left on the clip's wait plus FRAME_GRACE_MS. A clip job fal dropped at that deadline, before it started, answers its
  * result with 504 and `X-Fal-Request-Timeout-Type: user`: nothing was billed (fal's queue and pricing pages, quoted in
  * waited.ts notStartedWords), so the call counts nothing and the step says so plainly.
  */
@@ -189,7 +189,7 @@ export async function submitJob(fetchImpl: typeof fetch, key: string, endpointId
   return { request_id: id };
 }
 
-/** A cancel is answered at once; this bounds a lost answer. */
+/** A cancel is answered at once; this bounds a lost answer. One read of a job's status is bounded the same (seenDone). */
 const CANCEL_TIMEOUT_MS = 30_000;
 /**
  * How long a clip a stop came to after fal reported it done has its result read for, once, before it is settled as
@@ -508,14 +508,24 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
   const fetchImpl = opts.fetch ?? fetch;
   const { queue } = opts.client;
   /**
-   * Whether fal says a job is done, by one read of its status (a free read, retried as any round trip is): false when it
-   * says the job is queued or running, and when the status cannot be read at all, since then nothing shows it done.
+   * Whether fal says a job is done, by one read of its status (a free read, retried as any round trip is), waited for at
+   * most CANCEL_TIMEOUT_MS, as a cancel's answer is: a status is answered at once, so this bounds a lost answer. True
+   * when fal answers that the job is done; false when it says the job is queued or running, when the status cannot be
+   * read at all, and when no answer comes in time, since then nothing shows it done; STOPPED when the call's stop comes
+   * first (ADR-0111), which ends the read at once. Before the bound a hung read was waited for as long as its retries and
+   * Node's fetch limits allowed, some minutes, and the read after a failed cancel was not ended by a stop either
+   * (R-MONEY-2, Block 2's re-check).
    */
-  const seenDone = async (req: ProviderVideoRequest, endpointId: string, requestId: string): Promise<boolean> => {
+  const seenDone = async (req: ProviderVideoRequest, endpointId: string, requestId: string): Promise<boolean | typeof STOPPED> => {
+    const bound = new Deadline(CANCEL_TIMEOUT_MS);
     try {
-      return (await req.attempt(() => queue.status(endpointId, { requestId }))).status === 'COMPLETED';
+      const seen = await untilEnded(req.attempt(() => queue.status(endpointId, { requestId })), req.signal, bound.signal);
+      if (seen === STOPPED) return STOPPED;
+      return seen !== WAITED && seen.status === 'COMPLETED';
     } catch {
       return false;
+    } finally {
+      bound.end();
     }
   };
   /**
@@ -539,8 +549,9 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
    * after its wait) is not raced against the status at all: its deadline is a timer of no time, which would end the wait
    * before any answer could come back, and the job would be cancelled unseen. fal is asked once instead (seenDone): a job
    * it reports done is read, whatever the time, as one that finished within its wait is; one it reports queued or
-   * running, or whose status cannot be read, ends the wait there, and the caller cancels it (MONEY-2, Block 2's check:
-   * a clip fal had finished and billed was thrown away when that one cancel failed, in words saying it did not finish).
+   * running, or whose status cannot be read or does not answer within CANCEL_TIMEOUT_MS, ends the wait there, and the
+   * caller cancels it (MONEY-2, Block 2's check: a clip fal had finished and billed was thrown away when that one cancel
+   * failed, in words saying it did not finish). A stop during that read is a stop.
    */
   const pollJob = async (req: ProviderVideoRequest, role: JobRole, endpointId: string, requestId: string, deadline?: JobDeadline): Promise<Polled> => {
     const stop = req.signal;
@@ -550,7 +561,7 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     let done = false;
     try {
       if (deadline?.passed) {
-        const seen = await untilEnded(seenDone(req, endpointId, requestId), stop);
+        const seen = await seenDone(req, endpointId, requestId);
         if (seen !== true) return ended(seen === STOPPED ? STOPPED : WAITED, 'running');
       } else {
         const watching = either(stop, until);
@@ -649,12 +660,14 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
    * with the job's id; already done, the clip is kept and used ('done'), since it is paid for. A cancel that failed
    * (no answer, or one fal's page does not list) left the job as it was, which may be done by now: fal is asked once
    * more (seenDone), and a clip it finished is kept and used as well, rather than thrown away as may have been billed.
+   * That look is bounded as the cancel is (CANCEL_TIMEOUT_MS) and ended by a stop; one that runs out, or that a stop
+   * ends, shows nothing done, so the job is counted as the failed cancel left it, may have been billed.
    */
   const waitedGeneration = async (req: ProviderVideoRequest, polled: { waited: 'running' | 'done'; requestId: string }, waitMs: number): Promise<'done'> => {
     if (polled.waited === 'done') return 'done';
     const cancel = await queue.cancel(req.model, { requestId: polled.requestId });
     if (cancel.status === 'completed') return 'done';
-    if (cancel.status === 'failed' && (await seenDone(req, req.model, polled.requestId))) return 'done';
+    if (cancel.status === 'failed' && (await seenDone(req, req.model, polled.requestId)) === true) return 'done';
     const said =
       cancel.status === 'removed'
         ? `fal removed it from its queue before it ran (${cancel.detail}), so nothing was billed`

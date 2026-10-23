@@ -26,6 +26,8 @@ const MINUTE = 60_000;
 const BALANCED_VIDEO = 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video';
 const BEST_VIDEO = 'fal-ai/kling-video/v3/pro/image-to-video';
 const T0 = Date.parse('2026-10-22T12:00:00.000Z');
+/** How long one read of a job's status is waited for (fal.ts seenDone: CANCEL_TIMEOUT_MS), as a cancel's answer is. */
+const STATUS_BOUND_MS = 30_000;
 
 let dir: string;
 let book: MemorySpendBook;
@@ -103,12 +105,12 @@ const aborted = () => Object.assign(new Error('This operation was aborted'), { n
  * A fake fal whose clip job takes `clipTakesMs` and whose frame job takes `frameTakesMs` from their first status poll
  * (undefined: they never finish), each poll ending as the SDK's does once its signal aborts. Jobs in `done` are done from
  * the start. A status read of a done job, polled or read once (`status`), answers after `statusTakesMs` when given, as a
- * real round trip does, else at once; `statusFails` makes every one-shot status read throw it. A cancel answers `cancel`;
- * one that says the job was already done leaves it done, and with `finishesAtCancel` the job finishes just as the cancel
- * is sent, whatever it answers. The clip's result read calls `onClipResult` first (a stop arriving while it is under
- * way, say), then throws `clipResultFails` when given, or with `clipResultHeld` never answers; with `frameResultHeld`,
- * the frame job's result read never answers. Every submission, poll and cancel is kept, with the clock, and `log` keeps
- * every status read, poll, result read and cancel in order.
+ * real round trip does, else at once; `statusFails` makes every one-shot status read throw it, and with `statusHeld`
+ * none ever answers. A cancel answers `cancel`; one that says the job was already done leaves it done, and with
+ * `finishesAtCancel` the job finishes just as the cancel is sent, whatever it answers. The clip's result read calls
+ * `onClipResult` first (a stop arriving while it is under way, say), then throws `clipResultFails` when given, or with
+ * `clipResultHeld` never answers; with `frameResultHeld`, the frame job's result read never answers. Every submission,
+ * poll and cancel is kept, with the clock, and `log` keeps every status read, poll, result read and cancel in order.
  */
 function clipFal(
   opts: {
@@ -122,6 +124,7 @@ function clipFal(
     done?: string[];
     statusTakesMs?: number;
     statusFails?: unknown;
+    statusHeld?: boolean;
     finishesAtCancel?: boolean;
   } = {},
 ) {
@@ -158,6 +161,7 @@ function clipFal(
       async status(_endpoint, options) {
         log.push(`status ${options.requestId}`);
         if (opts.statusFails !== undefined) throw opts.statusFails;
+        if (opts.statusHeld) return new Promise<never>(() => undefined);
         return done.has(options.requestId) ? completed() : { status: 'IN_PROGRESS' };
       },
       async result(endpoint, options) {
@@ -204,6 +208,17 @@ async function settled<T>(p: Promise<T>): Promise<T> {
 async function polled(fal: { polls: unknown[] }, n: number): Promise<void> {
   for (let i = 0; i < 20_000 && fal.polls.length < n; i++) await turn();
   expect(fal.polls.length).toBeGreaterThanOrEqual(n);
+}
+
+/**
+ * Settles once `seen` holds, by real turns of the event loop only, the fake clock left where it is. Real time, not a
+ * count of turns, bounds the wait (performance.now is not faked): under a loaded gate the gateway's files take longer
+ * than any fixed number of turns allows, and a `seen` that never comes still fails an assertion.
+ */
+async function untilSeen(seen: () => boolean): Promise<void> {
+  const realBound = performance.now() + 30_000;
+  while (!seen() && performance.now() < realBound) await turn();
+  expect(seen()).toBe(true);
 }
 
 /**
@@ -281,6 +296,55 @@ describe('a fal clip waits its video model’s wait from fal’s acceptance, the
     expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: clip.costUsd })]);
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
+  });
+
+  // R-MONEY-2, Block 2's re-check: the look after a failed cancel had no bound of byway's own (only the read's retries and
+  // Node's fetch limits, minutes), and no stop ended it.
+  const failedCancel = 'byway’s cancel did not go through (no answer: fetch failed)';
+
+  it(`a cancel that did not go through, then a status that never answers: fal is asked once more for at most ${STATUS_BOUND_MS / 1000} seconds, and the call ends as may have been billed`, async () => {
+    const fal = clipFal({ cancel: { status: 'failed', detail: 'no answer: fetch failed' }, statusHeld: true });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = failure(g.video(clipOf()));
+    let over = false;
+    void err.finally(() => (over = true));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(30 * MINUTE);
+    await untilSeen(() => fal.log.includes('status req-1'));
+    await vi.advanceTimersByTimeAsync(STATUS_BOUND_MS - 1);
+    for (let i = 0; i < 200; i++) await turn();
+    expect(over).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    // Over at its bound: real turns only, the fake clock not moved on.
+    await untilSeen(() => over);
+    expect(Date.now()).toBe(T0 + 30 * MINUTE + STATUS_BOUND_MS);
+    expect(await err).toMatchObject({ billing: 'maybe', message: lateClip(BALANCED_VIDEO, 'req-1', 30, failedCancel, true), waited: { minutes: 30, how: 'clip', cancel: failedCancel } });
+    expect(asked(fal)).toEqual(['cancel req-1', 'status req-1']);
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO]);
+    expect(ledger()).toEqual([]);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'waited', providerJobs: { generation: 'req-1' } })]);
+  });
+
+  it('a stop while fal is asked once more after a cancel that did not go through ends that look at once: may have been billed, as the failed cancel left it', async () => {
+    const stop = new AbortController();
+    const until = new AbortController();
+    const fal = clipFal({ cancel: { status: 'failed', detail: 'no answer: fetch failed' }, statusHeld: true });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = failure(g.video(clipOf({ operation: { key: 'run-1/clip/video/abc/1', until: until.signal, stop: stop.signal } })));
+    let over = false;
+    void err.finally(() => (over = true));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(30 * MINUTE);
+    await untilSeen(() => fal.log.includes('status req-1'));
+    stop.abort();
+    // Over with the fake clock where it was: the stop ended the look, not its bound.
+    await untilSeen(() => over);
+    expect(Date.now()).toBe(T0 + 30 * MINUTE);
+    expect(await err).toMatchObject({ billing: 'maybe', message: lateClip(BALANCED_VIDEO, 'req-1', 30, failedCancel, true), waited: { minutes: 30, how: 'clip', cancel: failedCancel } });
+    expect(asked(fal)).toEqual(['cancel req-1', 'status req-1']);
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO]);
+    expect(ledger()).toEqual([]);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'waited', providerJobs: { generation: 'req-1' } })]);
   });
 
   it('already done when its wait ran out: the clip is kept and used, since it is paid for, with its last frame', async () => {
@@ -397,6 +461,30 @@ describe('a resumed clip keeps its clock: its wait counts from when fal accepted
     const e = await settled(err);
     expect(fal.log[0]).toBe('status req-earlier');
     expect(fal.log.at(-1)).toBe('cancel req-earlier');
+    expect(fal.log).not.toContain('poll req-earlier');
+    expect(e).toMatchObject({ billing: 'maybe', waited: { minutes: 30, how: 'clip' }, message: expect.stringContaining('clip job req-earlier within 30 minutes') });
+    expect(fal.submitted).toEqual([]);
+  });
+
+  // R-MONEY-2, Block 2's re-check: that one status read had no bound of byway's own (only its retries and Node's fetch
+  // limits, minutes), so a hung read held the job uncancelled for as long.
+  it(`a job resumed after its wait has passed whose status never answers is cancelled ${STATUS_BOUND_MS / 1000} seconds on, not later: an unread status shows nothing done`, async () => {
+    const key = 'run-1/clip/video/abc/1';
+    await acceptedEarlier(key, 45);
+    const fal = clipFal({ statusHeld: true, cancel: { status: 'requested', detail: 'HTTP 202 CANCELLATION_REQUESTED' } });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const until = new AbortController();
+    const err = failure(g.video(clipOf({ operation: { key, until: until.signal } })));
+    await untilSeen(() => fal.log.includes('status req-earlier'));
+    await vi.advanceTimersByTimeAsync(STATUS_BOUND_MS - 1);
+    for (let i = 0; i < 200; i++) await turn();
+    expect(fal.cancels).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    // Cancelled at its bound: real turns only, the fake clock not moved on.
+    await untilSeen(() => fal.cancels.length > 0);
+    expect(fal.cancels).toEqual([{ endpoint: BALANCED_VIDEO, requestId: 'req-earlier', at: T0 + 45 * MINUTE + STATUS_BOUND_MS }]);
+    const e = await settled(err);
+    expect(asked(fal)).toEqual(['status req-earlier', 'cancel req-earlier']);
     expect(fal.log).not.toContain('poll req-earlier');
     expect(e).toMatchObject({ billing: 'maybe', waited: { minutes: 30, how: 'clip' }, message: expect.stringContaining('clip job req-earlier within 30 minutes') });
     expect(fal.submitted).toEqual([]);
