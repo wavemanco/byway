@@ -11,8 +11,17 @@ export interface ModelProblem {
   message: string;
 }
 
-const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown }; heldKey?: unknown; billed?: unknown; declined?: unknown } =>
+const named = (err: unknown, name: string): err is Error & { code?: unknown; budget?: { scope?: unknown }; heldKey?: unknown; billed?: unknown; declined?: unknown; waited?: unknown } =>
   err instanceof Error && err.name === name;
+
+/**
+ * What is said after the gateway's words for a call that used the whole of its model's wait: asking again is a new call,
+ * so a person who presses Try again knows it can be billed as the first may have been.
+ */
+export const WAITED_TRY_AGAIN = 'Trying again makes a new call, which may be billed too.';
+
+/** The gateway's mark on a call that used the whole of its wait (its waitedError), read as the gateway's waitedOf reads it. */
+const usedItsWait = (waited: unknown): boolean => typeof waited === 'object' && waited !== null && typeof (waited as { minutes?: unknown }).minutes === 'number';
 
 /**
  * A call the provider answered and billed, whose answer byway could not keep, record or use (ADR-0099). It is counted in
@@ -32,6 +41,12 @@ export function modelProblem(err: unknown): ModelProblem | undefined {
     // The model declined and byway's one retry on it brought no answer (ADR-0102): the gateway's message is the one plain
     // message the Run screen shows too. It says what happened, what both attempts cost, and what to do.
     if (err.code === 'refused' && typeof err.declined === 'object' && err.declined !== null) return { status: 502, message: err.message };
+    // A call that used the whole of its model's wait, chosen in Settings (ADR-0114; the waits design of 2026-10-22): the
+    // gateway's words say the wait ran out, that the call may have billed the work and where to wait longer, as a run's
+    // step says them, rather than "did not answer, try again in a minute" (CRITIC-1). Compose and intake wait as model
+    // steps do, so a person who waited 15 minutes or more is told why, and that asking again is a new call. 504: byway
+    // stopped waiting for the provider.
+    if (usedItsWait(err.waited)) return { status: 504, message: `${err.message} ${WAITED_TRY_AGAIN}` };
     // Billed, whatever the code: the provider answered and was paid (ADR-0099), so 'did not answer, try again' is untrue.
     if (err.billed === true) return { status: 500, message: BILLED_CALL_LOST };
     switch (err.code) {

@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { GatewayError } from '@byway/contracts';
+import { waitedError } from '@byway/gateway';
 import { modelProblem } from '../src/server/model-errors.ts';
 
 const billed = (code: 'byway-failure' | 'provider-error', message: string) => new GatewayError(code, message, false, { billed: true });
@@ -55,6 +56,29 @@ describe('byway’s own failures while recommending or composing (follow-up (e))
     expect(modelProblem(billedRetry)).toEqual({ status: 502, message: billedRetry.message });
     // A refusal that is not a decline under the rule keeps the general words.
     expect(modelProblem(new GatewayError('refused', 'anthropic declined (bio)'))).toEqual({ status: 502, message: 'The model declined to answer this request. Rephrase the problem, or choose a recipe from the Library.' });
+  });
+
+  it('a call that used the whole of its model’s wait: the gateway’s words (the wait ran out, it may have billed, where to change it), and that trying again makes a new call (CRITIC-1)', () => {
+    const gemini = { provider: 'google' as const, model: 'gemini-3.1-pro-preview' };
+    const opus = { provider: 'anthropic' as const, model: 'claude-opus-5-5' };
+    const cases = [
+      // A Google text call answered whole, not sent again (the owner's "Give up and end the call plainly").
+      waitedError(gemini, { minutes: 15, how: 'answer' }, { retryable: false, billing: 'maybe' }),
+      // A stream that sent nothing for its wait, sent once more, and silent again.
+      waitedError(opus, { minutes: 60, how: 'silence' }, { retryable: true, billing: 'maybe' }),
+    ];
+    for (const err of cases) {
+      expect(modelProblem(err)).toEqual({ status: 504, message: `${err.message} Trying again makes a new call, which may be billed too.` });
+    }
+    expect(modelProblem(cases[0])?.message).toBe(
+      "Google’s model gemini-3.1-pro-preview did not answer within 15 minutes, the wait chosen in Settings, so byway stopped waiting. It may have billed the work. To wait longer, change 'How long to wait for an answer' in Settings. Trying again makes a new call, which may be billed too.",
+    );
+    expect(modelProblem(cases[1])?.message).toMatch(/^Anthropic’s model claude-opus-5-5 sent nothing for 60 minutes, the wait chosen in Settings, .*'How long to wait for an answer' in Settings\./);
+    // Read by its mark, as every error here is: one made by another server bundle says the same.
+    const foreign = Object.assign(new Error(cases[0]!.message), { name: 'GatewayError', code: 'provider-error', retryable: false, waited: { minutes: 15, how: 'answer' } });
+    expect(modelProblem(foreign)).toEqual(modelProblem(cases[0]));
+    // A mark that is not a wait is not read as one.
+    expect(modelProblem(Object.assign(new GatewayError('provider-error', 'HTTP 503', true), { waited: 'yes' }))?.message).toBe('The model provider did not answer. Try again in a minute.');
   });
 
   it('keeps the provider’s own failure as it was', () => {
