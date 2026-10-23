@@ -192,6 +192,11 @@ export async function submitJob(fetchImpl: typeof fetch, key: string, endpointId
 /** A cancel is answered at once; this bounds a lost answer. */
 const CANCEL_TIMEOUT_MS = 30_000;
 /**
+ * How long a clip a stop came to after fal reported it done has its result read for, once, before it is settled as
+ * made (falAdapter's stoppedGeneration): a result is answered at once, so, as for a cancel, this bounds a lost answer.
+ */
+export const RESULT_LOOK_MS = 30_000;
+/**
  * How much of fal's own status text a cancel's detail keeps. fal's documented answers are single words (at most 22
  * characters, CANCELLATION_REQUESTED); anything longer is not one of them, and the detail reaches stored and shown errors.
  */
@@ -500,6 +505,17 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     }
   };
   /**
+   * A job's result, one read. A clip job fal dropped unstarted at its start deadline answers it with that word (its 504,
+   * droppedAtStart): nothing was billed, and the call ends plainly (waited.ts notStartedWords), with the wait it was given
+   * and the deadline it was sent with.
+   */
+  const readResult = (req: ProviderVideoRequest, role: JobRole, endpointId: string, requestId: string) =>
+    queue.result(endpointId, { requestId }).catch((e: unknown) => {
+      if (role !== 'generation' || !droppedAtStart(e)) throw e;
+      const start = req.waitMs === undefined ? undefined : falStartTimeoutSeconds(req.waitMs, req.durationSec);
+      throw notStartedError({ provider: 'fal', model: req.model }, requestId, { ...(req.waitMs !== undefined ? { minutes: waitMinutes(req.waitMs) } : {}), ...(start !== undefined ? { startMinutes: start / 60 } : {}) });
+    });
+  /**
    * A job fal accepted, polled until done and read, each round trip retried on its own (free reads). A stop ends the
    * wait (ADR-0111): before fal reported the job done it is 'running' (the caller cancels it), after that 'done'. So
    * does `deadline` (its wait ran out; the stop is looked at first), and with `deadline.reading` the job's result is
@@ -516,14 +532,7 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     const stop = req.signal;
     const until = deadline?.signal;
     const ended = (mark: typeof STOPPED | typeof WAITED, state: 'running' | 'done'): Polled => (mark === STOPPED ? { stopped: state, requestId } : { waited: state, requestId });
-    // A clip job fal dropped unstarted at its start deadline: nothing was billed, and the call ends plainly (waited.ts
-    // notStartedWords), with the wait it was given and the deadline it was sent with.
-    const read = () =>
-      queue.result(endpointId, { requestId }).catch((e: unknown) => {
-        if (role !== 'generation' || !droppedAtStart(e)) throw e;
-        const start = req.waitMs === undefined ? undefined : falStartTimeoutSeconds(req.waitMs, req.durationSec);
-        throw notStartedError({ provider: 'fal', model: req.model }, requestId, { ...(req.waitMs !== undefined ? { minutes: waitMinutes(req.waitMs) } : {}), ...(start !== undefined ? { startMinutes: start / 60 } : {}) });
-      });
+    const read = () => readResult(req, role, endpointId, requestId);
     let done = false;
     try {
       if (deadline?.passed) {
@@ -577,14 +586,33 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
    * first live runs' ledger is to confirm it); asked to stop while running, or a cancel that failed, it may still finish
    * and be billed, so it is counted as "may have been billed", listed with its request id; already done, the clip was
    * made and billed, so it is settled at its seconds through the made-and-billed path, without downloading it.
+   *
+   * "Done" here is fal's status (or its cancel's "already completed"), and a job fal dropped unstarted at its start
+   * deadline is done too: only its result says it never ran (droppedAtStart). So before a done job is settled as made,
+   * its result is read once (a free read; no new job, which is all a stop forbids), for at most RESULT_LOOK_MS, and fal's
+   * word that it never ran is taken over the stop's: nothing is counted for it (notStartedError). A result that comes
+   * back, fails otherwise or does not come back in time leaves it settled as made, as before (TESTS-1, Block 2's check:
+   * a stop during the dropped job's result read, or during its poll with fal answering the cancel "already completed",
+   * ledgered a clip fal had not made or billed).
    */
   const stoppedGeneration = async (req: ProviderVideoRequest, polled: { stopped: 'running' | 'done'; requestId: string }): Promise<'done'> => {
-    if (polled.stopped === 'done') return 'done';
-    const cancel = await queue.cancel(req.model, { requestId: polled.requestId });
-    if (cancel.status === 'completed') return 'done';
-    if (cancel.status === 'removed') throw cutOffError('fal', 'none', `fal removed clip job ${polled.requestId} from its queue before it ran: ${cancel.detail}`);
-    const said = cancel.status === 'requested' ? `fal was asked to stop clip job ${polled.requestId} while it ran (${cancel.detail}), and it can still finish it` : `byway's cancel of clip job ${polled.requestId} did not go through (${cancel.detail})`;
-    throw cutOffError('fal', 'maybe', said);
+    if (polled.stopped === 'running') {
+      const cancel = await queue.cancel(req.model, { requestId: polled.requestId });
+      if (cancel.status === 'removed') throw cutOffError('fal', 'none', `fal removed clip job ${polled.requestId} from its queue before it ran: ${cancel.detail}`);
+      if (cancel.status !== 'completed') {
+        const said = cancel.status === 'requested' ? `fal was asked to stop clip job ${polled.requestId} while it ran (${cancel.detail}), and it can still finish it` : `byway's cancel of clip job ${polled.requestId} did not go through (${cancel.detail})`;
+        throw cutOffError('fal', 'maybe', said);
+      }
+    }
+    const look = new Deadline(RESULT_LOOK_MS);
+    try {
+      await untilEnded(req.attempt(() => readResult(req, 'generation', req.model, polled.requestId)), undefined, look.signal);
+    } catch (e) {
+      if (isNotStarted(e)) throw e;
+    } finally {
+      look.end();
+    }
+    return 'done';
   };
   /**
    * The generation job whose wait ran out before fal finished it (the waits design, section 2): cancelled, and counted by

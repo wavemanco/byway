@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, submitJob, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
+import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, RESULT_LOOK_MS, submitJob, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import { fakeFetch, MemoryArtifacts } from './fakes.ts';
 
 const KEYS = { FAL_KEY: '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff' };
@@ -105,11 +105,23 @@ const aborted = () => Object.assign(new Error('This operation was aborted'), { n
  * the start. A status read of a done job, polled or read once (`status`), answers after `statusTakesMs` when given, as a
  * real round trip does, else at once; `statusFails` makes every one-shot status read throw it. A cancel answers `cancel`;
  * one that says the job was already done leaves it done, and with `finishesAtCancel` the job finishes just as the cancel
- * is sent, whatever it answers. The clip's result read throws `clipResultFails` when given. Every submission, poll and
+ * is sent, whatever it answers. The clip's result read calls `onClipResult` first (a stop arriving while it is under
+ * way, say), then throws `clipResultFails` when given, or with `clipResultHeld` never answers. Every submission, poll and
  * cancel is kept, with the clock, and `log` keeps every status read, poll, result read and cancel in order.
  */
 function clipFal(
-  opts: { clipTakesMs?: number; frameTakesMs?: number; cancel?: FalCancel; clipResultFails?: unknown; done?: string[]; statusTakesMs?: number; statusFails?: unknown; finishesAtCancel?: boolean } = {},
+  opts: {
+    clipTakesMs?: number;
+    frameTakesMs?: number;
+    cancel?: FalCancel;
+    clipResultFails?: unknown;
+    clipResultHeld?: boolean;
+    onClipResult?: () => void;
+    done?: string[];
+    statusTakesMs?: number;
+    statusFails?: unknown;
+    finishesAtCancel?: boolean;
+  } = {},
 ) {
   const submitted: { endpoint: string; at: number; startTimeoutSeconds?: number }[] = [];
   const polls: { endpoint: string; requestId: string; at: number }[] = [];
@@ -148,8 +160,12 @@ function clipFal(
       },
       async result(endpoint, options) {
         log.push(`result ${options.requestId}`);
-        // The clip's result read failing as `clipResultFails` says (fal's answer for a job it dropped, say).
-        if (endpoint !== FAL_EXTRACT_FRAME && opts.clipResultFails !== undefined) throw opts.clipResultFails;
+        if (endpoint !== FAL_EXTRACT_FRAME) {
+          opts.onClipResult?.();
+          // The clip's result read failing as `clipResultFails` says (fal's answer for a job it dropped, say), or held.
+          if (opts.clipResultFails !== undefined) throw opts.clipResultFails;
+          if (opts.clipResultHeld) return new Promise<never>(() => undefined);
+        }
         const data = endpoint === FAL_EXTRACT_FRAME ? { images: [{ url: 'https://v3.fal.media/files/last.png', content_type: 'image/png' }] } : { video: { url: 'https://v3.fal.media/files/clip.mp4', content_type: 'video/mp4' } };
         return { data, requestId: options.requestId };
       },
@@ -495,6 +511,55 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     expect(e).toMatchObject({ retryable: false });
     expect(fal.submitted).toHaveLength(1);
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider: 'fal', providerJobs: { generation: 'req-1' } })]);
+  });
+
+  // TESTS-1, Block 2's check: a stop that came while the dropped job's result was read, or while it was polled with fal
+  // then answering its cancel "already completed", settled it through the made-and-billed path: the ledger counted a clip
+  // fal says it never ran and never billed.
+  it.each([
+    ['while its result is read', { clipTakesMs: 25 * MINUTE }, undefined, 25 * MINUTE, []],
+    ['while it is polled, its cancel answered “already completed”', {}, { status: 'completed', detail: 'HTTP 400 ALREADY_COMPLETED' }, MINUTE, ['req-1']],
+  ] as const)('a stop arriving %s is no reason to count it: fal’s word that it never ran is taken, and nothing is ledgered', async (_what, over, cancel, stopAtMs, cancelled) => {
+    const stop = new AbortController();
+    const until = new AbortController();
+    const fal = clipFal({ ...over, ...(cancel ? { cancel } : {}), clipResultFails: dropped(), onClipResult: stopAtMs === 25 * MINUTE ? () => stop.abort() : undefined });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const call = failure(g.video(clipOf({ operation: { key: 'run-1/clip/video/abc/1', until: until.signal, stop: stop.signal } })));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(stopAtMs);
+    stop.abort();
+    const e = await settled(call);
+    expect(e).toMatchObject({ code: 'provider-error', retryable: false, billing: 'none', billed: false, message: notStarted(BALANCED_VIDEO, 30, 25) });
+    expect(e).not.toHaveProperty('cutOff');
+    expect(fal.cancels.map((c) => c.requestId)).toEqual(cancelled);
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO]);
+    expect(ledger()).toEqual([]);
+    expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it(`a stop while a clip fal finished is read: its result is read once more, for at most ${RESULT_LOOK_MS / 1000} seconds, then it is settled as made`, async () => {
+    const stop = new AbortController();
+    const until = new AbortController();
+    const fal = clipFal({ clipTakesMs: MINUTE, clipResultHeld: true, onClipResult: () => stop.abort() });
+    const fetch = fakeFetch();
+    const g = gateway({ clients: { fal: fal.client }, fetch: fetch.fetch });
+    const call = failure(g.video(clipOf({ operation: { key: 'run-1/clip/video/abc/1', until: until.signal, stop: stop.signal } })));
+    let over = false;
+    void call.finally(() => (over = true));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    for (let i = 0; i < 20_000 && fal.log.filter((l) => l === 'result req-1').length < 2; i++) await turn();
+    expect(fal.log.filter((l) => l === 'result req-1')).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(RESULT_LOOK_MS - 1);
+    for (let i = 0; i < 200; i++) await turn();
+    expect(over).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const e = await settled(call);
+    expect(e).toMatchObject({ code: 'byway-failure', billed: true, message: 'fal made the clip and billed it (its cost is recorded), but its run was ending, so byway did not download it.' });
+    expect(fal.cancels).toEqual([]);
+    expect(fetch.requested).toEqual([]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video' })]);
   });
 });
 
