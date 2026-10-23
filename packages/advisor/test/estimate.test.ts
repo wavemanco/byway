@@ -1,6 +1,6 @@
 import { c1, c2, c3, c4, c5, c6a, c7, PROTOCOL_CONFIGS } from '@byway/catalog';
 import type { CostEstimate } from '@byway/contracts';
-import { PROFILES } from '@byway/gateway';
+import { PRICES, PROFILES } from '@byway/gateway';
 import { withHash, type Node, type Recipe } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
 import { createAdvisor, estimateRecipe, HUMAN_MINUTES, TOKEN_ASSUMPTIONS } from '../src/index.ts';
@@ -209,6 +209,43 @@ describe('estimate: the structure of a recipe times the profile prices', () => {
     const { advisor: demo } = demoAdvisor();
     const rec = await demo.recommend({ text: 'A memo about the offsite' }, { workspaceId: 'ws', profileId: 'demo' });
     expect(rec.estimate).toEqual(demo.estimate(c4, 'demo'));
+  });
+
+  /**
+   * LC-TIERS (block 2): the estimate prices each call at the long-context tier its prompt falls in, as the gateway
+   * reserves and settles it (the owner's "Approve, and price long-context tiers in W", 2026-10-21), and it does so at
+   * each end of the range with that end's tokens (TOKEN_BAND). The estimate plans typical sizes, far below the real
+   * thresholds, so the tiers are moved here: a threshold of 0 charges every call of Gemini 3.1 Pro at the tier's rates,
+   * one of 4,200 tokens only C4's judging calls at the high band (a critic reads 3,000 tokens of prompt and work: 2,250
+   * at the low band, 4,500 at the high; the cliché sweep 4,125 and 8,250).
+   */
+  describe("prices each call at its prompt's long-context tier (LC-TIERS)", () => {
+    const at = new Date('2026-10-22T12:00:00Z');
+    const google = PROFILES.find((p) => p.id === 'google')!;
+    const pro = (row: (typeof PRICES)[number]) => row.provider === 'google' && row.model === 'gemini-3.1-pro-preview';
+    const untiered = PRICES.map(({ longContext: _, ...row }) => row);
+    const withTier = (aboveInputTokens: number) => PRICES.map((row) => (pro(row) ? { ...row, longContext: { aboveInputTokens, inputPerMTok: 4, outputPerMTok: 18 } } : row));
+    const priced = (recipe: Recipe, prices: readonly (typeof PRICES)[number][], profile = google) => estimateRecipe(recipe, { profile, images: false, video: false, at, prices });
+
+    it('a call over the threshold at the tier, and one at or under it at the row', () => {
+      const allLong = PRICES.map((row) => (pro(row) ? { ...row, inputPerMTok: 4, outputPerMTok: 18, longContext: undefined } : row));
+      expect(priced(c4, withTier(0))).toEqual(priced(c4, allLong));
+      expect(priced(c4, withTier(10_000_000))).toEqual(priced(c4, untiered));
+      expect(priced(c4, allLong).highUsd).toBeGreaterThan(priced(c4, untiered).highUsd);
+    });
+
+    it("each end of the range at its own tokens' tier: past 4,200 tokens only at the high band", () => {
+      const tiered = priced(c4, withTier(4_200));
+      const flat = priced(c4, untiered);
+      expect(tiered.lowUsd).toBe(flat.lowUsd);
+      expect(tiered.highUsd).toBeGreaterThan(flat.highUsd);
+    });
+
+    it('changes no estimate of the catalog at the real thresholds: their typical calls stay under them', () => {
+      for (const profile of PROFILES.filter((p) => p.id === 'google' || p.id === 'openai')) {
+        for (const recipe of PROTOCOL_CONFIGS) expect(priced(recipe, PRICES, profile), `${profile.id} ${recipe.id}`).toEqual(priced(recipe, untiered, profile));
+      }
+    });
   });
 });
 

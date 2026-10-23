@@ -66,6 +66,8 @@ export interface Context {
   heldKeyIn(value: unknown): string | undefined;
   /** ServiceHost.questionEstimates, beside the services for the same reason. */
   questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
+  /** ServiceHost.pricesCheckedOn: the day byway's prices were last checked, beside the services for the same reason. */
+  pricesCheckedOn: string;
 }
 
 /**
@@ -80,5 +82,5 @@ export async function getContext(): Promise<Context> {
   const preferences = await h.store.getPreferences(workspace.id);
   const services = h.services(h.demoForced || preferences.demoMode);
   const profileId = runProfileId(services.mode, preferences.profileId, services.gateway.profileStatus());
-  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced, heldKeyIn: h.heldKeyIn, questionEstimates: h.questionEstimates };
+  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced, heldKeyIn: h.heldKeyIn, questionEstimates: h.questionEstimates, pricesCheckedOn: h.pricesCheckedOn };
 }

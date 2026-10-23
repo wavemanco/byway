@@ -502,3 +502,41 @@ describe("the weekly run's report of the Playwright pin (D4)", () => {
     expect(lines).toEqual(["byway pins Playwright 1.63.0 (packages/runner and apps/web), npm's latest release."]);
   });
 });
+
+/**
+ * The owner's answer of 2026-10-21 23:15 on keeping the price table current: "Weekly report + monthly re-read + date
+ * in the app (Recommended)", with "A weekly CI report (reporting only) compares OpenRouter's price API exactly and
+ * checks the other providers' pages for changed figures". The report runs on the weekly run, once, and fails nothing,
+ * as the Playwright pin's does; what it says is tested in price-report.test.ts.
+ */
+describe("the weekly run's price report (PRICE-CADENCE)", () => {
+  it('runs on the weekly run only, on one job, after Node is set up and before the tests, and cannot fail the job', () => {
+    const at = steps.findIndex((s) => s.run === 'node scripts/price-report.ts');
+    expect(steps.filter((s) => /price-report/.test(s.run ?? ''))).toHaveLength(1);
+    const step = steps[at]!;
+    expect(step.name).toBe("Do the providers' pages still give byway's prices? (the weekly run, Linux only; it reports and fails nothing)");
+    expect(step.if).toBe("${{ github.event_name == 'schedule' && matrix.name == 'linux' }}");
+    expect(step['continue-on-error']).toBe(true);
+    expect(step['timeout-minutes']).toBeLessThanOrEqual(5);
+    expect(step).not.toHaveProperty('env');
+    expect(step).not.toHaveProperty('uses');
+    expect(at).toBeGreaterThan(steps.findIndex((s) => (s.name ?? '').startsWith('Node (')));
+    expect(at).toBeLessThan(steps.findIndex((s) => s.run === 'pnpm verify'));
+    // The script exits 0 whatever it finds: nothing in it sets an exit code.
+    const script = read('scripts/price-report.ts');
+    expect(script).not.toMatch(/process\.exit|exitCode/);
+    expect(script.trim().split('\n').at(-1)).toBe('if (import.meta.main) await report({ ...(process.env.GITHUB_STEP_SUMMARY ? { summary: process.env.GITHUB_STEP_SUMMARY } : {}) });');
+    // The weekly schedule's comment names both reports.
+    expect(workflow).toMatch(/weekly run also says whether the Playwright pin has fallen behind npm's latest release and whether the providers'\n\s+# pages still give byway's prices \(two steps below\)/);
+  });
+
+  it('runs with plain Node before the dependencies are installed: its imports are Node\'s own modules and prices.ts, which imports only types', () => {
+    const script = read('scripts/price-report.ts');
+    expect([...script.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1])).toEqual(['node:fs', '../packages/gateway/src/prices.ts']);
+    expect([...read('packages/gateway/src/prices.ts').matchAll(/^import (.*) from '([^']+)';$/gm)].map((m) => [m[1]?.startsWith('type '), m[2]])).toEqual([[true, '@byway/contracts']]);
+    // Loaded as a module (not run): plain Node strips both files' types; nothing is fetched.
+    const loaded = spawnSync(process.execPath, ['--input-type=module', '-e', "const m = await import('./scripts/price-report.ts'); console.log(typeof m.report);"], { cwd: REPO, encoding: 'utf8' });
+    expect(loaded.stderr).toBe('');
+    expect(loaded.stdout.trim()).toBe('function');
+  });
+});

@@ -35,7 +35,7 @@ async function deps(): Promise<Deps> {
   const { host } = current;
   const services: Services = host.services(true);
   const ws = await services.store.ensureDefaultWorkspace();
-  swapped.deps = { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates };
+  swapped.deps = { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: host.pricesCheckedOn };
   return swapped.deps;
 }
 
