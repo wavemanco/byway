@@ -1,0 +1,1 @@
+    return this.askOnceMore(req, 'image', ref, estimate, first, async (call) => async (op) => this.imageOnce(op, call, prep, await this.waitMs(call, 'image', ref), first.entryId));

@@ -1,0 +1,40 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 1 failed) 49ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × reads OpenAI's long-context rates from the page's own scripts, and flags them when they differ or cannot be read 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > reads OpenAI's long-context rates from the page's own scripts, and flags them when they differ or cannot be read
+AssertionError: expected [ …(8) ] to deeply equal ArrayContaining{…}
+
+- Expected
++ Received
+
+- ArrayContaining [
+-   "OpenAI gpt-6.1-sol: the page's scripts do not give its long-context rates as byway records them (input $4, output $15).",
+-   "Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.",
++ [
++   "byway's price table was last read in full on 2026-10-22, 0 days ago.",
++   "OpenRouter: the prompt and completion prices of anthropic/claude-fable-5.1, anthropic/claude-opus-5.5, anthropic/claude-sonnet-5.5 match its model list exactly.",
++   "Anthropic: every figure byway records was found on https://platform.claude.com/docs/en/about-claude/pricing.md.",
++   "OpenAI: every figure byway records was found on https://developers.openai.com/api/docs/pricing.",
++   "Google: every figure byway records was found on https://ai.google.dev/gemini-api/docs/pricing?hl=en.",
++   "fal (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): every figure byway records was found on https://fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video.",
++   "fal (fal-ai/kling-video/v3/pro/image-to-video): every figure byway records was found on https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video.",
++   "fal (fal-ai/ffmpeg-api/extract-frame): every figure byway records was found on https://fal.ai/models/fal-ai/ffmpeg-api/extract-frame.",
+  ]
+
+ ❯ scripts/test/price-report.test.ts:164:116
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  17:35:37
+   Duration  626ms (tests 70%, transform 17%, import 11%, worker 1%)
+

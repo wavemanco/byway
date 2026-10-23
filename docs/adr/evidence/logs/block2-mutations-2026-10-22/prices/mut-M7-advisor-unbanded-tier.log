@@ -1,0 +1,35 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ packages/advisor/test/estimate.test.ts (35 tests | 1 failed) 144ms
+   ❯ estimate: the structure of a recipe times the profile prices (30)
+     ❯ prices each call at its prompt's long-context tier (LC-TIERS) (3)
+       × each end of the range at its own tokens' tier: past 4,200 tokens only at the high band 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/advisor/test/estimate.test.ts > estimate: the structure of a recipe times the profile prices > prices each call at its prompt's long-context tier (LC-TIERS) > each end of the range at its own tokens' tier: past 4,200 tokens only at the high band
+AssertionError: expected 0.04 to be 0.03 // Object.is equality
+
+- Expected
++ Received
+
+- 0.03
++ 0.04
+
+ ❯ packages/advisor/test/estimate.test.ts:240:29
+    238|       const tiered = priced(c4, withTier(4_200));
+    239|       const flat = priced(c4, untiered);
+    240|       expect(tiered.lowUsd).toBe(flat.lowUsd);
+       |                             ^
+    241|       expect(tiered.highUsd).toBeGreaterThan(flat.highUsd);
+    242|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 96 passed (97)
+   Start at  17:16:43
+   Duration  1.60s (import 46%, transform 43%, tests 11%)
+

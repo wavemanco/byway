@@ -1,8 +1,9 @@
 # Notes for agents working on byway
 
 These are for any coding agent, whichever model or provider runs it. The owner keeps byway's upkeep from being tied to
-one provider (2026-10-22), so nothing here needs a particular one; a person can follow the same steps. `CLAUDE.md` only
-imports this file.
+one provider (2026-10-22), so nothing here needs a particular one; a person can follow the same steps. Any duty, runbook
+or script in byway's records is for whichever agent runs the session (ADR-0107's Later note of 2026-10-23). `CLAUDE.md`
+only imports this file.
 
 byway's records say what is decided and what is open: `docs/playbook.md` (people and roles, the outside actions and
 the standing duties), `docs/backlog.md` (open work, each row with its trigger) and `docs/adr/` (the decisions, with
@@ -18,6 +19,11 @@ last run looked at first).
 
 The provider keys in the gitignored `.env.agents` file (or the environment) are for development only and must never
 ship (ADR-0009). Never read that file, and never print, store, log, commit or render a key; tests use fakes.
+
+## The owner's GitHub organisation
+
+Its details (the names of its other repositories, its Actions minutes, plan, seats, price and overages) never go into
+byway's records; billing or organisation data a brief needs is said to the owner, not recorded (ADR-0107).
 
 ## At the start of a session: is the price table due for a re-read?
 
@@ -46,7 +52,9 @@ use the table as it is, and Settings shows how long ago prices were checked, wit
 
 At a session's start, also read that week's Playwright pin report beside the price report: the step "Is the Playwright
 pin behind npm's latest release?" of the same scheduled run (Claude's proposal, from the backlog row "Nobody reads the
-weekly Playwright pin report"; the cadence it serves is ADR-0110's).
+weekly Playwright pin report"; the cadence it serves is ADR-0110's). When it says the pin is behind, read Playwright's
+release notes since the pin for a high or critical Chromium security fix, and tell the owner of such a fix, or of a
+minor release whose two weeks are running out.
 
 ## Before a first live run of a new kind
 

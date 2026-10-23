@@ -1,0 +1,2 @@
+    const waitMs = await this.waitMs(req, 'video', ref);
+    const op = await this.admit(req, 'video', ref, maxVideoCost(price, seconds, extras));

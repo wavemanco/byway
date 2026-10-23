@@ -1,0 +1,36 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 1 failed) 49ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × finds every figure on pages shaped as the providers write them, and flags nothing 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > finds every figure on pages shaped as the providers write them, and flags nothing
+AssertionError: https://openrouter.ai/api/v1/models: expected {} to deeply equal { 'accept-language': 'en-US,en;q=0.9' }
+
+- Expected
++ Received
+
+- {
+-   "accept-language": "en-US,en;q=0.9",
+- }
++ {}
+
+ ❯ scripts/test/price-report.test.ts:121:53
+    119|     expect(out.summary).toBe(`### Prices\n\n${out.lines.join('\n\n')}\…
+    120|     // The pages in English, each read once, with no key; the script o…
+    121|     for (const a of asked) expect(a.headers, a.url).toEqual({ 'accept-…
+       |                                                     ^
+    122|     expect(asked.map((a) => a.url).filter((u) => u.includes('elsewhere…
+    123|     expect(new Set(asked.map((a) => a.url)).size).toBe(asked.length);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  17:35:48
+   Duration  583ms (tests 68%, transform 20%, import 12%, worker 1%)
+

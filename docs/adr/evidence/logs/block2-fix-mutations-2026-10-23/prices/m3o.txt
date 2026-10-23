@@ -1,0 +1,1 @@
+scriptObjects(script, 'standard').flatMap((body) => [...body.matchAll(literal)])

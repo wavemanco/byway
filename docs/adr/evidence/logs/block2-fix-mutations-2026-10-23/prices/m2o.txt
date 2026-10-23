@@ -1,0 +1,13 @@
+  for (const m of text.matchAll(nameRe(name))) {
+    const from = m.index + m[0].length;
+    let to = form === 'markdown' ? (text.indexOf('\n', from) < 0 ? text.length : text.indexOf('\n', from)) : Math.min(text.length, from + WINDOW);
+    for (const other of [...otherNames, name]) {
+      const next = nameRe(other);
+      next.lastIndex = from;
+      const at = next.exec(text);
+      if (at && at.index < to) to = at.index;
+    }
+    const shown = dollars(text.slice(from, to));
+    if (shown.length > 0) return wanted.filter((f) => !shown.includes(f.usd));
+  }
+  return [...wanted];

@@ -1,0 +1,6 @@
+[
+  {"name": "thinking display omitted", "file": "packages/gateway/src/providers/anthropic.ts", "pkg": "packages/gateway", "tests": ["test/providers.test.ts"],
+   "old": "    thinking: { type: 'adaptive', display: 'summarized' },", "new": "    thinking: { type: 'adaptive', display: 'omitted' },"},
+  {"name": "thinking display left to the default", "file": "packages/gateway/src/providers/anthropic.ts", "pkg": "packages/gateway", "tests": ["test/providers.test.ts"],
+   "old": "    thinking: { type: 'adaptive', display: 'summarized' },", "new": "    thinking: { type: 'adaptive' },"}
+]

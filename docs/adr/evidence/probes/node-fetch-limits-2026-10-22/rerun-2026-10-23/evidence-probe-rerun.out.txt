@@ -1,0 +1,6 @@
+node v24.13.1, undici 7.18.2
+default, silent body: failed after 305 s with UND_ERR_BODY_TIMEOUT
+default, body with a ping every 30 s for 7 min: ok after 420 s (32 chars)
+default, headers held 330 s: failed after 305 s with UND_ERR_HEADERS_TIMEOUT
+raised Agent (400 s), headers held 330 s: ok after 330 s (4 chars)
+total 420 s

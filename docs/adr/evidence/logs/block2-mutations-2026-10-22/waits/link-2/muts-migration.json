@@ -1,0 +1,98 @@
+[
+ {
+  "name": "migration: CHECK without waited",
+  "file": "packages/store/src/migrations.ts",
+  "pkg": "packages/store",
+  "tests": [
+   "test/migrations.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "uncertain_reason IN ('interrupted', 'failed', 'waited')),\n  provider_jobs     TEXT CHECK (provider_jobs IS NULL OR json_valid(provider_jobs)),\n  owner             TEXT,\n  lease_until       INTEGER NOT NULL,\n  sent_at           TEXT,\n  settled_at        TEXT,\n  settle_seq        INTEGER UNIQUE,\n  settled_usd       REAL CHECK (settled_usd IS NULL OR settled_usd >= 0),\n  served_model      TEXT,\n  price_basis       TEXT,\n  entry             TEXT CHECK (entry IS NULL OR json_valid(entry)),\n  ledger_entry_id   TEXT UNIQUE,\n  ledgered_seq      INTEGER,\n  cleared_at        TEXT,\n  created_at        TEXT NOT NULL,\n  updated_at        TEXT NOT NULL,\n  op_key",
+  "new": "uncertain_reason IN ('interrupted', 'failed')),\n  provider_jobs     TEXT CHECK (provider_jobs IS NULL OR json_valid(provider_jobs)),\n  owner             TEXT,\n  lease_until       INTEGER NOT NULL,\n  sent_at           TEXT,\n  settled_at        TEXT,\n  settle_seq        INTEGER UNIQUE,\n  settled_usd       REAL CHECK (settled_usd IS NULL OR settled_usd >= 0),\n  served_model      TEXT,\n  price_basis       TEXT,\n  entry             TEXT CHECK (entry IS NULL OR json_valid(entry)),\n  ledger_entry_id   TEXT UNIQUE,\n  ledgered_seq      INTEGER,\n  cleared_at        TEXT,\n  created_at        TEXT NOT NULL,\n  updated_at        TEXT NOT NULL,\n  op_key",
+  "grep": "upgrade an existing version-9|allow the reason|SpendBook contract"
+ },
+ {
+  "name": "migration: no pairing of reason and wait",
+  "file": "packages/store/src/migrations.ts",
+  "pkg": "packages/store",
+  "tests": [
+   "test/migrations.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "  CHECK ((state = 'settled') = (settled_usd IS NOT NULL)),\n  CHECK ((uncertain_reason IS 'waited') = (waited IS NOT NULL))\n",
+  "new": "  CHECK ((state = 'settled') = (settled_usd IS NOT NULL))\n",
+  "grep": "upgrade an existing version-9|allow the reason|SpendBook contract"
+ },
+ {
+  "name": "migration: wait not checked as JSON",
+  "file": "packages/store/src/migrations.ts",
+  "pkg": "packages/store",
+  "tests": [
+   "test/migrations.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "  waited            TEXT CHECK (waited IS NULL OR json_valid(waited)),",
+  "new": "  waited            TEXT,",
+  "grep": "upgrade an existing version-9|allow the reason|SpendBook contract"
+ },
+ {
+  "name": "migration: times not checked as JSON",
+  "file": "packages/store/src/migrations.ts",
+  "pkg": "packages/store",
+  "tests": [
+   "test/migrations.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "  provider_jobs_at  TEXT CHECK (provider_jobs_at IS NULL OR json_valid(provider_jobs_at)),",
+  "new": "  provider_jobs_at  TEXT,",
+  "grep": "upgrade an existing version-9|allow the reason|SpendBook contract"
+ },
+ {
+  "name": "migration: key index not rebuilt",
+  "file": "packages/store/src/migrations.ts",
+  "pkg": "packages/store",
+  "tests": [
+   "test/migrations.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "CREATE UNIQUE INDEX paid_operations_by_key ON paid_operations (op_key) WHERE op_key IS NOT NULL;\n`,\n  },\n];",
+  "new": "`,\n  },\n];",
+  "grep": "upgrade an existing version-9|allow the reason|SpendBook contract"
+ },
+ {
+  "name": "migration: live index not rebuilt",
+  "file": "packages/store/src/migrations.ts",
+  "pkg": "packages/store",
+  "tests": [
+   "test/migrations.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "CREATE INDEX paid_operations_live ON paid_operations (lease_until) WHERE state IN ('open', 'sent', 'accepted');\nCREATE INDEX paid_operations_outbox ON paid_operations (settle_seq) WHERE state = 'settled' AND ledgered_seq IS NULL;\nCREATE UNIQUE INDEX",
+  "new": "CREATE INDEX paid_operations_outbox ON paid_operations (settle_seq) WHERE state = 'settled' AND ledgered_seq IS NULL;\nCREATE UNIQUE INDEX",
+  "grep": "upgrade an existing version-9|allow the reason|SpendBook contract"
+ },
+ {
+  "name": "migration: keys not copied",
+  "file": "packages/store/src/migrations.ts",
+  "pkg": "packages/store",
+  "tests": [
+   "test/migrations.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "ledger_entry_id, ledgered_seq, cleared_at, created_at, updated_at, op_key, released_key, NULL, NULL FROM paid_operations;",
+  "new": "ledger_entry_id, ledgered_seq, cleared_at, created_at, updated_at, NULL, released_key, NULL, NULL FROM paid_operations;",
+  "grep": "upgrade an existing version-9|allow the reason|SpendBook contract"
+ },
+ {
+  "name": "migration: rowids not copied",
+  "file": "packages/store/src/migrations.ts",
+  "pkg": "packages/store",
+  "tests": [
+   "test/migrations.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "  SELECT rowid, id, workspace_id, run_id, step_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd,\n  state, uncertain_reason, provider_jobs, owner, lease_until, sent_at, settled_at, settle_seq, settled_usd, served_model, price_basis, entry,\n  ledger_entry_id, ledgered_seq, cleared_at, created_at, updated_at, op_key, released_key, NULL, NULL FROM paid_operations;",
+  "new": "  SELECT NULL, id, workspace_id, run_id, step_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd,\n  state, uncertain_reason, provider_jobs, owner, lease_until, sent_at, settled_at, settle_seq, settled_usd, served_model, price_basis, entry,\n  ledger_entry_id, ledgered_seq, cleared_at, created_at, updated_at, op_key, released_key, NULL, NULL FROM paid_operations ORDER BY created_at DESC;",
+  "grep": "upgrade an existing version-9|allow the reason|SpendBook contract"
+ }
+]

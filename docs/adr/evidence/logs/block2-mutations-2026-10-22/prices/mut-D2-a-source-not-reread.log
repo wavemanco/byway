@@ -1,0 +1,27 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ packages/gateway/test/pricing.test.ts (65 tests | 1 failed) 136ms
+   ❯ the day prices were last checked (PRICES_CHECKED) (3)
+     × is named by the source of every row a provider charges for: each was read that day 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the day prices were last checked (PRICES_CHECKED) > is named by the source of every row a provider charges for: each was read that day
+AssertionError: openrouter anthropic/claude-fable-5.1: openrouter.ai/api/v1/models (pricing.prompt / pricing.completion), read 2026-10-18: expected [ '2026-10-18' ] to include '2026-10-22'
+ ❯ packages/gateway/test/pricing.test.ts:247:101
+    245|
+    246|   it('is named by the source of every row a provider charges for: each…
+    247|     for (const row of paid) expect(days(row.source), `${row.provider} …
+       |                                                                                                     ^
+    248|   });
+    249|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 64 passed (65)
+   Start at  17:20:48
+   Duration  988ms (import 44%, transform 40%, tests 16%)
+

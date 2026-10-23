@@ -1,0 +1,3 @@
+      const op = await this.admit(req, 'image', ref, estimate);
+      const waitMs = await this.waitMs(req, 'image', ref);
+      first = await this.imageOnce(op, req, prep, waitMs);

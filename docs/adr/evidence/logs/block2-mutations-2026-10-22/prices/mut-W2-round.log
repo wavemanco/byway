@@ -1,0 +1,109 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+(node:68980) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/web/test/prices-checked.test.ts (9 tests | 4 failed) 220ms
+   ❯ when prices were last checked, in words (4)
+     × names the day, with no notice through the 45th day after it 6ms
+     × adds a notice from the 46th day: how long ago, and what it means for estimates and recorded costs 1ms
+   ❯ the gateway's day reaches both screens from the server (3)
+     × the Recommendation shows it under the estimated cost, read with the server's clock, and the notice once it is old 70ms
+     × Settings shows it with the workspace budget, read with the server's clock, and the notice once it is old 66ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/web/test/prices-checked.test.ts > when prices were last checked, in words > names the day, with no notice through the 45th day after it
+AssertionError: 2026-12-06: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "notice": null,
++   "notice": "byway's prices were last checked against the providers' pages 46 days ago, on Oct 22, 2026, and providers change their prices. Until they are checked again, estimates and the costs byway records may differ from your provider's bill.",
+    "text": "Prices last checked Oct 22, 2026.",
+  }
+
+ ❯ apps/web/test/prices-checked.test.ts:46:118
+     44|   it('names the day, with no notice through the 45th day after it', ()…
+     45|     expect(PRICES_STALE_DAYS).toBe(45);
+     46|     for (const now of ['2026-10-22', '2026-11-01', '2026-12-06']) expe…
+       |                                                                                                                      ^
+     47|   });
+     48|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  apps/web/test/prices-checked.test.ts > when prices were last checked, in words > adds a notice from the 46th day: how long ago, and what it means for estimates and recorded costs
+AssertionError: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "notice": "byway's prices were last checked against the providers' pages 46 days ago, on Oct 22, 2026, and providers change their prices. Until they are checked again, estimates and the costs byway records may differ from your provider's bill.",
++   "notice": "byway's prices were last checked against the providers' pages 47 days ago, on Oct 22, 2026, and providers change their prices. Until they are checked again, estimates and the costs byway records may differ from your provider's bill.",
+    "text": "Prices last checked Oct 22, 2026.",
+  }
+
+ ❯ apps/web/test/prices-checked.test.ts:50:60
+     48|
+     49|   it('adds a notice from the 46th day: how long ago, and what it means…
+     50|     expect(pricesChecked('2026-10-22', day('2026-12-07'))).toEqual({ t…
+       |                                                            ^
+     51|     expect(pricesChecked('2026-10-22', new Date('2026-12-07T00:00:00.0…
+     52|     expect(pricesChecked('2026-10-22', new Date('2026-12-06T23:59:59.9…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  apps/web/test/prices-checked.test.ts > the gateway's day reaches both screens from the server > the Recommendation shows it under the estimated cost, read with the server's clock, and the notice once it is old
+AssertionError: 2026-12-06: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "notice": null,
++   "notice": "byway's prices were last checked against the providers' pages 46 days ago, on Oct 22, 2026, and providers change their prices. Until they are checked again, estimates and the costs byway records may differ from your provider's bill.",
+    "text": "Prices last checked Oct 22, 2026.",
+  }
+
+ ❯ apps/web/test/prices-checked.test.ts:127:38
+    125|       // A recipe chosen from the Library: the screen shows its propos…
+    126|       const view = screenOf(await RecommendPage({ params: Promise.reso…
+    127|       expect(view.props.prices, now).toEqual({ text: LINE, notice });
+       |                                      ^
+    128|       const html = renderToStaticMarkup(view);
+    129|       expect(html, now).toMatch(new RegExp(`<dt>Estimated cost</dt><dd…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  apps/web/test/prices-checked.test.ts > the gateway's day reaches both screens from the server > Settings shows it with the workspace budget, read with the server's clock, and the notice once it is old
+AssertionError: 2026-12-06: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "notice": null,
++   "notice": "byway's prices were last checked against the providers' pages 46 days ago, on Oct 22, 2026, and providers change their prices. Until they are checked again, estimates and the costs byway records may differ from your provider's bill.",
+    "text": "Prices last checked Oct 22, 2026.",
+  }
+
+ ❯ apps/web/test/prices-checked.test.ts:146:38
+    144|       vi.setSystemTime(day(now));
+    145|       const view = screenOf(await SettingsPage());
+    146|       expect(view.props.prices, now).toEqual({ text: LINE, notice });
+       |                                      ^
+    147|       const budget = /<section class="settings-section" aria-labelledb…
+    148|       expect(budget, now).toContain(`<p class="muted small prices-chec…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 5 passed (9)
+   Start at  17:25:33
+   Duration  2.28s (transform 52%, import 37%, tests 10%)
+

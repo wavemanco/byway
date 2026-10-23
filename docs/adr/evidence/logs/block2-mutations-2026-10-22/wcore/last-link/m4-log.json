@@ -1,0 +1,26 @@
+[
+  {
+    "name": "L1 ACTIVITY_BYTES.base 150 bytes lower",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 4 passed (5)"
+    ],
+    "failed": [
+      "× a fan-out of relay chains (each relay step carries the waits read before it) 3ms",
+      "FAIL  packages/runner/test/limits-batch.test.ts > workBound bounds every batch the interpreter schedules, and not by much > a fan-out of relay chains (each relay step carries the waits read before it)"
+    ]
+  },
+  {
+    "name": "L2 the relay step's input carries its waits twice over (a second copy under another name)",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 4 passed (5)"
+    ],
+    "failed": [
+      "× a fan-out of relay chains (each relay step carries the waits read before it) 3ms",
+      "FAIL  packages/runner/test/limits-batch.test.ts > workBound bounds every batch the interpreter schedules, and not by much > a fan-out of relay chains (each relay step carries the waits read before it)"
+    ]
+  }
+]

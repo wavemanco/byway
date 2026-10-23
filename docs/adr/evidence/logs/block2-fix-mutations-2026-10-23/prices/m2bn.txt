@@ -1,0 +1,3 @@
+  let best = [...wanted];
+  for (const m of text.matchAll(nameRe(name))) {
+    const from

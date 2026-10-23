@@ -1,0 +1,1 @@
+  for (const d of page.derived ?? []) if (missingFigures

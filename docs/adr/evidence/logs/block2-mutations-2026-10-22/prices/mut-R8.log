@@ -1,0 +1,36 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 1 failed) 45ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × flags a figure a page no longer shows after the model's name, naming the row and the figure, with one warning 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > flags a figure a page no longer shows after the model's name, naming the row and the figure, with one warning
+AssertionError: expected [] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+- [
+-   "::warning title=Prices::Google gemini-3.1-pro-preview: not found after its name on the page: long-context input $4. Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.",
+- ]
++ []
+
+ ❯ scripts/test/price-report.test.ts:133:26
+    131|     expect(out.lines).toContain(flagged);
+    132|     expect(out.lines.filter((l) => !l.startsWith('::warning')).at(-1))…
+    133|     expect(out.warnings).toEqual([`::warning title=Prices::${flagged} …
+       |                          ^
+    134|     // The dated row of a model is checked too.
+    135|     const flash2027 = row('google', 'gemini-3.8-flash', '2027-01-01');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  17:35:41
+   Duration  585ms (tests 68%, transform 19%, import 12%, worker 2%)
+

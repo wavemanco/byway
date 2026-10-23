@@ -1,0 +1,34 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 1 failed) 47ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × never fails: a page or list it cannot read is said in one line, and the others are still checked 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > never fails: a page or list it cannot read is said in one line, and the others are still checked
+AssertionError: expected 'The price report could not be made (U…' to match /^OpenRouter: its model list could not…/
+
+- Expected:
+/^OpenRouter: its model list could not be read \(.+\), so this run says nothing of it\.$/
+
++ Received:
+"The price report could not be made (Unexpected token '<', \"<html>\" is not valid JSON), so this run reports nothing on prices."
+
+ ❯ scripts/test/price-report.test.ts:202:80
+    200|     expect(out.summary).toContain(out.lines[1]!);
+    201|     // An answer that is not JSON is unreadable too.
+    202|     expect((await run(web({ [OPENROUTER_MODELS]: '<html>' }).fetch)).l…
+       |                                                                                ^
+    203|   });
+    204|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed (9)
+   Start at  17:35:59
+   Duration  210ms (tests 43%, transform 41%, import 14%, worker 3%)
+

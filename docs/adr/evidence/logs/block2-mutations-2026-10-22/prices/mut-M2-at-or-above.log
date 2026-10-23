@@ -1,0 +1,93 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ packages/gateway/test/pricing.test.ts (62 tests | 6 failed) 158ms
+   ❯ long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) (9)
+     × openai gpt-6-astra: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included 4ms
+     × openai gpt-6.1-sol: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included 1ms
+     × openai gpt-6-luna: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included 1ms
+     × google gemini-3.1-pro-preview: a prompt of 200000 input tokens at the short rates, one token more at the long rates, output included 1ms
+     × reserves a completion at the tier its estimated prompt falls in (maxCompletionCost) 1ms
+   ❯ the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) (4)
+     × reserves an OpenAI call whose estimated prompt is 272,000 tokens at the short rates, and one of 272,001 at the long rates 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6-astra: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included
+AssertionError: expected 5.515 to be close to 2.77, received difference is 2.7449999999999997, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:295:76
+    293|   ] as const)('%s %s: a prompt of %i input tokens at the short rates, …
+    294|     const row = at(provider, model);
+    295|     expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000…
+       |                                                                            ^
+    296|     expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: …
+    297|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6.1-sol: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included
+AssertionError: expected 1.103 to be close to 0.554, received difference is 0.5489999999999999, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:295:76
+    293|   ] as const)('%s %s: a prompt of %i input tokens at the short rates, …
+    294|     const row = at(provider, model);
+    295|     expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000…
+       |                                                                            ^
+    296|     expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: …
+    297|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6-luna: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included
+AssertionError: expected 0.05515 to be close to 0.0277, received difference is 0.02745, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:295:76
+    293|   ] as const)('%s %s: a prompt of %i input tokens at the short rates, …
+    294|     const row = at(provider, model);
+    295|     expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000…
+       |                                                                            ^
+    296|     expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: …
+    297|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > google gemini-3.1-pro-preview: a prompt of 200000 input tokens at the short rates, one token more at the long rates, output included
+AssertionError: expected 0.818 to be close to 0.41200000000000003, received difference is 0.4059999999999999, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:295:76
+    293|   ] as const)('%s %s: a prompt of %i input tokens at the short rates, …
+    294|     const row = at(provider, model);
+    295|     expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000…
+       |                                                                            ^
+    296|     expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: …
+    297|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > reserves a completion at the tier its estimated prompt falls in (maxCompletionCost)
+AssertionError: expected 5.515 to be close to 2.77, received difference is 2.7449999999999997, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:332:53
+    330|   it('reserves a completion at the tier its estimated prompt falls in …
+    331|     const astra = at('openai', 'gpt-6-astra');
+    332|     expect(maxCompletionCost(astra, 272_000, 1000)).toBeCloseTo(usd(27…
+       |                                                     ^
+    333|     expect(maxCompletionCost(astra, 272_001, 1000)).toBeCloseTo(usd(27…
+    334|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > reserves an OpenAI call whose estimated prompt is 272,000 tokens at the short rates, and one of 272,001 at the long rates
+AssertionError: expected 5.515 to be close to 2.77, received difference is 2.7449999999999997, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:352:121
+    350|     const openai = fakeOpenAI();
+    351|     // 815,976 characters are 271,992 tokens and 815,977 are 271,993, …
+    352|     expect(await reservedAt({ profileId: 'openai', tier: 'big', messag…
+       |                                                                                                                         ^
+    353|     expect(await reservedAt({ profileId: 'openai', tier: 'big', messag…
+    354|     expect(openai.calls).toHaveLength(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  6 failed | 91 passed (97)
+   Start at  17:16:17
+   Duration  1.52s (import 45%, transform 43%, tests 12%)
+

@@ -1,0 +1,40 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ packages/gateway/test/pricing.test.ts (62 tests | 2 failed) 113ms
+   ❯ the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) (4)
+     × settles a call at the tier of the prompt the provider reports, and records that cost in the ledger 15ms
+     × reads the tier from the call's price row, so a table the gateway is given is priced by its own tiers 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > settles a call at the tier of the prompt the provider reports, and records that cost in the ledger
+AssertionError: expected 3.05 to be close to 6.075, received difference is 3.0250000000000004, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:378:23
+    376|     const b = await g.complete(req({ profileId: 'google', tier: 'big' …
+    377|     // A dated snapshot of gpt-6-astra, at its row's tier.
+    378|     expect(a.costUsd).toBeCloseTo(usd(300_000, 20) + usd(1000, 75), 9);
+       |                       ^
+    379|     // Thinking tokens are output, at the tier's output rate.
+    380|     expect(b.costUsd).toBeCloseTo(usd(250_000, 4) + usd(1000, 18), 9);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > reads the tier from the call's price row, so a table the gateway is given is priced by its own tiers
+AssertionError: expected 0.003 to be close to 0.014, received difference is 0.011, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:390:25
+    388|     const openai = fakeOpenAI([{ model: 'gpt-6.1-sol', choices: [{ fin…
+    389|     const res = await gateway({ prices: table, clients: { openai: open…
+    390|     expect(res.costUsd).toBeCloseTo(usd(1000, 7) + usd(100, 70), 9);
+       |                         ^
+    391|   });
+    392| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 95 passed (97)
+   Start at  17:16:40
+   Duration  1.32s (import 47%, transform 43%, tests 10%)
+

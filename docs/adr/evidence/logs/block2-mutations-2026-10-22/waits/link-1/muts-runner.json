@@ -1,0 +1,14 @@
+[
+  {"name": "a step's calls carry a wait again", "file": "packages/runner/src/activities/index.ts", "pkg": "packages/runner", "tests": ["test/liveness.test.ts"], "grep": "the operation an activity invocation",
+   "old": "...(stop ? { stop } : {}) };", "new": "...(stop ? { stop } : {}), waitMs: 900_000 };"},
+  {"name": "startInvocation keeps a limit again", "file": "packages/runner/src/activities/liveness.ts", "pkg": "packages/runner", "tests": ["test/liveness.test.ts"], "grep": "the operation an activity invocation",
+   "old": "    signal: ctx.cancellationSignal,\n    done: done.signal,", "new": "    signal: ctx.cancellationSignal,\n    limitMs: ctx.info.startToCloseTimeoutMs,\n    done: done.signal,"},
+  {"name": "caps: matched by model alone", "file": "packages/runner/src/caps.ts", "pkg": "packages/runner", "tests": ["test/caps.test.ts"],
+   "old": "(w) => w.provider === ref.provider && w.model === ref.model", "new": "(w) => w.model === ref.model"},
+  {"name": "caps: matched by provider alone", "file": "packages/runner/src/caps.ts", "pkg": "packages/runner", "tests": ["test/caps.test.ts"],
+   "old": "(w) => w.provider === ref.provider && w.model === ref.model", "new": "(w) => w.provider === ref.provider"},
+  {"name": "caps: no wait read", "file": "packages/runner/src/caps.ts", "pkg": "packages/runner", "tests": ["test/caps.test.ts"],
+   "old": "      return (await store.getAnswerWaits(workspaceId))", "new": "      return [] as never as undefined; void (await store.getAnswerWaits(workspaceId))"},
+  {"name": "memo: the caller's operation not joined", "file": "packages/runner/src/activities/memo.ts", "pkg": "packages/runner", "tests": ["test/memo.test.ts"], "grep": "caller’s wait",
+   "old": "operation: { key: `${scope.runId}/${key}`, ...opts.operation,", "new": "operation: { key: `${scope.runId}/${key}`, until: opts.operation.until,"}
+]
