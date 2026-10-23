@@ -82,6 +82,9 @@ importers:
       '@playwright/test':
         specifier: 1.63.0
         version: 1.63.0
+      '@temporalio/client':
+        specifier: 1.24.0
+        version: 1.24.0
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4

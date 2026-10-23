@@ -118,7 +118,8 @@ async function main(): Promise<number> {
     const suite = spawn(process.execPath, [cli, 'test', ...process.argv.slice(2)], {
       cwd: WEB,
       stdio: 'inherit',
-      env: { ...process.env, BYWAY_E2E_BASE_URL: baseUrl, BYWAY_E2E_DATA_DIR: dataDir },
+      // The engine's address too: the specs that seed going runs park a workflow for each on it (apps/web/e2e/seed.ts).
+      env: { ...process.env, BYWAY_E2E_BASE_URL: baseUrl, BYWAY_E2E_DATA_DIR: dataDir, BYWAY_E2E_TEMPORAL_ADDRESS: `127.0.0.1:${temporalPort}` },
     });
     code = (await exited(suite)) ?? 1;
     if (code !== 0) console.error(`e2e: the server's output is in ${logFile}`);
