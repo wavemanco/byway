@@ -2,30 +2,32 @@
  * What the streamed chat calls share (ADR-0111): Anthropic's, OpenAI's and OpenRouter's are streamed, so a stop can close
  * them, and so each needs a bound of its own on a stream that stalls.
  */
+import { DEFAULT_WAIT_MINUTES, minutesMs } from '../waits.ts';
 
 /**
- * How long a streamed answer may go without a chunk before byway reads it as stalled: fifteen minutes, a model step's
- * own limit. The owner chose it on 2026-10-22, "In Block 2, 15 meanwhile (Recommended)", until block 2 lets each model
- * have its own wait, chosen in Settings, and raises the steps' limits so the chosen wait governs (ADR-0111's Later
- * notes). A call in a step whose own limit is longer (an image or video step's 45 minutes: an ASSET step's briefs and
- * integrate calls, a relay link's call) waits that long instead (SpendContext.operation.stepLimitMs; B1R2-CODE-3, the
- * re-check of block 1's second fix round), as the owner chose on 2026-10-22, "45 minutes for calls in media steps
- * (Recommended)", until block 2's per-model waits replace both. The OpenAI and Anthropic SDKs clear their own request
- * timeout (DEFAULT_TIMEOUT, ten minutes, in openai 7.28.0 and @anthropic-ai/sdk 0.131.0) once the response headers
- * arrive, so without this bound a stream that stalls after its 200 keeps its connection open after its step is given up.
- * - Anthropic: Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 leave their thinking out of the stream by default
- *   (`thinking.display` "omitted", the claude-api reference, read 2026-10-22), so a model that is thinking sends only
- *   pings, which the SDK does not pass on. Since a call waits at least its step's own limit, no think is cut off before
- *   its step would end.
+ * How long a streamed answer may go without a chunk before byway reads it as stalled, when its request names no wait: a
+ * text model's default wait, fifteen minutes ("15 minutes (Recommended)", the owner's choice of 2026-10-22). The gateway
+ * hands every streamed call its model's own wait, chosen in Settings' "How long to wait for an answer" (15, 30, 45 or 60
+ * minutes; waits.ts), or the one a relay step read for it (SpendContext.operation.waitMs); a step's own limit no longer
+ * enters into it, so a call in a step of any length stalls at its model's wait. The OpenAI and Anthropic SDKs clear
+ * their own request timeout (DEFAULT_TIMEOUT, ten minutes, in openai 7.28.0 and @anthropic-ai/sdk 0.131.0) once the
+ * response headers arrive, so without this bound a stream that stalls after its 200 keeps its connection open after its
+ * step is given up.
+ * - Anthropic: byway asks Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 for a summary of their thinking (`thinking.display`
+ *   "summarized"), so a model that is thinking sends events and the wait measures true silence. Their default,
+ *   "omitted", streams no thinking text: the server skips the thinking and sends only its signature (Anthropic's public
+ *   thinking page, https://platform.claude.com/docs/en/build-with-claude/thinking, read 2026-10-22). A stream may carry
+ *   `ping` events at any point (its streaming page, https://platform.claude.com/docs/en/build-with-claude/streaming,
+ *   read 2026-10-22), and @anthropic-ai/sdk 0.131.0 drops them (core/streaming.mjs), so byway would see a think as
+ *   silence.
  * - OpenAI and OpenRouter: unstreamed, the SDK's timeout bounded the whole call at ten minutes; streamed, a stretch of
- *   up to fifteen minutes with nothing arriving (45 in a media step) is allowed, and the whole call is bounded by its
- *   step.
+ *   up to the model's wait with nothing arriving is allowed, and the whole call is bounded by its step.
  */
-export const STREAM_IDLE_MS = 900_000;
+export const STREAM_IDLE_MS = minutesMs(DEFAULT_WAIT_MINUTES.text);
 
 /**
- * A streamed call's bound on stalling: `afterMs`, the request's own (ProviderCompletionRequest.streamIdleMs: the longer
- * of STREAM_IDLE_MS and its step's limit), or STREAM_IDLE_MS when it gives none. `signal` is what the SDK is handed: it
+ * A streamed call's bound on stalling: `afterMs`, the request's own (ProviderCompletionRequest.streamIdleMs: its
+ * model's wait), or STREAM_IDLE_MS when it gives none. `signal` is what the SDK is handed: it
  * aborts when the call's stop does (ADR-0111), and when the stream has gone `afterMs` without a chunk since restart() was
  * last called. The wait starts at the first restart(), once the response has begun (until then the SDK's own timeout
  * applies), and starts again at every chunk, so only a stream that has stalled is closed, never a long one that keeps
@@ -61,10 +63,24 @@ export class StreamIdle {
 }
 
 /**
- * What a stalled stream's error says happened: the bound its StreamIdle used (`afterMs`, so a call in a media step says
- * "nothing came for 45 minutes"), after `count` chunks (OpenAI, OpenRouter) or events (Anthropic).
+ * What a stalled stream's error says happened: the bound its StreamIdle used (`afterMs`, so a call whose model waits 45
+ * minutes says "nothing came for 45 minutes"), after `count` chunks (OpenAI, OpenRouter) or events (Anthropic).
  */
 export const stalledDetail = (count: number, what: 'chunk' | 'event', afterMs: number): string => `nothing came for ${afterMs / 60_000} minutes, after ${count} ${what}${count === 1 ? '' : 's'}`;
+
+/**
+ * A stream that stalled (StreamIdle closed it after `afterMs` without a chunk), as streamEndedEarly says it, marked with
+ * how long it waited (`stalledMs`), so the gateway can say the model's wait ran out (waited.ts) whatever the adapter.
+ */
+export function streamStalled(provider: string, count: number, what: 'chunk' | 'event', afterMs: number, cause?: unknown): Error & { stalledMs: number } {
+  return Object.assign(streamEndedEarly(provider, stalledDetail(count, what, afterMs), cause), { stalledMs: afterMs });
+}
+
+/** How long a stream waited before it was closed as stalled (streamStalled), or undefined for any other failure. */
+export function stalledMsOf(e: unknown): number | undefined {
+  const ms = typeof e === 'object' && e !== null ? (e as { stalledMs?: unknown }).stalledMs : undefined;
+  return typeof ms === 'number' ? ms : undefined;
+}
 
 /**
  * A stream that ended without a whole answer, though the provider had answered 200 and may have billed what it made: one

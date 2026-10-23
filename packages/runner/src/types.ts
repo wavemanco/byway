@@ -3,10 +3,11 @@
  * module, so nothing here may touch Node.
  *
  * Port values travel by reference (spec §3: "Workflow state holds port values by reference (artifact ids, short
- * texts); activities do all I/O"): artifacts, views and images are artifact ids; briefs, critiques, tastes and the
- * human's words are short texts.
+ * texts); activities do all I/O"): artifacts, views and images are artifact ids; briefs, critiques and tastes are short
+ * texts. What the run was started with travels by reference too (P2): the person's problem brief, fixed copy deck,
+ * draft and tell catalog as their files' ids (RunInput), never their texts; and so do the person's VOICE answers.
  */
-import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, ProblemBrief, RunEventPayloads, RunEventType, RunStatus } from '@byway/contracts';
+import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, RunEventPayloads, RunEventType, RunStatus } from '@byway/contracts';
 import type { PortType } from '@byway/protocol';
 import type { Recipe, Step } from '@byway/recipe';
 
@@ -21,13 +22,22 @@ export interface RunInput {
   runId: string;
   workspaceId: string;
   recipe: Recipe;
-  problem: ProblemBrief;
+  /**
+   * The brief (the person's problem, with its fields and attachments), by reference (P2): the artifact id of the one
+   * JSON file Runner.start stored it in (stored-inputs.ts). Never the brief itself, which may be megabytes.
+   */
+  problemId: string;
   profileId: string;
   budgetUsd: number;
   medium: Medium;
   /** Route choices made up front, by route id. */
   routes: Record<string, string>;
-  inputs: { refs?: string[]; voice?: string; draft?: string; tells?: string };
+  /**
+   * The person's own inputs, by reference (P2): their references (artifact ids already), and the fixed copy deck, the
+   * author's draft and their own tell catalog (StartRunInput.inputs voice, draft and tells), each the id of the text
+   * file Runner.start stored it in (stored-inputs.ts).
+   */
+  inputs: { refs?: string[]; voiceId?: string; draftId?: string; tellsId?: string };
 }
 
 export type StageName = 'D1' | 'D2' | 'D3';
@@ -70,6 +80,13 @@ export type Score = { kind: 'score'; value: number } | { kind: 'rank'; rank: num
 /** Port values by reference. Only `artifact`, `options`, `view` and the texts are ever large in meaning, never in size. */
 export interface Ports {
   brief?: string;
+  /**
+   * The brief is a list of questions with their defaults, as C7's interview writes it (QUESTION_BRIEF_PROMPTS in
+   * workflow/wording.ts): a person who revises it in place is asked to answer them (SPEC_IN_PLACE_PROMPT). Set or cleared
+   * by every write of the brief, so a brief any other step wrote, the person's answers among them, is asked about as a
+   * brief (R-C7).
+   */
+  briefQuestions?: true;
   /** The current work: an artifact id in the recipe medium's format. */
   artifact?: string;
   /** The work before its latest write, for keep-or-revert comparisons (TELLS). */
@@ -79,13 +96,15 @@ export interface Ports {
   score?: Score;
   taste?: string;
   /**
-   * The person's latest words: the latest VOICE write's answer, or the fixed copy deck the run was given. What a step
-   * that reads 'voice' gets (C5's voice-over audio after the locked script).
+   * The person's latest words, by their file's id (P2): the latest VOICE write's answer, or until one answers the fixed
+   * copy deck the run was given (RunInput.inputs.voiceId). What a step that reads 'voice' gets (C5's voice-over audio
+   * after the locked script), read from its file (held-voice.ts).
    */
   voice?: string;
   /**
-   * The held voice (ADR-0092 stage 4): every VOICE write's answer on the path, in order. A machine write declared
-   * keepsVoice keeps every line of all of them, not only the latest; and no other machine write may follow them.
+   * The held voice (ADR-0092 stage 4): every VOICE write's answer on the path, in order, by their files' ids (P2). A
+   * machine write declared keepsVoice keeps every line of all of them, not only the latest; and no other machine write
+   * may follow them.
    */
   held?: string[];
   /** option_set<artifact>: candidate artifact ids, labelled A, B, C… in order. */
@@ -129,16 +148,18 @@ export interface StepCall {
   stage: StageName;
 }
 
-/** The run facts every activity needs. */
+/**
+ * The run facts every activity needs. The SEED strings handed out so far are not among them (P2): PR3 reads them from
+ * the store, where each step call's is kept (activities/writes.ts runSeeds).
+ */
 export interface RunRef {
   runId: string;
   workspaceId: string;
   recipeId: string;
   profileId: string;
   medium: Medium;
-  problem: ProblemBrief;
-  /** Every SEED string handed out so far: no artifact may contain one (PR3). */
-  seeds: string[];
+  /** The brief's artifact id (RunInput.problemId): a step that fills the problem slot reads it (prompting.ts). */
+  problemId: string;
 }
 
 /** The parts of a recipe step the activities read. */
@@ -184,8 +205,8 @@ export interface ModelStepInput {
   round?: number;
   /** User-supplied reference artifacts (CRITIC lineups). */
   refs: string[];
-  /** The tell catalog text when the run supplies its own (StartRunInput.inputs.tells). */
-  tells?: string;
+  /** The run's own tell catalog (StartRunInput.inputs.tells), by its file's id: a sweep reads it in place of byway's. */
+  tellsId?: string;
   /** For pick(C): the candidates to choose among, labelled A, B, C… (the judge step's options). */
   candidates?: string[];
   meta?: StepMeta;
@@ -206,8 +227,6 @@ export interface ModelStepResult {
   keep?: 'A' | 'B';
   /** dedupe: the labels kept, in order. */
   keepLabels?: string[];
-  /** A SEED string handed to this step, for the run's PR3 checks. */
-  seed?: string;
   /** Set when the step ran differently from the recipe as written (ADR-0071 critic fallback). */
   note?: string;
   /** The note this step stored (its critique, flags or direction as text), shown to the person beside the work. */
@@ -255,6 +274,23 @@ export interface AssetResult {
   skipped?: boolean;
 }
 
+/**
+ * The answer waits a relay step's calls keep, in milliseconds, read just before the step begins (the relayWaits
+ * activity; the waits design of 2026-10-22, section 4): the link model's, a text model's, for the link call, and the
+ * video model's, for the clip and its last frame. The workflow sizes the step's own limit from the same reading
+ * (workflow/acts.ts relayLimitMs), so the limit and the calls always fit each other.
+ */
+export interface RelayWaits {
+  linkMs: number;
+  videoMs: number;
+}
+
+/** What the waits are read for: the run (its workspace and profile) and the relay step (the tier its link call asks). */
+export interface RelayWaitsInput {
+  run: RunRef;
+  step: StepSpec;
+}
+
 export interface RelayInput {
   run: RunRef;
   call: StepCall;
@@ -262,6 +298,11 @@ export interface RelayInput {
   ports: Ports;
   /** The shot this link makes. */
   shot: number;
+  /**
+   * The waits read before this step began (RelayWaits): its calls carry them (operation.waitMs), so a wait changed in
+   * Settings while the step runs changes none of its calls, and every attempt of the step keeps the same ones.
+   */
+  waits: RelayWaits;
   meta?: StepMeta;
 }
 
@@ -298,13 +339,31 @@ export interface OpenCheckpointInput {
   /** For a human step: its spec, so step-started is emitted with the checkpoint. Absent for operator checkpoints. */
   step?: StepSpec;
   meta?: StepMeta;
-  /** Ask the activity to compute the initial text (VOICE copy, the author's draft) from these. */
-  initial?: { from: 'copy' | 'artifact' | 'draft' | 'claims'; artifactId?: string; draft?: string };
+  /**
+   * Ask the activity to compute the initial text (VOICE copy, the author's draft) from these: the work, or the draft
+   * the run was given, by its file's id (RunInput.inputs.draftId). `earlier`: a VOICE the final check sent the run back
+   * over, asked again (VOICE-RETRY), with its last answer before the retry; the box starts from it where it still fits.
+   */
+  initial?: { from: 'copy' | 'artifact' | 'draft' | 'claims'; artifactId?: string; draftId?: string; earlier?: EarlierAnswer };
+}
+
+/**
+ * A VOICE's last answer and the deck it answered, by their files' ids (FinishHumanResult.voiceId and deckId): what the
+ * interpreter carries across a gate's retry for that VOICE (VOICE-RETRY, D9).
+ */
+export interface EarlierAnswer {
+  answerId: string;
+  deckId: string;
 }
 
 export interface OpenCheckpointResult {
   checkpointId: string;
   initialText?: string;
+  /**
+   * Set when the box starts from something other than the work's lines (the person's earlier lines, VOICE-RETRY): the
+   * work's lines, kept as a text file, by its id. An answer is unchanged when it equals them.
+   */
+  deckId?: string;
 }
 
 export interface RecordResolutionInput {
@@ -320,14 +379,26 @@ export interface FinishHumanInput {
   kind: CheckpointKind;
   resolution: CheckpointResolution;
   ports: Ports;
-  /** The text the checkpoint offered, for "unchanged" detection. */
+  /** The text the checkpoint first offered: for "unchanged" detection, and how a refusal quotes the lines it names. */
   initialText?: string;
+  /**
+   * OpenCheckpointResult.deckId, when the box started from the person's earlier lines (VOICE-RETRY): "unchanged" is then
+   * measured against these, the work's lines, not against initialText, so sending the earlier lines back writes them.
+   */
+  deckId?: string;
 }
 
 export interface FinishHumanResult {
   costUsd: number;
   artifactId?: string;
   text?: string;
+  /** A VOICE write's answer, kept as a text file: its id is the person's latest words, and held (Ports.voice, held). */
+  voiceId?: string;
+  /**
+   * A VOICE write's deck: the work's lines its answer was measured against, kept as a text file beside it. The
+   * interpreter keeps both ids, so if a gate's retry runs this VOICE again it can tell whether the answer still fits.
+   */
+  deckId?: string;
   /** compare: the version kept. */
   keep?: 'A' | 'B';
 }
@@ -377,6 +448,8 @@ export interface RunnerActivities {
   modelStep(input: ModelStepInput): Promise<ModelStepResult>;
   renderView(input: RenderInput): Promise<RenderResult>;
   assetStep(input: AssetInput): Promise<AssetResult>;
+  /** The waits a relay step's calls keep, read from Settings just before the step (a quick step). */
+  relayWaits(input: RelayWaitsInput): Promise<RelayWaits>;
   relayLink(input: RelayInput): Promise<RelayResult>;
   storyboardShots(input: { artifactId: string }): Promise<number[]>;
   skipStep(input: SkipInput): Promise<void>;

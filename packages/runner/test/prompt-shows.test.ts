@@ -20,8 +20,10 @@ import { assetStep } from '../src/activities/asset.ts';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { JUDGING_ROLES } from '../src/activities/prompting.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
+import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import type { Ports, RunRef, StepSpec, ViewRef } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
 const library = createPromptRenderer();
@@ -100,14 +102,15 @@ async function requestFor(step: StepSpec, medium: Medium): Promise<CompletionReq
   const runId = `run-${Math.random().toString(36).slice(2)}`;
   await store.createRun({ id: runId, workspaceId, recipeId: 'shows', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'MARK-intent', medium, budgetUsd: 5 });
   await store.updateRun(runId, { status: 'running' });
-  const run: RunRef = { runId, workspaceId, recipeId: 'shows', profileId: 'demo', medium, problem: { text: 'MARK-intent' }, seeds: [] };
+  const run: RunRef = { runId, workspaceId, recipeId: 'shows', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'MARK-intent' }) };
   const text = async (t: string, type = 'text/markdown') => (await store.artifacts.putText(t, type)).id;
   const ports: Ports = {
     artifact: await text(workText(medium, 'MARK-artifact')),
     brief: 'MARK-brief',
     critique: 'MARK-critique',
     taste: 'MARK-taste',
-    voice: 'MARK-voice',
+    // The person's words, by their file's id (P2).
+    voice: await text('MARK-voice', INPUT_MEDIA_TYPE),
     view: { pool: false, items: [await viewOf(medium, 'MARK-view', images.view)] },
     options: [await text(workText(medium, 'MARK-options'))],
     optionViews: [await viewOf(medium, 'MARK-option-view', images.option)],
@@ -119,8 +122,9 @@ async function requestFor(step: StepSpec, medium: Medium): Promise<CompletionReq
   const call = { key: `${runId}/${step.id}/-/1`, stepId: step.id, stage: 'D2' as const };
   try {
     if (step.role === 'asset') await assetStep(deps, { run, call, step, ports });
-    else if (step.role === 'relay') await relayLink(deps, { run, call, step, ports, shot: 1 });
-    else await modelStep(deps, { run, call, step, ports, refs: [], tells: 'MARK-tells' });
+    else if (step.role === 'relay') await relayLink(deps, { run, call, step, ports, shot: 1, waits: DEFAULT_RELAY_WAITS });
+    // The run's own tell catalog, stored as Runner.start stores it (P2).
+    else await modelStep(deps, { run, call, step, ports, refs: [], tellsId: await text('MARK-tells', INPUT_MEDIA_TYPE) });
   } catch (e) {
     if (!(e instanceof Captured)) throw e;
   }

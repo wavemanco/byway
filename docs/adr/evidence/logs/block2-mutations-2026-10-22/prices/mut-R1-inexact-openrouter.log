@@ -1,0 +1,29 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 1 failed) 57ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × compares OpenRouter's prices exactly, as decimals: any spelling of the same number matches, any other number does not 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > compares OpenRouter's prices exactly, as decimals: any spelling of the same number matches, any other number does not
+AssertionError: 0.0000041 4: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ scripts/test/price-report.test.ts:182:220
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  17:34:43
+   Duration  667ms (tests 72%, transform 14%, import 13%, worker 1%)
+

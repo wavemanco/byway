@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { RecommendationView, type RecipeOption } from '../../../src/components/RecommendationView.tsx';
 import { composeView, workspaceRemaining } from '../../../src/server/api.ts';
 import { getDeps } from '../../../src/server/deps.ts';
+import { pricesChecked } from '../../../src/view/prices.ts';
 import { takesRefs } from '../../../src/view/refs.ts';
 
 export const metadata: Metadata = { title: 'Recommendation' };
@@ -13,7 +14,8 @@ export const metadata: Metadata = { title: 'Recommendation' };
  *
  * The render reads what is stored and calls no model, so the page can be rendered again freely. The first
  * recommendation is asked for by the screen once it is shown (RecommendationView; POST /recommend { ensure: true }),
- * and a model error is shown there with a way forward (UX-2).
+ * and a model error is shown there with a way forward (UX-2). When byway's prices were last checked goes with the
+ * estimate, put in words with the server's clock (PRICE-CADENCE).
  */
 export default async function RecommendPage({ params, searchParams }: PageProps<'/recommend/[intakeId]'>) {
   const { intakeId } = await params;
@@ -67,6 +69,7 @@ export default async function RecommendPage({ params, searchParams }: PageProps<
         composed={composed}
         remainingUsd={spend.remainingUsd}
         demo={services.mode === 'demo'}
+        prices={pricesChecked(deps.pricesCheckedOn, new Date())}
       />
     </div>
   );

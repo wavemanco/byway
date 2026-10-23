@@ -1,0 +1,33 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+(node:15936) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/web/test/prices-checked.test.ts (9 tests | 1 failed) 269ms
+   ❯ the gateway's day reaches both screens from the server (3)
+     × Settings shows it with the workspace budget, read with the server's clock, and the notice once it is old 82ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/web/test/prices-checked.test.ts > the gateway's day reaches both screens from the server > Settings shows it with the workspace budget, read with the server's clock, and the notice once it is old
+AssertionError: expected '<section class="settings-section" ari…' to contain '<p class="notice notice-caution price…'
+
+Expected: "<p class="notice notice-caution prices-stale">byway&#x27;s prices were last checked against the providers&#x27; pages 46 days ago, on Oct 22, 2026, and providers change their prices. Until they are checked again, estimates and the costs byway records may differ from your provider&#x27;s bill.</p>"
+Received: "<section class="settings-section" aria-labelledby="_R_0_-budget"><h2 id="_R_0_-budget">Workspace budget</h2><p class="section-note">byway does not start a call whose estimated cost would take your spending past this amount. Estimates can be low, so a call can cost more than its estimate, and spending can end over this amount. $0.00 spent so far; $20.00 left. Each run also has its own budget, set when you start it.</p><p class="muted small prices-checked">Prices last checked Oct 22, 2026.</p><form class="inline-form"><label class="sr-only" for="_R_0_-budget-input">Workspace budget in dollars</label><span class="money"><span aria-hidden="true">$</span><input id="_R_0_-budget-input" inputMode="decimal" value="20.00"/></span><button type="submit" class="button">Save budget</button></form></section>"
+
+ ❯ apps/web/test/prices-checked.test.ts:149:34
+    147|       const budget = /<section class="settings-section" aria-labelledb…
+    148|       expect(budget, now).toContain(`<p class="muted small prices-chec…
+    149|       if (notice) expect(budget).toContain(`<p class="notice notice-ca…
+       |                                  ^
+    150|       else expect(budget).not.toContain('prices-stale');
+    151|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed (9)
+   Start at  17:25:42
+   Duration  2.45s (transform 52%, import 37%, tests 12%)
+

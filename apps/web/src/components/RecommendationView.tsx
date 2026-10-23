@@ -9,10 +9,12 @@ import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudget
 import { composedRefusalGroups, composeNotice, diffLine } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
 import { awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
+import type { PricesChecked } from '../view/prices.ts';
 import { recipeTitle } from '../view/vocabulary.ts';
 import { ActionButton } from './ActionButton.tsx';
 import { ApiError, post } from './api.ts';
 import { EvidenceLabel } from './EvidenceLabel.tsx';
+import { PricesStaleNotice } from './PricesChecked.tsx';
 import { Route, RouteDetails, RouteLegend } from './Route.tsx';
 import { Examples, exampleCount, storeExamples, type ExampleEntry } from './Examples.tsx';
 import { examplesSlot, keepExamples } from './examplesDraft.ts';
@@ -42,6 +44,8 @@ interface Props {
   composed?: ComposeView | null;
   remainingUsd: number;
   demo: boolean;
+  /** When byway's prices were last checked, in words, shown with the estimated cost (view/prices.ts; PRICE-CADENCE). */
+  prices: PricesChecked;
 }
 
 /**
@@ -54,7 +58,7 @@ interface Props {
  * props (the problem, its attachments, the questions, the recipes on offer, demo mode) cannot change while it is shown.
  */
 export function RecommendationView(props: Props) {
-  const { intakeId, chosenRecipeId, options, questions, demo } = props;
+  const { intakeId, chosenRecipeId, options, questions, demo, prices } = props;
   const router = useRouter();
   const technical = useTechnicalNames();
   const [state, setState] = useState<RecState>(() =>
@@ -218,6 +222,7 @@ export function RecommendationView(props: Props) {
             composed={selection.kind === 'composed' ? composed : null}
             remainingUsd={state.remainingUsd}
             demo={demo}
+            prices={prices}
             examples={examples}
             onExamples={onExamples}
             onExampleRefused={onExampleRefused}
@@ -379,6 +384,7 @@ interface ProposalProps {
   composed: ComposeView | null;
   remainingUsd: number;
   demo: boolean;
+  prices: PricesChecked;
   examples: ExampleEntry[];
   onExamples: (update: (entries: ExampleEntry[]) => ExampleEntry[]) => void;
   /** byway refused this pasted example for holding one of its provider keys (ADR-0088). */
@@ -388,7 +394,7 @@ interface ProposalProps {
   onStartRefused: (refusal: ApiError) => void;
 }
 
-function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, remainingUsd, demo, examples, onExamples, onExampleRefused, onStarted, onStartRefused }: ProposalProps) {
+function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, remainingUsd, demo, prices, examples, onExamples, onExampleRefused, onStarted, onStartRefused }: ProposalProps) {
   const technical = useTechnicalNames();
   const budgetId = useId();
   const { presentation, label, estimate } = option;
@@ -460,6 +466,7 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
           <dd>
             {formatCostRange(estimate.lowUsd, estimate.highUsd)}
             <span className="facts-sub">{formatCallRange(estimate.modelCalls)}</span>
+            <span className="facts-sub">{prices.text}</span>
           </dd>
         </div>
         <div>
@@ -469,6 +476,7 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
           </dd>
         </div>
       </dl>
+      <PricesStaleNotice prices={prices} />
 
       {composed ? (
         <div className="composed">

@@ -1,0 +1,22 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 1 failed) 44ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × reads a model's name as a whole name, and its figures only up to the next model it prices 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > reads a model's name as a whole name, and its figures only up to the next model it prices
+AssertionError: expected [ …(10) ] to include 'Anthropic claude-opus-5: not found af…'
+ ❯ scripts/test/price-report.test.ts:144:123
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  17:35:13
+   Duration  641ms (tests 72%, transform 17%, import 10%, worker 1%)
+

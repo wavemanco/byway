@@ -1,0 +1,3 @@
+                  : deadline?.expired && billingOf(e) !== 'none'
+                    ? waitedError(ref, { minutes: waitMinutes(deadline.afterMs), how: 'answer' }, { retryable: false, billing: 'maybe' })
+                    : toGatewayError(e, ref.provider, redact);

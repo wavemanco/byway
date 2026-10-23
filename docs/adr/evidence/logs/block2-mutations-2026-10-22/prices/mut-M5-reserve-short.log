@@ -1,0 +1,73 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ packages/gateway/test/pricing.test.ts (62 tests | 3 failed) 140ms
+   ❯ long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) (9)
+     × reserves a completion at the tier its estimated prompt falls in (maxCompletionCost) 3ms
+   ❯ the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) (4)
+     × reserves an OpenAI call whose estimated prompt is 272,000 tokens at the short rates, and one of 272,001 at the long rates 6ms
+     × refuses a maximal brief on Google whose short-rate estimate would fit the cap, before anything is sent: the cap holds at the tier 30ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > reserves a completion at the tier its estimated prompt falls in (maxCompletionCost)
+AssertionError: expected 2.77001 to be close to 5.51502, received difference is 2.7450099999999997, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:333:53
+    331|     const astra = at('openai', 'gpt-6-astra');
+    332|     expect(maxCompletionCost(astra, 272_000, 1000)).toBeCloseTo(usd(27…
+    333|     expect(maxCompletionCost(astra, 272_001, 1000)).toBeCloseTo(usd(27…
+       |                                                     ^
+    334|   });
+    335| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > reserves an OpenAI call whose estimated prompt is 272,000 tokens at the short rates, and one of 272,001 at the long rates
+AssertionError: expected 2.77001 to be close to 5.51502, received difference is 2.7450099999999997, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:353:121
+    351|     // 815,976 characters are 271,992 tokens and 815,977 are 271,993, …
+    352|     expect(await reservedAt({ profileId: 'openai', tier: 'big', messag…
+    353|     expect(await reservedAt({ profileId: 'openai', tier: 'big', messag…
+       |                                                                                                                         ^
+    354|     expect(openai.calls).toHaveLength(0);
+    355|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > refuses a maximal brief on Google whose short-rate estimate would fit the cap, before anything is sent: the cap holds at the tier
+AssertionError: expected { text: '', stopReason: 'end', …(5) } to match object { code: 'budget-exceeded' }
+(9 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "code": "budget-exceeded",
++   "costUsd": 0.01554,
++   "ledgerEntryId": "15e89534-0f51-42d5-a7a5-eb90879e55f2",
++   "provider": "google",
++   "servedModel": "gemini-3.1-pro-preview",
++   "stopReason": "end",
++   "text": "",
++   "usage": {
++     "inputTokens": 30,
++     "outputTokens": 1290,
++   },
+  }
+
+ ❯ packages/gateway/test/pricing.test.ts:364:17
+    362|     const g = gateway({ caps: { workspaceCapUsd: () => 0.5 }, clients:…
+    363|     const err = (await g.complete(req({ profileId: 'google', tier: 'bi…
+    364|     expect(err).toMatchObject({ code: 'budget-exceeded' });
+       |                 ^
+    365|     expect(err.budget!.estimateUsd).toBeCloseTo(usd(tokens, 4) + usd(1…
+    366|     expect(google.calls).toHaveLength(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  3 failed | 94 passed (97)
+   Start at  17:16:37
+   Duration  1.34s (import 46%, transform 43%, tests 11%)
+

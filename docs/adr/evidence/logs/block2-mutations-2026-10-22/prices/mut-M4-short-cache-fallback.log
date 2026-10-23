@@ -1,0 +1,27 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ packages/gateway/test/pricing.test.ts (62 tests | 1 failed) 110ms
+   ❯ long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) (9)
+     × charges a cache hit above Google's threshold at the long input rate, never at a short-context rate 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > charges a cache hit above Google's threshold at the long input rate, never at a short-context rate
+AssertionError: expected 0.8 to be close to 1, received difference is 0.19999999999999996, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:317:132
+    315|
+    316|   it("charges a cache hit above Google's threshold at the long input r…
+    317|     expect(tokenCost(at('google', 'gemini-3.1-pro-preview'), { inputTo…
+       |                                                                                                                                    ^
+    318|   });
+    319|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 96 passed (97)
+   Start at  17:16:34
+   Duration  1.38s (import 46%, transform 45%, tests 9%)
+

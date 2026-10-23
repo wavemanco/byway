@@ -1,0 +1,2 @@
+      if (stop?.aborted) return { stopped: done ? 'done' : 'running', requestId };
+      if (isNotStarted(e)) throw e;

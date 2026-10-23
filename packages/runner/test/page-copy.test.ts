@@ -506,7 +506,7 @@ describe('an <a> left open, or holding another: read as browsers read it, or ref
     const p = readPageCopy(pageOf(TP));
     expect(deckLines(p)).toEqual(['T', 'Intro', 'Hello world', 'Cell', 'After']);
     const why = "a link on the page (to /x) is left open or holds another link, around a table, a list box, an svg or other markup where byway cannot tell which words a browser shows as that link's words";
-    expect(pageVoiceSuffix(p)).toBe(`One line per block of text; leave a line empty to remove its text. Lines 3 to 5 cannot be changed in this step: ${why}; leave them as they are.`);
+    expect(pageVoiceSuffix(p)).toBe(`Lines 3 to 5 cannot be changed in this step: ${why}; leave them as they are.`);
     expect(run(TP, set(3, 'Cells')).rejected).toBe(`Line 4 cannot be changed in this step: ${why}, so byway cannot write this line exactly. Leave line 4 as it was offered.`);
     expect(run(TP, set(2, '')).rejected).toBe(`Line 3 cannot be changed in this step: ${why}, so byway cannot write this line exactly. Leave line 3 as it was offered.`);
     expect(run(TP, set(1, 'Intro!'))).toMatchObject(clean(TP.replace('Intro', 'Intro!')));
@@ -636,7 +636,7 @@ describe('links: where browsers end them, and what is not a link (F07, r5)', () 
     expect(run(N, set(1, 'Welcome!'))).toMatchObject(clean('<h2><a name="top"/>Welcome!</h2><p>Our <a href="/menu">menu</a> changes daily.</p>'));
     const C = readPageCopy(pageOf('<p>Go to <a name="x">here</a> now</p>'));
     expect(deckLines(C)).toEqual(['T', 'Go to here now']);
-    expect(pageVoiceSuffix(C)).toBe('One line per block of text; leave a line empty to remove its text.');
+    expect(pageVoiceSuffix(C)).toBe('');
     expect(linkHrefs(pageOf('<p>Go to <a name="x">here</a> now</p>'))).toEqual([]);
   });
 
@@ -1158,7 +1158,7 @@ describe('the C1 demo page (F07)', () => {
 
   it('names where every link goes in the VOICE prompt', () => {
     expect(pageVoiceSuffix(readPageCopy(html))).toBe(
-      'One line per block of text; leave a line empty to remove its text. Links stay where they are; only their words change. Where each one goes: line 2 "Saltbox" goes to #; line 3 "How it works" goes to #how; line 4 "Contact" goes to #start; line 7 "Book a visit" goes to #start; line 24 "Book a visit" goes to #start.',
+      'Links stay where they are; only their words change. Where each one goes: line 2 "Saltbox" goes to #; line 3 "How it works" goes to #how; line 4 "Contact" goes to #start; line 7 "Book a visit" goes to #start; line 24 "Book a visit" goes to #start.',
     );
   });
 });
@@ -1167,9 +1167,10 @@ describe('the VOICE prompt for a page, and the page lock (F07)', () => {
   it('a footer names each address; a page with no links gets no legend; a marked line gets the bracket rule', () => {
     const footer = readPageCopy(pageOf('<footer><p><a href="/terms">Terms of service</a> · <a href="/privacy">Privacy policy</a></p></footer>'));
     expect(pageVoiceSuffix(footer)).toBe(
-      "One line per block of text; leave a line empty to remove its text. Words in [brackets] are a link's words: keep one pair of brackets per link, in order, and leave a pair empty, [], to remove that link. To write a bracket as text, put \\ before it. Links stay where they are; only their words change. Where each one goes: line 2 \"Terms of service\" goes to /terms; line 2 \"Privacy policy\" goes to /privacy.",
+      "Words in [brackets] are a link's words: keep one pair of brackets per link, in order, and leave a pair empty, [], to remove that link. To write a bracket as text, put \\ before it. Links stay where they are; only their words change. Where each one goes: line 2 \"Terms of service\" goes to /terms; line 2 \"Privacy policy\" goes to /privacy.",
     );
-    expect(pageVoiceSuffix(readPageCopy(pageOf('<p>No links here.</p>')))).toBe('One line per block of text; leave a line empty to remove its text.');
+    // The line rule ends the workflow's question (R-SUFFIX), so a page with nothing more to say adds nothing.
+    expect(pageVoiceSuffix(readPageCopy(pageOf('<p>No links here.</p>')))).toBe('');
     expect(run('<footer><p><a href="/terms">Terms of service</a> · <a href="/privacy">Privacy policy</a></p></footer>', set(1, '[Privacy] · [Terms]'))).toMatchObject(clean('<footer><p><a href="/terms">Privacy</a> · <a href="/privacy">Terms</a></p></footer>'));
   });
 

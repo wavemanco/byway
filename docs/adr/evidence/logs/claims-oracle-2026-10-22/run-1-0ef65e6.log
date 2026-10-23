@@ -1,0 +1,19 @@
+# claims oracle at the measurement's size, B1 (fix/fx-b2-wcore)
+# started: 2026-10-22T20:48:38-07:00
+# HEAD: 0ef65e6676e68f2f6d6c552c67cbebe1f88a7e48
+# tree: ce93198b652e0600ec353ba92aefeec890889657
+# git status --porcelain lines: 0
+# command: CLAIMS_ORACLE_TRIES=40000 CLAIMS_ORACLE_SEEDS=26 CLAIMS_ORACLE_RUNS=12 pnpm exec vitest run scripts/test/claims-oracle.test.ts
+# node: v24.13.1
+
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-wcore
+
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  20:48:40
+   Duration  1655.37s (tests 100%)
+
+# exit: 0
+# ended: 2026-10-22T21:16:16-07:00

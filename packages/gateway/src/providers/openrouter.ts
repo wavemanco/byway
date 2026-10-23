@@ -1,14 +1,15 @@
 import OpenAI from 'openai';
 import { GatewayError } from '@byway/contracts';
 import { chatStreamParams, completeStreamed, openaiChatParams, type OpenAIClientLike, type OpenRouterRouting } from './openai.ts';
+import { providerFetch } from './fetch.ts';
 import { StreamIdle } from './stream.ts';
 import type { ProviderAdapter, ProviderCompletionRequest } from './types.ts';
 
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
-/** OpenRouter speaks the OpenAI Chat Completions API, so the OpenAI SDK is the client. */
-export function createOpenRouterClient(apiKey: string): OpenAIClientLike {
-  return new OpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL, maxRetries: 0, defaultHeaders: { 'X-Title': 'byway' } });
+/** OpenRouter speaks the OpenAI Chat Completions API, so the OpenAI SDK is the client, on the provider Agent's fetch (fetch.ts). */
+export function createOpenRouterClient(apiKey: string, fetchImpl: typeof fetch = providerFetch): OpenAIClientLike {
+  return new OpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL, maxRetries: 0, defaultHeaders: { 'X-Title': 'byway' }, fetch: fetchImpl });
 }
 
 /**

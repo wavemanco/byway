@@ -14,6 +14,17 @@
  *
  *   CLAIMS_ORACLE_TRIES=40000 CLAIMS_ORACLE_SEEDS=26 CLAIMS_ORACLE_RUNS=12 pnpm exec vitest run scripts/test/claims-oracle.test.ts
  *
+ * At answer seeds other than the measurement's, a lone E-REACT-CLAIM-BUT-NEVER-SHOWN is expected, from sampling alone:
+ * an AI VISION presented as directions to react to shows them to a later VISION of the person's on some runs and not on
+ * others, as the random answers differ, and at a few seeds none of a variant's runs does. C2's variant 2502 is so
+ * reported at 6 of 2,700 answer seeds, and its variant 2677 at 1 (ADR-0097's Later note; the picks are in
+ * docs/adr/evidence/probes/claims-draws-2026-10-21/). A variant's answers come from a seed of its place in the corpus
+ * (judgeVariants: 1000 + idx × 7919), drawn in turn by its runs, so a change that admits other variants before it, or
+ * that makes a run draw a different number of answers, judges it at other answers than the measurement's; and with
+ * fewer than 12 runs each, a variant's runs are the first of its twelve, which can all miss where the twelve do not.
+ * Such a report is not a regression by itself: judge the variant at other answer seeds, as those picks did, before
+ * reading it as a claim that no longer holds.
+ *
  * Problem kinds marked (info) are what the verifiers recorded as not a false claim (a claim that holds on some runs
  * and not others because the person's random answers differ, say); kinds marked (control) come only from the controls.
  *
@@ -33,7 +44,8 @@ const h = vi.hoisted(() => ({ respond: undefined as undefined | ((name: string, 
 /** The Interpreter's activities, stubbed by the oracle. */
 vi.mock('../../packages/runner/src/workflow/acts.ts', () => {
   const group = () => new Proxy({}, { get: (_t, name: string) => async (input: unknown) => h.respond!(name, input) });
-  return { quick: group(), model: group(), media: group() };
+  // A relay step runs on a proxy of its own, its limit worked out from its waits (acts.ts relayProxy).
+  return { quick: group(), model: group(), media: group(), relayProxy: () => group() };
 });
 
 const { judgeVariants, respond } = await import('./claims-oracle/oracle.ts');

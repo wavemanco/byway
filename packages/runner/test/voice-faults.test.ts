@@ -10,6 +10,7 @@ import { ApplicationFailure } from '@temporalio/common';
 import { AnswerRejected, StepError, toFailure } from '../src/activities/failures.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { serializeJson } from '../src/formats.ts';
+import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import { FAILURE, type StepSpec } from '../src/types.ts';
 import { fakePages } from './helpers/fake-pages.ts';
 import { benchRun, putWork, storyboard, voiceBench, VoiceQuestion, type VoiceBench } from './helpers/voice-activity.ts';
@@ -101,7 +102,7 @@ describe('keepsVoice: a fault in the check never repeats a paid call', () => {
       b.gateway.requests.push(req);
       return { text: '```json\n' + before + '\n```', stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, ledgerEntryId: 'l1' };
     };
-    return modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact, voice: 'Mine.' }, refs: [] }).catch((e: unknown) => e);
+    return modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact, voice: (await b.store.artifacts.putText('Mine.', INPUT_MEDIA_TYPE)).id }, refs: [] }).catch((e: unknown) => e);
   };
 
   it('a fault after the model answered: exactly one call, then a final step failure', async () => {

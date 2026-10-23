@@ -1,0 +1,1 @@
+usd: first * row.perSecondUsd

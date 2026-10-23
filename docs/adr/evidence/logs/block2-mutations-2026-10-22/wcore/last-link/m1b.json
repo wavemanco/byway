@@ -1,0 +1,52 @@
+[
+ {
+  "name": "M1 link call reads the waits afresh during the step",
+  "file": "packages/runner/src/activities/relay.ts",
+  "old": "    waitMs: waits.linkMs,",
+  "new": "    waitMs: (await relayWaits(deps, { run, step })).linkMs,",
+  "tests": [
+   "packages/runner/test/step-limits.test.ts"
+  ],
+  "grep": "calls keep the waits it was handed"
+ },
+ {
+  "name": "M2 clip reads the waits afresh during the step",
+  "file": "packages/runner/src/activities/relay.ts",
+  "old": "        waits.videoMs,\n      ),",
+  "new": "        (await relayWaits(deps, { run, step })).videoMs,\n      ),",
+  "tests": [
+   "packages/runner/test/step-limits.test.ts"
+  ],
+  "grep": "calls keep the waits it was handed"
+ },
+ {
+  "name": "M3 the clip is handed the link's wait",
+  "file": "packages/runner/src/activities/relay.ts",
+  "old": "        waits.videoMs,\n      ),",
+  "new": "        waits.linkMs,\n      ),",
+  "tests": [
+   "packages/runner/test/step-limits.test.ts"
+  ],
+  "grep": "calls keep the waits it was handed"
+ },
+ {
+  "name": "M4 memo drops a call's own wait",
+  "file": "packages/runner/src/activities/memo.ts",
+  "old": "    const ownWait = own?.waitMs !== undefined ? { waitMs: own.waitMs } : {};",
+  "new": "    const ownWait = {};",
+  "tests": [
+   "packages/runner/test/step-limits.test.ts"
+  ],
+  "grep": "calls keep the waits it was handed"
+ },
+ {
+  "name": "M5 memo key made from the request with its operation",
+  "file": "packages/runner/src/activities/memo.ts",
+  "old": "    const key = keyOf(kind, asked);",
+  "new": "    const key = keyOf(kind, request);",
+  "tests": [
+   "packages/runner/test/step-limits.test.ts"
+  ],
+  "grep": "calls keep the waits it was handed"
+ }
+]

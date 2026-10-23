@@ -6,7 +6,7 @@ import { loop, optional, seq, step, type Recipe } from '@byway/recipe';
 import { Timeline } from '../src/components/run/Timeline.tsx';
 import { shownStep, stepIndex } from '../src/view/steps.ts';
 import { howItWasMade } from '../src/view/run.ts';
-import { buildTimeline, currentStep, judgement, outputArtifacts } from '../src/view/timeline.ts';
+import { buildTimeline, currentStep, judgement, outputArtifacts, STOPPED_BY_FAILURE_NOTE } from '../src/view/timeline.ts';
 
 let seq_ = 0;
 const ev = (type: RunEvent['type'], stepId: string | undefined, data: Record<string, unknown> = {}, candidate?: number): RunEvent => ({
@@ -250,6 +250,34 @@ describe('run timeline, labelled by the presentation', () => {
     const refine = timeline.find((st) => st.stage === 'Refine');
     expect(refine?.steps.at(-1)).toMatchObject({ label: 'Pick one', status: 'stopped' });
     expect(timeline.at(-1)?.steps[0]).toMatchObject({ label: 'Trim', status: 'stopped' });
+  });
+
+  it('says why a step was stopped when another step’s failure ended the run (FANOUT-FAILURE): its calls were cut off, and it got no event of its own', () => {
+    // Two drafts side by side, each built then reviewed: the first draft's review is refused at the budget, which the
+    // person does not raise, while the second draft is still being built. The run fails, and the second build is cut off.
+    seq_ = 0;
+    const list = [
+      started('page', 'Draft', 'D2', 'model', {}, 0),
+      started('page', 'Draft', 'D2', 'model', {}, 1),
+      done('page', 0.01, {}, 0),
+      started('review', 'Review', 'D2', 'model', {}, 0),
+      ev('step-failed', 'review', { error: 'The run stopped at its budget of $2.00, and the budget was not raised.', retryable: false }, 0),
+      ev('run-failed', undefined, { error: 'The run stopped at its budget of $2.00, and the budget was not raised.' }),
+    ];
+    const [refine] = buildTimeline(list, [], 'failed');
+    expect(refine?.steps.map((s) => [s.label, s.status, s.note])).toEqual([
+      ['Draft', 'stopped', STOPPED_BY_FAILURE_NOTE],
+      ['Review', 'failed', undefined],
+    ]);
+    // Cancelled, the person ended it: no such note. Still going, nothing was stopped.
+    expect(buildTimeline(list.slice(0, 4), [], 'cancelled')[0]?.steps.map((s) => s.note)).toEqual([undefined, undefined]);
+    expect(buildTimeline(list.slice(0, 4), [], 'running')[0]?.steps.map((s) => [s.status, s.note])).toEqual([
+      ['running', undefined],
+      ['running', undefined],
+    ]);
+    // A note the step left before it was stopped stays, with why it was stopped after it.
+    const noted = [...list.slice(0, 1), ev('renderer-sandbox-off', 'page', { note: 'Drawn with the sandbox off.' }, 0), ...list.slice(1)];
+    expect(buildTimeline(noted, [], 'failed')[0]?.steps[0]?.note).toBe(`Drawn with the sandbox off. ${STOPPED_BY_FAILURE_NOTE}`);
   });
 
   it('finds the step in progress and every output', () => {

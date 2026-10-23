@@ -1,0 +1,58 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 2 failed) 45ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × finds every figure on pages shaped as the providers write them, and flags nothing 12ms
+     × reads OpenAI's long-context rates from the page's own scripts, and flags them when they differ or cannot be read 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > finds every figure on pages shaped as the providers write them, and flags nothing
+AssertionError: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "https://elsewhere.example/_astro/x.js",
++ ]
+
+ ❯ scripts/test/price-report.test.ts:122:76
+    120|     // The pages in English, each read once, with no key; the script o…
+    121|     for (const a of asked) expect(a.headers, a.url).toEqual({ 'accept-…
+    122|     expect(asked.map((a) => a.url).filter((u) => u.includes('elsewhere…
+       |                                                                            ^
+    123|     expect(new Set(asked.map((a) => a.url)).size).toBe(asked.length);
+    124|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > reads OpenAI's long-context rates from the page's own scripts, and flags them when they differ or cannot be read
+AssertionError: expected [ …(2) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
+    "https://developers.openai.com/_astro/pricing.Ab1.js?dpl=x",
++   "https://elsewhere.example/_astro/x.js",
+  ]
+
+ ❯ scripts/test/price-report.test.ts:160:89
+    158|
+    159|   it("reads OpenAI's long-context rates from the page's own scripts, a…
+    160|     expect(pageScripts(openaiPage(), 'https://developers.openai.com/ap…
+       |                                                                                         ^
+    161|     const sol = row('openai', 'gpt-6.1-sol');
+    162|     const changed = openaiScript().replace(`"gpt-6.1-sol":{input:${sol…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 69 passed (71)
+   Start at  17:35:34
+   Duration  608ms (tests 69%, transform 18%, import 12%, worker 2%)
+

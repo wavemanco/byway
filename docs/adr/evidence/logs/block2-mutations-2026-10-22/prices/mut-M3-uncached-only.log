@@ -1,0 +1,35 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ packages/gateway/test/pricing.test.ts (62 tests | 2 failed) 126ms
+   ❯ long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) (9)
+     × counts the whole prompt, its cached tokens too, and charges OpenAI's cache reads and writes at the tier's rates 3ms
+     × charges a cache hit above Google's threshold at the long input rate, never at a short-context rate 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > counts the whole prompt, its cached tokens too, and charges OpenAI's cache reads and writes at the tier's rates
+AssertionError: expected 0.92001 to be close to 1.84002, received difference is 0.92001, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:311:99
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > charges a cache hit above Google's threshold at the long input rate, never at a short-context rate
+AssertionError: expected 0.5 to be close to 1, received difference is 0.5, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:317:132
+    315|
+    316|   it("charges a cache hit above Google's threshold at the long input r…
+    317|     expect(tokenCost(at('google', 'gemini-3.1-pro-preview'), { inputTo…
+       |                                                                                                                                    ^
+    318|   });
+    319|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 95 passed (97)
+   Start at  17:16:20
+   Duration  1.47s (import 47%, transform 42%, tests 10%)
+

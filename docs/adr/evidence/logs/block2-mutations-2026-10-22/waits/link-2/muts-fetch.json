@@ -1,0 +1,88 @@
+[
+ {
+  "name": "agent headers timeout left at Node's 5 minutes",
+  "file": "packages/gateway/src/providers/fetch.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/fetch.test.ts"
+  ],
+  "old": "new Agent({ headersTimeout: PROVIDER_TIMEOUT_MS, bodyTimeout: PROVIDER_TIMEOUT_MS })",
+  "new": "new Agent({ headersTimeout: 300_000, bodyTimeout: PROVIDER_TIMEOUT_MS })"
+ },
+ {
+  "name": "agent body timeout left at Node's 5 minutes",
+  "file": "packages/gateway/src/providers/fetch.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/fetch.test.ts"
+  ],
+  "old": "new Agent({ headersTimeout: PROVIDER_TIMEOUT_MS, bodyTimeout: PROVIDER_TIMEOUT_MS })",
+  "new": "new Agent({ headersTimeout: PROVIDER_TIMEOUT_MS, bodyTimeout: 300_000 })"
+ },
+ {
+  "name": "provider fetch without the agent",
+  "file": "packages/gateway/src/providers/fetch.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/fetch.test.ts"
+  ],
+  "old": ", dispatcher: providerAgent })",
+  "new": " })"
+ },
+ {
+  "name": "anthropic on Node's fetch",
+  "file": "packages/gateway/src/providers/anthropic.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/fetch.test.ts"
+  ],
+  "old": "maxRetries: 0, fetch: fetchImpl",
+  "new": "maxRetries: 0"
+ },
+ {
+  "name": "openai on Node's fetch",
+  "file": "packages/gateway/src/providers/openai.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/fetch.test.ts"
+  ],
+  "old": "maxRetries: 0, fetch: fetchImpl",
+  "new": "maxRetries: 0"
+ },
+ {
+  "name": "openrouter on Node's fetch",
+  "file": "packages/gateway/src/providers/openrouter.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/fetch.test.ts"
+  ],
+  "old": ", fetch: fetchImpl });",
+  "new": " });"
+ },
+ {
+  "name": "google on Node's fetch",
+  "file": "packages/gateway/src/providers/google.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/fetch.test.ts"
+  ],
+  "old": "httpOptions: { fetch: fetchImpl }",
+  "new": "httpOptions: {}"
+ },
+ {
+  "name": "fal on the provider agent",
+  "file": "packages/gateway/src/providers/fal.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/fetch.test.ts"
+  ],
+  "old": "export function createFalClient(key: string, fetchImpl: typeof fetch = fetch): FalClientLike {",
+  "new": "export function createFalClient(key: string, fetchImpl: typeof fetch = providerFetch): FalClientLike {",
+  "also": [
+   {
+    "old": "import { cutOffError } from '../errors.ts';",
+    "new": "import { cutOffError } from '../errors.ts';\nimport { providerFetch } from './fetch.ts';"
+   }
+  ]
+ }
+]

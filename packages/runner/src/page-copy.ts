@@ -1083,12 +1083,13 @@ export function linkParts(p: PageDeck): { line: number; words: string; href: str
 const LEGEND_MAX = 40;
 
 /**
- * What the VOICE prompt adds for a page, from the page itself (never from the person's answer): the line rule, the
- * bracket rule when a line has link words in brackets, and where each link goes, so link words are the person's
- * informed choice.
+ * What the VOICE prompt adds for a page, from the page itself (never from the person's answer), after the line rule the
+ * workflow's question ends with (PAGE_LINES_RULE in workflow/wording.ts, R-SUFFIX): the bracket rule when a line has
+ * link words in brackets, and where each link goes, so link words are the person's informed choice. Empty for a page
+ * with neither, and no line that cannot be changed.
  */
 export function pageVoiceSuffix(p: PageDeck): string {
-  const parts = ['One line per block of text; leave a line empty to remove its text.'];
+  const parts: string[] = [];
   if (p.units.some((u) => u.marked)) parts.push("Words in [brackets] are a link's words: keep one pair of brackets per link, in order, and leave a pair empty, [], to remove that link. To write a bracket as text, put \\ before it.");
   // Lines in a tangled link's reach cannot be changed, so their links are not named.
   const links = linkParts(p).filter((x) => !p.units[x.line]!.tangled);

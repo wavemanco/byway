@@ -1,6 +1,7 @@
 /** Settings' Spending records in words (ADR-0095): what may have been billed, and why; notes that need nothing. */
 import { describe, expect, it } from 'vitest';
 import type { UncertainCall } from '@byway/contracts';
+import { waitedWords } from '@byway/gateway';
 import { auditText, callPurpose, FAULT_ADVICE, inFlightNote, outboxNote, quietNote, setAsideNote, uncertainReason } from '../src/view/spending.ts';
 
 const call = (over: Partial<UncertainCall> = {}): UncertainCall => ({ opId: 'op', purpose: 'build:prose', runId: 'run-12345678-abcd', provider: 'anthropic', model: 'claude-opus-5-5', usd: 0.4, since: '2026-10-08T12:00:00.000Z', reason: 'interrupted', ...over });
@@ -22,6 +23,57 @@ describe('Spending records in words', () => {
       'The request may have reached fal.ai before the connection failed, so fal.ai may have done the work and billed it. fal.ai accepted job req-1.',
     );
     expect(uncertainReason(call({ reason: 'resent' }))).toMatch(/^An earlier attempt may have reached Anthropic .* counted separately\.$/);
+  });
+
+  it('says how a call that used the whole of its model’s wait waited, for how long, and where to wait longer (the waits design)', () => {
+    const tail = "It may have billed the work. To wait longer, change 'How long to wait for an answer' in Settings.";
+    expect(uncertainReason(call({ reason: 'waited', waited: { minutes: 45, how: 'silence' } }))).toBe(
+      `Anthropic’s model claude-opus-5-5 sent nothing for 45 minutes, the wait chosen in Settings, so byway stopped waiting. ${tail}`,
+    );
+    expect(uncertainReason(call({ reason: 'waited', provider: 'google', model: 'gemini-3.1-pro-preview', waited: { minutes: 15, how: 'answer' } }))).toBe(
+      `Google’s model gemini-3.1-pro-preview did not answer within 15 minutes, the wait chosen in Settings, so byway stopped waiting. ${tail}`,
+    );
+    const cancel = 'fal was asked to stop it while it ran (HTTP 202 CANCELLATION_REQUESTED), and it can still finish it';
+    expect(uncertainReason(call({ reason: 'waited', provider: 'fal', model: 'fal-ai/kling-video/v3/pro/image-to-video', providerJobs: { generation: 'req-7' }, waited: { minutes: 30, how: 'clip', cancel } }))).toBe(
+      `fal.ai’s model fal-ai/kling-video/v3/pro/image-to-video did not finish clip job req-7 within 30 minutes, the wait chosen in Settings, so byway stopped waiting and cancelled it: ${cancel}. ${tail}`,
+    );
+  });
+
+  it('says of a call that waited what the step’s failure said, word for word (the gateway’s waitedWords)', () => {
+    const calls: UncertainCall[] = [
+      call({ reason: 'waited', provider: 'openrouter', model: 'anthropic/claude-opus-5.5', waited: { minutes: 60, how: 'silence' } }),
+      call({ reason: 'waited', provider: 'openai', model: 'gpt-image-2.5-flare', waited: { minutes: 5, how: 'answer' } }),
+      call({ reason: 'waited', provider: 'fal', model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', providerJobs: { generation: 'req-9' }, waited: { minutes: 75, how: 'clip', cancel: 'byway’s cancel did not go through (no answer)' } }),
+    ];
+    for (const c of calls) expect(uncertainReason(c)).toBe(waitedWords(c, c.waited!, c.providerJobs?.generation ? { job: c.providerJobs.generation } : {}));
+  });
+
+  it('says of a call sent again after a send that used its whole wait that the earlier send went silent, not that its connection failed, and where to wait longer (WEB-1)', () => {
+    expect(uncertainReason(call({ reason: 'resent', usd: 0.4, retainedUsd: 0.4, retainedWaited: { minutes: 60, how: 'silence' } }))).toBe(
+      "An earlier attempt went unanswered: Anthropic’s model claude-opus-5-5 sent nothing for 60 minutes, the wait chosen in Settings, so byway stopped waiting and sent the call again. That attempt may have billed the work, and this row counts it; the call sent again has its own cost, counted separately. To wait longer, change 'How long to wait for an answer' in Settings.",
+    );
+    // A send retained for another reason keeps the words it had.
+    expect(uncertainReason(call({ reason: 'resent', usd: 0.4, retainedUsd: 0.4 }))).toBe(
+      "An earlier attempt may have reached Anthropic before the connection failed; byway sent the call again, and that call's own cost is counted separately.",
+    );
+  });
+
+  it('says of a call that counts an earlier send as well as its own that it does, and how that send ended (WEB-1)', () => {
+    const silence = { minutes: 15, how: 'silence' as const };
+    const earlierSilent = 'byway had sent this call before: an earlier attempt went unanswered (Anthropic’s model claude-opus-5-5 sent nothing for 15 minutes, the wait chosen in Settings), so byway sent it again. That attempt may have been billed as well, and this row counts it too.';
+    const earlierLost = 'byway had sent this call before: an earlier attempt may have reached Anthropic before its connection failed, so byway sent it again. That attempt may have been billed as well, and this row counts it too.';
+    // Both sends went silent: the step's words for the call, then the earlier send.
+    const twice = call({ reason: 'waited', waited: silence, usd: 0.8, retainedUsd: 0.4, retainedWaited: silence });
+    expect(uncertainReason(twice)).toBe(`${waitedWords(twice, silence)} ${earlierSilent}`);
+    expect(uncertainReason(call({ reason: 'failed', usd: 0.8, retainedUsd: 0.4, retainedWaited: silence }))).toBe(
+      `The request may have reached Anthropic before the connection failed, so Anthropic may have done the work and billed it. ${earlierSilent}`,
+    );
+    expect(uncertainReason(call({ reason: 'failed', usd: 0.8, retainedUsd: 0.4 }))).toBe(`The request may have reached Anthropic before the connection failed, so Anthropic may have done the work and billed it. ${earlierLost}`);
+    expect(uncertainReason(call({ reason: 'interrupted', usd: 0.8, retainedUsd: 0.4 }))).toBe(
+      `byway stopped waiting for Anthropic's answer (its run was cancelled or ended, byway stopped, or it lost its connection), so it never learned the cost. ${earlierLost}`,
+    );
+    // A call that retained nothing says nothing of an earlier send.
+    expect(uncertainReason(call({ reason: 'failed' }))).not.toMatch(/earlier/);
   });
 
   it('notes calls under way, calls not yet written to the ledger, and set-aside tails, and nothing when there are none', () => {

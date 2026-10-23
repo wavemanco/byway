@@ -147,7 +147,8 @@ const FAL_MEDIA = 'https://v3.fal.media/files';
 /**
  * A fake fal.ai client: storage uploads return a URL per upload; queue jobs answer by endpoint (a video for an
  * image-to-video model, an image list for frame extraction). `failures` are thrown by submits to that endpoint, and
- * `pollFailures` by its status polls, in order. `calls` lists the submitted jobs (the billable step).
+ * `pollFailures` by its status polls, in order. `calls` lists the submitted jobs (the billable step), and `polls` the
+ * request id of every status read, polled or read once (`status`: a resumed job whose wait has already run out).
  */
 export function fakeFal(
   failures: Record<string, Error[]> = {},
@@ -184,6 +185,11 @@ export function fakeFal(
         const error = opts.pollFailures?.[endpoint]?.shift();
         if (error) throw error;
         return { status: 'COMPLETED', request_id: options.requestId };
+      },
+      async status(endpoint, options) {
+        polls.push(options.requestId);
+        if (jobs.get(options.requestId) !== endpoint) throw new Error(`no job ${options.requestId} on ${endpoint}`);
+        return { status: 'COMPLETED' };
       },
       async result(endpoint, options) {
         const data = endpoint.includes('extract-frame')

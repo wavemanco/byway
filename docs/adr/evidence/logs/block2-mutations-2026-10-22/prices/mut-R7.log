@@ -1,0 +1,102 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 4 failed) 46ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × finds every figure on pages shaped as the providers write them, and flags nothing 11ms
+     × flags a figure a page no longer shows after the model's name, naming the row and the figure, with one warning 4ms
+     × never fails: a page or list it cannot read is said in one line, and the others are still checked 4ms
+     × says when the monthly re-read is due, from 30 days after the last full read, with a warning 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > finds every figure on pages shaped as the providers write them, and flags nothing
+AssertionError: expected [ …(10) ] to deeply equal [ …(8) ]
+
+- Expected
++ Received
+
+  [
+    "byway's price table was last read in full on 2026-10-22, 0 days ago.",
+    "OpenRouter: the prompt and completion prices of anthropic/claude-fable-5.1, anthropic/claude-opus-5.5, anthropic/claude-sonnet-5.5 match its model list exactly.",
+    "Anthropic: every figure byway records was found on https://platform.claude.com/docs/en/about-claude/pricing.md.",
+-   "OpenAI: every figure byway records was found on https://developers.openai.com/api/docs/pricing.",
++   "OpenAI: the page no longer says \"Long: >272K input tokens\".",
+    "Google: every figure byway records was found on https://ai.google.dev/gemini-api/docs/pricing?hl=en.",
+    "fal (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): every figure byway records was found on https://fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video.",
+    "fal (fal-ai/kling-video/v3/pro/image-to-video): every figure byway records was found on https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video.",
+    "fal (fal-ai/ffmpeg-api/extract-frame): every figure byway records was found on https://fal.ai/models/fal-ai/ffmpeg-api/extract-frame.",
++   "Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.",
++   "::warning title=Prices::OpenAI: the page no longer says \"Long: >272K input tokens\". Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.",
+  ]
+
+ ❯ scripts/test/price-report.test.ts:110:23
+    108|     const { fetch, asked } = web();
+    109|     const out = await run(fetch);
+    110|     expect(out.lines).toEqual([
+       |                       ^
+    111|       `byway's price table was last read in full on ${PRICES_CHECKED},…
+    112|       'OpenRouter: the prompt and completion prices of anthropic/claud…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > flags a figure a page no longer shows after the model's name, naming the row and the figure, with one warning
+AssertionError: expected [ Array(1) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
+-   "::warning title=Prices::Google gemini-3.1-pro-preview: not found after its name on the page: long-context input $4. Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.",
++   "::warning title=Prices::OpenAI: the page no longer says \"Long: >272K input tokens\". Google gemini-3.1-pro-preview: not found after its name on the page: long-context input $4. Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.",
+  ]
+
+ ❯ scripts/test/price-report.test.ts:133:26
+    131|     expect(out.lines).toContain(flagged);
+    132|     expect(out.lines.filter((l) => !l.startsWith('::warning')).at(-1))…
+    133|     expect(out.warnings).toEqual([`::warning title=Prices::${flagged} …
+       |                          ^
+    134|     // The dated row of a model is checked too.
+    135|     const flash2027 = row('google', 'gemini-3.8-flash', '2027-01-01');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > never fails: a page or list it cannot read is said in one line, and the others are still checked
+AssertionError: expected [ …(15) ] to include 'OpenAI: every figure byway records wa…'
+ ❯ scripts/test/price-report.test.ts:197:23
+    195|     expect(out.lines).toContain('OpenRouter: its model list could not …
+    196|     expect(out.lines).toContain('Google: https://ai.google.dev/gemini-…
+    197|     expect(out.lines).toContain('OpenAI: every figure byway records wa…
+       |                       ^
+    198|     // A page that reads but shows none of its figures is flagged, not…
+    199|     expect(out.lines.filter((l) => l.startsWith('Anthropic claude-')))…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > says when the monthly re-read is due, from 30 days after the last full read, with a warning
+AssertionError: expected [ Array(1) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
+-   "::warning title=Prices::byway's price table was last read in full on 2026-10-22, 30 days ago: the monthly re-read the owner chose on 2026-10-21 is due.",
++   "::warning title=Prices::byway's price table was last read in full on 2026-10-22, 30 days ago: the monthly re-read the owner chose on 2026-10-21 is due. OpenAI: the page no longer says \"Long: >272K input tokens\". Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.",
+  ]
+
+ ❯ scripts/test/price-report.test.ts:211:26
+    209|     const due = new Date(CHECKED.getTime() + REREAD_DUE_DAYS * 86_400_…
+    210|     const out = await run(web().fetch, due);
+    211|     expect(out.warnings).toEqual([`::warning title=Prices::${rereadLin…
+       |                          ^
+    212|     expect(out.lines).not.toContain(NEXT);
+    213|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  4 failed | 67 passed (71)
+   Start at  17:35:39
+   Duration  601ms (tests 69%, transform 19%, import 11%, worker 1%)
+

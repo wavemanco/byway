@@ -1,0 +1,224 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ packages/gateway/test/pricing.test.ts (62 tests | 11 failed) 174ms
+   ❯ long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) (9)
+     × openai gpt-6-astra: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included 3ms
+     × openai gpt-6.1-sol: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included 1ms
+     × openai gpt-6-luna: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included 1ms
+     × google gemini-3.1-pro-preview: a prompt of 200000 input tokens at the short rates, one token more at the long rates, output included 1ms
+     × counts the whole prompt, its cached tokens too, and charges OpenAI's cache reads and writes at the tier's rates 1ms
+     × charges a cache hit above Google's threshold at the long input rate, never at a short-context rate 1ms
+     × reserves a completion at the tier its estimated prompt falls in (maxCompletionCost) 1ms
+   ❯ the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) (4)
+     × reserves an OpenAI call whose estimated prompt is 272,000 tokens at the short rates, and one of 272,001 at the long rates 6ms
+     × refuses a maximal brief on Google whose short-rate estimate would fit the cap, before anything is sent: the cap holds at the tier 43ms
+     × settles a call at the tier of the prompt the provider reports, and records that cost in the ledger 18ms
+     × reads the tier from the call's price row, so a table the gateway is given is priced by its own tiers 6ms
+ ❯ packages/advisor/test/estimate.test.ts (35 tests | 2 failed) 110ms
+   ❯ estimate: the structure of a recipe times the profile prices (30)
+     ❯ prices each call at its prompt's long-context tier (LC-TIERS) (3)
+       × a call over the threshold at the tier, and one at or under it at the row 6ms
+       × each end of the range at its own tokens' tier: past 4,200 tokens only at the high band 1ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/advisor/test/estimate.test.ts > estimate: the structure of a recipe times the profile prices > prices each call at its prompt's long-context tier (LC-TIERS) > a call over the threshold at the tier, and one at or under it at the row
+AssertionError: expected { lowUsd: 0.03, highUsd: 0.22, …(3) } to deeply equal { lowUsd: 0.04, highUsd: 0.33, …(3) }
+
+- Expected
++ Received
+
+  {
+-   "highUsd": 0.33,
++   "highUsd": 0.22,
+    "humanMinutes": {
+      "high": 77,
+      "low": 15,
+    },
+    "images": {
+      "high": 0,
+      "low": 0,
+    },
+-   "lowUsd": 0.04,
++   "lowUsd": 0.03,
+    "modelCalls": {
+      "high": 10,
+      "low": 4,
+    },
+  }
+
+ ❯ packages/advisor/test/estimate.test.ts:232:39
+    230|     it('a call over the threshold at the tier, and one at or under it …
+    231|       const allLong = PRICES.map((row) => (pro(row) ? { ...row, inputP…
+    232|       expect(priced(c4, withTier(0))).toEqual(priced(c4, allLong));
+       |                                       ^
+    233|       expect(priced(c4, withTier(10_000_000))).toEqual(priced(c4, unti…
+    234|       expect(priced(c4, allLong).highUsd).toBeGreaterThan(priced(c4, u…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  packages/advisor/test/estimate.test.ts > estimate: the structure of a recipe times the profile prices > prices each call at its prompt's long-context tier (LC-TIERS) > each end of the range at its own tokens' tier: past 4,200 tokens only at the high band
+AssertionError: expected 0.22 to be greater than 0.22
+ ❯ packages/advisor/test/estimate.test.ts:241:30
+    239|       const flat = priced(c4, untiered);
+    240|       expect(tiered.lowUsd).toBe(flat.lowUsd);
+    241|       expect(tiered.highUsd).toBeGreaterThan(flat.highUsd);
+       |                              ^
+    242|     });
+    243|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6-astra: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included
+AssertionError: expected 2.77001 to be close to 5.51502, received difference is 2.7450099999999997, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:296:80
+    294|     const row = at(provider, model);
+    295|     expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000…
+    296|     expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: …
+       |                                                                                ^
+    297|   });
+    298|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6.1-sol: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included
+AssertionError: expected 0.554002 to be close to 1.1030039999999999, received difference is 0.5490019999999999, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:296:80
+    294|     const row = at(provider, model);
+    295|     expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000…
+    296|     expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: …
+       |                                                                                ^
+    297|   });
+    298|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > openai gpt-6-luna: a prompt of 272000 input tokens at the short rates, one token more at the long rates, output included
+AssertionError: expected 0.0277 to be close to 0.0551502, received difference is 0.027450200000000004, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:296:80
+    294|     const row = at(provider, model);
+    295|     expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000…
+    296|     expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: …
+       |                                                                                ^
+    297|   });
+    298|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > google gemini-3.1-pro-preview: a prompt of 200000 input tokens at the short rates, one token more at the long rates, output included
+AssertionError: expected 0.412002 to be close to 0.8180040000000001, received difference is 0.4060020000000001, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:296:80
+    294|     const row = at(provider, model);
+    295|     expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000…
+    296|     expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: …
+       |                                                                                ^
+    297|   });
+    298|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > counts the whole prompt, its cached tokens too, and charges OpenAI's cache reads and writes at the tier's rates
+AssertionError: expected 0.92001 to be close to 1.84002, received difference is 0.92001, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:311:99
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > charges a cache hit above Google's threshold at the long input rate, never at a short-context rate
+AssertionError: expected 0.5 to be close to 1, received difference is 0.5, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:317:132
+    315|
+    316|   it("charges a cache hit above Google's threshold at the long input r…
+    317|     expect(tokenCost(at('google', 'gemini-3.1-pro-preview'), { inputTo…
+       |                                                                                                                                    ^
+    318|   });
+    319|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS) > reserves a completion at the tier its estimated prompt falls in (maxCompletionCost)
+AssertionError: expected 2.77001 to be close to 5.51502, received difference is 2.7450099999999997, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:333:53
+    331|     const astra = at('openai', 'gpt-6-astra');
+    332|     expect(maxCompletionCost(astra, 272_000, 1000)).toBeCloseTo(usd(27…
+    333|     expect(maxCompletionCost(astra, 272_001, 1000)).toBeCloseTo(usd(27…
+       |                                                     ^
+    334|   });
+    335| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > reserves an OpenAI call whose estimated prompt is 272,000 tokens at the short rates, and one of 272,001 at the long rates
+AssertionError: expected 2.77001 to be close to 5.51502, received difference is 2.7450099999999997, but expected 5e-7
+ ❯ packages/gateway/test/pricing.test.ts:353:121
+    351|     // 815,976 characters are 271,992 tokens and 815,977 are 271,993, …
+    352|     expect(await reservedAt({ profileId: 'openai', tier: 'big', messag…
+    353|     expect(await reservedAt({ profileId: 'openai', tier: 'big', messag…
+       |                                                                                                                         ^
+    354|     expect(openai.calls).toHaveLength(0);
+    355|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > refuses a maximal brief on Google whose short-rate estimate would fit the cap, before anything is sent: the cap holds at the tier
+AssertionError: expected { text: '', stopReason: 'end', …(5) } to match object { code: 'budget-exceeded' }
+(9 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "code": "budget-exceeded",
++   "costUsd": 0.01554,
++   "ledgerEntryId": "1e5fd0a0-60f6-401e-9632-a4f0ffbd9add",
++   "provider": "google",
++   "servedModel": "gemini-3.1-pro-preview",
++   "stopReason": "end",
++   "text": "",
++   "usage": {
++     "inputTokens": 30,
++     "outputTokens": 1290,
++   },
+  }
+
+ ❯ packages/gateway/test/pricing.test.ts:364:17
+    362|     const g = gateway({ caps: { workspaceCapUsd: () => 0.5 }, clients:…
+    363|     const err = (await g.complete(req({ profileId: 'google', tier: 'bi…
+    364|     expect(err).toMatchObject({ code: 'budget-exceeded' });
+       |                 ^
+    365|     expect(err.budget!.estimateUsd).toBeCloseTo(usd(tokens, 4) + usd(1…
+    366|     expect(google.calls).toHaveLength(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > settles a call at the tier of the prompt the provider reports, and records that cost in the ledger
+AssertionError: expected 3.05 to be close to 6.075, received difference is 3.0250000000000004, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:378:23
+    376|     const b = await g.complete(req({ profileId: 'google', tier: 'big' …
+    377|     // A dated snapshot of gpt-6-astra, at its row's tier.
+    378|     expect(a.costUsd).toBeCloseTo(usd(300_000, 20) + usd(1000, 75), 9);
+       |                       ^
+    379|     // Thinking tokens are output, at the tier's output rate.
+    380|     expect(b.costUsd).toBeCloseTo(usd(250_000, 4) + usd(1000, 18), 9);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/13]⎯
+
+ FAIL  packages/gateway/test/pricing.test.ts > the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS) > reads the tier from the call's price row, so a table the gateway is given is priced by its own tiers
+AssertionError: expected 0.003 to be close to 0.014, received difference is 0.011, but expected 5e-10
+ ❯ packages/gateway/test/pricing.test.ts:390:25
+    388|     const openai = fakeOpenAI([{ model: 'gpt-6.1-sol', choices: [{ fin…
+    389|     const res = await gateway({ prices: table, clients: { openai: open…
+    390|     expect(res.costUsd).toBeCloseTo(usd(1000, 7) + usd(100, 70), 9);
+       |                         ^
+    391|   });
+    392| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  13 failed | 84 passed (97)
+   Start at  17:16:13
+   Duration  1.48s (import 45%, transform 43%, tests 12%)
+

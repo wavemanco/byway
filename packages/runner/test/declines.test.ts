@@ -17,6 +17,7 @@ import { steps } from '@byway/recipe';
 import { createActivities } from '../src/activities/index.ts';
 import { serializeJson } from '../src/formats.ts';
 import { FAILURE, toStepSpec, type AssetInput, type RunRef } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -60,7 +61,7 @@ function declining(times: number): ModelGateway {
 async function attempt(times: number): Promise<{ result: unknown; events: RunEvent[]; run: RunRef }> {
   const created = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'r', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
   await store.updateRun(created.id, { status: 'running' });
-  const run: RunRef = { runId: created.id, workspaceId, recipeId: 'r', profileId: 'demo', medium: 'prose', problem: { text: 'A memo about the move' }, seeds: [] };
+  const run: RunRef = { runId: created.id, workspaceId, recipeId: 'r', profileId: 'demo', medium: 'prose', problemId: await storeBrief(store.artifacts, { text: 'A memo about the move' }) };
   const acts = createActivities({ gateway: declining(times), store, prompts: fakePrompts() });
   const result = await acts.modelStep({ run, call: { key: `${run.runId}/concept/-/1`, stepId: 'concept', stage: 'D1' }, step, ports: {}, refs: [] }).catch((e: unknown) => e);
   return { result, events: await store.events(run.runId), run };
@@ -172,7 +173,7 @@ describe('an image the model declined, when its step runs again (ADR-0102)', () 
   async function frames(): Promise<AssetInput> {
     const created = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'c5', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'media', budgetUsd: 5 });
     await store.updateRun(created.id, { status: 'running' });
-    const run: RunRef = { runId: created.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium: 'media', problem: { text: 'An ad for a cup' }, seeds: [] };
+    const run: RunRef = { runId: created.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium: 'media', problemId: await storeBrief(store.artifacts, { text: 'An ad for a cup' }) };
     const artifact = (await store.artifacts.putText(STORYBOARD, 'application/json')).id;
     return { run, call: { key: `${run.runId}/anchor-frames/-/1`, stepId: 'anchor-frames', stage: 'D2' }, step: FRAMES, ports: { artifact } };
   }

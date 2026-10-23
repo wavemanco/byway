@@ -1,0 +1,33 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 1 failed) 49ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × says when the monthly re-read is due, from 30 days after the last full read, with a warning 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > says when the monthly re-read is due, from 30 days after the last full read, with a warning
+AssertionError: expected { due: false, …(1) } to deeply equal { due: true, …(1) }
+
+- Expected
++ Received
+
+  {
+-   "due": true,
+-   "line": "byway's price table was last read in full on 2026-10-22, 30 days ago: the monthly re-read the owner chose on 2026-10-21 is due.",
++   "due": false,
++   "line": "byway's price table was last read in full on 2026-10-22, 30 days ago.",
+  }
+
+ ❯ scripts/test/price-report.test.ts:208:57
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  17:35:46
+   Duration  621ms (tests 69%, transform 18%, import 12%, worker 1%)
+

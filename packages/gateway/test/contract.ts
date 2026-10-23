@@ -103,7 +103,7 @@ export function checkContract(purpose: string, text: string, ctx: CheckContext =
   const i = purpose.lastIndexOf(':');
   const role = i < 0 ? purpose : purpose.slice(0, i);
   const medium = i < 0 ? undefined : purpose.slice(i + 1);
-  const builder = ['build', 'seed', 'fix', 'asset', 'asset.integrate', 'voice.apply'].includes(role);
+  const builder = ['build', 'seed', 'fix', 'asset', 'asset.integrate'].includes(role);
   if (builder) {
     const problems = artifactProblems(medium, text);
     if (role === 'asset.integrate' && !problems.length) {

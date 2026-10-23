@@ -1,0 +1,1 @@
+                    return { signal: clipWait.signal, ...(left <= 0 ? { passed: true } : {}) };

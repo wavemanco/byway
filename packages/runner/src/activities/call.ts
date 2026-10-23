@@ -11,6 +11,7 @@ import type { Usable } from '../formats.ts';
 import type { RunRef, StepCall } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { ContractMissed, StepError } from './failures.ts';
+import { withWait } from './memo.ts';
 import { ArtifactReader, userMessage, type ImageGroup } from './prompting.ts';
 
 export interface ModelCall<T> {
@@ -33,6 +34,12 @@ export interface ModelCall<T> {
    */
   parse: (text: string, rendered: RenderedPrompt, earlier?: T) => Usable<T> | Promise<Usable<T>>;
   maxOutputTokens?: number;
+  /**
+   * How long each ask waits for its answer, in milliseconds, when its caller read the wait before its step began (a
+   * relay step's link call: operation.waitMs, memo.ts withWait). Without it the gateway reads the model's wait in
+   * Settings on every call.
+   */
+  waitMs?: number;
 }
 
 const DEFAULT_MAX_OUTPUT = 16_000;
@@ -75,7 +82,8 @@ export async function askModel<T>(deps: RunnerDeps, reader: ArtifactReader, req:
   /** What could be used of the answers that fell short (the parser adds a later one to an earlier), with its problem. */
   let usable: { value: T; problem: string } | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const out = await deps.gateway.complete({ ...base, messages, maxOutputTokens });
+    const ask: CompletionRequest = { ...base, messages, maxOutputTokens };
+    const out = await deps.gateway.complete(req.waitMs !== undefined ? withWait(ask, req.waitMs) : ask);
     costUsd += out.costUsd;
     if (out.stopReason === 'max-tokens') {
       // A cut-off answer is never parsed (it may look complete); ask again from the start with more room.

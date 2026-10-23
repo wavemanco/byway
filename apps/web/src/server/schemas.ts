@@ -84,6 +84,12 @@ export const SpendAction = z.union([z.strictObject({ clear: z.array(z.string().m
  */
 export const RendererPatch = z.strictObject({ osSandbox: z.boolean() });
 
+/**
+ * Settings' "How long to wait for an answer": one model's wait, by provider and model. Which minutes the model offers is
+ * checked against the gateway's profiles (updateAnswerWait); here, only the shape.
+ */
+export const AnswerWaitPatch = z.strictObject({ provider: z.string().min(1).max(32), model: z.string().min(1).max(200), minutes: z.number().int().positive() });
+
 export const SettingsPatch = z.object({
   profileId: z.string().max(64).optional(),
   demoMode: z.boolean().optional(),

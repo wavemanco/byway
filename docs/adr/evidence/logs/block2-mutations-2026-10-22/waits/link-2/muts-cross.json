@@ -1,0 +1,6 @@
+[
+ {"name": "gateway clip words drift from Settings'", "file": "packages/gateway/src/waited.ts", "pkg": "apps/web", "tests": ["test/spending.test.ts"],
+  "old": "so byway stopped waiting and cancelled it${cancel}. ${tail}", "new": "so byway cancelled it${cancel}. ${tail}"},
+ {"name": "gateway model name drifts from Settings'", "file": "packages/gateway/src/waited.ts", "pkg": "apps/web", "tests": ["test/spending.test.ts"],
+  "old": "openrouter: 'OpenRouter', fal: 'fal.ai'", "new": "openrouter: 'Open Router', fal: 'fal'"}
+]

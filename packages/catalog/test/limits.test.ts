@@ -8,26 +8,26 @@ import { describe, expect, it } from 'vitest';
 import { composedLimitProblems, engineProblems, recipeSize, workBound, type Node, type Recipe, type Replicate, type Seq } from '@byway/recipe';
 import { bBon, CATALOG } from '../src/index.ts';
 
-/** stepRuns, peak, seeds: each recipe's worst case, as the bound walks it. */
-const PINNED: Record<string, [number, number, number]> = {
-  c1: [147, 4, 4],
-  c2: [34, 12, 12],
-  c3: [42, 6, 6],
-  c4: [26, 1, 0],
-  c5: [201, 8, 8],
-  c6: [103, 3, 0],
-  c6a: [122, 6, 6],
-  c7: [37, 1, 0],
-  c1h: [108, 4, 4],
-  'c1h-no-seed': [108, 4, 0],
-  'c1h-no-critic': [44, 4, 4],
-  'c1h-no-asset': [104, 4, 4],
-  'c1h-no-d3': [76, 4, 4],
-  'c1h-critic-self': [108, 4, 4],
-  'b-plain': [4, 4, 0],
-  'b-random': [4, 4, 0],
-  'b-skill': [4, 4, 0],
-  'b-bon': [24, 20, 0],
+/** stepRuns, peak: each recipe's worst case, as the bound walks it. (The seeds it once counted no longer travel, P2.) */
+const PINNED: Record<string, [number, number]> = {
+  c1: [147, 4],
+  c2: [34, 12],
+  c3: [42, 6],
+  c4: [26, 1],
+  c5: [201, 8],
+  c6: [103, 3],
+  c6a: [122, 6],
+  c7: [37, 1],
+  c1h: [108, 4],
+  'c1h-no-seed': [108, 4],
+  'c1h-no-critic': [44, 4],
+  'c1h-no-asset': [104, 4],
+  'c1h-no-d3': [76, 4],
+  'c1h-critic-self': [108, 4],
+  'b-plain': [4, 4],
+  'b-random': [4, 4],
+  'b-skill': [4, 4],
+  'b-bon': [24, 20],
 };
 
 describe('every CATALOG recipe is inside the limits', () => {
@@ -35,7 +35,7 @@ describe('every CATALOG recipe is inside the limits', () => {
     expect(engineProblems(r)).toEqual([]);
     expect(composedLimitProblems(r)).toEqual([]);
     const b = workBound(r);
-    expect([b.stepRuns, b.peak, b.seeds]).toEqual(PINNED[id]);
+    expect([b.stepRuns, b.peak]).toEqual(PINNED[id]);
   });
 
   it('pins every recipe', () => {
@@ -68,9 +68,7 @@ describe("B-BoN's N", () => {
     expect(engineProblems(bonWith(126)).map((p) => p.message)).toEqual(expect.arrayContaining([expect.stringMatching(/up to 504 steps can run at once/)]));
   });
 
-  it('carries no seeds and no option list into its builds', () => {
-    const b = workBound(bonWith(64));
-    expect(b.seeds).toBe(0);
+  it('carries no option list into its builds: its first stage opens with the fan-out', () => {
     const first: Node = bBon.stages[0]!.body;
     expect(first.op).toBe('replicate');
   });

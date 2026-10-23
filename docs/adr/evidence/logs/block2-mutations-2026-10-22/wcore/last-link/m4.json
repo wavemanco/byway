@@ -1,0 +1,4 @@
+[
+  {"name": "L1 ACTIVITY_BYTES.base 150 bytes lower", "file": "packages/recipe/src/limits.ts", "old": "export const ACTIVITY_BYTES = { base: 896,", "new": "export const ACTIVITY_BYTES = { base: 746,", "tests": ["packages/runner/test/limits-batch.test.ts"]},
+  {"name": "L2 the relay step's input carries its waits twice over (a second copy under another name)", "file": "packages/runner/src/workflow/interpreter.ts", "old": "shot: shot!, waits }));", "new": "shot: shot!, waits, ...({ waitsAgain: waits, waitsThird: waits, waitsFourth: waits, waitsFifth: waits } as object) }));", "tests": ["packages/runner/test/limits-batch.test.ts"]}
+]

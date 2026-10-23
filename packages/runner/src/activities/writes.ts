@@ -1,11 +1,12 @@
 /**
  * Every artifact the runner writes passes the same checks first:
- * - PR3: no SEED string handed out in this run appears in it (the seed is interpreted for direction, never shown);
+ * - PR3: no SEED string handed out in this run appears in it (the seed is interpreted for direction, never shown). The
+ *   run's seeds are read from the store (runSeeds), where each step call's is kept, not from the step's input (P2);
  * - keepsVoice (port rule 6): a machine write after VOICE leaves the person's copy deck exactly as it was locked
  *   (copy.ts `lockCopy`, ADR-0081). A storyboard's voice-over is written back rather than refused, and the step says so.
  * Then it is stored and announced with an `artifact` event.
  */
-import type { Medium } from '@byway/contracts';
+import type { Medium, Store } from '@byway/contracts';
 import { lockCopy, type LockedWrite } from '../copy.ts';
 import { mediaTypeOf } from '../formats.ts';
 import type { RunRef, StepCall } from '../types.ts';
@@ -13,8 +14,29 @@ import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
 import { StepError } from './failures.ts';
 
+/**
+ * Where a step call's SEED string is kept (model-step.ts memoizes it there, once for the call and its retries): in one
+ * key range of the run's memos, apart from its other memos, which start with the run's id (a call's answers and draws)
+ * or with `lineup/` (the critic's cards). So every seed the run handed out is one read of that range (runSeeds).
+ */
+export const SEED_MEMOS = 'seed/';
+export const seedMemoKey = (call: Pick<StepCall, 'key'>): string => `${SEED_MEMOS}${call.key}`;
+
+/**
+ * Every SEED string handed out in the run so far, read from the store (P2: RunRef no longer carries them). That is a
+ * superset of what once travelled in the step's input, a sibling's handed out while this step waited or ran and an
+ * earlier stage run's included: stricter, never looser.
+ */
+export const runSeeds = (store: Pick<Store, 'memosWithPrefix'>, runId: string): Promise<string[]> => store.memosWithPrefix(runId, SEED_MEMOS);
+
+/** What a write is checked against: the run's medium, and the SEED strings handed out in it (runSeeds). */
+export interface WriteRun {
+  medium: Medium;
+  seeds: readonly string[];
+}
+
 /** The PR3 check alone: problems that keep a text from being written as the run's artifact. */
-export function writeProblems(run: Pick<RunRef, 'seeds'>, text: string): string[] {
+export function writeProblems(run: Pick<WriteRun, 'seeds'>, text: string): string[] {
   return run.seeds.some((s) => s && text.includes(s)) ? ['The answer contains the random string it was given. Interpret it for direction, but never write it into the work.'] : [];
 }
 
@@ -32,7 +54,7 @@ export type CheckedWrite = LockedWrite;
  * now, before any model call, so a fault in the runner's own copy code never repeats a paid call: it is a plain,
  * non-retryable step failure, here or when the returned check runs.
  */
-export function checkedWriter(run: Pick<RunRef, 'seeds' | 'medium'>, voice: string | readonly string[] | undefined, before: string | undefined): (text: string) => CheckedWrite {
+export function checkedWriter(run: WriteRun, voice: string | readonly string[] | undefined, before: string | undefined): (text: string) => CheckedWrite {
   let check: (after: string) => LockedWrite;
   try {
     check = lockCopy(run.medium, voice, before);
@@ -51,7 +73,7 @@ export function checkedWriter(run: Pick<RunRef, 'seeds' | 'medium'>, voice: stri
 }
 
 /** One checked write with nothing paid for in between (a relay link's clip, attached images). */
-export const checkedWrite = (run: Pick<RunRef, 'seeds' | 'medium'>, text: string, voice: string | readonly string[] | undefined, before: string | undefined): CheckedWrite => checkedWriter(run, voice, before)(text);
+export const checkedWrite = (run: WriteRun, text: string, voice: string | readonly string[] | undefined, before: string | undefined): CheckedWrite => checkedWriter(run, voice, before)(text);
 
 const copyFault = (e: unknown): StepError => new StepError(`byway could not check this write against your words (${e instanceof Error ? e.message : String(e)}).`);
 

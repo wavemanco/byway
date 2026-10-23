@@ -1,0 +1,62 @@
+[
+  {
+    "name": "M1 link call reads the waits afresh during the step",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 skipped (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 110ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M2 clip reads the waits afresh during the step",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 skipped (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 105ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M3 the clip is handed the link's wait",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 skipped (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 105ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M4 memo drops a call's own wait",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 skipped (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 112ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M5 memo key made from the request with its operation",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 skipped (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 120ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings as the step begins and during it changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  }
+]

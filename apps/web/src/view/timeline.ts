@@ -16,6 +16,13 @@ import { BLOCK_NAMES, stageFromCode, type StageName, type Who } from './vocabula
 
 export type StepStatus = 'running' | 'waiting' | 'done' | 'failed' | 'skipped' | 'stopped';
 
+/**
+ * A step stopped because the run failed: another step's failure ends the run, and the run cuts off the calls it can stop
+ * that its other steps still had under way (ADR-0111 item 1), so this step got no event of its own to say why
+ * (FANOUT-FAILURE). A cancelled run's stopped steps need no note: the person ended it.
+ */
+export const STOPPED_BY_FAILURE_NOTE = 'The run failed before this step finished, so it was stopped.';
+
 export interface TimelineArtifact {
   artifactId: string;
   mediaType?: string;
@@ -267,6 +274,7 @@ export function buildTimeline(events: RunEvent[], checkpoints: CheckpointRecord[
     if (step.checkpointIds.some((id) => openIds.has(id))) step.status = 'waiting';
     else if (row.open.size > 0 || row.finished === 0) step.status = ended ? 'stopped' : 'running';
     else step.status = row.skipped === row.finished ? 'skipped' : 'done';
+    if (step.status === 'stopped' && runStatus === 'failed') step.note = [...row.notes, STOPPED_BY_FAILURE_NOTE].join(' ');
   }
 
   // Consecutive rows in the same stage form one group, so the timeline stays chronological.

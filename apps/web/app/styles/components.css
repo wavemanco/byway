@@ -31,6 +31,12 @@ code {
   background: var(--caution-soft);
 }
 
+/* Settings, the Recommendation and the Library, once byway's prices were last checked more than about 45 days ago
+   (PRICE-CADENCE). */
+.prices-stale {
+  margin: var(--s-3) 0;
+}
+
 .evidence-wrap {
   display: inline-flex;
   flex-direction: column;

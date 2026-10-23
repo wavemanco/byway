@@ -1,0 +1,122 @@
+[
+  {
+    "name": "N1 any 504 read as a drop (timeout type ignored)",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed | 1 passed (2)",
+      "Tests  1 failed | 44 passed (45)"
+    ],
+    "failed": [
+      "× a 504 that is not fal’s start deadline (no timeout type: a proxy’s answer) is read as before: the clip may still be made and billed, and is listed with its job 5ms",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > a 504 that is not fal’s start deadline (no timeout type: a proxy’s answer) is read as before: the clip may still be made and billed, and is listed with its job"
+    ]
+  },
+  {
+    "name": "N2 a drop never recognised",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  2 failed (2)",
+      "Tests  4 failed | 41 passed (45)"
+    ],
+    "failed": [
+      "× a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed 11ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again 8ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again 3ms",
+      "× best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again 3ms",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/fal-submit.test.ts > gateway: a relay link over fal HTTP, the SDK reading status and results (F03) > a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed"
+    ]
+  },
+  {
+    "name": "N3 a drop counted as may have been billed",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  2 failed (2)",
+      "Tests  4 failed | 41 passed (45)"
+    ],
+    "failed": [
+      "× a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed 7ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again 9ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again 3ms",
+      "× best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again 3ms",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/fal-submit.test.ts > gateway: a relay link over fal HTTP, the SDK reading status and results (F03) > a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed"
+    ]
+  },
+  {
+    "name": "N4 the drop wrapped as a result that could not be read",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  2 failed (2)",
+      "Tests  4 failed | 41 passed (45)"
+    ],
+    "failed": [
+      "× a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed 8ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again 8ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again 3ms",
+      "× best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again 3ms",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/fal-submit.test.ts > gateway: a relay link over fal HTTP, the SDK reading status and results (F03) > a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed"
+    ]
+  },
+  {
+    "name": "N5 the words name the wait as the start deadline",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  2 failed (2)",
+      "Tests  4 failed | 41 passed (45)"
+    ],
+    "failed": [
+      "× a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed 7ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again 8ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again 2ms",
+      "× best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again 2ms",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/fal-submit.test.ts > gateway: a relay link over fal HTTP, the SDK reading status and results (F03) > a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed"
+    ]
+  },
+  {
+    "name": "N6 a drop made retryable",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  2 failed (2)",
+      "Tests  4 failed | 41 passed (45)"
+    ],
+    "failed": [
+      "× a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed 15ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again 9ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again 3ms",
+      "× best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again 2ms",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/fal-submit.test.ts > gateway: a relay link over fal HTTP, the SDK reading status and results (F03) > a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed"
+    ]
+  },
+  {
+    "name": "N7 the words leave out that nothing was billed",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  2 failed (2)",
+      "Tests  4 failed | 41 passed (45)"
+    ],
+    "failed": [
+      "× a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed 6ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again 7ms",
+      "× balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again 3ms",
+      "× best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again 2ms",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 5-second clip at a undefined-minute wait (none chosen: 30), dropped at 25 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > balanced (fal-ai/kling-video/v2.5-turbo/pro/image-to-video): a 10-second clip at a 45-minute wait (none chosen: 30), dropped at 35 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/clip-wait.test.ts > a clip job fal dropped at its start deadline (504, timeout type \"user\"): nothing was billed, and the step says so > best (fal-ai/kling-video/v3/pro/image-to-video): a 15-second clip at a 75-minute wait (none chosen: 30), dropped at 60 minutes, is released counting nothing, never cancelled or sent again",
+      "FAIL  packages/gateway/test/fal-submit.test.ts > gateway: a relay link over fal HTTP, the SDK reading status and results (F03) > a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed"
+    ]
+  }
+]

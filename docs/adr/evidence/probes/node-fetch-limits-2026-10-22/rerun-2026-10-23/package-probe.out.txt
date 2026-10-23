@@ -1,0 +1,8 @@
+node v24.13.1, Node's own undici 7.18.2, the package's undici 7.30.1
+raised Agent, JSON POST as the SDKs send it: ok after 0 s (28 chars: {"echoed":{"hello":"world"}})
+default Agent, silent body: failed after 306 s with UND_ERR_BODY_TIMEOUT
+default Agent, body with a ping every 30 s for 7 min: ok after 420 s (32 chars)
+default Agent, headers held 330 s: failed after 306 s with UND_ERR_HEADERS_TIMEOUT
+raised Agent (400 s), headers held 330 s: ok after 330 s (4 chars)
+raised Agent (400 s), body silent 330 s: ok after 330 s (2 chars)
+total 420 s

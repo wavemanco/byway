@@ -21,12 +21,16 @@
  * are kept beside the work; when no answer is usable (malformed, cut off, placing none, or breaking a check), the work
  * is unchanged and every image is kept beside it. The note names them.
  *
+ * An image whose wait ran out (the owner's "Give up and end the call plainly (Recommended)", 2026-10-22) is not tried
+ * again, whatever the step's tries per slot, and the step's note gives the gateway's words for it: that the wait ran out,
+ * that it may have billed the work, and where to wait longer (makeImage).
+ *
  * Advice, never a veto (ADR-0101): a prompt that asks for it (`advice: yes`; only C3's header image) may add one line
  * of advice for the person to its briefs. The step's note shows it, as the AI's suggestion, with the image it came with;
  * it never changes how many images are made, and with no image made it is not shown.
  */
 import { GatewayError, type DeclineRecord, type Medium } from '@byway/contracts';
-import { declineStory, isHeldKeyError } from '@byway/gateway';
+import { declineStory, isHeldKeyError, waitedOf } from '@byway/gateway';
 import { audioAsset } from '@byway/recipe/semantics';
 import { parseHtml, parseMarkdown, parseOptions, parseStoryboard, serializeJson, textView, type Parsed } from '../formats.ts';
 import { imagesSlot, labelled, labelOf } from '@byway/prompts/pure';
@@ -41,7 +45,7 @@ import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { keptVoice } from './held-voice.ts';
-import { announce, checkedWriter, restoredNote, storeText } from './writes.ts';
+import { announce, checkedWriter, restoredNote, runSeeds, storeText } from './writes.ts';
 
 /** Image failures that stop the asset step instead of trying the image again (a billed failure does too: see below). */
 const STOPS_THE_STEP: ReadonlySet<GatewayError['code']> = new Set(['budget-exceeded', 'accounting-fault', 'no-credentials', 'unknown-profile', 'in-flight']);
@@ -113,7 +117,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const reader = new ArtifactReader(deps);
   const current = await reader.text(ports.artifact);
   // keepsVoice: locked before the paid calls, so a fault in the check never repeats them.
-  const write = checkedWriter(run, step.keepsVoice ? keptVoice(ports) : undefined, current);
+  const write = checkedWriter({ medium, seeds: await runSeeds(deps.store, run.runId) }, step.keepsVoice ? await keptVoice(reader, ports) : undefined, current);
   let restored: string[] = [];
   const knobs = step.knobs ?? {};
   const slotsKnob = typeof knobs.slots === 'number' ? knobs.slots : undefined;
@@ -122,7 +126,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const each = eachPlan(medium, current, what);
 
   // 1. Briefs, held to the plan: on prose and web pages, to the count the prompt declares.
-  const built = await buildPrompt(reader, { medium, problem: run.problem, step, ports });
+  const built = await buildPrompt(reader, { medium, problemId: run.problemId, step, ports });
   built.slots.artifact = current;
   if (medium === 'options') built.slots.options = optionLabels(current);
   const promptId = step.prompt && deps.prompts.has(step.prompt) ? step.prompt : 'helper.asset.briefs';
@@ -157,22 +161,27 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     return chosen ? { costUsd } : { costUsd, skipped: true };
   }
 
-  // 2. Images, at most `triesPerSlot` attempts each; shot 1's frame, which starts the relay chain, at least two.
+  // 2. Images, at most `triesPerSlot` attempts each; shot 1's frame, which starts the relay chain, at least two. An image
+  // whose wait ran out is not tried again (makeImage).
   const made: MadeImage[] = [];
   const failed: string[] = [];
   const declined: { slot: string; record: DeclineRecord }[] = [];
+  const waited: { slot: string; words: string }[] = [];
   const outputs: string[] = [];
   for (const brief of briefs.value.briefs) {
     const image = await makeImage(deps, input, brief, slots.kind === 'each' && brief.slot === slots.first ? Math.max(tries, 2) : tries).catch((e: unknown) => {
       throw (e instanceof GatewayError && e.billed === true) || e instanceof PaidNotKept ? billedStop(e, slots, brief.slot, made, what) : e;
     });
-    if (!image || 'declined' in image) {
+    if (!image || 'declined' in image || 'waited' in image) {
       failed.push(brief.slot);
-      if (image) {
+      if (image && 'declined' in image) {
         // What each attempt of a declined image cost (a retry billed with no usable image included) is this step's cost too.
         declined.push({ slot: brief.slot, record: image.declined });
         costUsd += image.declined.costUsd + (image.declined.retryCostUsd ?? 0);
       }
+      // An image whose wait ran out may have been billed: the spend book holds it at its estimate as waited, until the
+      // person clears it in Settings, so it is not this step's cost; the note says what the gateway said of it.
+      if (image && 'waited' in image) waited.push({ slot: brief.slot, words: image.waited });
       continue;
     }
     costUsd += image.costUsd;
@@ -180,7 +189,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
     outputs.push(image.made.artifactId);
   }
   if (!made.length) {
-    await stepFinished(deps, run, call, { costUsd, skipped: true, note: [NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...leftOutSentences(slots, briefs.value)].join(' ') }, true);
+    await stepFinished(deps, run, call, { costUsd, skipped: true, note: [NO_IMAGE_MADE_NOTE, ...declinedSentences(slots, declined), ...waitedSentences(slots, waited), ...leftOutSentences(slots, briefs.value)].join(' ') }, true);
     return { costUsd, skipped: true };
   }
 
@@ -253,7 +262,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   // not when no image is in the work, as Trim then has none to cut), and what keepsVoice wrote back (ADR-0081), in one note.
   const placedNone = unplaced !== undefined && unplaced.text === undefined;
   const advice = briefs.value.advice && !placedNone ? adviceNote(briefs.value.advice) : undefined;
-  const note = [partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
+  const note = [partialNote(slots, briefs.value, failed, anchorWanted && !anchor, declined, waited), unplaced ? unplacedNote(slots, unplaced) : undefined, advice, restoredNote(restored)].filter((n): n is string => !!n).join(' ') || undefined;
   await stepFinished(deps, run, call, { costUsd: result.costUsd, ...(note ? { note } : {}), outputArtifactIds: outputs }, true);
   return result;
 }
@@ -275,8 +284,16 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * exception to going on: a retry the provider answered and billed that byway could not keep (its image, its request and
  * response, or its cost could not be stored or recorded) is a billed failure (`billed`), and it stops the step as any
  * billed image does, checked before the decline.
+ *
+ * An image that used the whole of its model's wait (the gateway's waitedError, by its mark: waitedOf) is not tried again
+ * either, whatever the step's tries per slot, shot 1's frame included: the owner's "Give up and end the call plainly
+ * (Recommended)" of 2026-10-22, whose description reads "It stops at your wait, and the step says the wait ran out and
+ * where to change it in Settings ... Google charges for a call that is stopped, so a resend mostly pays twice." The
+ * gateway did not send it again, and neither does the step: another try would be a new call, admitted and sent as its
+ * own, which could wait as long again and be billed again. The slot is not made, and the gateway's words, which say the
+ * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences).
  */
-async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | undefined> {
+async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | { waited: string } | undefined> {
   const { run, call, step } = input;
   const medium = run.medium;
   for (let attempt = 1; attempt <= tries; attempt++) {
@@ -288,6 +305,7 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
     } catch (e) {
       if (!(e instanceof GatewayError) || STOPS_THE_STEP.has(e.code) || e.billed === true || isHeldKeyError(e)) throw e;
       if (e.declined) return { declined: e.declined };
+      if (waitedOf(e)) return { waited: e.message };
     }
   }
   return undefined;
@@ -319,9 +337,17 @@ const list = (items: string[]): string => (items.length > 1 ? `${items.slice(0, 
  * The step's note when it made only part of what its plan asked for, or left a brief out. "Not every image was made"
  * only when one was not: the slots no brief covered, and the images that could not be made. Then, apart, the briefs
  * left out (every planned image may still have been made), and, on a storyboard, that the video chain has no start
- * frame. Undefined when everything was made and nothing left out.
+ * frame. What became of an image the model declined, or one whose wait ran out, follows the first sentence. Undefined
+ * when everything was made and nothing left out.
  */
-function partialNote(plan: SlotPlan, briefs: SlotBriefs, failed: string[], noAnchor: boolean, declined: { slot: string; record: DeclineRecord }[] = []): string | undefined {
+function partialNote(
+  plan: SlotPlan,
+  briefs: SlotBriefs,
+  failed: string[],
+  noAnchor: boolean,
+  declined: { slot: string; record: DeclineRecord }[] = [],
+  waited: { slot: string; words: string }[] = [],
+): string | undefined {
   const name = (id: string) => slotName(plan, id);
   const parts = [
     ...(briefs.missing.length ? [`no image brief was written for ${list(briefs.missing.map(name))}`] : []),
@@ -331,6 +357,7 @@ function partialNote(plan: SlotPlan, briefs: SlotBriefs, failed: string[], noAnc
   const sentences = [
     ...(parts.length ? [`Not every image was made: ${parts.join('; ')}.`] : []),
     ...declinedSentences(plan, declined),
+    ...waitedSentences(plan, waited),
     ...leftOutSentences(plan, briefs),
     ...(noAnchor && first ? [`No frame was made for shot ${first}, so the video chain has no start frame.`] : []),
   ];
@@ -362,6 +389,16 @@ function leftOutSentences(plan: SlotPlan, briefs: SlotBriefs): string[] {
 /** What happened to each image the model declined (ADR-0102), in the words of the run's events and the gateway. */
 function declinedSentences(plan: SlotPlan, declined: { slot: string; record: DeclineRecord }[]): string[] {
   return declined.map(({ slot, record }) => declineStory(record, `the image for ${slotName(plan, slot)}`));
+}
+
+/**
+ * Each image whose wait ran out (makeImage), with the gateway's words (waitedWords), which the step's failure would give
+ * for a model step: "The image for shot 1 was not asked for again: Google’s model gemini-nano-banana-2.1 did not answer
+ * within 15 minutes, the wait chosen in Settings, so byway stopped waiting. It may have billed the work. To wait longer,
+ * change 'How long to wait for an answer' in Settings."
+ */
+function waitedSentences(plan: SlotPlan, waited: { slot: string; words: string }[]): string[] {
+  return waited.map(({ slot, words }) => `The image for ${slotName(plan, slot)} was not asked for again: ${words}`);
 }
 
 /**

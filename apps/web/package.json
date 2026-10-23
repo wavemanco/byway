@@ -18,7 +18,7 @@
     "@byway/recipe": "workspace:*",
     "@byway/runner": "workspace:*",
     "@byway/store": "workspace:*",
-    "next": "16.3.8",
+    "next": "16.4.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-markdown": "^10.1.0",
@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@temporalio/client": "1.24.0",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

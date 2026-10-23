@@ -1,0 +1,4 @@
+[
+  {"name": "caps: matched by provider alone", "file": "packages/runner/src/caps.ts", "pkg": "packages/runner", "tests": ["test/caps.test.ts"],
+   "old": "(w) => w.provider === ref.provider && w.model === ref.model", "new": "(w) => w.provider === ref.provider"}
+]

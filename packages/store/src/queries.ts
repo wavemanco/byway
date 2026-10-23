@@ -36,6 +36,9 @@ export function prepareQueries(db: DatabaseSync) {
     memo: p('SELECT value FROM memos WHERE run_id = ? AND key = ?'),
     // First write wins: a key that is already set keeps its value (the caller reads it back in the same transaction).
     insertMemo: p('INSERT INTO memos (run_id, key, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (run_id, key) DO NOTHING'),
+    // One key range: `key >= prefix` lets the primary key start there, and the exact comparison of the key's first
+    // characters (not LIKE or GLOB, whose % _ * ? [ are patterns, and LIKE ignores case) ends it. Keys sort as bytes.
+    memosWithPrefix: p('SELECT value FROM memos WHERE run_id = ? AND key >= ? AND substr(key, 1, length(?)) = ? ORDER BY key'),
 
     intake: p('SELECT * FROM intakes WHERE id = ?'),
     insertIntake: p(`INSERT INTO intakes (id, workspace_id, problem, answers, recommendation, composed, created_at, updated_at)
@@ -46,6 +49,12 @@ export function prepareQueries(db: DatabaseSync) {
     upsertPreferences: p(`INSERT INTO preferences (workspace_id, profile_id, demo_mode, show_technical_names, updated_at) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (workspace_id) DO UPDATE SET profile_id = excluded.profile_id, demo_mode = excluded.demo_mode,
       show_technical_names = excluded.show_technical_names, updated_at = excluded.updated_at`),
+
+    answerWaits: p('SELECT * FROM answer_waits WHERE workspace_id = ? ORDER BY provider, model'),
+    answerWait: p('SELECT * FROM answer_waits WHERE workspace_id = ? AND provider = ? AND model = ?'),
+    // A new choice for a model replaces the old one.
+    upsertAnswerWait: p(`INSERT INTO answer_waits (workspace_id, provider, model, minutes, changed_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (workspace_id, provider, model) DO UPDATE SET minutes = excluded.minutes, changed_at = excluded.changed_at`),
 
     rendererSettings: p('SELECT * FROM renderer_settings WHERE id = 1'),
     // The row is made by whichever write comes first; the sandbox's own default (on) is written with it.

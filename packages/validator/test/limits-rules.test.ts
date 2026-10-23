@@ -36,11 +36,19 @@ describe('ST3 limit', () => {
     expect(v.violations.filter((x) => x.ruleId === 'ST3').every((x) => x.class === 'invariant')).toBe(true);
   });
 
-  it('300 seeds, then each over them: the bytes in flight (and here the 300 critic loops) are over, though 300 at once is not', () => {
+  it('300 seeds, then each over them: the 300 critic loops are over, though 300 at once is not, and no seed rides in the bytes in flight (P2)', () => {
     const r = studio();
     d1(r).n = 300;
     const messages = validate(r).violations.filter((v) => v.clause === 'limit').map((v) => v.message);
-    expect(messages).toEqual([expect.stringMatching(/a run can take up to \d+ steps/), expect.stringMatching(/carry up to \d+ KB between them \(300 random strings/)]);
+    expect(messages).toEqual([expect.stringMatching(/a run can take up to \d+ steps/)]);
+  });
+
+  it('a second fan-out after 30 options: the bytes in flight are over (every branch carries the options and their views), though 30 at once is not', () => {
+    const r = studio();
+    const seeds = d1(r);
+    r.stages[0]!.body = seq({ ...seeds, n: 30 }, replicate('again', 30, seeds.body));
+    const messages = validate(r).violations.filter((v) => v.clause === 'limit').map((v) => v.message);
+    expect(messages).toEqual([expect.stringMatching(/carry up to \d+ KB between them \(the options and their views in every one\)/)]);
   });
 
   it('the studio fixture as it is: nothing', () => {

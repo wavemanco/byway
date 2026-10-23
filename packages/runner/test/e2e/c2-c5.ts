@@ -7,11 +7,13 @@ import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { c2, c5 } from '@byway/catalog';
 import type { CompletionRequest, VideoRequest, VideoResult } from '@byway/contracts';
+import { problemSlot } from '@byway/prompts/pure';
 import { NO_AUDIO_NOTE } from '../../src/activities/asset.ts';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { NO_COMPOSITING_NOTE, NO_VIDEO_NOTE } from '../../src/activities/relay.ts';
 import { BEST_SO_FAR_PROMPT, GATE_FAILED_PROMPT, GATE_RETRY_NOTE, READY_PROMPT } from '../../src/workflow/wording.ts';
 import { noClipNote } from '../../src/activities/render.ts';
+import { maximalBrief } from '../helpers/briefs.ts';
 import { checkEvents, notes, ofType } from '../helpers/events.ts';
 import { fakeShots, png } from '../helpers/fake-pages.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
@@ -85,6 +87,25 @@ export function c2c5Scenarios(use: () => Harness): void {
       const briefs = h.prompts.calls.filter((c) => c.id === 'product.c2.mood-boards').at(-1)!;
       expect(briefs.slots.options).toMatch(/^### A\nFix-it Fridays: /);
     }, 120_000);
+
+    it('runs on the largest brief the web accepts, in Chinese, and every prompt that shows the brief carries all of it exactly (P2)', async () => {
+      // About 3 MB of UTF-8: before P2 it rode in the start input and every step's input, past Temporal's 2 MB limit on
+      // one value, and the run stayed "running" with nothing spent.
+      const brief = maximalBrief();
+      const from = h.prompts.calls.length;
+      const run = await h.start(c2, { problem: brief });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      checkEvents(view, 'c2');
+      expect(view.run.problem).toBe(brief.text);
+      // Every step that takes the brief: the twelve seeds and the three unseeded answers of D1. Compared whole, not by
+      // toEqual, so a mismatch does not print a million characters.
+      const shown = h.prompts.calls.slice(from).filter((c) => c.slots.problem !== undefined);
+      expect(shown.map((c) => c.id).sort()).toEqual([...Array<string>(12).fill('product.c2.seed-option'), ...Array<string>(3).fill('product.c2.vanilla-build')].sort());
+      const exact = problemSlot(brief);
+      expect(shown.filter((c) => c.slots.problem !== exact)).toHaveLength(0);
+      expect(h.succeeded(run.id).filter((c) => c.purpose === 'seed:options')).toHaveLength(12);
+    }, 180_000);
   });
 
   describe('C5 on media', () => {
@@ -96,10 +117,12 @@ export function c2c5Scenarios(use: () => Harness): void {
       const script = 'Less time on the road.\nMore time on the trail.';
       try {
         const headline = 'Less road. More trail.';
+        let lateAsked = 0;
         const run = await h.start(c5, { problem: { text: 'A 30-second video ad for trail running shoes' } });
         const view = await h.drive(run.id, (cp) => {
           if (cp.stepId === 'vo-script') return { checkpointId: cp.id, text: script };
-          if (cp.stepId === 'voice') return { checkpointId: cp.id, text: cp.initialText!.replace(/^Headline: .*$/m, `Headline: ${headline}`) };
+          // You write the headline at the first late VOICE, and send the second one back as it was offered.
+          if (cp.stepId === 'voice') return { checkpointId: cp.id, text: ++lateAsked === 1 ? cp.initialText!.replace(/^Headline: .*$/m, `Headline: ${headline}`) : cp.initialText! };
           return undefined;
         });
         expect(view.run.status).toBe('done');
@@ -111,11 +134,15 @@ export function c2c5Scenarios(use: () => Harness): void {
           expect(cp.initialText).toMatch(/^Headline: .*\nTagline: .*\nShot 1: /);
           expect(cp.initialText).not.toContain('Less time on the road');
         }
-        // VOICE-RETRY (parked, docs/backlog.md; ADR-0081): the gate's retry re-enters D2 from the ports it started with,
-        // so the second pass's late VOICE offers model copy again, without the headline you wrote the first time. This
-        // records today's behaviour; it is not the intended one.
+        // VOICE-RETRY (D9): the gate's retry re-enters D2 from the ports it started with, which hold none of the copy you
+        // wrote at the first late VOICE; the interpreter carries that answer across the retry, and the second late VOICE
+        // starts from the line you wrote, which still fits the work (the same shots), with the work's lines for the fields
+        // you left as offered (WORKFLOW-1). Sent back as offered, it is written: the work delivered carries your headline
+        // (below), though you typed it once.
         expect(late).toHaveLength(2);
-        expect(late[1]!.initialText).not.toContain(`Headline: ${headline}`);
+        expect(late[0]!.initialText).not.toContain(`Headline: ${headline}`);
+        expect(late[1]!.initialText).toContain(`Headline: ${headline}`);
+        expect(late[1]!.prompt).toBe(late[0]!.prompt);
         const purposes = h.succeeded(run.id).map((c) => c.purpose);
         expect(purposes.filter((p) => p === 'seed:media')).toHaveLength(8);
         expect(purposes).toContain('dedupe:media');

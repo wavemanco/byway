@@ -53,7 +53,7 @@ const clauses = (r: Recipe) => engineProblems(r).map((p) => `${p.ruleId}:${p.cla
 describe('workBound', () => {
   it('replicate multiplies its body, and each multiplies by the options in front of it', () => {
     const b = workBound(recipe(['D1', seq(replicate('x', 4, seq(build('b'), render('r'))), each('e', seq(render('r2'), critic('c'))))]));
-    expect(b).toMatchObject({ stepRuns: 4 * 2 + 4 * 2, peak: 4, seeds: 0 });
+    expect(b).toMatchObject({ stepRuns: 4 * 2 + 4 * 2, peak: 4 });
   });
 
   it('an audit sums its lenses, side by side', () => {
@@ -83,8 +83,9 @@ describe('workBound', () => {
     expect(workBound(r).stepRuns).toBe(4 + 2 * 4);
   });
 
-  it('counts the seeds the run hands out', () => {
-    expect(workBound(recipe(['D1', replicate('x', 6, seedStep('s'))])).seeds).toBe(6);
+  it('weighs no seed: a seeded fan-out carries what the same fan-out of builds carries, now that seeds do not travel (P2)', () => {
+    const fanOut = (first: Step) => recipe(['D1', seq(replicate('x', 6, first), each('e', seq(render('r'), critic('c'))))]);
+    expect(workBound(fanOut(seedStep('s'))).batchBytes).toBe(workBound(fanOut(build('s'))).batchBytes);
   });
 
   it('walks a nest of 40 loops in linear time (memoized by place and ports)', () => {
@@ -129,17 +130,38 @@ describe('engineProblems', () => {
     ]);
   });
 
-  it('batch bytes: 300 seeds, then each over them (every seed rides in every input), is over though 300 at once and 600 steps are not', () => {
+  it('batch bytes: 300 seeds, then each over them, runs: no seed rides in a later input (P2), and 300 at once and 900 steps are within the limits', () => {
     const r = recipe(['D1', seq(replicate('seeds', 300, seedStep('s')), each('e', seq(render('r'), critic('c'))))]);
     expect(workBound(r)).toMatchObject({ peak: 300, stepRuns: 900 });
-    const problems = engineProblems(r);
-    expect(problems.map((p) => `${p.ruleId}:${p.clause}:${p.path}`)).toEqual(['ST3:limit:stages[0].body.steps[1]']);
-    expect(problems[0]!.message).toMatch(/300 random strings/);
+    expect(engineProblems(r)).toEqual([]);
   });
 
-  it("batch bytes: replicate(n, seq(seed, X)) counts the siblings' seeds, which finish before the later steps are scheduled", () => {
-    expect(engineProblems(recipe(['D1', replicate('x', 300, seq(seedStep('s'), build('after')))])).map((p) => `${p.ruleId}:${p.clause}`)).toEqual(['ST3:limit']);
-    expect(engineProblems(recipe(['D1', replicate('x', 100, seq(seedStep('s'), build('after')))]))).toEqual([]);
+  it("batch bytes: replicate(n, seq(seed, X)) runs too, since no sibling's seed rides into the later steps (P2)", () => {
+    expect(engineProblems(recipe(['D1', replicate('x', 300, seq(seedStep('s'), build('after')))]))).toEqual([]);
+  });
+
+  it('batch bytes: a fan-out after 30 options is over, every branch carrying the option list and their views, though 30 at once and 90 steps are not', () => {
+    const r = recipe(['D1', seq(replicate('first', 30, seq(build('b'), render('r'))), replicate('second', 30, build('b2')))]);
+    expect(workBound(r)).toMatchObject({ peak: 30, stepRuns: 90 });
+    const problems = engineProblems(r);
+    expect(problems.map((p) => `${p.ruleId}:${p.clause}:${p.path}`)).toEqual(['ST3:limit:stages[0].body.steps[1]']);
+    expect(problems[0]!.message).toMatch(/^the steps that can run at once here carry up to \d+ KB between them \(the options and their views in every one\); the engine allows 2048 KB$/);
+    expect(engineProblems(recipe(['D1', seq(replicate('first', 24, seq(build('b'), render('r'))), replicate('second', 24, build('b2')))]))).toEqual([]);
+  });
+
+  it("an ASSET step's slots knob that is not a whole number of at least 1 cannot run: the step would pay for briefs and make no image, or a fraction of one", () => {
+    const asset = (knobs?: Record<string, unknown>) =>
+      step({ id: 'images', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', consumes: ['artifact'], produces: ['artifact'], writes: true, ...(knobs ? { knobs: knobs as Step['knobs'] } : {}) });
+    const at = (knobs?: Record<string, unknown>) => engineProblems(recipe(['D2', seq(build('b'), asset(knobs))]));
+    for (const slots of [0, 0.5, 1.5, -1, '3', null]) {
+      expect(at({ slots }).map((p) => `${p.ruleId}:${p.clause}:${p.path}`), String(slots)).toEqual(['ST7:slots:stages[0].body.steps[1]']);
+    }
+    expect(at({ slots: 0.5 })[0]!.message).toBe('ASSET step "images"\'s slots knob is 0.5; it must be a whole number of at least 1');
+    expect(at({ slots: '3' })[0]!.message).toBe('ASSET step "images"\'s slots knob is "3"; it must be a whole number of at least 1');
+    for (const knobs of [{ slots: 1 }, { slots: 3, triesPerSlot: 3 }, undefined]) expect(at(knobs)).toEqual([]);
+    // Not a count the work bound reads, so the bound is still computed: 30 × 20 side by side beside it is still over.
+    const wide = replicate('outer', 30, seq(replicate('inner', 20, build('b')), pick('p', 'H', 1, 'human')));
+    expect(engineProblems(recipe(['D1', wide], ['D2', seq(build('b2'), asset({ slots: 0 }))])).map((p) => `${p.ruleId}:${p.clause}:${p.path}`)).toEqual(['ST7:slots:stages[1].body.steps[1]', 'ST3:limit:(recipe)']);
   });
 
   it('a C pick with no model judge cannot be decided', () => {

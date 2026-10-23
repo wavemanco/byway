@@ -19,12 +19,10 @@ function purposesOf(recipe: Recipe): string[] {
   const medium = recipe.medium as Medium;
   const out = new Set<string>();
   let asset = false;
-  let voice = false;
   let criticLoop = false;
   walk(recipe, (n, path, stage) => {
     if (n.op === 'step' && n.actor === 'model') out.add(`${n.role}:${medium}`);
     if (n.op === 'step' && n.block === 'ASSET') asset = true;
-    if (n.op === 'step' && n.block === 'VOICE') voice = true;
     if (n.op === 'loop') {
       walkNode(n.body, path, stage, (c) => {
         if (c.op === 'step' && c.role === 'critic') criticLoop = true;
@@ -35,7 +33,6 @@ function purposesOf(recipe: Recipe): string[] {
     out.add(`asset.briefs:${medium}`);
     if (medium === 'web-page' || medium === 'prose') out.add(`asset.integrate:${medium}`);
   }
-  if (voice) out.add(`voice.apply:${medium}`);
   if (criticLoop) out.add(`rerank:${medium}`);
   return [...out];
 }
@@ -120,8 +117,6 @@ function scenarios(purpose: string): Scenario[] {
       return [{ name: 'a direction', prompt: `${problem}\nTaste: warmer, less corporate.` }];
     case 'fix':
       return [{ name: 'applies a critique', prompt: `Critique:\n- Tighten the opening.\n\n${ARTIFACT[medium]}` }];
-    case 'voice.apply':
-      return [{ name: "writes the owner's words in", prompt: `Your words:\nOur bakery opens at six.\n\n${ARTIFACT[medium]}` }];
     case 'critic':
       return [
         { name: 'OK mode', prompt: `Critique the work as its audience meets it.\n\n${view.text}`, images: view.images, ctx: { mode: 'OK' } },
@@ -216,13 +211,16 @@ describe('mock responders cover every purpose the catalog can emit', () => {
         'cut:code-diff',
         'check:code-diff',
         'rerank:code-diff',
-        'voice.apply:code-diff',
         ...ADVISOR,
       ]),
     );
     // No asset.integrate on options or media: the runner attaches the images itself (spec §3.3).
     expect(PURPOSES).not.toContain('asset.integrate:options');
     expect(PURPOSES).not.toContain('asset.integrate:media');
+  });
+
+  it("answers no voice.apply purpose: VOICE writes the person's copy back with no model call (ADR-0081), and its helper is retired", () => {
+    for (const medium of Object.keys(PROBLEMS)) expect(responderFor(`voice.apply:${medium}`), medium).toBeUndefined();
   });
 
   describe.each(PURPOSES)('%s', (purpose) => {
@@ -280,12 +278,10 @@ describe('mock responders: the conventions they read', () => {
     expect(html).toContain(`<img src="/api/artifacts/${IMG_B}" alt="The oven at dawn">`);
   });
 
-  it('voice.apply and fix hand back the structured artifact they were given', async () => {
+  it('fix hands back the structured artifact it was given: the demo cannot apply edits to options or storyboards', async () => {
     for (const medium of ['options', 'media'] as const) {
-      const out = await ask(`voice.apply:${medium}`, `Your words:\nOur name is Spoke.\n\n${ARTIFACT[medium]}`);
+      const out = await ask(`fix:${medium}`, `Critique:\n- Tighten the opening.\n\n${ARTIFACT[medium]}`);
       expect(JSON.parse(lastBlock(out, 'json') as string)).toEqual(medium === 'options' ? OPTIONS : STORYBOARD);
     }
-    const diff = await ask('voice.apply:code-diff', `Your words:\nWhy: callers expect 2.\n\n${ARTIFACT['code-diff']}`);
-    expect(lastBlock(diff, 'diff')).toBe(DIFF);
   });
 });

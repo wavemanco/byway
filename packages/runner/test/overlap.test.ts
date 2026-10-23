@@ -375,6 +375,10 @@ describe('a relay link’s clip, attempt 1 lost while fal makes it (F03 stage 3)
           }
           return { status: 'COMPLETED' };
         },
+        // A one-shot status read (a resumed job whose wait has run out is asked once): every job here finishes.
+        async status() {
+          return { status: 'COMPLETED' };
+        },
         async result(endpoint, options) {
           const data = endpoint.includes('extract-frame') ? { images: [{ url: 'https://v3.fal.media/last.png' }] } : { video: { url: 'https://v3.fal.media/clip.mp4' } };
           return { data, requestId: options.requestId };

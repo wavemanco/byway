@@ -67,3 +67,9 @@ It reports and never blocks. Refusing spend after a restore lost it is F03's dec
   - `packages/runner/test/restore.test.ts`;
   - `packages/runner/test/engine-state.test.ts` (the orphan run);
   - `packages/runner/test/pages.test.ts` (redirect hops; the redirect test fails on the old code with the off-list host reached).
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-22, [ADR-0113](0113-run-inputs-seeds-and-the-held-voice-travel-by-reference.md).** Decision 2's two-way pass now also runs while the engine runs, every five minutes (`reconcileWhilePolling`, `dev-engine.ts`), in both directions. That repeated pass skips queued runs, because a start may be under way, and does not retire runs from an older bundle again. The pass before the worker polls is unchanged and still fails queued runs. So a run whose workflow Temporal closed without byway, on a limit or from outside, is marked failed while the engine runs, not only at the next start; a workflow that Temporal keeps running while its workflow task fails is not caught (ADR-0113, Consequences). The shape is Claude's, in the P2 design the owner approved on 2026-10-21 23:05; its interval, its message (the one used at start) and its lines are Claude's, in the build. Decision 1's report is unchanged. A run's brief, copy deck, draft, tell catalog and VOICE answers are now artifact files the run reads by id (ADR-0113 items 1 to 6). No event names them, so the report lists a missing one with no run named. The step that needs it fails plainly, not retried, saying its file "is missing or damaged in byway's data folder, perhaps from a partial restore", and the run must be started again.

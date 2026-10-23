@@ -1,7 +1,7 @@
 /**
  * Demo revision markers (demo mode only). The mock's own prose and code-diff answers carry an invisible marker that
  * counts their revisions: a builder or seed writes revision 1, each fix writes the revision it was given plus one, and
- * helpers that pass the work through (voice.apply, asset.integrate) keep it as it is. The mock's GREAT critic reads
+ * helpers that pass the work through (asset.integrate) keep it as it is. The mock's GREAT critic reads
  * the markers to rank a revised item higher (see lineup.ts), so a demo rank loop converges the way a real one should
  * when the fixes work. Nothing outside the mock reads them, and no real model ever sees one.
  *

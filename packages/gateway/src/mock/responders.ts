@@ -88,11 +88,11 @@ function existingDiff(prompt: string): string | undefined {
   return `${fence('diff', diff)}\n\n${after || inside || 'Why: the change keeps the behaviour and makes the code easier to review.'}`;
 }
 
-/** build, seed, fix, asset, asset.integrate and voice.apply: the artifact in its medium's format. */
+/** build, seed, fix, asset and asset.integrate: the artifact in its medium's format. */
 const artifact: Responder = (ctx) => {
   const subject = subjectOf(ctx.prompt);
   const medium = ctx.medium ?? 'prose';
-  const revising = ctx.role === 'fix' || ctx.role === 'voice.apply' || ctx.role === 'asset.integrate';
+  const revising = ctx.role === 'fix' || ctx.role === 'asset.integrate';
   switch (medium) {
     case 'web-page': {
       const existing = revising ? htmlDocument(ctx.prompt) : undefined;
@@ -149,7 +149,6 @@ export const DEFAULT_RESPONDERS: Readonly<Record<string, Responder>> = {
   fix: artifact,
   asset: artifact,
   'asset.integrate': artifact,
-  'voice.apply': artifact,
   critic,
   judge: (ctx) => choose(ctx.seed, ctx.prompt, ctx.images),
   select: (ctx) => choose(ctx.seed, ctx.prompt, ctx.images),

@@ -1,9 +1,10 @@
 /**
- * Prompt slots by port (spec §3.2) and the images that ride along. The runner fills: `intent` → problem, `brief` →
- * brief, `artifact` → artifact (never for judging steps: port rule 1), a text `view` → view and a screenshot view →
- * attached images, `option_set` → options (labelled A, B, C…), `critique` → critique, `taste`/`voice`/`tells`/`seed`/
- * `refs` → slots of the same name; `score` never reaches a prompt (port rule 2). The artifact slot holds the artifact's
- * raw text: templates put it in its medium's fence (@byway/prompts' ARTIFACT_FENCE).
+ * Prompt slots by port (spec §3.2) and the images that ride along. The runner fills: `intent` → problem (the run's
+ * brief, read from the file Runner.start stored it in: P2), `brief` → brief, `artifact` → artifact (never for judging
+ * steps: port rule 1), a text `view` → view and a screenshot view → attached images, `option_set` → options (labelled
+ * A, B, C…), `critique` → critique, `taste`/`voice`/`tells`/`seed`/`refs` → slots of the same name; `score` never
+ * reaches a prompt (port rule 2). The artifact slot holds the artifact's raw text: templates put it in its medium's
+ * fence (@byway/prompts' ARTIFACT_FENCE).
  *
  * Slot layouts (the problem, "### A" options, "### V1" control answers) come from @byway/prompts, the one place the
  * templates, the gateway's mock and the runner agree on them (spec §3.3 shared conventions).
@@ -16,9 +17,12 @@ import type { ChatMessage, ContentPart, MediaType, Medium, ProblemBrief, PromptS
 import { inputsOf } from '@byway/recipe';
 import { labelled, labelOf, problemSlot, vanillaLabelled } from '@byway/prompts/pure';
 import { textView, viewKindOf } from '../formats.ts';
+import { readBrief, unreadableInput } from '../stored-inputs.ts';
+import { personsWords } from './held-voice.ts';
 import { rendersKnob, SURFACE_CAPTIONS } from '../surfaces.ts';
 import type { Ports, StepSpec, Surface, View, ViewRef } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
+import { StepError } from './failures.ts';
 
 export type Slots = Partial<Record<PromptSlot, string>>;
 
@@ -55,6 +59,7 @@ const IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'im
 export class ArtifactReader {
   private readonly texts = new Map<string, string>();
   private readonly types = new Map<string, string>();
+  private readonly briefs = new Map<string, ProblemBrief>();
   private readonly deps: Pick<RunnerDeps, 'store'>;
   constructor(deps: Pick<RunnerDeps, 'store'>) {
     this.deps = deps;
@@ -66,6 +71,37 @@ export class ArtifactReader {
     const text = await this.deps.store.artifacts.getText(id);
     this.texts.set(id, text);
     return text;
+  }
+
+  /**
+   * A text the run stored for itself (P2), by its id: a file it was started with (stored-inputs.ts) or one of the
+   * person's VOICE answers (held-voice.ts). One the store cannot find, or finds damaged, was lost after it was stored
+   * (a partial restore): the step fails plainly and for good with `unreadable` (StepError), since reading it again
+   * finds the same. Any other trouble reading it is left to the activity's retries.
+   */
+  async ownText(id: string, unreadable: string): Promise<string> {
+    try {
+      return await this.text(id);
+    } catch (e) {
+      const code = (e as { code?: unknown } | null)?.code;
+      if (code === 'not-found' || code === 'corrupt') throw new StepError(unreadable);
+      throw e;
+    }
+  }
+
+  /** A file the run was started with (P2, stored-inputs.ts), by its id; `what` names it if it was lost. */
+  async startInput(id: string, what: string): Promise<string> {
+    return this.ownText(id, unreadableInput(what, id));
+  }
+
+  /** The run's brief (RunRef.problemId): read from its file once per activity, however many prompts show it. */
+  async problem(id: string): Promise<ProblemBrief> {
+    const hit = this.briefs.get(id);
+    if (hit) return hit;
+    const brief = readBrief(await this.startInput(id, 'brief'));
+    if (!brief) throw new StepError(unreadableInput('brief', id));
+    this.briefs.set(id, brief);
+    return brief;
   }
 
   async mediaType(id: string): Promise<string> {
@@ -117,7 +153,8 @@ export interface BuiltPrompt {
 
 export interface SlotContext {
   medium: Medium;
-  problem: ProblemBrief;
+  /** The run's brief, by its id (RunRef.problemId): read only when the step takes the brief in. */
+  problemId: string;
   step: StepSpec;
   ports: Ports;
   round?: number;
@@ -144,7 +181,7 @@ export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Pro
   for (const port of inputsOf(step)) {
     switch (port) {
       case 'intent':
-        slots.problem = problemSlot(ctx.problem);
+        slots.problem = problemSlot(await reader.problem(ctx.problemId));
         break;
       case 'brief':
         slots.brief = ports.brief ?? '';
@@ -177,7 +214,8 @@ export async function buildPrompt(reader: ArtifactReader, ctx: SlotContext): Pro
         slots.taste = ports.taste ?? '';
         break;
       case 'voice':
-        slots.voice = ports.voice ?? '';
+        // The person's latest words, by their file's id (P2): read only for a step that takes them in.
+        slots.voice = ports.voice !== undefined ? await personsWords(reader, ports, ports.voice) : '';
         break;
       case 'tells':
         slots.tells = ctx.tells ?? '';

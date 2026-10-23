@@ -9,22 +9,24 @@
  * - loop applies its hidden threshold outside every prompt, with probe, plateau, cap and best-snapshot rules;
  * - route takes the run's up-front choice or asks; optional asks with its trigger;
  * - audit runs its lenses concurrently and keeps their notes beside the work, never in it;
- * - a one-shot gate re-runs a stage on a fail, then asks; relay runs one link per storyboard shot, in order.
+ * - a one-shot gate re-runs a stage on a fail, then asks; each VOICE that runs again starts from the person's answer
+ *   there before the retry, where it still fits (VOICE-RETRY); relay runs one link per storyboard shot, in order.
  */
 import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '@temporalio/workflow';
 import type { CheckpointResolution } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
-import { asksSwaps, feedsGate, lockedScripts, machineWrites, voiceWrite } from '@byway/recipe/semantics';
+import { asksSwaps, feedsGate, HANDED_ON, lockedScripts, machineWrites, replacesCritique, voiceWrite, type HandedPort } from '@byway/recipe/semantics';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
-import { FAILURE, toStepSpec, type BudgetFailureDetails, type RejectedAnswerDetails, type CheckpointSpec, type ModelStepResult, type OpenCheckpointInput, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
-import { media, model, quick } from './acts.ts';
+import { FAILURE, toStepSpec, type BudgetFailureDetails, type RejectedAnswerDetails, type CheckpointSpec, type EarlierAnswer, type ModelStepResult, type OpenCheckpointInput, type OpenCheckpointResult, type Ports, type RunInput, type RunRef, type Score, type StageName, type StepCall, type ViewRef, type WorkflowEvent } from '../types.ts';
+import { media, model, quick, relayProxy } from './acts.ts';
 import type { PendingCheckpoint, RunControl } from './control.ts';
 import {
   BEST_SO_FAR_PROMPT,
   budgetPrompt,
+  DECLINED_CRITIQUE_NOTE,
   DECLINED_NOTE,
   FINAL_CHOICE_OPTIONS,
   FINAL_CHOICE_PROMPT,
@@ -39,6 +41,7 @@ import {
   NOTHING_TO_REMOVE,
   NOTHING_TO_SWAP,
   optionalPrompt,
+  QUESTION_BRIEF_PROMPTS,
   READY_PROMPT,
   revisesInPlace,
   routePrompt,
@@ -124,7 +127,6 @@ const SKIP_NO_EXECUTOR = 'This step has no executor in byway yet; the work passe
 export class Interpreter {
   private readonly input: RunInput;
   private readonly control: RunControl;
-  private readonly seeds: string[] = [];
   private readonly occurrences = new Map<string, number>();
   private readonly gateRetries = new Map<string, number>();
   private checkpointCount = 0;
@@ -132,6 +134,16 @@ export class Interpreter {
   private budgetCount = 0;
   /** The script VOICEs locked after they run (lockedScripts), read from the recipe the first time a VOICE asks. */
   private locked: ReadonlySet<Step> | undefined;
+  /**
+   * Each VOICE write's last answer and the deck it answered, by its place in the run (the step and its path), by their
+   * files' ids (VOICE-RETRY, D9).
+   */
+  private readonly answers = new Map<string, EarlierAnswer>();
+  /**
+   * The answers a gate's retry carried back over: those in `answers` when it re-entered a stage, whose ports drop them.
+   * The VOICE at each place, asked again, takes its own once, and its box starts from those lines where they still fit.
+   */
+  private carried = new Map<string, EarlierAnswer>();
 
   constructor(input: RunInput, control: RunControl) {
     this.input = input;
@@ -139,8 +151,8 @@ export class Interpreter {
   }
 
   private get run(): RunRef {
-    const { runId, workspaceId, recipe, profileId, medium, problem } = this.input;
-    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problem, seeds: [...this.seeds] };
+    const { runId, workspaceId, recipe, profileId, medium, problemId } = this.input;
+    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problemId };
   }
 
   /** A step's (or operator's) call at this place in the run; the key is stable across replays and retries. */
@@ -155,11 +167,15 @@ export class Interpreter {
 
   // ---- Stages -----------------------------------------------------------------------------------------------------
 
-  /** Run every stage; a gate's retry re-enters an earlier stage from the ports it started with. */
+  /**
+   * Run every stage; a gate's retry re-enters an earlier stage from the ports it started with. Those ports hold none of
+   * the person's VOICE answers given since, so each answer is carried to its VOICE, asked again (VOICE-RETRY).
+   */
   async runStages(): Promise<Ports> {
     const stages = this.input.recipe.stages;
     const entries: Ports[] = [];
-    let ports: Ports = this.input.inputs.voice ? { voice: this.input.inputs.voice } : {};
+    // A fixed copy deck the run was given is the person's latest words until a VOICE answers, by its file's id (P2).
+    let ports: Ports = this.input.inputs.voiceId ? { voice: this.input.inputs.voiceId } : {};
     let i = 0;
     while (i < stages.length) {
       const stage = stages[i]!;
@@ -172,6 +188,7 @@ export class Interpreter {
         const j = stages.findIndex((s) => s.stage === e.stage);
         if (j < 0 || j > i) throw new RunFailure(`The recipe asks to re-run stage ${e.stage}, which has not run.`);
         ports = entries[j]!;
+        this.carried = new Map(this.answers);
         i = j;
       }
     }
@@ -269,7 +286,7 @@ export class Interpreter {
    * Open a checkpoint and wait for its answer. The answer arrives through the RESOLVE_UPDATE Update, which validates it
    * against this checkpoint and records it before this resumes.
    */
-  async ask(call: StepCall, spec: Omit<CheckpointSpec, 'id'>, extra: Pick<OpenCheckpointInput, 'step' | 'initial'> = {}): Promise<CheckpointResolution & { initialText?: string }> {
+  async ask(call: StepCall, spec: Omit<CheckpointSpec, 'id'>, extra: Pick<OpenCheckpointInput, 'step' | 'initial'> = {}): Promise<CheckpointResolution & Pick<OpenCheckpointResult, 'initialText' | 'deckId'>> {
     await this.control.boundary();
     const id = `${this.input.runId}/cp${++this.checkpointCount}-${call.stepId}`;
     const entry: PendingCheckpoint = { cp: { id, kind: spec.kind, ...(spec.options ? { options: spec.options } : {}), ...(spec.k !== undefined ? { k: spec.k } : {}) }, call, recording: false };
@@ -277,7 +294,7 @@ export class Interpreter {
     try {
       const opened = await this.act(call, () => quick.openCheckpoint({ run: this.run, call, checkpoint: { id, ...spec }, ...extra }));
       await condition(() => entry.resolution !== undefined);
-      return { ...entry.resolution!, ...(opened.initialText !== undefined ? { initialText: opened.initialText } : {}) };
+      return { ...entry.resolution!, ...(opened.initialText !== undefined ? { initialText: opened.initialText } : {}), ...(opened.deckId !== undefined ? { deckId: opened.deckId } : {}) };
     } finally {
       this.control.pending.delete(id);
     }
@@ -336,23 +353,26 @@ export class Interpreter {
           const shots = await this.act(call, () => quick.storyboardShots({ artifactId: ports.artifact! }));
           shot = shots.at(-1) ?? 1;
         }
-        const res = await this.act(call, () => media.relayLink({ run: this.run, call, step: spec, ports, shot: shot! }));
+        // The waits its calls keep, read just before the step by a quick step (recorded, so the same on every replay): the
+        // step's limit is worked out from them, and they travel in its input, so each attempt keeps them (acts.ts).
+        const waits = await this.act(call, () => quick.relayWaits({ run: this.run, step: spec }));
+        const res = await this.act(call, () => relayProxy(waits).relayLink({ run: this.run, call, step: spec, ports, shot: shot!, waits }));
         const out: Ports = { ...ports };
         if (res.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: res.artifactId });
         if (res.anchor) out.anchor = res.anchor;
         return out;
       }
       if (s.role === 'fix' && s.consumes.includes('critique') && ports.emptyCritique) {
-        // An empty CUT directive, or TELLS hits of which none were chosen: there is nothing to apply, so no model is
-        // asked and the work stays as it is. Nothing changed, so a keep-or-revert after it has nothing to compare.
+        // An empty CUT directive, TELLS hits of which none were chosen, or a critique step the person declined: there is
+        // nothing to apply, so no model is asked and the work stays as it is. Nothing changed, so a keep-or-revert after
+        // it has nothing to compare.
         const note = ports.emptyCritique;
         await this.act(call, () => quick.passStep({ run: this.run, call, step: spec, note }));
         return { ...withCritique(ports, ports.critique), ...(ports.artifact ? { previousArtifact: ports.artifact } : {}) };
       }
       const res = await this.act(call, () =>
-        model.modelStep({ run: this.run, call, step: spec, ports, refs: this.input.inputs.refs ?? [], ...(this.input.inputs.tells ? { tells: this.input.inputs.tells } : {}), ...(ctx.loop ? { round: ctx.loop.round } : {}) }),
+        model.modelStep({ run: this.run, call, step: spec, ports, refs: this.input.inputs.refs ?? [], ...(this.input.inputs.tellsId ? { tellsId: this.input.inputs.tellsId } : {}), ...(ctx.loop ? { round: ctx.loop.round } : {}) }),
       );
-      if (res.seed) this.seeds.push(res.seed);
       return this.applyModel(s, ports, res);
     });
     // The loop's gate is applied after the step has finished, so a pause or a question at the cap is not "in flight".
@@ -366,7 +386,7 @@ export class Interpreter {
     if (res.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: res.artifactId });
     if (res.text !== undefined) {
       if (s.role === 'vision') {
-        if (s.produces.includes('brief')) out.brief = res.text;
+        if (s.produces.includes('brief')) out = withBrief(out, res.text, QUESTION_BRIEF_PROMPTS.has(s.prompt ?? ''));
         if (s.produces.includes('taste')) out.taste = res.text;
         if (s.produces.includes('critique')) out = withCritique(out, res.text);
       } else {
@@ -390,6 +410,7 @@ export class Interpreter {
     const kind = humanKind(s);
     const spec = toStepSpec(s);
     const round = ctx.loop?.round;
+    const place = placeOf(s, ctx);
     if (kind === 'compare' && ports.artifact && (!ports.previousArtifact || ports.previousArtifact === ports.artifact)) {
       // No swap was made (none chosen, or none found): both versions are the same, so there is nothing to ask.
       await this.control.machine(() => this.act(call, () => quick.passStep({ run: this.run, call, step: spec, note: NOTHING_TO_COMPARE })));
@@ -401,8 +422,12 @@ export class Interpreter {
     const revised = revisesInPlace(s);
     const inPlace = revised ? ports[revised]?.trim() : undefined;
     // A VOICE is asked by what it covers; a script says it is locked only where nothing the person writes later can change it.
-    const voice = s.role === 'voice' ? { medium: this.input.medium, locked: (this.locked ??= lockedScripts(this.input.recipe)).has(s) } : {};
-    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace, voice), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
+    // A page's VOICE with the work in front of it (its lines read from the page) ends with how a page's lines are written,
+    // and the activity adds the rest of the page's rules, which it reads from the page (R-SUFFIX).
+    const voice = s.role === 'voice' ? { medium: this.input.medium, locked: (this.locked ??= lockedScripts(this.input.recipe)).has(s), page: this.input.medium === 'web-page' && !!ports.artifact } : {};
+    // A brief revised in place is asked to be answered as questions only when it is the interview's list of them (R-C7).
+    const revising = !inPlace ? false : revised === 'brief' && ports.briefQuestions ? 'questions' : true;
+    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, revising, voice), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
     let initial: OpenCheckpointInput['initial'];
     if (kind === 'compare') {
       checkpoint = {
@@ -413,11 +438,14 @@ export class Interpreter {
         ],
       };
     } else if (kind === 'write') {
-      if (s.role === 'voice') initial = { from: s.variant === 'claim-log' ? 'claims' : 'copy', ...(ports.artifact ? { artifactId: ports.artifact } : {}) };
+      // A VOICE the final check sent the run back over is handed its last answer there and the deck it answered, once.
+      const earlier = voiceWrite(s) ? this.carried.get(place) : undefined;
+      if (earlier) this.carried.delete(place);
+      if (s.role === 'voice') initial = { from: s.variant === 'claim-log' ? 'claims' : 'copy', ...(ports.artifact ? { artifactId: ports.artifact } : {}), ...(earlier ? { earlier } : {}) };
       // The author revises their own last draft; the first time, they start from the draft they brought (or nothing),
       // never from a machine's text (a seed card or a premise is not their draft).
       else if (ports.artifact && ports.artifact === ports.authored) initial = { from: 'artifact', artifactId: ports.artifact };
-      else initial = { from: 'draft', ...(this.input.inputs.draft ? { draft: this.input.inputs.draft } : {}) };
+      else initial = { from: 'draft', ...(this.input.inputs.draftId ? { draftId: this.input.inputs.draftId } : {}) };
       // The author revises with the readers' notes beside their draft, as the question says (ENG-8); VOICE shows the work.
       const work = ports.artifact ? [ports.artifact] : [];
       checkpoint.artifactIds = s.role === 'voice' ? work : beside(ports, work);
@@ -426,13 +454,14 @@ export class Interpreter {
       checkpoint.artifactIds = beside(ports, shown.length ? shown : undefined);
     }
     const res = await this.ask(call, checkpoint, { step: spec, ...(initial ? { initial } : {}) });
-    // What the checkpoint first offered: "unchanged" is measured against it, however often the person is asked again.
-    const { initialText: offered, ...first } = res;
+    // What the checkpoint first offered: "unchanged" is measured against it, however often the person is asked again,
+    // unless the box started from the person's earlier lines (VOICE-RETRY): then against the work's lines, by `deckId`.
+    const { initialText: offered, deckId, ...first } = res;
     let resolution: CheckpointResolution = first;
     let fin;
     for (;;) {
       // Writing the answer back (VOICE may call the model) is the rest of this step: a pause waits for it.
-      const finish = { run: this.run, call, step: spec, kind, resolution, ports, ...(offered !== undefined ? { initialText: offered } : {}) };
+      const finish = { run: this.run, call, step: spec, kind, resolution, ports, ...(offered !== undefined ? { initialText: offered } : {}), ...(deckId !== undefined ? { deckId } : {}) };
       try {
         fin = await this.control.track(() => this.act(call, () => model.finishHumanStep(finish)));
         break;
@@ -440,7 +469,7 @@ export class Interpreter {
         const problem = rejectedAnswer(e);
         if (problem === undefined) throw e;
         // Asked again, starting from what they wrote, with why it could not be used (ENG-6).
-        const { initialText: _again, ...next } = await this.ask(call, { ...checkpoint, prompt: `${problem} ${checkpoint.prompt}`, initialText: resolution.text ?? '' }, { step: spec });
+        const { initialText: _again, deckId: _deck, ...next } = await this.ask(call, { ...checkpoint, prompt: `${problem} ${checkpoint.prompt}`, initialText: resolution.text ?? '' }, { step: spec });
         resolution = next;
       }
     }
@@ -454,15 +483,21 @@ export class Interpreter {
       case 'write':
         if (fin.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: fin.artifactId, ...(s.role !== 'voice' ? { authored: fin.artifactId } : {}) });
         // The person's words are what a VOICE write executes, not what a step declares (ADR-0092): the latest answer is
-        // what a 'voice' reader gets, and every answer is held for the keepsVoice writers after it.
-        if (voiceWrite(s)) Object.assign(out, { voice: text, held: [...(ports.held ?? []), text] });
+        // what a 'voice' reader gets, and every answer is held for the keepsVoice writers after it, by the id of the file
+        // the step kept it in (P2). An answer not kept could not be held, so the run stops before anything writes on.
+        if (voiceWrite(s)) {
+          if (fin.voiceId === undefined) throw new RunFailure(`byway could not keep your words from step "${s.id}", so the run stopped before any step could change them.`);
+          Object.assign(out, { voice: fin.voiceId, held: [...(ports.held ?? []), fin.voiceId] });
+          // Kept with the deck it answered, for this VOICE asked again after a gate's retry (VOICE-RETRY).
+          if (fin.deckId !== undefined) this.answers.set(place, { answerId: fin.voiceId, deckId: fin.deckId });
+        }
         break;
       case 'directive':
         // A person who lists nothing to remove gives an empty directive, as a model's "Nothing to remove." does.
         out = withCritique(out, text, text.trim() ? undefined : NOTHING_TO_REMOVE);
         break;
       default:
-        if (s.produces.includes('brief')) out.brief = text;
+        if (s.produces.includes('brief')) out = withBrief(out, text, false);
         if (s.produces.includes('taste')) out.taste = text;
         if (s.produces.includes('critique')) out = withCritique(out, text);
     }
@@ -478,6 +513,7 @@ export class Interpreter {
     return { ...ports, options: kept.map((o) => o.artifact!), optionViews: kept.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
   }
 
+  /** Each option runs the body as the work, with its own view and no option set; the candidates' work comes out (HANDED_ON). */
   private async each(e: Each, ports: Ports, ctx: Ctx): Promise<Ports> {
     const ids = ports.options ?? (ports.artifact ? [ports.artifact] : []);
     const outs = await Promise.all(
@@ -487,7 +523,8 @@ export class Interpreter {
         return this.node(e.body, start, branch(ctx, [...ctx.path, i]));
       }),
     );
-    return { ...ports, options: outs.map((o, i) => o.artifact ?? ids[i]!), optionViews: outs.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
+    const made: Ports = { options: outs.map((o, i) => o.artifact ?? ids[i]!), optionViews: outs.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
+    return handOn(ports, made, HANDED_ON.each);
   }
 
   private async pick(p: PickNode, ports: Ports, ctx: Ctx): Promise<Ports> {
@@ -717,7 +754,9 @@ export class Interpreter {
       { type: 'step-started', stepId: o.id, ...cand(call), data: { label: 'Optional step', stage: ctx.stage, role: 'optional', actor: 'human' }, dedupeKey: `${call.key}/step-started` },
       { type: 'step-finished', stepId: o.id, ...cand(call), data: { costUsd: 0, skipped: true, note: DECLINED_NOTE }, dedupeKey: `${call.key}/step-finished` },
     ]);
-    return ports;
+    // A declined step that would have put its critique in place leaves the critique empty and marked, so the writer after
+    // it makes no change and says why, as after an empty CUT, instead of acting on an older critique (R-DECLINED).
+    return replacesCritique(o.body) ? withCritique(ports, '', DECLINED_CRITIQUE_NOTE) : ports;
   }
 
   /**
@@ -741,19 +780,25 @@ export class Interpreter {
 
   // ---- Annotations, gates, relays --------------------------------------------------------------------------------
 
-  /** Lenses read the same input concurrently; their critiques are joined under their names and nothing else changes. */
+  /**
+   * Lenses read the same input concurrently; their critiques are joined under their names, and that is all that comes
+   * out (HANDED_ON), with their notes beside the work. Where no lens made a new critique, the one before it stays.
+   */
   private async audit(a: Audit, ports: Ports, ctx: Ctx): Promise<Ports> {
     const outs = await Promise.all(a.lenses.map((lens) => this.node(lens.body, ports, { stage: ctx.stage, path: ctx.path, contained: true })));
     const joined = outs.flatMap((o, i) => (o.critique && o.critique !== ports.critique ? [`## ${a.lenses[i]!.name}\n${o.critique.trim()}`] : []));
     const notes = outs.flatMap((o) => (o.notes && o.notes !== ports.notes ? o.notes : []));
-    const annotated = joined.length ? withCritique(ports, joined.join('\n\n')) : ports;
+    const annotated = handOn(ports, joined.length ? { critique: joined.join('\n\n') } : ports, HANDED_ON.audit);
     return { ...annotated, ...(notes.length ? { notes } : {}) };
   }
 
   private async gate(g: OneShotGate, ports: Ports, ctx: Ctx): Promise<Ports> {
     const out = await this.node(g.body, ports, { stage: ctx.stage, path: ctx.path, contained: true });
     const verdict = out.score && passes(out.score, g.pass.metric, g.pass.threshold);
-    const kept: Ports = { ...ports, ...(out.critique ? { critique: out.critique } : {}) };
+    // The gate hands on the ports it was handed with its body's critique as the body left it (HANDED_ON): a critique the
+    // body wrote replaces the one before it and clears that one's mark that it asked for nothing (an empty CUT) and an
+    // earlier sweep's hits, as any new critique does (R-GATE-MARK); a body that wrote none hands them on as they were.
+    const kept = handOn(ports, out, HANDED_ON.gate);
     if (verdict) return kept;
     const call = this.call(g.id, ctx);
     const used = this.gateRetries.get(g.id) ?? 0;
@@ -786,6 +831,9 @@ export class Interpreter {
 
 const cand = (call: StepCall): { candidate?: number } => (call.candidate !== undefined ? { candidate: call.candidate } : {});
 
+/** A step's place in the run, the same on every pass through it: its id and its candidate path (each fan-out branch's own). */
+const placeOf = (s: Step, ctx: Ctx): string => `${s.id}|${ctx.path.length ? ctx.path.join('.') : '-'}`;
+
 /**
  * Why a judging step (a model critic or check) inside a relay link has nothing to see: every item of the view it would
  * judge is one with nothing to judge (a shot whose clip was not made, render.ts). Undefined anywhere else: outside a
@@ -817,6 +865,31 @@ function beside(ports: Ports, work?: string[]): string[] {
 }
 
 /**
+ * The ports an operator that runs its body apart hands on (HANDED_ON in @byway/recipe/semantics, which the validator's
+ * scope typing reads too): those it was handed, with each port the table names taken from `made`, what ran inside it.
+ * The critique comes with what marks it (an empty CUT's note, a sweep's hits), the option set with each option's view.
+ */
+function handOn(ports: Ports, made: Ports, handed: readonly HandedPort[]): Ports {
+  let out = ports;
+  for (const port of handed) {
+    switch (port) {
+      case 'critique':
+        out = { ...withCritique(out, made.critique, made.emptyCritique), ...(made.hits ? { hits: made.hits } : {}) };
+        break;
+      case 'option_set<artifact>':
+        out = { ...out, options: made.options, optionViews: made.optionViews };
+        break;
+      default: {
+        // A port the table may name that is not taken here fails typecheck.
+        const untaken: never = port;
+        return untaken;
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Ports with a new critique. `empty` is the note of a critique that asks for nothing (an empty CUT directive, spec §3.3
  * "Nothing to remove."; no TELLS hit chosen), which the next fix passes over; any other critique, or no critique at all,
  * clears that mark, and the hits of an earlier sweep with it.
@@ -824,6 +897,15 @@ function beside(ports: Ports, work?: string[]): string[] {
 function withCritique(ports: Ports, critique: string | undefined, empty?: string): Ports {
   const { emptyCritique: _was, critique: _old, hits: _hits, ...rest } = ports;
   return { ...rest, ...(critique !== undefined ? { critique } : {}), ...(empty ? { emptyCritique: empty } : {}) };
+}
+
+/**
+ * Ports with a new brief, marked as a list of questions to answer in place only when `questions` says so (its prompt is
+ * one of QUESTION_BRIEF_PROMPTS); any other write of the brief clears that mark (Ports.briefQuestions, R-C7).
+ */
+function withBrief(ports: Ports, brief: string, questions: boolean): Ports {
+  const { briefQuestions: _was, ...rest } = ports;
+  return { ...rest, brief, ...(questions ? { briefQuestions: true as const } : {}) };
 }
 
 /** The problem with a person's answer that an activity could not use as it is (ENG-6), or undefined. */

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { TokenBreakdown } from '../prices.ts';
-import { stalledDetail, streamEndedEarly, StreamIdle } from './stream.ts';
+import { providerFetch } from './fetch.ts';
+import { StreamIdle, streamStalled } from './stream.ts';
 import { imageData, plain, type ProviderAdapter, type ProviderCompletion, type ProviderCompletionRequest } from './types.ts';
 
 type Params = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
@@ -49,9 +50,12 @@ export interface AnthropicClientLike {
   beta: { messages: { stream(body: Params, options?: { signal?: AbortSignal }): AnthropicStreamLike } };
 }
 
-/** SDK retries off: the gateway owns retries, so attempts are counted once and backoff is one policy. */
-export function createAnthropicClient(apiKey: string): AnthropicClientLike {
-  return new Anthropic({ apiKey, maxRetries: 0 });
+/**
+ * SDK retries off: the gateway owns retries, so attempts are counted once and backoff is one policy. Requests go through
+ * the provider Agent's fetch (fetch.ts), so Node's five-minute limits do not cut a long answer off under its wait.
+ */
+export function createAnthropicClient(apiKey: string, fetchImpl: typeof fetch = providerFetch): AnthropicClientLike {
+  return new Anthropic({ apiKey, maxRetries: 0, fetch: fetchImpl });
 }
 
 /**
@@ -66,9 +70,19 @@ export interface AnthropicAdapterOptions {
 
 /**
  * Build Messages API params. No temperature, top_p or top_k: Claude 4.7+ models reject non-default sampling
- * parameters. No thinking config: Claude Opus 5.5 and Fable 5.1 think adaptively and reject a disabled or budgeted
- * config, and Sonnet 5.5 defaults to adaptive. Effort stays at each model's default. No beta header and no fallback
- * field: the model asked for is the only one that may answer (ADR-0102).
+ * parameters. Thinking is adaptive, as Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 think by default (they reject a
+ * disabled or budgeted config), with its display "summarized": the default, "omitted", streams only pings while the
+ * model thinks, so a long think would read as silence and be cut off at the model's wait (StreamIdle), then sent again
+ * and paid twice (StreamIdle's comment in stream.ts says why only pings arrive). The owner chose it on 2026-10-22,
+ * "Ask for summaries (Recommended)". Anthropic's public thinking page
+ * (https://platform.claude.com/docs/en/build-with-claude/thinking, read 2026-10-22) says that on these three models
+ * thinking is on with no configuration, a disabled or budgeted config gets a 400, and display defaults to "omitted";
+ * that display controls how thinking content is returned, and the summary is written by a different model, which the
+ * thinking model never sees; and that "Either way the block is billed the same": the full thinking tokens are charged,
+ * not the summary's. So @anthropic-ai/sdk 0.131.0's type docs, which say the default is "summarized", are stale for
+ * these models. The summary is not part of the answer: only text blocks are read (parseAnthropicMessage). Effort stays
+ * at each model's default. No beta header and no fallback field: the model asked for is the only one that may answer
+ * (ADR-0102).
  */
 export function anthropicParams(req: ProviderCompletionRequest, inline: boolean): Params {
   const messages = req.messages.map((m) => ({
@@ -84,6 +98,7 @@ export function anthropicParams(req: ProviderCompletionRequest, inline: boolean)
     model: req.model,
     max_tokens: req.maxOutputTokens,
     messages,
+    thinking: { type: 'adaptive', display: 'summarized' },
     ...(req.system ? { system: req.system } : {}),
   };
 }
@@ -166,7 +181,7 @@ export function anthropicAdapter(opts: AnthropicAdapterOptions): ProviderAdapter
         // that answer is settled, as a streamed OpenAI or OpenRouter answer that finished is (ADR-0111). The SDK rejects
         // finalMessage when the abort lands after the last event but before it has read the stream's end.
         if (whole) msg = whole;
-        else if (idle.stalled && !req.signal?.aborted) throw streamEndedEarly('anthropic', stalledDetail(events, 'event', idle.afterMs), e);
+        else if (idle.stalled && !req.signal?.aborted) throw streamStalled('anthropic', events, 'event', idle.afterMs, e);
         else throw e;
       } finally {
         idle.end();

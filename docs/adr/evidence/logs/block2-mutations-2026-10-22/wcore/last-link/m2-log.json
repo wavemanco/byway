@@ -1,0 +1,66 @@
+[
+  {
+    "name": "C1 every proxy waits for its steps (WAIT_CANCELLATION_COMPLETED)",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  2 failed | 33 skipped (35)"
+    ],
+    "failed": [
+      "× pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope 6ms",
+      "× Cancel shows the run cancelled at once while a call byway does not cut off is still under way, and that call is paid for when it ends (TRY_CANCEL) 30225ms",
+      "FAIL  packages/runner/test/liveness.test.ts > the stop rule: which cancels cut a call off (ADR-0111) > pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope",
+      "FAIL  packages/runner/test/liveness.test.ts > cancel and stop through the real workflow > Cancel shows the run cancelled at once while a call byway does not cut off is still under way, and that call is paid for when it ends (TRY_CANCEL)"
+    ]
+  },
+  {
+    "name": "C2 the model proxy left to the SDK's default",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 1 passed | 33 skipped (35)"
+    ],
+    "failed": [
+      "× pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope 5ms",
+      "FAIL  packages/runner/test/liveness.test.ts > the stop rule: which cancels cut a call off (ADR-0111) > pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope"
+    ]
+  },
+  {
+    "name": "C3 a second cancellation scope",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 34 skipped (35)"
+    ],
+    "failed": [
+      "× pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope 9ms",
+      "FAIL  packages/runner/test/liveness.test.ts > the stop rule: which cancels cut a call off (ADR-0111) > pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope"
+    ]
+  },
+  {
+    "name": "C4 a fifth proxy with options of its own",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 34 skipped (35)"
+    ],
+    "failed": [
+      "× pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope 9ms",
+      "FAIL  packages/runner/test/liveness.test.ts > the stop rule: which cancels cut a call off (ADR-0111) > pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope"
+    ]
+  },
+  {
+    "name": "C5 Cancel no longer cancels the scope",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  2 failed | 33 skipped (35)"
+    ],
+    "failed": [
+      "× pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope 9ms",
+      "× Cancel shows the run cancelled at once while a call byway does not cut off is still under way, and that call is paid for when it ends (TRY_CANCEL) 30148ms",
+      "FAIL  packages/runner/test/liveness.test.ts > the stop rule: which cancels cut a call off (ADR-0111) > pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope",
+      "FAIL  packages/runner/test/liveness.test.ts > cancel and stop through the real workflow > Cancel shows the run cancelled at once while a call byway does not cut off is still under way, and that call is paid for when it ends (TRY_CANCEL)"
+    ]
+  }
+]

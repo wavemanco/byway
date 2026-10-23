@@ -1,0 +1,27 @@
+[
+ {
+  "name": "paid: wait of an earlier send kept",
+  "file": "packages/gateway/src/paid.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/whole-call.test.ts",
+   "test/cut-off.test.ts",
+   "test/spend-book.test.ts"
+  ],
+  "old": "    this.waited = waitedOf(err);",
+  "new": "    this.waited ??= waitedOf(err);"
+ },
+ {
+  "name": "google: logged request carries the signal",
+  "file": "packages/gateway/src/providers/google.ts",
+  "pkg": "packages/gateway",
+  "tests": [
+   "test/whole-call.test.ts",
+   "test/cut-off.test.ts",
+   "test/providers.test.ts"
+  ],
+  "old": "      return { ...parseGoogleResponse(res, req.model), requestBody: googleParams(req, false) };",
+  "new": "      return { ...parseGoogleResponse(res, req.model), requestBody: withDeadline(googleParams(req, false), req.deadline) };",
+  "also": []
+ }
+]

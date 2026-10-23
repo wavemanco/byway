@@ -1,0 +1,30 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 2 failed) 55ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × flags a figure a page no longer shows after the model's name, naming the row and the figure, with one warning 11ms
+     × reads a model's name as a whole name, and its figures only up to the next model it prices 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > flags a figure a page no longer shows after the model's name, naming the row and the figure, with one warning
+AssertionError: expected [ …(8) ] to include 'Google gemini-3.8-flash (the row from…'
+ ❯ scripts/test/price-report.test.ts:137:110
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > reads a model's name as a whole name, and its figures only up to the next model it prices
+AssertionError: expected [ …(8) ] to include 'OpenAI gpt-6-astra: not found after i…'
+ ❯ scripts/test/price-report.test.ts:156:111
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 69 passed (71)
+   Start at  17:34:45
+   Duration  623ms (tests 69%, transform 18%, import 12%, worker 1%)
+

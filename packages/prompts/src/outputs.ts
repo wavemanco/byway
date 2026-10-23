@@ -22,7 +22,10 @@ export const OUTPUT_CONTRACTS = {
   'tells-hits': 'One fenced json block: {"hits":[{"pattern":string,"where":string,"alternative":string}]}',
   keep: 'Optional reasoning, then a last line "Keep: A" or "Keep: B"',
   'plain-text': 'Plain text',
-  'image-briefs': 'One fenced json block: {"images":[{"slot":string,"prompt":string,"alt":string,"size":"1024x1024"|"1536x1024"|"1024x1536"}]}',
+  // Spec §3.3 (ADR-0101): a template whose front matter says advice: yes (only C3's header image) may add one optional
+  // line of advice for the person beside the images; it never stops the image.
+  'image-briefs':
+    'One fenced json block: {"images":[{"slot":string,"prompt":string,"alt":string,"size":"1024x1024"|"1536x1024"|"1024x1536"}],"advice"?:string} ("advice" only where the template says advice: yes: one short sentence for the person, at most 200 characters)',
   intake: 'One fenced json block: {"answers":[{"questionId":string,"answer":boolean,"confidence":number,"rationale":string}],"routes":{[routeId]:string}}',
   recipe: 'One fenced json block holding a byway.recipe/1 object',
   dedupe: 'One fenced json block: {"keep":[label…],"merged":[{"into":label,"from":[label…]}]}',
@@ -40,7 +43,7 @@ export const OUTPUT_IDS = Object.keys(OUTPUT_CONTRACTS) as OutputId[];
 const isMedium = (m: string | undefined): m is Medium => (MEDIA as readonly string[]).includes(m ?? '');
 
 /** Roles and helpers whose answer is the artifact itself, in the medium's format. */
-const ARTIFACT_ROLES = new Set(['build', 'seed', 'fix', 'asset.integrate', 'voice.apply']);
+const ARTIFACT_ROLES = new Set(['build', 'seed', 'fix', 'asset.integrate']);
 
 const BY_ROLE: Record<string, OutputId> = {
   critic: 'critique',

@@ -1,0 +1,4 @@
+[
+ {"name": "fal: frame bound never ended", "file": "packages/gateway/src/providers/fal.ts", "pkg": "packages/gateway", "tests": ["test/clip-wait.test.ts"],
+  "old": "        } finally {\n          frameBound?.end();\n        }", "new": "        } finally {\n        }"}
+]

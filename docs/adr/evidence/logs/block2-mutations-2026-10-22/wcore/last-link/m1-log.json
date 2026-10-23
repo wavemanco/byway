@@ -1,0 +1,249 @@
+[
+  {
+    "name": "M1 link call reads the waits afresh during the step",
+    "status": "MISSED",
+    "summary": [
+      "Test Files  1 passed (1)",
+      "Tests  12 passed (12)"
+    ],
+    "failed": []
+  },
+  {
+    "name": "M2 clip reads the waits afresh during the step",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 passed (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 102ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M3 the clip is handed the link's wait",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 passed (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 102ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M4 memo drops a call's own wait",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 passed (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 104ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M5 memo key made from the request with its operation",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 passed (12)"
+    ],
+    "failed": [
+      "× a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 113ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M6 relay limit 4x the link wait",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  5 failed | 7 passed (12)"
+    ],
+    "failed": [
+      "× a relay step’s limit is 5 times its link model’s wait, plus its video wait, plus 15 minutes: 2 hours at the defaults, 6.5 at the longest choices 23ms",
+      "× at the longest choices, 60 and 75 minutes: the step’s limit is six and a half hours 24ms",
+      "× in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults 976ms",
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 225ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 36ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the proxies’ limits, read back > a relay step’s limit is 5 times its link model’s wait, plus its video wait, plus 15 minutes: 2 hours at the defaults, 6.5 at the longest choices",
+      "FAIL  packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > at the longest choices, 60 and 75 minutes: the step’s limit is six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults"
+    ]
+  },
+  {
+    "name": "M7 relay limit without the 15-minute allowance",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  5 failed | 7 passed (12)"
+    ],
+    "failed": [
+      "× a relay step’s limit is 5 times its link model’s wait, plus its video wait, plus 15 minutes: 2 hours at the defaults, 6.5 at the longest choices 22ms",
+      "× at the longest choices, 60 and 75 minutes: the step’s limit is six and a half hours 21ms",
+      "× in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults 618ms",
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 190ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 23ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the proxies’ limits, read back > a relay step’s limit is 5 times its link model’s wait, plus its video wait, plus 15 minutes: 2 hours at the defaults, 6.5 at the longest choices",
+      "FAIL  packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > at the longest choices, 60 and 75 minutes: the step’s limit is six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults"
+    ]
+  },
+  {
+    "name": "M8 the relay step on the image proxy (24 h)",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  3 failed | 9 passed (12)"
+    ],
+    "failed": [
+      "× in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults 581ms",
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 210ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 22ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > a balanced run with its link and video models at the longest choices: each relay step under six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > the waits are read once, into the history: both runs replay without a mismatch after Settings change"
+    ]
+  },
+  {
+    "name": "M9 the waits read on the model proxy",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  3 failed | 9 passed (12)"
+    ],
+    "failed": [
+      "× in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults 694ms",
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 182ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 21ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > a balanced run with its link and video models at the longest choices: each relay step under six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > the waits are read once, into the history: both runs replay without a mismatch after Settings change"
+    ]
+  },
+  {
+    "name": "M10 the relay step handed the defaults, not its reading",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  2 failed | 10 passed (12)"
+    ],
+    "failed": [
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 162ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 19ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > a balanced run with its link and video models at the longest choices: each relay step under six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > the waits are read once, into the history: both runs replay without a mismatch after Settings change"
+    ]
+  },
+  {
+    "name": "M11 model steps keep 15 minutes",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  4 failed | 8 passed (12)"
+    ],
+    "failed": [
+      "× a model step and an image step run under a 24-hour backstop, with the heartbeat and the tries they had 34ms",
+      "× in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults 690ms",
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 231ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 25ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the proxies’ limits, read back > a model step and an image step run under a 24-hour backstop, with the heartbeat and the tries they had",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > a balanced run with its link and video models at the longest choices: each relay step under six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > the waits are read once, into the history: both runs replay without a mismatch after Settings change"
+    ]
+  },
+  {
+    "name": "M12 image steps keep 45 minutes",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  4 failed | 8 passed (12)"
+    ],
+    "failed": [
+      "× a model step and an image step run under a 24-hour backstop, with the heartbeat and the tries they had 29ms",
+      "× in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults 579ms",
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 178ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 22ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the proxies’ limits, read back > a model step and an image step run under a 24-hour backstop, with the heartbeat and the tries they had",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > a balanced run with its link and video models at the longest choices: each relay step under six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > the waits are read once, into the history: both runs replay without a mismatch after Settings change"
+    ]
+  },
+  {
+    "name": "M13 image steps get three tries",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  4 failed | 8 passed (12)"
+    ],
+    "failed": [
+      "× a model step and an image step run under a 24-hour backstop, with the heartbeat and the tries they had 27ms",
+      "× in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults 645ms",
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 194ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 19ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the proxies’ limits, read back > a model step and an image step run under a 24-hour backstop, with the heartbeat and the tries they had",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > in demo mode: model and image steps under 24 hours, the waits read as a quick step before each relay step, and each relay step under 2 hours, from the defaults",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > a balanced run with its link and video models at the longest choices: each relay step under six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > through the real workflow, on Temporal’s history > the waits are read once, into the history: both runs replay without a mismatch after Settings change"
+    ]
+  },
+  {
+    "name": "M14 the waits read always asks the big tier",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  5 failed | 7 passed (12)"
+    ],
+    "failed": [
+      "× what was chosen for the profile’s link model (its model for the step’s tier) and for its video model, each by provider and model 27ms",
+      "× at the longest choices, 60 and 75 minutes: the step’s limit is six and a half hours 21ms",
+      "× a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again 91ms",
+      "× a balanced run with its link and video models at the longest choices: each relay step under six and a half hours 201ms",
+      "× the waits are read once, into the history: both runs replay without a mismatch after Settings change 25ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > what was chosen for the profile’s link model (its model for the step’s tier) and for its video model, each by provider and model",
+      "FAIL  packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > at the longest choices, 60 and 75 minutes: the step’s limit is six and a half hours",
+      "FAIL  packages/runner/test/step-limits.test.ts > a relay step’s calls keep the waits it was handed > a wait raised in Settings during the step changes none of its calls; the next step reads it; and the step run again under other waits buys nothing again"
+    ]
+  },
+  {
+    "name": "M15 the waits read uses a choice the kind does not offer",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 passed (12)"
+    ],
+    "failed": [
+      "× a choice the model’s kind does not offer is not used, as the gateway does not use it 28ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > a choice the model’s kind does not offer is not used, as the gateway does not use it"
+    ]
+  },
+  {
+    "name": "M16 the waits read ignores demo mode",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 passed (12)"
+    ],
+    "failed": [
+      "× the demo’s mock models, a profile of mock models and a profile byway does not list wait the defaults 28ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > the demo’s mock models, a profile of mock models and a profile byway does not list wait the defaults"
+    ]
+  },
+  {
+    "name": "M17 the waits read takes a mock model's choice",
+    "status": "CAUGHT",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 11 passed (12)"
+    ],
+    "failed": [
+      "× the demo’s mock models, a profile of mock models and a profile byway does not list wait the defaults 26ms",
+      "FAIL  packages/runner/test/step-limits.test.ts > the waits read just before a relay step (relayWaits) > the demo’s mock models, a profile of mock models and a profile byway does not list wait the defaults"
+    ]
+  }
+]

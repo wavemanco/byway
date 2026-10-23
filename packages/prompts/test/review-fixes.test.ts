@@ -18,7 +18,8 @@ const FENCED = FILES.filter((f) => ['artifact:prose', 'artifact:code-diff', 'art
 
 describe('nested fences (ENG-1)', () => {
   it('covers the prose, diff and page templates', () => {
-    expect(FENCED.length).toBeGreaterThanOrEqual(24);
+    // 22 since the three voice.apply helpers of these media were retired (VOICE makes no model call, ADR-0081).
+    expect(FENCED.length).toBeGreaterThanOrEqual(22);
   });
 
   it.each(FENCED.map((f) => [f.name, f] as const))('%s says to fence content that has its own fences with a longer fence', (_n, f) => {
@@ -50,17 +51,6 @@ describe('storyboard on-screen copy (VOICE-1, C4)', () => {
   it.each(STORYBOARDS.map((f) => [f.name, f] as const))('%s shows the headline, tagline and per-shot caption in its shape', (_n, f) => {
     const format = answerFormat(f.raw);
     for (const field of ['"caption"', '"headline"', '"tagline"', '"voiceover"']) expect(format, field).toContain(field);
-  });
-
-  it('the media copy helper writes on-screen copy into its own fields and leaves a locked voice-over alone', () => {
-    const helper = FILES.find((f) => f.name === 'helper.voice.apply@media.md')!;
-    const user = library.render(helper.template.id, sampleSlots('media')).user;
-    expect(user).toMatch(/`headline`/);
-    expect(user).toMatch(/`tagline`/);
-    expect(user).toMatch(/`caption`/);
-    expect(user).toMatch(/locked/);
-    // On-screen words no longer go into shot descriptions.
-    expect(user).not.toMatch(/On-screen: "/);
   });
 });
 

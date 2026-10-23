@@ -117,15 +117,19 @@ function networkSignature(err: unknown): Billing | undefined {
  * - maybe: no answer after the request may have been written (ECONNRESET, EPIPE, UND_ERR_SOCKET, timeouts, aborts);
  *   408, 502 and 504, or any 5xx without a provider body (a proxy answered, not the provider); a stream that ended
  *   without its terminal event; and anything this cannot read, because only 'none' permits a blind re-send.
- * Treating a provider-bodied 5xx and a mid-stream error event as unbilled is an assumption, not documented provider
- * billing; it is today's behaviour and costs at most one attempt (ADR-0091). Read again on 2026-10-18: only fal says
- * it ("Server errors (HTTP 500+) are never charged", fal.ai/docs/documentation/model-apis/faq; its pricing page says the
- * same), and fal's queue jobs are never sent blind again anyway (BILLABLE_JOB). Anthropic's errors and streaming pages,
- * OpenAI's error codes and pricing pages, Google's troubleshooting, API errors and pricing pages, and OpenRouter's
- * errors page say nothing about whether a failed request is billed. OpenRouter's says that when a model answers with
- * no content, "you may still be charged for the prompt processing cost by the upstream provider"; such an answer is
- * a 200 with its usage, which is ledgered, not an error. So for Anthropic, OpenAI, Google and OpenRouter this is still
- * an assumption; the first live runs' ledger, against each provider's usage records, is what can settle it (backlog).
+ * Treating a provider-bodied 5xx and a mid-stream error event as unbilled is today's behaviour and costs at most one
+ * attempt (ADR-0091). Two providers document the 5xx half. fal, read again on 2026-10-18: "Server errors (HTTP 500+)
+ * are never charged" (fal.ai/docs/documentation/model-apis/faq; its pricing page says the same), and fal's queue jobs
+ * are never sent blind again anyway (BILLABLE_JOB). Google's billing page, read on 2026-10-22
+ * (ai.google.dev/gemini-api/docs/billing): a request that fails with a 400 or 500 error is not charged for its tokens;
+ * it says nothing about timeouts or aborted calls (ADR-0109's Later note of 2026-10-22, "Google's billing page").
+ * Anthropic's errors and streaming pages, OpenAI's error codes and pricing pages, Google's troubleshooting, API errors
+ * and pricing pages, and OpenRouter's errors page say nothing about whether a failed request is billed. OpenRouter's
+ * says that when a model answers with no content, "you may still be charged for the prompt processing cost by the
+ * upstream provider"; such an answer is a 200 with its usage, which is ledgered, not an error. So for Anthropic, OpenAI
+ * and OpenRouter the 5xx reading is still an assumption, and so is the mid-stream error event (read as unbilled on
+ * Anthropic's streams only, ADR-0111); the first live runs' ledger, against each provider's usage records, is what can
+ * settle them (backlog).
  */
 export function billingOf(err: unknown): Billing {
   const stated = isObject(err) ? err.billing : undefined;

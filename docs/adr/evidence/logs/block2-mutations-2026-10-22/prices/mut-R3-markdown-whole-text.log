@@ -1,0 +1,34 @@
+
+ RUN  v5.0.3 C:/Users/arvik/code/byway/.worktrees/fx-b2-prices
+
+ ❯ scripts/test/price-report.test.ts (9 tests | 1 failed) 49ms
+   ❯ the weekly run's price report (PRICE-CADENCE) (9)
+     × reads a model's name as a whole name, and its figures only up to the next model it prices 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/test/price-report.test.ts > the weekly run's price report (PRICE-CADENCE) > reads a model's name as a whole name, and its figures only up to the next model it prices
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ scripts/test/price-report.test.ts:150:183
+    148|     const astra = row('openai', 'gpt-6-astra');
+    149|     const split = anthropicPage().replace(/(\| Claude Fable 5\.1 \| \$…
+    150|     expect((await run(web({ 'https://platform.claude.com/docs/en/about…
+       |                                                                                                                                                                                       ^
+    151|     // In HTML, a model's stretch ends where the next model the page p…
+    152|     // stand in for gpt-6-astra's input once that has changed.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  17:35:15
+   Duration  615ms (tests 70%, transform 19%, import 10%, worker 1%)
+

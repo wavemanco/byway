@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { AdmitRequest } from '@byway/contracts';
 import { describe, expect, it } from 'vitest';
 import { MIGRATIONS, SCHEMA_VERSION, StoreError, createStore, migrate, openDatabase } from '../src/index.ts';
 import { openStore, tempDir } from './helpers.ts';
@@ -24,8 +25,31 @@ const MIGRATION_5_CHECKSUM = 'sha256:9a63b55748772581a7a23f8f9eef1ef9c85100cffc8
 const MIGRATION_6_CHECKSUM = 'sha256:8a6190b9d3d2443dc74679922806992d357242034ca7d56766d045ee89abb1f0';
 const MIGRATION_7_CHECKSUM = 'sha256:43d25171342abea916e9cdec341e2871557be594609c277f44369d45ba70113a';
 const MIGRATION_8_CHECKSUM = 'sha256:c0bf1a83fdc56c0292a686df508e44e5a8075f9d18692d96defab8a1e762444c';
+/** Pinned when migration 9 (each model's answer wait) was written; it must never change. */
+const MIGRATION_9_CHECKSUM = 'sha256:b2f7caccd2a1aaf6941fdc8fc09a2938e6396e29355c7824999287997f0465d1';
+/** Pinned when migration 10 (the spend book's acceptance times and its reason 'waited') was written; it must never change. */
+const MIGRATION_10_CHECKSUM = 'sha256:f27be46e0889d8c5c4e9dfa888981b51ae3561eb2fe3dfd6cb37df5100a595af';
+/** Pinned when migration 11 (how a retained send used its whole wait, WEB-1) was written; it must never change. */
+const MIGRATION_11_CHECKSUM = 'sha256:cfd3bddb786d29c2d96c7318808ed28388f6db25a06f3f088fb3be323330772f';
 
 const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
+
+/** A paid call in workspace "ws" for the spend book to admit, by owner "owner". */
+const admitOf = (over: Partial<AdmitRequest> = {}): AdmitRequest => ({
+  opId: 'op',
+  owner: 'owner',
+  leaseMs: 60_000,
+  workspaceId: 'ws',
+  runId: 'run-1',
+  purpose: 'build:prose',
+  kind: 'completion',
+  provider: 'anthropic',
+  model: 'm',
+  reserveUsd: 0.1,
+  paid: true,
+  caps: { workspaceUsd: 25 },
+  ...over,
+});
 
 /**
  * Writes a data directory exactly as a build that knew only migration 1 left it: the v1 schema, its schema_version row,
@@ -196,6 +220,9 @@ describe('migrations', () => {
       [6, 'spend-book', MIGRATION_6_CHECKSUM],
       [7, 'operation-keys', MIGRATION_7_CHECKSUM],
       [8, 'renderer-settings', MIGRATION_8_CHECKSUM],
+      [9, 'answer-waits', MIGRATION_9_CHECKSUM],
+      [10, 'spend-book-waits', MIGRATION_10_CHECKSUM],
+      [11, 'spend-book-retained-waits', MIGRATION_11_CHECKSUM],
     ]);
   });
 
@@ -349,6 +376,176 @@ describe('migrations', () => {
     expect(await store.getWorkspace('ws')).toMatchObject({ budgetUsd: 25 });
     expect(await store.spendBook.cursor()).toEqual({ offset: 0, tailStart: 0, tailSha256: null });
     expect(await store.spendBook.spend('ws')).toEqual({ spentUsd: 0, byRun: {}, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('upgrade an existing version-8 database file in place, adding answer waits with none chosen', async () => {
+    const dataDir = tempDir();
+    const db = openDatabase(join(dataDir, 'byway.sqlite'));
+    try {
+      db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+      for (const m of MIGRATIONS.slice(0, 8)) {
+        db.exec(m.sql);
+        db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-21T00:00:00.000Z');
+      }
+      db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, '2026-10-21T09:00:00.000Z');
+      db.prepare(`INSERT INTO preferences (workspace_id, profile_id, demo_mode, show_technical_names, updated_at) VALUES ('ws', 'best', 0, 1, '2026-10-21T09:00:00.000Z')`).run();
+    } finally {
+      db.close();
+    }
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    expect(await store.getPreferences('ws')).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true });
+    expect(await store.getAnswerWaits('ws')).toEqual([]);
+    expect(await store.setAnswerWait('ws', { provider: 'fal', model: 'fal-ai/kling-video/v3/pro/image-to-video', minutes: 45 })).toMatchObject({ minutes: 45 });
+  });
+
+  it('upgrade an existing version-9 database file in place, keeping every paid call, its reason, its jobs, its key and its order, and adding the reason "waited"', async () => {
+    const dataDir = tempDir();
+    const db = openDatabase(join(dataDir, 'byway.sqlite'));
+    const at = (s: number) => `2026-10-22T09:00:0${s}.000Z`;
+    try {
+      db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+      for (const m of MIGRATIONS.slice(0, 9)) {
+        db.exec(m.sql);
+        db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-22T00:00:00.000Z');
+      }
+      db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, at(0));
+      const insert = db.prepare(`INSERT INTO paid_operations (id, workspace_id, run_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd, state,
+        uncertain_reason, provider_jobs, lease_until, settle_seq, settled_usd, ledger_entry_id, entry, op_key, created_at, updated_at)
+        VALUES (?, 'ws', 'run-1', 'build:prose', ?, ?, 'm', 1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`);
+      // Inserted out of their time order, so rowid order is not created_at order: ties are broken by rowid.
+      insert.run('op-failed', 'completion', 'anthropic', 0.4, 0, 'uncertain', 'failed', null, null, null, null, null, null, at(2), at(2));
+      insert.run('op-clip', 'video', 'fal', 0.7, 0, 'uncertain', 'interrupted', '{"generation":"req-1"}', null, null, null, null, 'k-clip', at(1), at(1));
+      insert.run('op-settled', 'completion', 'openai', 0.2, 0, 'settled', null, null, 1, 0.15, 'entry-1', '{"costUsd":0.15}', 'k-done', at(1), at(1));
+      insert.run('op-resent', 'image', 'google', 0.05, 0.05, 'released', null, null, null, null, null, null, null, at(1), at(1));
+    } finally {
+      db.close();
+    }
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    const book = store.spendBook;
+    expect(await book.spend('ws')).toEqual({ spentUsd: 0.15, byRun: { 'run-1': 0.15 }, inFlightUsd: 0, uncertainUsd: 1.15 });
+    // As listed before the migration: each reason, its jobs, and the order (updated_at, then rowid).
+    expect((await book.records('ws')).uncertain).toEqual([
+      expect.objectContaining({ opId: 'op-clip', reason: 'interrupted', usd: 0.7, providerJobs: { generation: 'req-1' } }),
+      expect.objectContaining({ opId: 'op-resent', reason: 'resent', usd: 0.05 }),
+      expect.objectContaining({ opId: 'op-failed', reason: 'failed', usd: 0.4 }),
+    ]);
+    for (const u of (await book.records('ws')).uncertain) expect(u).not.toHaveProperty('waited');
+    // The keys held before still hold: the settled call's, and the clip's, resumed with its job and no acceptance time
+    // (it was accepted before the book kept one, so its wait counts from the resume).
+    expect(await book.admit(admitOf({ opId: 'later-done', operationKey: 'k-done' }))).toEqual({ settledEarlier: true });
+    expect(await book.admit(admitOf({ opId: 'later-clip', operationKey: 'k-clip', kind: 'video', provider: 'fal' }))).toEqual({ resume: { opId: 'op-clip', jobs: { generation: 'req-1' } } });
+    // And the new reason is taken.
+    const waited = admitOf({ opId: 'op-waited' });
+    await book.admit(waited);
+    await book.markSent('op-waited', 'owner');
+    await book.abandon('op-waited', 'waited', { minutes: 45, how: 'silence' });
+    expect((await book.records('ws')).uncertain).toEqual(expect.arrayContaining([expect.objectContaining({ opId: 'op-waited', reason: 'waited', waited: { minutes: 45, how: 'silence' } })]));
+    const indexes = new DatabaseSync(store.dbPath);
+    try {
+      const names = indexes.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'paid_operations' AND name NOT LIKE 'sqlite_autoindex%' ORDER BY name").all().map((r) => r.name);
+      expect(names).toEqual(['paid_operations_by_key', 'paid_operations_by_run', 'paid_operations_by_workspace', 'paid_operations_live', 'paid_operations_outbox']);
+      expect(indexes.prepare('SELECT id FROM paid_operations ORDER BY rowid').all().map((r) => r.id)).toEqual(['op-failed', 'op-clip', 'op-settled', 'op-resent', 'op-waited']);
+    } finally {
+      indexes.close();
+    }
+  });
+
+  it('upgrade an existing version-10 database file in place, keeping every paid call, and keep how a retained send waited (WEB-1)', async () => {
+    const dataDir = tempDir();
+    const db = openDatabase(join(dataDir, 'byway.sqlite'));
+    const at = (s: number) => `2026-10-23T09:00:0${s}.000Z`;
+    try {
+      db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+      for (const m of MIGRATIONS.slice(0, 10)) {
+        db.exec(m.sql);
+        db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-23T00:00:00.000Z');
+      }
+      db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, at(0));
+      const insert = db.prepare(`INSERT INTO paid_operations (id, workspace_id, run_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd, state,
+        uncertain_reason, waited, lease_until, settle_seq, settled_usd, ledger_entry_id, entry, created_at, updated_at)
+        VALUES (?, 'ws', 'run-1', 'build:prose', 'completion', 'anthropic', 'm', 1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`);
+      insert.run('op-waited', 0.4, 0.4, 'uncertain', 'waited', '{"minutes":60,"how":"silence"}', null, null, null, null, at(1), at(1));
+      insert.run('op-resent', 0.2, 0.2, 'settled', null, null, 1, 0.15, 'entry-1', '{"costUsd":0.15}', at(2), at(2));
+    } finally {
+      db.close();
+    }
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    const book = store.spendBook;
+    expect(await book.spend('ws')).toEqual({ spentUsd: 0.15, byRun: { 'run-1': 0.15 }, inFlightUsd: 0, uncertainUsd: 1 });
+    // As listed before the migration: a send retained before it was kept says nothing of how it ended.
+    const before = (await book.records('ws')).uncertain;
+    expect(before).toEqual([
+      expect.objectContaining({ opId: 'op-waited', reason: 'waited', usd: 0.8, waited: { minutes: 60, how: 'silence' }, retainedUsd: 0.4 }),
+      expect.objectContaining({ opId: 'op-resent', reason: 'resent', usd: 0.2, retainedUsd: 0.2 }),
+    ]);
+    for (const u of before) expect(u).not.toHaveProperty('retainedWaited');
+    // A send retained from now on keeps it.
+    const call = admitOf({ opId: 'op-new', reserveUsd: 0.3 });
+    await book.admit(call);
+    await book.markSent('op-new', 'owner');
+    await book.retain('op-new', 0.3, 25, { minutes: 15, how: 'silence' });
+    expect((await book.records('ws')).uncertain).toEqual(expect.arrayContaining([expect.objectContaining({ opId: 'op-new', reason: 'resent', usd: 0.3, retainedWaited: { minutes: 15, how: 'silence' } })]));
+  });
+
+  it('keep how a retained send waited at the schema level only as JSON, beside any state and reason', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      const insert = db.prepare(`INSERT INTO paid_operations (id, workspace_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd, state, settled_usd,
+        retained_waited, lease_until, created_at, updated_at) VALUES (?, 'w', 'p', 'completion', 'anthropic', 'm', 1, 0.3, 0.3, ?, ?, ?, 0, 'now', 'now')`);
+      insert.run('settled', 'settled', 0.2, '{"minutes":15,"how":"silence"}');
+      insert.run('released', 'released', null, '{"minutes":15,"how":"silence"}');
+      insert.run('none', 'released', null, null);
+      expect(() => insert.run('torn', 'settled', 0.2, '{"minutes":')).toThrow(/CHECK/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('allow the reason "waited" at the schema level only with how long and how the call waited, and when each job was accepted only as JSON', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      const insert = db.prepare(`INSERT INTO paid_operations (id, workspace_id, purpose, kind, provider, model, paid, reserved_usd, state, uncertain_reason,
+        waited, provider_jobs_at, lease_until, created_at, updated_at) VALUES (?, 'w', 'p', 'video', 'fal', 'm', 1, 0.7, 'uncertain', ?, ?, ?, 0, 'now', 'now')`);
+      insert.run('waited', 'waited', '{"minutes":30,"how":"clip","cancel":"HTTP 202"}', '{"generation":"2026-10-22T09:00:00.000Z"}');
+      insert.run('failed', 'failed', null, null);
+      insert.run('interrupted', 'interrupted', null, null);
+      expect(() => insert.run('no-wait', 'waited', null, null)).toThrow(/CHECK/);
+      expect(() => insert.run('wait-elsewhere', 'failed', '{"minutes":30,"how":"clip"}', null)).toThrow(/CHECK/);
+      expect(() => insert.run('wait-no-reason', null, '{"minutes":30,"how":"clip"}', null)).toThrow(/CHECK/);
+      expect(() => insert.run('odd', 'stalled', null, null)).toThrow(/CHECK/);
+      expect(() => insert.run('torn-wait', 'waited', '{"minutes":', null)).toThrow(/CHECK/);
+      expect(() => insert.run('torn-time', 'failed', null, '{"generation":')).toThrow(/CHECK/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('hold an answer wait to its workspace, one row per provider and model, and a positive wait at the schema level', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      db.exec('PRAGMA foreign_keys = ON');
+      db.prepare("INSERT INTO workspaces (id, name, budget_usd, created_at) VALUES ('w', 'W', 1, 'now')").run();
+      const insert = db.prepare("INSERT INTO answer_waits (workspace_id, provider, model, minutes, changed_at) VALUES (?, ?, ?, ?, 'now')");
+      insert.run('w', 'anthropic', 'claude-opus-5-5', 30);
+      insert.run('w', 'openrouter', 'claude-opus-5-5', 30);
+      expect(() => insert.run('w', 'anthropic', 'claude-opus-5-5', 45)).toThrow(/UNIQUE|PRIMARY/);
+      expect(() => insert.run('w', 'anthropic', 'claude-sonnet-5-5', 0)).toThrow(/CHECK/);
+      expect(() => insert.run('w', '', 'claude-sonnet-5-5', 15)).toThrow(/CHECK/);
+      expect(() => insert.run('w', 'anthropic', '', 15)).toThrow(/CHECK/);
+      expect(() => insert.run('w', 'anthropic', 'claude-sonnet-5-5', 15.5)).toThrow(/integer|INTEGER|datatype/i);
+      expect(() => insert.run('nowhere', 'anthropic', 'claude-sonnet-5-5', 15)).toThrow(/FOREIGN KEY/);
+    } finally {
+      db.close();
+    }
   });
 
   it('hold a paid operation to its contract states and a settled cost at the schema level', () => {

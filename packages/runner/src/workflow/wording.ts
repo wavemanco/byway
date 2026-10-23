@@ -36,9 +36,17 @@ export function revisesInPlace(step: Pick<Step, 'role' | 'consumes' | 'produces'
   return (['brief', 'taste'] as const).find((p) => step.consumes.includes(p) && step.produces.includes(p));
 }
 
-/** The VISION-lite spec (C7): the interview's questions with their defaults, answered in place. */
+/** A brief of questions with their defaults (C7's interview wrote it), answered in place: what C7's spec asks. */
 export const SPEC_IN_PLACE_PROMPT =
   'Answer the questions below in place, or change their defaults; anything you leave as it is keeps its default. What you send is the brief the next step works from.';
+
+/**
+ * The prompts whose brief is a list of questions with their defaults (C7's spec interview). A person who revises that
+ * brief in place answers them (SPEC_IN_PLACE_PROMPT); any other brief revised in place gets the general question, so the
+ * question is keyed on where the brief came from (Ports.briefQuestions), not on the step that revises it (R-C7 in the P2
+ * design). A list of prompt ids in workflow code is the simplest key (Claude's choice).
+ */
+export const QUESTION_BRIEF_PROMPTS: ReadonlySet<string> = new Set(['product.c7.interview']);
 
 /** What a VOICE's question needs from the run: what the VOICE covers, and whether its script is locked after it. */
 export interface VoiceContext {
@@ -46,7 +54,20 @@ export interface VoiceContext {
   medium?: Medium;
   /** Nothing the person writes later can change this script (@byway/recipe/semantics lockedScripts). */
   locked?: boolean;
+  /**
+   * A web page's VOICE with the work in front of it, whose lines the activity offers from the page: its question ends
+   * with how a page's lines are written (PAGE_LINES_RULE), and the activity adds what it reads from the page after it.
+   */
+  page?: boolean;
 }
+
+/**
+ * How a page's lines are written in a VOICE's box, the same for every page (ADR-0081): the one sentence of the page's
+ * rules the workflow can say (R-SUFFIX in the P2 design). The rest (the bracket rule, where each link goes, the lines not
+ * offered) is read from the page by the activity, since the copy code may never be bundled into the workflow, and follows
+ * it, so the question as shown is what it was when the activity wrote all of it.
+ */
+export const PAGE_LINES_RULE = 'One line per block of text; leave a line empty to remove its text.';
 
 /** A script VOICE that nothing later can change (lockedScripts): the only question that says the script is locked. */
 export const SCRIPT_LOCKED_PROMPT = 'Write the script yourself: change any line below. It is locked after this, and used exactly as you write it.';
@@ -55,13 +76,15 @@ export const SCRIPT_PROMPT = 'Write the script yourself: change any line below. 
 
 /**
  * What a person's step asks. `revising` is set when the step revises a text port in place (revisesInPlace) and that
- * port has text to revise: the question then says so, and the text is in the box. A VOICE is asked by what it covers
- * in the run's medium, and a script VOICE says it is locked only where `voice.locked` says so.
+ * port has text to revise: the question then says so, and the text is in the box. It is 'questions' when that text is a
+ * brief of questions with their defaults (Ports.briefQuestions), which the person answers in place. A VOICE is asked by
+ * what it covers in the run's medium, a script VOICE says it is locked only where `voice.locked` says so, and a page's
+ * VOICE with its work in front of it ends with how the page's lines are written (`voice.page`).
  */
-export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'consumes' | 'knobs'>, round?: number, revising = false, voice: VoiceContext = {}): string {
+export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'consumes' | 'knobs'>, round?: number, revising: boolean | 'questions' = false, voice: VoiceContext = {}): string {
   const port = revising ? revisesInPlace(step) : undefined;
   if (port === 'brief')
-    return step.variant === 'VISION-lite' ? SPEC_IN_PLACE_PROMPT : 'Revise this brief in place: change what you want and leave the rest. What you send is the brief the next step works from.';
+    return revising === 'questions' ? SPEC_IN_PLACE_PROMPT : 'Revise this brief in place: change what you want and leave the rest. What you send is the brief the next step works from.';
   if (port === 'taste') return 'Revise this direction in place: change what you want and leave the rest. What you send is the direction the next step works from.';
   switch (step.role) {
     case 'vision':
@@ -73,12 +96,8 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
     case 'tells-compare':
       return 'Keep the version from before the cliché sweep, or the one after the swaps?';
     case 'voice': {
-      const scope = voiceScope(step, voice.medium);
-      if (scope.base === 'claims')
-        return 'Sign off every number, date, name and causal claim below, one per line: correct any that is wrong, and your correction replaces it in the document. Leave just "-" on a line to take that claim out. You own them.';
-      if (scope.base === 'script') return voice.locked ? SCRIPT_LOCKED_PROMPT : SCRIPT_PROMPT;
-      if (scope.keyLines) return 'Rewrite the key lines yourself: the ask and the lines a reader acts on. Your lines are used exactly as you write them.';
-      return 'Write the words yourself: change any line below. Your lines are used exactly as you write them.';
+      const asked = voiceQuestion(step, voice);
+      return voice.page ? `${asked} ${PAGE_LINES_RULE}` : asked;
     }
     case 'build':
     case 'fix':
@@ -86,6 +105,16 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
     default:
       return 'What do you think? Your answer guides the next step.';
   }
+}
+
+/** A VOICE's question by what it covers in the run's medium (humanPrompt). */
+function voiceQuestion(step: Pick<Step, 'variant' | 'knobs'>, voice: VoiceContext): string {
+  const scope = voiceScope(step, voice.medium);
+  if (scope.base === 'claims')
+    return 'Sign off every number, date, name and causal claim below, one per line: correct any that is wrong, and your correction replaces it in the document. Leave just "-" on a line to take that claim out. You own them.';
+  if (scope.base === 'script') return voice.locked ? SCRIPT_LOCKED_PROMPT : SCRIPT_PROMPT;
+  if (scope.keyLines) return 'Rewrite the key lines yourself: the ask and the lines a reader acts on. Your lines are used exactly as you write them.';
+  return 'Write the words yourself: change any line below. Your lines are used exactly as you write them.';
 }
 
 /** A recipe's trigger, said to the person it is about ("a human calls the design plain" → "you call the design plain"). */
@@ -123,6 +152,11 @@ export const budgetPrompt = (amountUsd: number, scope: 'run' | 'workspace'): str
   scope === 'workspace' ? `Raise the workspace budget by $${amountUsd}?` : `Raise the budget by $${amountUsd}?`;
 /** A fix after an empty CUT directive ("Nothing to remove."): it makes no change, and its step says so. */
 export const NOTHING_TO_REMOVE = 'Nothing to remove';
+/**
+ * A fix after an optional the person declined that would have put its critique in place (R-DECLINED): the critique is
+ * left empty, so the fix makes no change, and its step says why, as after an empty CUT.
+ */
+export const DECLINED_CRITIQUE_NOTE = 'Nothing to apply: you chose not to run the step that would have said what to change';
 /** TELLS decided hit by hit (TELLS-1, convention C2): which of the sweep's hits the swap step acts on. */
 export const SWAPS_PROMPT = 'Which of these should be swapped? Choose any, or none.';
 /** The swap step when the person chose none of the hits: it makes no change, and says so (convention C2). */

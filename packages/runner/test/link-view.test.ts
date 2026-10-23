@@ -15,10 +15,11 @@ import { createPromptRenderer } from '@byway/prompts';
 import { steps } from '@byway/recipe';
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { modelStep } from '../src/activities/model-step.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
 import { LINK_CAPTIONS, renderView, noClipNote } from '../src/activities/render.ts';
 import { parseStoryboard, serializeJson } from '../src/formats.ts';
 import { toStepSpec, type RunRef, type StepSpec, type View } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { png } from './helpers/fake-pages.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -77,7 +78,7 @@ function gateway(shade: () => number): Gateway & { completions: CompletionReques
 async function newRun(): Promise<RunRef> {
   const run = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'c5', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'media', budgetUsd: 5 });
   await store.updateRun(run.id, { status: 'running' });
-  return { runId: run.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium: 'media', problem: { text: 'An ad for a cup' }, seeds: [] };
+  return { runId: run.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium: 'media', problemId: await storeBrief(store.artifacts, { text: 'An ad for a cup' }) };
 }
 
 /** A storyboard of three shots, each with its anchor still, as the anchor-frames step leaves it. */
@@ -95,8 +96,8 @@ async function checkShot2(shade: () => number) {
   const run = await newRun();
   const { id: board, stills } = await framedStoryboard();
   const call = (stepId: string, n = 1) => ({ key: `${run.runId}/${stepId}/-/${n}`, stepId, stage: 'D2' as const });
-  const link1 = await relayLink(deps, { run, call: call('clip'), step: spec('clip'), ports: { artifact: board, anchor: stills[0], shot: 1, linkStart: stills[0] }, shot: 1 });
-  const link2 = await relayLink(deps, { run, call: call('clip', 2), step: spec('clip'), ports: { artifact: link1.artifactId!, anchor: link1.anchor!, shot: 2, linkStart: link1.anchor! }, shot: 2 });
+  const link1 = await relayLink(deps, { run, call: call('clip'), step: spec('clip'), ports: { artifact: board, anchor: stills[0], shot: 1, linkStart: stills[0] }, shot: 1, waits: DEFAULT_RELAY_WAITS });
+  const link2 = await relayLink(deps, { run, call: call('clip', 2), step: spec('clip'), ports: { artifact: link1.artifactId!, anchor: link1.anchor!, shot: 2, linkStart: link1.anchor! }, shot: 2, waits: DEFAULT_RELAY_WAITS });
   const { view } = await renderView(deps, { run, call: call('shot-render'), step: spec('shot-render'), artifactIds: [link2.artifactId!], pool: false, link: { shot: 2, startFrame: link1.anchor! } });
   const before = g.completions.length;
   await modelStep(deps, { run, call: call('shot-check'), step: spec('shot-check'), ports: { view, shot: 2 }, refs: [] });

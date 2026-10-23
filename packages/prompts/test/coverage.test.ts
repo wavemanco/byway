@@ -48,9 +48,11 @@ describe('every prompt id has a template', () => {
   });
 
   it('has the runner helpers, with the variants their purposes need', () => {
+    // VOICE writes the person's copy back with no model call (ADR-0081), so the voice.apply helper is retired.
+    expect(Object.keys(HELPER_PROMPTS).sort()).toEqual(['asset.briefs', 'asset.integrate', 'rerank']);
+    expect(library.has('helper.voice.apply')).toBe(false);
     expect(library.variants(HELPER_PROMPTS['asset.briefs'])).toEqual(['media', 'options', 'prose', 'web-page']);
     expect(library.variants(HELPER_PROMPTS['asset.integrate'])).toEqual(['prose', 'web-page']);
-    expect(library.variants(HELPER_PROMPTS['voice.apply'])).toEqual([...MEDIA].sort());
     expect(library.has(HELPER_PROMPTS.rerank)).toBe(true);
     for (const m of MEDIA) expect(() => library.info(HELPER_PROMPTS.rerank, m)).not.toThrow();
   });

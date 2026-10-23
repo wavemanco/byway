@@ -271,6 +271,72 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
     );
 
     it(
+      'keeps how a retained send used the whole of its wait, so Settings can say so of what was retained (WEB-1); a send retained without one carries none',
+      withBook(async ({ a }) => {
+        const caps = { workspaceUsd: 5, runUsd: 5 };
+        // A stream silent for its wait, sent once more, and the second send answered.
+        const answered = admitRequest({ reserveUsd: 0.3, caps });
+        // The same, but the second send went silent too: abandoned as waited, counting both sends.
+        const twice = admitRequest({ reserveUsd: 0.2, caps });
+        // A send that may have been billed for another reason (a lost connection), then answered: as before.
+        const plain = admitRequest({ reserveUsd: 0.1, caps });
+        for (const r of [answered, twice, plain]) {
+          await a.admit(r);
+          await a.markSent(r.opId, 'owner-a');
+        }
+        expect(await a.retain(answered.opId, 0.3, 5, { minutes: 60, how: 'silence' })).toEqual({ retained: true });
+        await a.settle(answered.opId, settlement(0.25));
+        await a.retain(twice.opId, 0.2, 5, { minutes: 15, how: 'silence' });
+        await a.abandon(twice.opId, 'waited', { minutes: 15, how: 'silence' });
+        await a.retain(plain.opId, 0.1, 5);
+        await a.settle(plain.opId, settlement(0.05));
+        expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.3, inFlightUsd: 0, uncertainUsd: 0.8 });
+        const uncertain = (await a.records('ws')).uncertain;
+        expect(uncertain).toHaveLength(3);
+        const of = (opId: string) => uncertain.find((u) => u.opId === opId);
+        expect(of(answered.opId)).toEqual(expect.objectContaining({ usd: 0.3, reason: 'resent', retainedUsd: 0.3, retainedWaited: { minutes: 60, how: 'silence' } }));
+        expect(of(answered.opId)).not.toHaveProperty('waited');
+        expect(of(twice.opId)).toEqual(expect.objectContaining({ usd: 0.4, reason: 'waited', waited: { minutes: 15, how: 'silence' }, retainedUsd: 0.2, retainedWaited: { minutes: 15, how: 'silence' } }));
+        expect(of(plain.opId)).toEqual(expect.objectContaining({ usd: 0.1, reason: 'resent', retainedUsd: 0.1 }));
+        expect(of(plain.opId)).not.toHaveProperty('retainedWaited');
+        // A later send retained for another reason does not take away what an earlier one's wait said.
+        const mixed = admitRequest({ reserveUsd: 0.1, caps });
+        await a.admit(mixed);
+        await a.markSent(mixed.opId, 'owner-a');
+        await a.retain(mixed.opId, 0.1, 5, { minutes: 30, how: 'silence' });
+        await a.retain(mixed.opId, 0.1, 5);
+        await a.settle(mixed.opId, settlement(0.05));
+        expect((await a.records('ws')).uncertain.find((u) => u.opId === mixed.opId)).toEqual(expect.objectContaining({ usd: 0.2, reason: 'resent', retainedUsd: 0.2, retainedWaited: { minutes: 30, how: 'silence' } }));
+        // A call that retained nothing says nothing of it.
+        const none = admitRequest({ reserveUsd: 0.1, caps });
+        await a.admit(none);
+        await a.markSent(none.opId, 'owner-a');
+        await a.abandon(none.opId);
+        const listed = (await a.records('ws')).uncertain.find((u) => u.opId === none.opId);
+        expect(listed).not.toHaveProperty('retainedUsd');
+        expect(listed).not.toHaveProperty('retainedWaited');
+        // Cleared like any call that may have been billed.
+        expect(await a.clearUncertain('ws', [answered.opId, twice.opId, plain.opId, mixed.opId, none.opId])).toBe(5);
+        expect(await a.spend('ws')).toMatchObject({ uncertainUsd: 0 });
+      }),
+    );
+
+    it(
+      'refuses a retained send’s wait that is not one, retaining nothing',
+      withBook(async ({ a }) => {
+        const r = admitRequest({ reserveUsd: 0.3, caps: { workspaceUsd: 5, runUsd: 5 } });
+        await a.admit(r);
+        await a.markSent(r.opId, 'owner-a');
+        await expect(a.retain(r.opId, 0.3, 5, { minutes: 0, how: 'silence' })).rejects.toThrow();
+        await expect(a.retain(r.opId, 0.3, 5, { minutes: Number.NaN, how: 'silence' })).rejects.toThrow();
+        await expect(a.retain(r.opId, 0.3, 5, { minutes: 15, how: 'stall' as 'silence' })).rejects.toThrow();
+        await expect(a.retain(r.opId, 0.3, 5, null as unknown as undefined)).rejects.toThrow();
+        expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.3, uncertainUsd: 0 });
+        expect((await a.records('ws')).uncertain).toEqual([]);
+      }),
+    );
+
+    it(
       'releases a call that was certainly not billed and abandons one that may have been',
       withBook(async ({ a }) => {
         const released = admitRequest({ reserveUsd: 0.3 });
@@ -314,6 +380,60 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         // Cleared like any call that may have been billed.
         expect(await a.clearUncertain('ws', [streamed.opId, queued.opId])).toBe(2);
         expect(await a.spend('ws')).toMatchObject({ uncertainUsd: 0 });
+      }),
+    );
+
+    it(
+      'abandons a call that used the whole of its model’s wait as waited, at its reservation, with how long and how it waited (the waits design)',
+      withBook(async ({ a }) => {
+        const caps = { workspaceUsd: 5, runUsd: 5 };
+        const streamed = admitRequest({ reserveUsd: 0.4, caps });
+        const whole = admitRequest({ kind: 'image', provider: 'google', model: 'gemini-image', reserveUsd: 0.05, caps });
+        const clip = admitRequest({ kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7, caps });
+        for (const r of [streamed, whole, clip]) {
+          expect(await a.admit(r)).toEqual({ admitted: true });
+          await a.markSent(r.opId, 'owner-a');
+        }
+        await a.accept(clip.opId, 'generation', 'req-gen');
+        await a.abandon(streamed.opId, 'waited', { minutes: 15, how: 'silence' });
+        await a.abandon(whole.opId, 'waited', { minutes: 20, how: 'answer' });
+        await a.abandon(clip.opId, 'waited', { minutes: 30, how: 'clip', cancel: 'HTTP 202 CANCELLATION_REQUESTED' });
+        expect(await a.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 1.15 });
+        const uncertain = (await a.records('ws')).uncertain;
+        expect(uncertain).toHaveLength(3);
+        expect(uncertain).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ opId: streamed.opId, usd: 0.4, reason: 'waited', waited: { minutes: 15, how: 'silence' } }),
+            expect.objectContaining({ opId: whole.opId, usd: 0.05, reason: 'waited', waited: { minutes: 20, how: 'answer' } }),
+            expect.objectContaining({ opId: clip.opId, usd: 0.7, reason: 'waited', waited: { minutes: 30, how: 'clip', cancel: 'HTTP 202 CANCELLATION_REQUESTED' }, providerJobs: { generation: 'req-gen' } }),
+          ]),
+        );
+        // No other reason carries a wait.
+        for (const u of uncertain) expect(Object.keys(u)).toContain('waited');
+        expect(await a.clearUncertain('ws', [streamed.opId, whole.opId, clip.opId])).toBe(3);
+        expect(await a.spend('ws')).toMatchObject({ uncertainUsd: 0 });
+      }),
+    );
+
+    it(
+      'refuses a call abandoned as waited without how long and how it waited, and a wait given with another reason, changing nothing',
+      withBook(async ({ a }) => {
+        const r = admitRequest({ reserveUsd: 0.4 });
+        await a.admit(r);
+        await a.markSent(r.opId, 'owner-a');
+        await expect(a.abandon(r.opId, 'waited')).rejects.toThrow(/how long and how/);
+        await expect(a.abandon(r.opId, 'waited', { minutes: 0, how: 'silence' })).rejects.toThrow();
+        await expect(a.abandon(r.opId, 'waited', { minutes: Number.NaN, how: 'silence' })).rejects.toThrow();
+        await expect(a.abandon(r.opId, 'waited', { minutes: 15, how: 'stall' as 'silence' })).rejects.toThrow();
+        await expect(a.abandon(r.opId, 'waited', { minutes: 15, how: 'clip', cancel: 202 as unknown as string })).rejects.toThrow();
+        await expect(a.abandon(r.opId, 'failed', { minutes: 15, how: 'silence' })).rejects.toThrow(/no wait/);
+        await expect(a.abandon(r.opId, 'interrupted', { minutes: 15, how: 'silence' })).rejects.toThrow(/no wait/);
+        expect((await a.records('ws')).uncertain).toEqual([]);
+        expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.4, uncertainUsd: 0 });
+        // The same call abandoned with no wait is a failure as before, and says nothing of a wait.
+        await a.abandon(r.opId);
+        expect((await a.records('ws')).uncertain).toEqual([expect.objectContaining({ opId: r.opId, reason: 'failed' })]);
+        expect((await a.records('ws')).uncertain[0]).not.toHaveProperty('waited');
       }),
     );
 
@@ -705,7 +825,7 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           await a.accept(first.opId, 'generation', 'req-gen');
           advance(LEASE + 1);
           const retry = keyed('k-clip', { owner: 'owner-b', kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
-          expect(await b.admit(retry)).toEqual({ resume: { opId: first.opId, jobs: { generation: 'req-gen' } } });
+          expect(await b.admit(retry)).toEqual({ resume: { opId: first.opId, jobs: { generation: 'req-gen' }, acceptedAt: { generation: expect.any(String) } } });
           expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.7, uncertainUsd: 0 });
           // Held by its new owner: renewed by it, not by the old one.
           advance(LEASE - 1000);
@@ -716,6 +836,47 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           await b.settle(first.opId, settlement(0.66));
           expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.66, inFlightUsd: 0, uncertainUsd: 0 });
           expect((await a.unledgered(10)).map((u) => u.opId)).toEqual([first.opId]);
+        }),
+      );
+
+      it(
+        'hands a resumed call the time each of its queue jobs was accepted, by the book’s clock, not the time it is resumed (the waits design)',
+        withBook(async ({ a, b, advance }) => {
+          const clip = (owner: string) => keyed('k-clock', { owner, kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
+          const first = clip('owner-a');
+          await a.admit(first);
+          await a.markSent(first.opId, 'owner-a');
+          // The book's clock as the call was admitted: nothing has moved it since.
+          const admittedAt = (await a.records('ws')).inFlight[0]?.since as string;
+          await a.accept(first.opId, 'generation', 'req-gen');
+          advance(5000);
+          await a.accept(first.opId, 'extract', 'req-frame');
+          advance(LEASE + 1);
+          const frameAt = new Date(Date.parse(admittedAt) + 5000).toISOString();
+          expect(await b.admit(clip('owner-b'))).toEqual({ resume: { opId: first.opId, jobs: { generation: 'req-gen', extract: 'req-frame' }, acceptedAt: { generation: admittedAt, extract: frameAt } } });
+          // Resumed again later, by a third owner: still the times fal accepted the jobs.
+          advance(LEASE + 1);
+          expect(await a.admit(clip('owner-c'))).toEqual({ resume: { opId: first.opId, jobs: { generation: 'req-gen', extract: 'req-frame' }, acceptedAt: { generation: admittedAt, extract: frameAt } } });
+        }),
+      );
+
+      it(
+        'resumes a clip abandoned as waited like one handed back, no longer as waited, and lists it by its later reason',
+        withBook(async ({ a, b }) => {
+          const clip = (owner: string) => keyed('k-waited', { owner, kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
+          const first = clip('owner-a');
+          await a.admit(first);
+          await a.markSent(first.opId, 'owner-a');
+          await a.accept(first.opId, 'generation', 'req-gen');
+          await a.abandon(first.opId, 'waited', { minutes: 30, how: 'clip', cancel: 'no answer' });
+          expect((await a.records('ws')).uncertain).toEqual([expect.objectContaining({ opId: first.opId, reason: 'waited' })]);
+          expect(await b.admit(clip('owner-b'))).toEqual({ resume: { opId: first.opId, jobs: { generation: 'req-gen' }, acceptedAt: { generation: expect.any(String) } } });
+          expect((await a.records('ws')).uncertain).toEqual([]);
+          expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.7, uncertainUsd: 0 });
+          await b.abandon(first.opId, 'failed');
+          const listed = (await a.records('ws')).uncertain;
+          expect(listed).toEqual([expect.objectContaining({ opId: first.opId, reason: 'failed', providerJobs: { generation: 'req-gen' } })]);
+          expect(listed[0]).not.toHaveProperty('waited');
         }),
       );
 
@@ -732,7 +893,7 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
           }
           await a.endLeases('owner-a');
           expect(await a.clearUncertain('ws', [cleared.opId])).toBe(1);
-          expect(await b.admit({ ...clip('k-stopped'), owner: 'owner-b' })).toEqual({ resume: { opId: stopped.opId, jobs: { generation: 'req-k-stopped' } } });
+          expect(await b.admit({ ...clip('k-stopped'), owner: 'owner-b' })).toEqual({ resume: { opId: stopped.opId, jobs: { generation: 'req-k-stopped' }, acceptedAt: { generation: expect.any(String) } } });
           expect(await b.admit({ ...clip('k-cleared'), owner: 'owner-b' })).toEqual({ admitted: true });
           // The resumed call is in flight again, under its new owner, and no longer counted as may have been billed.
           expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 1.4, uncertainUsd: 0 });
