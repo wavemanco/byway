@@ -4,6 +4,7 @@ import type { AnswerWait } from '@byway/contracts';
 import { useId, useState } from 'react';
 import { defaultsSentence, KIND_WORDS, waitOption, type AnswerWaitGroup, type AnswerWaitRow } from '../view/waits.ts';
 import { patch } from './api.ts';
+import { waitSaves } from './waitSaves.ts';
 
 interface Props {
   /** Every model the profiles use, grouped by provider, with what each waits now (view/waits.ts answerWaitGroups). */
@@ -26,31 +27,24 @@ export const rowNote = (row: Pick<AnswerWaitRow, 'kind' | 'chosen'>): string => 
  * Settings' "How long to wait for an answer" (the waits design of 2026-10-22): one choice per model the profiles use,
  * grouped by provider, from the minutes its kind offers (text 15, 30, 45 or 60, images 5, 10, 15 or 20, video 30, 45, 60
  * or 75, the owner's choices). A change saves at once (PATCH /api/waits, which checks it against the model's set) and
- * applies from the model's next call: the gateway reads it on every call.
+ * applies from the model's next call: the gateway reads it on every call. A model's saves go one after another, and the
+ * select and its announcement end on what the server kept (waitSaves.ts).
  */
 export function AnswerWaits({ groups: initial }: Props) {
   const ids = useId();
   const [groups, setGroups] = useState(initial);
   const [said, setSaid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const show = (provider: string, model: string, change: Partial<AnswerWaitRow>) =>
-    setGroups((gs) => gs.map((g) => (g.provider !== provider ? g : { ...g, rows: g.rows.map((r) => (r.model === model ? { ...r, ...change } : r)) })));
-
-  async function choose(row: AnswerWaitRow, minutes: number) {
-    setError(null);
-    setSaid(null);
-    const before = { minutes: row.minutes, chosen: row.chosen };
-    show(row.provider, row.model, { minutes, chosen: true });
-    try {
-      const saved = await patch<AnswerWait>('/api/waits', { provider: row.provider, model: row.model, minutes });
-      show(row.provider, row.model, { minutes: saved.minutes, chosen: true });
-      setSaid(`${row.model} now waits ${saved.minutes} minutes, from its next call.`);
-    } catch (err) {
-      show(row.provider, row.model, before);
-      setError(err instanceof Error ? err.message : 'That was not saved. Try again.');
-    }
-  }
+  // Made once, so every change of a model meets the saves already under way for it. It only calls state setters.
+  const [choose] = useState(() =>
+    waitSaves({
+      save: (choice) => patch<AnswerWait>('/api/waits', choice),
+      show: (provider, model, shown) =>
+        setGroups((gs) => gs.map((g) => (g.provider !== provider ? g : { ...g, rows: g.rows.map((r) => (r.model === model ? { ...r, ...shown } : r)) }))),
+      said: setSaid,
+      failed: setError,
+    }),
+  );
 
   return (
     <section className="settings-section" id="waits" aria-labelledby={`${ids}-waits`}>
