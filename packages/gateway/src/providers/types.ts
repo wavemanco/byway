@@ -37,6 +37,17 @@ export interface ProviderCompletionRequest {
    * (Anthropic, OpenAI, OpenRouter); absent, they wait STREAM_IDLE_MS. Never sent to the provider.
    */
   streamIdleMs?: number;
+  /**
+   * The whole-call deadline (Deadline): the call's model's wait, for a call answered whole (ProviderAdapter.answersWhole:
+   * a Google text call). The adapter hands its signal to the SDK; it never carries the run's stop. Each send has its own.
+   */
+  deadline?: WholeCallDeadline;
+}
+
+/** What an adapter reads of a whole-call deadline (providers/deadline.ts): its signal, and the wait it is at. */
+export interface WholeCallDeadline {
+  readonly signal: AbortSignal;
+  readonly afterMs: number;
 }
 
 export interface ProviderCompletion {
@@ -74,6 +85,8 @@ export interface ProviderImageRequest {
   prompt: string;
   size: ImageRequest['size'];
   context: CallContext;
+  /** The whole-call deadline at the image model's wait, for an adapter whose images are answered whole (every image adapter but the mock). */
+  deadline?: WholeCallDeadline;
 }
 
 export interface ProviderImage {
@@ -177,6 +190,12 @@ export interface ProviderAdapter {
    * their exact cost (Google's SDK abort is client-side only; every image call).
    */
   readonly cutsOff?: { readonly complete?: boolean; readonly video?: boolean };
+  /**
+   * Which of this adapter's calls are answered whole rather than streamed, and so are handed a whole-call deadline at
+   * their model's wait (the waits design of 2026-10-22, section 2): Google's text and images, OpenAI's images. A call
+   * whose deadline ran out is not sent again (waited.ts). Streamed calls are bounded by their silence instead (StreamIdle).
+   */
+  readonly answersWhole?: { readonly complete?: boolean; readonly image?: boolean };
 }
 
 /** Concatenated text of a message's text parts. */

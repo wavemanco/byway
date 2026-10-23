@@ -1,7 +1,17 @@
 import { GoogleGenAI, type GenerateContentParameters } from '@google/genai';
 import type { MediaType } from '@byway/contracts';
 import { providerFetch } from './fetch.ts';
-import { IMAGE_ASPECT, imageData, plain, type ProviderAdapter, type ProviderCompletion, type ProviderCompletionRequest, type ProviderImage, type ProviderImageRequest } from './types.ts';
+import {
+  IMAGE_ASPECT,
+  imageData,
+  plain,
+  type ProviderAdapter,
+  type ProviderCompletion,
+  type ProviderCompletionRequest,
+  type ProviderImage,
+  type ProviderImageRequest,
+  type WholeCallDeadline,
+} from './types.ts';
 
 /** The fields of a generateContent response the adapter reads (a structural subset of GenerateContentResponse). */
 export interface GoogleResponseLike {
@@ -157,16 +167,26 @@ export function parseGoogleImage(res: GoogleResponseLike, requestedModel: string
   return { bytes: Buffer.from(inline.data, 'base64'), mediaType, servedModel, usage, responseBody: body };
 }
 
+/**
+ * The params as sent, with the call's whole-call deadline as the SDK's abort signal (`config.abortSignal`), never the
+ * run's stop. Only the request as logged leaves it out: a signal is not part of the request.
+ */
+function withDeadline(params: GenerateContentParameters, deadline: WholeCallDeadline | undefined): GenerateContentParameters {
+  return deadline ? { ...params, config: { ...params.config, abortSignal: deadline.signal } } : params;
+}
+
 export function googleAdapter(opts: { client: GoogleClientLike }): ProviderAdapter {
   return {
     id: 'google',
+    // Text and images are answered whole: each waits its model's wait in all (the waits design of 2026-10-22).
+    answersWhole: { complete: true, image: true },
     async complete(req) {
-      const res = await opts.client.models.generateContent(googleParams(req, true));
+      const res = await opts.client.models.generateContent(withDeadline(googleParams(req, true), req.deadline));
       return { ...parseGoogleResponse(res, req.model), requestBody: googleParams(req, false) };
     },
     async image(req) {
       const params = googleImageParams(req);
-      return { ...parseGoogleImage(await opts.client.models.generateContent(params), req.model), requestBody: params };
+      return { ...parseGoogleImage(await opts.client.models.generateContent(withDeadline(params, req.deadline)), req.model), requestBody: params };
     },
   };
 }

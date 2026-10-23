@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { TokenBreakdown } from '../prices.ts';
 import { providerFetch } from './fetch.ts';
-import { stalledDetail, streamEndedEarly, StreamIdle } from './stream.ts';
+import { StreamIdle, streamStalled } from './stream.ts';
 import { imageData, plain, type ProviderAdapter, type ProviderCompletion, type ProviderCompletionRequest } from './types.ts';
 
 type Params = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
@@ -176,7 +176,7 @@ export function anthropicAdapter(opts: AnthropicAdapterOptions): ProviderAdapter
         // that answer is settled, as a streamed OpenAI or OpenRouter answer that finished is (ADR-0111). The SDK rejects
         // finalMessage when the abort lands after the last event but before it has read the stream's end.
         if (whole) msg = whole;
-        else if (idle.stalled && !req.signal?.aborted) throw streamEndedEarly('anthropic', stalledDetail(events, 'event', idle.afterMs), e);
+        else if (idle.stalled && !req.signal?.aborted) throw streamStalled('anthropic', events, 'event', idle.afterMs, e);
         else throw e;
       } finally {
         idle.end();

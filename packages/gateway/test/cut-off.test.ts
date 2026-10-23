@@ -131,6 +131,10 @@ function heldAnthropic(onHeld: () => void | Promise<void>) {
   return { client, signals };
 }
 
+/** The words a streamed call's failure says once its model's wait ran out twice in silence (the waits design, section 7). */
+const silent = (model: string, minutes: number): string =>
+  `${model} sent nothing for ${minutes} minutes, the wait chosen in Settings, so byway stopped waiting. It may have billed the work. To wait longer, change 'How long to wait for an answer' in Settings.`;
+
 /** Rejects as the Anthropic SDK's finalMessage does once its signal aborts (at once when it already has). */
 const abortedWith = (signal: AbortSignal): Promise<never> =>
   new Promise((_, reject) => {
@@ -384,7 +388,7 @@ describe('a stop during the wait before a resend', () => {
 });
 
 describe('calls a stop does not cut off', () => {
-  it('a Google call is handed no signal, finishes after the stop, and is settled at its true cost', async () => {
+  it('a Google call is handed no stop, finishes after the stop, and is settled at its true cost: its only signal is its own deadline, which the stop leaves alone', async () => {
     const { stop, operation } = caller();
     const google = fakeGoogle([
       () => {
@@ -400,7 +404,10 @@ describe('calls a stop does not cut off', () => {
     expect(stop.signal.aborted).toBe(true);
     expect(seen).toHaveLength(1);
     expect(seen[0]).not.toHaveProperty('signal');
-    expect(JSON.stringify(google.calls[0])).not.toContain('abortSignal');
+    // The SDK's abort signal is the call's whole-call deadline (the waits design), never joined with the stop.
+    const sent = (google.calls[0] as { config?: { abortSignal?: AbortSignal } }).config?.abortSignal;
+    expect(sent).toBe(seen[0]?.deadline?.signal);
+    expect(sent?.aborted).toBe(false);
     expect(res.text).toBe('Done.');
     expect(ledger()).toEqual([expect.objectContaining({ provider: 'google', costUsd: res.costUsd })]);
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
@@ -808,6 +815,22 @@ describe('a streamed call that stalls (CC-2)', () => {
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider, reason: 'resent' })]);
   });
 
+  it('openai: a stream that stalls and is sent once more, then fails another way, is listed by that failure, not as waited', async () => {
+    const s = starts();
+    const reset = Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) });
+    const chat = chatClient((n, signal) => (n === 1 ? heldStream(openaiChunks().slice(0, 1), signal, s.start) : (s.start(), { [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(reset) }) })));
+    const g = gateway({ clients: { openai: chat.client } });
+    const err = failure(g.complete(ask({ profileId: 'openai' })));
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS);
+    await s.started(1);
+    const e = await err;
+    expect(e.message).toMatch(/ECONNRESET|fetch failed/);
+    expect(e).not.toHaveProperty('waited');
+    expect(chat.bodies).toHaveLength(2);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider: 'openai', reason: 'failed' })]);
+  });
+
   it('openai: a request whose response has not begun is left to the SDK’s own timeout', async () => {
     const { stop, operation } = caller();
     const s = starts();
@@ -850,12 +873,9 @@ describe('a streamed call that stalls (CC-2)', () => {
     await s.started(1);
     expect(fake.signals.map((x) => x.aborted)).toEqual([true, false]);
     await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS);
-    // Sent twice in all: one resend after an attempt that may have been billed, as for any lost answer (ADR-0091).
-    expect(await err).toMatchObject({
-      code: 'provider-error',
-      billing: 'maybe',
-      message: `anthropic call failed: anthropic's stream ended without producing a whole answer (nothing came for 15 minutes, after ${count} event${count === 1 ? '' : 's'})`,
-    });
+    // Sent twice in all: one resend after an attempt that may have been billed, as for any lost answer (ADR-0091). The
+    // failure says the wait ran out, and where to change it (the waits design, section 7).
+    expect(await err).toMatchObject({ code: 'provider-error', billing: 'maybe', message: silent('Anthropic’s model claude-opus-5-5', 15), waited: { minutes: 15, how: 'silence' } });
     expect(fake.signals.map((x) => x.aborted)).toEqual([true, true]);
     expect(ledger()).toEqual([]);
     expect((await g.spend('ws')).uncertainUsd).toBeGreaterThan(0);
@@ -939,10 +959,15 @@ describe('a streamed call that stalls (CC-2)', () => {
     await vi.advanceTimersByTimeAsync(bound);
     expect(fake.signals().map((x) => x?.aborted)).toEqual([true, true]);
     const e = await err;
-    const after = provider === 'anthropic' ? '0 events' : '1 chunk';
-    expect(e).toMatchObject({ code: 'provider-error', billing: 'maybe', message: `${provider} call failed: ${provider}'s stream ended without producing a whole answer (nothing came for ${minutes} minutes, after ${after})` });
+    const model = `${PROVIDER_NAME[provider]}’s model ${req.model?.model ?? BIG_MODEL[provider]}`;
+    expect(e).toMatchObject({ code: 'provider-error', billing: 'maybe', message: silent(model, minutes), waited: { minutes, how: 'silence' } });
+    // Settings lists the call as waited, at its reservation and what was retained before it was sent again (ADR-0095).
+    const listed = (await g.spendRecords('ws')).uncertain.filter((u) => u.provider === provider);
+    expect(listed.at(-1)).toMatchObject({ reason: 'waited', waited: { minutes, how: 'silence' } });
     return e;
   }
+
+  const PROVIDER_NAME = { anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter' } as const;
 
   /** A caps source whose answer waits are `chosen` (minutes by "provider/model"), recording what it was asked. */
   function waitsOf(chosen: Record<string, number | undefined>) {
@@ -993,7 +1018,7 @@ describe('a streamed call that stalls (CC-2)', () => {
     await vi.advanceTimersByTimeAsync(30 * 60_000);
     await s.started(1);
     await vi.advanceTimersByTimeAsync(30 * 60_000);
-    expect((await first).message).toContain('nothing came for 30 minutes');
+    expect((await first).message).toContain('sent nothing for 30 minutes');
     // The next call reads the new choice.
     await stallsAt('openrouter', 60, { caps: waits.caps });
   });

@@ -47,10 +47,13 @@ import { createGoogleClient, googleAdapter, type GoogleClientLike } from './prov
 import { mockAdapter } from './providers/mock.ts';
 import { createOpenAIClient, openaiAdapter, type OpenAIClientLike } from './providers/openai.ts';
 import { createOpenRouterClient, openrouterAdapter } from './providers/openrouter.ts';
+import { Deadline } from './providers/deadline.ts';
+import { stalledMsOf } from './providers/stream.ts';
 import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, ResolvedImage, ResolvedMessage } from './providers/types.ts';
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
 import { BILLABLE_CALL, BILLABLE_JOB, DEFAULT_RETRY, FREE_READ, withRetries, type RetryHooks, type RetryOptions } from './retry.ts';
+import { waitedError, waitMinutes } from './waited.ts';
 import { minutesMs, waitMinutesFor } from './waits.ts';
 
 /**
@@ -267,7 +270,11 @@ export class ModelGateway implements Gateway {
   /**
    * One attempt at a completion, admitted as `op`: sent (with transport retries), settled, ledgered (as a retry of
    * `retryOf` when it is one), and returned as its answer, or as a decline (ADR-0102) for the caller to decide about.
-   * `waitMs` is its model's wait (waitMs), read once for the call: a resend after a stall waits it again.
+   * `waitMs` is its model's wait (waitMs), read once for the call: a resend after a stall waits it again. How it is kept
+   * (the waits design of 2026-10-22): a streamed answer may send nothing for that long (StreamIdle), and is sent once more
+   * after a stall; an answer that comes whole (ProviderAdapter.answersWhole: Google's) may take that long in all, each
+   * send its own deadline (Deadline), and is not sent again once one runs out (the owner's "Give up and end the call
+   * plainly (Recommended)"). Either way the failure says the wait ran out and where to change it (waited.ts).
    */
   private async completeOnce(op: PaidCall, req: CompletionRequest, prep: CompletionPrep, waitMs: number, retryOf?: string): Promise<Attempt<CompletionResult>> {
     const { ref, messages, inputTokens, maxOutputTokens, estimate, prompt } = prep;
@@ -280,11 +287,14 @@ export class ModelGateway implements Gateway {
       // The run is ending (ADR-0111): handed only to an adapter that can cut its call off.
       const stop = req.operation?.stop;
       const signal = stop && adapter.cutsOff?.complete ? stop : undefined;
+      const whole = adapter.answersWhole?.complete === true;
       const reported = await withRetries(
         async () => {
           stopIfEnding(op, stop, ref.provider);
           await op.markSent();
           stopIfEnding(op, stop, ref.provider);
+          // An answer that comes whole may take its model's wait in all, from this send; never joined with the stop.
+          const deadline = whole ? new Deadline(waitMs) : undefined;
           try {
             return await adapter.complete({
               model: ref.model,
@@ -297,14 +307,26 @@ export class ModelGateway implements Gateway {
               // A streamed answer is read as stalled once it has sent nothing for its model's wait, however long its
               // step may run (the waits design of 2026-10-22).
               streamIdleMs: waitMs,
+              ...(deadline ? { deadline } : {}),
             });
           } catch (e) {
             // Cut off by its stop: the call may have been billed and is counted as interrupted, unless what the adapter
             // threw says the provider did no paid work (billingOf 'none': its own error answer, or a connection that failed
             // before the request was written), which the stop does not change: read by that error, the call is released.
-            const err = signal?.aborted && billingOf(e) !== 'none' ? cutOffError(ref.provider, 'maybe') : toGatewayError(e, ref.provider, redact);
+            // Otherwise a wait that ran out says so: a stream's silence (sent once more), a whole answer's (not sent again).
+            const stalled = stalledMsOf(e);
+            const err =
+              signal?.aborted && billingOf(e) !== 'none'
+                ? cutOffError(ref.provider, 'maybe')
+                : stalled !== undefined
+                  ? waitedError(ref, { minutes: waitMinutes(stalled), how: 'silence' }, { retryable: true, billing: 'maybe' })
+                  : deadline?.expired && billingOf(e) !== 'none'
+                    ? waitedError(ref, { minutes: waitMinutes(deadline.afterMs), how: 'answer' }, { retryable: false, billing: 'maybe' })
+                    : toGatewayError(e, ref.provider, redact);
             op.failed(err);
             throw err;
+          } finally {
+            deadline?.end();
           }
         },
         this.retry,
@@ -380,17 +402,30 @@ export class ModelGateway implements Gateway {
     const generate = adapter.image?.bind(adapter);
     if (!generate) throw invalid(`${ref.provider} does not generate images`);
     const estimate = maxImageCost(price, req);
-    const prep: ImagePrep = { ref, price, generate, estimate };
+    const prep: ImagePrep = { ref, price, generate, estimate, whole: adapter.answersWhole?.image === true };
     const earlier = req.operation?.declinedEarlier;
-    const first = earlier ? declinedFrom(earlier) : await this.imageOnce(await this.admit(req, 'image', ref, estimate), req, prep);
+    let first: Attempt<ImageResult>;
+    if (earlier) first = declinedFrom(earlier);
+    else {
+      // The image model's wait is read before the call is admitted, as a completion's is (complete).
+      const waitMs = await this.waitMs(req, 'image', ref);
+      first = await this.imageOnce(await this.admit(req, 'image', ref, estimate), req, prep, waitMs);
+    }
     if ('answer' in first) return first.answer;
-    // The image model declined (ADR-0102): one retry on the same model, as a call of its own, then a plain failure.
-    return this.askOnceMore(req, 'image', ref, estimate, first, async (call) => (op) => this.imageOnce(op, call, prep, first.entryId));
+    // The image model declined (ADR-0102): one retry on the same model, as a call of its own (its wait read again),
+    // then a plain failure.
+    return this.askOnceMore(req, 'image', ref, estimate, first, async (call) => {
+      const waitMs = await this.waitMs(call, 'image', ref);
+      return (op) => this.imageOnce(op, call, prep, waitMs, first.entryId);
+    });
   }
 
-  /** One attempt at an image, admitted as `op`, as {@link completeOnce} for a completion. */
-  private async imageOnce(op: PaidCall, req: ImageRequest, prep: ImagePrep, retryOf?: string): Promise<Attempt<ImageResult>> {
-    const { ref, price, generate, estimate } = prep;
+  /**
+   * One attempt at an image, admitted as `op`, as {@link completeOnce} for a completion. An image is answered whole: each
+   * send may take `waitMs`, its model's wait, in all (Deadline), and is not sent again once that runs out.
+   */
+  private async imageOnce(op: PaidCall, req: ImageRequest, prep: ImagePrep, waitMs: number, retryOf?: string): Promise<Attempt<ImageResult>> {
+    const { ref, price, generate, estimate, whole } = prep;
     const redact = makeRedactor(this.env);
     const started = Date.now();
     try {
@@ -402,12 +437,26 @@ export class ModelGateway implements Gateway {
           stopIfEnding(op, stop, ref.provider);
           await op.markSent();
           stopIfEnding(op, stop, ref.provider);
+          // From this send, never joined with the stop: a Cancel leaves an image running (ADR-0111).
+          const deadline = whole ? new Deadline(waitMs) : undefined;
           try {
-            return await generate({ model: ref.model, prompt: req.prompt, size: req.size, context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId } });
+            return await generate({
+              model: ref.model,
+              prompt: req.prompt,
+              size: req.size,
+              context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
+              ...(deadline ? { deadline } : {}),
+            });
           } catch (e) {
-            const err = toGatewayError(e, ref.provider, redact);
+            // A wait that ran out is not sent again (waited.ts), unless what the adapter threw says nothing was billed.
+            const err =
+              deadline?.expired && billingOf(e) !== 'none'
+                ? waitedError(ref, { minutes: waitMinutes(deadline.afterMs), how: 'answer' }, { retryable: false, billing: 'maybe' })
+                : toGatewayError(e, ref.provider, redact);
             op.failed(err);
             throw err;
+          } finally {
+            deadline?.end();
           }
         },
         this.retry,
@@ -1067,6 +1116,8 @@ interface ImagePrep {
   price: PriceRow;
   generate: NonNullable<ProviderAdapter['image']>;
   estimate: number;
+  /** The adapter answers its images whole (ProviderAdapter.answersWhole), so each send is handed a deadline at the wait. */
+  whole: boolean;
 }
 
 /**

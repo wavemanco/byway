@@ -65,6 +65,20 @@ export class StreamIdle {
 export const stalledDetail = (count: number, what: 'chunk' | 'event', afterMs: number): string => `nothing came for ${afterMs / 60_000} minutes, after ${count} ${what}${count === 1 ? '' : 's'}`;
 
 /**
+ * A stream that stalled (StreamIdle closed it after `afterMs` without a chunk), as streamEndedEarly says it, marked with
+ * how long it waited (`stalledMs`), so the gateway can say the model's wait ran out (waited.ts) whatever the adapter.
+ */
+export function streamStalled(provider: string, count: number, what: 'chunk' | 'event', afterMs: number, cause?: unknown): Error & { stalledMs: number } {
+  return Object.assign(streamEndedEarly(provider, stalledDetail(count, what, afterMs), cause), { stalledMs: afterMs });
+}
+
+/** How long a stream waited before it was closed as stalled (streamStalled), or undefined for any other failure. */
+export function stalledMsOf(e: unknown): number | undefined {
+  const ms = typeof e === 'object' && e !== null ? (e as { stalledMs?: unknown }).stalledMs : undefined;
+  return typeof ms === 'number' ? ms : undefined;
+}
+
+/**
  * A stream that ended without a whole answer, though the provider had answered 200 and may have billed what it made: one
  * that stalled (StreamIdle) and, for OpenAI and OpenRouter, an error chunk mid-stream (OpenRouter's streaming page: the
  * HTTP status stays 200 once headers are sent, and a choice finishes with "error"; the SDK raises the chunk's error) or

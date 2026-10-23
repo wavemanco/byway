@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import type { MediaType } from '@byway/contracts';
 import type { TokenBreakdown } from '../prices.ts';
 import { providerFetch } from './fetch.ts';
-import { stalledDetail, streamEndedEarly, StreamIdle } from './stream.ts';
+import { streamEndedEarly, StreamIdle, streamStalled } from './stream.ts';
 import {
   imageData,
   plain,
@@ -62,7 +62,8 @@ export interface ImagesResponseLike {
  */
 export interface OpenAIClientLike {
   chat: { completions: { create(body: ChatStreamParams & OpenRouterRouting, options?: { signal?: AbortSignal }): Promise<AsyncIterable<ChatChunkLike>> } };
-  images: { generate(body: ImageParams): Promise<ImagesResponseLike> };
+  /** `signal` is the image's whole-call deadline, and `timeout` the SDK's own, raised above it (openaiAdapter). */
+  images: { generate(body: ImageParams, options?: { signal?: AbortSignal; timeout?: number }): Promise<ImagesResponseLike> };
 }
 
 /** SDK retries off, as for every client; requests go through the provider Agent's fetch (fetch.ts). */
@@ -167,14 +168,14 @@ export async function readChatStream(
   } catch (e) {
     // A stream that broke after its finishing chunk still brought the whole answer: it is settled, below.
     if (finish === undefined || finish === 'error') {
-      throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk', idle.afterMs) : e instanceof Error ? e.message : String(e), e);
+      throw idle?.stalled ? streamStalled(provider, chunks, 'chunk', idle.afterMs, e) : streamEndedEarly(provider, e instanceof Error ? e.message : String(e), e);
     }
   } finally {
     idle?.end();
   }
   if (finish === undefined) {
     if (signal?.aborted) throw closed();
-    throw streamEndedEarly(provider, idle?.stalled ? stalledDetail(chunks, 'chunk', idle.afterMs) : `no finishing chunk after ${chunks} ${chunks === 1 ? 'chunk' : 'chunks'}`);
+    throw idle?.stalled ? streamStalled(provider, chunks, 'chunk', idle.afterMs) : streamEndedEarly(provider, `no finishing chunk after ${chunks} ${chunks === 1 ? 'chunk' : 'chunks'}`);
   }
   if (finish === 'error') throw streamEndedEarly(provider, 'its last chunk finished with "error"');
   const completion = {
@@ -298,11 +299,19 @@ export function openaiStreamParams(req: ProviderCompletionRequest, inline: boole
   return chatStreamParams(openaiChatParams(req, inline, 'developer'), 'ask');
 }
 
+/**
+ * How far above an image's wait the SDK's own request timeout is set. The SDK gives up on a request at ten minutes by
+ * default (openai 7.28.0), under the 15 and 20 minutes an image may wait; its deadline (req.deadline) does the timing.
+ */
+export const IMAGE_SDK_TIMEOUT_ABOVE_WAIT_MS = 60_000;
+
 export function openaiAdapter(opts: { client: OpenAIClientLike }): ProviderAdapter {
   return {
     id: 'openai',
     // Chat calls are streamed so a stop can close them (ADR-0111); image calls are not cut off.
     cutsOff: { complete: true },
+    // An image is answered whole: its model's wait bounds the whole call (the waits design of 2026-10-22).
+    answersWhole: { image: true },
     async complete(req) {
       // The SDK is handed the stop and the request's bound on a stalled stream together (StreamIdle, streamIdleMs).
       const idle = new StreamIdle(req.signal, req.streamIdleMs);
@@ -311,9 +320,11 @@ export function openaiAdapter(opts: { client: OpenAIClientLike }): ProviderAdapt
     },
     async image(req) {
       const params = openaiImageParams(req);
+      // The image's wait governs (its deadline), with the SDK's own timeout raised above it; never the run's stop.
+      const deadline = req.deadline;
       let res: ImagesResponseLike;
       try {
-        res = await opts.client.images.generate(params);
+        res = await (deadline ? opts.client.images.generate(params, { signal: deadline.signal, timeout: deadline.afterMs + IMAGE_SDK_TIMEOUT_ABOVE_WAIT_MS }) : opts.client.images.generate(params));
       } catch (e) {
         const declined = moderationDecline(e, req.model);
         if (declined) return { ...declined, requestBody: params };

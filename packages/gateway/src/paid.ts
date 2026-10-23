@@ -26,9 +26,10 @@
  * could not write, the timer writes later. A drain that fails never fails the call: the book already counts it.
  */
 import { randomUUID } from 'node:crypto';
-import { GatewayError, type AdmitRequest, type BudgetDetails, type LedgerCursor, type LedgerBatch, type ProviderJobRole, type Settlement, type SpendBook } from '@byway/contracts';
+import { GatewayError, type AdmitRequest, type BudgetDetails, type LedgerCursor, type LedgerBatch, type ProviderJobRole, type Settlement, type SpendBook, type WaitedFor } from '@byway/contracts';
 import { billingOf, isCutOff, type Billing } from './errors.ts';
 import type { Ledger } from './ledger.ts';
+import { waitedOf } from './waited.ts';
 
 export interface PaidCallsOptions {
   book: SpendBook;
@@ -327,6 +328,8 @@ export class PaidCall {
   private lastFailure: Billing | undefined;
   /** The last failed attempt was cut off by its caller's stop (ADR-0111): an abandoned call is recorded as interrupted. */
   private cutOff = false;
+  /** The last failed attempt used the whole of its model's wait (waited.ts): an abandoned call is recorded as waited. */
+  private waited: WaitedFor | undefined;
   /** What the book retained for sends that may have been billed before this call was sent again (retain). */
   private retained = 0;
   private readonly calls: PaidCalls;
@@ -384,11 +387,13 @@ export class PaidCall {
 
   /**
    * A failed attempt: its billing decides what is counted if no attempt succeeds. One byway cut off (cutOffError) that
-   * may have been billed is abandoned as interrupted, not as failed (ADR-0111): Settings says byway stopped waiting.
+   * may have been billed is abandoned as interrupted, not as failed (ADR-0111): Settings says byway stopped waiting. One
+   * that used the whole of its model's wait (waitedError) is abandoned as waited, with how long and how it waited.
    */
   failed(err: unknown): void {
     this.lastFailure = billingOf(err);
     this.cutOff = isCutOff(err);
+    this.waited = waitedOf(err);
   }
 
   /** Before sending again after an attempt that may have been billed: count that attempt's bound against the workspace. */
@@ -457,7 +462,11 @@ export class PaidCall {
     this.calls.ended(this.opId, this.settled);
     try {
       if (this.settled) await this.calls.drain();
-      else if (this.answered || (this.sent && this.lastFailure !== 'none')) await this.calls.book.abandon(this.opId, !this.answered && this.cutOff ? 'interrupted' : 'failed');
+      else if (this.answered || (this.sent && this.lastFailure !== 'none')) {
+        if (!this.answered && this.cutOff) await this.calls.book.abandon(this.opId, 'interrupted');
+        else if (!this.answered && this.waited) await this.calls.book.abandon(this.opId, 'waited', this.waited);
+        else await this.calls.book.abandon(this.opId, 'failed');
+      }
       else await this.calls.book.release(this.opId);
     } catch {
       // Unsettled rows the book could not update run out their lease; a drain left undone is done by the timer.

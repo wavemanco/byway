@@ -1,6 +1,7 @@
 /** Settings' Spending records in words (ADR-0095): what may have been billed, and why; notes that need nothing. */
 import { describe, expect, it } from 'vitest';
 import type { UncertainCall } from '@byway/contracts';
+import { waitedWords } from '@byway/gateway';
 import { auditText, callPurpose, FAULT_ADVICE, inFlightNote, outboxNote, quietNote, setAsideNote, uncertainReason } from '../src/view/spending.ts';
 
 const call = (over: Partial<UncertainCall> = {}): UncertainCall => ({ opId: 'op', purpose: 'build:prose', runId: 'run-12345678-abcd', provider: 'anthropic', model: 'claude-opus-5-5', usd: 0.4, since: '2026-10-08T12:00:00.000Z', reason: 'interrupted', ...over });
@@ -36,6 +37,15 @@ describe('Spending records in words', () => {
     expect(uncertainReason(call({ reason: 'waited', provider: 'fal', model: 'fal-ai/kling-video/v3/pro/image-to-video', providerJobs: { generation: 'req-7' }, waited: { minutes: 30, how: 'clip', cancel } }))).toBe(
       `fal.ai’s model fal-ai/kling-video/v3/pro/image-to-video did not finish clip job req-7 within 30 minutes, the wait chosen in Settings, so byway stopped waiting and cancelled it: ${cancel}. ${tail}`,
     );
+  });
+
+  it('says of a call that waited what the step’s failure said, word for word (the gateway’s waitedWords)', () => {
+    const calls: UncertainCall[] = [
+      call({ reason: 'waited', provider: 'openrouter', model: 'anthropic/claude-opus-5.5', waited: { minutes: 60, how: 'silence' } }),
+      call({ reason: 'waited', provider: 'openai', model: 'gpt-image-2.5-flare', waited: { minutes: 5, how: 'answer' } }),
+      call({ reason: 'waited', provider: 'fal', model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', providerJobs: { generation: 'req-9' }, waited: { minutes: 75, how: 'clip', cancel: 'byway’s cancel did not go through (no answer)' } }),
+    ];
+    for (const c of calls) expect(uncertainReason(c)).toBe(waitedWords(c, c.waited!, c.providerJobs?.generation ? { job: c.providerJobs.generation } : {}));
   });
 
   it('notes calls under way, calls not yet written to the ledger, and set-aside tails, and nothing when there are none', () => {
