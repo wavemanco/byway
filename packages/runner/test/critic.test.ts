@@ -397,7 +397,7 @@ describe('a card lineup shows every word or says what it left out (F13)', () => 
       const stepDeps: RunnerDeps = { gateway, store, prompts: fakePrompts(), pages, random: () => 0.5 };
       const runId = await aRun('run-step-note');
       await store.updateRun(runId, { status: 'running' });
-      const run: RunRef = { runId, workspaceId: (await store.ensureDefaultWorkspace()).id, recipeId: 'tiny', profileId: 'demo', medium: 'media', problemId: await storeBrief(store.artifacts, { text: 'An ad' }), seeds: [] };
+      const run: RunRef = { runId, workspaceId: (await store.ensureDefaultWorkspace()).id, recipeId: 'tiny', profileId: 'demo', medium: 'media', problemId: await storeBrief(store.artifacts, { text: 'An ad' }) };
       const view: View = { pool: false, items: [{ textArtifactId: await text('Shot 1 (3s): Open on hands.\n\nVoice-over: Less time.'), imageArtifactIds: [await image(1), await image(2)] }] };
       const refs = [await image(10), await longRef(), await image(30)];
       const out = await modelStep(stepDeps, { run, call: { key: `${runId}/critic/-/1`, stepId: 'critic', stage: 'D1' }, step: criticStep, ports: { view }, refs });

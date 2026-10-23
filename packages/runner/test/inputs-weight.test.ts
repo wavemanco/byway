@@ -4,7 +4,9 @@
  * so a brief of a million characters (about 3 MB of Chinese) made a start input over Temporal's 2 MB limit on one value,
  * and a seeded fan-out over its 4 MB limit on one batch. Now the start input holds the recipe and short ids, and every
  * input the interpreter schedules holds the brief's id, never the brief, and stays under a fixed size. So with the
- * person's own inputs: a fixed copy deck, an author's draft and their own tell catalog travel as their files' ids.
+ * person's own inputs: a fixed copy deck, an author's draft and their own tell catalog travel as their files' ids. And
+ * no input holds a SEED string: every seed handed out once rode in every later input, and now PR3 reads them from the
+ * store (writes.ts runSeeds).
  *
  * The start input is the one Runner.start sends (a stand-in Temporal client keeps it; the real store). The real
  * Interpreter then runs the catalog recipe on it with every activity answered at once by a stand-in, and every input
@@ -26,6 +28,8 @@ import { briefPieces, chinese, maximalBrief, piecesOf } from './helpers/briefs.t
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
 const seen = vi.hoisted(() => ({ inputs: [] as { name: string; input: unknown }[], n: 0 }));
+/** A SEED string as the runner makes them (01 SEED seed_shape: 48 base64url characters). */
+const SEED = vi.hoisted(() => 'S'.repeat(48));
 
 const hex = (n: number) => n.toString(16).padStart(64, '0');
 /** A web page's view at its largest: desktop and mobile at their 8 tiles each, and the first screen (limits-batch.test.ts). */
@@ -53,8 +57,9 @@ vi.mock('../src/workflow/acts.ts', () => {
         if (role === 'tells-sweep') return { costUsd: 0, text: '- "synergy"', hits: [{ pattern: 'synergy', where: 'the first line', alternative: 'say what they do together' }] };
         if (role === 'overlap' || role === 'vision' || role === 'cut') return { costUsd: 0, text: '- a note' };
         if (role === 'tells-compare') return { costUsd: 0, keep: 'B' };
-        // 01 SEED seed_shape: 48 base64url characters, as the runner makes them.
-        return { costUsd: 0, artifactId: id, ...(role === 'seed' ? { seed: 'S'.repeat(48) } : {}) };
+        // A seed's stand-in answers with its string as the activity once did (ModelStepResult.seed, before P2), so a
+        // workflow that still collected seeds would be seen handing them on.
+        return { costUsd: 0, artifactId: id, ...(role === 'seed' ? { seed: SEED } : {}) };
       }
       case 'renderView':
         // A web page is seen in screenshots, at their most; any other work as a text rendering.
@@ -128,12 +133,13 @@ async function carried(recipe: Recipe, over: Partial<StartRunInput>): Promise<{ 
 /**
  * The most a step's input may weigh in these runs: its run's facts and call, its step, and its ports by reference (the
  * work's id, up to twelve options with their views, the notes, and the person's short words). The heaviest measured
- * was about 6.5 KB (C1's final defect check, whose ports still hold the four drafts with their screenshots; measured
- * on 2026-10-22); before P2 each input weighed the brief's 3 MB and more.
+ * was about 6.5 KB (C1's final defect check with its own tell catalog, whose ports still hold the four drafts with
+ * their screenshots; measured on 2026-10-22, with no seed riding along); before P2 each input weighed the brief's 3 MB
+ * and more.
  */
-const STEP_INPUT_BYTES = 16 * 1024;
+const STEP_INPUT_BYTES = 8 * 1024;
 
-describe('a run with the largest brief the web accepts carries its id, never the brief, nor the person’s own inputs (P2)', () => {
+describe('a run with the largest brief the web accepts carries its id, never the brief, nor the person’s own inputs, nor a seed (P2)', () => {
   const brief: ProblemBrief = maximalBrief();
   /** The person's own inputs, each 100,000 characters of Chinese of its own. */
   const own = { voice: chinese(100_000, 11), draft: chinese(100_000, 13), tells: chinese(100_000, 17) };
@@ -154,8 +160,13 @@ describe('a run with the largest brief the web accepts carries its id, never the
     expect(carries(start)).toBe(false);
     expect(bytes(start) - bytes(recipe)).toBeLessThan(1024);
     expect(inputs.length).toBeGreaterThan(20);
+    // Seeds were handed out before later steps were scheduled (C1's four, C2's twelve), so none held is no accident.
+    const firstSeed = inputs.findIndex((i) => (i.input as { step?: { role?: string } }).step?.role === 'seed');
+    expect(firstSeed).toBeGreaterThanOrEqual(0);
+    expect(firstSeed).toBeLessThan(inputs.length - 1);
     for (const { name, input } of inputs) {
       expect(carries(input), name).toBe(false);
+      expect(JSON.stringify(input), name).not.toContain(SEED);
       expect(bytes(input), name).toBeLessThan(STEP_INPUT_BYTES);
       const run = (input as { run?: { problemId?: string; voiceId?: string } }).run;
       if (run) expect(run.problemId, name).toBe(start.problemId);

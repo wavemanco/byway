@@ -38,7 +38,7 @@ import { at, emit } from './events.ts';
 import { AnswerRejected, StepError } from './failures.ts';
 import { ArtifactReader } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
-import { storeText, writeProblems } from './writes.ts';
+import { runSeeds, storeText, writeProblems } from './writes.ts';
 
 /** The claim log (ENG-2) reads claims out of Markdown, so it runs on prose; on any other medium the step writes the copy deck. */
 const isClaimLog = (medium: Medium, step: Pick<StepSpec, 'variant'>): boolean => step.variant === 'claim-log' && medium === 'prose';
@@ -251,7 +251,7 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
     if (!applied.ok) throw new AnswerRejected(applied.problem);
     result.text = text;
     if (applied.value.changed.length) {
-      const problems = writeProblems(run, applied.value.text);
+      const problems = writeProblems({ seeds: await runSeeds(deps.store, run.runId) }, applied.value.text);
       if (problems.length) throw new StepError(problems.join(' '));
       result.artifactId = await storeText(deps, run, call, applied.value.text, { label: 'With your corrections', name: 'work' });
       outputs.push(result.artifactId);
@@ -268,7 +268,7 @@ export async function finishHumanStep(deps: RunnerDeps, input: FinishHumanInput)
     // The author's own draft (C3 "your own draft", C6/C6a every sentence): their text is the work.
     const parsed = run.medium === 'prose' ? { ok: true as const, value: `${text.trimEnd()}\n` } : parseArtifact(run.medium, text);
     if (!parsed.ok) throw new StepError(`Your draft could not be used as the ${run.medium}: ${parsed.problem}`);
-    const problems = writeProblems(run, parsed.value);
+    const problems = writeProblems({ seeds: await runSeeds(deps.store, run.runId) }, parsed.value);
     if (problems.length) throw new StepError(problems.join(' '));
     result.artifactId = await storeText(deps, run, call, parsed.value, { label: 'Your draft', name: 'work' });
     result.text = text;
@@ -306,7 +306,7 @@ const changedLines = (offered: string | undefined, answer: string): number[] => 
  * 1. An answer that differs from what was first offered only in layout writes nothing.
  * 2. Read and apply: the medium's total reader, then a deterministic write. No model.
  * 3. Check: the deck read back from the written artifact equals the answer (the round trip), the late VOICE left the
- *    voice-over alone, and no SEED string got in.
+ *    voice-over alone, and no SEED string the run handed out got in (read from the store before the guard).
  * 4. A result equal to the work's bytes writes nothing; anything else is stored as "Your words", at no cost.
  * Steps 2 and 3 are pure and guarded: every problem, a fault in the runner's own copy code included, goes back to the
  * person as a question asked again (ENG-6), quoting how the lines it names were first offered. Store reads and writes
@@ -319,9 +319,10 @@ async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: str
   const scope = mediaCopyOf(step);
   if (input.initialText !== undefined && sameCopy(medium, scope, input.initialText, edited)) return { costUsd: 0 };
   const before = await new ArtifactReader(deps).text(ports.artifact!);
+  const seeds = await runSeeds(deps.store, run.runId);
   let written: string;
   try {
-    written = composeVoice(run, step, medium, scope, before, edited, input.initialText);
+    written = composeVoice(seeds, step, medium, scope, before, edited, input.initialText);
   } catch (e) {
     if (e instanceof AnswerRejected) throw e;
     const quotes = offeredQuotes(deckKindOf(medium, scope), input.initialText, { lines: changedLines(input.initialText, edited) });
@@ -332,11 +333,11 @@ async function writeVoice(deps: RunnerDeps, input: FinishHumanInput, edited: str
 }
 
 /** Read, apply and check a non-web answer (pure). Throws AnswerRejected for every problem with the answer. */
-function composeVoice(run: FinishHumanInput['run'], step: StepSpec, medium: Exclude<Medium, 'web-page'>, scope: MediaCopy, before: string, edited: string, offered: string | undefined): string {
+function composeVoice(seeds: readonly string[], step: StepSpec, medium: Exclude<Medium, 'web-page'>, scope: MediaCopy, before: string, edited: string, offered: string | undefined): string {
   const refuse = (r: Refusal) => new AnswerRejected(`${r.problem}${offeredQuotes(deckKindOf(medium, scope), offered, r)}`);
   const applied = applyCopy(medium, before, edited, scope);
   if (!applied.ok) throw refuse(applied);
-  const problems = [roundTripProblem(medium, scope, applied.value, edited), ...lockedVoiceover(medium, step, before, applied.value), ...writeProblems(run, applied.value)].filter((p): p is string => !!p);
+  const problems = [roundTripProblem(medium, scope, applied.value, edited), ...lockedVoiceover(medium, step, before, applied.value), ...writeProblems({ seeds }, applied.value)].filter((p): p is string => !!p);
   if (problems.length) throw refuse({ problem: problems.join(' ') });
   return applied.value;
 }
@@ -355,6 +356,7 @@ async function writePageVoice(deps: RunnerDeps, input: FinishHumanInput, edited:
   if (offered !== undefined && samePageCopy(offered, edited)) return { costUsd: 0 };
   const pages = pageRenderer(deps);
   const before = await new ArtifactReader(deps).text(ports.artifact!);
+  const seeds = await runSeeds(deps.store, run.runId);
   // The first offer is the checkpoint whose starting text is what the step first offered; a re-ask starts from the
   // person's previous answer, which never equals it (an answer equal to the offer writes nothing above).
   const answered = await deps.store.getCheckpoint(resolution.checkpointId);
@@ -369,7 +371,7 @@ async function writePageVoice(deps: RunnerDeps, input: FinishHumanInput, edited:
   let notOffered: Set<number>;
   try {
     notOffered = notShown(before, loc);
-    ({ page: written, edit } = composePage(run, before, edited, offered, firstOffer, notOffered));
+    ({ page: written, edit } = composePage(seeds, before, edited, offered, firstOffer, notOffered));
   } catch (e) {
     if (e instanceof AnswerRejected) throw e;
     throw fault(e as Error);
@@ -401,13 +403,13 @@ function pageRefusal(offered: string | undefined, problem: string, lines: number
 }
 
 /** Read, place and verify a page answer (pure). Throws AnswerRejected for every problem with it. */
-function composePage(run: FinishHumanInput['run'], before: string, edited: string, offered: string | undefined, firstOffer: boolean, notOffered: ReadonlySet<number>): { page: string; edit: PageEdit } {
+function composePage(seeds: readonly string[], before: string, edited: string, offered: string | undefined, firstOffer: boolean, notOffered: ReadonlySet<number>): { page: string; edit: PageEdit } {
   const refuse = (problem: string, lines: number[] = []) => pageRefusal(offered, problem, lines);
   const edit = readPageEdit(readPageCopy(before, notOffered), edited, offered, firstOffer);
   if (!edit.ok) throw refuse(edit.problem, edit.lines);
   const placed = placePageEdit(before, edit, notOffered);
   if (placed.problems.length) throw refuse(placed.problems.join(' '));
-  const problems = [...pageEditProblems(before, placed.page, edit, placed, notOffered), ...writeProblems(run, placed.page)];
+  const problems = [...pageEditProblems(before, placed.page, edit, placed, notOffered), ...writeProblems({ seeds }, placed.page)];
   if (problems.length) throw refuse(problems.join(' '));
   return { page: placed.page, edit };
 }

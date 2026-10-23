@@ -124,7 +124,6 @@ const SKIP_NO_EXECUTOR = 'This step has no executor in byway yet; the work passe
 export class Interpreter {
   private readonly input: RunInput;
   private readonly control: RunControl;
-  private readonly seeds: string[] = [];
   private readonly occurrences = new Map<string, number>();
   private readonly gateRetries = new Map<string, number>();
   private checkpointCount = 0;
@@ -140,7 +139,7 @@ export class Interpreter {
 
   private get run(): RunRef {
     const { runId, workspaceId, recipe, profileId, medium, problemId, inputs } = this.input;
-    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problemId, ...(inputs.voiceId ? { voiceId: inputs.voiceId } : {}), seeds: [...this.seeds] };
+    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problemId, ...(inputs.voiceId ? { voiceId: inputs.voiceId } : {}) };
   }
 
   /** A step's (or operator's) call at this place in the run; the key is stable across replays and retries. */
@@ -354,7 +353,6 @@ export class Interpreter {
       const res = await this.act(call, () =>
         model.modelStep({ run: this.run, call, step: spec, ports, refs: this.input.inputs.refs ?? [], ...(this.input.inputs.tellsId ? { tellsId: this.input.inputs.tellsId } : {}), ...(ctx.loop ? { round: ctx.loop.round } : {}) }),
       );
-      if (res.seed) this.seeds.push(res.seed);
       return this.applyModel(s, ports, res);
     });
     // The loop's gate is applied after the step has finished, so a pause or a question at the cap is not "in flight".

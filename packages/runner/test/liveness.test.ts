@@ -336,7 +336,7 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
     const ws = (await store.ensureDefaultWorkspace()).id;
     const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
     await store.updateRun(run.id, { status: 'running' });
-    const input = { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problemId: await storeBrief(store.artifacts, { text: 'A memo' }), seeds: [] }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
+    const input = { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problemId: await storeBrief(store.artifacts, { text: 'A memo' }) }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
     return { runId: run.id, input, end: () => store.updateRun(run.id, { status }) };
   };
 
@@ -448,7 +448,7 @@ describe('the step limit an activity invocation hands its calls', () => {
     const ws = (await store.ensureDefaultWorkspace()).id;
     const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
     await store.updateRun(run.id, { status: 'running' });
-    return { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problemId: await storeBrief(store.artifacts, { text: 'A memo' }), seeds: [] }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
+    return { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problemId: await storeBrief(store.artifacts, { text: 'A memo' }) }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
   };
 
   it('startInvocation carries the attempt’s own limit, as Temporal’s activity info gives it, and none outside an activity', async () => {

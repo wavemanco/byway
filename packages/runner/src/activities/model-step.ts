@@ -21,7 +21,7 @@ import { StepError } from './failures.ts';
 import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { keptVoice, withDeck } from './held-voice.ts';
-import { checkedWriter, restoredNote, storeText, type CheckedWrite } from './writes.ts';
+import { checkedWriter, restoredNote, runSeeds, seedMemoKey, storeText, type CheckedWrite } from './writes.ts';
 
 const BUILDERS = new Set(['build', 'seed', 'fix', 'voice']);
 /** Judging answers are short; builders get the gateway's larger default. */
@@ -107,7 +107,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     if (notes.length) result.note = notes.join(' ');
   } else {
     // One string per step call, kept for its retries (convention C5): the same prompt, so the answer bought is reused.
-    const seed = step.role === 'seed' || step.consumes.includes('seed') ? await memoized(deps.store, run.runId, `${call.key}/seed`, deps.seed ?? defaultSeed) : undefined;
+    // It is kept in the run's seed range, where every write check of the run reads it (writes.ts runSeeds).
+    const seed = step.role === 'seed' || step.consumes.includes('seed') ? await memoized(deps.store, run.runId, seedMemoKey(call), deps.seed ?? defaultSeed) : undefined;
     const ports = input.candidates ? { ...given, options: input.candidates } : given;
     const built = await buildPrompt(reader, {
       medium: run.medium,
@@ -122,7 +123,8 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     if ((step.role === 'judge' || step.role === 'select') && !step.consumes.includes('option_set<artifact>')) {
       built.slots.options = labelled(await Promise.all((ports.options ?? []).map((id) => reader.candidateText(run.medium, id))));
     }
-    const seeds = seed ? [...run.seeds, seed] : run.seeds;
+    // PR3: every seed the run has handed out, this step's own included, read from the store (P2).
+    const seeds = await runSeeds(deps.store, run.runId);
     // keepsVoice: the person's deck is locked before the call (an empty voice is a voice too), and held after it.
     const voice = step.keepsVoice ? keptVoice(given) : undefined;
     const before = voice !== undefined && given.artifact ? await reader.text(given.artifact) : undefined;
@@ -140,7 +142,6 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
       parse,
     });
     result.costUsd = answer.costUsd;
-    if (seed) result.seed = seed;
     const v = answer.value;
     switch (v.kind) {
       case 'artifact': {

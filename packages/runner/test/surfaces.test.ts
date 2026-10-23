@@ -33,7 +33,7 @@ beforeEach(async () => {
   const workspaceId = (await store.ensureDefaultWorkspace()).id;
   const rec = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'c1', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'web-page', budgetUsd: 5 });
   await store.updateRun(rec.id, { status: 'running' });
-  run = { runId: rec.id, workspaceId, recipeId: 'c1', profileId: 'demo', medium: 'web-page', problemId: await storeBrief(store.artifacts, { text: 'A bakery page' }), seeds: [] };
+  run = { runId: rec.id, workspaceId, recipeId: 'c1', profileId: 'demo', medium: 'web-page', problemId: await storeBrief(store.artifacts, { text: 'A bakery page' }) };
   deps = { gateway: noGateway, store, prompts: fakePrompts(), pages: fakePages() };
 });
 afterEach(() => {

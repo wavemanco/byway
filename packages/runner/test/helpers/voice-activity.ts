@@ -84,7 +84,7 @@ export async function benchRun(b: VoiceBench, medium: Medium): Promise<RunRef> {
   const id = `run-${Math.random().toString(36).slice(2)}`;
   await b.store.createRun({ id, workspaceId: b.workspaceId, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium, budgetUsd: 5 });
   await b.store.updateRun(id, { status: 'running' });
-  return { runId: id, workspaceId: b.workspaceId, recipeId: 'tiny', profileId: 'demo', medium, problemId: await storeBrief(b.store.artifacts, { text: 'p' }), seeds: [] };
+  return { runId: id, workspaceId: b.workspaceId, recipeId: 'tiny', profileId: 'demo', medium, problemId: await storeBrief(b.store.artifacts, { text: 'p' }) };
 }
 
 export const putWork = async (b: VoiceBench, medium: Medium, text: string): Promise<string> => (await b.store.artifacts.putText(text, MEDIA_TYPES[medium])).id;

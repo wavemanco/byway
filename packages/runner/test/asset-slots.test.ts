@@ -122,7 +122,7 @@ const EMPTY = '```json\n{"images":[]}\n```';
 async function newRun(medium: Medium): Promise<RunRef> {
   const run = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'c5', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium, budgetUsd: 5 });
   await store.updateRun(run.id, { status: 'running' });
-  return { runId: run.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'An ad for a cup' }), seeds: [] };
+  return { runId: run.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'An ad for a cup' }) };
 }
 
 const storyboard = (shots = [1, 2, 3]) =>

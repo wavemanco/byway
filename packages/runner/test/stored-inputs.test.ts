@@ -189,7 +189,7 @@ describe('Runner.start stores the copy deck, the draft and the tell catalog once
 
   it('the question that starts from the author’s draft reads it by its id; a draft whose file is gone fails the step plainly', async () => {
     const run = await store.createRun({ id: 'run-own-draft', workspaceId, recipeId: 'c3', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
-    const ref: RunRef = { runId: run.id, workspaceId, recipeId: 'c3', profileId: 'demo', medium: 'prose', problemId: await storeBrief(store.artifacts, BRIEF), seeds: [] };
+    const ref: RunRef = { runId: run.id, workspaceId, recipeId: 'c3', profileId: 'demo', medium: 'prose', problemId: await storeBrief(store.artifacts, BRIEF) };
     const deps = { store, prompts: fakePrompts(), gateway: {} as never };
     const ask = (n: number, draftId: string) =>
       openCheckpoint(deps, { run: ref, call: { key: `${run.id}/own-draft/-/${n}`, stepId: 'own-draft', stage: 'D2' }, checkpoint: { id: `${run.id}/cp${n}-own-draft`, kind: 'write', prompt: 'Write your draft.' }, initial: { from: 'draft', draftId } });

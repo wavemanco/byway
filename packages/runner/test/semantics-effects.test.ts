@@ -71,7 +71,7 @@ function scripted(answers: string[]): Gateway {
 async function newRun(medium: RunRef['medium'] = 'prose'): Promise<RunRef> {
   const run = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium, budgetUsd: 5 });
   await store.updateRun(run.id, { status: 'running' });
-  return { runId: run.id, workspaceId, recipeId: 'tiny', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'A memo' }), seeds: [] };
+  return { runId: run.id, workspaceId, recipeId: 'tiny', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'A memo' }) };
 }
 const call = (run: RunRef, stepId: string): StepCall => ({ key: `${run.runId}/${stepId}/-/1`, stepId, stage: 'D2' });
 const spec = (role: Role, actor: StepSpec['actor'], produces: StepSpec['produces'], extra: Partial<StepSpec> = {}): StepSpec => ({ id: `s-${role}`, role, actor, prompt: 'product.test.step', consumes: ['artifact'], produces, ...extra });

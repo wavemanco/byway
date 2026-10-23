@@ -41,7 +41,7 @@ import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { keptVoice, withDeck } from './held-voice.ts';
-import { announce, checkedWriter, restoredNote, storeText } from './writes.ts';
+import { announce, checkedWriter, restoredNote, runSeeds, storeText } from './writes.ts';
 
 /** Image failures that stop the asset step instead of trying the image again (a billed failure does too: see below). */
 const STOPS_THE_STEP: ReadonlySet<GatewayError['code']> = new Set(['budget-exceeded', 'accounting-fault', 'no-credentials', 'unknown-profile', 'in-flight']);
@@ -116,7 +116,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const ports = await withDeck(reader, run, step, input.ports);
   const current = await reader.text(input.ports.artifact);
   // keepsVoice: locked before the paid calls, so a fault in the check never repeats them.
-  const write = checkedWriter(run, step.keepsVoice ? keptVoice(ports) : undefined, current);
+  const write = checkedWriter({ medium, seeds: await runSeeds(deps.store, run.runId) }, step.keepsVoice ? keptVoice(ports) : undefined, current);
   let restored: string[] = [];
   const knobs = step.knobs ?? {};
   const slotsKnob = typeof knobs.slots === 'number' ? knobs.slots : undefined;

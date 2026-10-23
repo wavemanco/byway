@@ -295,6 +295,13 @@ export interface Store {
    */
   getMemo(runId: string, key: string): Promise<string | undefined>;
   setMemo(runId: string, key: string, value: string): Promise<string>;
+  /**
+   * One key range of a run's memos, read only: the values of every key that starts with `prefix` (exactly, character for
+   * character; nothing in it is a pattern), in key order. The runner keeps a run's SEED strings under one prefix, so its
+   * check that no work holds one reads them all at once (P2). [] for a run with none, or that does not exist; an empty
+   * prefix is refused, since it would read every memo of the run.
+   */
+  memosWithPrefix(runId: string, prefix: string): Promise<string[]>;
 
   /** Defaults when never set: profileId 'balanced', demoMode false, showTechnicalNames false. */
   getPreferences(workspaceId: string): Promise<Preferences>;

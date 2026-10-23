@@ -101,7 +101,7 @@ describe('a model step whose run has image references', () => {
     const { runId } = await queued(medium);
     await store.updateRun(runId, { status: 'running' });
     const acts = createActivities({ gateway: recording(), store, prompts: fakePrompts(), pages });
-    const run = { runId, workspaceId, recipeId: 'r', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'An ad' }), seeds: [] };
+    const run = { runId, workspaceId, recipeId: 'r', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'An ad' }) };
     return acts.modelStep({ run, call: { key: `${runId}/concept/-/1`, stepId: 'concept', stage: 'D1' }, step, ports: {}, refs }).catch((e: unknown) => e);
   }
   const image = async (c: number) => (await store.artifacts.put(png(4, 3, [c, c, c]), 'image/png')).id;

@@ -13,9 +13,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { audit, oneShotGate, pick, replicate, seq, step, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { keptVoice } from '../src/activities/held-voice.ts';
-import { checkedWrite } from '../src/activities/writes.ts';
+import { checkedWrite, type WriteRun } from '../src/activities/writes.ts';
 import { serializeJson } from '../src/formats.ts';
-import type { Ports, RunInput, RunRef } from '../src/types.ts';
+import type { Ports, RunInput } from '../src/types.ts';
 import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
 const state = vi.hoisted(() => ({ calls: [] as { id: string; ports: Record<string, unknown> }[], scores: [] as number[], n: 0, label: 'A' as string | undefined }));
@@ -139,8 +139,8 @@ describe('the run-time guard: no machine write over the person’s words without
 });
 
 describe('keepsVoice keeps every held VOICE', () => {
-  const media: Pick<RunRef, 'seeds' | 'medium'> = { seeds: [], medium: 'media' };
-  const prose: Pick<RunRef, 'seeds' | 'medium'> = { seeds: [], medium: 'prose' };
+  const media: WriteRun = { seeds: [], medium: 'media' };
+  const prose: WriteRun = { seeds: [], medium: 'prose' };
   const script = 'We bake before dawn.';
   const onScreen = 'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Hot bread';
   const sb = (voiceover: string, headline: string) => serializeJson({ voiceover, headline, tagline: 'Bread club', storyboard: [{ shot: 1, description: 'd1', imagePrompt: 'p1', durationSec: 3, caption: 'Hot bread' }] });

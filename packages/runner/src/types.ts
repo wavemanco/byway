@@ -140,7 +140,10 @@ export interface StepCall {
   stage: StageName;
 }
 
-/** The run facts every activity needs. */
+/**
+ * The run facts every activity needs. The SEED strings handed out so far are not among them (P2): PR3 reads them from
+ * the store, where each step call's is kept (activities/writes.ts runSeeds).
+ */
 export interface RunRef {
   runId: string;
   workspaceId: string;
@@ -154,8 +157,6 @@ export interface RunRef {
    * answers, which a step that takes them in, or is held to keep them, reads (held-voice.ts withDeck).
    */
   voiceId?: string;
-  /** Every SEED string handed out so far: no artifact may contain one (PR3). */
-  seeds: string[];
 }
 
 /** The parts of a recipe step the activities read. */
@@ -223,8 +224,6 @@ export interface ModelStepResult {
   keep?: 'A' | 'B';
   /** dedupe: the labels kept, in order. */
   keepLabels?: string[];
-  /** A SEED string handed to this step, for the run's PR3 checks. */
-  seed?: string;
   /** Set when the step ran differently from the recipe as written (ADR-0071 critic fallback). */
   note?: string;
   /** The note this step stored (its critique, flags or direction as text), shown to the person beside the work. */

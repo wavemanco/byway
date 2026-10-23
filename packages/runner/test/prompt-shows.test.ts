@@ -102,7 +102,7 @@ async function requestFor(step: StepSpec, medium: Medium): Promise<CompletionReq
   const runId = `run-${Math.random().toString(36).slice(2)}`;
   await store.createRun({ id: runId, workspaceId, recipeId: 'shows', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'MARK-intent', medium, budgetUsd: 5 });
   await store.updateRun(runId, { status: 'running' });
-  const run: RunRef = { runId, workspaceId, recipeId: 'shows', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'MARK-intent' }), seeds: [] };
+  const run: RunRef = { runId, workspaceId, recipeId: 'shows', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'MARK-intent' }) };
   const text = async (t: string, type = 'text/markdown') => (await store.artifacts.putText(t, type)).id;
   const ports: Ports = {
     artifact: await text(workText(medium, 'MARK-artifact')),
