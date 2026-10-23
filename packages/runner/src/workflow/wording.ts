@@ -46,7 +46,20 @@ export interface VoiceContext {
   medium?: Medium;
   /** Nothing the person writes later can change this script (@byway/recipe/semantics lockedScripts). */
   locked?: boolean;
+  /**
+   * A web page's VOICE with the work in front of it, whose lines the activity offers from the page: its question ends
+   * with how a page's lines are written (PAGE_LINES_RULE), and the activity adds what it reads from the page after it.
+   */
+  page?: boolean;
 }
+
+/**
+ * How a page's lines are written in a VOICE's box, the same for every page (ADR-0081): the one sentence of the page's
+ * rules the workflow can say (R-SUFFIX in the P2 design). The rest (the bracket rule, where each link goes, the lines not
+ * offered) is read from the page by the activity, since the copy code may never be bundled into the workflow, and follows
+ * it, so the question as shown is what it was when the activity wrote all of it.
+ */
+export const PAGE_LINES_RULE = 'One line per block of text; leave a line empty to remove its text.';
 
 /** A script VOICE that nothing later can change (lockedScripts): the only question that says the script is locked. */
 export const SCRIPT_LOCKED_PROMPT = 'Write the script yourself: change any line below. It is locked after this, and used exactly as you write it.';
@@ -56,7 +69,8 @@ export const SCRIPT_PROMPT = 'Write the script yourself: change any line below. 
 /**
  * What a person's step asks. `revising` is set when the step revises a text port in place (revisesInPlace) and that
  * port has text to revise: the question then says so, and the text is in the box. A VOICE is asked by what it covers
- * in the run's medium, and a script VOICE says it is locked only where `voice.locked` says so.
+ * in the run's medium, a script VOICE says it is locked only where `voice.locked` says so, and a page's VOICE with its
+ * work in front of it ends with how the page's lines are written (`voice.page`).
  */
 export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'consumes' | 'knobs'>, round?: number, revising = false, voice: VoiceContext = {}): string {
   const port = revising ? revisesInPlace(step) : undefined;
@@ -73,12 +87,8 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
     case 'tells-compare':
       return 'Keep the version from before the cliché sweep, or the one after the swaps?';
     case 'voice': {
-      const scope = voiceScope(step, voice.medium);
-      if (scope.base === 'claims')
-        return 'Sign off every number, date, name and causal claim below, one per line: correct any that is wrong, and your correction replaces it in the document. Leave just "-" on a line to take that claim out. You own them.';
-      if (scope.base === 'script') return voice.locked ? SCRIPT_LOCKED_PROMPT : SCRIPT_PROMPT;
-      if (scope.keyLines) return 'Rewrite the key lines yourself: the ask and the lines a reader acts on. Your lines are used exactly as you write them.';
-      return 'Write the words yourself: change any line below. Your lines are used exactly as you write them.';
+      const asked = voiceQuestion(step, voice);
+      return voice.page ? `${asked} ${PAGE_LINES_RULE}` : asked;
     }
     case 'build':
     case 'fix':
@@ -86,6 +96,16 @@ export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | '
     default:
       return 'What do you think? Your answer guides the next step.';
   }
+}
+
+/** A VOICE's question by what it covers in the run's medium (humanPrompt). */
+function voiceQuestion(step: Pick<Step, 'variant' | 'knobs'>, voice: VoiceContext): string {
+  const scope = voiceScope(step, voice.medium);
+  if (scope.base === 'claims')
+    return 'Sign off every number, date, name and causal claim below, one per line: correct any that is wrong, and your correction replaces it in the document. Leave just "-" on a line to take that claim out. You own them.';
+  if (scope.base === 'script') return voice.locked ? SCRIPT_LOCKED_PROMPT : SCRIPT_PROMPT;
+  if (scope.keyLines) return 'Rewrite the key lines yourself: the ask and the lines a reader acts on. Your lines are used exactly as you write them.';
+  return 'Write the words yourself: change any line below. Your lines are used exactly as you write them.';
 }
 
 /** A recipe's trigger, said to the person it is about ("a human calls the design plain" → "you call the design plain"). */

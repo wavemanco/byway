@@ -35,6 +35,7 @@ import { arbiterProblem, expectedShown, locate, markedCopy, notShown, notShownWh
 import type { ArtifactResolver, PageRenderer, RenderOptions } from '../pages.ts';
 import { INPUT_MEDIA_TYPE } from '../stored-inputs.ts';
 import type { EarlierAnswer, FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, RunRef, StepSpec } from '../types.ts';
+import { PAGE_LINES_RULE } from '../workflow/wording.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
 import { AnswerRejected, StepError } from './failures.ts';
@@ -83,7 +84,7 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
     }
   }
   const { prompt: asked, options } = plainChoice(run.recipeId, call.stepId, checkpoint);
-  const prompt = withPageRules(page, `${asked}${earlier}`);
+  const prompt = withPageRules(page, asked, earlier);
   const stored = await deps.store.openCheckpoint({
     id: checkpoint.id,
     runId: run.runId,
@@ -248,23 +249,30 @@ async function pageQuestion(deps: RunnerDeps, input: OpenCheckpointInput): Promi
 }
 
 /**
- * A page's VOICE question says how its copy is written (ADR-0081): one line per run of text, the bracket rule when a line
- * has link words in brackets, and where each link goes; which lines are not offered, because a browser does not show
- * them as one line, and why; and, when the browser could not place the page's lines, that none of them can be changed.
- * It is read from the work, never from the starting text, and appended to the prompt the workflow sent, which never
- * carries it, so a re-ask gets it once too.
+ * A page's VOICE question says how its copy is written (ADR-0081). The workflow's question ends with the line rule, the
+ * one sentence that is the same for every page (PAGE_LINES_RULE, R-SUFFIX in the P2 design); what is read from the page
+ * follows it here: the bracket rule when a line has link words in brackets, and where each link goes; which lines are
+ * not offered, because a browser does not show them as one line, and why; and, when the browser could not place the
+ * page's lines, that none of them can be changed. It is read from the work, never from the starting text, and appended
+ * to the prompt the workflow sent, which never carries it, so a re-ask gets it once too.
+ *
+ * `earlier` is the note on the person's earlier lines (VOICE-RETRY), which belongs to the question: on a page it goes
+ * before the line rule, so the question as shown is what it was when the activity wrote all of the page's rules.
  */
-function withPageRules(page: PageQuestion | undefined, prompt: string): string {
-  if (!page) return prompt;
-  let rules: string;
+function withPageRules(page: PageQuestion | undefined, asked: string, earlier: string): string {
+  if (!page) return `${asked}${earlier}`;
+  const rules: string[] = [];
   try {
-    rules = pageVoiceSuffix(readPageCopy(page.html, page.notOffered));
-    if (page.whyNot.length) rules += ` ${notOfferedSentence(page)}`;
+    const read = pageVoiceSuffix(readPageCopy(page.html, page.notOffered));
+    if (read) rules.push(read);
+    if (page.whyNot.length) rules.push(notOfferedSentence(page));
   } catch (e) {
     throw new StepError(`byway could not read the copy of this work (${(e as Error).message}).`);
   }
-  if (!page.checked) rules += " byway could not match this page's lines to what a browser shows, so none of them can be changed in this step.";
-  return `${prompt} ${rules}`;
+  if (!page.checked) rules.push("byway could not match this page's lines to what a browser shows, so none of them can be changed in this step.");
+  const rule = ` ${PAGE_LINES_RULE}`;
+  const question = earlier && asked.endsWith(rule) ? `${asked.slice(0, -rule.length)}${earlier}${rule}` : `${asked}${earlier}`;
+  return [question, ...rules].join(' ');
 }
 
 /** At most this many lines not offered are quoted in the VOICE prompt, each cut to 60 characters. */

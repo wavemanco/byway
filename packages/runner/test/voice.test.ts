@@ -13,7 +13,7 @@ import { joinCodeDiff, parseStoryboard, serializeJson, splitCodeDiff } from '../
 import { playwrightPages, type PageRenderer } from '../src/pages.ts';
 import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import type { StepSpec } from '../src/types.ts';
-import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
+import { benchRun, putWork, stepCall, storyboard, voiceAsked, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
 // The runner's own Chromium: a page's VOICE is checked by the browser (ADR-0081). Each page question reads the page
 // in it twice and each page write three times, so a test with many questions takes seconds on a loaded machine.
@@ -401,7 +401,8 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(q.prompt).toMatch(/^Write the words yourself: change any line below\. One line per block of text; leave a line empty to remove its text\. Words in \[brackets\] are a link's words/);
     expect(q.prompt!.split(legend)).toHaveLength(2);
     const problem = await rejected(q.answer('T\nTerms · Privacy'));
-    const again = await q.ask({ prompt: `${problem} Write the words yourself: change any line below.`, initialText: 'T\nTerms · Privacy' });
+    // The workflow's question for a page ends with the line rule; the activity adds the rest after it, once (R-SUFFIX).
+    const again = await q.ask({ prompt: `${problem} ${voiceAsked(q.run)}`, initialText: 'T\nTerms · Privacy' });
     expect(again.prompt.split(legend)).toHaveLength(2);
     expect(again.prompt.split('One line per block of text')).toHaveLength(2);
     const out = await q.answer('T\n[Privacy] · [Terms]', again.checkpointId);

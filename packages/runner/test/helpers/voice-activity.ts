@@ -14,6 +14,7 @@ import { finishHumanStep, openCheckpoint } from '../../src/activities/human.ts';
 import { serializeJson } from '../../src/formats.ts';
 import type { PageRenderer } from '../../src/pages.ts';
 import type { EarlierAnswer, FinishHumanResult, RunRef, StepCall, StepSpec } from '../../src/types.ts';
+import { PAGE_LINES_RULE } from '../../src/workflow/wording.ts';
 import { storeBrief } from './briefs.ts';
 import { fakePrompts } from './fake-prompts.ts';
 import { createTestStore, type MemoStore } from './memo.ts';
@@ -94,6 +95,12 @@ export const voiceStep = (over: Partial<StepSpec> = {}): StepSpec => ({ id: 'voi
 let calls = 0;
 export const stepCall = (run: RunRef, stepId: string): StepCall => ({ key: `${run.runId}/${stepId}/-/${++calls}`, stepId, stage: 'D3' });
 
+/**
+ * The question a VOICE on `run` is sent (a short form of the workflow's): on a web page it ends with how a page's lines
+ * are written, as the workflow's question does when the work is in front of it (R-SUFFIX); the activity adds the rest.
+ */
+export const voiceAsked = (run: Pick<RunRef, 'medium'>): string => `Write the words yourself: change any line below.${run.medium === 'web-page' ? ` ${PAGE_LINES_RULE}` : ''}`;
+
 /** One VOICE question as the interpreter asks it: opened from the work, answered, finished; re-asks on a refusal. */
 export class VoiceQuestion {
   private n = 0;
@@ -120,7 +127,7 @@ export class VoiceQuestion {
    */
   static async open(b: VoiceBench, run: RunRef, artifactId: string, step: StepSpec = voiceStep(), from: 'copy' | 'claims' = 'copy', earlier?: EarlierAnswer): Promise<VoiceQuestion> {
     const q = new VoiceQuestion(b, run, step, artifactId);
-    const opened = await q.ask({ prompt: 'Write the words yourself: change any line below.', initial: { from, artifactId, ...(earlier ? { earlier } : {}) } });
+    const opened = await q.ask({ prompt: voiceAsked(run), initial: { from, artifactId, ...(earlier ? { earlier } : {}) } });
     q.offered = opened.initialText;
     q.deckId = opened.deckId;
     return q;
@@ -129,7 +136,7 @@ export class VoiceQuestion {
   /** A question opened by an older engine: its first offer is `offered` as that engine read the work. */
   static async openInFlight(b: VoiceBench, run: RunRef, artifactId: string, offered: string, step: StepSpec = voiceStep()): Promise<VoiceQuestion> {
     const q = new VoiceQuestion(b, run, step, artifactId);
-    const opened = await q.ask({ prompt: 'Write the words yourself: change any line below.', initialText: offered });
+    const opened = await q.ask({ prompt: voiceAsked(run), initialText: offered });
     q.offered = opened.initialText;
     return q;
   }
@@ -169,7 +176,7 @@ export class VoiceQuestion {
 
   /** Re-ask after a refusal, as the interpreter does, and answer the new checkpoint. */
   async reask(previous: string, problem: string, text: string): Promise<FinishHumanResult> {
-    const again = await this.ask({ prompt: `${problem} Write the words yourself: change any line below.`, initialText: previous });
+    const again = await this.ask({ prompt: `${problem} ${voiceAsked(this.run)}`, initialText: previous });
     return this.answer(text, again.checkpointId);
   }
 }

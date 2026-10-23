@@ -416,7 +416,9 @@ export class Interpreter {
     const revised = revisesInPlace(s);
     const inPlace = revised ? ports[revised]?.trim() : undefined;
     // A VOICE is asked by what it covers; a script says it is locked only where nothing the person writes later can change it.
-    const voice = s.role === 'voice' ? { medium: this.input.medium, locked: (this.locked ??= lockedScripts(this.input.recipe)).has(s) } : {};
+    // A page's VOICE with the work in front of it (its lines read from the page) ends with how a page's lines are written,
+    // and the activity adds the rest of the page's rules, which it reads from the page (R-SUFFIX).
+    const voice = s.role === 'voice' ? { medium: this.input.medium, locked: (this.locked ??= lockedScripts(this.input.recipe)).has(s), page: this.input.medium === 'web-page' && !!ports.artifact } : {};
     let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace, voice), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
     let initial: OpenCheckpointInput['initial'];
     if (kind === 'compare') {
