@@ -29,6 +29,8 @@ const MIGRATION_8_CHECKSUM = 'sha256:c0bf1a83fdc56c0292a686df508e44e5a8075f9d186
 const MIGRATION_9_CHECKSUM = 'sha256:b2f7caccd2a1aaf6941fdc8fc09a2938e6396e29355c7824999287997f0465d1';
 /** Pinned when migration 10 (the spend book's acceptance times and its reason 'waited') was written; it must never change. */
 const MIGRATION_10_CHECKSUM = 'sha256:f27be46e0889d8c5c4e9dfa888981b51ae3561eb2fe3dfd6cb37df5100a595af';
+/** Pinned when migration 11 (how a retained send used its whole wait, WEB-1) was written; it must never change. */
+const MIGRATION_11_CHECKSUM = 'sha256:cfd3bddb786d29c2d96c7318808ed28388f6db25a06f3f088fb3be323330772f';
 
 const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
 
@@ -220,6 +222,7 @@ describe('migrations', () => {
       [8, 'renderer-settings', MIGRATION_8_CHECKSUM],
       [9, 'answer-waits', MIGRATION_9_CHECKSUM],
       [10, 'spend-book-waits', MIGRATION_10_CHECKSUM],
+      [11, 'spend-book-retained-waits', MIGRATION_11_CHECKSUM],
     ]);
   });
 
@@ -448,6 +451,60 @@ describe('migrations', () => {
       expect(indexes.prepare('SELECT id FROM paid_operations ORDER BY rowid').all().map((r) => r.id)).toEqual(['op-failed', 'op-clip', 'op-settled', 'op-resent', 'op-waited']);
     } finally {
       indexes.close();
+    }
+  });
+
+  it('upgrade an existing version-10 database file in place, keeping every paid call, and keep how a retained send waited (WEB-1)', async () => {
+    const dataDir = tempDir();
+    const db = openDatabase(join(dataDir, 'byway.sqlite'));
+    const at = (s: number) => `2026-10-23T09:00:0${s}.000Z`;
+    try {
+      db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+      for (const m of MIGRATIONS.slice(0, 10)) {
+        db.exec(m.sql);
+        db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-23T00:00:00.000Z');
+      }
+      db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, at(0));
+      const insert = db.prepare(`INSERT INTO paid_operations (id, workspace_id, run_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd, state,
+        uncertain_reason, waited, lease_until, settle_seq, settled_usd, ledger_entry_id, entry, created_at, updated_at)
+        VALUES (?, 'ws', 'run-1', 'build:prose', 'completion', 'anthropic', 'm', 1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`);
+      insert.run('op-waited', 0.4, 0.4, 'uncertain', 'waited', '{"minutes":60,"how":"silence"}', null, null, null, null, at(1), at(1));
+      insert.run('op-resent', 0.2, 0.2, 'settled', null, null, 1, 0.15, 'entry-1', '{"costUsd":0.15}', at(2), at(2));
+    } finally {
+      db.close();
+    }
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    const book = store.spendBook;
+    expect(await book.spend('ws')).toEqual({ spentUsd: 0.15, byRun: { 'run-1': 0.15 }, inFlightUsd: 0, uncertainUsd: 1 });
+    // As listed before the migration: a send retained before it was kept says nothing of how it ended.
+    const before = (await book.records('ws')).uncertain;
+    expect(before).toEqual([
+      expect.objectContaining({ opId: 'op-waited', reason: 'waited', usd: 0.8, waited: { minutes: 60, how: 'silence' }, retainedUsd: 0.4 }),
+      expect.objectContaining({ opId: 'op-resent', reason: 'resent', usd: 0.2, retainedUsd: 0.2 }),
+    ]);
+    for (const u of before) expect(u).not.toHaveProperty('retainedWaited');
+    // A send retained from now on keeps it.
+    const call = admitOf({ opId: 'op-new', reserveUsd: 0.3 });
+    await book.admit(call);
+    await book.markSent('op-new', 'owner');
+    await book.retain('op-new', 0.3, 25, { minutes: 15, how: 'silence' });
+    expect((await book.records('ws')).uncertain).toEqual(expect.arrayContaining([expect.objectContaining({ opId: 'op-new', reason: 'resent', usd: 0.3, retainedWaited: { minutes: 15, how: 'silence' } })]));
+  });
+
+  it('keep how a retained send waited at the schema level only as JSON, beside any state and reason', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      const insert = db.prepare(`INSERT INTO paid_operations (id, workspace_id, purpose, kind, provider, model, paid, reserved_usd, retained_usd, state, settled_usd,
+        retained_waited, lease_until, created_at, updated_at) VALUES (?, 'w', 'p', 'completion', 'anthropic', 'm', 1, 0.3, 0.3, ?, ?, ?, 0, 'now', 'now')`);
+      insert.run('settled', 'settled', 0.2, '{"minutes":15,"how":"silence"}');
+      insert.run('released', 'released', null, '{"minutes":15,"how":"silence"}');
+      insert.run('none', 'released', null, null);
+      expect(() => insert.run('torn', 'settled', 0.2, '{"minutes":')).toThrow(/CHECK/);
+    } finally {
+      db.close();
     }
   });
 

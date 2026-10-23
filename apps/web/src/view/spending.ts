@@ -3,7 +3,7 @@
  * billed (with what to do about them), lines of the audit file the book could not read, settled calls not yet written
  * to it, and torn tails set aside after a crash. Plain functions, so the server, the client and the tests share them.
  */
-import type { LedgerAudit, ProviderId, SpendRecords, UncertainCall } from '@byway/contracts';
+import type { LedgerAudit, ProviderId, SpendRecords, UncertainCall, WaitedFor } from '@byway/contracts';
 import { formatUsd } from './format.ts';
 import { ledgerCheckText } from './history.ts';
 
@@ -18,7 +18,11 @@ export function callPurpose(call: { purpose: string; runId?: string }): string {
   return call.runId ? `A step of run ${call.runId.slice(0, 8)}` : 'A model call';
 }
 
-/** Why a call may have been billed, and where to look. */
+/**
+ * Why a call may have been billed, and where to look. A call byway sent again after a send that may have been billed
+ * counts that send too (UncertainCall.retainedUsd), and says how it ended: a send that used the whole of its model's wait
+ * says it went silent for the wait chosen in Settings, not that its connection failed (block 2's check, WEB-1).
+ */
 export function uncertainReason(call: UncertainCall): string {
   const who = providerName(call.provider);
   const jobs = call.providerJobs ? Object.values(call.providerJobs).filter(Boolean) : [];
@@ -26,14 +30,43 @@ export function uncertainReason(call: UncertainCall): string {
   switch (call.reason) {
     case 'interrupted':
       // Also a call byway cut off because its run was cancelled or ended (ADR-0111).
-      return `byway stopped waiting for ${who}'s answer (its run was cancelled or ended, byway stopped, or it lost its connection), so it never learned the cost.${ids}`;
+      return `byway stopped waiting for ${who}'s answer (its run was cancelled or ended, byway stopped, or it lost its connection), so it never learned the cost.${ids}${earlierSend(call)}`;
     case 'failed':
-      return `The request may have reached ${who} before the connection failed, so ${who} may have done the work and billed it.${ids}`;
+      return `The request may have reached ${who} before the connection failed, so ${who} may have done the work and billed it.${ids}${earlierSend(call)}`;
     case 'resent':
+      // Only what was retained for an earlier send is counted here: the call sent again settled, or was not billed.
+      if (call.retainedWaited) {
+        return `An earlier attempt went unanswered: ${waitRanOut(call, call.retainedWaited)}, so byway stopped waiting and sent the call again. That attempt may have billed the work, and this row counts it; the call sent again has its own cost, counted separately. ${WAIT_LONGER}${ids}`;
+      }
       return `An earlier attempt may have reached ${who} before the connection failed; byway sent the call again, and that call's own cost is counted separately.${ids}`;
     case 'waited':
-      return waitedText(call);
+      return `${waitedText(call)}${earlierSend(call)}`;
   }
+}
+
+/**
+ * What a row counts beyond its own send, when byway sent the call again after an earlier send that may have been billed
+ * (retainedUsd on a row that counts its reservation): that the earlier send is counted too, and how it ended. Empty when
+ * nothing was retained.
+ */
+function earlierSend(call: UncertainCall): string {
+  if (!(call.retainedUsd !== undefined && call.retainedUsd > 0)) return '';
+  const how = call.retainedWaited ? `went unanswered (${waitRanOut(call, call.retainedWaited)})` : `may have reached ${providerName(call.provider)} before its connection failed`;
+  return ` byway had sent this call before: an earlier attempt ${how}, so byway sent it again. That attempt may have been billed as well, and this row counts it too.`;
+}
+
+/**
+ * How a call used the whole of its model's wait, in the gateway's words (waitedWords) up to "so byway stopped waiting":
+ * "{Model} sent nothing for {N} minutes, the wait chosen in Settings", "did not answer within {N} minutes", or, for a fal
+ * clip, "did not finish clip job {id} within {N} minutes".
+ */
+function waitRanOut(call: UncertainCall, waited: WaitedFor): string {
+  const model = `${providerName(call.provider)}’s model ${call.model}`;
+  const n = waited.minutes;
+  if (waited.how === 'silence') return `${model} sent nothing for ${n} minutes, the wait chosen in Settings`;
+  if (waited.how === 'answer') return `${model} did not answer within ${n} minutes, the wait chosen in Settings`;
+  const job = call.providerJobs?.generation;
+  return `${model} did not finish ${job !== undefined ? `clip job ${job}` : 'its clip'} within ${n} minutes, the wait chosen in Settings`;
 }
 
 /**
@@ -42,18 +75,15 @@ export function uncertainReason(call: UncertainCall): string {
  * the work, and where to wait longer. A fal clip names its job and what fal answered to byway's cancel.
  */
 function waitedText(call: UncertainCall): string {
-  const model = `${providerName(call.provider)}’s model ${call.model}`;
   const waited = call.waited;
-  const minutes = waited?.minutes;
-  if (!waited || minutes === undefined) return `${model} used the whole of the wait chosen in Settings, so byway stopped waiting. ${WAITED_TAIL}`;
-  if (waited.how === 'silence') return `${model} sent nothing for ${minutes} minutes, the wait chosen in Settings, so byway stopped waiting. ${WAITED_TAIL}`;
-  if (waited.how === 'answer') return `${model} did not answer within ${minutes} minutes, the wait chosen in Settings, so byway stopped waiting. ${WAITED_TAIL}`;
-  const job = call.providerJobs?.generation;
+  if (!waited || waited.minutes === undefined) return `${providerName(call.provider)}’s model ${call.model} used the whole of the wait chosen in Settings, so byway stopped waiting. ${WAITED_TAIL}`;
+  if (waited.how !== 'clip') return `${waitRanOut(call, waited)}, so byway stopped waiting. ${WAITED_TAIL}`;
   const cancel = waited.cancel !== undefined ? `: ${waited.cancel}` : '';
-  return `${model} did not finish ${job !== undefined ? `clip job ${job}` : 'its clip'} within ${minutes} minutes, the wait chosen in Settings, so byway stopped waiting and cancelled it${cancel}. ${WAITED_TAIL}`;
+  return `${waitRanOut(call, waited)}, so byway stopped waiting and cancelled it${cancel}. ${WAITED_TAIL}`;
 }
 
-const WAITED_TAIL = "It may have billed the work. To wait longer, change 'How long to wait for an answer' in Settings.";
+const WAIT_LONGER = "To wait longer, change 'How long to wait for an answer' in Settings.";
+const WAITED_TAIL = `It may have billed the work. ${WAIT_LONGER}`;
 
 /** The advice under the list of calls that may have been billed. */
 export const UNCERTAIN_ADVICE =

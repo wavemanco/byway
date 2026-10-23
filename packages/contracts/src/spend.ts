@@ -322,6 +322,17 @@ export interface UncertainCall extends PaidCallSummary {
   reason: 'interrupted' | 'failed' | 'resent' | 'waited';
   /** With the reason 'waited': how long the call waited, and how. */
   waited?: WaitedFor;
+  /**
+   * What of `usd` was retained for earlier sends of the call that may have been billed, before byway sent it again
+   * (SpendBook.retain): all of it for 'resent', on top of the reservation for the other reasons. Absent when nothing was.
+   */
+  retainedUsd?: number;
+  /**
+   * When an earlier send that was retained used the whole of its model's wait (a stream that sent nothing for it, sent
+   * once more): how long and how it waited, so Settings says that send went silent, not that its connection failed
+   * (block 2's check, WEB-1). With any reason; absent for a send retained for another failure.
+   */
+  retainedWaited?: WaitedFor;
   /** Queue jobs the provider accepted (fal request ids by role), to look up in the provider's dashboard. */
   providerJobs?: Partial<Record<ProviderJobRole, string>>;
 }
@@ -412,9 +423,11 @@ export interface SpendBook {
   accept(opId: string, role: ProviderJobRole, providerJobId: string): Promise<void>;
   /**
    * Before a call is sent again after an attempt that may have been billed: counts that attempt's bound against the
-   * workspace cap (only), if it fits.
+   * workspace cap (only), if it fits. `waited`, when that attempt used the whole of its model's wait (a stream's silence),
+   * is kept with what was retained (UncertainCall.retainedWaited), whatever becomes of the call; a wait that is not one
+   * is refused, and nothing is retained.
    */
-  retain(opId: string, usd: number, workspaceCapUsd: number): Promise<{ retained: true } | { budget: BudgetDetails }>;
+  retain(opId: string, usd: number, workspaceCapUsd: number, waited?: WaitedFor): Promise<{ retained: true } | { budget: BudgetDetails }>;
   /** Definitely not billed: the row counts nothing (beyond what was retained). */
   release(opId: string): Promise<void>;
   /**

@@ -271,6 +271,72 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
     );
 
     it(
+      'keeps how a retained send used the whole of its wait, so Settings can say so of what was retained (WEB-1); a send retained without one carries none',
+      withBook(async ({ a }) => {
+        const caps = { workspaceUsd: 5, runUsd: 5 };
+        // A stream silent for its wait, sent once more, and the second send answered.
+        const answered = admitRequest({ reserveUsd: 0.3, caps });
+        // The same, but the second send went silent too: abandoned as waited, counting both sends.
+        const twice = admitRequest({ reserveUsd: 0.2, caps });
+        // A send that may have been billed for another reason (a lost connection), then answered: as before.
+        const plain = admitRequest({ reserveUsd: 0.1, caps });
+        for (const r of [answered, twice, plain]) {
+          await a.admit(r);
+          await a.markSent(r.opId, 'owner-a');
+        }
+        expect(await a.retain(answered.opId, 0.3, 5, { minutes: 60, how: 'silence' })).toEqual({ retained: true });
+        await a.settle(answered.opId, settlement(0.25));
+        await a.retain(twice.opId, 0.2, 5, { minutes: 15, how: 'silence' });
+        await a.abandon(twice.opId, 'waited', { minutes: 15, how: 'silence' });
+        await a.retain(plain.opId, 0.1, 5);
+        await a.settle(plain.opId, settlement(0.05));
+        expect(await a.spend('ws')).toMatchObject({ spentUsd: 0.3, inFlightUsd: 0, uncertainUsd: 0.8 });
+        const uncertain = (await a.records('ws')).uncertain;
+        expect(uncertain).toHaveLength(3);
+        const of = (opId: string) => uncertain.find((u) => u.opId === opId);
+        expect(of(answered.opId)).toEqual(expect.objectContaining({ usd: 0.3, reason: 'resent', retainedUsd: 0.3, retainedWaited: { minutes: 60, how: 'silence' } }));
+        expect(of(answered.opId)).not.toHaveProperty('waited');
+        expect(of(twice.opId)).toEqual(expect.objectContaining({ usd: 0.4, reason: 'waited', waited: { minutes: 15, how: 'silence' }, retainedUsd: 0.2, retainedWaited: { minutes: 15, how: 'silence' } }));
+        expect(of(plain.opId)).toEqual(expect.objectContaining({ usd: 0.1, reason: 'resent', retainedUsd: 0.1 }));
+        expect(of(plain.opId)).not.toHaveProperty('retainedWaited');
+        // A later send retained for another reason does not take away what an earlier one's wait said.
+        const mixed = admitRequest({ reserveUsd: 0.1, caps });
+        await a.admit(mixed);
+        await a.markSent(mixed.opId, 'owner-a');
+        await a.retain(mixed.opId, 0.1, 5, { minutes: 30, how: 'silence' });
+        await a.retain(mixed.opId, 0.1, 5);
+        await a.settle(mixed.opId, settlement(0.05));
+        expect((await a.records('ws')).uncertain.find((u) => u.opId === mixed.opId)).toEqual(expect.objectContaining({ usd: 0.2, reason: 'resent', retainedUsd: 0.2, retainedWaited: { minutes: 30, how: 'silence' } }));
+        // A call that retained nothing says nothing of it.
+        const none = admitRequest({ reserveUsd: 0.1, caps });
+        await a.admit(none);
+        await a.markSent(none.opId, 'owner-a');
+        await a.abandon(none.opId);
+        const listed = (await a.records('ws')).uncertain.find((u) => u.opId === none.opId);
+        expect(listed).not.toHaveProperty('retainedUsd');
+        expect(listed).not.toHaveProperty('retainedWaited');
+        // Cleared like any call that may have been billed.
+        expect(await a.clearUncertain('ws', [answered.opId, twice.opId, plain.opId, mixed.opId, none.opId])).toBe(5);
+        expect(await a.spend('ws')).toMatchObject({ uncertainUsd: 0 });
+      }),
+    );
+
+    it(
+      'refuses a retained send’s wait that is not one, retaining nothing',
+      withBook(async ({ a }) => {
+        const r = admitRequest({ reserveUsd: 0.3, caps: { workspaceUsd: 5, runUsd: 5 } });
+        await a.admit(r);
+        await a.markSent(r.opId, 'owner-a');
+        await expect(a.retain(r.opId, 0.3, 5, { minutes: 0, how: 'silence' })).rejects.toThrow();
+        await expect(a.retain(r.opId, 0.3, 5, { minutes: Number.NaN, how: 'silence' })).rejects.toThrow();
+        await expect(a.retain(r.opId, 0.3, 5, { minutes: 15, how: 'stall' as 'silence' })).rejects.toThrow();
+        await expect(a.retain(r.opId, 0.3, 5, null as unknown as undefined)).rejects.toThrow();
+        expect(await a.spend('ws')).toMatchObject({ inFlightUsd: 0.3, uncertainUsd: 0 });
+        expect((await a.records('ws')).uncertain).toEqual([]);
+      }),
+    );
+
+    it(
       'releases a call that was certainly not billed and abandons one that may have been',
       withBook(async ({ a }) => {
         const released = admitRequest({ reserveUsd: 0.3 });

@@ -405,9 +405,14 @@ export class PaidCall {
     this.waited = waitedOf(err);
   }
 
-  /** Before sending again after an attempt that may have been billed: count that attempt's bound against the workspace. */
-  async retain(usd: number, workspaceCapUsd: number): Promise<void> {
-    const out = await this.calls.book.retain(this.opId, usd, workspaceCapUsd);
+  /**
+   * Before sending again after an attempt that may have been billed: count that attempt's bound against the workspace.
+   * `waited`, when that attempt used the whole of its model's wait (a stream's silence, sent once more: waitedError), is
+   * kept with what was retained, so Settings' Spending records say that send went silent for the wait chosen in Settings
+   * rather than that its connection failed, even when the call sent again then answered (block 2's check, WEB-1).
+   */
+  async retain(usd: number, workspaceCapUsd: number, waited?: WaitedFor): Promise<void> {
+    const out = await this.calls.book.retain(this.opId, usd, workspaceCapUsd, waited);
     if ('budget' in out) throw budgetError(out.budget);
     this.retained = Math.round((this.retained + usd) * 1_000_000) / 1_000_000;
   }

@@ -585,6 +585,8 @@ describe('a streamed chat answer, read as a whole one', () => {
     expect(res.costUsd).toBe(0.0213);
     // The first attempt's bound stays counted, as for any resend after an attempt that may have been billed (ADR-0095).
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'resent' })]);
+    // It failed another way than by its wait, so the record says nothing of a wait (WEB-1).
+    expect((await g.spendRecords('ws')).uncertain[0]).not.toHaveProperty('retainedWaited');
   });
 
   it('reads a stream that ended without its finishing chunk the same way, and a finish of "error" too', async () => {
@@ -812,7 +814,11 @@ describe('a streamed call that stalls (CC-2)', () => {
     expect(chat.signals[0]?.aborted).toBe(true);
     expect(chat.bodies).toHaveLength(2);
     expect(ledger()).toHaveLength(1);
-    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider, reason: 'resent' })]);
+    // The stalled send is what was retained, and the record keeps how it ended, so Settings says it went silent for the
+    // wait rather than that its connection failed (WEB-1).
+    expect((await g.spendRecords('ws')).uncertain).toEqual([
+      expect.objectContaining({ provider, reason: 'resent', retainedWaited: { minutes: STREAM_IDLE_MS / 60_000, how: 'silence' } }),
+    ]);
   });
 
   it('openai: a stream that stalls and is sent once more, then fails another way, is listed by that failure, not as waited', async () => {
@@ -828,7 +834,8 @@ describe('a streamed call that stalls (CC-2)', () => {
     expect(e.message).toMatch(/ECONNRESET|fetch failed/);
     expect(e).not.toHaveProperty('waited');
     expect(chat.bodies).toHaveLength(2);
-    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider: 'openai', reason: 'failed' })]);
+    // Listed by its last failure, and counting the stalled send before it, which the record says went silent (WEB-1).
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider: 'openai', reason: 'failed', retainedWaited: { minutes: STREAM_IDLE_MS / 60_000, how: 'silence' } })]);
   });
 
   it('openai: a request whose response has not begun is left to the SDK’s own timeout', async () => {
@@ -963,7 +970,8 @@ describe('a streamed call that stalls (CC-2)', () => {
     expect(e).toMatchObject({ code: 'provider-error', billing: 'maybe', message: silent(model, minutes), waited: { minutes, how: 'silence' } });
     // Settings lists the call as waited, at its reservation and what was retained before it was sent again (ADR-0095).
     const listed = (await g.spendRecords('ws')).uncertain.filter((u) => u.provider === provider);
-    expect(listed.at(-1)).toMatchObject({ reason: 'waited', waited: { minutes, how: 'silence' } });
+    // Both sends went silent: the first, retained before the second was sent, says so too (WEB-1).
+    expect(listed.at(-1)).toMatchObject({ reason: 'waited', waited: { minutes, how: 'silence' }, retainedWaited: { minutes, how: 'silence' } });
     return e;
   }
 

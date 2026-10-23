@@ -152,9 +152,12 @@ export class SqliteSpendBook implements SpendBook {
     });
   }
 
-  async retain(opId: string, usd: number, workspaceCapUsd: number): Promise<{ retained: true } | { budget: BudgetDetails }> {
+  async retain(opId: string, usd: number, workspaceCapUsd: number, waited?: WaitedFor): Promise<{ retained: true } | { budget: BudgetDetails }> {
     const amount = usdOf('the retained amount', usd);
     const cap = usdOf('the workspace cap', workspaceCapUsd);
+    // How the retained send used its whole wait, when it did (retained_waited, migration 11): checked as an abandoned
+    // call's wait is, and kept until a later retained send that waited replaces it.
+    const detail = waited === undefined ? null : waitedJson(waited, 'a retained send that used its whole wait');
     return this.#tx(() => {
       const q = this.#queries();
       const row = q.get.get(opId) as Row | undefined;
@@ -162,7 +165,7 @@ export class SqliteSpendBook implements SpendBook {
       const ws = this.#workspaceExposure(String(row.workspace_id), this.#ms());
       const total = ws.settled + ws.inFlight + ws.uncertain + amount;
       if (total > cap + EPSILON) return { budget: details('workspace', cap, ws.settled, ws.inFlight, amount, total, ws.uncertain) };
-      q.retain.run({ id: opId, usd: amount, at: this.#stamp() });
+      q.retain.run({ id: opId, usd: amount, waited: detail, at: this.#stamp() });
       return { retained: true as const };
     });
   }
@@ -176,7 +179,7 @@ export class SqliteSpendBook implements SpendBook {
     // 'waited' without how long and how it waited, or a wait given with another reason.
     if (reason !== 'failed' && reason !== 'interrupted' && reason !== 'waited') throw new Error(`an abandoned call's reason is 'failed', 'interrupted' or 'waited', not ${JSON.stringify(reason)}`);
     if (reason !== 'waited' && waited !== undefined) throw new StoreError('invalid', `a call abandoned as ${reason} has no wait that ran out`);
-    const detail = reason === 'waited' ? waitedJson(waited) : null;
+    const detail = reason === 'waited' ? waitedJson(waited, "a call abandoned as 'waited'") : null;
     this.#tx(() => this.#queries().abandon.run({ id: opId, at: this.#stamp(), reason, waited: detail }));
   }
 
@@ -312,6 +315,8 @@ export class SqliteSpendBook implements SpendBook {
         since: String(r.updated_at),
         reason,
         ...(reason === 'waited' && r.waited !== null ? { waited: JSON.parse(String(r.waited)) as WaitedFor } : {}),
+        ...(Number(r.retained_usd) > 0 ? { retainedUsd: roundUsd(Number(r.retained_usd)) } : {}),
+        ...(Number(r.retained_usd) > 0 && r.retained_waited !== null && r.retained_waited !== undefined ? { retainedWaited: JSON.parse(String(r.retained_waited)) as WaitedFor } : {}),
         ...(jobs && Object.keys(jobs).length > 0 ? { providerJobs: jobs } : {}),
       };
     });
@@ -495,10 +500,13 @@ function acceptedJobs(value: unknown): Partial<Record<ProviderJobRole, string>> 
   return jobs;
 }
 
-/** A wait that ran out (WaitedFor) as the row keeps it, checked: minutes above 0, one of the three ways, fal's answer as text. */
-function waitedJson(waited: WaitedFor | undefined): string {
+/**
+ * A wait that ran out (WaitedFor) as the row keeps it, checked: minutes above 0, one of the three ways, fal's answer as
+ * text. `what` names what needs it, for the refusal: an abandoned call's reason 'waited', or a retained send's wait.
+ */
+function waitedJson(waited: WaitedFor | undefined, what: string): string {
   const w = waited as Partial<WaitedFor> | undefined;
-  if (typeof w !== 'object' || w === null) throw new StoreError('invalid', "a call abandoned as 'waited' needs how long and how it waited");
+  if (typeof w !== 'object' || w === null) throw new StoreError('invalid', `${what} needs how long and how it waited`);
   if (typeof w.minutes !== 'number' || !Number.isFinite(w.minutes) || w.minutes <= 0) throw new StoreError('invalid', `a wait that ran out is a number of minutes above 0, got ${String(w.minutes)}`);
   if (w.how !== 'silence' && w.how !== 'answer' && w.how !== 'clip') throw new StoreError('invalid', `a wait ran out in silence, for an answer or for a clip, not ${String(w.how)}`);
   if (w.cancel !== undefined && typeof w.cancel !== 'string') throw new StoreError('invalid', 'what a provider answered to a cancel is text');
@@ -566,7 +574,7 @@ function prepare(db: DatabaseSync) {
     accept: p(`UPDATE paid_operations SET state = CASE WHEN state IN ('open', 'sent') THEN 'accepted' ELSE state END,
       provider_jobs = json_set(COALESCE(provider_jobs, '{}'), :path, :job), provider_jobs_at = json_set(COALESCE(provider_jobs_at, '{}'), :path, :at),
       updated_at = :at WHERE id = :id`),
-    retain: p('UPDATE paid_operations SET retained_usd = retained_usd + :usd, updated_at = :at WHERE id = :id'),
+    retain: p('UPDATE paid_operations SET retained_usd = retained_usd + :usd, retained_waited = COALESCE(:waited, retained_waited), updated_at = :at WHERE id = :id'),
     release: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE id = :id AND state <> 'settled'`),
     abandon: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = :reason, waited = :waited, updated_at = :at WHERE id = :id AND state IN ('open', 'sent', 'accepted')`),
     settle: p(`UPDATE paid_operations SET state = 'settled', settled_usd = :cost, settled_at = :settledAt, served_model = :served, price_basis = :basis,
