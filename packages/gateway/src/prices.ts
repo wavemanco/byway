@@ -72,7 +72,9 @@ export interface LongContextTier {
 // owner's answer of 2026-10-21 23:15, "Weekly report + monthly re-read + date in the app (Recommended)"), and every
 // figure the rows recorded matched its page; the long-context tiers were added that day (LC-TIERS). The guides the
 // comments quote were read again that day too (OpenAI's prompt-caching guide, Google's caching and image-generation
-// guides), and each still says what is quoted. PRICES_CHECKED is that day.
+// guides), and each still says what is quoted. PRICES_CHECKED is that day. The dates here are the day of the session
+// that read the pages, as the records date the owner's answers: this read ran from 17:00 to 17:20 Pacific time on
+// 2026-10-22, which was 00:00 to 00:20 UTC on 2026-10-23.
 const ANTHROPIC = 'platform.claude.com/docs/en/about-claude/pricing, read 2026-10-18 and again 2026-10-22';
 const OPENAI = 'developers.openai.com/api/docs/pricing, read 2026-10-18, 2026-10-21 and 2026-10-22';
 const GOOGLE = 'ai.google.dev/gemini-api/docs/pricing (page dated 2026-10-16), read 2026-10-18, 2026-10-21 (page dated 2026-10-19) and 2026-10-22 (page dated 2026-10-22)';
@@ -80,10 +82,12 @@ const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.comple
 
 /**
  * The day byway's prices were last checked: the last day every row a provider charges for was read against its page
- * (YYYY-MM-DD, UTC). Settings and the Recommendation's estimated cost show it, with a notice once it is more than about
- * 45 days old, as the owner chose on 2026-10-21 ("Settings and the estimate show when prices were last checked, with a
- * notice after about 45 days"). Moved only by a full re-read: a page read alone, after the weekly report flags it,
- * changes that page's rows and their sources, not this day (pricing.test.ts holds every paid row's source to it).
+ * (YYYY-MM-DD, the session's day, as the sources give it). Settings and the Recommendation's estimated cost show it,
+ * with a notice once it is more than about 45 days old, as the owner chose on 2026-10-21 ("Settings and the estimate
+ * show when prices were last checked, with a notice after about 45 days"); they count whole UTC days from its start, so
+ * its age can read a day off the session's clock. Moved only by a full re-read: a page read alone, after the weekly
+ * report flags it, changes that page's rows and their sources, not this day (pricing.test.ts holds every paid row's
+ * source to it).
  */
 export const PRICES_CHECKED = '2026-10-22';
 
