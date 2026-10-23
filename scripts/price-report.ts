@@ -12,16 +12,17 @@
  * and marks a flagged figure, or a re-read that is due, with a warning on the run's page; a page it cannot read is said
  * in one line, and it exits 0 whatever happens. It reads no key. What it checks, against packages/gateway/src/prices.ts:
  * - OpenRouter's model list (openrouter.ai/api/v1/models): each pinned model's pricing.prompt and pricing.completion,
- *   per token, compared exactly, as decimals, with the row's rates per 1M tokens.
- * - Every other row's page (Anthropic's, OpenAI's, Google's and fal's): each figure the row records must be on the
- *   page, as a dollar amount shortly after the first place the page names the model with a price (on OpenAI's page,
- *   its Standard row, before its Batch, Fast and Ultrafast rows); OpenAI's long-context rates, which the page draws
- *   from its own script, in that script's standard map; each long-context tier's threshold, beside the row's figures
- *   on Google's page and on the switch above the Flagship models' table on OpenAI's; a row with no tier that the page
- *   now prices by prompt length; the figures byway's reading of a page rests on without recording them (Kling 2.5's
- *   price for its first 5 seconds, 5 times its rate per second); and the sentence it rests on, read whole (Anthropic's
- *   standard pricing across 1M tokens, with its list of exceptions). A figure not found means the page changed or
- *   moved it, and that page is read again (AGENTS.md); it cannot see a new rate the table does not record.
+ *   per token, compared exactly, as decimals, with the rates per 1M tokens of the row in force on the day of the run.
+ * - Every other row's page (Anthropic's, OpenAI's, Google's and fal's), for each row in force on the day of the run or
+ *   still to come, not one a later row has replaced: each figure the row records must be on the page, as a dollar
+ *   amount shortly after the first place the page names the model with a price (on OpenAI's page, its Standard row,
+ *   before its Batch, Fast and Ultrafast rows); OpenAI's long-context rates, which the page draws from its own script,
+ *   in that script's standard map; each long-context tier's threshold, beside the row's figures on Google's page and on
+ *   the switch above the Flagship models' table on OpenAI's; a row with no tier that the page now prices by prompt
+ *   length; the figures byway's reading of a page rests on without recording them (Kling 2.5's price for its first 5
+ *   seconds, 5 times its rate per second); and the sentence it rests on, read whole (Anthropic's standard pricing
+ *   across 1M tokens, with its list of exceptions). A figure not found means the page changed or moved it, and that
+ *   page is read again (AGENTS.md); it cannot see a new rate the table does not record.
  * - How long ago the last full re-read was (PRICES_CHECKED): the monthly re-read is due from 30 days after it (Claude's
  *   reading of "monthly").
  *
@@ -90,14 +91,26 @@ function figures(row: PriceRow, withLong: boolean): { what: string; usd: number 
   return all.filter((f): f is [string, number] => f[1] !== undefined && f[1] > 0).map(([what, usd]) => ({ what, usd }));
 }
 
-const rowsOf = (provider: Provider) => PRICES.filter((r) => r.provider === provider);
+/** Whether a row is the one in force for its model on a day. */
+const inForce = (row: PriceRow, now: Date) => priceFor(PRICES, row.provider, row.model, now) === row;
 
 /**
- * The pages, built from the price table, so a row added to prices.ts is checked on its provider's page. fal has a page
- * per model, each naming its price in one sentence.
+ * A provider's rows to check on the day of a run: each row in force that day, and each row still to come, a dated row
+ * before its day (Gemini 3.8 Flash's price from 2027-01-01, which Google's page already gives). A row a later one has
+ * replaced is left out. It stays in the table, right for calls made before, but once its day has passed its provider
+ * takes its figures off the page, and it would be flagged at every weekly run (PRICES-4).
  */
-export function pricePages(): PricePage[] {
-  const fal = rowsOf('fal').map((row): PricePage => {
+const rowsOf = (provider: Provider, now: Date) => {
+  const today = now.toISOString().slice(0, 10);
+  return PRICES.filter((r) => r.provider === provider && ((r.from !== undefined && r.from > today) || inForce(r, now)));
+};
+
+/**
+ * The pages to check on the day of a run, built from the price table, so a row added to prices.ts is checked on its
+ * provider's page. fal has a page per model, each naming its price in one sentence.
+ */
+export function pricePages(now: Date): PricePage[] {
+  const fal = rowsOf('fal', now).map((row): PricePage => {
     const first = FAL_FIRST_SECONDS[row.model];
     return {
       label: `fal (${row.model})`,
@@ -115,7 +128,7 @@ export function pricePages(): PricePage[] {
       label: 'Anthropic',
       url: 'https://platform.claude.com/docs/en/about-claude/pricing.md',
       form: 'markdown',
-      rows: rowsOf('anthropic'),
+      rows: rowsOf('anthropic', now),
       names: { 'claude-fable-5-1': 'Claude Fable 5.1', 'claude-opus-5-5': 'Claude Opus 5.5', 'claude-sonnet-5-5': 'Claude Sonnet 5.5', 'claude-opus-5': 'Claude Opus 5', 'claude-opus-4-8': 'Claude Opus 4.8' },
       // Whole, with its list of exceptions: a model added to it would no longer be priced the same at every length.
       sentences: ['Claude 4.6 and later models (except Claude Haiku 5.5) and Claude Mythos Preview include the full 1M token context window at standard pricing'],
@@ -125,7 +138,7 @@ export function pricePages(): PricePage[] {
       label: 'OpenAI',
       url: 'https://developers.openai.com/api/docs/pricing',
       form: 'html',
-      rows: rowsOf('openai'),
+      rows: rowsOf('openai', now),
       longInScripts: true,
       tierWords: { words: (t) => `Long: >${t.aboveInputTokens / 1000}K input tokens`, heading: 'Flagship models' },
     },
@@ -134,7 +147,7 @@ export function pricePages(): PricePage[] {
       label: 'Google',
       url: 'https://ai.google.dev/gemini-api/docs/pricing?hl=en',
       form: 'html',
-      rows: rowsOf('google'),
+      rows: rowsOf('google', now),
       tierWords: { words: (t) => `prompts > ${t.aboveInputTokens / 1000}k tokens` },
       byLength: 'prompts >',
     },
@@ -413,7 +426,8 @@ export async function report(opts: PriceReportOptions = {}): Promise<void> {
     const reread = rereadLine(PRICES_CHECKED, now);
     due = reread.due;
     sections.push({ flagged: false, lines: [reread.line] });
-    const openrouter = rowsOf('openrouter').filter((r) => priceFor(PRICES, r.provider, r.model, now) === r);
+    // The model list gives today's prices only, so a row still to come is not compared with it.
+    const openrouter = rowsOf('openrouter', now).filter((r) => inForce(r, now));
     const checks: Promise<{ flagged: boolean; lines: string[] }>[] = [
       (async () => {
         let models: OpenRouterModels;
@@ -425,7 +439,7 @@ export async function report(opts: PriceReportOptions = {}): Promise<void> {
         }
         return openRouterReport(models, openrouter);
       })(),
-      ...pricePages().map(async (page) => {
+      ...pricePages(now).map(async (page) => {
         let body: string;
         try {
           body = await get(page.url);

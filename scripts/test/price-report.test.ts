@@ -23,7 +23,7 @@ const CHECKED = new Date(`${PRICES_CHECKED}T12:00:00.000Z`);
  * Haiku 5.5's two rows priced by prompt length (no row of byway's: no profile uses it), and the long-context sentence
  * as the page words it, with its links.
  */
-function anthropicPage(rows = PRICES.filter((r) => r.provider === 'anthropic'), names = pricePages()[0]!.names!): string {
+function anthropicPage(rows = PRICES.filter((r) => r.provider === 'anthropic'), names = pricePages(CHECKED)[0]!.names!): string {
   const lines = rows.map((r) => `| ${names[r.model]} | ${$(r.inputPerMTok)} / MTok | ${$(r.cacheWritePerMTok!)} / MTok | $99 / MTok | ${$(r.cacheReadPerMTok!)} / MTok | ${$(r.outputPerMTok)} / MTok |`);
   const haiku = ['| Claude Haiku 5.5 (for prompts up to 100,000 tokens) | $0.10 / MTok | $0.125 / MTok | $0.20 / MTok | $0.01 / MTok | $0.50 / MTok |', '| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.50 / MTok | $0.625 / MTok | $1 / MTok | $0.05 / MTok | $2.50 / MTok |'];
   const sentence = 'Claude 4.6 and later models (except Claude Haiku 5.5) and [Claude Mythos Preview](https://example.test/glasswing) include the full [1M token context window](https://example.test/context) at standard pricing. (A 900k-token request is billed at the same per-token rate as a 9k-token request.)';
@@ -143,11 +143,28 @@ const NEXT = 'The agent running the next session (any model with web access, or 
 
 describe("the weekly run's price report (PRICE-CADENCE)", () => {
   it('checks every row a provider charges for: OpenRouter in its model list, every other row on its own page', () => {
-    const onPages = pricePages().flatMap((p) => p.rows);
+    // On the day of the last full re-read every row is in force or still to come.
+    const onPages = pricePages(CHECKED).flatMap((p) => p.rows);
     const paid = PRICES.filter((r) => r.provider !== 'mock');
     expect([...onPages, ...PRICES.filter((r) => r.provider === 'openrouter')].sort((a, b) => paid.indexOf(a) - paid.indexOf(b))).toEqual(paid);
-    for (const page of pricePages()) for (const r of page.rows) if (r.provider === 'anthropic') expect(page.names?.[r.model], r.model).toBeDefined();
+    for (const page of pricePages(CHECKED)) for (const r of page.rows) if (r.provider === 'anthropic') expect(page.names?.[r.model], r.model).toBeDefined();
     expect(OPENROUTER_MODELS).toBe('https://openrouter.ai/api/v1/models');
+  });
+
+  it('checks the rows in force on the day of the run and the rows still to come, not a row a later one has replaced (PRICES-4)', async () => {
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    const intro = row('google', 'gemini-3.8-flash');
+    const later = row('google', 'gemini-3.8-flash', '2027-01-01');
+    const googleRows = (now: Date) => pricePages(now).find((p) => p.label === 'Google')!.rows;
+    expect(googleRows(day('2026-12-31'))).toEqual(expect.arrayContaining([intro, later]));
+    expect(googleRows(day('2027-01-01'))).toContain(later);
+    expect(googleRows(day('2027-01-01'))).not.toContain(intro);
+    // Google's page once the introductory price is over, giving only the price from 2027-01-01.
+    const after = googlePage(PRICES.filter((r) => r.provider === 'google' && r !== intro));
+    const googleLines = async (now: Date) => (await run(web({ [GOOGLE]: after }).fetch, now)).lines.filter((l) => l.startsWith('Google'));
+    expect(await googleLines(day('2027-01-05'))).toEqual([`Google: every figure byway records was found on ${GOOGLE}.`]);
+    // Before then the introductory row is in force, so a page without its figures is flagged.
+    expect(await googleLines(CHECKED)).toEqual([`Google gemini-3.8-flash: not found after its name on the page: input $${intro.inputPerMTok}, output $${intro.outputPerMTok}.`]);
   });
 
   it('finds every figure on pages shaped as the providers write them, and flags nothing', async () => {
