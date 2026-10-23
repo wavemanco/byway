@@ -9,8 +9,9 @@
  * do it too.
  *
  * It reports and never fails, as scripts/playwright-pin.ts does: it prints what it found, adds it to the run's summary,
- * and marks a flagged figure, or a re-read that is due, with a warning on the run's page; a page it cannot read is said
- * in one line, and it exits 0 whatever happens. It reads no key. What it checks, against packages/gateway/src/prices.ts:
+ * and marks a flagged figure, a page it could not read (said in one line: it was not checked, and calls for the re-read
+ * as a flag does), or a re-read that is due, with a warning on the run's page; it exits 0 whatever happens. It reads
+ * no key. What it checks, against packages/gateway/src/prices.ts:
  * - OpenRouter's model list (openrouter.ai/api/v1/models): each pinned model's pricing.prompt and pricing.completion,
  *   per token, compared exactly, as decimals, with the rates per 1M tokens of the row in force on the day of the run.
  * - Every other row's page (Anthropic's, OpenAI's, Google's and fal's), for each row in force on the day of the run or
@@ -416,6 +417,17 @@ export interface PriceReportOptions {
 const FLAGGED_NEXT =
   'The agent running the next session (any model with web access, or a person) reads every page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
 
+/**
+ * What the report says of one check: its lines, whether it flagged a figure, and whether it could not be made at all
+ * (a page or list it could not read, or the report itself), which is warned of as a flag is, since a page that cannot
+ * be read was not checked that week and a re-read is the only check it gets (PRICES-5).
+ */
+interface Section {
+  flagged: boolean;
+  unread?: boolean;
+  lines: string[];
+}
+
 /** The report, printed: it never throws and never sets a failing exit code. */
 export async function report(opts: PriceReportOptions = {}): Promise<void> {
   const print = opts.print ?? ((line: string) => console.log(line));
@@ -427,7 +439,7 @@ export async function report(opts: PriceReportOptions = {}): Promise<void> {
   };
   const said = (err: unknown) => (err instanceof Error ? err.message : String(err));
   const now = (opts.now ?? (() => new Date()))();
-  const sections: { flagged: boolean; lines: string[] }[] = [];
+  const sections: Section[] = [];
   let due = false;
   try {
     const reread = rereadLine(PRICES_CHECKED, now);
@@ -435,14 +447,14 @@ export async function report(opts: PriceReportOptions = {}): Promise<void> {
     sections.push({ flagged: false, lines: [reread.line] });
     // The model list gives today's prices only, so a row still to come is not compared with it.
     const openrouter = rowsOf('openrouter', now).filter((r) => inForce(r, now));
-    const checks: Promise<{ flagged: boolean; lines: string[] }>[] = [
+    const checks: Promise<Section>[] = [
       (async () => {
         let models: OpenRouterModels;
         try {
           // An answer that is not JSON is as unreadable as no answer.
           models = JSON.parse(await get(OPENROUTER_MODELS)) as OpenRouterModels;
         } catch (err) {
-          return { flagged: false, lines: [`OpenRouter: its model list could not be read (${said(err)}), so this run says nothing of it.`] };
+          return { flagged: false, unread: true, lines: [`OpenRouter: its model list could not be read (${said(err)}), so this run did not check it.`] };
         }
         return openRouterReport(models, openrouter);
       })(),
@@ -451,7 +463,7 @@ export async function report(opts: PriceReportOptions = {}): Promise<void> {
         try {
           body = await get(page.url);
         } catch (err) {
-          return { flagged: false, lines: [`${page.label}: ${page.url} could not be read (${said(err)}), so this run says nothing of it.`] };
+          return { flagged: false, unread: true, lines: [`${page.label}: ${page.url} could not be read (${said(err)}), so this run did not check it.`] };
         }
         // A script that cannot be read is left out: the rates it would show are then reported as not found.
         const scripts = page.longInScripts ? (await Promise.all(pageScripts(body, page.url).map((u) => get(u).catch(() => '')))).filter((s) => s !== '') : [];
@@ -460,15 +472,16 @@ export async function report(opts: PriceReportOptions = {}): Promise<void> {
     ];
     for (const section of await Promise.all(checks)) sections.push(section);
   } catch (err) {
-    sections.push({ flagged: false, lines: [`The price report could not be made (${said(err)}), so this run reports nothing on prices.`] });
+    sections.push({ flagged: false, unread: true, lines: [`The price report could not be made (${said(err)}), so this run checked nothing on prices.`] });
   }
-  const flagged = sections.some((s) => s.flagged);
+  // A page that could not be read calls for the re-read as a flag does.
+  const flagged = sections.some((s) => s.flagged || s.unread);
   const lines = sections.flatMap((s) => s.lines);
   if (flagged) lines.push(FLAGGED_NEXT);
   for (const line of lines) print(line);
   // A warning on the run's page, which blocks nothing.
   if (flagged || due) {
-    const warned = sections.flatMap((s, i) => (s.flagged || (i === 0 && due) ? s.lines : []));
+    const warned = sections.flatMap((s, i) => (s.flagged || s.unread || (i === 0 && due) ? s.lines : []));
     if (flagged) warned.push(FLAGGED_NEXT);
     print(`::warning title=Prices::${warned.join(' ').replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
   }

@@ -313,14 +313,29 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
 
   it('never fails: a page or list it cannot read is said in one line, and the others are still checked', async () => {
     const out = await run(web({ [OPENROUTER_MODELS]: new Error('getaddrinfo ENOTFOUND openrouter.ai'), 'https://ai.google.dev/gemini-api/docs/pricing?hl=en': 503, 'https://platform.claude.com/docs/en/about-claude/pricing.md': 'not a page' }).fetch);
-    expect(out.lines).toContain('OpenRouter: its model list could not be read (getaddrinfo ENOTFOUND openrouter.ai), so this run says nothing of it.');
-    expect(out.lines).toContain('Google: https://ai.google.dev/gemini-api/docs/pricing?hl=en could not be read (it answered 503), so this run says nothing of it.');
+    expect(out.lines).toContain('OpenRouter: its model list could not be read (getaddrinfo ENOTFOUND openrouter.ai), so this run did not check it.');
+    expect(out.lines).toContain('Google: https://ai.google.dev/gemini-api/docs/pricing?hl=en could not be read (it answered 503), so this run did not check it.');
     expect(out.lines).toContain('OpenAI: every figure byway records was found on https://developers.openai.com/api/docs/pricing.');
     // A page that reads but shows none of its figures is flagged, not passed.
     expect(out.lines.filter((l) => l.startsWith('Anthropic claude-'))).toHaveLength(5);
     expect(out.summary).toContain(out.lines[1]!);
     // An answer that is not JSON is unreadable too.
-    expect((await run(web({ [OPENROUTER_MODELS]: '<html>' }).fetch)).lines[1]).toMatch(/^OpenRouter: its model list could not be read \(.+\), so this run says nothing of it\.$/);
+    expect((await run(web({ [OPENROUTER_MODELS]: '<html>' }).fetch)).lines[1]).toMatch(/^OpenRouter: its model list could not be read \(.+\), so this run did not check it\.$/);
+  });
+
+  it('warns of a page or list it could not read, which it did not check, as of a flag, and of a report it could not make (PRICES-5)', async () => {
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    const page = await run(web({ [GOOGLE]: 403 }).fetch);
+    const unread = `Google: ${GOOGLE} could not be read (it answered 403), so this run did not check it.`;
+    expect(page.lines.filter((l) => !l.startsWith('::warning')).slice(-2)).toEqual([expect.stringMatching(/^fal /), NEXT]);
+    expect(page.warnings).toEqual([`::warning title=Prices::${unread} ${NEXT}`]);
+    const list = await run(web({ [OPENROUTER_MODELS]: 503 }).fetch);
+    expect(list.warnings).toEqual([`::warning title=Prices::OpenRouter: its model list could not be read (it answered 503), so this run did not check it. ${NEXT}`]);
+    // The report as a whole, here on a clock it cannot read.
+    const whole = await run(web().fetch, new Date(Number.NaN));
+    const made = 'The price report could not be made (Invalid time value), so this run checked nothing on prices.';
+    expect(whole.lines).toContain(made);
+    expect(whole.warnings).toEqual([`::warning title=Prices::${made} ${NEXT}`]);
   });
 
   it(`says when the monthly re-read is due, from ${REREAD_DUE_DAYS} days after the last full read, with a warning`, async () => {
