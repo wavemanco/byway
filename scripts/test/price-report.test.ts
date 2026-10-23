@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PRICES, PRICES_CHECKED, type PriceRow } from '../../packages/gateway/src/prices.ts';
-import { decimal, OPENROUTER_MODELS, openRouterReport, pageScripts, pricePages, REREAD_DUE_DAYS, report, rereadLine, samePerToken, type OpenRouterModels, type PriceReportOptions } from '../price-report.ts';
+import { decimal, OPENROUTER_MODELS, openRouterReport, pageScripts, plain, pricePages, REREAD_DUE_DAYS, report, rereadLine, samePerToken, type OpenRouterModels, type PriceReportOptions } from '../price-report.ts';
 
 const row = (provider: PriceRow['provider'], model: string, from?: string) => PRICES.find((r) => r.provider === provider && r.model === model && r.from === from)!;
 const $ = (n: number) => `$${n.toFixed(Math.max(2, (String(n).split('.')[1] ?? '').length))}`;
@@ -336,6 +336,35 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     const made = 'The price report could not be made (Invalid time value), so this run checked nothing on prices.';
     expect(whole.lines).toContain(made);
     expect(whole.warnings).toEqual([`::warning title=Prices::${made} ${NEXT}`]);
+  });
+
+  it("prints nothing of a provider's answer that GitHub would read as a workflow command, in the log or the summary (SECURITY-2)", async () => {
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    // A model list that is not JSON, whose parser's message quotes it with its newline; a page whose error carries
+    // commands; and a price that is one, which its line quotes.
+    const prices = openrouterModels();
+    prices.data![0]!.pricing!.prompt = '##[error]planted';
+    const outs = [
+      await run(web({ [OPENROUTER_MODELS]: '\n::error::planted', [GOOGLE]: new Error('socket hang up\r\n::add-mask::x\u2028##[error]legacy\u001b[31m') }).fetch),
+      await run(web({ [OPENROUTER_MODELS]: JSON.stringify(prices) }).fetch),
+    ];
+    for (const out of outs) {
+      expect(out.warnings).toHaveLength(1);
+      for (const line of [...out.lines, ...out.summary.split('\n\n')]) {
+        expect(line, JSON.stringify(line)).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/);
+        expect(line.split('\n').filter((l) => l.trim().startsWith('::') && !l.startsWith('::warning title=Prices::')), JSON.stringify(line)).toEqual([]);
+        expect(line, JSON.stringify(line)).not.toContain('##[');
+      }
+      for (const line of out.lines) expect(line, JSON.stringify(line)).not.toContain('\n');
+    }
+    // What was said is still there to read, on one line.
+    expect(outs[0]!.lines).toContain(`Google: ${GOOGLE} could not be read (socket hang up ::add-mask::x ## [error]legacy [31m), so this run did not check it.`);
+    expect(outs[0]!.lines).toContain('OpenRouter: its model list could not be read (Unexpected token \':\', " ::error::planted" is not valid JSON), so this run did not check it.');
+    expect(outs[1]!.lines).toContain(`OpenRouter ${prices.data![0]!.id}: the model list gives prompt "## [error]planted" per token; byway records $${row('openrouter', prices.data![0]!.id as string).inputPerMTok} per 1M tokens.`);
+    // A line that would start with a command, after any spaces, has it broken.
+    expect(plain('::error::x')).toBe(': :error::x');
+    expect(plain(' \t::notice::x')).toBe('  : :notice::x');
+    expect(plain('a::b')).toBe('a::b');
   });
 
   it(`says when the monthly re-read is due, from ${REREAD_DUE_DAYS} days after the last full read, with a warning`, async () => {

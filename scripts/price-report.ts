@@ -11,7 +11,8 @@
  * It reports and never fails, as scripts/playwright-pin.ts does: it prints what it found, adds it to the run's summary,
  * and marks a flagged figure, a page it could not read (said in one line: it was not checked, and calls for the re-read
  * as a flag does), or a re-read that is due, with a warning on the run's page; it exits 0 whatever happens. It reads
- * no key. What it checks, against packages/gateway/src/prices.ts:
+ * no key, and nothing it quotes from a provider's answer can make a workflow command of a line (plain). What it
+ * checks, against packages/gateway/src/prices.ts:
  * - OpenRouter's model list (openrouter.ai/api/v1/models): each pinned model's pricing.prompt and pricing.completion,
  *   per token, compared exactly, as decimals, with the rates per 1M tokens of the row in force on the day of the run.
  * - Every other row's page (Anthropic's, OpenAI's, Google's and fal's), for each row in force on the day of the run or
@@ -418,6 +419,23 @@ const FLAGGED_NEXT =
   'The agent running the next session (any model with web access, or a person) reads every page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
 
 /**
+ * A line as the report prints it, with nothing in it that GitHub would read as a workflow command (SECURITY-2). The
+ * report echoes some of what it is given: a parser's message quotes a stretch of an answer that is not JSON, raw
+ * newlines and all, a failed fetch's message is quoted, and OpenRouter's prices are quoted as given. In a job's log a
+ * line that starts with "::", after any spaces, is a command (::error::, ::add-mask::, ::stop-commands::), and so is
+ * "##[" anywhere in a line, the runner's older form. So every control character, and the Unicode line and paragraph
+ * separators, becomes a space, which keeps the line one line; a "::" that would start it becomes ": :"; and "##["
+ * becomes "## [". What is left still reads as it was given. The weekly log is what each session's agent reads first
+ * (AGENTS.md), and the summary on the run's page has the same lines.
+ */
+export function plain(line: string): string {
+  return line
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
+    .replace(/^(\s*):(?=:)/, '$1: ')
+    .replace(/##\[/g, '## [');
+}
+
+/**
  * What the report says of one check: its lines, whether it flagged a figure, and whether it could not be made at all
  * (a page or list it could not read, or the report itself), which is warned of as a flag is, since a page that cannot
  * be read was not checked that week and a re-read is the only check it gets (PRICES-5).
@@ -476,12 +494,12 @@ export async function report(opts: PriceReportOptions = {}): Promise<void> {
   }
   // A page that could not be read calls for the re-read as a flag does.
   const flagged = sections.some((s) => s.flagged || s.unread);
-  const lines = sections.flatMap((s) => s.lines);
+  const lines = sections.flatMap((s) => s.lines).map(plain);
   if (flagged) lines.push(FLAGGED_NEXT);
   for (const line of lines) print(line);
   // A warning on the run's page, which blocks nothing.
   if (flagged || due) {
-    const warned = sections.flatMap((s, i) => (s.flagged || s.unread || (i === 0 && due) ? s.lines : []));
+    const warned = sections.flatMap((s, i) => (s.flagged || s.unread || (i === 0 && due) ? s.lines.map(plain) : []));
     if (flagged) warned.push(FLAGGED_NEXT);
     print(`::warning title=Prices::${warned.join(' ').replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
   }
