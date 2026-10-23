@@ -16,10 +16,12 @@
  * - Every other row's page (Anthropic's, OpenAI's, Google's and fal's): each figure the row records must be on the
  *   page, as a dollar amount shortly after the first place the page names the model with a price (on OpenAI's page,
  *   its Standard row, before its Batch, Fast and Ultrafast rows); OpenAI's long-context rates, which the page draws
- *   from its own script, in that script's standard map; the figures byway's reading of a page rests on without
- *   recording them (Kling 2.5's price for its first 5 seconds, 5 times its rate per second); and the sentences it rests
- *   on (Anthropic's standard pricing across 1M tokens, the two thresholds). A figure not found means the page changed
- *   or moved it, and that page is read again (AGENTS.md); it cannot see a new rate the table does not record.
+ *   from its own script, in that script's standard map; each long-context tier's threshold, beside the row's figures
+ *   on Google's page and on the switch above the Flagship models' table on OpenAI's; a row with no tier that the page
+ *   now prices by prompt length; the figures byway's reading of a page rests on without recording them (Kling 2.5's
+ *   price for its first 5 seconds, 5 times its rate per second); and the sentence it rests on, read whole (Anthropic's
+ *   standard pricing across 1M tokens, with its list of exceptions). A figure not found means the page changed or
+ *   moved it, and that page is read again (AGENTS.md); it cannot see a new rate the table does not record.
  * - How long ago the last full re-read was (PRICES_CHECKED): the monthly re-read is due from 30 days after it (Claude's
  *   reading of "monthly").
  *
@@ -27,7 +29,7 @@
  * imports only types, so this runs before the dependencies are installed.
  */
 import { appendFileSync } from 'node:fs';
-import { PRICES, PRICES_CHECKED, priceFor, roundUsd, type PriceRow } from '../packages/gateway/src/prices.ts';
+import { PRICES, PRICES_CHECKED, priceFor, roundUsd, type LongContextTier, type PriceRow } from '../packages/gateway/src/prices.ts';
 
 type Provider = PriceRow['provider'];
 
@@ -45,10 +47,25 @@ export interface PricePage {
   rows: readonly PriceRow[];
   /** The name the page gives each row's model, where it is not the model's id. */
   names?: Readonly<Record<string, string>>;
-  /** Sentences the page must still carry, in its text or its attributes. */
+  /** Sentences the page must still carry, whole, in its text or its attributes. */
   sentences?: readonly string[];
   /** The long-context rates are in the page's own scripts (OpenAI's Long table), not in its text. */
   longInScripts?: boolean;
+  /**
+   * Where the page gives a long-context tier's threshold, in words built from the row's (`aboveInputTokens`), so a
+   * threshold that changes is flagged as a changed figure is (PRICES-3). Without `heading`, the words must be in the
+   * stretch where the row's figures are read (Google's "$4.00, prompts > 200k tokens"). With it, they must be in the
+   * page's markup between that heading and the first place after it that names the model: OpenAI's Flagship models
+   * table, whose context-length switch is labelled "Long: >272K input tokens", while its Cyber models table further
+   * down has a switch of its own, which says nothing of byway's rows.
+   */
+  tierWords?: { words: (tier: LongContextTier) => string; heading?: string };
+  /**
+   * Words the page puts in a model's stretch when it prices the model by prompt length: on a row with no long-context
+   * tier they are flagged, since its row charges a long prompt at the short rates (PRICES-3). Anthropic's "(for
+   * prompts", as in "Claude Haiku 5.5 (for prompts over 100,000 tokens)"; Google's "prompts >".
+   */
+  byLength?: string;
   /**
    * Figures the page gives that the table does not record but its reading of the page rests on, each built from the row
    * and looked for after its own words as a row's figures are after the model's name: Kling 2.5's price for its first
@@ -100,11 +117,27 @@ export function pricePages(): PricePage[] {
       form: 'markdown',
       rows: rowsOf('anthropic'),
       names: { 'claude-fable-5-1': 'Claude Fable 5.1', 'claude-opus-5-5': 'Claude Opus 5.5', 'claude-sonnet-5-5': 'Claude Sonnet 5.5', 'claude-opus-5': 'Claude Opus 5', 'claude-opus-4-8': 'Claude Opus 4.8' },
-      sentences: ['include the full 1M token context window at standard pricing'],
+      // Whole, with its list of exceptions: a model added to it would no longer be priced the same at every length.
+      sentences: ['Claude 4.6 and later models (except Claude Haiku 5.5) and Claude Mythos Preview include the full 1M token context window at standard pricing'],
+      byLength: '(for prompts',
     },
-    { label: 'OpenAI', url: 'https://developers.openai.com/api/docs/pricing', form: 'html', rows: rowsOf('openai'), sentences: ['Long: >272K input tokens'], longInScripts: true },
+    {
+      label: 'OpenAI',
+      url: 'https://developers.openai.com/api/docs/pricing',
+      form: 'html',
+      rows: rowsOf('openai'),
+      longInScripts: true,
+      tierWords: { words: (t) => `Long: >${t.aboveInputTokens / 1000}K input tokens`, heading: 'Flagship models' },
+    },
     // In English: asked by Node's fetch with no hl=en, Google answered with its page in Russian (2026-10-22).
-    { label: 'Google', url: 'https://ai.google.dev/gemini-api/docs/pricing?hl=en', form: 'html', rows: rowsOf('google'), sentences: ['prompts > 200k tokens'] },
+    {
+      label: 'Google',
+      url: 'https://ai.google.dev/gemini-api/docs/pricing?hl=en',
+      form: 'html',
+      rows: rowsOf('google'),
+      tierWords: { words: (t) => `prompts > ${t.aboveInputTokens / 1000}k tokens` },
+      byLength: 'prompts >',
+    },
     ...fal,
   ];
 }
@@ -156,16 +189,16 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const nameRe = (name: string) => new RegExp(`(?<![\\w.-])${escapeRe(name)}(?![\\w-]|\\.\\d)`, 'g');
 
 /**
- * The figures of a row the page's text does not show: every figure must be among the dollar amounts in the stretch
- * after the first place the page names the model with a dollar amount after it. A stretch runs to the end of the line
- * in Markdown, else WINDOW characters, and is cut at the next name of any model on the page, the same model's included.
- * Only the first such place is read because a page that prices a model several ways names it again in each table, in
- * an order that puts the plain price first: OpenAI's page has the model's Standard row, then its Batch, Fast and
- * Ultrafast rows at half, twice and six times it. Read at any place instead, a model whose every price doubled would
- * still show byway's figures in its Batch row, and one whose every price halved in its Fast row (PRICES-1). A page that
- * names the model first in a sentence with some other price is flagged, which a re-read clears.
+ * Where a page prices a model: the stretch after the first place the page names the model with a dollar amount after
+ * it, or undefined when no place does. A stretch runs to the end of the line in Markdown, else WINDOW characters, and
+ * is cut at the next name of any model on the page, the same model's included. Only the first such place is read
+ * because a page that prices a model several ways names it again in each table, in an order that puts the plain price
+ * first: OpenAI's page has the model's Standard row, then its Batch, Fast and Ultrafast rows at half, twice and six
+ * times it. Read at any place instead, a model whose every price doubled would still show byway's figures in its Batch
+ * row, and one whose every price halved in its Fast row (PRICES-1). A page that names the model first in a sentence
+ * with some other price is flagged, which a re-read clears.
  */
-export function missingFigures(text: string, name: string, wanted: readonly { what: string; usd: number }[], otherNames: readonly string[], form: PricePage['form']): { what: string; usd: number }[] {
+export function priceStretch(text: string, name: string, otherNames: readonly string[], form: PricePage['form']): string | undefined {
   for (const m of text.matchAll(nameRe(name))) {
     const from = m.index + m[0].length;
     let to = form === 'markdown' ? (text.indexOf('\n', from) < 0 ? text.length : text.indexOf('\n', from)) : Math.min(text.length, from + WINDOW);
@@ -175,10 +208,30 @@ export function missingFigures(text: string, name: string, wanted: readonly { wh
       const at = next.exec(text);
       if (at && at.index < to) to = at.index;
     }
-    const shown = dollars(text.slice(from, to));
-    if (shown.length > 0) return wanted.filter((f) => !shown.includes(f.usd));
+    const stretch = text.slice(from, to);
+    if (dollars(stretch).length > 0) return stretch;
   }
-  return [...wanted];
+  return undefined;
+}
+
+/** The figures of a row the page's text does not show: every figure must be among the dollar amounts of its stretch. */
+export function missingFigures(text: string, name: string, wanted: readonly { what: string; usd: number }[], otherNames: readonly string[], form: PricePage['form']): { what: string; usd: number }[] {
+  const stretch = priceStretch(text, name, otherNames, form);
+  const shown = stretch === undefined ? [] : dollars(stretch);
+  return wanted.filter((f) => !shown.includes(f.usd));
+}
+
+/**
+ * Whether the page's markup gives a tier's threshold words between a heading and the first place after it that names
+ * the model: the switch above the model's table, not one above another table.
+ */
+function saidAbove(markup: string, heading: string, name: string, words: string): boolean {
+  const start = markup.indexOf(heading);
+  if (start < 0) return false;
+  const next = nameRe(name);
+  next.lastIndex = start + heading.length;
+  const at = next.exec(markup);
+  return at !== null && markup.slice(start, at.index).includes(words);
 }
 
 /** The script files a page loads from its own site (Astro's islands name them in component-url). */
@@ -283,7 +336,11 @@ export function openRouterReport(models: OpenRouterModels, rows: readonly PriceR
 
 const usd = (n: number) => `$${n}`;
 
-/** The lines on one page: every figure found, or each row's missing figures and each missing sentence. */
+/**
+ * The lines on one page: every figure found, or each row's missing figures, its tier's threshold where the page no
+ * longer gives it, a tier the page now gives a row that has none, and each missing figure or sentence the reading of
+ * the page rests on.
+ */
 export function pageReport(page: PricePage, body: string, scripts: readonly string[] = []): { flagged: boolean; lines: string[] } {
   const text = pageText(body, page.form);
   const attributes = page.form === 'html' ? decode(body) : body;
@@ -291,10 +348,19 @@ export function pageReport(page: PricePage, body: string, scripts: readonly stri
   const names = [...new Set(page.rows.map(nameOf))];
   const lines: string[] = [];
   for (const row of page.rows) {
-    const wanted = figures(row, !page.longInScripts);
-    const missing = missingFigures(text, nameOf(row), wanted, names.filter((n) => n !== nameOf(row)), page.form);
+    const name = nameOf(row);
+    const stretch = priceStretch(text, name, names.filter((n) => n !== name), page.form);
+    const shown = stretch === undefined ? [] : dollars(stretch);
+    const missing = figures(row, !page.longInScripts).filter((f) => !shown.includes(f.usd));
     const dated = row.from ? ` (the row from ${row.from})` : '';
     if (missing.length > 0) lines.push(`${page.label} ${row.model}${dated}: not found after its name on the page: ${missing.map((f) => `${f.what} ${usd(f.usd)}`).join(', ')}.`);
+    if (row.longContext && page.tierWords) {
+      const { heading } = page.tierWords;
+      const words = page.tierWords.words(row.longContext);
+      const said = heading === undefined ? (stretch ?? '').includes(words) : saidAbove(attributes, heading, name, words);
+      if (!said) lines.push(`${page.label} ${row.model}${dated}: the page no longer gives its long-context tier as "${words}" ${heading === undefined ? 'after its name' : `between "${heading}" and its name`}.`);
+    }
+    if (!row.longContext && page.byLength && (stretch ?? '').includes(page.byLength)) lines.push(`${page.label} ${row.model}${dated}: the page prices it by prompt length after its name ("${page.byLength}"), and byway's row has no long-context tier.`);
     if (page.longInScripts && row.longContext && !scripts.some((s) => scriptStatesTier(s, row))) {
       const t = row.longContext;
       lines.push(`${page.label} ${row.model}: the page's scripts do not give its long-context rates as byway records them (input ${usd(t.inputPerMTok)}, output ${usd(t.outputPerMTok)}).`);

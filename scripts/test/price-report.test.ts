@@ -18,10 +18,16 @@ const $ = (n: number) => `$${n.toFixed(Math.max(2, (String(n).split('.')[1] ?? '
 const day = (iso: string) => new Date(`${iso}T12:00:00.000Z`);
 const CHECKED = new Date(`${PRICES_CHECKED}T12:00:00.000Z`);
 
-/** Anthropic's page as served in Markdown: one table row per model, base input, writes, hits and output. */
+/**
+ * Anthropic's page as served in Markdown: one table row per model, base input, writes, hits and output, then Claude
+ * Haiku 5.5's two rows priced by prompt length (no row of byway's: no profile uses it), and the long-context sentence
+ * as the page words it, with its links.
+ */
 function anthropicPage(rows = PRICES.filter((r) => r.provider === 'anthropic'), names = pricePages()[0]!.names!): string {
   const lines = rows.map((r) => `| ${names[r.model]} | ${$(r.inputPerMTok)} / MTok | ${$(r.cacheWritePerMTok!)} / MTok | $99 / MTok | ${$(r.cacheReadPerMTok!)} / MTok | ${$(r.outputPerMTok)} / MTok |`);
-  return ['## Model pricing', '', '| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |', ...lines, '', '### Long context pricing', '', 'Claude 4.6 and later models include the full [1M token context window](https://example.test/context) at standard pricing.', ''].join('\n');
+  const haiku = ['| Claude Haiku 5.5 (for prompts up to 100,000 tokens) | $0.10 / MTok | $0.125 / MTok | $0.20 / MTok | $0.01 / MTok | $0.50 / MTok |', '| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.50 / MTok | $0.625 / MTok | $1 / MTok | $0.05 / MTok | $2.50 / MTok |'];
+  const sentence = 'Claude 4.6 and later models (except Claude Haiku 5.5) and [Claude Mythos Preview](https://example.test/glasswing) include the full [1M token context window](https://example.test/context) at standard pricing. (A 900k-token request is billed at the same per-token rate as a 9k-token request.)';
+  return ['## Model pricing', '', '| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |', ...lines, ...haiku, '', '### Long context pricing', '', sentence, ''].join('\n');
 }
 
 /**
@@ -40,14 +46,18 @@ const OPENAI_SPEEDS = [
 const times = (n: number, k: number) => Math.round(n * k * 1_000_000) / 1_000_000;
 
 /**
- * OpenAI's page: the Long tab's label, a table per processing speed in the page's order, Standard first, and the
- * island that loads its pricing script. `scale` multiplies every figure of a model, in every table, as a change of its
- * prices would.
+ * OpenAI's page: the Flagship models' heading and context-length switch, whose Long tab's label gives the threshold of
+ * the rows' tier; a table per processing speed in the page's order, Standard first; the Cyber models' heading, switch
+ * and table, of a model byway does not price; and the island that loads its pricing script. `scale` multiplies every
+ * figure of a model, in every table, as a change of its prices would.
  */
 function openaiPage(rows = PRICES.filter((r) => r.provider === 'openai'), scale: Readonly<Record<string, number>> = {}): string {
   const cells = (r: PriceRow, k: number) => [r.inputPerMTok, r.outputPerMTok, r.cacheReadPerMTok, r.cacheWritePerMTok].map((n) => `<td>${n === undefined ? '-' : $(times(n, k * (scale[r.model] ?? 1)))}</td>`).join('');
   const tables = OPENAI_SPEEDS.map(([speed, k]) => `<h4>${speed}</h4><table>${rows.map((r) => `<tr><td>${r.model}</td>${cells(r, k)}</tr>`).join('')}</table><p>All models</p>`).join('');
-  return `<html><body><astro-island component-url="/_astro/pricing.Ab1.js?dpl=x" props="{}"></astro-island><astro-island component-url="https://elsewhere.example/_astro/x.js"></astro-island><button aria-label="Short: ≤272K input tokens">Short</button><button aria-label="Long: &gt;272K input tokens">Long</button>${tables}<script>var hidden = "gpt-6-astra $1.00";</script></body></html>`;
+  const k = PRICES.find((r) => r.provider === 'openai' && r.longContext)!.longContext!.aboveInputTokens / 1000;
+  const lengths = `<button aria-label="Short: ≤${k}K input tokens">Short</button><button aria-label="Long: &gt;${k}K input tokens">Long</button>`;
+  const cyber = `<h2>Cyber models</h2>${lengths}<table><tr><td>gpt-5.6-sol</td><td>$4.00</td><td>$20.00</td></tr></table>`;
+  return `<html><body><astro-island component-url="/_astro/pricing.Ab1.js?dpl=x" props="{}"></astro-island><astro-island component-url="https://elsewhere.example/_astro/x.js"></astro-island><h2>Flagship models</h2>${lengths}${tables}${cyber}<script>var hidden = "gpt-6-astra $1.00";</script></body></html>`;
 }
 
 /**
@@ -68,18 +78,23 @@ function openaiScript(rows = PRICES.filter((r) => r.provider === 'openai' && r.l
   return `var m={ultrafast:{${map(6)}},standard:{${map(1)}},fast:{${map(2)}},batch:{${map(0.5)}},flex:{${map(0.5)}}};export{m as default}`;
 }
 
-/** Google's page: a section per model, each with its paid-tier input and output prices, tiers where it has them. */
-function googlePage(rows = PRICES.filter((r) => r.provider === 'google')): string {
+/**
+ * Google's page: a section per model, each with its paid-tier input and output prices, tiers where it has them, their
+ * threshold in the page's words; `first`, sections of models byway does not price, before byway's.
+ */
+function googlePage(rows: readonly PriceRow[] = PRICES.filter((r) => r.provider === 'google'), first = ''): string {
   const byModel = new Map<string, PriceRow[]>();
   for (const r of rows) byModel.set(r.model, [...(byModel.get(r.model) ?? []), r]);
-  const price = (rs: PriceRow[], pick: (r: PriceRow) => number, long?: number) =>
-    long !== undefined ? `${$(pick(rs[0]!))}, prompts &lt;= 200k tokens<br>${$(long)}, prompts &gt; 200k tokens` : rs.map((r) => `${$(pick(r))} ${r.from ? `starting ${r.from}` : 'now'}.`).join(' ');
+  const price = (rs: PriceRow[], pick: (r: PriceRow) => number, long?: number) => {
+    const k = (rs[0]!.longContext?.aboveInputTokens ?? 0) / 1000;
+    return long !== undefined ? `${$(pick(rs[0]!))}, prompts &lt;= ${k}k tokens<br>${$(long)}, prompts &gt; ${k}k tokens` : rs.map((r) => `${$(pick(r))} ${r.from ? `starting ${r.from}` : 'now'}.`).join(' ');
+  };
   const sections = [...byModel].map(([model, rs]) => {
     const long = rs[0]!.longContext;
     const image = rs[0]!.perImageUsd !== undefined ? ` Equivalent to ${$(rs[0]!.perImageUsd)} per 1K image.` : '';
     return `<h3>${model}</h3><table><tr><td>Input price</td><td>Not available</td><td>${price(rs, (r) => r.inputPerMTok, long?.inputPerMTok)}</td></tr><tr><td>Output price</td><td>Not available</td><td>${price(rs, (r) => r.outputPerMTok, long?.outputPerMTok)}${image}</td></tr></table>`;
   });
-  return `<html><body>${sections.join('')}</body></html>`;
+  return `<html><body>${first}${sections.join('')}</body></html>`;
 }
 
 /** A fal model page: its price in one sentence, Kling 2.5's first 5 seconds at its rate per second. */
@@ -228,11 +243,38 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     }
   });
 
-  it("flags a sentence the table's reading of a page rests on that the page no longer carries", async () => {
-    const gone = anthropicPage().replace('at standard pricing', 'at long-context pricing');
-    expect((await run(web({ 'https://platform.claude.com/docs/en/about-claude/pricing.md': gone }).fetch)).lines).toContain('Anthropic: the page no longer says "include the full 1M token context window at standard pricing".');
-    const noTier = openaiPage().replace('Long: &gt;272K input tokens', 'Long: &gt;300K input tokens');
-    expect((await run(web({ 'https://developers.openai.com/api/docs/pricing': noTier }).fetch)).lines).toContain('OpenAI: the page no longer says "Long: >272K input tokens".');
+  it("flags a sentence the table's reading of a page rests on that the page no longer carries, read whole (PRICES-3)", async () => {
+    const ANTHROPIC = 'https://platform.claude.com/docs/en/about-claude/pricing.md';
+    const said = 'Anthropic: the page no longer says "Claude 4.6 and later models (except Claude Haiku 5.5) and Claude Mythos Preview include the full 1M token context window at standard pricing".';
+    expect((await run(web({ [ANTHROPIC]: anthropicPage().replace('at standard pricing', 'at long-context pricing') }).fetch)).lines).toContain(said);
+    // A model added to the exceptions is no longer priced the same at every length, though the rest still reads so.
+    const excepted = anthropicPage().replace('(except Claude Haiku 5.5)', '(except Claude Haiku 5.5 and Claude Opus 5.5)');
+    expect((await run(web({ [ANTHROPIC]: excepted }).fetch)).lines.filter((l) => l.startsWith('Anthropic'))).toEqual([said]);
+  });
+
+  it("flags a long-context threshold that changed, read beside the row's figures or above its table, and a new tier on a row without one (PRICES-3)", async () => {
+    // Google: Gemini 3.1 Pro's threshold lowered to 128k, while a model byway does not price still says 200k.
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    const pro = row('google', 'gemini-3.1-pro-preview');
+    const lowered = PRICES.filter((r) => r.provider === 'google').map((r) => (r === pro ? { ...pro, longContext: { ...pro.longContext!, aboveInputTokens: 128_000 } } : r));
+    const older = '<h3>gemini-2.5-pro</h3><table><tr><td>Input price</td><td>Not available</td><td>$1.25, prompts &lt;= 200k tokens<br>$2.50, prompts &gt; 200k tokens</td></tr></table>';
+    expect(googlePage(lowered, older)).toContain('$4.00, prompts &gt; 128k tokens');
+    expect((await run(web({ [GOOGLE]: googlePage(lowered, older) }).fetch)).lines.filter((l) => l.startsWith('Google'))).toEqual(['Google gemini-3.1-pro-preview: the page no longer gives its long-context tier as "prompts > 200k tokens" after its name.']);
+    // OpenAI: the Flagship models' switch changed, while the Cyber models' switch below still says 272K.
+    const flagship = openaiPage().replace('Long: &gt;272K input tokens', 'Long: &gt;128K input tokens');
+    expect(flagship).toContain('Long: &gt;272K input tokens');
+    expect((await run(web({ 'https://developers.openai.com/api/docs/pricing': flagship }).fetch)).lines.filter((l) => l.startsWith('OpenAI'))).toEqual(
+      PRICES.filter((r) => r.provider === 'openai' && r.longContext).map((r) => `OpenAI ${r.model}: the page no longer gives its long-context tier as "Long: >272K input tokens" between "Flagship models" and its name.`),
+    );
+    // Anthropic: Claude Opus 5.5 split into two rows by prompt length, the first at byway's figures.
+    const ANTHROPIC = 'https://platform.claude.com/docs/en/about-claude/pricing.md';
+    const opus = anthropicPage().split('\n').find((l) => l.startsWith('| Claude Opus 5.5 |'))!;
+    const split = anthropicPage().replace(opus, `${opus.replace('| Claude Opus 5.5 |', '| Claude Opus 5.5 (for prompts up to 200,000 tokens) |')}\n| Claude Opus 5.5 (for prompts over 200,000 tokens) | $8.00 / MTok | $10.00 / MTok | $16 / MTok | $0.40 / MTok | $40.00 / MTok |`);
+    expect((await run(web({ [ANTHROPIC]: split }).fetch)).lines.filter((l) => l.startsWith('Anthropic'))).toEqual(["Anthropic claude-opus-5-5: the page prices it by prompt length after its name (\"(for prompts\"), and byway's row has no long-context tier."]);
+    // Google: a tier on Gemini 3.8 Flash, whose rows have none.
+    const flash = row('google', 'gemini-3.8-flash');
+    const tiered = PRICES.filter((r) => r.provider === 'google').map((r) => (r === flash ? { ...flash, longContext: { aboveInputTokens: 200_000, inputPerMTok: 1.5, outputPerMTok: 7.5 } } : r));
+    expect((await run(web({ [GOOGLE]: googlePage(tiered) }).fetch)).lines).toContain("Google gemini-3.8-flash: the page prices it by prompt length after its name (\"prompts >\"), and byway's row has no long-context tier.");
   });
 
   it("compares OpenRouter's prices exactly, as decimals: any spelling of the same number matches, any other number does not", () => {
