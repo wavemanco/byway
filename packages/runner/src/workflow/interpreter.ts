@@ -783,7 +783,11 @@ export class Interpreter {
   private async gate(g: OneShotGate, ports: Ports, ctx: Ctx): Promise<Ports> {
     const out = await this.node(g.body, ports, { stage: ctx.stage, path: ctx.path, contained: true });
     const verdict = out.score && passes(out.score, g.pass.metric, g.pass.threshold);
-    const kept: Ports = { ...ports, ...(out.critique ? { critique: out.critique } : {}) };
+    // The gate hands on the ports it was handed with its body's critique as the body left it: a critique the body wrote
+    // replaces the one before it and clears that one's mark that it asked for nothing (an empty CUT) and an earlier
+    // sweep's hits, as any new critique does (R-GATE-MARK); a body that wrote none hands them on as they were.
+    const { critique, emptyCritique, hits } = out;
+    const kept: Ports = { ...withCritique(ports, critique, emptyCritique), ...(hits ? { hits } : {}) };
     if (verdict) return kept;
     const call = this.call(g.id, ctx);
     const used = this.gateRetries.get(g.id) ?? 0;
