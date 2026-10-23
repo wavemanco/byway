@@ -1,6 +1,7 @@
 /**
  * Runner.start refuses what the engine cannot run (F02, ADR-0092 stage 2), whoever admitted the recipe: counts past
- * the engine's limits, a C pick nobody can decide and a retrying gate inside a fan-out (G1). It throws RecipeRefused
+ * the engine's limits, a C pick nobody can decide, a retrying gate inside a fan-out (G1) and an ASSET step whose slots
+ * knob is not a whole number of at least 1 (SLOTS-KNOB). It throws RecipeRefused
  * before any run record or workflow exists, and before the brief is stored, so nothing is left "queued" or wedged
  * "running", and nothing is written for it. A recipe holding a lone surrogate, which no hash can be taken of, is refused
  * earlier still, by parseRecipe's ZodError (F19, ADR-0083), with nothing written either.
@@ -32,6 +33,11 @@ const variant = (edit: (r: N) => void): Recipe => {
   return withHash(r as Recipe);
 };
 const d2Candidate = (r: N): N => r.stages[1].body.steps[0].body;
+/** C1's optional ASSET step, wherever it sits. */
+const c1Asset = (r: N): N => {
+  const find = (n: N): N | undefined => (n.op === 'step' && n.role === 'asset' ? n : [...(n.steps ?? []), ...(n.body ? [n.body] : [])].map(find).find(Boolean));
+  return r.stages.map((s: N) => find(s.body)).find(Boolean)!;
+};
 
 describe('Runner.start refuses what the engine cannot run, before a run exists', () => {
   it.each([
@@ -46,6 +52,10 @@ describe('Runner.start refuses what the engine cannot run, before a run exists',
         ),
       /gate "g" retries a stage from inside replicate, each or an audit lens/,
     ],
+    // An ASSET step whose slots knob is below 1 would pay for its briefs and make no image; one between whole numbers,
+    // a fraction of one (SLOTS-KNOB).
+    ['an ASSET step whose slots knob is 0.5', (r: N) => (c1Asset(r).knobs.slots = 0.5), /ASSET step "asset"'s slots knob is 0\.5; it must be a whole number of at least 1/],
+    ['an ASSET step whose slots knob is 1.5', (r: N) => (c1Asset(r).knobs.slots = 1.5), /ASSET step "asset"'s slots knob is 1\.5; it must be a whole number of at least 1/],
   ] as [string, (r: N) => void, RegExp][])('%s', async (_name, edit, message) => {
     const { r, createRun, start, putText } = runner();
     const recipe = variant(edit);

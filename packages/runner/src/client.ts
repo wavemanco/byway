@@ -123,8 +123,9 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       const medium = recipe.medium;
       if (!medium) throw new Error(`Recipe "${recipe.id}" names no medium, so it cannot run.`);
       // What the engine cannot run, whoever admitted it (F02): past its limits, a C pick nobody decides, a retrying gate
-      // in a fan-out. No product policy here (VOICE, composed limits): that is the advisor's and web start's. It is
-      // refused before any run record exists, so a start naming its run id leaves nothing behind.
+      // in a fan-out, an ASSET step's slots knob below 1 or between whole numbers. No product policy here (VOICE,
+      // composed limits): that is the advisor's and web start's. It is refused before any run record exists, so a start
+      // naming its run id leaves nothing behind.
       const problems = engineProblems(recipe);
       if (problems.length) throw new RecipeRefusedError(recipe.id, problems.map((p) => p.message));
       // The brief and the person's own inputs are stored once, before the run exists, and the workflow is handed their

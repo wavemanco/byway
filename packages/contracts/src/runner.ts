@@ -55,8 +55,8 @@ export interface Runner {
 
 /**
  * Runner.start's refusal of a recipe the engine cannot run (F02, ADR-0092): counts past the engine's limits, a C pick
- * nobody can decide, a retrying gate inside a fan-out (@byway/recipe engineProblems). It is thrown before any run record
- * or workflow exists. Callers in another bundle match it by name, as its class may be another object there.
+ * nobody can decide, a retrying gate inside a fan-out, an ASSET step's slots knob below 1 or between whole numbers
+ * (@byway/recipe engineProblems). It is thrown before any run record or workflow exists. Callers in another bundle match it by name, as its class may be another object there.
  */
 export class RecipeRefusedError extends Error {
   override name = 'RecipeRefused';

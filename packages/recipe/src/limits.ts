@@ -312,8 +312,8 @@ export function workBound(recipe: Recipe): WorkBound {
 
 /** A problem that keeps a recipe from running at all, with the rule and clause the validator reports it under. */
 export interface EngineProblem {
-  ruleId: 'ST3' | 'ST10' | 'ST12';
-  clause: 'count' | 'limit' | 'retry-count' | 'retry-scope' | 'pick-judge';
+  ruleId: 'ST3' | 'ST7' | 'ST10' | 'ST12';
+  clause: 'count' | 'limit' | 'retry-count' | 'retry-scope' | 'pick-judge' | 'slots';
   path: string;
   message: string;
 }
@@ -360,9 +360,11 @@ const KB = (b: number) => `${Math.round(b / 1024)} KB`;
 
 /**
  * What keeps a recipe from running on the engine, whoever admitted it: counts that are not positive whole numbers or
- * pass the engine's limits, a C pick nobody can decide, and a retrying gate inside a fan-out. Runner.start and the
- * workflow's start refuse a recipe with any; the validator reports the same as ST3, ST10 and ST12 findings. It holds
- * no product policy (no VOICE, no composed limits).
+ * pass the engine's limits, a C pick nobody can decide, a retrying gate inside a fan-out, and an ASSET step whose
+ * slots knob is not a whole number of at least 1 (it would pay for its briefs and make no image, or a fraction of one;
+ * SLOTS-KNOB). Runner.start and the workflow's start refuse a recipe with any; the validator reports the same as ST3,
+ * ST7, ST10 and ST12 findings (ST7's knob range for the slots knob). It holds no product policy (no VOICE, no
+ * composed limits).
  */
 export function engineProblems(recipe: Recipe): EngineProblem[] {
   const out: EngineProblem[] = [];
@@ -381,6 +383,13 @@ export function engineProblems(recipe: Recipe): EngineProblem[] {
       count(path, `loop "${n.id}"'s cap`, n.gate.max, ENGINE_LIMITS.stepRuns);
     }
     if (n.op === 'relay') count(path, `relay "${n.id}"'s links`, n.maxLinks, ENGINE_LIMITS.stepRuns);
+    // Knobs are free JSON in a recipe, and the activity caps the images by this one: not a count the work bound reads.
+    if (n.op === 'step' && n.role === 'asset' && n.knobs && Object.hasOwn(n.knobs, 'slots')) {
+      const slots = n.knobs.slots;
+      if (!(typeof slots === 'number' && positiveInt(slots))) {
+        out.push({ ruleId: 'ST7', clause: 'slots', path, message: `ASSET step "${n.id}"'s slots knob is ${JSON.stringify(slots)}; it must be a whole number of at least 1` });
+      }
+    }
     if (n.op === 'gate' && n.retry) {
       if (!positiveInt(n.retry.times) || n.retry.times > ENGINE_LIMITS.gateRetries) {
         out.push({ ruleId: 'ST10', clause: 'retry-count', path, message: `gate "${n.id}" retries ${n.retry.times} times; a retry is 1 to ${ENGINE_LIMITS.gateRetries} automatic re-runs` });

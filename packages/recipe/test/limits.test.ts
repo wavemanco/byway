@@ -149,6 +149,21 @@ describe('engineProblems', () => {
     expect(engineProblems(recipe(['D1', seq(replicate('first', 24, seq(build('b'), render('r'))), replicate('second', 24, build('b2')))]))).toEqual([]);
   });
 
+  it("an ASSET step's slots knob that is not a whole number of at least 1 cannot run: the step would pay for briefs and make no image, or a fraction of one", () => {
+    const asset = (knobs?: Record<string, unknown>) =>
+      step({ id: 'images', role: 'asset', block: 'ASSET', actor: 'model', tier: 'mid', consumes: ['artifact'], produces: ['artifact'], writes: true, ...(knobs ? { knobs: knobs as Step['knobs'] } : {}) });
+    const at = (knobs?: Record<string, unknown>) => engineProblems(recipe(['D2', seq(build('b'), asset(knobs))]));
+    for (const slots of [0, 0.5, 1.5, -1, '3', null]) {
+      expect(at({ slots }).map((p) => `${p.ruleId}:${p.clause}:${p.path}`), String(slots)).toEqual(['ST7:slots:stages[0].body.steps[1]']);
+    }
+    expect(at({ slots: 0.5 })[0]!.message).toBe('ASSET step "images"\'s slots knob is 0.5; it must be a whole number of at least 1');
+    expect(at({ slots: '3' })[0]!.message).toBe('ASSET step "images"\'s slots knob is "3"; it must be a whole number of at least 1');
+    for (const knobs of [{ slots: 1 }, { slots: 3, triesPerSlot: 3 }, undefined]) expect(at(knobs)).toEqual([]);
+    // Not a count the work bound reads, so the bound is still computed: 30 × 20 side by side beside it is still over.
+    const wide = replicate('outer', 30, seq(replicate('inner', 20, build('b')), pick('p', 'H', 1, 'human')));
+    expect(engineProblems(recipe(['D1', wide], ['D2', seq(build('b2'), asset({ slots: 0 }))])).map((p) => `${p.ruleId}:${p.clause}:${p.path}`)).toEqual(['ST7:slots:stages[1].body.steps[1]', 'ST3:limit:(recipe)']);
+  });
+
   it('a C pick with no model judge cannot be decided', () => {
     expect(clauses(recipe(['D1', seq(replicate('x', 3, build('b')), pick('p', 'C', 1, 'model'))]))).toEqual(['ST12:pick-judge']);
     const humanJudge = step({ id: 'j', role: 'judge', actor: 'human', consumes: ['view'], produces: [] });
