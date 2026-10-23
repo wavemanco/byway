@@ -24,11 +24,24 @@
  *   retry), plus the video wait, plus 15 minutes for the start frame's upload, the downloads and the frame (relayLimitMs):
  *   two hours at the defaults, six and a half at the longest choices. The step's calls keep that same reading, so its
  *   limit always fits them. Two tries: a second one takes its link answer from the memo and polls its clip by its id.
+ *
+ * Cancel. The owner chose on 2026-10-22 "Keep today's behaviour (Recommended)": "The run shows Cancelled at once;
+ * streams and video jobs are cut off; uncut Google and image calls finish in the background, are paid, and their cost
+ * is added to the run. Waiting would save no money, since those calls are paid either way." So every proxy cancels its
+ * steps as Temporal's TRY_CANCEL: the workflow goes on (to Cancelled) as soon as it has asked a step to stop, and the
+ * step hears at its next heartbeat and cuts off what it can (ADR-0111). It is what an unset option sends today (the
+ * protocol's value 0, from @temporalio/workflow 1.24.0), but that SDK's own docs give WAIT_CANCELLATION_COMPLETED as the
+ * default, so it is named here rather than left to the default. The run workflow keeps its one cancellation scope
+ * (run.ts), which ADR-0111's stop rule reads (activities/liveness.ts cancelEndsRun). Tests pin both (runner
+ * test/liveness.test.ts).
  */
-import { proxyActivities, type ActivityOptions } from '@temporalio/workflow';
+import { ActivityCancellationType, proxyActivities, type ActivityOptions } from '@temporalio/workflow';
 import { FAILURE, type RelayWaits, type RunnerActivities } from '../types.ts';
 
 const retry: ActivityOptions['retry'] = { initialInterval: '1 second', backoffCoefficient: 2, maximumInterval: '30 seconds', maximumAttempts: 3, nonRetryableErrorTypes: [FAILURE.budget, FAILURE.step, FAILURE.rejected] };
+
+/** How a step hears of its run's end (see the header): Temporal's TRY_CANCEL, named. */
+const CANCEL: Pick<ActivityOptions, 'cancellationType'> = { cancellationType: ActivityCancellationType.TRY_CANCEL };
 
 /** A long step that has not heartbeated for this long is taken as lost (its worker died) and retried. */
 const HEARTBEAT_TIMEOUT = '30 seconds';
@@ -36,11 +49,11 @@ const HEARTBEAT_TIMEOUT = '30 seconds';
 const STEP_BACKSTOP = '24 hours';
 
 /** Store reads and writes. */
-export const QUICK_OPTIONS: ActivityOptions = { startToCloseTimeout: '1 minute', retry: { ...retry, maximumAttempts: 5 } };
+export const QUICK_OPTIONS: ActivityOptions = { ...CANCEL, startToCloseTimeout: '1 minute', retry: { ...retry, maximumAttempts: 5 } };
 /** A model step, a page render, a person's step's finish. */
-export const MODEL_OPTIONS: ActivityOptions = { startToCloseTimeout: STEP_BACKSTOP, heartbeatTimeout: HEARTBEAT_TIMEOUT, retry };
+export const MODEL_OPTIONS: ActivityOptions = { ...CANCEL, startToCloseTimeout: STEP_BACKSTOP, heartbeatTimeout: HEARTBEAT_TIMEOUT, retry };
 /** An image (ASSET) step, which can take minutes per image. */
-export const MEDIA_OPTIONS: ActivityOptions = { startToCloseTimeout: STEP_BACKSTOP, heartbeatTimeout: HEARTBEAT_TIMEOUT, retry: { ...retry, maximumAttempts: 2 } };
+export const MEDIA_OPTIONS: ActivityOptions = { ...CANCEL, startToCloseTimeout: STEP_BACKSTOP, heartbeatTimeout: HEARTBEAT_TIMEOUT, retry: { ...retry, maximumAttempts: 2 } };
 
 /** What a relay step's limit allows beside its calls' waits: the start frame's upload, the clip's and frame's downloads. */
 export const RELAY_ALLOWANCE_MS = 15 * 60_000;
@@ -53,7 +66,7 @@ export const RELAY_ALLOWANCE_MS = 15 * 60_000;
 export const relayLimitMs = (waits: RelayWaits): number => 5 * waits.linkMs + waits.videoMs + RELAY_ALLOWANCE_MS;
 
 /** A relay step's options, from the waits read just before it. */
-export const relayOptions = (waits: RelayWaits): ActivityOptions => ({ startToCloseTimeout: relayLimitMs(waits), heartbeatTimeout: HEARTBEAT_TIMEOUT, retry: { ...retry, maximumAttempts: 2 } });
+export const relayOptions = (waits: RelayWaits): ActivityOptions => ({ ...CANCEL, startToCloseTimeout: relayLimitMs(waits), heartbeatTimeout: HEARTBEAT_TIMEOUT, retry: { ...retry, maximumAttempts: 2 } });
 
 export const quick = proxyActivities<RunnerActivities>(QUICK_OPTIONS);
 export const model = proxyActivities<RunnerActivities>(MODEL_OPTIONS);
