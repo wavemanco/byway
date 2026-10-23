@@ -1,9 +1,10 @@
 # Notes for agents working on byway
 
-These are for any coding agent, whichever model or provider runs it. The owner keeps byway's upkeep from being tied to
-one provider (2026-10-22), so nothing here needs a particular one; a person can follow the same steps. Any duty, runbook
-or script in byway's records is for whichever agent runs the session (ADR-0107's Later note of 2026-10-23). `CLAUDE.md`
-only imports this file.
+These are for any coding agent, whichever model or provider runs it; a person can follow the same steps. The owner asked
+on 2026-10-22 that the price re-read not be tied to one provider. Claude's reading of that message, recorded as Claude's
+at the owner's choice of 2026-10-23 (ADR-0107's Later note of that day), is that any duty, runbook or script in byway's
+records must work for any capable model from any provider, or a person, and falls to whichever agent runs the session.
+So nothing here needs a particular one. `CLAUDE.md` only imports this file.
 
 byway's records say what is decided and what is open: `docs/playbook.md` (people and roles, the outside actions and
 the standing duties), `docs/backlog.md` (open work, each row with its trigger) and `docs/adr/` (the decisions, with
