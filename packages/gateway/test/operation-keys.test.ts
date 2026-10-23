@@ -12,7 +12,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CompletionRequest, SpendContext, VideoRequest } from '@byway/contracts';
+import { GatewayError, type CompletionRequest, type SpendContext, type VideoRequest } from '@byway/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
@@ -297,5 +297,47 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     await workerB.close();
     await workerA.close();
     expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([out.costUsd]);
+  });
+
+  // MONEY-3, Block 2's check: a call whose lease ran out while it was getting its clip ready, and that found on marking
+  // itself sent another attempt's job fal had already accepted (PaidCall.markSent's takeover), submitted a second clip
+  // anyway, and its acceptance wrote over the first job's id: two clips billed, one of them recorded nowhere.
+  it('a call that finds, as it comes to submit, another attempt’s clip already accepted does not submit a second: that job is counted as may have been billed, with its id', async () => {
+    const fal = fakeFal();
+    const media = fakeFetch();
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const a = attempt(key);
+    const client: FalClientLike = {
+      ...fal.client,
+      storage: {
+        // While the start frame uploads: Temporal times this attempt out, so its lease is not renewed and runs out;
+        // another attempt takes the key, has its clip job accepted, and is gone too.
+        async upload(file) {
+          a.cancel.abort(new Error('TIMED_OUT'));
+          await sleep(40);
+          clock.t += LEASE + 1;
+          const other = { opId: 'other', owner: 'other-worker', leaseMs: 1000, operationKey: key, workspaceId: 'ws', runId: 'run-1', stepId: 'relay', purpose: 'relay:media', kind: 'video' as const, provider: 'fal' as const, model: MODEL };
+          expect(await book.admit({ ...other, reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 10, runUsd: 10 } })).toEqual({ admitted: true });
+          expect(await book.markSent('other', 'other-worker')).toBe(true);
+          await book.accept('other', 'generation', 'job-other');
+          clock.t += 1001;
+          return fal.client.storage.upload(file);
+        },
+      },
+    };
+    const g = gateway({ clients: { fal: client }, fetch: media.fetch });
+    const err = await g.video(await clip(a.operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(fal.uploads).toHaveLength(1);
+    // Nothing submitted: the other attempt's job is the call's.
+    expect(fal.calls).toEqual([]);
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false, billing: 'maybe', message: expect.stringContaining('clip job job-other') });
+    const records = await g.spendRecords('ws');
+    expect(records.inFlight).toEqual([]);
+    expect(records.uncertain).toEqual([expect.objectContaining({ provider: 'fal', providerJobs: { generation: 'job-other' } })]);
+    expect(await book.ledgeredCalls()).toEqual([]);
   });
 });
