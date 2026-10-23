@@ -25,6 +25,13 @@ export const threePages = recipe('three-pages', 'web-page', seq(replicate('three
  */
 export const cancelPeak = recipe('cancel-peak', 'prose', seq(replicate('slots', 2, replicate('drafts', 16, build('draft'))), build('after')));
 
+/**
+ * A fan-out a failure ends (RS-4, FANOUT-FAILURE): four drafts side by side, then a step that can start only once they
+ * have all ended. A draft refused at the budget, which the person does not raise, fails the run while the others are
+ * still in flight.
+ */
+export const fanOutFailure = recipe('fan-out-failure', 'prose', seq(replicate('drafts', 4, build('draft')), build('after')));
+
 /** A route: the AI drafts, or you do. */
 export const routed = recipe(
   'routed',

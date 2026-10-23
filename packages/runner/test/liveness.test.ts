@@ -23,7 +23,7 @@ import { fakePrompts } from './helpers/fake-prompts.ts';
 import { fakePages } from './helpers/fake-pages.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
 import { createTestStore } from './helpers/memo.ts';
-import { cancelPeak, threePages, tiny } from './helpers/recipes.ts';
+import { cancelPeak, fanOutFailure, threePages, tiny } from './helpers/recipes.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -700,6 +700,45 @@ describe('cancel and stop through the real workflow', () => {
       expect(events.at(-1)?.type).toBe('run-cancelled');
     } finally {
       delete responders['build:prose'];
+      mock.reset();
+    }
+  }, 120_000);
+
+  it('a failure during a fan-out ends the run the same way: a draft refused at the budget, not raised, fails the run, and the drafts still in flight are cut off and listed, with no event of their own (RS-4, FANOUT-FAILURE)', async () => {
+    // The review's reproduction: one of four drafts side by side is refused at the budget while the other three are held.
+    mock.hold('build:prose', true);
+    h.refuseOnce((c) => c.purpose === 'build:prose' && c.stepId === 'draft');
+    try {
+      const run = await h.start(fanOutFailure);
+      await h.waitFor('the other three drafts’ calls held', async () => mock.held.length === 3);
+      // The person does not raise the budget.
+      const view = await h.drive(run.id, (cp) => (cp.kind === 'confirm' ? { checkpointId: cp.id, approved: false } : undefined));
+      expect(view.run.status).toBe('failed');
+      expect(view.run.error).toMatch(/^The run stopped at its budget of \$\d+\.\d\d, and the budget was not raised\.$/);
+      // The failure cancels the run's one scope, as Cancel does (run.ts), so each sibling's call is cut off as its step
+      // hears of it, and listed once its call has ended: none answered, nothing ledgered, the run's cost nothing.
+      await h.waitFor('every held call cut off', async () => mock.held.every((c) => c.req.signal?.aborted === true));
+      const listed = await h.waitFor('the three listed in Spending records', async () => {
+        const rows = (await h.gateway.spendRecords(h.workspaceId)).uncertain.filter((c) => c.runId === run.id);
+        return rows.length === 3 && rows;
+      });
+      expect(listed.every((c) => c.reason === 'interrupted' && c.usd > 0)).toBe(true);
+      expect(h.calls.filter((c) => c.runId === run.id && c.result !== undefined)).toEqual([]);
+      expect(h.ledger(run.id)).toEqual([]);
+      expect((await h.store.getRun(run.id))?.costUsd).toBe(0);
+      // Only the refused draft says why it ended; the three cut off got no event of their own, so the Run screen says
+      // why a step stopped when the run failed (apps/web view/timeline.ts STOPPED_BY_FAILURE_NOTE). After them, nothing.
+      const events = await h.store.events(run.id);
+      const drafts = events.filter((e) => e.stepId === 'draft');
+      expect(drafts.filter((e) => e.type === 'step-started')).toHaveLength(4);
+      const failed = drafts.filter((e) => e.type === 'step-failed');
+      expect(failed).toHaveLength(1);
+      expect(drafts.filter((e) => e.type === 'step-finished')).toEqual([]);
+      const ended = new Set(failed.map((e) => e.candidate));
+      expect(drafts.filter((e) => e.type === 'step-started' && !ended.has(e.candidate))).toHaveLength(3);
+      expect(events.some((e) => e.stepId === 'after')).toBe(false);
+      expect(events.at(-1)?.type).toBe('run-failed');
+    } finally {
       mock.reset();
     }
   }, 120_000);
