@@ -208,3 +208,44 @@ Research prerequisites (RS). `labelFor` enforces `expires`, with an outcome the 
 | SEED string source in the product | Runner-injected (crypto.randomBytes, model-step.ts defaultSeed), which is SSoT v3 App. D.6's "Seed Injection" form; D.6 found model-written strings generally scored higher on DeepSeek-R1-0528 / NoveltyBench Curated. The alternative is a model-written string. No behaviour or recipe-hash change until decided (cited by spec §3.3) | Before SEED is studied or claimed |
 | When the research track resumes | Parked: the product track goes first and the research harness waits (ADR-0108; the owner, 2026-10-07: "go with the product track. complete it first."). The playbook's milestones still read as in protocol v1.1's timeline: venue answers in October 2026, the Monitor contracted by about mid-November, prompt registration about November to December 2026, Stage 0 about 2027-02-01. Owner question: resume now, at a named date, or after the first live run? On 2026-10-21 21:31, asked "D1. The research track is parked (ADR-0108, your "go with the product track. complete it first."). Should the research documents among the 39 land now (protocol corrections, a v1.2 draft, a draft research roadmap), with Claude drafting the two venue emails for you to send?", the owner chose "Keep all of it parked", whose description read "Nothing on the research track moves until it resumes." So the research documents, the venue emails and the second transcriber wait with the track; when it resumes is still the owner's to say. | Ask when the owner next turns to research, or before any of the playbook's research dates is relied on (trigger proposed by Claude, 2026-10-18) |
 | Judge hosting and data residency; who needs Lab access | Judge: Vercel, Cloudflare Workers or Pages with R2, or a self-managed EU or UK VPS. Recommended: let the ethics route and rater geography (D8) decide; Vercel if an account exists and US data residency is acceptable. In every case stimuli are served from a separate, cookieless origin, and the validity service runs on infrastructure the Monitor controls (ADR index; ADR-0028; protocol v1.1 Appendix B.2 item 8). Lab, the operator app: the owner plus a small team on local machines, with no public login; who exactly needs access is open (ADR index) | Judge: after D8, before the Judge app is built. Lab: before the Lab is built |
+
+## Done since the route map of 2026-10-18
+
+The route map of 2026-10-18 (drawn at main 8401820) listed these as open. Their work has since landed on main, checked item by item at 37a4104 on 2026-10-22, at the owner's request to mark completed items. A row closes, and is removed above, when its work is done; this list keeps the completed items visible. The items now being built in block 2 are not here until block 2 merges.
+
+| Item (as the route map named it) | Where it landed | Its row |
+|---|---|---|
+| Expose withdrawnAt on CheckpointRecord | eb712c3; row closed in 9ac54d3 | Closed |
+| Cancel stops calls already in flight | 333728a, c1fc822 (ADR-0111), 60e80f9, fix rounds bcbfa11/35cda68/e925c05/3d26250; row closed in ba0adee | Closed |
+| Cost in "Run this step?" and "Is this ready?" questions | 000c095, 5c55592; row closed in 9ac54d3 | Closed |
+| startDevEngine({ workflowsPath }) | 9f1bb47; row closed in 9ac54d3 | Closed |
+| Gateway mock's fenced-block reader | 246a3e2, 87806a4; row closed in 9ac54d3 | Closed |
+| Start keeps attachments per attachment after a held-key refusal | 2645433, c58d01c; row closed in 9ac54d3 | Closed |
+| Start says why "Attach another" went | d2a133d; row closed in 9ac54d3 | Closed |
+| Run start: describe the workflow before marking a run failed (P3 double fault) | 22f521b; ADR-0109 decision 3; row closed in 00401a0 | Closed |
+| Free-plan briefs beyond the declared max or the slots knob are dropped without a note | 5272cea, 852aecc (code); 772fedf (records); ADR-0112 item 6; row closed in 9ac54d3 | Closed |
+| Say which briefs were left out when no answer named a slot the work has | 5272cea; ADR-0112 item 6; row closed in 9ac54d3 | Closed |
+| asset.integrate's "Place every image" miss after purchase fails the run and loses the paid images | 5272cea, with ADR-0112 tests in 852aecc (A2, A4); ADR-0112 items 1-5; row closed in 9ac54d3 | Closed |
+| A paid image whose result byway cannot save fails without naming its slot | 5272cea; ADR-0112 item 7; row closed in 9ac54d3 | Closed |
+| Diff lines that share one shown label repeat it | ab217bc, 7935624; row closed in 9ac54d3 | Closed |
+| An applying writer separated from its cut or sweep by another step shows as its own "Revise" step | ab217bc; row closed in 9ac54d3 | Closed |
+| A model RELAY step is admitted in a non-media composed recipe | 2b1021a; ADR-0109 (e885788, renumbered in 88853f5); row closed in 00401a0 | Closed |
+| Port the claims oracle into the runner suite | 24e69f5; row closed in 00401a0 | Closed |
+| "Nothing is deleted for you" and "It flags only" still read declared ports | ab217bc; row closed in 9ac54d3 | Closed |
+| Move the first recommendation off the Recommendation page's GET render | 524e057; row closed in 9ac54d3 | Closed |
+| R3 remainder: outcome pointers for decisions already taken | dca74a7 (row closed in the same commit) | Closed |
+| Advisor estimate: VOICE costs nothing | afcc3fd; ADR-0109 (e885788, renumbered in 88853f5); row closed in 00401a0 | Closed |
+| Secrets-file names independent of module identity | d4bd96b, 56afdde, e885788 (ADR-0109); row closed in 00401a0; bbefdee | Closed |
+| Escape names in reserved-key violation paths | 2e35ed2; row closed in 9ac54d3 | Closed |
+| An activity-level test that keepsVoice writes check the held voice | 5272cea (test) and 9ac54d3 (records, row removed) | Closed |
+| Pin pages.shownText's launch failure in launch.test.ts | f6449f5 (test) and 9ac54d3 (records, row removed) | Closed |
+| Re-check model ids and price rows before the first live run | 6e4eb65 and 248e6fe, recorded in ADR-0109 (Decision 1) | Still in row "First live run with real keys and real money", marked done there |
+| Pin C1-H's parent hash before Study 1's prompt registration | d98d5fa (pin and test), ac83bac, 2e5fbfa and d187fab (naming), and 00401a0 (records, row removed) | Closed |
+| Bring the decision evidence kept only in %TEMP% into the repository | b015077, d754402, 24e69f5, 126025f; row closed in 00401a0; index in docs/adr/evidence/README.md | Closed |
+| Run start: a start that timed out is reported as "engine was not running" | 22f521b, 38eafa8; ADR-0109; row closed in 00401a0 | Closed |
+| A renderer read failure repeats the subresource's full URL, query string included | f6449f5, 852aecc; row closed in 9ac54d3 | Closed |
+| Ledger.verify throws on a deeply nested line | 0ed0b52, f6d2816, cda27c3; ADR-0083 Later notes; row closed in 9ac54d3 | Closed |
+| Storyboards may repeat a shot number | f24041d (681e0de: comment only); row closed in 9ac54d3 | Closed |
+| D2 left (9): the sandbox banner announces nothing to a screen reader | 24ffc74; ADR-0105 Later note of 2026-10-21; row item (9) updated in 9ac54d3 | Still in row "What D2 left (ADR-0105)", marked done there |
+| Late-close left (4): log the renderer's browser retirements and relaunches | f6449f5 (render-browsers.ts); ADR-0106 Later note of 2026-10-21; row item (4) updated in 9ac54d3 | Still in row "What the late-close fix left (ADR-0106)", marked done there |
+| Rename the local ActAI folder or retire it | dc19903; the owner chose "Claude renames it, on your yes" (D10, 2026-10-21 21:43), and the folder is now OneDrive\Documents\ActAI-retired-2026-10 | The playbook row, marked Done |
