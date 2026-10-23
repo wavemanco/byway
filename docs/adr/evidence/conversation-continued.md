@@ -1,6 +1,6 @@
 # Conversation record, continued (decision evidence)
 
-What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-22 12:10 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block) and on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, and from 12:09 to 12:10 local, for that round's check) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
+What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-22 20:07 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block) and on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, and from 14:06 to 20:07 local, for the sweep of unfiled items) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
 
 How it differs from conversation.md:
 
@@ -625,4 +625,63 @@ Not answered
 ---
 ## USER 2026-10-22T12:10:31.561-07:00 (2026-10-22T19:10:31.561Z)
 [ANSWER] Your questions have been answered: "Block 1's privacy check found no privacy problem. It found three record slips: the purge row's list of which local clones hold old commits is wrong (one folder it names is not a clone, and seven clones it calls clean hold five old commits), its list of which replaced commits hold what is incomplete (the purge removes them all regardless), and ADR-0111's note does not account for the empty commit 3ea91f8. How should it go?"="Fix the three, records tests, push (Recommended)", "The answer-wait research report (sent above) exists only in this session's Temp folder. Where should it be kept?"="Into the repo with Block 1 (Recommended)", "Images: you chose a 15-minute default and asked whether image waits should be longer than high-reasoning text. The research says no: at byway's settings an image takes about a minute, and the slowest p95 at any quality is 2.8 minutes. Which choices for image models?"="5, 10, 15, 20; default 15 (Recommended)", "Video (fal's Kling clips): you suggested 30, 45, 60, 75 but no default. The research supports 30 (about 6 times Kling 3 Pro's p95 of about 5 minutes); waiting longer on fal costs no money. Which default?"="30 minutes (Recommended)". You can now continue with these answers in mind.
+
+---
+## CLAUDE-ASKS 2026-10-22T14:06:11.603-07:00 (2026-10-22T21:06:11.603Z)
+[{"question":"The named Windows flake happened again on Block 1's branch run: C5 Ad Video waited over 120 s for its next turn while Temporal's SQLite store was slow. It merged under your rule, and main's CI then passed on both machines. The backlog row says the fix goes to you first if it recurs. What should happen?","header":"C5 flake","multiSelect":false,"options":[{"label":"Fix it in Block 2 (Recommended)","description":"The e2e helper waits on the run's progress (a new event within 120 s) instead of on the next turn alone, so a slow but moving run no longer fails; tested by mutation, and part of Block 2's check."},{"label":"Fix it now on a small branch","description":"The same fix as its own small branch before Block 2: gate, branch CI, merge."},{"label":"Leave it named","description":"No change; it stays a named flake that merges under ADR-0107 item 4."}]},{"question":"Block 2 is next (P2 with VOICE-RETRY, long-context prices, the price cadence, and the waits per model with the choice sets you just chose). The research left design points for the waits: Google's calls stop at about 5 minutes today; a model step that times out is retried with new paid calls, so step limits must be sized from the chosen wait; Anthropic's 'summarized' thinking would make a think not silent; and fal's start-deadline header. How should Block 2 start?","header":"Block 2","multiSelect":false,"options":[{"label":"Short design of the waits first (Recommended)","description":"I write a short design for the waits part covering those points, with a recommendation for each, and put it to you; the rest of Block 2, whose design you approved, starts building meanwhile."},{"label":"Design all of Block 2's new parts first","description":"Nothing in Block 2 is built until a short design of each new part (the waits, the price cadence) is approved."},{"label":"Build as approved, ask as points come up","description":"Start building Block 2 now and put each open point to you when the build reaches it."}]}]
+
+---
+## USER 2026-10-22T14:07:44.079-07:00 (2026-10-22T21:07:44.079Z)
+[ANSWER] Your questions have been answered: "The named Windows flake happened again on Block 1's branch run: C5 Ad Video waited over 120 s for its next turn while Temporal's SQLite store was slow. It merged under your rule, and main's CI then passed on both machines. The backlog row says the fix goes to you first if it recurs. What should happen?"="Fix it in Block 2 (Recommended)", "Block 2 is next (P2 with VOICE-RETRY, long-context prices, the price cadence, and the waits per model with the choice sets you just chose). The research left design points for the waits: Google's calls stop at about 5 minutes today; a model step that times out is retried with new paid calls, so step limits must be sized from the chosen wait; Anthropic's 'summarized' thinking would make a think not silent; and fal's start-deadline header. How should Block 2 start?"="Short design of the waits first (Recommended)". You can now continue with these answers in mind.
+
+---
+## USER 2026-10-22T14:13:04.833-07:00 (2026-10-22T21:13:04.833Z)
+<!-- reply 1 -->
+> The purge is yours to run. It permanently deletes the last copies of the replaced commits, so I’m not running it myself. A read-only preview shows it removes 29 entries from each of the two reflogs. There are no stashes, and no other branch or reflog is touched. The three commands are in my earlier message; run them in order. I’ll then check, read-only, that the old commits are gone.
+
+what are we purging really?
+
+---
+## USER 2026-10-22T14:19:15.219-07:00 (2026-10-22T21:19:15.219Z)
+can you run them please. go ahead.
+
+---
+## USER 2026-10-22T14:35:47.336-07:00 (2026-10-22T21:35:47.336Z)
+done, ran all three. check it
+
+---
+## USER 2026-10-22T16:55:03.473-07:00 (2026-10-22T23:55:03.473Z)
+there was an interruption. please resume the block2-scope-and-waits-design and any other workflows that got interrupted
+
+---
+## CLAUDE-ASKS 2026-10-22T17:41:49.666-07:00 (2026-10-23T00:41:49.666Z)
+[{"question":"Step limits: today a model step may run 15 minutes and an image or video step 45, which would cut your longer waits short. How should the limits leave room for your waits?","header":"Step limits","multiSelect":false,"options":[{"label":"Relay from your video wait, 24 h elsewhere (Recommended)","description":"The video (relay) step is sized from your video wait, as your video choice said. Model and image steps get a 24-hour backstop that the per-call waits normally make unnecessary; a stuck step could hold its run up to 24 hours a try (72 for a model step's 3 tries). No healthy step is ever cut short, and no clip is bought twice."},{"label":"Every limit worked out per run","description":"Each step's limit is computed from your waits, so a stuck step holds its run for hours rather than a day, but each kind of step needs its own formula, and one that undercounts cuts a healthy step short and its call can then be paid twice."}]},{"question":"Anthropic's models think silently by default, so a long think looks like a dead connection. Ask Anthropic to stream short summaries while the model thinks?","header":"Thinking","multiSelect":false,"options":[{"label":"Ask for summaries (Recommended)","description":"One field in the request; the thinking and the bill are the same (Anthropic's reference). Your waits then measure true silence, so a long think is not cut off and paid twice."},{"label":"Leave it hidden","description":"No change to the request; for Anthropic models your wait measures thinking time, and a think longer than the wait is cut off and sent again."}]},{"question":"When a Google text call or an image uses its whole wait (these come back in one piece, unlike streams), what should byway do?","header":"Full wait","multiSelect":false,"options":[{"label":"Give up and end the call plainly (Recommended)","description":"It stops at your wait, and the step says the wait ran out and where to change it in Settings; other connection failures are still sent once more. A call that used a whole wait, set well above normal times, is most likely stuck, and Google charges for a call that is stopped, so a resend mostly pays twice."},{"label":"Send it once more, as today","description":"Today's 'may have been billed' resend: up to twice your wait, and probably two charges."}]},{"question":"On Cancel, uncut calls (Google text and images) keep running until they answer, which with your waits can be up to 60 or 20 minutes. Should the run wait for them?","header":"Cancel","multiSelect":false,"options":[{"label":"Keep today's behaviour (Recommended)","description":"The run shows Cancelled at once; streams and video jobs are cut off; uncut Google and image calls finish in the background, are paid, and their cost is added to the run. Waiting would save no money, since those calls are paid either way."},{"label":"Wait for the steps to end","description":"The run shows a new 'stopping' state until those calls end, up to a Google call's or an image's chosen wait."}]}]
+
+---
+## USER 2026-10-22T18:53:56.850-07:00 (2026-10-23T01:53:56.850Z)
+[ANSWER] Your questions have been answered: "Step limits: today a model step may run 15 minutes and an image or video step 45, which would cut your longer waits short. How should the limits leave room for your waits?"="Relay from your video wait, 24 h elsewhere (Recommended)", "Anthropic's models think silently by default, so a long think looks like a dead connection. Ask Anthropic to stream short summaries while the model thinks?"="Ask for summaries (Recommended)", "When a Google text call or an image uses its whole wait (these come back in one piece, unlike streams), what should byway do?"="Give up and end the call plainly (Recommended)", "On Cancel, uncut calls (Google text and images) keep running until they answer, which with your waits can be up to 60 or 20 minutes. Should the run wait for them?"="Keep today's behaviour (Recommended)". You can now continue with these answers in mind.
+
+---
+## CLAUDE-ASKS 2026-10-22T18:54:15.315-07:00 (2026-10-23T01:54:15.315Z)
+[{"question":"You chose a monthly re-read of every price page by Claude (plus one at once when the weekly report flags a change). How should that re-read be started?","header":"Re-read","multiSelect":false,"options":[{"label":"Claude checks at each session's start (Recommended)","description":"A playbook duty: when a session opens and the last-checked date is 30 days old, or the weekly CI report has flagged a change, Claude re-reads every page first and updates the table on a branch. No scheduled task; the app's notice after about 45 days is the backstop if no session happens."},{"label":"A monthly scheduled routine","description":"A cloud routine that runs Claude once a month to re-read the pages and push a branch for you to review; it runs whether or not you open a session, and uses your account's routine allowance."}]}]
+
+---
+## USER 2026-10-22T18:54:33.342-07:00 (2026-10-23T01:54:33.342Z)
+[ANSWER] Your questions have been answered: "You chose a monthly re-read of every price page by Claude (plus one at once when the weekly report flags a change). How should that re-read be started?"="Claude checks at each session's start (Recommended)". You can now continue with these answers in mind.
+
+---
+## USER 2026-10-22T18:55:32.017-07:00 (2026-10-23T01:55:32.017Z)
+note that you are assuming it would be Claude reading the pricing pages. It could be another modelwith internet access provided by anothe rprovider. make sure we are allowing that in the harness. I can;t have this completely tethered to one provider
+
+---
+## USER 2026-10-22T19:15:08.514-07:00 (2026-10-23T02:15:08.514Z)
+there was an interruption. please resume the workflows
+
+---
+## USER 2026-10-22T19:29:16.283-07:00 (2026-10-23T02:29:16.283Z)
+while the background tasks are running, can you please update the byway ROUTE MAP so that completed items are marked as such. Equivalent change in the repo's backlog record need to be done as well.
+
+---
+## USER 2026-10-22T20:07:50.138-07:00 (2026-10-23T03:07:50.138Z)
+but how come number of backlog items is the same as it was before. we have implemented quite a few things since the artifact was first created. are we really saying that no nits emerged, no new deferrals happened? I think we should sweep this conversation and git history for any thing that is not filed with triggers in the backlog otherwise we might miss out on certain things.
 
