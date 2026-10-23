@@ -8,8 +8,12 @@
  * sends nothing for five minutes. So the Anthropic, OpenAI, OpenRouter and Google clients fetch through an undici Agent
  * (its connection pool) whose two timeouts are PROVIDER_TIMEOUT_MS, above the longest wait anyone can choose (75
  * minutes); byway's own deadlines do the timing: the stall bound on a stream (StreamIdle), the whole-call deadline of a
- * Google call or an image (Deadline), fal's from its job's acceptance. The Agent and its fetch are undici 7.18.2's, the
- * version Node 24.13.1 bundles, used as a package rather than by reaching into Node's internals.
+ * Google call or an image (Deadline), fal's from its job's acceptance. The Agent and its fetch are the undici package's,
+ * used as a package rather than by reaching into Node's internals. It was first pinned at 7.18.2, the version Node
+ * 24.13.1 bundles, but every 7.x before 7.30.1 has advisories published against it (GitHub's advisory database and
+ * undici's own, read 2026-10-23: 23 against 7.18.2, and eight of 2026-10-15 still against 7.29.1 and 7.30.0), so it is
+ * pinned at 7.30.1, the first 7.x clear of them all (fetch.test.ts keeps it there or later). Node's own fetch, which fal
+ * and the price report use, keeps the copy Node bundles until .node-version moves.
  *
  * fal keeps Node's default fetch: its requests are short (a status poll every two seconds, a submission answered at
  * once), and its upload and result reads have no deadline of their own, so Node's limits are what bound them.
