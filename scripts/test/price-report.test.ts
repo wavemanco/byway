@@ -11,48 +11,94 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PRICES, PRICES_CHECKED, type PriceRow } from '../../packages/gateway/src/prices.ts';
-import { decimal, OPENROUTER_MODELS, openRouterReport, pageScripts, pricePages, REREAD_DUE_DAYS, report, rereadLine, samePerToken, type OpenRouterModels, type PriceReportOptions } from '../price-report.ts';
+import { decimal, OPENROUTER_MODELS, openRouterReport, pageScripts, plain, pricePages, REREAD_DUE_DAYS, report, rereadLine, samePerToken, type OpenRouterModels, type PriceReportOptions } from '../price-report.ts';
 
 const row = (provider: PriceRow['provider'], model: string, from?: string) => PRICES.find((r) => r.provider === provider && r.model === model && r.from === from)!;
 const $ = (n: number) => `$${n.toFixed(Math.max(2, (String(n).split('.')[1] ?? '').length))}`;
 const day = (iso: string) => new Date(`${iso}T12:00:00.000Z`);
 const CHECKED = new Date(`${PRICES_CHECKED}T12:00:00.000Z`);
 
-/** Anthropic's page as served in Markdown: one table row per model, base input, writes, hits and output. */
-function anthropicPage(rows = PRICES.filter((r) => r.provider === 'anthropic'), names = pricePages()[0]!.names!): string {
+/**
+ * Anthropic's page as served in Markdown: one table row per model, base input, writes, hits and output, then Claude
+ * Haiku 5.5's two rows priced by prompt length (no row of byway's: no profile uses it), and the long-context sentence
+ * as the page words it, with its links.
+ */
+function anthropicPage(rows = PRICES.filter((r) => r.provider === 'anthropic'), names = pricePages(CHECKED)[0]!.names!): string {
   const lines = rows.map((r) => `| ${names[r.model]} | ${$(r.inputPerMTok)} / MTok | ${$(r.cacheWritePerMTok!)} / MTok | $99 / MTok | ${$(r.cacheReadPerMTok!)} / MTok | ${$(r.outputPerMTok)} / MTok |`);
-  return ['## Model pricing', '', '| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |', ...lines, '', '### Long context pricing', '', 'Claude 4.6 and later models include the full [1M token context window](https://example.test/context) at standard pricing.', ''].join('\n');
+  const haiku = ['| Claude Haiku 5.5 (for prompts up to 100,000 tokens) | $0.10 / MTok | $0.125 / MTok | $0.20 / MTok | $0.01 / MTok | $0.50 / MTok |', '| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.50 / MTok | $0.625 / MTok | $1 / MTok | $0.05 / MTok | $2.50 / MTok |'];
+  const sentence = 'Claude 4.6 and later models (except Claude Haiku 5.5) and [Claude Mythos Preview](https://example.test/glasswing) include the full [1M token context window](https://example.test/context) at standard pricing. (A 900k-token request is billed at the same per-token rate as a 9k-token request.)';
+  return ['## Model pricing', '', '| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |', ...lines, ...haiku, '', '### Long context pricing', '', sentence, ''].join('\n');
 }
 
-/** OpenAI's page: its short-context table in HTML, the Long tab's label, and the island that loads its pricing script. */
-function openaiPage(rows = PRICES.filter((r) => r.provider === 'openai')): string {
-  const cells = (r: PriceRow) => [r.inputPerMTok, r.outputPerMTok, r.cacheReadPerMTok, r.cacheWritePerMTok].map((n) => `<td>${n === undefined ? '-' : $(n)}</td>`).join('');
-  return `<html><body><astro-island component-url="/_astro/pricing.Ab1.js?dpl=x" props="{}"></astro-island><astro-island component-url="https://elsewhere.example/_astro/x.js"></astro-island><button aria-label="Short: ≤272K input tokens">Short</button><button aria-label="Long: &gt;272K input tokens">Long</button><table>${rows.map((r) => `<tr><td>${r.model}</td>${cells(r)}</tr>`).join('')}</table><script>var hidden = "gpt-6-astra $1.00";</script></body></html>`;
+/**
+ * How OpenAI's page prices its other processing speeds against Standard, each in a table of its own that names every
+ * model again: Batch at half, Fast at twice and Ultrafast at six times (the page as read on 2026-10-23). Its pricing
+ * script has a map per speed at the same ratios, and a Flex map at Batch's. So when every price of a model doubles,
+ * its Batch row shows the old figures, and when every price halves, its Fast row does.
+ */
+const OPENAI_SPEEDS = [
+  ['Standard', 1],
+  ['Batch', 0.5],
+  ['Fast', 2],
+  ['Ultrafast', 6],
+] as const;
+/** A figure times a factor, as the page would print it. */
+const times = (n: number, k: number) => Math.round(n * k * 1_000_000) / 1_000_000;
+
+/**
+ * OpenAI's page: the Flagship models' heading and context-length switch, whose Long tab's label gives the threshold of
+ * the rows' tier; a table per processing speed in the page's order, Standard first; the Cyber models' heading, switch
+ * and table, of a model byway does not price; and the island that loads its pricing script. `scale` multiplies every
+ * figure of a model, in every table, as a change of its prices would.
+ */
+function openaiPage(rows = PRICES.filter((r) => r.provider === 'openai'), scale: Readonly<Record<string, number>> = {}): string {
+  const cells = (r: PriceRow, k: number) => [r.inputPerMTok, r.outputPerMTok, r.cacheReadPerMTok, r.cacheWritePerMTok].map((n) => `<td>${n === undefined ? '-' : $(times(n, k * (scale[r.model] ?? 1)))}</td>`).join('');
+  const tables = OPENAI_SPEEDS.map(([speed, k]) => `<h4>${speed}</h4><table>${rows.map((r) => `<tr><td>${r.model}</td>${cells(r, k)}</tr>`).join('')}</table><p>All models</p>`).join('');
+  const k = PRICES.find((r) => r.provider === 'openai' && r.longContext)!.longContext!.aboveInputTokens / 1000;
+  const lengths = `<button aria-label="Short: ≤${k}K input tokens">Short</button><button aria-label="Long: &gt;${k}K input tokens">Long</button>`;
+  const cyber = `<h2>Cyber models</h2>${lengths}<table><tr><td>gpt-5.6-sol</td><td>$4.00</td><td>$20.00</td></tr></table>`;
+  return `<html><body><astro-island component-url="/_astro/pricing.Ab1.js?dpl=x" props="{}"></astro-island><astro-island component-url="https://elsewhere.example/_astro/x.js"></astro-island><h2>Flagship models</h2>${lengths}${tables}${cyber}<script>var hidden = "gpt-6-astra $1.00";</script></body></html>`;
 }
 
-/** OpenAI's pricing script: the Long table per processing tier, as minified object literals. */
-function openaiScript(rows = PRICES.filter((r) => r.provider === 'openai' && r.longContext)): string {
+/**
+ * OpenAI's pricing script: the Long table as a map per processing speed, minified object literals in the script's
+ * order (ultrafast, standard, fast, batch, flex), at the page's ratios to Standard; `scale` as for the page.
+ */
+function openaiScript(rows = PRICES.filter((r) => r.provider === 'openai' && r.longContext), scale: Readonly<Record<string, number>> = {}): string {
   const lit = (n: number) => String(n).replace(/^0\./, '.');
-  const standard = rows.map((r) => `"${r.model}":{input:${lit(r.longContext!.inputPerMTok)},output:${lit(r.longContext!.outputPerMTok)},cachedInput:${r.longContext!.cacheReadPerMTok === undefined ? '.02' : lit(r.longContext!.cacheReadPerMTok)},cacheWrite:${lit(r.longContext!.cacheWritePerMTok!)}}`).join(',');
-  return `var m={fast:{"gpt-6-astra":{input:40,output:150,cachedInput:4,cacheWrite:50}},standard:{${standard}}};export{m as default}`;
+  const map = (k: number) =>
+    rows
+      .map((r) => {
+        const t = r.longContext!;
+        const at = (n: number) => lit(times(n, k * (scale[r.model] ?? 1)));
+        // A cached-input rate the row does not record is still in the script (gpt-6-luna's).
+        return `"${r.model}":{input:${at(t.inputPerMTok)},output:${at(t.outputPerMTok)},cachedInput:${at(t.cacheReadPerMTok ?? t.inputPerMTok / 10)},cacheWrite:${at(t.cacheWritePerMTok!)}}`;
+      })
+      .join(',');
+  return `var m={ultrafast:{${map(6)}},standard:{${map(1)}},fast:{${map(2)}},batch:{${map(0.5)}},flex:{${map(0.5)}}};export{m as default}`;
 }
 
-/** Google's page: a section per model, each with its paid-tier input and output prices, tiers where it has them. */
-function googlePage(rows = PRICES.filter((r) => r.provider === 'google')): string {
+/**
+ * Google's page: a section per model, each with its paid-tier input and output prices, tiers where it has them, their
+ * threshold in the page's words; `first`, sections of models byway does not price, before byway's.
+ */
+function googlePage(rows: readonly PriceRow[] = PRICES.filter((r) => r.provider === 'google'), first = ''): string {
   const byModel = new Map<string, PriceRow[]>();
   for (const r of rows) byModel.set(r.model, [...(byModel.get(r.model) ?? []), r]);
-  const price = (rs: PriceRow[], pick: (r: PriceRow) => number, long?: number) =>
-    long !== undefined ? `${$(pick(rs[0]!))}, prompts &lt;= 200k tokens<br>${$(long)}, prompts &gt; 200k tokens` : rs.map((r) => `${$(pick(r))} ${r.from ? `starting ${r.from}` : 'now'}.`).join(' ');
+  const price = (rs: PriceRow[], pick: (r: PriceRow) => number, long?: number) => {
+    const k = (rs[0]!.longContext?.aboveInputTokens ?? 0) / 1000;
+    return long !== undefined ? `${$(pick(rs[0]!))}, prompts &lt;= ${k}k tokens<br>${$(long)}, prompts &gt; ${k}k tokens` : rs.map((r) => `${$(pick(r))} ${r.from ? `starting ${r.from}` : 'now'}.`).join(' ');
+  };
   const sections = [...byModel].map(([model, rs]) => {
     const long = rs[0]!.longContext;
     const image = rs[0]!.perImageUsd !== undefined ? ` Equivalent to ${$(rs[0]!.perImageUsd)} per 1K image.` : '';
     return `<h3>${model}</h3><table><tr><td>Input price</td><td>Not available</td><td>${price(rs, (r) => r.inputPerMTok, long?.inputPerMTok)}</td></tr><tr><td>Output price</td><td>Not available</td><td>${price(rs, (r) => r.outputPerMTok, long?.outputPerMTok)}${image}</td></tr></table>`;
   });
-  return `<html><body>${sections.join('')}</body></html>`;
+  return `<html><body>${first}${sections.join('')}</body></html>`;
 }
 
-/** A fal model page: its price in one sentence. */
-const falPage = (r: PriceRow) => `<html><body><p>For 5s video your request will cost $0.35. For every additional second you will be charged ${$(r.perSecondUsd!)}.</p><p>For every second of video you generated, you will be charged ${$(r.perSecondUsd!)} (audio off).</p><p>Your request will cost ${$(r.perSecondUsd!)} per second.</p></body></html>`;
+/** A fal model page: its price in one sentence, Kling 2.5's first 5 seconds at its rate per second. */
+const falPage = (r: PriceRow) => `<html><body><p>For 5s video your request will cost ${$(times(r.perSecondUsd!, 5))}. For every additional second you will be charged ${$(r.perSecondUsd!)}.</p><p>For every second of video you generated, you will be charged ${$(r.perSecondUsd!)} (audio off).</p><p>Your request will cost ${$(r.perSecondUsd!)} per second.</p></body></html>`;
 
 /** OpenRouter's model list: the pinned models at the rates byway records, per token, and another model. */
 function openrouterModels(rows = PRICES.filter((r) => r.provider === 'openrouter')): OpenRouterModels {
@@ -93,15 +139,33 @@ async function run(fetch: Fetch, now = CHECKED) {
   return { lines, warnings: lines.filter((l) => l.startsWith('::warning')), summary: readFileSync(summary, 'utf8') };
 }
 
-const NEXT = 'The agent running the next session (any model with web access, or a person) reads each flagged page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
+/** What follows a flag: every page read again, as the owner's option of 2026-10-22 18:54 says (PRICES-6). */
+const NEXT = 'The agent running the next session (any model with web access, or a person) reads every page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
 
 describe("the weekly run's price report (PRICE-CADENCE)", () => {
   it('checks every row a provider charges for: OpenRouter in its model list, every other row on its own page', () => {
-    const onPages = pricePages().flatMap((p) => p.rows);
+    // On the day of the last full re-read every row is in force or still to come.
+    const onPages = pricePages(CHECKED).flatMap((p) => p.rows);
     const paid = PRICES.filter((r) => r.provider !== 'mock');
     expect([...onPages, ...PRICES.filter((r) => r.provider === 'openrouter')].sort((a, b) => paid.indexOf(a) - paid.indexOf(b))).toEqual(paid);
-    for (const page of pricePages()) for (const r of page.rows) if (r.provider === 'anthropic') expect(page.names?.[r.model], r.model).toBeDefined();
+    for (const page of pricePages(CHECKED)) for (const r of page.rows) if (r.provider === 'anthropic') expect(page.names?.[r.model], r.model).toBeDefined();
     expect(OPENROUTER_MODELS).toBe('https://openrouter.ai/api/v1/models');
+  });
+
+  it('checks the rows in force on the day of the run and the rows still to come, not a row a later one has replaced (PRICES-4)', async () => {
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    const intro = row('google', 'gemini-3.8-flash');
+    const later = row('google', 'gemini-3.8-flash', '2027-01-01');
+    const googleRows = (now: Date) => pricePages(now).find((p) => p.label === 'Google')!.rows;
+    expect(googleRows(day('2026-12-31'))).toEqual(expect.arrayContaining([intro, later]));
+    expect(googleRows(day('2027-01-01'))).toContain(later);
+    expect(googleRows(day('2027-01-01'))).not.toContain(intro);
+    // Google's page once the introductory price is over, giving only the price from 2027-01-01.
+    const after = googlePage(PRICES.filter((r) => r.provider === 'google' && r !== intro));
+    const googleLines = async (now: Date) => (await run(web({ [GOOGLE]: after }).fetch, now)).lines.filter((l) => l.startsWith('Google'));
+    expect(await googleLines(day('2027-01-05'))).toEqual([`Google: every figure byway records was found on ${GOOGLE}.`]);
+    // Before then the introductory row is in force, so a page without its figures is flagged.
+    expect(await googleLines(CHECKED)).toEqual([`Google gemini-3.8-flash: not found after its name on the page: input $${intro.inputPerMTok}, output $${intro.outputPerMTok}.`]);
   });
 
   it('finds every figure on pages shaped as the providers write them, and flags nothing', async () => {
@@ -167,11 +231,68 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     expect(unread.map((l) => l.split(':')[0])).toEqual(['OpenAI gpt-6-astra', 'OpenAI gpt-6.1-sol', 'OpenAI gpt-6-luna']);
   });
 
-  it("flags a sentence the table's reading of a page rests on that the page no longer carries", async () => {
-    const gone = anthropicPage().replace('at standard pricing', 'at long-context pricing');
-    expect((await run(web({ 'https://platform.claude.com/docs/en/about-claude/pricing.md': gone }).fetch)).lines).toContain('Anthropic: the page no longer says "include the full 1M token context window at standard pricing".');
-    const noTier = openaiPage().replace('Long: &gt;272K input tokens', 'Long: &gt;300K input tokens');
-    expect((await run(web({ 'https://developers.openai.com/api/docs/pricing': noTier }).fetch)).lines).toContain('OpenAI: the page no longer says "Long: >272K input tokens".');
+  it("reads OpenAI's Standard prices only: a model whose every price doubles or halves, in every table and every map, is flagged (PRICES-1)", async () => {
+    for (const r of PRICES.filter((p) => p.provider === 'openai')) {
+      for (const k of [2, 0.5]) {
+        const pages = { 'https://developers.openai.com/api/docs/pricing': openaiPage(undefined, { [r.model]: k }), 'https://developers.openai.com/_astro/pricing.Ab1.js?dpl=x': openaiScript(undefined, { [r.model]: k }) };
+        const lines = (await run(web(pages).fetch)).lines.filter((l) => l.startsWith(`OpenAI ${r.model}:`));
+        const shown = [['input', r.inputPerMTok], ['output', r.outputPerMTok], ['cache read', r.cacheReadPerMTok], ['cache write', r.cacheWritePerMTok]].filter(([, n]) => n !== undefined);
+        const expected = [`OpenAI ${r.model}: not found after its name on the page: ${shown.map(([what, n]) => `${what} $${n}`).join(', ')}.`];
+        if (r.longContext) expected.push(`OpenAI ${r.model}: the page's scripts do not give its long-context rates as byway records them (input $${r.longContext.inputPerMTok}, output $${r.longContext.outputPerMTok}).`);
+        expect(lines, `${r.model} x${k}`).toEqual(expected);
+      }
+    }
+    // A model's stretch also ends where the page names it again, as when it ends one table and starts the next: here
+    // every table holds gpt-6-astra alone, so its Standard row runs straight into its Batch row.
+    const astra = row('openai', 'gpt-6-astra');
+    const alone = (await run(web({ 'https://developers.openai.com/api/docs/pricing': openaiPage([astra], { [astra.model]: 2 }) }).fetch)).lines;
+    expect(alone).toContain(`OpenAI gpt-6-astra: not found after its name on the page: input $${astra.inputPerMTok}, output $${astra.outputPerMTok}, cache read $${astra.cacheReadPerMTok}, cache write $${astra.cacheWritePerMTok}.`);
+  });
+
+  it("checks Kling 2.5's price for its first 5 seconds, on which its rate per second rests, as 5 times that rate (PRICES-2)", async () => {
+    const kling = row('fal', 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video');
+    const url = `https://fal.ai/models/${kling.model}`;
+    const base = `For 5s video your request will cost ${$(times(kling.perSecondUsd!, 5))}`;
+    expect(falPage(kling)).toContain('For 5s video your request will cost $0.35.');
+    // The base alone changes, the rate per second after it stays; a figure that only starts with byway's is another.
+    for (const other of ['$0.50', '$0.355']) {
+      const lines = (await run(web({ [url]: falPage(kling).replace(base, `For 5s video your request will cost ${other}`) }).fetch)).lines.filter((l) => l.startsWith(`fal (${kling.model})`));
+      expect(lines, other).toEqual([`fal (${kling.model}): not found after "For 5s video your request will cost": 5 seconds at the $${kling.perSecondUsd} per second byway records, $${times(kling.perSecondUsd!, 5)}.`]);
+    }
+  });
+
+  it("flags a sentence the table's reading of a page rests on that the page no longer carries, read whole (PRICES-3)", async () => {
+    const ANTHROPIC = 'https://platform.claude.com/docs/en/about-claude/pricing.md';
+    const said = 'Anthropic: the page no longer says "Claude 4.6 and later models (except Claude Haiku 5.5) and Claude Mythos Preview include the full 1M token context window at standard pricing".';
+    expect((await run(web({ [ANTHROPIC]: anthropicPage().replace('at standard pricing', 'at long-context pricing') }).fetch)).lines).toContain(said);
+    // A model added to the exceptions is no longer priced the same at every length, though the rest still reads so.
+    const excepted = anthropicPage().replace('(except Claude Haiku 5.5)', '(except Claude Haiku 5.5 and Claude Opus 5.5)');
+    expect((await run(web({ [ANTHROPIC]: excepted }).fetch)).lines.filter((l) => l.startsWith('Anthropic'))).toEqual([said]);
+  });
+
+  it("flags a long-context threshold that changed, read beside the row's figures or above its table, and a new tier on a row without one (PRICES-3)", async () => {
+    // Google: Gemini 3.1 Pro's threshold lowered to 128k, while a model byway does not price still says 200k.
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    const pro = row('google', 'gemini-3.1-pro-preview');
+    const lowered = PRICES.filter((r) => r.provider === 'google').map((r) => (r === pro ? { ...pro, longContext: { ...pro.longContext!, aboveInputTokens: 128_000 } } : r));
+    const older = '<h3>gemini-2.5-pro</h3><table><tr><td>Input price</td><td>Not available</td><td>$1.25, prompts &lt;= 200k tokens<br>$2.50, prompts &gt; 200k tokens</td></tr></table>';
+    expect(googlePage(lowered, older)).toContain('$4.00, prompts &gt; 128k tokens');
+    expect((await run(web({ [GOOGLE]: googlePage(lowered, older) }).fetch)).lines.filter((l) => l.startsWith('Google'))).toEqual(['Google gemini-3.1-pro-preview: the page no longer gives its long-context tier as "prompts > 200k tokens" after its name.']);
+    // OpenAI: the Flagship models' switch changed, while the Cyber models' switch below still says 272K.
+    const flagship = openaiPage().replace('Long: &gt;272K input tokens', 'Long: &gt;128K input tokens');
+    expect(flagship).toContain('Long: &gt;272K input tokens');
+    expect((await run(web({ 'https://developers.openai.com/api/docs/pricing': flagship }).fetch)).lines.filter((l) => l.startsWith('OpenAI'))).toEqual(
+      PRICES.filter((r) => r.provider === 'openai' && r.longContext).map((r) => `OpenAI ${r.model}: the page no longer gives its long-context tier as "Long: >272K input tokens" between "Flagship models" and its name.`),
+    );
+    // Anthropic: Claude Opus 5.5 split into two rows by prompt length, the first at byway's figures.
+    const ANTHROPIC = 'https://platform.claude.com/docs/en/about-claude/pricing.md';
+    const opus = anthropicPage().split('\n').find((l) => l.startsWith('| Claude Opus 5.5 |'))!;
+    const split = anthropicPage().replace(opus, `${opus.replace('| Claude Opus 5.5 |', '| Claude Opus 5.5 (for prompts up to 200,000 tokens) |')}\n| Claude Opus 5.5 (for prompts over 200,000 tokens) | $8.00 / MTok | $10.00 / MTok | $16 / MTok | $0.40 / MTok | $40.00 / MTok |`);
+    expect((await run(web({ [ANTHROPIC]: split }).fetch)).lines.filter((l) => l.startsWith('Anthropic'))).toEqual(["Anthropic claude-opus-5-5: the page prices it by prompt length after its name (\"(for prompts\"), and byway's row has no long-context tier."]);
+    // Google: a tier on Gemini 3.8 Flash, whose rows have none.
+    const flash = row('google', 'gemini-3.8-flash');
+    const tiered = PRICES.filter((r) => r.provider === 'google').map((r) => (r === flash ? { ...flash, longContext: { aboveInputTokens: 200_000, inputPerMTok: 1.5, outputPerMTok: 7.5 } } : r));
+    expect((await run(web({ [GOOGLE]: googlePage(tiered) }).fetch)).lines).toContain("Google gemini-3.8-flash: the page prices it by prompt length after its name (\"prompts >\"), and byway's row has no long-context tier.");
   });
 
   it("compares OpenRouter's prices exactly, as decimals: any spelling of the same number matches, any other number does not", () => {
@@ -192,14 +313,58 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
 
   it('never fails: a page or list it cannot read is said in one line, and the others are still checked', async () => {
     const out = await run(web({ [OPENROUTER_MODELS]: new Error('getaddrinfo ENOTFOUND openrouter.ai'), 'https://ai.google.dev/gemini-api/docs/pricing?hl=en': 503, 'https://platform.claude.com/docs/en/about-claude/pricing.md': 'not a page' }).fetch);
-    expect(out.lines).toContain('OpenRouter: its model list could not be read (getaddrinfo ENOTFOUND openrouter.ai), so this run says nothing of it.');
-    expect(out.lines).toContain('Google: https://ai.google.dev/gemini-api/docs/pricing?hl=en could not be read (it answered 503), so this run says nothing of it.');
+    expect(out.lines).toContain('OpenRouter: its model list could not be read (getaddrinfo ENOTFOUND openrouter.ai), so this run did not check it.');
+    expect(out.lines).toContain('Google: https://ai.google.dev/gemini-api/docs/pricing?hl=en could not be read (it answered 503), so this run did not check it.');
     expect(out.lines).toContain('OpenAI: every figure byway records was found on https://developers.openai.com/api/docs/pricing.');
     // A page that reads but shows none of its figures is flagged, not passed.
     expect(out.lines.filter((l) => l.startsWith('Anthropic claude-'))).toHaveLength(5);
     expect(out.summary).toContain(out.lines[1]!);
     // An answer that is not JSON is unreadable too.
-    expect((await run(web({ [OPENROUTER_MODELS]: '<html>' }).fetch)).lines[1]).toMatch(/^OpenRouter: its model list could not be read \(.+\), so this run says nothing of it\.$/);
+    expect((await run(web({ [OPENROUTER_MODELS]: '<html>' }).fetch)).lines[1]).toMatch(/^OpenRouter: its model list could not be read \(.+\), so this run did not check it\.$/);
+  });
+
+  it('warns of a page or list it could not read, which it did not check, as of a flag, and of a report it could not make (PRICES-5)', async () => {
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    const page = await run(web({ [GOOGLE]: 403 }).fetch);
+    const unread = `Google: ${GOOGLE} could not be read (it answered 403), so this run did not check it.`;
+    expect(page.lines.filter((l) => !l.startsWith('::warning')).slice(-2)).toEqual([expect.stringMatching(/^fal /), NEXT]);
+    expect(page.warnings).toEqual([`::warning title=Prices::${unread} ${NEXT}`]);
+    const list = await run(web({ [OPENROUTER_MODELS]: 503 }).fetch);
+    expect(list.warnings).toEqual([`::warning title=Prices::OpenRouter: its model list could not be read (it answered 503), so this run did not check it. ${NEXT}`]);
+    // The report as a whole, here on a clock it cannot read.
+    const whole = await run(web().fetch, new Date(Number.NaN));
+    const made = 'The price report could not be made (Invalid time value), so this run checked nothing on prices.';
+    expect(whole.lines).toContain(made);
+    expect(whole.warnings).toEqual([`::warning title=Prices::${made} ${NEXT}`]);
+  });
+
+  it("prints nothing of a provider's answer that GitHub would read as a workflow command, in the log or the summary (SECURITY-2)", async () => {
+    const GOOGLE = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
+    // A model list that is not JSON, whose parser's message quotes it with its newline; a page whose error carries
+    // commands; and a price that is one, which its line quotes.
+    const prices = openrouterModels();
+    prices.data![0]!.pricing!.prompt = '##[error]planted';
+    const outs = [
+      await run(web({ [OPENROUTER_MODELS]: '\n::error::planted', [GOOGLE]: new Error('socket hang up\r\n::add-mask::x\u2028##[error]legacy\u001b[31m') }).fetch),
+      await run(web({ [OPENROUTER_MODELS]: JSON.stringify(prices) }).fetch),
+    ];
+    for (const out of outs) {
+      expect(out.warnings).toHaveLength(1);
+      for (const line of [...out.lines, ...out.summary.split('\n\n')]) {
+        expect(line, JSON.stringify(line)).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/);
+        expect(line.split('\n').filter((l) => l.trim().startsWith('::') && !l.startsWith('::warning title=Prices::')), JSON.stringify(line)).toEqual([]);
+        expect(line, JSON.stringify(line)).not.toContain('##[');
+      }
+      for (const line of out.lines) expect(line, JSON.stringify(line)).not.toContain('\n');
+    }
+    // What was said is still there to read, on one line.
+    expect(outs[0]!.lines).toContain(`Google: ${GOOGLE} could not be read (socket hang up ::add-mask::x ## [error]legacy [31m), so this run did not check it.`);
+    expect(outs[0]!.lines).toContain('OpenRouter: its model list could not be read (Unexpected token \':\', " ::error::planted" is not valid JSON), so this run did not check it.');
+    expect(outs[1]!.lines).toContain(`OpenRouter ${prices.data![0]!.id}: the model list gives prompt "## [error]planted" per token; byway records $${row('openrouter', prices.data![0]!.id as string).inputPerMTok} per 1M tokens.`);
+    // A line that would start with a command, after any spaces, has it broken.
+    expect(plain('::error::x')).toBe(': :error::x');
+    expect(plain(' \t::notice::x')).toBe('  : :notice::x');
+    expect(plain('a::b')).toBe('a::b');
   });
 
   it(`says when the monthly re-read is due, from ${REREAD_DUE_DAYS} days after the last full read, with a warning`, async () => {
