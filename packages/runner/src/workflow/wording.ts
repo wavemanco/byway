@@ -152,6 +152,11 @@ export const budgetPrompt = (amountUsd: number, scope: 'run' | 'workspace'): str
   scope === 'workspace' ? `Raise the workspace budget by $${amountUsd}?` : `Raise the budget by $${amountUsd}?`;
 /** A fix after an empty CUT directive ("Nothing to remove."): it makes no change, and its step says so. */
 export const NOTHING_TO_REMOVE = 'Nothing to remove';
+/**
+ * A fix after an optional the person declined that would have put its critique in place (R-DECLINED): the critique is
+ * left empty, so the fix makes no change, and its step says why, as after an empty CUT.
+ */
+export const DECLINED_CRITIQUE_NOTE = 'Nothing to apply: you chose not to run the step that would have said what to change';
 /** TELLS decided hit by hit (TELLS-1, convention C2): which of the sweep's hits the swap step acts on. */
 export const SWAPS_PROMPT = 'Which of these should be swapped? Choose any, or none.';
 /** The swap step when the person chose none of the hits: it makes no change, and says so (convention C2). */

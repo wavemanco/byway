@@ -16,7 +16,7 @@ import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '
 import type { CheckpointResolution } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
-import { asksSwaps, feedsGate, lockedScripts, machineWrites, voiceWrite } from '@byway/recipe/semantics';
+import { asksSwaps, feedsGate, lockedScripts, machineWrites, replacesCritique, voiceWrite } from '@byway/recipe/semantics';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
@@ -26,6 +26,7 @@ import type { PendingCheckpoint, RunControl } from './control.ts';
 import {
   BEST_SO_FAR_PROMPT,
   budgetPrompt,
+  DECLINED_CRITIQUE_NOTE,
   DECLINED_NOTE,
   FINAL_CHOICE_OPTIONS,
   FINAL_CHOICE_PROMPT,
@@ -359,8 +360,9 @@ export class Interpreter {
         return out;
       }
       if (s.role === 'fix' && s.consumes.includes('critique') && ports.emptyCritique) {
-        // An empty CUT directive, or TELLS hits of which none were chosen: there is nothing to apply, so no model is
-        // asked and the work stays as it is. Nothing changed, so a keep-or-revert after it has nothing to compare.
+        // An empty CUT directive, TELLS hits of which none were chosen, or a critique step the person declined: there is
+        // nothing to apply, so no model is asked and the work stays as it is. Nothing changed, so a keep-or-revert after
+        // it has nothing to compare.
         const note = ports.emptyCritique;
         await this.act(call, () => quick.passStep({ run: this.run, call, step: spec, note }));
         return { ...withCritique(ports, ports.critique), ...(ports.artifact ? { previousArtifact: ports.artifact } : {}) };
@@ -747,7 +749,9 @@ export class Interpreter {
       { type: 'step-started', stepId: o.id, ...cand(call), data: { label: 'Optional step', stage: ctx.stage, role: 'optional', actor: 'human' }, dedupeKey: `${call.key}/step-started` },
       { type: 'step-finished', stepId: o.id, ...cand(call), data: { costUsd: 0, skipped: true, note: DECLINED_NOTE }, dedupeKey: `${call.key}/step-finished` },
     ]);
-    return ports;
+    // A declined step that would have put its critique in place leaves the critique empty and marked, so the writer after
+    // it makes no change and says why, as after an empty CUT, instead of acting on an older critique (R-DECLINED).
+    return replacesCritique(o.body) ? withCritique(ports, '', DECLINED_CRITIQUE_NOTE) : ports;
   }
 
   /**

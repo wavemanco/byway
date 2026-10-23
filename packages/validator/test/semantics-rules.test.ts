@@ -288,10 +288,11 @@ describe("ST12 'critique-unapplied': no person's list or critique that no writer
     const i = indexOf(d3(optionalFix), 'apply-cut');
     d3(optionalFix).steps[i] = optional('apply-if-wanted', 'a person wants the cuts made', d3(optionalFix).steps[i]!);
     expect(unapplied(optionalFix)).toEqual([]);
-    // A critique that a person may run first puts another in its place on that path only.
+    // A critique that a person may run first puts another in its place when it runs, and declined it leaves the critique
+    // empty, so the fix after it makes no change (R-DECLINED): the list is applied on no path.
     const review = studio();
     insertAfter(d3(review), 'cut', optional('review', 'a person wants a review first', critic('extra-critic')));
-    expect(unapplied(review)).toEqual([]);
+    expect(unapplied(review).map((x) => x.path)).toEqual(['stages[2].body.steps[1]']);
   });
 
   it('only once per step: where a candidate, a lens or a gate body drops it, those clauses say so', () => {
