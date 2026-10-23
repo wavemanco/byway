@@ -96,7 +96,8 @@ export function extractCopy(medium: Medium, artifact: string, scope?: MediaCopy)
 
 /** The kinds of non-web deck: their layout ({@link layoutOf}) and, for labelled ones, their reader. */
 export type DeckKind = 'prose' | 'script' | 'code-diff' | 'options' | 'on-screen';
-type Labelled = Extract<DeckKind, 'options' | 'on-screen'>;
+/** The decks of named fields, which the total reader {@link readLabelled} reads field by field. */
+export type Labelled = Extract<DeckKind, 'options' | 'on-screen'>;
 
 export const deckKindOf = (medium: Exclude<Medium, 'web-page'>, scope: MediaCopy): DeckKind => (medium === 'media' ? (scope === 'script' ? 'script' : 'on-screen') : medium);
 
@@ -186,6 +187,39 @@ export function readLabelled(kind: Labelled, text: string, expected: readonly st
 const optionFields = (count: number): string[] => Array.from({ length: count }, (_, i) => [`### ${labelOf(i)}`, ...['Title', 'Pitch', 'Rationale'].map((f) => `### ${labelOf(i)}/${f}`)]).flat();
 /** The fields of a storyboard's on-screen deck, in the order shown: one per shot, by position. */
 export const onScreenFields = (sb: Storyboard): string[] => ['Headline', 'Tagline', ...sb.storyboard.map((s) => `Shot ${s.shot}`)];
+
+/**
+ * The fields a labelled deck has on this work, in the order shown (the `expected` keys {@link readLabelled} takes): an
+ * options deck's four per option, a storyboard's on-screen deck's headline, tagline and one per shot. Undefined for a
+ * work its format cannot read.
+ */
+export function labelledFields(kind: Labelled, artifact: string): string[] | undefined {
+  if (kind === 'options') {
+    const doc = parseOptions(artifact);
+    return doc.ok ? optionFields(doc.value.options.length) : undefined;
+  }
+  const sb = parseStoryboard(artifact);
+  return sb.ok ? onScreenFields(sb.value) : undefined;
+}
+
+/**
+ * A labelled deck written out from its fields' values (`keys` as {@link labelledFields} gives them, `values` as
+ * {@link readLabelled} reads them), laid out as {@link extractCopy} offers a deck: one "Label: value" line per field with
+ * a value's further lines under it, and a blank line before each option after the first. The total reader reads it back
+ * to the same values. A VOICE asked again after a gate's retry makes its box with it, a field at a time (human.ts).
+ */
+export function labelledDeck(kind: Labelled, keys: readonly string[], values: readonly string[]): string {
+  const lines: string[] = [];
+  for (const [i, key] of keys.entries()) {
+    if (isHead(key)) {
+      if (lines.length) lines.push('');
+      lines.push(key);
+      continue;
+    }
+    lines.push(`${kind === 'options' ? key.replace(/^### [^/]+\//, '') : key}: ${values[i] ?? ''}`);
+  }
+  return lines.join('\n');
+}
 
 /**
  * The one layout of a non-web deck: line-based, keeps every line, never the reader. It normalises what is layout only:
