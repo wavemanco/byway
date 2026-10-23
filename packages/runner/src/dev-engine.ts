@@ -7,7 +7,9 @@
  * server left over from an earlier byway that was killed), putting runs in a database that is not this one. It runs a
  * CLI binary only this user can have put there (SEC-7) with the HTTP API switched off (SEC-2). And before the worker
  * polls, runs left by an older workflow bundle are retired (C7), so they fail plainly instead of hanging, and the store
- * and the engine are brought to agree in both directions (OPS-1, R4; settleBeforePolling).
+ * and the engine are brought to agree in both directions (OPS-1, R4; settleBeforePolling). While it runs, that lost-run
+ * pass is repeated every few minutes (reconcileWhilePolling), so a run whose workflow Temporal closed meanwhile fails
+ * plainly then, not at the next start.
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -63,6 +65,13 @@ export interface DevEngineOptions {
    * one with a byway or another suite building it at the same time.
    */
   workflowsPath?: string;
+  /**
+   * Where the engine says, while it runs, what its repeated lost-run pass ended, or that the pass could not run; as the
+   * lines byway prints under "engine" at start. Defaults to console.warn.
+   */
+  warn?: (message: string) => void;
+  /** How the lost-run pass is repeated while the engine runs; repeatEvery by default. For tests, which run it themselves. */
+  repeat?: typeof repeatEvery;
 }
 
 export interface DevEngine {
@@ -86,7 +95,10 @@ export interface EngineStartReport {
   orphaned: string[];
 }
 
-/** What the engine ended at start, as the lines byway prints under "engine"; none when it ended nothing. */
+/**
+ * What the engine ended at start, as the lines byway prints under "engine"; none when it ended nothing. The pass the
+ * engine repeats while it runs says what it ended in the same words (with no runs retired).
+ */
 export function engineStartLines(report: EngineStartReport): string[] {
   const runs = (n: number) => `${n} ${n === 1 ? 'run' : 'runs'}`;
   return [
@@ -118,6 +130,57 @@ export async function settleBeforePolling(client: Client, worker: RunnerWorker, 
  */
 export async function reconcileWhilePolling(client: Client, worker: RunnerWorker, store: Store): Promise<Reconciled> {
   return reconcileLostRuns(client, store, [(await store.ensureDefaultWorkspace()).id], { taskQueue: worker.taskQueue, skipQueued: true });
+}
+
+/**
+ * How often the engine runs reconcileWhilePolling while it runs. Block 2's design says "every few minutes"; five is
+ * Claude's reading of it. The pass is a listing of the queue's open workflows and one look at Temporal per going run.
+ */
+export const RECONCILE_EVERY_MS = 5 * 60_000;
+
+/** A pass repeated while the engine runs (repeatEvery). */
+export interface Repeating {
+  /** No pass starts after this. One under way is let finish, and this resolves once it has. */
+  stop(): Promise<void>;
+}
+
+/**
+ * Runs `pass` every `everyMs` until stopped. The next pass is timed from the end of the last, so two never overlap: one
+ * that takes longer than the interval delays the next instead of piling up behind it. A pass that fails (throws or
+ * rejects) is handed to `onError` and the next runs as usual, so nothing a pass meets stops the engine; an onError that
+ * throws is ignored for the same reason. The timer does not keep the process alive.
+ */
+export function repeatEvery(everyMs: number, pass: () => Promise<void>, onError: (e: unknown) => void): Repeating {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let underWay: Promise<void> | undefined;
+  const once = async () => {
+    try {
+      await pass();
+    } catch (e) {
+      try {
+        onError(e);
+      } catch {
+        // Saying so is best effort: the pass is tried again either way.
+      }
+    }
+    underWay = undefined;
+    if (!stopped) next();
+  };
+  const next = () => {
+    timer = setTimeout(() => {
+      underWay = once();
+    }, everyMs);
+    timer.unref?.();
+  };
+  next();
+  return {
+    async stop() {
+      stopped = true;
+      clearTimeout(timer);
+      await underWay;
+    },
+  };
 }
 
 /** The plain message for a port that is taken (OPS-1). */
@@ -161,6 +224,17 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
     }
     const running = worker.run();
     const runner = createRunnerClient({ client: env.client, store: opts.store });
+    // The lost-run pass again every few minutes while the worker polls, without its queued runs; what it ends, or why
+    // it could not run, is said, and never stops the engine.
+    const warn = opts.warn ?? ((message: string) => console.warn(message));
+    const whileRunning = (opts.repeat ?? repeatEvery)(
+      RECONCILE_EVERY_MS,
+      async () => {
+        const { lost, orphaned } = await reconcileWhilePolling(env.client, worker, opts.store);
+        for (const line of engineStartLines({ retired: [], lost, orphaned })) warn(`  engine     ${line}`);
+      },
+      (e) => warn(`  engine     could not look for runs the engine no longer has (${e instanceof Error ? e.message : String(e)}); it looks again in ${RECONCILE_EVERY_MS / 60_000} minutes`),
+    );
     return {
       address: env.address,
       runner,
@@ -168,9 +242,11 @@ export async function startDevEngine(opts: DevEngineOptions): Promise<DevEngine>
       worker,
       atStart,
       async stop() {
-        // The Temporal server is stopped even if the worker did not stop cleanly: a server left running would hold the
-        // port and this data directory's database (OPS-1).
+        // The repeated pass stops first, and one under way is let finish, so it never meets a worker or a server that
+        // has stopped. The Temporal server is stopped even if the worker did not stop cleanly: a server left running
+        // would hold the port and this data directory's database (OPS-1).
         try {
+          await whileRunning.stop();
           await worker.shutdown();
           await running.catch(() => undefined);
         } finally {
