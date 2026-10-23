@@ -1,9 +1,6 @@
 import { OPTION_SET, type PortType, type RuleId } from '@byway/protocol';
-import { personWrite, walkNode, type Actor, type Audit, type Node, type Recipe, type RelayChain, type Role, type Stage, type Step } from '@byway/recipe';
+import { HANDED_ON, personWrite, walkNode, type Actor, type Audit, type Node, type Recipe, type RelayChain, type Role, type Stage, type Step } from '@byway/recipe';
 import { Findings } from './context.ts';
-
-/** What comes out of an audit: its lenses' critiques, joined (runner interpreter audit). */
-const AUDIT_OUT = ['critique'] as const;
 
 /** Who may have produced a port: a recipe input, a step (with its role and actor) or an operator. */
 export interface Producer {
@@ -210,6 +207,8 @@ class ScopeWalk {
         inner.aside.delete(OPTION_SET);
         inner.held = false;
         this.type(node.body, inner, `${path}.body`, pass, label);
+        // What it hands on (HANDED_ON.each): its candidates' work, one per option, so in scope where the options were.
+        for (const port of HANDED_ON.each) if (st.must.has(port)) st.must.set(port, [{ kind: 'operator', op: 'each' }]);
         return st;
       }
       case 'pick': {
@@ -248,12 +247,14 @@ class ScopeWalk {
       case 'audit':
         return this.typeAudit(node, st, path, pass, label);
       case 'gate': {
-        // The runner keeps only the body's critique: after the gate, the ports before it and that critique (its view
-        // and score stay inside).
+        // After the gate, the ports before it with what it hands on of its body's (HANDED_ON.gate: the critique; its
+        // view and score stay inside).
         const out = this.type(node.body, st, `${path}.body`, pass, label);
-        const critique = out.must.get('critique');
-        if (critique) st.must.set('critique', [...critique]);
-        if (out.may.has('critique')) st.may.add('critique');
+        for (const port of HANDED_ON.gate) {
+          const made = out.must.get(port);
+          if (made) st.must.set(port, [...made]);
+          if (out.may.has(port)) st.may.add(port);
+        }
         return st;
       }
       case 'relay': {
@@ -281,10 +282,10 @@ class ScopeWalk {
   }
 
   /**
-   * Every lens starts from the same input. After the audit only the lenses' critiques come out, joined under their names
-   * (the runner keeps no lens's score: several lenses cannot make one score): `critique` is in scope when a lens makes
-   * it on every one of its paths, with every lens that made it as a producer. Anything else a lens makes (a score, its
-   * own renders, a vanilla control set) stays inside it.
+   * Every lens starts from the same input. After the audit only what it hands on comes out (HANDED_ON.audit: the
+   * lenses' critiques, joined under their names; several lenses cannot make one score): the critique is in scope when a
+   * lens makes it on every one of its paths, with every lens that made it as a producer. Anything else a lens makes (a
+   * score, its own renders, a vanilla control set) stays inside it.
    */
   private typeAudit(node: Audit, st: MutableState, path: string, pass: Pass, label: string): ScopeState {
     const entry = clone(st);
@@ -292,7 +293,7 @@ class ScopeWalk {
     node.lenses.forEach((lens, i) => {
       const out = this.type(lens.body, entry, `${path}.lenses[${i}].body`, pass, label);
       const made = producedWithin(lens.body);
-      for (const port of AUDIT_OUT) {
+      for (const port of HANDED_ON.audit) {
         if (!made.has(port)) continue;
         st.may.add(port);
         const producers = out.must.get(port);

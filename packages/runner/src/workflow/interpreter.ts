@@ -16,7 +16,7 @@ import { ActivityFailure, ApplicationFailure, condition, isCancellation } from '
 import type { CheckpointResolution } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Audit, Each, Loop, Node, OneShotGate, Optional, Pick as PickNode, RelayChain, Replicate, Route, Step } from '@byway/recipe';
-import { asksSwaps, feedsGate, lockedScripts, machineWrites, replacesCritique, voiceWrite } from '@byway/recipe/semantics';
+import { asksSwaps, feedsGate, HANDED_ON, lockedScripts, machineWrites, replacesCritique, voiceWrite, type HandedPort } from '@byway/recipe/semantics';
 import { bestSnapshots, converging, passes, plateaued, raiseAmount } from '../gates.ts';
 import { hitLabel, hitsCritique } from '../hits.ts';
 import { indexOfLabel } from '../labels.ts';
@@ -510,6 +510,7 @@ export class Interpreter {
     return { ...ports, options: kept.map((o) => o.artifact!), optionViews: kept.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
   }
 
+  /** Each option runs the body as the work, with its own view and no option set; the candidates' work comes out (HANDED_ON). */
   private async each(e: Each, ports: Ports, ctx: Ctx): Promise<Ports> {
     const ids = ports.options ?? (ports.artifact ? [ports.artifact] : []);
     const outs = await Promise.all(
@@ -519,7 +520,8 @@ export class Interpreter {
         return this.node(e.body, start, branch(ctx, [...ctx.path, i]));
       }),
     );
-    return { ...ports, options: outs.map((o, i) => o.artifact ?? ids[i]!), optionViews: outs.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
+    const made: Ports = { options: outs.map((o, i) => o.artifact ?? ids[i]!), optionViews: outs.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
+    return handOn(ports, made, HANDED_ON.each);
   }
 
   private async pick(p: PickNode, ports: Ports, ctx: Ctx): Promise<Ports> {
@@ -775,23 +777,25 @@ export class Interpreter {
 
   // ---- Annotations, gates, relays --------------------------------------------------------------------------------
 
-  /** Lenses read the same input concurrently; their critiques are joined under their names and nothing else changes. */
+  /**
+   * Lenses read the same input concurrently; their critiques are joined under their names, and that is all that comes
+   * out (HANDED_ON), with their notes beside the work. Where no lens made a new critique, the one before it stays.
+   */
   private async audit(a: Audit, ports: Ports, ctx: Ctx): Promise<Ports> {
     const outs = await Promise.all(a.lenses.map((lens) => this.node(lens.body, ports, { stage: ctx.stage, path: ctx.path, contained: true })));
     const joined = outs.flatMap((o, i) => (o.critique && o.critique !== ports.critique ? [`## ${a.lenses[i]!.name}\n${o.critique.trim()}`] : []));
     const notes = outs.flatMap((o) => (o.notes && o.notes !== ports.notes ? o.notes : []));
-    const annotated = joined.length ? withCritique(ports, joined.join('\n\n')) : ports;
+    const annotated = handOn(ports, joined.length ? { critique: joined.join('\n\n') } : ports, HANDED_ON.audit);
     return { ...annotated, ...(notes.length ? { notes } : {}) };
   }
 
   private async gate(g: OneShotGate, ports: Ports, ctx: Ctx): Promise<Ports> {
     const out = await this.node(g.body, ports, { stage: ctx.stage, path: ctx.path, contained: true });
     const verdict = out.score && passes(out.score, g.pass.metric, g.pass.threshold);
-    // The gate hands on the ports it was handed with its body's critique as the body left it: a critique the body wrote
-    // replaces the one before it and clears that one's mark that it asked for nothing (an empty CUT) and an earlier
-    // sweep's hits, as any new critique does (R-GATE-MARK); a body that wrote none hands them on as they were.
-    const { critique, emptyCritique, hits } = out;
-    const kept: Ports = { ...withCritique(ports, critique, emptyCritique), ...(hits ? { hits } : {}) };
+    // The gate hands on the ports it was handed with its body's critique as the body left it (HANDED_ON): a critique the
+    // body wrote replaces the one before it and clears that one's mark that it asked for nothing (an empty CUT) and an
+    // earlier sweep's hits, as any new critique does (R-GATE-MARK); a body that wrote none hands them on as they were.
+    const kept = handOn(ports, out, HANDED_ON.gate);
     if (verdict) return kept;
     const call = this.call(g.id, ctx);
     const used = this.gateRetries.get(g.id) ?? 0;
@@ -855,6 +859,31 @@ const optionsShown = (ports: Ports): string[] =>
 function beside(ports: Ports, work?: string[]): string[] {
   const items = work ?? (ports.artifact ? [ports.artifact] : optionsShown(ports));
   return [...items, ...(ports.notes ?? []).filter((id) => !items.includes(id))];
+}
+
+/**
+ * The ports an operator that runs its body apart hands on (HANDED_ON in @byway/recipe/semantics, which the validator's
+ * scope typing reads too): those it was handed, with each port the table names taken from `made`, what ran inside it.
+ * The critique comes with what marks it (an empty CUT's note, a sweep's hits), the option set with each option's view.
+ */
+function handOn(ports: Ports, made: Ports, handed: readonly HandedPort[]): Ports {
+  let out = ports;
+  for (const port of handed) {
+    switch (port) {
+      case 'critique':
+        out = { ...withCritique(out, made.critique, made.emptyCritique), ...(made.hits ? { hits: made.hits } : {}) };
+        break;
+      case 'option_set<artifact>':
+        out = { ...out, options: made.options, optionViews: made.optionViews };
+        break;
+      default: {
+        // A port the table may name that is not taken here fails typecheck.
+        const untaken: never = port;
+        return untaken;
+      }
+    }
+  }
+  return out;
 }
 
 /**

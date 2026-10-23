@@ -6,7 +6,8 @@
  * - whose words go into the work, from actor, role and `produces: ['artifact']` (never from the 'voice' port);
  * - what a VOICE covers, from `variant`, the knobs and the run's medium;
  * - which protocol block a step is, from its role (the runner reads `block` only for labels);
- * - whether a step's output is kept, from the operator it sits in;
+ * - whether a step's output is kept, from the operator it sits in, and what audit, a one-shot gate and each hand on of
+ *   what ran inside them (`HANDED_ON`);
  * - where a loop's gate can end the loop's body, from the operators between the loop and its critic or check;
  * - which steps have no executor yet and finish skipped, and which can put another critique in place of the last;
  * - what can run after a step, from walk order, the loops and relays around it and the final checks that re-run a
@@ -659,6 +660,32 @@ export function lockedScripts(recipe: Recipe): Set<Step> {
   }
   return locked;
 }
+
+// ---- What an operator hands on ----------------------------------------------------------------------------------
+
+/** The ports an operator that runs its body apart can take from what ran inside it (HANDED_ON). */
+export type HandedPort = Extract<PortType, 'critique' | 'option_set<artifact>'>;
+
+/**
+ * What audit, a one-shot gate and each hand on of what ran inside them, written down once (the backlog row "Operator
+ * output ports are defined twice"): the ports each puts in place of the ones it was handed. Every other port goes on as
+ * it was handed in, whatever ran inside. The validator's scope typing and the interpreter's audit(), gate() and each()
+ * read it, and the runner's operator-ports test runs small admitted recipes and holds the two to each other.
+ * - audit: its lenses' critiques, joined under their names, where a lens made one; else the critique it was handed.
+ *   Nothing else a lens makes comes out (several lenses cannot make one score); beside the work, the interpreter also
+ *   hands on its lenses' notes, which are no port.
+ * - gate: its body's critique, with what marks it (an empty CUT's, a sweep's hits; R-GATE-MARK); its view and its
+ *   score stay inside.
+ * - each: its candidates' work, as the option set, one per option it was handed. Inside, each candidate runs on its
+ *   own option as the work, with no option set.
+ * replicate and a pick hand on what they make too (the option set, the choice), and the typing reads them where it
+ * types them.
+ */
+export const HANDED_ON: Readonly<Record<'audit' | 'gate' | 'each', readonly HandedPort[]>> = {
+  audit: ['critique'],
+  gate: ['critique'],
+  each: ['option_set<artifact>'],
+};
 
 // ---- The flow walk ----------------------------------------------------------------------------------------------
 

@@ -25,6 +25,7 @@ import {
   FIELD_ROLES,
   flowRecipe,
   followsEveryRun,
+  HANDED_ON,
   hasNoExecutor,
   leavesNote,
   leavesOnlyAtExits,
@@ -339,6 +340,14 @@ describe("a TELLS sweep's swap choice (asksSwaps, the interpreter's seq)", () =>
     }
     // After the swap step, a critique changes nothing about the choice.
     expect(asksSwaps(sweep, [swaps, critic('after'), compare('human')])).toBe(true);
+  });
+});
+
+describe('what audit, a one-shot gate and each hand on (HANDED_ON)', () => {
+  it('an audit and a gate the critique made inside them, each its candidates’ work as the option set; every other port as handed in', () => {
+    // The validator's scope typing and the interpreter both read this table; the runner's operator-ports test runs
+    // small admitted recipes and holds the two to each other.
+    expect(HANDED_ON).toEqual({ audit: ['critique'], gate: ['critique'], each: ['option_set<artifact>'] });
   });
 });
 
