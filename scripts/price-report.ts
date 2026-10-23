@@ -4,7 +4,9 @@
  * re-read + date in the app (Recommended)": "A weekly CI report (reporting only) compares OpenRouter's price API
  * exactly and checks the other providers' pages for changed figures; Claude re-reads every page monthly and at once
  * when the report flags a change; Settings and the estimate show when prices were last checked, with a notice after
- * about 45 days. Plus the planned ledger-vs-dashboard check after real runs."
+ * about 45 days. Plus the planned ledger-vs-dashboard check after real runs." The owner added on 2026-10-22 that the
+ * re-read is for any model with web access, from any provider, not Claude alone; AGENTS.md says how, and a person can
+ * do it too.
  *
  * It reports and never fails, as scripts/playwright-pin.ts does: it prints what it found, adds it to the run's summary,
  * and marks a flagged figure, or a re-read that is due, with a warning on the run's page; a page it cannot read is said
@@ -15,7 +17,7 @@
  *   page, as a dollar amount shortly after a name the page gives the model; OpenAI's long-context rates, which the page
  *   draws from its own script, in the page's scripts; and the sentences byway's reading of a page rests on (Anthropic's
  *   standard pricing across 1M tokens, the two thresholds). A figure not found means the page changed or moved it, and
- *   Claude reads that page again; it cannot see a new rate the table does not record.
+ *   that page is read again (AGENTS.md); it cannot see a new rate the table does not record.
  * - How long ago the last full re-read was (PRICES_CHECKED): the monthly re-read is due from 30 days after it (Claude's
  *   reading of "monthly").
  *
@@ -274,7 +276,7 @@ export interface PriceReportOptions {
 }
 
 const FLAGGED_NEXT =
-  'Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.';
+  'The agent running the next session (any model with web access, or a person) reads each flagged page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
 
 /** The report, printed: it never throws and never sets a failing exit code. */
 export async function report(opts: PriceReportOptions = {}): Promise<void> {

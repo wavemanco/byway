@@ -68,7 +68,7 @@ jobs:
       # The weekly run only, on one job: whether OpenRouter's model list and the other providers' pages still give the
       # prices byway records, for the cadence the owner chose on 2026-10-21 (scripts/price-report.ts says it). It reports
       # as the step above does, and when a figure is not found, or the monthly re-read is due, warns on the run's page;
-      # Claude then reads the page again. It fails nothing, reads no secret, and needs only Node: prices.ts imports types.
+      # the page is then read again, by any agent or person (AGENTS.md says how). It fails nothing, reads no secret, and needs only Node: prices.ts imports types.
       - name: Do the providers' pages still give byway's prices? (the weekly run, Linux only; it reports and fails nothing)
         if: ${{ github.event_name == 'schedule' && matrix.name == 'linux' }}
         continue-on-error: true

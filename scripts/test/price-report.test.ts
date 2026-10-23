@@ -93,7 +93,7 @@ async function run(fetch: Fetch, now = CHECKED) {
   return { lines, warnings: lines.filter((l) => l.startsWith('::warning')), summary: readFileSync(summary, 'utf8') };
 }
 
-const NEXT = 'Claude reads each flagged page again and updates prices.ts, as the owner chose on 2026-10-21; until then estimates and recorded costs use the table as it is.';
+const NEXT = 'The agent running the next session (any model with web access, or a person) reads each flagged page again and updates prices.ts, as AGENTS.md says; until then estimates and recorded costs use the table as it is.';
 
 describe("the weekly run's price report (PRICE-CADENCE)", () => {
   it('checks every row a provider charges for: OpenRouter in its model list, every other row on its own page', () => {
