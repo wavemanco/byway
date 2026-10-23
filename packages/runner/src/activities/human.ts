@@ -15,6 +15,8 @@ import {
   applyCopy,
   deckKindOf,
   extractCopy,
+  labelledDeck,
+  labelledFields,
   mediaCopyOf,
   offeredPageCopy,
   offeredQuotes,
@@ -22,6 +24,7 @@ import {
   pageVoiceSuffix,
   placePageEdit,
   readPageCopy,
+  readLabelled,
   readPageEdit,
   roundTripProblem,
   sameCopy,
@@ -111,16 +114,27 @@ const unreadableDeck = (id: string): string =>
 /**
  * VOICE-RETRY (D9; the P2 design, approved 2026-10-21): a VOICE the final check sent the run back over is asked again
  * with the person's last answer there and the deck it answered (OpenCheckpointInput.initial.earlier, by their files'
- * ids). The box starts from those lines where they still fit the work: on a deck of named fields (a storyboard's
- * on-screen copy, options) when they still read as an answer to the work's deck, as the total reader and the round trip
- * decide; on any other deck (prose, the voice-over script, a diff's "Why:", a claim log) only when the work's deck has
- * not changed. The work's deck is then kept as a text file and its id returned, so "unchanged" is measured against the
- * work's lines, not what the box started from, and sending the earlier lines back writes them (Claude's detail).
- * Otherwise the box starts from the work's lines, and the question says the earlier lines could not be kept and quotes
- * them. A page's question names them but never fills them in, since a page's lines are read again from the browser
- * (Claude's detail).
+ * ids). The box starts from the person's lines where they still fit the work.
  *
- * An answer that changed nothing it was offered held none of the person's own lines, and one that equals the work's
+ * On a deck of named fields (a storyboard's on-screen copy, options) the box is made a field at a time, as the owner
+ * answered the Block 2 check's WORKFLOW-1, "Only the lines you wrote (Recommended)": "a field you changed from what was
+ * offered comes back as you wrote it; a field you left as offered follows the current work, so your later CUT and swaps
+ * stay. If the result no longer fits the work, the box starts from the work's lines and quotes yours, as today." A
+ * field is the person's when their answer's value differs from the value of the deck it answered, as the total reader
+ * reads both (so layout alone is no change). The box is made only while the work's deck has the fields of the deck
+ * the person answered (the same shots in the same places, the same number of options) and reads field by field, since
+ * a caption or an option's lines belong to their place in the work (Claude's reading); and it is offered only while it
+ * fits the work, as the total reader and the round trip decide. On any other deck (prose, the voice-over script, a
+ * diff's "Why:", a claim log) no field pairs a line of the person's with a line of the work, so the box is their whole
+ * answer, and only while the work's deck has not changed.
+ *
+ * When the box is not the work's lines, the work's deck is kept as a text file and its id returned, so "unchanged" is
+ * measured against the work's lines, not what the box started from, and sending the box back writes the person's
+ * lines (Claude's detail). Otherwise, when the person's lines do not fit, the box starts from the work's lines, and the
+ * question says the earlier lines could not be kept and quotes them. A page's question names them but never fills them
+ * in, since a page's lines are read again from the browser (Claude's detail).
+ *
+ * An answer that changed nothing it was offered held none of the person's own lines, and a box that equals the work's
  * lines needs no keeping: the box starts from the work's lines and the question says nothing (Claude's reading). A file
  * lost since fails the step plainly, as the held voice's do.
  */
@@ -136,19 +150,32 @@ async function earlierLines(
   if (medium === 'web-page') return samePageCopy(answered, answer) || samePageCopy(q.deck, answer) ? asBefore : { box: q.deck, note: earlierNote(true, answered, answer) };
   const scope = mediaCopyOf(q.step);
   if (sameCopy(medium, scope, answered, answer) || sameCopy(medium, scope, q.deck, answer)) return asBefore;
-  if (!fitsWork(medium, scope, q.from, q.work, q.deck, answered, answer)) return { box: q.deck, note: earlierNote(false, answered, answer) };
-  return { box: answer, note: '', deckId: (await deps.store.artifacts.putText(q.deck, INPUT_MEDIA_TYPE)).id };
+  const box = earlierBox(medium, scope, q.from, q.work, q.deck, answered, answer);
+  if (box === undefined) return { box: q.deck, note: earlierNote(false, answered, answer) };
+  if (sameCopy(medium, scope, q.deck, box)) return asBefore;
+  return { box, note: '', deckId: (await deps.store.artifacts.putText(q.deck, INPUT_MEDIA_TYPE)).id };
 }
 
-/** Whether an earlier VOICE answer still fits the work (earlierLines). Pure; a fault in the copy code is a no. */
-function fitsWork(medium: Exclude<Medium, 'web-page'>, scope: MediaCopy, from: 'copy' | 'claims', work: string, deck: string, answered: string, answer: string): boolean {
+/**
+ * The box a VOICE asked again starts from when the person's earlier lines still fit the work (earlierLines says how it
+ * is made), or undefined when they do not. Pure; a fault in the copy code is a no.
+ */
+function earlierBox(medium: Exclude<Medium, 'web-page'>, scope: MediaCopy, from: 'copy' | 'claims', work: string, deck: string, answered: string, answer: string): string | undefined {
   const kind = deckKindOf(medium, scope);
-  if (from === 'claims' || (kind !== 'options' && kind !== 'on-screen')) return sameCopy(medium, scope, answered, deck);
+  if (from === 'claims' || (kind !== 'options' && kind !== 'on-screen')) return sameCopy(medium, scope, answered, deck) ? answer : undefined;
   try {
-    const applied = applyCopy(medium, work, answer, scope);
-    return applied.ok && roundTripProblem(medium, scope, applied.value, answer) === undefined;
+    const keys = labelledFields(kind, work);
+    if (!keys) return undefined;
+    const was = readLabelled(kind, answered, keys);
+    const mine = readLabelled(kind, answer, keys);
+    const now = readLabelled(kind, deck, keys);
+    if (!was.ok || !mine.ok || !now.ok) return undefined;
+    // The person's value where it differs from what they were offered; the work's value where they left it as offered.
+    const box = labelledDeck(kind, keys, now.values.map((value, i) => (mine.values[i] === was.values[i] ? value : mine.values[i]!)));
+    const applied = applyCopy(medium, work, box, scope);
+    return applied.ok && roundTripProblem(medium, scope, applied.value, box) === undefined ? box : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
 

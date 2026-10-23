@@ -5,7 +5,10 @@
  * it answered, by their files' ids, carries both across the retry, and hands them to that VOICE when it is asked again;
  * the activity (human.ts openCheckpoint) starts the box from the person's earlier lines where they still fit the work,
  * and otherwise starts from the work's lines with a question that says the earlier lines could not be kept and quotes
- * them. "Unchanged" is then measured against the work's lines, so sending the earlier lines back writes them.
+ * them. "Unchanged" is then measured against the work's lines, so sending the earlier lines back writes them. On a deck
+ * of named fields the box is made field by field (WORKFLOW-1, the owner's "Only the lines you wrote"): a field the
+ * person changed from what was offered comes back as they wrote it, and a field they left as offered follows the work,
+ * so the second pass's own CUT and swaps stay.
  *
  * Three ways in: the real Interpreter with its activities stubbed (what it carries, and to which VOICE); the real
  * Interpreter on the real openCheckpoint and finishHumanStep over a temp store (a storyboard's second late VOICE, whose
@@ -261,15 +264,16 @@ describe('the interpreter on the real activities: a storyboard’s late VOICE af
     state.write = (_id, box, n) => (n === 1 ? box!.replace('Headline: Fresh at seven', 'Headline: Warm at six') : box!);
   });
 
-  it('lines that still fit: the box starts from them, and sending it back unchanged writes them into the work delivered', async () => {
+  it('lines that still fit: the box starts from the line the person wrote and the work’s lines for the rest, and sending it back unchanged writes both into the work delivered', async () => {
     const r = await benchRun(b, 'media');
-    // The second pass's model writes another tagline over the same two shots.
+    // The second pass writes another tagline over the same two shots (as its CUT would): the person left the tagline as
+    // offered, so the second pass's tagline is the one in the box and in the work delivered, not the first pass's.
     state.works = [shots(2), shots(2, 'Loaf club')];
     const ports = await run([['D2', build('board')], ['D3', seq(voice('late'), finalCheck('D2'))]], [3, 3], { runId: r.runId, workspaceId: r.workspaceId, medium: 'media' });
     const [first, second] = opensOf('late');
-    expect(second!.initialText).toBe(first!.initialText!.replace('Headline: Fresh at seven', 'Headline: Warm at six'));
+    expect(second!.initialText).toBe(first!.initialText!.replace('Headline: Fresh at seven', 'Headline: Warm at six').replace('Tagline: Bread club', 'Tagline: Loaf club'));
     expect(second!.prompt).toBe(first!.prompt);
-    expect((await json(ports.artifact!)).headline).toBe('Warm at six');
+    expect(await json(ports.artifact!)).toMatchObject({ headline: 'Warm at six', tagline: 'Loaf club' });
     expect(finishesOf('late')[1]!.deckId).toBeDefined();
   });
 
@@ -296,17 +300,41 @@ describe('the box after a retry, per deck (human.ts openCheckpoint)', () => {
   const deck2 = 'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Caption 1\nShot 2: Caption 2';
   const answer2 = deck2.replace('Fresh at seven', 'Warm at six');
 
-  it('a deck of named fields: lines that still read as an answer to the work’s deck are the box, whatever else changed', async () => {
-    const q = await again('media', shots(2, 'Loaf club'), deck2, answer2, late);
-    expect(q.offered).toBe(answer2);
-    expect(q.deckId).toBe(await kept(deck2.replace('Bread club', 'Loaf club')));
+  it('a deck of named fields, field by field: a field the person wrote comes back as they wrote it, and a field they left as offered follows the work', async () => {
+    // The person wrote the headline and shot 1's caption (on two lines) and left the tagline and shot 2 as offered. The
+    // second pass then wrote another headline, tagline and captions (its CUT and swaps).
+    const mine = deck2.replace('Fresh at seven', 'Warm at six').replace('Shot 1: Caption 1', 'Shot 1: First light\nand warm bread');
+    const work = storyboard({ voiceover: 'We bake before dawn.', headline: 'Fresh at eight', tagline: 'Loaf club', storyboard: [{ shot: 1, caption: 'Caption one' }, { shot: 2, caption: 'Caption two' }] });
+    const now = 'Headline: Fresh at eight\nTagline: Loaf club\nShot 1: Caption one\nShot 2: Caption two';
+    const q = await again('media', work, deck2, mine, late);
+    expect(q.offered).toBe('Headline: Warm at six\nTagline: Loaf club\nShot 1: First light\nand warm bread\nShot 2: Caption two');
+    expect(q.deckId).toBe(await kept(now));
     expect(q.prompt).toBe('Write the words yourself: change any line below.');
-    // Sent back unchanged it is not "unchanged": measured against the work's lines, it writes them.
+    // Sent back unchanged it is not "unchanged": measured against the work's lines, it writes the person's fields, and
+    // the fields they left as offered keep the work's lines.
     const out = await q.answer(q.offered!);
-    expect(await json(out.artifactId!)).toMatchObject({ headline: 'Warm at six', tagline: 'Bread club' });
+    expect(await json(out.artifactId!)).toMatchObject({ headline: 'Warm at six', tagline: 'Loaf club', storyboard: [{ caption: 'First light\nand warm bread' }, { caption: 'Caption two' }] });
     expect(out.deckId).toBe(q.deckId);
     // And the work's own lines sent back are unchanged: nothing is written.
-    expect((await q.answer(deck2.replace('Bread club', 'Loaf club'))).artifactId).toBeUndefined();
+    expect((await q.answer(now)).artifactId).toBeUndefined();
+  });
+
+  it('a work whose own deck does not read field by field: the box starts from the work’s lines and quotes the person’s', async () => {
+    // The second pass's caption for shot 1 holds a line that reads as a label, so its deck has no field for the person's
+    // lines to go back into; the whole earlier answer would put the first pass's caption back without saying so.
+    const work = storyboard({ voiceover: 'We bake before dawn.', headline: 'Fresh at seven', tagline: 'Bread club', storyboard: [{ shot: 1, caption: 'Caption 1\nTagline: odd' }, { shot: 2, caption: 'Caption 2' }] });
+    const q = await again('media', work, deck2, answer2, late);
+    expect(q.offered).toBe('Headline: Fresh at seven\nTagline: Bread club\nShot 1: Caption 1\nTagline: odd\nShot 2: Caption 2');
+    expect(q.deckId).toBeUndefined();
+    expect(q.prompt).toMatch(NOT_KEPT);
+  });
+
+  it('a deck of named fields whose lines the person wrote the work now has too: the box is the work’s lines, kept nowhere', async () => {
+    const work = storyboard({ voiceover: 'We bake before dawn.', headline: 'Warm at six', tagline: 'Loaf club', storyboard: [{ shot: 1, caption: 'Caption 1' }, { shot: 2, caption: 'Caption 2' }] });
+    const q = await again('media', work, deck2, answer2, late);
+    expect(q.offered).toBe(answer2.replace('Bread club', 'Loaf club'));
+    expect(q.deckId).toBeUndefined();
+    expect(q.prompt).toBe('Write the words yourself: change any line below.');
   });
 
   it('a refused answer is asked again with the work’s lines still the measure: the earlier lines sent back on the re-ask are written (ENG-6)', async () => {
@@ -320,11 +348,19 @@ describe('the box after a retry, per deck (human.ts openCheckpoint)', () => {
     expect((await json(out.artifactId!)).headline).toBe('Warm at six');
   });
 
-  it('options: the same number of options reads as an answer', async () => {
-    const opts = (titles: string[]) => serializeJson({ options: titles.map((title) => ({ title, pitch: `Pitch of ${title}.`, rationale: 'Because.' })) });
+  it('options: with the same options, the person’s fields come back and the rest follow the work; another number of options does not fit', async () => {
+    const opts = (titles: string[], pitch = (t: string) => `Pitch of ${t}.`) => serializeJson({ options: titles.map((title) => ({ title, pitch: pitch(title), rationale: 'Because.' })) });
     const deck = '### A\nTitle: Bread club\nPitch: Pitch of Bread club.\nRationale: Because.\n\n### B\nTitle: Weekend box\nPitch: Pitch of Weekend box.\nRationale: Because.';
     const answer = deck.replace('Title: Bread club', 'Title: Dawn loaves');
-    expect((await again('options', opts(['Bread club', 'Box of the week']), deck, answer)).offered).toBe(answer);
+    const same = await again('options', opts(['Bread club', 'Box of the week']), deck, answer);
+    expect(same.offered).toBe('### A\nTitle: Dawn loaves\nPitch: Pitch of Bread club.\nRationale: Because.\n\n### B\nTitle: Box of the week\nPitch: Pitch of Box of the week.\nRationale: Because.');
+    expect(same.deckId).toBeDefined();
+    // A box made so that it would not fit the work (here option B's pitch, which the person left as offered, is blank in
+    // the work, and an option needs one) is not offered: the box starts from the work's lines and quotes the person's.
+    const blank = await again('options', opts(['Bread club', 'Box of the week'], (t) => (t === 'Bread club' ? 'Pitch of Bread club.' : ' ')), deck, answer);
+    expect(blank.offered).toMatch(/^### A\nTitle: Bread club\n[^]*\n### B\nTitle: Box of the week\nPitch: {2}\n/);
+    expect(blank.deckId).toBeUndefined();
+    expect(blank.prompt).toMatch(/You had written: "Title: Dawn loaves"\./);
     const three = await again('options', opts(['Bread club', 'Weekend box', 'Night bake']), deck, answer);
     expect(three.offered).toMatch(/^### A\nTitle: Bread club\n/);
     expect(three.deckId).toBeUndefined();

@@ -136,8 +136,9 @@ export function c2c5Scenarios(use: () => Harness): void {
         }
         // VOICE-RETRY (D9): the gate's retry re-enters D2 from the ports it started with, which hold none of the copy you
         // wrote at the first late VOICE; the interpreter carries that answer across the retry, and the second late VOICE
-        // starts from your lines, which still fit the work (the same shots). Sent back as offered, they are written: the
-        // work delivered carries your headline (below), though you typed it once.
+        // starts from the line you wrote, which still fits the work (the same shots), with the work's lines for the fields
+        // you left as offered (WORKFLOW-1). Sent back as offered, it is written: the work delivered carries your headline
+        // (below), though you typed it once.
         expect(late).toHaveLength(2);
         expect(late[0]!.initialText).not.toContain(`Headline: ${headline}`);
         expect(late[1]!.initialText).toContain(`Headline: ${headline}`);
