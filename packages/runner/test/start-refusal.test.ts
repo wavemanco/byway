@@ -2,7 +2,8 @@
  * Runner.start refuses what the engine cannot run (F02, ADR-0092 stage 2), whoever admitted the recipe: counts past
  * the engine's limits, a C pick nobody can decide and a retrying gate inside a fan-out (G1). It throws RecipeRefused
  * before any run record or workflow exists, and before the brief is stored, so nothing is left "queued" or wedged
- * "running", and nothing is written for it.
+ * "running", and nothing is written for it. A recipe holding a lone surrogate, which no hash can be taken of, is refused
+ * earlier still, by parseRecipe's ZodError (F19, ADR-0083), with nothing written either.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { c1 } from '@byway/catalog';
@@ -60,5 +61,39 @@ describe('Runner.start refuses what the engine cannot run, before a run exists',
 
   it('a catalog recipe starts', async () => {
     await expect(startWith(c1)).resolves.toMatchObject({ recipeId: 'c1', status: 'queued' });
+  });
+});
+
+describe('Runner.start refuses a recipe holding a lone surrogate, before a run exists and before anything is stored (F19)', () => {
+  /**
+   * C1 read back from JSON text with `edit` applied to that text first: a lone surrogate reaches a recipe only as a JSON
+   * backslash-u escape (a model's answer, a file), and the recipe arrives as JSON.parse leaves it, with no hash.
+   */
+  const fromText = (edit: (text: string) => string): unknown => {
+    const r = structuredClone(c1) as N;
+    delete r.hash;
+    return JSON.parse(edit(JSON.stringify(r)));
+  };
+  const knobs = (json: string) => fromText((t) => t.replace(/"knobs":\{/, `"knobs":{"extra":${json},`));
+
+  it.each([
+    ['the title', fromText((t) => t.replace(/"title":"[^"]*"/, '"title":"C1 \\ud800"')), /\$\.title: string contains a lone surrogate/],
+    ['a knob value', knobs('"v\\udfff"'), /\.knobs\.extra: string contains a lone surrogate/],
+    ['a knob name', knobs('{"a\\udbff":1}'), /\.knobs\.extra: property name "a\\udbff" contains a lone surrogate/],
+  ] as [string, unknown, RegExp][])('in %s: one issue naming where it is, and no run, workflow or file', async (_name, recipe, where) => {
+    const { r, createRun, start, putText } = runner();
+    const refused = await r.start({ workspaceId: 'default', recipe: recipe as Recipe, problem: { text: 'A landing page' }, profileId: 'demo', budgetUsd: 5 }).catch((e: unknown) => e);
+    // parseRecipe's ZodError (ADR-0083): the web start and the CLI handle it on their existing path.
+    expect((refused as Error).name).toBe('ZodError');
+    const issues = (refused as { issues: { path: unknown[]; message: string }[] }).issues;
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.path).toEqual([]);
+    expect(issues[0]!.message).toMatch(/^the recipe cannot be hashed: /);
+    expect(issues[0]!.message).toMatch(where);
+    expect(issues[0]!.message.isWellFormed()).toBe(true);
+    expect(createRun).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    // The recipe is read before the brief is stored (P2), so such a start writes nothing to the store.
+    expect(putText).not.toHaveBeenCalled();
   });
 });
