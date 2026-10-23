@@ -26,7 +26,7 @@ import { completeStreamed, readChatStream, type ChatChunkLike, type OpenAIClient
 import { STREAM_IDLE_MS, StreamIdle } from '../src/providers/stream.ts';
 import type { ProviderAdapter, ProviderCompletionRequest, ProviderImageRequest } from '../src/providers/types.ts';
 import { makeRedactor } from '../src/redact.ts';
-import { anthropicMessage, fakeFetch, fakeGoogle, fakeOpenAI, httpError, MemoryArtifacts, streamOf } from './fakes.ts';
+import { anthropicMessage, fakeFal, fakeFetch, fakeGoogle, fakeOpenAI, httpError, MemoryArtifacts, streamOf } from './fakes.ts';
 
 /** Placeholders shaped like each provider's keys; none is a real key, and no test reaches a network. */
 const KEYS = {
@@ -1059,6 +1059,56 @@ describe('a streamed call that stalls (CC-2)', () => {
     expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0, spentUsd: 0 });
   });
 
+  // TESTS-2, Block 2's check: ADR-0114 item 2 reads the wait "once for a call, before the call is admitted" for every
+  // call, but only a completion was shown to: moving an image's or a clip's read after its admission passed every test,
+  // and left the failed call's reservation counted against both caps.
+  it.each([
+    ['a Google image', 'google', false],
+    ['a Google image, keyed', 'google', true],
+    ['an OpenAI image', 'openai', false],
+    ['an OpenAI image, keyed', 'openai', true],
+    ['a fal clip', 'fal', false],
+    ['a fal clip, keyed', 'fal', true],
+  ] as const)('%s: a wait that cannot be read from Settings fails the call before it is admitted, and sends nothing', async (_what, provider, keyed) => {
+    const admitted: string[] = [];
+    const admit = book.admit.bind(book);
+    book.admit = async (req) => {
+      admitted.push(req.purpose);
+      return admit(req);
+    };
+    const marked = marksSent();
+    const google = fakeGoogle();
+    const openai = fakeOpenAI();
+    const fal = fakeFal();
+    const g = gateway({
+      clients: { google: google.client, openai: openai.client, fal: fal.client },
+      fetch: fakeFetch().fetch,
+      caps: {
+        workspaceCapUsd: () => 100,
+        runCapUsd: () => 50,
+        waitMinutes: () => {
+          throw new Error('the store is closed');
+        },
+      },
+    });
+    // A key with its invocation, as a step's memo passes it, and no wait of its own: Settings is read for it.
+    const operation = keyed ? { operation: { key: `run-1/step/${provider}/abc/1`, until: new AbortController().signal } } : {};
+    if (provider === 'fal') {
+      const startFrameArtifactId = (await artifacts.put(encodePng(4, 2, new Uint8Array(24).fill(200)), 'image/png')).id;
+      const clip: VideoRequest = { workspaceId: 'ws', runId: 'run-1', stepId: 'clip', purpose: 'relay:media', profileId: 'balanced', prompt: 'Shot 2: the ridge at dawn', startFrameArtifactId, durationSec: 5, ...operation };
+      await expect(g.video(clip)).rejects.toThrow('the store is closed');
+    } else {
+      const image: ImageRequest = { workspaceId: 'ws', runId: 'run-1', stepId: 'art', purpose: 'asset:web-page', profileId: provider === 'google' ? 'balanced' : 'best', prompt: 'A loaf at dawn', size: '1024x1024', ...operation };
+      await expect(g.image(image)).rejects.toThrow('the store is closed');
+    }
+    expect(admitted).toEqual([]);
+    expect(marked).toEqual([]);
+    expect([...google.calls, ...openai.calls, ...fal.calls]).toEqual([]);
+    expect(fal.uploads).toEqual([]);
+    expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0, spentUsd: 0 });
+  });
+
   it('the demo’s mock models have no wait: Settings is not asked for one', async () => {
     const waits = waitsOf({});
     const g = gateway({ demo: true, caps: waits.caps });
@@ -1115,6 +1165,35 @@ describe('a streamed call that stalls (CC-2)', () => {
     expect(fake.signals).toHaveLength(1);
     expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
   });
+
+  it.each(['google', 'openai'] as const)('%s image: the one retry after a decline, when its wait cannot be read, is not made, nothing of it held, and says why', async (provider) => {
+    let reads = 0;
+    const admitted: string[] = [];
+    const admit = book.admit.bind(book);
+    book.admit = async (req) => {
+      admitted.push(req.purpose);
+      return admit(req);
+    };
+    const google = fakeGoogle([{ candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [] } }], usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 0 } }]);
+    const openai = fakeOpenAI([], [httpError(400, 'Your request was rejected by the safety system.', { code: 'moderation_blocked', message: 'Your request was rejected by the safety system.' })]);
+    const g = gateway({
+      clients: { google: google.client, openai: openai.client },
+      caps: {
+        workspaceCapUsd: () => 100,
+        waitMinutes: () => {
+          if (++reads > 1) throw new Error('the store is closed');
+          return undefined;
+        },
+      },
+    });
+    const image: ImageRequest = { workspaceId: 'ws', runId: 'run-1', stepId: 'art', purpose: 'asset:web-page', profileId: provider === 'google' ? 'balanced' : 'best', prompt: 'A loaf at dawn', size: '1024x1024' };
+    const err = await failure(g.image(image));
+    expect(err).toMatchObject({ code: 'refused', declined: { retry: 'not-made', problem: expect.stringContaining('the store is closed') } });
+    // The declined call was admitted and sent once, and the retry neither.
+    expect(admitted).toEqual(['asset:web-page']);
+    expect([...google.calls, ...openai.calls]).toHaveLength(1);
+    expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
+  });
 });
 
 // --- fal's queue jobs ------------------------------------------------------------------------------------------------
@@ -1140,6 +1219,8 @@ function heldFal(cancel: FalCancel | (() => FalCancel), opts: { stopAt?: 'poll' 
           control.stop?.abort();
         });
       },
+      // A one-shot read: the job is done when its status poll answered (stopAt 'result'), else still running.
+      status: async () => ({ status: opts.stopAt === 'result' ? 'COMPLETED' : 'IN_PROGRESS' }),
       result: () =>
         new Promise((resolve) => {
           control.stop?.abort();

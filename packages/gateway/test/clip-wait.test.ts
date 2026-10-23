@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, submitJob, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
+import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, RESULT_LOOK_MS, submitJob, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import { fakeFetch, MemoryArtifacts } from './fakes.ts';
 
 const KEYS = { FAL_KEY: '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff' };
@@ -101,15 +101,43 @@ const aborted = () => Object.assign(new Error('This operation was aborted'), { n
 
 /**
  * A fake fal whose clip job takes `clipTakesMs` and whose frame job takes `frameTakesMs` from their first status poll
- * (undefined: they never finish), each poll ending as the SDK's does once its signal aborts. A cancel answers `cancel`;
- * one that says the job was already done leaves it done. The clip's result read throws `clipResultFails` when given.
- * Every submission, poll and cancel is kept, with the clock.
+ * (undefined: they never finish), each poll ending as the SDK's does once its signal aborts. Jobs in `done` are done from
+ * the start. A status read of a done job, polled or read once (`status`), answers after `statusTakesMs` when given, as a
+ * real round trip does, else at once; `statusFails` makes every one-shot status read throw it. A cancel answers `cancel`;
+ * one that says the job was already done leaves it done, and with `finishesAtCancel` the job finishes just as the cancel
+ * is sent, whatever it answers. The clip's result read calls `onClipResult` first (a stop arriving while it is under
+ * way, say), then throws `clipResultFails` when given, or with `clipResultHeld` never answers; with `frameResultHeld`,
+ * the frame job's result read never answers. Every submission, poll and cancel is kept, with the clock, and `log` keeps
+ * every status read, poll, result read and cancel in order.
  */
-function clipFal(opts: { clipTakesMs?: number; frameTakesMs?: number; cancel?: FalCancel; clipResultFails?: unknown } = {}) {
+function clipFal(
+  opts: {
+    clipTakesMs?: number;
+    frameTakesMs?: number;
+    cancel?: FalCancel;
+    clipResultFails?: unknown;
+    clipResultHeld?: boolean;
+    frameResultHeld?: boolean;
+    onClipResult?: () => void;
+    done?: string[];
+    statusTakesMs?: number;
+    statusFails?: unknown;
+    finishesAtCancel?: boolean;
+  } = {},
+) {
   const submitted: { endpoint: string; at: number; startTimeoutSeconds?: number }[] = [];
   const polls: { endpoint: string; requestId: string; at: number }[] = [];
   const cancels: { endpoint: string; requestId: string; at: number }[] = [];
-  const done = new Set<string>();
+  const log: string[] = [];
+  const done = new Set<string>(opts.done);
+  /** COMPLETED, after a round trip of `statusTakesMs` when given (ending as the SDK's does once `signal` aborts). */
+  const completed = (signal?: AbortSignal): Promise<{ status: string }> =>
+    opts.statusTakesMs === undefined
+      ? Promise.resolve({ status: 'COMPLETED' })
+      : new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve({ status: 'COMPLETED' }), opts.statusTakesMs);
+          signal?.addEventListener('abort', () => (clearTimeout(timer), reject(aborted())), { once: true });
+        });
   const client: FalClientLike = {
     storage: { upload: async () => 'https://v3.fal.media/files/upload-0.png' },
     queue: {
@@ -119,28 +147,40 @@ function clipFal(opts: { clipTakesMs?: number; frameTakesMs?: number; cancel?: F
       },
       subscribeToStatus(endpoint, options) {
         polls.push({ endpoint, requestId: options.requestId, at: Date.now() });
-        if (done.has(options.requestId)) return Promise.resolve({ status: 'COMPLETED' });
+        log.push(`poll ${options.requestId}`);
+        if (done.has(options.requestId)) return completed(options.abortSignal);
         const takes = endpoint === FAL_EXTRACT_FRAME ? opts.frameTakesMs : opts.clipTakesMs;
         return new Promise((resolve, reject) => {
           const timer = takes === undefined ? undefined : setTimeout(() => (done.add(options.requestId), resolve({ status: 'COMPLETED' })), takes);
           options.abortSignal?.addEventListener('abort', () => (clearTimeout(timer), reject(aborted())), { once: true });
         });
       },
+      async status(_endpoint, options) {
+        log.push(`status ${options.requestId}`);
+        if (opts.statusFails !== undefined) throw opts.statusFails;
+        return done.has(options.requestId) ? completed() : { status: 'IN_PROGRESS' };
+      },
       async result(endpoint, options) {
-        // The clip's result read failing as `clipResultFails` says (fal's answer for a job it dropped, say).
-        if (endpoint !== FAL_EXTRACT_FRAME && opts.clipResultFails !== undefined) throw opts.clipResultFails;
+        log.push(`result ${options.requestId}`);
+        if (endpoint !== FAL_EXTRACT_FRAME) {
+          opts.onClipResult?.();
+          // The clip's result read failing as `clipResultFails` says (fal's answer for a job it dropped, say), or held.
+          if (opts.clipResultFails !== undefined) throw opts.clipResultFails;
+          if (opts.clipResultHeld) return new Promise<never>(() => undefined);
+        } else if (opts.frameResultHeld) return new Promise<never>(() => undefined);
         const data = endpoint === FAL_EXTRACT_FRAME ? { images: [{ url: 'https://v3.fal.media/files/last.png', content_type: 'image/png' }] } : { video: { url: 'https://v3.fal.media/files/clip.mp4', content_type: 'video/mp4' } };
         return { data, requestId: options.requestId };
       },
       async cancel(endpoint, options) {
         cancels.push({ endpoint, requestId: options.requestId, at: Date.now() });
+        log.push(`cancel ${options.requestId}`);
         const answer = opts.cancel ?? { status: 'failed', detail: 'the fake has no cancel answer' };
-        if (answer.status === 'completed') done.add(options.requestId);
+        if (answer.status === 'completed' || opts.finishesAtCancel) done.add(options.requestId);
         return answer;
       },
     },
   };
-  return { client, submitted, polls, cancels };
+  return { client, submitted, polls, cancels, log };
 }
 
 /** One turn of the real event loop (setImmediate is not faked): the gateway's file reads and writes get to finish. */
@@ -165,6 +205,12 @@ async function polled(fal: { polls: unknown[] }, n: number): Promise<void> {
   for (let i = 0; i < 20_000 && fal.polls.length < n; i++) await turn();
   expect(fal.polls.length).toBeGreaterThanOrEqual(n);
 }
+
+/**
+ * What `fal` was asked, in order, its status polls left out: a poll that a wait ended may still be tried again by the
+ * retries, after it was given up (untilEnded), so where a poll falls among the rest says nothing.
+ */
+const asked = (fal: { log: string[] }): string[] => fal.log.filter((l) => !l.startsWith('poll '));
 
 const TAIL = "To wait longer, change 'How long to wait for an answer' in Settings.";
 const lateClip = (model: string, job: string, minutes: number, cancel: string, billed: boolean) =>
@@ -218,6 +264,23 @@ describe('a fal clip waits its video model’s wait from fal’s acceptance, the
     const cancel = 'byway’s cancel did not go through (HTTP 404 NOT_FOUND)';
     expect(await err).toMatchObject({ billing: 'maybe', message: lateClip(BALANCED_VIDEO, 'req-1', 30, cancel, true) });
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'waited', providerJobs: { generation: 'req-1' }, waited: { minutes: 30, how: 'clip', cancel } })]);
+    // fal was asked once more, after the cancel, whether the job was done: it was not.
+    expect(asked(fal)).toEqual(['cancel req-1', 'status req-1']);
+  });
+
+  it('a cancel that did not go through, the clip finished meanwhile: fal is asked once more, and the clip is kept and used', async () => {
+    const fal = clipFal({ cancel: { status: 'failed', detail: 'no answer: fetch failed' }, finishesAtCancel: true, frameTakesMs: 0 });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const res = g.video(clipOf());
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(30 * MINUTE);
+    const clip = await settled(res);
+    expect(clip.costUsd).toBeGreaterThan(0);
+    expect(fal.cancels).toEqual([{ endpoint: BALANCED_VIDEO, requestId: 'req-1', at: T0 + 30 * MINUTE }]);
+    expect(asked(fal).slice(0, 3)).toEqual(['cancel req-1', 'status req-1', 'result req-1']);
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO, FAL_EXTRACT_FRAME]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: clip.costUsd })]);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
 
   it('already done when its wait ran out: the clip is kept and used, since it is paid for, with its last frame', async () => {
@@ -287,6 +350,73 @@ describe('a resumed clip keeps its clock: its wait counts from when fal accepted
     expect(await err).toMatchObject({ waited: { minutes: 30, how: 'clip' }, message: expect.stringContaining('clip job req-earlier within 30 minutes') });
     expect(fal.cancels).toEqual([{ endpoint: BALANCED_VIDEO, requestId: 'req-earlier', at: T0 + 30 * MINUTE }]);
     expect(fal.submitted).toEqual([]);
+  });
+
+  // MONEY-2, Block 2's check: a job resumed after its wait had passed was cancelled before its status came back (its
+  // deadline was a timer of no time, which beats any round trip), so a clip fal had finished and billed was thrown away
+  // when that one cancel failed, in words saying it did not finish.
+  /** An earlier attempt of the step whose clip job fal accepted at T0, its worker gone; then the clock at `minutes`. */
+  async function acceptedEarlier(key: string, minutes: number): Promise<void> {
+    await book.admit({ opId: 'earlier', owner: 'gone', leaseMs: 60_000, operationKey: key, workspaceId: 'ws', runId: 'run-1', stepId: 'clip', purpose: 'relay:media', kind: 'video', provider: 'fal', model: BALANCED_VIDEO, reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 100, runUsd: 50 } });
+    await book.markSent('earlier', 'gone');
+    await book.accept('earlier', 'generation', 'req-earlier');
+    await vi.advanceTimersByTimeAsync(minutes * MINUTE);
+  }
+
+  it('a job resumed after its wait has passed is asked about once first: one fal finished is read and kept, never cancelled, though its status takes a round trip', async () => {
+    const key = 'run-1/clip/video/abc/1';
+    await acceptedEarlier(key, 45);
+    // fal finished the clip; a cancel would not have gone through.
+    const fal = clipFal({ done: ['req-earlier'], statusTakesMs: 50, frameTakesMs: 0, cancel: { status: 'failed', detail: 'no answer: fetch failed' } });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const until = new AbortController();
+    const clip = await settled(g.video(clipOf({ operation: { key, until: until.signal } })));
+    expect(clip.costUsd).toBeGreaterThan(0);
+    expect(fal.log.slice(0, 2)).toEqual(['status req-earlier', 'result req-earlier']);
+    expect(fal.log).not.toContain('poll req-earlier');
+    expect(fal.cancels).toEqual([]);
+    // Polled by its id, never submitted again: only its last frame's job is.
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([FAL_EXTRACT_FRAME]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: clip.costUsd })]);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([]);
+  });
+
+  it.each([
+    ['still at work on it', {}],
+    ['whose status cannot be read', { statusFails: new Error('fetch failed') }],
+  ] as const)('a job resumed after its wait has passed, fal %s, is cancelled then, with no wait more, and counted by the cancel’s answer', async (_what, over) => {
+    const key = 'run-1/clip/video/abc/1';
+    await acceptedEarlier(key, 45);
+    const fal = clipFal({ ...over, cancel: { status: 'requested', detail: 'HTTP 202 CANCELLATION_REQUESTED' } });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const until = new AbortController();
+    const err = failure(g.video(clipOf({ operation: { key, until: until.signal } })));
+    // Cancelled with the clock where it was: nothing waited more.
+    for (let i = 0; i < 20_000 && fal.cancels.length === 0; i++) await turn();
+    expect(fal.cancels).toEqual([{ endpoint: BALANCED_VIDEO, requestId: 'req-earlier', at: T0 + 45 * MINUTE }]);
+    const e = await settled(err);
+    expect(fal.log[0]).toBe('status req-earlier');
+    expect(fal.log.at(-1)).toBe('cancel req-earlier');
+    expect(fal.log).not.toContain('poll req-earlier');
+    expect(e).toMatchObject({ billing: 'maybe', waited: { minutes: 30, how: 'clip' }, message: expect.stringContaining('clip job req-earlier within 30 minutes') });
+    expect(fal.submitted).toEqual([]);
+  });
+
+  it('a stop while fal is asked about a job resumed after its wait is a stop, not a wait that ran out: cancelled, and counted as interrupted', async () => {
+    const key = 'run-1/clip/video/abc/1';
+    await acceptedEarlier(key, 45);
+    const fal = clipFal({ done: ['req-earlier'], statusTakesMs: 50, cancel: { status: 'requested', detail: 'HTTP 202 CANCELLATION_REQUESTED' } });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const until = new AbortController();
+    const stop = new AbortController();
+    const err = failure(g.video(clipOf({ operation: { key, until: until.signal, stop: stop.signal } })));
+    for (let i = 0; i < 20_000 && !fal.log.includes('status req-earlier'); i++) await turn();
+    stop.abort();
+    const e = await settled(err);
+    expect(asked(fal)).toEqual(['status req-earlier', 'cancel req-earlier']);
+    expect(e).toMatchObject({ billing: 'maybe', cutOff: true });
+    expect(e).not.toHaveProperty('waited');
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'interrupted', providerJobs: { generation: 'req-earlier' } })]);
   });
 });
 
@@ -384,6 +514,55 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     expect(fal.submitted).toHaveLength(1);
     expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ provider: 'fal', providerJobs: { generation: 'req-1' } })]);
   });
+
+  // TESTS-1, Block 2's check: a stop that came while the dropped job's result was read, or while it was polled with fal
+  // then answering its cancel "already completed", settled it through the made-and-billed path: the ledger counted a clip
+  // fal says it never ran and never billed.
+  it.each([
+    ['while its result is read', { clipTakesMs: 25 * MINUTE }, undefined, 25 * MINUTE, []],
+    ['while it is polled, its cancel answered “already completed”', {}, { status: 'completed', detail: 'HTTP 400 ALREADY_COMPLETED' }, MINUTE, ['req-1']],
+  ] as const)('a stop arriving %s is no reason to count it: fal’s word that it never ran is taken, and nothing is ledgered', async (_what, over, cancel, stopAtMs, cancelled) => {
+    const stop = new AbortController();
+    const until = new AbortController();
+    const fal = clipFal({ ...over, ...(cancel ? { cancel } : {}), clipResultFails: dropped(), onClipResult: stopAtMs === 25 * MINUTE ? () => stop.abort() : undefined });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const call = failure(g.video(clipOf({ operation: { key: 'run-1/clip/video/abc/1', until: until.signal, stop: stop.signal } })));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(stopAtMs);
+    stop.abort();
+    const e = await settled(call);
+    expect(e).toMatchObject({ code: 'provider-error', retryable: false, billing: 'none', billed: false, message: notStarted(BALANCED_VIDEO, 30, 25) });
+    expect(e).not.toHaveProperty('cutOff');
+    expect(fal.cancels.map((c) => c.requestId)).toEqual(cancelled);
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO]);
+    expect(ledger()).toEqual([]);
+    expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it(`a stop while a clip fal finished is read: its result is read once more, for at most ${RESULT_LOOK_MS / 1000} seconds, then it is settled as made`, async () => {
+    const stop = new AbortController();
+    const until = new AbortController();
+    const fal = clipFal({ clipTakesMs: MINUTE, clipResultHeld: true, onClipResult: () => stop.abort() });
+    const fetch = fakeFetch();
+    const g = gateway({ clients: { fal: fal.client }, fetch: fetch.fetch });
+    const call = failure(g.video(clipOf({ operation: { key: 'run-1/clip/video/abc/1', until: until.signal, stop: stop.signal } })));
+    let over = false;
+    void call.finally(() => (over = true));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    for (let i = 0; i < 20_000 && fal.log.filter((l) => l === 'result req-1').length < 2; i++) await turn();
+    expect(fal.log.filter((l) => l === 'result req-1')).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(RESULT_LOOK_MS - 1);
+    for (let i = 0; i < 200; i++) await turn();
+    expect(over).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const e = await settled(call);
+    expect(e).toMatchObject({ code: 'byway-failure', billed: true, message: 'fal made the clip and billed it (its cost is recorded), but its run was ending, so byway did not download it.' });
+    expect(fal.cancels).toEqual([]);
+    expect(fetch.requested).toEqual([]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video' })]);
+  });
 });
 
 describe('the last frame is bounded by the time left on its clip’s wait plus 2 minutes; the clip is kept either way', () => {
@@ -424,6 +603,40 @@ describe('the last frame is bounded by the time left on its clip’s wait plus 2
       [BALANCED_VIDEO, T0 + 30 * MINUTE],
       [FAL_EXTRACT_FRAME, T0 + 30 * MINUTE + FRAME_GRACE_MS],
     ]);
+  });
+
+  // TESTS-4, Block 2's check: nothing showed the frame job's result read stops at the bound; the fake answered it at once.
+  it('the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept', async () => {
+    const fal = clipFal({ clipTakesMs: 28 * MINUTE, frameTakesMs: MINUTE, frameResultHeld: true });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = failure(g.video(clipOf()));
+    let over = false;
+    void err.finally(() => (over = true));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(28 * MINUTE);
+    await polled(fal, 2);
+    const frameFrom = Date.now();
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    for (let i = 0; i < 20_000 && !fal.log.includes('result req-2'); i++) await turn();
+    expect(fal.log).toContain('result req-2');
+    // 2 minutes left on the clip's wait and 2 more: 4 minutes from the frame job's start, 3 of them left now.
+    await vi.advanceTimersByTimeAsync(3 * MINUTE - 1);
+    for (let i = 0; i < 200; i++) await turn();
+    expect(over).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    // Given up then: it ends once its clip is ledgered and kept (files and timers), not on fal's answer.
+    for (let i = 0; i < 2000 && !over; i++) {
+      await turn();
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    expect(over).toBe(true);
+    const e = await err;
+    expect(Date.now() - frameFrom).toBeGreaterThanOrEqual(4 * MINUTE);
+    expect(e).toMatchObject({ billed: true });
+    expect(e.message).toMatch(/: last-frame job req-2 did not finish within the time left on the clip’s wait plus 2 minutes, so byway stopped waiting$/);
+    // Done when its bound ran out, so not cancelled; the clip is ledgered and kept.
+    expect(fal.cancels).toEqual([]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video' })]);
   });
 
   it('the frame’s download is bounded too: one held past it is given up, and the clip kept', async () => {

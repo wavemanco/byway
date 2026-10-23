@@ -285,6 +285,49 @@ describe('a call answered whole waits its model’s wait in all, and is not sent
     expect(waits.asked).toEqual([MODEL[kind].ref, MODEL[kind].ref]);
   });
 
+  // MONEY-4 and TESTS-3, Block 2's check: ADR-0114 item 5 makes a wait that ran out final "only when the adapter's error
+  // is not one that billed nothing, as for the stop", and dropping that condition failed no test.
+  it.each(['google text', 'google image', 'openai image'] as const)(
+    '%s: a provider’s own error answer that lands as its deadline runs out billed nothing: it is handled as that error (sent again), not as a wait that ran out',
+    async (kind) => {
+      // The provider's own 429, with its error body (billingOf 'none'), arriving just as the deadline aborts the send.
+      const refused = () => Object.assign(new Error('Resource has been exhausted'), { status: 429, error: { code: 429, message: 'Resource has been exhausted', status: 'RESOURCE_EXHAUSTED' } });
+      const answer = <T>(value: T) => (n: number, signal: AbortSignal | undefined): Promise<T> =>
+        n === 1 ? new Promise<T>((_, reject) => signal?.addEventListener('abort', () => reject(refused()), { once: true })) : Promise.resolve(value);
+      let started: (n: number) => Promise<void>;
+      let seen: { signal: AbortSignal | undefined }[];
+      let result: Promise<{ costUsd: number }>;
+      let g: ModelGateway;
+      if (kind === 'openai image') {
+        const fake = heldOpenAIImages(answer(PNG));
+        ({ seen, started } = fake);
+        g = gateway({ clients: { openai: fake.client } });
+        result = g.image(askImage('openai'));
+      } else {
+        const fake = heldGoogle(answer(kind === 'google text' ? TEXT : IMAGE));
+        ({ seen, started } = fake);
+        g = gateway({ clients: { google: fake.client } });
+        result = kind === 'google text' ? g.complete(askGoogle()) : g.image(askImage('google'));
+      }
+      let over = false;
+      void result.then(
+        () => (over = true),
+        () => (over = true),
+      );
+      await started(0);
+      await vi.advanceTimersByTimeAsync(15 * MINUTE);
+      // Its files are written on the real event loop (setImmediate is not faked).
+      for (let i = 0; i < 20_000 && !over; i++) await new Promise<void>((resolve) => setImmediate(resolve));
+      // Sent again: the first send aborted at the wait, the second answered.
+      expect(seen.map((x) => x.signal?.aborted)).toEqual([true, false]);
+      expect((await result).costUsd).toBeGreaterThan(0);
+      expect(ledger()).toHaveLength(1);
+      // Nothing listed as waited, nothing counted as "may have been billed": the first send billed nothing.
+      expect((await g.spendRecords('ws')).uncertain).toEqual([]);
+      expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
+    },
+  );
+
   it('google text: another connection failure is still sent once more, and the resend waits its whole wait again from its own send', async () => {
     const reset = () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) });
     const fake = heldGoogle((n, signal) => (n === 1 ? new Promise((_, reject) => setTimeout(() => reject(reset()), 9 * MINUTE)) : abortedWith(signal)));
