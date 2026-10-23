@@ -14,6 +14,9 @@ import type { ResolvedMessage } from './providers/types.ts';
  *   is read from PNG, JPEG and WebP headers; an image whose size cannot be read (damaged bytes) counts at the maximum.
  * - Output: the call's whole output allowance; gpt-image's per-image output figure is a planning number (prices.ts).
  * - Video: the clip's seconds at the per-second price, plus helper endpoints at their upper bound.
+ * - Rates: the long-context tier of the model's row when the estimated prompt is longer than its threshold (tokenCost;
+ *   LC-TIERS, block 2), so a very large prompt is reserved at the rates it will be billed at. The estimate runs high for
+ *   English, so a prompt just under a threshold can be reserved at the tier and settle below it; that leans high.
  */
 const CHARS_PER_TOKEN = 3;
 const PER_MESSAGE_OVERHEAD = 8;
@@ -64,7 +67,7 @@ export function estimateInputTokens(input: EstimateInput): number {
   return tokens + Math.ceil(ascii / CHARS_PER_TOKEN) + otherBytes;
 }
 
-/** The planning estimate for a completion: estimated input plus the full output allowance. */
+/** The planning estimate for a completion: estimated input plus the full output allowance, at the estimate's tier. */
 export function maxCompletionCost(price: PriceRow, inputTokens: number, maxOutputTokens: number): number {
   return tokenCost(price, { inputTokens, outputTokens: maxOutputTokens });
 }

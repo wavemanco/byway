@@ -905,9 +905,10 @@ export class ModelGateway implements Gateway {
 
   /**
    * Provider-reported cost first (OpenRouter), else each model that served the call (every billed attempt the answer
-   * lists, which with no fallback asked for is one) at its own price (servedPrice). `assumed` is true when any of them
-   * had no price row and was settled at the requested model's rates; the ledger records that (priceBasis), so the guess
-   * is visible, never silent (F04).
+   * lists, which with no fallback asked for is one) at its own price (servedPrice), at the long-context tier of the
+   * prompt the provider reports for it (tokenCost; LC-TIERS). `assumed` is true when any of them had no price row and
+   * was settled at the requested model's rates; the ledger records that (priceBasis), so the guess is visible, never
+   * silent (F04).
    */
   private completionCost(ref: ModelRef, out: ProviderCompletion): { costUsd: number; assumed: boolean } {
     if (out.reportedCostUsd !== undefined) return { costUsd: roundUsd(out.reportedCostUsd), assumed: false };
