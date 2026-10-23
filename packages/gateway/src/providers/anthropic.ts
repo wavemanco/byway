@@ -73,11 +73,16 @@ export interface AnthropicAdapterOptions {
  * parameters. Thinking is adaptive, as Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 think by default (they reject a
  * disabled or budgeted config), with its display "summarized": the default, "omitted", streams only pings while the
  * model thinks, so a long think would read as silence and be cut off at the model's wait (StreamIdle), then sent again
- * and paid twice. The owner chose it on 2026-10-22, "Ask for summaries (Recommended)": display "controls visibility
- * only - thinking happens and is billed the same under every setting" (the claude-api reference, read 2026-10-22;
- * @anthropic-ai/sdk 0.131.0's type docs, which say the default is "summarized", are stale). The summary is not part of
- * the answer: only text blocks are read (parseAnthropicMessage). Effort stays at each model's default. No beta header
- * and no fallback field: the model asked for is the only one that may answer (ADR-0102).
+ * and paid twice (StreamIdle's comment in stream.ts says why only pings arrive). The owner chose it on 2026-10-22,
+ * "Ask for summaries (Recommended)". Anthropic's public thinking page
+ * (https://platform.claude.com/docs/en/build-with-claude/thinking, read 2026-10-22) says that on these three models
+ * thinking is on with no configuration, a disabled or budgeted config gets a 400, and display defaults to "omitted";
+ * that display controls how thinking content is returned, and the summary is written by a different model, which the
+ * thinking model never sees; and that "Either way the block is billed the same": the full thinking tokens are charged,
+ * not the summary's. So @anthropic-ai/sdk 0.131.0's type docs, which say the default is "summarized", are stale for
+ * these models. The summary is not part of the answer: only text blocks are read (parseAnthropicMessage). Effort stays
+ * at each model's default. No beta header and no fallback field: the model asked for is the only one that may answer
+ * (ADR-0102).
  */
 export function anthropicParams(req: ProviderCompletionRequest, inline: boolean): Params {
   const messages = req.messages.map((m) => ({

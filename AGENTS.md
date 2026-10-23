@@ -42,7 +42,9 @@ weekly Playwright pin report"; the cadence it serves is ADR-0110's).
 ## Before a first live run of a new kind
 
 Before the first live run, the first run that makes an image, the first live C5 run and the first run on Best or
-OpenAI, go through the "Launch checklist" section of `docs/backlog.md` with the owner.
+OpenAI, go through the "Launch checklist" section of `docs/backlog.md` with the owner. The owner asked for the
+checklist on 2026-10-22 at 22:49: "file it somewhere so that it surfaces to me for checks otherwise we will forget it.
+Maybe a Launch Checklist within Backlog."
 
 ## Checks that clone the repository
 

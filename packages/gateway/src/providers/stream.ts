@@ -14,8 +14,12 @@ import { DEFAULT_WAIT_MINUTES, minutesMs } from '../waits.ts';
  * response headers arrive, so without this bound a stream that stalls after its 200 keeps its connection open after its
  * step is given up.
  * - Anthropic: byway asks Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 for a summary of their thinking (`thinking.display`
- *   "summarized"; the default, "omitted", sends only pings, which the SDK does not pass on; the claude-api reference,
- *   read 2026-10-22), so a model that is thinking sends events and the wait measures true silence.
+ *   "summarized"), so a model that is thinking sends events and the wait measures true silence. Their default,
+ *   "omitted", streams no thinking text: the server skips the thinking and sends only its signature (Anthropic's public
+ *   thinking page, https://platform.claude.com/docs/en/build-with-claude/thinking, read 2026-10-22). A stream may carry
+ *   `ping` events at any point (its streaming page, https://platform.claude.com/docs/en/build-with-claude/streaming,
+ *   read 2026-10-22), and @anthropic-ai/sdk 0.131.0 drops them (core/streaming.mjs), so byway would see a think as
+ *   silence.
  * - OpenAI and OpenRouter: unstreamed, the SDK's timeout bounded the whole call at ten minutes; streamed, a stretch of
  *   up to the model's wait with nothing arriving is allowed, and the whole call is bounded by its step.
  */

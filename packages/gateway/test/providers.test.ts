@@ -95,7 +95,8 @@ describe('anthropic adapter', () => {
     for (const k of SAMPLING) expect(body).not.toHaveProperty(k);
     // Thinking stays adaptive, each model's own default, and streams a summary instead of nothing (the owner's choice of
     // 2026-10-22, "Ask for summaries (Recommended)"), so a model that is thinking is not silent and its wait measures
-    // true silence. Billed the same (the claude-api reference, read 2026-10-22). The logged request says so too.
+    // true silence. Billed the same (Anthropic's public thinking page, read 2026-10-22:
+    // https://platform.claude.com/docs/en/build-with-claude/thinking). The logged request says so too.
     expect(body.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
     expect((out.requestBody as Record<string, unknown>).thinking).toEqual({ type: 'adaptive', display: 'summarized' });
     // The logged request references the artifact instead of carrying its bytes.
