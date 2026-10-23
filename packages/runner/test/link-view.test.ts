@@ -19,6 +19,7 @@ import { relayLink } from '../src/activities/relay.ts';
 import { LINK_CAPTIONS, renderView, noClipNote } from '../src/activities/render.ts';
 import { parseStoryboard, serializeJson } from '../src/formats.ts';
 import { toStepSpec, type RunRef, type StepSpec, type View } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { png } from './helpers/fake-pages.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -77,7 +78,7 @@ function gateway(shade: () => number): Gateway & { completions: CompletionReques
 async function newRun(): Promise<RunRef> {
   const run = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'c5', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'media', budgetUsd: 5 });
   await store.updateRun(run.id, { status: 'running' });
-  return { runId: run.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium: 'media', problem: { text: 'An ad for a cup' }, seeds: [] };
+  return { runId: run.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium: 'media', problemId: await storeBrief(store.artifacts, { text: 'An ad for a cup' }), seeds: [] };
 }
 
 /** A storyboard of three shots, each with its anchor still, as the anchor-frames step leaves it. */

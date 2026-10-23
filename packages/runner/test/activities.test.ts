@@ -20,6 +20,7 @@ import { createActivities } from '../src/activities/index.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { OTHER_FAMILY_FALLBACK_NOTE } from '../src/activities/availability.ts';
 import type { RunRef, StepCall, StepSpec } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { fakeHash, fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -72,7 +73,7 @@ function scripted(answers: string[], opts: { demo?: boolean; statuses?: ProfileS
 async function newRun(profileId = 'no-media'): Promise<RunRef> {
   const run = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'tiny', recipeHash: 'sha256:x', profileId, title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
   await store.updateRun(run.id, { status: 'running' });
-  return { runId: run.id, workspaceId, recipeId: 'tiny', profileId, medium: 'prose', problem: { text: 'A memo' }, seeds: [] };
+  return { runId: run.id, workspaceId, recipeId: 'tiny', profileId, medium: 'prose', problemId: await storeBrief(store.artifacts, { text: 'A memo' }), seeds: [] };
 }
 
 const call = (run: RunRef, stepId: string): StepCall => ({ key: `${run.runId}/${stepId}/-/1`, stepId, stage: 'D1' });

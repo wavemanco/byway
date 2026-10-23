@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { hasNoExecutor, ROLES, type Recipe, type Step } from '@byway/recipe';
 import type { RunInput } from '../src/types.ts';
+import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
 const state = vi.hoisted(() => ({ calls: [] as string[] }));
 
@@ -37,7 +38,7 @@ async function ran(step: Step): Promise<string[]> {
   state.calls = [];
   const draft: Step = { op: 'step', id: 'draft', role: 'build', actor: 'model', tier: 'mid', prompt: 'p.d', consumes: ['intent'], produces: ['artifact'], writes: true };
   const recipe = { schema: 'byway.recipe/1', id: 'one-step', title: 't', kind: 'experimental', family: 'baseline', channel: 'protocol', medium: 'media', inputs: ['intent'], stages: [{ stage: 'D2', body: { op: 'seq', steps: [draft, step] } }], sitsOut: [], exceptions: [] } as unknown as Recipe;
-  const input: RunInput = { runId: 'run-skip', workspaceId: 'ws', recipe, problem: { text: 'p' }, profileId: 'demo', budgetUsd: 5, medium: 'media', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-skip', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'media', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   await new Interpreter(input, control as never).runStages();
   return state.calls.filter((c) => c.endsWith(`:${step.id}`)).map((c) => c.split(':')[0]!);

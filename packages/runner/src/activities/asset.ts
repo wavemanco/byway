@@ -122,7 +122,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const each = eachPlan(medium, current, what);
 
   // 1. Briefs, held to the plan: on prose and web pages, to the count the prompt declares.
-  const built = await buildPrompt(reader, { medium, problem: run.problem, step, ports });
+  const built = await buildPrompt(reader, { medium, problemId: run.problemId, step, ports });
   built.slots.artifact = current;
   if (medium === 'options') built.slots.options = optionLabels(current);
   const promptId = step.prompt && deps.prompts.has(step.prompt) ? step.prompt : 'helper.asset.briefs';

@@ -139,8 +139,8 @@ export class Interpreter {
   }
 
   private get run(): RunRef {
-    const { runId, workspaceId, recipe, profileId, medium, problem } = this.input;
-    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problem, seeds: [...this.seeds] };
+    const { runId, workspaceId, recipe, profileId, medium, problemId } = this.input;
+    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problemId, seeds: [...this.seeds] };
   }
 
   /** A step's (or operator's) call at this place in the run; the key is stable across replays and retries. */

@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { audit, loop, relay, seq, step, type Gate, type Node, type Recipe, type Step } from '@byway/recipe';
 import type { RunInput } from '../src/types.ts';
 import { BEST_SO_FAR_PROMPT, FINAL_CHOICE_OPTIONS, humanCapPrompt, READY_PROMPT } from '../src/workflow/wording.ts';
+import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
 const state = vi.hoisted(() => ({ ran: [] as string[], n: 0 }));
 
@@ -67,7 +68,7 @@ interface Asked {
 async function run(l: Node, answer: (q: Asked, i: number) => boolean | string): Promise<{ asked: Asked[]; ran: string[]; error?: unknown }> {
   state.ran = [];
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'cap', title: 'Cap', kind: 'experimental', family: 'test', channel: 'workspace', medium: 'prose', inputs: ['intent'], stages: [{ stage: 'D2', body: seq(draft, l) }], sitsOut: [], exceptions: [], bank: false };
-  const input: RunInput = { runId: 'run-cap', workspaceId: 'ws', recipe, problem: { text: 'A story' }, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-cap', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   const asked: Asked[] = [];

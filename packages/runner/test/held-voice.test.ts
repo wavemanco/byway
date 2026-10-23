@@ -16,6 +16,7 @@ import { keptVoice } from '../src/activities/held-voice.ts';
 import { checkedWrite } from '../src/activities/writes.ts';
 import { serializeJson } from '../src/formats.ts';
 import type { Ports, RunInput, RunRef } from '../src/types.ts';
+import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
 const state = vi.hoisted(() => ({ calls: [] as { id: string; ports: Record<string, unknown> }[], scores: [] as number[], n: 0, label: 'A' as string | undefined }));
 
@@ -54,7 +55,7 @@ async function run(stages: [Stage['stage'], Node][], scores: number[] = []): Pro
   state.calls = [];
   state.scores = [...scores];
   const recipe: Recipe = { schema: 'byway.recipe/1', id: 'held', title: 'Held', kind: 'experimental', family: 'test', channel: 'workspace', medium: 'prose', inputs: ['intent'], stages: stages.map(([stage, body]) => ({ stage, body })), sitsOut: [], exceptions: [], bank: false };
-  const input: RunInput = { runId: 'run-held', workspaceId: 'ws', recipe, problem: { text: 'A memo' }, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-held', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, { ask: async (_c: unknown, spec: { kind: string }) => (spec.kind === 'confirm' ? { checkpointId: 'cp', approved: true } : spec.kind === 'write' ? { checkpointId: 'cp', text: 'x' } : { checkpointId: 'cp', choice: ['A'], text: 'x' }) });

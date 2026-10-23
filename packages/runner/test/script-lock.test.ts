@@ -14,6 +14,7 @@ import { c5 } from '@byway/catalog';
 import { lockedScripts, type Node, type OneShotGate, type Recipe, type Step } from '@byway/recipe';
 import type { RunInput } from '../src/types.ts';
 import { SCRIPT_LOCKED_PROMPT, SCRIPT_PROMPT } from '../src/workflow/wording.ts';
+import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
 const state = vi.hoisted(() => ({ n: 0 }));
 
@@ -52,7 +53,7 @@ const { Interpreter } = await import('../src/workflow/interpreter.ts');
 /** What the run asked at each write checkpoint, by step id, in order. */
 async function writePrompts(recipe: Recipe): Promise<[string, string][]> {
   const asked: [string, string][] = [];
-  const input: RunInput = { runId: 'run-lock', workspaceId: 'ws', recipe, problem: { text: 'An ad' }, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'media', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-lock', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'media', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {

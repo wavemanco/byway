@@ -53,7 +53,7 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
 
   const built = await buildPrompt(reader, {
     medium: run.medium,
-    problem: run.problem,
+    problemId: run.problemId,
     step,
     ports,
     extra: { artifact: storyboardText, brief: `Shot ${shot}` },

@@ -1,7 +1,8 @@
 /**
- * The Runner contract as a Temporal client (spec §2: the app is a Temporal client). `start` writes the RunRecord
- * (with its budget and intake) and starts the run's workflow; `resolve` sends the RESOLVE_UPDATE Update, which the
- * workflow validates against the open checkpoint; cancel, pause and resume are signals; `view` reads the store.
+ * The Runner contract as a Temporal client (spec §2: the app is a Temporal client). `start` stores the brief once
+ * (P2, stored-inputs.ts), writes the RunRecord (with its budget and intake) and starts the run's workflow with the
+ * brief's id; `resolve` sends the RESOLVE_UPDATE Update, which the workflow validates against the open checkpoint;
+ * cancel, pause and resume are signals; `view` reads the store.
  */
 import { randomUUID } from 'node:crypto';
 import { WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
@@ -10,6 +11,7 @@ import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME
 import { engineProblems, parseRecipe, recipeHash } from '@byway/recipe';
 import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
 import { startFailureMessage, type WorkflowAfterFailedStart } from './start-failure.ts';
+import { BRIEF_MEDIA_TYPE, briefFile } from './stored-inputs.ts';
 import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
@@ -125,6 +127,9 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
       // refused before any run record exists, so a start naming its run id leaves nothing behind.
       const problems = engineProblems(recipe);
       if (problems.length) throw new RecipeRefusedError(recipe.id, problems.map((p) => p.message));
+      // The brief is stored once, before the run exists, and the workflow is handed its id (P2, stored-inputs.ts): a
+      // write that fails leaves no run behind, and a start sent twice writes the same bytes to the same file.
+      const { id: problemId } = await store.artifacts.putText(briefFile(input.problem), BRIEF_MEDIA_TYPE);
       const id = input.runId ?? randomUUID();
       const hash = recipeHash(recipe);
       let record: RunRecord;
@@ -155,7 +160,7 @@ export function createRunnerClient(opts: RunnerClientOptions): Runner {
         runId: id,
         workspaceId: input.workspaceId,
         recipe,
-        problem: input.problem,
+        problemId,
         profileId: input.profileId,
         budgetUsd: input.budgetUsd,
         medium,

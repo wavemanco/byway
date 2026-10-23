@@ -4,9 +4,10 @@
  *
  * Port values travel by reference (spec §3: "Workflow state holds port values by reference (artifact ids, short
  * texts); activities do all I/O"): artifacts, views and images are artifact ids; briefs, critiques, tastes and the
- * human's words are short texts.
+ * human's words are short texts. What the run was started with travels by reference too (P2): the person's problem
+ * brief as its file's id (RunInput.problemId), never its text.
  */
-import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, ProblemBrief, RunEventPayloads, RunEventType, RunStatus } from '@byway/contracts';
+import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, RunEventPayloads, RunEventType, RunStatus } from '@byway/contracts';
 import type { PortType } from '@byway/protocol';
 import type { Recipe, Step } from '@byway/recipe';
 
@@ -21,7 +22,11 @@ export interface RunInput {
   runId: string;
   workspaceId: string;
   recipe: Recipe;
-  problem: ProblemBrief;
+  /**
+   * The brief (the person's problem, with its fields and attachments), by reference (P2): the artifact id of the one
+   * JSON file Runner.start stored it in (stored-inputs.ts). Never the brief itself, which may be megabytes.
+   */
+  problemId: string;
   profileId: string;
   budgetUsd: number;
   medium: Medium;
@@ -136,7 +141,8 @@ export interface RunRef {
   recipeId: string;
   profileId: string;
   medium: Medium;
-  problem: ProblemBrief;
+  /** The brief's artifact id (RunInput.problemId): a step that fills the problem slot reads it (prompting.ts). */
+  problemId: string;
   /** Every SEED string handed out so far: no artifact may contain one (PR3). */
   seeds: string[];
 }

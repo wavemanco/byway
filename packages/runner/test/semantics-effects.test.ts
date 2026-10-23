@@ -20,6 +20,7 @@ import { ArtifactReader, buildPrompt } from '../src/activities/prompting.ts';
 import { relayLink } from '../src/activities/relay.ts';
 import { toStepSpec, type RunRef, type StepCall, type StepSpec } from '../src/types.ts';
 import { humanKind } from '../src/workflow/wording.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -70,7 +71,7 @@ function scripted(answers: string[]): Gateway {
 async function newRun(medium: RunRef['medium'] = 'prose'): Promise<RunRef> {
   const run = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium, budgetUsd: 5 });
   await store.updateRun(run.id, { status: 'running' });
-  return { runId: run.id, workspaceId, recipeId: 'tiny', profileId: 'demo', medium, problem: { text: 'A memo' }, seeds: [] };
+  return { runId: run.id, workspaceId, recipeId: 'tiny', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'A memo' }), seeds: [] };
 }
 const call = (run: RunRef, stepId: string): StepCall => ({ key: `${run.runId}/${stepId}/-/1`, stepId, stage: 'D2' });
 const spec = (role: Role, actor: StepSpec['actor'], produces: StepSpec['produces'], extra: Partial<StepSpec> = {}): StepSpec => ({ id: `s-${role}`, role, actor, prompt: 'product.test.step', consumes: ['artifact'], produces, ...extra });
@@ -221,7 +222,7 @@ describe('the slots the composed profile renders a template with are slots the r
   it.each(modelSteps)('%s', async (_name, medium, step) => {
     const built = await buildPrompt(new ArtifactReader({ store }), {
       medium,
-      problem: { text: 'A memo' },
+      problemId: await storeBrief(store.artifacts, { text: 'A memo' }),
       step: toStepSpec(step),
       ports: {},
       ...(step.role === 'seed' || step.consumes.includes('seed') ? { seed: 'a-seed' } : {}),

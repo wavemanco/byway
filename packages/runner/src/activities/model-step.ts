@@ -72,7 +72,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     const notes = [plan.note, otherFamily && !reviewer ? OTHER_FAMILY_FALLBACK_NOTE : undefined].filter(Boolean);
     const answers: { answer: CriticAnswer; lineup?: Lineup }[] = [];
     for (let i = 0; i < plan.shuffles; i++) {
-      const built = await buildPrompt(reader, { medium: run.medium, problem: run.problem, step, ports: input.ports, ...(input.round !== undefined ? { round: input.round } : {}) });
+      const built = await buildPrompt(reader, { medium: run.medium, problemId: run.problemId, step, ports: input.ports, ...(input.round !== undefined ? { round: input.round } : {}) });
       const lineup = plan.mode === 'GREAT' ? await buildLineup(deps, reader, run.medium, input.ports, plan.refs, random, plan.shuffle, rendersKnob(step.knobs), run.runId) : undefined;
       if (lineup) {
         Object.assign(built.slots, lineup.slots);
@@ -108,7 +108,7 @@ export async function modelStep(deps: RunnerDeps, input: ModelStepInput): Promis
     const ports = input.candidates ? { ...input.ports, options: input.candidates } : input.ports;
     const built = await buildPrompt(reader, {
       medium: run.medium,
-      problem: run.problem,
+      problemId: run.problemId,
       step,
       ports,
       ...(input.round !== undefined ? { round: input.round } : {}),

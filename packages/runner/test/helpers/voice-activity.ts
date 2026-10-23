@@ -14,6 +14,7 @@ import { finishHumanStep, openCheckpoint } from '../../src/activities/human.ts';
 import { serializeJson } from '../../src/formats.ts';
 import type { PageRenderer } from '../../src/pages.ts';
 import type { FinishHumanResult, RunRef, StepCall, StepSpec } from '../../src/types.ts';
+import { storeBrief } from './briefs.ts';
 import { fakePrompts } from './fake-prompts.ts';
 import { createTestStore, type MemoStore } from './memo.ts';
 
@@ -83,7 +84,7 @@ export async function benchRun(b: VoiceBench, medium: Medium): Promise<RunRef> {
   const id = `run-${Math.random().toString(36).slice(2)}`;
   await b.store.createRun({ id, workspaceId: b.workspaceId, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium, budgetUsd: 5 });
   await b.store.updateRun(id, { status: 'running' });
-  return { runId: id, workspaceId: b.workspaceId, recipeId: 'tiny', profileId: 'demo', medium, problem: { text: 'p' }, seeds: [] };
+  return { runId: id, workspaceId: b.workspaceId, recipeId: 'tiny', profileId: 'demo', medium, problemId: await storeBrief(b.store.artifacts, { text: 'p' }), seeds: [] };
 }
 
 export const putWork = async (b: VoiceBench, medium: Medium, text: string): Promise<string> => (await b.store.artifacts.putText(text, MEDIA_TYPES[medium])).id;

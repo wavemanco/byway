@@ -1,7 +1,8 @@
 /**
  * Runner.start refuses what the engine cannot run (F02, ADR-0092 stage 2), whoever admitted the recipe: counts past
  * the engine's limits, a C pick nobody can decide and a retrying gate inside a fan-out (G1). It throws RecipeRefused
- * before any run record or workflow exists, so nothing is left "queued" or wedged "running".
+ * before any run record or workflow exists, and before the brief is stored, so nothing is left "queued" or wedged
+ * "running", and nothing is written for it.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { c1 } from '@byway/catalog';
@@ -14,9 +15,11 @@ type N = Record<string, any>;
 function runner() {
   const createRun = vi.fn(async (r: N) => ({ ...r, createdAt: '2026-10-09T00:00:00.000Z', updatedAt: '2026-10-09T00:00:00.000Z' }));
   const start = vi.fn(async () => undefined);
-  const store = { createRun, updateRun: vi.fn() } as unknown as Store;
+  // The brief is stored before the run is written (P2): the file's id is all the workflow is handed.
+  const putText = vi.fn(async () => ({ id: `sha256:${'b'.repeat(64)}` }));
+  const store = { createRun, updateRun: vi.fn(), artifacts: { putText } } as unknown as Store;
   const client = { workflow: { start } } as never;
-  return { r: createRunnerClient({ client, store }), createRun, start };
+  return { r: createRunnerClient({ client, store }), createRun, start, putText };
 }
 
 const startWith = (recipe: Recipe) => runner().r.start({ workspaceId: 'default', recipe, problem: { text: 'A landing page' }, profileId: 'demo', budgetUsd: 5 });
@@ -43,7 +46,7 @@ describe('Runner.start refuses what the engine cannot run, before a run exists',
       /gate "g" retries a stage from inside replicate, each or an audit lens/,
     ],
   ] as [string, (r: N) => void, RegExp][])('%s', async (_name, edit, message) => {
-    const { r, createRun, start } = runner();
+    const { r, createRun, start, putText } = runner();
     const recipe = variant(edit);
     const refused = await r.start({ workspaceId: 'default', recipe, problem: { text: 'A landing page' }, profileId: 'demo', budgetUsd: 5 }).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(RecipeRefusedError);
@@ -51,6 +54,8 @@ describe('Runner.start refuses what the engine cannot run, before a run exists',
     expect((refused as RecipeRefusedError).problems).toEqual(expect.arrayContaining([expect.stringMatching(message)]));
     expect(createRun).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+    // Nor is anything stored for it: the brief is written only for a start the engine can run (P2).
+    expect(putText).not.toHaveBeenCalled();
   });
 
   it('a catalog recipe starts', async () => {

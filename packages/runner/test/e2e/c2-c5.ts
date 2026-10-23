@@ -7,11 +7,13 @@ import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { c2, c5 } from '@byway/catalog';
 import type { CompletionRequest, VideoRequest, VideoResult } from '@byway/contracts';
+import { problemSlot } from '@byway/prompts/pure';
 import { NO_AUDIO_NOTE } from '../../src/activities/asset.ts';
 import { OK_FALLBACK_NOTE } from '../../src/activities/critic.ts';
 import { NO_COMPOSITING_NOTE, NO_VIDEO_NOTE } from '../../src/activities/relay.ts';
 import { BEST_SO_FAR_PROMPT, GATE_FAILED_PROMPT, GATE_RETRY_NOTE, READY_PROMPT } from '../../src/workflow/wording.ts';
 import { noClipNote } from '../../src/activities/render.ts';
+import { maximalBrief } from '../helpers/briefs.ts';
 import { checkEvents, notes, ofType } from '../helpers/events.ts';
 import { fakeShots, png } from '../helpers/fake-pages.ts';
 import { NO_VIDEO_PROFILE, type Harness } from '../helpers/harness.ts';
@@ -85,6 +87,25 @@ export function c2c5Scenarios(use: () => Harness): void {
       const briefs = h.prompts.calls.filter((c) => c.id === 'product.c2.mood-boards').at(-1)!;
       expect(briefs.slots.options).toMatch(/^### A\nFix-it Fridays: /);
     }, 120_000);
+
+    it('runs on the largest brief the web accepts, in Chinese, and every prompt that shows the brief carries all of it exactly (P2)', async () => {
+      // About 3 MB of UTF-8: before P2 it rode in the start input and every step's input, past Temporal's 2 MB limit on
+      // one value, and the run stayed "running" with nothing spent.
+      const brief = maximalBrief();
+      const from = h.prompts.calls.length;
+      const run = await h.start(c2, { problem: brief });
+      const view = await h.drive(run.id);
+      expect(view.run.status).toBe('done');
+      checkEvents(view, 'c2');
+      expect(view.run.problem).toBe(brief.text);
+      // Every step that takes the brief: the twelve seeds and the three unseeded answers of D1. Compared whole, not by
+      // toEqual, so a mismatch does not print a million characters.
+      const shown = h.prompts.calls.slice(from).filter((c) => c.slots.problem !== undefined);
+      expect(shown.map((c) => c.id).sort()).toEqual([...Array<string>(12).fill('product.c2.seed-option'), ...Array<string>(3).fill('product.c2.vanilla-build')].sort());
+      const exact = problemSlot(brief);
+      expect(shown.filter((c) => c.slots.problem !== exact)).toHaveLength(0);
+      expect(h.succeeded(run.id).filter((c) => c.purpose === 'seed:options')).toHaveLength(12);
+    }, 180_000);
   });
 
   describe('C5 on media', () => {

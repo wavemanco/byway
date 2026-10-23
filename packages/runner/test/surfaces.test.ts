@@ -13,6 +13,7 @@ import { ArtifactReader, buildPrompt, userMessage, viewParts } from '../src/acti
 import { renderView } from '../src/activities/render.ts';
 import { SURFACE_CAPTIONS } from '../src/surfaces.ts';
 import type { RunRef, StepCall, StepSpec, View } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { fakePages, fakeTiles } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -32,7 +33,7 @@ beforeEach(async () => {
   const workspaceId = (await store.ensureDefaultWorkspace()).id;
   const rec = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'c1', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'web-page', budgetUsd: 5 });
   await store.updateRun(rec.id, { status: 'running' });
-  run = { runId: rec.id, workspaceId, recipeId: 'c1', profileId: 'demo', medium: 'web-page', problem: { text: 'A bakery page' }, seeds: [] };
+  run = { runId: rec.id, workspaceId, recipeId: 'c1', profileId: 'demo', medium: 'web-page', problemId: await storeBrief(store.artifacts, { text: 'A bakery page' }), seeds: [] };
   deps = { gateway: noGateway, store, prompts: fakePrompts(), pages: fakePages() };
 });
 afterEach(() => {
@@ -90,14 +91,14 @@ describe('showing the surfaces to a model', () => {
   it('attaches every surface under the line that names it, for a critic that asks for all three', async () => {
     const view = await renderPage();
     const reader = new ArtifactReader(deps);
-    const built = await buildPrompt(reader, { medium: 'web-page', problem: run.problem, step: critic(['desktop', 'mobile', 'fold']), ports: { view } });
+    const built = await buildPrompt(reader, { medium: 'web-page', problemId: run.problemId, step: critic(['desktop', 'mobile', 'fold']), ports: { view } });
     expect(outline(await userMessage(reader, 'Prompt', built.images))).toEqual([SURFACE_CAPTIONS.desktop, '[img]', '[img]', SURFACE_CAPTIONS.mobile, '[img]', '[img]', SURFACE_CAPTIONS.fold, '[img]']);
   });
 
   it("honours the `renders` knob: Study 1's critic sees the wide screen only", async () => {
     const view = await renderPage();
     const reader = new ArtifactReader(deps);
-    const built = await buildPrompt(reader, { medium: 'web-page', problem: run.problem, step: critic(['desktop']), ports: { view } });
+    const built = await buildPrompt(reader, { medium: 'web-page', problemId: run.problemId, step: critic(['desktop']), ports: { view } });
     expect(outline(await userMessage(reader, 'Prompt', built.images))).toEqual([SURFACE_CAPTIONS.desktop, '[img]', '[img]']);
   });
 
@@ -105,7 +106,7 @@ describe('showing the surfaces to a model', () => {
     const view = await renderPage();
     const reader = new ArtifactReader(deps);
     const check: StepSpec = { id: 'critic-check', role: 'check', actor: 'model', tier: 'big', prompt: 'runbook.defect-check', consumes: ['view'], produces: ['critique'] };
-    const built = await buildPrompt(reader, { medium: 'web-page', problem: run.problem, step: check, ports: { view } });
+    const built = await buildPrompt(reader, { medium: 'web-page', problemId: run.problemId, step: check, ports: { view } });
     expect(texts(await userMessage(reader, 'Prompt', built.images)).slice(1)).toEqual([SURFACE_CAPTIONS.desktop, SURFACE_CAPTIONS.mobile, SURFACE_CAPTIONS.fold]);
   });
 

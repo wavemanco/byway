@@ -13,6 +13,7 @@ import type { Gateway } from '@byway/contracts';
 import { createActivities } from '../src/activities/index.ts';
 import { SANDBOX_OFF_NOTE } from '../src/activities/sandbox-note.ts';
 import type { RunRef, StepCall, StepSpec } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { fakePages, type FakePages } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -29,7 +30,7 @@ beforeEach(async () => {
   const workspaceId = (await store.ensureDefaultWorkspace()).id;
   const rec = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'c1', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'web-page', budgetUsd: 5 });
   await store.updateRun(rec.id, { status: 'running' });
-  run = { runId: rec.id, workspaceId, recipeId: 'c1', profileId: 'demo', medium: 'web-page', problem: { text: 'A bakery page' }, seeds: [] };
+  run = { runId: rec.id, workspaceId, recipeId: 'c1', profileId: 'demo', medium: 'web-page', problemId: await storeBrief(store.artifacts, { text: 'A bakery page' }), seeds: [] };
   pages = fakePages();
 });
 afterEach(() => {

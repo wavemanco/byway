@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { c1, c7 } from '@byway/catalog';
 import { asksSwaps, type Node, type Recipe, type Seq, type Step } from '@byway/recipe';
 import type { RunInput } from '../src/types.ts';
+import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
 const state = vi.hoisted(() => ({ asked: [] as string[], swapped: [] as string[], n: 0 }));
 
@@ -59,7 +60,7 @@ function nested(r: Recipe): Recipe {
 async function run(recipe: Recipe): Promise<void> {
   state.asked = [];
   state.swapped = [];
-  const input: RunInput = { runId: 'run-swaps', workspaceId: 'ws', recipe, problem: { text: 'A landing page' }, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'web-page', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-swaps', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'web-page', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {
