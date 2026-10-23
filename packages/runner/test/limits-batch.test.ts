@@ -11,9 +11,15 @@
  * counted every seed the run could hand out; the seeds no longer travel (P2: the write checks read them from the store),
  * so no input here holds one, and the bound counts none. Measured again on 2026-10-22 with ACTIVITY_BYTES.base at 896:
  * the bound is 1.06 to 1.81 times the heaviest batch (the most for the seed fan-out, whose inputs are the smallest).
+ *
+ * The steps' limits of 2026-10-22 (WAITS-STEP-LIMITS) leave those four shapes as they were measured: their inputs are
+ * the same, and the command around a model or image step grows by one byte at most (a 24-hour limit encoded against 15
+ * or 45 minutes). They put the waits read before each relay step in that step's input (about 44 bytes), so a fan-out of
+ * relay chains is measured beside them, with the waits at the longest choices: the bound is 1.15 times its heaviest
+ * batch.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { each, pick, replicate, seq, step, workBound, type Node, type Recipe, type Step } from '@byway/recipe';
+import { each, pick, relay, replicate, seq, step, workBound, type Node, type Recipe, type Step } from '@byway/recipe';
 import type { RunInput } from '../src/types.ts';
 import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
@@ -47,6 +53,13 @@ vi.mock('../src/workflow/acts.ts', () => {
       }
       case 'renderView':
         return { costUsd: 0, view: { pool: !!input.pool, items: (input.artifactIds ?? []).map((_, i) => pageView(n * 10 + i)) } };
+      case 'storyboardShots':
+        return [1, 2];
+      case 'relayWaits':
+        // The waits a relay step's calls keep, read before it, at the longest choices (the most digits).
+        return { linkMs: 60 * 60_000, videoMs: 75 * 60_000 };
+      case 'relayLink':
+        return { costUsd: 0, artifactId: `sha256:${hex(n)}`, anchor: `sha256:${hex(n + 500)}` };
       default:
         return undefined;
     }
@@ -57,7 +70,8 @@ vi.mock('../src/workflow/acts.ts', () => {
       held.pending.push({ name, input, release: () => resolve(respond(name, input)) });
     });
   const group = () => new Proxy({}, { get: (_t, name: string) => call(name) });
-  return { quick: group(), model: group(), media: group() };
+  // A relay step runs on a proxy of its own, its limit worked out from its waits (acts.ts relayProxy).
+  return { quick: group(), model: group(), media: group(), relayProxy: () => group() };
 });
 
 const { Interpreter } = await import('../src/workflow/interpreter.ts');
@@ -96,6 +110,7 @@ const seedStep = (id: string): Step => step({ id, role: 'seed', block: 'SEED', a
 const build = (id: string): Step => step({ id, role: 'build', actor: 'model', tier: 'mid', prompt: 'p.build', consumes: ['intent'], produces: ['artifact'], writes: true });
 const render = (id: string): Step => step({ id, role: 'render', glue: 'RENDER', actor: 'tool', consumes: ['artifact'], produces: ['view'] });
 const critic = (id: string): Step => step({ id, role: 'critic', block: 'CRITIC', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'p.critic', consumes: ['view'], produces: ['critique', 'score'] });
+const relayStep = (id: string): Step => step({ id, role: 'relay', block: 'RELAY', actor: 'model', tier: 'mid', prompt: 'p.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true });
 const judge = step({ id: 'judge', role: 'judge', actor: 'model', tier: 'big', isolated: true, frozenPrompt: true, prompt: 'p.judge', consumes: ['view'], produces: [] });
 
 const recipeOf = (body: Node): Recipe => ({ schema: 'byway.recipe/1', id: 'batches', title: 'Batches', kind: 'experimental', family: 'test', channel: 'workspace', medium: 'web-page', inputs: ['intent'], stages: [{ stage: 'D1', body }], sitsOut: [], exceptions: [], bank: false });
@@ -106,6 +121,7 @@ describe('workBound bounds every batch the interpreter schedules, and not by muc
     ['a fan-out after options (every branch carries the option list and its views)', seq(replicate('first', 24, seq(build('b1'), render('r1'))), replicate('second', 12, build('b2')))],
     ["seeds finishing inside the same fan-out (replicate(n, seq(seed, X)): no sibling's seed rides in the later steps)", replicate('x', 24, seq(seedStep('seed'), build('after')))],
     ["B-BoN's nest: a judge over each slot's pool", replicate('slots', 4, seq(replicate('pool', 12, seq(build('b'), render('r'))), pick('choose', 'C', 1, 'model', judge)))],
+    ['a fan-out of relay chains (each relay step carries the waits read before it)', seq(build('board'), replicate('chains', 12, relay('links', 2, relayStep('clip'))))],
   ] as [string, Node][])('%s', async (_name, body) => {
     const seen = await batches(body);
     const heaviest = Math.max(...seen.map((b) => b.bytes));
