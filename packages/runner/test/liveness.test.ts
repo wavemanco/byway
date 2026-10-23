@@ -416,11 +416,13 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
 });
 
 /**
- * B1R2-CODE-3, the re-check of block 1's second fix round: a step's calls carry the attempt's own time limit
- * (SpendContext.operation.stepLimitMs), so the gateway never reads a streamed answer as stalled before its step would
- * end. The owner chose on 2026-10-22, "45 minutes for calls in media steps (Recommended)".
+ * A step's calls do not carry the step's own time limit (it was SpendContext.operation.stepLimitMs, B1R2-CODE-3): the
+ * gateway reads each model's answer wait from Settings on every call (the waits design of 2026-10-22, the owner's
+ * choices "Build selectable limits for every model/provider: 15, 30, 45, and 60 minutes" and "Per model
+ * (Recommended)"), so a streamed answer stalls at its model's wait however long its step may run. Only a relay step
+ * passes a wait of its own (operation.waitMs), which a model step never does.
  */
-describe('the step limit an activity invocation hands its calls', () => {
+describe('the operation an activity invocation hands its calls', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'byway-step-limit-'));
   const store = createTestStore({ dataDir: dir });
   afterAll(() => {
@@ -450,31 +452,30 @@ describe('the step limit an activity invocation hands its calls', () => {
     return { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problem: { text: 'A memo' }, seeds: [] }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
   };
 
-  it('startInvocation carries the attempt’s own limit, as Temporal’s activity info gives it, and none outside an activity', async () => {
-    const outside = startInvocation();
-    outside.stop();
-    expect(outside.limitMs).toBeUndefined();
+  it('startInvocation keeps no time limit: an invocation is its signals and its end', async () => {
     let inside: ReturnType<typeof startInvocation> | undefined;
-    await new MockActivityEnvironment({ startToCloseTimeoutMs: 45 * 60_000 }).run(async () => {
+    await new MockActivityEnvironment({ startToCloseTimeoutMs: 24 * 60 * 60_000 }).run(async () => {
       inside = startInvocation();
     });
     inside?.stop();
-    expect(inside?.limitMs).toBe(45 * 60_000);
+    expect(Object.keys(inside ?? {}).sort()).toEqual(['done', 'signal', 'stop']);
   });
 
   it.each([
-    ['a media step', 45 * 60_000],
-    ['a model step', 15 * 60_000],
+    ['a 24-hour step', 24 * 60 * 60_000],
+    ['a model step of 15 minutes', 15 * 60_000],
     ['a quick step', 60_000],
-  ] as const)('in %s, each call the step makes carries its attempt’s limit to the gateway', async (_what, limitMs) => {
+  ] as const)('in %s, each call the step makes carries its key and signals, and neither the step’s limit nor a wait', async (_what, limitMs) => {
     const { gateway, seen } = answering();
     const acts = createActivities({ gateway, store, prompts: fakePrompts() });
     await new MockActivityEnvironment({ startToCloseTimeoutMs: limitMs }).run(acts.modelStep, await input());
     expect(seen.length).toBeGreaterThan(0);
-    expect(seen.map((r) => r.operation?.stepLimitMs)).toEqual(seen.map(() => limitMs));
+    for (const r of seen) {
+      expect(Object.keys(r.operation ?? {}).sort()).toEqual(['cancel', 'keepDecline', 'key', 'stop', 'until']);
+    }
   });
 
-  it('called outside an activity (as unit tests call steps), a step’s calls carry no limit', async () => {
+  it('called outside an activity (as unit tests call steps), a step’s calls carry their key and no limit', async () => {
     const { gateway, seen } = answering();
     const acts = createActivities({ gateway, store, prompts: fakePrompts() });
     await acts.modelStep(await input());
@@ -482,6 +483,7 @@ describe('the step limit an activity invocation hands its calls', () => {
     for (const r of seen) {
       expect(r.operation?.key).toBeDefined();
       expect(r.operation).not.toHaveProperty('stepLimitMs');
+      expect(r.operation).not.toHaveProperty('waitMs');
     }
   });
 });

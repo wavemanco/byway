@@ -901,17 +901,6 @@ describe('a streamed call that stalls (CC-2)', () => {
     expect(isCutOff(await err)).toBe(true);
   });
 
-  // B1R2-CODE-3, the re-check of block 1's second fix round: a text call inside an image or video step (an ASSET step's
-  // briefs and integrate calls, a relay link's call) waits that step's own 45 minutes, as the owner chose on 2026-10-22,
-  // "45 minutes for calls in media steps (Recommended)"; a call in a model step, in a one-minute quick step or with no
-  // step at all keeps STREAM_IDLE_MS.
-  const STEP_LIMITS = [
-    ['a media step’s 45 minutes', 45 * 60_000, 45],
-    ['a model step’s 15 minutes', 15 * 60_000, 15],
-    ['a quick step’s minute', 60_000, 15],
-    ['no step limit', undefined, 15],
-  ] as const;
-
   /** A client of `provider` whose every stream begins (one chunk, for a chat stream) and then sends nothing more. */
   function stalling(provider: 'anthropic' | 'openai' | 'openrouter', start: () => void): { client: AnthropicClientLike | OpenAIClientLike; signals: () => (AbortSignal | undefined)[] } {
     if (provider === 'anthropic') {
@@ -927,30 +916,136 @@ describe('a streamed call that stalls (CC-2)', () => {
     return { client: chat.client, signals: () => chat.signals };
   }
 
-  it.each(STEP_LIMITS.flatMap(([what, limitMs, minutes]) => (['anthropic', 'openai', 'openrouter'] as const).map((provider) => [provider, what, limitMs, minutes] as const)))(
-    '%s: a call whose step has %s reads its stream as stalled only after the longer of that and STREAM_IDLE_MS, and says how long it waited',
-    async (provider, _what, limitMs, minutes) => {
-      const bound = minutes * 60_000;
-      const s = starts();
-      const fake = stalling(provider, s.start);
-      const { operation } = caller();
-      const g = gateway({ clients: { [provider]: fake.client } });
-      const err = failure(g.complete(ask({ profileId: provider === 'anthropic' ? 'balanced' : provider, operation: { ...operation, ...(limitMs !== undefined ? { stepLimitMs: limitMs } : {}) } })));
-      await s.started(0);
-      await vi.advanceTimersByTimeAsync(bound - 1);
-      expect(fake.signals().map((x) => x?.aborted)).toEqual([false]);
-      await vi.advanceTimersByTimeAsync(1);
-      // Closed at the bound and sent once more, as for any lost answer (ADR-0091); the second stalls the same way.
-      await s.started(1);
-      expect(fake.signals().map((x) => x?.aborted)).toEqual([true, false]);
-      await vi.advanceTimersByTimeAsync(bound);
-      const after = provider === 'anthropic' ? '0 events' : '1 chunk';
-      expect(await err).toMatchObject({ code: 'provider-error', billing: 'maybe', message: `${provider} call failed: ${provider}'s stream ended without producing a whole answer (nothing came for ${minutes} minutes, after ${after})` });
-      expect(fake.signals().map((x) => x?.aborted)).toEqual([true, true]);
+  const PROFILE_OF = { anthropic: 'balanced', openai: 'openai', openrouter: 'openrouter' } as const;
+  const BIG_MODEL = { anthropic: 'claude-opus-5-5', openai: 'gpt-6-astra', openrouter: 'anthropic/claude-opus-5.5' } as const;
+
+  /**
+   * Drives a call of `provider` whose streams stall, to the end: closed at `minutes` and not a moment before, sent once
+   * more, and the second closed `minutes` after it began. Returns the failure.
+   */
+  async function stallsAt(provider: 'anthropic' | 'openai' | 'openrouter', minutes: number, over: Partial<GatewayOptions>, req: Partial<CompletionRequest> = {}): Promise<GatewayError> {
+    const bound = minutes * 60_000;
+    const s = starts();
+    const fake = stalling(provider, s.start);
+    const g = gateway({ clients: { [provider]: fake.client }, ...over });
+    const err = failure(g.complete(ask({ profileId: PROFILE_OF[provider], ...req })));
+    await s.started(0);
+    await vi.advanceTimersByTimeAsync(bound - 1);
+    expect(fake.signals().map((x) => x?.aborted)).toEqual([false]);
+    await vi.advanceTimersByTimeAsync(1);
+    // Closed at its wait and sent once more, as for any lost answer (ADR-0091); the second stalls the same way.
+    await s.started(1);
+    expect(fake.signals().map((x) => x?.aborted)).toEqual([true, false]);
+    await vi.advanceTimersByTimeAsync(bound);
+    expect(fake.signals().map((x) => x?.aborted)).toEqual([true, true]);
+    const e = await err;
+    const after = provider === 'anthropic' ? '0 events' : '1 chunk';
+    expect(e).toMatchObject({ code: 'provider-error', billing: 'maybe', message: `${provider} call failed: ${provider}'s stream ended without producing a whole answer (nothing came for ${minutes} minutes, after ${after})` });
+    return e;
+  }
+
+  /** A caps source whose answer waits are `chosen` (minutes by "provider/model"), recording what it was asked. */
+  function waitsOf(chosen: Record<string, number | undefined>) {
+    const asked: { workspaceId: string; ref: string }[] = [];
+    const caps: GatewayOptions['caps'] = {
+      workspaceCapUsd: () => 100,
+      runCapUsd: () => 50,
+      waitMinutes: (workspaceId, ref) => {
+        asked.push({ workspaceId, ref: `${ref.provider}/${ref.model}` });
+        return chosen[`${ref.provider}/${ref.model}`];
+      },
+    };
+    return { caps, asked, chosen };
+  }
+
+  // The owner's choices of 2026-10-22: "Build selectable limits for every model/provider: 15, 30, 45, and 60 minutes",
+  // "Per model (Recommended)", "15 minutes (Recommended)". The stall bound is the model's wait, read on every call.
+  it.each((['anthropic', 'openai', 'openrouter'] as const).flatMap((provider) => [undefined, 15, 30, 45, 60].map((minutes) => [provider, minutes] as const)))(
+    '%s: a streamed call stalls at its model’s wait chosen in Settings (%s minutes; none chosen: 15), and says how long it waited',
+    async (provider, minutes) => {
+      const waits = waitsOf({ [`${provider}/${BIG_MODEL[provider]}`]: minutes });
+      await stallsAt(provider, minutes ?? 15, { caps: waits.caps });
+      // Read once for the call, for its own model in its workspace: the resend keeps the call's wait.
+      expect(waits.asked).toEqual([{ workspaceId: 'ws', ref: `${provider}/${BIG_MODEL[provider]}` }]);
     },
   );
 
-  it('anthropic: the one retry after a decline waits as long as the declined call would have', async () => {
+  it('a call whose operation still carries a step’s own limit (a 24-hour step) stalls at its model’s wait, not the step’s', async () => {
+    const stepLimitMs = 24 * 60 * 60_000;
+    await stallsAt('anthropic', 15, {}, { operation: { ...caller().operation, stepLimitMs } as unknown as CompletionRequest['operation'] });
+    await stallsAt('openai', 30, { caps: waitsOf({ 'openai/gpt-6-astra': 30 }).caps }, { operation: { ...caller('run-1/step/complete/def/1').operation, stepLimitMs } as unknown as CompletionRequest['operation'] });
+  });
+
+  it('a call whose operation carries a wait (a relay step’s reading) waits that, and does not read Settings', async () => {
+    const waits = waitsOf({ 'anthropic/claude-opus-5-5': 60 });
+    await stallsAt('anthropic', 30, { caps: waits.caps }, { operation: { ...caller().operation, waitMs: 30 * 60_000 } });
+    expect(waits.asked).toEqual([]);
+  });
+
+  it('a changed wait applies from the next call, and not to the call under way or its resend', async () => {
+    const waits = waitsOf({ 'openrouter/anthropic/claude-opus-5.5': 30 });
+    const s = starts();
+    const fake = stalling('openrouter', s.start);
+    const g = gateway({ clients: { openrouter: fake.client as OpenAIClientLike }, caps: waits.caps });
+    const first = failure(g.complete(ask({ profileId: 'openrouter' })));
+    await s.started(0);
+    waits.chosen['openrouter/anthropic/claude-opus-5.5'] = 60;
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await s.started(1);
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    expect((await first).message).toContain('nothing came for 30 minutes');
+    // The next call reads the new choice.
+    await stallsAt('openrouter', 60, { caps: waits.caps });
+  });
+
+  it('the other-family critic’s call waits its own model’s wait, read for that model', async () => {
+    const waits = waitsOf({ 'openai/gpt-6-astra': 45, 'anthropic/claude-opus-5-5': 15 });
+    await stallsAt('openai', 45, { caps: waits.caps }, { profileId: 'balanced', model: { provider: 'openai', model: 'gpt-6-astra' } });
+    expect(waits.asked).toEqual([{ workspaceId: 'ws', ref: 'openai/gpt-6-astra' }]);
+  });
+
+  it.each([5, 20, 75, 0, Number.NaN])('a choice a text model’s kind does not offer (%s minutes) is not used: the call waits the default', async (minutes) => {
+    await stallsAt('anthropic', 15, { caps: waitsOf({ 'anthropic/claude-opus-5-5': minutes }).caps });
+  });
+
+  it('a wait that cannot be read from Settings fails the call before it is admitted, and sends nothing', async () => {
+    const s = starts();
+    const fake = stalling('anthropic', s.start);
+    const marked = marksSent();
+    const admitted: string[] = [];
+    const admit = book.admit.bind(book);
+    book.admit = async (req) => {
+      admitted.push(req.purpose);
+      return admit(req);
+    };
+    const g = gateway({
+      clients: { anthropic: fake.client as AnthropicClientLike },
+      caps: {
+        workspaceCapUsd: () => 100,
+        waitMinutes: () => {
+          throw new Error('the store is closed');
+        },
+      },
+    });
+    await expect(g.complete(ask())).rejects.toThrow('the store is closed');
+    expect(fake.signals()).toEqual([]);
+    expect(admitted).toEqual([]);
+    expect(marked).toEqual([]);
+    expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0, spentUsd: 0 });
+  });
+
+  it('the demo’s mock models have no wait: Settings is not asked for one', async () => {
+    const waits = waitsOf({});
+    const g = gateway({ demo: true, caps: waits.caps });
+    expect((await g.complete(ask({ profileId: 'demo' }))).provider).toBe('mock');
+    expect(waits.asked).toEqual([]);
+  });
+
+  it.each([
+    ['carrying a relay step’s wait, waits that wait too, without reading Settings', { waitMs: 45 * 60_000 }, 45, []],
+    ['with none, reads its model’s wait again, as a call of its own', {}, 30, ['anthropic/claude-opus-5-5', 'anthropic/claude-opus-5-5']],
+  ] as const)('anthropic: the one retry after a decline, %s', async (_what, extra, minutes, asked) => {
+    const waits = waitsOf({ 'anthropic/claude-opus-5-5': 30 });
     const s = starts();
     const fake = eventedAnthropic(async (emit, signal, n) => {
       emit('connect');
@@ -959,17 +1054,41 @@ describe('a streamed call that stalls (CC-2)', () => {
       return abortedWith(signal);
     });
     const { operation } = caller();
-    const g = gateway({ clients: { anthropic: fake.client } });
-    const err = failure(g.complete(ask({ operation: { ...operation, stepLimitMs: 45 * 60_000, keepDecline: async () => undefined } })));
+    const g = gateway({ clients: { anthropic: fake.client }, caps: waits.caps });
+    const err = failure(g.complete(ask({ operation: { ...operation, ...extra, keepDecline: async () => undefined } })));
     await s.started(0);
-    await vi.advanceTimersByTimeAsync(45 * 60_000 - 1);
+    await vi.advanceTimersByTimeAsync(minutes * 60_000 - 1);
     expect(fake.signals.map((x) => x.aborted)).toEqual([false, false]);
     await vi.advanceTimersByTimeAsync(1);
     await s.started(1);
     expect(fake.signals.map((x) => x.aborted)).toEqual([false, true, false]);
-    await vi.advanceTimersByTimeAsync(45 * 60_000);
+    await vi.advanceTimersByTimeAsync(minutes * 60_000);
     expect(await err).toBeInstanceOf(GatewayError);
     expect(fake.signals.map((x) => x.aborted)).toEqual([false, true, true]);
+    expect(waits.asked.map((a) => a.ref)).toEqual(asked);
+  });
+
+  it('anthropic: the one retry after a decline, when its wait cannot be read, is not made, and says why', async () => {
+    let reads = 0;
+    const fake = eventedAnthropic(async (emit) => {
+      emit('connect');
+      return anthropicMessage({ stop_reason: 'refusal', content: [] });
+    });
+    const g = gateway({
+      clients: { anthropic: fake.client },
+      caps: {
+        workspaceCapUsd: () => 100,
+        waitMinutes: () => {
+          if (++reads > 1) throw new Error('the store is closed');
+          return undefined;
+        },
+      },
+    });
+    const err = await failure(g.complete(ask()));
+    expect(err).toMatchObject({ code: 'refused', declined: { retry: 'not-made', problem: expect.stringContaining('the store is closed') } });
+    // The declined call was sent once and the retry never.
+    expect(fake.signals).toHaveLength(1);
+    expect(await g.spend('ws')).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
   });
 });
 

@@ -29,6 +29,7 @@ import {
   type SpendSummary,
   type VideoRequest,
   type VideoResult,
+  type WaitKind,
 } from '@byway/contracts';
 import { cleanReason, declineAdvice, declineStory, notMadeProblem, stoppedBeforeRetry } from './declines.ts';
 import { configuredProviders, isConfigured, KEY_VARS, keyFor, loadEnvFile, type Env } from './env.ts';
@@ -46,17 +47,27 @@ import { createGoogleClient, googleAdapter, type GoogleClientLike } from './prov
 import { mockAdapter } from './providers/mock.ts';
 import { createOpenAIClient, openaiAdapter, type OpenAIClientLike } from './providers/openai.ts';
 import { createOpenRouterClient, openrouterAdapter } from './providers/openrouter.ts';
-import { STREAM_IDLE_MS } from './providers/stream.ts';
 import type { ProviderAdapter, ProviderCompletion, ProviderVideoRequest, ResolvedImage, ResolvedMessage } from './providers/types.ts';
 import type { Responder } from './mock/responders.ts';
 import { makeRedactor, type Redactor } from './redact.ts';
 import { BILLABLE_CALL, BILLABLE_JOB, DEFAULT_RETRY, FREE_READ, withRetries, type RetryHooks, type RetryOptions } from './retry.ts';
+import { minutesMs, waitMinutesFor } from './waits.ts';
 
-/** Where spend caps come from: the workspace budget (Workspace.budgetUsd) and each run's budget (StartRunInput.budgetUsd). */
+/**
+ * Where spend caps come from: the workspace budget (Workspace.budgetUsd) and each run's budget (StartRunInput.budgetUsd);
+ * and, beside them, each model's answer wait chosen in Settings.
+ */
 export interface CapsSource {
   workspaceCapUsd(workspaceId: string): number | Promise<number>;
   /** The run's cap, or undefined when the run has none. Consulted on every call, so a raised budget applies at once. */
   runCapUsd?(runId: string): number | undefined | Promise<number | undefined>;
+  /**
+   * The answer wait chosen for `ref` in the workspace's Settings, in minutes (Store.getAnswerWaits), or undefined when
+   * none was chosen. Consulted on every call, as the caps are, so a change applies from the next call; a call waits its
+   * kind's default when there is none, or when its kind does not offer the one chosen (waits.ts). Without it, every call
+   * waits its kind's default.
+   */
+  waitMinutes?(workspaceId: string, ref: ModelRef): number | undefined | Promise<number | undefined>;
 }
 
 export interface GatewayOptions {
@@ -237,17 +248,28 @@ export class ModelGateway implements Gateway {
     const prep: CompletionPrep = { ref, messages, inputTokens, maxOutputTokens, estimate, ...(prompt ? { prompt } : {}) };
     // A decline an earlier attempt of the step kept (ADR-0102): the retry alone, never the declined call again.
     const earlier = req.operation?.declinedEarlier;
-    const first = earlier ? declinedFrom(earlier) : await this.completeOnce(await this.admit(req, 'completion', ref, estimate), req, prep);
+    let first: Attempt<CompletionResult>;
+    if (earlier) first = declinedFrom(earlier);
+    else {
+      // The model's wait is read before the call is admitted, so one that cannot be read holds and sends nothing.
+      const waitMs = await this.waitMs(req, 'text', ref);
+      first = await this.completeOnce(await this.admit(req, 'completion', ref, estimate), req, prep, waitMs);
+    }
     if ('answer' in first) return first.answer;
-    // The model declined (ADR-0102): one retry on the same model, as a call of its own, then a plain failure.
-    return this.askOnceMore(req, 'completion', ref, estimate, first, (call, op) => this.completeOnce(op, call, prep, first.entryId));
+    // The model declined (ADR-0102): one retry on the same model, as a call of its own (its wait read again), then a
+    // plain failure.
+    return this.askOnceMore(req, 'completion', ref, estimate, first, async (call) => {
+      const waitMs = await this.waitMs(call, 'text', ref);
+      return (op) => this.completeOnce(op, call, prep, waitMs, first.entryId);
+    });
   }
 
   /**
    * One attempt at a completion, admitted as `op`: sent (with transport retries), settled, ledgered (as a retry of
    * `retryOf` when it is one), and returned as its answer, or as a decline (ADR-0102) for the caller to decide about.
+   * `waitMs` is its model's wait (waitMs), read once for the call: a resend after a stall waits it again.
    */
-  private async completeOnce(op: PaidCall, req: CompletionRequest, prep: CompletionPrep, retryOf?: string): Promise<Attempt<CompletionResult>> {
+  private async completeOnce(op: PaidCall, req: CompletionRequest, prep: CompletionPrep, waitMs: number, retryOf?: string): Promise<Attempt<CompletionResult>> {
     const { ref, messages, inputTokens, maxOutputTokens, estimate, prompt } = prep;
     const redact = makeRedactor(this.env);
     const started = Date.now();
@@ -258,10 +280,6 @@ export class ModelGateway implements Gateway {
       // The run is ending (ADR-0111): handed only to an adapter that can cut its call off.
       const stop = req.operation?.stop;
       const signal = stop && adapter.cutsOff?.complete ? stop : undefined;
-      // A streamed answer is read as stalled only once its step would have ended anyway (B1R2-CODE-3): a call in an image
-      // or video step waits that step's 45 minutes, as the owner chose on 2026-10-22, "45 minutes for calls in media
-      // steps (Recommended)"; one in a model step or a quick step, or with no step limit, waits STREAM_IDLE_MS.
-      const streamIdleMs = Math.max(STREAM_IDLE_MS, req.operation?.stepLimitMs ?? 0);
       const reported = await withRetries(
         async () => {
           stopIfEnding(op, stop, ref.provider);
@@ -276,7 +294,9 @@ export class ModelGateway implements Gateway {
               responseFormat: req.responseFormat ?? 'text',
               context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, tier: req.tier, profileId: req.profileId },
               ...(signal ? { signal } : {}),
-              streamIdleMs,
+              // A streamed answer is read as stalled once it has sent nothing for its model's wait, however long its
+              // step may run (the waits design of 2026-10-22).
+              streamIdleMs: waitMs,
             });
           } catch (e) {
             // Cut off by its stop: the call may have been billed and is counted as interrupted, unless what the adapter
@@ -365,7 +385,7 @@ export class ModelGateway implements Gateway {
     const first = earlier ? declinedFrom(earlier) : await this.imageOnce(await this.admit(req, 'image', ref, estimate), req, prep);
     if ('answer' in first) return first.answer;
     // The image model declined (ADR-0102): one retry on the same model, as a call of its own, then a plain failure.
-    return this.askOnceMore(req, 'image', ref, estimate, first, (call, op) => this.imageOnce(op, call, prep, first.entryId));
+    return this.askOnceMore(req, 'image', ref, estimate, first, async (call) => (op) => this.imageOnce(op, call, prep, first.entryId));
   }
 
   /** One attempt at an image, admitted as `op`, as {@link completeOnce} for a completion. */
@@ -450,6 +470,9 @@ export class ModelGateway implements Gateway {
    * the retry) is not an outcome: that failure is thrown as it is, and the step's next attempt asks for the retry alone.
    * Without it kept (the advisor's calls, or a hook that failed), the same is a final 'not-made'.
    *
+   * `prepare` reads what the retry needs before it is admitted (a completion's wait, read again for the call of its own)
+   * and returns the attempt; a read that fails is a retry not made, as a refusal at admission is.
+   *
    * The outcome: the retry's answer, with `declined` set and the declined attempt's cost added to `costUsd`; or a
    * 'refused' GatewayError, never retryable, whose message says what happened (who declined, the reason given), what
    * became of the retry, what each attempt was billed (a retry billed without a usable answer included), what byway
@@ -466,7 +489,7 @@ export class ModelGateway implements Gateway {
     ref: ModelRef,
     estimate: number,
     first: Declined,
-    again: (call: Q, op: PaidCall) => Promise<Attempt<R>>,
+    prepare: (call: Q) => Promise<(op: PaidCall) => Promise<Attempt<R>>>,
   ): Promise<R & { declined: DeclineRecord }> {
     const redact = makeRedactor(this.env);
     const base = {
@@ -500,14 +523,16 @@ export class ModelGateway implements Gateway {
           ...(caller.cancel ? { cancel: caller.cancel } : {}),
           // The retry is cut off when its run is ending, as the declined call was (ADR-0111).
           ...(caller.stop ? { stop: caller.stop } : {}),
-          // And waits on a stalled stream as long as the declined call did, its step's own limit (B1R2-CODE-3).
-          ...(caller.stepLimitMs !== undefined ? { stepLimitMs: caller.stepLimitMs } : {}),
+          // And waits the wait its caller read for the declined call, when it read one (a relay step's).
+          ...(caller.waitMs !== undefined ? { waitMs: caller.waitMs } : {}),
           ...(earlier && caller.rebuy === true ? { rebuy: true } : {}),
         }
       : undefined;
     const call = (retryOp ? { ...rest, operation: retryOp } : rest) as Q;
+    let again: (op: PaidCall) => Promise<Attempt<R>>;
     let op: PaidCall;
     try {
+      again = await prepare(call);
       op = await this.admit(call, kind, ref, estimate);
     } catch (e) {
       const err = e instanceof GatewayError ? e : toGatewayError(e, ref.provider, redact);
@@ -516,7 +541,7 @@ export class ModelGateway implements Gateway {
     }
     let second: Attempt<R>;
     try {
-      second = await again(call, op);
+      second = await again(op);
     } catch (e) {
       const err = e instanceof GatewayError ? e : toGatewayError(e, ref.provider, redact);
       // Cut off because its run was ending (ADR-0111): no outcome for the decline to keep, since the run has ended.
@@ -895,6 +920,18 @@ export class ModelGateway implements Gateway {
   }
 
   /**
+   * How long a call waits for its answer, in milliseconds (waits.ts): the wait its caller read for it (a relay step's;
+   * SpendContext.operation.waitMs), else the one chosen in Settings for its model, read now (CapsSource.waitMinutes),
+   * else its kind's default. The demo's mock models have no wait to choose: Settings is not asked for one.
+   */
+  private async waitMs(req: SpendContext, kind: WaitKind, ref: ModelRef): Promise<number> {
+    const given = req.operation?.waitMs;
+    if (given !== undefined) return given;
+    const chosen = ref.provider === 'mock' ? undefined : await this.caps.waitMinutes?.(req.workspaceId, ref);
+    return minutesMs(waitMinutesFor(kind, chosen));
+  }
+
+  /**
    * Before a completion or an image is sent again after an attempt that may have been billed: that attempt's estimate
    * is retained against the workspace cap (not the run's), or, when it does not fit, the call stops with
    * 'budget-exceeded' at workspace scope instead of risking a second charge (ADR-0095).
@@ -1173,17 +1210,18 @@ const MAX_TIMER_MS = 2_147_483_647;
 
 /**
  * SpendContext.operation, checked before anything is reserved: a key, signals that can say when the caller ends, the
- * step's own time limit, and the caller's side of a decline it keeps (ADR-0102).
+ * wait its caller read for it, and the caller's side of a decline it keeps (ADR-0102). A step's own time limit is not
+ * read any more (it was `stepLimitMs`): a field of that name is ignored.
  */
 function validateOperation(value: unknown): void {
-  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; stop?: unknown; rebuy?: unknown; stepLimitMs?: unknown; keepDecline?: unknown; declinedEarlier?: unknown } | null;
-  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, stop?, rebuy?, stepLimitMs?, keepDecline?, declinedEarlier? }');
+  const op = value as { key?: unknown; until?: unknown; cancel?: unknown; stop?: unknown; rebuy?: unknown; waitMs?: unknown; keepDecline?: unknown; declinedEarlier?: unknown } | null;
+  if (typeof op !== 'object' || op === null) throw invalid('operation must be { key, until, cancel?, stop?, rebuy?, waitMs?, keepDecline?, declinedEarlier? }');
   if (op.rebuy !== undefined && typeof op.rebuy !== 'boolean') throw invalid('operation.rebuy, when given, must be true or false');
-  // A limit that is not a time a timer can wait would end every streamed answer's wait at once: setTimeout waits 1 ms for
+  // A wait that is not a time a timer can wait would end every streamed answer's wait at once: setTimeout waits 1 ms for
   // NaN and for anything past 2^31 - 1 ms (Infinity included).
-  const limit = op.stepLimitMs;
-  if (limit !== undefined && !(typeof limit === 'number' && Number.isFinite(limit) && limit > 0 && limit <= MAX_TIMER_MS)) {
-    throw invalid(`operation.stepLimitMs, when given, must be a number of milliseconds above 0 and at most ${MAX_TIMER_MS}`);
+  const wait = op.waitMs;
+  if (wait !== undefined && !(typeof wait === 'number' && Number.isFinite(wait) && wait > 0 && wait <= MAX_TIMER_MS)) {
+    throw invalid(`operation.waitMs, when given, must be a number of milliseconds above 0 and at most ${MAX_TIMER_MS}`);
   }
   if (typeof op.key !== 'string' || !op.key) throw invalid('operation.key must be a non-empty string');
   if (!(op.until instanceof AbortSignal)) throw invalid('operation.until must be an AbortSignal');
