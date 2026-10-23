@@ -18,7 +18,7 @@ import type { Client } from '@temporalio/client';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { DEFAULT_TEMPORAL_ADDRESS, type Gateway, type PromptRenderer, type Runner, type Store } from '@byway/contracts';
 import { createRunnerClient } from './client.ts';
-import { reconcileLostRuns } from './lost-runs.ts';
+import { reconcileLostRuns, type Reconciled } from './lost-runs.ts';
 import type { PageRenderer } from './pages.ts';
 import { cliFileName, devServerArgs, fileFacts, temporalExecutable, trustedBinary } from './temporal-cli.ts';
 import { createWorker, type RunnerWorker } from './worker.ts';
@@ -106,6 +106,18 @@ export async function settleBeforePolling(client: Client, worker: RunnerWorker, 
   const retired = await worker.retireStaleRuns(client);
   const { lost, orphaned } = await reconcileLostRuns(client, store, [(await store.ensureDefaultWorkspace()).id], { taskQueue: worker.taskQueue });
   return { retired, lost, orphaned };
+}
+
+/**
+ * The lost-run pass the engine repeats while its worker polls (lost-runs.ts): the one it ran at start, in both
+ * directions, except that queued runs are left alone, because the app may be starting one (Runner.start writes the run
+ * before its workflow). A run whose workflow Temporal closed without byway closing it, at one of Temporal's limits or
+ * from outside, is then failed plainly within minutes instead of reading "running" until byway next starts. Runs from
+ * another workflow bundle are not looked for again: the worker retired them all at start, and it starts runs under its
+ * own bundle only. Exported so the tests run it directly, without waiting for its timer.
+ */
+export async function reconcileWhilePolling(client: Client, worker: RunnerWorker, store: Store): Promise<Reconciled> {
+  return reconcileLostRuns(client, store, [(await store.ensureDefaultWorkspace()).id], { taskQueue: worker.taskQueue, skipQueued: true });
 }
 
 /** The plain message for a port that is taken (OPS-1). */
