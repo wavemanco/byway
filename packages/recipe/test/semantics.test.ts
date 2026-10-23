@@ -25,6 +25,7 @@ import {
   FIELD_ROLES,
   flowRecipe,
   followsEveryRun,
+  HANDED_ON,
   hasNoExecutor,
   leavesNote,
   leavesOnlyAtExits,
@@ -342,6 +343,14 @@ describe("a TELLS sweep's swap choice (asksSwaps, the interpreter's seq)", () =>
   });
 });
 
+describe('what audit, a one-shot gate and each hand on (HANDED_ON)', () => {
+  it('an audit and a gate the critique made inside them, each its candidates’ work as the option set; every other port as handed in', () => {
+    // The validator's scope typing and the interpreter both read this table; the runner's operator-ports test runs
+    // small admitted recipes and holds the two to each other.
+    expect(HANDED_ON).toEqual({ audit: ['critique'], gate: ['critique'], each: ['option_set<artifact>'] });
+  });
+});
+
 describe('steps with no executor yet (ADR-0069)', () => {
   it('a policy step, a tool other than a render, and a model ASSET that makes voice-over audio finish skipped', () => {
     const facts = (actor: Step['actor'], role: Step['role'], consumes: Step['consumes'] = ['artifact']) => ({ actor, role, consumes, produces: ['artifact'] as Step['produces'] });
@@ -480,6 +489,21 @@ describe('the flow walk (flowRecipe)', () => {
     // Loops, optionals and routes hand on what ran in them, whatever `after` says.
     expect(paths(recipeOf(seq(critic('a'), optional('o', 'needed', critic('b')), critic('c'))), entry)).toEqual(['a b c', 'a c']);
   });
+
+  it('`declined` says what a run goes on with when the person declines an optional (the interpreter clears a critique there, R-DECLINED); the state before it when left out', () => {
+    const declined = (r: Recipe) =>
+      [
+        ...flowRecipe<string[]>(r, [''], {
+          step: (s, _p, _st, state) => state.map((x) => `${x}${x ? ' ' : ''}${s.id}`),
+          join: (states) => [...new Set(states.flat())].sort(),
+          declined: (node, state, contained) => state.map((x) => `${x}${x ? ' ' : ''}-${node.id}${contained ? '(in)' : ''}`),
+        }),
+      ].sort();
+    expect(declined(recipeOf(seq(critic('a'), optional('o', 'needed', critic('b')), critic('c'))))).toEqual(['a -o c', 'a b c']);
+    // Where its output never reaches the work, the walk says so.
+    expect(declined(recipeOf(audit('au', [{ name: 'maybe', body: optional('o', 'needed', critic('b')) }])))).toEqual(['-o(in)', 'b']);
+    expect(paths(recipeOf(seq(critic('a'), optional('o', 'needed', critic('b')), critic('c'))))).toEqual(['a b c', 'a c']);
+  });
 });
 
 describe('whose critique a writer applies (critiqueSources)', () => {
@@ -523,6 +547,11 @@ describe('whose critique a writer applies (critiqueSources)', () => {
     const f = fix('f');
     expect(sources(recipeOf(seq(critic('c'), f, check('k'), f)))).toEqual({});
     expect(sources(recipeOf(seq(critic('c'), f, render('r'), f)))).toEqual({ f: 'c' });
+    // Declined, an optional that would have put its critique in place leaves none (R-DECLINED), even where its body's
+    // step is the one before it.
+    const k = check('k');
+    expect(sources(recipeOf(seq(k, optional('o', 'needed', k), fix('f'))))).toEqual({});
+    expect(sources(recipeOf(seq(k, optional('o', 'needed', render('r')), fix('f'))))).toEqual({ f: 'k' });
   });
 });
 
@@ -543,9 +572,14 @@ describe("a person's list or critique that no writer applies (unappliedCritiques
     // Another critique put in its place first: a direction of yours given as a critique (C4's case), a critic.
     expect(unapplied(seq(render('r'), personCut('cut'), yourCritique('direction'), fix('f')))).toEqual(['cut']);
     expect(unapplied(seq(personCut('cut'), render('r'), critic('c'), fix('f')))).toEqual(['cut']);
-    // Some path is enough: a fix you may decline, or one that a critic you may run comes before.
+    // Some path is enough: a fix you may decline, or one that a step you may run before it carries your list to.
     expect(unapplied(seq(personCut('cut'), optional('o', 'you want it', fix('f'))))).toEqual([]);
-    expect(unapplied(seq(personCut('cut'), optional('o', 'you want a review', seq(render('r'), critic('c'))), fix('f')))).toEqual([]);
+    expect(unapplied(seq(personCut('cut'), optional('o', 'you want a sketch', render('r')), fix('f')))).toEqual([]);
+    // Not a critic you may run: declined, it leaves the critique empty, so the fix after it makes no change and applies
+    // no older critique (R-DECLINED); run, its critique takes your list's place.
+    expect(unapplied(seq(personCut('cut'), optional('o', 'you want a review', seq(render('r'), critic('c'))), fix('f')))).toEqual(['cut']);
+    const carrier = step({ ...check('carrier'), consumes: ['view', 'critique'] });
+    expect(unapplied(seq(personCut('cut'), optional('o', 'you want a review', seq(render('r'), carrier)), fix('f')))).toEqual([]);
     expect(unapplied(seq(personCut('cut'), route('rt', 'how', [{ name: 'ai', body: fix('f') }, { name: 'yours', body: authorDraft('own') }])))).toEqual([]);
     // The next round's fix applies a list given at the end of a round (the last round's goes unapplied).
     expect(unapplied(loop('l', seq(fix('f'), render('r'), personCut('cut')), gate('human')))).toEqual([]);

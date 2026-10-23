@@ -15,11 +15,13 @@ import { cancelRun, failRun } from '../src/activities/lifecycle.ts';
 import { recordResolution } from '../src/activities/human.ts';
 import { assetStep, NO_IMAGES_NOTE } from '../src/activities/asset.ts';
 import { ArtifactReader } from '../src/activities/prompting.ts';
-import { NO_VIDEO_NOTE, relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, NO_VIDEO_NOTE, relayLink } from '../src/activities/relay.ts';
 import { createActivities } from '../src/activities/index.ts';
 import { modelStep } from '../src/activities/model-step.ts';
+import { runSeeds } from '../src/activities/writes.ts';
 import { OTHER_FAMILY_FALLBACK_NOTE } from '../src/activities/availability.ts';
 import type { RunRef, StepCall, StepSpec } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { fakeHash, fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
@@ -72,7 +74,7 @@ function scripted(answers: string[], opts: { demo?: boolean; statuses?: ProfileS
 async function newRun(profileId = 'no-media'): Promise<RunRef> {
   const run = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'tiny', recipeHash: 'sha256:x', profileId, title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
   await store.updateRun(run.id, { status: 'running' });
-  return { runId: run.id, workspaceId, recipeId: 'tiny', profileId, medium: 'prose', problem: { text: 'A memo' }, seeds: [] };
+  return { runId: run.id, workspaceId, recipeId: 'tiny', profileId, medium: 'prose', problemId: await storeBrief(store.artifacts, { text: 'A memo' }) };
 }
 
 const call = (run: RunRef, stepId: string): StepCall => ({ key: `${run.runId}/${stepId}/-/1`, stepId, stage: 'D1' });
@@ -151,12 +153,14 @@ describe('SEED (SEED-1)', () => {
       return { text, stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0, ledgerEntryId: 'l1' };
     };
     const out = await modelStep({ gateway, store, prompts }, { run, call: call(run, 'spark'), step: seedSpec, ports: {}, refs: [] });
-    expect(out.seed).toHaveLength(48);
-    expect(seen).toBe(out.seed);
+    // Kept in the run's seed range, where every write check reads it (P2), and not handed back to the workflow.
+    expect(seen).toHaveLength(48);
+    expect(await runSeeds(store, run.runId)).toEqual([seen]);
+    expect(out).not.toHaveProperty('seed');
     expect(await store.artifacts.getText(out.artifactId!)).toBe('# Spark\n\nA quiet direction.\n');
     const note = await store.artifacts.getText(out.noteArtifactId!);
     expect(note).toContain('Layout: one tall column.');
-    expect(note).not.toContain(out.seed!);
+    expect(note).not.toContain(seen);
   });
 
   it('keeps no note when the answer has no written direction (one line of preamble is not one)', async () => {
@@ -222,7 +226,7 @@ describe('which profile says whether images and video exist', () => {
     const deps: RunnerDeps = { gateway: scripted([], { demo: false }), store, prompts: fakePrompts() };
     const doc = (await store.artifacts.putText('# Memo\n', 'text/markdown')).id;
     expect(await assetStep(deps, { run, call: call(run, 'art'), step: assetSpec, ports: { artifact: doc } })).toMatchObject({ skipped: true });
-    expect(await relayLink(deps, { run, call: call(run, 'clip'), step: relaySpec, ports: { artifact: doc }, shot: 1 })).toMatchObject({ skipped: true });
+    expect(await relayLink(deps, { run, call: call(run, 'clip'), step: relaySpec, ports: { artifact: doc }, shot: 1, waits: DEFAULT_RELAY_WAITS })).toMatchObject({ skipped: true });
     const notes = (await store.events(run.runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
     expect(notes).toEqual([NO_IMAGES_NOTE, NO_VIDEO_NOTE]);
   });

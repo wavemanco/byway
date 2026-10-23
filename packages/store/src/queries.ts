@@ -36,6 +36,9 @@ export function prepareQueries(db: DatabaseSync) {
     memo: p('SELECT value FROM memos WHERE run_id = ? AND key = ?'),
     // First write wins: a key that is already set keeps its value (the caller reads it back in the same transaction).
     insertMemo: p('INSERT INTO memos (run_id, key, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (run_id, key) DO NOTHING'),
+    // One key range: `key >= prefix` lets the primary key start there, and the exact comparison of the key's first
+    // characters (not LIKE or GLOB, whose % _ * ? [ are patterns, and LIKE ignores case) ends it. Keys sort as bytes.
+    memosWithPrefix: p('SELECT value FROM memos WHERE run_id = ? AND key >= ? AND substr(key, 1, length(?)) = ? ORDER BY key'),
 
     intake: p('SELECT * FROM intakes WHERE id = ?'),
     insertIntake: p(`INSERT INTO intakes (id, workspace_id, problem, answers, recommendation, composed, created_at, updated_at)

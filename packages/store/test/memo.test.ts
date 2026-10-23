@@ -56,6 +56,38 @@ describe('memo', () => {
     expect(await store.getMemo('run-1', 'empty')).toBe('');
   });
 
+  it('reads one key range: every value whose key starts with the prefix, in key order, and only the run’s own', async () => {
+    const store = openStore();
+    await seedRun(store, 'run-1');
+    await seedRun(store, 'run-2');
+    // The runner keeps a run's SEED strings under one prefix (P2), beside its other memos.
+    await store.setMemo('run-1', 'seed/run-1/b/-/1', 'second');
+    await store.setMemo('run-1', 'seed/run-1/a/-/1', 'first');
+    await store.setMemo('run-1', 'run-1/a/-/1/complete/abc/1', 'sha256:answer');
+    await store.setMemo('run-1', 'run-1/a/-/1/seed', 'not under the prefix');
+    await store.setMemo('run-1', 'seeds/x', 'a longer word');
+    await store.setMemo('run-1', 'Seed/x', 'another case');
+    await store.setMemo('run-1', 'lineup/x', 'sha256:card');
+    await store.setMemo('run-2', 'seed/run-2/a/-/1', 'another run');
+    expect(await store.memosWithPrefix('run-1', 'seed/')).toEqual(['first', 'second']);
+    expect(await store.memosWithPrefix('run-2', 'seed/')).toEqual(['another run']);
+    // A prefix that is a whole key reads that key; one no key starts with reads nothing, as does a run with none.
+    expect(await store.memosWithPrefix('run-1', 'lineup/x')).toEqual(['sha256:card']);
+    expect(await store.memosWithPrefix('run-1', 'seed/run-1/c')).toEqual([]);
+    expect(await store.memosWithPrefix('no-run', 'seed/')).toEqual([]);
+    // Like and glob characters are characters: nothing in a prefix is a pattern.
+    await store.setMemo('run-1', 'a%b/1', 'percent');
+    await store.setMemo('run-1', 'axb/1', 'x');
+    await store.setMemo('run-1', 'a_b/1', 'underscore');
+    await store.setMemo('run-1', 'a*b/1', 'star');
+    expect(await store.memosWithPrefix('run-1', 'a%')).toEqual(['percent']);
+    expect(await store.memosWithPrefix('run-1', 'a_')).toEqual(['underscore']);
+    expect(await store.memosWithPrefix('run-1', 'a*')).toEqual(['star']);
+    // An empty prefix would read every memo of the run: it is refused, as an empty key is.
+    await expect(store.memosWithPrefix('run-1', '')).rejects.toMatchObject({ code: 'invalid' });
+    await expect(store.memosWithPrefix('', 'seed/')).rejects.toMatchObject({ code: 'invalid' });
+  });
+
   it('is shared by two store instances on one data directory (the web app and the worker)', async () => {
     const dataDir = tempDir();
     const a = openStore({ dataDir });
@@ -73,5 +105,6 @@ describe('memo', () => {
     store.close();
     await expect(store.getMemo('run-1', 'k')).rejects.toMatchObject({ code: 'closed' });
     await expect(store.setMemo('run-1', 'k', 'v')).rejects.toMatchObject({ code: 'closed' });
+    await expect(store.memosWithPrefix('run-1', 'k')).rejects.toMatchObject({ code: 'closed' });
   });
 });

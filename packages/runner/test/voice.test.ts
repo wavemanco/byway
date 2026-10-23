@@ -7,12 +7,13 @@ import type { Medium } from '@byway/contracts';
 import { AnswerRejected, StepError } from '../src/activities/failures.ts';
 import { finishHumanStep } from '../src/activities/human.ts';
 import { modelStep } from '../src/activities/model-step.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
 import { pageCopy, pageLockView } from '../src/copy.ts';
 import { joinCodeDiff, parseStoryboard, serializeJson, splitCodeDiff } from '../src/formats.ts';
 import { playwrightPages, type PageRenderer } from '../src/pages.ts';
+import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import type { StepSpec } from '../src/types.ts';
-import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
+import { benchRun, putWork, stepCall, storyboard, voiceAsked, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
 // The runner's own Chromium: a page's VOICE is checked by the browser (ADR-0081). Each page question reads the page
 // in it twice and each page write three times, so a test with many questions takes seconds on a loaded machine.
@@ -27,6 +28,8 @@ beforeEach(async () => {
 afterEach(() => b.close());
 
 const json = async (id: string) => JSON.parse(await b.store.artifacts.getText(id)) as Record<string, unknown>;
+/** The person's words as the run holds them (P2): kept as a text file, by its id. */
+const kept = async (text: string) => (await b.store.artifacts.putText(text, INPUT_MEDIA_TYPE)).id;
 const rejected = (p: Promise<unknown>) => p.then(
   () => {
     throw new Error('expected the answer to be refused');
@@ -258,6 +261,28 @@ describe('a broken character is asked about again, in every medium, before anyth
   });
 });
 
+describe("the author's own draft that byway cannot read is asked again with why, not a failed run (ENG-6)", () => {
+  const draft: StepSpec = { id: 'draft', role: 'build', actor: 'human', consumes: [], produces: ['artifact'], writes: true };
+  const finish = (run: Awaited<ReturnType<typeof benchRun>>, text: string) => finishHumanStep(b.deps, { run, call: stepCall(run, 'draft'), step: draft, kind: 'write', resolution: { checkpointId: 'cp-draft', text }, ports: {} });
+  const nothingStored = async (runId: string) => expect(await b.store.events(runId)).not.toContainEqual(expect.objectContaining({ type: 'artifact' }));
+
+  it('a storyboard with a shot numbered twice: the problem goes back to the person, nothing is stored, and their corrected draft is the work', async () => {
+    const run = await benchRun(b, 'media');
+    const twice = storyboard({ voiceover: 'Bread before seven.', storyboard: [{ shot: 1, caption: 'Oven' }, { shot: 1, caption: 'Door' }] });
+    expect(await rejected(finish(run, twice))).toBe('Your draft could not be used as the media: Shot 1 appears more than once in the storyboard: give each shot its own number.');
+    await nothingStored(run.runId);
+    const fixed = await finish(run, twice.replace(/"shot": 1,(?![\s\S]*"shot": 1,)/, '"shot": 2,'));
+    expect(((await json(fixed.artifactId!)).storyboard as { shot: number }[]).map((s) => s.shot)).toEqual([1, 2]);
+  });
+
+  it('a code diff that is not a diff at all', async () => {
+    const run = await benchRun(b, 'code-diff');
+    expect(await rejected(finish(run, 'not a diff at all'))).toMatch(/^Your draft could not be used as the code-diff: The answer is not a unified diff/);
+    await nothingStored(run.runId);
+    expect(b.gateway.requests).toEqual([]);
+  });
+});
+
 describe('keepsVoice holds the person’s words exactly (F07)', () => {
   const fixSpec: StepSpec = { id: 'apply-cut', role: 'fix', block: 'CUT', actor: 'model', tier: 'mid', prompt: 'product.test.polish', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true, keepsVoice: true };
   const fenced = (text: string) => '```json\n' + text + '\n```';
@@ -272,7 +297,7 @@ describe('keepsVoice holds the person’s words exactly (F07)', () => {
       b.gateway.requests.push(req);
       return { text: scripted.shift() ?? '', stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, ledgerEntryId: `l${b.gateway.requests.length}` };
     };
-    const out = await modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact, critique: '- Cut shot 2.', ...(voice !== undefined ? { voice } : {}) }, refs: [] });
+    const out = await modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact, critique: '- Cut shot 2.', ...(voice !== undefined ? { voice: await kept(voice) } : {}) }, refs: [] });
     const finished = (await b.store.events(run.runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
     return { out, finished, run };
   };
@@ -328,7 +353,7 @@ describe('keepsVoice holds the person’s words exactly (F07)', () => {
     const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true };
     // The link starts from shot 1's frame (a link with none makes no clip, ADR-0090).
     const start = (await b.store.artifacts.put(new Uint8Array([137, 80, 78, 71]), 'image/png')).id;
-    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, voice: script, anchor: start }, shot: 1 });
+    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, voice: await kept(script), anchor: start }, shot: 1, waits: DEFAULT_RELAY_WAITS });
     const stored = await json(out.artifactId!);
     expect(stored.voiceover).toBe(script);
     const shot = (stored.storyboard as { clipArtifactId?: string; lastFrameArtifactId?: string }[])[0]!;
@@ -376,7 +401,8 @@ describe('VOICE on a web page: deterministic, no model (F07)', () => {
     expect(q.prompt).toMatch(/^Write the words yourself: change any line below\. One line per block of text; leave a line empty to remove its text\. Words in \[brackets\] are a link's words/);
     expect(q.prompt!.split(legend)).toHaveLength(2);
     const problem = await rejected(q.answer('T\nTerms · Privacy'));
-    const again = await q.ask({ prompt: `${problem} Write the words yourself: change any line below.`, initialText: 'T\nTerms · Privacy' });
+    // The workflow's question for a page ends with the line rule; the activity adds the rest after it, once (R-SUFFIX).
+    const again = await q.ask({ prompt: `${problem} ${voiceAsked(q.run)}`, initialText: 'T\nTerms · Privacy' });
     expect(again.prompt.split(legend)).toHaveLength(2);
     expect(again.prompt.split('One line per block of text')).toHaveLength(2);
     const out = await q.answer('T\n[Privacy] · [Terms]', again.checkpointId);
@@ -957,7 +983,7 @@ describe('keepsVoice on a web page (F07)', () => {
       b.gateway.requests.push(req);
       return { text: '```html\n' + after + '\n```', stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, ledgerEntryId: 'l1' };
     };
-    return modelStep(b.deps, { run, call: { key: `${run.runId}/polish/-/1`, stepId: 'polish', stage: 'D3' }, step: fixSpec, ports: { artifact, voice: 'T\nNew head\nPlease [read the terms] today.' }, refs: [] });
+    return modelStep(b.deps, { run, call: { key: `${run.runId}/polish/-/1`, stepId: 'polish', stage: 'D3' }, step: fixSpec, ports: { artifact, voice: await kept('T\nNew head\nPlease [read the terms] today.') }, refs: [] });
   };
 
   it('refuses a write that adds a claim or retargets a link; a class change passes', async () => {

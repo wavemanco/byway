@@ -254,7 +254,7 @@ function stepSpan(w: Walk, s: Step, set: Count): Span {
         return minutes('compare');
       case 'voice':
         // Your time only: VOICE writes the edited copy back with no model call (ADR-0081, spec §3.2). Until B1 this also
-        // counted a mid-tier voice.apply completion for each VOICE that changes the work.
+        // counted a mid-tier voice.apply completion for each VOICE that changes the work (that helper is now retired).
         return minutes(s.knobs?.scope === 'key-lines' ? 'write-key-lines' : 'write');
       case 'build':
         return minutes('author');

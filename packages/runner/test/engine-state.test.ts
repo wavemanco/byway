@@ -16,6 +16,7 @@ import { RUN_WORKFLOW, workflowIdFor, type RunInput } from '../src/types.ts';
 import { createWorker } from '../src/worker.ts';
 import { OLDER_VERSION_MESSAGE, retireStaleRuns } from '../src/versioning.ts';
 import { WORKFLOW_HASH_MEMO } from '../src/workflow/version.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { createHarness, PROBLEM, type Harness } from './helpers/harness.ts';
 import { tiny } from './helpers/recipes.ts';
 
@@ -174,7 +175,7 @@ describe('a run workflow whose run the store does not have (R4: a store older th
   it('is stopped at engine start, before the worker polls, so none of its steps runs', async () => {
     const queue = `${h.taskQueue}-restored`;
     const runId = `orphan-${Date.now()}`;
-    const input: RunInput = { runId, workspaceId: h.workspaceId, recipe: tiny, problem: PROBLEM, profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
+    const input: RunInput = { runId, workspaceId: h.workspaceId, recipe: tiny, problemId: await storeBrief(h.store.artifacts, PROBLEM), profileId: 'demo', budgetUsd: 5, medium: 'prose', routes: {}, inputs: {} };
     // Started as the Runner client starts a run, on a queue no worker polls yet, and never written to this store: as
     // after a restore of byway.sqlite from before the run began, beside a temporal.sqlite from after.
     await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: queue, workflowId: workflowIdFor(runId), args: [input] });

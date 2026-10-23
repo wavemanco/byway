@@ -41,7 +41,7 @@ import { ArtifactReader, buildPrompt } from './prompting.ts';
 import { checkBriefs, eachPlan, freePlan, slotName, type SlotBrief, type SlotBriefs, type SlotPlan } from './slot-plan.ts';
 import { labelFor, stepFinished, stepStarted } from './steps.ts';
 import { keptVoice } from './held-voice.ts';
-import { announce, checkedWriter, restoredNote, storeText } from './writes.ts';
+import { announce, checkedWriter, restoredNote, runSeeds, storeText } from './writes.ts';
 
 /** Image failures that stop the asset step instead of trying the image again (a billed failure does too: see below). */
 const STOPS_THE_STEP: ReadonlySet<GatewayError['code']> = new Set(['budget-exceeded', 'accounting-fault', 'no-credentials', 'unknown-profile', 'in-flight']);
@@ -113,7 +113,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const reader = new ArtifactReader(deps);
   const current = await reader.text(ports.artifact);
   // keepsVoice: locked before the paid calls, so a fault in the check never repeats them.
-  const write = checkedWriter(run, step.keepsVoice ? keptVoice(ports) : undefined, current);
+  const write = checkedWriter({ medium, seeds: await runSeeds(deps.store, run.runId) }, step.keepsVoice ? await keptVoice(reader, ports) : undefined, current);
   let restored: string[] = [];
   const knobs = step.knobs ?? {};
   const slotsKnob = typeof knobs.slots === 'number' ? knobs.slots : undefined;
@@ -122,7 +122,7 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
   const each = eachPlan(medium, current, what);
 
   // 1. Briefs, held to the plan: on prose and web pages, to the count the prompt declares.
-  const built = await buildPrompt(reader, { medium, problem: run.problem, step, ports });
+  const built = await buildPrompt(reader, { medium, problemId: run.problemId, step, ports });
   built.slots.artifact = current;
   if (medium === 'options') built.slots.options = optionLabels(current);
   const promptId = step.prompt && deps.prompts.has(step.prompt) ? step.prompt : 'helper.asset.briefs';

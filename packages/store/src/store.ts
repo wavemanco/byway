@@ -422,6 +422,13 @@ export class SqliteStore implements Store {
     });
   }
 
+  /** The values of the run's memos whose keys start with `prefix`, in key order; [] for a run that has none. */
+  async memosWithPrefix(runId: string, prefix: string): Promise<string[]> {
+    const q = this.#queries();
+    const p = nonEmpty('memo key prefix', prefix);
+    return q.memosWithPrefix.all(nonEmpty('runId', runId), p, p, p).map((r) => String(r.value));
+  }
+
   // Preferences
 
   async getPreferences(workspaceId: string): Promise<Preferences> {

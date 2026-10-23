@@ -88,7 +88,7 @@ describe('exposure register', () => {
     }
     expect(existsSync(join(dir, EXPOSURE_FILENAME))).toBe(false);
     for (const role of ['critic', 'judge', 'select', 'rerank', 'check', 'tells-compare', 'gate']) expect(isJudgingPurpose(`${role}:prose`), role).toBe(true);
-    for (const role of ['build', 'fix', 'seed', 'cut', 'vision', 'tells-sweep', 'dedupe', 'overlap', 'asset.briefs', 'voice.apply', 'advisor.compose']) {
+    for (const role of ['build', 'fix', 'seed', 'cut', 'vision', 'tells-sweep', 'dedupe', 'overlap', 'asset.briefs', 'asset.integrate', 'advisor.compose']) {
       expect(isJudgingPurpose(`${role}:prose`), role).toBe(false);
     }
   });

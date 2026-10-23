@@ -6,7 +6,8 @@
  * - whose words go into the work, from actor, role and `produces: ['artifact']` (never from the 'voice' port);
  * - what a VOICE covers, from `variant`, the knobs and the run's medium;
  * - which protocol block a step is, from its role (the runner reads `block` only for labels);
- * - whether a step's output is kept, from the operator it sits in;
+ * - whether a step's output is kept, from the operator it sits in, and what audit, a one-shot gate and each hand on of
+ *   what ran inside them (`HANDED_ON`);
  * - where a loop's gate can end the loop's body, from the operators between the loop and its critic or check;
  * - which steps have no executor yet and finish skipped, and which can put another critique in place of the last;
  * - what can run after a step, from walk order, the loops and relays around it and the final checks that re-run a
@@ -176,7 +177,8 @@ export const leavesNote = (s: StepFacts & Pick<Step, 'prompt'>): 'always' | 'som
  * human(), audit() and gate()): a model critic, check, CUT, cliché sweep or overlap flag, a model or person's VISION
  * that produces a critique, a person's CUT directive or other reaction that produces one, an audit whose lenses do, and
  * a final check whose body does. replicate, each and a pick hand on the ports they started with, so what runs inside
- * them never does; a write (a person's or a machine's) leaves the critique as it was.
+ * them never does; a write (a person's or a machine's) leaves the critique as it was. An optional whose body can, and
+ * that the person declines, leaves the critique empty and marked instead (the interpreter's optional(), R-DECLINED).
  */
 export function replacesCritique(n: Node): boolean {
   switch (n.op) {
@@ -659,6 +661,32 @@ export function lockedScripts(recipe: Recipe): Set<Step> {
   return locked;
 }
 
+// ---- What an operator hands on ----------------------------------------------------------------------------------
+
+/** The ports an operator that runs its body apart can take from what ran inside it (HANDED_ON). */
+export type HandedPort = Extract<PortType, 'critique' | 'option_set<artifact>'>;
+
+/**
+ * What audit, a one-shot gate and each hand on of what ran inside them, written down once (the backlog row "Operator
+ * output ports are defined twice"): the ports each puts in place of the ones it was handed. Every other port goes on as
+ * it was handed in, whatever ran inside. The validator's scope typing and the interpreter's audit(), gate() and each()
+ * read it, and the runner's operator-ports test runs small admitted recipes and holds the two to each other.
+ * - audit: its lenses' critiques, joined under their names, where a lens made one; else the critique it was handed.
+ *   Nothing else a lens makes comes out (several lenses cannot make one score); beside the work, the interpreter also
+ *   hands on its lenses' notes, which are no port.
+ * - gate: its body's critique, with what marks it (an empty CUT's, a sweep's hits; R-GATE-MARK); its view and its
+ *   score stay inside.
+ * - each: its candidates' work, as the option set, one per option it was handed. Inside, each candidate runs on its
+ *   own option as the work, with no option set.
+ * replicate and a pick hand on what they make too (the option set, the choice), and the typing reads them where it
+ * types them.
+ */
+export const HANDED_ON: Readonly<Record<'audit' | 'gate' | 'each', readonly HandedPort[]>> = {
+  audit: ['critique'],
+  gate: ['critique'],
+  each: ['option_set<artifact>'],
+};
+
 // ---- The flow walk ----------------------------------------------------------------------------------------------
 
 export interface FlowOps<S> {
@@ -694,6 +722,13 @@ export interface FlowOps<S> {
    * it. May record findings, as `step` may.
    */
   after?(node: Replicate | Each | PickNode | Audit | OneShotGate, entry: S, inner: S, parts: readonly S[], contained: boolean): S;
+  /**
+   * The state a run goes on with when the person declines an optional (the interpreter's optional()); `state` when left
+   * out. A declined optional whose body would have put its critique in place (`replacesCritique`) leaves the critique
+   * empty and marked, so the writer after it makes no change (R-DECLINED); an analysis of the critique says so here.
+   * `contained` says the optional sits in a lens, a gate body or a judge, as `step` is told.
+   */
+  declined?(node: Optional, state: S, contained: boolean): S;
   /**
    * The state the loop's exit gets right after an exit point, from the states before and after the step; `after` when
    * left out. A judge in a relay link with nothing to see is skipped and ends the round 'unchecked' with the ports from
@@ -756,7 +791,7 @@ export function withoutFlowMemo<T>(fn: () => T): T {
  * and join; a loop body (and a relay link) runs twice, so effects that reach the next iteration through the back-edge
  * are seen; per-candidate bodies (replicate, each) join with the state before them; audit lenses fork from one state
  * and join. An analysis that follows one port says, through `enter` and `after`, what those operators start their bodies
- * from and hand on of it.
+ * from and hand on of it, and through `declined` what a run goes on with when an optional is declined.
  *
  * Exit-aware: a loop's gate may end its body right after a step that reports to it (an exit point: a model critic
  * under a critic gate, a model check under a check-clean gate, reached through seq, relay, route and optional), so the
@@ -854,7 +889,8 @@ function flowOnce<S>(walk: FlowWalk<S>, node: Node, state: S, path: string, stag
       return after(node, body, [body]);
     }
     case 'optional':
-      return ops.join([state, flowNode(walk, node.body, state, `${path}.body`, stage, contained, loop)]);
+      // Run, or declined: then the run goes on with what `declined` says, the state before it by default.
+      return ops.join([ops.declined ? ops.declined(node, state, contained) : state, flowNode(walk, node.body, state, `${path}.body`, stage, contained, loop)]);
     case 'route':
       return ops.join(node.branches.map((b, i) => flowNode(walk, b.body, state, `${path}.branches[${i}].body`, stage, contained, loop)));
     case 'pick': {
@@ -1001,12 +1037,16 @@ interface CritiqueTaker {
  * - A judge in a relay link may be skipped, with nothing to see, and the run goes on with the critique from before it,
  *   unless it reports to the loop around it, whose round then ends there (ADR-0090). A person's answer in a lens or a
  *   gate body may be empty, which is dropped (ADR-0098).
+ * - An optional the person declines whose body would have put its critique in place leaves the critique empty
+ *   (R-DECLINED): no step's critique is the latest after it. In a lens or a gate body the one before it is kept beside
+ *   none, since an audit drops a lens that ends with an empty critique and hands on the one it was handed.
  *
  * A may-analysis over a walk that holds every run: "may be the latest" covers every run. The walk also leaves every
  * loop from the end of its body, as every other rule reads it, which can only take a claim of `critiqueSources` away.
  */
 function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<string, CritiqueTaker> } {
-  // A state: the places of the steps whose critique may be the latest, sorted; '' is none yet.
+  // A state: the places of the steps whose critique may be the latest, sorted; '' is none: none given yet, or one a
+  // declined optional left empty.
   const at = new Map<string, Step>();
   const takers = new Map<string, CritiqueTaker>();
   const skippable = skippableJudges(recipe);
@@ -1028,6 +1068,7 @@ function critiqueFlow(recipe: Recipe): { at: Map<string, Step>; takers: Map<stri
     key: (st) => st.join('|'),
     after: (node, entry, inner) => (node.op === 'audit' || node.op === 'gate' ? inner : entry),
     exit: (_s, path, before, after) => (skippable.get(path) ? union(before, after) : after),
+    declined: (node, st, contained) => (!replacesCritique(node.body) ? st : contained ? union(st, ['']) : ['']),
   });
   return { at, takers };
 }
@@ -1211,6 +1252,9 @@ function decidesWork(recipe: Recipe): Set<string> {
  *   critique, or the critique it was handed
  *   where the body ends with a person's empty answer. Both hand on the brief and the taste they started with.
  * - A judge in a relay link may be skipped (`skippableJudges`): on those runs the port keeps what it had.
+ * - An optional the person declines whose body would have put its critique in place leaves the critique empty
+ *   (R-DECLINED), which carries nothing: the writer after it makes no change. In a lens or a gate body it is read as a
+ *   person's empty answer is there, so an audit drops that lens.
  */
 function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<string> {
   const askedAt = new Set(asked.map((p) => p.path));
@@ -1303,6 +1347,7 @@ function answersReachingWork(recipe: Recipe, asked: readonly Placement[]): Set<s
       }
     },
     exit: (_s, path, before, after) => (skippable.get(path) ? each((c) => union(before[c], after[c]), after.cand) : after),
+    declined: (node, st, contained) => (replacesCritique(node.body) ? { ...st, critique: contained ? [EMPTY_ANSWER] : [] } : st),
     exactLoops: true,
     untilStable: true,
   });

@@ -26,9 +26,10 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
 
 /**
  * fal over HTTP: the storage upload, the queue (submit, status, result) and the media host. `submits` plans the answer
- * to each POST to the queue, per endpoint, in order (then accepted); every POST is recorded.
+ * to each POST to the queue, per endpoint, in order (then accepted); `results` plans the answer to each read of a job's
+ * result, per request id, in order (then its media); every POST is recorded.
  */
-function fakeFalHttp(submits: Record<string, (Response | Error)[]> = {}) {
+function fakeFalHttp(submits: Record<string, (Response | Error)[]> = {}, results: Record<string, (() => Response)[]> = {}) {
   const media = fakeFetch();
   const posts: { url: string; auth: string | null; body: unknown }[] = [];
   const reads: string[] = [];
@@ -52,6 +53,8 @@ function fakeFalHttp(submits: Record<string, (Response | Error)[]> = {}) {
       const path = new URL(url).pathname;
       if (path.endsWith('/status')) return json({ status: 'COMPLETED' });
       const id = path.split('/').at(-1) as string;
+      const planned = results[id]?.shift();
+      if (planned) return planned();
       const data = path.startsWith('/fal-ai/ffmpeg-api/')
         ? { images: [{ url: 'https://v3.fal.media/files/last.png', content_type: 'image/png' }] }
         : { video: { url: 'https://v3.fal.media/files/clip.mp4', content_type: 'video/mp4' } };
@@ -180,5 +183,25 @@ describe('gateway: a relay link over fal HTTP, the SDK reading status and result
     expect(err.message).not.toContain(FAL_KEY);
     expect(http.posts).toHaveLength(1);
     expect(http.reads).toEqual([]);
+  });
+
+  // fal's queue page (read 2026-10-22): "If the deadline is reached before any runner successfully starts processing,
+  // the server returns `504 Gateway Timeout` with the header `X-Fal-Request-Timeout-Type: user` and no further retries
+  // occur." Its pricing page: "If a request fails with an HTTP 500 or higher status code, no charge is incurred."
+  it('a clip job fal dropped at its start deadline: the SDK hands on its 504 and timeout type, read once, as nothing billed', async () => {
+    const http = fakeFalHttp({}, { 'req-1': [() => json({ detail: 'Request timed out' }, 504, { 'x-fal-request-timeout-type': 'user' })] });
+    const g = gateway(http);
+    const err = (await g.video(req()).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ code: 'provider-error', retryable: false, billed: false });
+    expect(billingOf(err)).toBe('none');
+    expect(err.message).toBe(
+      `fal.ai’s model ${MODEL} did not start clip job req-1 in time to finish within 30 minutes, the wait chosen in Settings, so fal dropped it at the start deadline byway set (25 minutes) and nothing was billed. To wait longer, change 'How long to wait for an answer' in Settings.`,
+    );
+    // Submitted once with its deadline, its result read once (neither the SDK nor byway reads it again), no frame job.
+    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`]);
+    expect(http.reads.map((u) => new URL(u).pathname)).toEqual(['/fal-ai/kling-video/requests/req-1/status', '/fal-ai/kling-video/requests/req-1']);
+    expect(await g.spendRecords('ws-1')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
   });
 });

@@ -14,6 +14,7 @@ import { c5 } from '@byway/catalog';
 import { lockedScripts, type Node, type OneShotGate, type Recipe, type Step } from '@byway/recipe';
 import type { RunInput } from '../src/types.ts';
 import { SCRIPT_LOCKED_PROMPT, SCRIPT_PROMPT } from '../src/workflow/wording.ts';
+import { UNREAD_BRIEF } from './helpers/briefs.ts';
 
 const state = vi.hoisted(() => ({ n: 0 }));
 
@@ -31,11 +32,15 @@ vi.mock('../src/workflow/acts.ts', () => {
         return { costUsd: 0, artifactId: `${id}-${++state.n}` };
       }
       case 'finishHumanStep':
-        return { costUsd: 0, text: 'words', artifactId: `${id}-${++state.n}`, keep: 'B' };
+        // A VOICE's answer comes back by the id of the file it was kept in (P2), as from the activity.
+        return { costUsd: 0, text: 'words', artifactId: `${id}-${++state.n}`, voiceId: `words-${state.n}`, keep: 'B' };
       case 'renderView':
         return { costUsd: 0, view: { pool: false, items: [{ imageArtifactIds: [] }] } };
       case 'storyboardShots':
         return [1];
+      case 'relayWaits':
+        // The waits a relay step's calls keep, read before it (the defaults: 15 minutes for the link, 30 for the clip).
+        return { linkMs: 15 * 60_000, videoMs: 30 * 60_000 };
       case 'assetStep':
       case 'relayLink':
         return { costUsd: 0 };
@@ -44,7 +49,8 @@ vi.mock('../src/workflow/acts.ts', () => {
     }
   };
   const group = () => new Proxy({}, { get: (_t, name: string) => async (input: never) => respond(name, input) });
-  return { quick: group(), model: group(), media: group() };
+  // A relay step runs on a proxy of its own, its limit worked out from its waits (acts.ts relayProxy).
+  return { quick: group(), model: group(), media: group(), relayProxy: () => group() };
 });
 
 const { Interpreter } = await import('../src/workflow/interpreter.ts');
@@ -52,7 +58,7 @@ const { Interpreter } = await import('../src/workflow/interpreter.ts');
 /** What the run asked at each write checkpoint, by step id, in order. */
 async function writePrompts(recipe: Recipe): Promise<[string, string][]> {
   const asked: [string, string][] = [];
-  const input: RunInput = { runId: 'run-lock', workspaceId: 'ws', recipe, problem: { text: 'An ad' }, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'media', routes: {}, inputs: {} };
+  const input: RunInput = { runId: 'run-lock', workspaceId: 'ws', recipe, problemId: UNREAD_BRIEF, profileId: 'demo', budgetUsd: 5, medium: recipe.medium ?? 'media', routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: <T>(fn: () => Promise<T>) => fn(), track: <T>(fn: () => Promise<T>) => fn(), pending: new Map() };
   const engine = new Interpreter(input, control as never);
   Object.assign(engine, {

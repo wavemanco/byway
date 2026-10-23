@@ -10,19 +10,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CancelledFailure, Context } from '@temporalio/activity';
-import { ApplicationFailure } from '@temporalio/common';
+import { ActivityCancellationType, ApplicationFailure } from '@temporalio/common';
 import { MockActivityEnvironment } from '@temporalio/testing';
 import { CANCEL_SIGNAL, GatewayError, type CompletionRequest, type CompletionResult, type Gateway } from '@byway/contracts';
 import { mockAdapter, type ProviderAdapter, type Responder } from '@byway/gateway';
 import { COMPOSED_LIMITS, composedLimitProblems, workBound } from '@byway/recipe';
 import { createActivities } from '../src/activities/index.ts';
 import { CANCELLED_CALL, cancelEndsRun, ENDED_CALL, guardGateway, guardPages, HEARTBEAT_EVERY_MS, runHasEnded, settleLateCost, startInvocation, STOPPED_STEP, stopSignal } from '../src/activities/liveness.ts';
+import { DEFAULT_RELAY_WAITS } from '../src/activities/relay.ts';
+import { MEDIA_OPTIONS, MODEL_OPTIONS, QUICK_OPTIONS, relayOptions } from '../src/workflow/acts.ts';
 import { workflowIdFor, type StepSpec } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { fakePages } from './helpers/fake-pages.ts';
 import { createHarness, type Harness } from './helpers/harness.ts';
 import { createTestStore } from './helpers/memo.ts';
-import { cancelPeak, threePages, tiny } from './helpers/recipes.ts';
+import { cancelPeak, fanOutFailure, threePages, tiny } from './helpers/recipes.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -276,6 +279,40 @@ describe('the stop rule: which cancels cut a call off (ADR-0111)', () => {
     expect(all.match(/\.cancel\(\)/g)).toHaveLength(2);
     expect(sources['run.ts']?.match(/main\.cancel\(\);/g)).toHaveLength(2);
   });
+
+  /**
+   * The owner chose on 2026-10-22, for Cancel, "Keep today's behaviour (Recommended)": "The run shows Cancelled at once;
+   * streams and video jobs are cut off; uncut Google and image calls finish in the background, are paid, and their cost
+   * is added to the run. Waiting would save no money, since those calls are paid either way." That is Temporal's
+   * TRY_CANCEL on every proxy, with the one scope above. The proxies name it (workflow/acts.ts): an unset option sends
+   * it today, but @temporalio/workflow 1.24.0's docs give WAIT_CANCELLATION_COMPLETED as the default. The real workflow
+   * shows it below ("Cancel shows the run cancelled at once…").
+   */
+  it('pins the Cancel the owner chose: every proxy cancels its steps as TRY_CANCEL, and the workflow keeps its one cancellation scope', () => {
+    for (const options of [QUICK_OPTIONS, MODEL_OPTIONS, MEDIA_OPTIONS, relayOptions(DEFAULT_RELAY_WAITS), relayOptions({ linkMs: 60 * 60_000, videoMs: 75 * 60_000 })]) {
+      expect(options.cancellationType).toBe(ActivityCancellationType.TRY_CANCEL);
+    }
+    // The workflow code without its comments (which name the other types to say why they are not used).
+    const workflowDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'workflow');
+    const code = Object.fromEntries(
+      readdirSync(workflowDir)
+        .filter((f) => f.endsWith('.ts'))
+        .map((f) => [f, readFileSync(path.join(workflowDir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')]),
+    );
+    const all = Object.values(code).join('\n');
+    // Every proxy is made in acts.ts, from those options and nothing else; no other cancellation type is named.
+    for (const [file, source] of Object.entries(code)) if (file !== 'acts.ts') expect(source, file).not.toMatch(/proxy(Local)?Activities\b/);
+    expect([...(code['acts.ts'] ?? '').matchAll(/proxyActivities<RunnerActivities>\(([^;]*?)\);?\n/g)].map((m) => m[1])).toEqual(['QUICK_OPTIONS', 'MODEL_OPTIONS', 'MEDIA_OPTIONS', 'relayOptions(waits)']);
+    expect(all.match(/cancellationType\s*:/g)).toHaveLength(1);
+    expect(all.match(/ActivityCancellationType\.\w+/g)).toEqual(['ActivityCancellationType.TRY_CANCEL']);
+    expect(all).not.toMatch(/WAIT_CANCELLATION_COMPLETED|ABANDON/);
+    // The one scope, made in run.ts and cancelled only there: on Cancel and when the run ends.
+    expect(all.match(/new CancellationScope\b/g)).toHaveLength(1);
+    expect(code['run.ts']).toMatch(/const main = new CancellationScope\(\);/);
+    expect(all).not.toMatch(/CancellationScope\.(cancellable|nonCancellable|withTimeout)/);
+    expect(all.match(/\.cancel\(\)/g)).toHaveLength(2);
+    expect(code['run.ts']?.match(/main\.cancel\(\);/g)).toHaveLength(2);
+  });
 });
 
 describe('a step whose run is ending, in an activity (ADR-0111)', () => {
@@ -335,7 +372,7 @@ describe('a step whose run is ending, in an activity (ADR-0111)', () => {
     const ws = (await store.ensureDefaultWorkspace()).id;
     const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
     await store.updateRun(run.id, { status: 'running' });
-    const input = { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problem: { text: 'A memo' }, seeds: [] }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
+    const input = { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problemId: await storeBrief(store.artifacts, { text: 'A memo' }) }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
     return { runId: run.id, input, end: () => store.updateRun(run.id, { status }) };
   };
 
@@ -449,7 +486,7 @@ describe('the operation an activity invocation hands its calls', () => {
     const ws = (await store.ensureDefaultWorkspace()).id;
     const run = await store.createRun({ id: `r-${Math.random().toString(36).slice(2)}`, workspaceId: ws, recipeId: 'tiny', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
     await store.updateRun(run.id, { status: 'running' });
-    return { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problem: { text: 'A memo' }, seeds: [] }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
+    return { run: { runId: run.id, workspaceId: ws, recipeId: 'tiny', profileId: 'demo', medium: 'prose' as const, problemId: await storeBrief(store.artifacts, { text: 'A memo' }) }, call: { key: `${run.id}/draft/-/1`, stepId: 'draft', stage: 'D1' as const }, step: draft, ports: {}, refs: [] };
   };
 
   it('startInvocation keeps no time limit: an invocation is its signals and its end', async () => {
@@ -502,12 +539,13 @@ describe('the page renderer one activity invocation sees', () => {
 /**
  * The demo's mock, whose text calls the tests can hold. `cuts` says whether the adapter takes a stop at all, so the same
  * mock stands for a provider byway cuts off and for one it does not (Google's calls, every image): a held call that was
- * handed a signal ends as an abort when byway cuts it off, and one that was not answers once its step's cancel has come.
+ * handed a signal ends as an abort when byway cuts it off, and one that was not answers once its step's cancel has come,
+ * or, held `pastCancel`, only when the test releases it (a provider that takes its time whatever byway does).
  */
 function holdingMock(responders: Readonly<Record<string, Responder>>) {
   const inner = mockAdapter({ responders });
   const held: { req: Parameters<ProviderAdapter['complete']>[0]; release: () => void }[] = [];
-  const state = { hold: undefined as ((purpose: string) => boolean) | undefined, cuts: true };
+  const state = { hold: undefined as ((purpose: string) => boolean) | undefined, cuts: true, pastCancel: false };
   const adapter: ProviderAdapter = {
     ...inner,
     get cutsOff() {
@@ -521,6 +559,8 @@ function holdingMock(responders: Readonly<Record<string, Responder>>) {
             req.signal.addEventListener('abort', () => reject(Object.assign(new Error('The stream was closed.'), { name: 'AbortError' })), { once: true });
             return;
           }
+          // Held past the cancel: it answers only when the test releases it.
+          if (state.pastCancel) return;
           // Not cut off: it answers once its step's cancel has come (the activity's own signal), not before.
           const cancel = Context.current().cancellationSignal;
           if (cancel.aborted) resolve();
@@ -533,13 +573,19 @@ function holdingMock(responders: Readonly<Record<string, Responder>>) {
   return {
     adapter,
     held,
-    hold(purpose: string, cuts: boolean) {
+    hold(purpose: string, cuts: boolean, opts: { pastCancel?: boolean } = {}) {
       state.hold = (p) => p === purpose;
       state.cuts = cuts;
+      state.pastCancel = opts.pastCancel === true;
+    },
+    /** Lets every held call answer. */
+    release() {
+      held.splice(0).forEach((h) => h.release());
     },
     reset() {
       state.hold = undefined;
       state.cuts = true;
+      state.pastCancel = false;
       held.splice(0).forEach((h) => h.release());
     },
   };
@@ -615,6 +661,38 @@ describe('cancel and stop through the real workflow', () => {
       await h.waitFor('the run’s cost to match the ledger', async () => Math.abs(((await h.store.getRun(run.id))?.costUsd ?? 0) - ledger) < 1e-12);
       expect((await h.gateway.spendRecords(h.workspaceId)).uncertain.filter((c) => c.runId === run.id)).toEqual([]);
       expect((await h.store.events(run.id)).at(-1)?.type).toBe('run-cancelled');
+    } finally {
+      delete responders['build:prose'];
+      mock.reset();
+    }
+  }, 60_000);
+
+  // The owner's "Keep today's behaviour (Recommended)" for Cancel: "The run shows Cancelled at once; ... uncut Google and
+  // image calls finish in the background, are paid, and their cost is added to the run." With TRY_CANCEL the workflow
+  // does not wait for such a step to end; were a proxy to wait (WAIT_CANCELLATION_COMPLETED), the run would stay running
+  // until the call answered.
+  it('Cancel shows the run cancelled at once while a call byway does not cut off is still under way, and that call is paid for when it ends (TRY_CANCEL)', async () => {
+    responders['build:prose'] = () => '';
+    mock.hold('build:prose', false, { pastCancel: true });
+    try {
+      const run = await h.start(tiny);
+      await h.waitFor('the draft call held', async () => mock.held.length === 1);
+      await h.runner.cancel(run.id);
+      // Cancelled, and the workflow closed, while the call is still held: nothing waited for the step to end.
+      await statusIs(run.id, 'cancelled');
+      expect(await h.env.client.workflow.getHandle(workflowIdFor(run.id)).result()).toEqual({ status: 'cancelled' });
+      expect(mock.held).toHaveLength(1);
+      expect(mock.held[0]?.req.signal).toBeUndefined();
+      expect(h.calls.filter((c) => c.runId === run.id && c.result !== undefined)).toEqual([]);
+      // Let it answer: it is settled and paid for after the run has stopped, and the run's cost catches up with the ledger.
+      mock.release();
+      await h.waitFor('the call to answer', async () => h.calls.some((c) => c.runId === run.id && c.result !== undefined));
+      const ledger = await h.waitFor('the call in the ledger', async () => {
+        const sum = h.ledger(run.id).reduce((s, e) => s + e.costUsd, 0);
+        return sum > 0 && sum;
+      });
+      await h.waitFor('the run’s cost to match the ledger', async () => Math.abs(((await h.store.getRun(run.id))?.costUsd ?? 0) - ledger) < 1e-12);
+      expect((await h.store.getRun(run.id))?.status).toBe('cancelled');
     } finally {
       delete responders['build:prose'];
       mock.reset();
@@ -701,6 +779,45 @@ describe('cancel and stop through the real workflow', () => {
       expect(events.at(-1)?.type).toBe('run-cancelled');
     } finally {
       delete responders['build:prose'];
+      mock.reset();
+    }
+  }, 120_000);
+
+  it('a failure during a fan-out ends the run the same way: a draft refused at the budget, not raised, fails the run, and the drafts still in flight are cut off and listed, with no event of their own (RS-4, FANOUT-FAILURE)', async () => {
+    // The review's reproduction: one of four drafts side by side is refused at the budget while the other three are held.
+    mock.hold('build:prose', true);
+    h.refuseOnce((c) => c.purpose === 'build:prose' && c.stepId === 'draft');
+    try {
+      const run = await h.start(fanOutFailure);
+      await h.waitFor('the other three drafts’ calls held', async () => mock.held.length === 3);
+      // The person does not raise the budget.
+      const view = await h.drive(run.id, (cp) => (cp.kind === 'confirm' ? { checkpointId: cp.id, approved: false } : undefined));
+      expect(view.run.status).toBe('failed');
+      expect(view.run.error).toMatch(/^The run stopped at its budget of \$\d+\.\d\d, and the budget was not raised\.$/);
+      // The failure cancels the run's one scope, as Cancel does (run.ts), so each sibling's call is cut off as its step
+      // hears of it, and listed once its call has ended: none answered, nothing ledgered, the run's cost nothing.
+      await h.waitFor('every held call cut off', async () => mock.held.every((c) => c.req.signal?.aborted === true));
+      const listed = await h.waitFor('the three listed in Spending records', async () => {
+        const rows = (await h.gateway.spendRecords(h.workspaceId)).uncertain.filter((c) => c.runId === run.id);
+        return rows.length === 3 && rows;
+      });
+      expect(listed.every((c) => c.reason === 'interrupted' && c.usd > 0)).toBe(true);
+      expect(h.calls.filter((c) => c.runId === run.id && c.result !== undefined)).toEqual([]);
+      expect(h.ledger(run.id)).toEqual([]);
+      expect((await h.store.getRun(run.id))?.costUsd).toBe(0);
+      // Only the refused draft says why it ended; the three cut off got no event of their own, so the Run screen says
+      // why a step stopped when the run failed (apps/web view/timeline.ts STOPPED_BY_FAILURE_NOTE). After them, nothing.
+      const events = await h.store.events(run.id);
+      const drafts = events.filter((e) => e.stepId === 'draft');
+      expect(drafts.filter((e) => e.type === 'step-started')).toHaveLength(4);
+      const failed = drafts.filter((e) => e.type === 'step-failed');
+      expect(failed).toHaveLength(1);
+      expect(drafts.filter((e) => e.type === 'step-finished')).toEqual([]);
+      const ended = new Set(failed.map((e) => e.candidate));
+      expect(drafts.filter((e) => e.type === 'step-started' && !ended.has(e.candidate))).toHaveLength(3);
+      expect(events.some((e) => e.stepId === 'after')).toBe(false);
+      expect(events.at(-1)?.type).toBe('run-failed');
+    } finally {
       mock.reset();
     }
   }, 120_000);

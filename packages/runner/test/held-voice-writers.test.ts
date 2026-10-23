@@ -6,17 +6,23 @@
  * the held voice locks the on-screen words. The check each site builds is watched (writes.ts checkedWriter), and where
  * the step's own answer can change the person's words (a model's fix, an integrate answer) the refusal is shown too.
  * held-voice.test.ts pins keptVoice and the lock themselves.
+ *
+ * The person's words travel by reference (P2): every VOICE answer is kept as a text file (finishHumanStep), and the
+ * ports hold their ids, the fixed copy deck's first; each site reads the texts it holds its write to.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CATALOG } from '@byway/catalog';
 import type { ImageResult } from '@byway/contracts';
 import { steps } from '@byway/recipe';
 import { assetStep } from '../src/activities/asset.ts';
+import { finishHumanStep } from '../src/activities/human.ts';
 import { modelStep } from '../src/activities/model-step.ts';
-import { relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, relayLink } from '../src/activities/relay.ts';
+import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import { toStepSpec, type AssetResult, type Ports, type StepSpec } from '../src/types.ts';
 import { png } from './helpers/fake-pages.ts';
-import { benchRun, putWork, storyboard, voiceBench, type VoiceBench } from './helpers/voice-activity.ts';
+import type { RecordingPrompts } from './helpers/fake-prompts.ts';
+import { benchRun, putWork, stepCall, storyboard, voiceBench, VoiceQuestion, voiceStep, type VoiceBench } from './helpers/voice-activity.ts';
 
 /** The voice each keepsVoice check was built with, in order (the second argument of writes.ts checkedWriter). */
 const seen = vi.hoisted(() => ({ voices: [] as unknown[] }));
@@ -43,9 +49,14 @@ const script = 'Bread before seven.';
 /** The on-screen answer of a late VOICE: what the held voice keeps, and the latest answer alone does not lock. */
 const onScreen = 'Headline: Fresh at seven\nTagline: Bread club\nShot 1: Hot bread\nShot 2: Oven\nShot 3: Your door';
 const before = storyboard({ voiceover: script, headline: 'Fresh at seven', tagline: 'Bread club', storyboard: [{ shot: 1, caption: 'Hot bread' }, { shot: 2, caption: 'Oven' }, { shot: 3, caption: 'Your door' }] });
-/** The on-screen answer held first, the voice-over script last: ports.voice is the script. */
-const held: Pick<Ports, 'voice' | 'held'> = { voice: script, held: [onScreen, script] };
 const ON_SCREEN_LOCKED = /on-screen copy is the person's/;
+
+/** One of the person's words as the run keeps it: a text file, by its id (an answer's, as finishHumanStep stores it). */
+const kept = async (text: string): Promise<string> => (await b.store.artifacts.putText(text, INPUT_MEDIA_TYPE)).id;
+/** The on-screen answer held first, the voice-over script last: ports.voice is the script's id. */
+const heldIds = async (): Promise<Pick<Ports, 'voice' | 'held'>> => ({ voice: await kept(script), held: [await kept(onScreen), await kept(script)] });
+/** An id no file was ever stored under: a file lost since (a partial restore). */
+const LOST = `sha256:${'0'.repeat(64)}`;
 
 /** Completions answered from a list, each at a cent, every request kept. */
 function answers(texts: string[]) {
@@ -76,10 +87,10 @@ describe('every keepsVoice call site holds its write to the held voice, not the 
       answers([fenced(changed), fenced(changed)]);
       return modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact, critique: '- Sell harder.', ...ports }, refs: [] });
     };
-    await expect(fix(held)).rejects.toThrow(ON_SCREEN_LOCKED);
+    await expect(fix(await heldIds())).rejects.toThrow(ON_SCREEN_LOCKED);
     expect(seen.voices).toEqual([[onScreen, script]]);
     // The control: the same answer, held to the latest answer (the script) alone, is stored as written.
-    const out = await fix({ voice: script });
+    const out = await fix({ voice: await kept(script) });
     expect(JSON.parse(await b.store.artifacts.getText(out.artifactId!)).storyboard[0].caption).toBe('Hot bread, 50% off');
   });
 
@@ -94,7 +105,7 @@ describe('every keepsVoice call site holds its write to the held voice, not the 
     };
     const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true };
     const start = (await b.store.artifacts.put(png(4, 3, [1, 2, 3]), 'image/png')).id;
-    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, anchor: start, ...held }, shot: 1 });
+    const out = await relayLink(b.deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact, anchor: start, ...(await heldIds()) }, shot: 1, waits: DEFAULT_RELAY_WAITS });
     expect(out.artifactId).toBeDefined();
     expect(seen.voices).toEqual([[onScreen, script]]);
   });
@@ -107,7 +118,7 @@ describe('every keepsVoice call site holds its write to the held voice, not the 
     const artifact = await putWork(b, 'media', before);
     answers([fenced(JSON.stringify({ images: [1, 2, 3].map((shot) => ({ slot: String(shot), prompt: `Shot ${shot}`, alt: `Shot ${shot}`, size: '1536x1024' })) }))]);
     images();
-    const out = (await assetStep(b.deps, { run, call: { key: `${run.runId}/anchor-frames/-/1`, stepId: 'anchor-frames', stage: 'D2' }, step: frames, ports: { artifact, ...held } })) as AssetResult;
+    const out = (await assetStep(b.deps, { run, call: { key: `${run.runId}/anchor-frames/-/1`, stepId: 'anchor-frames', stage: 'D2' }, step: frames, ports: { artifact, ...(await heldIds()) } })) as AssetResult;
     expect(out.anchor).toBeDefined();
     expect(seen.voices).toEqual([[onScreen, script]]);
   });
@@ -132,7 +143,7 @@ describe('every keepsVoice call site holds its write to the held voice, not the 
         b.gateway.requests.push(req);
         return { text: left.shift()!(req), stopReason: 'end', servedModel: 'scripted', provider: 'mock', usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0.01, ledgerEntryId: `l${b.gateway.requests.length}` };
       };
-      const out = (await assetStep(b.deps, { run, call: { key: `${run.runId}/art/-/1`, stepId: 'art', stage: 'D2' }, step: assetSpec, ports: { artifact, voice: words, held: [words] } })) as AssetResult;
+      const out = (await assetStep(b.deps, { run, call: { key: `${run.runId}/art/-/1`, stepId: 'art', stage: 'D2' }, step: assetSpec, ports: { artifact, voice: await kept(words), held: [await kept(words)] } })) as AssetResult;
       const notes = (await b.store.events(run.runId)).filter((e) => e.type === 'step-finished').map((e) => e.data.note);
       return { out, notes };
     };
@@ -148,5 +159,125 @@ describe('every keepsVoice call site holds its write to the held voice, not the 
     expect(placed.out.asset).toBeUndefined();
     expect(placed.notes).toEqual([undefined]);
     expect(seen.voices).toEqual([[words], [words]]);
+  });
+});
+
+/**
+ * The fixed copy deck a run was given (StartRunInput.inputs.voice) is stored at start and travels as its id (P2), the
+ * first ports.voice: the steps read it from its file and hold to it as the person's latest words until a VOICE answers.
+ */
+describe('a fixed copy deck the run was given, read by its id until a VOICE answers (P2)', () => {
+  const fixSpec: StepSpec = { id: 'apply-cut', role: 'fix', block: 'CUT', actor: 'model', tier: 'mid', prompt: 'product.test.polish', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true, keepsVoice: true };
+  const changed = before.replace('"Hot bread"', '"Hot bread, 50% off"');
+  /** The on-screen copy as a run's fixed deck, stored as Runner.start stores it: its id is the run's first ports.voice. */
+  const deck = async (): Promise<Pick<Ports, 'voice'>> => ({ voice: await kept(onScreen) });
+
+  it('modelStep, relayLink and assetStep each hold a keepsVoice write to the deck; a fix that changes its words is refused', async () => {
+    const fix = async (given: Pick<Ports, 'voice'>) => {
+      const run = await benchRun(b, 'media');
+      const artifact = await putWork(b, 'media', before);
+      answers([fenced(changed), fenced(changed)]);
+      return modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact, critique: '- Sell harder.', ...given }, refs: [] });
+    };
+    await expect(fix(await deck())).rejects.toThrow(ON_SCREEN_LOCKED);
+    // The control: no deck, nothing is held, and the same answer is stored.
+    expect((await fix({})).artifactId).toBeDefined();
+    expect(seen.voices).toEqual([[onScreen], undefined]);
+
+    seen.voices = [];
+    const linkRun = await benchRun(b, 'media');
+    answers(['```json\n{"clipPrompt":"Shot 1: the loaf turns","durationSec":3}\n```']);
+    b.gateway.video = async () => {
+      const clip = await b.store.artifacts.putText('<svg/>', 'image/svg+xml');
+      const frame = await b.store.artifacts.put(png(4, 3, [9, 9, 9]), 'image/png');
+      return { artifactId: clip.id, mediaType: 'image/svg+xml', lastFrameArtifactId: frame.id, lastFrameMediaType: 'image/png', costUsd: 0, servedModel: 'mock', provider: 'mock', ledgerEntryId: 'v1' };
+    };
+    const relay: StepSpec = { id: 'clip', role: 'relay', block: 'RELAY', actor: 'model', prompt: 'product.test.clip', consumes: ['anchor', 'artifact'], produces: ['artifact', 'anchor'], writes: true, keepsVoice: true };
+    const start = (await b.store.artifacts.put(png(4, 3, [1, 2, 3]), 'image/png')).id;
+    await relayLink(b.deps, { run: linkRun, call: { key: `${linkRun.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: relay, ports: { artifact: await putWork(b, 'media', before), anchor: start, ...(await deck()) }, shot: 1, waits: DEFAULT_RELAY_WAITS });
+    expect(seen.voices).toEqual([[onScreen]]);
+
+    seen.voices = [];
+    const recipe = CATALOG.find((r) => r.id === 'c5')!;
+    const frames = toStepSpec(steps(recipe).find(({ step }) => step.id === 'anchor-frames')!.step);
+    const assetRun = await benchRun(b, 'media');
+    answers([fenced(JSON.stringify({ images: [1, 2, 3].map((shot) => ({ slot: String(shot), prompt: `Shot ${shot}`, alt: `Shot ${shot}`, size: '1536x1024' })) }))]);
+    images();
+    await assetStep(b.deps, { run: assetRun, call: { key: `${assetRun.runId}/anchor-frames/-/1`, stepId: 'anchor-frames', stage: 'D2' }, step: frames, ports: { artifact: await putWork(b, 'media', before), ...(await deck()) } });
+    expect(seen.voices).toEqual([[onScreen]]);
+  });
+
+  it("a step that takes the person's words in is shown the deck; once a VOICE has answered, the answer, and the deck is not read", async () => {
+    const build: StepSpec = { id: 'build', role: 'build', actor: 'model', tier: 'mid', prompt: 'product.test.build', consumes: ['intent', 'voice'], produces: ['artifact'], writes: true };
+    const prompts = b.deps.prompts as RecordingPrompts;
+    const shown = async (ports: Ports) => {
+      const run = await benchRun(b, 'media');
+      answers([fenced(before)]);
+      await modelStep(b.deps, { run, call: { key: `${run.runId}/build/-/1`, stepId: 'build', stage: 'D1' }, step: build, ports, refs: [] });
+      return prompts.calls.at(-1)!.slots.voice;
+    };
+    expect(await shown(await deck())).toBe(onScreen);
+    const answer = await kept(script);
+    const getText = vi.spyOn(b.store.artifacts, 'getText');
+    expect(await shown({ voice: answer, held: [answer] })).toBe(script);
+    expect(getText.mock.calls.map(([id]) => id)).not.toContain((await deck()).voice);
+  });
+
+  it('a step that neither takes the words in nor is held to them never reads the deck, so a deck file lost since does not stop it', async () => {
+    const run = await benchRun(b, 'media');
+    const fix = { ...fixSpec, keepsVoice: false };
+    answers([fenced(changed)]);
+    const out = await modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fix, ports: { artifact: await putWork(b, 'media', before), critique: '- Sell harder.', voice: LOST }, refs: [] });
+    expect(out.artifactId).toBeDefined();
+    // The control: held to the words, the same step reads the deck, and says plainly that its file is gone.
+    answers([fenced(changed)]);
+    const held = modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/2`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact: await putWork(b, 'media', before), critique: '- Sell harder.', voice: LOST }, refs: [] });
+    await expect(held).rejects.toThrow(/^The copy deck this run started with cannot be read: its file \(sha256:0{64}\) is missing or damaged/);
+  });
+});
+
+/**
+ * A VOICE answer is kept as a text file when the step finishes (P2), and the workflow holds its id: in ports.voice as
+ * the latest words and in ports.held. An empty answer is an answer, so its empty file is held like any other.
+ */
+describe('a VOICE answer is kept as a text file, and held by its id (P2)', () => {
+  const fixSpec: StepSpec = { id: 'apply-cut', role: 'fix', block: 'CUT', actor: 'model', tier: 'mid', prompt: 'product.test.polish', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true, keepsVoice: true };
+  /** The early VOICE on a storyboard: it writes the voice-over script (VOICE-1). */
+  const early = voiceStep({ id: 'vo-script', variant: 'VOICE-early' });
+
+  it("finishHumanStep returns the answer's id, its file holding the answer exactly; the same when the answer is the offer or empty", async () => {
+    const run = await benchRun(b, 'media');
+    const q = await VoiceQuestion.open(b, run, await putWork(b, 'media', before), early);
+    expect(q.offered).toBe(script);
+    const changed = await q.answer('Bread before six.');
+    expect(await b.store.artifacts.getText(changed.voiceId!)).toBe('Bread before six.');
+    // Sent back as offered, nothing is written, and the words are still the person's.
+    const same = await q.answer(script);
+    expect(same.artifactId).toBeUndefined();
+    expect(await b.store.artifacts.getText(same.voiceId!)).toBe(script);
+    const empty = await q.answer('');
+    expect(empty.artifactId).toBeDefined();
+    expect(await b.store.artifacts.getText(empty.voiceId!)).toBe('');
+  });
+
+  it("the author's own draft is the work, not the person's held words: it returns no id", async () => {
+    const run = await benchRun(b, 'prose');
+    const draft: StepSpec = { id: 'draft', role: 'build', actor: 'human', consumes: [], produces: ['artifact'], writes: true };
+    const out = await finishHumanStep(b.deps, { run, call: stepCall(run, 'draft'), step: draft, kind: 'write', resolution: { checkpointId: 'cp-draft', text: '# Mine\n\nA plan.' }, ports: {} });
+    expect(out.artifactId).toBeDefined();
+    expect(out).not.toHaveProperty('voiceId');
+  });
+
+  it('a keepsVoice write held to an empty answer is held to it; a held answer whose file is lost fails the step plainly', async () => {
+    const run = await benchRun(b, 'media');
+    const changed = before.replace('"Hot bread"', '"Hot bread, 50% off"');
+    const empty = await kept('');
+    answers([fenced(changed)]);
+    await modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/1`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact: await putWork(b, 'media', before), critique: '- Sell harder.', voice: empty, held: [empty] }, refs: [] });
+    expect(seen.voices).toEqual([['']]);
+    answers([fenced(changed)]);
+    const lost = modelStep(b.deps, { run, call: { key: `${run.runId}/apply-cut/-/2`, stepId: 'apply-cut', stage: 'D3' }, step: fixSpec, ports: { artifact: await putWork(b, 'media', before), critique: '- Sell harder.', voice: await kept(script), held: [LOST, await kept(script)] }, refs: [] });
+    await expect(lost).rejects.toThrow(/^Your words from an earlier step of this run cannot be read: their file \(sha256:0{64}\) is missing or damaged/);
+    expect(b.gateway.requests).toHaveLength(1);
   });
 });

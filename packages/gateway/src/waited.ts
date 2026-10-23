@@ -62,3 +62,40 @@ export function waitedOf(e: unknown): WaitedFor | undefined {
 
 /** A wait in minutes, as the words and the record give it. */
 export const waitMinutes = (ms: number): number => ms / 60_000;
+
+/**
+ * A fal clip job fal dropped before it started, at the start deadline byway gave it (providers/fal.ts
+ * falStartTimeoutSeconds: the clip's wait less about one clip's making). fal says so by answering the job's result with
+ * 504 and `X-Fal-Request-Timeout-Type: user`, and that is read as nothing billed, from fal's own pages, read on
+ * 2026-10-22:
+ * - the queue page (fal.ai/docs/model-apis/model-endpoints/queue): "If the deadline is reached before any runner
+ *   successfully starts processing, the server returns `504 Gateway Timeout` with the header
+ *   `X-Fal-Request-Timeout-Type: user` and no further retries occur.";
+ * - the pricing page (fal.ai/docs/documentation/model-apis/pricing): "If a request fails with an HTTP 500 or higher
+ *   status code, no charge is incurred.", and "Time spent waiting in the queue before a runner starts processing your
+ *   request is also free."
+ * Neither page names the dropped job's billing in one sentence; the reading joins the two (Claude's reading). The call
+ * is then released, counting nothing, and the step ends with these words: "{Model} did not start clip job {id} in time
+ * to finish within {N} minutes, the wait chosen in Settings, so fal dropped it at the start deadline byway set ({M}
+ * minutes) and nothing was billed. To wait longer, change 'How long to wait for an answer' in Settings." A job is never
+ * submitted again (ADR-0091), so neither is this one.
+ */
+export function notStartedWords(ref: Pick<ModelRef, 'provider' | 'model'>, job: string, wait: { minutes?: number; startMinutes?: number }): string {
+  const model = `${PROVIDER_NAMES[ref.provider] ?? ref.provider}’s model ${ref.model}`;
+  const within = wait.minutes !== undefined ? ` in time to finish within ${wait.minutes} minutes, the wait chosen in Settings,` : '';
+  const deadline = wait.startMinutes !== undefined ? ` (${wait.startMinutes} minutes)` : '';
+  return `${model} did not start clip job ${job}${within} so fal dropped it at the start deadline byway set${deadline} and nothing was billed. ${WAIT_LONGER}`;
+}
+
+/** A clip job fal dropped unstarted (notStartedWords): not retryable, and billing 'none', so the call counts nothing. */
+export type NotStartedError = ClassifiedError & { notStarted: true };
+
+export function notStartedError(ref: Pick<ModelRef, 'provider' | 'model'>, job: string, wait: { minutes?: number; startMinutes?: number }): NotStartedError {
+  const err = new GatewayError('provider-error', notStartedWords(ref, job, wait), false, { billed: false }) as NotStartedError;
+  err.billing = 'none';
+  err.notStarted = true;
+  return err;
+}
+
+/** Whether a failure is a clip job fal dropped unstarted (notStartedError), by its mark. */
+export const isNotStarted = (e: unknown): e is NotStartedError => e instanceof GatewayError && (e as Partial<NotStartedError>).notStarted === true;

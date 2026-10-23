@@ -26,11 +26,12 @@ import { adviceNote, assetStep, NO_BRIEF_NOTE, NO_IMAGE_CHOSEN_NOTE, NO_IMAGE_MA
 import type { RunnerDeps } from '../src/activities/deps.ts';
 import { ContractMissed, StepError, toFailure } from '../src/activities/failures.ts';
 import { memoGateway, PaidNotKept } from '../src/activities/memo.ts';
-import { noStartFrameNote, relayLink } from '../src/activities/relay.ts';
+import { DEFAULT_RELAY_WAITS, noStartFrameNote, relayLink } from '../src/activities/relay.ts';
 import { checkBriefs, eachPlan, freePlan, slotId } from '../src/activities/slot-plan.ts';
 import { serializeJson } from '../src/formats.ts';
 import { ADVICE_MAX } from '../src/parse.ts';
 import { FAILURE, toStepSpec, type AssetResult, type RunRef, type StepSpec } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { png } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -121,7 +122,7 @@ const EMPTY = '```json\n{"images":[]}\n```';
 async function newRun(medium: Medium): Promise<RunRef> {
   const run = await store.createRun({ id: `run-${Math.random().toString(36).slice(2)}`, workspaceId, recipeId: 'c5', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium, budgetUsd: 5 });
   await store.updateRun(run.id, { status: 'running' });
-  return { runId: run.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium, problem: { text: 'An ad for a cup' }, seeds: [] };
+  return { runId: run.id, workspaceId, recipeId: 'c5', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'An ad for a cup' }) };
 }
 
 const storyboard = (shots = [1, 2, 3]) =>
@@ -765,7 +766,7 @@ describe('a relay link with no frame to start from (F12)', () => {
     const g = fake([]);
     const run = await newRun('media');
     const artifact = (await store.artifacts.putText(storyboard(), 'application/json')).id;
-    const out = await relayLink({ gateway: g, store, prompts: library }, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: spec('c5', 'clip'), ports: { artifact, shot: 1 }, shot: 1 });
+    const out = await relayLink({ gateway: g, store, prompts: library }, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: spec('c5', 'clip'), ports: { artifact, shot: 1 }, shot: 1, waits: DEFAULT_RELAY_WAITS });
     expect(out).toMatchObject({ skipped: true, costUsd: 0 });
     expect(g.completions).toHaveLength(0);
     expect(g.videos).toHaveLength(0);

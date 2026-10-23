@@ -34,7 +34,8 @@ export const ENGINE_LIMITS = {
   gateRetries: MAX_GATE_RETRIES,
   /**
    * Bytes of the activity inputs in flight at once, by what the counts decide (ACTIVITY_BYTES). Temporal refuses a
-   * workflow task whose commands pass 4 MB; half of it is left for what the person sets (the brief, their files).
+   * workflow task whose commands pass 4 MB; half of it is left for what still travels by value and the counts do not
+   * decide: the person's reactions and what models write (the brief and the person's own files travel as their ids, P2).
    */
   batchBytes: 2 * 1024 * 1024,
 } as const;
@@ -62,25 +63,25 @@ export const COMPOSED_LIMITS = {
 /**
  * What one activity's input costs in bytes, by the parts the recipe's counts decide, measured from the interpreter
  * (runner limits-batch.test.ts drives the real Interpreter and weighs what it schedules):
- * - `base`: what every input carries whatever the counts: the run's own fields, the call, the ports' single ids, and
- *   Temporal's command around it (the step's own JSON is added as it is);
- * - `seed`: one random string in `RunRef.seeds`. Every seed handed out so far rides along in every later input;
+ * - `base`: what every input carries whatever the counts: the run's own fields (the brief and the person's own inputs
+ *   by their files' ids), the call, the ports' single ids, and Temporal's command around it (the step's own JSON is
+ *   added as it is). Measured on 2026-10-22, once the seeds stopped travelling: an input with empty ports weighs about
+ *   420 bytes besides its step, and the command around it about 160 (a ScheduleActivityTask command encoded with
+ *   @temporalio/proto 1.24.0, with the proxies' timeouts and retry policy); the rest is for the ports' single ids;
  * - `id`: one artifact id in a list: an option, a pick's or a judge's candidate, an image a pool render is given;
  * - `view`: one view in the ports, at its largest (a web page's: 17 screenshots, listed by image and by surface). The
  *   work's own view, every option's view after a fan-out, and a pool render's view of them all.
- * What the person sets (the brief, a fixed voice deck, their files) and what models write (critiques, briefs) are not
- * counted: they are carried by value too, and moving them to the store is its own backlog item.
+ * The SEED strings handed out are not counted: they no longer travel (P2; the runner's write checks read them from the
+ * store), so a recipe refused only for the seeds its fan-outs carried now runs. What models write (critiques, briefs)
+ * and the person's reactions are not counted either: they still travel by value.
  */
-export const ACTIVITY_BYTES = { base: 1024, seed: 64, id: 76, view: 2.75 * 1024 } as const;
+export const ACTIVITY_BYTES = { base: 896, id: 76, view: 2.75 * 1024 } as const;
 
 /** A loop's rounds: the planned cap, and the cap after the one raise a person may allow there (ADR-0073, ADR-0093). */
 export function loopRounds(gate: Pick<Gate, 'max' | 'onCap'>): { planned: number; withRaise: number } {
   const planned = Math.max(1, gate.max);
   return { planned, withRaise: gate.onCap === 'human' ? 2 * planned : planned };
 }
-
-/** A model step that is handed a random string: a SEED step, or one that reads the seed port (runner model-step). */
-const takesSeed = (s: Step): boolean => s.actor === 'model' && (s.role === 'seed' || s.consumes.includes('seed'));
 
 /** What the counts put in the ports at a point: the option list, the options' views, and the items of the current view. */
 interface Shape {
@@ -98,7 +99,6 @@ const joinShapes = (...shapes: Shape[]): Shape => ({
 interface Work {
   /** Step runs, a C pick's judge calls included. */
   runs: number;
-  seeds: number;
   /** Activities in flight at once. */
   peak: number;
   /** Bytes of the activity inputs in flight at once. */
@@ -109,8 +109,6 @@ interface Work {
 
 export interface WorkBound {
   stepRuns: number;
-  /** Seeds the run can hand out. */
-  seeds: number;
   peak: number;
   /** Bytes of the activity inputs in flight at once, at most. */
   batchBytes: number;
@@ -123,12 +121,8 @@ const stepBytes = (s: Step): number => JSON.stringify(s).length;
 /** A render of the option set as one pool (runner interpreter): it is given the options, not the work. */
 const poolRender = (s: Step): boolean => s.actor === 'tool' && s.role === 'render' && s.consumes.includes('option_set<artifact>') && !s.consumes.includes('artifact');
 
-/**
- * One walk, given the seeds the whole run hands out (`seedsTotal`; 0 on the first pass, which counts them). Every
- * activity carries every seed handed out before it, and since siblings may finish first, the bound takes all of them.
- */
+/** One walk of the recipe, every count at its worst. */
 class Walker {
-  private readonly seedsTotal: number;
   widest: { path: string; bytes: number } | undefined;
   /**
    * By path and the ports' shape: a loop or relay body is walked a second time from what its first round left, and
@@ -136,14 +130,10 @@ class Walker {
    */
   private readonly memo = new Map<string, Work>();
 
-  constructor(seedsTotal: number) {
-    this.seedsTotal = seedsTotal;
-  }
-
-  /** One activity's input: its step, the seeds, and what of the ports it carries (`ids` listed, `views` carried). */
+  /** One activity's input: its step, and what of the ports it carries (`ids` listed, `views` carried). */
   private activity(step: Step | undefined, ids: number, views: number): number {
     const B = ACTIVITY_BYTES;
-    return B.base + (step ? stepBytes(step) : 0) + B.seed * this.seedsTotal + B.id * ids + B.view * views;
+    return B.base + (step ? stepBytes(step) : 0) + B.id * ids + B.view * views;
   }
 
   /** An activity that carries the ports as they are. */
@@ -166,7 +156,7 @@ class Walker {
   }
 
   private step(s: Step, at: Shape): Work {
-    const one = { runs: 1, seeds: takesSeed(s) ? 1 : 0, peak: 1 };
+    const one = { runs: 1, peak: 1 };
     if (s.actor === 'tool' && s.role === 'render') {
       // A render is given artifact ids, not the ports; a pool render's view then holds every option's view, twice.
       const pool = poolRender(s);
@@ -184,11 +174,10 @@ class Walker {
         return this.step(n, at);
       case 'seq': {
         let cur = at;
-        const out = { runs: 0, seeds: 0, peak: 0, bytes: 0 };
+        const out = { runs: 0, peak: 0, bytes: 0 };
         n.steps.forEach((c, i) => {
           const w = this.node(c, cur, `${path}.steps[${i}]`);
           out.runs += w.runs;
-          out.seeds += w.seeds;
           out.peak = Math.max(out.peak, w.peak);
           out.bytes = Math.max(out.bytes, w.bytes);
           cur = w.after;
@@ -199,18 +188,18 @@ class Walker {
         // Every branch starts from the same ports, the options before it included; then each is an option, with its view.
         const k = Math.max(1, n.n);
         const b = this.node(n.body, at, `${path}.body`);
-        return this.fanOut(path, { runs: k * b.runs, seeds: k * b.seeds, peak: k * b.peak, bytes: k * b.bytes, after: { options: k, optionViews: k, view: at.view } });
+        return this.fanOut(path, { runs: k * b.runs, peak: k * b.peak, bytes: k * b.bytes, after: { options: k, optionViews: k, view: at.view } });
       }
       case 'each': {
         // One branch per option (the work itself when there are none), each with its own view and no option list.
         const k = Math.max(1, at.options);
         const b = this.node(n.body, { options: 0, optionViews: 0, view: 1 }, `${path}.body`);
-        return this.fanOut(path, { runs: k * b.runs, seeds: k * b.seeds, peak: k * b.peak, bytes: k * b.bytes, after: { options: k, optionViews: k, view: at.view } });
+        return this.fanOut(path, { runs: k * b.runs, peak: k * b.peak, bytes: k * b.bytes, after: { options: k, optionViews: k, view: at.view } });
       }
       case 'audit': {
         const lenses = n.lenses.map((l, i) => this.node(l.body, at, `${path}.lenses[${i}].body`));
         const sum = (f: (w: Work) => number) => lenses.reduce((s, w) => s + f(w), 0);
-        return this.fanOut(path, { runs: sum((w) => w.runs), seeds: sum((w) => w.seeds), peak: sum((w) => w.peak), bytes: sum((w) => w.bytes), after: at });
+        return this.fanOut(path, { runs: sum((w) => w.runs), peak: sum((w) => w.peak), bytes: sum((w) => w.bytes), after: at });
       }
       case 'pick': {
         const k = Math.max(1, n.k);
@@ -218,9 +207,9 @@ class Walker {
         const after = { options: Math.min(k, from), optionViews: Math.min(k, from), view: Math.max(1, at.view) };
         // H asks once, listing every option and its view; R draws; C asks its judge once per choice, with the ports and
         // the candidates.
-        if (n.mode === 'C') return { runs: k, seeds: 0, peak: 1, bytes: this.withPorts(n.judge, at, from), after };
-        if (n.mode === 'H') return { runs: 0, seeds: 0, peak: 1, bytes: this.activity(undefined, 2 * from, 0), after };
-        return { runs: 0, seeds: 0, peak: 0, bytes: 0, after };
+        if (n.mode === 'C') return { runs: k, peak: 1, bytes: this.withPorts(n.judge, at, from), after };
+        if (n.mode === 'H') return { runs: 0, peak: 1, bytes: this.activity(undefined, 2 * from, 0), after };
+        return { runs: 0, peak: 0, bytes: 0, after };
       }
       case 'loop':
       case 'relay': {
@@ -232,7 +221,6 @@ class Walker {
         const rerank = n.op === 'loop' && (n.gate.metric === 'critic-score' || n.gate.metric === 'critic-rank') ? 1 : 0;
         return {
           runs: times * Math.max(first.runs, second.runs) + rerank,
-          seeds: times * Math.max(first.seeds, second.seeds),
           peak: Math.max(first.peak, second.peak),
           bytes: Math.max(first.bytes, second.bytes),
           after: joinShapes(first.after, second.after),
@@ -241,7 +229,7 @@ class Walker {
       case 'route': {
         const ws = n.branches.map((b, i) => this.node(b.body, at, `${path}.branches[${i}].body`));
         const max = (f: (w: Work) => number) => Math.max(0, ...ws.map(f));
-        return { runs: max((w) => w.runs), seeds: max((w) => w.seeds), peak: max((w) => w.peak), bytes: max((w) => w.bytes), after: joinShapes(...ws.map((w) => w.after)) };
+        return { runs: max((w) => w.runs), peak: max((w) => w.peak), bytes: max((w) => w.bytes), after: joinShapes(...ws.map((w) => w.after)) };
       }
       case 'optional': {
         const b = this.node(n.body, at, `${path}.body`);
@@ -284,48 +272,39 @@ const childNodes = (n: Node): Node[] => {
   }
 };
 
-function walkStages(recipe: Recipe, seedsTotal: number): { w: Walker; runs: number; seeds: number; peak: number; bytes: number } {
-  const w = new Walker(seedsTotal);
+function walkStages(recipe: Recipe): { w: Walker; runs: number; peak: number; bytes: number } {
+  const w = new Walker();
   let at: Shape = { options: 0, optionViews: 0, view: 0 };
   let peak = 0;
   let bytes = 0;
   const runs = new Map<Stage['stage'], number>();
-  const seeds = new Map<Stage['stage'], number>();
   recipe.stages.forEach((s, i) => {
     const r = w.node(s.body, at, `stages[${i}].body`);
     runs.set(s.stage, r.runs);
-    seeds.set(s.stage, r.seeds);
     peak = Math.max(peak, r.peak);
     bytes = Math.max(bytes, r.bytes);
     at = r.after;
   });
   // A retry re-runs the stages from its target through its own, at most `times` times (the count is per gate, for the run).
   let extraRuns = 0;
-  let extraSeeds = 0;
   for (const { gate, stage } of retryingGates(recipe)) {
     const from = recipe.stages.findIndex((s) => s.stage === gate.retry!.stage);
     const to = recipe.stages.findIndex((s) => s.stage === stage);
     if (from < 0 || from > to) continue;
     const times = Math.max(0, gate.retry!.times);
-    for (const s of recipe.stages.slice(from, to + 1)) {
-      extraRuns += times * (runs.get(s.stage) ?? 0);
-      extraSeeds += times * (seeds.get(s.stage) ?? 0);
-    }
+    for (const s of recipe.stages.slice(from, to + 1)) extraRuns += times * (runs.get(s.stage) ?? 0);
   }
-  const total = (m: Map<Stage['stage'], number>) => [...m.values()].reduce((a, b) => a + b, 0);
-  return { w, runs: total(runs) + extraRuns, seeds: total(seeds) + extraSeeds, peak, bytes };
+  return { w, runs: [...runs.values()].reduce((a, b) => a + b, 0) + extraRuns, peak, bytes };
 }
 
 /** The most work a run of this recipe can do, and how much of it can be in flight at once. */
 export function workBound(recipe: Recipe): WorkBound {
-  const counted = walkStages(recipe, 0);
-  const weighed = walkStages(recipe, counted.seeds);
+  const walked = walkStages(recipe);
   return {
-    stepRuns: counted.runs,
-    seeds: counted.seeds,
-    peak: counted.peak,
-    batchBytes: weighed.bytes,
-    ...(weighed.w.widest ? { widest: weighed.w.widest } : {}),
+    stepRuns: walked.runs,
+    peak: walked.peak,
+    batchBytes: walked.bytes,
+    ...(walked.w.widest ? { widest: walked.w.widest } : {}),
   };
 }
 
@@ -333,8 +312,8 @@ export function workBound(recipe: Recipe): WorkBound {
 
 /** A problem that keeps a recipe from running at all, with the rule and clause the validator reports it under. */
 export interface EngineProblem {
-  ruleId: 'ST3' | 'ST10' | 'ST12';
-  clause: 'count' | 'limit' | 'retry-count' | 'retry-scope' | 'pick-judge';
+  ruleId: 'ST3' | 'ST7' | 'ST10' | 'ST12';
+  clause: 'count' | 'limit' | 'retry-count' | 'retry-scope' | 'pick-judge' | 'slots';
   path: string;
   message: string;
 }
@@ -381,9 +360,11 @@ const KB = (b: number) => `${Math.round(b / 1024)} KB`;
 
 /**
  * What keeps a recipe from running on the engine, whoever admitted it: counts that are not positive whole numbers or
- * pass the engine's limits, a C pick nobody can decide, and a retrying gate inside a fan-out. Runner.start and the
- * workflow's start refuse a recipe with any; the validator reports the same as ST3, ST10 and ST12 findings. It holds
- * no product policy (no VOICE, no composed limits).
+ * pass the engine's limits, a C pick nobody can decide, a retrying gate inside a fan-out, and an ASSET step whose
+ * slots knob is not a whole number of at least 1 (it would pay for its briefs and make no image, or a fraction of one;
+ * SLOTS-KNOB). Runner.start and the workflow's start refuse a recipe with any; the validator reports the same as ST3,
+ * ST7, ST10 and ST12 findings (ST7's knob range for the slots knob). It holds no product policy (no VOICE, no
+ * composed limits).
  */
 export function engineProblems(recipe: Recipe): EngineProblem[] {
   const out: EngineProblem[] = [];
@@ -402,6 +383,13 @@ export function engineProblems(recipe: Recipe): EngineProblem[] {
       count(path, `loop "${n.id}"'s cap`, n.gate.max, ENGINE_LIMITS.stepRuns);
     }
     if (n.op === 'relay') count(path, `relay "${n.id}"'s links`, n.maxLinks, ENGINE_LIMITS.stepRuns);
+    // Knobs are free JSON in a recipe, and the activity caps the images by this one: not a count the work bound reads.
+    if (n.op === 'step' && n.role === 'asset' && n.knobs && Object.hasOwn(n.knobs, 'slots')) {
+      const slots = n.knobs.slots;
+      if (!(typeof slots === 'number' && positiveInt(slots))) {
+        out.push({ ruleId: 'ST7', clause: 'slots', path, message: `ASSET step "${n.id}"'s slots knob is ${JSON.stringify(slots)}; it must be a whole number of at least 1` });
+      }
+    }
     if (n.op === 'gate' && n.retry) {
       if (!positiveInt(n.retry.times) || n.retry.times > ENGINE_LIMITS.gateRetries) {
         out.push({ ruleId: 'ST10', clause: 'retry-count', path, message: `gate "${n.id}" retries ${n.retry.times} times; a retry is 1 to ${ENGINE_LIMITS.gateRetries} automatic re-runs` });
@@ -427,7 +415,7 @@ export function engineProblems(recipe: Recipe): EngineProblem[] {
       ruleId: 'ST3',
       clause: 'limit',
       path: b.widest?.path ?? '(recipe)',
-      message: `the steps that can run at once here carry up to ${KB(b.batchBytes)} between them (${b.seeds} random strings and the options in every one); the engine allows ${KB(ENGINE_LIMITS.batchBytes)}`,
+      message: `the steps that can run at once here carry up to ${KB(b.batchBytes)} between them (the options and their views in every one); the engine allows ${KB(ENGINE_LIMITS.batchBytes)}`,
     });
   }
   return out;

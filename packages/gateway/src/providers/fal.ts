@@ -2,7 +2,7 @@ import { createFalClient as createFalSdkClient } from '@fal-ai/client';
 import { GatewayError } from '@byway/contracts';
 import { cutOffError } from '../errors.ts';
 import { makeRedactor } from '../redact.ts';
-import { waitedError, waitMinutes } from '../waited.ts';
+import { isNotStarted, notStartedError, waitedError, waitMinutes } from '../waited.ts';
 import { Deadline } from './deadline.ts';
 import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type ProviderVideoRequest } from './types.ts';
 
@@ -34,7 +34,9 @@ import { plain, type MediaBytes, type ProviderAdapter, type ProviderVideo, type 
  * stop while running, or a cancel that failed, it may have been billed, and the call says so with the job's id; already
  * done, the clip is kept and used, since it is paid for. The job is never submitted again. The clip job is submitted
  * with a start deadline below the wait (falStartTimeoutSeconds), and the last frame's extraction is bounded by the time
- * left on the clip's wait plus FRAME_GRACE_MS.
+ * left on the clip's wait plus FRAME_GRACE_MS. A clip job fal dropped at that deadline, before it started, answers its
+ * result with 504 and `X-Fal-Request-Timeout-Type: user`: nothing was billed (fal's queue and pricing pages, quoted in
+ * waited.ts notStartedWords), so the call counts nothing and the step says so plainly.
  */
 
 /** The slice of the fal client the adapter uses, so tests inject a fake. */
@@ -454,6 +456,17 @@ function acceptedButUnread(e: unknown, role: JobRole, requestId: string): Gatewa
   return Object.assign(err, { falRequests: { [role]: requestId } });
 }
 
+/**
+ * fal dropped the job at the start deadline it was sent with: its result answered 504 with `X-Fal-Request-Timeout-Type:
+ * user` (fal's queue page), which @fal-ai/client 1.10.1 hands on as an ApiError carrying `status` and `timeoutType`, as
+ * its own isUserTimeout reads them (and, by that reading, never retries). Read by those fields, as errors.ts reads the
+ * SDKs' errors, rather than by the SDK's class.
+ */
+const droppedAtStart = (e: unknown): boolean => {
+  const err = e as { status?: unknown; timeoutType?: unknown } | null;
+  return err?.status === 504 && err.timeoutType === 'user';
+};
+
 export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
   const fetchImpl = opts.fetch ?? fetch;
   const { queue } = opts.client;
@@ -467,16 +480,26 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
     const stop = req.signal;
     const until = deadline?.signal;
     const ended = (mark: typeof STOPPED | typeof WAITED, state: 'running' | 'done'): Polled => (mark === STOPPED ? { stopped: state, requestId } : { waited: state, requestId });
+    // A clip job fal dropped unstarted at its start deadline: nothing was billed, and the call ends plainly (waited.ts
+    // notStartedWords), with the wait it was given and the deadline it was sent with.
+    const read = () =>
+      queue.result(endpointId, { requestId }).catch((e: unknown) => {
+        if (role !== 'generation' || !droppedAtStart(e)) throw e;
+        const start = req.waitMs === undefined ? undefined : falStartTimeoutSeconds(req.waitMs, req.durationSec);
+        throw notStartedError({ provider: 'fal', model: req.model }, requestId, { ...(req.waitMs !== undefined ? { minutes: waitMinutes(req.waitMs) } : {}), ...(start !== undefined ? { startMinutes: start / 60 } : {}) });
+      });
     let done = false;
     try {
       const watching = either(stop, until);
       const status = await untilEnded(req.attempt(() => queue.subscribeToStatus(endpointId, { requestId, pollInterval: POLL_INTERVAL_MS, ...(watching ? { abortSignal: watching } : {}) })), stop, until);
       if (status === STOPPED || status === WAITED) return ended(status, 'running');
       done = true;
-      const result = await untilEnded(req.attempt(() => queue.result(endpointId, { requestId })), stop, deadline?.reading ? until : undefined);
+      const result = await untilEnded(req.attempt(read), stop, deadline?.reading ? until : undefined);
       if (result === STOPPED || result === WAITED) return ended(result, 'done');
       return { data: result.data, requestId };
     } catch (e) {
+      // fal's own word that the job never ran comes first: it was not billed, whatever else ended the wait.
+      if (isNotStarted(e)) throw e;
       if (stop?.aborted) return { stopped: done ? 'done' : 'running', requestId };
       if (until?.aborted && (!done || deadline?.reading)) return { waited: done ? 'done' : 'running', requestId };
       throw acceptedButUnread(e, role, requestId);

@@ -49,8 +49,8 @@ export interface SpendContext {
   stepId?: string;
   /**
    * Purpose label (product spec §3.3): `<role>:<medium>` for recipe steps (e.g. `build:web-page`, `critic:prose`),
-   * or a helper (`asset.briefs:web-page`, `asset.integrate:web-page`, `voice.apply:<medium>`, `rerank:<medium>`,
-   * `advisor.intake`, `advisor.compose`, `advisor.compose.repair`). The mock provider answers by purpose.
+   * or a helper (`asset.briefs:web-page`, `asset.integrate:web-page`, `rerank:<medium>`, `advisor.intake`,
+   * `advisor.compose`, `advisor.compose.repair`). The mock provider answers by purpose.
    */
   purpose: string;
   /**

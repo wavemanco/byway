@@ -13,6 +13,7 @@ import type { Gateway, Medium } from '@byway/contracts';
 import { createActivities } from '../src/activities/index.ts';
 import { launchFailure } from '../src/pages.ts';
 import { FAILURE } from '../src/types.ts';
+import { storeBrief } from './helpers/briefs.ts';
 import { fakePages, png, type FakePages } from './helpers/fake-pages.ts';
 import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -100,7 +101,7 @@ describe('a model step whose run has image references', () => {
     const { runId } = await queued(medium);
     await store.updateRun(runId, { status: 'running' });
     const acts = createActivities({ gateway: recording(), store, prompts: fakePrompts(), pages });
-    const run = { runId, workspaceId, recipeId: 'r', profileId: 'demo', medium, problem: { text: 'An ad' }, seeds: [] };
+    const run = { runId, workspaceId, recipeId: 'r', profileId: 'demo', medium, problemId: await storeBrief(store.artifacts, { text: 'An ad' }) };
     return acts.modelStep({ run, call: { key: `${runId}/concept/-/1`, stepId: 'concept', stage: 'D1' }, step, ports: {}, refs }).catch((e: unknown) => e);
   }
   const image = async (c: number) => (await store.artifacts.put(png(4, 3, [c, c, c]), 'image/png')).id;
