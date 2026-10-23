@@ -617,7 +617,10 @@ describe('the last frame is bounded by the time left on its clip’s wait plus 2
     await polled(fal, 2);
     const frameFrom = Date.now();
     await vi.advanceTimersByTimeAsync(MINUTE);
-    for (let i = 0; i < 20_000 && !fal.log.includes('result req-2'); i++) await turn();
+    // Real time, not a count of turns, bounds these waits: under a loaded gate the clip's files take longer to write than
+    // any fixed number of turns allows (performance.now is not faked here), and a missing bound still fails an assertion.
+    const realBound = performance.now() + 30_000;
+    while (!fal.log.includes('result req-2') && performance.now() < realBound) await turn();
     expect(fal.log).toContain('result req-2');
     // 2 minutes left on the clip's wait and 2 more: 4 minutes from the frame job's start, 3 of them left now.
     await vi.advanceTimersByTimeAsync(3 * MINUTE - 1);
@@ -625,7 +628,8 @@ describe('the last frame is bounded by the time left on its clip’s wait plus 2
     expect(over).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     // Given up then: it ends once its clip is ledgered and kept (files and timers), not on fal's answer.
-    for (let i = 0; i < 2000 && !over; i++) {
+    const endBound = performance.now() + 30_000;
+    while (!over && performance.now() < endBound) {
       await turn();
       await vi.advanceTimersByTimeAsync(100);
     }
