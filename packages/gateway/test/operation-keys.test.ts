@@ -289,6 +289,8 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     expect(out).toMatchObject({ provider: 'fal', mediaType: 'video/mp4' });
     expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame']);
     expect(fal.uploads).toHaveLength(1);
+    // Asked about by its id twice in all, never submitted again. (This book's clock is not the adapter's, which counts the
+    // clip's wait by the real one, so by that clock the job's wait has run out: the second attempt reads its status once.)
     expect(fal.polls.filter((id) => id === 'req-1')).toHaveLength(2);
     const spend = await workerB.spend('ws');
     expect(spend).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0, spentUsd: out.costUsd });

@@ -1140,6 +1140,8 @@ function heldFal(cancel: FalCancel | (() => FalCancel), opts: { stopAt?: 'poll' 
           control.stop?.abort();
         });
       },
+      // A one-shot read: the job is done when its status poll answered (stopAt 'result'), else still running.
+      status: async () => ({ status: opts.stopAt === 'result' ? 'COMPLETED' : 'IN_PROGRESS' }),
       result: () =>
         new Promise((resolve) => {
           control.stop?.abort();
