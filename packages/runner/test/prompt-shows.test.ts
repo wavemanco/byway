@@ -21,6 +21,7 @@ import type { RunnerDeps } from '../src/activities/deps.ts';
 import { modelStep } from '../src/activities/model-step.ts';
 import { JUDGING_ROLES } from '../src/activities/prompting.ts';
 import { relayLink } from '../src/activities/relay.ts';
+import { INPUT_MEDIA_TYPE } from '../src/stored-inputs.ts';
 import type { Ports, RunRef, StepSpec, ViewRef } from '../src/types.ts';
 import { storeBrief } from './helpers/briefs.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
@@ -121,7 +122,8 @@ async function requestFor(step: StepSpec, medium: Medium): Promise<CompletionReq
   try {
     if (step.role === 'asset') await assetStep(deps, { run, call, step, ports });
     else if (step.role === 'relay') await relayLink(deps, { run, call, step, ports, shot: 1 });
-    else await modelStep(deps, { run, call, step, ports, refs: [], tells: 'MARK-tells' });
+    // The run's own tell catalog, stored as Runner.start stores it (P2).
+    else await modelStep(deps, { run, call, step, ports, refs: [], tellsId: await text('MARK-tells', INPUT_MEDIA_TYPE) });
   } catch (e) {
     if (!(e instanceof Captured)) throw e;
   }

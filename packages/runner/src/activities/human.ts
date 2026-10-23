@@ -69,7 +69,8 @@ export async function openCheckpoint(deps: RunnerDeps, input: OpenCheckpointInpu
         initialText = claimLines(text);
         break;
       case 'draft':
-        initialText = input.initial.draft ?? '';
+        // The draft the run was given travels as its file's id (P2), read here; without one the person starts blank.
+        initialText = input.initial.draftId ? await new ArtifactReader(deps).startInput(input.initial.draftId, 'draft') : '';
         break;
     }
   }

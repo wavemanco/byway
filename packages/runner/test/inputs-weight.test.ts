@@ -3,7 +3,8 @@
  * batches: as JSON, the payload Temporal carries. Before, the brief rode in the start input and in every activity input,
  * so a brief of a million characters (about 3 MB of Chinese) made a start input over Temporal's 2 MB limit on one value,
  * and a seeded fan-out over its 4 MB limit on one batch. Now the start input holds the recipe and short ids, and every
- * input the interpreter schedules holds the brief's id, never the brief, and stays under a fixed size.
+ * input the interpreter schedules holds the brief's id, never the brief, and stays under a fixed size. So with the
+ * person's own inputs: a fixed copy deck, an author's draft and their own tell catalog travel as their files' ids.
  *
  * The start input is the one Runner.start sends (a stand-in Temporal client keeps it; the real store). The real
  * Interpreter then runs the catalog recipe on it with every activity answered at once by a stand-in, and every input
@@ -15,13 +16,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Client } from '@temporalio/client';
-import { c1, c2 } from '@byway/catalog';
+import { c1, c1h, c2, c3 } from '@byway/catalog';
 import type { CheckpointOption, ProblemBrief, StartRunInput } from '@byway/contracts';
 import { labelOf } from '@byway/prompts/pure';
 import type { Recipe } from '@byway/recipe';
 import { createRunnerClient } from '../src/client.ts';
 import type { RunInput } from '../src/types.ts';
-import { briefPieces, maximalBrief } from './helpers/briefs.ts';
+import { briefPieces, chinese, maximalBrief, piecesOf } from './helpers/briefs.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
 const seen = vi.hoisted(() => ({ inputs: [] as { name: string; input: unknown }[], n: 0 }));
@@ -50,7 +51,8 @@ vi.mock('../src/workflow/acts.ts', () => {
         if (role === 'judge' || role === 'select') return { costUsd: 0, label: 'A' };
         if (role === 'dedupe') return { costUsd: 0, keepLabels: (input.ports?.options ?? []).map((_, i) => labelOf(i)) };
         if (role === 'tells-sweep') return { costUsd: 0, text: '- "synergy"', hits: [{ pattern: 'synergy', where: 'the first line', alternative: 'say what they do together' }] };
-        if (role === 'overlap' || role === 'vision') return { costUsd: 0, text: '- a note' };
+        if (role === 'overlap' || role === 'vision' || role === 'cut') return { costUsd: 0, text: '- a note' };
+        if (role === 'tells-compare') return { costUsd: 0, keep: 'B' };
         // 01 SEED seed_shape: 48 base64url characters, as the runner makes them.
         return { costUsd: 0, artifactId: id, ...(role === 'seed' ? { seed: 'S'.repeat(48) } : {}) };
       }
@@ -118,7 +120,8 @@ async function carried(recipe: Recipe, over: Partial<StartRunInput>): Promise<{ 
     },
   });
   const ports = await engine.runStages();
-  expect(ports.artifact).toBeDefined();
+  // It ran to its end, with work: the draft it delivers, or (C1h, a study recipe) the drafts it ends with.
+  expect(ports.artifact ?? ports.options?.[0]).toBeDefined();
   return { start, inputs: seen.inputs };
 }
 
@@ -130,25 +133,38 @@ async function carried(recipe: Recipe, over: Partial<StartRunInput>): Promise<{ 
  */
 const STEP_INPUT_BYTES = 16 * 1024;
 
-describe('a run with the largest brief the web accepts carries its id, never the brief (P2)', () => {
+describe('a run with the largest brief the web accepts carries its id, never the brief, nor the person’s own inputs (P2)', () => {
   const brief: ProblemBrief = maximalBrief();
-  const pieces = briefPieces(brief);
-  const holdsBrief = (v: unknown) => pieces.some((p) => JSON.stringify(v).includes(p));
+  /** The person's own inputs, each 100,000 characters of Chinese of its own. */
+  const own = { voice: chinese(100_000, 11), draft: chinese(100_000, 13), tells: chinese(100_000, 17) };
+  const pieces = [...briefPieces(brief), ...Object.values(own).flatMap(piecesOf)];
+  /** Whether a value holds a piece of the brief or of one of the person's own inputs. */
+  const carries = (v: unknown) => pieces.some((p) => JSON.stringify(v).includes(p));
 
   it.each([
-    ['C1 on a web page', c1],
-    ['C2 on options', c2],
-  ] as [string, Recipe][])('%s: the start input is the recipe and short ids, and every step input stays small', async (_name, recipe) => {
+    ['C1 on a web page', c1, {}],
+    ['C1 with its own tell catalog', c1, { inputs: { tells: own.tells } }],
+    ['C1h with a fixed copy deck and its own tell catalog', c1h, { inputs: { voice: own.voice, tells: own.tells } }],
+    ['C2 on options', c2, {}],
+    ['C3 from the author’s own draft', c3, { inputs: { draft: own.draft, tells: own.tells }, routes: { draft: 'own' } }],
+  ] as [string, Recipe, Partial<StartRunInput>][])('%s: the start input is the recipe and short ids, and every step input stays small', async (_name, recipe, over) => {
     expect(bytes(brief)).toBeGreaterThan(3_000_000);
-    const { start, inputs } = await carried(recipe, { problem: brief });
-    expect(holdsBrief(start)).toBe(false);
+    const { start, inputs } = await carried(recipe, { problem: brief, ...over });
+    expect(Object.keys(start.inputs).sort()).toEqual(Object.keys(over.inputs ?? {}).map((k) => `${k}Id`).sort());
+    expect(carries(start)).toBe(false);
     expect(bytes(start) - bytes(recipe)).toBeLessThan(1024);
     expect(inputs.length).toBeGreaterThan(20);
     for (const { name, input } of inputs) {
-      expect(holdsBrief(input), name).toBe(false);
+      expect(carries(input), name).toBe(false);
       expect(bytes(input), name).toBeLessThan(STEP_INPUT_BYTES);
-      const run = (input as { run?: { problemId?: string } }).run;
+      const run = (input as { run?: { problemId?: string; voiceId?: string } }).run;
       if (run) expect(run.problemId, name).toBe(start.problemId);
+      // The deck reaches the steps as the run's (held-voice.ts withDeck reads it).
+      if (run) expect(run.voiceId, name).toBe(start.inputs.voiceId);
     }
+    // The ids reach the steps that read them: the sweep's catalog, and the question that starts from the draft.
+    const handed = (name: string, pick: (i: Record<string, any>) => unknown) => inputs.filter((i) => i.name === name).map((i) => pick(i.input as Record<string, any>));
+    if (over.inputs?.tells) expect(handed('modelStep', (i) => i.tellsId)).toContain(start.inputs.tellsId);
+    if (over.inputs?.draft) expect(handed('openCheckpoint', (i) => i.initial?.draftId)).toContain(start.inputs.draftId);
   });
 });

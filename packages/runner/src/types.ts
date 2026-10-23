@@ -5,7 +5,7 @@
  * Port values travel by reference (spec §3: "Workflow state holds port values by reference (artifact ids, short
  * texts); activities do all I/O"): artifacts, views and images are artifact ids; briefs, critiques, tastes and the
  * human's words are short texts. What the run was started with travels by reference too (P2): the person's problem
- * brief as its file's id (RunInput.problemId), never its text.
+ * brief, fixed copy deck, draft and tell catalog as their files' ids (RunInput), never their texts.
  */
 import type { CheckpointKind, CheckpointOption, CheckpointResolution, Medium, RunEventPayloads, RunEventType, RunStatus } from '@byway/contracts';
 import type { PortType } from '@byway/protocol';
@@ -32,7 +32,12 @@ export interface RunInput {
   medium: Medium;
   /** Route choices made up front, by route id. */
   routes: Record<string, string>;
-  inputs: { refs?: string[]; voice?: string; draft?: string; tells?: string };
+  /**
+   * The person's own inputs, by reference (P2): their references (artifact ids already), and the fixed copy deck, the
+   * author's draft and their own tell catalog (StartRunInput.inputs voice, draft and tells), each the id of the text
+   * file Runner.start stored it in (stored-inputs.ts).
+   */
+  inputs: { refs?: string[]; voiceId?: string; draftId?: string; tellsId?: string };
 }
 
 export type StageName = 'D1' | 'D2' | 'D3';
@@ -84,8 +89,9 @@ export interface Ports {
   score?: Score;
   taste?: string;
   /**
-   * The person's latest words: the latest VOICE write's answer, or the fixed copy deck the run was given. What a step
-   * that reads 'voice' gets (C5's voice-over audio after the locked script).
+   * The person's latest words: the latest VOICE write's answer. What a step that reads 'voice' gets (C5's voice-over
+   * audio after the locked script). Until a VOICE answers, such a step reads the fixed copy deck the run was given in
+   * its place (RunRef.voiceId; held-voice.ts withDeck).
    */
   voice?: string;
   /**
@@ -143,6 +149,11 @@ export interface RunRef {
   medium: Medium;
   /** The brief's artifact id (RunInput.problemId): a step that fills the problem slot reads it (prompting.ts). */
   problemId: string;
+  /**
+   * The fixed copy deck the run was given, by its file's id (RunInput.inputs.voiceId): the person's words until a VOICE
+   * answers, which a step that takes them in, or is held to keep them, reads (held-voice.ts withDeck).
+   */
+  voiceId?: string;
   /** Every SEED string handed out so far: no artifact may contain one (PR3). */
   seeds: string[];
 }
@@ -190,8 +201,8 @@ export interface ModelStepInput {
   round?: number;
   /** User-supplied reference artifacts (CRITIC lineups). */
   refs: string[];
-  /** The tell catalog text when the run supplies its own (StartRunInput.inputs.tells). */
-  tells?: string;
+  /** The run's own tell catalog (StartRunInput.inputs.tells), by its file's id: a sweep reads it in place of byway's. */
+  tellsId?: string;
   /** For pick(C): the candidates to choose among, labelled A, B, C… (the judge step's options). */
   candidates?: string[];
   meta?: StepMeta;
@@ -304,8 +315,11 @@ export interface OpenCheckpointInput {
   /** For a human step: its spec, so step-started is emitted with the checkpoint. Absent for operator checkpoints. */
   step?: StepSpec;
   meta?: StepMeta;
-  /** Ask the activity to compute the initial text (VOICE copy, the author's draft) from these. */
-  initial?: { from: 'copy' | 'artifact' | 'draft' | 'claims'; artifactId?: string; draft?: string };
+  /**
+   * Ask the activity to compute the initial text (VOICE copy, the author's draft) from these: the work, or the draft
+   * the run was given, by its file's id (RunInput.inputs.draftId).
+   */
+  initial?: { from: 'copy' | 'artifact' | 'draft' | 'claims'; artifactId?: string; draftId?: string };
 }
 
 export interface OpenCheckpointResult {

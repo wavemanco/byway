@@ -139,8 +139,8 @@ export class Interpreter {
   }
 
   private get run(): RunRef {
-    const { runId, workspaceId, recipe, profileId, medium, problemId } = this.input;
-    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problemId, seeds: [...this.seeds] };
+    const { runId, workspaceId, recipe, profileId, medium, problemId, inputs } = this.input;
+    return { runId, workspaceId, recipeId: recipe.id, profileId, medium, problemId, ...(inputs.voiceId ? { voiceId: inputs.voiceId } : {}), seeds: [...this.seeds] };
   }
 
   /** A step's (or operator's) call at this place in the run; the key is stable across replays and retries. */
@@ -159,7 +159,9 @@ export class Interpreter {
   async runStages(): Promise<Ports> {
     const stages = this.input.recipe.stages;
     const entries: Ports[] = [];
-    let ports: Ports = this.input.inputs.voice ? { voice: this.input.inputs.voice } : {};
+    // A fixed copy deck the run was given is the run's (RunRef.voiceId), read by the steps that take it in until a
+    // VOICE answers: the ports carry the person's answers only.
+    let ports: Ports = {};
     let i = 0;
     while (i < stages.length) {
       const stage = stages[i]!;
@@ -350,7 +352,7 @@ export class Interpreter {
         return { ...withCritique(ports, ports.critique), ...(ports.artifact ? { previousArtifact: ports.artifact } : {}) };
       }
       const res = await this.act(call, () =>
-        model.modelStep({ run: this.run, call, step: spec, ports, refs: this.input.inputs.refs ?? [], ...(this.input.inputs.tells ? { tells: this.input.inputs.tells } : {}), ...(ctx.loop ? { round: ctx.loop.round } : {}) }),
+        model.modelStep({ run: this.run, call, step: spec, ports, refs: this.input.inputs.refs ?? [], ...(this.input.inputs.tellsId ? { tellsId: this.input.inputs.tellsId } : {}), ...(ctx.loop ? { round: ctx.loop.round } : {}) }),
       );
       if (res.seed) this.seeds.push(res.seed);
       return this.applyModel(s, ports, res);
@@ -417,7 +419,7 @@ export class Interpreter {
       // The author revises their own last draft; the first time, they start from the draft they brought (or nothing),
       // never from a machine's text (a seed card or a premise is not their draft).
       else if (ports.artifact && ports.artifact === ports.authored) initial = { from: 'artifact', artifactId: ports.artifact };
-      else initial = { from: 'draft', ...(this.input.inputs.draft ? { draft: this.input.inputs.draft } : {}) };
+      else initial = { from: 'draft', ...(this.input.inputs.draftId ? { draftId: this.input.inputs.draftId } : {}) };
       // The author revises with the readers' notes beside their draft, as the question says (ENG-8); VOICE shows the work.
       const work = ports.artifact ? [ports.artifact] : [];
       checkpoint.artifactIds = s.role === 'voice' ? work : beside(ports, work);

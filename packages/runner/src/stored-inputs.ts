@@ -12,12 +12,20 @@
  * are all a brief has, and all a prompt shows (@byway/prompts problemSlot). JSON writes a lone surrogate as an escape,
  * so a brief of any text is stored exactly as it was given.
  *
- * Not workflow code: the client writes the file and the activities read it (prompting.ts ArtifactReader).
+ * The person's own inputs go the same way: the fixed copy deck, the author's draft and their own tell catalog are each
+ * stored as a text file, and only their ids travel (the design's reading, Claude's: the rows name the brief and the
+ * deck, and the draft and the tells are the same kind of input). The references are ids already.
+ *
+ * Not workflow code: the client writes the files and the activities read them (prompting.ts ArtifactReader).
  */
-import type { ProblemBrief } from '@byway/contracts';
+import type { ArtifactStore, ProblemBrief, StartRunInput } from '@byway/contracts';
+import type { RunInput } from './types.ts';
 
 /** The brief's file is JSON. */
 export const BRIEF_MEDIA_TYPE = 'application/json';
+
+/** The person's own inputs (the fixed copy deck, the author's draft, their tell catalog) are plain text files. */
+export const INPUT_MEDIA_TYPE = 'text/plain';
 
 /** The brief's file: canonical JSON (see the header). */
 export function briefFile(p: ProblemBrief): string {
@@ -29,6 +37,24 @@ export function briefFile(p: ProblemBrief): string {
     ...(p.attachments !== undefined ? { attachments: p.attachments.map((a) => ({ name: a.name, text: a.text })) } : {}),
   };
   return JSON.stringify(brief);
+}
+
+/**
+ * What Runner.start was given, stored, as the workflow is handed it: the brief's id, the references as they are, and the
+ * fixed copy deck, the author's draft and the person's tell catalog each by its text file's id. An empty text is no
+ * input, as it was when the texts travelled. A start sent twice writes the same bytes, so it gets the same ids.
+ */
+export async function storeRunInputs(artifacts: Pick<ArtifactStore, 'putText'>, input: Pick<StartRunInput, 'problem' | 'inputs'>): Promise<Pick<RunInput, 'problemId' | 'inputs'>> {
+  const { id: problemId } = await artifacts.putText(briefFile(input.problem), BRIEF_MEDIA_TYPE);
+  const { refs, voice, draft, tells } = input.inputs ?? {};
+  const stored = async (text: string | undefined) => (text ? (await artifacts.putText(text, INPUT_MEDIA_TYPE)).id : undefined);
+  const voiceId = await stored(voice);
+  const draftId = await stored(draft);
+  const tellsId = await stored(tells);
+  return {
+    problemId,
+    inputs: { ...(refs !== undefined ? { refs } : {}), ...(voiceId ? { voiceId } : {}), ...(draftId ? { draftId } : {}), ...(tellsId ? { tellsId } : {}) },
+  };
 }
 
 /** The brief a file holds, or undefined when the text is not a brief's file (no JSON object with a text). */

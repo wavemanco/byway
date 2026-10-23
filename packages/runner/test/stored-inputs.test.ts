@@ -6,6 +6,11 @@
  * one run. A step that fills the problem slot reads the brief once, by its id (ArtifactReader); a brief whose file is
  * gone (a partial restore) fails the step with a plain message, at once.
  *
+ * The person's own inputs go the same way: the fixed copy deck, the author's draft and their own tell catalog are each
+ * stored as a text file, and the start input holds their ids beside the references (already ids). The question that
+ * starts from the draft reads it by its id. (The deck's readers, the voice slot and the keepsVoice check, are driven in
+ * held-voice-writers.test.ts; the tells' sweep in e2e/text-media.ts.)
+ *
  * The real store; a stand-in Temporal client that keeps what it is asked to start, as Temporal does (a second start of
  * a running id fails with WorkflowExecutionAlreadyStartedError).
  */
@@ -18,11 +23,13 @@ import type { ProblemBrief, StartRunInput } from '@byway/contracts';
 import { problemSlot } from '@byway/prompts/pure';
 import { artifactPath } from '@byway/store';
 import { StepError, toFailure } from '../src/activities/failures.ts';
+import { openCheckpoint } from '../src/activities/human.ts';
 import { ArtifactReader, buildPrompt } from '../src/activities/prompting.ts';
 import { createRunnerClient } from '../src/client.ts';
-import { BRIEF_MEDIA_TYPE, briefFile, readBrief } from '../src/stored-inputs.ts';
-import { FAILURE, type RunInput, type StepSpec } from '../src/types.ts';
+import { BRIEF_MEDIA_TYPE, briefFile, INPUT_MEDIA_TYPE, readBrief, unreadableInput } from '../src/stored-inputs.ts';
+import { FAILURE, type RunInput, type RunRef, type StepSpec } from '../src/types.ts';
 import { storeBrief } from './helpers/briefs.ts';
+import { fakePrompts } from './helpers/fake-prompts.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 import { tiny } from './helpers/recipes.ts';
 
@@ -135,5 +142,63 @@ describe('a step reads the brief by its id (P2)', () => {
       // A StepError is not retried (failures.ts): reading again finds the same nothing.
       expect(toFailure(failed)).toMatchObject({ type: FAILURE.step, nonRetryable: true });
     }
+  });
+});
+
+describe('Runner.start stores the copy deck, the draft and the tell catalog once, and the steps read them by id (P2)', () => {
+  const DECK = 'Headline: Bread before seven\nTagline: Your rye, still warm';
+  const DRAFT = '# What the river kept\n\nMara counted the boats each morning.\n';
+  const TELLS = '- "synergy" → say what the teams do together';
+
+  it('stores each as a text file; the start input holds their ids beside the references, and none of the texts', async () => {
+    const t = temporal();
+    const runner = createRunnerClient({ client: t.client, store });
+    const refs = [(await store.artifacts.putText('# An example\n', 'text/markdown')).id];
+    const runId = '2b3c4d5e-6f70-4a8b-9c0d-1e2f3a4b5c6d';
+    const own = { inputs: { refs, voice: DECK, draft: DRAFT, tells: TELLS }, runId };
+    await runner.start(input(own));
+    const { inputs } = t.attempts[0]!;
+    expect(Object.keys(inputs).sort()).toEqual(['draftId', 'refs', 'tellsId', 'voiceId']);
+    expect(inputs.refs).toEqual(refs);
+    for (const [id, text] of [[inputs.voiceId, DECK], [inputs.draftId, DRAFT], [inputs.tellsId, TELLS]] as const) {
+      const file = await store.artifacts.get(id!);
+      expect(file.record.mediaType).toBe(INPUT_MEDIA_TYPE);
+      expect(new TextDecoder().decode(file.bytes)).toBe(text);
+    }
+    const sent = JSON.stringify(t.attempts[0]);
+    for (const piece of ['Bread before seven', 'Mara counted', 'synergy']) expect(sent).not.toContain(piece);
+    // Sent twice: the same files, under the same ids.
+    await runner.start(input(own));
+    expect(t.attempts[1]!.inputs).toEqual(inputs);
+  });
+
+  it('an empty text is no input, as when the texts travelled', async () => {
+    const t = temporal();
+    await createRunnerClient({ client: t.client, store }).start(input({ inputs: { voice: '', draft: '', tells: '' } }));
+    expect(t.attempts[0]!.inputs).toEqual({});
+  });
+
+  it('a start whose own input cannot be stored leaves no run behind and starts nothing', async () => {
+    const t = temporal();
+    // Half of a surrogate pair: UTF-8 cannot hold it, so the store refuses the file.
+    const broken = await createRunnerClient({ client: t.client, store }).start(input({ inputs: { draft: `${DRAFT}\uD800` } })).catch((e: unknown) => e);
+    expect(broken).toMatchObject({ code: 'invalid' });
+    expect(await store.listRuns(workspaceId)).toEqual([]);
+    expect(t.attempts).toEqual([]);
+  });
+
+  it('the question that starts from the author’s draft reads it by its id; a draft whose file is gone fails the step plainly', async () => {
+    const run = await store.createRun({ id: 'run-own-draft', workspaceId, recipeId: 'c3', recipeHash: 'sha256:x', profileId: 'demo', title: 't', problem: 'p', medium: 'prose', budgetUsd: 5 });
+    const ref: RunRef = { runId: run.id, workspaceId, recipeId: 'c3', profileId: 'demo', medium: 'prose', problemId: await storeBrief(store.artifacts, BRIEF), seeds: [] };
+    const deps = { store, prompts: fakePrompts(), gateway: {} as never };
+    const ask = (n: number, draftId: string) =>
+      openCheckpoint(deps, { run: ref, call: { key: `${run.id}/own-draft/-/${n}`, stepId: 'own-draft', stage: 'D2' }, checkpoint: { id: `${run.id}/cp${n}-own-draft`, kind: 'write', prompt: 'Write your draft.' }, initial: { from: 'draft', draftId } });
+    const draftId = (await store.artifacts.putText(DRAFT, INPUT_MEDIA_TYPE)).id;
+    expect((await ask(1, draftId)).initialText).toBe(DRAFT);
+    const never = `sha256:${'0'.repeat(64)}`;
+    const failed = await ask(2, never).catch((e: unknown) => e);
+    expect(failed).toBeInstanceOf(StepError);
+    expect((failed as Error).message).toBe(unreadableInput('draft', never));
+    expect((failed as Error).message).toMatch(/^The draft this run started with cannot be read: its file \(sha256:0{64}\) is missing or damaged/);
   });
 });
