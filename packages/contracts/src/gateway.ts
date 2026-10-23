@@ -70,15 +70,14 @@ export interface SpendContext {
    *   billable was sent counts nothing. Its abort comes only after `cancel`'s.
    * - `rebuy`: the caller was told an earlier attempt settled the call (GatewayError.settledEarlier), looked for its kept
    *   result and found none: buy it again (counted).
-   * - `stepLimitMs`: the step's own time limit, in milliseconds (its attempt's start-to-close timeout, as Temporal gives
-   *   it to the activity), so the gateway never reads a streamed answer as stalled before its step would end: a streamed
-   *   call waits the longer of the gateway's bound on a stalled stream (STREAM_IDLE_MS, fifteen minutes) and this for
-   *   its next chunk (B1R2-CODE-3, the re-check of block 1's second fix round). A text call inside an image or video
-   *   step so waits that step's 45 minutes, as the owner chose on 2026-10-22, "45 minutes for calls in media steps
-   *   (Recommended)"; a call in a model step or a one-minute quick step, or with no limit given, waits fifteen. When
-   *   given, a number of milliseconds above 0 and at most 2^31 - 1 (the longest wait a timer keeps).
+   * - `waitMs`: how long this call waits for its answer, in milliseconds, in place of the wait chosen in Settings for its
+   *   model (Store.getAnswerWaits, which the gateway reads on every call otherwise): the wait a relay step read before it
+   *   began, so that step's limit and its calls use the one reading (the waits design of 2026-10-22, section 4). Only
+   *   the relay step passes it; every other call leaves it out. When given, a number of milliseconds above 0 and at
+   *   most 2^31 - 1 (the longest wait a timer keeps). It replaces the step's own limit, which calls no longer carry: a
+   *   streamed call stalls at its model's wait, however long its step may run.
    * When the model declines the call, the gateway's one retry (ADR-0102) is a call of its own, keyed
-   * `<key>/after-decline/<the declined call's ledger entry id>`, with the same `until`, `cancel` and `stepLimitMs`; it
+   * `<key>/after-decline/<the declined call's ledger entry id>`, with the same `until`, `cancel` and `waitMs`; it
    * is a rebuy only when the caller asks for the retry alone (`declinedEarlier`) with `rebuy`. So that a step that runs
    * again never buys a declined call again, its caller keeps the decline:
    * - `keepDecline`: called once the declined call is settled and ledgered, before the retry is admitted; the runner's
@@ -96,7 +95,7 @@ export interface SpendContext {
     cancel?: AbortSignal;
     stop?: AbortSignal;
     rebuy?: boolean;
-    stepLimitMs?: number;
+    waitMs?: number;
     keepDecline?: (first: DeclinedAttempt) => Promise<void>;
     declinedEarlier?: DeclinedAttempt;
   };
@@ -436,6 +435,23 @@ export interface ProviderStatus {
   provider: ProviderId;
   /** True when a key for this provider is present in the environment. The key itself is never exposed. */
   configured: boolean;
+}
+
+/** The kind of answer a model gives, which sets the waits it offers: text, an image, or a video clip. */
+export type WaitKind = 'text' | 'image' | 'video';
+
+/**
+ * A model the profiles use, with the answer waits it offers (Settings' "How long to wait for an answer"; @byway/gateway
+ * modelWaits): its kind, read from where the profiles use it, the minutes its kind offers, and the kind's default.
+ */
+export interface ModelWait {
+  provider: ProviderId;
+  model: string;
+  kind: WaitKind;
+  /** The minutes a person can choose, shortest first. */
+  choices: readonly number[];
+  /** What the model waits while no one has chosen. */
+  defaultMinutes: number;
 }
 
 /** Whether a profile can run with the keys in the environment. Names providers only, never keys. */

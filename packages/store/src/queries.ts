@@ -50,6 +50,12 @@ export function prepareQueries(db: DatabaseSync) {
       ON CONFLICT (workspace_id) DO UPDATE SET profile_id = excluded.profile_id, demo_mode = excluded.demo_mode,
       show_technical_names = excluded.show_technical_names, updated_at = excluded.updated_at`),
 
+    answerWaits: p('SELECT * FROM answer_waits WHERE workspace_id = ? ORDER BY provider, model'),
+    answerWait: p('SELECT * FROM answer_waits WHERE workspace_id = ? AND provider = ? AND model = ?'),
+    // A new choice for a model replaces the old one.
+    upsertAnswerWait: p(`INSERT INTO answer_waits (workspace_id, provider, model, minutes, changed_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (workspace_id, provider, model) DO UPDATE SET minutes = excluded.minutes, changed_at = excluded.changed_at`),
+
     rendererSettings: p('SELECT * FROM renderer_settings WHERE id = 1'),
     // The row is made by whichever write comes first; the sandbox's own default (on) is written with it.
     setRendererSandbox: p(`INSERT INTO renderer_settings (id, os_sandbox, changed_at, last_check) VALUES (1, ?, ?, NULL)

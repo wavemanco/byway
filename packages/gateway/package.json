@@ -13,7 +13,8 @@
     "@byway/contracts": "workspace:*",
     "@fal-ai/client": "^1.10.1",
     "@google/genai": "^2.27.0",
-    "openai": "^7.28.0"
+    "openai": "^7.28.0",
+    "undici": "7.18.2"
   },
   "devDependencies": {
     "@byway/catalog": "workspace:*",

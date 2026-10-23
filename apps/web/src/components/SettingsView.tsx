@@ -4,10 +4,14 @@ import type { Preferences, ProfileStatus, ProviderId, ProviderStatus, RendererSe
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
 import { formatUsd, parseBudgetInput } from '../view/format.ts';
+import type { PricesChecked } from '../view/prices.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
 import { profileNeeds, videoAvailability } from '../view/labels.ts';
+import type { AnswerWaitGroup } from '../view/waits.ts';
+import { AnswerWaits } from './AnswerWaits.tsx';
 import { patch } from './api.ts';
 import { PageRendererSettings } from './PageRendererSettings.tsx';
+import { PricesStaleNotice } from './PricesChecked.tsx';
 import { SpendingRecords } from './SpendingRecords.tsx';
 import { Switch } from './Switch.tsx';
 import { SINGLE_KEY_SHORTCUTS, useViewerFlag } from './viewerFlags.ts';
@@ -51,9 +55,13 @@ interface Props {
   demoForced?: boolean;
   /** The page renderer's OS sandbox and what the last start-up check found (ADR-0105). */
   renderer: RendererSettings;
+  /** When byway's prices were last checked, in words, with a notice once that is old (view/prices.ts; PRICE-CADENCE). */
+  prices: PricesChecked;
+  /** Each model's answer wait, grouped by provider (view/waits.ts answerWaitGroups). */
+  waits: AnswerWaitGroup[];
 }
 
-export function SettingsView({ providers, profiles, preferences: initial, spend, records, pricingNote = null, mode, demoForced = false, renderer }: Props) {
+export function SettingsView({ providers, profiles, preferences: initial, spend, records, pricingNote = null, mode, demoForced = false, renderer, prices, waits }: Props) {
   const router = useRouter();
   const ids = useId();
   const [prefs, setPrefs] = useState(initial);
@@ -185,12 +193,16 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
         </p>
       </section>
 
+      <AnswerWaits groups={waits} />
+
       <section className="settings-section" aria-labelledby={`${ids}-budget`}>
         <h2 id={`${ids}-budget`}>Workspace budget</h2>
         <p className="section-note">
           byway does not start a call whose estimated cost would take your spending past this amount. Estimates can be low, so a call can cost more than its estimate, and spending can end over this amount. {spentSentence(spend, cap)} Each run also has its own
           budget, set when you start it.
         </p>
+        <p className="muted small prices-checked">{prices.text}</p>
+        <PricesStaleNotice prices={prices} />
         <form
           className="inline-form"
           onSubmit={(e) => {

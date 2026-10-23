@@ -1,11 +1,14 @@
 /**
  * What a person does in byway, as steps the specs share: describe the problem on Start, start the recommended recipe,
- * answer every "Your turn" through its panel, and reach the Result. Plus a watch on every request and response for
- * the stand-in provider keys (e2e/keys.ts).
+ * answer every "Your turn" through its panel, and reach the Result. A wait for the next turn lasts as long as the run
+ * shows progress, a new event within 120 s (e2e/progress.ts). Plus a watch on every request and response for the
+ * stand-in provider keys (e2e/keys.ts).
  */
 import { expect, type Locator, type Page } from '@playwright/test';
-import type { CheckpointKind } from '@byway/contracts';
+import type { CheckpointKind, RunEvent } from '@byway/contracts';
+import type { RunData } from '../src/view/rundata.ts';
 import { E2E_KEYS, SENTINEL } from './keys.ts';
+import { waitOnProgress } from './progress.ts';
 
 const TEXTUAL = /^(text\/|application\/(json|javascript|x-component)|image\/svg\+xml)/;
 
@@ -78,26 +81,67 @@ export type Outcome = { turn: Locator; id: string; kind: CheckpointKind } | { do
 const READ = { timeout: 1000 };
 
 /**
- * Waits for a "Your turn" other than `after`, the run being done, or the run failing. A panel can go at any moment,
- * the last one as the run finishes, so everything about it is read without waiting; one that went is looked for again,
- * which also finds the run done.
+ * One look for a "Your turn" other than `after`, the run being done, or the run failing, without waiting: what it found,
+ * or nothing yet. A panel can go at any moment, the last one as the run finishes, so everything about it is read
+ * without waiting; one that went is nothing yet, and the next look finds what came after it, the run's end included.
  */
-export async function nextTurn(page: Page, after: string | undefined, timeoutMs: number): Promise<Outcome> {
-  const deadline = Date.now() + timeoutMs;
+async function lookForTurn(page: Page, after: string | undefined): Promise<Outcome | undefined> {
+  if (await page.locator('.state-done').isVisible()) return { done: true };
+  const failed = page.getByRole('heading', { name: 'This run stopped with a problem' });
+  if (await failed.isVisible()) return { failed: (await page.locator('.notice-danger').first().textContent()) ?? 'no reason' };
   const turn = page.locator('section.turn');
-  while (Date.now() < deadline) {
-    if (await page.locator('.state-done').isVisible()) return { done: true };
-    const failed = page.getByRole('heading', { name: 'This run stopped with a problem' });
-    if (await failed.isVisible()) return { failed: (await page.locator('.notice-danger').first().textContent()) ?? 'no reason' };
-    const id = (await turn.count()) > 0 ? await turn.first().getAttribute('data-checkpoint', READ).catch(() => null) : null;
-    if (id !== null && id !== after) {
-      const pinned = page.locator(`section.turn[data-checkpoint="${id}"]`);
-      const kind = await pinned.getAttribute('data-kind', READ).catch(() => null);
-      if (kind !== null) return { turn: pinned, id, kind: kind as CheckpointKind };
-    }
-    await page.waitForTimeout(250);
+  const id = (await turn.count()) > 0 ? await turn.first().getAttribute('data-checkpoint', READ).catch(() => null) : null;
+  if (id !== null && id !== after) {
+    const pinned = page.locator(`section.turn[data-checkpoint="${id}"]`);
+    const kind = await pinned.getAttribute('data-kind', READ).catch(() => null);
+    if (kind !== null) return { turn: pinned, id, kind: kind as CheckpointKind };
   }
-  throw new Error(`Nothing happened in ${timeoutMs / 1000} s after ${after ? `answering ${after}` : 'starting'}.`);
+  return undefined;
+}
+
+/** The run a page shows, from its address (`/runs/<id>`, or its Result), or nothing on a page that shows no run. */
+function shownRun(page: Page): string | undefined {
+  return /^\/runs\/([0-9a-f-]+)(?:\/|$)/.exec(new URL(page.url()).pathname)?.[1];
+}
+
+/** How long one read of a run's events may take before it counts as unanswered (no progress). */
+const EVENTS_READ = { timeout: 10_000 };
+
+/**
+ * The run's events after sequence number `afterSeq`, read as the Run screen reads them (GET /api/runs/<id>?after=), or
+ * nothing when the app did not answer, answered with an error, or answered with something that is not the run's data.
+ */
+async function eventsAfter(page: Page, runId: string, afterSeq: number): Promise<RunEvent[] | undefined> {
+  try {
+    const res = await page.request.get(`/api/runs/${encodeURIComponent(runId)}?after=${afterSeq}`, EVENTS_READ);
+    if (!res.ok()) return undefined;
+    const events = ((await res.json()) as Partial<RunData>).view?.events;
+    return Array.isArray(events) ? events : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The last event the waits on each run have seen, by run id, so the next wait reads only the events after it. */
+const lastSeen = new Map<string, RunEvent>();
+
+/**
+ * Waits for a "Your turn" other than `after`, the run being done, or the run failing, for as long as the run shows
+ * progress (e2e/progress.ts): `windowMs` is how long the run may go with no new event, no turn and no end, and each new
+ * event of the run restarts it. On a page that shows no run (a spec's own page) there are no events to read, and the
+ * wait is one window from the start.
+ */
+export async function nextTurn(page: Page, after: string | undefined, windowMs: number): Promise<Outcome> {
+  const runId = shownRun(page);
+  const { outcome, last } = await waitOnProgress<Outcome>({
+    windowMs,
+    clock: { now: () => Date.now(), sleep: (ms) => page.waitForTimeout(ms) },
+    look: () => lookForTurn(page, after),
+    ...(runId === undefined ? {} : { read: (afterSeq: number) => eventsAfter(page, runId, afterSeq), seen: lastSeen.get(runId) }),
+    after: after ? `answering ${after}` : 'starting',
+  });
+  if (runId !== undefined && last) lastSeen.set(runId, last);
+  return outcome;
 }
 
 /** A "Your turn" a spec is answering: its panel (pinned to its checkpoint id), its id and its kind. */
@@ -107,9 +151,12 @@ export interface Turn {
   kind: CheckpointKind;
 }
 
-/** The next "Your turn" other than `after`; fails if the run ends first. */
+/** How long a run may go with no new event, no turn and no end before a wait on it fails (the owner's 120 s). */
+const PROGRESS_WINDOW_MS = 120_000;
+
+/** The next "Your turn" other than `after`; fails if the run ends first, or shows no progress for 120 s. */
 export async function turnAfter(page: Page, after?: string): Promise<Turn> {
-  const outcome = await nextTurn(page, after, 120_000);
+  const outcome = await nextTurn(page, after, PROGRESS_WINDOW_MS);
   if ('done' in outcome) throw new Error(`The run ended before another question${after ? ` after ${after}` : ''}.`);
   if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}`);
   return { turn: outcome.turn, id: outcome.id, kind: outcome.kind };
@@ -187,7 +234,8 @@ export async function answerTurn(page: Page, turn: Locator, kind: CheckpointKind
 
 /**
  * Run: answer every "Your turn" as it comes until the run is done. Fails with the run's own message if it stops with a
- * problem. Returns what was asked, in order.
+ * problem, and when the run shows no progress for `stepTimeoutMs` (120 s unless given): no new event, no turn and no
+ * end (nextTurn). Returns what was asked, in order.
  */
 export async function answerUntilDone(
   page: Page,
@@ -196,7 +244,7 @@ export async function answerUntilDone(
   const answered: Answered[] = [];
   let last: string | undefined = opts.after;
   for (let i = 0; i < (opts.maxTurns ?? 60); i++) {
-    const outcome = await nextTurn(page, last, opts.stepTimeoutMs ?? 120_000);
+    const outcome = await nextTurn(page, last, opts.stepTimeoutMs ?? PROGRESS_WINDOW_MS);
     if ('done' in outcome) return answered;
     if ('failed' in outcome) throw new Error(`The run failed: ${outcome.failed}\nAnswered so far: ${JSON.stringify(answered)}`);
     const { turn, id, kind } = outcome;

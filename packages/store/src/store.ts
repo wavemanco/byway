@@ -1,7 +1,7 @@
 /**
- * The product store (spec §2 "Data", ADR-0066): workspaces, runs, run events, checkpoints, intakes, preferences and the
- * page renderer's settings (ADR-0105) in one SQLite file, `byway.sqlite`, plus the content-addressed artifact files
- * beside it. The web app and the runner worker each open their own instance on the same data directory; every
+ * The product store (spec §2 "Data", ADR-0066): workspaces, runs, run events, checkpoints, intakes, preferences, each
+ * model's answer wait and the page renderer's settings (ADR-0105) in one SQLite file, `byway.sqlite`, plus the
+ * content-addressed artifact files beside it. The web app and the runner worker each open their own instance on the same data directory; every
  * read-then-write runs in an IMMEDIATE transaction so they agree.
  *
  * node:sqlite is synchronous. The contract is asynchronous so that a remote store could stand in later; here the
@@ -12,6 +12,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type {
+  AnswerWait,
   ArtifactStore,
   CheckpointOption,
   CheckpointRecord,
@@ -27,6 +28,7 @@ import type {
   Store,
   Workspace,
 } from '@byway/contracts';
+import { answerWait, toAnswerWait } from './answer-waits.ts';
 import { FileArtifactStore } from './artifacts.ts';
 import { assertSafeDataDir, resolveDataDir } from './datadir.ts';
 import { openDatabase, writeTransaction } from './db.ts';
@@ -443,6 +445,24 @@ export class SqliteStore implements Store {
       const next = mergePreferences(toPreferences(q.preferences.get(workspaceId)), p);
       q.upsertPreferences.run(workspaceId, next.profileId, next.demoMode ? 1 : 0, next.showTechnicalNames ? 1 : 0, this.#stamp());
       return next;
+    });
+  }
+
+  // Each model's answer wait, per workspace (Settings' "How long to wait for an answer").
+
+  async getAnswerWaits(workspaceId: string): Promise<AnswerWait[]> {
+    const q = this.#queries();
+    if (!q.workspace.get(workspaceId)) throw new StoreError('not-found', `no workspace ${JSON.stringify(workspaceId)}`);
+    return q.answerWaits.all(workspaceId).map(toAnswerWait);
+  }
+
+  async setAnswerWait(workspaceId: string, wait: Omit<AnswerWait, 'changedAt'>): Promise<AnswerWait> {
+    const q = this.#queries();
+    const w = answerWait(wait);
+    return writeTransaction(this.#db, () => {
+      if (!q.workspace.get(workspaceId)) throw new StoreError('not-found', `no workspace ${JSON.stringify(workspaceId)}`);
+      q.upsertAnswerWait.run(workspaceId, w.provider, w.model, w.minutes, this.#stamp());
+      return toAnswerWait(q.answerWait.get(workspaceId, w.provider, w.model)!);
     });
   }
 

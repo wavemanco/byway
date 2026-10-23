@@ -4,7 +4,7 @@
  */
 export { createRunnerClient, ResolutionRejectedError, RunStartConflictError, RunStartInvalidError, titleOf, type RunnerClientOptions } from './client.ts';
 export { createWorker, type CreateWorkerOptions, type RunnerWorker } from './worker.ts';
-export { assertPortFree, cachedTemporalExecutable, connectRunner, engineStartLines, portInUseMessage, settleBeforePolling, startDevEngine, TEMPORAL_BIN_DIR, TEMPORAL_DB_FILENAME, type DevEngine, type DevEngineOptions, type EngineStartReport } from './dev-engine.ts';
+export { assertPortFree, cachedTemporalExecutable, connectRunner, engineStartLines, portInUseMessage, reconcileWhilePolling, settleBeforePolling, startDevEngine, TEMPORAL_BIN_DIR, TEMPORAL_DB_FILENAME, type DevEngine, type DevEngineOptions, type EngineStartReport } from './dev-engine.ts';
 export { devServerArgs, HTTP_API_OFF, temporalExecutable, trustedBinary } from './temporal-cli.ts';
 export { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, WORKFLOW_ENTRY, workflowBundleHash, type BuildWorkflowsOptions } from './build.ts';
 export { LOST_RUN_MESSAGE, ORPHAN_RUN_MESSAGE, reconcileLostRuns, settleLostRun, stopOrphanRuns, type Reconciled, type ReconcileOptions } from './lost-runs.ts';

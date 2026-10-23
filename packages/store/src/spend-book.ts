@@ -35,6 +35,7 @@ import type {
   SpendFault,
   UncertainCall,
   UnledgeredCall,
+  WaitedFor,
 } from '@byway/contracts';
 import { ledgerEntryConflict, ledgerEntryProblem, ledgerOperationId, spendFaultDetail } from '@byway/contracts';
 import { migrate } from './migrations.ts';
@@ -146,6 +147,7 @@ export class SqliteSpendBook implements SpendBook {
     if (!ROLES.has(role)) throw new StoreError('invalid', `a provider job role is generation or extract, got ${String(role)}`);
     const job = textOf('providerJobId', providerJobId);
     this.#durable(() => {
+      // When the job was accepted is kept beside its id (provider_jobs_at, migration 10): a resumed fal clip's wait counts from it.
       this.#queries().accept.run({ id: opId, path: `$.${role}`, job, at: this.#stamp() });
     });
   }
@@ -169,10 +171,13 @@ export class SqliteSpendBook implements SpendBook {
     this.#tx(() => this.#queries().release.run({ id: opId, at: this.#stamp() }));
   }
 
-  async abandon(opId: string, reason: 'failed' | 'interrupted' = 'failed'): Promise<void> {
-    // The schema's CHECK already names both reasons (ADR-0111 needs no migration); anything else is refused here.
-    if (reason !== 'failed' && reason !== 'interrupted') throw new Error(`an abandoned call's reason is 'failed' or 'interrupted', not ${JSON.stringify(reason)}`);
-    this.#tx(() => this.#queries().abandon.run({ id: opId, at: this.#stamp(), reason }));
+  async abandon(opId: string, reason: 'failed' | 'interrupted' | 'waited' = 'failed', waited?: WaitedFor): Promise<void> {
+    // The schema's CHECK names the three reasons ('waited' since migration 10); anything else is refused here, as is a
+    // 'waited' without how long and how it waited, or a wait given with another reason.
+    if (reason !== 'failed' && reason !== 'interrupted' && reason !== 'waited') throw new Error(`an abandoned call's reason is 'failed', 'interrupted' or 'waited', not ${JSON.stringify(reason)}`);
+    if (reason !== 'waited' && waited !== undefined) throw new StoreError('invalid', `a call abandoned as ${reason} has no wait that ran out`);
+    const detail = reason === 'waited' ? waitedJson(waited) : null;
+    this.#tx(() => this.#queries().abandon.run({ id: opId, at: this.#stamp(), reason, waited: detail }));
   }
 
   async settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }> {
@@ -298,13 +303,15 @@ export class SqliteSpendBook implements SpendBook {
     const inFlight: PaidCallSummary[] = (q.inFlightRows.all({ ws: workspaceId, now }) as Row[]).map((r) => ({ ...summary(r), usd: roundUsd(Number(r.reserved_usd)), since: String(r.created_at) }));
     const uncertain: UncertainCall[] = (q.uncertainRows.all({ ws: workspaceId, now }) as Row[]).map((r) => {
       const counted = Number(r.counted) === 1;
-      const reason: UncertainCall['reason'] = !counted ? 'resent' : r.state === 'uncertain' && r.uncertain_reason === 'failed' ? 'failed' : 'interrupted';
+      const recorded = r.state === 'uncertain' ? r.uncertain_reason : undefined;
+      const reason: UncertainCall['reason'] = !counted ? 'resent' : recorded === 'failed' || recorded === 'waited' ? recorded : 'interrupted';
       const jobs = r.provider_jobs === null ? undefined : (JSON.parse(String(r.provider_jobs)) as UncertainCall['providerJobs']);
       return {
         ...summary(r),
         usd: roundUsd((counted ? Number(r.reserved_usd) : 0) + Number(r.retained_usd)),
         since: String(r.updated_at),
         reason,
+        ...(reason === 'waited' && r.waited !== null ? { waited: JSON.parse(String(r.waited)) as WaitedFor } : {}),
         ...(jobs && Object.keys(jobs).length > 0 ? { providerJobs: jobs } : {}),
       };
     });
@@ -415,7 +422,9 @@ export class SqliteSpendBook implements SpendBook {
     const jobs = acceptedJobs(row.provider_jobs);
     if (jobs.generation !== undefined && row.cleared_at === null && (state === 'accepted' || state === 'uncertain')) {
       q.resume.run({ id, owner, lease: now + leaseMs, at });
-      return { resume: { opId: id, jobs } };
+      // When its jobs were accepted, so the resumed call's wait keeps counting from fal's acceptance (migration 10).
+      const acceptedAt = acceptedJobs(row.provider_jobs_at);
+      return { resume: { opId: id, jobs, ...(Object.keys(acceptedAt).length > 0 ? { acceptedAt } : {}) } };
     }
     q.giveUpOpen.run({ id, at });
     q.giveUpSent.run({ id, at });
@@ -474,7 +483,7 @@ function heldCall(r: Row): HeldCall {
 /** The states in which a live row holds its operation key: the call is in flight, or its caller is keeping its result. */
 const HOLDING: ReadonlySet<string> = new Set(['open', 'sent', 'accepted', 'settled']);
 
-/** The queue jobs a row records, by role (provider_jobs). */
+/** What a row records by job role: its queue jobs' ids (provider_jobs), or when they were accepted (provider_jobs_at). */
 function acceptedJobs(value: unknown): Partial<Record<ProviderJobRole, string>> {
   if (value === null || value === undefined) return {};
   const parsed = JSON.parse(String(value)) as Record<string, unknown>;
@@ -484,6 +493,16 @@ function acceptedJobs(value: unknown): Partial<Record<ProviderJobRole, string>> 
     if (typeof id === 'string') jobs[role] = id;
   }
   return jobs;
+}
+
+/** A wait that ran out (WaitedFor) as the row keeps it, checked: minutes above 0, one of the three ways, fal's answer as text. */
+function waitedJson(waited: WaitedFor | undefined): string {
+  const w = waited as Partial<WaitedFor> | undefined;
+  if (typeof w !== 'object' || w === null) throw new StoreError('invalid', "a call abandoned as 'waited' needs how long and how it waited");
+  if (typeof w.minutes !== 'number' || !Number.isFinite(w.minutes) || w.minutes <= 0) throw new StoreError('invalid', `a wait that ran out is a number of minutes above 0, got ${String(w.minutes)}`);
+  if (w.how !== 'silence' && w.how !== 'answer' && w.how !== 'clip') throw new StoreError('invalid', `a wait ran out in silence, for an answer or for a clip, not ${String(w.how)}`);
+  if (w.cancel !== undefined && typeof w.cancel !== 'string') throw new StoreError('invalid', 'what a provider answered to a cancel is text');
+  return JSON.stringify({ minutes: w.minutes, how: w.how, ...(w.cancel !== undefined ? { cancel: w.cancel } : {}) });
 }
 
 /** SQLite's SQLITE_CONSTRAINT (19), in any of its extended forms (a UNIQUE, CHECK or NOT NULL constraint failed). */
@@ -537,7 +556,7 @@ function prepare(db: DatabaseSync) {
       lease_until, op_key, created_at, updated_at) VALUES (:id, :workspace, :run, :step, :purpose, :kind, :provider, :model, :paid, :reserved, 'open', :owner,
       :lease, :key, :at, :at)`),
     byKey: p('SELECT * FROM paid_operations WHERE op_key = ?'),
-    resume: p(`UPDATE paid_operations SET state = 'accepted', uncertain_reason = NULL, owner = :owner, lease_until = :lease, updated_at = :at WHERE id = :id`),
+    resume: p(`UPDATE paid_operations SET state = 'accepted', uncertain_reason = NULL, waited = NULL, owner = :owner, lease_until = :lease, updated_at = :at WHERE id = :id`),
     giveUpOpen: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE id = :id AND state = 'open'`),
     giveUpSent: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = 'interrupted', updated_at = :at WHERE id = :id AND state IN ('sent', 'accepted')`),
     freeKey: p('UPDATE paid_operations SET released_key = op_key, op_key = NULL, updated_at = :at WHERE id = :id'),
@@ -545,10 +564,11 @@ function prepare(db: DatabaseSync) {
     endHolds: p(`UPDATE paid_operations SET lease_until = MIN(lease_until, :now) WHERE owner = :owner AND state = 'settled' AND op_key IS NOT NULL`),
     markSent: p(`UPDATE paid_operations SET state = 'sent', sent_at = :at, updated_at = :at WHERE id = :id AND owner = :owner AND state = 'open' AND ${LIVE}`),
     accept: p(`UPDATE paid_operations SET state = CASE WHEN state IN ('open', 'sent') THEN 'accepted' ELSE state END,
-      provider_jobs = json_set(COALESCE(provider_jobs, '{}'), :path, :job), updated_at = :at WHERE id = :id`),
+      provider_jobs = json_set(COALESCE(provider_jobs, '{}'), :path, :job), provider_jobs_at = json_set(COALESCE(provider_jobs_at, '{}'), :path, :at),
+      updated_at = :at WHERE id = :id`),
     retain: p('UPDATE paid_operations SET retained_usd = retained_usd + :usd, updated_at = :at WHERE id = :id'),
     release: p(`UPDATE paid_operations SET state = 'released', updated_at = :at WHERE id = :id AND state <> 'settled'`),
-    abandon: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = :reason, updated_at = :at WHERE id = :id AND state IN ('open', 'sent', 'accepted')`),
+    abandon: p(`UPDATE paid_operations SET state = 'uncertain', uncertain_reason = :reason, waited = :waited, updated_at = :at WHERE id = :id AND state IN ('open', 'sent', 'accepted')`),
     settle: p(`UPDATE paid_operations SET state = 'settled', settled_usd = :cost, settled_at = :settledAt, served_model = :served, price_basis = :basis,
       entry = :entry, ledger_entry_id = :entryId, settle_seq = (SELECT COALESCE(MAX(settle_seq), 0) + 1 FROM paid_operations), updated_at = :at,
       lease_until = CASE WHEN :hold IS NULL OR op_key IS NULL THEN lease_until ELSE MAX(lease_until, :now + :hold) END WHERE id = :id`),

@@ -3,7 +3,7 @@
  * failed, or the worker is stopping) only in the reply to a heartbeat, and notices a dead worker only by missed
  * heartbeats. So every activity invocation:
  * - heartbeats while it runs (the long proxies set a heartbeat timeout, so a killed worker's step is retried within
- *   seconds rather than at its 15 or 45 minute limit);
+ *   seconds rather than at its own time limit);
  * - gets its own gateway that refuses new provider calls once the invocation is cancelled or its run has ended;
  * - gets a stop (stopSignal; ADR-0111) that aborts when the cancel means its run is ending, so the gateway cuts off the
  *   calls in flight that it can (Anthropic's, OpenAI's and OpenRouter's streams, fal's queue jobs, the demo's mock),
@@ -90,13 +90,6 @@ export interface Invocation {
   /** Aborted when Temporal cancels this invocation; undefined outside an activity (unit tests call activities directly). */
   signal: AbortSignal | undefined;
   /**
-   * The attempt's own time limit, in milliseconds: its start-to-close timeout as Temporal's activity info gives it (a
-   * quick step's minute, a model step's 15 minutes, an image or video step's 45; workflow/acts.ts). Its calls carry it
-   * (SpendContext.operation.stepLimitMs), so the gateway never reads a streamed answer as stalled before the step would
-   * end (B1R2-CODE-3). Undefined outside an activity, and when Temporal gives no positive limit.
-   */
-  limitMs: number | undefined;
-  /**
    * Aborted when the invocation ends (stop(), in the activity wrapper's finally), whatever its outcome. The gateway holds
    * a step's settled call until then, while its result is kept (SpendContext.operation.until; ADR-0099).
    */
@@ -111,9 +104,8 @@ export function startInvocation(everyMs = HEARTBEAT_EVERY_MS): Invocation {
   try {
     ctx = Context.current();
   } catch {
-    return { signal: undefined, limitMs: undefined, done: done.signal, stop: () => done.abort() };
+    return { signal: undefined, done: done.signal, stop: () => done.abort() };
   }
-  const limit = ctx.info.startToCloseTimeoutMs;
   const timer = setInterval(() => {
     try {
       ctx.heartbeat();
@@ -123,7 +115,6 @@ export function startInvocation(everyMs = HEARTBEAT_EVERY_MS): Invocation {
   }, everyMs);
   return {
     signal: ctx.cancellationSignal,
-    limitMs: Number.isFinite(limit) && limit > 0 ? limit : undefined,
     done: done.signal,
     stop: () => {
       clearInterval(timer);

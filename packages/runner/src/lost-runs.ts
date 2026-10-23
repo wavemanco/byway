@@ -15,6 +15,12 @@
  *
  * A third mix, the engine ahead of the store on the same run, is not detected (README "Back up and restore").
  *
+ * The same pass also runs every few minutes while the engine runs (dev-engine.ts, reconcileWhilePolling). A workflow
+ * closed from outside, or one Temporal closed itself because it passed one of its limits (a payload, a batch of
+ * commands or a history too large), never runs its own code again, so nothing in it ends its run: without that pass the
+ * run would read "running" or "waiting" until byway next starts. While the engine runs, a start may be under way, so
+ * that pass leaves queued runs alone (ReconcileOptions.skipQueued).
+ *
  * Client-safe: used by the Runner client (web process) as well as the engine.
  */
 import { WorkflowNotFoundError } from '@temporalio/common';
@@ -43,10 +49,12 @@ export function runIdOfWorkflow(workflowId: string): string | undefined {
 /**
  * Close a run whose workflow is gone. Idempotent, and a run that already ended keeps its status (its open questions
  * are still withdrawn). The terminal events use the same dedupe keys as the workflow's own, so they are never doubled.
+ * Says whether it closed the run: false when there is no such run or it had ended already (a workflow that ended it
+ * a moment before, while the engine runs).
  */
-export async function settleLostRun(store: Store, runId: string, outcome: LostRunOutcome): Promise<void> {
+export async function settleLostRun(store: Store, runId: string, outcome: LostRunOutcome): Promise<boolean> {
   const run = await store.getRun(runId);
-  if (!run) return;
+  if (!run) return false;
   if (!ENDED.has(run.status)) {
     if (outcome.status === 'cancelled') {
       await store.updateRun(runId, { status: 'cancelled' });
@@ -55,9 +63,10 @@ export async function settleLostRun(store: Store, runId: string, outcome: LostRu
     }
   }
   await store.withdrawCheckpoints(runId);
-  if (ENDED.has(run.status)) return;
+  if (ENDED.has(run.status)) return false;
   if (outcome.status === 'cancelled') await store.appendEvent({ runId, type: 'run-cancelled', data: {} }, { dedupeKey: `${runId}/run-cancelled` });
   else await store.appendEvent({ runId, type: 'run-failed', data: { error: outcome.error } }, { dedupeKey: `${runId}/run-failed` });
+  return true;
 }
 
 /** Whether Temporal is still running this run's workflow (false when it has none, or it has closed). */
@@ -74,11 +83,19 @@ export async function workflowRunning(client: Client, runId: string): Promise<bo
 export interface ReconcileOptions {
   /** The task queue whose run workflows are checked against the store; defaults to byway's (TASK_QUEUE). */
   taskQueue?: string;
+  /**
+   * Leave queued runs alone. Runner.start writes a run as queued before it starts the run's workflow, so while the
+   * engine runs, a queued run Temporal has no workflow for may be a start under way rather than a lost run; once its
+   * workflow begins, the run reads "running". The pass the engine repeats while it runs sets this. The pass at start
+   * does not: byway's app starts after the engine (scripts/serve.ts), so no start of its can be under way then, and a
+   * run left queued by a start that never reached Temporal is closed there.
+   */
+  skipQueued?: boolean;
 }
 
 /** What reconcileLostRuns settled, as run ids. */
 export interface Reconciled {
-  /** Shown as going by the store, not run by the engine: closed in the store as failed. */
+  /** Shown as going by the store, not run by the engine: closed in the store as failed by this pass. */
   lost: string[];
   /** Run by the engine, missing from the store: their workflows were terminated. */
   orphaned: string[];
@@ -111,6 +128,10 @@ export async function stopOrphanRuns(client: Client, store: Store, taskQueue: st
  * At engine start, before the worker polls: both directions, engine first. Run workflows on the task queue whose run
  * the store does not have are terminated; then runs of these workspaces that the store shows as going but whose
  * workflow is not running are closed in the store. The two sets are disjoint, so the order does not change the result. v1 has one workspace (the Store has no way to list or create others).
+ *
+ * While the engine runs (with skipQueued), workflows move on beside the pass: a run its workflow ends between the
+ * listing and the look at Temporal keeps the end its workflow wrote first (settleLostRun reads the run again), and is
+ * not counted in `lost`.
  */
 export async function reconcileLostRuns(client: Client, store: Store, workspaceIds: readonly string[], opts: ReconcileOptions = {}): Promise<Reconciled> {
   const orphaned = await stopOrphanRuns(client, store, opts.taskQueue ?? TASK_QUEUE);
@@ -118,9 +139,9 @@ export async function reconcileLostRuns(client: Client, store: Store, workspaceI
   for (const ws of workspaceIds) {
     for (const run of await store.listRuns(ws)) {
       if (ENDED.has(run.status)) continue;
+      if (opts.skipQueued && run.status === 'queued') continue;
       if (await workflowRunning(client, run.id)) continue;
-      await settleLostRun(store, run.id, { status: 'failed', error: LOST_RUN_MESSAGE });
-      lost.push(run.id);
+      if (await settleLostRun(store, run.id, { status: 'failed', error: LOST_RUN_MESSAGE })) lost.push(run.id);
     }
   }
   return { lost, orphaned };

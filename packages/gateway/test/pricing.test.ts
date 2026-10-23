@@ -1,11 +1,11 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CompletionRequest } from '@byway/contracts';
+import type { CompletionRequest, GatewayError } from '@byway/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
-import { maxImageCost } from '../src/estimate.ts';
-import { PRICES, priceFor, servedPrice, tokenCost } from '../src/prices.ts';
+import { maxCompletionCost, maxImageCost } from '../src/estimate.ts';
+import { PRICES, PRICES_CHECKED, priceFor, servedPrice, tokenCost, type PriceRow } from '../src/prices.ts';
 import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, MemoryArtifacts } from './fakes.ts';
 import { memorySpendBook } from '../src/memory-book.ts';
 
@@ -226,6 +226,32 @@ describe('the price rows, as the providers documented them on 2026-10-18', () =>
   });
 });
 
+/**
+ * PRICE-CADENCE (block 2): the date Settings and the estimate show as the day prices were last checked, at the owner's
+ * answer of 2026-10-21 23:15, "Weekly report + monthly re-read + date in the app (Recommended)" ("... Claude re-reads
+ * every page monthly and at once when the report flags a change; Settings and the estimate show when prices were last
+ * checked, with a notice after about 45 days. ..."). It is the day of the last full re-read, so it is true only when
+ * every row a provider charges for was read that day: a page read alone does not move it. Every row was read again on
+ * 2026-10-22 against its page, and every figure the rows recorded matched (the long-context tiers were added that day).
+ */
+describe('the day prices were last checked (PRICES_CHECKED)', () => {
+  const paid = PRICES.filter((r) => r.provider !== 'mock');
+  const days = (text: string) => [...text.matchAll(/\b(\d{4}-\d{2}-\d{2})\b/g)].map((m) => m[1]!);
+
+  it('is a real day, the last full re-read: 2026-10-22', () => {
+    expect(PRICES_CHECKED).toBe('2026-10-22');
+    expect(new Date(`${PRICES_CHECKED}T00:00:00Z`).toISOString().slice(0, 10)).toBe(PRICES_CHECKED);
+  });
+
+  it('is named by the source of every row a provider charges for: each was read that day', () => {
+    for (const row of paid) expect(days(row.source), `${row.provider} ${row.model}: ${row.source}`).toContain(PRICES_CHECKED);
+  });
+
+  it('is not older than any day a source names', () => {
+    for (const row of PRICES) for (const day of days(row.source)) expect(day <= PRICES_CHECKED, `${row.provider} ${row.model}: ${day}`).toBe(true);
+  });
+});
+
 describe('an OpenAI call is charged the tokens it wrote to the prompt cache at the write rate (MONEY-1)', () => {
   it('the uncached prompt at $10, the cache reads at $1 and the writes at $12.50 per 1M on gpt-6-astra', async () => {
     const usage = { prompt_tokens: 16_500, completion_tokens: 800, prompt_tokens_details: { cached_tokens: 4000, cache_write_tokens: 12_000 } };
@@ -265,5 +291,128 @@ describe('a Gemini image is charged its text and thinking tokens on top of the i
     expect(withoutThinking).toBeGreaterThan(0.0336);
     expect(maxImageCost(row, { prompt: 'A loaf' }) - withoutThinking).toBeCloseTo(tokenCost(row, { inputTokens: 0, outputTokens: 2000 }), 9);
     expect(tokenCost(row, { inputTokens: 0, outputTokens: 2000 })).toBe(0.015);
+  });
+});
+
+/**
+ * LC-TIERS (block 2): the long-context tiers, priced per call. Block 2 lets a very large brief run where before it
+ * failed without spending, so the owner chose on 2026-10-21, "Approve, and price long-context tiers in W" ("As the
+ * first, but W also records OpenAI's and Google's long-context rates and prices each call at its tier, since W lets
+ * very large briefs run where today they fail without spending."). What the gateway reserves before a call and what it
+ * records after it are both priced at the tier the call's prompt falls in, so the spend cap holds for a very large
+ * brief. The pages, read on 2026-10-22: OpenAI's "Long: >272K input tokens" (gpt-6-astra, gpt-6.1-sol, gpt-6-luna) and
+ * Google's "prompts > 200k tokens" (gemini-3.1-pro-preview). A prompt one token over the threshold pays the long rates on
+ * every token of the call, its output too; the prompt is counted whole, its cached tokens included (Claude's reading:
+ * neither page says how it is counted, and Anthropic's page counts "all of its input tokens, including cache reads and
+ * cache writes" for the one Claude model it prices by prompt length).
+ */
+describe('long-context tiers: each call is priced at the tier its prompt falls in (LC-TIERS)', () => {
+  const ON = new Date('2026-10-22T12:00:00Z');
+  const at = (provider: Parameters<typeof priceFor>[1], model: string) => priceFor(PRICES, provider, model, ON)!;
+  const usd = (tokens: number, perMTok: number) => (tokens * perMTok) / 1_000_000;
+
+  it.each([
+    ['openai', 'gpt-6-astra', 272_000, [10, 50], [20, 75]],
+    ['openai', 'gpt-6.1-sol', 272_000, [2, 10], [4, 15]],
+    ['openai', 'gpt-6-luna', 272_000, [0.1, 0.5], [0.2, 0.75]],
+    ['google', 'gemini-3.1-pro-preview', 200_000, [2, 12], [4, 18]],
+  ] as const)('%s %s: a prompt of %i input tokens at the short rates, one token more at the long rates, output included', (provider, model, threshold, short, long) => {
+    const row = at(provider, model);
+    expect(tokenCost(row, { inputTokens: threshold, outputTokens: 1000 })).toBeCloseTo(usd(threshold, short[0]) + usd(1000, short[1]), 6);
+    expect(tokenCost(row, { inputTokens: threshold + 1, outputTokens: 1000 })).toBeCloseTo(usd(threshold + 1, long[0]) + usd(1000, long[1]), 6);
+  });
+
+  it("records the tiers as the pages give them: OpenAI's cached input and 30-minute writes too, where the short row records them", () => {
+    expect(at('openai', 'gpt-6-astra').longContext).toEqual({ aboveInputTokens: 272_000, inputPerMTok: 20, outputPerMTok: 75, cacheReadPerMTok: 2, cacheWritePerMTok: 25 });
+    expect(at('openai', 'gpt-6.1-sol').longContext).toEqual({ aboveInputTokens: 272_000, inputPerMTok: 4, outputPerMTok: 15, cacheReadPerMTok: 0.2, cacheWritePerMTok: 5 });
+    // gpt-6-luna's cached input is not recorded at either tier (its row's trigger); its write rate is.
+    expect(at('openai', 'gpt-6-luna').longContext).toEqual({ aboveInputTokens: 272_000, inputPerMTok: 0.2, outputPerMTok: 0.75, cacheWritePerMTok: 0.25 });
+    // Google's context-cache rates are not recorded at either tier (the row's trigger).
+    expect(at('google', 'gemini-3.1-pro-preview').longContext).toEqual({ aboveInputTokens: 200_000, inputPerMTok: 4, outputPerMTok: 18 });
+  });
+
+  it("counts the whole prompt, its cached tokens too, and charges OpenAI's cache reads and writes at the tier's rates", () => {
+    const astra = at('openai', 'gpt-6-astra');
+    // 72,001 uncached and 200,000 read from the cache: 272,001 in the prompt, so the long tier.
+    expect(tokenCost(astra, { inputTokens: 272_001, cacheReadTokens: 200_000, outputTokens: 0 })).toBeCloseTo(usd(72_001, 20) + usd(200_000, 2), 9);
+    // 50,000 uncached, 100,000 read and 150,000 written, and 1,000 output.
+    expect(tokenCost(astra, { inputTokens: 300_000, cacheReadTokens: 100_000, cacheWriteTokens: 150_000, outputTokens: 1000 })).toBeCloseTo(usd(50_000, 20) + usd(100_000, 2) + usd(150_000, 25) + usd(1000, 75), 9);
+  });
+
+  it("charges a cache hit above Google's threshold at the long input rate, never at a short-context rate", () => {
+    expect(tokenCost(at('google', 'gemini-3.1-pro-preview'), { inputTokens: 250_000, cacheReadTokens: 100_000, outputTokens: 0 })).toBeCloseTo(usd(250_000, 4), 9);
+  });
+
+  it('gives no other row a tier: Claude models (direct and through OpenRouter) bill a 900k-token prompt at the per-token rate of a 9k one, and so do Gemini 3.8 Flash and the image and video models', () => {
+    const tiered = PRICES.filter((r) => r.longContext !== undefined).map((r) => `${r.provider} ${r.model}`);
+    expect(tiered).toEqual(['openai gpt-6-astra', 'openai gpt-6.1-sol', 'openai gpt-6-luna', 'google gemini-3.1-pro-preview']);
+    for (const row of PRICES.filter((r) => r.longContext === undefined)) {
+      const small = tokenCost(row, { inputTokens: 9_000, outputTokens: 0 });
+      const large = tokenCost(row, { inputTokens: 900_000, outputTokens: 0 });
+      expect(large, `${row.provider} ${row.model}`).toBeCloseTo(small * 100, 6);
+    }
+  });
+
+  it('reserves a completion at the tier its estimated prompt falls in (maxCompletionCost)', () => {
+    const astra = at('openai', 'gpt-6-astra');
+    expect(maxCompletionCost(astra, 272_000, 1000)).toBeCloseTo(usd(272_000, 10) + usd(1000, 50), 9);
+    expect(maxCompletionCost(astra, 272_001, 1000)).toBeCloseTo(usd(272_001, 20) + usd(1000, 75), 9);
+  });
+});
+
+describe('the gateway reserves and settles a very large prompt at its long-context tier (LC-TIERS)', () => {
+  const usd = (tokens: number, perMTok: number) => (tokens * perMTok) / 1_000_000;
+  /** A brief of `chars` ASCII characters: the estimate counts a third of a token each, plus 8 for the message. */
+  const brief = (chars: number): CompletionRequest['messages'] => [{ role: 'user', content: [{ type: 'text', text: 'a'.repeat(chars) }] }];
+  /** What a call was estimated at, read from the budget refusal a cap of one cent gives it before anything is sent. */
+  const reservedAt = async (over: Partial<CompletionRequest>, clients: GatewayOptions['clients']) => {
+    const g = gateway({ caps: { workspaceCapUsd: () => 0.01 }, ...(clients ? { clients } : {}) });
+    const err = (await g.complete(req(over)).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toMatchObject({ code: 'budget-exceeded' });
+    return err.budget!.estimateUsd;
+  };
+
+  it('reserves an OpenAI call whose estimated prompt is 272,000 tokens at the short rates, and one of 272,001 at the long rates', async () => {
+    const openai = fakeOpenAI();
+    // 815,976 characters are 271,992 tokens and 815,977 are 271,993, plus 8 for the message.
+    expect(await reservedAt({ profileId: 'openai', tier: 'big', messages: brief(815_976) }, { openai: openai.client })).toBeCloseTo(usd(272_000, 10) + usd(1000, 50), 6);
+    expect(await reservedAt({ profileId: 'openai', tier: 'big', messages: brief(815_977) }, { openai: openai.client })).toBeCloseTo(usd(272_001, 20) + usd(1000, 75), 6);
+    expect(openai.calls).toHaveLength(0);
+  });
+
+  it('refuses a maximal brief on Google whose short-rate estimate would fit the cap, before anything is sent: the cap holds at the tier', async () => {
+    const google = fakeGoogle();
+    // 700,000 characters: 233,334 tokens and 8 for the message, above Google's 200k. At $2 / $12 it would be about $0.48.
+    const tokens = 233_342;
+    expect(usd(tokens, 2) + usd(1000, 12)).toBeLessThan(0.5);
+    const g = gateway({ caps: { workspaceCapUsd: () => 0.5 }, clients: { google: google.client } });
+    const err = (await g.complete(req({ profileId: 'google', tier: 'big', messages: brief(700_000) })).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toMatchObject({ code: 'budget-exceeded' });
+    expect(err.budget!.estimateUsd).toBeCloseTo(usd(tokens, 4) + usd(1000, 18), 6);
+    expect(google.calls).toHaveLength(0);
+  });
+
+  it('settles a call at the tier of the prompt the provider reports, and records that cost in the ledger', async () => {
+    const openai = fakeOpenAI([{ model: 'gpt-6-astra-2026-09-30', choices: [{ finish_reason: 'stop', message: { content: 'ok' } }], usage: { prompt_tokens: 300_000, completion_tokens: 1000 } }]);
+    const google = fakeGoogle([
+      { modelVersion: 'gemini-3.1-pro-preview', candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'ok' }] } }], usageMetadata: { promptTokenCount: 250_000, candidatesTokenCount: 600, thoughtsTokenCount: 400 } },
+    ]);
+    const g = gateway({ clients: { openai: openai.client, google: google.client } });
+    const a = await g.complete(req({ profileId: 'openai', tier: 'big' }));
+    const b = await g.complete(req({ profileId: 'google', tier: 'big' }));
+    // A dated snapshot of gpt-6-astra, at its row's tier.
+    expect(a.costUsd).toBeCloseTo(usd(300_000, 20) + usd(1000, 75), 9);
+    // Thinking tokens are output, at the tier's output rate.
+    expect(b.costUsd).toBeCloseTo(usd(250_000, 4) + usd(1000, 18), 9);
+    expect(ledgerLines().map((e) => e.costUsd)).toEqual([a.costUsd, b.costUsd]);
+    expect(ledgerLines().map((e) => e.priceBasis)).toEqual([undefined, undefined]);
+  });
+
+  it("reads the tier from the call's price row, so a table the gateway is given is priced by its own tiers", async () => {
+    const sol = priceFor(PRICES, 'openai', 'gpt-6.1-sol', new Date('2026-10-22T12:00:00Z'))!;
+    const table: PriceRow[] = PRICES.map((r) => (r === sol ? { ...r, longContext: { aboveInputTokens: 500, inputPerMTok: 7, outputPerMTok: 70 } } : r));
+    const openai = fakeOpenAI([{ model: 'gpt-6.1-sol', choices: [{ finish_reason: 'stop', message: { content: 'ok' } }], usage: { prompt_tokens: 1000, completion_tokens: 100 } }]);
+    const res = await gateway({ prices: table, clients: { openai: openai.client } }).complete(req({ profileId: 'openai', tier: 'mid' }));
+    expect(res.costUsd).toBeCloseTo(usd(1000, 7) + usd(100, 70), 9);
   });
 });
