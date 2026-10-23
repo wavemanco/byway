@@ -82,8 +82,8 @@ function googlePage(rows = PRICES.filter((r) => r.provider === 'google')): strin
   return `<html><body>${sections.join('')}</body></html>`;
 }
 
-/** A fal model page: its price in one sentence. */
-const falPage = (r: PriceRow) => `<html><body><p>For 5s video your request will cost $0.35. For every additional second you will be charged ${$(r.perSecondUsd!)}.</p><p>For every second of video you generated, you will be charged ${$(r.perSecondUsd!)} (audio off).</p><p>Your request will cost ${$(r.perSecondUsd!)} per second.</p></body></html>`;
+/** A fal model page: its price in one sentence, Kling 2.5's first 5 seconds at its rate per second. */
+const falPage = (r: PriceRow) => `<html><body><p>For 5s video your request will cost ${$(times(r.perSecondUsd!, 5))}. For every additional second you will be charged ${$(r.perSecondUsd!)}.</p><p>For every second of video you generated, you will be charged ${$(r.perSecondUsd!)} (audio off).</p><p>Your request will cost ${$(r.perSecondUsd!)} per second.</p></body></html>`;
 
 /** OpenRouter's model list: the pinned models at the rates byway records, per token, and another model. */
 function openrouterModels(rows = PRICES.filter((r) => r.provider === 'openrouter')): OpenRouterModels {
@@ -214,6 +214,18 @@ describe("the weekly run's price report (PRICE-CADENCE)", () => {
     const astra = row('openai', 'gpt-6-astra');
     const alone = (await run(web({ 'https://developers.openai.com/api/docs/pricing': openaiPage([astra], { [astra.model]: 2 }) }).fetch)).lines;
     expect(alone).toContain(`OpenAI gpt-6-astra: not found after its name on the page: input $${astra.inputPerMTok}, output $${astra.outputPerMTok}, cache read $${astra.cacheReadPerMTok}, cache write $${astra.cacheWritePerMTok}.`);
+  });
+
+  it("checks Kling 2.5's price for its first 5 seconds, on which its rate per second rests, as 5 times that rate (PRICES-2)", async () => {
+    const kling = row('fal', 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video');
+    const url = `https://fal.ai/models/${kling.model}`;
+    const base = `For 5s video your request will cost ${$(times(kling.perSecondUsd!, 5))}`;
+    expect(falPage(kling)).toContain('For 5s video your request will cost $0.35.');
+    // The base alone changes, the rate per second after it stays; a figure that only starts with byway's is another.
+    for (const other of ['$0.50', '$0.355']) {
+      const lines = (await run(web({ [url]: falPage(kling).replace(base, `For 5s video your request will cost ${other}`) }).fetch)).lines.filter((l) => l.startsWith(`fal (${kling.model})`));
+      expect(lines, other).toEqual([`fal (${kling.model}): not found after "For 5s video your request will cost": 5 seconds at the $${kling.perSecondUsd} per second byway records, $${times(kling.perSecondUsd!, 5)}.`]);
+    }
   });
 
   it("flags a sentence the table's reading of a page rests on that the page no longer carries", async () => {

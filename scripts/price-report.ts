@@ -16,9 +16,10 @@
  * - Every other row's page (Anthropic's, OpenAI's, Google's and fal's): each figure the row records must be on the
  *   page, as a dollar amount shortly after the first place the page names the model with a price (on OpenAI's page,
  *   its Standard row, before its Batch, Fast and Ultrafast rows); OpenAI's long-context rates, which the page draws
- *   from its own script, in that script's standard map; and the sentences byway's reading of a page rests on (Anthropic's
- *   standard pricing across 1M tokens, the two thresholds). A figure not found means the page changed or moved it, and
- *   that page is read again (AGENTS.md); it cannot see a new rate the table does not record.
+ *   from its own script, in that script's standard map; the figures byway's reading of a page rests on without
+ *   recording them (Kling 2.5's price for its first 5 seconds, 5 times its rate per second); and the sentences it rests
+ *   on (Anthropic's standard pricing across 1M tokens, the two thresholds). A figure not found means the page changed
+ *   or moved it, and that page is read again (AGENTS.md); it cannot see a new rate the table does not record.
  * - How long ago the last full re-read was (PRICES_CHECKED): the monthly re-read is due from 30 days after it (Claude's
  *   reading of "monthly").
  *
@@ -26,7 +27,7 @@
  * imports only types, so this runs before the dependencies are installed.
  */
 import { appendFileSync } from 'node:fs';
-import { PRICES, PRICES_CHECKED, priceFor, type PriceRow } from '../packages/gateway/src/prices.ts';
+import { PRICES, PRICES_CHECKED, priceFor, roundUsd, type PriceRow } from '../packages/gateway/src/prices.ts';
 
 type Provider = PriceRow['provider'];
 
@@ -48,6 +49,12 @@ export interface PricePage {
   sentences?: readonly string[];
   /** The long-context rates are in the page's own scripts (OpenAI's Long table), not in its text. */
   longInScripts?: boolean;
+  /**
+   * Figures the page gives that the table does not record but its reading of the page rests on, each built from the row
+   * and looked for after its own words as a row's figures are after the model's name: Kling 2.5's price for its first
+   * 5 seconds, which byway's flat rate per second assumes is 5 times that rate (PRICES-2).
+   */
+  derived?: readonly { after: string; what: string; usd: number }[];
 }
 
 /** The figures of a row that a page states, by what they are. Zero is not stated (fal's token rates). */
@@ -73,13 +80,19 @@ const rowsOf = (provider: Provider) => PRICES.filter((r) => r.provider === provi
  * per model, each naming its price in one sentence.
  */
 export function pricePages(): PricePage[] {
-  const fal = rowsOf('fal').map((row): PricePage => ({
-    label: `fal (${row.model})`,
-    url: `https://fal.ai/models/${row.model}`,
-    form: 'html',
-    rows: [row],
-    names: { [row.model]: FAL_PRICE_SENTENCE[row.model] ?? 'will cost' },
-  }));
+  const fal = rowsOf('fal').map((row): PricePage => {
+    const first = FAL_FIRST_SECONDS[row.model];
+    return {
+      label: `fal (${row.model})`,
+      url: `https://fal.ai/models/${row.model}`,
+      form: 'html',
+      rows: [row],
+      names: { [row.model]: FAL_PRICE_SENTENCE[row.model] ?? 'will cost' },
+      ...(first !== undefined && row.perSecondUsd !== undefined
+        ? { derived: [{ after: `For ${first}s video your request will cost`, what: `${first} seconds at the ${usd(row.perSecondUsd)} per second byway records`, usd: roundUsd(first * row.perSecondUsd) }] }
+        : {}),
+    };
+  });
   return [
     {
       label: 'Anthropic',
@@ -101,6 +114,16 @@ const FAL_PRICE_SENTENCE: Readonly<Record<string, string>> = {
   'fal-ai/kling-video/v2.5-turbo/pro/image-to-video': 'For every additional second',
   'fal-ai/kling-video/v3/pro/image-to-video': 'For every second of video you generated',
   'fal-ai/ffmpeg-api/extract-frame': 'Your request will cost',
+};
+
+/**
+ * The seconds a fal page prices first, before its price for each further second: Kling 2.5's page reads "For 5s video
+ * your request will cost $0.35. For every additional second you will be charged $0.07." byway records only the $0.07
+ * and charges it for every second of the 5 s or 10 s clips the model makes (prices.ts), which holds only while the
+ * first 5 seconds cost 5 times it; a base that moves alone would be charged wrongly on every clip.
+ */
+const FAL_FIRST_SECONDS: Readonly<Record<string, number>> = {
+  'fal-ai/kling-video/v2.5-turbo/pro/image-to-video': 5,
 };
 
 /** How far after a model's name its figures are looked for, in characters of the page's text. */
@@ -166,9 +189,9 @@ export function pageScripts(html: string, pageUrl: string): string[] {
 }
 
 /**
- * The bodies of a script's `<key>:{...}` object literals, each to its matching brace: OpenAI's pricing script writes its
- * Long table as `var m={ultrafast:{...},standard:{...},fast:{...},batch:{...},flex:{...}}`. The maps hold numbers and
- * short strings, with no braces in them, so the braces are counted as they come.
+ * The bodies of a script's `<key>:{...}` object literals, each to its matching brace: OpenAI's pricing script writes
+ * its Long table as `var m={ultrafast:{...},standard:{...},fast:{...},batch:{...},flex:{...}}`. The maps hold numbers
+ * and short strings, with no braces in them, so the braces are counted as they come.
  */
 function scriptObjects(script: string, key: string): string[] {
   const bodies: string[] = [];
@@ -277,6 +300,7 @@ export function pageReport(page: PricePage, body: string, scripts: readonly stri
       lines.push(`${page.label} ${row.model}: the page's scripts do not give its long-context rates as byway records them (input ${usd(t.inputPerMTok)}, output ${usd(t.outputPerMTok)}).`);
     }
   }
+  for (const d of page.derived ?? []) if (missingFigures(text, d.after, [d], [], page.form).length > 0) lines.push(`${page.label}: not found after "${d.after}": ${d.what}, ${usd(d.usd)}.`);
   for (const sentence of page.sentences ?? []) if (!text.includes(sentence) && !attributes.includes(sentence)) lines.push(`${page.label}: the page no longer says "${sentence}".`);
   if (lines.length === 0) return { flagged: false, lines: [`${page.label}: every figure byway records was found on ${page.url}.`] };
   return { flagged: true, lines };
