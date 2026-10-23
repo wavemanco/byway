@@ -40,6 +40,7 @@ import {
   NOTHING_TO_REMOVE,
   NOTHING_TO_SWAP,
   optionalPrompt,
+  QUESTION_BRIEF_PROMPTS,
   READY_PROMPT,
   revisesInPlace,
   routePrompt,
@@ -380,7 +381,7 @@ export class Interpreter {
     if (res.artifactId) Object.assign(out, { previousArtifact: ports.artifact, artifact: res.artifactId });
     if (res.text !== undefined) {
       if (s.role === 'vision') {
-        if (s.produces.includes('brief')) out.brief = res.text;
+        if (s.produces.includes('brief')) out = withBrief(out, res.text, QUESTION_BRIEF_PROMPTS.has(s.prompt ?? ''));
         if (s.produces.includes('taste')) out.taste = res.text;
         if (s.produces.includes('critique')) out = withCritique(out, res.text);
       } else {
@@ -419,7 +420,9 @@ export class Interpreter {
     // A page's VOICE with the work in front of it (its lines read from the page) ends with how a page's lines are written,
     // and the activity adds the rest of the page's rules, which it reads from the page (R-SUFFIX).
     const voice = s.role === 'voice' ? { medium: this.input.medium, locked: (this.locked ??= lockedScripts(this.input.recipe)).has(s), page: this.input.medium === 'web-page' && !!ports.artifact } : {};
-    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, !!inPlace, voice), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
+    // A brief revised in place is asked to be answered as questions only when it is the interview's list of them (R-C7).
+    const revising = !inPlace ? false : revised === 'brief' && ports.briefQuestions ? 'questions' : true;
+    let checkpoint: Omit<CheckpointSpec, 'id'> = { kind, prompt: humanPrompt(s, round, revising, voice), ...(inPlace ? { initialText: ports[revised!]! } : {}) };
     let initial: OpenCheckpointInput['initial'];
     if (kind === 'compare') {
       checkpoint = {
@@ -489,7 +492,7 @@ export class Interpreter {
         out = withCritique(out, text, text.trim() ? undefined : NOTHING_TO_REMOVE);
         break;
       default:
-        if (s.produces.includes('brief')) out.brief = text;
+        if (s.produces.includes('brief')) out = withBrief(out, text, false);
         if (s.produces.includes('taste')) out.taste = text;
         if (s.produces.includes('critique')) out = withCritique(out, text);
     }
@@ -854,6 +857,15 @@ function beside(ports: Ports, work?: string[]): string[] {
 function withCritique(ports: Ports, critique: string | undefined, empty?: string): Ports {
   const { emptyCritique: _was, critique: _old, hits: _hits, ...rest } = ports;
   return { ...rest, ...(critique !== undefined ? { critique } : {}), ...(empty ? { emptyCritique: empty } : {}) };
+}
+
+/**
+ * Ports with a new brief, marked as a list of questions to answer in place only when `questions` says so (its prompt is
+ * one of QUESTION_BRIEF_PROMPTS); any other write of the brief clears that mark (Ports.briefQuestions, R-C7).
+ */
+function withBrief(ports: Ports, brief: string, questions: boolean): Ports {
+  const { briefQuestions: _was, ...rest } = ports;
+  return { ...rest, brief, ...(questions ? { briefQuestions: true as const } : {}) };
 }
 
 /** The problem with a person's answer that an activity could not use as it is (ENG-6), or undefined. */

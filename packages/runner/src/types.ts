@@ -80,6 +80,13 @@ export type Score = { kind: 'score'; value: number } | { kind: 'rank'; rank: num
 /** Port values by reference. Only `artifact`, `options`, `view` and the texts are ever large in meaning, never in size. */
 export interface Ports {
   brief?: string;
+  /**
+   * The brief is a list of questions with their defaults, as C7's interview writes it (QUESTION_BRIEF_PROMPTS in
+   * workflow/wording.ts): a person who revises it in place is asked to answer them (SPEC_IN_PLACE_PROMPT). Set or cleared
+   * by every write of the brief, so a brief any other step wrote, the person's answers among them, is asked about as a
+   * brief (R-C7).
+   */
+  briefQuestions?: true;
   /** The current work: an artifact id in the recipe medium's format. */
   artifact?: string;
   /** The work before its latest write, for keep-or-revert comparisons (TELLS). */

@@ -36,9 +36,17 @@ export function revisesInPlace(step: Pick<Step, 'role' | 'consumes' | 'produces'
   return (['brief', 'taste'] as const).find((p) => step.consumes.includes(p) && step.produces.includes(p));
 }
 
-/** The VISION-lite spec (C7): the interview's questions with their defaults, answered in place. */
+/** A brief of questions with their defaults (C7's interview wrote it), answered in place: what C7's spec asks. */
 export const SPEC_IN_PLACE_PROMPT =
   'Answer the questions below in place, or change their defaults; anything you leave as it is keeps its default. What you send is the brief the next step works from.';
+
+/**
+ * The prompts whose brief is a list of questions with their defaults (C7's spec interview). A person who revises that
+ * brief in place answers them (SPEC_IN_PLACE_PROMPT); any other brief revised in place gets the general question, so the
+ * question is keyed on where the brief came from (Ports.briefQuestions), not on the step that revises it (R-C7 in the P2
+ * design). A list of prompt ids in workflow code is the simplest key (Claude's choice).
+ */
+export const QUESTION_BRIEF_PROMPTS: ReadonlySet<string> = new Set(['product.c7.interview']);
 
 /** What a VOICE's question needs from the run: what the VOICE covers, and whether its script is locked after it. */
 export interface VoiceContext {
@@ -68,14 +76,15 @@ export const SCRIPT_PROMPT = 'Write the script yourself: change any line below. 
 
 /**
  * What a person's step asks. `revising` is set when the step revises a text port in place (revisesInPlace) and that
- * port has text to revise: the question then says so, and the text is in the box. A VOICE is asked by what it covers
- * in the run's medium, a script VOICE says it is locked only where `voice.locked` says so, and a page's VOICE with its
- * work in front of it ends with how the page's lines are written (`voice.page`).
+ * port has text to revise: the question then says so, and the text is in the box. It is 'questions' when that text is a
+ * brief of questions with their defaults (Ports.briefQuestions), which the person answers in place. A VOICE is asked by
+ * what it covers in the run's medium, a script VOICE says it is locked only where `voice.locked` says so, and a page's
+ * VOICE with its work in front of it ends with how the page's lines are written (`voice.page`).
  */
-export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'consumes' | 'knobs'>, round?: number, revising = false, voice: VoiceContext = {}): string {
+export function humanPrompt(step: Pick<Step, 'role' | 'variant' | 'produces' | 'consumes' | 'knobs'>, round?: number, revising: boolean | 'questions' = false, voice: VoiceContext = {}): string {
   const port = revising ? revisesInPlace(step) : undefined;
   if (port === 'brief')
-    return step.variant === 'VISION-lite' ? SPEC_IN_PLACE_PROMPT : 'Revise this brief in place: change what you want and leave the rest. What you send is the brief the next step works from.';
+    return revising === 'questions' ? SPEC_IN_PLACE_PROMPT : 'Revise this brief in place: change what you want and leave the rest. What you send is the brief the next step works from.';
   if (port === 'taste') return 'Revise this direction in place: change what you want and leave the rest. What you send is the direction the next step works from.';
   switch (step.role) {
     case 'vision':
