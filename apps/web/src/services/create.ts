@@ -60,6 +60,12 @@ export interface ServiceHost {
    * status or no price: the figures are only shown, so a run's screen never fails for want of one.
    */
   questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
+  /**
+   * The day byway's prices were last checked (YYYY-MM-DD): the gateway's PRICES_CHECKED, the last full read of its price
+   * table, which Settings and the Recommendation's estimated cost show (view/prices.ts; PRICE-CADENCE, block 2). Read
+   * here, on the server, so the client components do not import @byway/gateway.
+   */
+  readonly pricesCheckedOn: string;
   close(): Promise<void>;
 }
 
@@ -117,6 +123,7 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
         throw err;
       }
     },
+    pricesCheckedOn: engine.gateway.PRICES_CHECKED,
     async close() {
       for (const { gateway } of pairs.values()) await gateway.close();
       store.close();

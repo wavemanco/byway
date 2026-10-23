@@ -53,6 +53,8 @@ export interface Deps {
   heldKeyIn: HeldKeyIn;
   /** What each answer to a run's questions would cost, for a run on that profile (ServiceHost.questionEstimates). */
   questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
+  /** The day byway's prices were last checked (ServiceHost.pricesCheckedOn), which the Recommendation shows. */
+  pricesCheckedOn: string;
 }
 
 /** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */
