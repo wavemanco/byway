@@ -106,8 +106,9 @@ const aborted = () => Object.assign(new Error('This operation was aborted'), { n
  * real round trip does, else at once; `statusFails` makes every one-shot status read throw it. A cancel answers `cancel`;
  * one that says the job was already done leaves it done, and with `finishesAtCancel` the job finishes just as the cancel
  * is sent, whatever it answers. The clip's result read calls `onClipResult` first (a stop arriving while it is under
- * way, say), then throws `clipResultFails` when given, or with `clipResultHeld` never answers. Every submission, poll and
- * cancel is kept, with the clock, and `log` keeps every status read, poll, result read and cancel in order.
+ * way, say), then throws `clipResultFails` when given, or with `clipResultHeld` never answers; with `frameResultHeld`,
+ * the frame job's result read never answers. Every submission, poll and cancel is kept, with the clock, and `log` keeps
+ * every status read, poll, result read and cancel in order.
  */
 function clipFal(
   opts: {
@@ -116,6 +117,7 @@ function clipFal(
     cancel?: FalCancel;
     clipResultFails?: unknown;
     clipResultHeld?: boolean;
+    frameResultHeld?: boolean;
     onClipResult?: () => void;
     done?: string[];
     statusTakesMs?: number;
@@ -165,7 +167,7 @@ function clipFal(
           // The clip's result read failing as `clipResultFails` says (fal's answer for a job it dropped, say), or held.
           if (opts.clipResultFails !== undefined) throw opts.clipResultFails;
           if (opts.clipResultHeld) return new Promise<never>(() => undefined);
-        }
+        } else if (opts.frameResultHeld) return new Promise<never>(() => undefined);
         const data = endpoint === FAL_EXTRACT_FRAME ? { images: [{ url: 'https://v3.fal.media/files/last.png', content_type: 'image/png' }] } : { video: { url: 'https://v3.fal.media/files/clip.mp4', content_type: 'video/mp4' } };
         return { data, requestId: options.requestId };
       },
@@ -601,6 +603,40 @@ describe('the last frame is bounded by the time left on its clip’s wait plus 2
       [BALANCED_VIDEO, T0 + 30 * MINUTE],
       [FAL_EXTRACT_FRAME, T0 + 30 * MINUTE + FRAME_GRACE_MS],
     ]);
+  });
+
+  // TESTS-4, Block 2's check: nothing showed the frame job's result read stops at the bound; the fake answered it at once.
+  it('the frame job’s result read is bounded too: a frame job done in a minute whose result never comes is given up at the bound, and the clip kept', async () => {
+    const fal = clipFal({ clipTakesMs: 28 * MINUTE, frameTakesMs: MINUTE, frameResultHeld: true });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = failure(g.video(clipOf()));
+    let over = false;
+    void err.finally(() => (over = true));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(28 * MINUTE);
+    await polled(fal, 2);
+    const frameFrom = Date.now();
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    for (let i = 0; i < 20_000 && !fal.log.includes('result req-2'); i++) await turn();
+    expect(fal.log).toContain('result req-2');
+    // 2 minutes left on the clip's wait and 2 more: 4 minutes from the frame job's start, 3 of them left now.
+    await vi.advanceTimersByTimeAsync(3 * MINUTE - 1);
+    for (let i = 0; i < 200; i++) await turn();
+    expect(over).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    // Given up then: it ends once its clip is ledgered and kept (files and timers), not on fal's answer.
+    for (let i = 0; i < 2000 && !over; i++) {
+      await turn();
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    expect(over).toBe(true);
+    const e = await err;
+    expect(Date.now() - frameFrom).toBeGreaterThanOrEqual(4 * MINUTE);
+    expect(e).toMatchObject({ billed: true });
+    expect(e.message).toMatch(/: last-frame job req-2 did not finish within the time left on the clip’s wait plus 2 minutes, so byway stopped waiting$/);
+    // Done when its bound ran out, so not cancelled; the clip is ledgered and kept.
+    expect(fal.cancels).toEqual([]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video' })]);
   });
 
   it('the frame’s download is bounded too: one held past it is given up, and the clip kept', async () => {
