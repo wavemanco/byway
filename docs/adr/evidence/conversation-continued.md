@@ -1,6 +1,6 @@
 # Conversation record, continued (decision evidence)
 
-What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-22 20:07 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block) and on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, and from 14:06 to 20:07 local, for the sweep of unfiled items) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
+What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-22 22:49 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block) and on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, from 14:06 to 20:07 local, for the sweep of unfiled items, and at 22:49 local, for the launch checklist) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
 
 How it differs from conversation.md:
 
@@ -684,4 +684,14 @@ while the background tasks are running, can you please update the byway ROUTE MA
 ---
 ## USER 2026-10-22T20:07:50.138-07:00 (2026-10-23T03:07:50.138Z)
 but how come number of backlog items is the same as it was before. we have implemented quite a few things since the artifact was first created. are we really saying that no nits emerged, no new deferrals happened? I think we should sweep this conversation and git history for any thing that is not filed with triggers in the backlog otherwise we might miss out on certain things.
+
+---
+## USER 2026-10-22T22:49:26.118-07:00 (2026-10-23T05:49:26.118Z)
+<!-- reply 1 -->
+> One reading for you to know about: a clip fal drops at its start deadline is treated as not billed. That rests on two fal pages read together, since neither says it outright; your first C5 run’s fal dashboard can confirm it.
+
+file it somewhere so that it surfaces to me for checks otherwise we will forget it. Maybe a Launch Checklist within Backlog.
+
+
+Of the 24 (can land now) + 37 (could land now), how many are code related and not things that I have to do (like the whole provider key thing)?
 
