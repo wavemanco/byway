@@ -60,6 +60,10 @@ describe('the answer waits Settings lists', () => {
     expect(html).toContain('<h2 id="');
     expect(html).toContain('How long to wait for an answer</h2>');
     expect(waitsNote(groups)).toContain('For text that streams in, this is how long the model may send nothing.');
+    // A silent stream is sent once more (ADR-0114 item 4), so the help says what that costs in time and money (WEB-3).
+    expect(waitsNote(groups)).toContain(
+      'For text that streams in, this is how long the model may send nothing. A streamed answer that sends nothing for a whole wait is sent once more, so a stuck one can take twice the wait, and both sends may be billed. ',
+    );
     expect(waitsNote(groups)).toContain('A change applies from the model’s next call');
     expect(waitsNote(groups)).toContain('waits its kind’s default: 15 minutes for text and images, 30 for video clips.');
     expect(html).toContain(waitsNote(groups));

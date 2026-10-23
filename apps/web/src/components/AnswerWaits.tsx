@@ -11,10 +11,15 @@ interface Props {
   groups: AnswerWaitGroup[];
 }
 
-/** The help under the heading: what a wait is, when a change applies, and what a model no one chose for waits. */
+/**
+ * The help under the heading: what a wait is, that a stream silent for a whole wait is sent once more (ADR-0114 item 4;
+ * the owner's "Give up and end the call plainly" is for calls answered whole), when a change applies, and what a model
+ * no one chose for waits.
+ */
 export function waitsNote(groups: readonly AnswerWaitGroup[]): string {
   return (
     'How long byway waits for each model’s answer before it gives up on the call. For text that streams in, this is how long the model may send nothing. ' +
+    'A streamed answer that sends nothing for a whole wait is sent once more, so a stuck one can take twice the wait, and both sends may be billed. ' +
     'A change applies from the model’s next call; a link of an Ad Video Chain already being made keeps the waits it started with. ' +
     `A model no one has chosen a wait for, such as one a profile has just started using, waits its kind’s default: ${defaultsSentence(groups)}.`
   );
