@@ -21,6 +21,7 @@ import {
   recommendIntake,
   resolveInRun,
   startRun,
+  updateAnswerWait,
   updateRenderer,
   updateSettings,
   type Deps,
@@ -28,7 +29,7 @@ import {
   recommendCommand,
   workspaceRemaining,
 } from '../src/server/api.ts';
-import { RecommendInput } from '../src/server/schemas.ts';
+import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
 import { getRunData } from '../src/server/run-data.ts';
 import { FIRST_QUESTION } from './fixtures/runner.ts';
 import { TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
@@ -46,7 +47,7 @@ async function deps(): Promise<Deps> {
   const { host } = current;
   const services: Services = host.services(true);
   const ws = await services.store.ensureDefaultWorkspace();
-  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates };
+  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, modelWaits: host.modelWaits };
 }
 
 /**
@@ -230,6 +231,50 @@ describe('route handler logic', PRODUCT_PATH, () => {
     await updateSettings(d, { showTechnicalNames: true });
     expect((await d.services.store.getRendererSettings()).osSandbox).toBe(false);
     expect(await updateRenderer(d, { osSandbox: true })).toMatchObject({ osSandbox: true });
+  });
+
+  // The waits design of 2026-10-22: the store takes any minutes some kind offers; the web checks each model's own set,
+  // from the gateway's profiles (the owner's choices: text 15, 30, 45 or 60, images 5, 10, 15 or 20, video 30, 45, 60 or
+  // 75).
+  it('saves a model’s answer wait from the minutes its own kind offers, and refuses any other, or a model no profile uses', async () => {
+    const d = await deps();
+    const fal = 'fal-ai/kling-video/v3/pro/image-to-video';
+    expect(await updateAnswerWait(d, { provider: 'anthropic', model: 'claude-opus-5-5', minutes: 60 })).toMatchObject({ provider: 'anthropic', model: 'claude-opus-5-5', minutes: 60 });
+    expect(await updateAnswerWait(d, { provider: 'openai', model: 'gpt-image-2.5-flare', minutes: 5 })).toMatchObject({ minutes: 5 });
+    expect(await updateAnswerWait(d, { provider: 'fal', model: fal, minutes: 75 })).toMatchObject({ minutes: 75 });
+    // Each kind's set, not the union the store takes: a text model's 5, an image model's 30, a video model's 20.
+    const refused = [
+      [{ provider: 'anthropic', model: 'claude-opus-5-5', minutes: 5 }, 'claude-opus-5-5 can wait 15, 30, 45 or 60 minutes, not 5.'],
+      [{ provider: 'google', model: 'gemini-nano-banana-2.1', minutes: 30 }, 'gemini-nano-banana-2.1 can wait 5, 10, 15 or 20 minutes, not 30.'],
+      [{ provider: 'fal', model: fal, minutes: 20 }, `${fal} can wait 30, 45, 60 or 75 minutes, not 20.`],
+      // The same model through another provider, a model no profile uses, and the demo's mock: no wait to choose.
+      [{ provider: 'openrouter', model: 'claude-opus-5-5', minutes: 30 }, 'No model profile uses claude-opus-5-5 from openrouter, so it has no wait to choose.'],
+      [{ provider: 'google', model: 'gemini-9-ultra', minutes: 30 }, 'No model profile uses gemini-9-ultra from google, so it has no wait to choose.'],
+      [{ provider: 'mock', model: 'mock-big', minutes: 15 }, 'No model profile uses mock-big from mock, so it has no wait to choose.'],
+    ] as const;
+    for (const [input, message] of refused) await expect(updateAnswerWait(d, input)).rejects.toMatchObject({ status: 400, message });
+    expect((await d.services.store.getAnswerWaits(d.workspaceId)).map((w) => `${w.provider}/${w.model}: ${w.minutes}`)).toEqual([
+      'anthropic/claude-opus-5-5: 60',
+      `fal/${fal}: 75`,
+      'openai/gpt-image-2.5-flare: 5',
+    ]);
+    // The request's shape: a provider, a model and whole minutes, nothing more.
+    expect(AnswerWaitPatch.safeParse({ provider: 'anthropic', model: 'claude-opus-5-5', minutes: 30 }).success).toBe(true);
+    for (const bad of [{ provider: 'anthropic', model: 'claude-opus-5-5', minutes: 30.5 }, { provider: 'anthropic', model: 'claude-opus-5-5', minutes: 30, workspaceId: 'other' }, { provider: '', model: 'claude-opus-5-5', minutes: 30 }, { provider: 'anthropic', minutes: 30 }]) {
+      expect(AnswerWaitPatch.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it('lists every profile’s models for the waits, key or no key, once per provider and model, and none of the mock’s', async () => {
+    const d = await deps();
+    const models = d.modelWaits();
+    expect(models).toHaveLength(14);
+    expect(models.some((m) => m.provider === 'mock')).toBe(false);
+    expect(new Set(models.map((m) => `${m.provider}/${m.model}`)).size).toBe(14);
+    // The demo's gateway lists them too: the profiles are the gateway's own, whatever keys are set.
+    expect(d.services.gateway.demo).toBe(true);
+    const profiles = d.services.gateway.profileStatus().filter((s) => s.profile.id !== 'demo');
+    for (const s of profiles) for (const tier of ['big', 'mid'] as const) expect(models).toContainEqual(expect.objectContaining({ ...s.profile.tiers[tier], kind: 'text' }));
   });
 });
 
