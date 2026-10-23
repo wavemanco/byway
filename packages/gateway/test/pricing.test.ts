@@ -5,7 +5,7 @@ import type { CompletionRequest, GatewayError } from '@byway/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createGateway, type GatewayOptions } from '../src/gateway.ts';
 import { maxCompletionCost, maxImageCost } from '../src/estimate.ts';
-import { PRICES, priceFor, servedPrice, tokenCost, type PriceRow } from '../src/prices.ts';
+import { PRICES, PRICES_CHECKED, priceFor, servedPrice, tokenCost, type PriceRow } from '../src/prices.ts';
 import { anthropicMessage, fakeAnthropic, fakeGoogle, fakeOpenAI, MemoryArtifacts } from './fakes.ts';
 import { memorySpendBook } from '../src/memory-book.ts';
 
@@ -223,6 +223,32 @@ describe('the price rows, as the providers documented them on 2026-10-18', () =>
   it('covers every row a provider charges for', () => {
     const paid = PRICES.filter((r) => r.provider !== 'mock' && r.from === undefined).map((r) => `${r.provider} ${r.model}`);
     expect(paid).toHaveLength(19);
+  });
+});
+
+/**
+ * PRICE-CADENCE (block 2): the date Settings and the estimate show as the day prices were last checked, at the owner's
+ * answer of 2026-10-21 23:15, "Weekly report + monthly re-read + date in the app (Recommended)" ("... Claude re-reads
+ * every page monthly and at once when the report flags a change; Settings and the estimate show when prices were last
+ * checked, with a notice after about 45 days. ..."). It is the day of the last full re-read, so it is true only when
+ * every row a provider charges for was read that day: a page read alone does not move it. Every row was read again on
+ * 2026-10-22 against its page, and every figure the rows recorded matched (the long-context tiers were added that day).
+ */
+describe('the day prices were last checked (PRICES_CHECKED)', () => {
+  const paid = PRICES.filter((r) => r.provider !== 'mock');
+  const days = (text: string) => [...text.matchAll(/\b(\d{4}-\d{2}-\d{2})\b/g)].map((m) => m[1]!);
+
+  it('is a real day, the last full re-read: 2026-10-22', () => {
+    expect(PRICES_CHECKED).toBe('2026-10-22');
+    expect(new Date(`${PRICES_CHECKED}T00:00:00Z`).toISOString().slice(0, 10)).toBe(PRICES_CHECKED);
+  });
+
+  it('is named by the source of every row a provider charges for: each was read that day', () => {
+    for (const row of paid) expect(days(row.source), `${row.provider} ${row.model}: ${row.source}`).toContain(PRICES_CHECKED);
+  });
+
+  it('is not older than any day a source names', () => {
+    for (const row of PRICES) for (const day of days(row.source)) expect(day <= PRICES_CHECKED, `${row.provider} ${row.model}: ${day}`).toBe(true);
   });
 });
 

@@ -67,10 +67,25 @@ export interface LongContextTier {
 // default; it was added when the page was read again on 2026-10-21. Google's page was read again that day too, and
 // every figure byway records from it was unchanged. Anthropic's page and OpenRouter's model list were read that day
 // only for the rates these rows do not record (ADR-0109 decision 1).
-const ANTHROPIC = 'platform.claude.com/docs/en/about-claude/pricing, read 2026-10-18';
-const OPENAI = 'developers.openai.com/api/docs/pricing, read 2026-10-18 and again 2026-10-21';
-const GOOGLE = 'ai.google.dev/gemini-api/docs/pricing (page dated 2026-10-16), read 2026-10-18 and again 2026-10-21 (page dated 2026-10-19)';
-const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.completion), read 2026-10-18';
+//
+// Every row was read again on 2026-10-22, the full re-read the owner's cadence asks for (PRICE-CADENCE, block 2: the
+// owner's answer of 2026-10-21 23:15, "Weekly report + monthly re-read + date in the app (Recommended)"), and every
+// figure the rows recorded matched its page; the long-context tiers were added that day (LC-TIERS). The guides the
+// comments quote were read again that day too (OpenAI's prompt-caching guide, Google's caching and image-generation
+// guides), and each still says what is quoted. PRICES_CHECKED is that day.
+const ANTHROPIC = 'platform.claude.com/docs/en/about-claude/pricing, read 2026-10-18 and again 2026-10-22';
+const OPENAI = 'developers.openai.com/api/docs/pricing, read 2026-10-18, 2026-10-21 and 2026-10-22';
+const GOOGLE = 'ai.google.dev/gemini-api/docs/pricing (page dated 2026-10-16), read 2026-10-18, 2026-10-21 (page dated 2026-10-19) and 2026-10-22 (page dated 2026-10-22)';
+const OPENROUTER = 'openrouter.ai/api/v1/models (pricing.prompt / pricing.completion), read 2026-10-18 and again 2026-10-22';
+
+/**
+ * The day byway's prices were last checked: the last day every row a provider charges for was read against its page
+ * (YYYY-MM-DD, UTC). Settings and the Recommendation's estimated cost show it, with a notice once it is more than about
+ * 45 days old, as the owner chose on 2026-10-21 ("Settings and the estimate show when prices were last checked, with a
+ * notice after about 45 days"). Moved only by a full re-read: a page read alone, after the weekly report flags it,
+ * changes that page's rows and their sources, not this day (pricing.test.ts holds every paid row's source to it).
+ */
+export const PRICES_CHECKED = '2026-10-22';
 
 export const PRICES: readonly PriceRow[] = [
   // Anthropic, first-party API, global routing (no inference_geo multiplier). No row has a long-context tier: the page's
@@ -154,7 +169,12 @@ export const PRICES: readonly PriceRow[] = [
   // is not recorded: the page says cached input rates for these models "only apply to images generated with the
   // Responses API", and byway uses the Images API. The page lists no cache-write rate for them. OpenAI publishes no
   // per-image figure for these models (it points to a calculator), so 8,000 output tokens per image (~$0.24) is our
-  // planning bound for the pre-call estimate only; the ledger uses the usage the API returns.
+  // planning bound for the pre-call estimate only; the ledger uses the usage the API returns. The calculator, in OpenAI's
+  // image-generation guide (developers.openai.com/api/docs/guides/image-generation, read 2026-10-22), gives 439 output
+  // tokens for GPT Image 2.5 at medium quality and 1024x1024 and 343 at 1536x1024 or 1024x1536 (about $0.013 and $0.010);
+  // Pixmax, a second party, reports about 367 at medium and 2048x1152 (the answer-waits research of 2026-10-22). The
+  // 8,000 is left as it is, so the estimate leans high, until the first live run's ledger shows the real counts (Claude's
+  // choice: lowering it lowers every image reservation, which is the money path's to decide).
   { provider: 'openai', model: 'gpt-image-2.5-flare', inputPerMTok: 5, outputPerMTok: 30, estimatedOutputTokensPerImage: 8000, source: OPENAI },
   { provider: 'openai', model: 'gpt-image-2.5-sunburst', inputPerMTok: 5, outputPerMTok: 30, estimatedOutputTokensPerImage: 8000, source: OPENAI },
 
@@ -217,7 +237,7 @@ export const PRICES: readonly PriceRow[] = [
     inputPerMTok: 0,
     outputPerMTok: 0,
     perSecondUsd: 0.07,
-    source: 'fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video, read 2026-10-18',
+    source: 'fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video, read 2026-10-18 and again 2026-10-22',
   },
   // kling-video/v3/pro/image-to-video: "$0.112 (audio off)" per second of video ($0.168 with audio, $0.196 with voice
   // control). The gateway always sends generate_audio: false.
@@ -227,11 +247,11 @@ export const PRICES: readonly PriceRow[] = [
     inputPerMTok: 0,
     outputPerMTok: 0,
     perSecondUsd: 0.112,
-    source: 'fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video, read 2026-10-18',
+    source: 'fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video, read 2026-10-18 and again 2026-10-22',
   },
   // ffmpeg-api/extract-frame (the relay anchor: a clip's last frame): "Your request will cost $0.0002 per second" of
   // compute. fal does not report the seconds to the client; the gateway charges a fixed upper bound (providers/fal.ts).
-  { provider: 'fal', model: 'fal-ai/ffmpeg-api/extract-frame', inputPerMTok: 0, outputPerMTok: 0, perSecondUsd: 0.0002, source: 'fal.ai/models/fal-ai/ffmpeg-api/extract-frame, read 2026-10-18' },
+  { provider: 'fal', model: 'fal-ai/ffmpeg-api/extract-frame', inputPerMTok: 0, outputPerMTok: 0, perSecondUsd: 0.0002, source: 'fal.ai/models/fal-ai/ffmpeg-api/extract-frame, read 2026-10-18 and again 2026-10-22' },
 
   // The demo-mode mock costs nothing.
   { provider: 'mock', model: 'mock-big', inputPerMTok: 0, outputPerMTok: 0, source: 'byway mock provider, 2026-10-07' },
