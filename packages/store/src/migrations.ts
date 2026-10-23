@@ -299,6 +299,25 @@ CREATE TABLE renderer_settings (
 ) STRICT;
 `,
   },
+  {
+    version: 9,
+    name: 'answer-waits',
+    sql: `
+-- How long byway waits for each model's answer (AnswerWait; Settings' "How long to wait for an answer"): one row per
+-- workspace, provider and model the person chose a wait for. No row means never chosen, and the call waits its kind's
+-- default, which the gateway knows. A row whose model no profile uses any more is kept, and Settings does not show it.
+-- Which minutes a wait may be is checked in TypeScript (answer-waits.ts: those some kind of model offers), since the
+-- store does not know the models and the choices may grow; only that a wait is a whole number above 0 is a CHECK.
+CREATE TABLE answer_waits (
+  workspace_id  TEXT NOT NULL REFERENCES workspaces (id),
+  provider      TEXT NOT NULL CHECK (provider <> ''),
+  model         TEXT NOT NULL CHECK (model <> ''),
+  minutes       INTEGER NOT NULL CHECK (minutes > 0),
+  changed_at    TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, provider, model)
+) STRICT, WITHOUT ROWID;
+`,
+  },
 ];
 
 /** The schema version this build writes. */

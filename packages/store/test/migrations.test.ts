@@ -24,6 +24,8 @@ const MIGRATION_5_CHECKSUM = 'sha256:9a63b55748772581a7a23f8f9eef1ef9c85100cffc8
 const MIGRATION_6_CHECKSUM = 'sha256:8a6190b9d3d2443dc74679922806992d357242034ca7d56766d045ee89abb1f0';
 const MIGRATION_7_CHECKSUM = 'sha256:43d25171342abea916e9cdec341e2871557be594609c277f44369d45ba70113a';
 const MIGRATION_8_CHECKSUM = 'sha256:c0bf1a83fdc56c0292a686df508e44e5a8075f9d18692d96defab8a1e762444c';
+/** Pinned when migration 9 (each model's answer wait) was written; it must never change. */
+const MIGRATION_9_CHECKSUM = 'sha256:b2f7caccd2a1aaf6941fdc8fc09a2938e6396e29355c7824999287997f0465d1';
 
 const checksumOf = (sql: string): string => `sha256:${createHash('sha256').update(sql, 'utf8').digest('hex')}`;
 
@@ -196,6 +198,7 @@ describe('migrations', () => {
       [6, 'spend-book', MIGRATION_6_CHECKSUM],
       [7, 'operation-keys', MIGRATION_7_CHECKSUM],
       [8, 'renderer-settings', MIGRATION_8_CHECKSUM],
+      [9, 'answer-waits', MIGRATION_9_CHECKSUM],
     ]);
   });
 
@@ -349,6 +352,48 @@ describe('migrations', () => {
     expect(await store.getWorkspace('ws')).toMatchObject({ budgetUsd: 25 });
     expect(await store.spendBook.cursor()).toEqual({ offset: 0, tailStart: 0, tailSha256: null });
     expect(await store.spendBook.spend('ws')).toEqual({ spentUsd: 0, byRun: {}, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('upgrade an existing version-8 database file in place, adding answer waits with none chosen', async () => {
+    const dataDir = tempDir();
+    const db = openDatabase(join(dataDir, 'byway.sqlite'));
+    try {
+      db.exec('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
+      for (const m of MIGRATIONS.slice(0, 8)) {
+        db.exec(m.sql);
+        db.prepare('INSERT INTO schema_version VALUES (?, ?, ?, ?)').run(m.version, m.name, checksumOf(m.sql), '2026-10-21T00:00:00.000Z');
+      }
+      db.prepare('INSERT INTO workspaces (id, name, budget_usd, is_default, created_at) VALUES (?, ?, ?, ?, ?)').run('ws', 'Studio', 25, 1, '2026-10-21T09:00:00.000Z');
+      db.prepare(`INSERT INTO preferences (workspace_id, profile_id, demo_mode, show_technical_names, updated_at) VALUES ('ws', 'best', 0, 1, '2026-10-21T09:00:00.000Z')`).run();
+    } finally {
+      db.close();
+    }
+    expect(versions(join(dataDir, 'byway.sqlite'))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    const store = openStore({ dataDir });
+    expect(versions(store.dbPath)).toEqual(MIGRATIONS.map((m) => m.version));
+    expect(await store.getPreferences('ws')).toEqual({ profileId: 'best', demoMode: false, showTechnicalNames: true });
+    expect(await store.getAnswerWaits('ws')).toEqual([]);
+    expect(await store.setAnswerWait('ws', { provider: 'fal', model: 'fal-ai/kling-video/v3/pro/image-to-video', minutes: 45 })).toMatchObject({ minutes: 45 });
+  });
+
+  it('hold an answer wait to its workspace, one row per provider and model, and a positive wait at the schema level', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      db.exec('PRAGMA foreign_keys = ON');
+      db.prepare("INSERT INTO workspaces (id, name, budget_usd, created_at) VALUES ('w', 'W', 1, 'now')").run();
+      const insert = db.prepare("INSERT INTO answer_waits (workspace_id, provider, model, minutes, changed_at) VALUES (?, ?, ?, ?, 'now')");
+      insert.run('w', 'anthropic', 'claude-opus-5-5', 30);
+      insert.run('w', 'openrouter', 'claude-opus-5-5', 30);
+      expect(() => insert.run('w', 'anthropic', 'claude-opus-5-5', 45)).toThrow(/UNIQUE|PRIMARY/);
+      expect(() => insert.run('w', 'anthropic', 'claude-sonnet-5-5', 0)).toThrow(/CHECK/);
+      expect(() => insert.run('w', '', 'claude-sonnet-5-5', 15)).toThrow(/CHECK/);
+      expect(() => insert.run('w', 'anthropic', '', 15)).toThrow(/CHECK/);
+      expect(() => insert.run('w', 'anthropic', 'claude-sonnet-5-5', 15.5)).toThrow(/integer|INTEGER|datatype/i);
+      expect(() => insert.run('nowhere', 'anthropic', 'claude-sonnet-5-5', 15)).toThrow(/FOREIGN KEY/);
+    } finally {
+      db.close();
+    }
   });
 
   it('hold a paid operation to its contract states and a settled cost at the schema level', () => {

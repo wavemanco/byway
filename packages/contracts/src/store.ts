@@ -3,7 +3,7 @@
  * Product data lives in its own data directory and never feeds a confirmatory study (ADR-0041 rule 3, CR3/CR12).
  */
 import type { ChooserAnswer, ComposeResult, ProblemBrief, Recommendation } from './advisor.ts';
-import type { DeclineRecord } from './gateway.ts';
+import type { DeclineRecord, ProviderId } from './gateway.ts';
 import type { Medium } from './medium.ts';
 import type { SpendBook } from './spend.ts';
 
@@ -198,6 +198,21 @@ export interface Preferences {
 }
 
 /**
+ * How long byway waits for one model's answer, as the person chose it in Settings ("How long to wait for an answer"):
+ * per workspace, provider and model, so claude-opus-5-5 from Anthropic and anthropic/claude-opus-5.5 from OpenRouter
+ * are two choices. A model with none waits its kind's default (the gateway's waits.ts: text 15 minutes, images 15, video
+ * 30). The owner chose the sets on 2026-10-22: text 15, 30, 45 or 60 minutes, images 5, 10, 15 or 20, video 30, 45, 60
+ * or 75. The gateway reads it on every call, as it reads the spend caps, so a change applies from the next call.
+ */
+export interface AnswerWait {
+  provider: ProviderId;
+  model: string;
+  minutes: number;
+  /** When the person last chose it. */
+  changedAt: string;
+}
+
+/**
  * What byway's start-up check of the page renderer found (scripts/serve.ts; ADR-0105). The check draws byway's own test
  * page, with a script, under the setting in force; with the sandbox off it also tries the sandbox, and with the sandbox
  * on and failing it tries without it, to tell whether the sandbox is the cause.
@@ -299,6 +314,19 @@ export interface Store {
   /** Defaults when never set: profileId 'balanced', demoMode false, showTechnicalNames false. */
   getPreferences(workspaceId: string): Promise<Preferences>;
   setPreferences(workspaceId: string, patch: Partial<Preferences>): Promise<Preferences>;
+
+  /**
+   * Every answer wait chosen in the workspace's Settings (AnswerWait), by provider and model. A model never chosen has
+   * none. A choice for a model no profile uses any more is kept: the store does not know the models, and a later profile
+   * may use it again (Settings shows only the profiles' models).
+   */
+  getAnswerWaits(workspaceId: string): Promise<AnswerWait[]>;
+  /**
+   * One model's answer wait, replacing any earlier choice for it. The store takes any of the minutes some kind of model
+   * offers (5, 10, 15, 20, 30, 45, 60, 75); whether this model's own kind offers it is checked by the caller that knows the
+   * models (the web API, from the gateway's profiles).
+   */
+  setAnswerWait(workspaceId: string, wait: Omit<AnswerWait, 'changedAt'>): Promise<AnswerWait>;
 
   /** The page renderer's settings (ADR-0105). Never set: the OS sandbox on, and no check recorded. */
   getRendererSettings(): Promise<RendererSettings>;
