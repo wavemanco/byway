@@ -20,9 +20,20 @@ import { buildWorkflows, DEFAULT_WORKFLOWS_BUNDLE, workflowBundleHash } from '..
  * this" only where nothing the person writes later can change it (`lockedScripts`, read from the recipe at the step),
  * a VOICE is asked by what it covers in the run's medium, and a cliché sweep asks which finds to swap only where nothing
  * puts another critique in their place before the swap step (`asksSwaps` with `replacesCritique`). fcadfee4… never
- * reached main either. Runs waiting under an older bundle end plainly (ADR-0078).
+ * reached main either. Block 2's workflow batch (W, landed, as the owner chose on 2026-10-21, "Now, before the first live
+ * run") changes it once, on purpose, from 38afef53… to b0a4e13b…: P2 (the brief, the fixed copy deck, the author's
+ * draft, the tell catalog and each VOICE answer travel by their files' ids, and the SEED strings stay in the store, so
+ * RunRef carries no seeds and the batch bound loses its seed term); VOICE-RETRY (a gate's retry carries each VOICE's
+ * last answer and the deck it answered); the riders (the voice.apply id retired, VOICE's fixed page sentence in the
+ * workflow's wording, C3's advice field in the output contracts, C7's in-place prompt keyed on the brief, a one-shot
+ * gate clearing the empty-critique mark, a declined critique step clearing the critique, what audit, a gate and each
+ * hand on written once in @byway/recipe's semantics, an ASSET slots knob below 1 refused by the engine); the steps'
+ * limits (model and image steps under a 24-hour backstop, and TRY_CANCEL named on every proxy); and the relay's waits (a
+ * quick step reads them just before each relay step, whose limit is worked out from them and whose calls keep them).
+ * Block 2's other branches (the answer waits, the prices, the lost-run pass, the browser helper) change no workflow
+ * code. Runs waiting under an older bundle end plainly (ADR-0078).
  */
-const PINNED_WORKFLOW_HASH = '38afef53ed613c48e1065255bdbac69c9016af95a156b0559634e67625e0b637';
+const PINNED_WORKFLOW_HASH = 'b0a4e13bc112a94946bd2394f9bd743047f6985d3cbc45b00e70a158d2cdf2b7';
 
 describe('the workflow bundle', () => {
   it('inlines the workspace and leaves only the Temporal workflow SDK external', async () => {
@@ -41,7 +52,7 @@ describe('the workflow bundle', () => {
     }
   }, 60_000);
 
-  it('is the bundle runs in flight were started under: the spend book’s stage 3 changed no workflow code, cluster F and cluster A changed it on purpose (ADR-0078, ADR-0099, ADR-0090, ADR-0093, ADR-0098)', async () => {
+  it('is the bundle runs in flight were started under: the spend book’s stage 3 changed no workflow code, cluster F, cluster A and block 2’s workflow batch changed it on purpose (ADR-0078, ADR-0099, ADR-0090, ADR-0093, ADR-0098)', async () => {
     // A run records the hash of the bundle it started under, and a worker running another bundle ends it plainly
     // (ADR-0078). Pinned, so that a change to workflow code is a decision made with it, never a side effect of activity
     // work: update it in the same change that alters workflow code on purpose.
