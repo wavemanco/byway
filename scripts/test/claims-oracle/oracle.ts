@@ -185,6 +185,9 @@ export async function respond(name: string, input: any): Promise<unknown> {
         const id = newArt('h', sid, input.ports.artifact);
         ev.made = id;
         out.artifactId = id;
+        // A VOICE write's answer is kept as a file whose id the run holds (P2-HELD): without it the run stops before
+        // any step could change the person's words.
+        if (st.role === 'voice') out.voiceId = `voice:${sid}#${n}`;
       }
       if (input.kind === 'compare') out.keep = input.resolution?.choice?.[0] === 'A' ? 'A' : 'B';
       ev.kind = input.kind;
@@ -223,7 +226,7 @@ export async function respond(name: string, input: any): Promise<unknown> {
 
 async function runOnce(recipe: N): Promise<Run> {
   cur = { events: [], created: new Map(), outcome: 'done' };
-  const input = { runId: 'run', workspaceId: 'ws', recipe, problem: { text: 'p' }, profileId: 'demo', budgetUsd: 5, medium: recipe.medium, routes: {}, inputs: {} };
+  const input = { runId: 'run', workspaceId: 'ws', recipe, problemId: 'brief', profileId: 'demo', budgetUsd: 5, medium: recipe.medium, routes: {}, inputs: {} };
   const control = { boundary: async () => {}, machine: (fn: any) => fn(), track: (fn: any) => fn(), pending: new Map() };
   const engine = new Interpreter(input as never, control as never);
   Object.assign(engine, {
