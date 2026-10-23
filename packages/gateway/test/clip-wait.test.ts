@@ -12,7 +12,7 @@
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ApiError } from '@fal-ai/client';
+import { ApiError, ValidationError } from '@fal-ai/client';
 import { GatewayError, type VideoRequest } from '@byway/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
@@ -562,6 +562,74 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     expect(fal.cancels).toEqual([]);
     expect(fetch.requested).toEqual([]);
     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video' })]);
+  });
+});
+
+/**
+ * A stopped clip fal reported done (its status, or its cancel's "already completed") whose result fal answers with its
+ * own failure: an HTTP status with fal's JSON body, as @fal-ai/client 1.10.1 hands on an answer that is not a success (an
+ * ApiError; a ValidationError for 422). fal's pricing page (read 2026-10-22): "If a request fails with an HTTP 500 or
+ * higher status code, no charge is incurred"; its FAQ says a 422 may still be charged. So it may have been billed, and
+ * is counted so, at its estimate, as the same answer is without a stop; it is never ledgered as made. A lost connection,
+ * or a page with no body of fal's (a proxy's), is no word from fal on the job, so the clip is settled as made, as before.
+ */
+describe('a stopped clip fal reported done, whose result fal answers with a failure: may have been billed, never ledgered as made', () => {
+  // R-MONEY-1, Block 2's re-check: the stopped clip's one result read took only fal's start-deadline 504, and settled a
+  // clip as made, ledgered at its price, when fal answered its result with any other failure of its own.
+  const fals = {
+    'a 500 with fal’s body': () => new ApiError({ message: 'Internal Server Error', status: 500, body: { detail: 'The model failed to generate the video' } }),
+    'a 422 (a ValidationError)': () => new ValidationError({ message: 'Unprocessable Entity', status: 422, body: { detail: 'The model failed to generate the video' } }),
+  };
+  const notFals = {
+    'a lost connection (no status)': () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }),
+    'a 500 with no body of fal’s (a proxy’s page)': () => new ApiError({ message: 'HTTP 500: Internal Server Error', status: 500 }),
+  };
+  const routes = {
+    'the status said done, then a stop came while its result was read': 'read',
+    'a stop came while it was polled, and fal answered its cancel “already completed”': 'poll',
+  } as const;
+  const cases = <T extends Record<string, () => unknown>>(answers: T) => Object.entries(routes).flatMap(([what, route]) => Object.entries(answers).map(([answer, fails]) => [what, answer, route, fails] as const));
+
+  /** The call on `route` with its clip's result failing as `fails` says: its error, its gateway, and what fal was asked. */
+  async function stoppedDone(route: 'read' | 'poll', fails: () => unknown) {
+    const stop = new AbortController();
+    const until = new AbortController();
+    const fal = clipFal({ ...(route === 'read' ? { clipTakesMs: MINUTE, onClipResult: () => stop.abort() } : { cancel: { status: 'completed', detail: 'HTTP 400 ALREADY_COMPLETED' } }), clipResultFails: fails() });
+    const media = fakeFetch();
+    const g = gateway({ clients: { fal: fal.client }, fetch: media.fetch });
+    const call = failure(g.video(clipOf({ operation: { key: 'run-1/clip/video/abc/1', until: until.signal, stop: stop.signal } })));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    stop.abort();
+    const e = await settled(call);
+    // Read once more after the stop, never sent again, nothing downloaded.
+    expect(asked(fal)).toEqual(route === 'read' ? ['result req-1', 'result req-1'] : ['cancel req-1', 'result req-1']);
+    expect(fal.submitted.map((s) => s.endpoint)).toEqual([BALANCED_VIDEO]);
+    expect(media.requested).toEqual([]);
+    return { e, g };
+  }
+
+  it.each(cases(fals))('%s, its result answered with %s: counted as may have been billed, at its estimate, with its job; nothing ledgered', async (_what, _answer, route, fails) => {
+    const { e, g } = await stoppedDone(route, fails);
+    const status = (fails() as { status: number }).status;
+    expect(e).toMatchObject({
+      code: 'byway-failure',
+      retryable: false,
+      billing: 'maybe',
+      cutOff: true,
+      message: `byway cut off this fal call because its run was ending (fal reported clip job req-1 done, but answered its result with a failure, HTTP ${status}). fal may have billed the work it did, so the call is counted at its estimate, as "may have been billed", and listed in Settings under Spending records until you clear it.`,
+    });
+    expect(e.billed).toBeUndefined();
+    expect(ledger()).toEqual([]);
+    expect((await g.spendRecords('ws')).uncertain.map((u) => [u.reason, u.usd, u.providerJobs])).toEqual([['interrupted', 0.352, { generation: 'req-1' }]]);
+    expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, byRun: {}, inFlightUsd: 0, uncertainUsd: 0.352 });
+  });
+
+  it.each(cases(notFals))('%s, its result answered with %s: no word from fal on the job, so it is settled as made, as before', async (_what, _answer, route, fails) => {
+    const { e, g } = await stoppedDone(route, fails);
+    expect(e).toMatchObject({ code: 'byway-failure', billed: true, message: 'fal made the clip and billed it (its cost is recorded), but its run was ending, so byway did not download it.' });
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: 0.352 })]);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([]);
   });
 });
 

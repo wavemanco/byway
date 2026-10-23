@@ -1,6 +1,6 @@
 import { createFalClient as createFalSdkClient } from '@fal-ai/client';
 import { GatewayError } from '@byway/contracts';
-import { cutOffError } from '../errors.ts';
+import { cutOffError, isCutOff } from '../errors.ts';
 import { makeRedactor } from '../redact.ts';
 import { isNotStarted, notStartedError, waitedError, waitMinutes } from '../waited.ts';
 import { Deadline } from './deadline.ts';
@@ -481,6 +481,20 @@ const droppedAtStart = (e: unknown): boolean => {
 };
 
 /**
+ * fal's own failure answer to a read, in words (its HTTP status), or undefined when the failure is not fal's word: an
+ * HTTP status that came with fal's JSON error body, which @fal-ai/client 1.10.1 hands on as an ApiError (a
+ * ValidationError for 422) carrying `status` and `body`. A page from a proxy in between has no body (the SDK sets one
+ * only from a JSON answer), and a lost connection or a timeout has no status, so neither is fal's word on the job. The
+ * body is how errors.ts tells fal's own 5xx from a proxy's (hasProviderBody); here it is asked of a 4xx too, since a
+ * status without fal's body says nothing of the job either (Claude's reading). Read by those fields, as droppedAtStart
+ * reads them, and before the gateway maps the error, which keeps neither.
+ */
+const falFailure = (e: unknown): string | undefined => {
+  const err = e as { status?: unknown; body?: unknown } | null;
+  return typeof err?.status === 'number' && typeof err.body === 'object' && err.body !== null ? `HTTP ${err.status}` : undefined;
+};
+
+/**
  * What a job is waited for under (runJob): `signal` ends the wait; with `reading`, the job's result is read under it too
  * (the frame's bound); `passed`, the wait had already run out as the poll began (a clip job resumed after its wait).
  */
@@ -588,12 +602,18 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
    * made and billed, so it is settled at its seconds through the made-and-billed path, without downloading it.
    *
    * "Done" here is fal's status (or its cancel's "already completed"), and a job fal dropped unstarted at its start
-   * deadline is done too: only its result says it never ran (droppedAtStart). So before a done job is settled as made,
-   * its result is read once (a free read; no new job, which is all a stop forbids), for at most RESULT_LOOK_MS, and fal's
-   * word that it never ran is taken over the stop's: nothing is counted for it (notStartedError). A result that comes
-   * back, fails otherwise or does not come back in time leaves it settled as made, as before (TESTS-1, Block 2's check:
-   * a stop during the dropped job's result read, or during its poll with fal answering the cancel "already completed",
-   * ledgered a clip fal had not made or billed).
+   * deadline is done too: only its result says it never ran (droppedAtStart). So is a job that failed: fal reports it
+   * done, and only its result says it failed. So before a done job is settled as made, its result is read once (a free
+   * read; no new job, which is all a stop forbids), for at most RESULT_LOOK_MS, and fal's word on the job is taken over
+   * the stop's. Its word that the job never ran comes first, and nothing is counted for it (notStartedError). Any other
+   * failure fal answers the read with itself (falFailure: a status with fal's own body, such as a 500 or a 422) means
+   * the clip was not made, but fal may have billed the work: the call is counted as "may have been billed", at its
+   * estimate, listed with the job's id, and nothing is ledgered, as the same answer is counted without a stop
+   * (acceptedButUnread). A result that comes back, a failure that is not fal's word (a lost connection, a proxy's page)
+   * or no answer in time leaves it settled as made, as before. (TESTS-1, Block 2's check: a stop during the dropped
+   * job's result read, or during its poll with fal answering the cancel "already completed", ledgered a clip fal had not
+   * made or billed. R-MONEY-1, its re-check: the same two races ledgered a clip whose result fal answered with its own
+   * failure, which the look had read and dropped.)
    */
   const stoppedGeneration = async (req: ProviderVideoRequest, polled: { stopped: 'running' | 'done'; requestId: string }): Promise<'done'> => {
     if (polled.stopped === 'running') {
@@ -604,11 +624,19 @@ export function falAdapter(opts: FalAdapterOptions): ProviderAdapter {
         throw cutOffError('fal', 'maybe', said);
       }
     }
+    // fal's own failure answer is read from the SDK's error here, before the gateway maps it (which keeps no status or
+    // body), and thrown as the call's outcome: not retryable, so it is not read again. readResult has already turned fal's
+    // start-deadline answer into notStartedError, which carries neither, so that word still comes first.
+    const read = () =>
+      readResult(req, 'generation', req.model, polled.requestId).catch((e: unknown) => {
+        const said = falFailure(e);
+        throw said === undefined ? e : cutOffError('fal', 'maybe', `fal reported clip job ${polled.requestId} done, but answered its result with a failure, ${said}`);
+      });
     const look = new Deadline(RESULT_LOOK_MS);
     try {
-      await untilEnded(req.attempt(() => readResult(req, 'generation', req.model, polled.requestId)), undefined, look.signal);
+      await untilEnded(req.attempt(read), undefined, look.signal);
     } catch (e) {
-      if (isNotStarted(e)) throw e;
+      if (isNotStarted(e) || isCutOff(e)) throw e;
     } finally {
       look.end();
     }
