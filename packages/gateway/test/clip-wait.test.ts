@@ -649,7 +649,12 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     expect(e).toMatchObject({ code: 'byway-failure', billed: true, message: 'fal made the clip and billed it (its cost is recorded), but its run was ending, so byway did not download it.' });
     expect(fal.cancels).toEqual([]);
     expect(fetch.requested).toEqual([]);
-    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video' })]);
+    // Over at its bound, not only after it (R-MONEY-3, Block 2's re-check: settled() moves the clock up to 200 seconds, so
+    // a look of two minutes passed too). The gateway reads the clock as the adapter answers (the entry's latencyMs, from
+    // the call's start at T0): the clip was done a minute in, so its answer came RESULT_LOOK_MS later, to the
+    // millisecond. That reading comes before the files that follow, whose lock waits are timers too, so it holds however
+    // far settled() then moves the clock; waiting by real turns alone would hang on a lock Windows keeps busy.
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', latencyMs: MINUTE + RESULT_LOOK_MS })]);
   });
 });
 
@@ -791,12 +796,15 @@ describe('the last frame is bounded by the time left on its clip’s wait plus 2
     }
     expect(over).toBe(true);
     const e = await err;
-    expect(Date.now() - frameFrom).toBeGreaterThanOrEqual(4 * MINUTE);
     expect(e).toMatchObject({ billed: true });
     expect(e.message).toMatch(/: last-frame job req-2 did not finish within the time left on the clip’s wait plus 2 minutes, so byway stopped waiting$/);
-    // Done when its bound ran out, so not cancelled; the clip is ledgered and kept.
+    // Done when its bound ran out, so not cancelled; the clip is ledgered and kept. Given up at the bound, not only after
+    // it (R-MONEY-3, Block 2's re-check: the loop above moves the clock until the call is over, so a read bounded apart
+    // from the frame's, and longer, passed too): the gateway read the clock as the adapter answered (the entry's
+    // latencyMs, from the call's start at T0), 4 minutes from the frame job's start to the millisecond. That reading
+    // comes before the files that follow, whose lock waits are timers too, so the loop's steps do not move it.
     expect(fal.cancels).toEqual([]);
-    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video' })]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', latencyMs: frameFrom + 4 * MINUTE - T0 })]);
   });
 
   it('the frame’s download is bounded too: one held past it is given up, and the clip kept', async () => {
