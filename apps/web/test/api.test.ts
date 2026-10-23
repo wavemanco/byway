@@ -247,10 +247,12 @@ describe('route handler logic', PRODUCT_PATH, () => {
       [{ provider: 'anthropic', model: 'claude-opus-5-5', minutes: 5 }, 'claude-opus-5-5 can wait 15, 30, 45 or 60 minutes, not 5.'],
       [{ provider: 'google', model: 'gemini-nano-banana-2.1', minutes: 30 }, 'gemini-nano-banana-2.1 can wait 5, 10, 15 or 20 minutes, not 30.'],
       [{ provider: 'fal', model: fal, minutes: 20 }, `${fal} can wait 30, 45, 60 or 75 minutes, not 20.`],
-      // The same model through another provider, a model no profile uses, and the demo's mock: no wait to choose.
+      // The same model through another provider, a model no profile uses, and the demo's mock: no wait to choose. The
+      // demo profile does use the mock's models, so they are refused for what they are (WEB-4), any name alike.
       [{ provider: 'openrouter', model: 'claude-opus-5-5', minutes: 30 }, 'No model profile uses claude-opus-5-5 from openrouter, so it has no wait to choose.'],
       [{ provider: 'google', model: 'gemini-9-ultra', minutes: 30 }, 'No model profile uses gemini-9-ultra from google, so it has no wait to choose.'],
-      [{ provider: 'mock', model: 'mock-big', minutes: 15 }, 'No model profile uses mock-big from mock, so it has no wait to choose.'],
+      [{ provider: 'mock', model: 'mock-big', minutes: 15 }, 'mock-big is one of demo mode’s sample models, which answer at once, so it has no wait to choose.'],
+      [{ provider: 'mock', model: 'mock-anything', minutes: 15 }, 'mock-anything is one of demo mode’s sample models, which answer at once, so it has no wait to choose.'],
     ] as const;
     for (const [input, message] of refused) await expect(updateAnswerWait(d, input)).rejects.toMatchObject({ status: 400, message });
     expect((await d.services.store.getAnswerWaits(d.workspaceId)).map((w) => `${w.provider}/${w.model}: ${w.minutes}`)).toEqual([

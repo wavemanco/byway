@@ -416,9 +416,12 @@ export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsP
  * store takes any minutes some kind of model offers, since it does not know the models; here the choice is checked
  * against its own model's set, from the gateway's profiles (text 15, 30, 45 or 60 minutes, images 5, 10, 15 or 20,
  * video 30, 45, 60 or 75, the owner's choices). A model no profile uses, or the mock's, has no wait to choose. The
+ * mock's are refused in words of their own: the demo profile does use them, so "no model profile uses" would be untrue
+ * there (WEB-4 of block 2's check); they answer at once, and the gateway never asks Settings for their wait. The
  * gateway reads the wait on every call, so it applies from the model's next call. Returns the wait as saved.
  */
 export async function updateAnswerWait(deps: Deps, input: z.infer<typeof AnswerWaitPatch>): Promise<AnswerWait> {
+  if (input.provider === 'mock') throw new HttpError(400, `${input.model} is one of demo mode’s sample models, which answer at once, so it has no wait to choose.`);
   const model = deps.modelWaits().find((m) => m.provider === input.provider && m.model === input.model);
   if (!model) throw new HttpError(400, `No model profile uses ${input.model} from ${input.provider}, so it has no wait to choose.`);
   if (!model.choices.includes(input.minutes)) {

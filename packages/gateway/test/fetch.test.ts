@@ -5,6 +5,7 @@
  * timeouts are 80 minutes, and fal keeps Node's default. undici is replaced here by a recorder around the real one: no
  * request leaves the process, and Node's own fetch is a stub that fails the test if anything but fal reaches it.
  */
+import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const seen = vi.hoisted(() => ({ agents: [] as { agent: unknown; options: unknown }[], requests: [] as { url: string; dispatcher: unknown }[] }));
@@ -63,6 +64,15 @@ describe('the provider Agent', () => {
   it('is one undici Agent whose headers and body timeouts are 80 minutes, above the longest wait anyone can choose', () => {
     expect(PROVIDER_TIMEOUT_MS).toBe(80 * 60_000);
     expect(seen.agents).toEqual([{ agent: providerAgent, options: { headersTimeout: 80 * 60_000, bodyTimeout: 80 * 60_000 } }]);
+  });
+
+  // Every undici 7.x before 7.30.1 has advisories published against it (GitHub's advisory database and undici's own,
+  // read 2026-10-23): 7.18.2, the version Node 24.13.1 bundles and the gateway first pinned, has 23, and 7.29.1 and
+  // 7.30.0 still have the eight of 2026-10-15. So the package the gateway fetches through is never older than 7.30.1.
+  it('is undici 7.30.1 or later, the first 7.x clear of every published advisory', () => {
+    const { version } = createRequire(import.meta.url)('undici/package.json') as { version: string };
+    const [major = 0, minor = 0, patch = 0] = version.split('.').map((part) => Number.parseInt(part, 10));
+    expect(major * 1e6 + minor * 1e3 + patch, `undici ${version}`).toBeGreaterThanOrEqual(7_030_001);
   });
 });
 

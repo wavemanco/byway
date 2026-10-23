@@ -12,7 +12,9 @@ export { createRunnerClient, ResolutionRejectedError, RunStartConflictError, Run
 export { storeCaps } from './caps.ts';
 export { ENGINE_DOWN_AT_START, isTransportFailure } from './start-failure.ts';
 export { RUN_WORKFLOW, workflowIdFor } from './types.ts';
-export { LOST_RUN_MESSAGE } from './lost-runs.ts';
+// reconcileLostRuns is client-safe too: the e2e suite runs the engine's lost-run pass itself, to check that the runs it
+// seeds outlast it (apps/web/e2e/seed.ts).
+export { LOST_RUN_MESSAGE, reconcileLostRuns } from './lost-runs.ts';
 export { OLDER_VERSION_MESSAGE } from './versioning.ts';
 
 export interface ConnectedRunner {

@@ -16,6 +16,15 @@ const external = process.env.BYWAY_E2E_BASE_URL;
 const port = Number(process.env.BYWAY_E2E_PORT ?? 3210);
 /** The data directory of the suite's own server: made once in the main process, and Playwright's workers inherit it. */
 const ownDataDir = (): string => (process.env.BYWAY_E2E_DATA_DIR ??= mkdtempSync(path.join(tmpdir(), 'byway-e2e-')));
+/**
+ * The engine port of the suite's own server. Its address reaches the workers the same way, since seed.ts parks the
+ * seeded runs' workflows there; `pnpm e2e` sets the address itself.
+ */
+const ownTemporalPort = (): string => {
+  const temporalPort = process.env.BYWAY_E2E_TEMPORAL_PORT ?? '7290';
+  process.env.BYWAY_E2E_TEMPORAL_ADDRESS ??= `127.0.0.1:${temporalPort}`;
+  return temporalPort;
+};
 
 export default defineConfig({
   testDir: './e2e',
@@ -55,7 +64,7 @@ export default defineConfig({
             BYWAY_DATA_DIR: ownDataDir(),
             BYWAY_NEXT_DIST_DIR: '.next-e2e',
             PORT: String(port),
-            BYWAY_TEMPORAL_PORT: process.env.BYWAY_E2E_TEMPORAL_PORT ?? '7290',
+            BYWAY_TEMPORAL_PORT: ownTemporalPort(),
           },
         },
       }),

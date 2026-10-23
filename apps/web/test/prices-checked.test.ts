@@ -3,8 +3,9 @@
  * block 2), at the owner's answer of 2026-10-21 23:15, "Weekly report + monthly re-read + date in the app
  * (Recommended)": "Settings and the estimate show when prices were last checked, with a notice after about 45 days."
  * The day is the gateway's PRICES_CHECKED, read on the server (the client components do not import @byway/gateway)
- * and put in words with the server's clock. Every clock here is fixed: no test reads the wall clock. The two screens
- * are rendered whole, on the real services in demo mode, with Next.js's router stood in for (they only refresh it).
+ * and put in words with the server's clock. Every clock here is fixed: no test reads the wall clock. The two screens,
+ * and the Library, whose recipes show estimated costs from the same table, are rendered whole, on the real services in
+ * demo mode, with Next.js's router stood in for (they only refresh it).
  */
 import { createElement, isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -33,6 +34,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh() {}, push() {},
 
 const { default: RecommendPage } = await import('../app/recommend/[intakeId]/page.tsx');
 const { default: SettingsPage } = await import('../app/settings/page.tsx');
+const { default: LibraryPage } = await import('../app/library/page.tsx');
 
 const day = (iso: string) => new Date(`${iso}T12:00:00.000Z`);
 const LINE = 'Prices last checked Oct 22, 2026.';
@@ -148,6 +150,29 @@ describe("the gateway's day reaches both screens from the server", { timeout: 30
       expect(budget, now).toContain(`<p class="muted small prices-checked">${LINE}</p>`);
       if (notice) expect(budget).toContain(`<p class="notice notice-caution prices-stale">${escaped(STALE)}</p>`);
       else expect(budget).not.toContain('prices-stale');
+    }
+  });
+
+  // The Library shows an estimated cost for every recipe, from the same price table (WEB-5 of block 2's check).
+  it("the Library shows it once, above its recipes' estimated costs, read with the server's clock, and the notice once it is old", async () => {
+    const { host, services: s, workspaceId } = await services();
+    const preferences = await s.store.getPreferences(workspaceId);
+    swapped.context = { services: s, workspaceId, profileId: 'demo', preferences, demoForced: true, heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: '2026-10-22', modelWaits: host.modelWaits };
+    vi.useFakeTimers({ toFake: ['Date'] });
+    for (const [now, notice] of [
+      ['2026-12-06', null],
+      ['2026-12-07', STALE],
+    ] as const) {
+      vi.setSystemTime(day(now));
+      const html = renderToStaticMarkup(await LibraryPage());
+      const [head = '', list = ''] = html.split('<ol class="library">');
+      expect(head, now).toContain(`<p class="muted small prices-checked">${LINE}</p>`);
+      expect(html.match(/prices-checked/g), now).toHaveLength(1);
+      expect(list.match(/<dt>Cost<\/dt>/g)?.length, now).toBeGreaterThan(1);
+      if (notice) {
+        expect(head).toContain(`<p class="notice notice-caution prices-stale">${escaped(STALE)}</p>`);
+        expect(html.match(/prices-stale/g)).toHaveLength(1);
+      } else expect(html).not.toContain('prices-stale');
     }
   });
 });

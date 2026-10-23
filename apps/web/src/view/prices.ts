@@ -1,10 +1,11 @@
 /**
- * When byway's prices were last checked, in the words Settings and the Recommendation's estimated cost show (PRICE-
- * CADENCE, block 2). The owner chose on 2026-10-21 23:15 "Weekly report + monthly re-read + date in the app
- * (Recommended)", whose description read, in part, "Settings and the estimate show when prices were last checked, with a
- * notice after about 45 days." The day is the gateway's PRICES_CHECKED, the last day every row of its price table was
- * read against the provider's page; the server reads it (ServiceHost.pricesCheckedOn) and puts it in words here with its
- * own clock, so the client components never import @byway/gateway and the server and the browser show the same words.
+ * When byway's prices were last checked, in the words Settings, the Recommendation's estimated cost and the Library
+ * show (PRICE-CADENCE, block 2; the Library's from WEB-5 of block 2's check). The owner chose on 2026-10-21 23:15
+ * "Weekly report + monthly re-read + date in the app (Recommended)", whose description read, in part, "Settings and the
+ * estimate show when prices were last checked, with a notice after about 45 days." The day is the gateway's
+ * PRICES_CHECKED, the last day every row of its price table was read against the provider's page; the server reads it
+ * (ServiceHost.pricesCheckedOn) and puts it in words here with its own clock, so the client components never import
+ * @byway/gateway and the server and the browser show the same words.
  */
 
 /** Past this many whole days after the check, the screens add a notice: "about 45 days", as the owner chose. */
