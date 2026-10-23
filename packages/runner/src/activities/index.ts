@@ -12,8 +12,9 @@
  * of a step whose local work failed, or the same step run again after a budget raise, reuses what it already bought.
  * Each call also carries its operation key and this invocation's signals to the gateway (Temporal's cancel, and the
  * invocation's end): an attempt that overlaps another of the same step waits for that one's result, and a timed-out or
- * dead one's call is taken over, its accepted clips resumed (stage 3; ADR-0099). And it carries the attempt's own time
- * limit, so the gateway never reads a streamed answer as stalled before the step would end (B1R2-CODE-3).
+ * dead one's call is taken over, its accepted clips resumed (stage 3; ADR-0099). It does not carry the step's own time
+ * limit: the gateway reads each model's answer wait from Settings on every call (the waits design of 2026-10-22), so a
+ * streamed answer stalls at its model's wait however long its step may run.
  *
  * A decline is asked once more by the gateway, on the same model (ADR-0102). The memo keeps the decline and then the
  * call's outcome, so a step that runs again never buys the declined call again (memo.ts); a step's calls write each
@@ -55,14 +56,7 @@ export function createActivities(deps: RunnerDeps): RunnerActivities {
       const memo = memoScopeOf(input);
       // The run is ending (ADR-0111): set beside `until` and `cancel`, after the request is hashed, so memo keys stay.
       const stop = stopSignal(invocation.signal, () => runHasEnded(deps.store, memo?.runId ?? runIdOf(input)), invocation.done);
-      // The step's own time limit, so a streamed answer is never read as stalled before the step would end (B1R2-CODE-3):
-      // joined after the request is hashed too, so memo keys stay.
-      const operation = {
-        until: invocation.done,
-        ...(invocation.signal ? { cancel: invocation.signal } : {}),
-        ...(stop ? { stop } : {}),
-        ...(invocation.limitMs !== undefined ? { stepLimitMs: invocation.limitMs } : {}),
-      };
+      const operation = { until: invocation.done, ...(invocation.signal ? { cancel: invocation.signal } : {}), ...(stop ? { stop } : {}) };
       const memoized = memo ? memoGateway(gateway, deps.store, memo, { operation }) : gateway;
       // Each decline a step's calls meet is written to the run's events (ADR-0102), outside the memo: see declines.ts.
       const step = stepCallOf(input);

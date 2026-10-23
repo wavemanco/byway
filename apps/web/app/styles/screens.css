@@ -585,6 +585,49 @@
   margin-top: var(--s-3);
 }
 
+/* How long to wait for an answer: one choice per model, grouped by provider. */
+.waits-provider {
+  font-size: inherit;
+  margin: var(--s-3) 0 var(--s-1);
+}
+
+.waits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wait {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-2) 0;
+  border-top: 1px solid var(--line);
+}
+
+/* A long model id (fal's are) wraps beside its choice rather than pushing it off a narrow screen. */
+.wait > div {
+  min-width: 0;
+}
+
+.wait p {
+  margin: 0;
+}
+
+.wait-model {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.wait-choice {
+  flex: none;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  padding: 6px 8px;
+}
+
 .providers {
   list-style: none;
   margin: 0;

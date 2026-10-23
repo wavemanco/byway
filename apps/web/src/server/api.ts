@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { QuestionEstimate } from '@byway/advisor';
-import type { ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
+import type { AnswerWait, ChooserAnswer, ComposeResult, EvidenceLabel, IntakeRecord, ModelWait, Preferences, Recommendation, RecipePresentation, RendererSettings, RunRecord, SpendRecords } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import type { z } from 'zod';
 import { isEngineUnavailable } from '../services/engine-runner.ts';
@@ -27,7 +27,7 @@ import { firstRecommendation } from './first-recommendation.ts';
 import type { HeldKeyIn } from './http.ts';
 import { modelProblem } from './model-errors.ts';
 import { RefError, storeRef } from './refs.ts';
-import type { ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
+import type { AnswerWaitPatch, ControlInput, ProblemInput, RecommendInput, RefInput, RendererPatch, ResolutionInput, SettingsPatch, SpendAction, StartInput } from './schemas.ts';
 
 export class HttpError extends Error {
   override name = 'HttpError';
@@ -55,6 +55,8 @@ export interface Deps {
   questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
   /** The day byway's prices were last checked (ServiceHost.pricesCheckedOn), which the Recommendation shows. */
   pricesCheckedOn: string;
+  /** Every model the gateway's profiles use, with the answer waits it offers (ServiceHost.modelWaits). */
+  modelWaits(): ModelWait[];
 }
 
 /** Runs a model-backed advisor call; a model error becomes an HttpError the person can act on (UX-2). */
@@ -407,6 +409,23 @@ export async function updateSettings(deps: Deps, patch: z.infer<typeof SettingsP
     ...(patch.demoMode !== undefined ? { demoMode: patch.demoMode } : {}),
     ...(patch.showTechnicalNames !== undefined ? { showTechnicalNames: patch.showTechnicalNames } : {}),
   });
+}
+
+/**
+ * Settings' "How long to wait for an answer" (PATCH /api/waits; the waits design of 2026-10-22): one model's wait. The
+ * store takes any minutes some kind of model offers, since it does not know the models; here the choice is checked
+ * against its own model's set, from the gateway's profiles (text 15, 30, 45 or 60 minutes, images 5, 10, 15 or 20,
+ * video 30, 45, 60 or 75, the owner's choices). A model no profile uses, or the mock's, has no wait to choose. The
+ * gateway reads the wait on every call, so it applies from the model's next call. Returns the wait as saved.
+ */
+export async function updateAnswerWait(deps: Deps, input: z.infer<typeof AnswerWaitPatch>): Promise<AnswerWait> {
+  const model = deps.modelWaits().find((m) => m.provider === input.provider && m.model === input.model);
+  if (!model) throw new HttpError(400, `No model profile uses ${input.model} from ${input.provider}, so it has no wait to choose.`);
+  if (!model.choices.includes(input.minutes)) {
+    const list = `${model.choices.slice(0, -1).join(', ')} or ${model.choices.at(-1)}`;
+    throw new HttpError(400, `${input.model} can wait ${list} minutes, not ${input.minutes}.`);
+  }
+  return deps.services.store.setAnswerWait(deps.workspaceId, { provider: model.provider, model: model.model, minutes: input.minutes });
 }
 
 /**

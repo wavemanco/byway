@@ -1,6 +1,7 @@
 /** Settings' Spending records in words (ADR-0095): what may have been billed, and why; notes that need nothing. */
 import { describe, expect, it } from 'vitest';
 import type { UncertainCall } from '@byway/contracts';
+import { waitedWords } from '@byway/gateway';
 import { auditText, callPurpose, FAULT_ADVICE, inFlightNote, outboxNote, quietNote, setAsideNote, uncertainReason } from '../src/view/spending.ts';
 
 const call = (over: Partial<UncertainCall> = {}): UncertainCall => ({ opId: 'op', purpose: 'build:prose', runId: 'run-12345678-abcd', provider: 'anthropic', model: 'claude-opus-5-5', usd: 0.4, since: '2026-10-08T12:00:00.000Z', reason: 'interrupted', ...over });
@@ -22,6 +23,29 @@ describe('Spending records in words', () => {
       'The request may have reached fal.ai before the connection failed, so fal.ai may have done the work and billed it. fal.ai accepted job req-1.',
     );
     expect(uncertainReason(call({ reason: 'resent' }))).toMatch(/^An earlier attempt may have reached Anthropic .* counted separately\.$/);
+  });
+
+  it('says how a call that used the whole of its model’s wait waited, for how long, and where to wait longer (the waits design)', () => {
+    const tail = "It may have billed the work. To wait longer, change 'How long to wait for an answer' in Settings.";
+    expect(uncertainReason(call({ reason: 'waited', waited: { minutes: 45, how: 'silence' } }))).toBe(
+      `Anthropic’s model claude-opus-5-5 sent nothing for 45 minutes, the wait chosen in Settings, so byway stopped waiting. ${tail}`,
+    );
+    expect(uncertainReason(call({ reason: 'waited', provider: 'google', model: 'gemini-3.1-pro-preview', waited: { minutes: 15, how: 'answer' } }))).toBe(
+      `Google’s model gemini-3.1-pro-preview did not answer within 15 minutes, the wait chosen in Settings, so byway stopped waiting. ${tail}`,
+    );
+    const cancel = 'fal was asked to stop it while it ran (HTTP 202 CANCELLATION_REQUESTED), and it can still finish it';
+    expect(uncertainReason(call({ reason: 'waited', provider: 'fal', model: 'fal-ai/kling-video/v3/pro/image-to-video', providerJobs: { generation: 'req-7' }, waited: { minutes: 30, how: 'clip', cancel } }))).toBe(
+      `fal.ai’s model fal-ai/kling-video/v3/pro/image-to-video did not finish clip job req-7 within 30 minutes, the wait chosen in Settings, so byway stopped waiting and cancelled it: ${cancel}. ${tail}`,
+    );
+  });
+
+  it('says of a call that waited what the step’s failure said, word for word (the gateway’s waitedWords)', () => {
+    const calls: UncertainCall[] = [
+      call({ reason: 'waited', provider: 'openrouter', model: 'anthropic/claude-opus-5.5', waited: { minutes: 60, how: 'silence' } }),
+      call({ reason: 'waited', provider: 'openai', model: 'gpt-image-2.5-flare', waited: { minutes: 5, how: 'answer' } }),
+      call({ reason: 'waited', provider: 'fal', model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video', providerJobs: { generation: 'req-9' }, waited: { minutes: 75, how: 'clip', cancel: 'byway’s cancel did not go through (no answer)' } }),
+    ];
+    for (const c of calls) expect(uncertainReason(c)).toBe(waitedWords(c, c.waited!, c.providerJobs?.generation ? { job: c.providerJobs.generation } : {}));
   });
 
   it('notes calls under way, calls not yet written to the ledger, and set-aside tails, and nothing when there are none', () => {

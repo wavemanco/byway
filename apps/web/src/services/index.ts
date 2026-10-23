@@ -5,7 +5,7 @@
  */
 import 'server-only';
 import type { QuestionEstimate } from '@byway/advisor';
-import type { Preferences } from '@byway/contracts';
+import type { ModelWait, Preferences } from '@byway/contracts';
 import type { Recipe } from '@byway/recipe';
 import { connection } from 'next/server';
 import { runProfileId, servicesConfig } from './config.ts';
@@ -68,6 +68,8 @@ export interface Context {
   questionEstimates(recipe: Recipe, profileId: string): Record<string, QuestionEstimate>;
   /** ServiceHost.pricesCheckedOn: the day byway's prices were last checked, beside the services for the same reason. */
   pricesCheckedOn: string;
+  /** ServiceHost.modelWaits, beside the services for the same reason. */
+  modelWaits(): ModelWait[];
 }
 
 /**
@@ -82,5 +84,5 @@ export async function getContext(): Promise<Context> {
   const preferences = await h.store.getPreferences(workspace.id);
   const services = h.services(h.demoForced || preferences.demoMode);
   const profileId = runProfileId(services.mode, preferences.profileId, services.gateway.profileStatus());
-  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced, heldKeyIn: h.heldKeyIn, questionEstimates: h.questionEstimates, pricesCheckedOn: h.pricesCheckedOn };
+  return { services, workspaceId: workspace.id, profileId, preferences, demoForced: h.demoForced, heldKeyIn: h.heldKeyIn, questionEstimates: h.questionEstimates, pricesCheckedOn: h.pricesCheckedOn, modelWaits: h.modelWaits };
 }

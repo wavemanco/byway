@@ -26,7 +26,7 @@ async function deps(): Promise<Deps> {
   const { host } = current;
   const services: Services = host.services(true);
   const ws = await services.store.ensureDefaultWorkspace();
-  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: host.pricesCheckedOn };
+  return { services, workspaceId: ws.id, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: host.pricesCheckedOn, modelWaits: host.modelWaits };
 }
 
 /** An intake with a composed recipe the demo composer made (ok: true), and that stored result. */

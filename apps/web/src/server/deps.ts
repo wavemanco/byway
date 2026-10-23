@@ -5,8 +5,8 @@ import { HttpError, type Deps } from './api.ts';
 import { fail, json } from './http.ts';
 
 export async function getDeps(): Promise<Deps> {
-  const { services, workspaceId, profileId, heldKeyIn, questionEstimates, pricesCheckedOn } = await getContext();
-  return { services, workspaceId, profileId, heldKeyIn, questionEstimates, pricesCheckedOn };
+  const { services, workspaceId, profileId, heldKeyIn, questionEstimates, pricesCheckedOn, modelWaits } = await getContext();
+  return { services, workspaceId, profileId, heldKeyIn, questionEstimates, pricesCheckedOn, modelWaits };
 }
 
 /**

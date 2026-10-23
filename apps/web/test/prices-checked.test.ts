@@ -114,7 +114,7 @@ describe("the gateway's day reaches both screens from the server", { timeout: 30
 
   it("the Recommendation shows it under the estimated cost, read with the server's clock, and the notice once it is old", async () => {
     const { host, services: s, workspaceId } = await services();
-    swapped.deps = { services: s, workspaceId, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: '2026-10-22' };
+    swapped.deps = { services: s, workspaceId, profileId: 'demo', heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: '2026-10-22', modelWaits: host.modelWaits };
     const { intakeId } = await createIntake(swapped.deps, { text: 'Tighten my quarterly memo' });
     vi.useFakeTimers({ toFake: ['Date'] });
     for (const [now, notice] of [
@@ -135,7 +135,7 @@ describe("the gateway's day reaches both screens from the server", { timeout: 30
   it("Settings shows it with the workspace budget, read with the server's clock, and the notice once it is old", async () => {
     const { host, services: s, workspaceId } = await services();
     const preferences = await s.store.getPreferences(workspaceId);
-    swapped.context = { services: s, workspaceId, profileId: 'demo', preferences, demoForced: true, heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: '2026-10-22' };
+    swapped.context = { services: s, workspaceId, profileId: 'demo', preferences, demoForced: true, heldKeyIn: host.heldKeyIn, questionEstimates: host.questionEstimates, pricesCheckedOn: '2026-10-22', modelWaits: host.modelWaits };
     vi.useFakeTimers({ toFake: ['Date'] });
     for (const [now, notice] of [
       ['2026-12-06', null],

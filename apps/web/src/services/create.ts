@@ -14,7 +14,7 @@
  */
 import path from 'node:path';
 import type { QuestionEstimate } from '@byway/advisor';
-import type { Advisor, Gateway, PromptRenderer, Runner, Store } from '@byway/contracts';
+import type { Advisor, Gateway, ModelWait, PromptRenderer, Runner, Store } from '@byway/contracts';
 import type { Env as GatewayEnv } from '@byway/gateway';
 import type { Recipe } from '@byway/recipe';
 import { effectiveMode } from './config.ts';
@@ -66,6 +66,12 @@ export interface ServiceHost {
    * here, on the server, so the client components do not import @byway/gateway.
    */
   readonly pricesCheckedOn: string;
+  /**
+   * Every model the gateway's profiles use, key or no key, with the answer waits it offers (@byway/gateway modelWaits):
+   * Settings' "How long to wait for an answer" lists them, and the route that saves a wait checks each choice against
+   * its model's set. The mock's models have none.
+   */
+  modelWaits(): ModelWait[];
   close(): Promise<void>;
 }
 
@@ -124,6 +130,8 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
       }
     },
     pricesCheckedOn: engine.gateway.PRICES_CHECKED,
+    // An arrow too. The profiles are the gateway's own, every one of them whatever keys are set (Gateway.profileStatus).
+    modelWaits: () => engine.gateway.modelWaits(pair(opts.demo).gateway.profileStatus().map((s) => s.profile)),
     async close() {
       for (const { gateway } of pairs.values()) await gateway.close();
       store.close();

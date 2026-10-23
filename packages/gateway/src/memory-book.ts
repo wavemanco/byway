@@ -27,6 +27,7 @@ import type {
   SpendBook,
   UncertainCall,
   UnledgeredCall,
+  WaitedFor,
 } from '@byway/contracts';
 import { ledgerEntryConflict, ledgerEntryProblem, ledgerOperationId, spendFaultDetail } from '@byway/contracts';
 import { roundUsd } from './prices.ts';
@@ -44,8 +45,12 @@ interface Row {
   reservedUsd: number;
   retainedUsd: number;
   state: PaidOperationState;
-  uncertainReason?: 'interrupted' | 'failed';
+  uncertainReason?: 'interrupted' | 'failed' | 'waited';
+  /** With the reason 'waited': how long and how the call waited. */
+  waited?: WaitedFor;
   providerJobs?: Partial<Record<ProviderJobRole, string>>;
+  /** When each of providerJobs was accepted, by the book's clock. */
+  providerJobsAt?: Partial<Record<ProviderJobRole, string>>;
   owner?: string;
   leaseUntil: number;
   /** The operation key it holds (AdmitRequest.operationKey), until it gives the key up to a later attempt. */
@@ -80,6 +85,9 @@ const HOLDING: ReadonlySet<PaidOperationState> = new Set(['open', 'sent', 'accep
 const inFlight = (r: Row, now: number) => (r.state === 'open' || r.state === 'sent' || r.state === 'accepted') && live(r, now);
 /** May have been billed and counts its reservation until cleared (the retained part is counted separately). */
 const uncertain = (r: Row, now: number) => r.clearedAt === undefined && (r.state === 'uncertain' || ((r.state === 'sent' || r.state === 'accepted') && !live(r, now)));
+/** A wait that ran out, as the store's book checks it: minutes above 0, one of the three ways, fal's answer as text. */
+const isWaitedFor = (w: WaitedFor | undefined): w is WaitedFor =>
+  typeof w === 'object' && w !== null && typeof w.minutes === 'number' && Number.isFinite(w.minutes) && w.minutes > 0 && (w.how === 'silence' || w.how === 'answer' || w.how === 'clip') && (w.cancel === undefined || typeof w.cancel === 'string');
 
 export class MemorySpendBook implements SpendBook {
   private readonly rows = new Map<string, Row>();
@@ -158,8 +166,10 @@ export class MemorySpendBook implements SpendBook {
     const r = this.rows.get(opId);
     if (!r) return;
     if (r.state === 'open' || r.state === 'sent') r.state = 'accepted';
+    const at = this.stamp();
     r.providerJobs = { ...r.providerJobs, [role]: providerJobId };
-    r.updatedAt = this.stamp();
+    r.providerJobsAt = { ...r.providerJobsAt, [role]: at };
+    r.updatedAt = at;
   }
 
   async retain(opId: string, usd: number, workspaceCapUsd: number): Promise<{ retained: true } | { budget: BudgetDetails }> {
@@ -177,9 +187,14 @@ export class MemorySpendBook implements SpendBook {
     if (r && r.state !== 'settled') Object.assign(r, { state: 'released', updatedAt: this.stamp() });
   }
 
-  async abandon(opId: string, reason: 'failed' | 'interrupted' = 'failed'): Promise<void> {
+  async abandon(opId: string, reason: 'failed' | 'interrupted' | 'waited' = 'failed', waited?: WaitedFor): Promise<void> {
+    // As the store's book: a 'waited' says how long and how it waited, and no other reason carries a wait.
+    if (reason === 'waited' ? !isWaitedFor(waited) : waited !== undefined) throw new Error(`a call abandoned as ${reason} ${reason === 'waited' ? 'needs how long and how it waited' : 'has no wait that ran out'}`);
     const r = this.rows.get(opId);
-    if (r && (r.state === 'open' || r.state === 'sent' || r.state === 'accepted')) Object.assign(r, { state: 'uncertain', uncertainReason: reason, updatedAt: this.stamp() });
+    if (r && (r.state === 'open' || r.state === 'sent' || r.state === 'accepted')) {
+      Object.assign(r, { state: 'uncertain', uncertainReason: reason, updatedAt: this.stamp() });
+      if (waited) r.waited = { minutes: waited.minutes, how: waited.how, ...(waited.cancel !== undefined ? { cancel: waited.cancel } : {}) };
+    }
   }
 
   async settle(opId: string, settlement: Settlement): Promise<{ ledgerEntryId: string }> {
@@ -299,12 +314,14 @@ export class MemorySpendBook implements SpendBook {
       .sort((x, y) => x.updatedAt.localeCompare(y.updatedAt))
       .map((r) => {
         const counted = uncertain(r, now);
-        const reason: UncertainCall['reason'] = !counted ? 'resent' : r.state === 'uncertain' && r.uncertainReason === 'failed' ? 'failed' : 'interrupted';
+        const recorded = r.state === 'uncertain' ? r.uncertainReason : undefined;
+        const reason: UncertainCall['reason'] = !counted ? 'resent' : recorded === 'failed' || recorded === 'waited' ? recorded : 'interrupted';
         return {
           ...summary(r),
           usd: roundUsd((counted ? r.reservedUsd : 0) + r.retainedUsd),
           since: r.updatedAt,
           reason,
+          ...(reason === 'waited' && r.waited ? { waited: { ...r.waited } } : {}),
           ...(r.providerJobs && Object.keys(r.providerJobs).length > 0 ? { providerJobs: { ...r.providerJobs } } : {}),
         };
       });
@@ -390,7 +407,9 @@ export class MemorySpendBook implements SpendBook {
     if (jobs.generation !== undefined && r.clearedAt === undefined && (r.state === 'accepted' || r.state === 'uncertain')) {
       Object.assign(r, { state: 'accepted', owner, leaseUntil: now + leaseMs, updatedAt: at });
       delete r.uncertainReason;
-      return { resume: { opId: r.id, jobs } };
+      delete r.waited;
+      const acceptedAt = { ...r.providerJobsAt };
+      return { resume: { opId: r.id, jobs, ...(Object.keys(acceptedAt).length > 0 ? { acceptedAt } : {}) } };
     }
     if (r.state === 'open') Object.assign(r, { state: 'released', updatedAt: at });
     else if (r.state === 'sent' || r.state === 'accepted') Object.assign(r, { state: 'uncertain', uncertainReason: 'interrupted', updatedAt: at });

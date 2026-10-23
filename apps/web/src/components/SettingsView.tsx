@@ -7,6 +7,8 @@ import { formatUsd, parseBudgetInput } from '../view/format.ts';
 import type { PricesChecked } from '../view/prices.ts';
 import type { WorkspaceSpend } from '../view/history.ts';
 import { profileNeeds, videoAvailability } from '../view/labels.ts';
+import type { AnswerWaitGroup } from '../view/waits.ts';
+import { AnswerWaits } from './AnswerWaits.tsx';
 import { patch } from './api.ts';
 import { PageRendererSettings } from './PageRendererSettings.tsx';
 import { PricesStaleNotice } from './PricesChecked.tsx';
@@ -55,9 +57,11 @@ interface Props {
   renderer: RendererSettings;
   /** When byway's prices were last checked, in words, with a notice once that is old (view/prices.ts; PRICE-CADENCE). */
   prices: PricesChecked;
+  /** Each model's answer wait, grouped by provider (view/waits.ts answerWaitGroups). */
+  waits: AnswerWaitGroup[];
 }
 
-export function SettingsView({ providers, profiles, preferences: initial, spend, records, pricingNote = null, mode, demoForced = false, renderer, prices }: Props) {
+export function SettingsView({ providers, profiles, preferences: initial, spend, records, pricingNote = null, mode, demoForced = false, renderer, prices, waits }: Props) {
   const router = useRouter();
   const ids = useId();
   const [prefs, setPrefs] = useState(initial);
@@ -188,6 +192,8 @@ export function SettingsView({ providers, profiles, preferences: initial, spend,
           {mode === 'demo' && !chosen?.video ? <span className="muted">. Demo runs show labelled placeholder clips instead.</span> : null}
         </p>
       </section>
+
+      <AnswerWaits groups={waits} />
 
       <section className="settings-section" aria-labelledby={`${ids}-budget`}>
         <h2 id={`${ids}-budget`}>Workspace budget</h2>

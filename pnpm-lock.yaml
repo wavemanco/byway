@@ -183,7 +183,10 @@ importers:
         version: 2.27.0(supports-color@8.1.1)
       openai:
         specifier: ^7.28.0
-        version: 7.28.0(ws@8.22.0)(zod@4.6.5)
+        version: 7.28.0(undici@7.18.2)(ws@8.22.0)(zod@4.6.5)
+      undici:
+        specifier: 7.18.2
+        version: 7.18.2
     devDependencies:
       '@byway/catalog':
         specifier: workspace:*
@@ -2314,6 +2317,10 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
+  undici@7.18.2:
+    resolution: {integrity: sha512-y+8YjDFzWdQlSE9N5nzKMT3g4a5UBX1HKowfdXh0uvAnTaqqwqB92Jt4UXBAeKekDs5IaDKyJFR4X1gYVCgXcw==}
+    engines: {node: '>=20.18.1'}
+
   unified@11.0.5:
     resolution: {integrity: sha512-xKvGhPWw3k84Qjh8bI3ZeJjqnyadK+GEFtazSfZv/rKeTkTjOJho6mFqh2SM96iIcZokxiOpg78GazTSg8+KHA==}
 
@@ -4181,8 +4188,9 @@ snapshots:
 
   obug@2.2.1: {}
 
-  openai@7.28.0(ws@8.22.0)(zod@4.6.5):
+  openai@7.28.0(undici@7.18.2)(ws@8.22.0)(zod@4.6.5):
     optionalDependencies:
+      undici: 7.18.2
       ws: 8.22.0
       zod: 4.6.5
 
@@ -4515,6 +4523,8 @@ snapshots:
       '@typescript/typescript-win32-x64': 7.0.2
 
   undici-types@8.9.0: {}
+
+  undici@7.18.2: {}
 
   unified@11.0.5:
     dependencies:
