@@ -9,7 +9,8 @@ So nothing here needs a particular one. `CLAUDE.md` only imports this file.
 Start with the section "Plan to all clear" at the top of `docs/backlog.md`: that file is the single version of what is
 pending, and the section is the working memory of whichever agent runs the session. Read it first in every session and
 after any context compression, and update its "Where we are" in the same commit as the work (the owner, 2026-10-23;
-ADR-0107's Later note of that day).
+ADR-0107's Later note of that day). Keep its rows in the form its section "How this file is kept" sets (the format test
+holds it), and publish the Route Map only from it: `node scripts/route-map.ts <out.html>`.
 
 byway's records say what is decided and what is open: `docs/playbook.md` (people and roles, the outside actions and
 the standing duties), `docs/backlog.md` (open work, each row with its trigger) and `docs/adr/` (the decisions, with
