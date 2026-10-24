@@ -1,6 +1,6 @@
 # Conversation record, continued (decision evidence)
 
-What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-23 13:37 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block), on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, from 14:06 to 20:07 local, for the sweep of unfiled items, and at 22:49 local, for the launch checklist) and on 2026-10-23 (from 01:18 to 02:20 local, for the records pass of block 2's fix round, from 03:40 to 09:06 local, for the records pass of its second fix round, from 09:59 to 10:10 local, for that round's last answer, from 10:54 to 11:07 local, for the answer to its re-check, and from 11:17 to 12:28 local, for the records pass after block 2's merge, and from 12:35 to 13:37 local, for the plan to all clear) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
+What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-23 20:22 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block), on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, from 14:06 to 20:07 local, for the sweep of unfiled items, and at 22:49 local, for the launch checklist) and on 2026-10-23 (from 01:18 to 02:20 local, for the records pass of block 2's fix round, from 03:40 to 09:06 local, for the records pass of its second fix round, from 09:59 to 10:10 local, for that round's last answer, from 10:54 to 11:07 local, for the answer to its re-check, and from 11:17 to 12:28 local, for the records pass after block 2's merge, from 12:35 to 13:37 local, for the plan to all clear, and from 13:44 to 20:22 local, for the backlog sync) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
 
 How it differs from conversation.md:
 
@@ -858,3 +858,70 @@ is it 60 or is it 43?
 ---
 ## USER 2026-10-23T13:37:52.583-07:00 (2026-10-23T20:37:52.583Z)
 so then what are the 296 items in the backlog and playbook listed in Route Map?
+
+---
+## CLAUDE-ASKS 2026-10-23T13:44:23.253-07:00 (2026-10-23T20:44:23.253Z)
+[{"question":"fal reroutes a failed video job to 'an equivalent endpoint' by default, and byway's ledger would still show the endpoint it asked for. Should byway send fal's x-app-fal-disable-fallback header on every job?","header":"fal fallback","multiSelect":false,"options":[{"label":"Yes, turn fallbacks off (Recommended)","description":"The model a profile names is the only one that answers, as byway already does for OpenRouter (allow_fallbacks: false) and as its records and protocol say. A clip whose endpoint fails becomes a plain failed job, which fal's pricing page says is not billed; the clip is lost and the run says so. Added in the follow-up branch with a test that pins it; confirmed in fal's dashboard at the first C5 run."},{"label":"No, keep fal's fallbacks","description":"A clip may come from another endpoint, at a price byway did not choose, while the ledger shows the one asked for. The records (ADR-0102, the README, the protocol note) are corrected to say fal may reroute."}]}]
+
+---
+## USER 2026-10-23T13:54:35.241-07:00 (2026-10-23T20:54:35.241Z)
+[ANSWER] The user answered: "fal reroutes a failed video job to 'an equivalent endpoint' by default, and byway's ledger would still show the endpoint it asked for. Should byway send fal's x-app-fal-disable-fallback header on every job?"="Can the fall backs be decided by the user at the moment of failure?". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
+
+---
+## CLAUDE-ASKS 2026-10-23T13:54:52.870-07:00 (2026-10-23T20:54:52.870Z)
+[{"question":"fal can't ask you mid-failure; byway can, if fallbacks are off and byway itself asks when a clip fails. How should it go?","header":"fal fallback","multiSelect":false,"options":[{"label":"Fallbacks off now; 'ask me on failure' filed for C5 (Recommended)","description":"The follow-up branch sends the header, with a test, so a clip comes only from the endpoint byway chose and a failed one is unbilled. A failed clip does what any failed clip does today. A backlog row files the question-on-failure (retry, another model at its price, or stop), to be built before the first C5 run, which is after this phase."},{"label":"Fallbacks off, and build 'ask me on failure' now","description":"Both in the follow-up branch. More engine work (a new mid-run question for media steps) before the first live runs, though C4 and C3 make no clips."},{"label":"Keep fal's fallbacks","description":"fal may reroute a failed clip to another endpoint at its price; the records are corrected to say so."}]}]
+
+---
+## USER 2026-10-23T13:57:01.508-07:00 (2026-10-23T20:57:01.508Z)
+<!-- reply 1 -->
+> Meanwhile, I’m preparing the one question needed for step 3—about fal’s fallback header—before making the follow-up edits to fal.ts.
+
+what is this step 3? weren;t we discussing backlogs and stuff? how did this thing come in suddenly?
+
+---
+## USER 2026-10-23T13:57:01.519-07:00 (2026-10-23T20:57:01.519Z)
+[ANSWER] The user answered: "fal can't ask you mid-failure; byway can, if fallbacks are off and byway itself asks when a clip fails. How should it go?"="[User did not answer this question — they sent a message instead. Treat that message as their response; do not re-ask.]". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
+
+---
+## USER 2026-10-23T14:04:01.631-07:00 (2026-10-23T21:04:01.631Z)
+Is everything pushed to Gut remote? CI is red there. Windows check is still running but Linux run already reddened
+
+---
+## USER 2026-10-23T19:51:46.359-07:00 (2026-10-24T02:51:46.359Z)
+The Route Map numbers: 323, 91, 65, 18, 48, 115, 25 , and 0 (review items not addressed or filed), how does the math work here? something must add up to 323.
+
+Second piece: from the backlog on Git, what can YOU land today without needing any decisions from me? Or minimal decisions from me? Is that number still 18 + 48 = 66?
+
+And are we completely sure of the filters in the artifact? And aere these filters also represented in the backlog on Git because nothing in this artifact should be "artifact only" . everything has to flow from backlog file in Git. So if we need to do another sync cycle, now is the time. After this I don;t want to get into this thing again. 
+
+If this is already done in the last few runs where we were going back and forth on hygiene, say so.
+
+I also see that the items in backlog.md, some are numbered and some are not. Plus that file can benefit from a tabular format instead of bullets in sections that are not checklists.
+
+---
+## CLAUDE-ASKS 2026-10-23T19:54:00.143-07:00 (2026-10-24T02:54:00.143Z)
+[{"question":"Do the one-time sync this way: every pending item a row with an ID and the map's fields as columns, a fresh land-now/milestone/who judgment for the 258 open rows, the Route Map generated from backlog.md by a script, and a records test that keeps the format?","header":"Sync","multiSelect":false,"options":[{"label":"Yes, all of it, with the fresh judgment (Recommended)","description":"IDs and columns by script from the existing rows and the map's data; about four agents re-judge milestone, who and land now for the 258 open rows against main today (no refuters: records only); scripts/route-map generates the map from the backlog; a format test in the gate. Records and scripts only, so the gate and no adversarial check. Then 'what can you land today' is one filter on the backlog."},{"label":"Yes, but carry the map's values as they are","description":"Same format, generator and test, but the columns take the map's 18 October values, dated as such, with no re-judgment pass. Cheaper; the land-now column is stale until each row is next touched."},{"label":"Change the columns first","description":"Tell me which columns to add, drop or rename before anything is built."}]}]
+
+---
+## USER 2026-10-23T20:00:06.098-07:00 (2026-10-24T03:00:06.098Z)
+[ANSWER] The user answered: "Do the one-time sync this way: every pending item a row with an ID and the map's fields as columns, a fresh land-now/milestone/who judgment for the 258 open rows, the Route Map generated from backlog.md by a script, and a records test that keeps the format?"="We need to be careful with numbering/IDs. For example, there are items in backlog that already fall under findings like multiple entries or rows under Fxx where xx is some number. Similarly Release Actions section has multiple entries or rows under Rx where x is some number or the alphabet S in case of the row RS. In such cases we simply use Fxx (a), Fxx (b) type of numbering. That should eb the general rule that wherever some umbrella code is already available, we add a parenthetical to preserve the umbrella code and at the same time distinguish the component rows.
+
+With that understanding, go with your recommendation.". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
+
+---
+## USER 2026-10-23T20:09:34.397-07:00 (2026-10-24T03:09:34.397Z)
+<!-- reply 1 -->
+> there’s no separate map data left to drift.
+
+but right now, since the two aren;t synced, there might be things in the artifact that aren;t represented properly in backlog so this run will take care of that two way traffic? (and after that it is all one-way Git to Artifact)?
+
+---
+## USER 2026-10-23T20:13:19.231-07:00 (2026-10-24T03:13:19.231Z)
+<!-- reply 1 -->
+> ell me if you want either as a column
+
+they should be columns because that helps make the Git files readable too no?
+
+---
+## USER 2026-10-23T20:22:23.793-07:00 (2026-10-24T03:22:23.793Z)
+it was honest mistake.

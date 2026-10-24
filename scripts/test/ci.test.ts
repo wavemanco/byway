@@ -329,7 +329,7 @@ describe('branch and tag protection, as set on GitHub (ADR-0103 §8)', () => {
   // `gh api repos/wavemanco/byway/rulesets` on 2026-10-17: "Protect main" (~DEFAULT_BRANCH: deletion,
   // non_fast_forward) and "Protect tags" (~ALL tags: deletion, update, non_fast_forward), neither with a bypass actor.
   const adr = section(read('docs/adr/0103-adr-log-rule-and-ci.md'), '### 8. Branch protection, and what CR14 still lacks') ?? '';
-  const playbook = read('docs/playbook.md').split('\n').find((l) => l.startsWith('| **Public record for the charter**')) ?? '';
+  const playbook = read('docs/playbook.md').split('\n').find((l) => l.includes('| **Public record for the charter**')) ?? '';
 
   it('ADR-0103 says both rulesets exist, with their rules and no bypass list', () => {
     expect(adr).toContain('"Protect main"');

@@ -1,0 +1,512 @@
+<title>byway Route Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Overpass+Mono:wght@400;600&display=swap">
+<!--
+  The Route Map's template. scripts/route-map.ts fills window.DATA from docs/backlog.md and docs/playbook.md (and the
+  head commit), and nothing else: every item below is a row of those files. Keep this file ASCII (characters outside
+  it are written as \u escapes or entities), so the page reads the same however a browser guesses its encoding.
+-->
+<style>
+/* Layout: a wayfinding board. Milestones are routes, backlog rows are stops; a stop's shape and colour say its state. */
+:root {
+  --bg: #f2f3f1;            /* road-atlas paper, a hair of green */
+  --panel: #ffffff;
+  --ink: #1d2321;           /* asphalt ink */
+  --muted: #5d6662;
+  --rule: #d6dad6;
+  --accent: #7a4a26;        /* scenic-byway sign brown */
+  --accent-ink: #ffffff;
+  --ok: #2f7a4d;            /* can land now */
+  --stop: #b23b2a;          /* waits on another row */
+  --wait: #9a6a0c;          /* needs something not there today */
+  --ask: #2c5aa0;           /* a small choice of the owner's */
+  --done: #8a918d;
+  --chip: #e7eae7;
+  --focus: #2c5aa0;
+  --display: "Overpass", "Highway Gothic", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Overpass", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Overpass Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --s-1: 0.8125rem; --s0: 0.9375rem; --s1: 1.0625rem; --s2: 1.3rem; --s3: 1.75rem; --s4: 2.4rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141716; --panel: #1c201e; --ink: #e7e9e6; --muted: #a2aaa5; --rule: #323835;
+    --accent: #c98c5a; --accent-ink: #1a120c; --ok: #5fbf86; --stop: #ec7e6a; --wait: #e2b24e; --ask: #84aaf0; --done: #7c8480;
+    --chip: #262b29; --focus: #84aaf0; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141716; --panel: #1c201e; --ink: #e7e9e6; --muted: #a2aaa5; --rule: #323835;
+  --accent: #c98c5a; --accent-ink: #1a120c; --ok: #5fbf86; --stop: #ec7e6a; --wait: #e2b24e; --ask: #84aaf0; --done: #7c8480;
+  --chip: #262b29; --focus: #84aaf0; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: var(--s0); line-height: 1.5; margin: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 56px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: var(--s4); font-weight: 800; line-height: 1.05; }
+h2 { font-size: var(--s3); font-weight: 800; line-height: 1.1; }
+h3 { font-size: var(--s1); font-weight: 700; line-height: 1.25; }
+p { margin: 0; }
+a { color: var(--accent); }
+button { font: inherit; color: inherit; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--chip); padding: 0 4px; border-radius: 3px; overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mono { font-family: var(--mono); font-size: var(--s-1); }
+.muted { color: var(--muted); }
+.label { font-family: var(--display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+
+/* Header: a guide sign. */
+.sign { display: grid; gap: 14px; grid-template-columns: 1fr; align-items: end; padding-block: 8px 18px; border-bottom: 3px solid var(--ink); }
+.sign .plate { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: var(--accent-ink); font-family: var(--display); font-weight: 800; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 10px 3px; border-radius: 4px; width: max-content; }
+.sign .plate .shield { width: 14px; height: 16px; background: var(--accent-ink); clip-path: polygon(50% 0, 100% 18%, 92% 72%, 50% 100%, 8% 72%, 0 18%); }
+.sign .lede { max-width: 68ch; color: var(--muted); font-size: var(--s1); }
+.asof { font-family: var(--mono); font-size: var(--s-1); color: var(--muted); overflow-wrap: anywhere; }
+
+/* Mile markers: the numbers, as sums that add up. */
+.strips { display: grid; gap: 14px; margin-block: 18px 6px; }
+.strip { display: grid; gap: 6px; min-width: 0; }
+.eq { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.op { align-self: center; font-family: var(--display); font-weight: 800; font-size: var(--s2); color: var(--muted); flex: none; }
+.marker { flex: 1 1 96px; min-width: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; display: grid; gap: 2px; text-align: left; cursor: pointer; align-content: start; }
+.marker:hover { border-color: var(--ink); }
+.marker.static { cursor: default; }
+.marker.static:hover { border-color: var(--rule); }
+.marker b { font-family: var(--display); font-size: var(--s3); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.marker span { color: var(--muted); font-size: var(--s-1); }
+
+/* Tabs. */
+.tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); display: flex; gap: 4px; overflow-x: auto; padding-block: 10px; border-bottom: 1px solid var(--rule); margin-bottom: 18px; scrollbar-width: thin; }
+.tab { flex: none; border: 1px solid transparent; background: transparent; border-radius: 999px; padding: 6px 14px 4px; font-family: var(--display); font-weight: 700; cursor: pointer; color: var(--muted); }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+.tab:hover:not([aria-selected="true"]) { border-color: var(--rule); color: var(--ink); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; font-size: var(--s-1); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Stops. */
+.stop { width: 14px; height: 14px; flex: none; display: inline-block; }
+.st-ready { background: var(--ok); border-radius: 50%; }
+.st-blocked { background: var(--stop); border-radius: 2px; }
+.st-waiting { border: 3px solid var(--wait); border-radius: 50%; background: var(--panel); }
+.st-choice { background: var(--ask); transform: rotate(45deg) scale(0.85); border-radius: 2px; }
+
+/* Routes. */
+.routes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 16px; align-items: start; }
+.route { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; min-width: 0; }
+.route.primary { border: 2px solid var(--accent); }
+.route header { padding: 14px 16px 12px; display: grid; gap: 6px; border-bottom: 1px solid var(--rule); }
+.route .when { font-family: var(--mono); font-size: var(--s-1); color: var(--accent); }
+.route .status { color: var(--muted); font-size: var(--s-1); }
+.route .none { padding: 12px 16px 14px; color: var(--muted); font-size: var(--s-1); }
+.line { list-style: none; margin: 0; padding: 12px 16px 14px; display: grid; gap: 0; }
+.line li { position: relative; display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; padding-block: 7px; }
+.line li::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 3px; background: var(--rule); }
+.line li:first-child::before { top: 14px; }
+.line li:last-child::before { bottom: calc(100% - 14px); }
+.line li .stop { position: relative; z-index: 1; margin-top: 3px; margin-left: 4px; }
+button.go { text-align: left; background: none; border: 0; padding: 0; cursor: pointer; display: grid; gap: 2px; min-width: 0; }
+button.go:hover .t { text-decoration: underline; text-underline-offset: 3px; }
+.line .t { font-size: var(--s0); line-height: 1.35; overflow-wrap: anywhere; }
+.who { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
+/* Cards and lists. */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; display: grid; gap: 10px; min-width: 0; align-content: start; }
+.card .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.72rem; padding: 2px 8px 1px; border-radius: 999px; background: var(--chip); color: var(--ink); white-space: nowrap; }
+.pill.ok { background: color-mix(in srgb, var(--ok) 18%, var(--panel)); }
+.pill.stop { background: color-mix(in srgb, var(--stop) 18%, var(--panel)); }
+.pill.wait { background: color-mix(in srgb, var(--wait) 22%, var(--panel)); }
+.pill.ask { background: color-mix(in srgb, var(--ask) 18%, var(--panel)); }
+.pill.accent { background: var(--accent); color: var(--accent-ink); }
+.pill.done { background: color-mix(in srgb, var(--done) 30%, var(--panel)); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--rule); background: var(--bg); border-radius: 4px; padding: 3px 8px 2px; font-size: var(--s-1); cursor: pointer; text-align: left; max-width: 100%; overflow-wrap: anywhere; }
+.chip:hover { border-color: var(--ink); }
+.chip .cid { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); margin-right: 6px; }
+span.chip { cursor: default; }
+span.chip:hover { border-color: var(--rule); }
+.chip.isdone { color: var(--muted); }
+.chip.isdone::before { content: "\2713\00a0"; color: var(--ok); font-weight: 700; }
+.chip.missing { color: var(--stop); border-style: dashed; }
+/* Priority: ink for high, an outline for medium, a dashed outline for low; apart from the state colours of the stops. */
+.prio { display: inline-block; font-family: var(--mono); font-size: 0.68rem; font-weight: 600; line-height: 1.35; padding: 0 5px; border-radius: 3px; border: 1px solid var(--rule); color: var(--muted); white-space: nowrap; vertical-align: 1px; }
+.prio.p-high { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.prio.p-medium { border-color: var(--muted); color: var(--ink); }
+.prio.p-low { border-style: dashed; }
+.chip .prio { margin-right: 6px; }
+.who .prio { margin-right: 2px; }
+.queue { display: grid; gap: 10px; }
+.qrow { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; display: grid; grid-template-columns: 2.2rem 1fr; gap: 10px; align-items: start; }
+.qrow .n { font-family: var(--display); font-weight: 800; font-size: var(--s2); color: var(--accent); font-variant-numeric: tabular-nums; }
+.qrow .body { display: grid; gap: 6px; min-width: 0; }
+.qrow .go .t { font-weight: 700; font-size: var(--s0); overflow-wrap: anywhere; }
+.bar { height: 6px; border-radius: 3px; background: var(--chip); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--ask); }
+
+/* Checklists. */
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.checks li { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; display: grid; grid-template-columns: 1.4rem 1fr; gap: 8px; align-items: start; }
+.checks .txt { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.box { width: 16px; height: 16px; border: 2px solid var(--muted); border-radius: 3px; margin-top: 3px; display: grid; place-items: center; font-size: 11px; line-height: 1; color: var(--panel); font-weight: 800; }
+.box.on { background: var(--ok); border-color: var(--ok); }
+.checks li.ticked .txt > p { color: var(--muted); }
+
+/* Table. */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.filters input, .filters select { font: inherit; font-size: var(--s-1); padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--ink); min-width: 0; max-width: 100%; }
+.filters input { flex: 1 1 220px; }
+.filters select { flex: 0 1 auto; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: var(--s-1); }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); position: sticky; top: 0; background: var(--panel); }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--bg); }
+td .t { font-weight: 600; }
+td.wide { min-width: 16rem; }
+.count { color: var(--muted); font-size: var(--s-1); margin-bottom: 8px; }
+
+/* Detail drawer. */
+.scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 35%, transparent); z-index: 20; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%); background: var(--panel); z-index: 21; border-left: 1px solid var(--rule); display: grid; grid-template-rows: auto 1fr; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.drawer header { display: flex; justify-content: space-between; gap: 12px; align-items: start; padding: 16px 18px 12px; border-bottom: 1px solid var(--rule); }
+.drawer header > div { min-width: 0; overflow-wrap: anywhere; }
+.drawer .body { overflow-y: auto; padding: 16px 18px 28px; display: grid; gap: 14px; align-content: start; }
+.drawer dl { display: grid; grid-template-columns: 8.5rem 1fr; gap: 6px 12px; margin: 0; }
+.drawer dt { color: var(--muted); font-size: var(--s-1); }
+.drawer dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.close { border: 1px solid var(--rule); background: var(--bg); border-radius: 6px; padding: 4px 10px 2px; cursor: pointer; }
+.section { display: grid; gap: 14px; }
+.section + .section { margin-top: 28px; }
+.intro { max-width: 72ch; color: var(--muted); }
+ul.plain { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
+.empty { padding: 18px; border: 1px dashed var(--rule); border-radius: 8px; color: var(--muted); }
+@media (max-width: 640px) {
+  h1 { font-size: var(--s3); }
+  .drawer dl { grid-template-columns: 1fr; }
+  .marker b { font-size: var(--s2); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .drawer { animation: slide 160ms ease-out; }
+  @keyframes slide { from { transform: translateX(24px); opacity: 0.6; } }
+}
+</style>
+
+<div class="wrap">
+  <header class="sign">
+    <span class="plate"><i class="shield"></i>byway &middot; backlog</span>
+    <h1>Where the backlog leads, and what stands in the way</h1>
+    <p class="lede" id="lede"></p>
+    <p class="asof" id="asof"></p>
+  </header>
+
+  <div class="strips" id="markers"></div>
+
+  <nav class="tabs" role="tablist" aria-label="Views" id="tabs"></nav>
+
+  <main id="views"></main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dtitle" hidden>
+  <header><div><p class="label" id="dkind"></p><h3 id="dtitle"></h3></div><button class="close" id="dclose" type="button">Close</button></header>
+  <div class="body" id="dbody"></div>
+</aside>
+
+<script>
+window.DATA = /*DATA*/null;
+</script>
+<script>
+(() => {
+  const D = window.DATA;
+  const $ = (s, el = document) => el.querySelector(s);
+  const h = (tag, attrs = {}, ...kids) => {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const k of kids.flat(Infinity)) if (k != null && k !== false) el.append(k.nodeType ? k : document.createTextNode(String(k)));
+    return el;
+  };
+  const DOT = ' \u00b7 ';
+
+  const items = new Map(D.items.map((i) => [i.id, i]));
+  const closedIds = new Set(D.doneIds);
+  const MS = new Map(D.milestones.map((m) => [m.id, m]));
+  const msLabel = (m) => MS.get(m)?.label || m;
+  const msRank = (m) => { const k = D.milestones.findIndex((x) => x.id === m); return k < 0 ? D.milestones.length : k; };
+
+  // Repository links, only when the generator was given a link base; otherwise paths are named, not linked.
+  const repoPath = (from, target) => { const parts = from.split('/').slice(0, -1); for (const p of target.split('/')) { if (p === '..') parts.pop(); else if (p !== '.' && p !== '') parts.push(p); } return parts.join('/'); };
+  const repoLink = (p, text) => D.linkBase ? h('a', { href: `${D.linkBase}/${p}`, target: '_blank', rel: 'noopener noreferrer' }, text) : h('code', {}, text);
+
+  /** The backlog's inline Markdown as nodes: bold, emphasis, code, links and line breaks; never as HTML. */
+  function md(text, from = 'docs/backlog.md') {
+    const s = String(text ?? '');
+    const out = [];
+    const re = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|(<br\s*\/?>)|\*([^*\s][^*]*)\*/gi;
+    let last = 0, m;
+    while ((m = re.exec(s))) {
+      if (m.index > last) out.push(s.slice(last, m.index));
+      if (m[1] !== undefined) out.push(h('strong', {}, m[1]));
+      else if (m[2] !== undefined) out.push(h('code', {}, m[2]));
+      else if (m[3] !== undefined) {
+        const url = m[4];
+        if (/^https?:\/\//i.test(url)) out.push(h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, m[3]));
+        else if (D.linkBase && !/^[a-z][a-z0-9+.-]*:/i.test(url)) { const [file, anchor] = url.split('#'); out.push(h('a', { href: `${D.linkBase}/${file ? repoPath(from, file) : from}${anchor ? `#${anchor}` : ''}`, target: '_blank', rel: 'noopener noreferrer' }, m[3])); }
+        else out.push(h('span', { title: url }, m[3]));
+      } else if (m[5] !== undefined) out.push(h('br'));
+      else out.push(h('em', {}, m[6]));
+      last = re.lastIndex;
+    }
+    if (last < s.length) out.push(s.slice(last));
+    return out;
+  }
+  const plain = (s) => String(s ?? '').replace(/\*\*|`/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/<br\s*\/?>/gi, ' ');
+
+  const STATE = { ready: ['st-ready', 'Can land now'], choice: ['st-choice', 'Waits on a small choice of yours'], blocked: ['st-blocked', 'Waits on another open row'], waiting: ['st-waiting', 'Needs something not there today'] };
+  const stateOf = (i) => i.landNow === 'yes' ? 'ready' : i.landNow === 'maybe' ? 'choice' : i.waitsOn.some((w) => items.has(w)) ? 'blocked' : 'waiting';
+  const stop = (s) => h('i', { class: `stop ${STATE[s][0]}`, 'aria-hidden': 'true' });
+  const LAND = { yes: ['ok', 'yes'], maybe: ['ask', 'small choice'], no: ['', 'no'] };
+  const STATUS = { open: ['', 'open'], partly: ['wait', 'partly'] };
+  const landPill = (i) => h('span', { class: `pill ${LAND[i.landNow][0]}` }, `Land now: ${LAND[i.landNow][1]}`);
+  const statusPill = (i) => h('span', { class: `pill ${(STATUS[i.status] || STATUS.open)[0]}` }, i.status);
+  // Values in the format's order (D.priorities, D.triggerTypes), any value outside it after them.
+  const rankIn = (order, v) => { const k = order.indexOf(v); return k < 0 ? order.length : k; };
+  const inOrder = (vals, order) => [...vals].sort((a, b) => rankIn(order, a) - rankIn(order, b) || (a < b ? -1 : a > b ? 1 : 0));
+  const prioRank = (p) => rankIn(D.priorities, p);
+  const prio = (i) => h('span', { class: `prio p-${D.priorities.includes(i.priority) ? i.priority : 'other'}`, title: `Priority: ${i.priority}` }, i.priority);
+
+  /** A row's chip: opens the row; a closed row (named in the Done table) or an ID no row has is shown as such. */
+  function chipFor(id) {
+    const it = items.get(id);
+    if (it) return h('button', { class: 'chip', type: 'button', onclick: () => openItem(id), 'aria-label': `${id}, priority ${it.priority}: ${plain(it.title)}` }, h('span', { class: 'cid' }, id), prio(it), plain(it.title));
+    if (closedIds.has(id)) return h('span', { class: 'chip isdone', title: 'Closed: in the Done table' }, `${id} (closed)`);
+    return h('span', { class: 'chip missing', title: 'No row has this ID' }, `${id} (no such row)`);
+  }
+
+  // Header.
+  $('#lede').textContent = D.lede;
+  $('#asof').textContent = D.asOf;
+
+  // Mile markers: two sums that add up, then subsets of the open rows, then checklist lines.
+  const C = D.counts;
+  const filters = { q: '', status: '', priority: '', land: '', who: '', milestone: '', size: '', kind: '', trigger: '', waits: '', file: '', filed: '' };
+  const clearFilters = () => { for (const k of Object.keys(filters)) filters[k] = ''; };
+  const go = (tab, f = {}) => () => { clearFilters(); Object.assign(filters, f); show(tab); };
+  // A marker with no view of its own (rows in all: no view lists closed and open rows together) is not a button.
+  const marker = (n, text, onclick) => onclick ? h('button', { class: 'marker', type: 'button', onclick }, h('b', {}, String(n)), h('span', {}, text)) : h('div', { class: 'marker static' }, h('b', {}, String(n)), h('span', {}, text));
+  const op = (s) => h('span', { class: 'op', 'aria-hidden': 'true' }, s);
+  const strip = (title, ...kids) => h('section', { class: 'strip', 'aria-label': title }, h('p', { class: 'label' }, title), h('div', { class: 'eq' }, kids));
+  const firstLive = D.routes.find((r) => r.id === 'first-live-use');
+  $('#markers').append(
+    strip(`Rows in all = closed + open (${C.total} = ${C.closed} + ${C.open})`,
+      marker(C.total, 'rows in all', null), op('='), marker(C.closed, 'closed (the Done table)', go('done')), op('+'), marker(C.open, 'open (pending rows)', go('items'))),
+    strip(`The open rows by Land now (${C.open} = ${C.land.yes} + ${C.land.maybe} + ${C.land.no})`,
+      marker(C.open, 'open', go('items')), op('='), marker(C.land.yes, 'yes: an agent can land it now', go('land')), op('+'), marker(C.land.maybe, 'small choice: after one choice of yours', go('queue')), op('+'), marker(C.land.no, 'no: needs something not there today', go('waiting'))),
+    strip(`Subsets of the ${C.open} open rows (they overlap)`,
+      marker(C.needYou, 'need you (Who is owner or both)', go('items', { who: 'owner-or-both' })), marker(C.waitsOnRow, 'wait on another open row', go('items', { waits: 'yes' })), marker(firstLive ? firstLive.stops.length : 0, 'on the first-live-use route', go('routes')), marker(C.noMilestone, 'no milestone (wait for their trigger)', go('items', { milestone: 'none' }))),
+    strip('Checklist lines (lines, not rows)',
+      marker(C.launchList.open, `Launch checklist lines open, of ${C.launchList.lines}`, go('launch')), marker(C.review.open, `Review checklist lines open, of ${C.review.lines}`, go('review'))),
+  );
+
+  // Tabs.
+  const TABS = [['routes', 'Routes'], ['land', 'Land now'], ['queue', 'Your queue'], ['waiting', 'Waiting on'], ['items', 'All open rows'], ['launch', 'Launch checklist'], ['review', 'Review checklist'], ['done', 'Done']];
+  const tabs = $('#tabs'), views = $('#views');
+  for (const [id, name] of TABS) tabs.append(h('button', { class: 'tab', role: 'tab', id: `tab-${id}`, 'aria-selected': 'false', 'aria-controls': 'views', type: 'button', onclick: () => { clearFilters(); show(id); } }, name));
+  function show(id) {
+    for (const b of tabs.children) b.setAttribute('aria-selected', String(b.id === `tab-${id}`));
+    views.replaceChildren(RENDER[id]());
+    try { localStorage.setItem('byway-routemap-tab', id); } catch {}
+    try { if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`); } catch {}
+  }
+
+  // Which checklist lines name a row.
+  const namedBy = new Map();
+  for (const [list, name] of [[D.launchList, 'Launch checklist'], [D.review, 'Review checklist']]) for (const g of list) for (const l of g.lines) for (const id of l.ids) { if (!namedBy.has(id)) namedBy.set(id, []); namedBy.get(id).push({ list: name, group: g.group, line: l }); }
+
+  // Detail drawer.
+  const drawer = $('#drawer'), scrim = $('#scrim');
+  let lastFocus = null;
+  function openItem(id) {
+    const it = items.get(id);
+    if (!it) return;
+    lastFocus = document.activeElement;
+    $('#dkind').textContent = `${it.id}${DOT}${it.kind}${DOT}${it.section}`;
+    $('#dtitle').replaceChildren(...md(it.title, it.file));
+    const body = $('#dbody');
+    body.replaceChildren();
+    const dl = h('dl');
+    const row = (k, ...v) => dl.append(h('dt', {}, k), h('dd', {}, v));
+    row('Status', statusPill(it));
+    row('Priority', prio(it));
+    row('Land now', landPill(it), it.landNowWhy ? [' ', md(it.landNowWhy, it.file)] : null);
+    row('Who', it.who, it.ownerNeeded ? ' (needs you)' : '');
+    row('Milestone', it.milestones.map((m, k) => `${msLabel(m)}${k === 0 && it.milestones.length > 1 ? ' (main)' : ''}`).join('; '));
+    row('Trigger type', it.triggerType);
+    row('Trigger', md(it.trigger, it.file));
+    row('Size', it.size);
+    row('Filed', it.filed);
+    row('Where', D.linkBase ? h('a', { href: `${D.linkBase}/${it.file}#L${it.line}`, target: '_blank', rel: 'noopener noreferrer' }, `${it.file}, line ${it.line}`) : `${it.file}, line ${it.line}`);
+    row('Files', md(it.files, it.file));
+    body.append(dl);
+    body.append(h('div', { class: 'section' }, h('p', { class: 'label' }, 'Details'), h('p', {}, md(it.details, it.file))));
+    const links = (title, ids) => { if (!ids?.length) return; body.append(h('div', { class: 'section' }, h('p', { class: 'label' }, title), h('div', { class: 'chips' }, ids.map(chipFor)))); };
+    links('Waits on', it.waitsOn);
+    links('Rows that wait on this one', it.unlocks);
+    const named = namedBy.get(id);
+    if (named?.length) body.append(h('div', { class: 'section' }, h('p', { class: 'label' }, 'Named by checklist lines'), h('ul', { class: 'plain' }, named.map((n) => h('li', {}, `${n.line.checked ? '[x] ' : '[ ] '}${n.list}${n.group ? `, ${n.group}` : ''}: `, md(n.line.text))))));
+    drawer.hidden = false; scrim.hidden = false;
+    $('#dclose').focus();
+  }
+  function closeItem() { drawer.hidden = true; scrim.hidden = true; lastFocus?.focus?.(); }
+  $('#dclose').addEventListener('click', closeItem);
+  scrim.addEventListener('click', closeItem);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !drawer.hidden) closeItem(); });
+
+  const legend = () => h('div', { class: 'legend' }, Object.entries(STATE).map(([k, [, t]]) => h('span', {}, stop(k), t)), h('span', {}, 'Priority:', D.priorities.map((p) => prio({ priority: p }))));
+  const ofOpen = (n) => `${n} of the ${C.open} open rows`;
+  const sizes = (ids) => { const n = {}; for (const id of ids) { const s = items.get(id)?.size || '?'; n[s] = (n[s] || 0) + 1; } return ['S', 'M', 'L', 'XL', '?'].filter((s) => n[s]).map((s) => `${n[s]} ${s}`).join(', '); };
+  const checkList = (lines) => h('ul', { class: 'checks' }, lines.map((l) => h('li', { class: l.checked ? 'ticked' : '' },
+    h('span', { class: `box${l.checked ? ' on' : ''}`, role: 'img', 'aria-label': l.checked ? 'ticked' : 'open' }, l.checked ? '\u2713' : ''),
+    h('div', { class: 'txt' }, h('p', {}, md(l.text)), l.ids.length ? h('div', { class: 'chips' }, l.ids.map(chipFor)) : h('p', { class: 'muted' }, `Names no row (docs/backlog.md, line ${l.line}).`)))));
+
+  const RENDER = {
+    routes() {
+      const wrap = h('div', { class: 'section' });
+      wrap.append(h('p', { class: 'intro' }, `Each milestone is a route, and its stops are the open rows whose Milestone names it, each after the rows it waits on, the ones that can land first, then the higher priority. A row with several milestones is on each of their routes. The ${C.noMilestone} open rows whose Milestone is none wait only for their trigger and are on no route (Waiting on and All open rows have them). Select a stop to see its row.`), legend());
+      const grid = h('div', { class: 'routes' });
+      for (const r of D.routes) {
+        const n = (k) => r.stops.filter((id) => items.get(id)?.landNow === k).length;
+        grid.append(h('section', { class: `route${r.id === 'first-live-use' ? ' primary' : ''}`, 'aria-labelledby': `r-${r.id}` },
+          h('header', {}, h('p', { class: 'when' }, r.id), h('h3', { id: `r-${r.id}` }, r.label), h('p', { class: 'status' }, r.stops.length ? `${r.stops.length} open rows: ${n('yes')} can land now, ${n('maybe')} wait on a small choice, ${n('no')} not now.` : 'No open row names this milestone.')),
+          r.stops.length ? h('ol', { class: 'line' }, r.stops.map((id) => { const it = items.get(id); const s = stateOf(it); return h('li', {}, stop(s), h('button', { class: 'go', type: 'button', onclick: () => openItem(id), 'aria-label': `${id}: ${plain(it.title)}. ${STATE[s][1]}. Priority: ${it.priority}. Who: ${it.who}` }, h('span', { class: 't' }, plain(it.title)), h('span', { class: 'who' }, prio(it), ` ${id}${DOT}${it.who}${DOT}${STATE[s][1].toLowerCase()}`))); })) : null));
+      }
+      wrap.append(grid);
+      return wrap;
+    },
+    land() {
+      const wrap = h('div', { class: 'section' });
+      wrap.append(h('p', { class: 'intro' }, `The rows whose Land now is yes: an agent can do each today, with no decision or action of yours, nothing open it waits on, and nothing it needs missing. ${ofOpen(C.land.yes)}, grouped by their main milestone (the first their Milestone names), the higher priority first in each.`));
+      if (!D.landNow.length) wrap.append(h('p', { class: 'empty' }, 'No open row can land now.'));
+      const grid = h('div', { class: 'grid2' });
+      for (const g of D.landNow) grid.append(h('section', { class: 'card' },
+        h('div', { class: 'meta' }, h('span', { class: 'pill accent' }, g.milestone), h('span', { class: 'pill' }, `${g.ids.length} rows`), h('span', { class: 'pill' }, sizes(g.ids))),
+        h('h3', {}, g.label),
+        h('div', { class: 'chips' }, g.ids.map(chipFor))));
+      wrap.append(grid);
+      return wrap;
+    },
+    queue() {
+      const wrap = h('div', { class: 'section' });
+      const all = [...D.queue.smallChoice, ...D.queue.needYou];
+      const max = Math.max(1, ...all.map((id) => items.get(id).unlocks.length));
+      wrap.append(h('p', { class: 'intro' }, `Your queue: ${ofOpen(C.queue)}. First the ${D.queue.smallChoice.length} rows whose Land now is a small choice, with the choice, the higher priority first, then the ones that open up more rows; then the ${D.queue.needYou.length} other rows whose Who is owner or both, by milestone, and within one the higher priority first. The bar is the number of rows that wait on it directly.`));
+      const qrow = (id, k, extra) => { const it = items.get(id); return h('div', { class: 'qrow' }, h('span', { class: 'n' }, String(k + 1)), h('div', { class: 'body' },
+        h('button', { class: 'go', type: 'button', onclick: () => openItem(id) }, h('span', { class: 't' }, plain(it.title)), h('span', { class: 'who' }, prio(it), ` ${id}${DOT}who: ${it.who}${DOT}${it.milestones.join(', ')}${DOT}size ${it.size}`)),
+        extra(it),
+        it.unlocks.length ? [h('div', { class: 'bar', role: 'img', 'aria-label': `${it.unlocks.length} rows wait on it` }, h('i', { style: `width:${(it.unlocks.length / max) * 100}%` })), h('div', { class: 'chips' }, it.unlocks.map(chipFor))] : null)); };
+      wrap.append(h('h3', {}, `Small choices (${D.queue.smallChoice.length})`));
+      wrap.append(D.queue.smallChoice.length ? h('div', { class: 'queue' }, D.queue.smallChoice.map((id, k) => qrow(id, k, (it) => h('p', {}, h('strong', {}, 'Your choice: '), md(it.landNowWhy, it.file))))) : h('p', { class: 'empty' }, 'No row waits on a small choice.'));
+      wrap.append(h('h3', { style: 'margin-top:12px' }, `Other rows that need you (${D.queue.needYou.length})`));
+      wrap.append(D.queue.needYou.length ? h('div', { class: 'queue' }, D.queue.needYou.map((id, k) => qrow(id, k, (it) => h('p', {}, landPill(it), it.landNowWhy ? [' ', md(it.landNowWhy, it.file)] : null)))) : h('p', { class: 'empty' }, 'No other row needs you.'));
+      return wrap;
+    },
+    waiting() {
+      const wrap = h('div', { class: 'section' });
+      wrap.append(h('p', { class: 'intro' }, `The rows whose Land now is no, grouped by what each says it needs, the higher priority first in each: ${ofOpen(C.land.no)}. When that is there, they come back.`));
+      const grid = h('div', { class: 'grid2' });
+      for (const w of D.waiting) grid.append(h('section', { class: 'card' }, h('div', { class: 'meta' }, stop('waiting'), h('span', { class: 'pill wait' }, `${w.ids.length} rows`)), h('h3', {}, md(w.need)), h('div', { class: 'chips' }, w.ids.map(chipFor))));
+      wrap.append(grid);
+      return wrap;
+    },
+    items() {
+      const wrap = h('div', { class: 'section' });
+      const present = (f) => [...new Set(D.items.map(f).flat())];
+      const sel = (key, label, opts) => h('select', { 'aria-label': label, onchange: (e) => { filters[key] = e.target.value; draw(); } }, h('option', { value: '' }, label), opts.map(([v, t]) => h('option', { value: v, selected: filters[key] === v }, t)));
+      const q = h('input', { type: 'search', placeholder: 'Search IDs, items, triggers, details, files', 'aria-label': 'Search', value: filters.q, oninput: (e) => { filters.q = e.target.value; draw(); } });
+      wrap.append(h('div', { class: 'filters' }, q,
+        sel('status', 'Status', present((i) => i.status).sort().map((v) => [v, `Status: ${v}`])),
+        sel('priority', 'Priority', inOrder(present((i) => i.priority), D.priorities).map((v) => [v, `Priority: ${v}`])),
+        sel('land', 'Land now', [['yes', 'Land now: yes'], ['maybe', 'Land now: small choice'], ['no', 'Land now: no']]),
+        sel('who', 'Who', [...present((i) => i.who).sort().map((v) => [v, `Who: ${v}`]), ['owner-or-both', 'Who: owner or both (needs you)']]),
+        sel('milestone', 'Milestone', present((i) => i.milestones).sort((a, b) => msRank(a) - msRank(b)).map((m) => [m, `Milestone: ${m}`])),
+        sel('size', 'Size', inOrder(present((i) => i.size), ['S', 'M', 'L', 'XL']).map((v) => [v, `Size: ${v}`])),
+        sel('kind', 'Kind', present((i) => i.kind).sort().map((v) => [v, `Kind: ${v}`])),
+        sel('trigger', 'Trigger type', inOrder(present((i) => i.triggerType), D.triggerTypes).map((v) => [v, `Trigger type: ${v}`])),
+        sel('waits', 'Waits on', [['yes', 'Waits on: another row'], ['no', 'Waits on: none']]),
+        sel('file', 'File', present((i) => i.file).sort().map((v) => [v, v])),
+        // The days, latest first, then "before 2026-10-07".
+        sel('filed', 'Filed', present((i) => i.filed).sort((a, b) => { const da = /^\d{4}-/.test(a), db = /^\d{4}-/.test(b); return da !== db ? (da ? -1 : 1) : (a < b ? 1 : a > b ? -1 : 0); }).map((v) => [v, `Filed: ${v}`]))));
+      wrap.append(h('p', { class: 'muted', style: 'font-size:var(--s-1);margin-bottom:8px' }, 'Each filter is a column of the backlog\'s tables (Who: owner or both is the Who column\'s two values that need you); a row with several milestones matches each of them. The rows go by Land now, then main milestone, then priority, highest first.'));
+      const countEl = h('p', { class: 'count' });
+      const tbody = h('tbody');
+      wrap.append(countEl, h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['ID', 'Item', 'Status', 'Priority', 'Land now', 'Who', 'Milestone', 'Size', 'Kind', 'Trigger type', 'Trigger'].map((c) => h('th', { scope: 'col' }, c)))), tbody)));
+      const lorder = { yes: 0, maybe: 1, no: 2 };
+      const order = new Map(D.items.map((i, k) => [i.id, k]));
+      function draw() {
+        const q = filters.q.trim().toLowerCase();
+        const ok = (i) => (!filters.status || i.status === filters.status)
+          && (!filters.priority || i.priority === filters.priority)
+          && (!filters.land || i.landNow === filters.land)
+          && (!filters.who || (filters.who === 'owner-or-both' ? i.ownerNeeded : i.who === filters.who))
+          && (!filters.milestone || i.milestones.includes(filters.milestone))
+          && (!filters.size || i.size === filters.size)
+          && (!filters.kind || i.kind === filters.kind)
+          && (!filters.trigger || i.triggerType === filters.trigger)
+          && (!filters.waits || (filters.waits === 'yes') === i.waitsOn.some((w) => w !== i.id && items.has(w)))
+          && (!filters.file || i.file === filters.file)
+          && (!filters.filed || i.filed === filters.filed)
+          && (!q || `${i.id} ${i.title} ${i.trigger} ${i.details} ${i.files} ${i.landNowWhy}`.toLowerCase().includes(q));
+        const rows = D.items.filter(ok).sort((a, b) => lorder[a.landNow] - lorder[b.landNow] || msRank(a.milestones[0]) - msRank(b.milestones[0]) || prioRank(a.priority) - prioRank(b.priority) || order.get(a.id) - order.get(b.id));
+        countEl.textContent = `${rows.length} of the ${C.open} open rows`;
+        tbody.replaceChildren(...rows.map((i) => h('tr', { class: 'click', tabindex: '0', onclick: () => openItem(i.id), onkeydown: (e) => { if (e.key === 'Enter') openItem(i.id); } },
+          h('td', { class: 'mono' }, i.id),
+          h('td', { class: 'wide' }, h('div', { class: 't' }, plain(i.title)), h('div', { class: 'muted' }, i.section)),
+          h('td', {}, statusPill(i)),
+          h('td', {}, prio(i)),
+          h('td', {}, h('span', { class: `pill ${LAND[i.landNow][0]}` }, LAND[i.landNow][1])),
+          h('td', { class: 'mono' }, i.who),
+          h('td', { class: 'mono' }, i.milestones.join(', ')),
+          h('td', { class: 'mono' }, i.size),
+          h('td', { class: 'mono' }, i.kind),
+          h('td', { class: 'mono' }, i.triggerType),
+          h('td', { class: 'wide' }, plain(i.trigger)))));
+      }
+      draw();
+      return wrap;
+    },
+    launch() {
+      const wrap = h('div', { class: 'section' });
+      wrap.append(h('p', { class: 'intro' }, `docs/backlog.md's Launch checklist, line by line: what only a real run can settle, and what must be done before one. ${C.launchList.ticked} of its ${C.launchList.lines} lines are ticked. Each line names the rows it settles.`));
+      for (const g of D.launchList) wrap.append(h('div', { class: 'section' }, h('h3', {}, g.group || 'Launch checklist', ' ', h('span', { class: 'pill' }, `${g.lines.filter((l) => l.checked).length} of ${g.lines.length} ticked`)), checkList(g.lines)));
+      return wrap;
+    },
+    review() {
+      const wrap = h('div', { class: 'section' });
+      wrap.append(h('p', { class: 'intro' }, `docs/backlog.md's Review checklist: every item of the external review of 2026-10-08 that its trace left open, each with the row that carries it, or ticked with where it closed. ${C.review.ticked} of its ${C.review.lines} lines are ticked. The review and its verification: `, repoLink(D.reviewDoc, D.reviewDoc), '.'));
+      for (const g of D.review) wrap.append(h('div', { class: 'section' }, h('h3', {}, g.group || 'Review checklist', ' ', h('span', { class: 'pill' }, `${g.lines.filter((l) => l.checked).length} of ${g.lines.length} ticked`)), checkList(g.lines)));
+      return wrap;
+    },
+    done() {
+      const wrap = h('div', { class: 'section' });
+      wrap.append(h('p', { class: 'intro' }, `docs/backlog.md's table "Done since the route map of 2026-10-18": the ${C.closed} closed entries, counted as closed in the numbers above. A row that closes leaves its table for this one.`));
+      if (!D.done.entries.length) { wrap.append(h('p', { class: 'empty' }, 'The Done table has no entries.')); return wrap; }
+      wrap.append(h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, D.done.headers.map((c) => h('th', { scope: 'col' }, c)))), h('tbody', {}, D.done.entries.map((e) => h('tr', {}, D.done.headers.map((_, k) => h('td', { class: k === 0 ? 'wide' : '' }, k === 0 ? h('div', { class: 't' }, md(e.cells[k] ?? '')) : md(e.cells[k] ?? '')))))))));
+      return wrap;
+    },
+  };
+
+  let start = (location.hash || '').slice(1);
+  if (!TABS.some(([id]) => id === start)) { try { start = localStorage.getItem('byway-routemap-tab') || 'routes'; } catch { start = 'routes'; } }
+  if (!TABS.some(([id]) => id === start)) start = 'routes';
+  show(start);
+})();
+</script>
