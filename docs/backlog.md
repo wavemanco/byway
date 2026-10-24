@@ -23,7 +23,7 @@ This section is the working memory of whichever agent runs the session: read it 
 5. **The first live runs**, with the owner: C4 on Balanced, then C3 with its image; the price-table check at that session's start.
 6. **What the runs settle**: the Launch checklist's groups for those runs and "After the first live runs", and the Review checklist lines they close. Then all clear, by the definition above.
 
-**Where we are** (2026-10-23, 21:10 local): steps 1 and 2 done; the backlog sync of 2026-10-23 (the owner's request of 19:51, and the answers of 20:00, 20:09 and 20:13) done in this commit: every pending row of this file and the playbook has an ID and the columns of "How this file is kept", the Route Map is generated from them, and the format test holds them. 342 rows = 72 closed + 270 open; open = 71 land now + 26 small choice + 173 not now. Next: step 3, once the owner has said the plan is right (the owner asked at 13:57 what step 3 was, since the plan had not been shown before work on it began; not yet answered).
+**Where we are** (2026-10-23, 21:40 local): steps 1 and 2 done, and the backlog sync of 2026-10-23 (the owner's request of 19:51, and the answers of 20:00, 20:09 and 20:13) merged at 8b3c037, main's CI green on both machines (run 40061420969). Every pending row of this file and the playbook has an ID and the columns of "How this file is kept"; the Route Map is generated from them (v5, published from 8b3c037). 342 rows = 72 closed + 270 open; open = 72 land now + 26 small choice + 172 not now. Next: step 3, once the owner has said the plan is right (the owner asked at 13:57 what step 3 was, since the plan had not been shown before work on it began; not yet answered).
 
 ## How this file is kept
 
