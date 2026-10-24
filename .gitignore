@@ -32,3 +32,5 @@ coverage/
 apps/web/test-results/
 apps/web/playwright-report/
 apps/web/blob-report/
+# The Playwright MCP browser tool writes its logs into the folder its server started in (AGENTS.md, checks).
+.playwright-mcp/

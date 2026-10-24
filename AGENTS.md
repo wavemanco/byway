@@ -82,3 +82,38 @@ re-check (Recommended)", chose `--no-local` for future checks and the deletion o
 scratchpad. That the rule holds for every check is Claude's reading of the option's "future checks", and the ban on a
 plain local clone and `--no-hardlinks` comes from the first block's check (MI-5), not from the owner's words
 (ADR-0107's Later note of 2026-10-22 quotes the answer).
+
+Every check's agents stay in their clone or the session's scratch folder, never in the main checkout or its worktrees. Asked
+on 2026-10-23 how to stop check agents writing there, the owner chose at 12:51 "Brief rules + tripwire, in AGENTS.md
+(Recommended)", whose description read in part: "each command starts with its own cd into the clone, files are written by
+absolute path inside the clone or the scratchpad, nothing is backgrounded after a cd, and no Playwright browser tool in
+checks. .playwright-mcp/ goes in .gitignore. Before and after each check, the agent running the session compares the files in
+the main checkout and its worktrees, and reports and files anything new." So, in every check's brief and in your own commands:
+
+- start each shell command with its own `cd <your clone> &&`, or use absolute paths: a shell's working folder can reset
+  between commands to the session's, which may be inside the repository;
+- write every file by an absolute path inside your clone or the scratch folder;
+- never put `&` after a chain that starts with `cd`: it sends the whole chain, `cd` included, to the background, and the
+  rest runs where the shell started (this is how a check's browser suite ran in the coordinator's worktree on 2026-10-22);
+- use no browser-automation tool that writes into the folder its server started in (the Playwright MCP tool writes
+  `.playwright-mcp/` there); use the clone's own browser tests, or a browser whose output goes into the clone.
+
+Before a check starts and after it ends, list the main checkout's and its worktrees' untracked and ignored files (outside
+dependencies and build output, with their times), compare the two lists, and report to the owner and file anything new.
+That rule was to land with the follow-up branch (the option's "Built on the follow-up branch."); it was written here on
+2026-10-23 so that a session started elsewhere has it (Claude's choice).
+
+## The Route Map
+
+The Route Map is a claude.ai artifact, private to the owner: https://claude.ai/artifact/9s5b13pEXhZcJWXfKZKPBa. It holds
+nothing of its own. Generate it from the merged backlog with `node scripts/route-map.ts <out.html>` and publish that file at
+the same link after each records change that reaches main; an agent that cannot publish to claude.ai gives the file to the
+owner. The format it reads is `docs/backlog.md`'s "How this file is kept".
+
+## The conversation record
+
+`docs/adr/evidence/conversation-continued.md` holds the owner's own words and answers, which the records quote. A Claude Code
+session extends it from its own transcript (`~/.claude/projects/<project>/<session>.jsonl`) with
+`node scripts/extract-conversation.cjs <transcript.jsonl> <out.md>`, appending the entries after the record's last one; an agent
+of another provider copies the owner's messages and its own questions and answers by hand in the same form (backlog row
+"The conversation record is extended only from Claude Code's transcript").
