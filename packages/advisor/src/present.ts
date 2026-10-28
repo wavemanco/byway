@@ -108,14 +108,18 @@ export function stepLabel(n: Unit, near?: Pick_<Around, 'reactedTo'>): string {
  *
  * A step is described by what this version runs (ADR-0069): one with no executor yet (@byway/recipe hasNoExecutor: a
  * tool relay's compositing, voice-over audio, any other tool or policy step that is not a render) finishes skipped and
- * passes the work through, and its sentence says so. A machine writer inside an audit lens or a final check's body
- * drafts a version that never reaches the work (the plain sessions of an obvious-answer check), and never applies a
- * critique to it.
+ * passes the work through, and its sentence says so. So does an image or motion step where the profile it is presented
+ * for has no image or video model with a key (`Media`: the runner skips it then, mediaStatus). A machine writer inside
+ * an audit lens or a final check's body drafts a version that never reaches the work (the plain sessions of an
+ * obvious-answer check), and never applies a critique to it.
+ *
+ * A pick takes every option, and asks no one, when it has no more than it keeps (the interpreter's pick): how many
+ * reach it is run data (a merge of near-duplicates can leave fewer), so each pick sentence says so.
  */
 export const COMPOSED_EXPLAINERS = {
-  pickYours: 'Your turn: choose what to keep.',
-  pickAi: 'The AI chooses what to keep.',
-  pickRandom: 'Chosen at random; no one compares them.',
+  pickYours: 'Your turn: choose what to keep. With no more options than it keeps, every one goes on and you are not asked.',
+  pickAi: 'The AI chooses what to keep. With no more options than it keeps, every one goes on.',
+  pickRandom: 'Chosen at random; no one compares them. With no more options than it keeps, every one goes on.',
   seed: 'Separate sessions, each told to take its direction from its own random string.',
   seedOne: 'One session, told to take its direction from its own random string.',
   visionYours: 'Your turn: say what you want, what pulls you and what to avoid.',
@@ -130,6 +134,8 @@ export const COMPOSED_EXPLAINERS = {
   compositingSkipped: 'Not available in this version: compositing is skipped, and the work passes through unchanged.',
   audioSkipped: 'Not available in this version: no voice-over audio is made, and the work passes through unchanged.',
   skipped: 'Not available in this version: this step is skipped, and the work passes through unchanged.',
+  imagesSkipped: 'Not available with this profile: it has no image model with a key, so no images are made and the work passes through unchanged.',
+  videoSkipped: 'Not available with this profile: it has no video model with a key, so no clip is made and the work passes through unchanged.',
   cutYoursApplies: 'Your turn: list what the work could lose, and the AI removes it.',
   cutYours: 'Your turn: mark what the work could lose.',
   cutApplies: 'A fresh reviewer lists what the work could lose, and the AI removes it.',
@@ -192,6 +198,15 @@ interface Around {
    * loop round or relay link runs the step again before the writer has taken its findings in.
    */
   everyRun(step: Step, writer: Step): boolean;
+}
+
+/**
+ * What the profile a recipe is presented for can make (ProfileStatus): without an image or video model with a key, its
+ * image and motion steps finish skipped. Left out, the steps are described as they run where the profile has both.
+ */
+export interface Media {
+  images: boolean;
+  video: boolean;
 }
 
 /** TypeScript's `Pick`, which the recipe's `Pick` node type shadows here. */
@@ -258,11 +273,14 @@ type Asks = 'every' | 'some' | 'none';
  * One plain sentence on what a shown step does, from its lead node; `applies` when a writer shown with it applies its
  * findings, `asks` where the person chooses which of a cliché sweep's finds are applied.
  */
-function explainer(n: Unit, applies: boolean, asks: Asks, medium: Recipe['medium'], near: Around): string {
+function explainer(n: Unit, applies: boolean, asks: Asks, medium: Recipe['medium'], near: Around, media?: Media): string {
   const E = COMPOSED_EXPLAINERS;
   if (n.op === 'pick') return n.mode === 'H' ? E.pickYours : n.mode === 'R' ? E.pickRandom : E.pickAi;
   if (n.actor === 'human') return yoursExplainer(n, applies, medium, near);
   if (hasNoExecutor(n)) return audioAsset(n) ? E.audioSkipped : n.role === 'relay' ? E.compositingSkipped : E.skipped;
+  // As the runner skips them (assetStep and relayLink, by mediaStatus).
+  if (media && n.role === 'asset' && !media.images) return E.imagesSkipped;
+  if (media && n.role === 'relay' && !media.video) return E.videoSkipped;
   if (near.aside.has(n) && machineWrites(n)) return E.aside;
   switch (blockOf(n)) {
     case 'SEED':
@@ -346,8 +364,10 @@ const FINDS = new Set(['critic', 'check', 'cut', 'tells-sweep']);
  */
 const appliesFindings = (u: Unit, near: Around) => u.op === 'step' && appliesCritique(u, near.containedSomewhere.has(u), near.medium);
 const isRender = (u: Unit) => u.op === 'step' && u.role === 'render';
-/** The node a group is named after: the first that is not a render. */
-const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group[0]!;
+/** A machine writer whose draft never reaches the work (an obvious-answer check's plain sessions): explained as `aside`. */
+const isAside = (u: Unit, near: Around) => u.op === 'step' && u.actor !== 'human' && near.aside.has(u) && machineWrites(u);
+/** The node a group is named after: the first that is neither a render nor a draft set aside for the step that reads it. */
+const leadOf = (group: Unit[], near: Around): Unit => group.find((u) => !isRender(u) && !isAside(u, near)) ?? group.find((u) => !isRender(u)) ?? group[0]!;
 
 /**
  * The shown steps of one stage, from its steps and picks in order: renders wait for the next node (the one that reads
@@ -361,27 +381,45 @@ const leadOf = (group: Unit[]): Unit => group.find((u) => !isRender(u)) ?? group
  * A second writer that applies the same findings joins the same group (a fix between a trim and the step that carries
  * out its removals): the group's sentence is true of each. Where the step sits at more than one place, a writer joins
  * the latest group that step leads, whose run's findings are the latest when the writer runs.
+ *
+ * A draft set aside in an audit lens or a final check's body (`isAside`) waits, as a render does, for the next node in
+ * the same lens or body, which is what reads it (an obvious-answer check's plain sessions join their check). With none
+ * there, it stands on its own. `boxes` holds each unit's lens or body (undefined outside one).
  */
-function groupStage(units: Unit[], near: Around, from: ReadonlyMap<Step, Step>): Unit[][] {
+function groupStage(units: Unit[], boxes: readonly (string | undefined)[], near: Around, from: ReadonlyMap<Step, Step>): Unit[][] {
   const groups: Unit[][] = [];
   let renders: Unit[] = [];
-  for (const u of units) {
+  // Set aside drafts waiting in `renders` (the first `through` of them, with the renders before), and their lens or body.
+  let aside: { box: string | undefined; through: number } | undefined;
+  units.forEach((u, i) => {
     if (isRender(u)) {
       renders.push(u);
-      continue;
+      return;
+    }
+    if (aside && boxes[i] !== aside.box) {
+      groups.push(renders.slice(0, aside.through));
+      renders = renders.slice(aside.through);
+      aside = undefined;
+    }
+    if (isAside(u, near)) {
+      renders.push(u);
+      aside = { box: boxes[i], through: renders.length };
+      return;
     }
     const writer = u.op === 'step' && appliesFindings(u, near) ? u : undefined;
     const source = writer ? from.get(writer) : undefined;
     const into =
       writer && source && FINDS.has(source.role) && replacesCritique(source) && near.everyRun(source, writer)
-        ? groups.findLast((g) => leadOf(g) === source)
+        ? groups.findLast((g) => leadOf(g, near) === source)
         : undefined;
     if (into) into.push(...renders, u);
     else groups.push([...renders, u]);
     renders = [];
-  }
-  // Renders at the end of a stage belong to the step before them (or stand alone).
-  if (renders.length) {
+    aside = undefined;
+  });
+  // Renders at the end of a stage belong to the step before them (or stand alone), and so to set aside drafts there.
+  if (aside) groups.push(renders);
+  else if (renders.length) {
     const last = groups.at(-1);
     if (last) last.push(...renders);
     else groups.push(renders);
@@ -397,7 +435,7 @@ export interface ComposedCopy {
   code: string;
 }
 
-export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePresentation {
+export function presentComposed(recipe: Recipe, copy: ComposedCopy, media?: Media): RecipePresentation {
   const near = around(recipe);
   const from = critiqueSources(recipe);
   const order = new Map<string, number>();
@@ -410,13 +448,18 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
   for (const s of recipe.stages) {
     const units: Unit[] = [];
     const judges = new Set<Step>();
-    walkNode(s.body, '', s.stage, (n) => {
-      if (n.op === 'pick') {
-        units.push(n);
-        if (n.judge) judges.add(n.judge);
-      } else if (n.op === 'step' && !judges.has(n)) units.push(n);
+    // Each unit's innermost audit lens or final check's body, by path (the walk visits a container before its nodes).
+    const bodies: string[] = [];
+    const boxes: (string | undefined)[] = [];
+    walkNode(s.body, '', s.stage, (n, path) => {
+      if (n.op === 'audit') n.lenses.forEach((_, i) => bodies.push(`${path}.lenses[${i}].body`));
+      if (n.op === 'gate') bodies.push(`${path}.body`);
+      if (n.op !== 'pick' && (n.op !== 'step' || judges.has(n))) return;
+      units.push(n);
+      boxes.push(bodies.findLast((b) => path === b || path.startsWith(`${b}.`)));
+      if (n.op === 'pick' && n.judge) judges.add(n.judge);
     });
-    for (const g of groupStage(units, near, from)) groups.push({ stage: s.stage, units: g });
+    for (const g of groupStage(units, boxes, near, from)) groups.push({ stage: s.stage, units: g });
   }
 
   /** Index of the shown step each id belongs to. */
@@ -455,9 +498,9 @@ export function presentComposed(recipe: Recipe, copy: ComposedCopy): RecipePrese
   };
 
   const shown = groups.map(({ stage, units }) => {
-    const lead = leadOf(units);
+    const lead = leadOf(units, near);
     const applies = units.some((u) => u !== lead && appliesFindings(u, near));
-    return { stage: STAGE_NAMES[stage], label: stepLabel(lead, near), explainer: explainer(lead, applies, asking(lead), recipe.medium, near), who: whoDoes(units), stepIds: [] as string[] };
+    return { stage: STAGE_NAMES[stage], label: stepLabel(lead, near), explainer: explainer(lead, applies, asking(lead), recipe.medium, near, media), who: whoDoes(units), stepIds: [] as string[] };
   });
   for (const [id, i] of [...owner].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0))) shown[i]!.stepIds.push(id);
 
