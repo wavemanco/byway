@@ -132,8 +132,8 @@ const IMAGE_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536']);
 const MOCK_MODELS = { big: 'mock-big', mid: 'mock-mid', image: 'mock-image', video: 'mock-video' } as const;
 /** Relay links are a few seconds each (03 C5); a request far beyond that is a mistake, not a clip. */
 const MAX_VIDEO_SECONDS = 60;
-/** The clip types VideoResult.mediaType can name: real providers' MP4, and the demo mock's labelled SVG placeholder. */
-const CLIP_TYPES = new Set<VideoResult['mediaType']>(['video/mp4', 'image/svg+xml']);
+/** The clip types VideoResult.mediaType can name: real providers' MP4 and WebM, and the demo mock's labelled SVG placeholder. */
+const CLIP_TYPES = new Set<VideoResult['mediaType']>(['video/mp4', 'video/webm', 'image/svg+xml']);
 const FIDELITIES = new Set<PromptRef['fidelity']>(['verbatim', 'paraphrase', 'project']);
 const SHA256_ID = /^sha256:[0-9a-f]{64}$/;
 
@@ -761,11 +761,11 @@ export class ModelGateway implements Gateway {
         // Not retryable: a retry would generate (and bill) another clip; the run decides what to do instead.
         throw new GatewayError(failure?.code ?? 'provider-error', redact(`${ref.provider} made the clip and billed it, but ${what}: ${failure?.message ?? 'no media arrived'}`), false, { billed: true });
       }
-      // The contract names two clip types (MP4, and the demo's SVG placeholder) and three frame types. Anything else is
-      // kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
+      // The contract names three clip types (MP4, WebM, and the demo's SVG placeholder) and three frame types. Anything
+      // else is kept and ledgered above (it was billed) but not handed to a run that could not show or relay it.
       const mediaType = clip.mediaType as VideoResult['mediaType'];
       if (!CLIP_TYPES.has(mediaType)) {
-        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 (the clip is kept as ${clip.id})`, false, { billed: true });
+        throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but it is ${clip.mediaType}, not MP4 or WebM (the clip is kept as ${clip.id})`, false, { billed: true });
       }
       const lastFrameMediaType = lastFrame.mediaType as MediaType;
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {

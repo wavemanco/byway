@@ -249,12 +249,12 @@ export interface VideoRequest extends SpendContext {
 
 export interface VideoResult {
   /**
-   * The clip, stored in the artifact store immediately (provider URLs expire): video/mp4 from real providers; the
+   * The clip, stored in the artifact store immediately (provider URLs expire): MP4 or WebM from real providers; the
    * demo-mode mock stores a labelled placeholder (an animated SVG) instead.
    */
   artifactId: string;
-  /** The clip's media type: 'video/mp4', or 'image/svg+xml' for the demo placeholder. */
-  mediaType: 'video/mp4' | 'image/svg+xml';
+  /** The clip's media type: 'video/mp4' or 'video/webm' (as its bytes say), or 'image/svg+xml' for the demo placeholder. */
+  mediaType: 'video/mp4' | 'video/webm' | 'image/svg+xml';
   /** The clip's last frame, the anchor the next relay link starts from. */
   lastFrameArtifactId: string;
   /** Stored under its real type (the provider's frame extractor does not promise PNG). */
