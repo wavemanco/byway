@@ -377,10 +377,3 @@ export function seededRandom(salt: string): () => number {
   };
 }
 
-/** An activity input's memo scope, when it is a step call of a run. */
-export function memoScopeOf(input: unknown): MemoScope | undefined {
-  const i = input as { run?: { runId?: unknown }; call?: { key?: unknown } } | undefined;
-  const runId = i?.run?.runId;
-  const key = i?.call?.key;
-  return typeof runId === 'string' && typeof key === 'string' ? { runId, key } : undefined;
-}
