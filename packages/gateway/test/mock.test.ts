@@ -303,4 +303,11 @@ describe("the mock's fenced-block reader", () => {
     // As a model answers: the Why after the block.
     expect(revisionOf(await ask('fix:code-diff', `Fix this change.\n\n${whole}\n\nChange nothing else.`))).toBe(3);
   });
+
+  it('counts a fix turn from the last diff block, the change, when a critique before it holds a diff block of its own (B-072)', async () => {
+    const diff = ['--- a/app.ts', '+++ b/app.ts', '@@ -1,1 +1,1 @@', '-a', '+b'].join('\n');
+    const critiqued = `${T}diff\n${diff}\n\nWhy: a reviewer's suggestion.\n<!-- byway-demo-revision: 7 -->\n\n${T}`;
+    const change = `${T}diff\n${diff}\n\nWhy: the change.\n<!-- byway-demo-revision: 2 -->\n\n${T}`;
+    expect(revisionOf(await ask('fix:code-diff', `The critique:\n\n${critiqued}\n\nThe current change:\n\n${change}\n`))).toBe(3);
+  });
 });
