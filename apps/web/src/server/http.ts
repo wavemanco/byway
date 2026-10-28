@@ -74,9 +74,3 @@ export async function parseBody<T extends z.ZodType>(request: Request, schema: T
   }
   return { ok: true, data: parsed.data };
 }
-
-/** Errors thrown by services carry messages written for people; anything else gets a generic line. */
-export function failFrom(err: unknown, status = 400): Response {
-  const message = err instanceof Error && err.message ? err.message : 'Something went wrong.';
-  return fail(status, message);
-}
