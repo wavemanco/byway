@@ -5,11 +5,12 @@
  */
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { admitRequest, settlement, spendBookContract } from '@byway/contracts/spend-book-suite';
-import { MIGRATIONS, SCHEMA_VERSION, openSpendBook } from '../src/index.ts';
+import { MIGRATIONS, SCHEMA_VERSION, SqliteSpendBook, migrate, openDatabase, openSpendBook } from '../src/index.ts';
 import { openStore, tempDir } from './helpers.ts';
 
 function clock() {
@@ -55,6 +56,52 @@ describe('the store’s spend book', () => {
     expect(await worker.spendBook.admit(admitRequest({ reserveUsd: 0.1, caps: { workspaceUsd: 0.15 } }))).toMatchObject({ budget: { scope: 'workspace', reservedUsd: 0.1, estimateUsd: 0.1 } });
     await web.spendBook.settle(call.opId, settlement(0.1));
     expect(await worker.spendBook.spend('ws')).toMatchObject({ spentUsd: 0.1, inFlightUsd: 0 });
+  });
+
+  it('sweeps run-out leases through the partial index of live rows, not a scan of every call ever made', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      migrate(db);
+      const prepare = vi.spyOn(db, 'prepare');
+      new SqliteSpendBook(db);
+      const sweeps = prepare.mock.calls.map(([sql]) => sql).filter((sql) => sql.startsWith('UPDATE paid_operations') && sql.includes('lease_until <= :now') && !sql.includes(':id') && !sql.includes(':owner'));
+      expect(sweeps).toHaveLength(2);
+      for (const sql of sweeps) {
+        const plan = (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all({ now: 0, at: 'x' }) as { detail: string }[]).map((r) => r.detail).join('\n');
+        expect(plan).toMatch(/USING INDEX paid_operations_live/);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it('commits admit, markSent, accept and settle with synchronous=FULL and puts NORMAL back, even when one throws; the other writes stay NORMAL', async () => {
+    const db = openDatabase(path.join(tempDir(), 'byway.sqlite'));
+    try {
+      migrate(db);
+      const book = new SqliteSpendBook(db);
+      const exec = vi.spyOn(db, 'exec');
+      const watched = async (fn: () => Promise<unknown>) => {
+        exec.mockClear();
+        await fn().catch(() => undefined);
+        return exec.mock.calls.map(([sql]) => sql);
+      };
+      const durable = (end: string) => ['PRAGMA synchronous = FULL', 'BEGIN IMMEDIATE', end, 'PRAGMA synchronous = NORMAL'];
+      const r = admitRequest({ kind: 'video', provider: 'fal', model: 'fal-ai/kling' });
+      expect(await watched(() => book.admit(r))).toEqual(durable('COMMIT'));
+      expect(await watched(() => book.markSent(r.opId, 'owner-a'))).toEqual(durable('COMMIT'));
+      expect(await watched(() => book.accept(r.opId, 'generation', 'req-gen'))).toEqual(durable('COMMIT'));
+      expect(await watched(() => book.retain(r.opId, 0.01, 10))).toEqual(['BEGIN IMMEDIATE', 'COMMIT']);
+      expect(await watched(() => book.settle(r.opId, settlement(0.1)))).toEqual(durable('COMMIT'));
+      // The same opId again fails on the primary key inside the transaction.
+      expect(await watched(() => book.admit(r))).toEqual(durable('ROLLBACK'));
+      expect(await watched(() => book.markLedgered(r.opId, 1))).toEqual(['BEGIN IMMEDIATE', 'COMMIT']);
+      expect(await watched(() => book.clearUncertain('ws', [r.opId]))).toEqual(['BEGIN IMMEDIATE', 'COMMIT']);
+      exec.mockRestore();
+      expect(db.prepare('PRAGMA synchronous').get()).toEqual({ synchronous: 1 });
+    } finally {
+      db.close();
+    }
   });
 
   it('refuses work once the store is closed', async () => {
