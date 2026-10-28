@@ -127,7 +127,9 @@ export interface ProviderVideoRequest {
   /**
    * Runs one billable job submission (ADR-0091): retried only after failures that were certainly not billed (billingOf
    * 'none', such as fal's own 503 body). After one that may have been, it is never sent again: the call fails, not
-   * retryable, saying the provider may have accepted `what` ("the clip").
+   * retryable, saying the provider may have accepted `what` ("the clip"). When marking the call sent finds another
+   * attempt's jobs the provider had already accepted, nothing is submitted and the error carries those jobs
+   * (takenOverOf): an adapter that polls jobs by id may poll them instead, as it polls `resume`'s (B-071).
    */
   submit<T>(fn: () => Promise<T>, what: string): Promise<T>;
   /**
