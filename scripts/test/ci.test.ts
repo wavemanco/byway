@@ -485,6 +485,10 @@ describe("the weekly run's report of the Playwright pin (D4)", () => {
     }
     // Package files that pin no single release.
     expect((await run(answer(200, async () => registry('1.64.1', RELEASES)), pinnedAt('^1.63.0'))).lines[0]).toContain('does not pin playwright to one release');
+    // An answer that quotes a line break and a workflow command stays one plain line (B-020; the price report's plain()).
+    const planted = await run(answer(200, async () => Promise.reject(new SyntaxError('Unexpected token in "x\n::error::planted\r\n##[warning]also"'))));
+    expect(planted.lines).toEqual(['Whether the Playwright pin has fallen behind could not be read (Unexpected token in "x ::error::planted ## [warning]also"), so this run reports nothing on it.']);
+    expect(planted.summary).toContain(planted.lines[0]);
   });
 
   it("marks a pin that is behind with one warning on the run's page, and a pin at the latest release with none", async () => {

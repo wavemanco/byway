@@ -7,15 +7,16 @@
  *
  * It reports and never fails: it prints what it found, adds it to the run's summary, and marks a pin that is behind
  * with a warning on the run's page; anything it cannot read (the registry, a package file) is said in one line, and it
- * exits 0 whatever happens. It reads the pins from packages/runner (playwright) and apps/web (@playwright/test), and
- * npm's record of Playwright's releases, with no key. Security fixes are not in npm's record: a release's notes say
- * which Chromium it brings.
+ * exits 0 whatever happens. Every line goes out plain, through the price report's plain() (B-020). It reads the pins
+ * from packages/runner (playwright) and apps/web (@playwright/test), and npm's record of Playwright's releases, with no
+ * key. Security fixes are not in npm's record: a release's notes say which Chromium it brings.
  *
  * Run with plain Node, which strips this file's types: `node scripts/playwright-pin.ts`.
  */
 import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { plain } from './price-report.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** npm's record of Playwright's releases: its versions and when each came out. */
@@ -127,6 +128,8 @@ export async function report(opts: ReportOptions = {}): Promise<void> {
   } catch (err) {
     lines = [`Whether the Playwright pin has fallen behind could not be read (${err instanceof Error ? err.message : String(err)}), so this run reports nothing on it.`];
   }
+  // An error's message can quote npm's answer, line breaks and workflow commands included: every line goes out plain.
+  lines = lines.map(plain);
   for (const line of lines) print(line);
   // A warning on the run's page, which blocks nothing.
   if (behind) print(`::warning title=Playwright pin::${lines.join(' ').replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
