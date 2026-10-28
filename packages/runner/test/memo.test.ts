@@ -9,9 +9,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GatewayError, type CompletionRequest, type CompletionResult, type DeclineRecord, type Gateway, type ImageRequest, type ImageResult, type VideoRequest, type VideoResult } from '@byway/contracts';
 import type { ApplicationFailure } from '@temporalio/common';
-import { createGateway } from '@byway/gateway';
+import { createGateway, waitedError, waitedOf, waitedWords } from '@byway/gateway';
 import { DeclineRetryPending, StepError, toFailure } from '../src/activities/failures.ts';
-import { memoGateway, memoized, seededRandom } from '../src/activities/memo.ts';
+import { memoGateway, memoized, PaidNotKept, seededRandom } from '../src/activities/memo.ts';
 import { createTestStore, type MemoStore } from './helpers/memo.ts';
 
 let dir: string;
@@ -97,6 +97,50 @@ describe('memoGateway (convention C5)', () => {
     const second = memoGateway(gateway, store, scope);
     expect([await second.image(img), await second.video(clip)]).toEqual(shots);
     expect(made).toEqual({ complete: 0, image: 1, video: 1 });
+  });
+
+  it('a call that failed with nothing kept leaves its repeat to the next ask, so a retry finds what that ask bought (B-142)', async () => {
+    const { gateway, made } = counting();
+    const inner = gateway.complete.bind(gateway);
+    let fail = true;
+    gateway.complete = async (req) => {
+      if (fail) {
+        fail = false;
+        throw new GatewayError('provider-error', 'anthropic returned 529: overloaded', true);
+      }
+      return inner(req);
+    };
+    const one = memoGateway(gateway, store, scope);
+    await expect(one.complete(ask('Same.'))).rejects.toThrow('overloaded');
+    const a = [await one.complete(ask('Same.')), await one.complete(ask('Same.'))];
+    const two = memoGateway(gateway, store, scope);
+    expect([await two.complete(ask('Same.')), await two.complete(ask('Same.'))]).toEqual(a);
+    expect(made.complete).toBe(2);
+  });
+
+  it('a failure while a later ask of the same request is under way does not hand that ask’s repeat out again', async () => {
+    const { gateway, made } = counting();
+    const inner = gateway.complete.bind(gateway);
+    let n = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    gateway.complete = async (req) => {
+      const at = ++n;
+      if (at === 1) {
+        await gate;
+        throw new GatewayError('provider-error', 'anthropic returned 529: overloaded', true);
+      }
+      return inner(req);
+    };
+    const one = memoGateway(gateway, store, scope);
+    const first = one.complete(ask('Same.')).catch((e: unknown) => e);
+    const second = await one.complete(ask('Same.'));
+    release();
+    expect(await first).toBeInstanceOf(GatewayError);
+    // The second ask was kept under repeat 2: the next asks are new calls, never the second's answer.
+    const later = [await one.complete(ask('Same.')), await one.complete(ask('Same.'))];
+    expect(later).not.toContainEqual(second);
+    expect(made.complete).toBe(3);
   });
 
   it('a long answer is kept as an artifact of its own, never as the work’s own bytes', async () => {
@@ -367,6 +411,64 @@ describe('a decline is kept like an answer (ADR-0102)', () => {
       'The model declined an image this step asked for, and byway could not keep that outcome (SQLITE_BUSY: database is locked). The step stops here rather than run again, which could ask the model again.',
     );
     expect((toFailure(err) as ApplicationFailure).nonRetryable).toBe(true);
+    // A billed decline is a paid call byway could not keep, so the asset step names its slot (B-044 (1)); one with no
+    // recorded cost is not.
+    expect(err).toBeInstanceOf(PaidNotKept);
+    const free = scripted(async () => {
+      throw new GatewayError('refused', 'declined twice', false, { declined: { ...record, costUsd: 0, retry: 'not-made', retryLedgerEntryId: undefined, retryCostUsd: undefined } });
+    });
+    const unbilled = await memoGateway(free.gateway, flaky, scope, { saveAttempts: 1 }).image(image).catch((e: unknown) => e);
+    expect(unbilled).toBeInstanceOf(StepError);
+    expect(unbilled).not.toBeInstanceOf(PaidNotKept);
+  });
+});
+
+describe('a wait that ran out is kept like a decline (B-045)', () => {
+  const image: ImageRequest = { workspaceId: 'w', runId: 'run-memo', stepId: 'art', purpose: 'asset:prose', profileId: 'demo', prompt: 'A loaf', size: '1024x1024' };
+  const nanoBanana = { provider: 'google' as const, model: 'gemini-nano-banana-2.1' };
+
+  it('an image whose wait ran out: the step run again gets the same failure, with its mark, and asks nothing', async () => {
+    const { gateway, made } = counting();
+    gateway.image = async () => {
+      made.image++;
+      throw waitedError(nanoBanana, { minutes: 15, how: 'answer' }, { retryable: false, billing: 'maybe' });
+    };
+    const first = await memoGateway(gateway, store, scope).image(image).catch((e: unknown) => e);
+    const again = await memoGateway(gateway, store, scope).image(image).catch((e: unknown) => e);
+    expect(made.image).toBe(1);
+    for (const err of [first, again]) {
+      expect(err).toBeInstanceOf(GatewayError);
+      expect(err).toMatchObject({ code: 'provider-error', retryable: false, message: waitedWords(nanoBanana, { minutes: 15, how: 'answer' }) });
+      expect(waitedOf(err)).toEqual({ minutes: 15, how: 'answer' });
+      expect((err as GatewayError).billed).toBeUndefined();
+    }
+  });
+
+  it('a stream’s silence, which the gateway marks retryable, is not kept: Temporal’s retry asks again, as before', async () => {
+    const { gateway, made } = counting();
+    gateway.complete = async () => {
+      made.complete++;
+      throw waitedError({ provider: 'anthropic', model: 'm' }, { minutes: 5, how: 'silence' }, { retryable: true, billing: 'maybe' });
+    };
+    await memoGateway(gateway, store, scope).complete(ask('Write it.')).catch(() => undefined);
+    await memoGateway(gateway, store, scope).complete(ask('Write it.')).catch(() => undefined);
+    expect(made.complete).toBe(2);
+  });
+
+  it('when the waited outcome cannot be kept, the step gets the gateway’s failure as it was', async () => {
+    const { gateway } = counting();
+    const waited = waitedError(nanoBanana, { minutes: 15, how: 'answer' }, { retryable: false, billing: 'maybe' });
+    gateway.image = async () => {
+      throw waited;
+    };
+    const flaky: Parameters<typeof memoGateway>[1] = {
+      getMemo: (r, k) => store.getMemo(r, k),
+      setMemo: async () => {
+        throw new Error('SQLITE_BUSY: database is locked');
+      },
+      artifacts: store.artifacts,
+    };
+    expect(await memoGateway(gateway, flaky, scope, { saveAttempts: 2, saveDelayMs: 1 }).image(image).catch((e: unknown) => e)).toBe(waited);
   });
 });
 

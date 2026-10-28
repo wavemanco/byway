@@ -291,7 +291,8 @@ export async function assetStep(deps: RunnerDeps, input: AssetInput): Promise<As
  * where to change it in Settings ... Google charges for a call that is stopped, so a resend mostly pays twice." The
  * gateway did not send it again, and neither does the step: another try would be a new call, admitted and sent as its
  * own, which could wait as long again and be billed again. The slot is not made, and the gateway's words, which say the
- * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences).
+ * wait ran out, that it may have billed the work and where to wait longer, go in the step's note (waitedSentences). The
+ * memo keeps that outcome as it keeps a decline (B-045), so the step run again gets it back and asks nothing.
  */
 async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, tries: number): Promise<{ made: MadeImage; costUsd: number } | { declined: DeclineRecord } | { waited: string } | undefined> {
   const { run, call, step } = input;
@@ -317,7 +318,8 @@ async function makeImage(deps: RunnerDeps, input: AssetInput, brief: SlotBrief, 
  * leaves: which image it was, that the run stops here and buys no more images (a billed failure is a storage or ledger
  * fault that more images could repeat), and that the images this step already made were billed too and are not in the
  * work (the step stops before attaching or placing them). An image whose result byway could not keep (memo.ts
- * PaidNotKept) is a billed failure too: the same words are added, and it stays a StepError.
+ * PaidNotKept), or a decline with a recorded cost whose outcome it could not keep (B-044 (1)), is a billed failure too:
+ * the same words are added, and it stays a StepError.
  */
 function billedStop(e: GatewayError | PaidNotKept, plan: SlotPlan, slot: string, made: MadeImage[], what: string): GatewayError | PaidNotKept {
   const name = (id: string) => slotName(plan, id);

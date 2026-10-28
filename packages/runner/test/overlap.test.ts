@@ -282,6 +282,40 @@ describe('two attempts of one step’s paid call (F03 stage 3, ADR-0099)', () =>
     expect(op?.cancel).toBe(first.cancel.signal);
     first.invocation.stop();
   });
+
+  it('a try that failed unbilled leaves its key to the next try of the same request, which is admitted at once and kept under it (B-142)', async () => {
+    const seen: CompletionRequest[] = [];
+    let calls = 0;
+    const adapter = {
+      id: 'anthropic',
+      async complete(req: { model: string }) {
+        calls += 1;
+        if (calls === 1) throw Object.assign(new Error('bad request'), { status: 400 });
+        return { text: `answer ${calls}`, servedModel: req.model, usage: { inputTokens: 0, outputTokens: 1000 }, requestBody: {}, responseBody: {} };
+      },
+    } as unknown as ProviderAdapter;
+    const worker = gateway({ anthropic: adapter });
+    const spy = new Proxy(worker, {
+      get(target, prop, receiver) {
+        if (prop === 'complete') return async (req: CompletionRequest) => (seen.push(req), target.complete(req));
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    });
+    const first = attempt();
+    const one = memoGateway(spy, store, scope(), { ...QUICK, operation: first.operation });
+    await expect(one.complete(ask())).rejects.toMatchObject({ code: 'invalid-request' });
+    const started = Date.now();
+    await expect(one.complete(ask())).resolves.toMatchObject({ text: 'answer 2' });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(seen.map((r) => r.operation?.key)).toEqual([seen[0]!.operation!.key, seen[0]!.operation!.key]);
+    expect(seen[0]!.operation!.key).toMatch(/\/1$/);
+    first.invocation.stop();
+    // The step run again finds the answer under the first repeat's key, and buys nothing.
+    const second = attempt();
+    await expect(memoGateway(worker, store, scope(), { operation: second.operation }).complete(ask())).resolves.toMatchObject({ text: 'answer 2' });
+    second.invocation.stop();
+    expect(calls).toBe(2);
+  });
 });
 
 /**
