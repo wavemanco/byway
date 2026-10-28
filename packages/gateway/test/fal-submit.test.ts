@@ -145,6 +145,40 @@ describe('createFalClient: a job is submitted with one HTTP request (F03)', () =
   });
 });
 
+describe('createFalClient: the start frame is uploaded only to fal’s media host, its redirects not followed (F17 (a), ADR-0088)', () => {
+  /** fal's REST API answering the slot request with `uploadUrl`; every other request is recorded and answered 200. */
+  function slotAt(uploadUrl: string) {
+    const sent: { url: string; method: string; redirect: RequestRedirect | undefined }[] = [];
+    const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://rest.fal.ai/storage/upload/initiate')) return json({ upload_url: uploadUrl, file_url: 'https://v3.fal.media/files/upload-0.png' });
+      sent.push({ url, method: (init?.method ?? 'GET').toUpperCase(), redirect: init?.redirect });
+      return new Response(null, { status: 200 });
+    };
+    return { fetch: fetch as typeof globalThis.fetch, sent };
+  }
+  const frame = () => new Blob([encodePng(2, 2, new Uint8Array(12).fill(9))], { type: 'image/png' });
+
+  it('a slot on fal’s media host: one PUT there, redirects refused, and the file’s URL returned', async () => {
+    const http = slotAt('https://v3b.fal.media/files/upload/slot-1?token=t');
+    expect(await createFalClient(FAL_KEY, http.fetch).storage.upload(frame())).toBe('https://v3.fal.media/files/upload-0.png');
+    expect(http.sent).toEqual([{ url: 'https://v3b.fal.media/files/upload/slot-1?token=t', method: 'PUT', redirect: 'error' }]);
+  });
+
+  it.each([
+    ['another host', 'https://uploads.example/slot-1', 'https://uploads.example'],
+    ['plain http', 'http://v3.fal.media/slot-1', 'http://v3.fal.media'],
+    ['another port', 'https://v3.fal.media:8443/slot-1', 'https://v3.fal.media:8443'],
+    ['user info', 'https://me:pw@v3.fal.media/slot-1', 'https://v3.fal.media'],
+    ['a look-alike host', 'https://fal.media.example/slot-1', 'https://fal.media.example'],
+  ])('a slot at %s is refused, and the frame is sent nowhere', async (_what, uploadUrl, origin) => {
+    const http = slotAt(uploadUrl);
+    const err = await createFalClient(FAL_KEY, http.fetch).storage.upload(frame()).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'provider-error', message: `fal named an upload address for the start frame outside its media host (${origin})` });
+    expect(http.sent).toEqual([]);
+  });
+});
+
 describe('gateway: a relay link over fal HTTP, the SDK reading status and results (F03)', () => {
   it('submits each job once, reads its status and result through the SDK, and ledgers the clip', async () => {
     const http = fakeFalHttp();

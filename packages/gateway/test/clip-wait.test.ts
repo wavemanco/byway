@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGateway, type GatewayOptions, type ModelGateway } from '../src/gateway.ts';
 import { MemorySpendBook } from '../src/memory-book.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, RESULT_LOOK_MS, submitJob, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
+import { FAL_EXTRACT_FRAME, FAL_START_TIMEOUT_HEADERS, falStartTimeoutSeconds, FRAME_GRACE_MS, submitJob, type FalCancel, type FalClientLike } from '../src/providers/fal.ts';
 import { fakeFetch, MemoryArtifacts } from './fakes.ts';
 
 const KEYS = { FAL_KEY: '0d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6:00112233445566778899aabbccddeeff' };
@@ -28,6 +28,8 @@ const BEST_VIDEO = 'fal-ai/kling-video/v3/pro/image-to-video';
 const T0 = Date.parse('2026-10-22T12:00:00.000Z');
 /** How long one read of a job's status is waited for (fal.ts seenDone: CANCEL_TIMEOUT_MS), as a cancel's answer is. */
 const STATUS_BOUND_MS = 30_000;
+/** How long a stopped clip's one look at its result is waited for (fal.ts stoppedGeneration: RESULT_LOOK_MS). */
+const LOOK_BOUND_MS = 30_000;
 
 let dir: string;
 let book: MemorySpendBook;
@@ -120,6 +122,7 @@ function clipFal(
     clipResultFails?: unknown;
     clipResultHeld?: boolean;
     frameResultHeld?: boolean;
+    frameResultFails?: unknown;
     onClipResult?: () => void;
     done?: string[];
     statusTakesMs?: number;
@@ -171,7 +174,8 @@ function clipFal(
           // The clip's result read failing as `clipResultFails` says (fal's answer for a job it dropped, say), or held.
           if (opts.clipResultFails !== undefined) throw opts.clipResultFails;
           if (opts.clipResultHeld) return new Promise<never>(() => undefined);
-        } else if (opts.frameResultHeld) return new Promise<never>(() => undefined);
+        } else if (opts.frameResultFails !== undefined) throw opts.frameResultFails;
+        else if (opts.frameResultHeld) return new Promise<never>(() => undefined);
         const data = endpoint === FAL_EXTRACT_FRAME ? { images: [{ url: 'https://v3.fal.media/files/last.png', content_type: 'image/png' }] } : { video: { url: 'https://v3.fal.media/files/clip.mp4', content_type: 'video/mp4' } };
         return { data, requestId: options.requestId };
       },
@@ -628,7 +632,7 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     expect(await g.spend('ws')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
   });
 
-  it(`a stop while a clip fal finished is read: its result is read once more, for at most ${RESULT_LOOK_MS / 1000} seconds, then it is settled as made`, async () => {
+  it(`a stop while a clip fal finished is read: its result is read once more, for at most ${LOOK_BOUND_MS / 1000} seconds, then it is settled as made`, async () => {
     const stop = new AbortController();
     const until = new AbortController();
     const fal = clipFal({ clipTakesMs: MINUTE, clipResultHeld: true, onClipResult: () => stop.abort() });
@@ -641,7 +645,7 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     await vi.advanceTimersByTimeAsync(MINUTE);
     for (let i = 0; i < 20_000 && fal.log.filter((l) => l === 'result req-1').length < 2; i++) await turn();
     expect(fal.log.filter((l) => l === 'result req-1')).toHaveLength(2);
-    await vi.advanceTimersByTimeAsync(RESULT_LOOK_MS - 1);
+    await vi.advanceTimersByTimeAsync(LOOK_BOUND_MS - 1);
     for (let i = 0; i < 200; i++) await turn();
     expect(over).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
@@ -651,10 +655,10 @@ describe('a clip job fal dropped at its start deadline (504, timeout type "user"
     expect(fetch.requested).toEqual([]);
     // Over at its bound, not only after it (R-MONEY-3, Block 2's re-check: settled() moves the clock up to 200 seconds, so
     // a look of two minutes passed too). The gateway reads the clock as the adapter answers (the entry's latencyMs, from
-    // the call's start at T0): the clip was done a minute in, so its answer came RESULT_LOOK_MS later, to the
+    // the call's start at T0): the clip was done a minute in, so its answer came LOOK_BOUND_MS later, to the
     // millisecond. That reading comes before the files that follow, whose lock waits are timers too, so it holds however
     // far settled() then moves the clock; waiting by real turns alone would hang on a lock Windows keeps busy.
-    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', latencyMs: MINUTE + RESULT_LOOK_MS })]);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', latencyMs: MINUTE + LOOK_BOUND_MS })]);
   });
 });
 
@@ -672,10 +676,19 @@ describe('a stopped clip fal reported done, whose result fal answers with a fail
   const fals = {
     'a 500 with fal’s body': () => new ApiError({ message: 'Internal Server Error', status: 500, body: { detail: 'The model failed to generate the video' } }),
     'a 422 (a ValidationError)': () => new ValidationError({ message: 'Unprocessable Entity', status: 422, body: { detail: 'The model failed to generate the video' } }),
+    'a 400 with fal’s body': () => new ApiError({ message: 'Bad Request', status: 400, body: { detail: 'bad_request' } }),
   };
+  // R2-MONEY-1, Block 2's second re-check: any status with a body counted, so fal's answers about the read rather than
+  // the job (its limits, its gateway, the key) counted a clip fal made and billed as may have been billed. A body that is
+  // not fal's JSON error, with its `detail`, is no word from fal either.
   const notFals = {
     'a lost connection (no status)': () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }),
     'a 500 with no body of fal’s (a proxy’s page)': () => new ApiError({ message: 'HTTP 500: Internal Server Error', status: 500 }),
+    'a 500 whose body is text, not fal’s JSON': () => new ApiError({ message: 'Internal Server Error', status: 500, body: 'upstream connect error' }),
+    'a 500 whose body has no detail': () => new ApiError({ message: 'Internal Server Error', status: 500, body: { error: 'oops' } }),
+    ...Object.fromEntries(
+      [408, 429, 502, 503, 504, 401, 403].map((status) => [`a ${status} with fal’s body (about the read, not the job)`, () => new ApiError({ message: `HTTP ${status}`, status, body: { detail: 'Try again later' } })]),
+    ),
   };
   const routes = {
     'the status said done, then a stop came while its result was read': 'read',
@@ -723,6 +736,39 @@ describe('a stopped clip fal reported done, whose result fal answers with a fail
     expect(e).toMatchObject({ code: 'byway-failure', billed: true, message: 'fal made the clip and billed it (its cost is recorded), but its run was ending, so byway did not download it.' });
     expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video', costUsd: 0.352 })]);
     expect((await g.spendRecords('ws')).uncertain).toEqual([]);
+  });
+});
+
+describe('fal’s own failure answer with no stop (the parity the stopped look leans on, ADR-0114 item 12)', () => {
+  it('a 500 with fal’s body on the clip’s result: accepted but unread, counted as may have been billed (failed), nothing ledgered', async () => {
+    const fal = clipFal({ clipTakesMs: MINUTE, clipResultFails: new ApiError({ message: 'Internal Server Error', status: 500, body: { detail: 'The model failed to generate the video' } }) });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const call = failure(g.video(clipOf()));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    const e = await settled(call);
+    expect(e.message).toMatch(/^fal accepted the clip \(request req-1\), but its result could not be read: .*fal may still make it and bill it; byway did not submit it again\.$/);
+    expect(e).toMatchObject({ retryable: false });
+    expect(fal.cancels).toEqual([]);
+    expect(ledger()).toEqual([]);
+    expect((await g.spendRecords('ws')).uncertain.map((u) => [u.reason, u.providerJobs])).toEqual([['failed', { generation: 'req-1' }]]);
+  });
+});
+
+describe('the last-frame job is sent no start deadline, and its 504 is not read as never started (B-025)', () => {
+  it('a 504 with timeout type "user" on the frame’s result: the clip is kept and ledgered, the frame could not be read', async () => {
+    const fal = clipFal({ clipTakesMs: MINUTE, frameTakesMs: MINUTE, frameResultFails: new ApiError({ message: 'Gateway Timeout', status: 504, body: { detail: 'Request timed out' }, timeoutType: 'user' }) });
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const call = failure(g.video(clipOf()));
+    await polled(fal, 1);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    await polled(fal, 2);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    const e = await settled(call);
+    expect(fal.submitted.map(({ at: _at, ...job }) => job)).toEqual([{ endpoint: BALANCED_VIDEO, startTimeoutSeconds: expect.any(Number) }, { endpoint: FAL_EXTRACT_FRAME }]);
+    expect(e).toMatchObject({ billed: true });
+    expect(e.message).toMatch(/^fal made the clip and billed it, but its last frame could not be extracted \(the clip is kept as sha256:[0-9a-f]{64}\): .*req-2/);
+    expect(ledger()).toEqual([expect.objectContaining({ provider: 'fal', kind: 'video' })]);
   });
 });
 

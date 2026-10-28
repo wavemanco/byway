@@ -16,7 +16,10 @@
  * and the price report use, keeps the copy Node bundles until .node-version moves.
  *
  * fal keeps Node's default fetch: its requests are short (a status poll every two seconds, a submission answered at
- * once), and its upload and result reads have no deadline of their own, so Node's limits are what bound them.
+ * once), and its upload and result reads have no deadline of their own, so Node's limits are what bound them, except
+ * four (ADR-0114 item 3, fal.ts): the last frame's result read and its download, bounded by frameBound (the time left on
+ * the clip's wait plus two minutes); a stopped clip's one result read (RESULT_LOOK_MS, 30 s); and a resumed clip's
+ * status read past its wait and the look after a failed cancel (CANCEL_TIMEOUT_MS, 30 s each).
  */
 import { Agent, fetch as undiciFetch } from 'undici';
 
