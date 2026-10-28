@@ -2,9 +2,11 @@
  * How activity errors reach the workflow. Temporal serializes errors, so a GatewayError's code and budget details
  * would be lost as plain text; they travel as typed ApplicationFailures instead. A failure Temporal should not retry
  * (a refused budget, a step whose answer missed its contract twice, a missing prompt) is non-retryable; transient
- * trouble is left to the activity's retry policy.
+ * trouble is left to the activity's retry policy. Any other error goes on with only its name and its message, which the
+ * gateway has redacted: Temporal would store its stack and its cause chain in the engine's history, and either can hold
+ * a key the redaction did not reach (B-026, ADR-0074).
  */
-import { ApplicationFailure } from '@temporalio/common';
+import { ApplicationFailure, TemporalFailure } from '@temporalio/common';
 import { GatewayError } from '@byway/contracts';
 import { FAILURE, type BudgetFailureDetails, type RejectedAnswerDetails } from '../types.ts';
 
@@ -63,6 +65,8 @@ export function toFailure(err: unknown): unknown {
     return ApplicationFailure.create({ type: FAILURE.step, message: err.message, nonRetryable: !err.retryable });
   }
   if (err instanceof StepError) return ApplicationFailure.create({ type: FAILURE.step, message: err.message, nonRetryable: true });
+  // Typed by its name, as Temporal's converter would, so the retry policy reads it as before.
+  if (err instanceof Error && !(err instanceof TemporalFailure)) return ApplicationFailure.create({ type: err.name, message: err.message });
   return err;
 }
 
