@@ -50,7 +50,7 @@ function itemsHolding(list: readonly unknown[], heldKeyIn: HeldKeyIn): HeldKeyIt
  * Reads a JSON body against a schema; only application/json is accepted (a CSRF form post cannot send it). A body
  * holding one of byway's provider keys is refused before anything is stored or sent (ADR-0088). `heldKeyIn` is
  * required, so a route that skips the check does not compile. It runs on what the schema keeps: fields the schema
- * strips are never stored.
+ * strips are never stored. It is the only reader of a request body: test/guard-body.test.ts fails on any other.
  */
 export async function parseBody<T extends z.ZodType>(request: Request, schema: T, heldKeyIn: HeldKeyIn): Promise<Parsed<z.infer<T>>> {
   if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) {
