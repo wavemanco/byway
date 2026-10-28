@@ -146,10 +146,16 @@ export class FileArtifactStore implements ArtifactStore {
     const tmp = path.join(this.#tmpDir, `${hex.slice(0, 16)}-${randomUUID()}`);
     const handle = await open(tmp, 'wx');
     try {
-      await handle.writeFile(bytes);
-      await handle.sync();
-    } finally {
-      await handle.close();
+      try {
+        await handle.writeFile(bytes);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    } catch (e) {
+      // A failed write (a full disk, an I/O error) must not leave its partial file in artifacts/tmp: nothing sweeps it.
+      await rm(tmp, { force: true }).catch(() => undefined);
+      throw e;
     }
     try {
       await rename(tmp, file);
