@@ -30,7 +30,7 @@ import {
   workspaceRemaining,
 } from '../src/server/api.ts';
 import { AnswerWaitPatch, RecommendInput } from '../src/server/schemas.ts';
-import { getRunData } from '../src/server/run-data.ts';
+import { artifactInfo, getRunData } from '../src/server/run-data.ts';
 import { FIRST_QUESTION } from './fixtures/runner.ts';
 import { TINY_PNG_BASE64, testHost, type TestHost } from './fixtures/services.ts';
 
@@ -184,6 +184,16 @@ describe('route handler logic', PRODUCT_PATH, () => {
     expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
     // A resend under that id with another budget is checked as a new Start is.
     await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500, runId })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
+  });
+
+  it('leaves a damaged artifact out of what the Run screen polls, as a missing one is, and shows the rest (WEB-4)', async () => {
+    const d = await deps();
+    const good = await d.services.store.artifacts.putText('# Good', 'text/markdown');
+    const bad = await d.services.store.artifacts.putText('# Bad!', 'text/markdown');
+    const hex = bad.id.slice('sha256:'.length);
+    // The same size, other bytes: the start-up size check does not see it, and has() still finds the file.
+    writeFileSync(path.join(current!.dataDir, 'artifacts', 'sha256', hex.slice(0, 2), hex.slice(2)), '# Bad?');
+    expect(Object.keys(await artifactInfo(d.services, [good.id, bad.id]))).toEqual([good.id]);
   });
 
   it('resolves a question only within its own run, and passes validation messages through', async () => {
