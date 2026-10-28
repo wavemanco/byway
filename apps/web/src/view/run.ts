@@ -146,3 +146,15 @@ export function sideImages(stages: TimelineStage[]): SideImage[] {
       ),
   );
 }
+
+/**
+ * The images the Result screen shows beside the deliverable: for an options list, every one (it cannot hold them, UX-8);
+ * for any other medium, those Custom imagery made that the deliverable does not hold, as a prose piece or a page keeps
+ * the images its placing answer left out, or every one when that answer could not be used (ADR-0112; B-047). Before,
+ * only an options run showed them, so a kept image was found only through "Open the run". `deliverable` is its text;
+ * a placed image is in it by its artifact address, a storyboard's frame by its id.
+ */
+export function resultImages(medium: RunRecord['medium'], stages: TimelineStage[], deliverable: string): SideImage[] {
+  const images = sideImages(stages);
+  return medium === 'options' ? images : images.filter((img) => !deliverable.includes(img.artifactId));
+}

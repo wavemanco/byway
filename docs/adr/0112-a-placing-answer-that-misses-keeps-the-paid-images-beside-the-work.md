@@ -65,3 +65,9 @@ Claude's audit of 2026-10-21, the report put to the owner with D1 to D10, set ou
 - The owner's answers of 2026-10-21 21:43: [evidence/conversation-continued.md](evidence/conversation-continued.md), under that time.
 - Claude's audit of 2026-10-21, with the defaults quoted under Context (its section "Defaults Claude takes without asking (say if any should be yours)"): [evidence/reports/audit-2026-10-21.md](evidence/reports/audit-2026-10-21.md).
 - The probe behind the first finding under Consequences: `lockCopy('prose', ['Mine.'], …)` refuses a memo whose only change is one added image line, with "keep the text exactly as it is" (run again on 2026-10-21 for this record).
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-28, backlog row B-047.** The images this record keeps beside a prose piece or a page are now on the Result screen. Until then it showed images beside the deliverable only for an options run (`run.medium === 'options' ? sideImages(timeline) : []`, UX-8), so a kept image was found only through "Open the run", in that step's outputs, though the step's note said it was kept beside the work. `resultImages` (`apps/web/src/view/run.ts`) now gives, for an options run, every image Custom imagery made, as before, and for every other medium those the deliverable does not hold: a placed image is in it by its address, a storyboard's frame by its id. They are shown under the step's name with a download each, and the screen says they are not in the result and that its export leaves them out. The decision and the words are Claude's. The Run screen is unchanged: a step's outputs already list every image it made. `apps/web/test/kept-images.test.ts` shows both screens with no image placed and with some placed.
