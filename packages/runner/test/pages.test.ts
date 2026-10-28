@@ -564,35 +564,51 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect(launched.length).toBe(2);
   }, 60_000);
 
+  /** Chromium's answer when it could not take a screenshot, as Playwright gives it, with its call log. */
+  const UNABLE = 'page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot\nCall log:\n  - taking page screenshot';
+  /** The browser, with a page's nth screenshot (from 1, counted across its pages) refused with `error` when `refuse(n)` says so. */
+  const refusing = (b: Browser, refuse: (n: number) => boolean, error = UNABLE): Browser => {
+    let n = 0;
+    return seenThrough(b, {
+      page: (page) =>
+        new Proxy(page, {
+          get(pg, name, rr) {
+            if (name === 'screenshot') return async (...a: Parameters<Page['screenshot']>) => (refuse(++n) ? Promise.reject(new Error(error)) : pg.screenshot(...a));
+            const v = Reflect.get(pg, name, rr) as unknown;
+            return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
+          },
+        }),
+    });
+  };
+
+  it('takes a screenshot once more when Chromium answers "Unable to capture screenshot", and only once (B-118)', async () => {
+    // Seen on GitHub's Linux machine after a card's fonts had loaded, on commits that changed no code.
+    const calls: number[] = [];
+    const flaky = playwrightPages({ launch: async () => refusing(await launchChromium(STATED), (n) => (calls.push(n), n === 1 || n === 3)) });
+    opened.push(flaky);
+    // The first screen and the whole page's one tile, each refused once and then taken.
+    const shots = await flaky.render(SIMPLE, none, ['fold', 'desktop']);
+    expect(shots.map((s) => s.tiles.length)).toEqual([1, 1]);
+    expect(calls).toEqual([1, 2, 3, 4]);
+    // Refused twice in a row: one plain step failure after two tries, not three.
+    calls.length = 0;
+    const refused = playwrightPages({ launch: async () => refusing(await launchChromium(STATED), (n) => (calls.push(n), true)) });
+    opened.push(refused);
+    await expect(refused.render(SIMPLE, none, ['fold'])).rejects.toThrow('The page could not be drawn: the page renderer could not take its screenshot (Unable to capture screenshot).');
+    expect(calls).toEqual([1, 2]);
+    // Any other error is not tried again.
+    calls.length = 0;
+    const crashed = playwrightPages({ launch: async () => refusing(await launchChromium(STATED), (n) => (calls.push(n), true), 'page.screenshot: Target crashed') });
+    opened.push(crashed);
+    await expect(crashed.render(SIMPLE, none, ['fold'])).rejects.toThrow('The page could not be drawn: the page renderer could not take its screenshot (Target crashed).');
+    expect(calls).toEqual([1]);
+  }, 60_000);
+
   it('turns a renderer failure while drawing (a Playwright protocol error) into one plain step failure, not the raw error', async () => {
     // Seen under load in the dialog-interval test: Chromium refused the screenshot, and Playwright's own message reached
     // the step as it was, an error the workflow does not know (so Temporal retried it as if it were transient).
-    const RAW = 'page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot';
-    const refusing = (b: Browser): Browser =>
-      new Proxy(b, {
-        get(target, prop, receiver) {
-          if (prop !== 'newContext') return Reflect.get(target, prop, receiver);
-          return async (...args: Parameters<Browser['newContext']>) => {
-            const context = await target.newContext(...args);
-            return new Proxy(context, {
-              get(c, p, r) {
-                if (p !== 'newPage') return Reflect.get(c, p, r);
-                return async () => {
-                  const page = await c.newPage();
-                  return new Proxy(page, {
-                    get(pg, name, rr) {
-                      if (name === 'screenshot') return async () => Promise.reject(new Error(`${RAW}\nCall log:\n  - taking page screenshot`));
-                      const v = Reflect.get(pg, name, rr) as unknown;
-                      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(pg) : v;
-                    },
-                  });
-                };
-              },
-            });
-          };
-        },
-      });
-    const failing = playwrightPages({ launch: async () => refusing(await launchChromium(STATED)) });
+    // Refused every time: the renderer's one more try (B-118) is refused too.
+    const failing = playwrightPages({ launch: async () => refusing(await launchChromium(STATED), () => true) });
     opened.push(failing);
     const err = await failing.render(SIMPLE, none, ['desktop', 'fold']).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StepError);

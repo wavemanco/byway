@@ -47,7 +47,7 @@
  * Math.random, so a page reads the same each time; the page is scrolled through and back, and what each character
  * shows is measured from its box (ShownText). It runs under the same sandbox setting as a render.
  */
-import type { Browser, BrowserContext, LaunchOptions, Page, Route } from 'playwright';
+import type { Browser, BrowserContext, LaunchOptions, Page, PageScreenshotOptions, Route } from 'playwright';
 import type { RendererCheckRecord } from '@byway/contracts';
 import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
@@ -589,7 +589,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     const w = Math.min(Math.max(screenWidth, size.w), maxWidth);
     const tiles: Uint8Array[] = [];
     for (let y = 0; y < size.h && tiles.length < maxTiles; y += maxTile) {
-      const shot = await page.screenshot({ type: 'png', fullPage: true, animations: 'disabled', clip: { x: 0, y, width: w, height: Math.min(maxTile, size.h - y) } });
+      const shot = await screenshot(page, { type: 'png', fullPage: true, animations: 'disabled', clip: { x: 0, y, width: w, height: Math.min(maxTile, size.h - y) } });
       tiles.push(new Uint8Array(shot));
     }
     return tiles;
@@ -711,7 +711,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         for (const surface of [...want].sort((a, b) => Number(b === 'fold') - Number(a === 'fold'))) {
           if (surface === 'fold') {
             await page.evaluate('window.scrollTo(0, 0)');
-            out.push({ surface, tiles: [new Uint8Array(await page.screenshot({ type: 'png', animations: 'disabled' }))] });
+            out.push({ surface, tiles: [new Uint8Array(await screenshot(page, { type: 'png', animations: 'disabled' }))] });
           } else {
             out.push({ surface, tiles: await tilesOf(page, phone ? mobile.width : width) });
           }
@@ -2506,6 +2506,22 @@ export function readFailure(err: unknown, signal: AbortSignal | undefined): unkn
   if (err instanceof RendererClosed) return new StepError(`The page's text could not be read: ${err.message}.`, { cause: err });
   const said = playwrightSaid(firstLine(err));
   return new StepError(`The page's text could not be read: the page renderer failed while reading it${said ? ` (${said})` : ''}.`, { cause: err });
+}
+
+/**
+ * A screenshot, taken once more when Chromium answers "Unable to capture screenshot" (B-118). Chromium's DevTools gives
+ * that answer when the capture brought back no image from its compositor, not when it refuses the page's content: seen
+ * on GitHub's Linux machine after a card's fonts had loaded, on two commits in a row that changed no code, and under load
+ * while a page opened dialogs. Once more only, under the same deadline and cancel (loaded): a second refusal, or any
+ * other error, is the render's plain step failure (drawFailure).
+ */
+async function screenshot(page: Page, opts: PageScreenshotOptions): Promise<Buffer> {
+  try {
+    return await page.screenshot(opts);
+  } catch (err) {
+    if (!/Unable to capture screenshot/.test(firstLine(err))) throw err;
+    return await page.screenshot(opts);
+  }
 }
 
 const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
