@@ -7,7 +7,7 @@ import { CANCEL_QUESTION, controlPendingLabel, runStatusLabel, type ControlActio
 import { runMeter } from '../../view/meter.ts';
 import type { Connection } from '../../view/refresh.ts';
 import { HELD_KEY_REFUSAL } from '../../view/refusals.ts';
-import { activeCheckpoint, isEnded, pollDelay } from '../../view/run.ts';
+import { activeCheckpoint, isEnded, runPollDelay } from '../../view/run.ts';
 import { lastSeq, mergeRunData, type RunData } from '../../view/rundata.ts';
 import type { QuestionCosts } from '../../view/questions.ts';
 import type { StepIndex } from '../../view/steps.ts';
@@ -27,9 +27,6 @@ import { StepDetail } from './StepDetail.tsx';
 import { Timeline } from './Timeline.tsx';
 import { UnsentWords } from './UnsentWords.tsx';
 import { YourTurn } from './YourTurn.tsx';
-
-/** How long to wait before retrying while byway is not answering, whatever the run's status. */
-const LOST_RETRY_MS = 3000;
 
 interface Props {
   initial: RunData;
@@ -104,9 +101,8 @@ export function RunScreen({ initial, presentation, label, steps, questions }: Pr
     setConnection,
   );
   // Poll while the run can still change: briskly while the AI works, lazily while it waits for you or, once it has ended,
-  // while some of its calls are still under way. While byway is not answering, keep retrying whatever the last status
-  // said, so the banner clears on an ended run too.
-  usePolling(refresher, connection === 'lost' ? LOST_RETRY_MS : pollDelay(run.status, after?.callsUnderWay));
+  // while some of its calls are still under way (view/run.ts runPollDelay).
+  usePolling(refresher, runPollDelay(data, connection));
 
   // F06: the person's unsent answers, owned here, above the working area's conditional render. The store is made once
   // per mount without side effects; it loads after hydration (so the server HTML and the first client render agree)

@@ -3,6 +3,8 @@
  * output is previewed, and the "How this was made" account of who did what.
  */
 import type { CheckpointRecord, RunRecord, RunStatus } from '@byway/contracts';
+import type { Connection } from './refresh.ts';
+import type { RunData } from './rundata.ts';
 import type { TimelineStage } from './timeline.ts';
 import type { StageName, Who } from './vocabulary.ts';
 
@@ -24,6 +26,20 @@ export function pollDelay(status: RunStatus, callsUnderWay: number | undefined):
   if (isEnded(status)) return (callsUnderWay ?? 0) > 0 ? 3000 : null;
   if (status === 'paused' || status === 'waiting') return 3000;
   return 1000;
+}
+
+/** How long to wait before retrying while byway is not answering, whatever the run's status. */
+export const LOST_RETRY_MS = 3000;
+
+/**
+ * The Run screen's poll, from what it was last served and the connection: while byway is not answering, retry whatever
+ * the last status said (so the banner clears on an ended run too); otherwise pollDelay, given an ended run's calls under
+ * way from the spend book (RunData.ended). A pure function so what the screen passes is tested (B-039).
+ */
+export function runPollDelay(data: Pick<RunData, 'view' | 'ended'>, connection: Connection): number | null {
+  if (connection === 'lost') return LOST_RETRY_MS;
+  const status = data.view.run.status;
+  return pollDelay(status, isEnded(status) ? data.ended?.callsUnderWay : undefined);
 }
 
 /** The question shown in the "Your turn" panel: the oldest one still open. */
