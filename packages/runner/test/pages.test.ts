@@ -39,20 +39,21 @@ const size = (png: Uint8Array) => {
   return { width: v.getUint32(16), height: v.getUint32(20) };
 };
 
-/** Runs a TypeScript file in a fresh Node process (Node strips the types) and collects what it printed. */
+/**
+ * Runs a TypeScript file in a fresh Node process (Node strips the types) and collects what it printed. Called inside a
+ * test, it takes no time limit of its own: the test's own is the hang guard, and the process is killed when the test ends
+ * (a kill after 50 s once failed a dialog test under load, B-100).
+ */
 const runNode = (file: string, args: string[]) =>
   new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(process.execPath, [file, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['ignore', 'pipe', 'pipe'] });
+    onTestFinished(() => void child.kill());
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
     child.stderr.on('data', (d: Buffer) => (stderr += d.toString()));
-    const killer = setTimeout(() => child.kill(), 50_000);
     child.on('error', reject);
-    child.on('close', (code) => {
-      clearTimeout(killer);
-      resolve({ code, stdout, stderr });
-    });
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
   });
 
 const PIXEL =Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
@@ -262,10 +263,11 @@ describe('web-page RENDER with Playwright Chromium', () => {
 
   it('bounds a page that never settles: the render fails plainly and is not retried, and the next render works (SEC-5)', async () => {
     // The page never settles, so a render of it can end only at its deadline, however fast the machine: were the deadline
-    // not kept, the test would time out. The deadline is short, to keep the test quick, and long enough for the plain
-    // page after it to render on a busy machine (renders take no deadline of their own, so that next render runs under
-    // the same 5 s). Nothing here measures time (this test required the render to end within the limit, both closes and
-    // 5 s: on GitHub's 2-CPU Windows machine it took 18.8 s once, against 14 s, in run 39079760987).
+    // not kept, the test would time out. Nothing here measures time (this test required the render to end within the
+    // limit, both closes and 5 s: on GitHub's 2-CPU Windows machine it took 18.8 s once, against 14 s, in run
+    // 39079760987). Nor does any plain page render under a short limit (B-100): the renderer's own short limit is checked
+    // on a stuck render alone, and the next render follows a stuck render given a deadline of its own, on a renderer
+    // whose own limit only stops a hung render.
     const seen = { launches: 0, contexts: 0 };
     const counted = (into: typeof seen, closing: string[], stuck: () => Promise<void> | undefined) => async () => {
       into.launches++;
@@ -286,15 +288,9 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect(seen.contexts - before.contexts).toBe(1);
     // The deadline closed the stuck page's context before the render ended (a slow close under load may add the browser).
     expect(shut[0]).toBe('context');
-    const next = await quick.screenshots(SIMPLE, none);
-    expect(next.length).toBe(1);
-    expect(seen.contexts - before.contexts).toBe(2);
 
-    // A stuck page is then closed and, if it will not close, the browser, each within its own limit. Here the test holds
-    // both from closing, as for a renderer too stuck to close, so the render can end only by giving up on each; the next
-    // render then launches a browser again. On a renderer whose own limit only stops a hung render, the render is
-    // cancelled once its page asks for its image, which never comes (so no page spins a CPU while it is held): a cancel
-    // closes the page the same way as the deadline, and nothing in this part runs under a short deadline.
+    // The same stuck page with a deadline of its own, on a renderer whose own limit only stops a hung render: it fails at
+    // its deadline, made once, its context closed; the plain page after it renders with no short limit.
     const held = { launches: 0, contexts: 0 };
     const closing: string[] = [];
     let stuck: Promise<void> | undefined;
@@ -302,6 +298,21 @@ describe('web-page RENDER with Playwright Chromium', () => {
     opened.push(patient);
     await patient.ready();
     closing.length = 0;
+    const first = { ...held };
+    const late = await patient.screenshots(BUSY, none, { deadline: Date.now() + 5_000 }).catch((e: unknown) => e);
+    expect(late).toBeInstanceOf(StepError);
+    expect((late as Error).message).toBe("The page did not finish rendering in the time byway gives a page's renders, so it could not be shown.");
+    expect(held.contexts - first.contexts).toBe(1);
+    expect(closing[0]).toBe('context');
+    expect((await patient.screenshots(SIMPLE, none)).length).toBe(1);
+    expect(held.contexts - first.contexts).toBe(2);
+    closing.length = 0;
+
+    // A stuck page is then closed and, if it will not close, the browser, each within its own limit. Here the test holds
+    // both from closing, as for a renderer too stuck to close, so the render can end only by giving up on each; the next
+    // render then launches a browser again. On the same patient renderer, the render is cancelled once its page asks for
+    // its image, which never comes (so no page spins a CPU while it is held): a cancel closes the page the same way as
+    // the deadline, and nothing in this part runs under a short deadline.
     // Neither the stuck page's context nor the browser closes until the test lets them: when it ends, whichever way it
     // ends (a timeout included), so the browsers can close after it.
     let release = () => {};
@@ -1429,25 +1440,35 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
   it('a read slower than its deadline fails plainly at it, once, and the next read works, on any machine (SEC-5)', async () => {
     // The page above, read by a reader with a short deadline whose first sample is held until the read has failed: the
     // read cannot finish in time however fast the machine. Were the read to wait for its work past the deadline, it would
-    // never fail, and the test would time out; were it read again, a second context would open.
+    // never fail, and the test would time out; were it read again, a second context would open. The reader's own short
+    // limit is checked on the held read alone; the next read follows a held read given a deadline of its own, on a
+    // reader whose own limit only stops a hung read, so no plain read runs under a short limit (B-100).
     const { seen, launch } = watched();
     const quick = playwrightPages({ timeoutMs: 5_000, closeTimeoutMs: 2_000, launch });
-    opened.push(quick);
+    const patient = playwrightPages({ timeoutMs: 300_000, closeTimeoutMs: 2_000, launch });
+    opened.push(quick, patient);
+    // The readiness check draws byway's test page in a context of its own (ADR-0105).
     await quick.ready();
-    // The readiness check drew byway's test page in a context of its own (ADR-0105).
-    const before = seen.contexts;
-    let release = () => {};
-    seen.hold = new Promise<void>((r) => (release = r));
-    try {
-      const err = await quick.shownText(OPEN, none).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(StepError);
-      expect((err as Error).message).toBe('The page did not finish loading within 5 s, so its text could not be read.');
-      expect(seen.contexts - before).toBe(1);
-    } finally {
-      release();
-      seen.hold = undefined;
+    await patient.ready();
+    const reads = [
+      { reader: quick, deadline: false, said: 'The page did not finish loading within 5 s, so its text could not be read.' },
+      { reader: patient, deadline: true, said: "The page did not finish loading in the time byway gives a page's reads, so its text could not be read." },
+    ];
+    for (const { reader, deadline, said } of reads) {
+      const before = seen.contexts;
+      let release = () => {};
+      seen.hold = new Promise<void>((r) => (release = r));
+      try {
+        const err = await reader.shownText(OPEN, none, deadline ? { deadline: Date.now() + 5_000 } : {}).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(StepError);
+        expect((err as Error).message).toBe(said);
+        expect(seen.contexts - before).toBe(1);
+      } finally {
+        release();
+        seen.hold = undefined;
+      }
     }
-    expect((await quick.shownText('<p>Next</p>', none)).text).toBe('Next');
+    expect((await patient.shownText('<p>Next</p>', none)).text).toBe('Next');
   }, 60_000);
 
   it('text in a marquee is seen wherever its scrolling has taken it: it is measured by the marquee\'s own box (r9)', async () => {
@@ -1703,7 +1724,10 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
 
   it('is bounded and cancellable like a render (SEC-5)', async () => {
     const quick = playwrightPages({ timeoutMs: 2_000, closeTimeoutMs: 2_000 });
-    opened.push(quick);
+    // Whose own limit only stops a hung read: the stuck reads before its plain one are given a deadline of their own, so
+    // no plain read runs under a short limit (B-100).
+    const patient = playwrightPages({ timeoutMs: 300_000, closeTimeoutMs: 2_000 });
+    opened.push(quick, patient);
     // An artifact that never comes back holds its load; a script that loops once the read runs its clock holds the read.
     const hang = '<!doctype html><html><body><img src="/api/artifacts/sha256:never">Text</body></html>';
     const never = () => new Promise<undefined>(() => undefined);
@@ -1711,8 +1735,11 @@ describe('the text a page shows a visitor, for VOICE\'s arbiter (ADR-0081): Chro
       const err = await quick.shownText(page, never).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(StepError);
       expect((err as Error).message).toMatch(/did not finish loading within 2 s, so its text could not be read/);
+      const late = await patient.shownText(page, never, { deadline: Date.now() + 2_000 }).catch((e: unknown) => e);
+      expect(late).toBeInstanceOf(StepError);
+      expect((late as Error).message).toBe("The page did not finish loading in the time byway gives a page's reads, so its text could not be read.");
     }
-    expect((await quick.shownText('<p>Next</p>', none)).text).toBe('Next');
+    expect((await patient.shownText('<p>Next</p>', none)).text).toBe('Next');
     const ctrl = new AbortController();
     const reason = new Error('cancelled by the run');
     setTimeout(() => ctrl.abort(reason), 300);

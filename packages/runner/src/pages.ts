@@ -70,7 +70,8 @@ export interface RenderOptions {
   signal?: AbortSignal;
   /**
    * The time (as Date.now()) by which the load must finish, as well as within the renderer's own timeout: reads that
-   * share one deadline share its time (a VOICE question's two reads, inside an activity's one minute).
+   * share one deadline share its time (a VOICE question's two reads, inside an activity's one minute). A render's two
+   * screen sizes share it too; no step gives a render one yet (tests do, so a plain page after a stuck one has none).
    */
   deadline?: number;
   /**
@@ -718,7 +719,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         }
         return out;
       },
-      undefined,
+      renderOpts.deadline,
       undefined,
       renderOpts.drawn,
     );
