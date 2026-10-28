@@ -6,8 +6,8 @@
  * - an Accepted record that names a path under Temp (as `…/AppData/Local/Temp/…`, `%LOCALAPPDATA%\Temp`, `%TEMP%`,
  *   `%TMP%`, `$env:TEMP`, `$env:TMP`, `$TEMP/`, `${TEMP}/`, `$TMP/`, `${TMP}/`, Git Bash's `/tmp/` or `Temp/byway-…`) has
  *   the Later note headed as the one that says where that evidence is now, or that it was not kept, and its Later notes
- *   name each Temp path it cites in backticks, whole or by its last part (one range, ADR-0098's, is named as such); a
- *   path cited outside backticks is checked for the heading only. `%LOCALAPPDATA%` counts only with `Temp` after it,
+ *   name each Temp path it cites, in backticks or bare, whole or by its last part (one range, ADR-0098's, is named as
+ *   such; a bare path is read up to the next space, B-085). `%LOCALAPPDATA%` counts only with `Temp` after it,
  *   since byway's data folder is `%LOCALAPPDATA%\byway` (ADR-0066);
  * - every relative link in the evidence files written to be read here, and in the records' Later notes, resolves;
  * - the evidence files and the reviews (docs/reviews, where review packets are kept) hold no email address, written
@@ -41,8 +41,18 @@ const records = readdirSync(path.join(REPO, ADR_DIR))
 /** A record's text before its Later notes, where a Temp path is a citation rather than a note about one. */
 const cited = (text: string) => text.split(/^## Later notes\s*$/m)[0] ?? text;
 
-/** The Temp paths a record's text before its Later notes cites in backticks, as it writes them. */
-const tempPaths = (text: string) => [...new Set([...cited(text).matchAll(/`([^`\n]+)`/g)].map((m) => m[1] ?? '').filter((p) => TEMP.test(p)))];
+/**
+ * The Temp paths a record's text before its Later notes cites, as it writes them: in backticks, or bare, as a run of
+ * text with no space in it, without the brackets and punctuation around it (B-085).
+ */
+const tempPaths = (text: string) => {
+  const quoted = [...cited(text).matchAll(/`([^`\n]+)`/g)].map((m) => m[1] ?? '');
+  const bare = cited(text)
+    .replace(/`[^`\n]+`/g, ' ')
+    .split(/\s+/)
+    .map((s) => s.replace(/^[("'[]+/, '').replace(/[.,;:)"'\]]+$/, ''));
+  return [...new Set([...quoted, ...bare].filter((p) => TEMP.test(p)))];
+};
 const lastPart = (p: string) => p.split(/[\\/]/).filter((s) => s !== '').at(-1) ?? p;
 /** Whether a record's Later notes name a cited path: whole, or by its last part (a file or a folder's name). */
 const named = (notes: string, p: string) => notes.includes(p) || notes.includes(lastPart(p));
@@ -142,7 +152,7 @@ describe('decision evidence kept in the repository', () => {
     expect(citing.filter((r) => !(section(r.text, '## Later notes') ?? '').includes(NOTE)).map((r) => r.file)).toEqual([]);
   });
 
-  it('that note names each Temp path the record cites in backticks, whole or by its last part, but for the range named here', () => {
+  it('that note names each Temp path the record cites, in backticks or bare, whole or by its last part, but for the range named here', () => {
     const accepted = records.filter((r) => isAccepted(parseRecord(r.text).status));
     expect(accepted.flatMap((r) => tempPaths(r.text)).length).toBeGreaterThan(10);
     const unnamed = accepted.flatMap((r) => {
@@ -159,9 +169,9 @@ describe('decision evidence kept in the repository', () => {
       const notes = section(r?.text ?? '', '## Later notes') ?? '';
       expect(tempPaths(r?.text ?? '').filter((p) => !named(notes, p)).map(lastPart), `ADR-${n}`).toEqual(parts);
     }
-    // The note's heading alone names no path.
-    const record = '## Context\n\nIt ran in `C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/a-probe/`.\n\n## Later notes\n\n- **2026-10-18, the evidence kept only under Temp.**\n';
-    expect(tempPaths(record).filter((p) => !named(section(record, '## Later notes') ?? '', p))).toEqual(['C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/a-probe/']);
+    // The note's heading alone names no path, in backticks or bare (B-085).
+    const record = '## Context\n\nIt ran in `C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/a-probe/`, and (C:/Users/arvik/AppData/Local/Temp/byway-fixes/b-probe.json, its brief).\n\n## Later notes\n\n- **2026-10-18, the evidence kept only under Temp.**\n';
+    expect(tempPaths(record).filter((p) => !named(section(record, '## Later notes') ?? '', p))).toEqual(['C:/Users/arvik/AppData/Local/Temp/byway-fixes/scratch/a-probe/', 'C:/Users/arvik/AppData/Local/Temp/byway-fixes/b-probe.json']);
   });
 
   it('reads each spelling of a Temp path that the header names, and not a word that only starts like one, nor byway’s data folder', () => {
