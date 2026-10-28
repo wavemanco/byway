@@ -215,6 +215,25 @@ describe('withdrawn checkpoints', () => {
     await recordResolution({ gateway: scripted([]), store, prompts: fakePrompts() }, { runId: run.runId, call: call(run, 'react'), resolution: { checkpointId: again.id, text: 'Yes.' } });
     expect((await store.events(run.runId)).filter((e) => e.type === 'checkpoint-resolved')).toHaveLength(1);
   });
+
+  it("reads the store's errors by name and code, so an error from another copy of the store module still counts (BUILD-1)", async () => {
+    const run = await newRun();
+    // What a second copy of @byway/store throws: the same name and code, another class.
+    const copied = (name: string, code: string) => Object.assign(new Error('from another copy'), { name, code });
+    const bound = (s: MemoStore, k: string | symbol): unknown => { const v: unknown = Reflect.get(s, k); return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(s) : v; };
+    const throwing = (e: Error) => ({ gateway: scripted([]), prompts: fakePrompts(), store: new Proxy(store, { get: (s, k) => (k === 'resolveCheckpoint' ? () => Promise.reject(e) : bound(s, k)) }) });
+    const resolved = await openOne(run, 'cp1');
+    await recordResolution(throwing(copied('CheckpointResolvedError', 'already-resolved')), { runId: run.runId, call: call(run, 'react'), resolution: { checkpointId: resolved.id, text: 'Yes.' } });
+    expect((await store.events(run.runId)).filter((e) => e.type === 'checkpoint-resolved')).toHaveLength(1);
+    const withdrawn = await openOne(run, 'cp2');
+    const err = await createActivities(throwing(copied('CheckpointWithdrawnError', 'withdrawn'))).recordResolution({ runId: run.runId, call: call(run, 'react'), resolution: { checkpointId: withdrawn.id, text: 'Late.' } }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApplicationFailure);
+    expect((err as ApplicationFailure).nonRetryable).toBe(true);
+    expect((err as ApplicationFailure).message).toMatch(/withdrawn/);
+    // A name without its code is any other store error: thrown again, for a retry.
+    const other = copied('CheckpointResolvedError', 'not-found');
+    await expect(recordResolution(throwing(other), { runId: run.runId, call: call(run, 'react'), resolution: { checkpointId: withdrawn.id, text: 'Late.' } })).rejects.toBe(other);
+  });
 });
 
 describe('which profile says whether images and video exist', () => {
