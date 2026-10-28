@@ -80,7 +80,7 @@ export function createServiceHost(engine: EngineModules, opts: ServiceHostOption
   const store = engine.store.createStore({ dataDir: opts.dataDir });
   const prompts = engine.prompts.createPromptRenderer();
   const connect = opts.connect ?? (async (s: Store, address: string) => (await engine.runner.connectRunner({ store: s, address })).runner);
-  const runner = engineRunner(store, () => connect(store, opts.temporalAddress));
+  const runner = engineRunner(store, () => connect(store, opts.temporalAddress), (e) => engine.runner.isTransportFailure(e) || engine.runner.isTimeout(e));
   const pairs = new Map<boolean, { gateway: Gateway; advisor: Advisor }>();
 
   const pair = (demo: boolean) => {
