@@ -7,6 +7,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ATTACH_LIMIT_NOTE, AttachControl, MAX_ATTACHMENTS } from '../src/components/StartForm.tsx';
+import { decodeAttachments } from '../src/components/startDraft.ts';
 import { ProblemInput } from '../src/server/schemas.ts';
 
 const shown = (count: number) => renderToStaticMarkup(createElement(AttachControl, { count, onAttach: () => undefined }));
@@ -28,5 +29,20 @@ describe("Start's attach control", () => {
     expect(MAX_ATTACHMENTS).toBe(5);
     expect(ProblemInput.safeParse({ text: 'A memo', attachments: attachments(5) }).success).toBe(true);
     expect(ProblemInput.safeParse({ text: 'A memo', attachments: attachments(6) }).success).toBe(false);
+  });
+
+  it("keeps the text limits the server keeps, in the request and in the kept draft (WEB-8)", () => {
+    const ok = (text: string, name = 'Note', body = 'x') => ProblemInput.safeParse({ text, attachments: [{ name, text: body }] }).success;
+    expect(ok('x'.repeat(20_000))).toBe(true);
+    expect(ok('x'.repeat(20_001))).toBe(false);
+    expect(ok('A memo', 'n'.repeat(200))).toBe(true);
+    expect(ok('A memo', 'n'.repeat(201))).toBe(false);
+    expect(ok('A memo', 'Note', 'x'.repeat(200_000))).toBe(true);
+    expect(ok('A memo', 'Note', 'x'.repeat(200_001))).toBe(false);
+    expect(decodeAttachments([{ name: 'n'.repeat(200), text: 'x'.repeat(200_000) }])).toHaveLength(1);
+    expect(decodeAttachments([{ name: 'n'.repeat(201), text: 'x' }])).toBeNull();
+    expect(decodeAttachments([{ name: 'Note', text: 'x'.repeat(200_001) }])).toBeNull();
+    expect(decodeAttachments(attachments(5))).toHaveLength(5);
+    expect(decodeAttachments(attachments(6))).toBeNull();
   });
 });

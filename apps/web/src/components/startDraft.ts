@@ -6,14 +6,11 @@
  * silently dropped the drafts you had pasted. The text keeps its original plain-string key, so nothing kept by an
  * earlier byway needs migrating.
  */
+import { ATTACHMENT_NAME_MAX, ATTACHMENT_TEXT_MAX, MAX_ATTACHMENTS } from '../view/format.ts';
 import type { HeldKeyPart } from '../view/refusals.ts';
 import { sessionSlot } from './sessionSlot.ts';
 
 const KEY = 'byway.start-draft';
-/** The limits Start's request accepts (server/schemas.ts ProblemInput). */
-const MAX_ATTACHMENTS = 5;
-const MAX_NAME = 200;
-const MAX_TEXT = 200_000;
 
 export interface KeptAttachment {
   name: string;
@@ -26,7 +23,8 @@ export function decodeAttachments(raw: unknown): KeptAttachment[] | null {
   for (const item of raw as unknown[]) {
     const a = item as Record<string, unknown> | null;
     if (typeof a !== 'object' || a === null || typeof a.name !== 'string' || typeof a.text !== 'string') return null;
-    if (a.name.length > MAX_NAME || a.text.length > MAX_TEXT) return null;
+    // The limits Start's request accepts (server/schemas.ts ProblemInput).
+    if (a.name.length > ATTACHMENT_NAME_MAX || a.text.length > ATTACHMENT_TEXT_MAX) return null;
     out.push({ name: a.name, text: a.text });
   }
   return out;
