@@ -1,6 +1,6 @@
 # Conversation record, continued (decision evidence)
 
-What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-23 23:13 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block), on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, from 14:06 to 20:07 local, for the sweep of unfiled items, and at 22:49 local, for the launch checklist) and on 2026-10-23 (from 01:18 to 02:20 local, for the records pass of block 2's fix round, from 03:40 to 09:06 local, for the records pass of its second fix round, from 09:59 to 10:10 local, for that round's last answer, from 10:54 to 11:07 local, for the answer to its re-check, and from 11:17 to 12:28 local, for the records pass after block 2's merge, from 12:35 to 13:37 local, for the plan to all clear, from 13:44 to 20:22 local, for the backlog sync, and from 20:22 to 23:13 local, for the hand-over to a session started elsewhere) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
+What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-28 15:59 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block), on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, from 14:06 to 20:07 local, for the sweep of unfiled items, and at 22:49 local, for the launch checklist) and on 2026-10-23 (from 01:18 to 02:20 local, for the records pass of block 2's fix round, from 03:40 to 09:06 local, for the records pass of its second fix round, from 09:59 to 10:10 local, for that round's last answer, from 10:54 to 11:07 local, for the answer to its re-check, and from 11:17 to 12:28 local, for the records pass after block 2's merge, from 12:35 to 13:37 local, for the plan to all clear, from 13:44 to 20:22 local, for the backlog sync, and from 20:22 to 23:13 local, for the hand-over to a session started elsewhere) and on 2026-10-28 (from 2026-10-24 01:01 to 2026-10-28 15:59 local, for the records of the ponytail audit; the owner's "Try again" of 2026-10-28 was copied by hand, since the extractor drops a message whose words repeat an earlier one) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
 
 How it differs from conversation.md:
 
@@ -931,3 +931,117 @@ it was honest mistake.
 Is remote main up to date with these changes? CI is red on windows there.
 
 And, after remote is up to date, if I were to start a new session in cloud on byway Github repo, will the new agent be able to take over from where you are leaving things here?
+
+---
+## USER 2026-10-24T01:01:09.472-07:00 (2026-10-24T08:01:09.472Z)
+<!-- reply 1 -->
+> None of these findings is in the backlog yet. Say the word and I’ll file them as rows, and put 1 to 5 into step 3, since they matter before the first live run.
+
+commit the auit-report.md (C:\Users\arvik\AppData\Local\Temp\claude\C--Users-arvik-code-byway\67b5b9ac-8595-4cc6-898a-d7d911b9d422\scratchpad\audit-report.md) file to the repo but rename it ponytail-audit-report.md and in the file, add a header that mentions the current head at main and today's date so that we know when the audit was done.
+
+
+Are you satisfied with these findings from ponytail? do we need an adversarial verification?
+
+---
+## CLAUDE-ASKS 2026-10-24T01:03:45.324-07:00 (2026-10-24T08:03:45.324Z)
+[{"question":"File the audit's findings in the backlog now, with 'reproduce first' as the check for the risky ones?","header":"Audit rows","multiSelect":false,"options":[{"label":"File all; 1-9 and 16 into step 3, reproduce first (Recommended)","description":"Every finding (the 20 and the 19 smaller) becomes a backlog row with an ID and trigger. 1-9 and 16 go into the plan's step 3, each to start with the failing test the finding proposes (dropped if it cannot be made to fail); the branch then gets its adversarial check on the money and engine parts. 10-20 and the smaller ones wait for their triggers; 19 waits for an ADR-0095 check. Records only."},{"label":"File all, but run a separate adversarial verification first","description":"Before filing, a refuter pass reproduces 1-9 and 16 in a clone (failing tests, then thrown away). More tokens; the same tests are written again when fixing."},{"label":"File only 1-5 now","description":"The five that matter before the first live run become rows in step 3; the rest stay in the report until later."}]}]
+
+---
+## USER 2026-10-24T01:14:48.595-07:00 (2026-10-24T08:14:48.595Z)
+[ANSWER] The user answered: "File the audit's findings in the backlog now, with 'reproduce first' as the check for the risky ones?"="I would like to go with Option 1 but since this is a refactor of sorts, I would like for you to follow this protocol (I said like to but you should push back if something isn't right in this protocol):
+
+--
+
+Implement the actionable findings in the Ponytail audit report, subject to the following requirements.
+
+PRIMARY OBJECTIVE
+Improve the codebase while preserving existing intended behavior.
+Reducing code, files, dependencies, or abstraction layers is secondary.
+The audit report is a set of hypotheses, not an authoritative specification.
+
+1. VALIDATE AND PRIORITIZE THE FINDINGS
+Before editing, check each finding against the actual code and repository
+instructions.
+
+Classify each as:
+- Valid and suitable for behavior-preserving implementation.
+- Valid but requires an intentional behavior or contract change.
+- Unsupported, incorrect, or not worth the risk.
+- Uncertain because relevant context or verification is unavailable.
+
+Explain rejected and uncertain findings briefly.
+Do not implement behavior-changing findings without my approval.
+
+2. MAP THE IMPACT
+For each proposed change, identify affected callers, consumers, interfaces,
+data flows, tests, configuration, exports, and persistence formats.
+
+Do not assume that a symbol with no obvious direct callers is unused.
+Consider indirect references, registration, dynamic loading, external
+consumers, and documented contracts where relevant.
+
+Identify what must remain unchanged: outputs, errors, validation,
+authorization, side effects, persistence, ordering, and relevant
+performance characteristics.
+
+3. ESTABLISH A BASELINE
+Inspect the repository's development and testing instructions.
+Run the relevant existing tests and checks before editing.
+Record existing failures separately from failures introduced by changes.
+
+Where important affected behavior lacks coverage, add characterization
+tests against the existing implementation first. Do not silently treat
+suspected bugs as intended behavior; flag ambiguity.
+
+If you cannot establish a meaningful baseline for a high-risk change,
+stop that change and explain the gap.
+
+4. IMPLEMENT IN SMALL BATCHES
+Group findings by shared dependencies and risk.
+Implement small, independently reviewable batches rather than rewriting
+the repository in one pass.
+
+Preserve existing public contracts and architectural boundaries.
+Do not remove error handling, validation, authorization, compatibility
+behavior, or observability merely to simplify code.
+
+Do not weaken tests or change expected results simply to make a
+refactor pass.
+
+5. VERIFY EACH BATCH
+Run the relevant tests and checks after each batch.
+Include affected integration or contract tests where available.
+
+Where practical, compare old and new behavior on the same inputs,
+including edge cases, errors, and side effects.
+
+Run the broader project-required checks after all batches.
+If a check cannot run, state that explicitly; do not count it as passed.
+
+6. REPORT EVIDENCE AND LIMITS
+For each implemented finding, report:
+- What changed and why.
+- Affected contracts and consumers.
+- Checks actually run and their results.
+- Any remaining uncertainty or unverified behavior.
+
+Distinguish verified behavior from assumptions.
+Do not claim complete behavioral equivalence based only on passing tests.
+
+WORKFLOW
+First present a concise implementation plan with finding classifications,
+change batches, and verification steps. Do not edit until I approve the plan.
+After approval, execute the approved behavior-preserving batches.
+Stop and ask before expanding scope or changing intended behavior.". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
+
+---
+## CLAUDE-ASKS 2026-10-24T01:45:17.183-07:00 (2026-10-24T08:45:17.183Z)
+[{"question":"Approve the plan: batch 0 (records), A-F into step 3, G-N after it at the points listed, WEB-6 and RECIPES-10 not taken, and L (deleting the in-memory spend book) not now?","header":"Plan","multiSelect":false,"options":[{"label":"Approve as recommended (Recommended)","description":"Batch 0 now. A to F join step 3 under its one adversarial check, branch CI and merge. G, H and I wait for their runs (Best, C2, after C4 and C3); J, K, M and N follow step 3; L is filed but not done now. Each later batch's own choice is put to you when it comes up."},{"label":"Approve, but do L too","description":"As recommended, and batch L (delete memory-book.ts, move about 17 test files onto the SQLite book) after step 3, so the spend-book rules are written once."},{"label":"Change the plan first","description":"Tell me what to move, drop or add before anything is edited."}]},{"question":"Batch B: a 'may have been billed' call that is being sent again. What should Clear do?","header":"Batch B","multiSelect":false,"options":[{"label":"(b) Keep it listed; Clear waits until the call ends (Recommended)","description":"The row stays in Settings so you can see it, but Clear does nothing to it (and its button is hidden) until the send in flight ends; then Clear works as today. Smaller change, no migration."},{"label":"(a) Hide it while it is in flight","description":"The row disappears from the list and from Clear all until the send ends, then comes back."}]},{"question":"Batch C: once Temporal cancels a step attempt, should the gateway stop sending that attempt's call again?","header":"Batch C","multiSelect":false,"options":[{"label":"Yes, nothing is sent again after a cancel (Recommended)","description":"The cancelled attempt stops its re-sends; the next attempt makes the call. A call that was not cancelled keeps its one resend after a 'maybe' failure, and the run's own stop still cuts calls off as today. Widens the cancel contract; recorded in a Later note on ADR-0111."},{"label":"No, keep today's re-sends","description":"A cancelled attempt may still re-send while the next attempt buys the call; the report's case (paying twice after a laptop sleep) stays."}]},{"question":"Batch A: a final check (gate) that has no retry and does not pass. What should byway ask?","header":"Batch A","multiSelect":false,"options":[{"label":"\"It did not pass the final check. Use it anyway?\" (Recommended)","description":"Says what happened and that there is no retry to offer. C5's own wording (GATE_FAILED_PROMPT) stays as it is."},{"label":"Keep today's wording","description":"The question stays as it is now for gates with no retry."}]}]
+
+---
+## USER 2026-10-24T02:48:38.099-07:00 (2026-10-24T09:48:38.099Z)
+[ANSWER] Your questions have been answered: "Approve the plan: batch 0 (records), A-F into step 3, G-N after it at the points listed, WEB-6 and RECIPES-10 not taken, and L (deleting the in-memory spend book) not now?"="Approve as recommended (Recommended)", "Batch B: a 'may have been billed' call that is being sent again. What should Clear do?"="(b) Keep it listed; Clear waits until the call ends (Recommended)", "Batch C: once Temporal cancels a step attempt, should the gateway stop sending that attempt's call again?"="Yes, nothing is sent again after a cancel (Recommended)", "Batch A: a final check (gate) that has no retry and does not pass. What should byway ask?"=""It did not pass the final check. Use it anyway?" (Recommended)". You can now continue with these answers in mind.
+
+---
+## USER 2026-10-28T15:59:49.490-07:00 (2026-10-28T22:59:49.490Z)
+Try again
