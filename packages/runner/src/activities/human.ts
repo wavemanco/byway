@@ -35,7 +35,7 @@ import {
 } from '../copy.ts';
 import { parseArtifact, parseStoryboard } from '../formats.ts';
 import { arbiterProblem, expectedShown, locate, markedCopy, notShown, notShownWhy, WHY_NOT_SHOWN, type Location, type NotShownWhy } from '../page-arbiter.ts';
-import type { ArtifactResolver, PageRenderer, RenderOptions } from '../pages.ts';
+import type { PageRenderer, RenderOptions } from '../pages.ts';
 import { INPUT_MEDIA_TYPE } from '../stored-inputs.ts';
 import type { EarlierAnswer, FinishHumanInput, FinishHumanResult, OpenCheckpointInput, OpenCheckpointResult, RecordResolutionInput, RunRef, StepSpec } from '../types.ts';
 import { PAGE_LINES_RULE } from '../workflow/wording.ts';
@@ -43,7 +43,7 @@ import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
 import { AnswerRejected, StepError } from './failures.ts';
 import { unreadableAnswer } from './held-voice.ts';
-import { ArtifactReader } from './prompting.ts';
+import { ArtifactReader, artifactRoute } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
 import { runSeeds, storeText, writeProblems } from './writes.ts';
 
@@ -224,15 +224,6 @@ function pageRenderer(deps: RunnerDeps): PageRenderer {
   if (!deps.pages) throw new StepError('The words on a web page cannot be written in this step: no page renderer is configured, and byway writes a page only when a browser shows it as you wrote it.');
   return deps.pages;
 }
-
-/** Artifact routes in a page the browser reads, served from the store. */
-const artifactRoute =
-  (deps: RunnerDeps): ArtifactResolver =>
-  async (id) => {
-    if (!(await deps.store.artifacts.has(id))) return undefined;
-    const { record, bytes } = await deps.store.artifacts.get(id);
-    return { body: bytes, contentType: record.mediaType };
-  };
 
 /**
  * Where Chromium shows each of the page's lines (page-arbiter.ts). The reads fail as a render does, with a plain

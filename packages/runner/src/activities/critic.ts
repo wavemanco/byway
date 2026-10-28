@@ -23,14 +23,13 @@ import { GREAT_MIN_REFERENCES, greatLineup, labelled, labelOf } from '@byway/pro
 import { cardHtml, fitCard, imageSize, unitNoun, type CardContent, type CardCut, type CardImage } from '../cards.ts';
 import { textView, viewKindOf } from '../formats.ts';
 import { labels } from '../labels.ts';
-import type { ArtifactResolver } from '../pages.ts';
 import { sectionOf, type CriticAnswer } from '../parse.ts';
 import { SURFACE_CAPTIONS, SURFACES } from '../surfaces.ts';
 import type { Ports, Score, StepSpec, Surface, View } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 import { memoized } from './memo.ts';
-import { ArtifactReader, surfaceGroups, type ImageGroup, type Slots } from './prompting.ts';
+import { ArtifactReader, artifactRoute, surfaceGroups, type ImageGroup, type Slots } from './prompting.ts';
 
 /** 01 CRITIC: up to 10 references. */
 export const MAX_REFS = 10;
@@ -152,15 +151,6 @@ async function oursItem(reader: ArtifactReader, medium: Medium, view: View | und
     layout: medium === 'web-page' ? 'stack' : 'grid',
   };
 }
-
-/** The renderer's artifact route, served from the store (a missing artifact is a 404). */
-const artifactRoute =
-  (deps: RunnerDeps): ArtifactResolver =>
-  async (id) => {
-    if (!(await deps.store.artifacts.has(id))) return undefined;
-    const { record, bytes } = await deps.store.artifacts.get(id);
-    return { body: bytes, contentType: record.mediaType };
-  };
 
 /**
  * A reference's screenshots or a card, made once in a run and kept (convention C5): a retried step shows the critic the
