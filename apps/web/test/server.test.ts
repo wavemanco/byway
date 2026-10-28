@@ -198,6 +198,10 @@ describe('how the app is built and served (C8, SEC-3, DEV-1)', () => {
     expect(configFor({}).experimental?.turbopackFileSystemCacheForBuild).toBe(false);
   });
 
+  it('turns off Next’s image optimiser, which byway does not use (B-096; dev-server.real.test.ts sees /_next/image 404)', () => {
+    expect(configFor({}).images?.unoptimized).toBe(true);
+  });
+
   it('builds into BYWAY_NEXT_DIST_DIR when set, so the e2e suite never rebuilds under a byway you are running', () => {
     expect(configFor({})).toMatchObject({ distDir: '.next', typescript: { tsconfigPath: 'tsconfig.json' } });
     // Its own tsconfig too: Next.js adds a build folder's type paths to the tsconfig it builds with.
