@@ -1228,7 +1228,9 @@ describe('size: reading, placing and verifying are linear in the page (F07)', ()
 
   it('the edit script matches as many words as the table, in order, on 2,000 random pairs of word lists', () => {
     let seed = 7;
-    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    // The product taken exactly (Math.imul): `seed * 1103515245` passes a double's 53 bits and loses its low bits, whose
+    // states end in short cycles (ADR-0097's Later note). Over 2^31, so a draw is below 1 and indexes a letter.
+    const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x80000000);
     const list = () => Array.from({ length: Math.floor(rnd() * 30) }, () => 'abcde'[Math.floor(rnd() * 5)]!);
     for (let i = 0; i < 2000; i++) {
       const a = list();
