@@ -374,6 +374,9 @@ class LaunchFailed extends StepError {
   }
 }
 
+/** byway's test page not drawn within the renderer's own time, for the readiness check (readyFailure). */
+class TestPageLate extends StepError {}
+
 export interface PlaywrightPagesOptions {
   /** Wide-screen width (and the first screen's). */
   width?: number;
@@ -620,7 +623,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     const text = screen === 'text';
     const late = (cut: boolean) => {
       const s = Math.round(timeout / 1000);
-      if (screen === 'check') return new StepError(`The page renderer did not draw byway's test page within ${s} s.`);
+      if (screen === 'check') return new TestPageLate(`The page renderer did not draw byway's test page within ${s} s.`);
       if (cut) return new StepError(`The page did not finish ${text ? 'loading' : 'rendering'} in the time byway gives a page's ${text ? 'reads, so its text could not be read' : 'renders, so it could not be shown'}.`);
       return new StepError(text ? `The page did not finish loading within ${s} s, so its text could not be read.` : `The page did not finish rendering within ${s} s, so it could not be shown.`);
     };
@@ -2320,10 +2323,11 @@ export async function launchChromium(setting: LaunchSetting): Promise<Browser> {
  * The readiness check's failure, which refuses a run before it spends (ADR-0105). With the sandbox on, once byway's last
  * start-up check found the sandbox cannot start on this computer (its probe drew the test page without it, or Chromium
  * said so), a failure that is not a missing Chromium nor byway's own close is the sandbox's message, as the start-up
- * line and Settings say it. Otherwise a launch that failed and a check past its deadline pass as they are (their own
- * plain messages: launchFailure names the sandbox as one possible cause of a death Chromium gave no reason for); a test
- * page that could not be drawn says so, and with the sandbox on, a failure Chromium tied to the sandbox is the sandbox's
- * message, and any other names the sandbox as one possible cause.
+ * line and Settings say it. Otherwise a launch that failed passes as it is (launchFailure names the sandbox as one
+ * possible cause of a death Chromium gave no reason for), and a check past its deadline says so, with the sandbox on
+ * naming the sandbox as one possible cause and a busy computer as another; a test page that could not be drawn says
+ * so, and with the sandbox on, a failure Chromium tied to the sandbox is the sandbox's message, and any other names the
+ * sandbox as one possible cause.
  */
 async function readyFailure(err: unknown, osSandbox: boolean, host: SandboxHost | undefined, lastCheck: PlaywrightPagesOptions['lastCheck']): Promise<unknown> {
   if (err instanceof RendererClosed) return new StepError(`byway's test page could not be drawn: ${err.message}.`, { cause: err });
@@ -2332,6 +2336,8 @@ async function readyFailure(err: unknown, osSandbox: boolean, host: SandboxHost 
     const found = await (lastCheck?.() ?? Promise.resolve(undefined)).catch(() => undefined);
     if (found?.sandbox === 'fails') return new StepError(sandboxFailureMessage(await advice()), { cause: err });
   }
+  // A sandboxed test page past its time: Chromium gave no reason, so the sandbox is one possible cause (D2 (f)).
+  if (osSandbox && err instanceof TestPageLate) return new StepError(`${err.message} ${maybeTheSandbox(await advice())} Another is a computer too busy to draw it in time.`, { cause: err });
   if (err instanceof StepError) return err;
   if (osSandbox && isSandboxFailure(err)) return new StepError(sandboxFailureMessage(await advice()), { cause: err });
   const said = playwrightSaid(firstLine(err)) || 'no reason given';

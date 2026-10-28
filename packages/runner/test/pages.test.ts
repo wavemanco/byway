@@ -20,7 +20,7 @@ import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import type { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
 import { allowedUrl, chromiumLaunchOptions, fileSaid, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
-import { headlessShell, possibleSandboxCause, sandboxAdvice, type SandboxHost } from '../src/sandbox.ts';
+import { headlessShell, maybeTheSandbox, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, type SandboxHost } from '../src/sandbox.ts';
 
 /** The launch byway makes when the person has not switched the sandbox off: inside it (ADR-0105). */
 const STATED = { osSandbox: RENDERER_OS_SANDBOX_DEFAULT };
@@ -725,6 +725,37 @@ describe('web-page RENDER with Playwright Chromium', () => {
     expect((without as Error).message).toBe("The page renderer started but could not draw byway's test page (Target crashed).");
     // Not proven: asked again, it draws the test page again, and fails again.
     await expect(on.ready()).rejects.toThrow(/could not draw byway's test page/);
+  }, 60_000);
+
+  it("a sandboxed test page past its time names the sandbox as one possible cause, a busy computer another; without the sandbox it says only that it was late (D2 (f); ADR-0105)", async () => {
+    const host: SandboxHost = { os: 'windows', root: false, container: false, appArmorRestricts: false, userNamespacesOff: false };
+    // A page renderer that never loads byway's test page: the check can end only at its own limit.
+    const stalled = (b: Browser): Browser =>
+      seenThrough(b, {
+        page: (p) =>
+          new Proxy(p, {
+            get(t, name, r) {
+              if (name === 'goto') return () => new Promise(() => undefined);
+              const v = Reflect.get(t, name, r) as unknown;
+              return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+            },
+          }),
+      });
+    const on = playwrightPages({ host, timeoutMs: 1_000, launch: async (setting) => stalled(await launchChromium(setting)) });
+    const off = playwrightPages({ host, timeoutMs: 1_000, osSandbox: () => false, launch: async (setting) => stalled(await launchChromium(setting)) });
+    opened.push(on, off);
+    const late = "The page renderer did not draw byway's test page within 1 s.";
+    const withSandbox = await on.ready().catch((e: unknown) => e);
+    expect(withSandbox).toBeInstanceOf(StepError);
+    const named = headlessShell((await import('playwright')).chromium.executablePath());
+    expect((withSandbox as Error).message).toBe(`${late} ${maybeTheSandbox(sandboxAdvice(host, named))} Another is a computer too busy to draw it in time.`);
+    const without = await off.ready().catch((e: unknown) => e);
+    expect(without).toBeInstanceOf(StepError);
+    expect((without as Error).message).toBe(late);
+    // Once the start-up check found the sandbox cannot start here, the sandbox's own message, as before.
+    const found = playwrightPages({ host, timeoutMs: 1_000, lastCheck: async () => ({ sandbox: 'fails' }), launch: async (setting) => stalled(await launchChromium(setting)) });
+    opened.push(found);
+    await expect(found.ready()).rejects.toThrow(sandboxFailureMessage(sandboxAdvice(host, named)));
   }, 60_000);
 
   it('reads the OS sandbox setting before each load: after a change the next load launches with it, and a render under way finishes on the browser it started on (ADR-0105)', async () => {
