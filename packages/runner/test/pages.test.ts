@@ -20,7 +20,7 @@ import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import type { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
 import { StepError } from '../src/activities/failures.ts';
 import { allowedUrl, chromiumLaunchOptions, fileSaid, launchChromium, LINK_CLOSE, LINK_DIGIT_0, LINK_INDEX_END, LINK_OPEN, OFFSET, playwrightPages, RENDER_ALLOWLIST, RENDERER_OS_SANDBOX_DEFAULT, REVERSED, TURNED } from '../src/pages.ts';
-import { headlessShell, maybeTheSandbox, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, type SandboxHost } from '../src/sandbox.ts';
+import { headlessShell, maybeTheSandbox, possibleSandboxCause, sandboxAdvice, sandboxFailureMessage, sandboxHost, type SandboxHost } from '../src/sandbox.ts';
 
 /** The launch byway makes when the person has not switched the sandbox off: inside it (ADR-0105). */
 const STATED = { osSandbox: RENDERER_OS_SANDBOX_DEFAULT };
@@ -40,13 +40,49 @@ const size = (png: Uint8Array) => {
 };
 
 /**
+ * PowerShell that puts itself, and so everything it starts, in a job object with JOB_OBJECT_UILIMIT_DESKTOP (0x40), then
+ * runs Node on BYWAY_SCRIPT with BYWAY_ARGS (D2 (g)). Chromium's sandbox needs a desktop of its own, so a sandboxed
+ * Chromium dies at launch with no word of why; Chromium without the sandbox needs none. Round 2's probe
+ * (docs/adr/evidence/probes/d2/probe-s2/nodesktop.ps1); only this process tree is affected.
+ */
+const NO_DESKTOP = `
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class J {
+  [StructLayout(LayoutKind.Sequential)] public struct UI { public uint Class; }
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr CreateJobObject(IntPtr a, string n);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetInformationJobObject(IntPtr j, int c, ref UI i, uint l);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AssignProcessToJobObject(IntPtr j, IntPtr p);
+  [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
+}
+'@
+$job = [J]::CreateJobObject([IntPtr]::Zero, $null)
+$ui = New-Object J+UI
+$ui.Class = [uint32]0x40
+if (-not [J]::SetInformationJobObject($job, 4, [ref]$ui, 4)) { throw 'SetInformationJobObject failed' }
+if (-not [J]::AssignProcessToJobObject($job, [J]::GetCurrentProcess())) { throw 'AssignProcessToJobObject failed' }
+& $env:BYWAY_NODE $env:BYWAY_SCRIPT @(ConvertFrom-Json $env:BYWAY_ARGS)
+exit $LASTEXITCODE
+`;
+
+/**
  * Runs a TypeScript file in a fresh Node process (Node strips the types) and collects what it printed. Called inside a
  * test, it takes no time limit of its own: the test's own is the hang guard, and the process is killed when the test ends
- * (a kill after 50 s once failed a dialog test under load, B-100).
+ * (a kill after 50 s once failed a dialog test under load, B-100). With `noDesktop` (Windows only), it runs inside a job
+ * object that denies Chromium's sandbox a desktop of its own (NO_DESKTOP).
  */
-const runNode = (file: string, args: string[]) =>
+const runNode = (file: string, args: string[], noDesktop = false) =>
   new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(process.execPath, [file, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['ignore', 'pipe', 'pipe'] });
+    const cwd = fileURLToPath(new URL('..', import.meta.url));
+    const child = noDesktop
+      ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(NO_DESKTOP, 'utf16le').toString('base64')], {
+          cwd,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, BYWAY_NODE: process.execPath, BYWAY_SCRIPT: file, BYWAY_ARGS: JSON.stringify(args) },
+        })
+      : spawn(process.execPath, [file, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     onTestFinished(() => void child.kill());
     let stdout = '';
     let stderr = '';
@@ -757,6 +793,23 @@ describe('web-page RENDER with Playwright Chromium', () => {
     opened.push(found);
     await expect(found.ready()).rejects.toThrow(sandboxFailureMessage(sandboxAdvice(host, named)));
   }, 60_000);
+
+  it.runIf(process.platform === 'win32')(
+    "on Windows, a sandbox that ends Chromium at launch with no word of why: the start-up check finds the sandbox the cause, a run's refusal names it as one possible cause and then as the cause, and Chromium without it is ready (D2 (g); ADR-0105)",
+    async () => {
+      // The real case, not the launch seam: its own Node process, in a job object that denies the sandbox its desktop.
+      const { code, stdout, stderr } = await runNode(fileURLToPath(new URL('./helpers/no-desktop.ts', import.meta.url)), [], true);
+      expect(code, stderr).toBe(0);
+      const out = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)!) as { check: Record<string, unknown>; refused: string; refusedWithFinding: string; off: string };
+      const advice = sandboxAdvice(sandboxHost(), headlessShell((await import('playwright')).chromium.executablePath()));
+      expect(out.check).toEqual({ osSandbox: true, ready: false, sandbox: 'fails', message: sandboxFailureMessage(advice), why: advice.why, fix: advice.fix });
+      expect(out.refused).toMatch(/^The page renderer could not start \(/);
+      expect(out.refused).toContain(maybeTheSandbox(advice));
+      expect(out.refusedWithFinding).toBe(sandboxFailureMessage(advice));
+      expect(out.off).toBe('ready');
+    },
+    120_000,
+  );
 
   it('reads the OS sandbox setting before each load: after a change the next load launches with it, and a render under way finishes on the browser it started on (ADR-0105)', async () => {
     let osSandbox = true;
