@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ComposeResultView, ComposeView, RecommendResult } from '../server/api.ts';
 import { formatCallRange, formatCostRange, formatMinutes, formatUsd, parseBudgetInput, suggestBudget } from '../view/format.ts';
-import { composedRefusalGroups, composeNotice, diffLine } from '../view/composed.ts';
+import { composedRefusalGroups, composeNotice } from '../view/composed.ts';
 import { ROUTING_NOTE, answerNote, decidingQuestion, fitText, showAnswerNote } from '../view/labels.ts';
 import { awaitingFirst, composedAfterStart, composedReady, initialRecState, recovered, rerouted, retryFailed, screen, selected, type RecState, type Selection } from '../view/recommendation.ts';
 import type { PricesChecked } from '../view/prices.ts';
@@ -483,7 +483,7 @@ function Proposal({ intakeId, option, heading, tag, recipeId, routes, composed, 
           <h2>How it differs</h2>
           <ul>
             {composed.diff.map((line) => (
-              <li key={line}>{diffLine(line, technical)}</li>
+              <li key={line}>{line}</li>
             ))}
           </ul>
           {composed.violations.length > 0 ? (
