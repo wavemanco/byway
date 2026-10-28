@@ -96,7 +96,16 @@ the main checkout and its worktrees, and reports and files anything new." So, in
 - never put `&` after a chain that starts with `cd`: it sends the whole chain, `cd` included, to the background, and the
   rest runs where the shell started (this is how a check's browser suite ran in the coordinator's worktree on 2026-10-22);
 - use no browser-automation tool that writes into the folder its server started in (the Playwright MCP tool writes
-  `.playwright-mcp/` there); use the clone's own browser tests, or a browser whose output goes into the clone.
+  `.playwright-mcp/` there); use the clone's own browser tests, or a browser whose output goes into the clone;
+- give each clone a folder name of a few characters (`c1`, `rm1`), never the finding's id: the session's scratch folder
+  is already long, and in block 2's check and re-check vitest would not start in clones whose vite or vitest
+  `package.json` path was 260 to 278 characters (`ERR_PACKAGE_IMPORT_NOT_DEFINED`); git's `core.longpaths` does not
+  change how Node resolves paths;
+- in a clone where vitest still will not start, install again with
+  `pnpm install --frozen-lockfile --config.virtual-store-dir-max-length=30`;
+- a lens or refuter that could not run the suite, or the part of it its finding needs, says so in its result or vote,
+  with what it ran instead (backlog row "Check clones in the scratchpad pass Windows' path limit, so refuters cannot run
+  vitest").
 
 Before a check starts and after it ends, list the main checkout's and its worktrees' untracked and ignored files (outside
 dependencies and build output, with their times), compare the two lists, and report to the owner and file anything new.
@@ -112,8 +121,31 @@ owner. The format it reads is `docs/backlog.md`'s "How this file is kept".
 
 ## The conversation record
 
-`docs/adr/evidence/conversation-continued.md` holds the owner's own words and answers, which the records quote. A Claude Code
-session extends it from its own transcript (`~/.claude/projects/<project>/<session>.jsonl`) with
-`node scripts/extract-conversation.cjs <transcript.jsonl> <out.md>`, appending the entries after the record's last one; an agent
-of another provider copies the owner's messages and its own questions and answers by hand in the same form (backlog row
-"The conversation record is extended only from Claude Code's transcript").
+`docs/adr/evidence/conversation-continued.md` holds the owner's own words and answers in the Claude Code session that
+built byway, which the records quote as the evidence for the owner's choices. Each records pass that cites something
+the owner said or chose since the record's last entry extends the record first, whichever agent runs it (backlog row
+"The conversation record is extended only from Claude Code's transcript"):
+
+1. **Which session.** The session the owner spoke in. Its words go into the record of that session: the Claude Code
+   session above extends `conversation-continued.md`; any other session, whether run by Claude Code, an agent of
+   another provider or a person, gets its own file, `docs/adr/evidence/conversation-<first day>-<agent>.md` (for example
+   `conversation-2026-11-02-codex.md`), with a header in `conversation-continued.md`'s form naming the agent, the
+   session and its first and last entries, and a row in `docs/adr/evidence/README.md`.
+2. **What is read.** A Claude Code session reads its own transcript (`~/.claude/projects/<project>/<session>.jsonl`)
+   with `node scripts/extract-conversation.cjs <transcript.jsonl> <out.md>`, and appends the entries after the
+   record's last one. Another agent reads its own session's history as its tool keeps it, or, if it keeps none, the
+   messages as they appear on screen, and writes the same entries by hand. Never a summary, and never another
+   session's words.
+3. **What is copied.** Every message the owner typed, word for word, typos included, as `## USER <local time> (<UTC>)`;
+   each question the agent asked the owner with options, exactly as asked, as `## CLAUDE-ASKS` (another agent writes
+   `## AGENT-ASKS (<agent>)`), followed by the owner's answer as a `## USER` entry whose text starts `[ANSWER]`; and
+   where the owner answered a quoted part of the agent's message, that part as `>` lines. Nothing else of the agent's: no other
+   messages, tool output, notifications, system text or summaries.
+4. **What is left out or redacted.** The owner's email address and any key are never copied. The names of the owner's
+   other repositories and the organisation's details (its Actions minutes, plan, seats, price and overages) are
+   replaced with "[another repository]" or "[redacted]", as "The owner's GitHub organisation" above says,
+   and so is anything the owner asks to be kept out. Each change to the text is said in the file's header, with its
+   date and reason.
+5. **The header and the check.** Update the header's "up to" time and its list of extractions. Run
+   `pnpm exec vitest run scripts/test/adr-evidence.test.ts`, which fails on an email address or a key-shaped string in
+   the evidence, and the gate before the merge (ADR-0103 §3); a records pass is checked as ADR-0107 says.
