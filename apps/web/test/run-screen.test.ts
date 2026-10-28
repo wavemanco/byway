@@ -188,7 +188,7 @@ describe('the Cancel question and the cancelled run (ADR-0111)', () => {
   // RS-6: only a cut-off call that may have been billed is listed, and it counts against the workspace, not the run.
   it('says which cut-off calls are listed, and where they are counted', () => {
     expect(CUT_OFF_NOTE).toBe(
-      'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts at its estimate against the workspace budget, not this run’s, until you clear it.',
+      'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts against the workspace budget, not this run’s, at the amount listed there (its estimate, and an earlier attempt’s too when byway had sent the call before), until you clear it.',
     );
   });
 
