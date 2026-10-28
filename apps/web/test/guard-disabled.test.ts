@@ -21,11 +21,6 @@ const ALLOWED: { file: string; element: string; reason: string }[] = [
     reason: 'Disabled while the run starts (its `disabled` prop, from Start). Focus is on Start, outside it, and nothing in it may change what is being sent.',
   },
   {
-    file: 'apps/web/src/components/Examples.tsx',
-    element: 'button',
-    reason: '"Paste an example", disabled once nine examples (MAX_REFS) are listed. Pressing it moves focus to the new example’s field, so it is never disabled under focus.',
-  },
-  {
     file: 'apps/web/src/components/Switch.tsx',
     element: 'button',
     reason: 'The caller’s `disabled`: a switch that cannot be used here at all, set by configuration (Settings’ Demo mode when pnpm demo forced it or no key is set), never by pressing it. Busy uses aria-disabled.',
