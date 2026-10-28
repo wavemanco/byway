@@ -94,6 +94,31 @@ describe('dependency direction (spec §2)', SCANS, () => {
     expect(offenders).toEqual([]);
   });
 
+  it("resolves every package its code and tests import from its own manifest, never the repo root's, and imports every @byway package it declares (BUILD-4)", () => {
+    // The root's devDependencies are the tools it runs every package's tests with (vitest); its dependencies are none.
+    const tools = Object.keys((JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8')) as { devDependencies?: Record<string, string> }).devDependencies ?? {});
+    const offenders: string[] = [];
+    for (const p of packages) {
+      const manifest = JSON.parse(readFileSync(path.join(p.dir, 'package.json'), 'utf8')) as { name: string; dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+      const declared = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.devDependencies ?? {})]);
+      const resolves = new Set([...declared, ...tools]);
+      const imported = new Set<string>();
+      for (const file of [...shipped(p.dir), ...filesUnder(path.join(p.dir, 'test'), SOURCE)]) {
+        for (const spec of importSpecifiers(readFileSync(file, 'utf8'))) {
+          if (/^(\.|node:|@\/)/.test(spec)) continue;
+          // The package's name: "@scope/name" or "name", without a subpath.
+          const name = spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/');
+          imported.add(name);
+          // The app's tests quote sample sources to its scanners, and Next resolves the app; so only packages/ here.
+          const checked = path.relative(path.join(REPO, 'packages'), p.dir).split(path.sep)[0] !== '..' && /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i.test(name);
+          if (checked && name !== manifest.name && !resolves.has(name)) offenders.push(`${rel(file)} imports ${spec}, which ${manifest.name}'s package.json does not declare`);
+        }
+      }
+      for (const dep of declared) if (dep.startsWith('@byway/') && !imported.has(dep)) offenders.push(`${manifest.name} declares ${dep} and imports nothing from it`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('never reaches into another package or the app by relative path', () => {
     const offenders: string[] = [];
     for (const p of packages) {
