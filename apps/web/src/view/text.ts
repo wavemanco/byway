@@ -56,6 +56,13 @@ const EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'image/svg+xml': 'svg',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/ogg': 'ogg',
 };
 
 export function extensionFor(mediaType: string): string {
