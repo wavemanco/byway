@@ -18,7 +18,7 @@ import { DefaultLogger, Runtime } from '@temporalio/worker';
 import { createGateway } from '@byway/gateway';
 import { buildWorkflows } from '../src/build.ts';
 import { storeCaps } from '../src/caps.ts';
-import { connectRunner, RECONCILE_EVERY_MS, startDevEngine, TEMPORAL_DB_FILENAME, type DevEngine, type DevEngineOptions } from '../src/dev-engine.ts';
+import { assertPortFree, connectRunner, portInUseMessage, RECONCILE_EVERY_MS, startDevEngine, TEMPORAL_DB_FILENAME, type DevEngine, type DevEngineOptions } from '../src/dev-engine.ts';
 import { LOST_RUN_MESSAGE } from '../src/lost-runs.ts';
 import { workflowIdFor } from '../src/types.ts';
 import { fakePages } from './helpers/fake-pages.ts';
@@ -114,6 +114,19 @@ describe('the dev engine', () => {
     } finally {
       await new Promise((r) => squatter.close(r));
     }
+  });
+
+  it("refuses a taken port with the caller's own message, when it gives one (BUILD-2)", async () => {
+    const port = await freePort();
+    const squatter = createServer();
+    await new Promise<void>((r) => squatter.listen(port, '127.0.0.1', () => r()));
+    try {
+      await expect(assertPortFree(port, (p) => `web port ${p} is taken`)).rejects.toThrow(`web port ${port} is taken`);
+      await expect(assertPortFree(port)).rejects.toThrow(portInUseMessage(port));
+    } finally {
+      await new Promise((r) => squatter.close(r));
+    }
+    await expect(assertPortFree(port, () => 'unused')).resolves.toBeUndefined();
   });
 
   it('runs a recipe end to end, and keeps its history in the data directory across restarts', async () => {
