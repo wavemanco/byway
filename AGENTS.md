@@ -50,6 +50,11 @@ weekly CI report, a monthly re-read and a date in the app (2026-10-21), and a ch
      still give and which they do not;
    - open each row's `source` page in `prices.ts` and compare every figure the row records; look for new charges, tiers
      or models too;
+   - check that each model id the profiles name (`packages/gateway/src/profiles.ts`) is still offered, on the
+     provider's model page its comment names (OpenRouter's model list needs no key), with any deprecation or shutdown
+     date; the report shows a model dropped from its price page only as figures not found, which reads like a changed
+     price. Say a missing, deprecated or retiring one to the owner, and update the comment's date when every id is
+     still listed;
    - change the rows that changed, each with its page and the day you read it, and set `PRICES_CHECKED` to that day;
    - on a branch, run `pnpm verify`, and give the change to the owner as for any change to the money path.
 4. A page you cannot read is said, never guessed: no figure is written that a provider's page does not give.
