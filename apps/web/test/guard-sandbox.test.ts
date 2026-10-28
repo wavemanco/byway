@@ -234,9 +234,7 @@ const PINS: Pin[] = [...SWITCH, ...OPTION, ...BUILD, ...LAUNCH];
 /** The pins whose lines differ in these sources. */
 const moved = (files: Source[]): string[] => PINS.filter((p) => JSON.stringify(uses(p.pattern, files)) !== JSON.stringify(p.lines)).map((p) => p.what);
 
-const SCANS = { timeout: 30_000 };
-
-describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', SCANS, () => {
+describe('only the person turns the OS sandbox off, in Settings (ADR-0105)', () => {
   it('reads the product sources', () => {
     const files = sources().map((s) => s.file);
     for (const f of ['packages/runner/src/pages.ts', 'packages/runner/src/worker.ts', 'packages/store/src/store.ts', 'apps/web/src/server/api.ts', 'apps/web/app/api/renderer/route.ts', 'apps/web/instrumentation.ts', 'scripts/serve.ts']) expect(files).toContain(f);

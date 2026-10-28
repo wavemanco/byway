@@ -129,7 +129,7 @@ describe('a billed completion is ledgered before anything else can fail (ENG-3)'
     expect(calls).toHaveLength(1);
     // It stays counted at its estimate, as may have been billed, until the person checks it.
     expect((await g.spend('ws-1')).uncertainUsd).toBeGreaterThan(0);
-  }, 15_000);
+  });
 
   it('ledgers and counts a billed call after a crash left the ledger with a torn last line (F03)', async () => {
     const { client, calls } = fakeAnthropic();

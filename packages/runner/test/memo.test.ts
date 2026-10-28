@@ -6,7 +6,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GatewayError, type CompletionRequest, type CompletionResult, type DeclineRecord, type Gateway, type ImageRequest, type ImageResult, type VideoRequest, type VideoResult } from '@byway/contracts';
 import type { ApplicationFailure } from '@temporalio/common';
 import { createGateway } from '@byway/gateway';
@@ -170,9 +170,14 @@ describe('saving what a paid call returned (ENG-3)', () => {
     ] as const) {
       const { gateway, made } = counting(() => `# Page\n\n${'x'.repeat(70_000)}\n`);
       const { flaky, failures } = failing(what, Infinity);
-      const started = Date.now();
+      // The pauses between the tries are read from the timers they set, not from the clock: 5, 10 and 20 ms, as saveDelayMs
+      // asks, and nothing longer (backlog row B-120).
+      const pauses: number[] = [];
+      const real = globalThis.setTimeout;
+      const timers = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => (pauses.push(ms ?? 0), real(fn, ms))) as typeof setTimeout);
       const err = await call(memoGateway(gateway, flaky, { ...scope, key: `${scope.key}/${what}` }, quick)).catch((e: unknown) => e);
-      expect(Date.now() - started).toBeLessThan(2_000);
+      timers.mockRestore();
+      expect(pauses).toEqual([5, 10, 20]);
       expect(failures()).toBe(4);
       expect(made.complete + made.image).toBe(1);
       expect(err).toBeInstanceOf(StepError);

@@ -67,9 +67,9 @@ describe('what the walk costs', () => {
     expect(walked(recipeOf(nest(22)), true)).toBeLessThanOrEqual(4 * steps);
   });
 
-  it('the validator over a nest of 22 loops takes well under a second', () => {
-    const started = performance.now();
-    validate(recipeOf(nest(22)));
-    expect(performance.now() - started).toBeLessThan(1000);
+  // By what it would cost, not by the clock: walked whole, 40 levels would be about 2^40 walks, which no machine ends, so a
+  // rule that gave the walk no key would hold this test until vitest's hang guard stopped it (backlog row B-120).
+  it('the validator over a nest of 40 loops returns, so every rule keys its walk', () => {
+    expect(validate(recipeOf(nest(40))).violations).toBeDefined();
   });
 });

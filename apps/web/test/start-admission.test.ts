@@ -38,9 +38,7 @@ async function composed(d: Deps): Promise<{ intakeId: string; stored: ComposeRes
   return { intakeId, stored };
 }
 
-const PRODUCT_PATH = { timeout: 30_000 };
-
-describe('starting a composed recipe admits it again', PRODUCT_PATH, () => {
+describe('starting a composed recipe admits it again', () => {
   it('an unchanged recipe starts with the hash that was offered', async () => {
     const d = await deps();
     const { intakeId, stored } = await composed(d);
@@ -104,7 +102,7 @@ describe('starting a composed recipe admits it again', PRODUCT_PATH, () => {
   });
 });
 
-describe("the engine's own refusal at start (F02, ADR-0092 stage 2)", PRODUCT_PATH, () => {
+describe("the engine's own refusal at start (F02, ADR-0092 stage 2)", () => {
   it('a recipe the runner refuses (RecipeRefused) is a 400 that says why, and no run exists', async () => {
     const d = await deps();
     const { intakeId } = await composed(d);
