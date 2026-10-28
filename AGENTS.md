@@ -119,6 +119,17 @@ nothing of its own. Generate it from the merged backlog with `node scripts/route
 the same link after each records change that reaches main; an agent that cannot publish to claude.ai gives the file to the
 owner. The format it reads is `docs/backlog.md`'s "How this file is kept".
 
+## Each block's records pass: the triggers it fired
+
+Before a block's records pass closes, run `node scripts/fired-triggers.ts [<base>]` (plain Node; `<base>` is `main` by
+default). It lists the pending rows of `docs/backlog.md` and `docs/playbook.md` whose Trigger names a file the branch
+touches, or a code name on a line it adds or removes. Read each listed row and say in it what happened. Then read every
+builder's could-not-do list and parked findings and the check's notes, and give each one a row or a dated note in the
+row whose trigger fired; triggers the script cannot see (an event, a date, another row's close) are read by hand. At the
+merge, publish the Route Map again from the merged backlog (above). The owner chose this at 2026-10-23 08:58, "Build the
+script and make it a step (Recommended)" (backlog row "Each block's records pass checks fired triggers and the
+builders' parked notes"; ADR-0107's Later note of 2026-10-28).
+
 ## The conversation record
 
 `docs/adr/evidence/conversation-continued.md` holds the owner's own words and answers in the Claude Code session that
