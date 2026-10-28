@@ -1,5 +1,6 @@
 import { outputForStep, PromptTemplateError, slotsForStep, type PromptLibrary } from '@byway/prompts';
-import { BLOCKS, EXCEPTIONS, ROLE_KNOBS, type KnobDef, type Medium, type PortType } from '@byway/protocol';
+import { STAGE_NAMES } from '@byway/catalog';
+import { EXCEPTIONS, type Medium, type PortType } from '@byway/protocol';
 import {
   authorWrite,
   changesWork,
@@ -16,12 +17,11 @@ import {
   voiceWrites,
   walk,
   type Checkpoint,
-  type Json,
   type Recipe,
   type Step,
   type VoiceScope,
 } from '@byway/recipe';
-import { flowRecipe } from '@byway/validator';
+import { flowRecipe, knobDefs, knobValueOk } from '@byway/validator';
 
 /**
  * The composed validator profile of ADR-0058, enforced in code on top of the validator: a composed recipe may use only
@@ -49,7 +49,6 @@ export interface ProfileViolation {
 }
 
 export const COMPOSED_RULES = {
-  block: 'COMPOSED-BLOCK',
   knob: 'COMPOSED-KNOB',
   study: 'COMPOSED-STUDY',
   exception: 'COMPOSED-EXCEPTION',
@@ -60,29 +59,6 @@ export const COMPOSED_RULES = {
   limit: 'COMPOSED-LIMIT',
   medium: 'COMPOSED-MEDIUM',
 } as const;
-
-function knobDefs(step: Step): Record<string, KnobDef> {
-  if (step.block) return BLOCKS[step.block]?.knobs ?? {};
-  if (step.role === 'build' || step.role === 'fix' || step.role === 'select') return ROLE_KNOBS[step.role];
-  return {};
-}
-
-export function knobValueOk(def: KnobDef, value: Json): boolean {
-  switch (def.type) {
-    case 'enum':
-      return typeof value === 'string' && def.values.includes(value);
-    case 'enum[]':
-      return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === 'string' && def.values.includes(v)) && new Set(value).size === value.length;
-    case 'int':
-      return typeof value === 'number' && Number.isInteger(value) && value >= def.min && value <= def.max;
-    case 'bool':
-      return typeof value === 'boolean';
-    case 'string':
-      return typeof value === 'string';
-    case 'string[]':
-      return Array.isArray(value) && value.every((v) => typeof v === 'string');
-  }
-}
 
 /** Prompt ids the catalog's model steps use, with the roles they are written for. */
 export function catalogPrompts(recipes: readonly Recipe[]): Map<string, Set<string>> {
@@ -144,8 +120,6 @@ function promptProblem(step: Step, prompt: string, medium: Medium | undefined, p
 function unshownPorts(step: Step, medium: Medium): PortType[] {
   return inputsOf(step).filter((p) => !promptShows(step, p, medium));
 }
-
-const STAGE_WORDS: Record<string, string> = { D1: 'Explore', D2: 'Refine', D3: 'Finish' };
 
 /** What a VOICE covers, in plain words. */
 function scopeWords(s: VoiceScope): string {
@@ -214,7 +188,6 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
   for (const { path, message } of composedLimitProblems(recipe)) add('limit', path, message);
 
   for (const { step, path } of steps(recipe)) {
-    if (step.block && !Object.hasOwn(BLOCKS, step.block)) add('block', path, `step "${step.id}" uses "${step.block}", which is not a registered block`);
     const defs = knobDefs(step);
     for (const [name, value] of Object.entries(step.knobs ?? {})) {
       const def = defs[name];
@@ -265,9 +238,9 @@ export function checkComposedProfile(recipe: Recipe, ctx: ProfileContext): Profi
   for (const [w, h] of matchCheckpoints(want, checkpoints(recipe))) {
     if (h) continue;
     if (w.kind === 'voice') {
-      add('voice', 'stages', `the nearest recipe (${ctx.nearest.id}) has you write ${scopeWords(w.scope)} yourself in ${STAGE_WORDS[w.stage]} on every run; keep a VOICE step that does, where every run reaches it (not in an optional, a choice, a candidate, or after a check that can end its loop's round)`);
+      add('voice', 'stages', `the nearest recipe (${ctx.nearest.id}) has you write ${scopeWords(w.scope)} yourself in ${STAGE_NAMES[w.stage]} on every run; keep a VOICE step that does, where every run reaches it (not in an optional, a choice, a candidate, or after a check that can end its loop's round)`);
     } else {
-      add('author', 'stages', `in the nearest recipe (${ctx.nearest.id}) you write the work yourself in ${STAGE_WORDS[w.stage]} on every run; keep a step where you do (a human build or fix that writes the work) where every run reaches it`);
+      add('author', 'stages', `in the nearest recipe (${ctx.nearest.id}) you write the work yourself in ${STAGE_NAMES[w.stage]} on every run; keep a step where you do (a human build or fix that writes the work) where every run reaches it`);
     }
   }
 
