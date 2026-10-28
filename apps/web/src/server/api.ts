@@ -243,7 +243,10 @@ export async function startRun(deps: Deps, input: z.infer<typeof StartInput>): P
     }
   }
   const spend = await workspaceRemaining(deps);
-  const problem = budgetProblem(input.budgetUsd, spend);
+  // A Start sent again under its id, with the same budget, is that run (ADR-0099 decision 7): its own first call has
+  // already lowered what is left, so it is not checked again. The runner still decides same run or conflict.
+  const before = input.runId !== undefined ? await services.store.getRun(input.runId) : undefined;
+  const problem = before !== undefined && before.budgetUsd === input.budgetUsd ? null : budgetProblem(input.budgetUsd, spend);
   if (problem) throw new HttpError(400, problem);
   const run = await refusedAsHttp(!input.recipeId, () => startOnce(services, {
     workspaceId: spend.workspaceId,

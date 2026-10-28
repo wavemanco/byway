@@ -172,6 +172,20 @@ describe('route handler logic', PRODUCT_PATH, () => {
     await expect(startRun(d, { intakeId, recipeId: 'c1', budgetUsd: 2, runId })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/another problem or recipe/) });
   });
 
+  it("returns the same run for a Start sent again after the run's first call has lowered what is left; another budget is still checked (WEB-1)", async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo', recipeId: 'c4' });
+    const runId = '6e7f8091-a2b3-4c5d-9e0f-6a7b8c9d0e1f';
+    const budgetUsd = (await workspaceRemaining(d)).remainingUsd;
+    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    await d.services.store.spendBook.admit({ opId: 'first-call', owner: 'worker', leaseMs: 60_000, workspaceId: d.workspaceId, runId, purpose: 'build:prose', kind: 'completion', provider: 'google', model: 'gemini-3-pro', reserveUsd: 0.5, paid: true, caps: { workspaceUsd: 1000 } });
+    // The answer was lost; the same Start again is the same run, though what is left is now below its budget.
+    expect(await startRun(d, { intakeId, recipeId: 'c4', budgetUsd, runId })).toEqual({ runId });
+    expect((await d.services.store.listRuns(d.workspaceId)).filter((r) => r.id === runId)).toHaveLength(1);
+    // A resend under that id with another budget is checked as a new Start is.
+    await expect(startRun(d, { intakeId, recipeId: 'c4', budgetUsd: 500, runId })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/workspace budget/) });
+  });
+
   it('resolves a question only within its own run, and passes validation messages through', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page', recipeId: 'c1' });
