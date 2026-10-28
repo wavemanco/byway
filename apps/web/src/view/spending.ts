@@ -85,9 +85,12 @@ function waitedText(call: UncertainCall): string {
 const WAIT_LONGER = "To wait longer, change 'How long to wait for an answer' in Settings.";
 const WAITED_TAIL = `It may have billed the work. ${WAIT_LONGER}`;
 
-/** The advice under the list of calls that may have been billed. */
+/**
+ * The advice under the list of calls that may have been billed. A row that holds an earlier send as well as its own
+ * counts both (its usd includes retainedUsd), so "at its estimate" alone was wrong for it (B-038).
+ */
 export const UNCERTAIN_ADVICE =
-  'Each counts at its estimate against the workspace budget (not the run’s) until you clear it. Look it up in the provider’s own dashboard; clear it once you know whether it was billed.';
+  'Each counts against the workspace budget (not the run’s) at the amount shown, until you clear it: the estimate of each send the row counts, so a row that counts an earlier attempt as well as its own send counts both, about twice the estimate. Look it up in the provider’s own dashboard; clear it once you know whether it was billed.';
 
 /** The advice beside the lines of the audit file the spend book could not read. */
 export const FAULT_ADVICE =
