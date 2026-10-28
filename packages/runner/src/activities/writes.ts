@@ -72,9 +72,6 @@ export function checkedWriter(run: WriteRun, voice: string | readonly string[] |
   };
 }
 
-/** One checked write with nothing paid for in between (a relay link's clip, attached images). */
-export const checkedWrite = (run: WriteRun, text: string, voice: string | readonly string[] | undefined, before: string | undefined): CheckedWrite => checkedWriter(run, voice, before)(text);
-
 const copyFault = (e: unknown): StepError => new StepError(`byway could not check this write against your words (${e instanceof Error ? e.message : String(e)}).`);
 
 export interface StoreOptions {

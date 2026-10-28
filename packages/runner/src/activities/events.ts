@@ -3,10 +3,9 @@
  * dedupe key, because Temporal runs an activity at least once and a retried activity must not log its step twice.
  */
 import type { Gateway, RunEvent, RunEventPayloads, RunEventType, Store } from '@byway/contracts';
-import type { StepCall } from '../types.ts';
+import { ENDED_STATUSES as ENDED, type StepCall } from '../types.ts';
 
 const TERMINAL: ReadonlySet<RunEventType> = new Set(['run-finished', 'run-failed', 'run-cancelled']);
-const ENDED = new Set(['done', 'failed', 'cancelled']);
 
 export interface EmitOptions {
   stepId?: string;

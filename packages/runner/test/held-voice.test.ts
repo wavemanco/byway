@@ -14,7 +14,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { audit, oneShotGate, pick, replicate, seq, step, type Node, type Recipe, type Stage, type Step } from '@byway/recipe';
 import { keptVoice, personsWords } from '../src/activities/held-voice.ts';
-import { checkedWrite, type WriteRun } from '../src/activities/writes.ts';
+import { checkedWriter, type WriteRun } from '../src/activities/writes.ts';
 import { serializeJson } from '../src/formats.ts';
 import type { Ports, RunInput } from '../src/types.ts';
 import { UNREAD_BRIEF } from './helpers/briefs.ts';
@@ -201,27 +201,27 @@ describe('keepsVoice keeps every held VOICE', () => {
     const before = sb(script, 'Fresh at seven');
     const after = sb(script, 'Fresh at noon');
     // Control: checked against the latest answer only, the change to the earlier answer's headline is stored.
-    expect(checkedWrite(media, after, script, before)).toMatchObject({ problems: [], restored: [] });
+    expect(checkedWriter(media, script, before)(after)).toMatchObject({ problems: [], restored: [] });
     // Checked against every held answer, as keepsVoice is, it is refused.
-    expect(checkedWrite(media, after, await keptVoice(reader, held), before).problems).toEqual([expect.stringMatching(ON_SCREEN_LOCKED)]);
-    expect(checkedWrite(media, before, await keptVoice(reader, held), before)).toMatchObject({ problems: [], restored: [] });
+    expect(checkedWriter(media, await keptVoice(reader, held), before)(after).problems).toEqual([expect.stringMatching(ON_SCREEN_LOCKED)]);
+    expect(checkedWriter(media, await keptVoice(reader, held), before)(before)).toMatchObject({ problems: [], restored: [] });
   });
 
   it("in prose, ADR-0081's lock holds the whole text once any answer exists, so the latest answer alone also refuses a change to an earlier VOICE's line", async () => {
     const before = 'Voice-over: We bake before dawn.\nHeadline: Fresh at seven';
     const after = 'Voice-over: We bake at noon.\nHeadline: Fresh at seven';
     const held = { voice: kept('Fresh at seven'), held: [kept('We bake before dawn.'), kept('Fresh at seven')] };
-    expect(checkedWrite(prose, after, await keptVoice(reader, held), before).problems).toEqual([expect.stringMatching(/exactly as written/)]);
-    expect(checkedWrite(prose, after, 'Fresh at seven', before).problems).toEqual([expect.stringMatching(/exactly as written/)]);
-    expect(checkedWrite(prose, before, await keptVoice(reader, held), before).problems).toEqual([]);
+    expect(checkedWriter(prose, await keptVoice(reader, held), before)(after).problems).toEqual([expect.stringMatching(/exactly as written/)]);
+    expect(checkedWriter(prose, 'Fresh at seven', before)(after).problems).toEqual([expect.stringMatching(/exactly as written/)]);
+    expect(checkedWriter(prose, await keptVoice(reader, held), before)(before).problems).toEqual([]);
   });
 
   it("a storyboard's on-screen answer held beside its voice-over script stays locked; the script is written back", async () => {
     const before = sb(script, 'Fresh at seven');
     const voices = await keptVoice(reader, { voice: kept(onScreen), held: [kept(script), kept(onScreen)] });
     // Joined into one text, as the held voice was first passed, the on-screen answer would not read as one, and its words would be open.
-    expect(checkedWrite(media, sb(script, 'Fresh at noon'), voices, before).problems).toEqual([expect.stringMatching(ON_SCREEN_LOCKED)]);
-    const r = checkedWrite(media, sb('We bake at noon.', 'Fresh at seven'), voices, before);
+    expect(checkedWriter(media, voices, before)(sb(script, 'Fresh at noon')).problems).toEqual([expect.stringMatching(ON_SCREEN_LOCKED)]);
+    const r = checkedWriter(media, voices, before)(sb('We bake at noon.', 'Fresh at seven'));
     expect(r).toMatchObject({ problems: [], restored: ['voice-over'] });
     expect(JSON.parse(r.text).voiceover).toBe(script);
   });

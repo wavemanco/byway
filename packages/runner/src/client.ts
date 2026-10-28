@@ -7,12 +7,12 @@
 import { randomUUID } from 'node:crypto';
 import { WorkflowExecutionAlreadyStartedError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import { WorkflowNotFoundError } from '@temporalio/common';
-import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunStatus, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
+import { CANCEL_SIGNAL, PAUSE_SIGNAL, RecipeRefusedError, RESOLVE_UPDATE, RESUME_SIGNAL, TASK_QUEUE, type CheckpointResolution, type RunRecord, type RunView, type Runner, type StartRunInput, type Store } from '@byway/contracts';
 import { engineProblems, parseRecipe, recipeHash } from '@byway/recipe';
 import { LOST_RUN_MESSAGE, settleLostRun } from './lost-runs.ts';
 import { startFailureMessage, type WorkflowAfterFailedStart } from './start-failure.ts';
 import { storeRunInputs } from './stored-inputs.ts';
-import { RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
+import { ENDED_STATUSES as ENDED, RUN_WORKFLOW, workflowIdFor, type RunInput } from './types.ts';
 
 export interface RunnerClientOptions {
   client: Client;
@@ -26,8 +26,6 @@ export function titleOf(text: string): string {
   if (line.length <= 72) return line || 'Untitled run';
   return `${line.slice(0, 72).replace(/\s+\S*$/, '')}…`;
 }
-
-const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
 
 /** What the app shows for an answer to a question its run withdrew (contracts v4 CheckpointRecord.status). */
 const WITHDRAWN = 'This question was withdrawn: its run was cancelled or failed.';

@@ -25,10 +25,8 @@
  */
 import { WorkflowNotFoundError } from '@temporalio/common';
 import type { Client } from '@temporalio/client';
-import { TASK_QUEUE, type RunStatus, type Store } from '@byway/contracts';
-import { RUN_WORKFLOW, workflowIdFor } from './types.ts';
-
-const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
+import { TASK_QUEUE, type Store } from '@byway/contracts';
+import { ENDED_STATUSES as ENDED, RUN_WORKFLOW, workflowIdFor } from './types.ts';
 
 /** Shown on a run whose workflow Temporal no longer has, or closed without byway closing the run. */
 export const LOST_RUN_MESSAGE = "byway's engine no longer has this run, so it cannot continue. Start it again.";
