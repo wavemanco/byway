@@ -387,6 +387,99 @@ describe('a stop during the wait before a resend', () => {
   });
 });
 
+describe('an attempt Temporal has cancelled while its run goes on (F03 (g))', () => {
+  /** Temporal's cancel of the attempt (a heartbeat timeout, a worker shutting down), with no stop: the run is going. */
+  function timedOut(key = 'run-1/step/complete/abc/1') {
+    const cancel = new AbortController();
+    const until = new AbortController();
+    const stop = new AbortController();
+    return { cancel, operation: { key, until: until.signal, cancel: cancel.signal, stop: stop.signal } };
+  }
+  const reset = () => Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+  const limited = () => Object.assign(new Error('rate limited'), { status: 429, error: { type: 'error', error: { type: 'rate_limit_error' } } });
+
+  /** An Anthropic client whose first send is cancelled by Temporal, then fails with `fail`. */
+  function cancelledAnthropic(cancel: AbortController, fail: () => Error) {
+    let sent = 0;
+    const client: AnthropicClientLike = {
+      beta: {
+        messages: {
+          stream: () => {
+            sent++;
+            return {
+              finalMessage: async () => {
+                cancel.abort();
+                throw fail();
+              },
+            };
+          },
+        },
+      },
+    };
+    return { client, sent: () => sent };
+  }
+
+  it('a reset after the cancel: not sent again, and counted once at its reservation as may have been billed', async () => {
+    const { cancel, operation } = timedOut();
+    const anthropic = cancelledAnthropic(cancel, reset);
+    const g = gateway({ clients: { anthropic: anthropic.client } });
+    expect((await failure(g.complete(ask({ operation })))).message).toMatch(/socket hang up|ECONNRESET/);
+    expect(anthropic.sent()).toBe(1);
+    const records = await g.spendRecords('ws');
+    expect(records.uncertain).toEqual([expect.objectContaining({ reason: 'failed' })]);
+    expect(records.uncertain[0]!.usd).toBeGreaterThan(0);
+    expect(ledger()).toEqual([]);
+  });
+
+  it('a 429 after the cancel: not retried, and nothing counted', async () => {
+    const { cancel, operation } = timedOut();
+    const anthropic = cancelledAnthropic(cancel, limited);
+    const g = gateway({ clients: { anthropic: anthropic.client } });
+    await failure(g.complete(ask({ operation })));
+    expect(anthropic.sent()).toBe(1);
+    expect(await g.spendRecords('ws')).toMatchObject({ inFlight: [], uncertain: [] });
+  });
+
+  it('with no cancel, a reset is still sent once more', async () => {
+    const { operation } = timedOut();
+    let sent = 0;
+    const client: AnthropicClientLike = {
+      beta: {
+        messages: {
+          stream: () => {
+            sent++;
+            return { finalMessage: async () => Promise.reject(reset()) };
+          },
+        },
+      },
+    };
+    const g = gateway({ clients: { anthropic: client } });
+    await failure(g.complete(ask({ operation })));
+    expect(sent).toBe(2);
+  });
+
+  it('an image whose send resets after the cancel is not sent again', async () => {
+    const { cancel, operation } = timedOut();
+    let sent = 0;
+    const adapter: ProviderAdapter = {
+      id: 'openai',
+      complete: async () => {
+        throw new Error('not used');
+      },
+      image: async () => {
+        sent++;
+        cancel.abort();
+        throw reset();
+      },
+    };
+    const g = gateway({ adapters: { openai: adapter } });
+    const imageReq: ImageRequest = { workspaceId: 'ws', runId: 'run-1', stepId: 'art', purpose: 'asset:web-page', profileId: 'best', prompt: 'A loaf at dawn', size: '1024x1024', operation };
+    await failure(g.image(imageReq));
+    expect(sent).toBe(1);
+    expect((await g.spendRecords('ws')).uncertain).toEqual([expect.objectContaining({ reason: 'failed' })]);
+  });
+});
+
 describe('calls a stop does not cut off', () => {
   it('a Google call is handed no stop, finishes after the stop, and is settled at its true cost: its only signal is its own deadline, which the stop leaves alone', async () => {
     const { stop, operation } = caller();

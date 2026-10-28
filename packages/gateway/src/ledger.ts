@@ -150,12 +150,6 @@ export function readLedgerLine(line: string): { entry: GatewayLedgerEntry } | { 
   return problem === undefined ? { entry: parsed as GatewayLedgerEntry } : { problem };
 }
 
-/** A stored line as an entry the spend book can count, or undefined (see readLedgerLine for why not). */
-export function absorbable(line: string): GatewayLedgerEntry | undefined {
-  const read = readLedgerLine(line);
-  return 'entry' in read ? read.entry : undefined;
-}
-
 /** What the drain may do while it holds the ledger's lock (Ledger.exclusive). */
 export interface LockedLedger {
   readFrom(cursor: LedgerCursor): Promise<LedgerBatch>;
@@ -221,8 +215,9 @@ export class Ledger {
   }
 
   /**
-   * Appends one entry. `lockTimeoutMs` overrides the wait for the cross-process lock for this append: the gateway
-   * appends only calls a provider has already billed, and waits long for those rather than lose one (ENG-3).
+   * Appends one entry directly, without the spend book's outbox. No billed call takes this path: the gateway writes
+   * through exclusive's locked append (paid.ts). Tests use it to stand in for an older worker's direct appends, which
+   * the spend book absorbs. `lockTimeoutMs` overrides the wait for the cross-process lock for this append.
    */
   append(draft: LedgerDraft, opts: { lockTimeoutMs?: number } = {}): Promise<GatewayLedgerEntry> {
     const run = this.queue.then(() => this.withLock(() => this.appendLocked(draft), opts.lockTimeoutMs ?? this.lockTimeoutMs));

@@ -60,7 +60,8 @@ export interface SpendContext {
    * - `key`: the run and memo key of the call (AdmitRequest.operationKey). While one attempt holds it, another waits for
    *   its result (GatewayError 'in-flight') instead of paying again; a dead or timed-out holder's call is taken over.
    * - `cancel`: aborts when Temporal cancels the attempt (a cancel, a timeout, a lost worker): an unsettled call is held
-   *   no longer, so a later attempt can take it over within one lease.
+   *   no longer, so a later attempt can take it over within one lease; and nothing is sent again for it and a retry's
+   *   wait ends at once (F03 (g)), though, unlike `stop`, it cuts no call off.
    * - `until`: aborts when the attempt's invocation ends: a settled call is held until then, while its result is kept.
    * - `stop`: aborts when the call's run is ending (ADR-0111: the person's Cancel, "Stop the run", or a failure elsewhere
    *   in the run; or any cancel of the attempt once the store shows the run ended). It cuts the call off where its

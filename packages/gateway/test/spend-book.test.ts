@@ -386,6 +386,13 @@ describe('the ledger check says what the spend book did with a line that is not 
     expect(await gateway().auditLedger()).toMatchObject({ brokenAt: 'line:2', brokenLine: { line: 2, book: 'fault' }, openFaults: 1 });
   });
 
+  it('a line that is just null: the check names it by its line, as a fault, and does not throw', async () => {
+    await twoEntries();
+    const [first] = readFileSync(ledgerPath, 'utf8').split('\n');
+    writeFileSync(ledgerPath, `${first}\nnull\n`);
+    expect(await gateway().auditLedger()).toMatchObject({ brokenAt: 'line:2', brokenLine: { line: 2, book: 'fault' }, openFaults: 1 });
+  });
+
   it('a torn last line: not read, not a fault; set aside when byway next writes to the ledger', async () => {
     await twoEntries();
     writeFileSync(ledgerPath, `${readFileSync(ledgerPath, 'utf8')}{"workspaceId":"ws","cost`);
