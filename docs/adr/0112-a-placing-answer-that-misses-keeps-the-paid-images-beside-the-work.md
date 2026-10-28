@@ -65,3 +65,9 @@ Claude's audit of 2026-10-21, the report put to the owner with D1 to D10, set ou
 - The owner's answers of 2026-10-21 21:43: [evidence/conversation-continued.md](evidence/conversation-continued.md), under that time.
 - Claude's audit of 2026-10-21, with the defaults quoted under Context (its section "Defaults Claude takes without asking (say if any should be yours)"): [evidence/reports/audit-2026-10-21.md](evidence/reports/audit-2026-10-21.md).
 - The probe behind the first finding under Consequences: `lockCopy('prose', ['Mine.'], …)` refuses a memo whose only change is one added image line, with "keep the text exactly as it is" (run again on 2026-10-21 for this record).
+
+## Later notes
+
+Notes appended under [ADR-0103](0103-adr-log-rule-and-ci.md) rule 1; the Context and Decision above are unchanged.
+
+- **2026-10-28, [ADR-0113](0113-run-inputs-seeds-and-the-held-voice-travel-by-reference.md).** Item 6 still says what an ASSET step does with a slots knob below 1, and the step still does it (`NO_SLOTS_NOTE`, `packages/runner/src/activities/asset.ts`), but no run reaches it now: since block 2 the engine refuses a recipe whose slots knob is not a whole number of at least 1 before any run exists (ST7 `slots`, `packages/recipe/src/limits.ts`; ADR-0113 item 8.3), so item 6's fraction of a knob that buys two brief answers is no longer reachable either. ADR-0113 lists this record as read with it and unchanged by it, so the index has no "changed by" link for it (ADR-0103's Later note of 2026-10-28; backlog row "When a Later note may carry a changed decision, and when it needs a new ADR").
