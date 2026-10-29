@@ -1,7 +1,7 @@
 import { c1, c2, c3, c4, c5, c6a, c7, PROTOCOL_CONFIGS } from '@byway/catalog';
 import type { CostEstimate } from '@byway/contracts';
 import { PRICES, PROFILES } from '@byway/gateway';
-import { withHash, type Node, type Recipe } from '@byway/recipe';
+import { loop, oneShotGate, seq, step, withHash, type Node, type Recipe, type Step } from '@byway/recipe';
 import { describe, expect, it } from 'vitest';
 import { createAdvisor, estimateRecipe, HUMAN_MINUTES, TOKEN_ASSUMPTIONS } from '../src/index.ts';
 import { demoAdvisor, demoGateway, recordingPrompts } from './helpers.ts';
@@ -345,5 +345,53 @@ describe('estimate in demo mode (Gateway.demo: every call goes to the mock)', ()
     expect([rec.estimate.lowUsd, rec.estimate.highUsd]).toEqual([0, 0]);
     const composed = await advisor.compose({ text: 'A detailed strategy memo on the billing migration' }, ws);
     expect([composed.estimate.lowUsd, composed.estimate.highUsd]).toEqual([0, 0]);
+  });
+});
+
+/**
+ * B-152 (the ponytail audit's RECIPES-5): the estimate's call counts held to what the interpreter runs, case by case;
+ * the runner's configurations harness holds whole runs to them (runner/test/e2e/estimate-bound.ts). Where the estimate
+ * is known to differ, the case says what the interpreter makes and is marked failing with the backlog row that holds
+ * the difference, which awaits the owner's choice; the day its fix lands the case fails here and is made a plain one.
+ */
+describe('the call counts the interpreter makes (B-152)', () => {
+  const at = new Date('2026-10-07T12:00:00Z');
+  const ctx = { profile: PROFILES.find((p) => p.id === 'balanced')!, images: true, video: true, at };
+  const calls = (r: Recipe, c: Partial<typeof ctx> = {}) => estimateRecipe(r, { ...ctx, ...c }).modelCalls;
+  const draft = step({ id: 'draft', role: 'build', actor: 'model', tier: 'mid', prompt: 'product.c4.draft', consumes: ['intent', 'brief'], produces: ['artifact'], writes: true });
+  const view = step({ id: 'render', role: 'render', actor: 'tool', consumes: ['artifact'], produces: ['view'] });
+  const critic = (knobs: Record<string, unknown>) =>
+    step({ id: 'recipient', role: 'critic', actor: 'model', tier: 'big', prompt: 'product.c4.recipient', consumes: ['view', 'refs'], produces: ['critique', 'score'], knobs: knobs as Step['knobs'] });
+  const revise = step({ id: 'revise', role: 'fix', actor: 'model', tier: 'mid', prompt: 'product.c4.revise', consumes: ['critique', 'artifact'], produces: ['artifact'], writes: true });
+  const recipe = (...stages: Node[]): Recipe => withHash({ ...c4, stages: stages.map((body, i) => ({ stage: `D${i + 1}`, body })) } as Recipe);
+  const pass = { metric: 'critic-rank', threshold: 3, hidden: true, holder: 'harness' } as const;
+
+  it('a build, then a one-shot gate with no retry: the build and the gate critic, once each', () => {
+    expect(calls(recipe(seq(draft, view, oneShotGate('gate', critic({ mode: 'OK' }), pass))))).toEqual({ low: 2, high: 2 });
+  });
+
+  it.fails('a GREAT critic with `shuffles` 2 makes two calls over the lineup (planCritic; known difference: B-149)', () => {
+    expect(calls(recipe(seq(draft, view, critic({ mode: 'GREAT', refs: 4, shuffles: 2 }))))).toEqual({ low: 2, high: 3 });
+  });
+
+  it.fails('a GREAT critic with no refs knob, or refs 0, reads up to ten references (MAX_REFS; known difference: B-149)', () => {
+    const priced = (knobs: Record<string, unknown>) => estimateRecipe(recipe(seq(draft, view, critic(knobs))), ctx).highUsd;
+    expect(priced({ mode: 'GREAT' })).toBe(priced({ mode: 'GREAT', refs: 10 }));
+    expect(priced({ mode: 'GREAT', refs: 0 })).toBe(priced({ mode: 'GREAT', refs: 10 }));
+  });
+
+  it.fails('a gate whose retry names an earlier stage re-runs every stage from it through its own (known difference: B-150)', () => {
+    // D1 builds; D2 revises and gates, retrying D1 once: at worst build, revise, critic, then build, revise, critic.
+    expect(calls(recipe(draft, seq(revise, view, oneShotGate('gate', critic({ mode: 'OK' }), pass, { stage: 'D1', times: 1 }))))).toEqual({ low: 3, high: 6 });
+  });
+
+  it.fails("a critic loop's fix runs only when its verdict does not end the loop (known difference: B-151)", () => {
+    // Under rankGate(3, 3, 1): at least the build and one passing critique; at most three critiques, two fixes and the re-rank.
+    const gate = { ...pass, holder: 'worker', probe: 1, max: 3, plateau: { minGain: 1, window: 2 }, onCap: 'human', onNoConverge: 'recalibrate-human' } as const;
+    expect(calls(recipe(seq(draft, loop('critic-loop', seq(view, critic({ mode: 'OK' }), revise), gate))))).toEqual({ low: 2, high: 7 });
+  });
+
+  it.fails('an ASSET step makes no call when the profile cannot make images (asset.ts; known difference: B-154)', () => {
+    expect(calls(c3, { images: false }).high).toBe(calls(c3).high - 2);
   });
 });

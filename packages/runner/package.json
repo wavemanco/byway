@@ -31,6 +31,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@byway/advisor": "workspace:*",
     "@byway/validator": "workspace:*",
     "@tailwindcss/browser": "4.1.11"
   }
