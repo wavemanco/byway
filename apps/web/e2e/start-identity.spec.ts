@@ -61,3 +61,22 @@ test('a Start sends its id again only while no answer came back and nothing chan
   expect(after).not.toBe(other);
   expect(after).not.toBe(first);
 });
+
+// B-042: the tab keeps a Start that got no answer, so the same Start pressed again after a reload is the same one.
+test('a Start that got no answer keeps its id across a reload; once byway answered, the next is new', async ({ page }) => {
+  await describeProblem(page, 'Tighten my quarterly status memo for the leadership team before Friday');
+  const title = page.locator('#proposal-title');
+  await expect(title).toHaveText('Memo Polish', { timeout: 60_000 });
+  const sent = await answerStarts(page, ['no answer', 'no answer', { status: 409, error: 'e2e: refused' }, 'no answer']);
+
+  const first = await pressStart(page, sent);
+  await page.reload();
+  await expect(title).toHaveText('Memo Polish', { timeout: 60_000 });
+  expect(await pressStart(page, sent)).toBe(first);
+
+  // byway answered with a refusal: that Start is over, and a reload does not bring it back.
+  expect(await pressStart(page, sent)).toBe(first);
+  await page.reload();
+  await expect(title).toHaveText('Memo Polish', { timeout: 60_000 });
+  expect(await pressStart(page, sent)).not.toBe(first);
+});
