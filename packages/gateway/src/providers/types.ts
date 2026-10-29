@@ -121,9 +121,11 @@ export interface ProviderVideoRequest {
   context: CallContext;
   /**
    * Runs one free round trip (an upload, a status poll, a result, a download) under the gateway's retry policy and
-   * error mapping. A video call makes several, and only the failed one is repeated.
+   * error mapping. A video call makes several, and only the failed one is repeated. `done`: the round trip reads a job
+   * the provider has reported done (its result, or what that result points to), so it is retried as far as the run's
+   * stop allows, even after Temporal cancels the attempt (SpendContext.operation.cancel): a read sends nothing again.
    */
-  attempt<T>(fn: () => Promise<T>): Promise<T>;
+  attempt<T>(fn: () => Promise<T>, opts?: { done?: boolean }): Promise<T>;
   /**
    * Runs one billable job submission (ADR-0091): retried only after failures that were certainly not billed (billingOf
    * 'none', such as fal's own 503 body). After one that may have been, it is never sent again: the call fails, not

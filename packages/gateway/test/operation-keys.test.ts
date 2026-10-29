@@ -521,6 +521,52 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([made.costUsd]);
   });
 
+  // The gap f2bf60f left: the clip's own reads stayed under the cancel, so a result read or a download of the made clip
+  // that failed once after the cancel was not retried, the clip settled as made without frames, and the next attempt
+  // bought it again. A read is not a send: once fal has reported the clip done, its reads go on to the stop alone.
+  for (const failing of ['result read', 'download'] as const) {
+    it(`after the cancel, the made clip’s ${failing} that fails once is read again: its frames are made, and the next attempt gets that clip, not a new one`, async () => {
+      const fal = fakeFal({}, failing === 'result read' ? { resultFailures: { [MODEL]: [fetchFailed('ECONNRESET')] } } : {});
+      const media = fakeFetch(failing === 'download' ? { [fal.clipUrl]: [503] } : {});
+      const key = 'run-1/run-1/relay/-/1/video/abc/1';
+      const a = attempt(key);
+      const workerA = gateway({ clients: { fal: cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) }, fetch: media.fetch });
+      const workerB = gateway({ clients: { fal: fal.client }, fetch: media.fetch });
+      const made = await workerA.video(await clip(a.operation));
+      expect(a.cancel.signal.aborted).toBe(true);
+      expect(made).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String), middleFrameArtifactId: expect.any(String) });
+      if (failing === 'download') expect(media.requested.filter((u) => u === fal.clipUrl)).toHaveLength(2);
+      expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+      expect(frameJobsOf(fal)).toEqual(['last', 'middle']);
+      expect((await book.ledgeredCalls()).map((c) => [c.entryId, c.costUsd])).toEqual([[made.ledgerEntryId, made.costUsd]]);
+      a.until.abort();
+      await until(async () => (await workerB.video(await clip(attempt(key).operation)).catch((e: { settledEarlier?: boolean }) => e.settledEarlier)) === true);
+      expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+      expect(frameJobsOf(fal)).toEqual(['last', 'middle']);
+      expect(await book.ledgeredCalls()).toHaveLength(1);
+      expect(await workerB.spend('ws')).toMatchObject({ spentUsd: made.costUsd, inFlightUsd: 0, uncertainUsd: 0 });
+    });
+  }
+
+  it('after the cancel, a status poll of the clip that fails before fal reports it done is not polled again: nothing settles, and the next attempt resumes the clip', async () => {
+    const fal = fakeFal({}, { pollFailures: { [MODEL]: [fetchFailed('ECONNRESET')] } });
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const a = attempt(key);
+    const workerA = gateway({ clients: { fal: cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) }, fetch: fakeFetch().fetch });
+    const err = await workerA.video(await clip(a.operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ retryable: false });
+    expect(fal.polls).toEqual(['req-1']);
+    expect(frameJobsOf(fal)).toEqual([]);
+    expect(await book.ledgeredCalls()).toEqual([]);
+    const resumed = await gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch }).video(await clip(attempt(key).operation));
+    expect(resumed).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String) });
+    expect(fal.calls.filter((c) => c.endpoint === MODEL)).toHaveLength(1);
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([resumed.costUsd]);
+  });
+
   it('a cancelled attempt that lost its row to a takeover submits no frame job either: its clip settles as made, on the one row', async () => {
     const fal = fakeFal();
     const media = fakeFetch();

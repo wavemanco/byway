@@ -661,8 +661,9 @@ export class ModelGateway implements Gateway {
     // jobs go on (Recommended)"): refused, its clip settled as made without frames, and the next attempt, finding the
     // row settled, bought the clip again. Once such a job is out, its retries and every read after it (its status, its
     // result, the frames' downloads) end on the stop alone, so the made clip is completed once and kept. The clip itself
-    // is never sent again after a cancel: its submission's retries stay under `stopping`, and a submission before the
-    // clip job was accepted is refused.
+    // is never sent again after a cancel: its submission's retries stay under `stopping`, a submission before the clip
+    // job was accepted is refused, and a status poll of the clip before the provider reports it done stays under
+    // `stopping` too (the reads of a done clip go on: `attempt`'s `done`, below).
     const finishing = haltOn(stop, undefined);
     let framing = false;
     let clipAccepted = false;
@@ -683,7 +684,9 @@ export class ModelGateway implements Gateway {
           ...(req.shot !== undefined ? { shot: req.shot } : {}),
           ...(startFrame ? { startFrame } : {}),
           context: { workspaceId: req.workspaceId, ...ctxIds(req), purpose: req.purpose, profileId: req.profileId },
-          attempt: (fn) => withRetries(mapped(fn), this.retry, FREE_READ, framing ? finishing : stopping),
+          // A read of a job the provider reported done (the made clip's result and download) is retried on the stop
+          // alone too, so a cancel never loses a clip that is paid for to one failed read: a read sends nothing again.
+          attempt: (fn, o) => withRetries(mapped(fn), this.retry, FREE_READ, framing || o?.done ? finishing : stopping),
           submit: async (fn, what) => {
             // Nothing more is submitted once the run is ending: this job was not sent, so nothing was billed for it.
             if (stop?.aborted) throw cutOffError(ref.provider, 'none', `${what} was not submitted`);
