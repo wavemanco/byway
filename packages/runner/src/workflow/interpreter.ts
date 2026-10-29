@@ -510,7 +510,8 @@ export class Interpreter {
     const n = Math.max(1, r.n);
     const outs = await Promise.all(Array.from({ length: n }, (_, i) => this.node(r.body, ports, branch(ctx, [...ctx.path, i]))));
     const kept = outs.filter((o) => o.artifact);
-    return { ...ports, options: kept.map((o) => o.artifact!), optionViews: kept.map((o) => (o.view && !o.view.pool ? o.view.items[0] : undefined)) };
+    // An option's view is one its branch made: the view it was handed is of the work before the options (B-063).
+    return { ...ports, options: kept.map((o) => o.artifact!), optionViews: kept.map((o) => (o.view && o.view !== ports.view && !o.view.pool ? o.view.items[0] : undefined)) };
   }
 
   /** Each option runs the body as the work, with its own view and no option set; the candidates' work comes out (HANDED_ON). */

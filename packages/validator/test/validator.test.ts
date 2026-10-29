@@ -240,12 +240,22 @@ describe('default rules', () => {
   });
 
   it('DR6 a critic view that does not come from a render', () => {
+    // A person's look in place of the render. (A view that is a recipe input no longer reaches a critic inside each:
+    // each hands a candidate only its own view, B-063, so that is ST5.)
     const r = studio();
-    r.inputs.push('view');
     walk(r, (node) => {
-      if (node.op === 'seq') node.steps = node.steps.filter((s) => !(s.op === 'step' && s.id === 'render-1'));
+      if (node.op === 'step' && node.id === 'render-1') {
+        Object.assign(node, { role: 'vision', block: 'VISION', actor: 'human' });
+        delete node.glue;
+      }
     });
     expect(ids(validate(r))).toEqual(['DR6']);
+    const fromInput = studio();
+    fromInput.inputs.push('view');
+    walk(fromInput, (node) => {
+      if (node.op === 'seq') node.steps = node.steps.filter((s) => !(s.op === 'step' && s.id === 'render-1'));
+    });
+    expect(ids(validate(fromInput))).toEqual(['ST5']);
   });
 
   it('DR7 without its C1 exception', () => {
