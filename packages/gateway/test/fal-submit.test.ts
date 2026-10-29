@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { billingOf } from '../src/errors.ts';
 import { createGateway } from '../src/gateway.ts';
 import { encodePng } from '../src/mock/png.ts';
-import { createFalClient, FAL_EXTRACT_FRAME, FalQueueError } from '../src/providers/fal.ts';
-import { fakeFetch, fetchFailed, MemoryArtifacts } from './fakes.ts';
+import { createFalClient, FAL_EXTRACT_FRAME, FalQueueError, type FalClientLike } from '../src/providers/fal.ts';
+import { fakeFal, fakeFetch, fetchFailed, MemoryArtifacts } from './fakes.ts';
 import { memorySpendBook } from '../src/memory-book.ts';
 
 /**
@@ -239,5 +239,94 @@ describe('gateway: a relay link over fal HTTP, the SDK reading status and result
     expect(http.reads.map((u) => new URL(u).pathname)).toEqual(['/fal-ai/kling-video/requests/req-1/status', '/fal-ai/kling-video/requests/req-1']);
     expect(await g.spendRecords('ws-1')).toMatchObject({ inFlight: [], uncertain: [] });
     expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+});
+
+// MONEY-2, the check of fix/fx-landnow: F03 (g)'s cancel ("Yes, nothing is sent again after a cancel") was honoured by
+// completions and images only. A clip attempt Temporal cancelled still sent its submission again after fal's 503,
+// retried its reads, and submitted its last-frame and middle-frame jobs beside the attempt that took the call over.
+describe('gateway: a clip attempt Temporal has cancelled sends nothing again (F03 (g))', () => {
+  /** Temporal's cancel of the attempt (a heartbeat timeout, a lost worker), with no stop: the run goes on. */
+  const timedOut = () => {
+    const cancel = new AbortController();
+    const until = new AbortController();
+    const stop = new AbortController();
+    return { cancel, operation: { key: 'run-1/run-1/clip/-/1/video/abc/1', until: until.signal, cancel: cancel.signal, stop: stop.signal } };
+  };
+  /** fal over HTTP as fakeFalHttp, with `before` run on each request first: it may cancel the attempt, or answer in fal's place. */
+  const watched = (http: ReturnType<typeof fakeFalHttp>, before: (url: string, method: string) => Response | undefined) => ({
+    ...http,
+    fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      return before(url, (init?.method ?? 'GET').toUpperCase()) ?? http.fetch(input, init);
+    }) as typeof globalThis.fetch,
+  });
+
+  it('a submission fal refuses with its 503 as the attempt is cancelled is not sent again, and counts nothing', async () => {
+    const { cancel, operation } = timedOut();
+    const http = watched(fakeFalHttp({ [MODEL]: [json({ detail: 'Service temporarily unavailable' }, 503)] }), (url, method) => {
+      if (method === 'POST' && url === `${QUEUE}/${MODEL}`) cancel.abort(new Error('TIMED_OUT'));
+      return undefined;
+    });
+    const g = gateway(http);
+    const err = (await g.video(req({ operation })).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(billingOf(err)).toBe('none');
+    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`]);
+    expect(await g.spendRecords('ws-1')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  it('a clip made as the attempt is cancelled is settled as made, and no last-frame or middle-frame job is submitted', async () => {
+    const { cancel, operation } = timedOut();
+    const http = watched(fakeFalHttp(), (url, method) => {
+      // The clip's result is read: Temporal cancels the attempt as it arrives.
+      if (method === 'GET' && new URL(url).pathname === '/fal-ai/kling-video/requests/req-1') cancel.abort(new Error('TIMED_OUT'));
+      return undefined;
+    });
+    const g = gateway(http);
+    const err = (await g.video(req({ operation })).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ retryable: false, billed: true });
+    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`]);
+    // Made and billed: ledgered at the clip's price, with nothing counted as may have been billed.
+    expect(ledgerLines()).toHaveLength(1);
+    expect(ledgerLines()[0]).toMatchObject({ kind: 'video', costUsd: 0.354 });
+    expect(await g.spendRecords('ws-1')).toMatchObject({ inFlight: [], uncertain: [] });
+    expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0.354, inFlightUsd: 0, uncertainUsd: 0 });
+  });
+
+  // On the SDK's client fake, not over HTTP: the SDK retries a status read itself, and what is counted here is byway's
+  // own reads of it, one per poll the adapter makes.
+  it('a status poll that fails after the cancel is not polled again: the clip counts as may have been billed, with its id', async () => {
+    const { cancel, operation } = timedOut();
+    const fal = fakeFal({}, { pollFailures: { [MODEL]: [fetchFailed('ECONNRESET'), fetchFailed('ECONNRESET')] } });
+    const client: FalClientLike = {
+      ...fal.client,
+      queue: {
+        ...fal.client.queue,
+        subscribeToStatus(endpoint, options) {
+          cancel.abort(new Error('TIMED_OUT'));
+          return fal.client.queue.subscribeToStatus(endpoint, options);
+        },
+      },
+    };
+    const g = createGateway({
+      ledgerPath: join(dir, 'ledger.jsonl'),
+      spendBook: memorySpendBook(),
+      artifacts,
+      caps: { workspaceCapUsd: () => 100 },
+      env: { FAL_KEY },
+      clients: { fal: client },
+      fetch: fakeFetch().fetch,
+      retry: { sleep: async () => {}, random: () => 0.5 },
+    });
+    const err = (await g.video(req({ operation })).catch((e: unknown) => e)) as GatewayError;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ retryable: false });
+    expect(billingOf(err)).toBe('maybe');
+    expect(fal.polls).toEqual(['req-1']);
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL]);
+    expect((await g.spendRecords('ws-1')).uncertain).toEqual([expect.objectContaining({ provider: 'fal', providerJobs: { generation: 'req-1' } })]);
   });
 });

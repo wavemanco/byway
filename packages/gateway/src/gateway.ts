@@ -651,7 +651,11 @@ export class ModelGateway implements Gateway {
     // The run is ending (ADR-0111): no more jobs and no more retries, and an adapter that can cancel its job does.
     const stop = req.operation?.stop;
     const signal = stop && adapter.cutsOff?.video ? stop : undefined;
-    const stopping = stop ? { stop } : {};
+    // Temporal's cancel of this attempt ends its retries and its submissions too (F03 (g)): a later attempt takes the
+    // call over, so this one sends nothing again (MONEY-2, the check of fix/fx-landnow). The cut-off, the adapter's
+    // cancel of its job, stays on the stop alone (ADR-0111 item 1).
+    const cancel = req.operation?.cancel;
+    const stopping = haltOn(stop, cancel);
     try {
       const mapped = <T>(fn: () => Promise<T>) => async () => {
         try {
@@ -673,6 +677,9 @@ export class ModelGateway implements Gateway {
           submit: async (fn, what) => {
             // Nothing more is submitted once the run is ending: this job was not sent, so nothing was billed for it.
             if (stop?.aborted) throw cutOffError(ref.provider, 'none', `${what} was not submitted`);
+            // Nor once Temporal has cancelled this attempt (F03 (g)): a clip made already is settled as made, without
+            // its frame jobs, which the attempt that takes the call over makes.
+            if (cancel?.aborted) throw notSubmitted(ref.provider, what, 'Temporal cancelled this attempt of the step, and a later attempt takes the call over');
             // The submission is the call's first billable request: the spend book marks the call sent before it.
             const fresh = op.resumed === undefined;
             await op.markSent();
@@ -1145,6 +1152,16 @@ function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<Prov
   err.billing = 'maybe';
   const taken: TakenOver = { resume: { ...jobs }, ...acceptedTimes(at) };
   return Object.assign(err, { takenOver: taken });
+}
+
+/**
+ * A queue job byway did not submit because this attempt is no longer the call's (Temporal cancelled it, or another
+ * attempt took its row over): nothing was sent for it, so nothing was billed for it, and it is not retried.
+ */
+function notSubmitted(provider: ProviderId, what: string, why: string): ClassifiedError {
+  const err: ClassifiedError = new GatewayError('byway-failure', `byway did not submit ${what} to ${provider}: ${why}.`.slice(0, 2000), false, { billed: false });
+  err.billing = 'none';
+  return err;
 }
 
 /** When a resumed call's jobs were accepted (the spend book's ISO times), in milliseconds, for the adapter; a time that cannot be read is left out. */
