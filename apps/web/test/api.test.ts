@@ -772,7 +772,7 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
 // B-070: a compose or a re-route runs inside its web request, with no bound of byway's own but the model's wait, and
 // goes on when the request ends. A press again after a reload, or a second tab, joins the call under way instead of
 // buying a second one beside it.
-describe('"Build my own" and a re-route asked again while under way join the call (B-070)', PRODUCT_PATH, () => {
+describe('"Build my own" and a re-route asked again while under way join the call (B-070)', () => {
   it('two composes of one intake at once share one advisor call; once it settles, the next is a new one', async () => {
     const d = await deps();
     const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
