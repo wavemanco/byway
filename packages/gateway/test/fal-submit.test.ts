@@ -148,7 +148,7 @@ describe('createFalClient: a job is submitted with one HTTP request (F03)', () =
 describe('createFalClient: the start frame is uploaded only to fal’s media host, its redirects not followed (F17 (a), ADR-0088)', () => {
   /** fal's REST API answering the slot request with `uploadUrl`; every other request is recorded and answered 200. */
   function slotAt(uploadUrl: string) {
-    const sent: { url: string; method: string; redirect: RequestRedirect | undefined }[] = [];
+    const sent: { url: string; method: string; redirect: RequestInit['redirect'] }[] = [];
     const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const url = String(input instanceof Request ? input.url : input);
       if (url.startsWith('https://rest.fal.ai/storage/upload/initiate')) return json({ upload_url: uploadUrl, file_url: 'https://v3.fal.media/files/upload-0.png' });
@@ -157,7 +157,7 @@ describe('createFalClient: the start frame is uploaded only to fal’s media hos
     };
     return { fetch: fetch as typeof globalThis.fetch, sent };
   }
-  const frame = () => new Blob([encodePng(2, 2, new Uint8Array(12).fill(9))], { type: 'image/png' });
+  const frame = () => new Blob([Buffer.from(encodePng(2, 2, new Uint8Array(12).fill(9)))], { type: 'image/png' });
 
   it('a slot on fal’s media host: one PUT there, redirects refused, and the file’s URL returned', async () => {
     const http = slotAt('https://v3b.fal.media/files/upload/slot-1?token=t');
