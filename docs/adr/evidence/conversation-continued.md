@@ -1,6 +1,6 @@
 # Conversation record, continued (decision evidence)
 
-What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-29 00:48 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block), on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, from 14:06 to 20:07 local, for the sweep of unfiled items, and at 22:49 local, for the launch checklist) and on 2026-10-23 (from 01:18 to 02:20 local, for the records pass of block 2's fix round, from 03:40 to 09:06 local, for the records pass of its second fix round, from 09:59 to 10:10 local, for that round's last answer, from 10:54 to 11:07 local, for the answer to its re-check, and from 11:17 to 12:28 local, for the records pass after block 2's merge, from 12:35 to 13:37 local, for the plan to all clear, from 13:44 to 20:22 local, for the backlog sync, and from 20:22 to 23:13 local, for the hand-over to a session started elsewhere) and on 2026-10-28 (from 2026-10-24 01:01 to 2026-10-28 15:59 local, for the records of the ponytail audit; the owner's "Try again" of 2026-10-28 was copied by hand, since the extractor drops a message whose words repeat an earlier one) and on 2026-10-29 (from 2026-10-28 15:59 to 2026-10-29 00:48 local, for the records of the owner's goal of 2026-10-28) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
+What the owner typed in the same Claude Code session after [conversation.md](conversation.md) ends (its last entry is 2026-10-07T17:57:32Z, 10:57 local), up to 2026-10-29 08:54 local. Claude extracted it on 2026-10-18 (up to 2026-10-18 20:53 local), on 2026-10-21 (up to 2026-10-21 16:42 local), again late on 2026-10-21 (up to 21:43, for the records pass of that night), once more that night (from 22:58 to 23:15, for the records pass of the first block), on 2026-10-22 (from 01:48 to 01:54 local, for the records pass of the first block's fix round, from 04:04 to 06:40 local, for its second fix round, from 06:41 to 10:35 local, for its third, from 12:09 to 12:10 local, for that round's check, from 14:06 to 20:07 local, for the sweep of unfiled items, and at 22:49 local, for the launch checklist) and on 2026-10-23 (from 01:18 to 02:20 local, for the records pass of block 2's fix round, from 03:40 to 09:06 local, for the records pass of its second fix round, from 09:59 to 10:10 local, for that round's last answer, from 10:54 to 11:07 local, for the answer to its re-check, and from 11:17 to 12:28 local, for the records pass after block 2's merge, from 12:35 to 13:37 local, for the plan to all clear, from 13:44 to 20:22 local, for the backlog sync, and from 20:22 to 23:13 local, for the hand-over to a session started elsewhere) and on 2026-10-28 (from 2026-10-24 01:01 to 2026-10-28 15:59 local, for the records of the ponytail audit; the owner's "Try again" of 2026-10-28 was copied by hand, since the extractor drops a message whose words repeat an earlier one) and on 2026-10-29 (from 2026-10-28 15:59 to 2026-10-29 00:48 local, for the records of the owner's goal of 2026-10-28), and again that day (from 00:48 to 08:54 local, for the records of F01 (f)) from the session transcript, which is outside the repository (`~/.claude/projects/C--Users-arvik-code-byway/67b5b9ac-8595-4cc6-898a-d7d911b9d422.jsonl`).
 
 How it differs from conversation.md:
 
@@ -1078,3 +1078,50 @@ don;t commit this to repo (delete if done). I don;t want duplicates there. just 
 ---
 ## USER 2026-10-29T00:48:15.212-07:00 (2026-10-29T07:48:15.212Z)
 [ANSWER] The user answered: "F01 (a): a composed recipe where a person's admitted answer is applied on no path the run can take. What should byway do?"="Tell the person at run time (Recommended)", "B-060: the claims about a later-stage source and a reused step object can only be made if the Plan screen shows steps per place or across stages. What should happen?"="for now, Keep the claims as they are; close it (per your Recommended option) and file Build the screen change as backlog. Record the reason for deferral (larger UI change) and the implication of this deferral in the backlog itself.". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
+
+---
+## USER 2026-10-29T03:27:44.936-07:00 (2026-10-29T10:27:44.936Z)
+/goal clear
+
+---
+## USER 2026-10-29T03:28:38.750-07:00 (2026-10-29T10:28:38.750Z)
+How many of the 114 open items waiting on another row are now unlocked without needing a decision from me?
+
+---
+## USER 2026-10-29T03:38:02.413-07:00 (2026-10-29T10:38:02.413Z)
+looking at the off-center protocol, which wirings are ready to use today?
+
+---
+## USER 2026-10-29T07:08:48.382-07:00 (2026-10-29T14:08:48.382Z)
+<!-- reply 2 -->
+> The protocol documents have moved. They are no longer at ActAI/protocol but under ActAI-retired-2026-10/protocol. My memory note still points to the old path.
+
+but the protocol is still relevant right? If yes then it (and any other related document that is still relevant and current) should come out of the retired folder and into a dedicated protocol folder.
+
+<!-- reply -->
+> Out-of-date boxes in the Launch checklist. Five unticked lines (lines 61, 66, 67, 69 and 79 of docs/backlog.md) are about work that has already landed: B-026, B-106, B-108, B-045 and the follow-up branch. The checklist therefore looks longer than it is. Ticking them is a records-only change; I can do it if you’d like.
+
+you shouldn;t even be asking me to do these things. this is basic housekeeping and should be done by default.
+
+
+Put up F01 (f) here and lay out the pros and cons of the options available to us for that decision. Then give me your recommendation with rationale.
+
+---
+## CLAUDE-ASKS 2026-10-29T07:21:36.326-07:00 (2026-10-29T14:21:36.326Z)
+[{"question":"F01 (f): how should byway handle C1's seed being read as writing its direction on every run?","header":"F01 (f)","multiSelect":false,"options":[{"label":"Accept and measure (Recommended)","description":"B: keep the check as ADR-0098 names it; the row's trigger becomes a count, in the first live C1 runs, of seed steps that ended without a Direction note. If the rate is more than rare, come back to C. Records only, done today."},{"label":"Stand-in note","description":"C: when C1's seed writes no direction, store a stand-in note (own label, product channel only, C1-H untouched). Engine code, small, needs an adversarial check; no extra spend."},{"label":"Re-ask the model","description":"A: a C1 seed answer with no direction is a miss and is asked again once (then keep the page). Extra paid page build per miss; product channel only. Engine and money path, needs an adversarial check."},{"label":"Hold with ST9 (a) and B-062","description":"Leave F01 (f) open and decide it together with its two sibling questions, as its trigger says."}]}]
+
+---
+## USER 2026-10-29T08:50:21.144-07:00 (2026-10-29T15:50:21.144Z)
+[ANSWER] The user answered: "F01 (f): how should byway handle C1's seed being read as writing its direction on every run?"="Why would the model ignore anything at all? WHy is this issue even happening?". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.
+
+---
+## USER 2026-10-29T08:54:35.429-07:00 (2026-10-29T15:54:35.429Z)
+<!-- reply 1 -->
+> My recommendation: B now; C later only if the count says so
+> Proportion. It’s a corner of composed recipes that the catalog can’t reach, and the rate is a guess. Your rule is to size a fix to what real use shows, and the count is free.
+> If a fix is ever needed, C beats A. It gets the same exactness with no extra spend and no new way for a run to fail. D trades a rare wrongly refused answer for frequently pointless questions, which is the wrong way round.
+> Research credibility comes first. B touches no Study 1 arm. Any later run-time change should leave the research channel (C1-H) out.
+
+Go exactly with this. B now, C later. But file C with the correct trigger so we end up doing it if needed.
+
+Also, these solutions feel like solutions during a test run of the system. WHat should be done from a product perspective when a user using byway faces this?
