@@ -111,9 +111,10 @@ export function c2c5Scenarios(use: () => Harness): void {
   describe('C5 on media', () => {
     it('runs the relay one shot after another from the anchor frames, holds your script, and retries D2 when the launch gate fails', async () => {
       h.responders['critic:media'] = () => '- The payoff shot is too short.\nScore: 5/10';
-      // A stand-in shot check that finds a defect in any image beyond the link's own two frames: a flaw in another
-      // shot's still, which the check used to be shown and no regeneration of this shot could remove (F10).
-      h.responders['check:media'] = (ctx) => (ctx.images > 2 ? '- Garbled lettering on the box in one of the frames.' : 'No defects.');
+      // A stand-in shot check that finds a defect in any image beyond the link's own three frames (its start, middle and
+      // last): a flaw in another shot's still, which the check used to be shown and no regeneration of this shot could
+      // remove (F10).
+      h.responders['check:media'] = (ctx) => (ctx.images > 3 ? '- Garbled lettering on the box in one of the frames.' : 'No defects.');
       const script = 'Less time on the road.\nMore time on the trail.';
       try {
         const headline = 'Less road. More trail.';
@@ -171,14 +172,16 @@ export function c2c5Scenarios(use: () => Harness): void {
         const framed = (await json(anchorRun.at(-1)!)) as { storyboard: { shot: number; imageArtifactId?: string }[] };
         expect((videos[0]!.request as VideoRequest).startFrameArtifactId).toBe(framed.storyboard.find((s) => s.shot === 1)!.imageArtifactId);
 
-        // Each shot check sees its link's two frames, the clip's start and its last frame, and no other shot's still:
-        // no regeneration, no "best version so far?" question (F10).
+        // Each shot check sees its link's three frames, the clip's start, a frame from its middle (F10 (a)) and its last
+        // frame, and no other shot's still: no regeneration, no "best version so far?" question (F10).
         const checks = h.succeeded(run.id).filter((c) => c.stepId === 'shot-check');
         expect(checks).toHaveLength(2 * 4);
         const shown = (c: (typeof checks)[number]) => (c.request as CompletionRequest).messages.flatMap((m) => m.content.flatMap((p) => (p.type === 'image' ? [p.artifactId] : [])));
         for (const [i, c] of checks.slice(0, 4).entries()) {
           const start = (videos[i]!.request as VideoRequest).startFrameArtifactId;
-          expect(shown(c)).toEqual([start, (videos[i]!.result as VideoResult).lastFrameArtifactId]);
+          const made = videos[i]!.result as VideoResult;
+          expect(made.middleFrameArtifactId).toBeDefined();
+          expect(shown(c)).toEqual([start, made.middleFrameArtifactId, made.lastFrameArtifactId]);
         }
         expect(ofType(view, 'step-started', 'regenerate')).toEqual([]);
         expect(view.checkpoints.some((c) => c.prompt === BEST_SO_FAR_PROMPT)).toBe(false);

@@ -137,15 +137,18 @@ export async function relayLink(deps: RunnerDeps, input: RelayInput): Promise<Re
   // The gateway says what it stored: MP4 or the demo's SVG placeholder, and a frame that is not always PNG.
   await announce(deps, run.runId, call, clip.artifactId, clip.mediaType, { label: `Clip for shot ${shot}`, name: 'clip', shot });
   await announce(deps, run.runId, call, clip.lastFrameArtifactId, clip.lastFrameMediaType, { label: `Last frame of shot ${shot}`, name: 'last-frame', shot });
+  const middle = clip.middleFrameArtifactId;
+  if (middle && clip.middleFrameMediaType) await announce(deps, run.runId, call, middle, clip.middleFrameMediaType, { label: `Middle frame of shot ${shot}`, name: 'middle-frame', shot });
 
-  // The clip and its last frame go on the shot together (a regeneration replaces both), so the shot check inside this
-  // link sees the clip's own last frame (F10, ADR-0090).
-  const next = serializeJson({ ...sb.value, storyboard: sb.value.storyboard.map((s) => (s.shot === shot ? { ...s, clipArtifactId: clip.artifactId, lastFrameArtifactId: clip.lastFrameArtifactId } : s)) });
+  // The clip and its frames go on the shot together (a regeneration replaces them all, a middle frame it could not take
+  // included), so the shot check inside this link sees the clip's own frames (F10, ADR-0090).
+  const frames = { clipArtifactId: clip.artifactId, lastFrameArtifactId: clip.lastFrameArtifactId, middleFrameArtifactId: middle };
+  const next = serializeJson({ ...sb.value, storyboard: sb.value.storyboard.map((s) => (s.shot === shot ? { ...s, ...frames } : s)) });
   const checked = write(next);
   if (checked.problems.length) throw new StepError(`The ${what} step could not update the storyboard: ${checked.problems.join(' ')}`);
   const artifactId = await storeText(deps, run, call, checked.text, { label: `Storyboard with the clip for shot ${shot}`, name: 'work', shot });
   const note = restoredNote(checked.restored);
-  await stepFinished(deps, run, call, { costUsd, ...(note ? { note } : {}), outputArtifactIds: [clip.artifactId, clip.lastFrameArtifactId, artifactId] }, true);
+  await stepFinished(deps, run, call, { costUsd, ...(note ? { note } : {}), outputArtifactIds: [clip.artifactId, clip.lastFrameArtifactId, ...(middle ? [middle] : []), artifactId] }, true);
   return { costUsd, artifactId, anchor: clip.lastFrameArtifactId };
 }
 

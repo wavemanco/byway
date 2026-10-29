@@ -8,7 +8,9 @@
  * A call's memo key is the step call's key, the kind of call, a hash of the request, and which repeat of that request
  * it is within the activity: the same request asked twice on purpose (two critic shuffles over one lineup) is two
  * calls, and a request that differs on the retry (a new prompt) is a new call. What makes a request is kept stable
- * across retries: the SEED string and the critic's random draws are memoized too (memoized, seededRandom).
+ * across retries: the SEED string and the critic's random draws are memoized too (memoized, seededRandom). A call that
+ * failed with nothing kept gives its repeat back (keyOf's undo; B-142): the asset step's next try of the same image goes
+ * under the same key, so the image that try buys is kept where the step run again looks first, and is not bought again.
  *
  * Keeping a paid answer is not left to Temporal (ENG-3): if the memo write (or, for a long answer, its artifact write)
  * fails after the provider answered, a Temporal retry would find no memo and buy the call again. So the save is
@@ -38,12 +40,19 @@
  * step that runs again with only the decline kept (its earlier attempt ended during the retry: a crash, a timeout, a
  * stop) asks the gateway for the retry alone (operation.declinedEarlier). If byway did not start that retry (it is
  * stopping, or the step was stopped), the attempt ends with a plain error that Temporal tries again (DeclineRetryPending),
- * never as a failed image the asset step would try again under a new key. What is not covered: a worker that dies in the
- * moment between a provider's answer being settled and its keeping (the decline's, or the retry's outcome) leaves
- * nothing kept, and the next attempt buys that call again, as for any answer (ADR-0099).
+ * never as a failed image the asset step would try again. What is not covered: a worker that dies in the moment between
+ * a provider's answer being settled and its keeping (the decline's, or the retry's outcome) leaves nothing kept, and the
+ * next attempt buys that call again, as for any answer (ADR-0099).
+ *
+ * Waits that ran out (B-045). A call that used the whole of its model's wait and that the gateway does not send again (an
+ * image or a text answered whole, a clip; waitedOf, not retryable) may have been billed, so its failure is kept under the
+ * memo key as a final decline is, and a step run again (a lost worker, a later budget raise) gets it back, mark and words
+ * included, and asks nothing. A stream's silence, which the gateway marks retryable, is not kept: Temporal's retry asks
+ * again, as it did.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { GatewayError, type CompletionResult, type DeclinedAttempt, type DeclineRecord, type Gateway, type SpendContext, type Store } from '@byway/contracts';
+import { GatewayError, type CompletionResult, type DeclinedAttempt, type DeclineRecord, type Gateway, type SpendContext, type Store, type WaitedFor } from '@byway/contracts';
+import { waitedOf } from '@byway/gateway';
 import { DeclineRetryPending, StepError } from './failures.ts';
 
 /**
@@ -160,20 +169,35 @@ interface DeclineMemo {
 const declineMemo = (err: GatewayError & { declined: DeclineRecord }): string =>
   JSON.stringify({ declinedCall: { message: err.message, ...(err.billed !== undefined ? { billed: err.billed } : {}), declined: err.declined } } satisfies DeclineMemo);
 
-/** The final decline a memo value holds, as the gateway threw it; undefined for an answer. */
+/** A wait that ran out as the memo keeps it (B-045), and as a step run again gets it back: the same error, with its mark. */
+interface WaitedMemo {
+  waitedCall: { message: string; billed?: boolean; billing?: unknown; waited: WaitedFor };
+}
+
+const waitedMemo = (err: GatewayError, waited: WaitedFor): string => {
+  const billing = (err as { billing?: unknown }).billing;
+  return JSON.stringify({ waitedCall: { message: err.message, ...(err.billed !== undefined ? { billed: err.billed } : {}), ...(billing !== undefined ? { billing } : {}), waited } } satisfies WaitedMemo);
+};
+
+/** The final decline or waited failure a memo value holds, as the gateway threw it; undefined for an answer. */
 function keptDecline(value: string): GatewayError | undefined {
-  let memo: Partial<DeclineMemo> | null;
+  let memo: Partial<DeclineMemo & WaitedMemo> | null;
   try {
-    memo = JSON.parse(value) as Partial<DeclineMemo> | null;
+    memo = JSON.parse(value) as Partial<DeclineMemo & WaitedMemo> | null;
   } catch {
     return undefined;
+  }
+  const w = memo?.waitedCall;
+  if (typeof w === 'object' && w !== null) {
+    const err = new GatewayError('provider-error', w.message, false, w.billed !== undefined ? { billed: w.billed } : {});
+    return Object.assign(err, { waited: w.waited }, w.billing !== undefined ? { billing: w.billing } : {});
   }
   const d = memo?.declinedCall;
   if (typeof d !== 'object' || d === null) return undefined;
   return new GatewayError('refused', d.message, false, { declined: d.declined, ...(d.billed !== undefined ? { billed: d.billed } : {}) });
 }
 
-/** A kept outcome: the answer, or the final decline the call ended with. */
+/** A kept outcome: the answer, or the final decline or waited failure the call ended with. */
 type Kept<T> = { value: T } | { error: GatewayError };
 
 const unwrap = <T>(kept: Kept<T>): T => {
@@ -192,11 +216,16 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
   const recallMs = opts.recallEveryMs ?? RECALL_EVERY_MS;
   const limitMs = opts.waitLimitMs ?? WAIT_LIMIT_MS;
   const repeats = new Map<string, number>();
-  const keyOf = (kind: string, request: unknown): string => {
+  /**
+   * The call's memo key, and its undo for a call that kept nothing (B-142): the next ask of the same request then takes
+   * this repeat, so a try that failed does not push the one that is kept onto a key the step run again never reaches. Only
+   * while no later ask of it has begun: a later one's repeat is never handed out twice.
+   */
+  const keyOf = (kind: string, request: unknown): { key: string; undo: () => void } => {
     const at = `${kind}/${hashOf(request)}`;
     const n = (repeats.get(at) ?? 0) + 1;
     repeats.set(at, n);
-    return `${scope.key}/${at}/${n}`;
+    return { key: `${scope.key}/${at}/${n}`, undo: () => void (repeats.get(at) === n && repeats.set(at, n - 1)) };
   };
   /**
    * The call, or, while another attempt holds it (in-flight), that attempt's outcome once it is kept (an answer, or a final
@@ -260,7 +289,7 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
     // request with no operation is the same request, so its key is the one it always had.
     const { operation: own, ...asked } = request;
     const ownWait = own?.waitMs !== undefined ? { waitMs: own.waitMs } : {};
-    const key = keyOf(kind, asked);
+    const { key, undo } = keyOf(kind, asked);
     // What is kept under the key: an answer, or the call's final decline, thrown again as the gateway threw it (ADR-0102).
     const loadKept = async (v: string): Promise<Kept<T>> => {
       const declined = keptDecline(v);
@@ -292,11 +321,24 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
         const { saved, kept } = await persist(
           key,
           async () => declineMemo(declined),
-          (reason) =>
-            new StepError(`The model declined ${DECLINED[kind] ?? 'a call this step made'}, and byway could not keep that outcome (${reason}). The step stops here rather than run again, which could ask the model again.`),
+          (reason) => {
+            // A decline with a recorded cost is a paid call byway could not keep, so the asset step names its slot (B-044 (1)).
+            const billed = declined.billed === true || declined.declined.costUsd > 0 || (declined.declined.retryCostUsd ?? 0) > 0;
+            const message = `The model declined ${DECLINED[kind] ?? 'a call this step made'}, and byway could not keep that outcome (${reason}). The step stops here rather than run again, which could ask the model again.`;
+            return billed ? new PaidNotKept(message) : new StepError(message);
+          },
         );
         if (kept === saved) throw declined;
         return unwrap(await loadKept(kept));
+      }
+      // A wait that ran out, which the gateway does not send again (B-045): kept like a decline, so a step run again does
+      // not ask for what may have been billed. shortcut: kept best effort; if the store fails, the step gets the failure as
+      // before and a step run again would ask again, as for any failure (B-044's store-fault case).
+      const waited = waitedOf(e);
+      if (waited && e instanceof GatewayError && !e.retryable) {
+        const memo = await persist(key, async () => waitedMemo(e, waited), (reason) => new Error(reason)).catch(() => undefined);
+        if (!memo || memo.kept === memo.saved) throw e;
+        return unwrap(await loadKept(memo.kept));
       }
       // The retry of a kept decline, not started: no outcome. The step's next attempt asks for the retry alone. The words
       // say what byway does, since no one can try a step of a run again: Temporal tries it while it has tries left, and
@@ -307,6 +349,7 @@ export function memoGateway(inner: Gateway, store: MemoStore, scope: MemoScope, 
           { cause: e },
         );
       }
+      undo();
       throw e;
     }
     if ('kept' in outcome) return unwrap(outcome.kept);

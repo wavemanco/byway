@@ -314,6 +314,10 @@ describe('an image whose wait ran out (the waits design; MONEY-1)', () => {
     const result = await assetStep({ gateway, store, prompts: library }, { run, call, step, ports: { artifact } });
     expect(g.images).toHaveLength(1);
     expect(result).toMatchObject({ skipped: true });
+    // The waited outcome is kept like a decline (B-045): the step run again (a lost worker, a later budget raise) asks nothing.
+    const again = await assetStep({ gateway: memoGateway(g, store, { runId: run.runId, key: call.key }), store, prompts: library }, { run, call, step, ports: { artifact } });
+    expect(g.images).toHaveLength(1);
+    expect(again).toEqual(result);
   });
 
   it('any other unbilled failure is still tried again, up to the step’s tries per slot', async () => {
@@ -321,6 +325,26 @@ describe('an image whose wait ran out (the waits design; MONEY-1)', () => {
     const { notes } = await runAsset('web-page', spec('c1', 'asset'), page, g);
     expect(g.images.filter((r) => r.prompt.endsWith('for hero'))).toHaveLength(3);
     expect(notes).toEqual(['Not every image was made: the image for “hero” could not be made.']);
+  });
+
+  it('an image made on a later try is not bought again when the step runs again (B-142, ENGINE-1)', async () => {
+    // Hero's first try fails unbilled and its second is made; detail is refused at the run budget once, so the step runs again.
+    let heroAsks = 0;
+    let detailAsks = 0;
+    const g = fake([briefsOf('hero', 'detail')], (req) => {
+      if (req.prompt.endsWith('for hero')) return ++heroAsks === 1 ? new GatewayError('provider-error', 'google returned 503: unavailable', true) : false;
+      return ++detailAsks === 1 ? new GatewayError('budget-exceeded', 'The run’s budget has no room for this image.', false) : false;
+    });
+    const run = await newRun('web-page');
+    const artifact = (await store.artifacts.putText(page, 'text/html')).id;
+    const step = spec('c1', 'asset');
+    const call = { key: `${run.runId}/${step.id}/-/1`, stepId: step.id, stage: 'D2' as const };
+    const deps = () => ({ gateway: memoGateway(g, store, { runId: run.runId, key: call.key }), store, prompts: library });
+    await expect(assetStep(deps(), { run, call, step, ports: { artifact } })).rejects.toMatchObject({ code: 'budget-exceeded' });
+    const result = await assetStep(deps(), { run, call, step, ports: { artifact } });
+    expect(heroAsks).toBe(2);
+    expect(detailAsks).toBe(2);
+    expect((result as AssetResult).artifactId).toBeDefined();
   });
 });
 

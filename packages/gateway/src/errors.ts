@@ -1,4 +1,4 @@
-import { GatewayError, type GatewayErrorCode, type ProviderId } from '@byway/contracts';
+import { GatewayError, type GatewayErrorCode, type ProviderId, type ProviderJobRole } from '@byway/contracts';
 import type { Redactor } from './redact.ts';
 
 /**
@@ -172,8 +172,8 @@ export function cutOffError(provider: ProviderId, billing: Billing, detail?: str
  * adapter that polls jobs by id can poll these in the same call (B-071), as it polls `resume`'s.
  */
 export interface TakenOver {
-  resume: Partial<Record<'generation' | 'extract', string>>;
-  acceptedAt?: Partial<Record<'generation' | 'extract', number>>;
+  resume: Partial<Record<ProviderJobRole, string>>;
+  acceptedAt?: Partial<Record<ProviderJobRole, number>>;
 }
 
 /** The jobs a takeover error carries (TakenOver), or undefined for any other error. */

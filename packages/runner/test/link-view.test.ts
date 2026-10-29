@@ -40,8 +40,11 @@ afterEach(() => {
 
 const spec = (id: string): StepSpec => toStepSpec(steps(c5).find(({ step }) => step.id === id)!.step);
 
-/** A gateway that records completions and makes clips whose last frames differ by `shade`. */
-function gateway(shade: () => number): Gateway & { completions: CompletionRequest[]; videos: VideoRequest[] } {
+/**
+ * A gateway that records completions and makes clips whose last frames differ by `shade`; with `middle`, the clips of
+ * those links (by call, from 1) also have a frame from their middle (F10 (a)).
+ */
+function gateway(shade: () => number, middle: (n: number) => boolean = () => false): Gateway & { completions: CompletionRequest[]; videos: VideoRequest[] } {
   const completions: CompletionRequest[] = [];
   const videos: VideoRequest[] = [];
   const demo = PROFILES.find((p) => p.id === 'demo')!;
@@ -62,7 +65,8 @@ function gateway(shade: () => number): Gateway & { completions: CompletionReques
       videos.push(req);
       const clip = await store.artifacts.putText(`<svg>clip ${videos.length}</svg>`, 'image/svg+xml');
       const frame = await store.artifacts.put(png(4, 3, [shade(), 0, 0]), 'image/png');
-      return { artifactId: clip.id, mediaType: 'image/svg+xml', lastFrameArtifactId: frame.id, lastFrameMediaType: 'image/png', servedModel: 'mock-video', provider: 'mock', costUsd: 0, ledgerEntryId: 'v' };
+      const mid = middle(videos.length) ? { middleFrameArtifactId: (await store.artifacts.put(png(4, 3, [0, shade(), 0]), 'image/png')).id, middleFrameMediaType: 'image/png' as const } : {};
+      return { artifactId: clip.id, mediaType: 'image/svg+xml', lastFrameArtifactId: frame.id, lastFrameMediaType: 'image/png', ...mid, servedModel: 'mock-video', provider: 'mock', costUsd: 0, ledgerEntryId: 'v' };
     },
     spend: async (id) => ({ workspaceId: id, spentUsd: 0, capUsd: 100, byRun: {} }),
     providers: () => [],
@@ -90,8 +94,8 @@ async function framedStoryboard(): Promise<{ id: string; stills: string[] }> {
 }
 
 /** Links 1 and 2 of the chain, then the render and the shot check inside link 2, as the interpreter runs them. */
-async function checkShot2(shade: () => number) {
-  const g = gateway(shade);
+async function checkShot2(shade: () => number, middle?: (n: number) => boolean) {
+  const g = gateway(shade, middle);
   const deps: RunnerDeps = { gateway: g, store, prompts: library };
   const run = await newRun();
   const { id: board, stills } = await framedStoryboard();
@@ -120,6 +124,33 @@ describe('the shot check inside a relay link (F10)', () => {
     expect(texts[0]).toContain('Shot 2 (3s): Shot 2: the cup');
     expect(texts[0]).not.toContain('Shot 1 (3s)');
     expect(view.items[0]!.imageArtifactIds).toEqual([start, last]);
+  });
+
+  it('sees a frame from the clip’s middle between the two, under its caption, when the gateway took one (F10 (a))', async () => {
+    const { request, start, last, view, storyboard } = await checkShot2(() => 50, () => true);
+    const sb = parseStoryboard(await store.artifacts.getText(storyboard));
+    const middle = sb.ok ? sb.value.storyboard[1]!.middleFrameArtifactId : undefined;
+    expect(middle).toBeDefined();
+    expect(imagesOf(request)).toEqual([start, middle, last]);
+    const texts = textsOf(request);
+    expect(texts.indexOf(LINK_CAPTIONS.start)).toBeLessThan(texts.indexOf(LINK_CAPTIONS.middle));
+    expect(texts.indexOf(LINK_CAPTIONS.middle)).toBeLessThan(texts.indexOf(LINK_CAPTIONS.last));
+    expect(view.items[0]!.imageArtifactIds).toEqual([start, middle, last]);
+  });
+
+  it('a clip made again without a middle frame leaves out the earlier clip’s, so the check never sees a frame of another clip', async () => {
+    // Link 2's clip, made twice on the same storyboard (a regeneration): the first had a middle frame, the second none.
+    const g = gateway(() => 80, (n) => n === 1);
+    const deps: RunnerDeps = { gateway: g, store, prompts: library };
+    const run = await newRun();
+    const { id: board, stills } = await framedStoryboard();
+    const ports = { artifact: board, anchor: stills[0], shot: 1, linkStart: stills[0] };
+    const first = await relayLink(deps, { run, call: { key: `${run.runId}/clip/-/1`, stepId: 'clip', stage: 'D2' }, step: spec('clip'), ports, shot: 1, waits: DEFAULT_RELAY_WAITS });
+    const again = await relayLink(deps, { run, call: { key: `${run.runId}/regenerate/-/1`, stepId: 'regenerate', stage: 'D2' }, step: spec('clip'), ports: { ...ports, artifact: first.artifactId! }, shot: 1, waits: DEFAULT_RELAY_WAITS });
+    const shot = (id: string) => store.artifacts.getText(id).then((t) => { const sb = parseStoryboard(t); return sb.ok ? sb.value.storyboard[0] : undefined; });
+    expect((await shot(first.artifactId!))?.middleFrameArtifactId).toBeDefined();
+    expect(await shot(again.artifactId!)).not.toHaveProperty('middleFrameArtifactId');
+    expect((await shot(again.artifactId!))?.lastFrameArtifactId).toBe(again.anchor);
   });
 
   it('two clips with different last frames send different checks', async () => {
@@ -157,17 +188,18 @@ describe('the shot check inside a relay link (F10)', () => {
 
   it('the shot-check prompt says exactly what it is shown and what it cannot see', () => {
     const p = library.render('product.c5.shot-check', { medium: 'media', view: 'Shot 2 (3s): the cup' });
-    expect(p.version).toBe(2);
+    expect(p.version).toBe(3);
     const text = `${p.system}\n${p.user}`.toLowerCase();
     for (const caption of Object.values(LINK_CAPTIONS)) expect(text).toContain(caption.toLowerCase().replace(/:$/, ''));
     expect(text).toMatch(/already visible in the start frame/);
-    expect(text).toMatch(/motion between the two frames/);
+    expect(text).toMatch(/motion between the frames/);
+    expect(text).toMatch(/middle or last frame/);
     expect(text).not.toMatch(/the shot's frames as attached images/);
   });
 
   it('the Motion explainer says the same: the clip’s last frame against the frame it started from, no motion, nothing without video', () => {
     const motion = stepPresentation('c5', 'shot-check')!.explainer;
-    expect(motion).toMatch(/last frame is checked for visible defects against the frame it started from/);
+    expect(motion).toMatch(/last frame, and a frame from its middle when one could be taken, is checked for visible defects against the frame it started from/);
     expect(motion).toMatch(/the motion between them is not checked/);
     expect(motion).toMatch(/Without a video provider set up, .* nothing is checked\./);
   });

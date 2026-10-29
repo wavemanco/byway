@@ -2,6 +2,7 @@ import { canonicalize, sha256Hex } from '@byway/canonical';
 import {
   GatewayError,
   MAX_PLAUSIBLE_CALL_USD,
+  PROVIDER_JOB_ROLES,
   type ArtifactRecord,
   type ArtifactStore,
   type BrokenLine,
@@ -21,6 +22,7 @@ import {
   type ProfileStatus,
   type PromptRef,
   type ProviderId,
+  type ProviderJobRole,
   type ProviderStatus,
   type SettledCall,
   type SpendBook,
@@ -611,9 +613,10 @@ export class ModelGateway implements Gateway {
 
   /**
    * One relay link (ADR-0069): a clip from the start frame, stored at once with its last frame (the next link's
-   * anchor). It fails with 'no-credentials' when the profile has no video model or its provider has no key. The
-   * budget check uses the clip's seconds at the model's price plus the provider's helper calls at their bound. A clip
-   * that was generated is ledgered even when keeping it or its last frame then fails: it was billed.
+   * anchor) and, best effort, a frame from its middle for the shot check (F10 (a)). It fails with 'no-credentials' when
+   * the profile has no video model or its provider has no key. The budget check uses the clip's seconds at the model's
+   * price plus the provider's helper calls at their bound. A clip that was generated is ledgered even when keeping it or
+   * its last frame then fails: it was billed; a middle frame that cannot be kept is left out.
    */
   async video(req: VideoRequest): Promise<VideoResult> {
     validateSpend(req);
@@ -721,6 +724,9 @@ export class ModelGateway implements Gateway {
       const keptFrame = madeFrame ? await keep(() => this.artifacts.put(madeFrame.bytes, madeFrame.mediaType)) : undefined;
       const clip = keptClip?.record;
       const lastFrame = keptFrame?.record;
+      // The middle frame is best effort (F10 (a)): one that cannot be stored, or of a type a run cannot show, is left out.
+      const madeMiddle = out.middleFrame;
+      const keptMiddle = madeMiddle && MEDIA_TYPES.has(madeMiddle.mediaType as MediaType) ? (await keep(() => this.artifacts.put(madeMiddle.bytes, madeMiddle.mediaType))).record : undefined;
       const failure = out.failure !== undefined ? toGatewayError(out.failure, ref.provider, redact) : undefined;
       const entry = await this.record(
         op,
@@ -743,6 +749,7 @@ export class ModelGateway implements Gateway {
           usage: { units: units.value },
           ...(clip ? { artifactId: clip.id } : {}),
           ...(lastFrame ? { lastFrameArtifactId: lastFrame.id } : {}),
+          ...(keptMiddle ? { middleFrameArtifactId: keptMiddle.id } : {}),
           ...(failure ? { failure: failure.message } : {}),
           wire: out.responseBody,
         },
@@ -772,7 +779,8 @@ export class ModelGateway implements Gateway {
       if (!MEDIA_TYPES.has(lastFrameMediaType)) {
         throw new GatewayError('provider-error', `${ref.provider} made the clip and billed it, but returned a last frame of type ${lastFrame.mediaType}, not PNG, JPEG or WebP (the clip is kept as ${clip.id})`, false, { billed: true });
       }
-      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
+      const middle = keptMiddle ? { middleFrameArtifactId: keptMiddle.id, middleFrameMediaType: keptMiddle.mediaType as MediaType } : {};
+      return { artifactId: clip.id, mediaType, lastFrameArtifactId: lastFrame.id, lastFrameMediaType, ...middle, servedModel: entry.servedModel, provider: ref.provider, costUsd: entry.costUsd, ledgerEntryId: entry.id };
     } finally {
       await op.end();
     }
@@ -1116,13 +1124,16 @@ function stopIfEnding(op: PaidCall, stop: AbortSignal | undefined, provider: Pro
   throw err;
 }
 
+/** A queue job by its role, as the words name it. */
+const JOB_NAMES: Record<ProviderJobRole, string> = { generation: 'clip', extract: 'last-frame', middle: 'middle-frame' };
+
 /**
  * A queue call that, as it came to submit `what`, found another attempt's jobs the provider had already accepted
  * (PaidCall.markSent's takeover): not submitted, not retryable, and counted as may have been billed, since those jobs
  * may be, with their ids in the words as in the spend book, where the person can look them up.
  */
-function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<'generation' | 'extract', string>>, at: Partial<Record<'generation' | 'extract', string>> | undefined, redact: Redactor): ClassifiedError {
-  const listed = Object.entries(jobs).map(([role, id]) => `${role === 'extract' ? 'last-frame' : 'clip'} job ${id}`);
+function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<ProviderJobRole, string>>, at: Partial<Record<ProviderJobRole, string>> | undefined, redact: Redactor): ClassifiedError {
+  const listed = Object.entries(jobs).map(([role, id]) => `${JOB_NAMES[role as ProviderJobRole] ?? 'clip'} job ${id}`);
   const them = listed.length > 1 ? 'Those jobs may have been billed: they are listed with their ids' : 'That job may have been billed: it is listed with its id';
   const err: ClassifiedError = new GatewayError(
     'provider-error',
@@ -1137,9 +1148,9 @@ function takenOver(provider: ProviderId, what: string, jobs: Partial<Record<'gen
 }
 
 /** When a resumed call's jobs were accepted (the spend book's ISO times), in milliseconds, for the adapter; a time that cannot be read is left out. */
-function acceptedTimes(at: Partial<Record<'generation' | 'extract', string>> | undefined): { acceptedAt?: Partial<Record<'generation' | 'extract', number>> } {
-  const out: Partial<Record<'generation' | 'extract', number>> = {};
-  for (const role of ['generation', 'extract'] as const) {
+function acceptedTimes(at: Partial<Record<ProviderJobRole, string>> | undefined): { acceptedAt?: Partial<Record<ProviderJobRole, number>> } {
+  const out: Partial<Record<ProviderJobRole, number>> = {};
+  for (const role of PROVIDER_JOB_ROLES) {
     const ms = at?.[role] === undefined ? Number.NaN : Date.parse(at[role]);
     if (Number.isFinite(ms)) out[role] = ms;
   }
