@@ -661,6 +661,28 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     expect(await workerB.spend('ws')).toMatchObject({ spentUsd: resumed?.costUsd, inFlightUsd: 0, uncertainUsd: 0 });
   });
 
+  // The other side of R3-MONEY-1's check: an attempt that still holds its row sends its refused frame job again, cancelled
+  // or not, so an ordinary clip keeps both its frames.
+  it.each([
+    ['cancelled', true],
+    ['not cancelled', false],
+  ] as const)('an attempt %s that still holds its row sends its last-frame job again after fal refused it with a 503, and keeps both frames', async (_how, cancelled) => {
+    const fal = fakeFal({ 'fal-ai/ffmpeg-api/extract-frame': [falQueueError(503, { detail: 'Service temporarily unavailable' })] });
+    const media = fakeFetch();
+    const a = attempt('run-1/run-1/relay/-/1/video/abc/1');
+    const worker = gateway({
+      clients: { fal: cancelled ? cancelledAtClipPoll(fal, () => a.cancel.abort(new Error('TIMED_OUT'))) : fal.client },
+      fetch: media.fetch,
+      retry: { random: () => 0.5, sleep: async () => {} },
+    });
+    const out = await worker.video(await clip(a.operation));
+    expect(out).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', lastFrameArtifactId: expect.any(String), middleFrameMediaType: 'image/png' });
+    // The clip, the refused last frame, its resend, then the middle frame.
+    expect(frameJobsOf(fal)).toEqual(['last', 'last', 'middle']);
+    await worker.close();
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([out.costUsd]);
+  });
+
   it('a cancelled attempt whose book cannot say whether it holds its row submits no frame job: the clip settles as made', async () => {
     const fal = fakeFal();
     book.holds = async () => {
