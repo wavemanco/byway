@@ -47,7 +47,7 @@
  * Math.random, so a page reads the same each time; the page is scrolled through and back, and what each character
  * shows is measured from its box (ShownText). It runs under the same sandbox setting as a render.
  */
-import type { Browser, BrowserContext, LaunchOptions, Page, Route } from 'playwright';
+import type { Browser, BrowserContext, LaunchOptions, Page, PageScreenshotOptions, Route } from 'playwright';
 import type { RendererCheckRecord } from '@byway/contracts';
 import { namesFromEnvFile, withoutSecrets, type Env } from '@byway/gateway';
 import { StepError } from './activities/failures.ts';
@@ -70,7 +70,8 @@ export interface RenderOptions {
   signal?: AbortSignal;
   /**
    * The time (as Date.now()) by which the load must finish, as well as within the renderer's own timeout: reads that
-   * share one deadline share its time (a VOICE question's two reads, inside an activity's one minute).
+   * share one deadline share its time (a VOICE question's two reads, inside an activity's one minute). A render's two
+   * screen sizes share it too; no step gives a render one yet (tests do, so a plain page after a stuck one has none).
    */
   deadline?: number;
   /**
@@ -373,6 +374,9 @@ class LaunchFailed extends StepError {
   }
 }
 
+/** byway's test page not drawn within the renderer's own time, for the readiness check (readyFailure). */
+class TestPageLate extends StepError {}
+
 export interface PlaywrightPagesOptions {
   /** Wide-screen width (and the first screen's). */
   width?: number;
@@ -589,7 +593,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     const w = Math.min(Math.max(screenWidth, size.w), maxWidth);
     const tiles: Uint8Array[] = [];
     for (let y = 0; y < size.h && tiles.length < maxTiles; y += maxTile) {
-      const shot = await page.screenshot({ type: 'png', fullPage: true, animations: 'disabled', clip: { x: 0, y, width: w, height: Math.min(maxTile, size.h - y) } });
+      const shot = await screenshot(page, { type: 'png', fullPage: true, animations: 'disabled', clip: { x: 0, y, width: w, height: Math.min(maxTile, size.h - y) } });
       tiles.push(new Uint8Array(shot));
     }
     return tiles;
@@ -619,7 +623,7 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
     const text = screen === 'text';
     const late = (cut: boolean) => {
       const s = Math.round(timeout / 1000);
-      if (screen === 'check') return new StepError(`The page renderer did not draw byway's test page within ${s} s.`);
+      if (screen === 'check') return new TestPageLate(`The page renderer did not draw byway's test page within ${s} s.`);
       if (cut) return new StepError(`The page did not finish ${text ? 'loading' : 'rendering'} in the time byway gives a page's ${text ? 'reads, so its text could not be read' : 'renders, so it could not be shown'}.`);
       return new StepError(text ? `The page did not finish loading within ${s} s, so its text could not be read.` : `The page did not finish rendering within ${s} s, so it could not be shown.`);
     };
@@ -711,14 +715,14 @@ export function playwrightPages(opts: PlaywrightPagesOptions = {}): PageRenderer
         for (const surface of [...want].sort((a, b) => Number(b === 'fold') - Number(a === 'fold'))) {
           if (surface === 'fold') {
             await page.evaluate('window.scrollTo(0, 0)');
-            out.push({ surface, tiles: [new Uint8Array(await page.screenshot({ type: 'png', animations: 'disabled' }))] });
+            out.push({ surface, tiles: [new Uint8Array(await screenshot(page, { type: 'png', animations: 'disabled' }))] });
           } else {
             out.push({ surface, tiles: await tilesOf(page, phone ? mobile.width : width) });
           }
         }
         return out;
       },
-      undefined,
+      renderOpts.deadline,
       undefined,
       renderOpts.drawn,
     );
@@ -2319,10 +2323,11 @@ export async function launchChromium(setting: LaunchSetting): Promise<Browser> {
  * The readiness check's failure, which refuses a run before it spends (ADR-0105). With the sandbox on, once byway's last
  * start-up check found the sandbox cannot start on this computer (its probe drew the test page without it, or Chromium
  * said so), a failure that is not a missing Chromium nor byway's own close is the sandbox's message, as the start-up
- * line and Settings say it. Otherwise a launch that failed and a check past its deadline pass as they are (their own
- * plain messages: launchFailure names the sandbox as one possible cause of a death Chromium gave no reason for); a test
- * page that could not be drawn says so, and with the sandbox on, a failure Chromium tied to the sandbox is the sandbox's
- * message, and any other names the sandbox as one possible cause.
+ * line and Settings say it. Otherwise a launch that failed passes as it is (launchFailure names the sandbox as one
+ * possible cause of a death Chromium gave no reason for), and a check past its deadline says so, with the sandbox on
+ * naming the sandbox as one possible cause and a busy computer as another; a test page that could not be drawn says
+ * so, and with the sandbox on, a failure Chromium tied to the sandbox is the sandbox's message, and any other names the
+ * sandbox as one possible cause.
  */
 async function readyFailure(err: unknown, osSandbox: boolean, host: SandboxHost | undefined, lastCheck: PlaywrightPagesOptions['lastCheck']): Promise<unknown> {
   if (err instanceof RendererClosed) return new StepError(`byway's test page could not be drawn: ${err.message}.`, { cause: err });
@@ -2331,6 +2336,8 @@ async function readyFailure(err: unknown, osSandbox: boolean, host: SandboxHost 
     const found = await (lastCheck?.() ?? Promise.resolve(undefined)).catch(() => undefined);
     if (found?.sandbox === 'fails') return new StepError(sandboxFailureMessage(await advice()), { cause: err });
   }
+  // A sandboxed test page past its time: Chromium gave no reason, so the sandbox is one possible cause (D2 (f)).
+  if (osSandbox && err instanceof TestPageLate) return new StepError(`${err.message} ${maybeTheSandbox(await advice())} Another is a computer too busy to draw it in time.`, { cause: err });
   if (err instanceof StepError) return err;
   if (osSandbox && isSandboxFailure(err)) return new StepError(sandboxFailureMessage(await advice()), { cause: err });
   const said = playwrightSaid(firstLine(err)) || 'no reason given';
@@ -2506,6 +2513,22 @@ export function readFailure(err: unknown, signal: AbortSignal | undefined): unkn
   if (err instanceof RendererClosed) return new StepError(`The page's text could not be read: ${err.message}.`, { cause: err });
   const said = playwrightSaid(firstLine(err));
   return new StepError(`The page's text could not be read: the page renderer failed while reading it${said ? ` (${said})` : ''}.`, { cause: err });
+}
+
+/**
+ * A screenshot, taken once more when Chromium answers "Unable to capture screenshot" (B-118). Chromium's DevTools gives
+ * that answer when the capture brought back no image from its compositor, not when it refuses the page's content: seen
+ * on GitHub's Linux machine after a card's fonts had loaded, on two commits in a row that changed no code, and under load
+ * while a page opened dialogs. Once more only, under the same deadline and cancel (loaded): a second refusal, or any
+ * other error, is the render's plain step failure (drawFailure).
+ */
+async function screenshot(page: Page, opts: PageScreenshotOptions): Promise<Buffer> {
+  try {
+    return await page.screenshot(opts);
+  } catch (err) {
+    if (!/Unable to capture screenshot/.test(firstLine(err))) throw err;
+    return await page.screenshot(opts);
+  }
 }
 
 const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0] ?? '';
