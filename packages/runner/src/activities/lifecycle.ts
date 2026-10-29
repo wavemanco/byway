@@ -7,14 +7,12 @@ import { textView } from '../formats.ts';
 import { labelled } from '@byway/prompts/pure';
 import { labels } from '../labels.ts';
 import { parseChoice } from '../parse.ts';
-import type { BudgetRaiseInput, FailRunInput, FinishRunInput, RerankInput, RerankResult, SkipInput, WorkflowEvent } from '../types.ts';
+import { ENDED_STATUSES as ENDED, type BudgetRaiseInput, type FailRunInput, type FinishRunInput, type RerankInput, type RerankResult, type SkipInput, type WorkflowEvent } from '../types.ts';
 import { askModel } from './call.ts';
 import type { RunnerDeps } from './deps.ts';
 import { at, emit } from './events.ts';
 import { ArtifactReader, surfaceGroups, type ImageGroup } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
-
-const ENDED: ReadonlySet<RunStatus> = new Set(['done', 'failed', 'cancelled']);
 
 /**
  * The run begins. A web page is first rendered after its build (and seed) steps are paid for, so a web-page run whose

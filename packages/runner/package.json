@@ -8,9 +8,6 @@
     ".": "./src/index.ts",
     "./client": "./src/client-entry.ts"
   },
-  "scripts": {
-    "build:workflows": "tsx scripts/build-workflows.ts"
-  },
   "dependencies": {
     "@byway/catalog": "workspace:*",
     "@byway/contracts": "workspace:*",

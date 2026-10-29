@@ -10,8 +10,9 @@
  * not read as the engine being down: with no answer from Temporal, byway cannot say the run did not start, or that
  * nothing was spent.
  *
- * Client-safe: no worker, test server or Node-only engine code. apps/web keeps its own copy of the transport check
- * (services/engine-runner.ts) because it loads engine packages only at run time, outside its bundle.
+ * Client-safe: no worker, test server or Node-only engine code. apps/web uses isTransportFailure and isTimeout through
+ * the client entry, loaded at run time outside its bundle, and reads either as the engine being unavailable
+ * (services/create.ts).
  */
 
 /** The run's error when the workflow could not be started because byway's engine was not there. */

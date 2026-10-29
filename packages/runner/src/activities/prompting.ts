@@ -21,10 +21,23 @@ import { readBrief, unreadableInput } from '../stored-inputs.ts';
 import { personsWords } from './held-voice.ts';
 import { rendersKnob, SURFACE_CAPTIONS } from '../surfaces.ts';
 import type { Ports, StepSpec, Surface, View, ViewRef } from '../types.ts';
+import type { ArtifactResolver } from '../pages.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
 
 export type Slots = Partial<Record<PromptSlot, string>>;
+
+/**
+ * The renderer's artifact route, served from the store (a missing artifact is a 404). One route for every render and
+ * read of a page, so what the critic sees and what VOICE's arbiter reads are served the same.
+ */
+export const artifactRoute =
+  (deps: Pick<RunnerDeps, 'store'>): ArtifactResolver =>
+  async (id) => {
+    if (!(await deps.store.artifacts.has(id))) return undefined;
+    const { record, bytes } = await deps.store.artifacts.get(id);
+    return { body: bytes, contentType: record.mediaType };
+  };
 
 /**
  * Images to attach, in groups. A labelled group is introduced by its "### A" heading (once for consecutive groups with

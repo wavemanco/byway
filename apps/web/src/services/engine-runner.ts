@@ -31,22 +31,12 @@ export function isEngineUnavailable(err: unknown): boolean {
   return err instanceof Error && err.name === 'EngineUnavailableError';
 }
 
-/** gRPC status codes that mean the server was not there or did not answer: 14 UNAVAILABLE, 4 DEADLINE_EXCEEDED. */
-const TRANSPORT_CODES = new Set([14, 4]);
-const TRANSPORT_TEXT = /\bECONNREFUSED\b|\bECONNRESET\b|\b14 UNAVAILABLE\b|No connection established/;
-
-/** True when an error, or anything in its cause chain, says the engine could not be reached. */
-export function isTransportFailure(err: unknown): boolean {
-  for (let e: unknown = err, depth = 0; e instanceof Error && depth < 8; e = e.cause, depth++) {
-    const code = (e as { code?: unknown }).code;
-    if (typeof code === 'number' && TRANSPORT_CODES.has(code)) return true;
-    if (typeof code === 'string' && (code === 'ECONNREFUSED' || code === 'ECONNRESET')) return true;
-    if (TRANSPORT_TEXT.test(e.message)) return true;
-  }
-  return false;
-}
-
-export function engineRunner(store: Store, connect: () => Promise<Runner>): Runner {
+/**
+ * `isEngineDown` says whether an engine call's error means the engine could not be reached or did not answer in time:
+ * create.ts passes the runner client's own checks (its isTransportFailure or isTimeout), loaded at run time, so the web
+ * keeps no copy of them.
+ */
+export function engineRunner(store: Store, connect: () => Promise<Runner>, isEngineDown: (err: unknown) => boolean): Runner {
   let connected: Promise<Runner> | undefined;
   const runner = (): Promise<Runner> =>
     (connected ??= connect().catch((err: unknown) => {
@@ -60,7 +50,7 @@ export function engineRunner(store: Store, connect: () => Promise<Runner>): Runn
     try {
       return await use(r);
     } catch (err) {
-      if (!isTransportFailure(err)) throw err;
+      if (!isEngineDown(err)) throw err;
       connected = undefined;
       throw new EngineUnavailableError(err);
     }

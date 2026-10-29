@@ -13,14 +13,6 @@ import { at, emit } from './events.ts';
 /** The note, in plain words. */
 export const SANDBOX_OFF_NOTE = "Pages in this step were drawn with the page renderer's OS sandbox off (it was switched off in Settings).";
 
-/** The run and step call an activity's input names: `run.runId` (most steps) or `runId` (recording an answer). */
-function stepOf(input: unknown): { runId: string; call: StepCall } | undefined {
-  const i = input as { run?: { runId?: unknown }; runId?: unknown; call?: Partial<StepCall> } | undefined;
-  const runId = i?.run?.runId ?? i?.runId;
-  const call = i?.call;
-  return typeof runId === 'string' && typeof call?.key === 'string' && typeof call.stepId === 'string' ? { runId, call: call as StepCall } : undefined;
-}
-
 export interface SandboxWatch {
   /** The renderer as the step sees it: each load tells the watch the setting it was drawn under. */
   pages: PageRenderer;
@@ -29,8 +21,7 @@ export interface SandboxWatch {
 }
 
 /** Watches a step's pages; the first drawn with the sandbox off writes the note (once per step call, by its key). */
-export function watchSandbox(inner: PageRenderer, store: Store, input: unknown): SandboxWatch {
-  const step = stepOf(input);
+export function watchSandbox(inner: PageRenderer, store: Store, step: { runId: string; call: StepCall } | undefined): SandboxWatch {
   let writing: Promise<unknown> | undefined;
   const drawn = (how: { osSandbox: boolean }) => {
     if (how.osSandbox || !step || writing) return;

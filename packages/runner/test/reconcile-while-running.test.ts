@@ -2,8 +2,9 @@
  * The lost-run pass while the engine runs (the backlog row "Reconcile lost runs while the engine runs, not only at
  * start"). The pass byway runs at start (engine-state.test.ts) also runs every few minutes while the worker polls, so a
  * run whose workflow Temporal closed without byway closing it (at a payload, batch or history limit, or terminated from
- * outside) is marked failed instead of staying "running" until byway next starts. It skips queued runs, because a start
- * may be under way. These tests call the pass directly, beside a worker that polls; the timer that repeats it is tested
+ * outside) is marked failed instead of staying "running" until byway next starts, and so is a run whose workflow
+ * Temporal keeps running while its workflow task keeps failing (backlog row F02 (a)). It skips a queued run Temporal has
+ * no workflow for, because a start may be under way, and closes a queued one whose workflow has closed. These tests call the pass directly, beside a worker that polls; the timer that repeats it is tested
  * in repeat-every.test.ts and the engine's use of both in dev-engine.test.ts.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -11,7 +12,7 @@ import type { Client } from '@temporalio/client';
 import type { Store } from '@byway/contracts';
 import { createRunnerClient } from '../src/client.ts';
 import { reconcileWhilePolling } from '../src/dev-engine.ts';
-import { LOST_RUN_MESSAGE, reconcileLostRuns, type Reconciled } from '../src/lost-runs.ts';
+import { LOST_RUN_MESSAGE, reconcileLostRuns, STUCK_RUN_MESSAGE, STUCK_TASK_ATTEMPTS, type Reconciled } from '../src/lost-runs.ts';
 import { RUN_WORKFLOW, workflowIdFor } from '../src/types.ts';
 import { createHarness, PROBLEM, type Harness } from './helpers/harness.ts';
 import { tiny } from './helpers/recipes.ts';
@@ -125,6 +126,46 @@ describe('the lost-run pass while the engine runs', () => {
     expect(atStart.lost).toContain(queued.id);
     expect(await h.store.getRun(queued.id)).toMatchObject({ status: 'failed', error: LOST_RUN_MESSAGE });
   }, 60_000);
+
+  it('closes a queued run whose workflow exists and has closed: it closed before the run began', async () => {
+    const queued = await runRecord(`queued-closed-${Date.now()}`, 'queued');
+    await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: `${h.taskQueue}-unpolled`, workflowId: workflowIdFor(queued.id), args: [] });
+    await handle(queued.id).terminate(HISTORY_LIMIT);
+    expect((await pass()).lost).toContain(queued.id);
+    const view = await h.runner.view(queued.id);
+    expect(view.run).toMatchObject({ status: 'failed', error: LOST_RUN_MESSAGE });
+    expect(view.events.at(-1)).toMatchObject({ type: 'run-failed', data: { error: LOST_RUN_MESSAGE } });
+  }, 60_000);
+
+  it('stops a workflow whose task keeps failing, and fails its run plainly; the pass at start leaves it to the worker', async () => {
+    // A run whose workflow Temporal keeps running while each of its workflow tasks fails: here the workflow is started
+    // with no input on the polled queue, so its code throws on every try, as a completion too large to send would fail.
+    const run = await runRecord(`stuck-${Date.now()}`, 'running');
+    await h.env.client.workflow.start(RUN_WORKFLOW, { taskQueue: h.taskQueue, workflowId: workflowIdFor(run.id), args: [] });
+    const attempt = async () => (await handle(run.id).describe()).raw.pendingWorkflowTask?.attempt ?? 0;
+    await h.waitFor('a second try of its workflow task', async () => (await attempt()) >= 2);
+    // Fewer tries than STUCK_TASK_ATTEMPTS: a worker restarting or a slow step gives as many, so the run is left going.
+    if ((await attempt()) < STUCK_TASK_ATTEMPTS) {
+      expect((await pass()).stuck).not.toContain(run.id);
+      expect((await h.store.getRun(run.id))?.status).toBe('running');
+    }
+    await h.waitFor(`try ${STUCK_TASK_ATTEMPTS} of its workflow task`, async () => (await attempt()) >= STUCK_TASK_ATTEMPTS, 100_000);
+    // The pass at start counts no tries: before its worker polls, they would be another worker's.
+    const atStart = await reconcileLostRuns(h.env.client, h.store, [h.workspaceId], { taskQueue: h.taskQueue });
+    expect(atStart.lost).not.toContain(run.id);
+    expect(atStart.stuck).toEqual([]);
+    expect((await h.store.getRun(run.id))?.status).toBe('running');
+
+    const settled = await pass();
+    expect(settled.stuck).toEqual([run.id]);
+    expect(settled.lost).not.toContain(run.id);
+    expect((await handle(run.id).describe()).status.name).toBe('TERMINATED');
+    const view = await h.runner.view(run.id);
+    expect(view.run).toMatchObject({ status: 'failed', error: STUCK_RUN_MESSAGE });
+    expect(view.events.at(-1)).toMatchObject({ type: 'run-failed', data: { error: STUCK_RUN_MESSAGE } });
+    // Once stopped, it is an ended run like any other: the next pass leaves it alone.
+    expect((await pass()).stuck).toEqual([]);
+  }, 150_000);
 
   it('a run that ended while the pass looked at it keeps its end, and is not counted as one the pass closed', async () => {
     const run = await h.start(tiny);

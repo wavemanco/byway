@@ -15,6 +15,7 @@ import { rendersKnob, SURFACE_NAMES, SURFACES } from '../surfaces.ts';
 import type { RenderInput, RenderResult, Surface, ViewRef } from '../types.ts';
 import type { RunnerDeps } from './deps.ts';
 import { StepError } from './failures.ts';
+import { artifactRoute } from './prompting.ts';
 import { stepFinished, stepStarted } from './steps.ts';
 import { announce, storeText } from './writes.ts';
 
@@ -40,11 +41,7 @@ export async function renderView(deps: RunnerDeps, input: RenderInput): Promise<
       case 'web-page': {
         if (!deps.pages) throw new StepError('Web pages cannot be rendered: no page renderer is configured.');
         const wanted = rendersKnob(step.knobs) ?? [...SURFACES];
-        const shots = await deps.pages.render(text, async (id) => {
-          if (!(await deps.store.artifacts.has(id))) return undefined;
-          const { record, bytes } = await deps.store.artifacts.get(id);
-          return { body: bytes, contentType: record.mediaType };
-        }, wanted.length ? wanted : [...SURFACES]);
+        const shots = await deps.pages.render(text, artifactRoute(deps), wanted.length ? wanted : [...SURFACES]);
         const surfaces: NonNullable<ViewRef['surfaces']> = [];
         for (const { surface, tiles } of shots) {
           const ids: string[] = [];
