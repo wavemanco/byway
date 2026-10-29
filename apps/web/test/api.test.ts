@@ -752,3 +752,49 @@ describe('the first recommendation is asked for once per intake (F03, ADR-0091)'
     expect(recommend).toHaveBeenCalledTimes(2);
   });
 });
+
+// B-070: a compose or a re-route runs inside its web request, with no bound of byway's own but the model's wait, and
+// goes on when the request ends. A press again after a reload, or a second tab, joins the call under way instead of
+// buying a second one beside it.
+describe('"Build my own" and a re-route asked again while under way join the call (B-070)', PRODUCT_PATH, () => {
+  it('two composes of one intake at once share one advisor call; once it settles, the next is a new one', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    const [a, b] = await Promise.all([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    expect(a.composed).toEqual(b.composed);
+    expect(compose).toHaveBeenCalledTimes(1);
+    // "Try building again" once nothing is under way composes again, as it always has.
+    await composeCommand(d, intakeId);
+    expect(compose).toHaveBeenCalledTimes(2);
+    // Another intake's compose is its own.
+    const other = await createIntake(d, { text: 'Tighten my quarterly memo' });
+    await Promise.all([composeCommand(d, intakeId), composeCommand(d, other.intakeId)]);
+    expect(compose).toHaveBeenCalledTimes(4);
+  });
+
+  it('two re-routes of one intake with the same answers share one call; other answers are their own', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A landing page for my pottery studio' });
+    const { answers } = await currentRecommendation(d, intakeId);
+    const flipped = answers.map((a, i) => (i === 0 ? { ...a, answer: !a.answer, confidence: 1, setBy: 'user' as const } : a));
+    const recommend = vi.spyOn(d.services.advisor, 'recommend');
+    const [a, b] = await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers: flipped })]);
+    expect(a.recommendation).toEqual(b.recommendation);
+    expect(recommend).toHaveBeenCalledTimes(1);
+    await Promise.all([recommendCommand(d, intakeId, { answers: flipped }), recommendCommand(d, intakeId, { answers })]);
+    expect(recommend).toHaveBeenCalledTimes(3);
+  });
+
+  it('shares a failure with the presses that joined it, keeps nothing, and the next press tries again', async () => {
+    const d = await deps();
+    const { intakeId } = await createIntake(d, { text: 'A memo' });
+    const compose = vi.spyOn(d.services.advisor, 'compose');
+    compose.mockRejectedValueOnce(new GatewayError('rate-limited', 'rate-limited from the provider'));
+    const both = await Promise.allSettled([composeCommand(d, intakeId), composeCommand(d, intakeId)]);
+    expect(both.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    expect(compose).toHaveBeenCalledTimes(1);
+    expect((await composeCommand(d, intakeId)).composed).toBeTruthy();
+    expect(compose).toHaveBeenCalledTimes(2);
+  });
+});
