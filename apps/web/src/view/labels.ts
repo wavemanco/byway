@@ -105,7 +105,7 @@ export const CANCEL_QUESTION =
  * is settled at its cost, in the run's.
  */
 export const CUT_OFF_NOTE =
-  'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts at its estimate against the workspace budget, not this run’s, until you clear it.';
+  'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts against the workspace budget, not this run’s, at the amount listed there (its estimate, and an earlier attempt’s too when byway had sent the call before), until you clear it.';
 
 /**
  * Under a run that has ended while some of its AI calls are still under way: a call byway does not cut off (Google's text

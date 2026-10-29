@@ -432,3 +432,84 @@ test('examples you admire and Start attachments survive a detour, and are cleare
   await page.getByRole('button', { name: 'Cancel run' }).click();
   await expect(page.locator('.run-status')).toHaveText('Cancelled');
 });
+
+// F05 (a): the review's acceptance named these and the 2026-10-18 trace found them unwritten.
+test.describe('the review’s acceptance cases for F06 and F15, not covered above', () => {
+  test('on-screen copy you change survives looking at earlier steps, Esc and a reload, and is what is sent (F06)', async ({ page }) => {
+    await describeProblem(page, 'A 30-second video ad for a neighbourhood bakery');
+    await startRecommended(page, 'Ad Video Chain');
+    // Ad Video Chain asks for its on-screen copy late, as labelled fields (view/onscreen.ts); other questions come first.
+    let t: Turn | undefined;
+    let after: string | undefined;
+    for (let i = 0; i < 30 && !t; i++) {
+      const next = await turnAfter(page, after);
+      if (next.kind === 'write' && (await next.turn.locator('.onscreen-copy').count()) > 0) t = next;
+      else await answerTurn(page, next.turn, next.kind);
+      after = next.id;
+    }
+    if (!t) throw new Error('Ad Video Chain asked for no on-screen copy.');
+    const words = 'F06 sentinel: fresh bread before the city wakes';
+    const first = () => (t as Turn).turn.locator('.onscreen-copy input').first();
+    await first().fill(words);
+
+    await inspectEarlierStep(page);
+    await expect(first()).toHaveValue(words);
+    await inspectAndEscape(page);
+    await expect(first()).toHaveValue(words);
+    await page.reload();
+    await expect(first()).toHaveValue(words);
+
+    const posted = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes('/checkpoints/'));
+    await t.turn.locator('.turn-foot button.button-primary').click();
+    expect(((await posted).postDataJSON() as { text?: string }).text?.split('\n')[0]).toMatch(new RegExp(`: ${words}$`));
+    await expect(t.turn).toHaveCount(0, { timeout: 30_000 });
+    await cancelRun(page);
+  });
+
+  test('a Choose highlight survives opening the current row as a step and closing it, but not a reload (F06, UX-1)', async ({ page }) => {
+    // Series Writer from the Library has no route chosen up front, so the run asks who writes the first draft (choose).
+    await page.goto('/library');
+    await page.getByRole('link', { name: /Use this recipe\s*: Series Writer/ }).click();
+    await page.getByLabel('What are you working on?').fill('A weekly newsletter about cycling in the city, for people who commute by bike');
+    await page.getByRole('button', { name: /Continue/ }).click();
+    await startRecommended(page, 'Series Writer');
+    const t = await untilTurn(page, ['choose']);
+    const radios = t.turn.locator('input[type="radio"]');
+    const value = (await radios.last().getAttribute('value')) ?? '';
+    await radios.last().check();
+
+    await currentRowTwice(page);
+    await expect(t.turn.locator(`input[value="${value}"]`)).toBeChecked();
+    // Kept in memory only: restored after a reload, it would let a stray Enter go a way the person only looked at.
+    await page.reload();
+    await expect(t.turn).toBeVisible();
+    await expect(t.turn.locator('input[type="radio"]:checked')).toHaveCount(0);
+    await cancelRun(page);
+  });
+
+  test('Nav’s count: an answer for the page left behind never puts back a count that has since changed (F15)', async ({ page }) => {
+    const held: { route: Route | null } = { route: null };
+    await page.route('**/api/waiting', async (route) => {
+      if (held.route === null) {
+        held.route = route;
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 2 }) });
+    });
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    const count = nav.getByRole('link', { name: /History/ }).locator('.count');
+    await page.goto('/library');
+    await expect.poll(() => held.route !== null).toBe(true);
+    // Another page: Nav re-reads the count for it, and that answer is the one shown.
+    await nav.getByRole('link', { name: 'Settings' }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(count).toHaveText(/^2\b/);
+    // The first page's request answers only now, with a count that is no longer true.
+    try {
+      await held.route?.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 7 }) });
+    } catch {
+      // Nav gave up on it when the page changed.
+    }
+    await staysTrue(page, 2500, async () => /^2\b/.test(((await count.textContent()) ?? '').trim()), 'an older answer put back its count');
+  });
+});

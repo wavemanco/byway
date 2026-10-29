@@ -153,6 +153,27 @@ test('opened at the top level, a page runs nothing: its address, with or without
   expect(collector.hits()).toEqual([]);
 });
 
+// F05 (a): the review's acceptance named history restoration, which the reload above does not cover. Back and Forward
+// bring a full-size view back from the back-forward cache, or from the HTTP cache (its page is cached for a year), with
+// the headers it was served with: it must run nothing either way.
+test('a full-size view brought back by Back and Forward runs nothing, from the back-forward cache or not', async ({ page }) => {
+  for (const path of ['/artifacts/script', '/artifacts/script?scripts=1', '/artifacts/meta']) {
+    const view = `${harness.origin}${path}`;
+    await page.goto(view);
+    await settle(page);
+    await page.goto(`${harness.origin}/app?link=${encodeURIComponent(path)}`);
+    await page.goBack();
+    expect(page.url(), path).toBe(view);
+    await settle(page);
+    await page.goForward();
+    await page.goBack();
+    expect(page.url(), path).toBe(view);
+    await settle(page);
+  }
+  expect(harness.asked.every((a) => !a.granted)).toBe(true);
+  expect(collector.hits()).toEqual([]);
+});
+
 test('an Open link to a page’s address opens it inert in the new tab', async ({ page, context }) => {
   for (const link of ['/artifacts/script', '/artifacts/script?scripts=1', '/artifacts/meta']) {
     await page.goto(`${harness.origin}/app?link=${encodeURIComponent(link)}`);

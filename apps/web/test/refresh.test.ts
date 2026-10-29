@@ -179,4 +179,42 @@ describe('refresh sequencing (F15)', () => {
     expect(calls).toBe(2);
     expect(statuses).toEqual(['lost', 'lost']);
   });
+
+  // F05 (a), the 2026-10-18 trace's F15 gap: the success path's generation guard, apart from the abort check. Every fetch
+  // here ignores its abort signal and resolves, as a reader that swallows a cut-off body does, so an older request that
+  // answers after a newer one is stopped by being superseded, not by rejecting.
+  it('an older request that ignores its abort and answers after a newer one changes nothing, even one that timed out', async () => {
+    vi.useFakeTimers();
+    const finish: ((value: string) => void)[] = [];
+    const applied: string[] = [];
+    const statuses: Connection[] = [];
+    const refresher = createRefresher<string>({
+      fetch: () => new Promise<string>((resolve) => finish.push(resolve)),
+      apply: (data) => applied.push(data),
+      status: (c) => statuses.push(c),
+      timeoutMs: 5_000,
+    });
+    const older = refresher.now();
+    await vi.advanceTimersByTimeAsync(0);
+    const newer = refresher.now();
+    await vi.advanceTimersByTimeAsync(0);
+    finish[1]!('newer');
+    await newer;
+    finish[0]!('older');
+    await older;
+    expect(applied).toEqual(['newer']);
+    expect(statuses).toEqual(['ok']);
+
+    // One that timed out before it was superseded would say 'lost' if only its own abort were checked.
+    const stalled = refresher.now();
+    await vi.advanceTimersByTimeAsync(5_000);
+    const after = refresher.now();
+    await vi.advanceTimersByTimeAsync(0);
+    finish[3]!('after');
+    await after;
+    finish[2]!('stalled');
+    await stalled;
+    expect(applied).toEqual(['newer', 'after']);
+    expect(statuses).toEqual(['ok', 'ok']);
+  });
 });

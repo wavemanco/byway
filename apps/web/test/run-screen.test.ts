@@ -6,7 +6,7 @@ import { RunStatusPanel } from '../src/components/run/RunStatusPanel.tsx';
 import { focusAfterRemoval } from '../src/view/focus.ts';
 import { CANCEL_QUESTION, CUT_OFF_NOTE, controlPendingLabel, underWayNote } from '../src/view/labels.ts';
 import type { CheckpointRecord, RunRecord } from '@byway/contracts';
-import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, sideImages, waitingRunCount } from '../src/view/run.ts';
+import { activeCheckpoint, howItWasMade, isEnded, outputKind, pollDelay, runPollDelay, sideImages, waitingRunCount } from '../src/view/run.ts';
 import type { RunData } from '../src/view/rundata.ts';
 import type { TimelineStage, TimelineStep } from '../src/view/timeline.ts';
 
@@ -188,7 +188,7 @@ describe('the Cancel question and the cancelled run (ADR-0111)', () => {
   // RS-6: only a cut-off call that may have been billed is listed, and it counts against the workspace, not the run.
   it('says which cut-off calls are listed, and where they are counted', () => {
     expect(CUT_OFF_NOTE).toBe(
-      'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts at its estimate against the workspace budget, not this run’s, until you clear it.',
+      'If byway cut off an AI call that may have been billed, Settings lists it under Spending records; it counts against the workspace budget, not this run’s, at the amount listed there (its estimate, and an earlier attempt’s too when byway had sent the call before), until you clear it.',
     );
   });
 
@@ -224,9 +224,8 @@ const runScreen = (run: RunRecord, spend?: RunData['ended']) =>
 
 // F3R-1 (the re-check of block 1's fix round): RS-5's pieces are tested one by one, and RunScreen joins them. A dropped
 // argument fails the typecheck (pollDelay's and runMeter's last parameters have no default). A wrong cost, a wrong count
-// on the panel or a wrong test of the run's end fails here; a wrong count for the poll does not (pollDelay given
-// undefined, 0 or after?.settledUsd in place of after?.callsUnderWay passes every test), since only the polling would
-// show it, which a server render cannot (ADR-0111; B1R2-CODE-5, the re-check of block 1's second fix round).
+// on the panel or a wrong test of the run's end fails here. The poll's delay cannot be seen in a server render
+// (B1R2-CODE-5), so RunScreen takes it whole from runPollDelay, tested below with what the screen is served (B-039).
 describe('the Run screen joins what the spend book says of an ended run (RS-5)', () => {
   it('shows an ended run’s calls under way and its settled cost, and says nothing of them once none is under way', () => {
     for (const status of ['cancelled', 'failed'] as const) {
@@ -244,5 +243,20 @@ describe('the Run screen joins what the spend book says of an ended run (RS-5)',
     expect(runScreen(ended('cancelled'))).not.toContain('still under way');
     // The server sends them only for an ended run; were a running run's poll to carry them, they are not its meter.
     expect(runScreen({ ...ended('cancelled'), status: 'running' }, { callsUnderWay: 2, settledUsd: 0.8 })).toContain('<span class="meter-spent">$0.40</span>');
+  });
+
+  // B-039: what RunScreen polls with, from what it was served. A cancelled run whose uncut calls still bill keeps polling
+  // until none is under way; it stops once none is, and never polls on its settled cost.
+  it('polls a cancelled run while its calls are under way, by their count, not its cost', () => {
+    const data = (run: RunRecord, spend?: RunData['ended']) => ({ view: { run, events: [], checkpoints: [] }, ...(spend ? { ended: spend } : {}) });
+    for (const status of ['cancelled', 'failed'] as const) {
+      expect(runPollDelay(data(ended(status), { callsUnderWay: 2, settledUsd: 0 }), 'ok'), status).toBe(3000);
+      expect(runPollDelay(data(ended(status), { callsUnderWay: 0, settledUsd: 0.8 }), 'ok'), status).toBeNull();
+      expect(runPollDelay(data(ended(status)), 'ok'), status).toBeNull();
+      // While byway is not answering, it retries whatever the run's status.
+      expect(runPollDelay(data(ended(status)), 'lost'), status).toBe(3000);
+    }
+    // A run still going polls briskly; figures sent for it are not its own.
+    expect(runPollDelay(data({ ...ended('cancelled'), status: 'running' }, { callsUnderWay: 0, settledUsd: 0 }), 'ok')).toBe(1000);
   });
 });

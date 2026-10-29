@@ -29,17 +29,20 @@ interface Props {
   media: Record<string, ArtifactInfo>;
   presentation: RecipePresentation | null;
   label: Label | null;
-  /** Images made beside a deliverable that cannot hold them (an options list's mood boards). */
+  /** Images made that the deliverable does not hold: an options list's mood boards, or images kept beside a piece (resultImages). */
   images?: SideImage[];
 }
 
-/** Rough images beside the options (UX-8): shown apart from the decision, each with its own download. */
-function SideImages({ images }: { images: SideImage[] }) {
+/**
+ * Images beside the deliverable, each with its own download: rough images beside the options (UX-8), apart from the
+ * decision, or the images a piece or page does not hold, kept beside it (ADR-0112; B-047).
+ */
+function SideImages({ images, options }: { images: SideImage[]; options: boolean }) {
   const step = images[0]?.step ?? 'Custom imagery';
   return (
     <section className="side-images" aria-labelledby="side-images-title">
       <h2 id="side-images-title">{step}</h2>
-      <p className="muted">Rough images made in this run. They are not part of the options above.</p>
+      <p className="muted">{options ? 'Rough images made in this run. They are not part of the options above.' : 'Images made in this run that are not in the result above. They are kept beside it, and the export leaves them out.'}</p>
       <ul className="side-images-grid">
         {images.map((img, i) => {
           const name = img.label ?? `Image ${i + 1}`;
@@ -117,7 +120,7 @@ export function ResultView({ run, artifactId, mediaType, text, made, media, pres
         <Deliverable run={run} artifactId={artifactId} text={text} made={made} media={media} />
       </section>
 
-      {images.length > 0 ? <SideImages images={images} /> : null}
+      {images.length > 0 ? <SideImages images={images} options={run.medium === 'options'} /> : null}
 
       <section className="made" aria-labelledby="made-title">
         <h2 id="made-title">How this was made</h2>
