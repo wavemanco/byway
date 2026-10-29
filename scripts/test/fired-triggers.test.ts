@@ -103,11 +103,17 @@ describe('the branch’s diff', { timeout: 60_000 }, () => {
     git('commit', '--quiet', '--no-verify', '-m', 'main moves on');
     git('switch', '--quiet', 'fix/x');
     write('src/b.ts', 'export const b = toFailure(2);\n');
-    write('src/new.ts', 'export const n = 1;\n');
+    write('src/new.ts', 'export const n = markSent(1);\n');
+    // A record that names a code name changes no code.
+    mkdirSync(path.join(dir, 'docs'), { recursive: true });
+    write('docs/note.md', 'A note on keepsVoice.\n');
+    write('NOTES.md', 'And on falFailure.\n');
     const diff = branchDiff('main', dir);
-    expect(diff.files.sort()).toEqual(['src/a.ts', 'src/b.ts', 'src/new.ts']);
+    expect(diff.files.sort()).toEqual(['NOTES.md', 'docs/note.md', 'src/a.ts', 'src/b.ts', 'src/new.ts']);
     expect(diff.lines).toContain('+export const a = redactMessage(1);');
     expect(diff.lines).toContain('+export const b = toFailure(2);');
+    expect(diff.lines).toContain('+export const n = markSent(1);');
+    expect(diff.lines).not.toMatch(/keepsVoice|falFailure/);
     expect(diff.lines).not.toMatch(/^(?:\+\+\+|---) /m);
   });
 });

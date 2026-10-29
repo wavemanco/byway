@@ -1,7 +1,7 @@
 /**
  * Which pending rows' triggers a branch's diff fires: the rows of docs/backlog.md and docs/playbook.md whose Trigger
- * names a file the diff touches, or a code name (`redactMessage`, `SpendBook.abandon`, `PRICES_CHECKED`) on a line it
- * adds or removes. The owner chose at 2026-10-23 08:58 "Build the script and make it a step (Recommended)": "A small
+ * names a file the diff touches, or a code name (`redactMessage`, `SpendBook.abandon`, `PRICES_CHECKED`) on a line of
+ * code it adds or removes (a record under docs/ or a .md file changes no code). The owner chose at 2026-10-23 08:58 "Build the script and make it a step (Recommended)": "A small
  * script under scripts/, usable by any agent or person, lists the backlog rows whose trigger names a file the branch's
  * diff touches. Each block's records pass runs it, reads every builder's could-not-do list, parked findings and the
  * check's notes, gives each a row or a dated note, and rebuilds the Route Map's item list at the merge." (backlog row
@@ -12,6 +12,8 @@
  * where HEAD left <base> (default `main`) to the working tree, uncommitted and untracked files included.
  */
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { parseDocs, readDocs, ROOT, type Row } from './route-map.ts';
 
 export interface Diff {
@@ -58,17 +60,21 @@ export function firedTriggers(rows: readonly Row[], diff: Diff): Fired[] {
   });
 }
 
-/** The branch's diff from where HEAD left `base` to the working tree. */
+/** Records, not code: a code name on their lines (a note, a copied probe) is not a change to it. */
+const isRecord = (file: string) => file.startsWith('docs/') || file.endsWith('.md');
+
+/** The branch's diff from where HEAD left `base` to the working tree; its lines are those of the code, not the records. */
 export function branchDiff(base = 'main', root = ROOT): Diff {
   const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
   const from = git('merge-base', base, 'HEAD').trim();
   const list = (text: string) => text.split('\n').map((l) => l.trim()).filter((l) => l !== '');
-  const files = [...new Set([...list(git('diff', '--name-only', from)), ...list(git('ls-files', '--others', '--exclude-standard'))])];
-  const lines = git('diff', '-U0', from)
+  const untracked = list(git('ls-files', '--others', '--exclude-standard'));
+  const files = [...new Set([...list(git('diff', '--name-only', from)), ...untracked])];
+  const changed = git('diff', '-U0', from, '--', '.', ':(exclude)docs', ':(exclude)*.md')
     .split('\n')
-    .filter((l) => /^[+-]/.test(l) && !/^(?:\+\+\+|---) /.test(l))
-    .join('\n');
-  return { files, lines };
+    .filter((l) => /^[+-]/.test(l) && !/^(?:\+\+\+|---) /.test(l));
+  const added = untracked.filter((f) => !isRecord(f)).flatMap((f) => readFileSync(path.join(root, f), 'utf8').split('\n').map((l) => `+${l}`));
+  return { files, lines: [...changed, ...added].join('\n') };
 }
 
 function main(argv: string[]): number {
