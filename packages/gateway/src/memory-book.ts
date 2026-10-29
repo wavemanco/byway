@@ -166,6 +166,10 @@ export class MemorySpendBook implements SpendBook {
     return true;
   }
 
+  async holds(opId: string, owner: string): Promise<boolean> {
+    return this.rows.get(opId)?.owner === owner;
+  }
+
   async accept(opId: string, role: ProviderJobRole, providerJobId: string): Promise<void> {
     const r = this.rows.get(opId);
     if (!r) return;

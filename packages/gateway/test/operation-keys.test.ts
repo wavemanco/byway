@@ -393,6 +393,81 @@ describe('a fal clip accepted by the provider is resumed, never submitted again 
     expect(await book.ledgeredCalls()).toEqual([]);
   });
 
+  // MONEY-1, the check of fix/fx-landnow (F03 (e)): an attempt whose lease ran out while it polled its clip, with no
+  // cancel (its process slept), went on once the clip was made and submitted its own last-frame and middle-frame jobs
+  // beside those of the attempt that had resumed its row: four extract-frame jobs billed for one clip, two counted.
+  it.each([
+    ['on two workers', false],
+    ['on one worker', true],
+  ] as const)('after a takeover %s, the attempt that lost its row submits no frame job: one clip, two extract-frame jobs, the owner attempt’s', async (_where, oneWorker) => {
+    const fal = fakeFal();
+    const media = fakeFetch();
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let first = true;
+    // The first attempt's first status poll waits until the test lets it go: its clip is made meanwhile.
+    const client: FalClientLike = {
+      ...fal.client,
+      queue: {
+        ...fal.client.queue,
+        async subscribeToStatus(endpoint, options) {
+          if (first) {
+            first = false;
+            fal.polls.push(options.requestId);
+            await held;
+          }
+          return fal.client.queue.subscribeToStatus(endpoint, options);
+        },
+      },
+    };
+    const slept = sleepsThrough();
+    const workerA = gateway({ clients: { fal: client }, fetch: media.fetch });
+    const workerB = oneWorker ? workerA : gateway({ clients: { fal: client }, fetch: media.fetch });
+    const key = 'run-1/run-1/relay/-/1/video/abc/1';
+    const lost = workerA.video(await clip(attempt(key).operation)).then(
+      (out) => out,
+      (e: unknown) => e,
+    );
+    await until(() => fal.polls.length === 1);
+    // The first attempt's process sleeps through its lease; the step's next attempt resumes its row and finishes the clip.
+    slept.asleep = true;
+    clock.t += LEASE + 1;
+    const out = await workerB.video(await clip(attempt(key).operation));
+    slept.asleep = false;
+    expect(out).toMatchObject({ provider: 'fal', mediaType: 'video/mp4' });
+    const frameJobs = () => fal.calls.filter((c) => c.endpoint === 'fal-ai/ffmpeg-api/extract-frame').map((c) => c.input.frame_type);
+    expect(frameJobs()).toEqual(['last', 'middle']);
+    // The first attempt wakes, its clip made: it submits nothing more, and its clip settles as made, on the one row.
+    release();
+    const err = await lost;
+    expect(err).toBeInstanceOf(GatewayError);
+    expect(err).toMatchObject({ retryable: false, billed: true, message: expect.stringContaining('another attempt of this step took the call over') });
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL, 'fal-ai/ffmpeg-api/extract-frame', 'fal-ai/ffmpeg-api/extract-frame']);
+    expect(frameJobs()).toEqual(['last', 'middle']);
+    const spend = await workerB.spend('ws');
+    expect(spend).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0, spentUsd: out.costUsd });
+    await workerB.close();
+    await workerA.close();
+    expect((await book.ledgeredCalls()).map((c) => c.costUsd)).toEqual([out.costUsd]);
+  });
+
+  it('a book that cannot say whether the call still holds its row has no frame job submitted: the clip settles as made', async () => {
+    const fal = fakeFal();
+    book.holds = async () => {
+      throw new Error('database is locked');
+    };
+    const g = gateway({ clients: { fal: fal.client }, fetch: fakeFetch().fetch });
+    const err = await g.video(await clip(attempt().operation)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ retryable: false, billed: true, message: expect.stringContaining('could not read its spending records') });
+    expect(fal.calls.map((c) => c.endpoint)).toEqual([MODEL]);
+    const spend = await g.spend('ws');
+    expect(spend).toMatchObject({ inFlightUsd: 0, uncertainUsd: 0 });
+    expect(spend.spentUsd).toBeGreaterThan(0);
+  });
+
   // MONEY-2, the check of fix/fx-landnow (F03 (g)): an attempt Temporal cancelled sends nothing again, so it neither
   // submits its clip nor takes the other attempt's row over to poll it and submit frame jobs: the attempt that takes
   // the call over does that.

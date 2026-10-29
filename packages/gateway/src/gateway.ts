@@ -682,6 +682,7 @@ export class ModelGateway implements Gateway {
             if (cancel?.aborted) throw notSubmitted(ref.provider, what, 'Temporal cancelled this attempt of the step, and a later attempt takes the call over');
             // The submission is the call's first billable request: the spend book marks the call sent before it.
             const fresh = op.resumed === undefined;
+            const later = op.wasSent;
             await op.markSent();
             // Marking it sent found another attempt's jobs the provider had already accepted (PaidCall.markSent: this
             // call's lease ran out while it got the job ready, and it was admitted again onto that attempt's row). The
@@ -691,6 +692,15 @@ export class ModelGateway implements Gateway {
             // here, as may have been billed, listed with that job's id. (A call resumed from the start polls its jobs
             // instead, and submits only the ones not listed: `resume` below.)
             if (fresh && op.resumed) throw takenOver(ref.provider, what, op.resumed, op.resumedAt, redact);
+            // A submission after the call's first (a last-frame or middle-frame job) goes out only while this call still
+            // holds its row in the spend book. An attempt that took the row over (this one's lease ran out while its
+            // process slept) polls the same clip and submits its own frame jobs, so this one submits nothing more, and its
+            // clip settles as made (MONEY-1, the check of fix/fx-landnow; F03 (e)). A book that cannot say submits nothing.
+            if (later) {
+              const holds = await op.holdsRow().catch(() => undefined);
+              if (holds === undefined) throw notSubmitted(ref.provider, what, 'byway could not read its spending records to see that this attempt of the step still holds the call');
+              if (!holds) throw notSubmitted(ref.provider, what, 'another attempt of this step took the call over, and it makes this job');
+            }
             try {
               return await withRetries(mapped(fn), this.retry, BILLABLE_JOB, stopping);
             } catch (e) {

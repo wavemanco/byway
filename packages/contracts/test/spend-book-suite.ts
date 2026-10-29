@@ -912,6 +912,29 @@ export function spendBookContract(name: string, open: () => SpendBookFixture): v
         }),
       );
 
+      // MONEY-1, the check of fix/fx-landnow: the attempt that lost its row asks before each later queue job.
+      it(
+        'says which owner holds a call: its admitter until another owner resumes it, then that owner only, settled or not, and nobody for a call it does not have',
+        withBook(async ({ a, b, advance }) => {
+          const first = keyed('k-holds', { kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 });
+          await a.admit(first);
+          expect(await b.holds(first.opId, 'owner-a')).toBe(true);
+          expect(await a.holds(first.opId, 'owner-b')).toBe(false);
+          await a.markSent(first.opId, 'owner-a');
+          await a.accept(first.opId, 'generation', 'req-gen');
+          // Its lease has run out, but no other owner has it: still the admitter's.
+          advance(LEASE + 1);
+          expect(await a.holds(first.opId, 'owner-a')).toBe(true);
+          expect(await b.admit(keyed('k-holds', { owner: 'owner-b', kind: 'video', provider: 'fal', model: 'fal-ai/kling', reserveUsd: 0.7 }))).toMatchObject({ resume: { opId: first.opId } });
+          expect(await a.holds(first.opId, 'owner-a')).toBe(false);
+          expect(await a.holds(first.opId, 'owner-b')).toBe(true);
+          await b.settle(first.opId, settlement(0.66));
+          expect(await b.holds(first.opId, 'owner-a')).toBe(false);
+          expect(await b.holds(first.opId, 'owner-b')).toBe(true);
+          expect(await a.holds('no-such-call', 'owner-a')).toBe(false);
+        }),
+      );
+
       it(
         'hands a resumed call the time each of its queue jobs was accepted, by the book’s clock, not the time it is resumed (the waits design)',
         withBook(async ({ a, b, advance }) => {
