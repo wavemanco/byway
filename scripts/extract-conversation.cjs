@@ -11,6 +11,7 @@ const recs=[]; for(const l of lines){ try{recs.push(JSON.parse(l))}catch(e){} }
 const asks=new Map();
 for(const o of recs) if(o.type==='assistant'&&Array.isArray(o.message?.content)) for(const p of o.message.content) if(p.type==='tool_use'&&p.name==='AskUserQuestion') asks.set(p.id,{ts:o.timestamp,input:p.input,side:!!o.isSidechain});
 const entries=[]; const seen=new Set();
+function part(p){ return p.type==='text'?p.text:'['+p.type+']'; }
 function local(ts){ const d=new Date(Date.parse(ts)-7*3600e3); const s=d.toISOString(); return s.slice(0,23)+'-07:00'; }
 function add(ts,kind,text){ const key=kind+'|'+text.trim(); if(kind==='USER'&&seen.has(key)) return; seen.add(key); entries.push({ts,kind,text}); }
 for(const o of recs){
@@ -19,8 +20,9 @@ for(const o of recs){
   if(o.type==='user'){
     const c=o.message?.content;
     if(o.isCompactSummary||o.isMeta) continue;
-    if(typeof c==='string'||(Array.isArray(c)&&c.every(p=>p.type==='text'))){
-      const t=typeof c==='string'?c:c.map(p=>p.text).join('\n');
+    // A typed message is any without a tool result; a part that is not text (a pasted image) is marked by its type.
+    if(typeof c==='string'||(Array.isArray(c)&&!c.some(p=>p.type==='tool_result'))){
+      const t=typeof c==='string'?c:c.map(part).join('\n');
       const kind=o.origin?.kind;
       if(kind==='human') add(o.timestamp,'USER',t);
       else if(kind===undefined && /<command-name>\/goal<\/command-name>/.test(t)){
@@ -37,7 +39,7 @@ for(const o of recs){
     }
   }
   if(o.type==='attachment'&&o.attachment?.type==='queued_command'&&o.attachment.origin?.kind==='human'){
-    const p=o.attachment.prompt; const t=typeof p==='string'?p:p.map(x=>x.text||'').join('\n');
+    const p=o.attachment.prompt; const t=typeof p==='string'?p:p.map(part).join('\n');
     add(o.attachment.timestamp||o.timestamp,'USER',t);
   }
 }

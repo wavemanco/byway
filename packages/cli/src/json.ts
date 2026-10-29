@@ -1,9 +1,6 @@
-/** Strict reading of recipe JSON files: encodings, duplicate keys and nesting depth. */
+/** Strict reading of recipe JSON files: encodings and duplicate keys (parseRecipe's shape check bounds the nesting). */
 
 export class JsonInputError extends Error {}
-
-/** Maximum nesting depth accepted from a file (the recursive schema, walkers and hashing stay well inside the stack). */
-export const MAX_DEPTH = 64;
 
 /** Decode file bytes as UTF-8 (a UTF-8 BOM is dropped). UTF-16 and invalid UTF-8 are rejected with a clear message. */
 export function decode(bytes: Uint8Array, file: string): string {
@@ -19,9 +16,9 @@ export function decode(bytes: Uint8Array, file: string): string {
 }
 
 /**
- * Reject objects that repeat a key and nesting deeper than MAX_DEPTH. JSON.parse silently keeps the last
- * duplicate, so a reader of the file could see a different value from the one that is hashed.
- * Call only on text that JSON.parse has already accepted.
+ * Reject objects that repeat a key. JSON.parse silently keeps the last duplicate, so a reader of the file could see a
+ * different value from the one that is hashed. Iterative, so any nesting is safe here; parseRecipe refuses nesting
+ * deeper than SHAPE_LIMITS.depth. Call only on text that JSON.parse has already accepted.
  */
 export function checkStructure(text: string, file: string): void {
   const stack: (Set<string> | null)[] = [];
@@ -30,7 +27,6 @@ export function checkStructure(text: string, file: string): void {
     const c = text[i]!;
     if (c === '{' || c === '[') {
       stack.push(c === '{' ? new Set() : null);
-      if (stack.length > MAX_DEPTH) throw new JsonInputError(`${file} nests deeper than ${MAX_DEPTH} levels`);
       i += 1;
     } else if (c === '}' || c === ']') {
       stack.pop();

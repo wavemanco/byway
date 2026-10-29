@@ -9,7 +9,6 @@ import { routeChoice } from '@byway/catalog';
 import type { Medium } from '@byway/contracts';
 import { withoutMarks } from '@byway/gateway';
 import { voiceWrite } from '@byway/recipe/semantics';
-import { CheckpointResolvedError, CheckpointWithdrawnError } from '@byway/store';
 import { applyClaims, claimLines } from '../claims.ts';
 import {
   applyCopy,
@@ -326,11 +325,14 @@ export async function recordResolution(deps: RunnerDeps, input: RecordResolution
   try {
     await deps.store.resolveCheckpoint(input.resolution);
   } catch (e) {
+    // By name and code, not class: a store handed in by a caller that loaded @byway/store by another URL throws its own
+    // copy's classes (BUILD-1).
+    const err = e as { name?: unknown; code?: unknown } | null;
     // A withdrawn question (its run was cancelled or failed) takes no answer, and retrying will not change that. It is
     // deliberately not a CheckpointResolvedError, so it never passes for an earlier attempt's success.
-    if (e instanceof CheckpointWithdrawnError) throw new StepError('This question was withdrawn: its run was cancelled or failed.');
+    if (err?.name === 'CheckpointWithdrawnError' && err.code === 'withdrawn') throw new StepError('This question was withdrawn: its run was cancelled or failed.');
     // A retried activity whose first attempt committed finds the checkpoint already answered: that is success.
-    if (!(e instanceof CheckpointResolvedError)) throw e;
+    if (!(err?.name === 'CheckpointResolvedError' && err.code === 'already-resolved')) throw e;
   }
   await emit(deps.store, input.runId, 'checkpoint-resolved', { checkpointId: input.resolution.checkpointId }, at(input.call, `checkpoint/${input.resolution.checkpointId}/resolved`));
 }

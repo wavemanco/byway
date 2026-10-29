@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      zod:
-        specifier: ^4.6.5
-        version: 4.6.5
     devDependencies:
       '@types/node':
         specifier: ^26.6.4
@@ -129,9 +125,6 @@ importers:
 
   packages/catalog:
     dependencies:
-      '@byway/canonical':
-        specifier: workspace:*
-        version: link:../canonical
       '@byway/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -200,6 +193,9 @@ importers:
       '@byway/validator':
         specifier: workspace:*
         version: link:../validator
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   packages/prompts:
     dependencies:

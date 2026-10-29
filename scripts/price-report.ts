@@ -75,6 +75,12 @@ export interface PricePage {
    * 5 seconds, which byway's flat rate per second assumes is 5 times that rate (PRICES-2).
    */
   derived?: readonly { after: string; what: string; usd: number }[];
+  /**
+   * The page names its models by id (OpenAI's, Google's): a row's stretch also ends at the next id on the page, of a
+   * model byway prices or not, so a section of a model with no row, within WINDOW characters, is never read as the
+   * row's (its tier words could hide a changed threshold, or flag a row with no tier; B-032).
+   */
+  byIds?: boolean;
 }
 
 /** The figures of a row that a page states, by what they are. Zero is not stated (fal's token rates). */
@@ -142,6 +148,7 @@ export function pricePages(now: Date): PricePage[] {
       form: 'html',
       rows: rowsOf('openai', now),
       longInScripts: true,
+      byIds: true,
       tierWords: { words: (t) => `Long: >${t.aboveInputTokens / 1000}K input tokens`, heading: 'Flagship models' },
     },
     // In English: asked by Node's fetch with no hl=en, Google answered with its page in Russian (2026-10-22).
@@ -150,6 +157,7 @@ export function pricePages(now: Date): PricePage[] {
       url: 'https://ai.google.dev/gemini-api/docs/pricing?hl=en',
       form: 'html',
       rows: rowsOf('google', now),
+      byIds: true,
       tierWords: { words: (t) => `prompts > ${t.aboveInputTokens / 1000}k tokens` },
       byLength: 'prompts >',
     },
@@ -202,24 +210,40 @@ function dollars(text: string): number[] {
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A name as a whole word: not inside a longer name ("Claude Opus 5" in "Claude Opus 5.5", an id with a suffix). */
 const nameRe = (name: string) => new RegExp(`(?<![\\w.-])${escapeRe(name)}(?![\\w-]|\\.\\d)`, 'g');
+/**
+ * Any model id, as OpenAI's and Google's pages name them: lowercase words joined by hyphens, one of them starting with a
+ * digit ("gpt-6-astra", "gemini-3.8-flash", "imagen-4.0-generate").
+ * shortcut: an id with no hyphen before a digit (OpenAI's "o3") does not end a stretch; add its shape if a page lists one.
+ */
+const MODEL_ID = /(?<![\w.-])[a-z][a-z0-9]*(?:-[a-z0-9.]+)*?-\d[\w.-]*/g;
 
 /**
  * Where a page prices a model: the stretch after the first place the page names the model with a dollar amount after
  * it, or undefined when no place does. A stretch runs to the end of the line in Markdown, else WINDOW characters, and
- * is cut at the next name of any model on the page, the same model's included. Only the first such place is read
+ * is cut at the next name of any model on the page, the same model's included, and on a page that names its models by
+ * id at the next id of any model, priced or not (B-032). Only the first such place is read
  * because a page that prices a model several ways names it again in each table, in an order that puts the plain price
  * first: OpenAI's page has the model's Standard row, then its Batch, Fast and Ultrafast rows at half, twice and six
  * times it. Read at any place instead, a model whose every price doubled would still show byway's figures in its Batch
  * row, and one whose every price halved in its Fast row (PRICES-1). A page that names the model first in a sentence
  * with some other price is flagged, which a re-read clears.
  */
-export function priceStretch(text: string, name: string, otherNames: readonly string[], form: PricePage['form']): string | undefined {
+export function priceStretch(text: string, name: string, otherNames: readonly string[], form: PricePage['form'], byIds = false): string | undefined {
   for (const m of text.matchAll(nameRe(name))) {
     const from = m.index + m[0].length;
     let to = form === 'markdown' ? (text.indexOf('\n', from) < 0 ? text.length : text.indexOf('\n', from)) : Math.min(text.length, from + WINDOW);
     for (const other of [...otherNames, name]) {
       const next = nameRe(other);
       next.lastIndex = from;
+      const at = next.exec(text);
+      if (at && at.index < to) to = at.index;
+    }
+    // An id before the first price is the section's own (Google's "gemini-3.1-pro-preview and
+    // gemini-3.1-pro-preview-customtools"); one after it starts the next section.
+    const priced = text.slice(from, to).search(/\$/);
+    if (byIds && priced >= 0) {
+      const next = new RegExp(MODEL_ID);
+      next.lastIndex = from + priced;
       const at = next.exec(text);
       if (at && at.index < to) to = at.index;
     }
@@ -364,7 +388,7 @@ export function pageReport(page: PricePage, body: string, scripts: readonly stri
   const lines: string[] = [];
   for (const row of page.rows) {
     const name = nameOf(row);
-    const stretch = priceStretch(text, name, names.filter((n) => n !== name), page.form);
+    const stretch = priceStretch(text, name, names.filter((n) => n !== name), page.form, page.byIds);
     const shown = stretch === undefined ? [] : dollars(stretch);
     const missing = figures(row, !page.longInScripts).filter((f) => !shown.includes(f.usd));
     const dated = row.from ? ` (the row from ${row.from})` : '';

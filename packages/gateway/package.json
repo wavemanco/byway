@@ -19,6 +19,7 @@
   "devDependencies": {
     "@byway/catalog": "workspace:*",
     "@byway/recipe": "workspace:*",
-    "@byway/validator": "workspace:*"
+    "@byway/validator": "workspace:*",
+    "zod": "^4.6.5"
   }
 }

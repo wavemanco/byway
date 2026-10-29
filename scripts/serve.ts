@@ -52,7 +52,7 @@ import { ENGINE_STOPPED_MESSAGE, watchEngine } from '../apps/web/src/server/engi
 import { parseServeArgs } from '../apps/web/src/server/serving.ts';
 import { createGateway, loadEnvFile, withoutSecrets } from '../packages/gateway/src/index.ts';
 import { createPromptRenderer } from '../packages/prompts/src/index.ts';
-import { browsersFolder, buildWorkflows, checkRenderer, dataDirReport, DEFAULT_WORKFLOWS_BUNDLE, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
+import { assertPortFree, browsersFolder, buildWorkflows, checkRenderer, dataDirReport, DEFAULT_WORKFLOWS_BUNDLE, engineStartLines, rendererCheckWithin, rendererLine, reportLines, startDevEngine, storeCaps, type DevEngine, type RendererCheckProgress } from '../packages/runner/src/index.ts';
 import { createStore, resolveDataDir } from '../packages/store/src/index.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -152,10 +152,17 @@ async function build(env: Record<string, string>): Promise<void> {
   }
 }
 
+/** The plain message for a web port that is taken (BUILD-2), beside the engine's (OPS-1). */
+const webPortInUseMessage = (port: number): string => `Port ${port} on 127.0.0.1 is already in use: is byway already running? Stop it, or choose another port with PORT.`;
+
 async function main(): Promise<void> {
   const { mode, demo } = parseServeArgs(process.argv.slice(2), process.env);
   const webPort = port('PORT', 3000);
   const temporalPort = port('BYWAY_TEMPORAL_PORT', 7233);
+  // Both ports before anything else: `next build` cleans apps/web/.next first, which a byway already running serves
+  // from (BUILD-2). The engine checks its port again when it starts, for a port taken meanwhile.
+  await assertPortFree(temporalPort);
+  await assertPortFree(webPort, webPortInUseMessage);
 
   quietTemporal();
   // Turbopack's caches are off now (next.config.ts), but ones left by an earlier byway may hold a snapshot of the

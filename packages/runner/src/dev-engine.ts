@@ -192,11 +192,11 @@ export function repeatEvery(everyMs: number, pass: () => Promise<void>, onError:
 export const portInUseMessage = (port: number): string =>
   `Port ${port} on 127.0.0.1 is already in use, so byway cannot start its engine there. Another Temporal server, or one left over from an earlier byway that did not stop cleanly, may be holding it. Stop that process, or choose another port with BYWAY_TEMPORAL_PORT.`;
 
-/** Resolves when nothing listens on 127.0.0.1:port; rejects with a plain message when something does. */
-export function assertPortFree(port: number): Promise<void> {
+/** Resolves when nothing listens on 127.0.0.1:port; rejects with a plain message (the engine's by default) when something does. */
+export function assertPortFree(port: number, message: (port: number) => string = portInUseMessage): Promise<void> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
-    probe.once('error', (e: NodeJS.ErrnoException) => reject(e.code === 'EADDRINUSE' || e.code === 'EACCES' ? new Error(portInUseMessage(port)) : e));
+    probe.once('error', (e: NodeJS.ErrnoException) => reject(e.code === 'EADDRINUSE' || e.code === 'EACCES' ? new Error(message(port)) : e));
     probe.listen({ port, host: '127.0.0.1', exclusive: true }, () => probe.close(() => resolve()));
   });
 }
