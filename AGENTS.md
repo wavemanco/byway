@@ -70,6 +70,11 @@ weekly Playwright pin report"; the cadence it serves is ADR-0110's). When it say
 release notes since the pin for a high or critical Chromium security fix, and tell the owner of such a fix, or of a
 minor release whose two weeks are running out.
 
+Read the advisories report of the same run too: the step "Do byway's dependencies or its Node have known advisories?"
+(backlog row X-VAL-4 (a); `node scripts/advisories.ts` runs it by hand, with no key). Tell the owner of each advisory it
+names that applies, of each Node security release after `.node-version`, and of anything it could not read. A version
+bump that fixes one goes to the owner as any dependency change does; the report only says what it found.
+
 ## Before a first live run of a new kind
 
 Before the first live run, the first run that makes an image, the first live C5 run and the first run on Best or
