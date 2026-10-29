@@ -277,7 +277,10 @@ describe('gateway: a clip attempt Temporal has cancelled sends nothing again (F0
     expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0, inFlightUsd: 0, uncertainUsd: 0 });
   });
 
-  it('a clip made as the attempt is cancelled is settled as made, and no last-frame or middle-frame job is submitted', async () => {
+  // R-MONEY-1, the re-check of fix/fx-landnow: refusing these frame jobs settled the clip without frames, and the next
+  // attempt bought it again. The owner chose "Third round: frame jobs go on (Recommended)": while this attempt still holds
+  // the call's row, the made clip's last-frame and middle-frame jobs are submitted, and the clip is completed and kept.
+  it('a clip made as the attempt is cancelled, its row still held, has its last-frame and middle-frame jobs made: one clip, kept', async () => {
     const { cancel, operation } = timedOut();
     const http = watched(fakeFalHttp(), (url, method) => {
       // The clip's result is read: Temporal cancels the attempt as it arrives.
@@ -285,13 +288,13 @@ describe('gateway: a clip attempt Temporal has cancelled sends nothing again (F0
       return undefined;
     });
     const g = gateway(http);
-    const err = (await g.video(req({ operation })).catch((e: unknown) => e)) as GatewayError;
-    expect(err).toBeInstanceOf(GatewayError);
-    expect(err).toMatchObject({ retryable: false, billed: true });
-    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`]);
-    // Made and billed: ledgered at the clip's price, with nothing counted as may have been billed.
+    const out = await g.video(req({ operation }));
+    expect(cancel.signal.aborted).toBe(true);
+    expect(out).toMatchObject({ provider: 'fal', mediaType: 'video/mp4', costUsd: 0.354, lastFrameArtifactId: expect.any(String), middleFrameArtifactId: expect.any(String) });
+    expect(http.posts.map((p) => p.url)).toEqual([`${QUEUE}/${MODEL}`, `${QUEUE}/${FAL_EXTRACT_FRAME}`, `${QUEUE}/${FAL_EXTRACT_FRAME}`]);
+    // Made and billed once: ledgered at the clip's price, with nothing counted as may have been billed.
     expect(ledgerLines()).toHaveLength(1);
-    expect(ledgerLines()[0]).toMatchObject({ kind: 'video', costUsd: 0.354 });
+    expect(ledgerLines()[0]).toMatchObject({ kind: 'video', costUsd: 0.354, id: out.ledgerEntryId });
     expect(await g.spendRecords('ws-1')).toMatchObject({ inFlight: [], uncertain: [] });
     expect(await g.spend('ws-1')).toMatchObject({ spentUsd: 0.354, inFlightUsd: 0, uncertainUsd: 0 });
   });
